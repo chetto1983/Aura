@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/readiness"
+	"github.com/chetto1983/aura/internal/runner"
 )
 
 type listenFunc func(network, address string) (net.Listener, error)
@@ -18,19 +20,34 @@ type schedulerLifecycle interface {
 	Start(context.Context) error
 }
 
-// backgroundStopTimeout bounds each join of background work at shutdown.
 const backgroundStopTimeout = 5 * time.Second
 
-// newServeCompletionDispatcher builds the daemon's one background-completion dispatcher and
-// installs it as the background shell completion hook. It is nil without the steer rail that
-// carries its wakes: shells then keep explicit polls, and completed video jobs stay undelivered
-// until a boot with the rail wakes them.
+type shellCompletionHookSetter interface {
+	SetCompletionHook(tools.BackgroundShellCompletionHook)
+}
+
+// newServeCompletionDispatcher builds the daemon's one background-completion dispatcher. It is
+// nil without the steer rail that carries its wakes: shells then keep explicit polls, and
+// completed video jobs stay undelivered until a boot with the rail wakes them. The nil checks
+// run on the concrete fields, before either is boxed in an interface that would no longer
+// read as nil.
 func newServeCompletionDispatcher(ctx context.Context, chat *chatEnv) *backgroundCompletionDispatcher {
 	if chat.run == nil || chat.steer == nil {
 		return nil
 	}
-	dispatcher := newBackgroundCompletionDispatcher(ctx, chat.run, chat.steer)
-	chat.toolHandles.BackgroundShells.SetCompletionHook(dispatcher.NotifyShell)
+	return installBackgroundCompletions(ctx, chat.run, chat.steer, chat.toolHandles.BackgroundShells)
+}
+
+// installBackgroundCompletions makes the dispatcher the shells' completion hook. A nil
+// *tools.BackgroundShells is a valid setter: its SetCompletionHook is nil-safe.
+func installBackgroundCompletions(
+	ctx context.Context,
+	run backgroundCompletionWakeRunner,
+	pusher runner.SteerPusher,
+	shells shellCompletionHookSetter,
+) *backgroundCompletionDispatcher {
+	dispatcher := newBackgroundCompletionDispatcher(ctx, run, pusher)
+	shells.SetCompletionHook(dispatcher.NotifyShell)
 	return dispatcher
 }
 

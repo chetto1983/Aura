@@ -5,13 +5,17 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
+	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/steer"
 )
 
 var errRecoveryStoreUnused = errors.New("not reached by boot recovery")
@@ -231,13 +235,57 @@ func TestMediaBackgroundWorkIsNilSafeWhenDisabled(t *testing.T) {
 	recovery.Start(context.Background())
 	recovery.Stop()
 
-	dispatcher := newServeCompletionDispatcher(context.Background(), &chatEnv{})
-	if dispatcher != nil {
-		t.Fatal("a dispatcher was built without the steer rail that carries its wakes")
+	rail := steer.NewPostgresStore(nil, steer.Config{})
+	for name, chat := range map[string]*chatEnv{
+		"nothing wired": {},
+		"no steer rail": {run: &runner.Runner{}},
+		"no runner":     {steer: rail},
+	} {
+		dispatcher := newServeCompletionDispatcher(context.Background(), chat)
+		if dispatcher != nil {
+			t.Fatalf("%s: a dispatcher was built without the runner and steer rail its wakes need", name)
+		}
+		dispatcher.NotifyMedia(mediaDone("job-1"))
+		dispatcher.NotifyShell(shellDone("sh-1", "exited:0"))
 	}
-	dispatcher.NotifyMedia(mediaDone("job-1"))
-	dispatcher.NotifyShell(shellDone("sh-1", "exited:0"))
 	shutdownBackgroundWork(&serveEnv{chatEnv: &chatEnv{}})
+}
+
+type recordingHookSetter struct {
+	hook tools.BackgroundShellCompletionHook
+}
+
+func (r *recordingHookSetter) SetCompletionHook(hook tools.BackgroundShellCompletionHook) {
+	r.hook = hook
+}
+
+// TestServeCompletionDispatcherIsTheShellCompletionHook proves the installed hook is the
+// dispatcher's shell entry: a completion handed to the hook wakes its conversation under the
+// shell source.
+func TestServeCompletionDispatcherIsTheShellCompletionHook(t *testing.T) {
+	run := &fakeBackgroundCompletionRunner{}
+	shells := &recordingHookSetter{}
+	dispatcher := installBackgroundCompletions(context.Background(), run, acceptingSteerPusher{}, shells)
+	if shells.hook == nil {
+		t.Fatal("no completion hook was installed on the background shells")
+	}
+	shells.hook(shellDone("sh-hooked", "exited:0"))
+	wakes := run.waitForWakes(t, 1)
+	stopDispatcher(t, dispatcher)
+	if wakes[0].source != steer.SourceShell || wakes[0].owner != "owner-1" || !strings.Contains(wakes[0].text, "Background shell sh-hooked ") {
+		t.Fatalf("wake = %+v, want the hooked shell completion delivered under the shell source", wakes[0])
+	}
+
+	chat := &chatEnv{
+		run:         &runner.Runner{},
+		steer:       steer.NewPostgresStore(nil, steer.Config{}),
+		toolHandles: runtimeToolHandles{BackgroundShells: tools.NewBackgroundShells(nil)},
+	}
+	served := newServeCompletionDispatcher(context.Background(), chat)
+	if served == nil {
+		t.Fatal("no dispatcher with a runner and the steer rail")
+	}
+	stopDispatcher(t, served)
 }
 
 // cancelObservingResolver blocks the supervisor's credential lookup until the watcher is

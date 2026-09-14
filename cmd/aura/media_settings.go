@@ -98,8 +98,10 @@ func (m mediaSettings) storedValue(ctx context.Context, key string) (string, err
 
 // bootAssetMaxVideoBytes reads AURA_ASSET_MAX_VIDEO_BYTES once at boot (row ->
 // default), for assets.Limits.MaxVideoBytes and the media path — unlike the
-// other three settings, it is not re-read per call. A nonpositive stored value
-// is a boot error, never a silent fallback to the default.
+// other three settings, it is not re-read per call. A stored value no media
+// byte limit accepts (mediagen.ValidByteLimit: nonpositive, or math.MaxInt64)
+// is a boot error, never a silent fallback to the default, so the asset
+// service and the video watcher never disagree about the ceiling.
 func bootAssetMaxVideoBytes(ctx context.Context, lister settings.Lister) (int64, error) {
 	value, err := (mediaSettings{lister: lister}).storedValue(ctx, assetMaxVideoBytesSettingKey)
 	if err != nil {
@@ -112,8 +114,9 @@ func bootAssetMaxVideoBytes(ctx context.Context, lister settings.Lister) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("mediagen: %s: %w", assetMaxVideoBytesSettingKey, err)
 	}
-	if maxBytes <= 0 {
-		return 0, fmt.Errorf("mediagen: %s must be positive, got %d", assetMaxVideoBytesSettingKey, maxBytes)
+	if mediagen.ValidByteLimit(maxBytes) != nil {
+		return 0, fmt.Errorf("mediagen: %s must be a positive byte limit below the int64 maximum, got %d",
+			assetMaxVideoBytesSettingKey, maxBytes)
 	}
 	return maxBytes, nil
 }

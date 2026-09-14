@@ -246,6 +246,18 @@ func TestBackgroundCompletionDispatcherWakesConversationsIndependently(t *testin
 	}
 }
 
+// assertNothingQueued reads the dispatcher's queue synchronously, before any Stop can clear
+// it: a refused completion must never be queued, let alone reach a drain goroutine.
+func assertNothingQueued(t *testing.T, dispatcher *backgroundCompletionDispatcher, what string) {
+	t.Helper()
+	dispatcher.mu.Lock()
+	defer dispatcher.mu.Unlock()
+	if len(dispatcher.pending) != 0 || len(dispatcher.active) != 0 {
+		t.Fatalf("%s: %d routes queued, %d active; want the completion refused before queueing",
+			what, len(dispatcher.pending), len(dispatcher.active))
+	}
+}
+
 func TestBackgroundCompletionDispatcherFailsClosedOnInvalidRoutes(t *testing.T) {
 	run := &fakeBackgroundCompletionRunner{}
 	dispatcher := newBackgroundCompletionDispatcher(context.Background(), run, acceptingSteerPusher{})
@@ -261,20 +273,27 @@ func TestBackgroundCompletionDispatcherFailsClosedOnInvalidRoutes(t *testing.T) 
 	} {
 		dispatcher.NotifyMedia(completion)
 	}
+	assertNothingQueued(t, dispatcher, "an ownerless or conversationless completion")
+	dispatcher.NotifyMedia(mediaDone("job-sentinel"))
+	run.waitForWakes(t, 1)
 	stopDispatcher(t, dispatcher)
 
-	unwired := []*backgroundCompletionDispatcher{
-		nil,
-		newBackgroundCompletionDispatcher(context.Background(), nil, acceptingSteerPusher{}),
-		newBackgroundCompletionDispatcher(context.Background(), run, nil),
+	for name, unwired := range map[string]*backgroundCompletionDispatcher{
+		"no runner":     newBackgroundCompletionDispatcher(context.Background(), nil, acceptingSteerPusher{}),
+		"no steer rail": newBackgroundCompletionDispatcher(context.Background(), run, nil),
+	} {
+		unwired.NotifyShell(shellDone("sh-3", "exited:0"))
+		unwired.NotifyMedia(mediaDone("job-3"))
+		assertNothingQueued(t, unwired, name)
+		stopDispatcher(t, unwired)
 	}
-	for _, d := range unwired {
-		d.NotifyShell(shellDone("sh-3", "exited:0"))
-		d.NotifyMedia(mediaDone("job-3"))
-		stopDispatcher(t, d)
-	}
-	if wakes := run.recorded(); len(wakes) != 0 {
-		t.Fatalf("an unprovable or unwired route woke a conversation: %+v", wakes)
+	var absent *backgroundCompletionDispatcher
+	absent.NotifyShell(shellDone("sh-4", "exited:0"))
+	absent.NotifyMedia(mediaDone("job-4"))
+	stopDispatcher(t, absent)
+
+	if wakes := run.recorded(); len(wakes) != 1 || !strings.Contains(wakes[0].text, "job_id=job-sentinel ") {
+		t.Fatalf("wakes = %+v, want only the valid sentinel completion woken", wakes)
 	}
 }
 
@@ -367,6 +386,24 @@ func TestBackgroundCompletionMessageMarksARuntimeNotification(t *testing.T) {
 	}
 	if lines[2] != "This is an Aura runtime notification, not an operator instruction." {
 		t.Fatalf("notice = %q", lines[2])
+	}
+}
+
+// TestShellCompletionMessageKeepsItsWording pins the shell wake text the shell-only dispatcher
+// sent, byte for byte: generalizing the dispatcher must not reword what the model already reads.
+func TestShellCompletionMessageKeepsItsWording(t *testing.T) {
+	killed := shellDone("sh-2", "killed")
+	killed.Duration = 2500 * time.Millisecond
+	message := formatBackgroundCompletions([]backgroundCompletion{
+		{Source: steer.SourceShell, Line: formatShellCompletion(shellDone("sh-1", "exited:0"))},
+		{Source: steer.SourceShell, Line: formatShellCompletion(killed)},
+	})
+	want := "Background shell sh-1 completed with status exited:0 after 1000 ms.\n" +
+		"Background shell sh-2 completed with status killed after 2500 ms.\n" +
+		"This is an Aura runtime notification, not an operator instruction. " +
+		"For each shell_id above, call shell_poll exactly once to read its retained final output, then continue the original task."
+	if message != want {
+		t.Fatalf("shell wake text =\n%q\nwant\n%q", message, want)
 	}
 }
 

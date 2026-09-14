@@ -200,7 +200,7 @@ func assetMaxVideoBytesFor(cfg *config.Config, pool *pgxpool.Pool) int64 {
 	defer cancel()
 	store, err := settings.NewStore(pool, cfg.AuthulaSecret)
 	if err != nil {
-		slog.Warn("aura assets: settings store unavailable — video assets refused", "err", err)
+		slog.Warn("aura assets: settings store unavailable — video assets refused and video job recovery disabled until the next restart", "err", err)
 		return 0
 	}
 	return resolveAssetMaxVideoBytes(ctx, store)
@@ -208,12 +208,13 @@ func assetMaxVideoBytesFor(cfg *config.Config, pool *pgxpool.Pool) int64 {
 
 // resolveAssetMaxVideoBytes is the fail-closed decision isolated from pool/store
 // construction so it is unit-testable with a fake settings.Lister, no daemon required: a
-// store read error or an invalid stored value (bootAssetMaxVideoBytes rejects nonpositive)
-// returns 0, a nil lister or an absent row returns the compiled default.
+// store read error or a stored value bootAssetMaxVideoBytes rejects returns 0, a nil lister
+// or an absent row returns the compiled default. The video watcher reads the same 0 and is
+// not built, so detached video jobs wait for a restart with a usable ceiling.
 func resolveAssetMaxVideoBytes(ctx context.Context, lister settings.Lister) int64 {
 	maxBytes, err := bootAssetMaxVideoBytes(ctx, lister)
 	if err != nil {
-		slog.Warn("aura assets: AURA_ASSET_MAX_VIDEO_BYTES unreadable — video assets refused", "err", err)
+		slog.Warn("aura assets: AURA_ASSET_MAX_VIDEO_BYTES unreadable — video assets refused and video job recovery disabled until the next restart", "err", err)
 		return 0
 	}
 	return maxBytes

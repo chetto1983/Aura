@@ -114,8 +114,8 @@ func TestBootAssetMaxVideoBytesDefaultAndOverride(t *testing.T) {
 	}
 }
 
-func TestBootAssetMaxVideoBytesRejectsNonpositive(t *testing.T) {
-	for _, value := range []string{"0", "-100"} {
+func TestBootAssetMaxVideoBytesRejectsUnusableLimits(t *testing.T) {
+	for _, value := range []string{"0", "-100", "9223372036854775807"} {
 		lister := &fakeMediaLister{rows: []sqlc.AuraSettings{{Key: assetMaxVideoBytesSettingKey, Value: value}}}
 		if _, err := bootAssetMaxVideoBytes(context.Background(), lister); err == nil {
 			t.Fatalf("bootAssetMaxVideoBytes() with stored %q must be rejected", value)

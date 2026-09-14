@@ -24,8 +24,6 @@ type backgroundCompletionWakeRunner interface {
 	) iter.Seq2[*agent.Event, error]
 }
 
-// backgroundCompletion is one terminal runtime fact bound for its owner's conversation: Line is
-// its formatted notice and Source the reserved steer source its wake is delivered under.
 type backgroundCompletion struct {
 	OwnerID, ConversationID, Source, Line string
 }
@@ -73,7 +71,6 @@ func newBackgroundCompletionDispatcher(
 	}
 }
 
-// NotifyShell implements tools.BackgroundShellCompletionHook.
 func (d *backgroundCompletionDispatcher) NotifyShell(completion tools.BackgroundShellCompletion) {
 	d.enqueue(backgroundCompletion{
 		OwnerID:        completion.OwnerID,
