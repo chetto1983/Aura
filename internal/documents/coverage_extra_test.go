@@ -13,7 +13,7 @@ import (
 // --- embedder.go error paths ---
 
 func TestEmbeddingClientRejectsNon2xxStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusServiceUnavailable)
 	}))
 	defer srv.Close()
@@ -26,7 +26,7 @@ func TestEmbeddingClientRejectsNon2xxStatus(t *testing.T) {
 }
 
 func TestEmbeddingClientRejectsCountMismatch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 		// Asked for 2 inputs, sidecar returns 1 embedding.
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"index": 0, "embedding": []float64{1, 2}}},
@@ -42,7 +42,7 @@ func TestEmbeddingClientRejectsCountMismatch(t *testing.T) {
 }
 
 func TestEmbeddingClientRejectsMalformedJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("{not json"))
 	}))
 	defer srv.Close()
@@ -68,7 +68,7 @@ func TestEmbeddingClientPropagatesTransportError(t *testing.T) {
 
 func TestEmbeddingClientUsesDefaultDimensionsWhenUnset(t *testing.T) {
 	dim := config.DefaultEmbedDimensions
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"index": 0, "embedding": make([]float64, dim)}},
 		})

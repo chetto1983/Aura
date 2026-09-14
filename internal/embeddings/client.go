@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -31,7 +32,8 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
-// Client calls an OpenAI-compatible /v1/embeddings endpoint.
+// Client calls an OpenAI-compatible /v1/embeddings endpoint. An empty APIKey is the local
+// llama.cpp sidecar; a key selects a hosted route.
 type Client struct {
 	BaseURL    string
 	Model      string
@@ -40,12 +42,16 @@ type Client struct {
 	Dimensions int
 	BatchSize  int
 	Timeout    time.Duration
+
+	limitMu sync.Mutex
+	limit   int
 }
 
+// embeddingRequest inputs are strings, or token-ID arrays for a local input cut to the limit.
 type embeddingRequest struct {
-	Input      []string `json:"input"`
-	Model      string   `json:"model"`
-	Dimensions int      `json:"dimensions,omitempty"`
+	Input      []any  `json:"input"`
+	Model      string `json:"model"`
+	Dimensions int    `json:"dimensions,omitempty"`
 }
 
 type embeddingResponse struct {
@@ -55,8 +61,9 @@ type embeddingResponse struct {
 	} `json:"data"`
 }
 
-// Embed returns one validated vector per input in input order. Empty input does
-// not issue an HTTP request.
+// Embed returns one validated vector per input in input order. Every input is first
+// fitted to the model's input limit (fit.go), so none can fail the request it rides in.
+// Empty input does not issue an HTTP request.
 func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	if c == nil {
 		return nil, fmt.Errorf("embeddings: no client configured")
@@ -75,70 +82,48 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
+	limit, err := c.inputLimit(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("embeddings: %w", err)
+	}
+	inputs := make([]any, len(texts))
+	costs := make([]int, len(texts))
+	for index, text := range texts {
+		if inputs[index], costs[index], err = c.fitInput(ctx, text, limit); err != nil {
+			return nil, fmt.Errorf("embeddings: input %d: %w", index, err)
+		}
+	}
 
 	out := make([][]float64, 0, len(texts))
-	for start := 0; start < len(texts); start += batchSize {
-		end := min(start+batchSize, len(texts))
-		batch, err := c.embedBatch(ctx, texts[start:end], dimensions)
+	for start := 0; start < len(texts); {
+		end := requestEnd(costs, start, batchSize)
+		batch, err := c.embedBatch(ctx, inputs[start:end], dimensions)
 		if err != nil {
-			return nil, fmt.Errorf("embeddings: batch %d: %w", start/batchSize, err)
+			return nil, fmt.Errorf("embeddings: batch at input %d: %w", start, err)
 		}
 		out = append(out, batch...)
+		start = end
 	}
 	return out, nil
 }
 
-func (c *Client) embedBatch(ctx context.Context, texts []string, dimensions int) ([][]float64, error) {
-	payload := embeddingRequest{Input: texts, Model: modelOrDefault(c.Model)}
-	apiKey := strings.TrimSpace(c.APIKey)
-	if apiKey != "" {
+func (c *Client) embedBatch(ctx context.Context, inputs []any, dimensions int) ([][]float64, error) {
+	payload := embeddingRequest{Input: inputs, Model: modelOrDefault(c.Model)}
+	if c.hosted() {
 		// Hosted embedders can MRL-truncate server-side. llama.cpp currently ignores
 		// this field, so local responses are narrowed and renormalized below.
 		payload.Dimensions = dimensions
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("encode request: %w", err)
-	}
-	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout())
-	defer cancel()
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, endpoint(c.BaseURL), bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("build request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+apiKey)
-	}
-	client := c.Client
-	if client == nil {
-		client = &http.Client{Timeout: c.requestTimeout()}
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("endpoint returned HTTP %d (%s)", resp.StatusCode, resp.Status)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
-	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
-	}
-	if len(raw) > maxResponseBytes {
-		return nil, fmt.Errorf("response exceeds %d bytes", maxResponseBytes)
-	}
 	var decoded embeddingResponse
-	if err := json.Unmarshal(raw, &decoded); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
+	if err := c.postJSON(ctx, endpoint(c.BaseURL), payload, &decoded); err != nil {
+		return nil, err
 	}
-	if len(decoded.Data) != len(texts) {
-		return nil, fmt.Errorf("endpoint returned %d embeddings for %d inputs", len(decoded.Data), len(texts))
+	if len(decoded.Data) != len(inputs) {
+		return nil, fmt.Errorf("endpoint returned %d embeddings for %d inputs", len(decoded.Data), len(inputs))
 	}
 
-	out := make([][]float64, len(texts))
-	seen := make([]bool, len(texts))
+	out := make([][]float64, len(inputs))
+	seen := make([]bool, len(inputs))
 	for _, item := range decoded.Data {
 		if item.Index == nil {
 			return nil, fmt.Errorf("response index is missing")
@@ -163,6 +148,55 @@ func (c *Client) embedBatch(ctx context.Context, texts []string, dimensions int)
 		}
 	}
 	return out, nil
+}
+
+// postJSON sends one bounded JSON request and decodes a 2xx answer into out. The request
+// body never reaches an error: it is document and memory text.
+func (c *Client) postJSON(ctx context.Context, url string, payload, out any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode request: %w", err)
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout())
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.hosted() {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.APIKey))
+	}
+	resp, err := c.httpClient().Do(req)
+	if err != nil {
+		return fmt.Errorf("request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("endpoint returned HTTP %d (%s)", resp.StatusCode, resp.Status)
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	if len(raw) > maxResponseBytes {
+		return fmt.Errorf("response exceeds %d bytes", maxResponseBytes)
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
+}
+
+func (c *Client) hosted() bool {
+	return strings.TrimSpace(c.APIKey) != ""
+}
+
+func (c *Client) httpClient() *http.Client {
+	if c.Client != nil {
+		return c.Client
+	}
+	return &http.Client{Timeout: c.requestTimeout()}
 }
 
 func (c *Client) requestTimeout() time.Duration {

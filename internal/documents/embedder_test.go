@@ -2,14 +2,27 @@ package documents
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
+// withEmbedCatalogue answers the embedding route's model catalogue, which the client reads
+// its input limit from before the first embedding request.
+func withEmbedCatalogue(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			_, _ = io.WriteString(w, `{"data":[{"id":"qwen/qwen3-embedding-8b","context_length":2048}]}`)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func TestEmbeddingClientReturnsEmbeddings(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/embeddings" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -33,7 +46,7 @@ func TestEmbeddingClientReturnsEmbeddings(t *testing.T) {
 }
 
 func TestEmbeddingClientRejectsDimensionMismatch(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"index": 0, "embedding": []float64{1}}},
 		})
@@ -71,7 +84,7 @@ func TestEmbeddingClientRequiresBaseURL(t *testing.T) {
 func TestEmbeddingClientCloudRoute(t *testing.T) {
 	capture := func(t *testing.T, apiKey string, dims int) (auth string, body map[string]any) {
 		t.Helper()
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, r *http.Request) {
 			auth = r.Header.Get("Authorization")
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			_ = json.NewEncoder(w).Encode(map[string]any{

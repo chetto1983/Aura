@@ -846,13 +846,17 @@ services:
       # above the ceiling is refused with HTTP 500 "input (N tokens) is too large to
       # process", loudly, so the chunker must stay under 2048 TOKENS (~6 KB of Italian
       # prose, less for a dense table row) rather than trust a byte budget.
-      # -c is PER SLOT, so it multiplies by -np; one slot at 2048 is a few MB of KV.
+      # -c is SPLIT across -np slots on this build: -np 2 -c 2048 served 1024 per slot and
+      # refused 1025 (measured 2026-09-14). The Go client reads that per-slot limit from
+      # /v1/models meta.n_ctx, so -ub takes the same value as -c: an input is refused above
+      # n_ubatch too, which the server does not publish, and must fit ONE ubatch because
+      # embeddings are not decoded incrementally.
       - -np
       - "${AURA_EMBED_SLOTS:-1}"
       - -c
       - "${AURA_EMBED_CTX:-2048}"
       - -ub
-      - "${AURA_EMBED_UBATCH:-2048}"           # the whole sequence must fit ONE ubatch: embeddings are not decoded incrementally
+      - "${AURA_EMBED_CTX:-2048}"
     ports:
       - "127.0.0.1:8081:8081"
     volumes:

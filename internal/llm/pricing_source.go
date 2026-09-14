@@ -61,6 +61,7 @@ type modelsWire struct {
 		} `json:"meta"`
 		TopProvider struct {
 			MaxCompletionTokens int `json:"max_completion_tokens"`
+			ContextLength       int `json:"context_length"`
 		} `json:"top_provider"`
 		Pricing struct {
 			Prompt         string `json:"prompt"`

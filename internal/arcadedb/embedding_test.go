@@ -28,13 +28,25 @@ func TestNewSidecarEmbedderNormalizesConfiguration(t *testing.T) {
 	}
 }
 
+// withEmbedCatalogue answers the embedding route's model catalogue, which the client reads
+// its input limit from before the first embedding request.
+func withEmbedCatalogue(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			_, _ = io.WriteString(w, `{"data":[{"id":"embeddinggemma","context_length":2048}]}`)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func TestSidecarEmbedderUsesOpenAIWireAndResponseIndexes(t *testing.T) {
 	var path, auth string
 	var payload struct {
 		Input []string `json:"input"`
 		Model string   `json:"model"`
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
 		auth = r.Header.Get("Authorization")
 		_ = json.NewDecoder(r.Body).Decode(&payload)
@@ -78,7 +90,7 @@ func TestSidecarEmbedderRejectsBadResponses(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			srv := httptest.NewServer(withEmbedCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 				w.WriteHeader(tt.status)
 				_, _ = io.WriteString(w, tt.body)
 			}))

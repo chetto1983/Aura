@@ -3,6 +3,7 @@ package embeddings
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -12,9 +13,23 @@ import (
 	"time"
 )
 
+const singleModelCatalogue = `{"data":[{"id":"model","context_length":2048,"meta":{"n_ctx":2048}}]}`
+
+// withCatalogue answers either route's catalogue (llama.cpp /v1/models, OpenRouter
+// /v1/embeddings/models) so a test reaches the embeddings request it is about.
+func withCatalogue(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/models") {
+			_, _ = io.WriteString(w, singleModelCatalogue)
+			return
+		}
+		next(w, r)
+	}
+}
+
 func TestClientUsesOpenAIWireAndResponseIndexes(t *testing.T) {
 	var request embeddingRequest
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(withCatalogue(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/embeddings" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
@@ -49,14 +64,14 @@ func TestClientUsesOpenAIWireAndResponseIndexes(t *testing.T) {
 
 func TestClientBatchesWithoutLosingGlobalOrder(t *testing.T) {
 	var mu sync.Mutex
-	var batches [][]string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var batches [][]any
+	server := httptest.NewServer(withCatalogue(func(w http.ResponseWriter, r *http.Request) {
 		var request embeddingRequest
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
 		mu.Lock()
-		batches = append(batches, append([]string(nil), request.Input...))
+		batches = append(batches, request.Input)
 		mu.Unlock()
 		data := make([]map[string]any, len(request.Input))
 		for index := range request.Input {
@@ -73,6 +88,8 @@ func TestClientBatchesWithoutLosingGlobalOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(batches) != 3 || len(batches[0]) != 2 || len(batches[2]) != 1 {
 		t.Fatalf("batches = %v", batches)
 	}
@@ -90,7 +107,7 @@ func TestClientRejectsInvalidResponseIndexes(t *testing.T) {
 	}
 	for name, response := range tests {
 		t.Run(name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			server := httptest.NewServer(withCatalogue(func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(response))
 			}))
 			t.Cleanup(server.Close)
@@ -108,6 +125,10 @@ func TestClientRejectsInvalidResponseIndexes(t *testing.T) {
 
 func TestClientBoundsRequestsAndDoesNotEchoText(t *testing.T) {
 	transport := roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if strings.HasSuffix(request.URL.Path, "/models") {
+			return &http.Response{StatusCode: http.StatusOK, Request: request,
+				Body: io.NopCloser(strings.NewReader(singleModelCatalogue))}, nil
+		}
 		<-request.Context().Done()
 		return nil, request.Context().Err()
 	})

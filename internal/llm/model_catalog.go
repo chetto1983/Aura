@@ -28,11 +28,16 @@ var ErrModelCatalogUnavailable = errors.New("model catalog unavailable")
 // ModelCatalogEntry is one published model. ContextWindow is 0 when the provider does not
 // publish it on the catalogue route, and HasPrice is false when it charges nothing per
 // token (a local server) or publishes no parseable rate.
+//
+// TopProviderContextWindow is OpenRouter's top_provider.context_length, 0 when absent. It
+// can be lower than ContextWindow -- qwen/qwen3-embedding-8b publishes 32768 and 32000
+// (measured 2026-09-14) -- and an embedding input must fit the provider that serves it.
 type ModelCatalogEntry struct {
-	ID            string
-	ContextWindow int
-	Price         Price
-	HasPrice      bool
+	ID                       string
+	ContextWindow            int
+	TopProviderContextWindow int
+	Price                    Price
+	HasPrice                 bool
 }
 
 // FetchModelCatalog returns the models baseURL publishes, sorted by id. The API key is
@@ -56,7 +61,10 @@ func FetchModelCatalog(
 		if id == "" {
 			continue
 		}
-		entry := ModelCatalogEntry{ID: id, ContextWindow: m.ContextLength}
+		entry := ModelCatalogEntry{
+			ID: id, ContextWindow: m.ContextLength,
+			TopProviderContextWindow: max(m.TopProvider.ContextLength, 0),
+		}
 		if entry.ContextWindow <= 0 {
 			entry.ContextWindow = m.Meta.ContextWindow
 		}

@@ -179,10 +179,15 @@ func TestDoctorDefaultPostgresProbeNamesEmptyURL(t *testing.T) {
 
 func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// The client reads the sidecar's input limit from its catalogue first.
+		if r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[{"id":"embeddinggemma.gguf","meta":{"n_ctx":2048}}]}`))
+			return
+		}
 		if r.URL.Path != "/v1/embeddings" {
 			t.Fatalf("path = %s, want /v1/embeddings", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(map[string]any{
 			"data": []map[string]any{{"index": 0, "embedding": []float64{0.1, 0.2, 0.3}}},
 		}); err != nil {

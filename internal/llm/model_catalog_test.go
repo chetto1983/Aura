@@ -14,7 +14,7 @@ import (
 // else, Ollama's /v1/models publishes ids alone.
 const (
 	openRouterCatalogBody = `{"data":[
-		{"id":"z-ai/glm-5.3","context_length":204800,
+		{"id":"z-ai/glm-5.3","context_length":204800,"top_provider":{"context_length":200000},
 		 "pricing":{"prompt":"0.00000014","completion":"0.00000028","input_cache_read":"0.00000003"}},
 		{"id":"deepseek/deepseek-v4-flash","context_length":1000000,
 		 "pricing":{"prompt":"0.0000002","completion":"0.0000008"}},
@@ -57,8 +57,8 @@ func TestFetchModelCatalogOpenRouterSortsAndPricesEntries(t *testing.T) {
 		t.Fatalf("entries not sorted by id: %+v", entries)
 	}
 	glm := entries[1]
-	if glm.ContextWindow != 204800 || !glm.HasPrice {
-		t.Fatalf("glm entry = %+v, want context 204800 with a price", glm)
+	if glm.ContextWindow != 204800 || glm.TopProviderContextWindow != 200000 || !glm.HasPrice {
+		t.Fatalf("glm entry = %+v, want context 204800, top provider 200000, with a price", glm)
 	}
 	// Rates are per 1M tokens, so the string "0.00000014" per token is $0.14.
 	if glm.Price.InputPer1M != 0.14 || glm.Price.OutputPer1M != 0.28 || glm.Price.CacheReadPer1M != 0.03 {
