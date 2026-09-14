@@ -1,8 +1,14 @@
-import { describe, expect, it, vi } from 'vitest';
+import { access } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { installLocal, preflightLocal, resolveInstallerArtifact } from '../local.js';
 
 const success = { stdout: '', stderr: '', exitCode: 0 };
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, access: vi.fn(original.access) };
+});
+afterEach(() => vi.mocked(access).mockReset());
 
 describe('local installer', () => {
   it('rejects local mode outside Linux and macOS before running commands', async () => {
@@ -220,8 +226,15 @@ describe('local installer', () => {
   });
 
   it('resolves the bundled installer artifact next to the package root', async () => {
-    // R5: Task 7 has not landed yet in this repo, so the real artifact genuinely does not
-    // exist -- this must fail loudly with a named error, never silently skip the install.
+    vi.mocked(access).mockResolvedValueOnce(undefined);
+    const artifact = await resolveInstallerArtifact();
+    expect(artifact.path).toMatch(/[/\\]create-aura[/\\]install-appliance\.run$/);
+    expect(access).toHaveBeenCalledWith(artifact.path);
+    await artifact.cleanup();
+  });
+
+  it('refuses a missing bundled installer independently of the local build output', async () => {
+    vi.mocked(access).mockRejectedValueOnce(new Error('ENOENT'));
     await expect(resolveInstallerArtifact()).rejects.toThrow('installerArtifactMissing');
   });
 });

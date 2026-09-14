@@ -15,7 +15,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 	dockerfile := readProjectFile(t, root, "docker/aura/Dockerfile")
 	compose := readProjectFile(t, root, "compose.yaml")
-	installer := readProjectFile(t, root, "scripts/install.sh")
+	installer := readProjectFile(t, root, "scripts/install.sh") + "\n" + readProjectFile(t, root, "scripts/install_env.sh")
 	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
 	garageBootstrap := readProjectFile(t, root, "scripts/garage_bootstrap.sh")
@@ -195,7 +195,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		t.Fatalf("compose.yaml's aura-llama-embed does not load a literal local gguf with -m")
 	}
 	if !strings.Contains(installer, `EMBED_MODEL_PATH="`+embedModel[1]+`"`) {
-		t.Fatalf("scripts/install.sh fetches the embedding model somewhere other than compose's -m %s", embedModel[1])
+		t.Fatalf("scripts/install_env.sh fetches the embedding model somewhere other than compose's -m %s", embedModel[1])
 	}
 	if strings.Count(compose, "0.0.0.0:${AURA_HTTPS_PORT:-443}:443") != 1 {
 		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")

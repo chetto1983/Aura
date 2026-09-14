@@ -14,7 +14,7 @@ import (
 
 func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	root := repoRootForTest(t)
-	installer := readProjectFile(t, root, "scripts/install.sh")
+	installer := readProjectFile(t, root, "scripts/install.sh") + "\n" + readProjectFile(t, root, "scripts/install_env.sh")
 	releaser := readProjectFile(t, root, ".goreleaser.yaml")
 	unit := readProjectFile(t, root, "deploy/aura.service")
 
@@ -51,7 +51,7 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"https://${host}/setup/?token=${token}",
 	} {
 		if !strings.Contains(installer, want) {
-			t.Fatalf("scripts/install.sh missing %q:\n%s", want, installer)
+			t.Fatalf("installer scripts missing %q", want)
 		}
 	}
 	for _, want := range []string{
@@ -250,8 +250,8 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 			t.Errorf(".env.example missing active assignment for %q, which compose requires", m[1])
 		}
 	}
-	// The posture a fresh install ships differs from compose's fallbacks, which keep an
-	// in-place upgrade unchanged, so the template states it.
+	// Appliance installs and upgrades enforce this posture; bare compose keeps its
+	// development fallbacks, so the template must state the appliance values.
 	for _, want := range []string{
 		"AURA_PROFILE=single_user_hardened",
 		"AURA_MUSR_ISOLATION=true",

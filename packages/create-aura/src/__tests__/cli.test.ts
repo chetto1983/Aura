@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { access } from 'node:fs/promises';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { en } from '../messages/en.js';
 import { runCli } from '../cli.js';
@@ -8,6 +9,12 @@ import {
   createPassingRemotePreflightRunner,
   validSettings,
 } from './cli-test-support.js';
+
+vi.mock(import('node:fs/promises'), async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, access: vi.fn(original.access) };
+});
+afterEach(() => vi.mocked(access).mockReset());
 
 // Local-preflight-gate scenarios (architecture/cpu/memory/disk/platform/existingInstall,
 // plus the TRANSLATED_ERROR_CODES completeness checks) live in
@@ -150,12 +157,8 @@ describe('create-aura CLI', () => {
     expect(writeError.mock.calls.flat().join('\n')).toContain('primary install failure');
   });
 
-  // R5/R6 (Task 6): installLocal now has a real default (local.ts's installLocal, resolving
-  // the bundled artifact via resolveInstallerArtifact) instead of throwing
-  // localInstallNotImplemented. Task 7 has not packaged install-appliance.run in this repo
-  // yet, so exercising the real default -- by injecting no installLocal at all -- must still
-  // fail, but with the honest, translated installerArtifactMissing message, not a crash.
-  it('uses the real installLocal default and fails with a translated message because the Task 7 artifact does not exist yet', async () => {
+  it('translates a missing artifact when the real local installer runs', async () => {
+    vi.mocked(access).mockRejectedValueOnce(new Error('ENOENT'));
     const writeError = vi.fn();
 
     const code = await runCli(['--mode', 'local'], {
@@ -173,12 +176,8 @@ describe('create-aura CLI', () => {
     expect(writeError).toHaveBeenCalledWith(en.installerArtifactMissing);
   });
 
-  // The remote twin of the installLocal case above: injecting no installRemote now exercises
-  // remote.ts's REAL default, which resolves the bundled artifact first. Task 7 has not
-  // packaged install-appliance.run yet, so the honest failure is the missing artifact -- and
-  // it must be the translated message, not a raw code, because this is the error an operator
-  // hits if a published tarball ever ships without its payload.
   it('reports the missing bundled artifact when the real remote installer runs', async () => {
+    vi.mocked(access).mockRejectedValueOnce(new Error('ENOENT'));
     const writeError = vi.fn();
 
     const code = await runCli(['--mode', 'remote'], {

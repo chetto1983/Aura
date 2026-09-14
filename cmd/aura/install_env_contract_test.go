@@ -1,5 +1,5 @@
 // install_env_contract_test.go proves the shipped key set actually boots, instead of
-// asserting it (Task 3, D-01/D-03). It parses `scripts/install.sh`'s fresh-`.env` heredoc
+// asserting it (Task 3, D-01/D-03). It parses `scripts/install_env.sh`'s fresh-`.env` heredoc
 // from disk — never a second copy of the values, because a copy is exactly what drifts,
 // as the installer's own trailing comment on that heredoc says — applies the parsed pairs
 // plus shaped stand-ins for every secret `ensure_internal_env_secrets` generates, and loads
@@ -25,7 +25,7 @@ import (
 // root from the test's own working directory — reused here rather than duplicated
 // (CLAUDE.md REUSABLE CODE).
 
-// parseInstallerHeredoc extracts the KEY=VALUE pairs scripts/install.sh's
+// parseInstallerHeredoc extracts the KEY=VALUE pairs scripts/install_env.sh's
 // write_env_if_missing writes into a brand-new .env: the region between the
 // `cat > .env <<EOF` line and its terminating `EOF`. A parse that finds no heredoc (or
 // an empty one) returns an empty map — the caller decides whether that is fatal, so this
@@ -103,7 +103,7 @@ func parseGeneratedSecrets(t *testing.T, installSh string) []generatedSecret {
 // (ValidateProfile(config.ProfileSingleUserHardened)) with zero Fatal violations. It reads
 // scripts/install.sh from disk — it does not hardcode a second copy of the shipped values.
 func TestInstallerFreshEnvValidatesUnderStrictProfile(t *testing.T) {
-	installSh := filepath.Join(repoRootForTest(t), "scripts", "install.sh")
+	installSh := filepath.Join(repoRootForTest(t), "scripts", "install_env.sh")
 
 	pairs := parseInstallerHeredoc(t, installSh)
 	if len(pairs) == 0 {

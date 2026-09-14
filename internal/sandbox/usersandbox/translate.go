@@ -10,21 +10,22 @@ import (
 	"github.com/moby/moby/api/types/mount"
 )
 
-// The box's sanctioned mount targets. The workspace volume + tmpfs scratch + the shared
-// uv / npm / pip warm-cache volumes are the ONLY mounts toHostConfig builds; no host path
-// (and so no docker socket) can be mounted. The uv/npm/pip caches are SHARED across
-// identities (constant Source name) so per-identity boxes stop re-downloading packages every
-// turn; only the workspace volume is per-identity.
 const (
 	workspaceTarget = "/workspace"
 	scratchTarget   = "/workspace/.scratch"
-	uvCacheVolume   = "aura-uv-cache"
 	uvCacheTarget   = "/root/.cache/uv"
-	npmCacheVolume  = "aura-npm-cache"
 	npmCacheTarget  = "/root/.npm"
-	pipCacheVolume  = "aura-pip-cache"
 	pipCacheTarget  = "/root/.cache/pip"
 )
+
+func identityCacheMounts(identityID string) []mount.Mount {
+	prefix := boxName(identityID)
+	return []mount.Mount{
+		{Type: mount.TypeVolume, Source: prefix + "-uv-cache", Target: uvCacheTarget},
+		{Type: mount.TypeVolume, Source: prefix + "-npm-cache", Target: npmCacheTarget},
+		{Type: mount.TypeVolume, Source: prefix + "-pip-cache", Target: pipCacheTarget},
+	}
+}
 
 // toHostConfig builds the moby container.HostConfig for a SandboxSpec, pinning every
 // host-exposure field to a safe constant unconditionally. These dangerous literals live
@@ -36,7 +37,7 @@ const (
 //   - CapDrop     empty        keep default caps (D-12: the box is not a jail)
 //
 // Mounts is built only from the per-identity workspace volume, a tmpfs scratch, and the
-// shared uv / npm / pip warm-cache volumes. The docker socket is a host path whose only
+// identity's uv / npm / pip warm-cache volumes. The docker socket is a host path whose only
 // mount vector is a bind — which never appears here — so the socket is unrepresentable.
 func toHostConfig(s SandboxSpec) *container.HostConfig {
 	pids := s.Limits.PidsLimit
@@ -47,13 +48,10 @@ func toHostConfig(s SandboxSpec) *container.HostConfig {
 		AutoRemove:  false,
 		CapDrop:     []string{},
 		Runtime:     s.Runtime.dockerRuntime(),
-		Mounts: []mount.Mount{
+		Mounts: append([]mount.Mount{
 			{Type: mount.TypeVolume, Source: s.WorkspaceVol, Target: workspaceTarget},
 			{Type: mount.TypeTmpfs, Target: scratchTarget},
-			{Type: mount.TypeVolume, Source: uvCacheVolume, Target: uvCacheTarget},
-			{Type: mount.TypeVolume, Source: npmCacheVolume, Target: npmCacheTarget},
-			{Type: mount.TypeVolume, Source: pipCacheVolume, Target: pipCacheTarget},
-		},
+		}, identityCacheMounts(s.IdentityID)...),
 		NanoCPUs:  s.Limits.NanoCPUs,
 		Memory:    s.Limits.MemoryBytes,
 		PidsLimit: &pids,

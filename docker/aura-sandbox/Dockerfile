@@ -20,7 +20,7 @@ FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bb
 
 # --- heavy runtime layer (cache-stable: ordered FIRST so a later tweak re-runs only the
 # small trailing layers, never this ~apt/node/uv layer). D-13 bakes the common runtimes;
-# uv installs the long tail on-demand into the shared warm-cache volume at /root/.cache/uv
+# uv installs the long tail on-demand into the identity's warm cache at /root/.cache/uv
 # (mounted by the usersandbox translator), which makes skill `deps:` frontmatter load-bearing.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
@@ -78,7 +78,7 @@ ENV PNPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
 
 # uv/uvx as static binaries from the DIGEST-PINNED astral image (sandbox-runtime finding:
 # COPY the binaries, never pip-install uv). uv drives the on-demand long-tail dep installs
-# into the shared warm-cache volume (D-13).
+# into the identity's warm-cache volume (D-13).
 COPY --from=ghcr.io/astral-sh/uv@sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c /uv /uvx /usr/local/bin/
 
 # ↓↓ Document/office toolchain — MANDATORY parity with docker/aura/Dockerfile ↓↓
@@ -140,9 +140,9 @@ RUN pip install --no-cache-dir --break-system-packages \
 # baked here; D-10/D-13):
 #   /workspace          -> the per-identity named volume aura-box-<id> (persistent, RETAINED on suspend)
 #   /workspace/.scratch -> a tmpfs RW scratch (ephemeral)
-#   /root/.cache/uv     -> the shared uv warm-cache volume aura-uv-cache (cross-identity, content-addressed)
-#   /root/.npm          -> the shared npm warm-cache volume aura-npm-cache (cross-identity)
-#   /root/.cache/pip    -> the shared pip warm-cache volume aura-pip-cache (cross-identity)
+#   /root/.cache/uv     -> aura-box-<id>-uv-cache
+#   /root/.npm          -> aura-box-<id>-npm-cache
+#   /root/.cache/pip    -> aura-box-<id>-pip-cache
 # Pre-create the dirs so a first exec before any mount still has a writable tree.
 RUN mkdir -p /workspace /root/.cache/uv /root/.npm /root/.cache/pip
 

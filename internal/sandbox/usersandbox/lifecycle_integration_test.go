@@ -59,7 +59,7 @@ func containerExists(t *testing.T, cli *client.Client, id string) bool {
 
 // TestLifecycle_SuspendResumeDelete proves D-08: Suspend retains the box+volume, Resume
 // reuses the SAME container against the SAME volume (marker survives), and Stop(Delete)
-// removes the container AND the per-identity volume while the shared uv/npm/pip caches survive.
+// removes the container AND the per-identity workspace and cache volumes.
 func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	skipUnlessDockerd(t)
 	cli := newTestDockerClient(t)
@@ -88,14 +88,11 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	if !volumeExists(t, cli, vol) {
 		t.Fatalf("workspace volume %q should exist after resolve", vol)
 	}
-	if !volumeExists(t, cli, uvCacheVolume) {
-		t.Fatalf("shared uv-cache volume should exist after resolve")
-	}
-	if !volumeExists(t, cli, npmCacheVolume) {
-		t.Fatalf("shared npm-cache volume should exist after resolve")
-	}
-	if !volumeExists(t, cli, pipCacheVolume) {
-		t.Fatalf("shared pip-cache volume should exist after resolve")
+	for _, cache := range identityCacheMounts(id) {
+		if !volumeExists(t, cli, cache.Source) {
+			t.Fatalf("identity cache %q should exist after resolve", cache.Source)
+		}
+		assertExecWrite(t, cli, h, cache.Target+"/marker", "cache-retained")
 	}
 
 	// Suspend retains the volume (and the container).
@@ -118,8 +115,11 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	if code != 0 || !strings.Contains(out, "retained") {
 		t.Fatalf("marker lost across suspend/resume: code=%d out=%q", code, out)
 	}
+	for _, cache := range identityCacheMounts(id) {
+		assertBoxFile(t, cli, h.ContainerID, cache.Target+"/marker", "cache-retained")
+	}
 
-	// Stop(Delete) removes the container AND the per-identity volume; uv-cache survives.
+	// Stop(Delete) removes every volume belonging to this identity.
 	if err := backend.Stop(ctx, h); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
@@ -130,14 +130,10 @@ func TestLifecycle_SuspendResumeDelete(t *testing.T) {
 	if volumeExists(t, cli, vol) {
 		t.Fatalf("per-identity volume %q must be gone after Stop(Delete)", vol)
 	}
-	if !volumeExists(t, cli, uvCacheVolume) {
-		t.Fatalf("shared uv-cache volume must NOT be deleted by Stop")
-	}
-	if !volumeExists(t, cli, npmCacheVolume) {
-		t.Fatalf("shared npm-cache volume must NOT be deleted by Stop")
-	}
-	if !volumeExists(t, cli, pipCacheVolume) {
-		t.Fatalf("shared pip-cache volume must NOT be deleted by Stop")
+	for _, cache := range identityCacheMounts(id) {
+		if volumeExists(t, cli, cache.Source) {
+			t.Fatalf("identity cache %q survived Stop", cache.Source)
+		}
 	}
 }
 
@@ -164,18 +160,28 @@ func TestVolume_CrossIdentityDeny(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = backend.Stop(context.Background(), hB) })
 
-	// A writes a secret into ITS /workspace.
-	if _, code := rawExec(t, cli, hA.ContainerID, []string{"/bin/sh", "-c", "echo top-secret-A > /workspace/secret.txt"}); code != 0 {
-		t.Fatalf("A write secret: exit %d", code)
+	for _, target := range []string{"/workspace", "/root/.cache/uv", "/root/.npm", "/root/.cache/pip"} {
+		path := target + "/secret.txt"
+		assertExecWrite(t, cli, hA, path, "private-A")
+		out, code := rawExec(t, cli, hB.ContainerID, []string{"cat", path})
+		if code == 0 || strings.Contains(out, "private-A") {
+			t.Fatalf("B read A's file in %s: code=%d out=%q", target, code, out)
+		}
+		assertExecWrite(t, cli, hB, path, "private-B")
+		assertBoxFile(t, cli, hA.ContainerID, path, "private-A")
 	}
+	if err := backend.Stop(ctx, hA); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range []string{"/workspace", "/root/.cache/uv", "/root/.npm", "/root/.cache/pip"} {
+		assertBoxFile(t, cli, hB.ContainerID, target+"/secret.txt", "private-B")
+	}
+}
 
-	// B cannot read it — a different named volume backs B's /workspace.
-	out, code := rawExec(t, cli, hB.ContainerID, []string{"/bin/sh", "-c", "cat /workspace/secret.txt 2>&1"})
-	if code == 0 {
-		t.Fatalf("cross-identity read MUST fail, but B read A's secret: %q", out)
-	}
-	if strings.Contains(out, "top-secret-A") {
-		t.Fatalf("cross-identity leak: B saw A's secret content: %q", out)
+func assertExecWrite(t *testing.T, cli *client.Client, h BoxHandle, path, value string) {
+	t.Helper()
+	if _, code := rawExec(t, cli, h.ContainerID, []string{"sh", "-c", `printf %s "$2" > "$1"`, "sh", path, value}); code != 0 {
+		t.Fatalf("write %s: exit %d", path, code)
 	}
 }
 

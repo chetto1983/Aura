@@ -314,6 +314,9 @@ main() {
   fi
   retire_env_keys
 
+  # A pre-existing .env used to omit these keys forever, silently retaining dev.
+  bash scripts/appliance_posture.sh .env
+
   docker compose up -d aura
   wait_healthy aura
 
