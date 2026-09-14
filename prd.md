@@ -904,6 +904,14 @@ load, chaos, disaster recovery, observability, rollback and audit closure. Evide
 older than 24 hours, missing reports and failed required gates block release. The
 readiness report hashes its inputs; checkboxes and historical scores do not replace it.
 
+The CLI subprocess used for idempotent commands must inherit the caller's standard
+input. On 2026-09-14, `aura chat new` on the appliance printed its prompt and exited
+without a turn, with both piped input and a TTY. Its child executor omitted stdin;
+the native subprocess regression received zero bytes instead of two supplied lines.
+`aura shell`, which uses the same Runner without that subprocess, completed the
+operator's sandbox command and wrote all three identity-private caches. This measures
+input transport and sandbox execution, not CLI retry semantics or HTTP authorization.
+
 ## 19. Evidence, exclusions and remaining limits
 
 The 2026-09-07 backup check passed four restore planes and restored one real scheduled
