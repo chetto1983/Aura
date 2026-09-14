@@ -82,6 +82,24 @@ def test_titles_of_a_pdf_without_an_outline_are_empty(tmp_path):
     assert outline.titles_of(str(path)) == []
 
 
+def test_titles_of_a_pdf_preserve_nested_bookmarks(tmp_path):
+    from pypdf import PdfWriter
+
+    path = tmp_path / "manuale.pdf"
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    chapter = writer.add_outline_item("Capitolo uno", 0)
+    writer.add_outline_item("Sezione con accenti: è", 0, parent=chapter)
+    writer.add_outline_item("Capitolo due", 0)
+    writer.write(path)
+
+    assert outline.titles_of(str(path)) == [
+        (0, "Capitolo uno"),
+        (1, "Sezione con accenti: è"),
+        (0, "Capitolo due"),
+    ]
+
+
 def test_a_title_that_prefixes_a_longer_one_does_not_match_it():
     """Measured on the Italian Constitution: its outline offers "Titolo I", which occurs 16
     times in the text because it opens "Titolo II" and "Titolo III" too. Matching the prefix
