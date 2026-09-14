@@ -16,7 +16,7 @@
     "github.com/chetto1983/aura/internal/approvaltext": {"mode": "target"},
     "github.com/chetto1983/aura/internal/arcadedb": {"mode": "delegated", "authority": "arcadedb_coverage"},
     "github.com/chetto1983/aura/internal/askuser": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/assets": {"mode": "baseline", "covered_statements": 739, "total_statements": 915},
+    "github.com/chetto1983/aura/internal/assets": {"mode": "baseline", "covered_statements": 745, "total_statements": 920},
     "github.com/chetto1983/aura/internal/bm25": {"mode": "target"},
     "github.com/chetto1983/aura/internal/boundedbuffer": {"mode": "target"},
     "github.com/chetto1983/aura/internal/breakglass": {"mode": "target"},
