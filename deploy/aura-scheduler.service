@@ -9,8 +9,10 @@
 # Install (per-user systemd; the operator owns ~/.aura + the Docker stack):
 #   mkdir -p ~/.config/systemd/user
 #   cp deploy/aura-scheduler.service ~/.config/systemd/user/
-#   # put the runtime env (OPENROUTER_API_KEY, POSTGRES_*, AURA_SCHEDULER_*, AURA_BACKUP_DIR,
-#   # TELEGRAM_BOT_TOKEN, MCP creds, ...) in ~/.aura/env (KEY=VALUE per line, no `export`):
+#   # put the runtime env (POSTGRES_*, AURA_SCHEDULER_*, AURA_BACKUP_DIR, MCP creds, ...) in
+#   # ~/.aura/env (KEY=VALUE per line, no `export`). The model route, the OpenRouter key and
+#   # the Telegram bot token are NOT env: they are set in the first-run web setup and kept in
+#   # aura.settings.
 #   systemctl --user daemon-reload
 #   systemctl --user enable --now aura-scheduler.service
 #   journalctl --user -u aura-scheduler -f      # the daemon's slog stream (the audit trail)
@@ -37,7 +39,7 @@ TimeoutStopSec=1860
 # Restart on a crash (D-16 ops posture); a clean SIGTERM exit (code 0) is NOT a restart.
 Restart=on-failure
 RestartSec=5
-# Runtime env: composed DSNs + OPENROUTER_API_KEY + AURA_SCHEDULER_* + MCP creds.
+# Runtime env: composed DSNs + AURA_SCHEDULER_* + MCP creds.
 EnvironmentFile=%h/.aura/env
 
 # Hardening (the daemon needs the Docker socket for backups, so it is NOT fully

@@ -350,25 +350,21 @@ env_value() {
 # embeddings. `convert_hf_to_gguf.py` drops them unless `--sentence-transformers-dense-modules`
 # is passed, and Google's own maintainer confirms the projections are part of the model
 # (huggingface.co/google/embeddinggemma-300m/discussions/22). ggml-org's build carries them
-# — 316 tensors including dense_2/dense_3 — so that is the default here, and the check
+# — 316 tensors including dense_2/dense_3 — so that is the build fetched here, and the check
 # below is for exactly those two tensors rather than a size or a checksum, because that is
 # the property that was actually wrong.
-EMBED_MODEL_URL_DEFAULT="https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
-
-EMBED_MODEL_PATH_DEFAULT="/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
-
-embed_model_url() {
-  url="$(env_value AURA_EMBED_MODEL_URL)"
-  [ -n "$url" ] || url="$EMBED_MODEL_URL_DEFAULT"
-  printf '%s\n' "$url"
-}
+#
+# Both are the release's, never .env's: compose.yaml's `-m` carries the same path, and a
+# copy of either in .env froze each machine on the model it was installed with.
+EMBED_MODEL_URL="https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf"
+EMBED_MODEL_PATH="/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
 
 # One HEAD, three answers: the size the fetch checks against, plus the two provenance
 # values compose demands. `-L` prints the headers of EVERY hop and the CDN's final hop
 # carries its own `etag:` that is NOT the artifact digest, so every reader below takes
 # the FIRST match and stops.
 embed_model_headers() {
-  curl -fsIL "$(embed_model_url)" 2>/dev/null
+  curl -fsIL "$EMBED_MODEL_URL" 2>/dev/null
 }
 
 # Reads one header from stdin. `strip` is a character class dropped from the value,
@@ -381,13 +377,8 @@ embed_header_value() {
 }
 
 ensure_embed_model() {
-  # Both values are ALSO defaulted in compose.yaml, so an .env that omits them still
-  # boots a sidecar pointing at this path. Returning early on an absent key would skip
-  # the fetch silently and leave that exact install broken — the failure this function
-  # exists to prevent. Mirror the compose default instead.
-  model_path="$(env_value AURA_EMBED_MODEL_PATH)"
-  [ -n "$model_path" ] || model_path="$EMBED_MODEL_PATH_DEFAULT"
-  model_url="$(embed_model_url)"
+  model_path="$EMBED_MODEL_PATH"
+  model_url="$EMBED_MODEL_URL"
 
   # Upstream is the size authority: pinning one here would turn a legitimate upstream
   # rebuild into a failed install, while asking the server costs one HEAD request.
@@ -489,7 +480,7 @@ ensure_embed_provenance() {
   revision="$(printf '%s\n' "$headers" | embed_header_value x-repo-commit '[^0-9a-fA-F]')"
   fingerprint="$(printf '%s\n' "$headers" | embed_header_value x-linked-etag '[^0-9a-fA-F]')"
   if [ -z "$revision" ] || [ -z "$fingerprint" ]; then
-    echo "FAIL: could not derive AURA_EMBED_REVISION/AURA_EMBED_FINGERPRINT from $(embed_model_url)." >&2
+    echo "FAIL: could not derive AURA_EMBED_REVISION/AURA_EMBED_FINGERPRINT from ${EMBED_MODEL_URL}." >&2
     echo "      compose requires both. A non-HuggingFace mirror does not serve those headers;" >&2
     echo "      set the pair in .env from the artifact you actually serve." >&2
     exit 1
@@ -660,8 +651,7 @@ ensure_internal_env_secrets() {
 
   # Observability is an appliance default, not a hidden profile an operator must
   # remember after every reboot. Preserve additional profiles and explicit off
-  # switches, but migrate the one known-stale endpoint from the old shared-network
-  # topology.
+  # switches. The in-stack tracing endpoint is compose's, not this file's.
   profiles="$(env_value COMPOSE_PROFILES)"
   case ",${profiles}," in
     *,observability,*) ;;
@@ -670,10 +660,6 @@ ensure_internal_env_secrets() {
   esac
   ensure_env_default AURA_OTEL_EXPORTER otlp
   ensure_env_default AURA_OBSERVABILITY_CHECK_ENABLED true
-  ensure_env_default AURA_OTEL_ENDPOINT tempo:4317
-  if [ "$(env_value AURA_OTEL_ENDPOINT)" = "localhost:4317" ]; then
-    set_env_value AURA_OTEL_ENDPOINT tempo:4317
-  fi
 }
 
 ensure_objectstore_public_endpoint() {
@@ -734,16 +720,7 @@ AURA_BACKUP_DIR=./backups
 SEARXNG_SECRET=${searxng_secret}
 COMPOSE_PROFILES=observability
 AURA_OTEL_EXPORTER=otlp
-AURA_OTEL_ENDPOINT=tempo:4317
 AURA_OBSERVABILITY_CHECK_ENABLED=true
-
-AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
-# Where the installer fetches that file from when it is missing or differs from upstream.
-# ggml-org's build and NOT unsloth's: unsloth's Q8_0 omits the two sentence-transformers
-# dense projections, which makes llama.cpp return backbone-only vectors at the correct
-# width with no error at all. The installer refuses a model without them.
-AURA_EMBED_MODEL_URL=https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/main/embeddinggemma-300M-Q8_0.gguf
-AURA_EMBED_DIMENSIONS=768
 
 AURA_OBJECTSTORE_ACCESS_KEY=${objectstore_access_key}
 AURA_OBJECTSTORE_SECRET_KEY=${objectstore_secret_key}

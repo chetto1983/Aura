@@ -117,11 +117,14 @@ services:
       AURA_HISTORY_HARD_CAP_TURNS: ${AURA_HISTORY_HARD_CAP_TURNS:-50}
       AURA_RUN_DIR_WARN_THRESHOLD_BYTES: ${AURA_RUN_DIR_WARN_THRESHOLD_BYTES:-1073741824}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
+      # The width EmbeddingGemma-300M returns: a property of the pinned model, not a host
+      # choice, so it is not read from .env (a copy there froze the value per machine).
+      AURA_EMBED_DIMENSIONS: "768"
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
       # tempo:4317, not localhost:4317. Tempo used to live in this container's network
-      # namespace; it is an ordinary service now, so traces go to it by name.
-      AURA_OTEL_ENDPOINT: ${AURA_OTEL_ENDPOINT:-tempo:4317}
+      # namespace; it is an ordinary service now, so traces go to it by name. An in-stack
+      # address, so .env does not carry it.
+      AURA_OTEL_ENDPOINT: tempo:4317
       # False for bare Compose invocations; .env.example and the appliance installer
       # enable this together with COMPOSE_PROFILES=observability.
       AURA_OBSERVABILITY_CHECK_ENABLED: ${AURA_OBSERVABILITY_CHECK_ENABLED:-false}
@@ -808,9 +811,11 @@ services:
       # has to fetch a GGUF from HuggingFace fails with "Could not establish
       # connection" and restart-loops. The model is pre-fetched into the cache volume
       # (docker run --rm -v aura_aura-llama-embed:/cache alpine … curl -o /cache/<file>),
-      # which an appliance install wants anyway.
+      # which an appliance install wants anyway. The path is the model this release pins
+      # and scripts/install.sh fetches (EMBED_MODEL_PATH_DEFAULT): not read from .env, where
+      # a copy froze each machine on the model it was installed with.
       - -m
-      - ${AURA_EMBED_MODEL_PATH:-/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf}
+      - /root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
       - --embeddings
       # No --pooling on purpose. Pooling is a property of the model file, and the model
       # file already carries it: this GGUF declares gemma-embedding.pooling_type = 1,
@@ -934,7 +939,7 @@ services:
       AURA_STT_CLOUD_MODEL: ${AURA_STT_CLOUD_MODEL:-}
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
-      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-768}
+      AURA_EMBED_DIMENSIONS: "768"
       # Catch-up mode does NOT fail closed, whatever this comment used to
       # claim: measured 2026-08-09, a per-file failure is caught by CocoIndex, printed as
       # "component build failed", and the pass carries on to exit 0 — in catch-up mode

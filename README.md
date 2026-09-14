@@ -175,12 +175,9 @@ AURA_OBJECTSTORE_SECRET_KEY=$(New-Hex)
 GARAGE_RPC_SECRET=$(New-Hex)
 AURA_GARAGE_ADMIN_TOKEN=$(New-Hex)
 AURA_BACKUP_DIR=./backups
-AURA_EMBED_MODEL_PATH=/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf
 AURA_EMBED_REVISION=0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
 AURA_EMBED_FINGERPRINT=b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
 AURA_EMBED_NGL=99
-AURA_EMBED_DIMENSIONS=768
-OPENROUTER_API_KEY=
 "@ | Set-Content -Path .env -Encoding ascii
 
 docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi
@@ -194,8 +191,10 @@ an NVIDIA GPU, run embeddings on the CPU instead: set `AURA_EMBED_NGL=0` and
 Windows), which drops the GPU reservation and selects the CPU build of the pinned
 llama.cpp server.
 
-Set `OPENROUTER_API_KEY` before production use. For local development images,
-replace `AURA_IMAGE` with `aura:local` after building the image.
+The model route, the OpenRouter key and the Telegram bot token are not `.env`
+settings: choose them in the first-run web setup, and Aura keeps them in
+`aura.settings`. For local development images, replace `AURA_IMAGE` with
+`aura:local` after building the image.
 
 Postgres 18 is the default Compose image for new installs. When upgrading an
 existing Aura deployment from Postgres 17, migrate the data with `pg_dump` /

@@ -184,21 +184,18 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf("compose.yaml manufactured an explicit %s override", knob)
 		}
 	}
-	// The embedding sidecar's model follows the same rule, for the same reason: which
-	// model embeds is a deployment decision (it changed the day the graph stopped
-	// discriminating), and pinning it here only guarantees this contract goes red
-	// every time someone makes that decision. What the image contract owes is that a
-	// default EXISTS and the operator can override it from .env.
-	//
-	// The knob is AURA_EMBED_MODEL_PATH, not the AURA_EMBED_HF_REPO/HF_FILE pair it
-	// replaced: the sidecar now loads a LOCAL gguf with -m instead of fetching one
-	// with --hf-repo. It has no egress, so a first boot that had to reach
-	// HuggingFace restart-looped on "Could not establish connection" and took the
-	// whole memory path down with it. The contract asserted here is unchanged.
-	for _, knob := range []string{"AURA_EMBED_MODEL_PATH"} {
-		if !regexp.MustCompile(`\$\{` + knob + `:-[^}]+\}`).MatchString(compose) {
-			t.Fatalf("compose.yaml missing env-overridable %s default pattern (${%s:-...})", knob, knob)
-		}
+	// The embedding sidecar loads a LOCAL gguf with -m instead of fetching one with
+	// --hf-repo: it has no egress, so a first boot that had to reach HuggingFace
+	// restart-looped on "Could not establish connection" and took the whole memory path
+	// down with it. Which model embeds is the release's decision, carried by the payload,
+	// so compose names the path itself and the installer fetches the model to exactly that
+	// path; an .env override froze each appliance on the model it was installed with.
+	embedModel := regexp.MustCompile(`(?m)^\s+- -m\n\s+- (/\S+\.gguf)\s*$`).FindStringSubmatch(compose)
+	if embedModel == nil {
+		t.Fatalf("compose.yaml's aura-llama-embed does not load a literal local gguf with -m")
+	}
+	if !strings.Contains(installer, `EMBED_MODEL_PATH="`+embedModel[1]+`"`) {
+		t.Fatalf("scripts/install.sh fetches the embedding model somewhere other than compose's -m %s", embedModel[1])
 	}
 	if strings.Count(compose, "0.0.0.0:${AURA_HTTPS_PORT:-443}:443") != 1 {
 		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")

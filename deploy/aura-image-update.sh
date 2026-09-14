@@ -30,8 +30,9 @@ PAYLOAD_IMAGE_DIR=/usr/share/aura/payload
 # The manifest of the payload the running stack was last brought up with, under INSTALL_DIR.
 APPLIED_MANIFEST=payload_manifest.applied
 # Keys an earlier installer wrote into .env that no compose file reads any more. The image
-# pins moved into compose.yaml and its overlays on 2026-09-14, where .env cannot outrank them.
-RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE)
+# pins, the embedding model and the in-stack tracing endpoint moved into compose.yaml and its
+# overlays on 2026-09-14, where .env cannot outrank them and freeze a host on an old value.
+RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT)
 
 container_image_id() {
   local container_id
