@@ -318,6 +318,18 @@ reasoning is not reconstructed. Traces, bounded/redacted tool observations and t
 entity links form a separate projection. Ordinary recall, preload, compaction,
 summarization and fact extraction exclude it.
 
+Trace persistence never holds a turn's completion. The committed answer returns once the
+trace is queued; one ordered writer embeds and stores it within 30 seconds, and a full
+queue drops the trace with a warning. Source deletion waits for that conversation's
+queued and in-flight traces before it removes the graph, so a write cannot outlive the
+delete that started after it was queued; a trace queued once that delete has already
+begun is not covered, exactly as with the former synchronous write. Graceful shutdown drains the queue; a crash
+loses what was queued, as a failed write did before. Measured 2026-09-14 on the appliance:
+the longest stored trace (2,289 runes, 561 tokens) embedded in 1.45 s inside turn
+completion, and a 2,048-token input takes 5.7 s, past the former 5-second window that
+also covered the graph write, so such a trace was lost whole. Only three traces existed,
+so production loss frequency is not established.
+
 Reasoning retrieval requires an explicit selector. Successful traces retain for 30
 days; failed/cancelled traces for 7 days. Source, conversation, identity and operator
 deletion override TTL. Retrieval does not renew it. Concurrent expiry/deletion must
