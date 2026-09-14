@@ -47,3 +47,14 @@ authorization attack suite, audit-trail assertions, host-escape battery and
 uv/npm package-tampering scenarios have not been certified by these tests.
 Scratch logs and before/after pip evidence are under
 `.planning/tmp/identity-cache-check` and `.planning/tmp/identity-cache-fix`.
+
+## CI test correction
+
+CI run 34832104176 reported three excess goroutines in
+`TestServer_DisconnectClosesPump`. Forcing the finite fixture to finish before
+cancel reproduced the same +3 locally; stack traces showed HTTP connection
+read/write/server loops, not an SSE producer. The test now reuses the existing
+context-blocked runner, waits until the turn is open, disconnects, closes its own
+HTTP client, and checks remaining goroutines with goleak. The corrected test
+passed 50 consecutive race runs and the full AG-UI race suite. Production SSE
+behavior is unchanged.

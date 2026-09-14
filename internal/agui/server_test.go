@@ -9,7 +9,6 @@ import (
 	"iter"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
+	"go.uber.org/goleak"
 )
 
 // scriptedRunner is a fake Runner whose Turn replays a fixed *agent.Event slice and
@@ -450,48 +450,41 @@ func TestServer_RunErrorRedaction(t *testing.T) {
 	}
 }
 
-// TestServer_DisconnectClosesPump (Pitfall 4): a client that disconnects mid-SSE leaves
-// no leaked pump goroutine — NumGoroutine returns to baseline. The scripted turn yields
-// one event then the connection is cancelled before the stream completes.
+// A finite fixture can finish before cancellation, leaving HTTP keep-alive goroutines
+// that a global count mistakes for a leaked SSE pump. Hold this turn open until cancel.
 func TestServer_DisconnectClosesPump(t *testing.T) {
 	const tid = "88888888-8888-8888-8888-888888888888"
-	// A long turn: enough deltas that the client can cancel mid-stream.
-	evs := make([]*agent.Event, 0, 200)
-	for range 200 {
-		evs = append(evs, &agent.Event{Author: "aura", LLMResponse: &agent.LLMResponse{Content: "x"}})
-	}
-	srv := newTestServer(t, &scriptedRunner{events: evs}, &fakeConvStore{known: map[string]bool{tid: true}})
+	baseline := goleak.IgnoreCurrent()
+	t.Cleanup(func() { goleak.VerifyNone(t, baseline) })
+	run := &ctxWaitTurnRunner{started: make(chan struct{})}
+	srv := newTestServer(t, run, &fakeConvStore{known: map[string]bool{tid: true}})
+	client := srv.Client()
+	t.Cleanup(client.CloseIdleConnections)
 
-	baseline := runtime.NumGoroutine()
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv.URL+"/agent/run", strings.NewReader(runPayload(tid)))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("do request: %v", err)
 	}
+	defer resp.Body.Close()
 
 	// Read the first frame to confirm the stream is live, then disconnect.
 	sc := bufio.NewScanner(resp.Body)
-	if sc.Scan() {
-		_ = sc.Text()
+	if !sc.Scan() {
+		t.Fatalf("stream ended before disconnect: %v", sc.Err())
+	}
+	select {
+	case <-run.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("turn never reached its cancellation wait")
 	}
 	cancel()
-	resp.Body.Close()
-
-	// Goroutines return to baseline (poll — teardown is async). goleak TestMain also guards.
-	// A 1s window missed the teardown by one goroutine under -race on a CI runner
-	// (2026-09-11, 74 vs baseline 71); a leak never returns, so a longer wait costs nothing.
-	for range 500 {
-		if runtime.NumGoroutine() <= baseline+2 {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Errorf("goroutines = %d, baseline %d — SSE pump leaked", runtime.NumGoroutine(), baseline)
 }
 
 // projectMessages projects the persisted llm.Message history onto the AG-UI
