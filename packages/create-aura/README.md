@@ -25,6 +25,11 @@ Installs made from this package track the `edge` channel: the appliance images c
 moving `:edge` tag, Docker is set to always re-pull them, and a systemd timer applies new
 images as they are published — so the box keeps itself current without you returning to it.
 
+The appliance uses `single_user_hardened` with identity isolation enabled. Reinstalling
+or updating also repairs existing configurations that omitted these settings or selected
+`dev` or `local_trusted`. An existing `server_production` profile is preserved. Secrets
+and other settings are retained. Writable uv, npm and pip caches belong to each identity.
+
 ## Requirements
 
 On the machine running this wizard: Node.js >= 22.13.
