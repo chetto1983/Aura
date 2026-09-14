@@ -61,14 +61,14 @@ func clonePointer[T any](value *T) *T {
 	return &copied
 }
 
-// called counts method and returns ctx's error or the next failure queued for it. The caller
-// holds mu.
+// called returns ctx's error for a cancelled call, which pgx never sends, or counts method and
+// returns the next failure queued for it. The caller holds mu.
 func (s *fakeJobStore) called(ctx context.Context, method string) error {
-	s.calls[method]++
-	s.deadlines[method], _ = ctx.Deadline()
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	s.calls[method]++
+	s.deadlines[method], _ = ctx.Deadline()
 	queue := s.fail[method]
 	if len(queue) == 0 {
 		return nil

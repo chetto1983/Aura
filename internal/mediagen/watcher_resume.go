@@ -62,10 +62,24 @@ type supervision struct {
 	// again; assetID is kept while Complete is retried, so the clip is not fetched again.
 	remoteCompleted bool
 	assetID         string
+	// verdict is a terminal status already decided by the provider or by the clip, kept while
+	// its write is retried so the decision is never asked for again.
+	verdict *verdict
 	// final is set when the ceiling has passed and the job's one final attempt starts.
 	final bool
 	// cause is the retry cause last logged, so a failure that persists is reported once.
 	cause string
+}
+
+type verdict struct {
+	status  Status
+	failure *Error
+}
+
+// decided reports an outcome only a store write is missing for: an ingested clip to complete
+// the job with, or a terminal verdict.
+func (r *supervision) decided() bool {
+	return r.assetID != "" || r.verdict != nil
 }
 
 func newSupervision(job Job, maxAge time.Duration) supervision {
@@ -85,8 +99,10 @@ func (w *Watcher) supervise(entry *trackedJob, job Job) {
 	for {
 		select {
 		case <-w.ctx.Done():
-			return
 		case <-timer.C:
+		}
+		if w.ctx.Err() != nil {
+			return
 		}
 		result, err := w.attempt(&run)
 		switch result {
@@ -105,8 +121,9 @@ func (w *Watcher) supervise(entry *trackedJob, job Job) {
 // attempt advances the job by one step. Before the ceiling every call shares the job's
 // remaining lifetime. The first attempt past the ceiling is the job's last contact with the
 // provider, each call bounded by videoFinalAttemptGrace: it can still complete an ingested clip,
-// record a terminal status or collect a completed clip. A job it leaves unfinished expires with
-// the freshest known cost, and only that expiry is retried.
+// record a terminal status or collect a completed clip. An outcome it decided is written, and
+// that write alone is retried, without the provider; a job it leaves undecided expires with the
+// freshest known cost, and only that expiry is retried.
 func (w *Watcher) attempt(run *supervision) (outcome, error) {
 	if remaining := run.deadline.Sub(w.opts.Now()); remaining > 0 {
 		deadline := time.Now().Add(remaining)
@@ -114,10 +131,10 @@ func (w *Watcher) attempt(run *supervision) (outcome, error) {
 			return context.WithDeadline(w.ctx, deadline)
 		})
 	}
-	if !run.final {
+	if !run.final || run.decided() {
 		run.final = true
 		result, err := w.advance(run, w.graceBound)
-		if result != keepPolling || w.ctx.Err() != nil {
+		if result != keepPolling || w.ctx.Err() != nil || run.decided() {
 			return result, err
 		}
 		w.report(run, err)
@@ -130,10 +147,13 @@ func (w *Watcher) graceBound() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(w.ctx, videoFinalAttemptGrace)
 }
 
-// advance completes an ingested clip, or reads the provider's status and acts on it.
+// advance writes an outcome already decided, or reads the provider's status and acts on it.
 func (w *Watcher) advance(run *supervision, bound callBound) (outcome, error) {
-	if run.assetID != "" {
+	switch {
+	case run.assetID != "":
 		return w.complete(run, bound)
+	case run.verdict != nil:
+		return w.progress(run, bound, run.verdict.status, run.verdict.failure)
 	}
 	baseURL, apiKey, err := w.endpoint(run, bound)
 	if err != nil {
@@ -151,7 +171,7 @@ func (w *Watcher) advance(run *supervision, bound callBound) (outcome, error) {
 			}
 			return w.progress(run, bound, remote.Status, nil)
 		case StatusFailed, StatusExpired, StatusCancelled:
-			return w.progress(run, bound, remote.Status, remote.Error)
+			return w.conclude(run, bound, remote.Status, remote.Error)
 		case StatusCompleted:
 			run.remoteCompleted = true
 		default:
@@ -195,13 +215,19 @@ func (w *Watcher) poll(run *supervision, bound callBound, baseURL, apiKey string
 func (w *Watcher) collect(run *supervision, bound callBound, baseURL, apiKey string) (outcome, error) {
 	assetID, err := w.ingest(run, bound, baseURL, apiKey)
 	if failure, ok := errors.AsType[*Error](err); ok && (failure.Code == "too_large" || failure.Code == "unsupported") {
-		return w.progress(run, bound, StatusFailed, failure)
+		return w.conclude(run, bound, StatusFailed, failure)
 	}
 	if err != nil {
 		return keepPolling, err
 	}
 	run.assetID = assetID
 	return w.complete(run, bound)
+}
+
+// conclude keeps a terminal verdict, so a failed write of it is retried as it is, and writes it.
+func (w *Watcher) conclude(run *supervision, bound callBound, status Status, failure *Error) (outcome, error) {
+	run.verdict = &verdict{status: status, failure: failure}
+	return w.progress(run, bound, status, failure)
 }
 
 func (w *Watcher) ingest(run *supervision, bound callBound, baseURL, apiKey string) (string, error) {

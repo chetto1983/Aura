@@ -417,6 +417,23 @@ func TestWatcherKeepsARetrackedEntryWhenAnOldWaiterSettles(t *testing.T) {
 	}
 }
 
+func TestWatcherEndsSupervisionWhenTheRowVanishes(t *testing.T) {
+	provider := newFakeProvider(t, statuses(`{"id":"vid_gone","status":"in_progress"}`), refuseRequest(t))
+	h := newWatcherHarness(t, context.Background(), provider, nil)
+	job := h.insertJob(t, "vid_gone")
+	h.store.remove(job.ID)
+
+	h.watcher.Track(job, false)
+	awaitSupervisorsExit(t, h.watcher)
+	if tracked := trackedJobs(h.watcher); tracked != 0 || provider.polls.Load() != 1 {
+		t.Fatalf("tracked=%d polls=%d; a job whose row is gone is dropped after one poll", tracked, provider.polls.Load())
+	}
+	h.stop(t)
+	if notices := h.drainNotices(); len(notices) != 0 {
+		t.Fatalf("a vanished job was notified: %+v", notices)
+	}
+}
+
 func TestNewWatcherRefusesAMiswiredWatcher(t *testing.T) {
 	provider := newFakeProvider(t, refuseRequest(t), refuseRequest(t))
 	store := newFakeJobStore(time.Now)
@@ -425,11 +442,6 @@ func TestNewWatcherRefusesAMiswiredWatcher(t *testing.T) {
 	assets := &fakeVideoAssets{store: store, bySource: map[string]string{}}
 	notify := func(Completion) {}
 	valid := WatcherOptions{PollInterval: time.Millisecond, MaxAge: time.Minute, MaxVideoBytes: 1}
-	with := func(change func(*WatcherOptions)) WatcherOptions {
-		opts := valid
-		change(&opts)
-		return opts
-	}
 	ctx := context.Background()
 	for name, build := range map[string]func(){
 		"no store":        func() { NewWatcher(ctx, nil, client, credentials, assets, notify, valid) },
@@ -437,21 +449,24 @@ func TestNewWatcherRefusesAMiswiredWatcher(t *testing.T) {
 		"no credentials":  func() { NewWatcher(ctx, store, client, nil, assets, notify, valid) },
 		"no video assets": func() { NewWatcher(ctx, store, client, credentials, nil, notify, valid) },
 		"no notify":       func() { NewWatcher(ctx, store, client, credentials, assets, nil, valid) },
-		"zero poll interval": func() {
-			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.PollInterval = 0 }))
-		},
-		"negative ceiling": func() {
-			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxAge = -time.Minute }))
-		},
-		"zero byte limit": func() {
-			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxVideoBytes = 0 }))
-		},
-		"unbounded byte limit": func() {
-			NewWatcher(ctx, store, client, credentials, assets, notify, with(func(o *WatcherOptions) { o.MaxVideoBytes = math.MaxInt64 }))
-		},
 	} {
 		if !panics(build) {
 			t.Errorf("NewWatcher with %s built a watcher", name)
+		}
+	}
+	for name, change := range map[string]func(*WatcherOptions){
+		"zero poll interval":     func(o *WatcherOptions) { o.PollInterval = 0 },
+		"negative poll interval": func(o *WatcherOptions) { o.PollInterval = -time.Millisecond },
+		"zero ceiling":           func(o *WatcherOptions) { o.MaxAge = 0 },
+		"negative ceiling":       func(o *WatcherOptions) { o.MaxAge = -time.Minute },
+		"zero byte limit":        func(o *WatcherOptions) { o.MaxVideoBytes = 0 },
+		"negative byte limit":    func(o *WatcherOptions) { o.MaxVideoBytes = -1 },
+		"unbounded byte limit":   func(o *WatcherOptions) { o.MaxVideoBytes = math.MaxInt64 },
+	} {
+		opts := valid
+		change(&opts)
+		if !panics(func() { NewWatcher(ctx, store, client, credentials, assets, notify, opts) }) {
+			t.Errorf("NewWatcher with a %s built a watcher", name)
 		}
 	}
 	w := NewWatcher(ctx, store, client, credentials, assets, notify, valid)

@@ -249,6 +249,53 @@ func TestWatcherCollectsTheClipOnItsFinalAttempt(t *testing.T) {
 	}
 }
 
+// TestWatcherRetriesAKnownFinalOutcome fails the one store write of a final attempt that already
+// knows the outcome: that write is retried as it is, never asked of the provider again and
+// never replaced by an expiry.
+func TestWatcherRetriesAKnownFinalOutcome(t *testing.T) {
+	oversized := func(_ int32, w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Length", "2097152")
+		w.WriteHeader(http.StatusOK)
+		http.NewResponseController(w).Flush()
+		<-r.Context().Done()
+	}
+	cases := map[string]struct {
+		remote, write, code string
+		download            providerHandler
+		want                Status
+		downloads           int32
+	}{
+		"a clip the final attempt ingested": {"completed", "Complete", "", serveClip, StatusCompleted, 1},
+		"a failure the provider reported":   {"failed", "Progress", "job_failed", nil, StatusFailed, 0},
+		"a clip above the byte ceiling":     {"completed", "Progress", "too_large", oversized, StatusFailed, 1},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			download := tc.download
+			if download == nil {
+				download = refuseRequest(t)
+			}
+			provider := newFakeProvider(t, statuses(`{"id":"vid_known","status":"`+tc.remote+`","usage":{"cost":0.55}}`), download)
+			h := newWatcherHarness(t, context.Background(), provider, nil)
+			job := h.insertJob(t, "vid_known")
+			job.CreatedAt = h.clock.now().Add(-VideoJobMaxAge - time.Hour)
+			h.store.seed(job)
+			h.store.failNext(tc.write, errors.New("connection reset by peer"))
+
+			finished := h.awaitTerminal(t, job)
+			requireRow(t, h, job, tc.want, tc.code, 0.55)
+			if provider.polls.Load() != 1 || provider.downloads.Load() != tc.downloads || h.store.count(tc.write) != 2 {
+				t.Fatalf("polls=%d downloads=%d %s=%d; want 1, %d and 2: the known write retried without the provider",
+					provider.polls.Load(), provider.downloads.Load(), tc.write, h.store.count(tc.write), tc.downloads)
+			}
+			if tc.write == "Complete" && h.store.count("Progress") != 0 {
+				t.Fatal("an expiry was written for a clip already ingested")
+			}
+			requireOneNotice(t, h, completionOf(finished))
+		})
+	}
+}
+
 func TestWatcherStopAbortsTheFinalAttempt(t *testing.T) {
 	polled := make(chan struct{}, 1)
 	provider := newFakeProvider(t, func(_ int32, _ http.ResponseWriter, r *http.Request) {
@@ -429,23 +476,6 @@ func TestWatcherPublishesARowFinishedElsewhere(t *testing.T) {
 	}
 	job.Status = StatusCancelled
 	requireOneNotice(t, h, completionOf(job))
-}
-
-func TestWatcherEndsSupervisionWhenTheRowVanishes(t *testing.T) {
-	provider := newFakeProvider(t, statuses(`{"id":"vid_gone","status":"in_progress"}`), refuseRequest(t))
-	h := newWatcherHarness(t, context.Background(), provider, nil)
-	job := h.insertJob(t, "vid_gone")
-	h.store.remove(job.ID)
-
-	h.watcher.Track(job, false)
-	awaitSupervisorsExit(t, h.watcher)
-	if tracked := trackedJobs(h.watcher); tracked != 0 || provider.polls.Load() != 1 {
-		t.Fatalf("tracked=%d polls=%d; a job whose row is gone is dropped after one poll", tracked, provider.polls.Load())
-	}
-	h.stop(t)
-	if notices := h.drainNotices(); len(notices) != 0 {
-		t.Fatalf("a vanished job was notified: %+v", notices)
-	}
 }
 
 func TestResumeWakesUndeliveredCompletionsOnceAndRejoinsActiveJobs(t *testing.T) {
