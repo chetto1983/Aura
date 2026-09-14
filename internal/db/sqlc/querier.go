@@ -40,6 +40,7 @@ type Querier interface {
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error)
+	BindMediaJobAssetDelivery(ctx context.Context, arg BindMediaJobAssetDeliveryParams) (int64, error)
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -57,10 +58,14 @@ type Querier interface {
 	// worker can run concurrently against the SAME table without ever stealing
 	// each other's lease (Phase 51, SWARM-09).
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
+	ClaimMediaJobDelivery(ctx context.Context, arg ClaimMediaJobDeliveryParams) (AuraMediaJob, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
 	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
+	// The asset must be deliverable by BindMediaJobAssetDelivery when the job completes: owned,
+	// in the job's conversation, an accepted agent video that is not deleted.
+	CompleteMediaJob(ctx context.Context, arg CompleteMediaJobParams) (AuraMediaJob, error)
 	CompleteOperation(ctx context.Context, arg CompleteOperationParams) (int64, error)
 	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	ConsumePasswordResetChallenge(ctx context.Context, id pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -200,6 +205,7 @@ type Querier interface {
 	GetIdentityRecoveryByIdentity(ctx context.Context, identityID pgtype.UUID) (AuraIdentityRecovery, error)
 	// The turn path wants one string, not a row: the clock is rendered on every request.
 	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
+	GetMediaJobForIdentity(ctx context.Context, arg GetMediaJobForIdentityParams) (AuraMediaJob, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
@@ -273,6 +279,7 @@ type Querier interface {
 	InsertIdentityLLMKeyIfAbsent(ctx context.Context, arg InsertIdentityLLMKeyIfAbsentParams) (int64, error)
 	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
+	InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) (AuraMediaJob, error)
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
 	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
@@ -420,6 +427,7 @@ type Querier interface {
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
+	ListRecoverableMediaJobs(ctx context.Context, identityID pgtype.UUID) ([]AuraMediaJob, error)
 	ListReservedConversationDeletes(ctx context.Context, arg ListReservedConversationDeletesParams) ([]ListReservedConversationDeletesRow, error)
 	// Every grant standing on one resource, for the operator asking "who can read this?" before
 	// deciding whether to revoke. Ordered so a listing is stable across calls.
@@ -648,6 +656,8 @@ type Querier interface {
 	UpdateConversationStatusForIdentity(ctx context.Context, arg UpdateConversationStatusForIdentityParams) (int64, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateIngestionJobStatus(ctx context.Context, arg UpdateIngestionJobStatusParams) (UpdateIngestionJobStatusRow, error)
+	// A NULL cost keeps the recorded one; a zero cost is recorded.
+	UpdateMediaJobProgress(ctx context.Context, arg UpdateMediaJobProgressParams) (AuraMediaJob, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so

@@ -84,6 +84,26 @@ func NumericFromFloat(f float64) (pgtype.Numeric, error) {
 	return pgtype.Numeric{Int: mantissa, Exp: -numericScale, Valid: true}, nil
 }
 
+// NullableFromFloat encodes an optional USD value: nil is SQL NULL, so an absent value stays
+// distinguishable from an explicit zero.
+func NullableFromFloat(f *float64) (pgtype.Numeric, error) {
+	if f == nil {
+		return pgtype.Numeric{}, nil
+	}
+	return NumericFromFloat(*f)
+}
+
+// NullableFloat reads an optional USD column back. FloatFromNumeric reads NULL as 0, which
+// would turn an absent value (a key with no limit, a cost not yet reported) into a zero one,
+// so NULL is checked first and read as nil.
+func NullableFloat(n pgtype.Numeric) *float64 {
+	if !n.Valid {
+		return nil
+	}
+	f := FloatFromNumeric(n)
+	return &f
+}
+
 // FloatFromNumeric converts a pgtype.Numeric cost column to float64 at the read
 // boundary. An invalid/NULL/NaN numeric reads as 0.
 func FloatFromNumeric(n pgtype.Numeric) float64 {

@@ -438,6 +438,25 @@ type AuraMcpServer struct {
 	UpdatedAt pgtype.Timestamptz `json:"updated_at"`
 }
 
+// Durable OpenRouter video generation jobs (migration 0128). One row per provider job; resumed from provider_job_id after a restart, delivered once through delivered_at. request is the clamped body without image data plus a reserved _aura audit object (reference asset ids, submission origin); it never holds a key.
+type AuraMediaJob struct {
+	ID             pgtype.UUID        `json:"id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	ConversationID string             `json:"conversation_id"`
+	ToolCallID     string             `json:"tool_call_id"`
+	ProviderJobID  string             `json:"provider_job_id"`
+	Model          string             `json:"model"`
+	Request        []byte             `json:"request"`
+	Status         string             `json:"status"`
+	Error          []byte             `json:"error"`
+	AssetID        pgtype.UUID        `json:"asset_id"`
+	CostUsd        pgtype.Numeric     `json:"cost_usd"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
+}
+
 // Short-lived Telegram code challenges for self-service Authula password reset.
 type AuraPasswordResetChallenges struct {
 	ID             pgtype.UUID        `json:"id"`

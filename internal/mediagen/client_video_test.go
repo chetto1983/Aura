@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -85,6 +86,49 @@ func TestSubmitVideoSendsFrameAndInputReferencesAndOmitsUnsetFields(t *testing.T
 	}
 	if _, found := body["duration"]; found {
 		t.Fatal("unset duration must be omitted")
+	}
+}
+
+// TestSubmitVideoNeverResendsAfterFailureOrLostResponse pins the two pre-Insert rows of the
+// spec's recovery boundary: a provider failure and a response lost after the provider read
+// the whole body both surface as an error after exactly one POST, never as a second paid
+// submission.
+func TestSubmitVideoNeverResendsAfterFailureOrLostResponse(t *testing.T) {
+	cases := map[string]func(t *testing.T, w http.ResponseWriter){
+		"provider 5xx": func(_ *testing.T, w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"error":{"code":500,"message":"Internal Server Error"}}`)
+		},
+		"response lost after acceptance": func(t *testing.T, w http.ResponseWriter) {
+			conn, _, err := http.NewResponseController(w).Hijack()
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			_ = conn.Close()
+		},
+	}
+	for name, respond := range cases {
+		t.Run(name, func(t *testing.T) {
+			var posts atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodPost {
+					posts.Add(1)
+				}
+				_, _ = io.Copy(io.Discard, r.Body)
+				respond(t, w)
+			}))
+			defer srv.Close()
+			_, err := NewClient(srv.Client(), 1<<20).SubmitVideo(context.Background(), srv.URL, "k",
+				VideoRequest{Model: "minimax/hailuo-3-max", Prompt: "moving sea", Duration: 5})
+			if err == nil {
+				t.Fatal("a failed or lost submit must surface as an error, never as an accepted job")
+			}
+			if got := posts.Load(); got != 1 {
+				t.Fatalf("POSTs = %d, want exactly 1: a paid submission is never re-sent", got)
+			}
+		})
 	}
 }
 

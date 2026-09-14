@@ -130,7 +130,7 @@ func (s *Store) rowParams(ctx context.Context, r Record) (string, sqlc.UpsertIde
 	if err != nil {
 		return "", sqlc.UpsertIdentityLLMKeyParams{}, err
 	}
-	limitUSD, err := numericCap(r.LimitUSD)
+	limitUSD, err := pgnumeric.NullableFromFloat(r.LimitUSD)
 	if err != nil {
 		return "", sqlc.UpsertIdentityLLMKeyParams{}, fmt.Errorf("identitykey: save: %w", err)
 	}
@@ -240,7 +240,7 @@ func (s *Store) List(ctx context.Context) ([]Summary, error) {
 			IdentityID: uuidString(r.IdentityID),
 			Hash:       r.KeyHash,
 			Label:      r.KeyLabel,
-			LimitUSD:   capFromNumeric(r.LimitUsd),
+			LimitUSD:   pgnumeric.NullableFloat(r.LimitUsd),
 			LimitReset: r.LimitReset,
 			UpdatedAt:  r.UpdatedAt.Time,
 		})
@@ -257,7 +257,7 @@ func (s *Store) decodeRow(row sqlc.AuraIdentityLlmKey) (Record, error) {
 		Key:        string(plaintext),
 		Hash:       row.KeyHash,
 		Label:      row.KeyLabel,
-		LimitUSD:   capFromNumeric(row.LimitUsd),
+		LimitUSD:   pgnumeric.NullableFloat(row.LimitUsd),
 		LimitReset: row.LimitReset,
 		UpdatedAt:  row.UpdatedAt.Time,
 	}, nil
@@ -332,22 +332,4 @@ func deriveKeyWithInfo(authulaSecretHex, info string) ([]byte, error) {
 		return nil, fmt.Errorf("identitykey: derive key: %w", err)
 	}
 	return key, nil
-}
-
-// numericCap maps a cap onto the limit_usd column: nil is SQL NULL, a key with no limit.
-func numericCap(limit *float64) (pgtype.Numeric, error) {
-	if limit == nil {
-		return pgtype.Numeric{}, nil
-	}
-	return pgnumeric.NumericFromFloat(*limit)
-}
-
-// capFromNumeric reads limit_usd back. pgnumeric.FloatFromNumeric reads NULL as 0, which
-// would turn a key with no limit into one that refuses every turn, so NULL is checked first.
-func capFromNumeric(n pgtype.Numeric) *float64 {
-	if !n.Valid {
-		return nil
-	}
-	f := pgnumeric.FloatFromNumeric(n)
-	return &f
 }

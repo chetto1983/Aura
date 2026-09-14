@@ -118,3 +118,25 @@ func TestFloatFromNumeric_Float64ValueErrorReadsZero(t *testing.T) {
 		t.Errorf("numeric whose Float64Value errors must read as 0, got %v", got)
 	}
 }
+
+func TestNullableFloatKeepsNullDistinctFromZero(t *testing.T) {
+	null, err := NullableFromFloat(nil)
+	if err != nil || null.Valid {
+		t.Fatalf("NullableFromFloat(nil) = %#v, %v; want SQL NULL", null, err)
+	}
+	if got := NullableFloat(null); got != nil {
+		t.Fatalf("NullableFloat(NULL) = %v, want nil", *got)
+	}
+	zero := 0.0
+	encoded, err := NullableFromFloat(&zero)
+	if err != nil || !encoded.Valid {
+		t.Fatalf("NullableFromFloat(&0) = %#v, %v; want a valid zero", encoded, err)
+	}
+	if got := NullableFloat(encoded); got == nil || *got != 0 {
+		t.Fatalf("NullableFloat(0) = %v, want a pointer to 0", got)
+	}
+	nan := math.NaN()
+	if _, err := NullableFromFloat(&nan); err == nil {
+		t.Fatal("NullableFromFloat accepted NaN")
+	}
+}

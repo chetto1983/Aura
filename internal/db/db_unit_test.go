@@ -368,9 +368,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// be NULL, a key with no limit (the admin's own). 0126 records on an agent
 	// asset the tool call that delivered it, so a reload puts its card back there.
 	// 0127 admits video in the aura.assets modality CHECK, for bounded MP4/WebM
-	// assets and generated clips.
-	if head != 127 {
-		t.Fatalf("MigrationHead=%d, want embedded head 127", head)
+	// assets and generated clips. 0128 adds aura.media_job, the identity-scoped
+	// durable video generation jobs resumed after a restart and delivered once.
+	if head != 128 {
+		t.Fatalf("MigrationHead=%d, want embedded head 128", head)
 	}
 }
 

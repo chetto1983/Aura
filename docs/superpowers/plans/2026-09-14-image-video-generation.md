@@ -629,7 +629,7 @@ git commit -m "feat(tools): generate images as identity-owned artifacts" -m "Reu
 - `Store.ClaimDelivery(ctx, ownerID, jobID, conversationID, deliveryCallID string) (Job, bool, error)`: atomically checks completed/undelivered and binds the existing asset to that delivery call. True means the caller won the claim.
 - `JobStore` is the consumer-side interface containing these exact methods; `Store` satisfies it.
 
-- [ ] **Step 1: Resolve the recovery acceptance boundary before implementing the store.**
+- [x] **Step 1: Resolve the recovery acceptance boundary before implementing the store.**
 
 Run a deterministic fault-injection experiment against the Task 4 SDK test server, which records accepted POSTs. Crash/abort at these boundaries: before provider acceptance, after acceptance before the response, after the response before Insert, after Insert, after asset ingest before Complete, and after ClaimDelivery before emitting the tool result. Record accepted requests, provider IDs, job rows, assets and transcript cards.
 
@@ -649,7 +649,7 @@ Use the user's recovery-scope choice to record the exact guarantee in the spec/P
 
 The claim schema below implements one winner per completed job, not transactional receipt by an external channel. Include the claim-to-event crash interval in that decision. This step is a bounded falsification experiment, not a paid provider test.
 
-- [ ] **Step 2: Write RLS and competing-claim tests.**
+- [x] **Step 2: Write RLS and competing-claim tests.**
 
 In tagged integration tests open the already migrated disposable database with `pgxpool.New(ctx, os.Getenv("AURA_DB_URL"))`. Fail under CI when the env is absent; allow a local skip only when explicitly running without integration setup. Seed two unique identities with `INSERT INTO aura.identities(id,name,kind) VALUES($1,$2,'user')`; create one accepted video asset and completed job in A's `db.WithIdentityTxRaw`.
 
@@ -672,7 +672,7 @@ if _, err := store.Get(ctx, ownerB, jobID); !errors.Is(err, pgx.ErrNoRows) {
 
 This assertion belongs in `TestMediaJobClaimsOnceAndIsolatesOwners`; define its setup in that file using the SQL above and migration schema below. Add direct raw SELECT/UPDATE/INSERT tests for absent and empty identity settings, so the test proves database policies rather than merely WHERE clauses.
 
-- [ ] **Step 3: Allocate and implement schema.**
+- [x] **Step 3: Allocate and implement schema.**
 
 ~~~sh
 ls internal/db/migrations/ | tail -1
@@ -717,7 +717,7 @@ CREATE POLICY media_job_requires_identity ON aura.media_job
 
 Follow the adjacent migration's grants/default-privileges convention; use the nonowner runtime pool for tests. The down migration drops this feature's table/index/policies only; never run it on a production database with paid jobs as an automatic rollback.
 
-- [ ] **Step 4: Implement sqlc queries and scoped methods.**
+- [x] **Step 4: Implement sqlc queries and scoped methods.**
 
 ~~~sql
 -- name: GetMediaJobForIdentity :one
@@ -747,7 +747,7 @@ All store calls go through `db.WithIdentityTx`; ClaimDelivery runs the two queri
 
 The persisted request contains the clamped JSON body with reference data removed. Include asset IDs and the submission origin in a reserved `_aura` audit object; the SDK body builder never forwards this object. This lets resume refuse an origin switch without storing a key. Redact URLs containing user data, bearer credentials and all data URLs.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~sh
 sqlc generate

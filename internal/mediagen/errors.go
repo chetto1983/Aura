@@ -9,10 +9,11 @@ package mediagen
 import "errors"
 
 // Error is a media-generation refusal a caller can act on: Code is machine-
-// readable (no_key, no_credit, ...), Message is the human-readable copy.
+// readable (no_key, no_credit, ...), Message is the human-readable copy. Its JSON
+// form is the stable {code,message} a job's error column stores.
 type Error struct {
-	Code    string
-	Message string
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
 func (e *Error) Error() string { return e.Message }
