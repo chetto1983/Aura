@@ -95,6 +95,7 @@ jobs:
           bash scripts/install_lib_test.sh
           bash scripts/install_config_test.sh
           bash scripts/install_preflight_test.sh
+          bash scripts/aura_image_update_test.sh
           bash scripts/payload_manifest_gate.sh
 
       # makeself is not preinstalled on GitHub's ubuntu runners; build_installer_test.sh

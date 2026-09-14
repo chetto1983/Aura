@@ -22,6 +22,18 @@ RUN npm run build
 # CLI talks native RPC to the server and Garage wants matched versions.
 FROM dxflrs/garage:v2.3.0 AS garagebin
 
+# The appliance payload -- compose files, the updater and its units, sidecar config -- travels
+# INSIDE this image so an edge machine converges on it with no operator:
+# deploy/aura-image-update.sh extracts it after every pull and installs whatever differs. The
+# file list IS scripts/payload_manifest.txt and the copy is checked against it, so an image
+# whose payload does not match the commit it was built from fails here instead of on a host.
+FROM debian:bookworm-slim AS payload
+RUN --mount=type=bind,target=/src \
+    set -eu; \
+    while read -r _ rel; do install -D -m 0644 "/src/$rel" "/payload/$rel"; done < /src/scripts/payload_manifest.txt; \
+    install -m 0644 /src/scripts/payload_manifest.txt /payload/payload_manifest.txt; \
+    cd /payload && sha256sum --check --quiet --strict payload_manifest.txt
+
 FROM golang:1.27.1-alpine AS build
 
 WORKDIR /src
@@ -159,6 +171,7 @@ RUN pip install --no-cache-dir --break-system-packages \
 
 ENV AURA_IN_CONTAINER=1
 
+COPY --from=payload /payload /usr/share/aura/payload
 COPY --from=build /out/aura /usr/local/bin/aura
 COPY --from=garagebin /garage /usr/local/bin/garage
 COPY docker/aura/aura-garage-bootstrap.sh /usr/local/bin/aura-garage-bootstrap.sh

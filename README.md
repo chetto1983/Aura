@@ -145,8 +145,8 @@ the three `ARCADEDB_*` secrets, and `AURA_ACCESS_TOKEN`, downloads the Compose/C
 starts the stack. Re-running it keeps an existing `.env` intact. A master/edge
 install points `.env` at the `:edge` moving tags, and `--appliance` also enables
 the `aura-image-update` systemd timer: from then on the machine re-pulls aura and
-its MCP sidecars from GHCR on its own, migrations included, with no operator
-involved. Without `--appliance` (no systemd units, no timer), the stack still
+its MCP sidecars from GHCR on its own, migrations and Compose payload included, with
+no operator involved. Without `--appliance` (no systemd units, no timer), the stack still
 starts; updates stay manual.
 
 Add `--gvisor` on native Linux Docker hosts that should run Aura under `runsc`.
@@ -223,7 +223,13 @@ docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > aura-
 
 An edge appliance installed with `--appliance` updates itself: the
 `aura-image-update.timer` (5-minute cadence, flock-guarded) pulls the moving
-tags and recreates only what changed, running migrations first. Watch it with
+tags and recreates only what changed, running migrations first. The aura image
+also carries the installation payload — the Compose files, the updater and its
+units, the sidecar configuration — and each tick installs whatever differs from
+`/opt/aura` (backing up what it replaces under `backups/payload-*`) and brings
+the whole stack up on it. A version pin changed in `compose.yaml` therefore
+reaches every appliance on its own. `sha256sum -c payload_manifest.txt` inside
+`/opt/aura` shows whether a host matches its payload. Watch it with
 `journalctl -u aura-image-update.service -f`.
 
 Manual update (pinned installs, or no systemd). Volumes persist, and the

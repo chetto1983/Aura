@@ -21,6 +21,28 @@
 !services/
 !services/ingest/
 !services/ingest/**
+# The appliance payload the aura image carries (docker/aura/Dockerfile, payload stage). Its
+# file list is scripts/payload_manifest.txt: a payload file left out here fails that build.
+!scripts/
+!scripts/payload_manifest.txt
+!scripts/garage_bootstrap.sh
+!scripts/fetch_embedding_model.sh
+!scripts/observability_sidecar_check.sh
+!compose.yaml
+!compose.cpu.yaml
+!compose.vulkan.yaml
+!caddy/
+!caddy/**
+!deploy/
+!deploy/**
+!docker/garage/
+!docker/garage/**
+!docker/arcadedb/
+!docker/arcadedb/backup.json
+!searxng/
+!searxng/**
+!observability/
+!observability/**
 
 internal/runner/conversations
 web/node_modules
