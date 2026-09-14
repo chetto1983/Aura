@@ -427,6 +427,14 @@ origins and removes the cockpit host across ports for MCP views, whose connect
 domains are declared by a mounted server rather than the operator; the wildcard is
 opt-in (`ViewPolicy.AllowConnectWildcard`) and only the artifact renderer sets it.
 
+Package caches (uv, npm and pip) belong to the identity just like its workspace.
+They survive suspension and are removed when that identity is deprovisioned. A box
+with older shared cache mounts must be recreated before reuse, preserving its
+workspace and starting with empty private caches. Shared cached packages must never
+seed a private cache. Measured 2026-09-14 on the appliance sandbox image: B changed a
+cached wheel and A's next pip install by name/version reused and executed it. The
+disposable proof covers cache reuse, not the whole authenticated adversarial suite.
+
 The per-identity sandbox image includes Python Playwright 1.62.0, its matching
 Chromium and system dependencies. HTML delivery instructions require browser
 validation before `send_file`: console/page and HTTP/network errors, primary
@@ -766,6 +774,17 @@ The appliance is Docker Compose. Installation validates target prerequisites, pr
 artifacts, generates configuration and selects CPU/CUDA embeddings from target hardware.
 CPU configuration must also remove incompatible GPU reservations. Installation payloads
 are verified against their manifest.
+
+The appliance installer and updater enforce `single_user_hardened` with
+`AURA_MUSR_ISOLATION=true` on a single-node appliance, including upgrades whose
+configuration omits those keys or still selects a development profile. An explicit
+`server_production` profile remains unchanged and retains its separate durability
+and runtime prerequisites. Bare development Compose invocations keep their opt-in
+profile. Measured 2026-09-14: the running appliance had neither key in `.env` and
+therefore ran as `dev`; the installer's existing-file path never filled the pair,
+and the updater did not migrate it. Config validation of that appliance under
+`single_user_hardened` returned no violations. This does not establish multi-node
+durability or validate the full live workload under the changed profile.
 
 Edge and tagged releases have distinct publication contracts. Systemd appliance updates
 may apply edge images automatically; pinned deployments have an explicit update process.
