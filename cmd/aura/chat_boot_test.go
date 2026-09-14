@@ -524,15 +524,12 @@ func TestReasoningRetentionBoot(t *testing.T) {
 	cfg.Retention.ReasoningSuccessTTL = 21 * 24 * time.Hour
 	cfg.Retention.ReasoningFailedTTL = 5 * 24 * time.Hour
 	runtime := newChatReasoningMemory(cfg)
-	if runtime == nil || runtime.sink == nil || runtime.retention == nil || runtime.deletion == nil {
-		t.Fatal("configured chat boot did not construct one shared reasoning sink/lifecycle")
+	if runtime == nil || runtime.writer == nil || runtime.retention == nil {
+		t.Fatal("configured chat boot did not construct the reasoning writer and retention store")
 	}
-	if any(runtime.sink) != any(runtime.retention) || any(runtime.sink) != any(runtime.deletion) {
-		t.Fatal("chat boot constructed separate reasoning sink and lifecycle owners")
-	}
-	store, ok := runtime.sink.(*tenantReasoningMemory)
+	store, ok := runtime.retention.(*tenantReasoningMemory)
 	if !ok || store.policy.SuccessTTL != 21*24*time.Hour || store.policy.FailedTTL != 5*24*time.Hour {
-		t.Fatalf("reasoning sink policy = %#v, want validated 21d/5d overrides", runtime.sink)
+		t.Fatalf("reasoning store policy = %#v, want validated 21d/5d overrides", runtime.retention)
 	}
 }
 
@@ -545,12 +542,12 @@ func (isolatedMemoryContext) Search(context.Context, string, string) (string, er
 
 func TestChatBootReasoningIsolation(t *testing.T) {
 	store := &tenantReasoningMemory{}
-	runtime := &chatReasoningMemory{sink: store, retention: store, deletion: store}
+	runtime := &chatReasoningMemory{writer: runner.NewReasoningTraceWriter(store), retention: store}
 	automatic := isolatedMemoryContext{}
 	deps := runner.Deps{MemoryContext: automatic}
 	wireChatReasoningMemory(&deps, runtime)
-	if deps.ReasoningGraphSink != store || deps.ReasoningDeletion != store {
-		t.Fatal("explicit reasoning store was not wired to its dedicated dependencies")
+	if deps.ReasoningGraphSink != runtime.writer || deps.ReasoningDeletion != runtime.writer {
+		t.Fatal("reasoning writes and source deletes were not both wired through the writer")
 	}
 	if deps.MemoryContext != automatic {
 		t.Fatal("reasoning wiring replaced the ordinary digest/preload provider")

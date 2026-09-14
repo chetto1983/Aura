@@ -10,10 +10,12 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
+// chatReasoningMemory is one tenant store behind two owners. Trace writes and source deletes
+// go through the writer, which keeps them off turn completion and orders a delete after the
+// traces it covers; retention sweeps only remove expired traces and reach the store directly.
 type chatReasoningMemory struct {
-	sink      runner.ReasoningGraphSink
+	writer    *runner.ReasoningTraceWriter
 	retention runner.ReasoningRetentionStore
-	deletion  runner.ReasoningDeletionStore
 }
 
 type tenantMemoryCaptureSink struct {
@@ -103,13 +105,13 @@ func newChatReasoningMemory(cfg *config.Config) *chatReasoningMemory {
 			FailedTTL:  cfg.Retention.ReasoningFailedTTL,
 		},
 	}
-	return &chatReasoningMemory{sink: store, retention: store, deletion: store}
+	return &chatReasoningMemory{writer: runner.NewReasoningTraceWriter(store), retention: store}
 }
 
 func wireChatReasoningMemory(deps *runner.Deps, memory *chatReasoningMemory) {
 	if deps == nil || memory == nil {
 		return
 	}
-	deps.ReasoningGraphSink = memory.sink
-	deps.ReasoningDeletion = memory.deletion
+	deps.ReasoningGraphSink = memory.writer
+	deps.ReasoningDeletion = memory.writer
 }

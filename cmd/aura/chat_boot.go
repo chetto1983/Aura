@@ -63,6 +63,7 @@ type chatEnv struct {
 	deleteReconciler      *runner.DeleteReconciler
 	conversationProjector *runner.ConversationProjector
 	memoryCaptureQueue    *runner.MemoryCaptureQueue
+	reasoningWriter       *runner.ReasoningTraceWriter
 	assets                *assets.Service
 	// shareSvc is the WEBSHARE-02/03 share lifecycle (buildShareService, share_service_wiring.go,
 	// serve-only — nil under `aura chat`). Backs three composition-root seams at once: the HTTP
@@ -108,6 +109,13 @@ func (e *chatEnv) close() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		if err := e.memoryCaptureQueue.Close(ctx); err != nil {
 			slog.Warn("memory capture shutdown incomplete", "error", err)
+		}
+		cancel()
+	}
+	if e.reasoningWriter != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		if err := e.reasoningWriter.Close(ctx); err != nil {
+			slog.Warn("reasoning trace writer shutdown incomplete", "error", err)
 		}
 		cancel()
 	}
@@ -491,12 +499,14 @@ func assembleChatEnv(
 	wireChatConversationReconciliation(
 		deleteReconciler, conversationProjector, roster,
 	)
+	var reasoningWriter *runner.ReasoningTraceWriter
 	if reasoningMemory != nil {
+		reasoningWriter = reasoningMemory.writer
 		deleteReconciler.SetReasoningRetention(reasoningMemory.retention, roster, cfg.Retention.BatchSize)
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

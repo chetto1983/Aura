@@ -28,10 +28,11 @@ const (
 	reasoningGraphMaxToolsPerStep  = 32
 	reasoningGraphMaxReferences    = 32
 	reasoningGraphMaxArgumentDepth = 8
-	reasoningGraphWriteTimeout     = 5 * time.Second
 )
 
-// ReasoningGraphSink is the narrow identity-scoped graph persistence boundary.
+// ReasoningGraphSink is the narrow identity-scoped graph persistence boundary. The runner
+// offers each trace at turn completion, after the answer is committed, so a production sink
+// must not write inline: ReasoningTraceWriter queues it.
 type ReasoningGraphSink interface {
 	UpsertReasoningTrace(context.Context, arcadedb.ReasoningTrace) error
 }
@@ -417,9 +418,7 @@ func (r *Runner) commitSourceTurn(ctx context.Context, tr *turnTracker, ev *agen
 	if !ok {
 		return
 	}
-	graphCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), reasoningGraphWriteTimeout)
-	defer cancel()
-	if err := r.reasoningGraphSink.UpsertReasoningTrace(graphCtx, trace); err != nil {
+	if err := r.reasoningGraphSink.UpsertReasoningTrace(ctx, trace); err != nil {
 		slog.Warn("reasoning graph delivery failed after answer commit", "err", redact.Line(err.Error()))
 	}
 }
