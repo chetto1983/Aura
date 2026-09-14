@@ -134,6 +134,13 @@ sync_payload() {
       echo "payload: ${rel} updated."
     done
     rm -f "${INSTALL_DIR}/${APPLIED_MANIFEST}"
+    # Only the payload this change replaced is kept: the edge channel updates many times a
+    # day, and the older copies are recoverable from git anyway. A change that only added
+    # files replaced nothing, wrote no backup, and leaves the previous one where it is.
+    if [[ -d "${backup}" ]]; then
+      find "${INSTALL_DIR}/backups" -mindepth 1 -maxdepth 1 -type d -name 'payload-*' ! -path "${backup}" \
+        -exec rm -rf {} +
+    fi
   fi
   if ! cmp -s "${work}/payload_manifest.txt" "${INSTALL_DIR}/payload_manifest.txt"; then
     install -m 0644 "${work}/payload_manifest.txt" "${INSTALL_DIR}/payload_manifest.txt"
@@ -158,6 +165,34 @@ sync_payload() {
   ((units_changed == 0)) || systemctl daemon-reload
 
   rm -rf "${work}"
+}
+
+# repository[:tag][@digest] -> repository, keeping a registry port (host:5000/name) intact.
+image_repository() {
+  local ref="${1%%@*}"
+  [[ "${ref##*/}" != *:* ]] || ref="${ref%:*}"
+  printf '%s' "${ref}"
+}
+
+# A changed pin leaves the previous image TAGGED, and `docker image prune` only reclaims
+# untagged ones, so every llama.cpp or SearXNG bump would leave hundreds of MB on the disk.
+# An image is removed when compose still uses its repository but no pin names it any more.
+# Images outside compose (the per-user sandbox boxes) are never considered, and docker itself
+# refuses to remove one a container still uses.
+remove_superseded_images() {
+  local ref id
+  local -A pinned_repos=() pinned_ids=()
+  while read -r ref; do
+    [[ -n "${ref}" ]] || continue
+    pinned_repos["$(image_repository "${ref}")"]=1
+    id="$(docker image inspect --format '{{.Id}}' "${ref}" 2>/dev/null)" && pinned_ids["${id}"]=1
+  done < <(docker compose config --images)
+  while read -r ref id; do
+    [[ -n "${pinned_repos[$(image_repository "${ref}")]:-}" && -z "${pinned_ids[${id}]:-}" ]] || continue
+    if docker rmi "${ref}" >/dev/null 2>&1; then
+      echo "images: ${ref} superseded by its pin; removed."
+    fi
+  done < <(docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}')
 }
 
 # MCP sidecars ride the same timer. A service whose container does not exist is
@@ -291,7 +326,9 @@ main() {
 
   refresh_sandbox_images
 
-  # Remove only untagged images left behind by a successful replacement.
+  # Only a tick that got this far reclaims images: tagged ones no pin names any more, then
+  # the untagged ones a moving tag left behind.
+  remove_superseded_images
   docker image prune --force >/dev/null
   echo "Aura image update completed; the appliance is healthy."
 }

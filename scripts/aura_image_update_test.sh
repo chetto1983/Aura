@@ -23,6 +23,7 @@ image_payload="$fixture/image-payload"
 # `docker cp <container>:<dir>/. <dst>` copies the directory's contents into dst; an image
 # without that directory makes docker cp fail, which is what an image built before the
 # payload stage existed does.
+# shellcheck disable=SC2329 # called by the sourced updater, and redefined for the image cleanup below
 docker() {
   echo "docker $*" >>"$calls"
   case "$1" in
@@ -58,7 +59,7 @@ seal() {
     while read -r rel; do sha256sum "$rel"; done)"
   printf '%s\n' "$sums" >"$image_payload/payload_manifest.txt"
 }
-backups() { find "$INSTALL_DIR/backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l; }
+backups() { find "$INSTALL_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name 'payload-*' 2>/dev/null | wc -l; }
 
 INSTALL_DIR="$fixture/opt/aura"
 UPDATER_BIN="$fixture/sbin/aura-image-update.sh"
@@ -147,3 +148,85 @@ sync_payload ""
 [[ "$UPDATER_CHANGED" == 0 ]] || fail "no configured image reported a new updater"
 [[ ! -s "$calls" ]] || fail "no configured image still called docker: $(cat "$calls")"
 echo "ok: a host with no AURA_IMAGE skips the sync"
+
+# Updates land many times a day on the edge channel, so backups must not pile up: only the
+# payload the latest change replaced is kept, and nothing else under backups/ is touched.
+mkdir -p "$INSTALL_DIR/backups/payload-20000101T000000Z" "$INSTALL_DIR/backups/restore-drill"
+write "$image_payload/compose.yaml" "compose v4"
+write "$image_payload/deploy/aura-image-update.sh" "updater v2"
+write "$image_payload/deploy/aura-image-update.timer" "timer v2"
+write "$image_payload/deploy/aura-image-update.service" "update service v1"
+write "$image_payload/deploy/aura.service" "service v1"
+write "$image_payload/observability/tempo/tempo.yml" "tempo v1"
+write "$image_payload/scripts/garage_bootstrap.sh" "bootstrap v1"
+seal
+sleep 1 # a distinct backup stamp from the first sync's
+sync_payload ghcr.io/example/aura:edge >/dev/null
+[[ "$(backups)" == 1 ]] || fail "expected only the latest payload backup, found $(backups)"
+[[ ! -e "$INSTALL_DIR/backups/payload-20000101T000000Z" ]] || fail "an older payload backup survived"
+latest="$(find "$INSTALL_DIR/backups" -mindepth 1 -maxdepth 1 -type d -name 'payload-*')"
+[[ "$(content "$latest/compose.yaml")" == "compose v2" ]] || fail "the kept backup is not the payload this change replaced"
+[[ -d "$INSTALL_DIR/backups/restore-drill" ]] || fail "a backup that is not a payload backup was removed"
+echo "ok: only the latest payload backup is kept"
+
+# A payload that only ADDS files replaces nothing, so no backup is written -- and a host with
+# no backups/ directory at all must still converge instead of failing the tick on it.
+saved_install_dir="$INSTALL_DIR"
+INSTALL_DIR="$fixture/fresh-host"
+mkdir -p "$INSTALL_DIR"
+sync_payload ghcr.io/example/aura:edge >/dev/null
+[[ "$(content "$INSTALL_DIR/compose.yaml")" == "compose v4" ]] || fail "a host with no backups/ did not receive the payload"
+[[ ! -d "$INSTALL_DIR/backups" ]] || fail "a payload that replaced nothing wrote a backup"
+INSTALL_DIR="$saved_install_dir"
+echo "ok: a payload that only adds files converges without a backups/ directory"
+
+# A pin change leaves the previous image TAGGED, so `docker image prune` never reclaims it and
+# every llama.cpp bump would leave hundreds of MB behind. Same-repository images that no
+# compose pin names are removed; one a container still uses is refused by docker and kept.
+declare -A local_image_ids=(
+  ["ghcr.io/ggml-org/llama.cpp:server-vulkan-b10951"]=sha256:llama-new
+  ["ghcr.io/ggml-org/llama.cpp:server-vulkan"]=sha256:llama-old
+  ["ghcr.io/ggml-org/llama.cpp:server-cuda-b10884"]=sha256:llama-in-use
+  ["searxng/searxng:2026.9.13-d4ce87c23"]=sha256:searx-new
+  ["searxng/searxng:2026.7.26-b060c780d"]=sha256:searx-old
+  ["hwdsl2/whisper-server:latest"]=sha256:whisper
+  ["ghcr.io/chetto1983/aura:edge"]=sha256:aura
+  ["ghcr.io/chetto1983/aura-sandbox:edge"]=sha256:box
+  ["<none>:<none>"]=sha256:dangling
+)
+compose_images=(
+  ghcr.io/ggml-org/llama.cpp:server-vulkan-b10951
+  searxng/searxng:2026.9.13-d4ce87c23
+  hwdsl2/whisper-server:latest@sha256:whisper
+  ghcr.io/chetto1983/aura:edge
+)
+docker() {
+  echo "docker $*" >>"$calls"
+  case "$1 ${2:-}" in
+    "compose config") printf '%s\n' "${compose_images[@]}" ;;
+    "image inspect")
+      # With the containerd image store an image's Id is the digest a pin names.
+      local ref="${*: -1}"
+      case "$ref" in
+        *@sha256:*) echo "sha256:${ref##*@sha256:}" ;;
+        *) [[ -n "${local_image_ids[$ref]:-}" ]] || return 1; echo "${local_image_ids[$ref]}" ;;
+      esac
+      ;;
+    "images --no-trunc") for ref in "${!local_image_ids[@]}"; do echo "$ref ${local_image_ids[$ref]}"; done ;;
+    "rmi "*)
+      [[ "$2" != "ghcr.io/ggml-org/llama.cpp:server-cuda-b10884" ]] || {
+        echo "Error response from daemon: conflict: image is being used by running container" >&2
+        return 1
+      }
+      ;;
+    *) fail "unexpected docker $*" ;;
+  esac
+}
+: >"$calls"
+remove_superseded_images >"$fixture/images.out" || fail "a refused removal failed the tick"
+removed="$(sed -n 's/^docker rmi //p' "$calls" | LC_ALL=C sort | tr '\n' ' ')"
+[[ "$removed" == "ghcr.io/ggml-org/llama.cpp:server-cuda-b10884 ghcr.io/ggml-org/llama.cpp:server-vulkan searxng/searxng:2026.7.26-b060c780d " ]] ||
+  fail "removal attempts were: $removed"
+grep -q 'server-vulkan superseded' "$fixture/images.out" || fail "a removed image was not reported"
+! grep -q 'server-cuda-b10884 superseded' "$fixture/images.out" || fail "an image docker refused was reported as removed"
+echo "ok: tagged images no pin names any more are removed, the rest are kept"
