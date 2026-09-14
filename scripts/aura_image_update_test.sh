@@ -180,6 +180,30 @@ sync_payload ghcr.io/example/aura:edge >/dev/null
 INSTALL_DIR="$saved_install_dir"
 echo "ok: a payload that only adds files converges without a backups/ directory"
 
+# Keys an earlier installer wrote that no compose file reads any more must leave .env on their
+# own: left behind they look like settings an operator can change, and change nothing.
+cat >"$INSTALL_DIR/.env" <<'ENV'
+POSTGRES_PASSWORD=do-not-print-me
+POSTGRES_IMAGE=postgres:18.4-alpine3.24
+# POSTGRES_IMAGE used to pin the database here
+AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server-vulkan
+AURA_EMBED_IMAGE_NOTE=a longer key that only starts like a retired one
+AURA_EMBED_NGL=99
+ENV
+chmod 600 "$INSTALL_DIR/.env"
+retire_env_keys >"$fixture/retire1.out"
+[[ "$(cat "$INSTALL_DIR/.env")" == "POSTGRES_PASSWORD=do-not-print-me
+# POSTGRES_IMAGE used to pin the database here
+AURA_EMBED_IMAGE_NOTE=a longer key that only starts like a retired one
+AURA_EMBED_NGL=99" ]] || fail "retiring keys left .env as: $(cat "$INSTALL_DIR/.env")"
+[[ "$(mode "$INSTALL_DIR/.env")" == 600 ]] || fail "retiring keys widened .env to $(mode "$INSTALL_DIR/.env")"
+[[ "$(cat "$fixture/retire1.out")" == "env: retired AURA_EMBED_IMAGE POSTGRES_IMAGE removed from .env." ]] ||
+  fail "the retired keys were not named in the log: $(cat "$fixture/retire1.out")"
+! grep -q 'do-not-print-me\|server-vulkan' "$fixture/retire1.out" || fail "retiring keys printed .env values"
+retire_env_keys >"$fixture/retire2.out"
+[[ ! -s "$fixture/retire2.out" ]] || fail "a clean .env still reported retirements: $(cat "$fixture/retire2.out")"
+echo "ok: keys no compose file reads any more are removed from .env, and nothing else is"
+
 # A pin change leaves the previous image TAGGED, so `docker image prune` never reclaims it and
 # every llama.cpp bump would leave hundreds of MB behind. Same-repository images that no
 # compose pin names are removed; one a container still uses is refused by docker and kept.

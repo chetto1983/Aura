@@ -19,12 +19,6 @@ func TestThirdPartyImagesArePinnedWhereTheUpdaterDeliversThem(t *testing.T) {
 		files[rel] = readProjectFile(t, root, rel)
 	}
 
-	for _, shadow := range []string{"${POSTGRES_IMAGE", "${AURA_EMBED_IMAGE"} {
-		if strings.Contains(files["compose.yaml"], shadow) {
-			t.Errorf("compose.yaml reads %s}: the installer wrote it into .env, where it outranks the pin on every installed host", shadow)
-		}
-	}
-
 	imageLine := regexp.MustCompile(`(?m)^\s+image:\s*(\S+)\s*$`)
 	llamaBuild := regexp.MustCompile(`llama\.cpp:server(?:-cuda|-vulkan)?-b(\d+)`)
 	builds := map[string][]string{}
@@ -46,6 +40,34 @@ func TestThirdPartyImagesArePinnedWhereTheUpdaterDeliversThem(t *testing.T) {
 	}
 	if len(builds) != 1 {
 		t.Errorf("the stack runs more than one llama.cpp build, so CUDA, Vulkan, CPU and CI hosts do not test the same server: %v", builds)
+	}
+}
+
+// The update timer deletes RETIRED_ENV_KEYS from every appliance's .env. A compose file that
+// still reads one would let the stale value outrank its pin again, and a template line or an
+// installer write would put the key straight back on the next install.
+func TestRetiredEnvKeysStayRetired(t *testing.T) {
+	root := repoRootForTest(t)
+	declared := regexp.MustCompile(`(?m)^RETIRED_ENV_KEYS=\(([^)]*)\)`).
+		FindStringSubmatch(readProjectFile(t, root, "deploy/aura-image-update.sh"))
+	if declared == nil || len(strings.Fields(declared[1])) == 0 {
+		t.Fatal("deploy/aura-image-update.sh declares no RETIRED_ENV_KEYS")
+	}
+	envExample := readProjectFile(t, root, ".env.example")
+	installer := readProjectFile(t, root, "scripts/install.sh")
+	for key := range strings.FieldsSeq(declared[1]) {
+		for _, rel := range []string{"compose.yaml", "compose.vulkan.yaml", "compose.cpu.yaml"} {
+			if strings.Contains(readProjectFile(t, root, rel), "${"+key) {
+				t.Errorf("%s reads ${%s}, which outranks the pin on every host that still has it", rel, key)
+			}
+		}
+		if hasActiveEnvAssignment(envExample, key) {
+			t.Errorf(".env.example sets %s, which the update timer removes from every appliance", key)
+		}
+		written := regexp.MustCompile(`(?m)(\b(set_env_value|ensure_env_default)\s+` + key + `\b|^` + key + `=)`)
+		if written.MatchString(installer) {
+			t.Errorf("scripts/install.sh writes %s, which the update timer removes from every appliance", key)
+		}
 	}
 }
 

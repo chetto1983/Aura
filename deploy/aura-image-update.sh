@@ -29,6 +29,9 @@ set -Eeuo pipefail
 PAYLOAD_IMAGE_DIR=/usr/share/aura/payload
 # The manifest of the payload the running stack was last brought up with, under INSTALL_DIR.
 APPLIED_MANIFEST=payload_manifest.applied
+# Keys an earlier installer wrote into .env that no compose file reads any more. The image
+# pins moved into compose.yaml and its overlays on 2026-09-14, where .env cannot outrank them.
+RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE)
 
 container_image_id() {
   local container_id
@@ -167,6 +170,18 @@ sync_payload() {
   rm -rf "${work}"
 }
 
+# Left in .env a retired key reads like a setting an operator can change, and changes nothing.
+# The lines are deleted in place (GNU sed keeps the file's 0600 mode and owner) and only the key
+# names are logged: .env holds the secrets, so it is neither printed nor copied to a backup.
+retire_env_keys() {
+  local env_file="${INSTALL_DIR}/.env" pattern found
+  [[ -f "${env_file}" ]] || return 0
+  pattern="^($(IFS='|' && echo "${RETIRED_ENV_KEYS[*]}"))="
+  found="$(grep -oE "${pattern}" "${env_file}" | tr -d '=' | sort -u | tr '\n' ' ')" || return 0
+  sed -i -E "/${pattern}/d" "${env_file}"
+  echo "env: retired ${found% } removed from .env."
+}
+
 # repository[:tag][@digest] -> repository, keeping a registry port (host:5000/name) intact.
 image_repository() {
   local ref="${1%%@*}"
@@ -296,6 +311,7 @@ main() {
     echo "payload: the updater changed; re-executing it."
     AURA_IMAGE_UPDATE_REEXEC=1 exec "${UPDATER_BIN}"
   fi
+  retire_env_keys
 
   docker compose up -d aura
   wait_healthy aura
