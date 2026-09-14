@@ -3,6 +3,8 @@ package webauth
 import (
 	"net/url"
 	"testing"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // TestEnsureAuthulaSearchPath pins the H1 DSN hardening: every Authula DSN must
@@ -45,6 +47,18 @@ func TestEnsureAuthulaSearchPath(t *testing.T) {
 			in:             "postgres://u:p@h:5432/db?search_path=custom",
 			wantSearchPath: "custom",
 		},
+		{
+			name:           "startup options retain URI-encoded spaces",
+			in:             "postgres://u:p@h/db?options=-c%20statement_timeout%3D5000",
+			wantSearchPath: "authula",
+			wantParams:     map[string]string{"options": "-c statement_timeout=5000"},
+		},
+		{
+			name:           "literal and encoded plus remain literal",
+			in:             "postgres://u:p@h/db?application_name=aura+login%2Bweb",
+			wantSearchPath: "authula",
+			wantParams:     map[string]string{"application_name": "aura+login+web"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,12 +77,19 @@ func TestEnsureAuthulaSearchPath(t *testing.T) {
 				t.Fatalf("result %q is not a valid URL: %v", got, perr)
 			}
 			q := u.Query()
+			parsed, parseErr := pgx.ParseConfig(got)
+			if parseErr != nil {
+				t.Fatalf("pgx rejected DSN: %v", parseErr)
+			}
 			if sp := q["search_path"]; len(sp) != 1 || sp[0] != tt.wantSearchPath {
 				t.Fatalf("search_path = %v, want exactly [%q] (result %q)", sp, tt.wantSearchPath, got)
 			}
 			for k, want := range tt.wantParams {
 				if g := q.Get(k); g != want {
 					t.Fatalf("param %q = %q, want %q (result %q)", k, g, want, got)
+				}
+				if k != "sslmode" && parsed.RuntimeParams[k] != want {
+					t.Fatalf("pgx runtime param %q = %q, want %q", k, parsed.RuntimeParams[k], want)
 				}
 			}
 		})

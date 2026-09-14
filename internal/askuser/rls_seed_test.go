@@ -14,11 +14,12 @@ package askuser
 
 import (
 	"context"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -69,6 +70,7 @@ func sessionScopedAppURL(t *testing.T, appURL, identityID string) string {
 	}
 	q := u.Query()
 	q.Set("options", "-c app.current_identity="+identityID)
-	u.RawQuery = q.Encode()
+	// pgx 5.11 follows libpq: a query '+' is literal, so spaces must be %20.
+	u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
 	return u.String()
 }

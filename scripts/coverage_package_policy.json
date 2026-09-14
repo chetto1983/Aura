@@ -78,7 +78,7 @@
     "github.com/chetto1983/aura/internal/toolinvocations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "target"},
     "github.com/chetto1983/aura/internal/web": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 207, "total_statements": 379},
+    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 208, "total_statements": 380},
     "github.com/chetto1983/aura/internal/webui": {"mode": "target"}
   }
 }

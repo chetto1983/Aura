@@ -1,6 +1,22 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**Dependency-upgrade measurement:** 2026-09-14 — PRs #79–81 plus pypdf 6.18.1.
+Full disposable Go unit + `db_integration` matrix, including `cmd/aura` execution:
+**39,881/45,558 = 87.54%**. The pgx URI correction adds one covered statement to
+`webauth`; its exact baseline increases from **207/379** to **208/380**, retaining
+the visible 85% target. Full Go race, vet, build, lint and deadcode passed.
+Authula 1.44 passed real Postgres authentication and worker-cleanup tests with race
+detection; both DSN encoding mutations were killed. Frontend: **2,138 tests / 256
+files**, statements **8,620/9,410 = 91.60%**, branches **6,075/7,108 = 85.46%**.
+Desktop/mobile Chrome preserved the HTML preview iframe while toggling source and
+resizing with the keyboard. Valid nested PDF bookmarks and malformed-input cases
+passed on pypdf 6.18.0 and 6.18.1 (**16 tests each**). Local evidence lives under
+`.planning/tmp/deps-*`. These checks do not certify live external LLM providers or
+the separate ArcadeDB/Docker coverage authorities; remote CI remains authoritative
+for those tiers. Go symbol scanning found no reachable vulnerability; the module-only
+OpenPGP advisory (GO-2026-5932) concerns packages Aura does not import.
+
 **Recovered-tool replay measurement:** 2026-09-08 — `6b8b1fc17`; full frontend
 **2032 tests / 241 files**, statements **8139/8931 = 91.13%**, branches
 **5706/6681 = 85.40%**. MCP verified the formerly incorrect Completed card now

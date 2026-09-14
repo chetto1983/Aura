@@ -91,6 +91,7 @@ func (r *cronFakeRows) FieldDescriptions() []pgconn.FieldDescription { return ni
 func (r *cronFakeRows) Values() ([]any, error)                       { return nil, nil }
 func (r *cronFakeRows) RawValues() [][]byte                          { return nil }
 func (r *cronFakeRows) Conn() *pgx.Conn                              { return nil }
+func (r *cronFakeRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 func (r *cronFakeRows) Next() bool {
 	if r.idx >= len(r.rows) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // fakeDBTX is an in-memory sqlc.DBTX so the Store's query methods can be exercised
@@ -82,6 +83,7 @@ func (r *fakeRows) FieldDescriptions() []pgconn.FieldDescription { return nil }
 func (r *fakeRows) Values() ([]any, error)                       { return nil, nil }
 func (r *fakeRows) RawValues() [][]byte                          { return nil }
 func (r *fakeRows) Conn() *pgx.Conn                              { return nil }
+func (r *fakeRows) TypeMap() *pgtype.Map                         { return pgtype.NewMap() }
 
 func (r *fakeRows) Next() bool {
 	if r.idx >= len(r.rows) {

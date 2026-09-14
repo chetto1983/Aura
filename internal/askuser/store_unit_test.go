@@ -296,6 +296,7 @@ func (emptyRows) Scan(...any) error                            { return nil }
 func (emptyRows) Values() ([]any, error)                       { return nil, nil }
 func (emptyRows) RawValues() [][]byte                          { return nil }
 func (emptyRows) Conn() *pgx.Conn                              { return nil }
+func (emptyRows) TypeMap() *pgtype.Map                         { return nil }
 
 // TestMarkResumedBatchTx_ClaimsInSortedTokenOrder asserts the batch claims pauses in
 // SORTED token order (RESEARCH landmine #2 / T-34-B) so two concurrent overlapping

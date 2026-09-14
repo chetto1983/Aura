@@ -1,4 +1,4 @@
-// Package webauth embeds the Authula (Apache-2.0, v1.42.0) Go auth framework as
+// Package webauth embeds the Authula (Apache-2.0) Go auth framework as
 // the cockpit's "industrial" web-auth provider, behind the AURA_WEB_AUTH_PROVIDER
 // feature flag (see docs/cockpit-overhaul/05-authula-auth-SPEC.md, Option A2). It
 // constructs authula.New with the three mandatory hardenings:
@@ -370,10 +370,13 @@ func ensureAuthulaSearchPath(dsn string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// libpq and pgx 5.11 interpret '+' literally, unlike net/url's form encoding.
+	// https://github.com/jackc/pgx/releases/tag/v5.11.0
+	u.RawQuery = strings.ReplaceAll(u.RawQuery, "+", "%2B")
 	q := u.Query()
 	if q.Get("search_path") == "" {
 		q.Set("search_path", authulaSchema)
-		u.RawQuery = q.Encode()
+		u.RawQuery = strings.ReplaceAll(q.Encode(), "+", "%20")
 	}
 	return u.String(), nil
 }
