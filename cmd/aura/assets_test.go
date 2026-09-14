@@ -12,6 +12,7 @@ import (
 	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	llmpkg "github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
@@ -99,6 +100,12 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	}
 	if svc.Limits.MaxDocumentBytes != 123 || svc.Limits.MaxImageBytes != 456 || svc.Limits.MaxAudioBytes != 789 {
 		t.Fatalf("asset service limits = %+v, want configured limits", svc.Limits)
+	}
+	// No pool: there is no aura.settings to read, so MaxVideoBytes takes the compiled
+	// default rather than the fail-closed 0 a real read failure would produce.
+	if svc.Limits.MaxVideoBytes != mediagen.DefaultAssetMaxVideoBytes {
+		t.Fatalf("asset service MaxVideoBytes = %d, want the compiled default %d for a pool-free build",
+			svc.Limits.MaxVideoBytes, mediagen.DefaultAssetMaxVideoBytes)
 	}
 	if _, ok := svc.ProcessingJobs.(*runtimeAssetProcessingQueue); !ok {
 		t.Fatalf("asset processing jobs = %T, want *runtimeAssetProcessingQueue", svc.ProcessingJobs)

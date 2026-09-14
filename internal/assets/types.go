@@ -45,6 +45,7 @@ const (
 	ModalityDocument Modality = "document"
 	ModalityImage    Modality = "image"
 	ModalityAudio    Modality = "audio"
+	ModalityVideo    Modality = "video"
 	ModalityUnknown  Modality = "unknown"
 )
 

@@ -258,7 +258,7 @@ git commit -m "feat(media): resolve live models and identity credentials" -m "Re
 - Consumes: `Config.Media.AssetMaxVideoBytes`, `assets.Service.IngestAgentFile`.
 - Produces: `assets.ModalityVideo`, `assets.Limits.MaxVideoBytes int64`, accepted MP4/WebM asset rows. Media producers remain responsible for size checks before the limit-bypassing agent ingest.
 
-- [ ] **Step 1: Write boundary tests.**
+- [x] **Step 1: Write boundary tests.**
 
 ~~~go
 func TestVideoModalityAndLimits(t *testing.T) {
@@ -283,7 +283,7 @@ func TestVideoModalityAndLimits(t *testing.T) {
 
 Add MIME/extension mismatch, negative size, and unknown `video/*` cases. The upload pipeline must validate the accepted video MIME allowlist; never treat every video subtype as playable MP4.
 
-- [ ] **Step 2: Run red and allocate the migration.**
+- [x] **Step 2: Run red and allocate the migration.**
 
 ~~~sh
 go test ./internal/assets -run TestVideo -count=1
@@ -292,7 +292,7 @@ ls internal/db/migrations/ | tail -1
 
 Use the next integer printed by the latter command when creating the files, padded to four digits.
 
-- [ ] **Step 3: Implement modality and database constraint.**
+- [x] **Step 3: Implement modality and database constraint.**
 
 ~~~sql
 -- *_asset_video.up.sql
@@ -311,7 +311,7 @@ ALTER TABLE aura.assets ADD CONSTRAINT assets_modality_check
 
 The down migration intentionally fails transactionally while video rows exist; do not delete or relabel user media. Add `ModalityVideo = "video"`, infer only mp4/webm, and mirror the existing image/audio limit cases. Wire `MaxVideoBytes: cfg.Media.AssetMaxVideoBytes` into the existing service.
 
-- [ ] **Step 4: Verify the real database path.**
+- [x] **Step 4: Verify the real database path.**
 
 In `video_integration_test.go` (`//go:build db_integration`) use the package's existing DB fixture to call `IngestAgentFile` with a small real MP4 fixture, `ModalityVideo`, and a unique SourceRef. Read it with `GetForIdentity`; assert `accepted`, `video`, actual MIME, bytes and ownership. Test both allowed formats and denied cross-owner access. Run only on the disposable integration database.
 
@@ -321,7 +321,7 @@ go test -tags=db_integration ./internal/assets -run TestVideo -count=1
 go test -race ./internal/assets
 ~~~
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ~~~sh
 git add internal/assets/types.go internal/assets/limits.go internal/assets/video_test.go internal/assets/video_integration_test.go internal/db/migrations cmd/aura/document_processor_wiring.go

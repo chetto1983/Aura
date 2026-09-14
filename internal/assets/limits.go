@@ -21,6 +21,7 @@ type Limits struct {
 	MaxDocumentBytes int64
 	MaxImageBytes    int64
 	MaxAudioBytes    int64
+	MaxVideoBytes    int64
 }
 
 // documentExts is the asset-upload allowlist for the ModalityDocument path. It MUST
@@ -46,6 +47,15 @@ var documentExts = map[string]bool{
 	".epub":     true,
 }
 
+// videoExts is the asset-upload allowlist for the ModalityVideo path: exactly the two
+// formats the watcher this slice feeds is contracted to play back, MP4 and WebM. Unlike
+// documentExts/image/audio, this is deliberately NOT a "strings.HasPrefix(mimeType,
+// "video/")" branch: video/quicktime, video/x-matroska and every other video/* subtype
+// exist and are NOT playable MP4/WebM, so classifying by MIME prefix alone would accept
+// containers the pipeline cannot actually serve. The extension is the gate, exactly as
+// Validate re-checks it below.
+var videoExts = map[string]bool{".mp4": true, ".webm": true}
+
 func InferModality(fileName, mimeType string) Modality {
 	ext := strings.ToLower(filepath.Ext(fileName))
 	switch {
@@ -55,6 +65,8 @@ func InferModality(fileName, mimeType string) Modality {
 		return ModalityImage
 	case strings.HasPrefix(mimeType, "audio/"):
 		return ModalityAudio
+	case videoExts[ext]:
+		return ModalityVideo
 	default:
 		if mt := mime.TypeByExtension(ext); strings.HasPrefix(mt, "image/") {
 			return ModalityImage
@@ -85,6 +97,13 @@ func (l Limits) Validate(modality Modality, fileName string, size int64) error {
 	case ModalityAudio:
 		if size > l.MaxAudioBytes {
 			return fmt.Errorf("%w: audio exceeds %d bytes", ErrAssetTooLarge, l.MaxAudioBytes)
+		}
+	case ModalityVideo:
+		if !videoExts[strings.ToLower(filepath.Ext(fileName))] {
+			return fmt.Errorf("%w: video type %q", ErrAssetUnsupported, filepath.Ext(fileName))
+		}
+		if size > l.MaxVideoBytes {
+			return fmt.Errorf("%w: video exceeds %d bytes", ErrAssetTooLarge, l.MaxVideoBytes)
 		}
 	default:
 		return fmt.Errorf("%w: asset modality %q", ErrAssetUnsupported, modality)

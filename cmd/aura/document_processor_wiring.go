@@ -15,12 +15,18 @@ import (
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 const (
 	visionCapabilityTimeout = 5 * time.Second
 	visionCapabilityTTL     = time.Minute
+	// assetMaxVideoBytesTimeout bounds the boot-time AURA_ASSET_MAX_VIDEO_BYTES read the
+	// same way visionCapabilityTimeout bounds the vision-route probe above: an aura.settings
+	// row lookup over the pool buildAssetService already holds, not a network call, but still
+	// bounded so a stalled pool cannot hang boot.
+	assetMaxVideoBytesTimeout = 5 * time.Second
 )
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
@@ -47,6 +53,7 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 			MaxDocumentBytes: int64(cfg.AssetMaxDocumentBytes),
 			MaxImageBytes:    int64(cfg.AssetMaxImageBytes),
 			MaxAudioBytes:    int64(cfg.AssetMaxAudioBytes),
+			MaxVideoBytes:    assetMaxVideoBytesFor(cfg, pool),
 		},
 		Bucket:     cfg.ObjectStoreBucket,
 		PresignTTL: time.Duration(cfg.AssetPresignTTLSec) * time.Second,
@@ -175,4 +182,39 @@ func visionConfigFrom(cfg *config.Config) multimodal.VisionConfig {
 
 func sttConfigFrom(cfg *config.Config) multimodal.STTConfig {
 	return multimodal.STTConfigFrom(cfg)
+}
+
+// assetMaxVideoBytesFor resolves assets.Limits.MaxVideoBytes at boot, over a settings store
+// built from the SAME pool buildAssetService already holds (ruling R3: never a second pool).
+// No pool at all (the pool-free tests/paths buildAssetService already supports) is the one
+// case with no aura.settings to check, so it takes bootAssetMaxVideoBytes' own nil-lister
+// contract (the compiled default). Any other failure to read AURA_ASSET_MAX_VIDEO_BYTES —
+// the settings store itself failing to build, or resolveAssetMaxVideoBytes below — fails
+// CLOSED to 0 so every video upload is refused, never silently falling back to the default
+// and hiding a real stored value the store failed to read.
+func assetMaxVideoBytesFor(cfg *config.Config, pool *pgxpool.Pool) int64 {
+	if pool == nil {
+		return resolveAssetMaxVideoBytes(context.Background(), nil)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), assetMaxVideoBytesTimeout)
+	defer cancel()
+	store, err := settings.NewStore(pool, cfg.AuthulaSecret)
+	if err != nil {
+		slog.Warn("aura assets: settings store unavailable — video assets refused", "err", err)
+		return 0
+	}
+	return resolveAssetMaxVideoBytes(ctx, store)
+}
+
+// resolveAssetMaxVideoBytes is the fail-closed decision isolated from pool/store
+// construction so it is unit-testable with a fake settings.Lister, no daemon required: a
+// store read error or an invalid stored value (bootAssetMaxVideoBytes rejects nonpositive)
+// returns 0, a nil lister or an absent row returns the compiled default.
+func resolveAssetMaxVideoBytes(ctx context.Context, lister settings.Lister) int64 {
+	maxBytes, err := bootAssetMaxVideoBytes(ctx, lister)
+	if err != nil {
+		slog.Warn("aura assets: AURA_ASSET_MAX_VIDEO_BYTES unreadable — video assets refused", "err", err)
+		return 0
+	}
+	return maxBytes
 }
