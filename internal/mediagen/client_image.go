@@ -140,6 +140,8 @@ func decodeCappedBase64(encoded string, maxBytes int64) ([]byte, error) {
 // signature table), or sniffs alone when none was declared. SVG cannot be
 // sniffed that way, so a declared image/svg+xml is trusted directly and
 // returned as a downloadable asset rather than a displayable-image guess.
+// A declared type outside the image set is refused even when the bytes match
+// it: an MP4 declared as video/mp4 is consistent, and still not an image.
 // Any other mismatch or unrecognized type is refused, never guessed.
 func resolveImageMIME(declared string, data []byte) (string, error) {
 	sniffed := http.DetectContentType(data)
@@ -156,6 +158,9 @@ func resolveImageMIME(declared string, data []byte) (string, error) {
 	}
 	if mediaType == "image/svg+xml" {
 		return mediaType, nil
+	}
+	if !sniffableImageMIME[mediaType] {
+		return "", &Error{Code: "unsupported", Message: "Generated image declared a media type that is not an image."}
 	}
 	if mediaType != sniffed {
 		return "", &Error{Code: "unsupported", Message: "Generated image content does not match its declared media type."}

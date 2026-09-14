@@ -323,3 +323,17 @@ func TestGenerateImageClassifiesProviderErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateImageRejectsANonImageTypeEvenWhenTheBytesMatchIt(t *testing.T) {
+	clip := []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41\x00\x00\x00\x08free")
+	encoded := base64.StdEncoding.EncodeToString(clip)
+	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"video/mp4"}]}`}
+	srv := httptest.NewServer(server.handler(t))
+	defer srv.Close()
+
+	client := NewClient(srv.Client(), 1<<20)
+	_, err := client.GenerateImage(context.Background(), srv.URL, "k", ImageRequest{Model: "m", Prompt: "p"})
+	if ErrorCode(err) != "unsupported" {
+		t.Fatalf("ErrorCode = %q, want unsupported for MP4 bytes declared as video/mp4 in an image answer", ErrorCode(err))
+	}
+}

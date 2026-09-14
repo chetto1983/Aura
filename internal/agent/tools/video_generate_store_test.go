@@ -31,8 +31,12 @@ type fakeVideoJobs struct {
 	beforeInsert   func()
 	insertCtxErr   error
 	insertDeadline time.Time
-	claimErr       error
-	claims         []string
+	// claimErr fails a claim before it commits; lostAnswer fails it after it commits, as a
+	// dropped connection does; beforeClaim runs first, outside the lock, to stage a rival.
+	claimErr    error
+	lostAnswer  error
+	beforeClaim func(jobID string)
+	claims      []string
 }
 
 var _ mediagen.JobStore = (*fakeVideoJobs)(nil)
@@ -156,6 +160,9 @@ func (s *fakeVideoJobs) Complete(_ context.Context, ownerID, jobID, assetID stri
 }
 
 func (s *fakeVideoJobs) ClaimDelivery(ctx context.Context, ownerID, jobID, conversationID, deliveryCallID string) (mediagen.Job, bool, error) {
+	if s.beforeClaim != nil {
+		s.beforeClaim(jobID)
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls["ClaimDelivery"]++
@@ -172,6 +179,9 @@ func (s *fakeVideoJobs) ClaimDelivery(ctx context.Context, ownerID, jobID, conve
 	job.DeliveredAt = new(time.Now())
 	s.jobs[job.ID] = job
 	s.claims = append(s.claims, deliveryCallID)
+	if s.lostAnswer != nil {
+		return mediagen.Job{}, false, s.lostAnswer
+	}
 	return job, true, nil
 }
 

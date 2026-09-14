@@ -102,7 +102,7 @@ func (g *ImageGenerate) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 		return mediaErrorResult(err), nil
 	}
 
-	path, filename, err := stageMedia(ctx, generated.Bytes, generated.MIMEType)
+	path, filename, err := stageImage(ctx, generated.Bytes, generated.MIMEType)
 	if err != nil {
 		return errorResult("job_failed", "The image was generated but could not be staged for delivery."), nil
 	}

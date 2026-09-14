@@ -8,6 +8,16 @@ import (
 	"strings"
 )
 
+// AssetModality is the kind of identity-owned asset OpenOwned accepts.
+type AssetModality string
+
+// The two owned asset kinds media generation reads: the images a request refers to, and the
+// clip a finished video job delivers.
+const (
+	AssetImage AssetModality = "image"
+	AssetVideo AssetModality = "video"
+)
+
 // ReferenceMeta is what a ReferenceReader reports about one asset before its
 // bytes are read: the declared MIME type and modality, checked before the
 // stream is bounded and read, and the declared size, checked before that.
@@ -47,32 +57,56 @@ func LoadReferences(ctx context.Context, reader ReferenceReader, owner string, i
 }
 
 func loadReference(ctx context.Context, reader ReferenceReader, owner, id string, maxBytes int64) (ImageReference, error) {
+	rc, meta, err := OpenOwned(ctx, reader, owner, id, AssetImage, maxBytes)
+	if err != nil {
+		return ImageReference{}, err
+	}
+	defer func() { _ = rc.Close() }()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return ImageReference{}, err
+	}
+	dataURL := "data:" + meta.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(data)
+	return ImageReference{Type: "image_url", ImageURL: ImageURL{URL: dataURL}}, nil
+}
+
+// OpenOwned opens the identity's asset id through reader. Before any byte is read it refuses an
+// asset of another modality, by its declared modality and its MIME type alike, and one declaring
+// more than maxBytes. The reader it returns fails with too_large past maxBytes, so a declared
+// size that understates the stream is still bounded. The caller closes it.
+func OpenOwned(ctx context.Context, reader ReferenceReader, owner, id string, modality AssetModality, maxBytes int64) (io.ReadCloser, ReferenceMeta, error) {
 	if reader == nil {
-		return ImageReference{}, fmt.Errorf("mediagen: no reference reader is configured")
+		return nil, ReferenceMeta{}, fmt.Errorf("mediagen: no reference reader is configured")
+	}
+	if err := ValidByteLimit(maxBytes); err != nil {
+		return nil, ReferenceMeta{}, err
 	}
 	rc, meta, err := reader.Open(ctx, owner, id)
 	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ImageReference{}, ctxErr
+			return nil, ReferenceMeta{}, ctxErr
 		}
 		// Foreign, deleted and missing IDs are indistinguishable on purpose:
 		// none of them should tell the caller which one it was.
-		return ImageReference{}, &Error{Code: "asset_not_found", Message: "Referenced asset was not found."}
+		return nil, ReferenceMeta{}, &Error{Code: "asset_not_found", Message: "Referenced asset was not found."}
 	}
-	defer func() { _ = rc.Close() }()
+	var refusal *Error
+	switch {
+	case meta.Modality != string(modality) || !strings.HasPrefix(meta.MIMEType, string(modality)+"/"):
+		refusal = &Error{Code: "unsupported", Message: "Referenced asset is not " + modality.noun() + "."}
+	case meta.SizeBytes > maxBytes:
+		refusal = &Error{Code: "too_large", Message: "Referenced asset exceeds the configured byte limit."}
+	}
+	if refusal != nil {
+		_ = rc.Close()
+		return nil, ReferenceMeta{}, refusal
+	}
+	return capped(rc, maxBytes), meta, nil
+}
 
-	if meta.Modality != "image" || !strings.HasPrefix(meta.MIMEType, "image/") {
-		return ImageReference{}, &Error{Code: "unsupported", Message: "Referenced asset is not an image."}
+func (m AssetModality) noun() string {
+	if m == AssetImage {
+		return "an image"
 	}
-	if meta.SizeBytes > maxBytes {
-		return ImageReference{}, &Error{Code: "too_large", Message: "Referenced asset exceeds the configured byte limit."}
-	}
-
-	data, err := readCapped(rc, maxBytes)
-	if err != nil {
-		return ImageReference{}, err
-	}
-
-	dataURL := "data:" + meta.MIMEType + ";base64," + base64.StdEncoding.EncodeToString(data)
-	return ImageReference{Type: "image_url", ImageURL: ImageURL{URL: dataURL}}, nil
+	return "a " + string(m)
 }

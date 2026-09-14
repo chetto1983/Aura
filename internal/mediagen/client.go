@@ -121,8 +121,8 @@ func validProviderID(id string) (string, error) {
 }
 
 // ValidByteLimit rejects a maxBytes value that cannot bound anything: zero or
-// negative accepts nothing, and math.MaxInt64 (readCapped's own maxBytes+1
-// sentinel for "unbounded") would defeat the point of bounding at all. Every
+// negative accepts nothing, and math.MaxInt64 (a capped read looks one byte
+// past maxBytes to see the limit crossed) would defeat the point of bounding at all. Every
 // byte-bounded read in this package guards its limit with it, and NewWatcher
 // panics on a limit it rejects, so the composition root checks the boot
 // video ceiling with it before building a watcher.
@@ -133,22 +133,35 @@ func ValidByteLimit(maxBytes int64) error {
 	return nil
 }
 
-// readCapped reads at most maxBytes+1 bytes so a body exceeding the limit is
-// detected without buffering it in full. Shared by DownloadVideo's content
-// read and LoadReferences' owned-asset read: both bound an external byte
-// stream the same way.
+// readCapped reads a body bounded to maxBytes, detecting one that exceeds the
+// limit without buffering it in full.
 func readCapped(r io.Reader, maxBytes int64) ([]byte, error) {
 	if err := ValidByteLimit(maxBytes); err != nil {
 		return nil, err
 	}
-	data, err := io.ReadAll(io.LimitReader(r, maxBytes+1))
+	data, err := io.ReadAll(capped(io.NopCloser(r), maxBytes))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(data)) > maxBytes {
-		return nil, mediaTooLarge()
-	}
 	return data, nil
+}
+
+// cappedReader is http.MaxBytesReader's bound with this package's too_large
+// refusal in place of *http.MaxBytesError, so a downloaded clip, a reference
+// image and a restaged video all fail the same way past their limit. Callers
+// check maxBytes with ValidByteLimit first.
+type cappedReader struct{ io.ReadCloser }
+
+func capped(rc io.ReadCloser, maxBytes int64) io.ReadCloser {
+	return cappedReader{http.MaxBytesReader(nil, rc, maxBytes)}
+}
+
+func (c cappedReader) Read(p []byte) (int, error) {
+	n, err := c.ReadCloser.Read(p)
+	if _, over := errors.AsType[*http.MaxBytesError](err); over {
+		return n, mediaTooLarge()
+	}
+	return n, err
 }
 
 func mediaTooLarge() *Error {

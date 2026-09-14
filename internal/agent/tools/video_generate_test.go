@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -323,5 +324,75 @@ func TestVideoGenerateReportsATerminalFailureInline(t *testing.T) {
 	}
 	if notices := f.remainingNotices(t); len(notices) != 0 || f.jobs.count("ClaimDelivery") != 0 {
 		t.Fatalf("wakes %+v, claims %d; a failure reported inline is acknowledged", notices, f.jobs.count("ClaimDelivery"))
+	}
+}
+
+// A clip that finished inside the wait can still fail its hand-over at the claim. A claim that
+// never committed goes back to the wake path, once, and a collect delivers the same asset. A
+// claim that committed but lost its answer, or that a rival already won, is delivered: nobody is
+// woken, the call answers in_progress or already_delivered, and a collect answers
+// already_delivered.
+func TestVideoGenerateInlineHandOverWhenTheClaimFails(t *testing.T) {
+	for name, tc := range map[string]struct {
+		arrange       func(f *videoFixture)
+		inline        string
+		wakes         int
+		collectedCode string
+	}{
+		"claim refused before it commits": {
+			arrange: func(f *videoFixture) { f.jobs.claimErr = errors.New("connection reset") },
+			inline:  "in_progress", wakes: 1,
+		},
+		"claim committed, answer lost": {
+			arrange: func(f *videoFixture) { f.jobs.lostAnswer = errors.New("connection reset after commit") },
+			inline:  "in_progress", collectedCode: "already_delivered",
+		},
+		"claim lost to a rival": {
+			arrange: func(f *videoFixture) {
+				f.jobs.beforeClaim = func(jobID string) {
+					f.jobs.beforeClaim = nil
+					if _, won, err := f.jobs.ClaimDelivery(context.Background(), videoOwner, jobID, videoThread, "call-rival"); !won || err != nil {
+						t.Errorf("rival claim = %v, %v", won, err)
+					}
+				}
+			},
+			inline: "already_delivered", collectedCode: "already_delivered",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newVideoFixture(t)
+			tc.arrange(f)
+			res := f.execute(t, f.callCtx("call-video"), `{"prompt":"waves"}`)
+			job := f.jobs.inserted[0]
+			if tc.inline == "in_progress" {
+				if status := videoStatus(t, res); status.Status != "in_progress" || status.JobID != job.ID {
+					t.Fatalf("inline status = %+v, want in_progress for job %s", status, job.ID)
+				}
+			} else if code, _ := toolError(t, res); code != tc.inline {
+				t.Fatalf("inline code = %q, want %q", code, tc.inline)
+			}
+			if tc.wakes == 1 {
+				if notice := f.awaitNotice(t); notice.JobID != job.ID || notice.Status != mediagen.StatusCompleted {
+					t.Fatalf("wake = %+v", notice)
+				}
+			}
+			if notices := f.remainingNotices(t); len(notices) != 0 {
+				t.Fatalf("wakes beyond %d: %+v", tc.wakes, notices)
+			}
+			if dirs := stagedMediaDirs(t, f.runDir); len(dirs) != 0 {
+				t.Fatalf("an undelivered inline clip stayed staged in %v", dirs)
+			}
+			f.jobs.claimErr, f.jobs.lostAnswer = nil, nil
+			collected := f.execute(t, f.callCtx("call-collect"), `{"job_id":"`+job.ID+`"}`)
+			if tc.collectedCode != "" {
+				if code, _ := toolError(t, collected); code != tc.collectedCode {
+					t.Fatalf("collect code = %q, want %q", code, tc.collectedCode)
+				}
+				return
+			}
+			if descriptor := artifactMap(t, collected); descriptor["asset_id"] != f.library.assetOf(job.ID) {
+				t.Fatalf("collected %#v, want the watcher's asset %s", descriptor, f.library.assetOf(job.ID))
+			}
+		})
 	}
 }

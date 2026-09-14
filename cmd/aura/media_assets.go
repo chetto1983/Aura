@@ -24,10 +24,6 @@ var (
 
 var errNoAssetService = errors.New("asset service is not configured")
 
-// videoExtensions is keyed by the type http.DetectContentType sniffs from a clip's bytes: the
-// provider's Content-Type is never trusted, and assets accepts video only as MP4 or WebM.
-var videoExtensions = map[string]string{"video/mp4": ".mp4", "video/webm": ".webm"}
-
 func (a mediaAssetAdapter) Open(ctx context.Context, identityID, assetID string) (io.ReadCloser, mediagen.ReferenceMeta, error) {
 	if a.svc == nil {
 		return nil, mediagen.ReferenceMeta{}, errNoAssetService
@@ -54,10 +50,11 @@ func (a mediaAssetAdapter) IngestVideo(ctx context.Context, job mediagen.Job, da
 	if a.svc == nil {
 		return "", errNoAssetService
 	}
+	// The type is sniffed from the bytes: the provider's Content-Type is never trusted.
 	mimeType := http.DetectContentType(data)
-	extension, ok := videoExtensions[mimeType]
-	if !ok {
-		return "", &mediagen.Error{Code: "unsupported", Message: "The generated video is neither MP4 nor WebM."}
+	extension, err := mediagen.VideoExtension(mimeType)
+	if err != nil {
+		return "", err
 	}
 	asset, err := a.svc.IngestAgentFile(ctx, assets.AgentIngestRequest{
 		IdentityID: job.IdentityID,

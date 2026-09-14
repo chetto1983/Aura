@@ -33,6 +33,10 @@ type videoJobStatus struct {
 
 const videoStillRunning = "The video is still being generated. It will be announced in this conversation when it is ready; then call video_generate once with this job_id to deliver it. Do not submit it again."
 
+// videoRetryLater answers a collect that failed for a reason that may pass, such as staging or
+// the store: the job is untouched, so saying only that generation failed would be wrong.
+const videoRetryLater = "The video job could not be delivered right now. It is kept: call video_generate again with the same job_id to collect it. Do not submit it again."
+
 // collect delivers or reports an existing job from the store alone. It never tracks the job:
 // the watcher that submitted or resumed it already supervises it, and a job no watcher tracks is
 // finished. No credential, live model or provider request is needed to hand over a paid clip.
@@ -43,7 +47,7 @@ func (g *VideoGenerate) collect(ctx context.Context, owner, jobID string) ToolRe
 	case errors.Is(err, pgx.ErrNoRows), err == nil && job.ConversationID != tc.sessionID:
 		return videoJobNotFound()
 	case err != nil:
-		return mediaErrorResult(err)
+		return videoCollectFailed(err)
 	case job.DeliveredAt == nil && (job.Status == mediagen.StatusPending || job.Status == mediagen.StatusInProgress):
 		return videoInProgressResult(job, job.Status)
 	case job.DeliveredAt != nil || job.Status != mediagen.StatusCompleted:
@@ -60,11 +64,11 @@ func (g *VideoGenerate) collect(ctx context.Context, owner, jobID string) ToolRe
 func (g *VideoGenerate) handOver(ctx context.Context, owner string, job mediagen.Job) (ToolResult, bool) {
 	prompt, used, adjustments, err := videoSubmission(job)
 	if err != nil {
-		return mediaErrorResult(err), false
+		return videoCollectFailed(err), false
 	}
 	path, filename, mimeType, size, err := stageExistingVideo(ctx, g.VideoAssets, owner, job.AssetID, g.MaxVideoBytes)
 	if err != nil {
-		return mediaErrorResult(err), false
+		return videoCollectFailed(err), false
 	}
 	tc, _ := toolCallCtx(ctx)
 	_, claimed, err := g.Jobs.ClaimDelivery(ctx, owner, job.ID, tc.sessionID, tc.toolCallID)
@@ -75,7 +79,7 @@ func (g *VideoGenerate) handOver(ctx context.Context, owner string, job mediagen
 	case errors.Is(err, pgx.ErrNoRows):
 		return videoJobNotFound(), false
 	case err != nil:
-		return mediaErrorResult(err), false
+		return videoCollectFailed(err), false
 	case !claimed:
 		return videoAlreadyDelivered(), true
 	}
@@ -130,6 +134,15 @@ func videoOutcomeResult(job mediagen.Job) ToolResult {
 		return errorResult(job.Error.Code, storedMessage(job, "Video generation failed."))
 	}
 	return errorResult("job_failed", "Video generation failed.")
+}
+
+// videoCollectFailed keeps a coded refusal, such as a clip that is gone, and turns any other
+// failure into a job_failed that tells the model the same job_id can be collected again.
+func videoCollectFailed(err error) ToolResult {
+	if _, coded := errors.AsType[*mediagen.Error](err); coded {
+		return mediaErrorResult(err)
+	}
+	return errorResult("job_failed", videoRetryLater)
 }
 
 func storedMessage(job mediagen.Job, fallback string) string {

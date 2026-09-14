@@ -135,8 +135,9 @@ func TestVideoGenerateCollectLeavesTheJobCollectibleWhenStagingFails(t *testing.
 	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if code, _ := toolError(t, f.execute(t, f.callCtx("call-collect"), `{"job_id":"`+job.ID+`"}`)); code != "job_failed" {
-		t.Fatalf("code = %q, want job_failed", code)
+	code, message := toolError(t, f.execute(t, f.callCtx("call-collect"), `{"job_id":"`+job.ID+`"}`))
+	if code != "job_failed" || message != videoRetryLater {
+		t.Fatalf("got %q %q, want job_failed saying the same job_id can be collected again", code, message)
 	}
 	if f.jobs.count("ClaimDelivery") != 0 || f.jobs.job(job.ID).DeliveredAt != nil {
 		t.Fatal("a failed staging still claimed the delivery")
@@ -164,20 +165,19 @@ func TestVideoGenerateCollectReportsAClipThatIsGone(t *testing.T) {
 
 func TestVideoGenerateCollectDiscardsTheStagedClipWhenTheClaimFails(t *testing.T) {
 	for name, tc := range map[string]struct {
-		err  error
-		code string
+		err           error
+		code, message string
 	}{
-		"asset no longer bindable": {&mediagen.Error{Code: "asset_not_found", Message: "The generated video is not available for this job."}, "asset_not_found"},
-		"store unavailable":        {errors.New("dial tcp 10.0.0.7:5432: connection refused"), "job_failed"},
-		"job vanished":             {pgx.ErrNoRows, "asset_not_found"},
+		"asset no longer bindable": {&mediagen.Error{Code: "asset_not_found", Message: "The generated video is not available for this job."}, "asset_not_found", "The generated video is not available for this job."},
+		"store unavailable":        {errors.New("dial tcp 10.0.0.7:5432: connection refused"), "job_failed", videoRetryLater},
+		"job vanished":             {pgx.ErrNoRows, "asset_not_found", "No video job with this job_id exists in this conversation."},
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newVideoFixture(t)
 			job := f.seedJob(t, mediagen.StatusCompleted, videoThread)
 			f.jobs.claimErr = tc.err
-			code, message := toolError(t, f.execute(t, f.callCtx("call-collect"), `{"job_id":"`+job.ID+`"}`))
-			if code != tc.code || strings.Contains(message, "10.0.0.7") {
-				t.Fatalf("got %q %q, want %q without infrastructure detail", code, message, tc.code)
+			if code, message := toolError(t, f.execute(t, f.callCtx("call-collect"), `{"job_id":"`+job.ID+`"}`)); code != tc.code || message != tc.message {
+				t.Fatalf("got %q %q, want %q %q", code, message, tc.code, tc.message)
 			}
 			if dirs := stagedMediaDirs(t, f.runDir); len(dirs) != 0 {
 				t.Fatalf("an undelivered clip stayed staged in %v", dirs)

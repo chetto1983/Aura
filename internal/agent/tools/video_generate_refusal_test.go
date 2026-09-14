@@ -1,9 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -217,7 +219,10 @@ func TestVideoGenerateNeverResubmitsAfterAProviderTimeoutOrFailure(t *testing.T)
 	}
 }
 
+// A lost Insert leaves a paid provider job that only the log names: the operator reconciles it
+// from the owner and provider job ID, and the log never carries the key.
 func TestVideoGenerateReportsAnUnrecordedSubmissionWithoutResubmitting(t *testing.T) {
+	logs := captureLogs(t)
 	f := newVideoFixture(t)
 	f.jobs.insertErr = errors.New("dial tcp 10.0.0.7:5432: connection refused")
 	code, message := toolError(t, f.execute(t, f.callCtx("call-video"), `{"prompt":"waves"}`))
@@ -227,4 +232,23 @@ func TestVideoGenerateReportsAnUnrecordedSubmissionWithoutResubmitting(t *testin
 	if notices := f.remainingNotices(t); len(notices) != 0 || f.provider.count("POST /videos") != 1 || f.provider.count("GET /videos/vid_1") != 0 {
 		t.Fatalf("requests %v, wakes %+v; want one submit and no supervision", f.provider.seen(), notices)
 	}
+	logged := logs.String()
+	for _, want := range []string{"level=ERROR", "owner=" + videoOwner, "provider_job_id=vid_1"} {
+		if !strings.Contains(logged, want) {
+			t.Errorf("log %q lacks %q", logged, want)
+		}
+	}
+	if strings.Count(logged, "level=") != 1 || strings.Contains(logged, "identity-key") || strings.Contains(logged, "Bearer") {
+		t.Fatalf("log %q, want one record without the identity key", logged)
+	}
+}
+
+// captureLogs sends the default logger to a buffer for the test, keeping test output clean.
+func captureLogs(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+	return &logs
 }

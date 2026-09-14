@@ -196,3 +196,37 @@ func TestLoadReferencesPropagatesContextCancellationDistinctFromNotFound(t *test
 		t.Fatal("cancellation must not be mislabeled as asset_not_found")
 	}
 }
+
+// A delivered clip is opened like a reference image, as a video: its stream is bounded past the
+// limit whatever size it declares, and an asset of another modality is refused and closed.
+func TestOpenOwnedBoundsAVideoAndRefusesOtherModalities(t *testing.T) {
+	clip := []byte("0123456789")
+	reader := &fakeReferenceReader{assets: map[string]*fakeAsset{
+		"owner/clip":    {data: clip, meta: ReferenceMeta{MIMEType: "video/mp4", Modality: "video", SizeBytes: int64(len(clip))}},
+		"owner/lying":   {meta: ReferenceMeta{MIMEType: "video/webm", Modality: "video", SizeBytes: 2}, streamed: clip},
+		"owner/picture": {data: clip, meta: ReferenceMeta{MIMEType: "image/png", Modality: "image", SizeBytes: int64(len(clip))}},
+	}}
+	rc, meta, err := OpenOwned(context.Background(), reader, "owner", "clip", AssetVideo, 10)
+	if err != nil || meta.MIMEType != "video/mp4" {
+		t.Fatalf("OpenOwned = %+v, %v", meta, err)
+	}
+	if data, err := io.ReadAll(rc); err != nil || string(data) != string(clip) {
+		t.Fatalf("read %q, %v; want the whole clip at exactly the limit", data, err)
+	}
+	if err := rc.Close(); err != nil || !reader.assets["owner/clip"].closed {
+		t.Fatalf("Close = %v, want the underlying reader closed", err)
+	}
+
+	rc, _, err = OpenOwned(context.Background(), reader, "owner", "lying", AssetVideo, 8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadAll(rc); ErrorCode(err) != "too_large" {
+		t.Fatalf("reading past the limit = %v, want too_large", err)
+	}
+
+	_, _, err = OpenOwned(context.Background(), reader, "owner", "picture", AssetVideo, 10)
+	if ErrorCode(err) != "unsupported" || err.Error() != "Referenced asset is not a video." || !reader.assets["owner/picture"].closed {
+		t.Fatalf("image opened as video = %v (closed %v), want unsupported and closed", err, reader.assets["owner/picture"].closed)
+	}
+}

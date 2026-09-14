@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -209,5 +210,20 @@ func TestImageGenerateReportsAFailedIngestWithoutAnArtifact(t *testing.T) {
 	}
 	if dirs := stagedMediaDirs(t, f.runDir); len(dirs) != 0 {
 		t.Fatalf("an undelivered image stayed staged in %v", dirs)
+	}
+}
+
+// A provider answer declaring a video whose bytes really are MP4 passes a sniff-versus-declared
+// check, so only an image-only gate keeps image_generate from staging and ingesting a clip.
+func TestImageGenerateRefusesAVideoDeclaredAndSniffedAsVideo(t *testing.T) {
+	f := newImageFixture(t, func(p *fakeOpenRouter, _ []byte) {
+		p.imageBody = `{"data":[{"b64_json":"` + base64.StdEncoding.EncodeToString(generatedClip) + `","media_type":"video/mp4"}],"usage":{"cost":0.04}}`
+	})
+	if code, _ := toolError(t, f.execute(t, `{"prompt":"a picture"}`)); code != "unsupported" {
+		t.Fatalf("code = %q, want unsupported for a video answered to an image request", code)
+	}
+	if f.provider.generations() != 1 || f.deliverer.calls != 0 || len(stagedMediaDirs(t, f.runDir)) != 0 {
+		t.Fatalf("generations=%d ingests=%d staged=%v, want the paid call and nothing staged or ingested",
+			f.provider.generations(), f.deliverer.calls, stagedMediaDirs(t, f.runDir))
 	}
 }

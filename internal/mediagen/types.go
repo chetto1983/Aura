@@ -14,6 +14,19 @@ const (
 	StatusCancelled  Status = "cancelled"
 )
 
+// VideoExtension names a clip of mimeType for storage and delivery. Aura keeps video only as MP4
+// or WebM, the two formats the assets service accepts as video; any other type is refused as
+// unsupported.
+func VideoExtension(mimeType string) (string, error) {
+	switch mimeType {
+	case "video/mp4":
+		return ".mp4", nil
+	case "video/webm":
+		return ".webm", nil
+	}
+	return "", &Error{Code: "unsupported", Message: "The generated video is neither MP4 nor WebM."}
+}
+
 // ImageInput is the caller-requested shape of an image generation call, before
 // ClampImage narrows it to what the target Model actually declares.
 type ImageInput struct {

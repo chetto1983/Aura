@@ -51,9 +51,9 @@ func TestMediaDeliveryStagesEachGeneratedTypeUnderTheRunDirectory(t *testing.T) 
 		t.Run(mimeType, func(t *testing.T) {
 			runDir := t.TempDir()
 			data := []byte("bytes of " + mimeType)
-			path, filename, err := stageMedia(mediaCtx(t, runDir), data, mimeType)
+			path, filename, err := stageImage(mediaCtx(t, runDir), data, mimeType)
 			if err != nil {
-				t.Fatalf("stageMedia: %v", err)
+				t.Fatalf("stageImage: %v", err)
 			}
 			if filename != wantName || filepath.Base(path) != wantName {
 				t.Fatalf("staged %q as %q, want fixed basename %q", path, filename, wantName)
@@ -95,8 +95,8 @@ func TestMediaDeliveryStagesEachGeneratedTypeUnderTheRunDirectory(t *testing.T) 
 
 func TestMediaDeliveryRefusesAnUnknownTypeWithoutCreatingAnything(t *testing.T) {
 	runDir := t.TempDir()
-	if _, _, err := stageMedia(mediaCtx(t, runDir), []byte("<html>"), "text/html"); err == nil {
-		t.Fatal("stageMedia accepted a type generation never returns")
+	if _, _, err := stageImage(mediaCtx(t, runDir), []byte("<html>"), "text/html"); err == nil {
+		t.Fatal("stageImage accepted a type generation never returns")
 	}
 	if dirs := stagedMediaDirs(t, runDir); len(dirs) != 0 {
 		t.Fatalf("refused staging left %v behind", dirs)
@@ -122,8 +122,8 @@ func TestMediaDeliveryRefusesAnUnusableRunDirectory(t *testing.T) {
 	}
 	for name, ctx := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := stageMedia(ctx, []byte("png"), "image/png"); err == nil {
-				t.Fatal("stageMedia staged without a usable run directory")
+			if _, _, err := stageImage(ctx, []byte("png"), "image/png"); err == nil {
+				t.Fatal("stageImage staged without a usable run directory")
 			}
 		})
 	}
@@ -138,8 +138,8 @@ func TestMediaDeliveryRefusesAStagingRootThatEscapesTheRunDirectory(t *testing.T
 	if err := os.Symlink(outside, filepath.Join(runDir, "tmp")); err != nil {
 		t.Skipf("symlinks unavailable on this platform: %v", err)
 	}
-	if _, _, err := stageMedia(mediaCtx(t, runDir), []byte("png"), "image/png"); err == nil {
-		t.Fatal("stageMedia followed a tmp symlink out of the run directory")
+	if _, _, err := stageImage(mediaCtx(t, runDir), []byte("png"), "image/png"); err == nil {
+		t.Fatal("stageImage followed a tmp symlink out of the run directory")
 	}
 	entries, err := os.ReadDir(outside)
 	if err != nil {
@@ -223,8 +223,9 @@ func (c understatedClip) Open(context.Context, string, string) (io.ReadCloser, m
 func TestMediaDeliveryRefusesAVideoItCannotRestage(t *testing.T) {
 	library := &fakeVideoLibrary{clips: map[string]storedClip{}, bySource: map[string]string{}}
 	owned := library.store("owner-1")
-	image := &fakeReferenceReader{assets: map[string]ownedReference{
-		"picture": {owner: "owner-1", mimeType: "image/png", modality: "image", data: []byte("png")},
+	others := &fakeReferenceReader{assets: map[string]ownedReference{
+		"picture":   {owner: "owner-1", mimeType: "image/png", modality: "image", data: []byte("png")},
+		"quicktime": {owner: "owner-1", mimeType: "video/quicktime", modality: "video", data: generatedClip},
 	}}
 	cases := map[string]struct {
 		reader   mediagen.ReferenceReader
@@ -234,7 +235,8 @@ func TestMediaDeliveryRefusesAVideoItCannotRestage(t *testing.T) {
 	}{
 		"foreign clip":         {library, library.store("owner-2"), 1 << 20, "asset_not_found"},
 		"missing clip":         {library, "gone", 1 << 20, "asset_not_found"},
-		"not a video":          {image, "picture", 1 << 20, "asset_not_found"},
+		"not a video":          {others, "picture", 1 << 20, "unsupported"},
+		"not MP4 or WebM":      {others, "quicktime", 1 << 20, "unsupported"},
 		"declared over limit":  {library, owned, 8, "too_large"},
 		"streamed over limit":  {understatedClip{data: generatedClip}, "lying", 8, "too_large"},
 		"limit bounds nothing": {library, owned, 0, "too_large"},
@@ -260,5 +262,18 @@ func TestMediaDeliveryArtifactResultRefusesAnUnencodablePreview(t *testing.T) {
 	var body map[string]string
 	if err := json.Unmarshal([]byte(res.Preview), &body); err != nil || body["error"] != "job_failed" {
 		t.Fatalf("preview = %q, want a job_failed error result", res.Preview)
+	}
+}
+
+// Image staging keeps an image-only type set: a clip is never staged as an image delivery.
+func TestMediaDeliveryImageStagingRefusesVideoTypes(t *testing.T) {
+	for _, mimeType := range []string{"video/mp4", "video/webm"} {
+		runDir := t.TempDir()
+		if _, _, err := stageImage(mediaCtx(t, runDir), generatedClip, mimeType); err == nil {
+			t.Fatalf("stageImage accepted %s", mimeType)
+		}
+		if dirs := stagedMediaDirs(t, runDir); len(dirs) != 0 {
+			t.Fatalf("refused %s left %v behind", mimeType, dirs)
+		}
 	}
 }
