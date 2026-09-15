@@ -2,9 +2,7 @@ import { useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import type { LLMCatalogModel } from './settingsApi';
 import type { ModelCatalogState } from './useModelCatalog';
-import { modelMeta } from './modelCatalogFormat';
 import {
   ModelSelectorContent,
   ModelSelectorEmpty,
@@ -18,21 +16,22 @@ import {
 } from '@/components/model-selector';
 import { CommandItem } from '@/components/ui/command';
 
-// ModelPicker is assistant-ui's model-selector element over the catalogue the daemon
-// probes from the configured endpoint. The list is grouped by vendor (OpenRouter ids are
-// `vendor/name`; llama.cpp and Ollama publish flat ids and land in one group), each row
-// carrying the two numbers a routing decision actually turns on: the context window and,
-// where the provider charges per token, its input/output rate.
+// ModelPicker is assistant-ui's model-selector element over a catalogue the daemon lists:
+// the LLM endpoint's models, or OpenRouter's image or video models. The list is grouped by
+// vendor (OpenRouter ids are `vendor/name`; llama.cpp and Ollama publish flat ids and land
+// in one group), and `formatRow` writes the numbers a choice turns on — context window and
+// token rates for an LLM, per-image or per-second prices and capabilities for media.
 //
 // Free text survives: llama.cpp serves aliases its catalogue does not list and an
 // unreachable endpoint must not block a save, so a typed id that matches nothing is
 // offered as its own row instead of being swallowed.
 
-interface ModelPickerProps {
+interface ModelPickerProps<M extends { readonly id: string }> {
   readonly id: string;
   readonly value: string;
-  readonly catalog: ModelCatalogState;
+  readonly catalog: ModelCatalogState<M>;
   readonly onChange: (value: string) => void;
+  readonly formatRow: (model: M, freeLabel: string) => string;
 }
 
 interface ModelGroup {
@@ -47,16 +46,17 @@ function vendorOf(id: string): string {
   return rest === undefined || vendor === undefined ? '' : vendor;
 }
 
-function toModelOptions(
-  models: readonly LLMCatalogModel[],
+function toModelOptions<M extends { readonly id: string }>(
+  models: readonly M[],
   freeLabel: string,
+  formatRow: (model: M, freeLabel: string) => string,
 ): readonly ModelOption[] {
   return models.map((model) => {
     const vendor = vendorOf(model.id);
     return {
       id: model.id,
       name: model.id,
-      description: modelMeta(model, freeLabel),
+      description: formatRow(model, freeLabel),
       ...(vendor === '' ? {} : { keywords: [vendor] }),
     };
   });
@@ -73,10 +73,16 @@ function groupByVendor(options: readonly ModelOption[]): readonly ModelGroup[] {
   return [...groups].map(([name, models]) => ({ name, models }));
 }
 
-export function ModelPicker({ id, value, catalog, onChange }: ModelPickerProps) {
+export function ModelPicker<M extends { readonly id: string }>({
+  id,
+  value,
+  catalog,
+  onChange,
+  formatRow,
+}: ModelPickerProps<M>) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
-  const options = toModelOptions(catalog.models, t('settings.models.noCharge'));
+  const options = toModelOptions(catalog.models, t('settings.models.noCharge'), formatRow);
   // The saved model may not be in the catalogue (an alias, or a route the endpoint no
   // longer serves). It still has to render as the current value rather than disappear.
   const known = options.some((option) => option.id === value);

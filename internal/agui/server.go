@@ -152,6 +152,7 @@ type Server struct {
 	// modelCatalog overrides the outbound GET /models probe (settings_llm_models.go).
 	// Nil in production: the handler builds its own client.
 	modelCatalog modelCatalogFetcher
+	mediaCatalog MediaCatalogLister
 	settingsMu   sync.Mutex
 	audit        auditReader
 	idAdmin      identityAdmin

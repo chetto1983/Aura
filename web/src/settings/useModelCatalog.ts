@@ -3,11 +3,16 @@ import { fetchLLMModels, type LLMCatalogModel } from './settingsApi';
 
 export type CatalogStatus = 'idle' | 'loading' | 'ready' | 'error';
 
-export interface ModelCatalogState {
-  readonly models: readonly LLMCatalogModel[];
+export interface ModelCatalogState<M = LLMCatalogModel> {
+  readonly models: readonly M[];
   readonly status: CatalogStatus;
   readonly error: string | undefined;
   readonly reload: () => void;
+}
+
+/** Why a catalogue read failed, as the picker shows it. */
+export function catalogError(err: unknown): string {
+  return err instanceof Error && err.message.trim() !== '' ? err.message : String(err);
 }
 
 // The probe is debounced because the base URL is a text box: fetching on every keystroke
@@ -56,7 +61,7 @@ export function useModelCatalog(provider: string, baseURL: string): ModelCatalog
       if (ticket !== sequence.current) return;
       setModels([]);
       setStatus('error');
-      setError(err instanceof Error && err.message.trim() !== '' ? err.message : String(err));
+      setError(catalogError(err));
     }
   }, [baseURL, provider]);
 

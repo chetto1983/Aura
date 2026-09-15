@@ -54,10 +54,16 @@ func (p mediaCredentials) For(ctx context.Context, owner string) (string, string
 	if err != nil {
 		return "", "", err
 	}
-	if llm.ReasoningTarget(snap.Config.Provider, snap.Config.BaseURL) != llm.ReasoningTargetOpenRouter ||
-		llm.IsKeylessLocalBaseURL(snap.Config.BaseURL) ||
-		strings.TrimSpace(snap.Config.APIKey) == "" {
+	if !openRouterMediaRoute(snap.Config) || strings.TrimSpace(snap.Config.APIKey) == "" {
 		return "", "", &mediagen.Error{Code: "no_key", Message: "Generation requires the OpenRouter route."}
 	}
 	return snap.Config.BaseURL, snap.Config.APIKey, nil
+}
+
+// openRouterMediaRoute reports whether cfg is a route generation can run on: OpenRouter, and
+// not a keyless local host even when it is labelled openrouter. The credential port and the
+// settings picker's catalog decide it here, so they never disagree about a route.
+func openRouterMediaRoute(cfg llm.Config) bool {
+	return llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetOpenRouter &&
+		!llm.IsKeylessLocalBaseURL(cfg.BaseURL)
 }

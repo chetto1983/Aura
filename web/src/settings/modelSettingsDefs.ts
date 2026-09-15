@@ -29,7 +29,9 @@ export type SettingsKey =
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_TTS_MODEL'
-  | 'AURA_STT_CLOUD_MODEL';
+  | 'AURA_STT_CLOUD_MODEL'
+  | 'AURA_IMAGE_MODEL'
+  | 'AURA_VIDEO_MODEL';
 
 export interface SettingDef {
   readonly key: SettingsKey;
@@ -81,6 +83,22 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     labelKey: 'settings.fields.openRouterManagementKey',
     placeholder: 'sk-or-v1-...',
     helpKey: 'settings.help.openRouterManagementKey',
+  },
+  // Generation is served by OpenRouter only, so the two media models are Cloud rows. Each is
+  // read on every generation call: a saved model is live for the next image or video.
+  {
+    key: 'AURA_IMAGE_MODEL',
+    kind: 'string',
+    cloudOnly: true,
+    labelKey: 'settings.fields.imageModel',
+    placeholder: 'microsoft/mai-image-2.6',
+  },
+  {
+    key: 'AURA_VIDEO_MODEL',
+    kind: 'string',
+    cloudOnly: true,
+    labelKey: 'settings.fields.videoModel',
+    placeholder: 'minimax/hailuo-3-max',
   },
 ];
 

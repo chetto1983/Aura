@@ -96,7 +96,7 @@ export interface TelegramLinkStatus {
   readonly linked: boolean;
 }
 
-async function readJSON<T>(res: Response): Promise<T> {
+export async function readJSON<T>(res: Response): Promise<T> {
   if (!res.ok) {
     throw new Error(await readErrorMessage(res));
   }

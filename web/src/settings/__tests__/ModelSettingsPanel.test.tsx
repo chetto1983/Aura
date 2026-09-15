@@ -369,7 +369,9 @@ describe('ModelSettingsPanel', () => {
         if (method === 'DELETE') {
           return deletePromise;
         }
-        getCount += 1;
+        // Only the settings list proves the post-reset reload: route memory and the model
+        // catalogues are separate GETs on their own schedules.
+        if (url === '/api/settings') getCount += 1;
         return Promise.resolve(jsonResponse(SETTINGS_BODY));
       }),
     );

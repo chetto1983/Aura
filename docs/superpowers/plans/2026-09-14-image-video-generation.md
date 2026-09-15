@@ -1065,7 +1065,7 @@ git commit -m "feat(tools): generate and collect durable video artifacts" -m "Us
 - Generalize `ModelCatalogState<M = LLMCatalogModel>`; `ModelPicker<M extends {readonly id:string}>` accepts required `formatRow: (model:M, freeLabel:string) => string`.
 - `imageModelMeta(model: ImageCatalogModel, labels: MediaLabels): string`; `videoModelMeta(model: VideoCatalogModel, labels: MediaLabels): string`. `MediaLabels` contains `references:(max:number)=>string`, `duration:(min:number,max:number)=>string`, and `imageToVideo:string`; the React caller builds it from `t` and tests provide explicit labels.
 
-- [ ] **Step 1: Write formatter and picker tests.**
+- [x] **Step 1: Write formatter and picker tests.**
 
 ~~~tsx
 const labels = {
@@ -1089,14 +1089,14 @@ it('shows per-second prices and never token prices as per-image prices', () => {
 
 Extend ModelPicker tests: image/video row formatting, vendor grouping, custom entry, missing saved model, search/count, error and Refresh. Existing LLM tests must still show their exact context/token-price labels.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 cd web
 npx vitest run src/settings/__tests__/mediaModelCatalogFormat.test.ts src/settings/__tests__/ModelPicker.test.tsx
 ~~~
 
-- [ ] **Step 3: Implement handlers on the shared catalog.**
+- [x] **Step 3: Implement handlers on the shared catalog.**
 
 ~~~go
 mux.HandleFunc("GET /api/settings/image-models", s.handleListImageModels)
@@ -1107,7 +1107,7 @@ Mount both through `RequireCapability(..., governanceWriteCapability)` in the ou
 
 Tests must exercise both inner routes and outer capability enforcement. Verify member model-row writes/deletes are refused even when the member has governance.write; admin changes are visible to the next tool call on the same daemon instance.
 
-- [ ] **Step 4: Generalize picker data without duplicating its UI.**
+- [x] **Step 4: Generalize picker data without duplicating its UI.**
 
 ~~~tsx
 interface ModelPickerProps<M extends { readonly id: string }> {
@@ -1125,7 +1125,7 @@ Define `ModelRow = LLMCatalogModel | MediaCatalogModel` and `PickerBinding{catal
 
 The media hook fetches only while cloud mode is active, uses AbortController/sequence invalidation on disable/unmount, and sends `refresh=1` for the Refresh button. Catalog errors do not disable saving a custom model ID. Add English/Italian labels for image model, video model, references, seconds and image-to-video in `resources.settings.ts`.
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~sh
 go test ./internal/agui ./cmd/aura -count=1

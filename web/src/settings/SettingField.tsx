@@ -6,6 +6,7 @@ import type { SettingItem } from './settingsApi';
 import type { SettingDef, SettingsKey } from './modelSettingsDefs';
 import { settingRow, type LoadedState } from './modelSettingsState';
 import { ModelPicker } from './ModelPicker';
+import type { ModelRow } from './mediaModelCatalog';
 import type { ModelCatalogState } from './useModelCatalog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -18,13 +19,20 @@ function SettingsGrid({ children }: { readonly children: ReactNode }) {
   return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>;
 }
 
+/** One model field's catalogue and the formatter that writes its rows. */
+export interface PickerBinding {
+  readonly catalog: ModelCatalogState<ModelRow>;
+  readonly formatRow: (row: ModelRow, freeLabel: string) => string;
+}
+
+export type PickerBindings = Partial<Readonly<Record<SettingsKey, PickerBinding>>>;
+
 export function SettingsFields({
-  catalog,
-  catalogKey,
   defs,
   loaded,
   onReset,
   onValueChange,
+  pickers,
   resetting,
 }: {
   readonly defs: readonly SettingDef[];
@@ -32,9 +40,8 @@ export function SettingsFields({
   readonly resetting: string | undefined;
   readonly onValueChange: (key: SettingsKey, value: string) => void;
   readonly onReset: (key: SettingsKey) => void;
-  /** The published models offered for `catalogKey`; absent leaves every field free text. */
-  readonly catalog?: ModelCatalogState | undefined;
-  readonly catalogKey?: SettingsKey | undefined;
+  /** The catalogue each model field picks from; a field without one stays free text. */
+  readonly pickers?: PickerBindings | undefined;
 }) {
   return (
     <SettingsGrid>
@@ -44,7 +51,7 @@ export function SettingsFields({
           def={def}
           item={settingRow(loaded, def)}
           value={loaded.values[def.key] ?? ''}
-          catalog={def.key === catalogKey ? catalog : undefined}
+          picker={pickers?.[def.key]}
           onChange={(value) => {
             onValueChange(def.key, value);
           }}
@@ -59,11 +66,11 @@ export function SettingsFields({
 }
 
 function SettingField({
-  catalog,
   def,
   item,
   onChange,
   onReset,
+  picker,
   resetting,
   value,
 }: {
@@ -73,7 +80,7 @@ function SettingField({
   readonly onChange: (value: string) => void;
   readonly onReset: () => void;
   readonly resetting: boolean;
-  readonly catalog?: ModelCatalogState | undefined;
+  readonly picker?: PickerBinding | undefined;
 }) {
   const { t } = useTranslation();
   const inputId = `setting-${def.key}`;
@@ -108,8 +115,14 @@ function SettingField({
           />
           {t('settings.fields.enabled')}
         </label>
-      ) : catalog !== undefined ? (
-        <ModelPicker id={inputId} value={value} catalog={catalog} onChange={onChange} />
+      ) : picker !== undefined ? (
+        <ModelPicker
+          id={inputId}
+          value={value}
+          catalog={picker.catalog}
+          formatRow={picker.formatRow}
+          onChange={onChange}
+        />
       ) : def.secret ? (
         <SecretInput
           id={inputId}

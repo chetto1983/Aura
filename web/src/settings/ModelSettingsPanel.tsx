@@ -1,11 +1,15 @@
 import { useMemo } from 'react';
+import type { TFunction } from 'i18next';
 import { Cloud, Cpu, RefreshCw, Save, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import { SettingsFields } from './SettingField';
+import { SettingsFields, type PickerBindings } from './SettingField';
 import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog } from './useModelCatalog';
+import { useMediaModelCatalog } from './useMediaModelCatalog';
+import type { ModelRow } from './mediaModelCatalog';
+import { modelRowMeta, type MediaLabels } from './mediaModelCatalogFormat';
 import {
   MODEL_SETTINGS_GROUPS,
   PROVIDER_OPTIONS,
@@ -28,6 +32,17 @@ const PROVIDER_ICONS: Record<ProviderChoice, typeof Cloud> = {
 // providerIDOf turns the active button back into the provider id the catalogue probe takes.
 function providerIDOf(choice: ProviderChoice): string {
   return PROVIDER_OPTIONS.find((option) => option.id === choice)?.provider ?? '';
+}
+
+function mediaLabels(t: TFunction): MediaLabels {
+  return {
+    references: (max) => t('settings.models.references', { count: max }),
+    duration: (min, max) =>
+      t('settings.models.seconds', {
+        range: min === max ? String(min) : `${String(min)}–${String(max)}`,
+      }),
+    imageToVideo: t('settings.models.imageToVideo'),
+  };
 }
 
 interface ModelSettingsPanelProps {
@@ -84,6 +99,11 @@ export function ModelSettingsPanel({
   // The catalogue follows the FORM route, not the saved one, so the model list is the list
   // of the endpoint the operator is currently pointing at.
   const catalog = useModelCatalog(providerIDOf(provider), formBaseURL);
+  // The media models are Cloud rows of the routing pane: their catalogues are asked for only
+  // while that pane is showing them, never while the settings are still loading.
+  const mediaEnabled = loaded !== undefined && provider === 'cloud' && groups.includes('routing');
+  const imageCatalog = useMediaModelCatalog('image', mediaEnabled);
+  const videoCatalog = useMediaModelCatalog('video', mediaEnabled);
 
   if (loadStatus === 'loading') {
     return (
@@ -114,6 +134,13 @@ export function ModelSettingsPanel({
     onComplete !== undefined && dirtyKeys.length === 0
       ? t('settings.actions.continue')
       : (saveLabel ?? t('settings.actions.save'));
+  const labels = mediaLabels(t);
+  const formatRow = (row: ModelRow, freeLabel: string) => modelRowMeta(row, freeLabel, labels);
+  const pickers: PickerBindings = {
+    AURA_LLM_MODEL: { catalog, formatRow },
+    AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
+    AURA_VIDEO_MODEL: { catalog: videoCatalog, formatRow },
+  };
 
   return (
     <div className={cn('flex flex-col gap-7', className)}>
@@ -174,8 +201,7 @@ export function ModelSettingsPanel({
             resetting={resetting}
             onValueChange={setValue}
             onReset={(key) => void resetSetting(key)}
-            catalog={group.id === 'routing' ? catalog : undefined}
-            catalogKey="AURA_LLM_MODEL"
+            pickers={group.id === 'routing' ? pickers : undefined}
           />
         </section>
       ))}
