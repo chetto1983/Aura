@@ -1,5 +1,5 @@
 import type { ImageCatalogModel, ModelRow, VideoCatalogModel } from './mediaModelCatalog';
-import { formatRate, modelMeta } from './modelCatalogFormat';
+import { modelMeta } from './modelCatalogFormat';
 
 /** The localized words of a media row; the numbers and units are written here. */
 export interface MediaLabels {
@@ -8,11 +8,21 @@ export interface MediaLabels {
   readonly imageToVideo: string;
 }
 
+// Per-image and per-second prices sit in the cents and below, where rounding to cents would
+// turn $0.039 into $0.04 and a $0.035–$0.039 range into one price; four significant digits
+// keep them apart, and trailing zeros are dropped.
+const MEDIA_PRICE = new Intl.NumberFormat('en-US', {
+  maximumSignificantDigits: 4,
+  useGrouping: false,
+});
+
 // A price shows only when both ends are known: filling in a missing end would state a range
 // the catalogue never published.
 function priceRange(min: number | undefined, max: number | undefined): string | undefined {
   if (min === undefined || max === undefined) return undefined;
-  return min === max ? formatRate(min) : `${formatRate(min)}–${formatRate(max)}`;
+  const low = `$${MEDIA_PRICE.format(min)}`;
+  const high = `$${MEDIA_PRICE.format(max)}`;
+  return low === high ? low : `${low}–${high}`;
 }
 
 /** An image row: the per-image price, when the model has one, and its reference limit. */

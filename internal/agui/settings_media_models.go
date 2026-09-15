@@ -25,7 +25,7 @@ type MediaCatalogLister interface {
 // ErrMediaCatalogLocalRoute refuses the media catalogues on a llama.cpp, Ollama or other
 // non-OpenRouter route: generation is served by OpenRouter only.
 var ErrMediaCatalogLocalRoute = errors.New(
-	"image and video models are listed only on the OpenRouter route: choose Cloud in Model routing and save, then refresh",
+	"image and video models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
 )
 
 // SetMediaCatalog wires the shared media catalog. Until set, both routes answer 503.
@@ -100,14 +100,16 @@ func imageCapabilities(row *mediaCatalogModelDTO, model mediagen.Model) {
 	}
 }
 
-// videoCapabilities reports image-to-video exactly as ClampVideo decides it: a model that
-// does not list first_frame refuses a starting image.
+// videoCapabilities reports image-to-video as ClampVideo decides it (a model whose frame images
+// do not list first_frame refuses a starting image), and only when frame images are declared.
 func videoCapabilities(row *mediaCatalogModelDTO, model mediagen.Model) {
 	if len(model.Durations) > 0 {
 		row.DurationMin, row.DurationMax = new(slices.Min(model.Durations)), new(slices.Max(model.Durations))
 	}
 	row.Resolutions = model.Resolutions
-	row.ImageToVideo = new(slices.Contains(model.FrameImages, "first_frame"))
+	if len(model.FrameImages) > 0 {
+		row.ImageToVideo = new(slices.Contains(model.FrameImages, "first_frame"))
+	}
 	if low, high, ok := mediagen.VideoPrice(model.PricingSKUs); ok {
 		row.SecondMinUSD, row.SecondMaxUSD, row.HasPrice = &low, &high, true
 	}

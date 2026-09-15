@@ -230,6 +230,77 @@ describe('ModelSettingsPanel media models', () => {
     });
   });
 
+  it('lists the media models as soon as the Cloud route is saved, with no Refresh', async () => {
+    // The daemon answers from the SAVED route: while it is local both catalogues refuse.
+    let saved = settingsBody('llamacpp', 'http://aura-llm:8084/v1');
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        const method = init?.method ?? 'GET';
+        calls.push({ method, url, body: typeof init?.body === 'string' ? init.body : undefined });
+        if (method === 'PUT') {
+          saved = settingsBody('openrouter', 'https://openrouter.ai/api/v1');
+          return Promise.resolve(json({ updated: 3, restart_required: false }));
+        }
+        const refused = json(
+          { error: 'image and video models are listed only on the OpenRouter route' },
+          409,
+        );
+        const local = saved.settings[0]?.value === 'llamacpp';
+        if (url.startsWith('/api/settings/image-models'))
+          return Promise.resolve(local ? refused : json(IMAGE_BODY));
+        if (url.startsWith('/api/settings/video-models'))
+          return Promise.resolve(local ? refused : json(VIDEO_BODY));
+        if (url.startsWith('/api/settings/llm-'))
+          return Promise.resolve(json({ models: [], routes: [] }));
+        return Promise.resolve(json(saved));
+      }),
+    );
+    renderPanel();
+
+    await screen.findByLabelText('Primary model');
+    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    await screen.findByLabelText('Image generation model');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(mediaGets(calls)).toEqual([]);
+    expect(screen.queryByText(/only on the OpenRouter route/)).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Image generation model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Video generation model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    expect(mediaGets(calls)).toEqual(['/api/settings/image-models', '/api/settings/video-models']);
+    expect(screen.queryByText(/only on the OpenRouter route/)).toBeNull();
+  });
+
+  it('labels an unsaved media model as applying immediately', async () => {
+    const body = settingsBody('openrouter', 'https://openrouter.ai/api/v1');
+    stubFetch({
+      ...body,
+      settings: body.settings.filter((row) => !/^AURA_(IMAGE|VIDEO)_MODEL$/.test(row.key)),
+    });
+    renderPanel();
+
+    await screen.findByLabelText('Image generation model');
+    expect(
+      within(fieldCard('Image generation model')).getByText('Applies immediately'),
+    ).toBeTruthy();
+    expect(
+      within(fieldCard('Video generation model')).getByText('Applies immediately'),
+    ).toBeTruthy();
+  });
+
   it('labels the media rows in Italian', async () => {
     stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
     await i18n.changeLanguage('it');

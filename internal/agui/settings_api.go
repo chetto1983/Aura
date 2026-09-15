@@ -168,10 +168,13 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			Applied: appliedBoot,
 		}
 		// Effective value: the DB value when overridden, else the active runtime for a
-		// hot model-profile key, else the process env. A hot key is always "live", and so
-		// is the Telegram token while the running channel polls it; any other boot-bound
-		// key persisted after boot (its row differs from what the process booted with) is
-		// "restart" and is named in restart_keys.
+		// hot model-profile key, else the process env. A hot key and a call-time key are
+		// always "live", and so is the Telegram token while the running channel polls it;
+		// any other boot-bound key persisted after boot (its row differs from what the
+		// process booted with) is "restart" and is named in restart_keys.
+		if isCallTimeSetting(key) {
+			item.Applied = appliedLive
+		}
 		effective := os.Getenv(key)
 		if s.hotLLMRouteEnabled(key) {
 			item.Applied = appliedLive
@@ -190,9 +193,7 @@ func (s *Server) handleListSettings(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case key == telegramTokenKey && s.telegramRuns(row.Value):
 				item.Applied = appliedLive
-			case isCallTimeSetting(key):
-				item.Applied = appliedLive
-			case row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key):
+			case row.Value != os.Getenv(key) && !s.hotLLMRouteEnabled(key) && !isCallTimeSetting(key):
 				item.Applied = appliedRestart
 				out.RestartRequired = true
 				out.RestartKeys = append(out.RestartKeys, key)

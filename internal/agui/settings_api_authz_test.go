@@ -158,6 +158,29 @@ func TestMediaModelsAndWaitReadAsLive(t *testing.T) {
 	}
 }
 
+// A call-time key is read on every use whether or not a row exists, so an unsaved one is
+// "live" too; the boot-bound rows around it keep their labels.
+func TestCallTimeSettingsReadAsLiveWithNoSavedValue(t *testing.T) {
+	s := &Server{settings: &fakeSettingsStore{}}
+	rr := httptest.NewRecorder()
+	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	for key, want := range map[string]string{
+		"AURA_IMAGE_MODEL":                 appliedLive,
+		"AURA_VIDEO_MODEL":                 appliedLive,
+		"AURA_VIDEO_INLINE_WAIT_SEC":       appliedLive,
+		"AURA_OPENROUTER_MANAGEMENT_KEY":   appliedLive,
+		"AURA_OPENROUTER_SERVICES_CAP_USD": appliedLive,
+		"AURA_ASSET_MAX_VIDEO_BYTES":       appliedBoot,
+		"AURA_TTS_MODEL":                   appliedBoot,
+		// A hot profile key, not a call-time one: live only through the wired reloader.
+		"AURA_LLM_MODEL": appliedBoot,
+	} {
+		if item := settingItemByKey(t, rr.Body.Bytes(), key); item.Applied != want || item.Overridden {
+			t.Errorf("%s: applied = %q overridden = %v, want %q with no saved row", key, item.Applied, item.Overridden, want)
+		}
+	}
+}
+
 // TestAssetMaxVideoBytesIsBootBound pins the byte ceiling's deliberate absence
 // from callTimeSettingKeys: it is read once at boot, so a persisted change
 // reports "restart", not "live", unlike its three siblings above.

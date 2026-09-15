@@ -17,6 +17,8 @@ const VIDEO_MODELS: readonly MediaCatalogModel[] = [
   },
 ];
 
+const CLOUD_ROUTE = 'openrouter https://openrouter.ai/api/v1';
+
 interface FetchCall {
   readonly url: string;
   readonly signal: AbortSignal | null | undefined;
@@ -60,7 +62,7 @@ describe('useMediaModelCatalog', () => {
 
   it('lists the kind’s catalogue while cloud mode is active', async () => {
     const calls = stubFetch(() => Promise.resolve(jsonResponse({ models: VIDEO_MODELS })));
-    const { result } = renderHook(() => useMediaModelCatalog('video', true));
+    const { result } = renderHook(() => useMediaModelCatalog('video', true, CLOUD_ROUTE));
 
     await waitFor(() => {
       expect(result.current.status).toBe('ready');
@@ -72,7 +74,7 @@ describe('useMediaModelCatalog', () => {
 
   it('asks nothing while cloud mode is off', async () => {
     const calls = stubFetch(() => Promise.resolve(jsonResponse({ models: VIDEO_MODELS })));
-    const { result } = renderHook(() => useMediaModelCatalog('image', false));
+    const { result } = renderHook(() => useMediaModelCatalog('image', false, CLOUD_ROUTE));
 
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(result.current.status).toBe('idle');
@@ -82,7 +84,7 @@ describe('useMediaModelCatalog', () => {
 
   it('bypasses the daemon cache when the operator refreshes', async () => {
     const calls = stubFetch(() => Promise.resolve(jsonResponse({ models: VIDEO_MODELS })));
-    const { result } = renderHook(() => useMediaModelCatalog('image', true));
+    const { result } = renderHook(() => useMediaModelCatalog('image', true, CLOUD_ROUTE));
     await waitFor(() => {
       expect(result.current.status).toBe('ready');
     });
@@ -110,7 +112,7 @@ describe('useMediaModelCatalog', () => {
         ),
       ),
     );
-    const { result } = renderHook(() => useMediaModelCatalog('video', true));
+    const { result } = renderHook(() => useMediaModelCatalog('video', true, CLOUD_ROUTE));
 
     await waitFor(() => {
       expect(result.current.status).toBe('error');
@@ -121,7 +123,7 @@ describe('useMediaModelCatalog', () => {
 
   it('names the status when a failure carries no message', async () => {
     stubFetch(() => Promise.reject(new Error('')));
-    const { result } = renderHook(() => useMediaModelCatalog('video', true));
+    const { result } = renderHook(() => useMediaModelCatalog('video', true, CLOUD_ROUTE));
 
     await waitFor(() => {
       expect(result.current.status).toBe('error');
@@ -132,7 +134,7 @@ describe('useMediaModelCatalog', () => {
   it('abandons an in-flight answer when cloud mode turns off', async () => {
     const calls = stubFetch(pendingUntilAborted);
     const { result, rerender } = renderHook(
-      ({ enabled }) => useMediaModelCatalog('video', enabled),
+      ({ enabled }) => useMediaModelCatalog('video', enabled, CLOUD_ROUTE),
       {
         initialProps: { enabled: true },
       },
@@ -163,7 +165,7 @@ describe('useMediaModelCatalog', () => {
         releaseStale = resolve;
       });
     });
-    const { result } = renderHook(() => useMediaModelCatalog('video', true));
+    const { result } = renderHook(() => useMediaModelCatalog('video', true, CLOUD_ROUTE));
     await waitFor(() => {
       expect(calls).toHaveLength(1);
     });
@@ -192,7 +194,7 @@ describe('useMediaModelCatalog', () => {
         ? Promise.resolve(jsonResponse({ models: VIDEO_MODELS }))
         : pendingUntilAborted(call);
     });
-    const { result } = renderHook(() => useMediaModelCatalog('video', true));
+    const { result } = renderHook(() => useMediaModelCatalog('video', true, CLOUD_ROUTE));
     await waitFor(() => {
       expect(result.current.status).toBe('ready');
     });
@@ -208,7 +210,7 @@ describe('useMediaModelCatalog', () => {
   it('reads the daemon cache again when the rows come back after a refresh', async () => {
     const calls = stubFetch(() => Promise.resolve(jsonResponse({ models: VIDEO_MODELS })));
     const { result, rerender } = renderHook(
-      ({ enabled }) => useMediaModelCatalog('video', enabled),
+      ({ enabled }) => useMediaModelCatalog('video', enabled, CLOUD_ROUTE),
       { initialProps: { enabled: true } },
     );
     await waitFor(() => {
@@ -239,9 +241,12 @@ describe('useMediaModelCatalog', () => {
         ? Promise.resolve(jsonResponse({ models: VIDEO_MODELS }))
         : pendingUntilAborted(call),
     );
-    const { result, rerender } = renderHook(({ kind }) => useMediaModelCatalog(kind, true), {
-      initialProps: { kind: 'video' as 'image' | 'video' },
-    });
+    const { result, rerender } = renderHook(
+      ({ kind }) => useMediaModelCatalog(kind, true, CLOUD_ROUTE),
+      {
+        initialProps: { kind: 'video' as 'image' | 'video' },
+      },
+    );
     await waitFor(() => {
       expect(result.current.status).toBe('ready');
     });
@@ -258,9 +263,57 @@ describe('useMediaModelCatalog', () => {
     });
   });
 
+  it('reads as loading, not as the earlier answer, while the rows come back', async () => {
+    let answered = 0;
+    stubFetch((call) => {
+      answered += 1;
+      return answered === 1
+        ? Promise.resolve(jsonResponse({ error: 'GET videos/models: 503' }, 502))
+        : pendingUntilAborted(call);
+    });
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useMediaModelCatalog('video', enabled, CLOUD_ROUTE),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => {
+      expect(result.current.status).toBe('error');
+    });
+
+    rerender({ enabled: false });
+    expect(result.current.status).toBe('idle');
+    rerender({ enabled: true });
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.error).toBeUndefined();
+  });
+
+  it('asks again when the saved route changes, without the old route’s models', async () => {
+    const calls = stubFetch((call) =>
+      calls.length === 1
+        ? Promise.resolve(jsonResponse({ models: VIDEO_MODELS }))
+        : pendingUntilAborted(call),
+    );
+    const { result, rerender } = renderHook(
+      ({ route }) => useMediaModelCatalog('video', true, route),
+      { initialProps: { route: CLOUD_ROUTE } },
+    );
+    await waitFor(() => {
+      expect(result.current.status).toBe('ready');
+    });
+
+    rerender({ route: 'openrouter https://eu.openrouter.ai/api/v1' });
+
+    expect(result.current.status).toBe('loading');
+    expect(result.current.models).toEqual([]);
+    await waitFor(() => {
+      expect(calls).toHaveLength(2);
+    });
+    expect(calls[1]?.url).toBe('/api/settings/video-models');
+  });
+
   it('cancels its request when the pane unmounts', async () => {
     const calls = stubFetch(pendingUntilAborted);
-    const { unmount } = renderHook(() => useMediaModelCatalog('image', true));
+    const { unmount } = renderHook(() => useMediaModelCatalog('image', true, CLOUD_ROUTE));
     await waitFor(() => {
       expect(calls).toHaveLength(1);
     });

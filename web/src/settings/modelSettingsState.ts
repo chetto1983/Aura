@@ -40,7 +40,17 @@ const HOT_LLM_PROFILE_KEYS = new Set<SettingsKey>([
   'AURA_LOOP_MAX_WALLCLOCK_SEC',
 ]);
 
+// Mirrors the daemon's callTimeSettingKeys (internal/agui/settings_api_authz.go): read on every
+// use, so live whether or not a row is saved.
+const CALL_TIME_SETTING_KEYS = new Set<SettingsKey>([
+  'AURA_OPENROUTER_MANAGEMENT_KEY',
+  'AURA_OPENROUTER_SERVICES_CAP_USD',
+  'AURA_IMAGE_MODEL',
+  'AURA_VIDEO_MODEL',
+]);
+
 function emptyItem(def: SettingDef): SettingItem {
+  const live = HOT_LLM_PROFILE_KEYS.has(def.key) || CALL_TIME_SETTING_KEYS.has(def.key);
   return {
     key: def.key,
     label: def.key,
@@ -49,7 +59,7 @@ function emptyItem(def: SettingDef): SettingItem {
     value: '',
     has_value: false,
     overridden: false,
-    applied: HOT_LLM_PROFILE_KEYS.has(def.key) ? 'live' : 'boot',
+    applied: live ? 'live' : 'boot',
   };
 }
 

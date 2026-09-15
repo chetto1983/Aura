@@ -99,11 +99,19 @@ export function ModelSettingsPanel({
   // The catalogue follows the FORM route, not the saved one, so the model list is the list
   // of the endpoint the operator is currently pointing at.
   const catalog = useModelCatalog(providerIDOf(provider), formBaseURL);
-  // The media models are Cloud rows of the routing pane: their catalogues are asked for only
-  // while that pane is showing them, never while the settings are still loading.
-  const mediaEnabled = loaded !== undefined && provider === 'cloud' && groups.includes('routing');
-  const imageCatalog = useMediaModelCatalog('image', mediaEnabled);
-  const videoCatalog = useMediaModelCatalog('video', mediaEnabled);
+  // The media models are Cloud rows of the routing pane, but the daemon lists them from the
+  // SAVED route: they are asked for only while the rows show AND the saved route is Cloud, and
+  // a save that changes the saved route asks again.
+  const savedProvider = loaded?.initial.AURA_LLM_PROVIDER ?? '';
+  const savedBaseURL = loaded?.initial.AURA_LLM_BASE_URL ?? '';
+  const mediaEnabled =
+    loaded !== undefined &&
+    provider === 'cloud' &&
+    resolveProvider(savedProvider, savedBaseURL) === 'cloud' &&
+    groups.includes('routing');
+  const savedRoute = `${savedProvider} ${savedBaseURL}`;
+  const imageCatalog = useMediaModelCatalog('image', mediaEnabled, savedRoute);
+  const videoCatalog = useMediaModelCatalog('video', mediaEnabled, savedRoute);
 
   if (loadStatus === 'loading') {
     return (

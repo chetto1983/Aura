@@ -161,6 +161,7 @@ func TestVideoModelsCarryCapabilitiesAndOnlyPerSecondPrices(t *testing.T) {
 			AspectRatios: []string{"16:9"},
 		},
 		{
+			// Frame images declared without first_frame: ClampVideo refuses a start image, so false is stated.
 			ID: "vendor/cents", Kind: mediagen.KindVideo,
 			Durations:   []int{10, 4, 8},
 			FrameImages: []string{"last_frame"},
@@ -188,7 +189,7 @@ func TestVideoModelsCarryCapabilitiesAndOnlyPerSecondPrices(t *testing.T) {
 		"image_to_video": false, "second_min_usd": 0.12, "second_max_usd": 0.12, "has_price": true,
 	})
 	assertRow(t, rows[2], map[string]any{
-		"id": "vendor/token-video", "kind": "video", "image_to_video": false, "has_price": false,
+		"id": "vendor/token-video", "kind": "video", "has_price": false,
 	})
 }
 

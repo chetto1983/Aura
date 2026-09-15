@@ -85,6 +85,69 @@ describe('media model row labels', () => {
     ).toBe('$0.04/image');
   });
 
+  it('keeps the sub-cent digits of a media price instead of rounding to cents', () => {
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'vendor/a',
+          has_price: true,
+          image_min_usd: 0.039,
+          image_max_usd: 0.039,
+        },
+        labels,
+      ),
+    ).toBe('$0.039/image');
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'vendor/b',
+          has_price: true,
+          image_min_usd: 0.035,
+          image_max_usd: 0.039,
+        },
+        labels,
+      ),
+    ).toBe('$0.035–$0.039/image');
+    expect(
+      videoModelMeta(
+        {
+          kind: 'video',
+          id: 'vendor/c',
+          has_price: true,
+          second_min_usd: 0.0125,
+          second_max_usd: 0.125,
+        },
+        labels,
+      ),
+    ).toBe('$0.0125–$0.125/s');
+    expect(
+      videoModelMeta(
+        {
+          kind: 'video',
+          id: 'vendor/d',
+          has_price: true,
+          second_min_usd: 0.1234567,
+          second_max_usd: 1.5,
+        },
+        labels,
+      ),
+    ).toBe('$0.1235–$1.5/s');
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'vendor/e',
+          has_price: true,
+          image_min_usd: 0.000038,
+          image_max_usd: 0.000038,
+        },
+        labels,
+      ),
+    ).toBe('$0.000038/image');
+  });
+
   it('keeps a zero price, because a free model is a real price and an unknown one is not', () => {
     expect(
       imageModelMeta(
