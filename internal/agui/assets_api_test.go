@@ -181,14 +181,18 @@ func (f *fakeAssetService) OpenForIdentity(_ context.Context, id, identityID str
 	return f.openResp, f.openAsset, nil
 }
 
-func (f *fakeAssetService) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (io.ReadSeekCloser, assets.Asset, error) {
+func (f *fakeAssetService) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (*objectstore.SeekableObject, assets.Asset, error) {
 	f.openID = id
 	f.openIdentityID = identityID
 	if f.openErr != nil {
 		return nil, assets.Asset{}, f.openErr
 	}
 	ref := objectstore.ObjectRef{Bucket: f.openAsset.ObjectBucket, Key: f.openAsset.ObjectKey}
-	return objectstore.NewSeekableObject(ctx, f.seekStore, ref, f.openAsset.SizeBytes), f.openAsset, nil
+	object, err := objectstore.OpenSeekableObject(ctx, f.seekStore, ref)
+	if err != nil {
+		return nil, assets.Asset{}, err
+	}
+	return object, f.openAsset, nil
 }
 
 func (f *fakeAssetService) ListForThread(_ context.Context, identityID, threadID string) ([]assets.Asset, error) {

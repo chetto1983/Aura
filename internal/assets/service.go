@@ -202,15 +202,19 @@ func (s *Service) OpenForIdentity(ctx context.Context, id, identityID string) (i
 	return rc, asset, err
 }
 
-// OpenSeekableForIdentity is OpenForIdentity for Range streaming: the same ownership gate, then a
-// reader sized from the asset row that opens the object at whatever offset it is read from. No
-// store read happens until the caller reads.
-func (s *Service) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (io.ReadSeekCloser, Asset, error) {
+// OpenSeekableForIdentity is OpenForIdentity for Range streaming: the same ownership gate, then
+// one Head of the owner's object, so a missing object fails here exactly as download's Get does,
+// then a reader that opens the object at whatever offset it is read from.
+func (s *Service) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (*objectstore.SeekableObject, Asset, error) {
 	objects, asset, err := s.ownedObject(ctx, id, identityID)
 	if err != nil {
 		return nil, Asset{}, err
 	}
-	return objectstore.NewSeekableObject(ctx, objects, assetRef(asset), asset.SizeBytes), asset, nil
+	object, err := objectstore.OpenSeekableObject(ctx, objects, assetRef(asset))
+	if err != nil {
+		return nil, Asset{}, err
+	}
+	return object, asset, nil
 }
 
 func (s *Service) ownedObject(ctx context.Context, id, identityID string) (objectstore.Store, Asset, error) {

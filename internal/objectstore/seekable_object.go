@@ -6,38 +6,49 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sync"
 )
 
 var errSeekableObjectClosed = errors.New("objectstore: seekable object is closed")
 
-// SeekableObject presents one stored object of known size as an io.ReadSeekCloser without
-// reading it whole, which is what net/http.ServeContent needs to answer Range requests over an
-// object store. Seeks only move an offset; the store is opened at that offset on the next Read,
-// and a Seek elsewhere drops the open body so the following Read reopens there.
+// SeekableObject presents one stored object as an io.ReadSeekCloser without reading it whole,
+// which is what net/http.ServeContent needs to answer Range requests over an object store.
+// Seeks only move an offset; the store is opened at that offset on the next Read, and a Seek
+// elsewhere drops the open body so the following Read reopens there. It is not safe for
+// concurrent use.
 type SeekableObject struct {
 	ctx   context.Context
 	store Store
 	ref   ObjectRef
 	size  int64
 
-	// mu serialises Close with Read: ServeContent's multi-range writer reads from its own
-	// goroutine, which can still be inside Read when the handler's deferred Close runs.
-	mu     sync.Mutex
 	offset int64
 	body   io.ReadCloser
 	closed bool
+	err    error
 }
 
-// NewSeekableObject reads ref through store, scoped to ctx. size is the caller's record of the
-// object's length (the asset row, a share snapshot): reads end there.
-func NewSeekableObject(ctx context.Context, store Store, ref ObjectRef, size int64) *SeekableObject {
+// OpenSeekableObject heads ref before anything is served, so a missing object is an error
+// while a response can still say so, and the object serves the size the store reports rather
+// than any size recorded about it.
+func OpenSeekableObject(ctx context.Context, store Store, ref ObjectRef) (*SeekableObject, error) {
+	attrs, err := store.Head(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return newSeekableObject(ctx, store, ref, attrs.SizeBytes), nil
+}
+
+func newSeekableObject(ctx context.Context, store Store, ref ObjectRef, size int64) *SeekableObject {
 	return &SeekableObject{ctx: ctx, store: store, ref: ref, size: size}
 }
 
+// Err returns the first store error a Read met. ServeContent discards its copy error once the
+// status line is written, so a caller that served this object must ask here.
+func (o *SeekableObject) Err() error {
+	return o.err
+}
+
 func (o *SeekableObject) Read(p []byte) (int, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	if o.closed {
 		return 0, errSeekableObjectClosed
 	}
@@ -48,6 +59,7 @@ func (o *SeekableObject) Read(p []byte) (int, error) {
 	if o.body == nil {
 		body, err := o.store.GetFrom(o.ctx, o.ref, o.offset)
 		if err != nil {
+			o.keep(err)
 			return 0, err
 		}
 		o.body = body
@@ -60,12 +72,13 @@ func (o *SeekableObject) Read(p []byte) (int, error) {
 	if errors.Is(err, io.EOF) && o.offset < o.size {
 		err = io.ErrUnexpectedEOF
 	}
+	if err != nil && !errors.Is(err, io.EOF) {
+		o.keep(err)
+	}
 	return n, err
 }
 
 func (o *SeekableObject) Seek(offset int64, whence int) (int64, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	if o.closed {
 		return 0, errSeekableObjectClosed
 	}
@@ -90,8 +103,6 @@ func (o *SeekableObject) Seek(offset int64, whence int) (int64, error) {
 }
 
 func (o *SeekableObject) Close() error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
 	o.closed = true
 	if o.body == nil {
 		return nil
@@ -99,4 +110,10 @@ func (o *SeekableObject) Close() error {
 	err := o.body.Close()
 	o.body = nil
 	return err
+}
+
+func (o *SeekableObject) keep(err error) {
+	if o.err == nil {
+		o.err = err
+	}
 }

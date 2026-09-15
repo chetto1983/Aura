@@ -25,6 +25,27 @@ func TestShareSnapshotKeyShape(t *testing.T) {
 	}
 }
 
+// TestShareArtifactRefParsesTheAssetID pins the one string entry point to a share key: a real
+// UUID lands on ShareArtifactKey in the given bucket, and anything else, a traversal string
+// included, never becomes a key.
+func TestShareArtifactRefParsesTheAssetID(t *testing.T) {
+	shareID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	snapshotID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	assetID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	ref, err := ShareArtifactRef("share-bucket", shareID, snapshotID, assetID.String())
+	if err != nil {
+		t.Fatalf("ShareArtifactRef() error = %v", err)
+	}
+	if want := (ObjectRef{Bucket: "share-bucket", Key: ShareArtifactKey(shareID, snapshotID, assetID)}); ref != want {
+		t.Fatalf("ShareArtifactRef() = %#v, want %#v", ref, want)
+	}
+	for _, hostile := range []string{"", "../identity/victim/asset/x", "not-a-uuid"} {
+		if ref, err := ShareArtifactRef("share-bucket", shareID, snapshotID, hostile); err == nil {
+			t.Fatalf("ShareArtifactRef(%q) = %#v, want a refusal", hostile, ref)
+		}
+	}
+}
+
 // TestShareArtifactKeyShape mirrors TestAssetKeyContainsNoFilename's shape
 // for the artifact key.
 func TestShareArtifactKeyShape(t *testing.T) {

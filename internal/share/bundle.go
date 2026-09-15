@@ -97,7 +97,7 @@ func bundleArtifacts(
 ) ([]SnapshotArtifact, error) {
 	out := make([]SnapshotArtifact, 0, len(artifacts))
 	for _, a := range artifacts {
-		assetID, err := uuid.Parse(a.ID)
+		ref, err := objectstore.ShareArtifactRef(bucket, shareID, snapshotID, a.ID)
 		if err != nil {
 			return nil, fmt.Errorf("bundle artifact %s: %w", a.ID, err)
 		}
@@ -105,10 +105,7 @@ func bundleArtifacts(
 		if err != nil {
 			return nil, fmt.Errorf("bundle artifact %s: open: %w", a.ID, err)
 		}
-		_, putErr := store.Put(ctx, objectstore.ObjectRef{
-			Bucket: bucket,
-			Key:    objectstore.ShareArtifactKey(shareID, snapshotID, assetID),
-		}, rc, objectstore.PutOptions{MIMEType: a.MIMEType, Size: a.SizeBytes})
+		_, putErr := store.Put(ctx, ref, rc, objectstore.PutOptions{MIMEType: a.MIMEType, Size: a.SizeBytes})
 		closeErr := rc.Close()
 		if putErr != nil {
 			return nil, fmt.Errorf("bundle artifact %s: put: %w", a.ID, putErr)

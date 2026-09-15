@@ -12,13 +12,19 @@ import (
 
 const otherServiceIdentityID = "00000000-0000-0000-0000-000000000002"
 
-// recordingObjectStore counts Get and GetFrom calls to prove the OpenForIdentity ownership gate precedes any
-// object-store read (T-IDOR / D-12): a non-owner request must never reach Get. Every other method
-// delegates to the embedded fake.
+// recordingObjectStore counts Head, Get and GetFrom calls to prove the ownership gate precedes any
+// object-store call (T-IDOR / D-12): a non-owner request must never reach the store. Every other
+// method delegates to the embedded fake.
 type recordingObjectStore struct {
 	objectstore.Store
+	headCalls      int
 	getCalls       int
 	getFromOffsets []int64
+}
+
+func (r *recordingObjectStore) Head(ctx context.Context, ref objectstore.ObjectRef) (objectstore.Attrs, error) {
+	r.headCalls++
+	return r.Store.Head(ctx, ref)
 }
 
 func (r *recordingObjectStore) Get(ctx context.Context, ref objectstore.ObjectRef) (io.ReadCloser, objectstore.Attrs, error) {
@@ -120,13 +126,13 @@ func TestOpenForIdentityNonOwnerBlocksBeforeStoreRead(t *testing.T) {
 }
 
 // TestOpenSeekableForIdentityOwnerSeeksWithoutReadingWhole proves the Range path: the owner gets
-// a reader sized from the asset row, the store is opened only when read, and a seek opens it at
-// that offset instead of streaming the object from the start.
+// a reader sized from one Head of the object (not from the row, which is seeded wrong here), the
+// bytes are opened only when read, and a seek opens them at that offset.
 func TestOpenSeekableForIdentityOwnerSeeksWithoutReadingWhole(t *testing.T) {
 	svc, store, rec := newOpenForIdentityRig(t)
 	const body = "0123456789 streamed clip bytes"
 	seeded := seedOwnedAsset(t, svc, store, serviceIdentityID, body)
-	if _, err := store.MarkAccepted(context.Background(), seeded.ID, serviceIdentityID, int64(len(body)), "hash", "video/mp4"); err != nil {
+	if _, err := store.MarkAccepted(context.Background(), seeded.ID, serviceIdentityID, 5, "hash", "video/mp4"); err != nil {
 		t.Fatalf("seed MarkAccepted: %v", err)
 	}
 
@@ -139,7 +145,7 @@ func TestOpenSeekableForIdentityOwnerSeeksWithoutReadingWhole(t *testing.T) {
 		t.Fatalf("asset.ID = %q, want %q", got.ID, seeded.ID)
 	}
 	if end, err := object.Seek(0, io.SeekEnd); err != nil || end != int64(len(body)) {
-		t.Fatalf("Seek(0, SeekEnd) = %d, %v, want the row size %d", end, err, len(body))
+		t.Fatalf("Seek(0, SeekEnd) = %d, %v, want the stored size %d", end, err, len(body))
 	}
 	if _, err := object.Seek(11, io.SeekStart); err != nil {
 		t.Fatal(err)
@@ -148,13 +154,32 @@ func TestOpenSeekableForIdentityOwnerSeeksWithoutReadingWhole(t *testing.T) {
 	if err != nil || string(tail) != body[11:] {
 		t.Fatalf("read from 11 = %q, %v, want %q", tail, err, body[11:])
 	}
-	if rec.getCalls != 0 || len(rec.getFromOffsets) != 1 || rec.getFromOffsets[0] != 11 {
-		t.Fatalf("Get calls = %d, GetFrom offsets = %v, want no Get and one GetFrom at 11", rec.getCalls, rec.getFromOffsets)
+	if rec.headCalls != 1 || rec.getCalls != 0 || len(rec.getFromOffsets) != 1 || rec.getFromOffsets[0] != 11 {
+		t.Fatalf("Head = %d, Get = %d, GetFrom offsets = %v, want one Head, no Get and one GetFrom at 11",
+			rec.headCalls, rec.getCalls, rec.getFromOffsets)
+	}
+}
+
+// TestOpenSeekableForIdentityRefusesAMissingObject: the owner's row exists but the object does
+// not, so the open fails on the Head, before any byte is read, as download's Get fails.
+func TestOpenSeekableForIdentityRefusesAMissingObject(t *testing.T) {
+	svc, store, rec := newOpenForIdentityRig(t)
+	seeded := seedOwnedAsset(t, svc, store, serviceIdentityID, "about to vanish")
+	if err := svc.Objects.Delete(context.Background(), objectstore.ObjectRef{Bucket: seeded.ObjectBucket, Key: seeded.ObjectKey}); err != nil {
+		t.Fatal(err)
+	}
+
+	object, _, err := svc.OpenSeekableForIdentity(context.Background(), seeded.ID, serviceIdentityID)
+	if !objectstore.IsNotFound(err) || object != nil {
+		t.Fatalf("OpenSeekableForIdentity(missing object) = %v, %v, want nil and not found", object, err)
+	}
+	if rec.headCalls != 1 || len(rec.getFromOffsets) != 0 {
+		t.Fatalf("Head = %d, GetFrom offsets = %v, want one Head and no open", rec.headCalls, rec.getFromOffsets)
 	}
 }
 
 // TestOpenSeekableForIdentityNonOwnerBlocksBeforeStoreRead is the T-IDOR gate for the streaming
-// reader: the same GetForIdentity miss as OpenForIdentity, before any store open.
+// reader: the same GetForIdentity miss as OpenForIdentity, before any store call, Head included.
 func TestOpenSeekableForIdentityNonOwnerBlocksBeforeStoreRead(t *testing.T) {
 	svc, store, rec := newOpenForIdentityRig(t)
 	seeded := seedOwnedAsset(t, svc, store, serviceIdentityID, "owner-only bytes")
@@ -166,7 +191,8 @@ func TestOpenSeekableForIdentityNonOwnerBlocksBeforeStoreRead(t *testing.T) {
 	if object != nil {
 		t.Fatalf("OpenSeekableForIdentity(non-owner) reader = %v, want nil", object)
 	}
-	if rec.getCalls != 0 || len(rec.getFromOffsets) != 0 {
-		t.Fatalf("store reads = %d Get, %v GetFrom, want none before the ownership gate", rec.getCalls, rec.getFromOffsets)
+	if rec.headCalls != 0 || rec.getCalls != 0 || len(rec.getFromOffsets) != 0 {
+		t.Fatalf("store calls = %d Head, %d Get, %v GetFrom, want none before the ownership gate",
+			rec.headCalls, rec.getCalls, rec.getFromOffsets)
 	}
 }

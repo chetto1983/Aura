@@ -116,7 +116,7 @@ func (a *shareServiceAdapter) ResolveInternal(ctx context.Context, shareID, id s
 // reference): the caller (share_api_artifact.go, SC4 row 9) has already confirmed assetID belongs
 // to the resolved snapshot before calling this.
 func (a *shareServiceAdapter) OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error) {
-	ref, err := a.artifactRef(shareID, snapshotID, assetID)
+	ref, err := objectstore.ShareArtifactRef(a.bucket, shareID, snapshotID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -124,19 +124,12 @@ func (a *shareServiceAdapter) OpenArtifact(ctx context.Context, shareID, snapsho
 	return rc, err
 }
 
-// OpenArtifactSeekable reads the same key lazily from whatever offset the stream route seeks.
-func (a *shareServiceAdapter) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error) {
-	ref, err := a.artifactRef(shareID, snapshotID, assetID)
+// OpenArtifactSeekable heads the same key, then reads it lazily from whatever offset the stream
+// route seeks.
+func (a *shareServiceAdapter) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (*objectstore.SeekableObject, error) {
+	ref, err := objectstore.ShareArtifactRef(a.bucket, shareID, snapshotID, assetID)
 	if err != nil {
 		return nil, err
 	}
-	return objectstore.NewSeekableObject(ctx, a.objects, ref, size), nil
-}
-
-func (a *shareServiceAdapter) artifactRef(shareID, snapshotID uuid.UUID, assetID string) (objectstore.ObjectRef, error) {
-	aid, err := uuid.Parse(assetID)
-	if err != nil {
-		return objectstore.ObjectRef{}, err
-	}
-	return objectstore.ObjectRef{Bucket: a.bucket, Key: objectstore.ShareArtifactKey(shareID, snapshotID, aid)}, nil
+	return objectstore.OpenSeekableObject(ctx, a.objects, ref)
 }

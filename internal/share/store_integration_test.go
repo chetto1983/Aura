@@ -147,8 +147,7 @@ func pastPtr(d time.Duration) *time.Time {
 // *pgconn.PgError — used so CHECK/UNIQUE violation assertions key on the SQLSTATE, never a
 // message match.
 func pgErrCode(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		return pgErr.Code
 	}
 	return ""

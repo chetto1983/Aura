@@ -5,6 +5,7 @@ import (
 	"io"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/objectstore"
 )
 
 // AssetService is the narrow asset API surface consumed by AG-UI handlers.
@@ -17,9 +18,9 @@ type AssetService interface {
 	// a presigned store URL (D-09). The caller closes the ReadCloser.
 	OpenForIdentity(context.Context, string, string) (io.ReadCloser, assets.Asset, error)
 	// OpenSeekableForIdentity is OpenForIdentity for the Range stream route: the same ownership
-	// gate, then a reader that opens the object at whatever offset it is read from. The caller
-	// closes it.
-	OpenSeekableForIdentity(context.Context, string, string) (io.ReadSeekCloser, assets.Asset, error)
+	// gate, one Head of the object, then a reader that opens it at whatever offset it is read
+	// from. The caller closes it and checks its Err after serving.
+	OpenSeekableForIdentity(context.Context, string, string) (*objectstore.SeekableObject, assets.Asset, error)
 	ListForThread(context.Context, string, string) ([]assets.Asset, error)
 	Promote(context.Context, string, string) (assets.Asset, error)
 	Delete(context.Context, string, string) (assets.Asset, error)

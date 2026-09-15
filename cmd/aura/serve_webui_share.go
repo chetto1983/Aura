@@ -19,18 +19,18 @@ package main
 //     an absent id must be indistinguishable).
 //   - GET /api/shares/{id}/data, GET /api/shares/{id}/asset/{assetID} and its /stream video
 //     sibling — bare aguiHandler, RequireAuth-only, and deliberately NOT admitted to
-//     PublicRoute below. This is the D-10
-//     bearer-within-auth tier (plan 37F-10): TWO halves, both load-bearing. Half one — NO
-//     capability and NO owner predicate: any authenticated identity holding the share id
-//     resolves its already-redacted snapshot, which is the entire point of an "internal
-//     link". Half two — authenticated: the routes sit on the authenticated /api/ lane so
-//     RequireAuth gates them for free; an anonymous caller gets 401/302. Do NOT "unify"
-//     these onto the /s/ lane below — isPublicShareRoute admits every GET /s/... with no
-//     session at all, so moving them there would make every internal share world-readable.
+//     PublicRoute below. This is the D-10 bearer-within-auth tier (plan 37F-10): TWO halves,
+//     both load-bearing. Half one — NO capability and NO owner predicate: any authenticated
+//     identity holding the share id resolves its already-redacted snapshot, which is the entire
+//     point of an "internal link". Half two — authenticated: the routes sit on the
+//     authenticated /api/ lane so RequireAuth gates them for free; an anonymous caller gets
+//     401/302. Do NOT "unify" these onto the /s/ lane below — isPublicShareRoute admits every
+//     GET /s/... with no session at all, so moving them there would make every internal share
+//     world-readable.
 //   - GET /s/{token}/data, GET /s/{token}/asset/{id} and its /stream video sibling — bare
-//     aguiHandler PLUS the PublicRoute admission wired in serve_webui.go. These are the phase's ONLY
-//     unauthenticated routes in the whole binary; the opaque token itself is their entire
-//     gate.
+//     aguiHandler PLUS the PublicRoute admission wired in serve_webui.go. These are the
+//     phase's ONLY unauthenticated routes in the whole binary; the opaque token itself is
+//     their entire gate.
 //
 // Method+path-specific patterns win Go 1.22 longest-pattern precedence over the bare "/api/"
 // exclusion carve-out and the "/" embed catch-all (mirrors _musr.go:47-50); the "/api/"
@@ -80,9 +80,9 @@ const (
 // isPublicShareRoute is the fail-closed /s/ allowlist predicate serve_webui.go's PublicRoute
 // chain admits unauthenticated (T-37F-57). Unlike isPublicPasswordResetRoute's exact-path
 // switch, this needs a PREFIX match — /s/{token}, /s/{token}/data, /s/{token}/asset/{id} and
-// its /stream sibling all share the "/s/" prefix. GET-only; every other method and every other path (including
-// the confusable "/shared/..." internal-tier page — "/sh" != "/s/" — and a naive bare "/s"
-// with no trailing slash) returns false by default.
+// its /stream sibling all share the "/s/" prefix. GET-only; every other method and every other
+// path (including the confusable "/shared/..." internal-tier page — "/sh" != "/s/" — and a
+// naive bare "/s" with no trailing slash) returns false by default.
 func isPublicShareRoute(r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		return false

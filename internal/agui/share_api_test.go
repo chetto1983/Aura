@@ -86,7 +86,7 @@ func (a *shareTestAdapter) ResolveInternal(ctx context.Context, shareID, id stri
 
 // OpenArtifact reads the token/snapshot-scoped object-store key directly (copy-never-reference).
 func (a *shareTestAdapter) OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error) {
-	ref, err := a.artifactRef(shareID, snapshotID, assetID)
+	ref, err := objectstore.ShareArtifactRef(a.bucket, shareID, snapshotID, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,20 +94,12 @@ func (a *shareTestAdapter) OpenArtifact(ctx context.Context, shareID, snapshotID
 	return rc, err
 }
 
-func (a *shareTestAdapter) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error) {
-	ref, err := a.artifactRef(shareID, snapshotID, assetID)
+func (a *shareTestAdapter) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (*objectstore.SeekableObject, error) {
+	ref, err := objectstore.ShareArtifactRef(a.bucket, shareID, snapshotID, assetID)
 	if err != nil {
 		return nil, err
 	}
-	return objectstore.NewSeekableObject(ctx, a.objects, ref, size), nil
-}
-
-func (a *shareTestAdapter) artifactRef(shareID, snapshotID uuid.UUID, assetID string) (objectstore.ObjectRef, error) {
-	aid, err := uuid.Parse(assetID)
-	if err != nil {
-		return objectstore.ObjectRef{}, err
-	}
-	return objectstore.ObjectRef{Bucket: a.bucket, Key: objectstore.ShareArtifactKey(shareID, snapshotID, aid)}, nil
+	return objectstore.OpenSeekableObject(ctx, a.objects, ref)
 }
 
 type shareAPIEnv struct {

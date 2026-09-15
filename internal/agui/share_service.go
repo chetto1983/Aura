@@ -9,6 +9,7 @@ import (
 	"context"
 	"io"
 
+	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/google/uuid"
 )
@@ -54,7 +55,7 @@ type ShareService interface {
 	// closes the returned io.ReadCloser.
 	OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error)
 	// OpenArtifactSeekable is OpenArtifact for the Range stream routes: the same key and the same
-	// precondition, read lazily from whatever offset is sought. size is the resolved snapshot's
-	// SizeBytes for assetID. The caller closes it.
-	OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error)
+	// precondition, headed once so a missing blob fails before a response starts, then read
+	// lazily from whatever offset is sought. The caller closes it and checks its Err after serving.
+	OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (*objectstore.SeekableObject, error)
 }

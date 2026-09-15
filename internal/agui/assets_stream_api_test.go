@@ -5,47 +5,57 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"maps"
-	"mime"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
-// rangeRecordingStore holds real bytes and records every ranged open, so a test proves a
-// Range request opened the store at the range start and never read the object whole.
+// rangeRecordingStore holds real bytes and records every Head, whole-object Get and ranged open,
+// so a test proves exactly which store calls a request made.
 type rangeRecordingStore struct {
 	objectstore.Store
-	mu       sync.Mutex
-	offsets  []int64
+	heads    int
 	getCalls int
+	offsets  []int64
+	// getFromErr fails every ranged open; cancel, when set, first cancels the request the way a
+	// client disconnect does.
+	getFromErr error
+	cancel     context.CancelFunc
+}
+
+func (s *rangeRecordingStore) Head(ctx context.Context, ref objectstore.ObjectRef) (objectstore.Attrs, error) {
+	s.heads++
+	return s.Store.Head(ctx, ref)
 }
 
 func (s *rangeRecordingStore) Get(ctx context.Context, ref objectstore.ObjectRef) (io.ReadCloser, objectstore.Attrs, error) {
-	s.mu.Lock()
 	s.getCalls++
-	s.mu.Unlock()
 	return s.Store.Get(ctx, ref)
 }
 
 func (s *rangeRecordingStore) GetFrom(ctx context.Context, ref objectstore.ObjectRef, offset int64) (io.ReadCloser, error) {
-	s.mu.Lock()
 	s.offsets = append(s.offsets, offset)
-	s.mu.Unlock()
+	if s.cancel != nil {
+		s.cancel()
+	}
+	if s.getFromErr != nil {
+		return nil, s.getFromErr
+	}
 	return s.Store.GetFrom(ctx, ref, offset)
 }
 
-func (s *rangeRecordingStore) opened() ([]int64, int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return slices.Clone(s.offsets), s.getCalls
+func (s *rangeRecordingStore) assertUntouched(t *testing.T) {
+	t.Helper()
+	if s.heads != 0 || s.getCalls != 0 || len(s.offsets) != 0 {
+		t.Fatalf("store calls = %d Head, %d Get, GetFrom at %v; want none", s.heads, s.getCalls, s.offsets)
+	}
 }
 
 const streamClipSize = 2048
@@ -95,6 +105,16 @@ func rangeHeader(spec string) http.Header {
 	return http.Header{"Range": {spec}}
 }
 
+// captureWarnings routes slog to a buffer for one test; the handlers log through the default.
+func captureWarnings(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, nil)))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+	return &buf
+}
+
 type rangeCase struct {
 	name         string
 	header       http.Header
@@ -113,11 +133,13 @@ func rangeCases() []rangeCase {
 		{"suffix range", rangeHeader("bytes=-100"), http.StatusPartialContent, clip[1948:], "bytes 1948-2047/2048", []int64{1948}},
 		{"unsatisfiable range", rangeHeader("bytes=999999-"), http.StatusRequestedRangeNotSatisfiable, nil, "bytes */2048", nil},
 		{"stale If-Range falls back to the whole clip", http.Header{"Range": {"bytes=0-99"}, "If-Range": {`"stale"`}}, http.StatusOK, clip, "", []int64{0}},
+		{"several ranges are served whole", rangeHeader("bytes=0-0,0-0,0-0,1000-1009"), http.StatusOK, clip, "", []int64{0}},
 	}
 }
 
 // assertRangeResponse checks one Range answer end to end: status, exact bytes, the headers a
-// <video> element depends on, and the offsets the store was opened at.
+// <video> element depends on, and the store calls — one Head, then opens only at the offsets
+// the range needs, never a whole-object Get.
 func assertRangeResponse(t *testing.T, tc rangeCase, rec *httptest.ResponseRecorder, store *rangeRecordingStore, contentType string) {
 	t.Helper()
 	if rec.Code != tc.status {
@@ -126,9 +148,9 @@ func assertRangeResponse(t *testing.T, tc rangeCase, rec *httptest.ResponseRecor
 	if got := rec.Header().Get("Content-Range"); got != tc.contentRange {
 		t.Fatalf("Content-Range = %q, want %q", got, tc.contentRange)
 	}
-	offsets, gets := store.opened()
-	if !slices.Equal(offsets, tc.offsets) || gets != 0 {
-		t.Fatalf("store opened at %v with %d whole-object Gets, want %v and none", offsets, gets, tc.offsets)
+	if store.heads != 1 || store.getCalls != 0 || !slices.Equal(store.offsets, tc.offsets) {
+		t.Fatalf("store calls = %d Head, %d Get, GetFrom at %v; want 1 Head, no Get, GetFrom at %v",
+			store.heads, store.getCalls, store.offsets, tc.offsets)
 	}
 	if tc.status == http.StatusRequestedRangeNotSatisfiable {
 		return
@@ -164,39 +186,7 @@ func TestAssetStreamServesRangesInline(t *testing.T) {
 	}
 }
 
-// A multi-range request makes ServeContent seek between parts, so each part must come from a
-// store reopened at its own start.
-func TestAssetStreamReopensTheStoreAtEachRangeOfAMultiRangeRequest(t *testing.T) {
-	s, _, store := newAssetStreamRig(t, "video/mp4")
-	rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, rangeHeader("bytes=0-9,1000-1009"))
-	if rec.Code != http.StatusPartialContent {
-		t.Fatalf("status = %d, want 206", rec.Code)
-	}
-	mediaType, params, err := mime.ParseMediaType(rec.Header().Get("Content-Type"))
-	if err != nil || mediaType != "multipart/byteranges" {
-		t.Fatalf("Content-Type = %q (%v), want multipart/byteranges", rec.Header().Get("Content-Type"), err)
-	}
-	clip := streamClip()
-	reader := multipart.NewReader(rec.Body, params["boundary"])
-	for _, want := range [][]byte{clip[0:10], clip[1000:1010]} {
-		part, err := reader.NextPart()
-		if err != nil {
-			t.Fatalf("next part: %v", err)
-		}
-		if part.Header.Get("Content-Type") != "video/mp4" {
-			t.Fatalf("part Content-Type = %q, want video/mp4", part.Header.Get("Content-Type"))
-		}
-		got, err := io.ReadAll(part)
-		if err != nil || !bytes.Equal(got, want) {
-			t.Fatalf("part = %v (%v), want %v", got, err, want)
-		}
-	}
-	if offsets, gets := store.opened(); !slices.Equal(offsets, []int64{0, 1000}) || gets != 0 {
-		t.Fatalf("store opened at %v with %d Gets, want [0 1000] and none", offsets, gets)
-	}
-}
-
-func TestAssetStreamHeadDoesNotOpenTheStore(t *testing.T) {
+func TestAssetStreamHeadReadsNoBytes(t *testing.T) {
 	s, _, store := newAssetStreamRig(t, "video/webm")
 	rec := streamRequest(s, http.MethodHead, "/api/assets/asset-1/stream", assetAPIIdentityID, nil)
 	if rec.Code != http.StatusOK || rec.Header().Get("Content-Length") != "2048" || rec.Body.Len() != 0 {
@@ -205,8 +195,8 @@ func TestAssetStreamHeadDoesNotOpenTheStore(t *testing.T) {
 	if rec.Header().Get("Content-Type") != "video/webm" {
 		t.Fatalf("Content-Type = %q, want video/webm", rec.Header().Get("Content-Type"))
 	}
-	if offsets, gets := store.opened(); len(offsets) != 0 || gets != 0 {
-		t.Fatalf("HEAD opened the store at %v with %d Gets", offsets, gets)
+	if store.heads != 1 || store.getCalls != 0 || len(store.offsets) != 0 {
+		t.Fatalf("HEAD store calls = %d Head, %d Get, GetFrom at %v; want only the Head", store.heads, store.getCalls, store.offsets)
 	}
 }
 
@@ -236,8 +226,8 @@ func TestAssetStreamServesOnlyTheAcceptedVideoTypes(t *testing.T) {
 				}
 				return
 			}
-			if offsets, gets := store.opened(); len(offsets) != 0 || gets != 0 {
-				t.Fatalf("a refused type opened the store at %v with %d Gets", offsets, gets)
+			if store.getCalls != 0 || len(store.offsets) != 0 {
+				t.Fatalf("a refused type read the store: %d Get, GetFrom at %v", store.getCalls, store.offsets)
 			}
 		})
 	}
@@ -258,12 +248,58 @@ func TestAssetStreamRefusesAForeignAssetLikeDownload(t *testing.T) {
 	}
 }
 
+// An owned row whose object is gone answers 404 on GET and HEAD alike, before a status line
+// could promise bytes that do not exist.
+func TestAssetStreamRefusesAMissingObject(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		t.Run(method, func(t *testing.T) {
+			s, fake, store := newAssetStreamRig(t, "video/mp4")
+			fake.openAsset.ObjectKey = "identity/gone.mp4"
+			rec := streamRequest(s, method, "/api/assets/asset-1/stream", assetAPIIdentityID, rangeHeader("bytes=0-99"))
+			if rec.Code != http.StatusNotFound || rec.Header().Get("Content-Range") != "" {
+				t.Fatalf("%s missing object = %d (Content-Range %q), want a plain 404", method, rec.Code, rec.Header().Get("Content-Range"))
+			}
+			if store.heads != 1 || len(store.offsets) != 0 {
+				t.Fatalf("store calls = %d Head, GetFrom at %v; want the Head only", store.heads, store.offsets)
+			}
+		})
+	}
+}
+
+// Once the status line is out a failing read can only truncate the body, so the failure is
+// logged; a request the client cancelled is not a store fault and stays quiet.
+func TestAssetStreamLogsAStoreFailureAfterTheStatusLine(t *testing.T) {
+	logs := captureWarnings(t)
+	s, _, store := newAssetStreamRig(t, "video/mp4")
+	store.getFromErr = errors.New("garage connection reset")
+	rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, rangeHeader("bytes=100-"))
+	if rec.Code != http.StatusPartialContent || rec.Body.Len() != 0 {
+		t.Fatalf("status = %d with %d bytes, want the 206 already sent and nothing after it", rec.Code, rec.Body.Len())
+	}
+	for _, want := range []string{"video stream read failed", "asset_id=asset-1", "garage connection reset"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("log %q does not contain %q", logs.String(), want)
+		}
+	}
+
+	logs.Reset()
+	cancelled, _, cancelStore := newAssetStreamRig(t, "video/mp4")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cancelStore.cancel, cancelStore.getFromErr = cancel, context.Canceled
+	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/assets/asset-1/stream", nil).WithContext(ctx), assetAPIIdentityID)
+	cancelled.Mux().ServeHTTP(httptest.NewRecorder(), req)
+	if len(cancelStore.offsets) != 1 || logs.Len() != 0 {
+		t.Fatalf("GetFrom at %v, log %q; want one open and no warning for a client that left", cancelStore.offsets, logs.String())
+	}
+}
+
 func TestAssetStreamRequiresAServiceAndAPrincipal(t *testing.T) {
 	bare := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
 	if rec := streamRequest(bare, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, nil); rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("no asset service status = %d, want 503", rec.Code)
 	}
-	s, fake, _ := newAssetStreamRig(t, "video/mp4")
+	s, fake, store := newAssetStreamRig(t, "video/mp4")
 	if rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", "", nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("no principal status = %d, want 401", rec.Code)
 	}
@@ -273,4 +309,5 @@ func TestAssetStreamRequiresAServiceAndAPrincipal(t *testing.T) {
 	if rec.Code != http.StatusUnauthorized || fake.openID != "" {
 		t.Fatalf("no session = %d with open id %q, want 401 before the asset service", rec.Code, fake.openID)
 	}
+	store.assertUntouched(t)
 }

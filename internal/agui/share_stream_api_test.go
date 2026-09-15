@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	streamShareToken = "public-token"
-	streamShareID    = "0199a000-0000-7000-8000-00000000000a"
-	streamVideoID    = "0199a000-0000-7000-8000-0000000000b1"
-	streamDocID      = "0199a000-0000-7000-8000-0000000000b2"
+	streamShareToken  = "public-token"
+	streamShareID     = "0199a000-0000-7000-8000-00000000000a"
+	streamVideoID     = "0199a000-0000-7000-8000-0000000000b1"
+	streamDocID       = "0199a000-0000-7000-8000-0000000000b2"
+	streamShareBucket = "share-bucket"
 )
 
 var errShareMiss = errors.New("share not found")
@@ -48,24 +49,39 @@ func (f *streamShareService) ResolveInternal(_ context.Context, shareID, _ strin
 }
 
 func (f *streamShareService) OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error) {
-	body, _, err := f.objects.Get(ctx, streamShareRef(shareID, snapshotID, assetID))
+	ref, err := objectstore.ShareArtifactRef(streamShareBucket, shareID, snapshotID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	body, _, err := f.objects.Get(ctx, ref)
 	return body, err
 }
 
-func (f *streamShareService) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error) {
-	return objectstore.NewSeekableObject(ctx, f.objects, streamShareRef(shareID, snapshotID, assetID), size), nil
+func (f *streamShareService) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (*objectstore.SeekableObject, error) {
+	ref, err := objectstore.ShareArtifactRef(streamShareBucket, shareID, snapshotID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	return objectstore.OpenSeekableObject(ctx, f.objects, ref)
 }
 
-func streamShareRef(shareID, snapshotID uuid.UUID, assetID string) objectstore.ObjectRef {
-	return objectstore.ObjectRef{Bucket: "share-bucket", Key: objectstore.ShareArtifactKey(shareID, snapshotID, uuid.MustParse(assetID))}
+func streamShareRef(t *testing.T, link share.Link, assetID string) objectstore.ObjectRef {
+	t.Helper()
+	ref, err := objectstore.ShareArtifactRef(streamShareBucket, link.ID, link.SnapshotID, assetID)
+	if err != nil {
+		t.Fatalf("share artifact ref: %v", err)
+	}
+	return ref
 }
+
+var streamShareLink = share.Link{ID: uuid.MustParse(streamShareID), SnapshotID: uuid.MustParse("0199a000-0000-7000-8000-0000000000c1")}
 
 func newShareStreamRig(t *testing.T) (*Server, *rangeRecordingStore) {
 	t.Helper()
-	link := share.Link{ID: uuid.MustParse(streamShareID), SnapshotID: uuid.MustParse("0199a000-0000-7000-8000-0000000000c1")}
-	store := newRangeRecordingStore(t, streamShareRef(link.ID, link.SnapshotID, streamVideoID), streamClip())
+	link := streamShareLink
+	store := newRangeRecordingStore(t, streamShareRef(t, link, streamVideoID), streamClip())
 	doc := []byte("shared notes")
-	if _, err := store.Put(context.Background(), streamShareRef(link.ID, link.SnapshotID, streamDocID), bytes.NewReader(doc), objectstore.PutOptions{}); err != nil {
+	if _, err := store.Put(context.Background(), streamShareRef(t, link, streamDocID), bytes.NewReader(doc), objectstore.PutOptions{}); err != nil {
 		t.Fatalf("seed doc: %v", err)
 	}
 	svc := &streamShareService{
@@ -106,7 +122,7 @@ func TestShareStreamServesRangesInlineOnBothTiers(t *testing.T) {
 	}
 }
 
-func TestShareStreamRefusesWithoutOpeningTheStore(t *testing.T) {
+func TestShareStreamRefusesWithoutTouchingTheStore(t *testing.T) {
 	for _, tier := range shareTiers() {
 		for _, tc := range []struct {
 			name   string
@@ -122,9 +138,7 @@ func TestShareStreamRefusesWithoutOpeningTheStore(t *testing.T) {
 				if rec.Code != tc.status {
 					t.Fatalf("status = %d, want %d", rec.Code, tc.status)
 				}
-				if offsets, gets := store.opened(); len(offsets) != 0 || gets != 0 {
-					t.Fatalf("refused request opened the store at %v with %d Gets", offsets, gets)
-				}
+				store.assertUntouched(t)
 			})
 		}
 	}
@@ -143,8 +157,51 @@ func TestShareStreamRefusesAnUnresolvedShareLikeDownload(t *testing.T) {
 			t.Fatalf("%s: stream = %d %q, download = %d %q; want the same 404", paths[0], stream.Code, stream.Body.String(), download.Code, download.Body.String())
 		}
 	}
-	if offsets, gets := store.opened(); len(offsets) != 0 || gets != 0 {
-		t.Fatalf("an unresolved share opened the store at %v with %d Gets", offsets, gets)
+	store.assertUntouched(t)
+}
+
+// A bundled blob that is gone answers the download route's 404 on GET and HEAD alike, before a
+// status line could promise bytes that do not exist.
+func TestShareStreamRefusesAMissingBlobLikeDownload(t *testing.T) {
+	for _, tier := range shareTiers() {
+		t.Run(tier.name, func(t *testing.T) {
+			s, store := newShareStreamRig(t)
+			if err := store.Delete(context.Background(), streamShareRef(t, streamShareLink, streamVideoID)); err != nil {
+				t.Fatal(err)
+			}
+			download := streamRequest(s, http.MethodGet, tier.asset(streamVideoID), tier.principal, nil)
+			for _, method := range []string{http.MethodGet, http.MethodHead} {
+				stream := streamRequest(s, method, tier.asset(streamVideoID)+"/stream", tier.principal, rangeHeader("bytes=0-99"))
+				if stream.Code != http.StatusNotFound || stream.Code != download.Code || stream.Header().Get("Content-Range") != "" {
+					t.Fatalf("%s stream = %d (Content-Range %q), download = %d; want the same plain 404",
+						method, stream.Code, stream.Header().Get("Content-Range"), download.Code)
+				}
+				if method == http.MethodGet && stream.Body.String() != download.Body.String() {
+					t.Fatalf("stream body %q, download body %q; want the same", stream.Body.String(), download.Body.String())
+				}
+			}
+			if len(store.offsets) != 0 {
+				t.Fatalf("a missing blob was opened at %v", store.offsets)
+			}
+		})
+	}
+}
+
+func TestShareStreamLogsAStoreFailureAfterTheStatusLine(t *testing.T) {
+	logs := captureWarnings(t)
+	s, store := newShareStreamRig(t)
+	store.getFromErr = errors.New("garage connection reset")
+	rec := streamRequest(s, http.MethodGet, shareTiers()[0].asset(streamVideoID)+"/stream", "", nil)
+	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
+		t.Fatalf("status = %d with %d bytes, want the 200 already sent and nothing after it", rec.Code, rec.Body.Len())
+	}
+	for _, want := range []string{"video stream read failed", "asset_id=" + streamVideoID, "garage connection reset"} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("log %q does not contain %q", logs.String(), want)
+		}
+	}
+	if strings.Contains(logs.String(), streamShareToken) {
+		t.Fatalf("the public token reached the log: %q", logs.String())
 	}
 }
 

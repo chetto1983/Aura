@@ -5,18 +5,18 @@ import (
 	"errors"
 	"io"
 	"strings"
-	"sync"
 	"testing"
 )
 
-// openRecordingStore records every GetFrom offset and whether each opened body was closed, so
+// openRecordingStore records every Head and GetFrom and whether each opened body was closed, so
 // the reader's lazy-open and reopen-on-seek behaviour is asserted, not inferred from bytes.
 type openRecordingStore struct {
 	Store
-	mu      sync.Mutex
+	heads   int
 	offsets []int64
 	bodies  []*closeRecordingBody
 	openErr error
+	readErr error
 }
 
 type closeRecordingBody struct {
@@ -29,12 +29,23 @@ func (b *closeRecordingBody) Close() error {
 	return b.ReadCloser.Close()
 }
 
+type failingBody struct{ err error }
+
+func (b failingBody) Read([]byte) (int, error) { return 0, b.err }
+func (failingBody) Close() error               { return nil }
+
+func (s *openRecordingStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
+	s.heads++
+	return s.Store.Head(ctx, ref)
+}
+
 func (s *openRecordingStore) GetFrom(ctx context.Context, ref ObjectRef, offset int64) (io.ReadCloser, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.offsets = append(s.offsets, offset)
 	if s.openErr != nil {
 		return nil, s.openErr
+	}
+	if s.readErr != nil {
+		return failingBody{err: s.readErr}, nil
 	}
 	body, err := s.Store.GetFrom(ctx, ref, offset)
 	if err != nil {
@@ -47,13 +58,19 @@ func (s *openRecordingStore) GetFrom(ctx context.Context, ref ObjectRef, offset 
 
 var seekableRef = ObjectRef{Bucket: "bucket", Key: "clip.mp4"}
 
-func newSeekableRig(t *testing.T, stored string, size int64) (*SeekableObject, *openRecordingStore) {
+func newRecordingStore(t *testing.T, stored string) *openRecordingStore {
 	t.Helper()
 	store := &openRecordingStore{Store: NewFake()}
 	if _, err := store.Put(context.Background(), seekableRef, strings.NewReader(stored), PutOptions{Size: int64(len(stored))}); err != nil {
 		t.Fatalf("Put() error = %v", err)
 	}
-	return NewSeekableObject(context.Background(), store, seekableRef, size), store
+	return store
+}
+
+func newSeekableRig(t *testing.T, stored string, size int64) (*SeekableObject, *openRecordingStore) {
+	t.Helper()
+	store := newRecordingStore(t, stored)
+	return newSeekableObject(context.Background(), store, seekableRef, size), store
 }
 
 func readN(t *testing.T, r io.Reader, n int) string {
@@ -66,17 +83,31 @@ func readN(t *testing.T, r io.Reader, n int) string {
 	return string(buf)
 }
 
-func TestSeekableObjectMeasuresItsSizeWithoutOpeningTheStore(t *testing.T) {
-	object, store := newSeekableRig(t, getFromContent, int64(len(getFromContent)))
+// The size served is the store's, not a recorded one: opening heads the object once, reads no
+// bytes, and a missing object fails before anything could be served.
+func TestOpenSeekableObjectSizesFromTheStoreAndRefusesAMissingObject(t *testing.T) {
+	store := newRecordingStore(t, getFromContent)
+	object, err := OpenSeekableObject(context.Background(), store, seekableRef)
+	if err != nil {
+		t.Fatalf("OpenSeekableObject() error = %v", err)
+	}
 	end, err := object.Seek(0, io.SeekEnd)
 	if err != nil || end != int64(len(getFromContent)) {
-		t.Fatalf("Seek(0, SeekEnd) = %d, %v, want %d", end, err, len(getFromContent))
+		t.Fatalf("Seek(0, SeekEnd) = %d, %v, want the stored %d", end, err, len(getFromContent))
 	}
 	if start, err := object.Seek(0, io.SeekStart); err != nil || start != 0 {
 		t.Fatalf("Seek(0, SeekStart) = %d, %v, want 0", start, err)
 	}
+	if store.heads != 1 || len(store.offsets) != 0 {
+		t.Fatalf("heads = %d, GetFrom offsets = %v, want one Head and no open before the first Read", store.heads, store.offsets)
+	}
+
+	missing, err := OpenSeekableObject(context.Background(), store, ObjectRef{Bucket: "bucket", Key: "gone.mp4"})
+	if !IsNotFound(err) || missing != nil {
+		t.Fatalf("OpenSeekableObject(missing) = %v, %v, want nil and not found", missing, err)
+	}
 	if len(store.offsets) != 0 {
-		t.Fatalf("GetFrom offsets = %v, want none before the first Read", store.offsets)
+		t.Fatalf("a missing object was opened at %v", store.offsets)
 	}
 }
 
@@ -125,13 +156,16 @@ func TestSeekableObjectOpensOnceAtTheOffsetAndReopensOnlyOnAMove(t *testing.T) {
 	if !store.bodies[2].closed {
 		t.Fatal("Close did not close the open body")
 	}
+	if object.Err() != nil {
+		t.Fatalf("Err() = %v after clean reads, want nil", object.Err())
+	}
 }
 
 func TestSeekableObjectEndsAtItsSizeWithoutTouchingTheStore(t *testing.T) {
 	object, store := newSeekableRig(t, getFromContent, 4)
 	got, err := io.ReadAll(object)
 	if err != nil || string(got) != "0123" {
-		t.Fatalf("ReadAll = %q, %v, want 0123 clamped to the declared size", got, err)
+		t.Fatalf("ReadAll = %q, %v, want 0123 clamped to the size", got, err)
 	}
 	if _, err := object.Seek(40, io.SeekStart); err != nil {
 		t.Fatalf("Seek past the end error = %v, want allowed", err)
@@ -139,21 +173,46 @@ func TestSeekableObjectEndsAtItsSizeWithoutTouchingTheStore(t *testing.T) {
 	if n, err := object.Read(make([]byte, 8)); n != 0 || !errors.Is(err, io.EOF) {
 		t.Fatalf("Read past the end = %d, %v, want 0, EOF", n, err)
 	}
-	if len(store.offsets) != 1 {
-		t.Fatalf("GetFrom offsets = %v, want one open; reads at the end must not reopen", store.offsets)
+	if len(store.offsets) != 1 || object.Err() != nil {
+		t.Fatalf("GetFrom offsets = %v, Err() = %v; want one open and EOF never kept as an error", store.offsets, object.Err())
 	}
 }
 
-func TestSeekableObjectReportsAnObjectShorterThanItsSize(t *testing.T) {
+func TestSeekableObjectKeepsAnObjectShorterThanItsSizeAsAnError(t *testing.T) {
 	object, _ := newSeekableRig(t, "0123", 10)
 	_, err := io.ReadAll(object)
-	if !errors.Is(err, io.ErrUnexpectedEOF) {
-		t.Fatalf("ReadAll error = %v, want io.ErrUnexpectedEOF for a truncated object", err)
+	if !errors.Is(err, io.ErrUnexpectedEOF) || !errors.Is(object.Err(), io.ErrUnexpectedEOF) {
+		t.Fatalf("ReadAll error = %v, Err() = %v, want io.ErrUnexpectedEOF for both", err, object.Err())
 	}
 }
 
-func TestSeekableObjectRefusesInvalidSeeksAndSurfacesOpenErrors(t *testing.T) {
+// ServeContent throws away the copy error once headers are out, so the reader must remember the
+// first store failure for the handler to report, and a later one must not overwrite it.
+func TestSeekableObjectKeepsTheFirstStoreError(t *testing.T) {
 	object, store := newSeekableRig(t, getFromContent, int64(len(getFromContent)))
+	store.openErr = errors.New("store unavailable")
+	if _, err := object.Read(make([]byte, 1)); !errors.Is(err, store.openErr) {
+		t.Fatalf("Read error = %v, want the store's open error", err)
+	}
+	first := store.openErr
+	store.openErr = nil
+	store.readErr = errors.New("connection reset mid-body")
+	if _, err := object.Read(make([]byte, 1)); !errors.Is(err, store.readErr) {
+		t.Fatalf("Read error = %v, want the body's read error", err)
+	}
+	if !errors.Is(object.Err(), first) {
+		t.Fatalf("Err() = %v, want the first failure %v", object.Err(), first)
+	}
+
+	reading, readStore := newSeekableRig(t, getFromContent, int64(len(getFromContent)))
+	readStore.readErr = errors.New("connection reset mid-body")
+	if _, err := reading.Read(make([]byte, 4)); !errors.Is(err, readStore.readErr) || !errors.Is(reading.Err(), readStore.readErr) {
+		t.Fatalf("Read error = %v, Err() = %v, want the read failure kept", err, reading.Err())
+	}
+}
+
+func TestSeekableObjectRefusesInvalidSeeks(t *testing.T) {
+	object, _ := newSeekableRig(t, getFromContent, int64(len(getFromContent)))
 	if _, err := object.Seek(-1, io.SeekStart); err == nil {
 		t.Fatal("Seek(-1, SeekStart) error = nil, want refusal")
 	}
@@ -162,10 +221,6 @@ func TestSeekableObjectRefusesInvalidSeeksAndSurfacesOpenErrors(t *testing.T) {
 	}
 	if pos, _ := object.Seek(0, io.SeekCurrent); pos != 0 {
 		t.Fatalf("a refused seek moved the offset to %d", pos)
-	}
-	store.openErr = errors.New("store unavailable")
-	if _, err := object.Read(make([]byte, 1)); !errors.Is(err, store.openErr) {
-		t.Fatalf("Read error = %v, want the store's open error", err)
 	}
 	if err := object.Close(); err != nil {
 		t.Fatalf("Close() with nothing open error = %v", err)
@@ -186,21 +241,4 @@ func TestSeekableObjectRefusesUseAfterClose(t *testing.T) {
 	if len(store.offsets) != 0 {
 		t.Fatalf("GetFrom offsets = %v, want no reopen after Close", store.offsets)
 	}
-}
-
-// net/http.ServeContent's multi-range writer reads from its own goroutine, which can still be
-// inside Read when the handler's deferred Close runs. Run under -race.
-func TestSeekableObjectCloseRacesARead(t *testing.T) {
-	object, _ := newSeekableRig(t, strings.Repeat("x", 1<<16), 1<<16)
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		buf := make([]byte, 16)
-		for {
-			if _, err := object.Read(buf); err != nil {
-				return
-			}
-		}
-	})
-	_ = object.Close()
-	wg.Wait()
 }

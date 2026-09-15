@@ -35,21 +35,26 @@ func (s *Server) serveShareArtifact(w http.ResponseWriter, r *http.Request, snap
 }
 
 // streamShareArtifact is the Range-capable inline stream of a bundled video, under the same
-// rules as /api/assets/{id}/stream. The snapshot already tells its holder every artifact's MIME,
-// so answering a non-video with 415 rather than 404 reveals nothing new.
+// rules as /api/assets/{id}/stream. The type is checked before the store is touched; the
+// snapshot already tells its holder every artifact's MIME, so answering a non-video with 415
+// rather than 404 reveals nothing new. A failed open answers the download route's 404.
 func (s *Server) streamShareArtifact(w http.ResponseWriter, r *http.Request, snap share.Snapshot, link share.Link, assetID string) {
 	artifact, ok := snapshotArtifact(snap, assetID)
 	if !ok {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	body, err := s.share.OpenArtifactSeekable(r.Context(), link.ID, link.SnapshotID, assetID, artifact.SizeBytes)
+	contentType, ok := videoStreamType(w, artifact.MIMEType)
+	if !ok {
+		return
+	}
+	body, err := s.share.OpenArtifactSeekable(r.Context(), link.ID, link.SnapshotID, assetID)
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	defer func() { _ = body.Close() }()
-	serveVideoStream(w, r, body, artifact.MIMEType, artifact.FileName)
+	serveVideoStream(w, r, body, contentType, artifact.FileName, assetID)
 }
 
 func snapshotArtifact(snap share.Snapshot, assetID string) (share.SnapshotArtifact, bool) {

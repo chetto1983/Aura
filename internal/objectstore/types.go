@@ -3,6 +3,7 @@ package objectstore
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"time"
 
@@ -127,6 +128,16 @@ func ShareSnapshotKey(shareID, snapshotID uuid.UUID) string {
 // List(prefix)+Delete depends on to reclaim every byte (T-37F-07).
 func ShareArtifactKey(shareID, snapshotID, assetID uuid.UUID) string {
 	return "share/" + shareID.String() + "/snapshot/" + snapshotID.String() + "/asset/" + assetID.String()
+}
+
+// ShareArtifactRef addresses one bundled artifact in bucket. Asset ids reach it as strings from
+// routes and asset rows, so it parses them here: only a real UUID can name a share key.
+func ShareArtifactRef(bucket string, shareID, snapshotID uuid.UUID, assetID string) (ObjectRef, error) {
+	id, err := uuid.Parse(assetID)
+	if err != nil {
+		return ObjectRef{}, fmt.Errorf("objectstore: share artifact id: %w", err)
+	}
+	return ObjectRef{Bucket: bucket, Key: ShareArtifactKey(shareID, snapshotID, id)}, nil
 }
 
 // ShareKeyPrefix returns the revoke-scope prefix for one share:
