@@ -94,6 +94,10 @@ type Store interface {
 	Put(context.Context, ObjectRef, io.Reader, PutOptions) (Attrs, error)
 	Head(context.Context, ObjectRef) (Attrs, error)
 	Get(context.Context, ObjectRef) (io.ReadCloser, Attrs, error)
+	// GetFrom opens an object from a byte offset to its end, so a Range request reads only the
+	// bytes it serves. An offset at or past the end is an empty body, not an error; a negative
+	// offset is refused.
+	GetFrom(ctx context.Context, ref ObjectRef, offset int64) (io.ReadCloser, error)
 	List(context.Context, ListRequest) ([]ObjectInfo, error)
 	Delete(context.Context, ObjectRef) error
 	// Copy duplicates one object inside the store. It exists so a file manager's move and

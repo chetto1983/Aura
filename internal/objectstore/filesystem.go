@@ -121,6 +121,30 @@ func (s *FilesystemStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser
 	return f, attrs, nil
 }
 
+// GetFrom relies on os.File allowing a seek past the end: the read then returns EOF, which is
+// the empty body the contract promises.
+func (s *FilesystemStore) GetFrom(ctx context.Context, ref ObjectRef, offset int64) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := checkOffset(offset); err != nil {
+		return nil, err
+	}
+	p, err := s.objectPath(ref)
+	if err != nil {
+		return nil, err
+	}
+	f, err := os.Open(p) //nolint:gosec // objectPath rejects traversal, absolute paths, and root escapes.
+	if err != nil {
+		return nil, err
+	}
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	return f, nil
+}
+
 func (s *FilesystemStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err

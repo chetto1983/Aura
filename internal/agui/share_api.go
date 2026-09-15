@@ -8,9 +8,9 @@
 // that file's header before assuming this file's owner-gate-first shape generalises there.
 //
 // registerShareRoutes is the single entry point server.go's Mux() calls; it registers this
-// file's four owner routes directly and delegates the remaining four to
-// registerShareInternalRoutes (share_api_internal.go) and registerSharePublicRoutes
-// (share_api_public.go) — so every one of the plan's eight route strings lives beside the
+// file's four owner routes directly and delegates the remaining six (the plan's four plus the
+// two video stream siblings) to registerShareInternalRoutes (share_api_internal.go) and
+// registerSharePublicRoutes (share_api_public.go) — so every route string lives beside the
 // handler it drives, never centralised in share_service.go.
 package agui
 
@@ -25,7 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/share"
 )
 
-// registerShareRoutes mounts the eight WEBSHARE-02/03 share-lifecycle routes across three
+// registerShareRoutes mounts the ten WEBSHARE-02/03 share-lifecycle routes across three
 // trust boundaries. The parent-mux mount (RequireAuth whole-origin, RequireCapability(
 // share.public) on the public-tier mint, and the isPublicShareRoute allowlist admitting
 // /s/... unauthenticated) lives in cmd/aura/serve_webui_share.go (plan 37F-12) — none of that

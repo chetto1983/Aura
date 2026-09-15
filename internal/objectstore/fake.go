@@ -85,7 +85,26 @@ func (s *FakeStore) Head(ctx context.Context, ref ObjectRef) (Attrs, error) {
 }
 
 func (s *FakeStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attrs, error) {
+	data, attrs, err := s.readFrom(ctx, ref, 0)
+	if err != nil {
+		return nil, Attrs{}, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), attrs, nil
+}
+
+func (s *FakeStore) GetFrom(ctx context.Context, ref ObjectRef, offset int64) (io.ReadCloser, error) {
+	data, _, err := s.readFrom(ctx, ref, offset)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
+func (s *FakeStore) readFrom(ctx context.Context, ref ObjectRef, offset int64) ([]byte, Attrs, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, Attrs{}, err
+	}
+	if err := checkOffset(offset); err != nil {
 		return nil, Attrs{}, err
 	}
 	s.mu.RLock()
@@ -94,8 +113,8 @@ func (s *FakeStore) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attr
 	if !ok {
 		return nil, Attrs{}, fmt.Errorf("objectstore fake: %s/%s: %w", ref.Bucket, ref.Key, fs.ErrNotExist)
 	}
-	data := bytes.Clone(obj.data)
-	return io.NopCloser(bytes.NewReader(data)), obj.attrs, nil
+	start := min(offset, int64(len(obj.data)))
+	return bytes.Clone(obj.data[start:]), obj.attrs, nil
 }
 
 func (s *FakeStore) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {

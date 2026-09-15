@@ -1,5 +1,6 @@
 // share_api_public.go owns the UNAUTHENTICATED public token routes (WEBSHARE-02/03, plan
-// 37F-10): GET /s/{token}/data and GET /s/{token}/asset/{id}. These are the phase's ONLY
+// 37F-10): GET /s/{token}/data, GET /s/{token}/asset/{id} and its video stream sibling
+// GET /s/{token}/asset/{id}/stream. These are the phase's ONLY
 // unauthenticated handlers — INVERTING assets_api.go's handleAssetDownload doc line ("no
 // unauthenticated surface"): that line is FALSE here. RequireAuth does NOT apply to this
 // prefix; the token predicate itself is the entire gate (plan 37F-12's isPublicShareRoute
@@ -14,80 +15,61 @@
 package agui
 
 import (
-	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/chetto1983/aura/internal/share"
 )
 
-// registerSharePublicRoutes mounts the two unauthenticated token routes. The token predicate
+// registerSharePublicRoutes mounts the unauthenticated token routes. The token predicate
 // (share.Service.ResolveByToken) is the entire gate — there is no per-route auth wiring here
 // and none is added at the parent mux either (plan 37F-12).
 func (s *Server) registerSharePublicRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /s/{token}/data", s.handleShareResolvePublic)
 	mux.HandleFunc("GET /s/{token}/asset/{id}", s.handleShareAssetPublic)
+	mux.HandleFunc("GET /s/{token}/asset/{id}/stream", s.handleShareAssetStreamPublic)
 }
 
 // handleShareResolvePublic resolves a live public link with NO session (D-15's lazy
-// fail-closed predicate — see share.Store.ResolveByToken's own doc). The token is passed to
-// the resolver UNCHECKED: no length/shape early-return before the DB probe (a timing oracle),
-// and ANY failure collapses to the SAME 404 body below.
+// fail-closed predicate — see share.Store.ResolveByToken's own doc).
 func (s *Server) handleShareResolvePublic(w http.ResponseWriter, r *http.Request) {
-	if s.share == nil {
-		http.Error(w, "share service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	snap, _, err := s.share.ResolveByToken(r.Context(), r.PathValue("token"))
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
+	snap, _, ok := s.resolvePublicShare(w, r)
+	if !ok {
 		return
 	}
 	writeJSON(w, snap)
 }
 
-// handleShareAssetPublic streams one bundled artifact from a resolved public snapshot. The
-// token is resolved FIRST; id must belong to THAT snapshot (SC4 row 9) or the response is
-// 404 — holding a token authenticates one snapshot, never any asset id. Bytes are read only
-// from the token-scoped share/ object-store namespace, never through the identity-scoped
-// artifact API (D-09 copy-never-reference).
+// handleShareAssetPublic serves one bundled artifact of the resolved public snapshot as an inert
+// attachment (share_api_artifact.go).
 func (s *Server) handleShareAssetPublic(w http.ResponseWriter, r *http.Request) {
+	snap, link, ok := s.resolvePublicShare(w, r)
+	if !ok {
+		return
+	}
+	s.serveShareArtifact(w, r, snap, link, r.PathValue("id"))
+}
+
+// handleShareAssetStreamPublic is the Range-capable inline sibling for a bundled video — the
+// token-scoped equivalent of /api/assets/{id}/stream.
+func (s *Server) handleShareAssetStreamPublic(w http.ResponseWriter, r *http.Request) {
+	snap, link, ok := s.resolvePublicShare(w, r)
+	if !ok {
+		return
+	}
+	s.streamShareArtifact(w, r, snap, link, r.PathValue("id"))
+}
+
+// resolvePublicShare passes the token to the resolver UNCHECKED: no length/shape early-return
+// before the DB probe (a timing oracle), and ANY failure collapses to the SAME 404 body.
+func (s *Server) resolvePublicShare(w http.ResponseWriter, r *http.Request) (share.Snapshot, share.Link, bool) {
 	if s.share == nil {
 		http.Error(w, "share service unavailable", http.StatusServiceUnavailable)
-		return
+		return share.Snapshot{}, share.Link{}, false
 	}
 	snap, link, err := s.share.ResolveByToken(r.Context(), r.PathValue("token"))
 	if err != nil {
 		http.Error(w, "not found", http.StatusNotFound)
-		return
+		return share.Snapshot{}, share.Link{}, false
 	}
-	assetID := r.PathValue("id")
-	var artifact share.SnapshotArtifact
-	found := false
-	for _, a := range snap.Artifacts {
-		if a.AssetID == assetID {
-			artifact, found = a, true
-			break
-		}
-	}
-	if !found {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	rc, err := s.share.OpenArtifact(r.Context(), link.ID, link.SnapshotID, assetID)
-	if err != nil {
-		http.Error(w, "not found", http.StatusNotFound)
-		return
-	}
-	defer func() { _ = rc.Close() }()
-
-	// Neutral-typed attachment (37A D-10): the artifact's real MIME is NEVER trusted as a
-	// serve header — application/octet-stream + nosniff regardless, mirroring
-	// handleAssetDownload (assets_api.go) verbatim.
-	h := w.Header()
-	h.Set("Content-Type", "application/octet-stream")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", contentDisposition(artifact.FileName))
-	h.Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
-	_, _ = io.Copy(w, rc)
+	return snap, link, true
 }

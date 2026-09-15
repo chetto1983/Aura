@@ -3,7 +3,7 @@ package main
 // serve_webui_share.go carries the 37F WEBSHARE-02 share-lifecycle parent-mux mounts, kept
 // OUT of serve_webui.go so that file stays under the 600-LOC ceiling (mirrors the
 // serve_webui_musr.go / serve_webui_voice.go / serve_webui_composer.go extractions). It
-// mounts the eight share routes registered on the agui Server.Mux (share_api.go /
+// mounts the ten share routes registered on the agui Server.Mux (share_api.go /
 // share_api_internal.go / share_api_public.go):
 //
 //   - POST /api/shares — bare aguiHandler, RequireAuth-only. D-02: internal links need NO
@@ -17,8 +17,9 @@ package main
 //   - GET /api/shares, PATCH /api/shares/{id}/snapshot, DELETE /api/shares/{id} — bare
 //     aguiHandler; owner-scoped, *ForIdentity-gated, 404-on-foreign (D-06 — a foreign id and
 //     an absent id must be indistinguishable).
-//   - GET /api/shares/{id}/data, GET /api/shares/{id}/asset/{assetID} — bare aguiHandler,
-//     RequireAuth-only, and deliberately NOT admitted to PublicRoute below. This is the D-10
+//   - GET /api/shares/{id}/data, GET /api/shares/{id}/asset/{assetID} and its /stream video
+//     sibling — bare aguiHandler, RequireAuth-only, and deliberately NOT admitted to
+//     PublicRoute below. This is the D-10
 //     bearer-within-auth tier (plan 37F-10): TWO halves, both load-bearing. Half one — NO
 //     capability and NO owner predicate: any authenticated identity holding the share id
 //     resolves its already-redacted snapshot, which is the entire point of an "internal
@@ -26,8 +27,8 @@ package main
 //     RequireAuth gates them for free; an anonymous caller gets 401/302. Do NOT "unify"
 //     these onto the /s/ lane below — isPublicShareRoute admits every GET /s/... with no
 //     session at all, so moving them there would make every internal share world-readable.
-//   - GET /s/{token}/data, GET /s/{token}/asset/{id} — bare aguiHandler PLUS the
-//     PublicRoute admission wired in serve_webui.go. These are the phase's ONLY
+//   - GET /s/{token}/data, GET /s/{token}/asset/{id} and its /stream video sibling — bare
+//     aguiHandler PLUS the PublicRoute admission wired in serve_webui.go. These are the phase's ONLY
 //     unauthenticated routes in the whole binary; the opaque token itself is their entire
 //     gate.
 //
@@ -54,7 +55,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 )
 
-// The eight WEBSHARE-02/03 share-lifecycle routes. share_api.go / share_api_internal.go /
+// The ten WEBSHARE-02/03 share-lifecycle routes. share_api.go / share_api_internal.go /
 // share_api_public.go own the handlers (registerShareRoutes on *agui.Server); this file only
 // mounts the parent-mux entries that delegate to them.
 const (
@@ -65,19 +66,21 @@ const (
 	// shareInternalDataRoute / shareInternalAssetRoute are the D-10 bearer-within-auth
 	// routes: bare aguiHandler, RequireAuth-only, deliberately absent from
 	// isPublicShareRoute below — see the file header's two-halves note.
-	shareInternalDataRoute  = "GET /api/shares/{id}/data"
-	shareInternalAssetRoute = "GET /api/shares/{id}/asset/{assetID}"
+	shareInternalDataRoute        = "GET /api/shares/{id}/data"
+	shareInternalAssetRoute       = "GET /api/shares/{id}/asset/{assetID}"
+	shareInternalAssetStreamRoute = "GET /api/shares/{id}/asset/{assetID}/stream"
 	// sharePublicDataRoute / sharePublicAssetRoute are the phase's ONLY unauthenticated
 	// routes — admitted by isPublicShareRoute below AND the PublicRoute chain entry added
 	// in serve_webui.go.
-	sharePublicDataRoute  = "GET /s/{token}/data"
-	sharePublicAssetRoute = "GET /s/{token}/asset/{id}"
+	sharePublicDataRoute        = "GET /s/{token}/data"
+	sharePublicAssetRoute       = "GET /s/{token}/asset/{id}"
+	sharePublicAssetStreamRoute = "GET /s/{token}/asset/{id}/stream"
 )
 
 // isPublicShareRoute is the fail-closed /s/ allowlist predicate serve_webui.go's PublicRoute
 // chain admits unauthenticated (T-37F-57). Unlike isPublicPasswordResetRoute's exact-path
-// switch, this needs a PREFIX match — /s/{token}, /s/{token}/data, and /s/{token}/asset/{id}
-// all share the "/s/" prefix. GET-only; every other method and every other path (including
+// switch, this needs a PREFIX match — /s/{token}, /s/{token}/data, /s/{token}/asset/{id} and
+// its /stream sibling all share the "/s/" prefix. GET-only; every other method and every other path (including
 // the confusable "/shared/..." internal-tier page — "/sh" != "/s/" — and a naive bare "/s"
 // with no trailing slash) returns false by default.
 func isPublicShareRoute(r *http.Request) bool {
@@ -102,8 +105,10 @@ func registerShareRoutes(mux *http.ServeMux, aguiHandler http.Handler, _ agui.Au
 	// Do not move these onto the /s/ lane; see the file header's two-halves note.
 	mux.Handle(shareInternalDataRoute, aguiHandler)
 	mux.Handle(shareInternalAssetRoute, aguiHandler)
+	mux.Handle(shareInternalAssetStreamRoute, aguiHandler)
 	// The phase's ONLY unauthenticated routes; the PublicRoute admission itself lives in
 	// serve_webui.go, not here.
 	mux.Handle(sharePublicDataRoute, aguiHandler)
 	mux.Handle(sharePublicAssetRoute, aguiHandler)
+	mux.Handle(sharePublicAssetStreamRoute, aguiHandler)
 }

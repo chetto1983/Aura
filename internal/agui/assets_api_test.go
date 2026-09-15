@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/objectstore"
 )
 
 const assetAPIIdentityID = "00000000-0000-0000-0000-000000000001"
@@ -133,6 +134,8 @@ type fakeAssetService struct {
 	openResp   io.ReadCloser
 	openAsset  assets.Asset
 	openErr    error
+	// seekStore holds openAsset's bytes for OpenSeekableForIdentity.
+	seekStore objectstore.Store
 
 	// adopted records every "<assetID>-><threadID>" claim, so a test can assert that an
 	// attachment presigned before its conversation existed gets bound to it.
@@ -176,6 +179,16 @@ func (f *fakeAssetService) OpenForIdentity(_ context.Context, id, identityID str
 		return nil, assets.Asset{}, f.openErr
 	}
 	return f.openResp, f.openAsset, nil
+}
+
+func (f *fakeAssetService) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (io.ReadSeekCloser, assets.Asset, error) {
+	f.openID = id
+	f.openIdentityID = identityID
+	if f.openErr != nil {
+		return nil, assets.Asset{}, f.openErr
+	}
+	ref := objectstore.ObjectRef{Bucket: f.openAsset.ObjectBucket, Key: f.openAsset.ObjectKey}
+	return objectstore.NewSeekableObject(ctx, f.seekStore, ref, f.openAsset.SizeBytes), f.openAsset, nil
 }
 
 func (f *fakeAssetService) ListForThread(_ context.Context, identityID, threadID string) ([]assets.Asset, error) {

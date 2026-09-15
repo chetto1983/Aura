@@ -14,8 +14,8 @@ import (
 )
 
 // ShareService mirrors share.Service's Create/Update/Revoke/ResolveByToken/ResolveInternal
-// (plan 37F-08) verbatim, plus share.Store's two owner-scoped list reads and one
-// token/snapshot-scoped artifact opener that Service itself does not expose. The composition
+// (plan 37F-08) verbatim, plus share.Store's two owner-scoped list reads and the
+// token/snapshot-scoped artifact openers that Service itself does not expose. The composition
 // root (cmd/aura/serve_webui_share.go, plan 37F-12) satisfies this with a thin adapter over
 // the real *share.Service + *share.Store + objectstore.Store — the same "consumer-declared
 // seam" shape internal/share/service.go's own doc describes for ITS upstream dependencies
@@ -53,4 +53,8 @@ type ShareService interface {
 	// confirmed assetID belongs to the resolved snapshot (SC4 row 9) before calling this, and
 	// closes the returned io.ReadCloser.
 	OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error)
+	// OpenArtifactSeekable is OpenArtifact for the Range stream routes: the same key and the same
+	// precondition, read lazily from whatever offset is sought. size is the resolved snapshot's
+	// SizeBytes for assetID. The caller closes it.
+	OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error)
 }

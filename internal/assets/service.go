@@ -152,7 +152,7 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 	if err != nil {
 		return Asset{}, err
 	}
-	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
+	ref := assetRef(asset)
 	attrs, err := objects.Head(ctx, ref)
 	if err != nil {
 		_, _ = s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "object_missing", "uploaded object was not found")
@@ -194,6 +194,26 @@ func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (As
 // runs BEFORE any object-store read, so a non-owner never reaches the store (T-IDOR). It returns a
 // stream-through ReadCloser, never a presigned/direct store URL (D-09); the caller closes it.
 func (s *Service) OpenForIdentity(ctx context.Context, id, identityID string) (io.ReadCloser, Asset, error) {
+	objects, asset, err := s.ownedObject(ctx, id, identityID)
+	if err != nil {
+		return nil, Asset{}, err
+	}
+	rc, _, err := objects.Get(ctx, assetRef(asset))
+	return rc, asset, err
+}
+
+// OpenSeekableForIdentity is OpenForIdentity for Range streaming: the same ownership gate, then a
+// reader sized from the asset row that opens the object at whatever offset it is read from. No
+// store read happens until the caller reads.
+func (s *Service) OpenSeekableForIdentity(ctx context.Context, id, identityID string) (io.ReadSeekCloser, Asset, error) {
+	objects, asset, err := s.ownedObject(ctx, id, identityID)
+	if err != nil {
+		return nil, Asset{}, err
+	}
+	return objectstore.NewSeekableObject(ctx, objects, assetRef(asset), asset.SizeBytes), asset, nil
+}
+
+func (s *Service) ownedObject(ctx context.Context, id, identityID string) (objectstore.Store, Asset, error) {
 	asset, err := s.GetForIdentity(ctx, id, identityID)
 	if err != nil {
 		return nil, Asset{}, err
@@ -202,8 +222,11 @@ func (s *Service) OpenForIdentity(ctx context.Context, id, identityID string) (i
 	if err != nil {
 		return nil, Asset{}, err
 	}
-	rc, _, err := objects.Get(ctx, objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
-	return rc, asset, err
+	return objects, asset, nil
+}
+
+func assetRef(asset Asset) objectstore.ObjectRef {
+	return objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
 }
 
 func (s *Service) ListForThread(ctx context.Context, identityID, threadID string) ([]Asset, error) {
@@ -250,7 +273,7 @@ func (s *Service) Delete(ctx context.Context, identityID, assetID string) (Asset
 		// Best-effort object cleanup on the OWNER's resolved store (a resolution fault must
 		// not fail the record delete — the row is already gone and the object is orphaned-safe).
 		if objects, _, rErr := s.objectsFor(identityctx.WithIdentityID(ctx, identityID)); rErr == nil {
-			_ = objects.Delete(context.WithoutCancel(ctx), objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey})
+			_ = objects.Delete(context.WithoutCancel(ctx), assetRef(asset))
 		}
 	}
 	return asset, nil

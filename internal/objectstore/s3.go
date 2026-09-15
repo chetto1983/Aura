@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
-
-	"net/url"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -193,6 +194,29 @@ func (s *S3Store) Get(ctx context.Context, ref ObjectRef) (io.ReadCloser, Attrs,
 		// the sidecar has not reached yet.
 		Metadata: out.Metadata,
 	}, nil
+}
+
+// GetFrom sends an open-ended Range ("bytes=N-") past the start and a plain GET at zero: Garage
+// answers even "bytes=0-" on an empty object with 416 (measured 2026-09-15, v2.3.0).
+func (s *S3Store) GetFrom(ctx context.Context, ref ObjectRef, offset int64) (io.ReadCloser, error) {
+	if err := checkOffset(offset); err != nil {
+		return nil, err
+	}
+	in := &s3.GetObjectInput{
+		Bucket: aws.String(ref.Bucket),
+		Key:    aws.String(ref.Key),
+	}
+	if offset > 0 {
+		in.Range = aws.String("bytes=" + strconv.FormatInt(offset, 10) + "-")
+	}
+	out, err := s.client.GetObject(ctx, in)
+	if isRangeNotSatisfiable(err) {
+		return http.NoBody, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return out.Body, nil
 }
 
 func (s *S3Store) List(ctx context.Context, req ListRequest) ([]ObjectInfo, error) {

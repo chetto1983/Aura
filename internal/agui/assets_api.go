@@ -17,6 +17,8 @@ func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 	// The framed-document sibling of download: same ownership gate, HTML only, served
 	// under its own sealed CSP so the cockpit can frame it with src= (assets_render_api.go).
 	mux.HandleFunc("GET /api/assets/{id}/render", s.handleAssetRender)
+	// The Range-capable inline sibling for video (assets_stream_api.go): same ownership gate.
+	mux.HandleFunc("GET /api/assets/{id}/stream", s.handleAssetStream)
 	mux.HandleFunc("GET /api/assets", s.handleAssetList)
 	mux.HandleFunc("POST /api/assets/{id}/promote", s.handleAssetPromote)
 	mux.HandleFunc("POST /api/assets/{id}/retry", s.handleAssetRetry)
@@ -35,13 +37,8 @@ func (s *Server) registerAssetRoutes(mux *http.ServeMux) {
 //   - D-09 DoS-safe stream-through: the read is scoped to r.Context() so a client disconnect
 //     cancels it and io.Copy unblocks (no goroutine leak); the stream is never presigned/redirected.
 func (s *Server) handleAssetDownload(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	rc, asset, err := s.assets.OpenForIdentity(r.Context(), r.PathValue("id"), identityID)
@@ -50,14 +47,18 @@ func (s *Server) handleAssetDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = rc.Close() }()
+	setAttachmentHeaders(w.Header(), asset.FileName, asset.SizeBytes)
+	_, _ = io.Copy(w, rc)
+}
 
-	h := w.Header()
+// setAttachmentHeaders is the D-10 inert-bytes rule every download route shares: a neutral
+// octet-stream type the browser may not sniff past, whatever the stored MIME claims, and a
+// header-injection-safe attachment name.
+func setAttachmentHeaders(h http.Header, fileName string, size int64) {
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", contentDisposition(asset.FileName))
-	h.Set("Content-Length", strconv.FormatInt(asset.SizeBytes, 10))
-
-	_, _ = io.Copy(w, rc)
+	h.Set("Content-Disposition", contentDisposition(fileName))
+	h.Set("Content-Length", strconv.FormatInt(size, 10))
 }
 
 type assetPresignBody struct {
@@ -70,13 +71,8 @@ type assetPresignBody struct {
 }
 
 func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	body, err := decodeAssetPresignBody(w, r)
@@ -148,13 +144,8 @@ func (s *Server) handleAssetDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssetGet(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	asset, err := s.assets.GetForIdentity(r.Context(), r.PathValue("id"), identityID)
@@ -166,13 +157,8 @@ func (s *Server) handleAssetGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleAssetList(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	items, err := s.assets.ListForThread(r.Context(), identityID, r.URL.Query().Get("thread_id"))
@@ -188,13 +174,8 @@ func (s *Server) callAssetMutation(
 	r *http.Request,
 	call func(context.Context, string, string) (assets.Asset, error),
 ) (assets.Asset, bool) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return assets.Asset{}, false
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return assets.Asset{}, false
 	}
 	asset, err := call(r.Context(), identityID, r.PathValue("id"))
@@ -203,6 +184,21 @@ func (s *Server) callAssetMutation(
 		return assets.Asset{}, false
 	}
 	return asset, true
+}
+
+// assetCaller answers the two refusals every asset route shares: 503 without an asset service,
+// 401 without an authenticated principal.
+func (s *Server) assetCaller(w http.ResponseWriter, r *http.Request) (string, bool) {
+	if s.assets == nil {
+		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
+		return "", false
+	}
+	identityID, ok := principalIdentityID(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return "", false
+	}
+	return identityID, true
 }
 
 func principalIdentityID(r *http.Request) (string, bool) {

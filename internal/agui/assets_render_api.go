@@ -45,13 +45,8 @@ const maxRenderableArtifactBytes = 8 << 20
 //   - sealed: the response carries the sealed-view CSP, nosniff, and no filename — the
 //     bytes are for framing, not for saving; download remains the route that saves.
 func (s *Server) handleAssetRender(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	rc, asset, err := s.assets.OpenForIdentity(r.Context(), r.PathValue("id"), identityID)

@@ -2,7 +2,6 @@ package agui
 
 import (
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -37,13 +36,8 @@ import (
 //     rejecting the request: a human clicking "export" wants the readable
 //     form, and an unrecognized optional query value is not a client error.
 func (s *Server) handleConversationExport(w http.ResponseWriter, r *http.Request) {
-	if s.assets == nil {
-		http.Error(w, "asset service unavailable", http.StatusServiceUnavailable)
-		return
-	}
-	identityID, ok := principalIdentityID(r)
+	identityID, ok := s.assetCaller(w, r)
 	if !ok {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	id := r.PathValue("id")
@@ -110,11 +104,7 @@ func (s *Server) handleConversationExport(w http.ResponseWriter, r *http.Request
 
 	filename := exportFilenameStem(conv.Title) + "." + ext
 
-	h := w.Header()
-	h.Set("Content-Type", "application/octet-stream")
-	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", contentDisposition(filename))
-	h.Set("Content-Length", strconv.Itoa(len(body)))
+	setAttachmentHeaders(w.Header(), filename, int64(len(body)))
 	_, _ = w.Write(body)
 }
 

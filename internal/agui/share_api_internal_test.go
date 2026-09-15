@@ -10,6 +10,7 @@
 package agui
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -123,4 +124,30 @@ func TestShareInternalAssetContentType(t *testing.T) {
 	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
 	rec := shareReq(env.server, http.MethodGet, "/api/shares/"+link.ID+"/asset/"+assetID, owner, "")
 	assertInertAttachment(t, rec)
+}
+
+// TestShareInternalVideoStreamsToABearer: B, a NON-owner holding A's internal link, streams the
+// bundled clip by Range (D-10), while an anonymous request never passes RequireAuth.
+func TestShareInternalVideoStreamsToABearer(t *testing.T) {
+	pool := migratedPool(t)
+	env := newShareAPIEnv(t, pool, true)
+	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
+	bearerB := seedShareExportIdentity(t, pool)
+	clip := streamClip()
+	assetID := seedBundledVideo(env, clip)
+	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
+	stream := "/api/shares/" + link.ID + "/asset/" + assetID + "/stream"
+	rec := streamRequest(env.server, http.MethodGet, stream, bearerB, rangeHeader("bytes=-48"))
+	if rec.Code != http.StatusPartialContent || !bytes.Equal(rec.Body.Bytes(), clip[2000:]) {
+		t.Fatalf("bearer stream = %d with %d bytes, want 206 and the last 48 bytes: %s", rec.Code, rec.Body.Len(), rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Range"); got != "bytes 2000-2047/2048" {
+		t.Fatalf("Content-Range = %q, want bytes 2000-2047/2048", got)
+	}
+	deps := AuthDeps{SecretConfigured: true, SigningKey: []byte("0123456789abcdef0123456789abcdef")}
+	anonymous := httptest.NewRecorder()
+	RequireAuth(env.server.Mux(), deps).ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, stream, nil))
+	if anonymous.Code != http.StatusUnauthorized && anonymous.Code != http.StatusFound {
+		t.Fatalf("anonymous internal stream status = %d, want 401 or 302", anonymous.Code)
+	}
 }

@@ -232,6 +232,27 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
+	t.Run("asset and share streams -> AG-UI handler beside their download routes", func(t *testing.T) {
+		for _, route := range []string{
+			"/api/assets/asset-1/stream",
+			"/s/token-1/asset/asset-1",
+			"/s/token-1/asset/asset-1/stream",
+			"/api/shares/share-1/asset/asset-1",
+			"/api/shares/share-1/asset/asset-1/stream",
+		} {
+			aguiHits = nil
+			resp, err := http.Get(srv.URL + route)
+			if err != nil {
+				t.Fatalf("GET %s: %v", route, err)
+			}
+			raw, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if len(aguiHits) != 1 || aguiHits[0] != route {
+				t.Fatalf("GET %s did not route to the AG-UI handler: hits=%v status=%d body=%.80s", route, aguiHits, resp.StatusCode, raw)
+			}
+		}
+	})
+
 	t.Run("/api/assets + mutations -> AG-UI handler (asset mount)", func(t *testing.T) {
 		for _, route := range []string{"/api/assets", "/api/assets/asset-1"} {
 			aguiHits = nil

@@ -135,7 +135,7 @@ func TestShareTokenEnumeration(t *testing.T) {
 	if baseline.Code != http.StatusNotFound {
 		t.Fatalf("baseline status = %d, want 404", baseline.Code)
 	}
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		token, _, err := share.Mint()
 		if err != nil {
 			t.Fatalf("mint random token %d: %v", i, err)
@@ -240,5 +240,32 @@ func TestSharePublicAssetHeaderInjection(t *testing.T) {
 	}
 	if strings.ContainsAny(rec.Header().Get("Content-Disposition"), "\r\n") {
 		t.Fatalf("Content-Disposition carries a raw CR/LF: %q", rec.Header().Get("Content-Disposition"))
+	}
+}
+
+// TestSharePublicVideoStreamsUntilRevoked: a bundled clip streams by Range over the public token,
+// and once the link is revoked the same stream URL answers the unknown token's 404.
+func TestSharePublicVideoStreamsUntilRevoked(t *testing.T) {
+	pool := migratedPool(t)
+	env := newShareAPIEnv(t, pool, true)
+	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
+	clip := streamClip()
+	assetID := seedBundledVideo(env, clip)
+	link := createShare(t, env, owner, convID, "public", http.StatusCreated)
+	stream := "/s/" + publicToken(t, link.URL) + "/asset/" + assetID + "/stream"
+	rec := streamRequest(env.server, http.MethodGet, stream, "", rangeHeader("bytes=100-199"))
+	if rec.Code != http.StatusPartialContent || !bytes.Equal(rec.Body.Bytes(), clip[100:200]) {
+		t.Fatalf("stream = %d with %d bytes, want 206 and bytes 100-199: %s", rec.Code, rec.Body.Len(), rec.Body.String())
+	}
+	if rec.Header().Get("Content-Range") != "bytes 100-199/2048" || rec.Header().Get("Content-Type") != "video/mp4" {
+		t.Fatalf("Content-Range = %q, Content-Type = %q", rec.Header().Get("Content-Range"), rec.Header().Get("Content-Type"))
+	}
+	if del := shareReq(env.server, http.MethodDelete, "/api/shares/"+link.ID, owner, ""); del.Code != http.StatusNoContent {
+		t.Fatalf("revoke status = %d, want 204: %s", del.Code, del.Body.String())
+	}
+	revoked := streamRequest(env.server, http.MethodGet, stream, "", rangeHeader("bytes=100-199"))
+	unknown := streamRequest(env.server, http.MethodGet, "/s/"+uuid.Must(uuid.NewV7()).String()+"/asset/"+assetID+"/stream", "", rangeHeader("bytes=100-199"))
+	if revoked.Code != http.StatusNotFound || revoked.Body.String() != unknown.Body.String() {
+		t.Fatalf("revoked stream = %d %q, unknown token = %d %q; want the same 404", revoked.Code, revoked.Body.String(), unknown.Code, unknown.Body.String())
 	}
 }

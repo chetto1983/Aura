@@ -86,12 +86,28 @@ func (a *shareTestAdapter) ResolveInternal(ctx context.Context, shareID, id stri
 
 // OpenArtifact reads the token/snapshot-scoped object-store key directly (copy-never-reference).
 func (a *shareTestAdapter) OpenArtifact(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string) (io.ReadCloser, error) {
-	aid, err := uuid.Parse(assetID)
+	ref, err := a.artifactRef(shareID, snapshotID, assetID)
 	if err != nil {
 		return nil, err
 	}
-	rc, _, err := a.objects.Get(ctx, objectstore.ObjectRef{Bucket: a.bucket, Key: objectstore.ShareArtifactKey(shareID, snapshotID, aid)})
+	rc, _, err := a.objects.Get(ctx, ref)
 	return rc, err
+}
+
+func (a *shareTestAdapter) OpenArtifactSeekable(ctx context.Context, shareID, snapshotID uuid.UUID, assetID string, size int64) (io.ReadSeekCloser, error) {
+	ref, err := a.artifactRef(shareID, snapshotID, assetID)
+	if err != nil {
+		return nil, err
+	}
+	return objectstore.NewSeekableObject(ctx, a.objects, ref, size), nil
+}
+
+func (a *shareTestAdapter) artifactRef(shareID, snapshotID uuid.UUID, assetID string) (objectstore.ObjectRef, error) {
+	aid, err := uuid.Parse(assetID)
+	if err != nil {
+		return objectstore.ObjectRef{}, err
+	}
+	return objectstore.ObjectRef{Bucket: a.bucket, Key: objectstore.ShareArtifactKey(shareID, snapshotID, aid)}, nil
 }
 
 type shareAPIEnv struct {
@@ -194,6 +210,14 @@ func seedBundledArtifact(env *shareAPIEnv, name string, body []byte) string {
 	env.assetsF.listResp = []assets.Asset{asset}
 	env.assetsF.openResp = io.NopCloser(bytes.NewReader(body))
 	env.assetsF.openAsset = asset
+	return id
+}
+
+// seedBundledVideo is seedBundledArtifact for an MP4 clip, the one kind the stream routes serve.
+func seedBundledVideo(env *shareAPIEnv, body []byte) string {
+	id := seedBundledArtifact(env, "clip.mp4", body)
+	env.assetsF.listResp[0].MIMEType = "video/mp4"
+	env.assetsF.openAsset.MIMEType = "video/mp4"
 	return id
 }
 
