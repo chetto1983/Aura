@@ -68,7 +68,7 @@
   - Connection: `AURA_DB_URL` (app role), `AURA_DB_MIGRATE_URL` (migrate role), `AURA_DB_BOOTSTRAP_URL`; composed by `internal/config/config.go` from `POSTGRES_HOST`/`POSTGRES_PORT`/`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`/`POSTGRES_SSLMODE`. Roles named by `AURA_DB_APP_ROLE`, `AURA_DB_MIGRATE_ROLE`.
   - Client: pgx/v5 pool + sqlc-generated `internal/db/sqlc/`; queries in `internal/db/queries/`.
   - Migrations: `internal/db/migrations/` (latest `0119_drop_orphan_content_parts`), run by golang-migrate via `aura db migrate` (`cmd/aura/db.go`) and the `aura-migrate` Compose one-shot. **The next migration number is `ls internal/db/migrations/ | tail -1` + 1, never a number copied from a doc.**
-- **ArcadeDB 26.9.1-SNAPSHOT** (digest-pinned; `VerifySecureVersion` refuses < 26.4.2 for CVE-2026-44221) — long-term memory, **one database per identity**, tenant credential derived by HMAC over `AURA_ARCADEDB_TENANT_SECRET`.
+- **ArcadeDB 26.9.1** (digest-pinned; `VerifySecureVersion` refuses < 26.4.2 for CVE-2026-44221) — long-term memory, **one database per identity**, tenant credential derived by HMAC over `AURA_ARCADEDB_TENANT_SECRET`.
   - Client: `internal/arcadedb/` (`memory.go`, `memory_graph.go`, `memory_graph_temporal.go`, `memory_mentions*.go`, `transaction.go`, …). Bitemporal facts (`valid_from`/`valid_to` + supersede), native vector + full-text index.
   - Env: `AURA_ARCADEDB_URL`, `AURA_ARCADEDB_DATABASE`, `AURA_ARCADEDB_ADMIN_USER`, `AURA_ARCADEDB_ADMIN_PASSWORD`, `AURA_ARCADEDB_TENANT_SECRET`, sidecar-side `ARCADEDB_PASSWORD`, `ARCADEDB_APP_USER`, `ARCADEDB_APP_PASSWORD`, `ARCADEDB_DATABASE`.
   - Tiers: `make arcadedb-integration`, CI `arcadedb-integration-test`, `make agent-memory-eval`.
