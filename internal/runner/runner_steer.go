@@ -79,8 +79,8 @@ func (r *Runner) persistSteerTurn(ctx context.Context, tr *turnTracker, ev *agen
 		return nil
 	}
 	for _, s := range steers {
-		if s["source"] == steer.SourceWorker {
-			// DelegationDelivery already persisted this report as an assistant turn.
+		if source, _ := s["source"].(string); steer.IsRuntimeSource(source) {
+			// Aura's own fact, not the operator's words (steer.IsRuntimeSource).
 			continue
 		}
 		delivery, _ := s["delivery"].(string)
@@ -190,7 +190,7 @@ func leftoverTurnInput(msgs []steer.Message) turnInput {
 	visible := make([]steer.Message, 0, len(msgs))
 	model := make([]string, 0, len(msgs))
 	for _, msg := range msgs {
-		if msg.Source == steer.SourceWorker {
+		if steer.IsRuntimeSource(msg.Source) {
 			marked, _ := agent.MarkSteer(msg)
 			model = append(model, marked)
 		} else {

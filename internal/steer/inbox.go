@@ -73,6 +73,20 @@ const SourceShell = "shell"
 // envelope, stored as KindSteer.
 const SourceMedia = "media"
 
+// IsRuntimeSource reports whether source is one Aura generates itself rather than a channel an
+// operator types in. A runtime fact reaches the model in the untrusted envelope and is never
+// written into the transcript as the operator's words: a worker report is persisted by
+// DelegationDelivery as its own assistant turn, and a shell or media fact is a nudge whose
+// visible record is the turn it starts. Measured live on 2026-09-16, when a finished video
+// job's notification showed up in the chat as a message the operator never sent.
+func IsRuntimeSource(source string) bool {
+	switch source {
+	case SourceWorker, SourceShell, SourceMedia:
+		return true
+	}
+	return false
+}
+
 // Message is one steer or delegation-result row, carrying the minimum provenance the
 // aura.steer echo frame needs: an id, the source channel, and the arrival time. A small
 // value type, not an interface.

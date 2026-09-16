@@ -20,6 +20,11 @@ import type { SteerNotice as SteerFramePayload } from './sseAdapter';
 // and observes shows exactly one notice, matching the behaviour the plan's acceptance criteria
 // pin down.
 
+// The steer sources Aura generates itself (internal/steer IsRuntimeSource): a worker report, a
+// background shell exit, a detached video outcome. The operator redirected nothing, so none of
+// them earns a "redirected" notice.
+const RUNTIME_STEER_SOURCES: ReadonlySet<string> = new Set(['swarm', 'shell', 'media']);
+
 export interface SteerNoticeView {
   readonly id: string;
   readonly kind: 'redirected' | 'autoDelivered';
@@ -84,7 +89,7 @@ export function useSteerSend({
     (frame: SteerFramePayload) => {
       if (frame.conversation_id !== threadId) return;
       for (const entry of frame.steers) {
-        if (entry.source === 'swarm') continue;
+        if (RUNTIME_STEER_SOURCES.has(entry.source)) continue;
         if (seenIdsRef.current.has(entry.id)) continue;
         seenIdsRef.current.add(entry.id);
         if (entry.source === 'cockpit' && entry.text === pendingTextRef.current) {

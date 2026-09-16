@@ -227,3 +227,14 @@ func TestDrainRejectsMalformedConversationIDWithoutQuerying(t *testing.T) {
 		t.Fatalf("Drain(malformed) = %v, want no messages", got)
 	}
 }
+
+func TestIsRuntimeSourceNamesOnlyAurasOwnSources(t *testing.T) {
+	for source, want := range map[string]bool{
+		SourceWorker: true, SourceShell: true, SourceMedia: true,
+		"cockpit": false, "telegram": false, "": false, "Swarm": false,
+	} {
+		if got := IsRuntimeSource(source); got != want {
+			t.Errorf("IsRuntimeSource(%q) = %v, want %v", source, got, want)
+		}
+	}
+}

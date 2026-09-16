@@ -28,7 +28,7 @@ func (s *lockCheckingSteer) Push(conv, source, text string) error {
 	return s.Fake.Push(conv, source, text)
 }
 
-func TestWakeWithSteerLocksBeforePushAndUsesUntrustedShellEnvelope(t *testing.T) {
+func TestWakeWithSteerLocksBeforePushAndKeepsTheShellFactOutOfTheTranscript(t *testing.T) {
 	client := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(textResponseCall("call-wake", "wake handled")),
 	)
@@ -72,14 +72,17 @@ func TestWakeWithSteerLocksBeforePushAndUsesUntrustedShellEnvelope(t *testing.T)
 	if err != nil {
 		t.Fatalf("LoadHistory: %v", err)
 	}
-	runtimeTurns := 0
+	// The fact reached the model above; the transcript keeps only the turn it started. A
+	// runtime notification is Aura's, never a message the operator sent (steer.IsRuntimeSource).
+	answered := false
 	for _, msg := range history {
-		if msg.Role == llm.RoleUser && msg.Content == message {
-			runtimeTurns++
+		if msg.Role == llm.RoleUser && strings.Contains(msg.Content, "sh-1") {
+			t.Fatalf("runtime fact persisted as an operator message; history=%+v", history)
 		}
+		answered = answered || (msg.Role == llm.RoleAssistant && msg.Content == "wake handled")
 	}
-	if runtimeTurns != 1 {
-		t.Fatalf("persisted runtime turns = %d, want 1; history=%+v", runtimeTurns, history)
+	if !answered {
+		t.Fatalf("the woken turn's answer was not persisted; history=%+v", history)
 	}
 	if drained := inbox.Drain(convID); len(drained) != 0 {
 		t.Fatalf("wake left %d steer row(s) undrained", len(drained))

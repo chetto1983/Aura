@@ -280,6 +280,28 @@ describe('useSteerSend', () => {
     expect(rendered.result.current.notice).toEqual({ id: 'steer-3', kind: 'autoDelivered' });
   });
 
+  it.each(['swarm', 'shell', 'media'])(
+    'onFrame shows no notice for Aura’s own %s fact, which the operator never sent',
+    (source) => {
+      const { rendered } = fixture('run-7');
+
+      rendered.result.current.onFrame({
+        conversation_id: 'conv-1',
+        round: 1,
+        steers: [
+          {
+            id: `runtime-${source}`,
+            source,
+            text: 'job finished',
+            delivery: 'user_message_fallback',
+          },
+        ],
+      });
+      rendered.rerender();
+      expect(rendered.result.current.notice).toBeUndefined();
+    },
+  );
+
   it('onFrame ignores a frame for a different conversation', () => {
     const { rendered } = fixture('run-7');
 
