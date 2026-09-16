@@ -10,6 +10,7 @@ const labels: MediaLabels = {
   references: (max: number) => String(max) + ' reference images',
   duration: (min: number, max: number) => String(min) + '–' + String(max) + ' s',
   imageToVideo: 'Image-to-video',
+  imageTokens: (price: string) => price + '/M image tokens',
 };
 
 describe('media model row labels', () => {
@@ -36,6 +37,59 @@ describe('media model row labels', () => {
     );
     expect(label).toContain('5');
     expect(label).not.toContain('/image');
+  });
+
+  it('prices a token-billed image model per million output tokens, first in the row', () => {
+    // Every image model in the live catalogue on 2026-09-16 was token billed, so without this
+    // no image row showed any price and the cheapest could not be picked from the menu.
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'openai/gpt-image-1-mini',
+          has_price: false,
+          reference_max: 16,
+          image_token_min_per_1m: 8,
+          image_token_max_per_1m: 8,
+        },
+        labels,
+      ),
+    ).toBe('$8.00/M image tokens · 16 reference images');
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'vendor/two-providers',
+          has_price: false,
+          image_token_min_per_1m: 8,
+          image_token_max_per_1m: 38,
+        },
+        labels,
+      ),
+    ).toBe('$8.00–$38.00/M image tokens');
+  });
+
+  it('prefers a per-image price and never shows a half-declared token range', () => {
+    expect(
+      imageModelMeta(
+        {
+          kind: 'image',
+          id: 'vendor/both',
+          has_price: true,
+          image_min_usd: 0.04,
+          image_max_usd: 0.04,
+          image_token_min_per_1m: 30,
+          image_token_max_per_1m: 30,
+        },
+        labels,
+      ),
+    ).toBe('$0.04/image');
+    expect(
+      imageModelMeta(
+        { kind: 'image', id: 'vendor/half', has_price: false, image_token_min_per_1m: 30 },
+        labels,
+      ),
+    ).toBe('');
   });
 
   it('writes every declared video capability in one row, in a fixed order', () => {

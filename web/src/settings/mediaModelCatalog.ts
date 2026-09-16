@@ -11,6 +11,9 @@ export interface ImageCatalogModel {
   readonly reference_max?: number;
   readonly image_min_usd?: number;
   readonly image_max_usd?: number;
+  /** Output-token rate per million for a token-billed model, which has no per-image price. */
+  readonly image_token_min_per_1m?: number;
+  readonly image_token_max_per_1m?: number;
   readonly has_price: boolean;
 }
 

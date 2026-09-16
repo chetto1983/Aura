@@ -42,6 +42,7 @@ function mediaLabels(t: TFunction): MediaLabels {
         range: min === max ? String(min) : `${String(min)}–${String(max)}`,
       }),
     imageToVideo: t('settings.models.imageToVideo'),
+    imageTokens: (price) => t('settings.models.imageTokens', { price }),
   };
 }
 

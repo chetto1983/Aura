@@ -97,6 +97,7 @@ export const settingsEn = {
       references_other: 'up to {{count}} reference images',
       seconds: '{{range}} s',
       imageToVideo: 'image-to-video',
+      imageTokens: '{{price}}/M image tokens',
     },
     tokens: {
       heading: 'Token and turn budget',
@@ -257,6 +258,7 @@ export const settingsIt = {
       references_other: 'fino a {{count}} immagini di riferimento',
       seconds: '{{range}} s',
       imageToVideo: 'da immagine a video',
+      imageTokens: '{{price}}/M token immagine',
     },
     tokens: {
       heading: 'Budget token e turni',

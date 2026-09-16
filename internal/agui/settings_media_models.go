@@ -39,13 +39,18 @@ type mediaCatalogModelDTO struct {
 	ReferenceMax *int     `json:"reference_max,omitempty"`
 	ImageMinUSD  *float64 `json:"image_min_usd,omitempty"`
 	ImageMaxUSD  *float64 `json:"image_max_usd,omitempty"`
-	DurationMin  *int     `json:"duration_min,omitempty"`
-	DurationMax  *int     `json:"duration_max,omitempty"`
-	Resolutions  []string `json:"resolutions,omitempty"`
-	ImageToVideo *bool    `json:"image_to_video,omitempty"`
-	SecondMinUSD *float64 `json:"second_min_usd,omitempty"`
-	SecondMaxUSD *float64 `json:"second_max_usd,omitempty"`
-	HasPrice     bool     `json:"has_price"`
+	// ImageTokenMinPer1M and ImageTokenMaxPer1M are the output-token rate of a model billed per
+	// token, which has no per-image price. They are not counted in HasPrice, which keeps
+	// meaning "a per-unit price the row can print as $/image or $/s".
+	ImageTokenMinPer1M *float64 `json:"image_token_min_per_1m,omitempty"`
+	ImageTokenMaxPer1M *float64 `json:"image_token_max_per_1m,omitempty"`
+	DurationMin        *int     `json:"duration_min,omitempty"`
+	DurationMax        *int     `json:"duration_max,omitempty"`
+	Resolutions        []string `json:"resolutions,omitempty"`
+	ImageToVideo       *bool    `json:"image_to_video,omitempty"`
+	SecondMinUSD       *float64 `json:"second_min_usd,omitempty"`
+	SecondMaxUSD       *float64 `json:"second_max_usd,omitempty"`
+	HasPrice           bool     `json:"has_price"`
 }
 
 type mediaCatalogDTO struct {
@@ -89,14 +94,17 @@ func (s *Server) listMediaModels(w http.ResponseWriter, r *http.Request, kind me
 	writeJSON(w, out)
 }
 
-// imageCapabilities reads the same input_references descriptor ClampImage enforces, and only
-// the per-image price lines mediagen.ImagePrice can express.
+// imageCapabilities reads the same input_references descriptor ClampImage enforces, the
+// per-image price lines mediagen.ImagePrice can express, and the output-token rate.
 func imageCapabilities(row *mediaCatalogModelDTO, model mediagen.Model) {
 	if references, declared := model.Parameters["input_references"]; declared && references.Max != nil {
 		row.ReferenceMax = new(max(*references.Max, 0))
 	}
 	if low, high, ok := mediagen.ImagePrice(model.ImagePricing); ok {
 		row.ImageMinUSD, row.ImageMaxUSD, row.HasPrice = &low, &high, true
+	}
+	if low, high, ok := mediagen.ImageTokenPricePerMillion(model.ImagePricing); ok {
+		row.ImageTokenMinPer1M, row.ImageTokenMaxPer1M = &low, &high
 	}
 }
 

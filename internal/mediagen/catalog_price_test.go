@@ -12,6 +12,47 @@ func TestImagePriceDoesNotCallTokenPricingPerImage(t *testing.T) {
 	}
 }
 
+// TestImageTokenPrice pins the rate the picker shows for a model billed per output token. Every
+// image model in the live catalog on 2026-09-16 billed that way, so without it no image row
+// carried a price and the cheapest model could not be chosen from the menu.
+func TestImageTokenPrice(t *testing.T) {
+	cases := []struct {
+		name      string
+		lines     []PriceLine
+		low, high float64
+		ok        bool
+	}{
+		{name: "no lines"},
+		{name: "per-image lines are not token rates", lines: []PriceLine{{Billable: "output_image", Unit: "image", CostUSD: 0.04}}},
+		{name: "input tokens are not the output rate", lines: []PriceLine{{Billable: "input_image", Unit: "token", CostUSD: 0.000008}}},
+		{
+			name: "observed MAI endpoint",
+			lines: []PriceLine{
+				{Billable: "input_text", Unit: "token", CostUSD: 0.000005},
+				{Billable: "output_image", Unit: "token", CostUSD: 0.000038},
+			},
+			low: 38, high: 38, ok: true,
+		},
+		{
+			name: "two providers widen the range",
+			lines: []PriceLine{
+				{Billable: "output_image", Unit: "token", CostUSD: 0.00003},
+				{Billable: "output_image", Unit: "token", CostUSD: 0.000008},
+			},
+			low: 8, high: 30, ok: true,
+		},
+		{name: "a negative rate is ignored", lines: []PriceLine{{Billable: "output_image", Unit: "token", CostUSD: -1}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			low, high, ok := ImageTokenPricePerMillion(tc.lines)
+			if ok != tc.ok || low != tc.low || high != tc.high {
+				t.Fatalf("ImageTokenPricePerMillion = %v, %v, %v; want %v, %v, %v", low, high, ok, tc.low, tc.high, tc.ok)
+			}
+		})
+	}
+}
+
 func TestImagePrice(t *testing.T) {
 	cases := []struct {
 		name      string

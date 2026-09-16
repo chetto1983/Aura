@@ -18,6 +18,24 @@ func ImagePrice(lines []PriceLine) (low, high float64, ok bool) {
 	return low, high, ok
 }
 
+// ImageTokenPricePerMillion returns the USD range per million output image tokens, the unit
+// every image model in the live catalog was billed in on 2026-09-16. It is a rate, not a
+// per-image price: the token count depends on the size and quality of each image.
+func ImageTokenPricePerMillion(lines []PriceLine) (low, high float64, ok bool) {
+	for _, line := range lines {
+		if line.Billable == "output_image" && line.Unit == "token" {
+			low, high, ok = widenPrice(low, high, ok, perMillion(line.CostUSD))
+		}
+	}
+	return low, high, ok
+}
+
+// perMillion scales a per-token rate, rounding off the binary noise of the product so
+// 0.000038 reads as 38 rather than 38.00000000000001.
+func perMillion(perToken float64) float64 {
+	return math.Round(perToken*1e15) / 1e9
+}
+
 // VideoPrice returns the USD-per-second range across the duration_seconds* (dollars)
 // and cents_per_second* (cents) SKUs. Every other SKU is priced per token, megapixel,
 // image or generation and cannot be expressed per second, so it is left out.

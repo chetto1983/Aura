@@ -99,7 +99,7 @@ func TestMediaModelRoutesAskTheSharedCatalogForTheirOwnKind(t *testing.T) {
 	}
 }
 
-func TestImageModelsCarryTheReferenceLimitAndOnlyPerImagePrices(t *testing.T) {
+func TestImageModelsCarryTheReferenceLimitAndPricesInTheirOwnUnit(t *testing.T) {
 	catalog := &fakeMediaCatalog{models: []mediagen.Model{
 		{
 			// MAI as measured in planning: five references, output priced per token.
@@ -138,6 +138,7 @@ func TestImageModelsCarryTheReferenceLimitAndOnlyPerImagePrices(t *testing.T) {
 	}
 	assertRow(t, rows[0], map[string]any{
 		"id": "microsoft/mai-image-2.6", "kind": "image", "reference_max": 5, "has_price": false,
+		"image_token_min_per_1m": 38, "image_token_max_per_1m": 38,
 	})
 	assertRow(t, rows[1], map[string]any{
 		"id": "black-forest-labs/flux-3-pro", "kind": "image", "reference_max": 8,

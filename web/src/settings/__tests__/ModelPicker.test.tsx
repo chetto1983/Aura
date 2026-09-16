@@ -64,6 +64,7 @@ const MEDIA_LABELS: MediaLabels = {
   references: (max) => `up to ${String(max)} reference images`,
   duration: (min, max) => `${String(min)}–${String(max)} s`,
   imageToVideo: 'image-to-video',
+  imageTokens: (price) => `${price}/M image tokens`,
 };
 
 // Fixture rows shaped like the catalogue measured during planning: MAI prices output
