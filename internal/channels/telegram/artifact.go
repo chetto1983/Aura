@@ -1,15 +1,18 @@
 // Package telegram — this file is the artifact consumer (the channel side of
 // D-06 / UX-02). The substrate (plan 13-02) emits a channel-agnostic AG-UI CUSTOM
-// event named agui.ArtifactEventName carrying a {path, filename, caption}
-// descriptor; this file is the Telegram renderer that turns it into a
-// sendDocument. Telegram auto-detects the MIME from the file, so there is no
-// channel-side MIME plumbing. The caption is ASCII-sanitized before it reaches the
-// Bot API (Pitfall 4 / T-13-06-CaptionInject) so a non-ASCII byte never triggers a
-// document-caption 400.
+// event named agui.ArtifactEventName carrying a {path, filename, caption,
+// mime_type, …} descriptor; this file is the Telegram renderer that turns it into
+// the best delivery Telegram offers for those bytes — an inline photo, a streamable
+// video, or a document. The caption is ASCII-sanitized and length-bounded before it
+// reaches the Bot API (Pitfall 4 / T-13-06-CaptionInject) so neither a byte > 0x7F
+// nor an over-long caption triggers a 400.
 package telegram
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"os"
 	"strings"
 	"unicode"
 
@@ -19,9 +22,24 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 )
 
-// artifact renders artifact CUSTOM events to a chat as documents. It implements
-// the eventConsumer seam so the per-turn fanout can drive it like the status pane
-// / renderer (a third consumer subscribed before Run, plan 13-05 wiring).
+// Bot API upload ceilings for a NATIVE photo / video, deliberately the conservative
+// decimal ones Telegram documents (10 MB photo, 50 MB file) rather than binary MB.
+// Aura's own asset ceiling is 52428800 bytes, so a generated clip can legitimately sit
+// ABOVE the upload ceiling and below the cap: it exists in the cockpit and the chat is
+// told where to find it.
+const (
+	telegramPhotoUploadCap = 10_000_000
+	telegramVideoUploadCap = 50_000_000
+)
+
+// videoInCockpitMessage is what the chat gets for a clip Telegram will not carry. Like
+// every other user-facing string in this package (turnBusyMessage, the status-pane
+// labels) it is written straight in Italian — the channel has no localization layer.
+const videoInCockpitMessage = "Il video è disponibile nel cockpit."
+
+// artifact renders artifact CUSTOM events to a chat. It implements the
+// eventConsumer seam so the per-turn fanout can drive it like the status pane /
+// renderer (a third consumer subscribed before Run, plan 13-05 wiring).
 type artifact struct {
 	bot botSender
 	to  tele.Recipient
@@ -32,9 +50,9 @@ func newArtifact(bot botSender, to tele.Recipient) *artifact {
 	return &artifact{bot: bot, to: to}
 }
 
-// consume drains the subscriber channel, sending a document for every artifact
-// CUSTOM event and ignoring the rest. The channel is closed by the Fanout producer
-// on source-end/ctx-cancel, so the range terminates without a leak.
+// consume drains the subscriber channel, delivering every artifact CUSTOM event and
+// ignoring the rest. The channel is closed by the Fanout producer on
+// source-end/ctx-cancel, so the range terminates without a leak.
 func (a *artifact) consume(ctx context.Context, ch <-chan events.Event) {
 	for ev := range ch {
 		if ctx.Err() != nil {
@@ -44,28 +62,90 @@ func (a *artifact) consume(ctx context.Context, ch <-chan events.Event) {
 	}
 }
 
-// consumeEvent renders ONE event: an artifact CUSTOM event becomes a sendDocument
-// (returning the Send RESPONSE — the spike ground truth — and ok=true); any other
-// event is ignored (ok=false). A descriptor with no usable path is a no-op.
+// consumeEvent renders ONE event: an artifact CUSTOM event becomes the best Telegram
+// delivery for the file (photo / video / document, or the cockpit announcement for a
+// clip Telegram will not take), returning the Send RESPONSE — the spike ground truth
+// — and ok=true. Any other event is ignored (ok=false), as is a descriptor whose file
+// is not there to send.
 func (a *artifact) consumeEvent(ev events.Event) (*tele.Message, bool) {
 	desc, ok := artifactDescriptor(ev)
 	if !ok {
 		return nil, false
 	}
+	payload, ok := artifactPayload(desc)
+	if !ok {
+		return nil, false
+	}
+	msg, err := a.bot.Send(a.to, payload)
+	if err == nil {
+		return msg, true
+	}
+	doc, ok := rejectedPhotoFallback(payload, stringField(desc, "filename"), err)
+	if !ok {
+		return nil, false // best-effort: a failed delivery must not wedge the turn
+	}
+	if msg, err = a.bot.Send(a.to, doc); err != nil {
+		return nil, false
+	}
+	return msg, true
+}
+
+// artifactPayload picks the Telegram sendable for an artifact descriptor: a native
+// photo or streamable video when the MIME says so and the file fits the Bot API's
+// upload ceiling, the cockpit announcement for a clip that does not, and a document
+// for everything else — an unknown or absent MIME included, which is what a generic
+// send_file delivery looks like.
+//
+// The size comes from os.Stat, NEVER from the descriptor's size_bytes: that field is
+// the producer's claim about a file it staged earlier, and a wrong claim would push
+// an oversized upload at the Bot API. A file that cannot be stat'd is not deliverable
+// at all (ok=false) — the upload would fail anyway, so the round trip is skipped.
+func artifactPayload(desc map[string]any) (any, bool) {
 	path := stringField(desc, "path")
 	if path == "" {
 		return nil, false
 	}
-	doc := &tele.Document{
-		File:     tele.FromDisk(path),
-		FileName: stringField(desc, "filename"),
-		Caption:  asciiCaption(stringField(desc, "caption")),
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		return nil, false
 	}
-	msg, err := a.bot.Send(a.to, doc)
-	if err != nil {
-		return nil, false // best-effort: a failed delivery must not wedge the turn
+	size := info.Size()
+	mimeType := strings.ToLower(stringField(desc, "mime_type"))
+	filename := stringField(desc, "filename")
+	caption := capRunes(asciiCaption(stringField(desc, "caption")), telegramCaptionCap)
+	switch {
+	case strings.HasPrefix(mimeType, "image/") && size <= telegramPhotoUploadCap:
+		return &tele.Photo{File: tele.FromDisk(path), Caption: caption}, true
+	case strings.HasPrefix(mimeType, "video/") && size <= telegramVideoUploadCap:
+		return &tele.Video{
+			File: tele.FromDisk(path), FileName: filename, MIME: mimeType,
+			Caption: caption, Streaming: true,
+		}, true
+	case strings.HasPrefix(mimeType, "video/"):
+		return videoInCockpitMessage, true
+	default:
+		return &tele.Document{File: tele.FromDisk(path), FileName: filename, Caption: caption}, true
 	}
-	return msg, true
+}
+
+// rejectedPhotoFallback re-offers a REFUSED photo as a plain file. It fires only on a
+// Bot API 400: the request reached Telegram, was parsed and was refused, so nothing
+// was delivered and a second send cannot duplicate a message — the SVG or exotic
+// format Telegram will not process as an image still travels fine as a document.
+//
+// Everything else is ambiguous (a timeout, a reset connection, a 5xx: the message may
+// already be in the chat) and is never retried. Only a photo has a cheaper lane to
+// fall back to; a refused video or document is simply reported.
+func rejectedPhotoFallback(payload any, filename string, err error) (*tele.Document, bool) {
+	photo, ok := payload.(*tele.Photo)
+	if !ok {
+		return nil, false
+	}
+	var apiErr *tele.Error
+	if !errors.As(err, &apiErr) || apiErr.Code != http.StatusBadRequest {
+		return nil, false
+	}
+	return &tele.Document{File: photo.File, FileName: filename, Caption: photo.Caption}, true
 }
 
 // artifactDescriptor extracts the {path,filename,caption} descriptor from an

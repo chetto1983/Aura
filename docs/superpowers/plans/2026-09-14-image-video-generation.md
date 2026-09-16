@@ -1261,7 +1261,7 @@ git commit -m "feat(cockpit): render generation progress and inline media" -m "K
 - `mediaActionController` tracks active tool-call IDs and computes current `tele.ChatAction`; `Start(callID,toolName string)`, `Finish(callID string)`, `Stop()`.
 - Status consumer owns the controller during a turn; its action pulse replaces that turn's independent Typing pulse.
 
-- [ ] **Step 1: Write dispatch table tests.**
+- [x] **Step 1: Write dispatch table tests.**
 
 ~~~go
 func TestArtifactMediaRouting(t *testing.T) {
@@ -1291,13 +1291,13 @@ func TestArtifactMediaRouting(t *testing.T) {
 
 Use conservative decimal 10 MB/50 MB for Telegram; Aura's 50 MiB asset cap remains exactly 52428800. Thus a clip between 50,000,000 and 52,428,800 bytes can exist in the cockpit and must use Telegram's fallback. Use a real fixture when testing the Send seam; missing/lying descriptor size must be checked against os.Stat before choosing a native upload.
 
-- [ ] **Step 2: Run red.**
+- [x] **Step 2: Run red.**
 
 ~~~sh
 go test ./internal/channels/telegram -run 'TestArtifactMedia|TestMediaAction' -count=1
 ~~~
 
-- [ ] **Step 3: Implement native payload selection.**
+- [x] **Step 3: Implement native payload selection.**
 
 ~~~go
 switch {
@@ -1314,7 +1314,7 @@ default:
 
 Keep the existing best-effort Send result handling. Bound caption to Telegram's 1024-character limit after existing sanitization. Unknown or missing MIME stays document; preserve generic send_file descriptors. A provider SVG or format Telegram rejects as a photo may fall back to Document on a definite Bot API validation rejection; never retry ambiguous network failures as another send, which could duplicate a received message.
 
-- [ ] **Step 4: Reuse the four-second pulse with one action owner.**
+- [x] **Step 4: Reuse the four-second pulse with one action owner.**
 
 ~~~text
 RUN_STARTED -> typing
@@ -1328,7 +1328,7 @@ Use a mutex-protected active-call map; choose video over image if both are activ
 
 Tests use a controllable pulse interval/clock and recording notifier. Assert immediate action switch, four-second refresh, default typing restored, independent call tracking, no uploads after terminal result, and Stop joins without leaks. Confirm AG-UI ToolCallEnd is emitted after execution (do not stop merely on streamed argument completion).
 
-- [ ] **Step 5: Verify and commit.**
+- [x] **Step 5: Verify and commit.**
 
 ~~~sh
 go test ./internal/channels/telegram -count=1

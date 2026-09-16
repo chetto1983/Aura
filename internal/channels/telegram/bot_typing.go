@@ -31,15 +31,25 @@ func keepWorking(ctx context.Context, c tele.Context, action tele.ChatAction) (s
 	return pulseChatAction(ctx, n, c.Recipient(), action)
 }
 
-// pulseChatAction sends the chat action immediately and refreshes it every
-// typingPulse until stop() is called. goleak-safe: stop() closes done AND joins the
-// goroutine; the loop also exits on ctx cancellation (daemon shutdown). Best-effort
-// — a Notify error (no permission, stale chat) is ignored.
+// pulseChatAction is the FIXED-action adapter for callers whose activity never
+// changes shape — the voice/photo/document ingest waits, which are one long "typing…"
+// from the first byte to the turn. A turn that can switch to an upload action uses
+// pulseChatActionFunc through mediaActionController instead.
 func pulseChatAction(ctx context.Context, n botNotifier, to tele.Recipient, action tele.ChatAction) (stop func()) {
-	if n == nil || to == nil {
+	return pulseChatActionFunc(ctx, n, to, func() tele.ChatAction { return action })
+}
+
+// pulseChatActionFunc sends the chat action immediately and refreshes it every
+// typingPulse until stop() is called, re-reading action() at every tick so an owner
+// can change what the chat says without starting a second pulse. goleak-safe: stop()
+// closes done AND joins the goroutine; the loop also exits on ctx cancellation
+// (daemon shutdown). Best-effort — a Notify error (no permission, stale chat) is
+// ignored.
+func pulseChatActionFunc(ctx context.Context, n botNotifier, to tele.Recipient, action func() tele.ChatAction) (stop func()) {
+	if n == nil || to == nil || action == nil {
 		return func() {}
 	}
-	_ = n.Notify(to, action) // immediate feedback
+	_ = n.Notify(to, action()) // immediate feedback
 	done := make(chan struct{})
 	finished := make(chan struct{})
 	go func() {
@@ -53,7 +63,7 @@ func pulseChatAction(ctx context.Context, n botNotifier, to tele.Recipient, acti
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				_ = n.Notify(to, action)
+				_ = n.Notify(to, action())
 			}
 		}
 	}()

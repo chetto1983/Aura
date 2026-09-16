@@ -56,13 +56,17 @@ func artifactCustom(desc map[string]any) *events.CustomEvent {
 // TestArtifactConsumeSendsDocument: an artifact CUSTOM event renders to a
 // sendDocument whose RESPONSE carries a non-nil msg.Document.FileName (VALIDATION
 // "send_file → artifact event → sendDocument", ground truth = the Send RESPONSE).
+//
+// The descriptors here point at REAL files: since native photo/video delivery is
+// chosen from the file's os.Stat size, a path that does not exist is no longer a
+// deliverable artifact at all (artifact_media_test.go pins that rule).
 func TestArtifactConsumeSendsDocument(t *testing.T) {
 	t.Parallel()
 	bot := &docBot{}
 	a := newArtifact(bot, tele.ChatID(42))
 
 	msg, ok := a.consumeEvent(artifactCustom(map[string]any{
-		"path": "/abs/results.xlsx", "filename": "results.xlsx", "caption": "results",
+		"path": fixtureFile(t, "results.xlsx", 2048), "filename": "results.xlsx", "caption": "results",
 	}))
 	if !ok {
 		t.Fatal("an artifact CUSTOM event must be consumed")
@@ -93,7 +97,7 @@ func TestArtifactCaptionSanitizedASCII(t *testing.T) {
 	bot := &docBot{}
 	a := newArtifact(bot, tele.ChatID(42))
 	a.consumeEvent(artifactCustom(map[string]any{
-		"path": "/abs/città.pdf", "filename": "città.pdf", "caption": "città è caffè — résumé",
+		"path": fixtureFile(t, "citta.pdf", 128), "filename": "città.pdf", "caption": "città è caffè — résumé",
 	}))
 	docs := bot.recorded()
 	if len(docs) != 1 {
@@ -159,7 +163,7 @@ func TestArtifactEnrichedDescriptorStillSends(t *testing.T) {
 	a := newArtifact(bot, tele.ChatID(42))
 
 	msg, ok := a.consumeEvent(artifactCustom(map[string]any{
-		"path":         "/abs/results.xlsx",
+		"path":         fixtureFile(t, "results.xlsx", 2048),
 		"filename":     "results.xlsx",
 		"caption":      "results",
 		"asset_id":     "asset-abc",
@@ -212,8 +216,8 @@ func TestArtifactConsumeChannelDrainsAll(t *testing.T) {
 
 	ch := make(chan events.Event, 4)
 	ch <- events.NewTextMessageContentEvent("m1", "ignore me")
-	ch <- artifactCustom(map[string]any{"path": "/abs/a.pdf", "filename": "a.pdf", "caption": "one"})
-	ch <- artifactCustom(map[string]any{"path": "/abs/b.csv", "filename": "b.csv", "caption": "two"})
+	ch <- artifactCustom(map[string]any{"path": fixtureFile(t, "a.pdf", 64), "filename": "a.pdf", "caption": "one"})
+	ch <- artifactCustom(map[string]any{"path": fixtureFile(t, "b.csv", 64), "filename": "b.csv", "caption": "two"})
 	close(ch)
 
 	a.consume(context.Background(), ch)

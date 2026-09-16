@@ -8,22 +8,34 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// recordingNotifier is the botNotifier double: it counts the chat actions the pulse
+// sends AND keeps them in order, so the media-action tests can assert WHICH action
+// the single turn-wide pulse carried at each tick.
 type recordingNotifier struct {
-	mu sync.Mutex
-	n  int
+	mu   sync.Mutex
+	sent []tele.ChatAction
 }
 
-func (r *recordingNotifier) Notify(_ tele.Recipient, _ tele.ChatAction, _ ...int) error {
+func (r *recordingNotifier) Notify(_ tele.Recipient, action tele.ChatAction, _ ...int) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.n++
+	r.sent = append(r.sent, action)
 	return nil
 }
 
 func (r *recordingNotifier) count() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.n
+	return len(r.sent)
+}
+
+// chatActions returns a copy of the recorded actions in send order.
+func (r *recordingNotifier) chatActions() []tele.ChatAction {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]tele.ChatAction, len(r.sent))
+	copy(out, r.sent)
+	return out
 }
 
 // TestPulseChatAction proves the working indicator fires immediately and stop()

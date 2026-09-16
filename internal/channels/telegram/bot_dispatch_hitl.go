@@ -181,7 +181,6 @@ func (t *Telegram) takePausePrompt(chatID int64) *tele.Message {
 // captures the bot + chat id available only at dispatch time.
 func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 	sender := t.sender(c)
-	notifier, _ := sender.(botNotifier)
 	messageID := 0
 	if msg := c.Message(); msg != nil {
 		messageID = msg.ID
@@ -189,7 +188,7 @@ func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 	resume := func(ctx context.Context, _ string) {
 		// nil userMsg → a continuation turn; inboundWasVoice=false (a resume is a
 		// button/text answer, never itself a voice note).
-		t.startTurn(ctx, sender, notifier, tele.ChatID(chatID), chatID, messageID, nil, false,
+		t.startTurn(ctx, sender, tele.ChatID(chatID), chatID, messageID, nil, false,
 			func() { t.sendBusy(sender, chatID) })
 	}
 	return newHitl(t.deps.Resume, resume)

@@ -42,13 +42,12 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	composedText := t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
 	daemonCtx = t.withTurnMediaProjection(daemonCtx, chatID, attachments)
 	sender := t.sender(c)
-	notifier, _ := c.Bot().(botNotifier)
 	to := c.Recipient()
 	messageID := 0
 	if msg := c.Message(); msg != nil {
 		messageID = msg.ID
 	}
-	t.startTurn(daemonCtx, sender, notifier, to, chatID, messageID, &composedText, inboundWasVoice,
+	t.startTurn(daemonCtx, sender, to, chatID, messageID, &composedText, inboundWasVoice,
 		t.onBusyRedirect(c, chatID, rawText, composedText, len(attachments) > 0, inboundWasVoice))
 }
 
@@ -94,7 +93,6 @@ func (t *Telegram) composeTurnContext(ctx context.Context, c tele.Context, chatI
 func (t *Telegram) startTurn(
 	daemonCtx context.Context,
 	sender botSender,
-	notifier botNotifier,
 	to tele.Recipient,
 	chatID int64,
 	messageID int,
@@ -153,8 +151,9 @@ func (t *Telegram) startTurn(
 	t.wg.Go(func() {
 		defer cancel()
 		defer t.cmds.unregisterTurn(chatID)
-		stop := pulseChatAction(turnCtx, notifier, to, tele.Typing) // "Aura is working" for the whole turn
-		defer stop()
+		// No chat-action pulse here: the status pane owns it for the whole turn
+		// (media_action.go) so "typing…" can become "sending video…" while a generation
+		// runs. A second pulse would overwrite that on its own tick.
 		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
 		// deliverPendingTurn runs BEFORE the deferred unregisterTurn above (defers
 		// fire in reverse order strictly at return, and this call sits before the

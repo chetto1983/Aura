@@ -142,6 +142,12 @@ func (t *Telegram) speakIfNeeded(ctx context.Context, bot botSender, to tele.Rec
 	if text == "" {
 		return
 	}
+	// The status pane's chat action ended with its event channel, and synthesis +
+	// upload take seconds AFTER the answer was already sent — without this the user
+	// waits on a silent chat. A fixed action, so the plain adapter is the right seam.
+	notifier, _ := bot.(botNotifier)
+	stopAction := pulseChatAction(ctx, notifier, to, tele.RecordingAudio)
+	defer stopAction()
 	if _, err := t.tts.Speak(ctx, bot, to, text); err != nil {
 		slog.Warn("telegram: tts-out failed", "err", err)
 	}

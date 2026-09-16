@@ -178,7 +178,9 @@ func TestHandleTurnArtifactReachesSendDocument(t *testing.T) {
 	stream := []*agent.Event{
 		textEvent("ecco il file"),
 		artifactAgentEvent(map[string]any{
-			"path": "/abs/results.xlsx", "filename": "results.xlsx", "caption": "results",
+			// A real file: native delivery is chosen from the file's os.Stat size, so a
+			// path that does not exist is no longer a deliverable artifact.
+			"path": fixtureFile(t, "results.xlsx", 2048), "filename": "results.xlsx", "caption": "results",
 		}),
 	}
 

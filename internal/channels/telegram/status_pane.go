@@ -96,6 +96,11 @@ type statusPane struct {
 
 	lastEdit time.Time
 	dirty    bool
+
+	// actions owns the turn's chat action for as long as consume runs (media_action.go).
+	// The status consumer is the SINGLE owner — no other pulse competes for the chat —
+	// and it is nil for a pane driven straight through handle().
+	actions *mediaActionController
 }
 
 // newStatusPane builds a status pane bound to a chat with the status throttle,
@@ -123,8 +128,11 @@ func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration, sho
 // consume drains the status subscriber channel, updating the pane per event family
 // (RUN_STARTED open; TOOL_CALL_*/REASONING_*/TEXT_MESSAGE_* activity rows;
 // STATE_DELTA cost footer; RUN_FINISHED/RUN_ERROR finalize). The channel is closed
-// by the Fanout producer.
+// by the Fanout producer. For the same span it owns the turn's chat action, so a
+// closed channel or a cancelled ctx stops the pulse and joins it.
 func (p *statusPane) consume(ctx context.Context, ch <-chan events.Event) {
+	p.actions = p.newActions(ctx)
+	defer p.actions.Stop()
 	for ev := range ch {
 		if ctx.Err() != nil {
 			return
@@ -144,10 +152,16 @@ func (p *statusPane) handle(ev events.Event) {
 		}
 		p.dirty = true // open the pane on first render
 	case *events.ToolCallStartEvent:
+		p.actions.Start(e.ToolCallID, e.ToolCallName)
 		p.startTool(e.ToolCallID, e.ToolCallName)
 	case *events.ToolCallResultEvent:
+		p.actions.Finish(e.ToolCallID)
 		p.finishTool(e.ToolCallID, e.Content)
 	case *events.ToolCallEndEvent:
+		// TOOL_CALL_END is emitted after the tool EXECUTED (agui.emitToolInvocation on
+		// agent.ToolInvocationEnd), not when its streamed arguments completed, so it is a
+		// valid terminal for the chat action even without a RESULT.
+		p.actions.Finish(e.ToolCallID)
 		// END without a RESULT (rare) still resolves the spinner to OK.
 		if ts, ok := p.byID[e.ToolCallID]; ok && ts.glyph == glyphRunning {
 			ts.glyph = glyphOK
@@ -198,10 +212,12 @@ func (p *statusPane) handle(ev events.Event) {
 	case *events.StateDeltaEvent:
 		p.applyCost(e.Delta)
 	case *events.RunErrorEvent:
+		p.actions.Stop()
 		p.failed = true
 		p.done = true
 		p.dirty = true
 	case *events.RunFinishedEvent:
+		p.actions.Stop()
 		// Turn done: clear the live reasoning window so the final pane always shows
 		// "completato" (the safe label) rather than frozen raw thoughts. msg #2 carries
 		// the actual answer; the status pane is just a lifecycle indicator from here.
