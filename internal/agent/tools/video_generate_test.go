@@ -109,7 +109,7 @@ func TestVideoGenerateDeliversAnEarlyCompletionInline(t *testing.T) {
 	preview := decodeVideoPreview(t, res)
 	if preview.AssetID != assetID || preview.MIMEType != "video/mp4" || preview.Model != mediagen.DefaultVideoModel ||
 		preview.CostUSD == nil || *preview.CostUSD != 0.4 || preview.Used.Duration != 6 ||
-		preview.Adjustments == nil || len(preview.Adjustments) != 0 {
+		preview.Adjustments == nil || len(preview.Adjustments) != 0 || preview.Delivered != mediaDeliveredNote {
 		t.Fatalf("preview = %+v", preview)
 	}
 	if calls := f.jobs.deliveryCalls(); !slices.Equal(calls, []string{"call-video"}) || f.jobs.job(job.ID).DeliveredAt == nil {

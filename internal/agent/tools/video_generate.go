@@ -51,7 +51,7 @@ const videoGenerateParameters = `{
 
 const videoGenerateDescription = `Generate one video from a prompt, or animate an image by passing its asset id as first_frame_asset_id. The operator chooses the model.
 Submit: {"prompt":"waves breaking at dawn, slow pan","duration":6,"aspect_ratio":"16:9"}.
-A clip that finishes quickly is delivered by this call. Otherwise the call returns {"status":"in_progress","job_id":...}: tell the user the video is on its way and end your turn; do not poll and do not submit it again. The runtime notifies this conversation when the job finishes; then call video_generate once with only that job_id to deliver it.
+A clip that finishes quickly is delivered by this call and shown to the user; do not send it again. Otherwise the call returns {"status":"in_progress","job_id":...}: tell the user the video is on its way and end your turn; do not poll and do not submit it again. The runtime notifies this conversation when the job finishes; then call video_generate once with only that job_id to deliver it.
 Collect: {"job_id":"<job_id from the result or the notification>"}.
 Read adjustments and errors; do not invent a model or a download URL.`
 

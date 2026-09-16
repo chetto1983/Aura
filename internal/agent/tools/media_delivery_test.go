@@ -176,7 +176,7 @@ func TestMediaDeliveryPreflightNeedsIdentityThreadCallAndRunDirectory(t *testing
 
 func TestMediaDeliveryArtifactResultCarriesTheDescriptorAndPreview(t *testing.T) {
 	ctx := mediaCtx(t, t.TempDir())
-	preview := map[string]any{"asset_id": "asset-9", "adjustments": []string{}}
+	preview := mediaResult{AssetID: "asset-9", MIMEType: "image/png", Model: "m", Adjustments: []string{}}
 	res := mediaArtifactResult(ctx, "/run/tmp/media-1/generated.png", "generated.png", "image/png", "asset-9", "città 🌙", 42, preview)
 
 	want := map[string]any{
@@ -192,7 +192,9 @@ func TestMediaDeliveryArtifactResultCarriesTheDescriptorAndPreview(t *testing.T)
 			t.Fatalf("descriptor[%q] = %#v, want %#v", key, got[key], value)
 		}
 	}
-	if res.Preview != `{"adjustments":[],"asset_id":"asset-9"}` || res.Bytes != len(res.Preview) {
+	wantPreview := `{"asset_id":"asset-9","mime_type":"image/png","model":"m","cost_usd":null,"used":null,` +
+		`"adjustments":[],"delivered":"` + mediaDeliveredNote + `"}`
+	if res.Preview != wantPreview || res.Bytes != len(res.Preview) {
 		t.Fatalf("preview = %q (%d bytes)", res.Preview, res.Bytes)
 	}
 }
@@ -255,7 +257,7 @@ func TestMediaDeliveryRefusesAVideoItCannotRestage(t *testing.T) {
 }
 
 func TestMediaDeliveryArtifactResultRefusesAnUnencodablePreview(t *testing.T) {
-	res := mediaArtifactResult(mediaCtx(t, t.TempDir()), "/p", "generated.png", "image/png", "a", "p", 1, func() {})
+	res := mediaArtifactResult(mediaCtx(t, t.TempDir()), "/p", "generated.png", "image/png", "a", "p", 1, mediaResult{Used: func() {}})
 	if res.Meta != nil {
 		t.Fatal("an unencodable preview still produced an artifact")
 	}

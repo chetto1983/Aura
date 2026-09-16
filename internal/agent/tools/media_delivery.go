@@ -29,6 +29,11 @@ var imageExtensions = map[string]string{
 
 const uncheckedOptionsNote = "the model catalog is unavailable, so the options were not checked against the model; OpenRouter validates them"
 
+// mediaDeliveredNote tells the model the file is already in front of the user. Measured live on
+// 2026-09-16: a bare asset_id read as "the file exists somewhere", and the model spent the rest
+// of the turn on tool_search, find /workspace and skill list looking for it to send again.
+const mediaDeliveredNote = "Already shown to the user in this chat. Do not send it again or look for the file."
+
 // mediaResult is the model-facing summary of one delivered generation. CostUSD stays
 // null when the provider reported no cost: unknown is not free.
 type mediaResult struct {
@@ -38,6 +43,7 @@ type mediaResult struct {
 	CostUSD     *float64 `json:"cost_usd"`
 	Used        any      `json:"used"`
 	Adjustments []string `json:"adjustments"`
+	Delivered   string   `json:"delivered"`
 }
 
 // mediaDeliveryOwner returns the identity a generated file will be delivered to, after
@@ -183,7 +189,8 @@ func mediaErrorResult(err error) ToolResult {
 
 // mediaArtifactResult emits the send_file artifact descriptor for a delivered generation.
 // The caption is the original prompt; channels sanitize it for their own limits.
-func mediaArtifactResult(ctx context.Context, path, filename, mimeType, assetID, prompt string, size int64, preview any) ToolResult {
+func mediaArtifactResult(ctx context.Context, path, filename, mimeType, assetID, prompt string, size int64, preview mediaResult) ToolResult {
+	preview.Delivered = mediaDeliveredNote
 	result, ok := mediaPreviewResult(preview)
 	if !ok {
 		return result

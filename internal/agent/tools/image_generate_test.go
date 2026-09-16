@@ -245,6 +245,7 @@ type imagePreview struct {
 		ReferenceAssetIDs []string `json:"reference_asset_ids"`
 	} `json:"used"`
 	Adjustments []string `json:"adjustments"`
+	Delivered   string   `json:"delivered"`
 }
 
 func TestImageGenerateSpec(t *testing.T) {
@@ -320,6 +321,11 @@ func TestImageGenerateDeliversAnOwnedArtifact(t *testing.T) {
 		preview.CostUSD == nil || *preview.CostUSD != 0.04 || preview.Used.AspectRatio != "16:9" ||
 		!slices.Equal(preview.Used.ReferenceAssetIDs, []string{"ref-1"}) || preview.Adjustments == nil || len(preview.Adjustments) != 0 {
 		t.Fatalf("preview = %+v", preview)
+	}
+	// Measured live 2026-09-16: without this line the model went looking for the file it had
+	// just delivered (tool_search, find /workspace, skill list) to send it again.
+	if preview.Delivered != mediaDeliveredNote {
+		t.Fatalf("preview.delivered = %q, want %q", preview.Delivered, mediaDeliveredNote)
 	}
 	if res.Bytes != len(res.Preview) {
 		t.Fatalf("Bytes = %d, want %d", res.Bytes, len(res.Preview))

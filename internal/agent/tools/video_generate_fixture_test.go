@@ -324,6 +324,7 @@ type videoPreview struct {
 	CostUSD     *float64         `json:"cost_usd"`
 	Used        videoUsedPreview `json:"used"`
 	Adjustments []string         `json:"adjustments"`
+	Delivered   string           `json:"delivered"`
 }
 
 func decodeVideoPreview(t *testing.T, res ToolResult) videoPreview {

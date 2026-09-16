@@ -49,7 +49,7 @@ func (g *ImageGenerate) Spec() Spec {
 	return Spec{
 		Name:                "image_generate",
 		Summary:             "Generate an image or picture, or edit an image using reference assets.",
-		Description:         "Create one image from a prompt or edit supplied image assets. Use reference_asset_ids from attachments or previous generation results. The operator chooses the model. Read adjustments and errors; do not invent a model or a download URL.",
+		Description:         "Create one image from a prompt or edit supplied image assets. Use reference_asset_ids from attachments or previous generation results. The operator chooses the model. The image is shown to the user when this call returns; do not send it again. Read adjustments and errors; do not invent a model or a download URL.",
 		Parameters:          json.RawMessage(imageGenerateParameters),
 		Deferred:            true,
 		Mutating:            true,

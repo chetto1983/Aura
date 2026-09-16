@@ -50,8 +50,8 @@ func TestVideoGenerateCollectsAJobFinishedBeforeARestart(t *testing.T) {
 	preview := decodeVideoPreview(t, res)
 	if preview.AssetID != job.AssetID || preview.Model != mediagen.DefaultVideoModel || preview.CostUSD == nil || *preview.CostUSD != 0.4 ||
 		preview.Used.Duration != 5 || preview.Used.Resolution != "768p" || preview.Used.FirstFrameAssetID != "frame-1" ||
-		!slices.Equal(preview.Adjustments, []string{"duration 4s is not offered; used 5s"}) {
-		t.Fatalf("preview = %+v, want the submission's model, cost, options and adjustments", preview)
+		!slices.Equal(preview.Adjustments, []string{"duration 4s is not offered; used 5s"}) || preview.Delivered != mediaDeliveredNote {
+		t.Fatalf("preview = %+v, want the submission's model, cost, options, adjustments and delivery note", preview)
 	}
 	if f.credentials.calls != 0 || f.settings.calls != 0 {
 		t.Fatalf("collect read credentials %d and settings %d times, want neither", f.credentials.calls, f.settings.calls)
