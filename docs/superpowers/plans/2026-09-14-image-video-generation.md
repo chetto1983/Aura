@@ -1348,7 +1348,7 @@ git commit -m "feat(telegram): deliver native generation media" -m "Choose photo
 - Helper `createMediaConversation(page: Page, title: string): Promise<string>`.
 - Evidence records contain acceptance ID, exact commit, conversation ID, tool-call IDs, job/asset IDs, measured model/cost, status, media inspection notes and artifact paths. Never include keys or base64/reference contents.
 
-- [ ] **Step 1: Extend executable coverage and mutation scope before claiming completion.**
+- [x] **Step 1: Extend executable coverage and mutation scope before claiming completion.**
 
 ~~~json
 {"github.com/chetto1983/aura/internal/mediagen": {"mode":"target"}}
@@ -1365,7 +1365,7 @@ GO_SCOPES.update({
 
 Extend mutation contract tests to require both scopes and fail for missing/zero executed mutants. The existing critical-mutation CI invocation picks up these entries; do not duplicate the runner. Add all new media components and formatter/state logic to Stryker's mutate list, and add their actual tests to `vitest.stryker.config.ts` (its include list is explicit). Include the owned registry image/generation customizations, generation grouping/state, GeneratedImagePreview and VideoPreview. Measure media frontend mutations separately at >=70%, in addition to the existing aggregate floor, so unrelated files cannot mask survivors.
 
-- [ ] **Step 2: Write a real composer-driven image acceptance test.**
+- [x] **Step 2: Write a real composer-driven image acceptance test.**
 
 ~~~ts
 async function createMediaConversation(page: Page, title: string): Promise<string> {
@@ -1402,7 +1402,7 @@ test('the real agent generates a visible image', async ({ page }, info) => {
 
 Preserve the installed ImagePreview's `data-slot="image-preview"` on its img in Task 11. Save network/SSE trace evidence and assert `tool_search` actually promotes `image_generate`, then a corresponding call and artifact appear. A screenshot alone does not prove the real tool was called. Test helpers may read the trace/API and create/upload fixtures, but may not inject assistant messages, call the Go tool directly, or mock the generation response.
 
-- [ ] **Step 3: Run all unpaid gates first.**
+- [x] **Step 3: Run all unpaid gates first.**
 
 ~~~sh
 go vet ./...

@@ -41,6 +41,18 @@ const mutationTests = [
   'src/chat/__tests__/sseAdapter_network.test.ts',
   'src/chat/ExternalStoreChat.reasoning.test.tsx',
   'src/chat/displays/__tests__/snapshotToMessages.test.ts',
+  // Generation cockpit (2026-09-16): the owned registry image/image-generation
+  // customizations, the generation frame/state/tool display, and the two media
+  // renderers plus the dispatch switch they are reached through. Scored on their own
+  // denominator by critical_mutation_gate's media_frontend scope, so a survivor here
+  // cannot be averaged away by the suites above.
+  'src/chat/generation/GenerationFrame.test.tsx',
+  'src/chat/generation/GenerationToolDisplay.test.tsx',
+  'src/chat/generation/generationState.test.ts',
+  'src/chat/generation/generationThread.test.tsx',
+  'src/chat/artifacts/renderers/GeneratedImagePreview.test.tsx',
+  'src/chat/artifacts/renderers/VideoPreview.test.tsx',
+  'src/chat/artifacts/PreviewModal.test.tsx',
 ] as const;
 
 export default defineConfig({

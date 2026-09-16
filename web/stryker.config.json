@@ -38,7 +38,15 @@
     "src/chat/toolGrouping.ts",
     "src/conversations/exportConversation.ts",
     "src/conversations/useConversationTitle.ts",
-    "src/audit/auditPairing.ts"
+    "src/audit/auditPairing.ts",
+    "src/components/image.tsx",
+    "src/components/image-generation.tsx",
+    "src/chat/generation/generationState.ts",
+    "src/chat/generation/GenerationFrame.tsx",
+    "src/chat/generation/GenerationToolDisplay.tsx",
+    "src/chat/artifacts/renderers/GeneratedImagePreview.tsx",
+    "src/chat/artifacts/renderers/VideoPreview.tsx",
+    "src/chat/artifacts/renderers/previewDispatch.tsx"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

@@ -20,7 +20,23 @@ GO_SCOPES = {
     "identity_isolation": "internal/identityctx/operator.go",
     "profile_validation": "internal/config/config_runtimeprofile.go",
     "sandbox": "internal/sandbox/usersandbox/spec.go",
+    "media_clamp": "internal/mediagen/clamp.go",
+    "media_watcher": "internal/mediagen/watcher_state.go",
 }
+# The generation cockpit is scored on its own denominator as well as inside the
+# aggregate: eight media files among thirty-odd others cannot carry survivors that a
+# strong unrelated suite would average away.
+MEDIA_FRONTEND_FILES = (
+    "src/chat/artifacts/renderers/GeneratedImagePreview.tsx",
+    "src/chat/artifacts/renderers/VideoPreview.tsx",
+    "src/chat/artifacts/renderers/previewDispatch.tsx",
+    "src/chat/generation/GenerationFrame.tsx",
+    "src/chat/generation/GenerationToolDisplay.tsx",
+    "src/chat/generation/generationState.ts",
+    "src/components/image-generation.tsx",
+    "src/components/image.tsx",
+)
+REQUIRED_SCOPE_IDS = frozenset({*GO_SCOPES, "frontend", "media_frontend"})
 SUMMARY = re.compile(
     r"mutation score is ([0-9.]+) "
     r"\((\d+) passed, (\d+) failed, (\d+) duplicated, (\d+) skipped"
@@ -54,8 +70,30 @@ def parse_go_mutation_output(output: str) -> dict[str, Any]:
     }
 
 
+def normalized_report_path(path: str) -> str:
+    cleaned = path.replace("\\", "/")
+    for prefix in ("./", "web/"):
+        if cleaned.startswith(prefix):
+            cleaned = cleaned[len(prefix) :]
+    return cleaned
+
+
+def selected_file_reports(
+    files: dict[str, Any], only: tuple[str, ...] | None
+) -> list[Any]:
+    if only is None:
+        return list(files.values())
+    indexed = {normalized_report_path(name): body for name, body in files.items()}
+    missing = [name for name in only if name not in indexed]
+    if missing:
+        raise ValueError("Stryker report does not mutate: " + ", ".join(missing))
+    return [indexed[name] for name in only]
+
+
 def parse_frontend_report(
-    path: pathlib.Path, max_age_hours: float = 24.0
+    path: pathlib.Path,
+    max_age_hours: float = 24.0,
+    only: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     if max_age_hours <= 0:
         raise ValueError("frontend report max age must be positive")
@@ -77,7 +115,7 @@ def parse_frontend_report(
     files = report.get("files")
     if not isinstance(files, dict):
         raise ValueError("Stryker report files are missing")
-    for file_report in files.values():
+    for file_report in selected_file_reports(files, only):
         if not isinstance(file_report, dict):
             continue
         for mutant in file_report.get("mutants", []):
@@ -129,6 +167,22 @@ def run_go_scope(
     }
 
 
+def scope_failures(scopes: list[dict[str, Any]], minimum: float) -> list[str]:
+    present = {scope.get("id") for scope in scopes}
+    failures = [
+        f"missing scope {name}" for name in sorted(REQUIRED_SCOPE_IDS - present)
+    ]
+    for scope in scopes:
+        scope_id = scope.get("id")
+        if scope.get("executed") is not True:
+            failures.append(f"{scope_id} did not execute")
+        elif scope.get("killed", 0) + scope.get("survived", 0) == 0:
+            failures.append(f"{scope_id} executed no mutants")
+        elif scope.get("score_percent", 0.0) < minimum:
+            failures.append(f"{scope_id}={scope['score_percent']:.2f}%")
+    return failures
+
+
 def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -154,27 +208,29 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             report["scopes"].append(
                 run_go_scope(executable, repo, scope_id, relative_path, log_dir)
             )
-        frontend = parse_frontend_report(
-            args.frontend_report.resolve(), args.frontend_max_age_hours
-        )
+        frontend_report = args.frontend_report.resolve()
         report["scopes"].append(
             {
                 "id": "frontend",
                 "executed": True,
                 "files": ["web/stryker.config.json"],
-                **frontend,
+                **parse_frontend_report(frontend_report, args.frontend_max_age_hours),
             }
         )
-        below = [
-            scope
-            for scope in report["scopes"]
-            if scope["score_percent"] < args.minimum
-        ]
-        report["passed"] = not below
-        if below:
-            report["error"] = "mutation scopes below threshold: " + ", ".join(
-                f"{scope['id']}={scope['score_percent']:.2f}%" for scope in below
-            )
+        report["scopes"].append(
+            {
+                "id": "media_frontend",
+                "executed": True,
+                "files": [f"web/{name}" for name in MEDIA_FRONTEND_FILES],
+                **parse_frontend_report(
+                    frontend_report, args.frontend_max_age_hours, MEDIA_FRONTEND_FILES
+                ),
+            }
+        )
+        failures = scope_failures(report["scopes"], args.minimum)
+        report["passed"] = not failures
+        if failures:
+            report["error"] = "mutation gate failed: " + ", ".join(failures)
     except Exception as exc:
         report["error"] = str(exc)
         write_report(output, report)
