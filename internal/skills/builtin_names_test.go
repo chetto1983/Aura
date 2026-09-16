@@ -22,7 +22,7 @@ func TestBuiltinNamesAreTheEmbeddedSet(t *testing.T) {
 	t.Parallel()
 	got := BuiltinNames()
 
-	for _, want := range []string{"find-skills-aura", "memory-aura", "skill-creator"} {
+	for _, want := range []string{"find-skills-aura", "media-generation-aura", "memory-aura", "skill-creator"} {
 		if !slices.Contains(got, want) {
 			t.Fatalf("BuiltinNames() = %v, want it to carry %q", got, want)
 		}
