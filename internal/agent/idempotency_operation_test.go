@@ -448,4 +448,39 @@ func TestDeriveToolOperationContextDerivesForDelegatedDispatch(t *testing.T) {
 			t.Fatalf("claim-loop tool derive scope = %q, want %q", op.Key.Scope, spec.OperationScope)
 		}
 	})
+
+	t.Run("background wake's own tool call", func(t *testing.T) {
+		// Mirrors cmd/aura/background_completion.go's wakeOperationContext: a woken turn's
+		// collect call must derive its own operation, or the gateway denies it.
+		fingerprint, err := idempotency.FingerprintTyped(struct {
+			WakeID string `json:"wake_id"`
+		}{WakeID: "wake-1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, err := idempotency.WithOperation(
+			identityctx.WithIdentityID(context.Background(), identityctx.LocalOperatorIdentity),
+			idempotency.Operation{
+				Key: idempotency.OperationKey{
+					IdentityID: identityctx.LocalOperatorIdentity,
+					Scope:      idempotency.ScopeBackgroundWake,
+					Key:        "conv-1:wake-1",
+				},
+				Fingerprint: fingerprint,
+				Correlation: "wake-1",
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx = withModelRound(ctx, modelRound{requestID: uuid.Must(uuid.NewV7()), ordinal: 1})
+		spec := childOperationSpec()
+		derived, err := deriveToolOperationContext(ctx, spec, json.RawMessage(`{"action":"restore","name":"calc"}`))
+		if err != nil {
+			t.Fatalf("background wake tool derive: %v", err)
+		}
+		if op, ok := idempotency.OperationFromContext(derived); !ok || op.Key.Scope != spec.OperationScope {
+			t.Fatalf("background wake tool derive = %+v, %v; want a %q child", op.Key, ok, spec.OperationScope)
+		}
+	})
 }

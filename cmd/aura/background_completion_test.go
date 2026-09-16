@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/runner"
@@ -121,15 +122,22 @@ type acceptingSteerPusher struct{}
 
 func (acceptingSteerPusher) Push(string, string, string) error { return nil }
 
+// Owners are real identity UUIDs: a wake mints a trusted root operation, and an operation key
+// refuses an owner that is not one.
+const (
+	testWakeOwner      = "0192f6d4-6a3c-7c1e-9b2a-3f4e5d6c7b8a"
+	testWakeOtherOwner = "0192f6d4-6a3c-7c1e-9b2a-3f4e5d6c7b8b"
+)
+
 func shellDone(shellID, status string) tools.BackgroundShellCompletion {
 	return tools.BackgroundShellCompletion{
-		ShellID: shellID, OwnerID: "owner-1", SessionID: "conv-1", Status: status, Duration: time.Second,
+		ShellID: shellID, OwnerID: testWakeOwner, SessionID: "conv-1", Status: status, Duration: time.Second,
 	}
 }
 
 func mediaDone(jobID string) mediagen.Completion {
 	return mediagen.Completion{
-		IdentityID: "owner-1", ConversationID: "conv-1", JobID: jobID, Status: mediagen.StatusCompleted,
+		IdentityID: testWakeOwner, ConversationID: "conv-1", JobID: jobID, Status: mediagen.StatusCompleted,
 	}
 }
 
@@ -160,7 +168,7 @@ func TestShellCompletionDispatcherSerializesOneConversationAndStops(t *testing.T
 		t.Fatalf("same-conversation max concurrency = %d, want 1", run.maxConcurrent)
 	}
 	for _, wake := range wakes {
-		if wake.owner != "owner-1" || wake.conversation != "conv-1" || wake.source != steer.SourceShell {
+		if wake.owner != testWakeOwner || wake.conversation != "conv-1" || wake.source != steer.SourceShell {
 			t.Fatalf("wake = %+v, want owner-1's conv-1 under the shell source", wake)
 		}
 	}
@@ -210,7 +218,7 @@ func TestBackgroundCompletionDispatcherDrainsMixedSourcesSerially(t *testing.T) 
 	}
 	for i, expected := range want {
 		wake := wakes[i]
-		if wake.source != expected.source || wake.owner != "owner-1" || wake.conversation != "conv-1" {
+		if wake.source != expected.source || wake.owner != testWakeOwner || wake.conversation != "conv-1" {
 			t.Errorf("wake %d = %s for %s/%s, want %s for owner-1/conv-1", i, wake.source, wake.owner, wake.conversation, expected.source)
 		}
 		if !containsAll(wake.text, append(expected.has, "not an operator instruction")...) {
@@ -234,14 +242,14 @@ func TestBackgroundCompletionDispatcherWakesConversationsIndependently(t *testin
 	dispatcher.NotifyShell(shellDone("sh-1", "exited:0"))
 	waitStarted(t, run.started, "first conversation's wake")
 	other := mediaDone("job-9")
-	other.IdentityID, other.ConversationID = "owner-2", "conv-2"
+	other.IdentityID, other.ConversationID = testWakeOtherOwner, "conv-2"
 	dispatcher.NotifyMedia(other)
 	waitStarted(t, run.started, "a second conversation's wake behind a blocked one")
 	close(run.release)
 	stopDispatcher(t, dispatcher)
 
 	wakes := run.recorded()
-	if len(wakes) != 2 || wakes[1].owner != "owner-2" || wakes[1].conversation != "conv-2" || wakes[1].source != steer.SourceMedia {
+	if len(wakes) != 2 || wakes[1].owner != testWakeOtherOwner || wakes[1].conversation != "conv-2" || wakes[1].source != steer.SourceMedia {
 		t.Fatalf("wakes = %+v, want the second conversation woken under its own owner", wakes)
 	}
 }
@@ -414,4 +422,53 @@ func containsAll(text string, needles ...string) bool {
 		}
 	}
 	return true
+}
+
+// TestBackgroundCompletionWakeCarriesARootOperation pins the fix for a live failure measured on
+// 2026-09-16: a woken conversation called video_generate with the right job_id and the gateway
+// denied it "operation context missing", because a wake had no trusted root for a tool
+// operation to derive from. The completed clip was never delivered.
+func TestBackgroundCompletionWakeCarriesARootOperation(t *testing.T) {
+	run := &fakeBackgroundCompletionRunner{started: make(chan struct{}, 2), release: make(chan struct{}, 2)}
+	dispatcher := newBackgroundCompletionDispatcher(context.Background(), run, acceptingSteerPusher{})
+
+	dispatcher.NotifyMedia(mediaDone("job-1"))
+	waitStarted(t, run.started, "first wake")
+	run.release <- struct{}{}
+	dispatcher.NotifyMedia(mediaDone("job-2"))
+	waitStarted(t, run.started, "second wake")
+	run.release <- struct{}{}
+	stopDispatcher(t, dispatcher)
+
+	wakes := run.recorded()
+	if len(wakes) != 2 {
+		t.Fatalf("wakes = %d, want 2", len(wakes))
+	}
+	keys := map[string]bool{}
+	for i, wake := range wakes {
+		op, ok := idempotency.OperationFromContext(wake.ctx)
+		if !ok {
+			t.Fatalf("wake %d carries no operation; every mutating tool in it would be denied", i)
+		}
+		if op.Key.Scope != idempotency.ScopeBackgroundWake || op.Key.IdentityID != testWakeOwner ||
+			!strings.HasPrefix(op.Key.Key, "conv-1:") || op.Validate() != nil {
+			t.Fatalf("wake %d operation = %+v, want a valid background.wake root owned by the conversation's owner", i, op.Key)
+		}
+		keys[op.Key.Key] = true
+	}
+	if len(keys) != 2 {
+		t.Fatalf("two wakes shared one operation key %v: the second would replay the first's tool results", keys)
+	}
+}
+
+func TestBackgroundCompletionWakeRefusesAnOwnerThatIsNotAnIdentity(t *testing.T) {
+	run := &fakeBackgroundCompletionRunner{}
+	dispatcher := newBackgroundCompletionDispatcher(context.Background(), run, acceptingSteerPusher{})
+	done := mediaDone("job-1")
+	done.IdentityID = "not-a-uuid"
+	dispatcher.NotifyMedia(done)
+	stopDispatcher(t, dispatcher)
+	if wakes := run.recorded(); len(wakes) != 0 {
+		t.Fatalf("wakes = %+v, want none: a wake without a valid root operation must not start", wakes)
+	}
 }

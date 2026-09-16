@@ -57,6 +57,8 @@ func TestOperationScopesAreFinite(t *testing.T) {
 		ScopeSchedulerRun,
 		ScopeApproval,
 		ScopeMCPTool,
+		ScopeSwarmDelegation,
+		ScopeBackgroundWake,
 	}
 	for _, scope := range valid {
 		key := OperationKey{IdentityID: testIdentityID, Scope: scope, Key: "key"}

@@ -274,7 +274,7 @@ func TestServeCompletionDispatcherIsTheShellCompletionHook(t *testing.T) {
 	shells.hook(shellDone("sh-hooked", "exited:0"))
 	wakes := run.waitForWakes(t, 1)
 	stopDispatcher(t, dispatcher)
-	if wakes[0].source != steer.SourceShell || wakes[0].owner != "owner-1" || !strings.Contains(wakes[0].text, "Background shell sh-hooked ") {
+	if wakes[0].source != steer.SourceShell || wakes[0].owner != testWakeOwner || !strings.Contains(wakes[0].text, "Background shell sh-hooked ") {
 		t.Fatalf("wake = %+v, want the hooked shell completion delivered under the shell source", wakes[0])
 	}
 

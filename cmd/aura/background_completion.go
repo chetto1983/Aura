@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"log/slog"
 	"sync"
 
+	"github.com/google/uuid"
+
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/runner"
@@ -127,9 +131,15 @@ func (d *backgroundCompletionDispatcher) drainRoute(route backgroundCompletionRo
 		}
 		d.mu.Unlock()
 
-		ctx := identityctx.WithIdentityID(d.ctx, route.ownerID)
-		source := group[0].Source
-		for _, err := range d.run.WakeWithSteer(ctx, route.conversationID, d.steer, source, formatBackgroundCompletions(group)) {
+		source, text := group[0].Source, formatBackgroundCompletions(group)
+		ctx, err := wakeOperationContext(identityctx.WithIdentityID(d.ctx, route.ownerID), route, source, text)
+		if err != nil {
+			slog.Warn("aura serve: background completion wake refused",
+				"owner", route.ownerID, "conversation", route.conversationID,
+				"source", source, "completions", len(group), "err", err)
+			continue
+		}
+		for _, err := range d.run.WakeWithSteer(ctx, route.conversationID, d.steer, source, text) {
 			if err != nil {
 				slog.Warn("aura serve: background completion wake failed",
 					"owner", route.ownerID, "conversation", route.conversationID,
@@ -138,6 +148,33 @@ func (d *backgroundCompletionDispatcher) drainRoute(route backgroundCompletionRo
 			}
 		}
 	}
+}
+
+// wakeOperationContext mints the trusted root a woken turn's tool operations derive from, the
+// way cron's scheduledOperationContext and swarm's delegationOperationContext do for theirs.
+// Without it the gateway denies every mutating call in the turn, video_generate's collect
+// included. Each wake gets a fresh key: a later wake of the same conversation is a different
+// operation, never a replay of this one's results; delivery claims keep a collect once-only.
+func wakeOperationContext(ctx context.Context, route backgroundCompletionRoute, source, text string) (context.Context, error) {
+	wakeID := uuid.NewString()
+	fingerprint, err := idempotency.FingerprintTyped(struct {
+		WakeID         string `json:"wake_id"`
+		ConversationID string `json:"conversation_id"`
+		Source         string `json:"source"`
+		Text           string `json:"text"`
+	}{WakeID: wakeID, ConversationID: route.conversationID, Source: source, Text: text})
+	if err != nil {
+		return nil, fmt.Errorf("wake operation fingerprint: %w", err)
+	}
+	return idempotency.WithOperation(ctx, idempotency.Operation{
+		Key: idempotency.OperationKey{
+			IdentityID: route.ownerID,
+			Scope:      idempotency.ScopeBackgroundWake,
+			Key:        route.conversationID + ":" + wakeID,
+		},
+		Fingerprint: fingerprint,
+		Correlation: wakeID,
+	})
 }
 
 // nextGroupLocked removes and returns the route's leading run of completions from one source:

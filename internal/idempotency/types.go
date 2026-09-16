@@ -55,6 +55,12 @@ const (
 	// to inherit an operation from, so the claim loop is the trusted root the
 	// same way cron's dispatch is.
 	ScopeSwarmDelegation Scope = "swarm.delegation"
+	// ScopeBackgroundWake roots the turn the background completion dispatcher starts when a
+	// detached shell or video job finishes (cmd/aura/background_completion.go). Like the two
+	// roots above it has no ingress operation to inherit, and without one every mutating tool
+	// in the woken turn is denied: measured live on 2026-09-16, when a finished clip could not
+	// be collected. Parent-only, like ScopeSwarmDelegation: stored rows carry agent.tool.
+	ScopeBackgroundWake Scope = "background.wake"
 )
 
 var validScopes = map[Scope]struct{}{
@@ -65,6 +71,7 @@ var validScopes = map[Scope]struct{}{
 	ScopeApproval:        {},
 	ScopeMCPTool:         {},
 	ScopeSwarmDelegation: {},
+	ScopeBackgroundWake:  {},
 }
 
 // Validate rejects scopes outside Aura's finite registry.

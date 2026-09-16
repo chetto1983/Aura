@@ -66,6 +66,9 @@ func deriveToolOperationContext(ctx context.Context, spec tools.Spec, args json.
 		// the same "trusted root with no upstream ingress operation" shape as
 		// ScopeSchedulerRun, just for a worker instead of a scheduled task.
 		idempotency.ScopeSwarmDelegation,
+		// ScopeBackgroundWake is the root the background completion dispatcher mints for a
+		// woken conversation, the same trusted-root shape for a finished detached job.
+		idempotency.ScopeBackgroundWake,
 		// ScopeAgentTool as a PARENT is the nested case above: a tool operation may
 		// own another tool operation, one level per delegation hop. The derived key
 		// still carries the parent's key and fingerprint, so a worker's call is
