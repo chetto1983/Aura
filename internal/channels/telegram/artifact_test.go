@@ -153,10 +153,11 @@ func TestArtifactMissingPathIgnored(t *testing.T) {
 }
 
 // TestArtifactEnrichedDescriptorStillSends is the 37A-02 (WEBART-02) cross-channel non-regression
-// guard: the send_file descriptor now also rides asset_id + size_bytes + mime_type + tool_call_id
-// (the web delivery lane's keys). Telegram's artifactDescriptor reads ONLY path and ignores the
-// extra keys, so an enriched descriptor must STILL deliver the document byte-for-byte. It reuses
-// the existing artifactCustom helper + docBot fake — no new fakes.
+// guard: the send_file descriptor also rides asset_id + size_bytes + mime_type + tool_call_id
+// (the web delivery lane's keys). Telegram now reads mime_type, filename, caption and tool_call_id
+// too, and stats path — but a non-media MIME must STILL deliver the document byte-for-byte, and
+// asset_id and the stale size_bytes must still change nothing. It reuses the existing
+// artifactCustom helper + docBot fake — no new fakes.
 func TestArtifactEnrichedDescriptorStillSends(t *testing.T) {
 	t.Parallel()
 	bot := &docBot{}

@@ -131,7 +131,10 @@ func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration, sho
 // by the Fanout producer. For the same span it owns the turn's chat action, so a
 // closed channel or a cancelled ctx stops the pulse and joins it.
 func (p *statusPane) consume(ctx context.Context, ch <-chan events.Event) {
-	p.actions = p.newActions(ctx)
+	if p.actions == nil { // the composition root pre-wires one it shares with the artifact consumer
+		p.actions = newMediaActionController(notifierFor(p.bot), p.to)
+	}
+	p.actions.start(ctx)
 	defer p.actions.Stop()
 	for ev := range ch {
 		if ctx.Err() != nil {

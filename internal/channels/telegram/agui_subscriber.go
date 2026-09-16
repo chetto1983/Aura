@@ -163,6 +163,11 @@ func (t *Telegram) consumers(bot botSender, to tele.Recipient) (status, content,
 	pane := newStatusPane(bot, to, t.statusThrottle(), t.deps.ShowReasoning, t.reasoningFIFORunes())
 	rend := newRenderer(bot, to, t.contentThrottle(), t.chatRateLimit())
 	art := newArtifact(bot, to)
+	// ONE chat-action controller for the turn: the pane owns its lifetime (it starts the
+	// pulse when it begins consuming and stops it at the end), the artifact consumer only
+	// holds the action while it uploads. Sharing it here is what keeps a single ticker.
+	pane.actions = newMediaActionController(notifierFor(bot), to)
+	art.actions = pane.actions
 	return pane, rend, art
 }
 

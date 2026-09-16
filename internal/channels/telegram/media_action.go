@@ -21,34 +21,63 @@ var mediaUploadActions = map[string]tele.ChatAction{
 	"video_generate": tele.UploadingVideo,
 }
 
-// mediaActionController tracks the media tool calls in flight for one turn and
-// selects the chat action the turn's single pulse sends. It is safe for concurrent
-// use and safe on a nil receiver (a pane driven outside consume has no controller).
+// mediaActionController tracks the media work in flight for one turn and selects the
+// chat action the turn's single pulse sends. Two goroutines reach it — the status
+// consumer, which drives the tool lifecycle and owns start/Stop, and the artifact
+// consumer, which holds the action across an upload — plus the pulse, which only
+// reads the selection; the mutex covers exactly that, and is never held across a
+// Notify. A nil receiver is a no-op (a pane driven outside consume has no controller).
 type mediaActionController struct {
 	mu       sync.Mutex
-	active   map[string]tele.ChatAction
+	active   map[string]tele.ChatAction // tool calls the agent is running
+	held     map[string]tele.ChatAction // uploads in flight, outliving their tool call
 	selected tele.ChatAction
 	stopped  bool
 
 	notifier botNotifier
 	to       tele.Recipient
 	stop     func()
-	stopOnce sync.Once
 }
 
-// newMediaActionController starts the turn's chat-action pulse on "typing" and
-// returns the controller that owns it until Stop. The pulse re-reads the selection at
-// every tick, so an upload longer than Telegram's action expiry keeps showing as an
-// upload.
-func newMediaActionController(ctx context.Context, n botNotifier, to tele.Recipient) *mediaActionController {
-	c := &mediaActionController{
+// newMediaActionController builds the turn's controller on "typing". Nothing pulses
+// until start: the controller exists from the moment the consumers are built, because
+// the artifact consumer shares it, but the turn's indicator belongs to the status
+// consumer's lifetime.
+func newMediaActionController(n botNotifier, to tele.Recipient) *mediaActionController {
+	return &mediaActionController{
 		active:   make(map[string]tele.ChatAction),
+		held:     make(map[string]tele.ChatAction),
 		selected: tele.Typing,
 		notifier: n,
 		to:       to,
 	}
-	c.stop = pulseChatActionFunc(ctx, n, to, c.action)
-	return c
+}
+
+// start opens the turn's single chat-action pulse, which re-reads the selection at
+// every tick so an upload longer than Telegram's action expiry keeps showing as an
+// upload. Calling it twice, or after Stop, does nothing — there is one ticker.
+func (c *mediaActionController) start(ctx context.Context) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	begin := !c.stopped && c.stop == nil
+	c.mu.Unlock()
+	if !begin {
+		return
+	}
+	// Outside the lock: the pulse notifies immediately, reading the selection through
+	// action(), which takes the same mutex.
+	stop := pulseChatActionFunc(ctx, c.notifier, c.to, c.action)
+	c.mu.Lock()
+	stopped := c.stopped
+	if !stopped {
+		c.stop = stop
+	}
+	c.mu.Unlock()
+	if stopped {
+		stop() // Stop landed while the pulse was opening: join it now, never leak it
+	}
 }
 
 // Start records a media tool call as in flight. When it changes what the chat should
@@ -92,20 +121,58 @@ func (c *mediaActionController) Finish(callID string) {
 }
 
 // Stop ends the pulse and JOINS its goroutine (goleak). It is idempotent: the pane
-// stops on the terminal run event and again when the event channel closes. Nothing
-// notifies after it.
+// stops on the terminal run event and again when the event channel closes. It is also
+// the backstop for a hold whose upload never returned — nothing notifies after it, and
+// no later Start or Hold can restart it.
 func (c *mediaActionController) Stop() {
 	if c == nil {
 		return
 	}
 	c.mu.Lock()
 	c.stopped = true
+	stop := c.stop
+	c.stop = nil
 	c.mu.Unlock()
-	c.stopOnce.Do(func() {
-		if c.stop != nil {
-			c.stop()
-		}
-	})
+	if stop != nil {
+		stop()
+	}
+}
+
+// Hold claims the action for an upload that is ALREADY under way. It exists because the
+// tool call ends the instant the bytes start moving: the translator emits
+// TOOL_CALL_END, TOOL_CALL_RESULT and the artifact descriptor from the SAME source
+// event, so without a hold the chat would fall back to typing for the heaviest part of
+// the turn. Held claims live apart from the in-flight tool calls, so the pane's Finish
+// — which fires on both END and RESULT — cannot drop them.
+func (c *mediaActionController) Hold(callID string, action tele.ChatAction) {
+	if c == nil || callID == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return
+	}
+	c.held[callID] = action
+	next, changed := c.reselect()
+	c.mu.Unlock()
+	c.notify(next, changed)
+}
+
+// Release ends a hold when the upload returns, whether it delivered or failed.
+func (c *mediaActionController) Release(callID string) {
+	if c == nil || callID == "" {
+		return
+	}
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return
+	}
+	delete(c.held, callID)
+	next, changed := c.reselect()
+	c.mu.Unlock()
+	c.notify(next, changed)
 }
 
 // action is what the pulse sends at each tick.
@@ -115,22 +182,30 @@ func (c *mediaActionController) action() tele.ChatAction {
 	return c.selected
 }
 
-// reselect recomputes the action from the in-flight calls and reports whether it
-// changed. Video wins over image: it is the longer, heavier upload, so it is the one
-// worth describing while both run. Caller holds the mutex.
+// reselect recomputes the action from the running tool calls and the uploads in flight
+// and reports whether it changed. Caller holds the mutex.
 func (c *mediaActionController) reselect() (tele.ChatAction, bool) {
 	next := tele.Typing
 	for _, action := range c.active {
-		next = action
-		if action == tele.UploadingVideo {
-			break
-		}
+		next = outrank(next, action)
+	}
+	for _, action := range c.held {
+		next = outrank(next, action)
 	}
 	if next == c.selected {
 		return next, false
 	}
 	c.selected = next
 	return next, true
+}
+
+// outrank picks the action worth showing between two claims. Video wins over image: it
+// is the longer, heavier upload, so it is the one worth describing while both run.
+func outrank(current, candidate tele.ChatAction) tele.ChatAction {
+	if current == tele.UploadingVideo || candidate == tele.UploadingVideo {
+		return tele.UploadingVideo
+	}
+	return candidate
 }
 
 // notify pushes a changed action out of band. Best-effort, like the pulse itself — a
@@ -142,11 +217,36 @@ func (c *mediaActionController) notify(action tele.ChatAction, changed bool) {
 	_ = c.notifier.Notify(c.to, action)
 }
 
-// newActions builds the pane's controller. The notifier is the very bot the pane
-// already sends through — the live *tele.Bot satisfies both seams, exactly as
-// keepWorking and the HITL resume path resolve it; a render-only double simply
-// yields a no-op controller.
-func (p *statusPane) newActions(ctx context.Context) *mediaActionController {
-	n, _ := p.bot.(botNotifier)
-	return newMediaActionController(ctx, n, p.to)
+// notifierFor resolves the chat-action seam out of a render sender: the live *tele.Bot
+// satisfies both, exactly as keepWorking and the HITL resume path resolve it; a
+// render-only double yields nil and the controller degrades to a no-op.
+func notifierFor(bot botSender) botNotifier {
+	n, _ := bot.(botNotifier)
+	return n
+}
+
+// holdUploadAction keeps the chat's upload action alive for the whole Send and returns
+// the release the caller MUST defer, so a failed upload frees the action exactly like a
+// delivered one. A descriptor without a tool_call_id, or a payload that is not a media
+// upload (a document, the cockpit announcement), holds nothing.
+func (a *artifact) holdUploadAction(desc map[string]any, payload any) (release func()) {
+	callID := stringField(desc, "tool_call_id")
+	action, ok := uploadActionFor(payload)
+	if callID == "" || !ok {
+		return func() {}
+	}
+	a.actions.Hold(callID, action)
+	return func() { a.actions.Release(callID) }
+}
+
+// uploadActionFor names what the chat should say while these bytes go up. Only the
+// native media uploads claim an action — they are the ones this turn promised.
+func uploadActionFor(payload any) (tele.ChatAction, bool) {
+	switch payload.(type) {
+	case *tele.Photo:
+		return tele.UploadingPhoto, true
+	case *tele.Video:
+		return tele.UploadingVideo, true
+	}
+	return "", false
 }

@@ -11,6 +11,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -32,10 +33,21 @@ const (
 	telegramVideoUploadCap = 50_000_000
 )
 
-// videoInCockpitMessage is what the chat gets for a clip Telegram will not carry. Like
-// every other user-facing string in this package (turnBusyMessage, the status-pane
+// videoInCockpitPrefix opens the notice for a clip Telegram will not carry, with the
+// package's degraded-but-recoverable glyph (the status pane's budget-trip line uses the
+// same one). Like every other user-facing string here (turnBusyMessage, the status-pane
 // labels) it is written straight in Italian — the channel has no localization layer.
-const videoInCockpitMessage = "Il video è disponibile nel cockpit."
+const videoInCockpitPrefix = "⚠️ Il video è disponibile nel cockpit."
+
+// videoInCockpitMessage names WHICH clip is waiting: two generations in one turn would
+// otherwise send the same sentence twice. The caption is the one artifactPayload already
+// sanitized and capped, so no second bound is applied here.
+func videoInCockpitMessage(caption string) string {
+	if caption == "" {
+		return videoInCockpitPrefix
+	}
+	return videoInCockpitPrefix + " " + caption
+}
 
 // artifact renders artifact CUSTOM events to a chat. It implements the
 // eventConsumer seam so the per-turn fanout can drive it like the status pane /
@@ -43,6 +55,11 @@ const videoInCockpitMessage = "Il video è disponibile nel cockpit."
 type artifact struct {
 	bot botSender
 	to  tele.Recipient
+
+	// actions is the turn's chat-action controller, shared with the status pane
+	// (media_action.go). Nil outside the per-turn wiring: an upload then simply says
+	// nothing, exactly as before.
+	actions *mediaActionController
 }
 
 // newArtifact builds an artifact consumer bound to a chat.
@@ -76,6 +93,8 @@ func (a *artifact) consumeEvent(ev events.Event) (*tele.Message, bool) {
 	if !ok {
 		return nil, false
 	}
+	release := a.holdUploadAction(desc, payload)
+	defer release()
 	msg, err := a.bot.Send(a.to, payload)
 	if err == nil {
 		return msg, true
@@ -106,7 +125,12 @@ func artifactPayload(desc map[string]any) (any, bool) {
 		return nil, false
 	}
 	info, err := os.Stat(path)
-	if err != nil || info.IsDir() {
+	if err != nil {
+		slog.Warn("telegram: artifact file unreadable, delivery skipped", "path", path, "err", err)
+		return nil, false
+	}
+	if info.IsDir() {
+		slog.Warn("telegram: artifact path is a directory, delivery skipped", "path", path)
 		return nil, false
 	}
 	size := info.Size()
@@ -122,7 +146,7 @@ func artifactPayload(desc map[string]any) (any, bool) {
 			Caption: caption, Streaming: true,
 		}, true
 	case strings.HasPrefix(mimeType, "video/"):
-		return videoInCockpitMessage, true
+		return videoInCockpitMessage(caption), true
 	default:
 		return &tele.Document{File: tele.FromDisk(path), FileName: filename, Caption: caption}, true
 	}

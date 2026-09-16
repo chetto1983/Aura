@@ -1,7 +1,9 @@
 package telegram
 
 import (
+	"bytes"
 	"errors"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,8 +206,39 @@ func TestArtifactOversizedVideoAnnouncesTheCockpit(t *testing.T) {
 		t.Fatalf("want 1 send, got %d", len(sent))
 	}
 	text, isText := sent[0].(string)
-	if !isText || text != videoInCockpitMessage {
-		t.Fatalf("sent %#v, want the cockpit fallback %q", sent[0], videoInCockpitMessage)
+	if !isText || text != videoInCockpitMessage("a long clip") {
+		t.Fatalf("sent %#v, want the cockpit fallback %q", sent[0], videoInCockpitMessage("a long clip"))
+	}
+}
+
+// TestArtifactOversizedVideoNamesTheClip: two clips in one turn must not send the same
+// sentence twice — the notice carries the (already capped) caption, and stands alone
+// when there is none.
+func TestArtifactOversizedVideoNamesTheClip(t *testing.T) {
+	t.Parallel()
+	payload, ok := artifactPayload(map[string]any{
+		"path": fixtureFile(t, "clip.mp4", 50_000_001), "filename": "clip.mp4",
+		"mime_type": "video/mp4", "caption": strings.Repeat("b", 2000),
+	})
+	if !ok {
+		t.Fatal("valid descriptor ignored")
+	}
+	text, isText := payload.(string)
+	if !isText {
+		t.Fatalf("want the cockpit fallback, got %s", payloadKind(payload))
+	}
+	if !strings.HasPrefix(text, videoInCockpitPrefix) {
+		t.Errorf("the notice must open with the package glyph, got %q", text[:40])
+	}
+	if want := len([]rune(videoInCockpitPrefix)) + 1 + telegramCaptionCap; len([]rune(text)) != want {
+		t.Errorf("notice is %d runes, want %d (prefix + the already capped caption)", len([]rune(text)), want)
+	}
+
+	payload, _ = artifactPayload(map[string]any{
+		"path": fixtureFile(t, "clip.mp4", 50_000_001), "filename": "clip.mp4", "mime_type": "video/mp4",
+	})
+	if text, _ := payload.(string); text != videoInCockpitPrefix {
+		t.Errorf("a captionless clip must send the bare notice, got %q", text)
 	}
 }
 
@@ -312,5 +345,127 @@ func TestArtifactRejectedVideoIsNotRetried(t *testing.T) {
 	}
 	if n := len(bot.recorded()); n != 1 {
 		t.Fatalf("want exactly 1 attempt, got %d", n)
+	}
+}
+
+// TestArtifactHoldsUploadActionAcrossTheSend is the point of the hold: the tool call is
+// already over when the bytes start moving (TOOL_CALL_END, TOOL_CALL_RESULT and the
+// artifact descriptor ride the same source event), so without it the chat would say
+// "typing…" through the heaviest part of the turn.
+func TestArtifactHoldsUploadActionAcrossTheSend(t *testing.T) {
+	t.Parallel()
+	rn := &recordingNotifier{}
+	ctrl := newMediaActionController(rn, tele.ChatID(7))
+	ctrl.Start("call-1", "video_generate")
+	ctrl.Finish("call-1") // the pane's terminal, fired before the upload begins
+
+	var duringSend tele.ChatAction
+	bot := &mediaBot{fail: func(any) error {
+		duringSend = ctrl.action()
+		return nil
+	}}
+	a := &artifact{bot: bot, to: tele.ChatID(7), actions: ctrl}
+
+	if _, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"path": fixtureFile(t, "clip.mp4", 2048), "filename": "clip.mp4",
+		"mime_type": "video/mp4", "caption": "a clip", "tool_call_id": "call-1",
+	})); !ok {
+		t.Fatal("the clip must be delivered")
+	}
+	if duringSend != tele.UploadingVideo {
+		t.Errorf("action during the upload = %q, want %q", duringSend, tele.UploadingVideo)
+	}
+	if got := ctrl.action(); got != tele.Typing {
+		t.Errorf("action after the upload = %q, want %q", got, tele.Typing)
+	}
+	assertActions(t, rn, tele.UploadingVideo, tele.Typing, tele.UploadingVideo, tele.Typing)
+}
+
+// TestArtifactReleasesTheHoldWhenTheSendFails: a failed upload must free the action too,
+// or the chat would claim to be uploading for the rest of the turn.
+func TestArtifactReleasesTheHoldWhenTheSendFails(t *testing.T) {
+	t.Parallel()
+	rn := &recordingNotifier{}
+	ctrl := newMediaActionController(rn, tele.ChatID(7))
+	bot := &mediaBot{fail: func(any) error { return errors.New("connection reset by peer") }}
+	a := &artifact{bot: bot, to: tele.ChatID(7), actions: ctrl}
+
+	if _, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"path": fixtureFile(t, "shot.png", 100), "filename": "shot.png",
+		"mime_type": "image/png", "caption": "art", "tool_call_id": "call-1",
+	})); ok {
+		t.Error("a failed upload must not report a delivery")
+	}
+	if got := ctrl.action(); got != tele.Typing {
+		t.Errorf("action after a failed upload = %q, want %q", got, tele.Typing)
+	}
+	assertActions(t, rn, tele.UploadingPhoto, tele.Typing)
+}
+
+// TestArtifactWithoutToolCallIDStillDelivers: the correlation key is best-effort on the
+// descriptor, so its absence costs the chat action, never the delivery.
+func TestArtifactWithoutToolCallIDStillDelivers(t *testing.T) {
+	t.Parallel()
+	rn := &recordingNotifier{}
+	ctrl := newMediaActionController(rn, tele.ChatID(7))
+	bot := &mediaBot{}
+	a := &artifact{bot: bot, to: tele.ChatID(7), actions: ctrl}
+
+	if _, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"path": fixtureFile(t, "shot.png", 100), "filename": "shot.png", "mime_type": "image/png",
+	})); !ok {
+		t.Fatal("a descriptor with no tool_call_id must still deliver")
+	}
+	if n := len(bot.recorded()); n != 1 {
+		t.Fatalf("want 1 send, got %d", n)
+	}
+	if n := rn.count(); n != 0 {
+		t.Errorf("want no chat action without a correlation key, got %d", n)
+	}
+}
+
+// TestArtifactHoldsNothingForADocument: only the native media uploads claim an action —
+// a generic send_file delivery is not what this turn promised.
+func TestArtifactHoldsNothingForADocument(t *testing.T) {
+	t.Parallel()
+	rn := &recordingNotifier{}
+	ctrl := newMediaActionController(rn, tele.ChatID(7))
+	a := &artifact{bot: &mediaBot{}, to: tele.ChatID(7), actions: ctrl}
+
+	if _, ok := a.consumeEvent(artifactCustom(map[string]any{
+		"path": fixtureFile(t, "report.pdf", 100), "filename": "report.pdf",
+		"mime_type": "application/pdf", "tool_call_id": "call-1",
+	})); !ok {
+		t.Fatal("the document must be delivered")
+	}
+	if n := rn.count(); n != 0 {
+		t.Errorf("a document upload must claim no action, got %d", n)
+	}
+}
+
+// TestArtifactUnstattableDeclineIsLogged: every other best-effort miss in this package
+// logs, so a file that vanished between staging and delivery must not disappear in
+// silence — that is the only trace an operator would have.
+func TestArtifactUnstattableDeclineIsLogged(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	missing := filepath.Join(t.TempDir(), "gone.png")
+	if _, ok := artifactPayload(map[string]any{"path": missing, "mime_type": "image/png"}); ok {
+		t.Fatal("a missing file must not be sendable")
+	}
+	out := logs.String()
+	if !strings.Contains(out, "artifact file unreadable") || !strings.Contains(out, "gone.png") {
+		t.Fatalf("the decline must be logged with its path, got %q", out)
+	}
+
+	logs.Reset()
+	if _, ok := artifactPayload(map[string]any{"path": t.TempDir(), "filename": "dir"}); ok {
+		t.Fatal("a directory must not be sendable")
+	}
+	if !strings.Contains(logs.String(), "artifact path is a directory") {
+		t.Fatalf("a directory decline must be logged, got %q", logs.String())
 	}
 }

@@ -22,6 +22,14 @@ func newPaneActionBot() *paneActionBot {
 	return &paneActionBot{fakeBot: newFakeBot(), recordingNotifier: &recordingNotifier{}}
 }
 
+// startedController builds a controller and opens its pulse, the pairing the status
+// consumer performs at the top of every turn.
+func startedController(ctx context.Context, n botNotifier, to tele.Recipient) *mediaActionController {
+	c := newMediaActionController(n, to)
+	c.start(ctx)
+	return c
+}
+
 // assertActions compares the recorded chat-action sequence with the expected one.
 func assertActions(t *testing.T, rn *recordingNotifier, want ...tele.ChatAction) {
 	t.Helper()
@@ -41,7 +49,7 @@ func assertActions(t *testing.T, rn *recordingNotifier, want ...tele.ChatAction)
 func TestMediaActionControllerStartsTyping(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		synctest.Wait()
 		assertActions(t, rn, tele.Typing)
@@ -53,7 +61,7 @@ func TestMediaActionControllerStartsTyping(t *testing.T) {
 func TestMediaActionControllerSwitchesImmediately(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		synctest.Wait()
 
@@ -70,7 +78,7 @@ func TestMediaActionControllerSwitchesImmediately(t *testing.T) {
 func TestMediaActionControllerRefreshesSelectedAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		ctrl.Start("call-1", "video_generate")
 		synctest.Wait()
@@ -88,7 +96,7 @@ func TestMediaActionControllerRefreshesSelectedAction(t *testing.T) {
 func TestMediaActionControllerRestoresTypingOnFinish(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		ctrl.Start("call-1", "image_generate")
 		ctrl.Finish("call-1")
@@ -107,7 +115,7 @@ func TestMediaActionControllerRestoresTypingOnFinish(t *testing.T) {
 func TestMediaActionControllerVideoWinsOverImage(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		ctrl.Start("img", "image_generate")
 		ctrl.Start("vid", "video_generate")
@@ -125,7 +133,7 @@ func TestMediaActionControllerVideoWinsOverImage(t *testing.T) {
 func TestMediaActionControllerTracksCallsIndependently(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		ctrl.Start("one", "image_generate")
 		ctrl.Start("two", "image_generate")
@@ -144,7 +152,7 @@ func TestMediaActionControllerTracksCallsIndependently(t *testing.T) {
 func TestMediaActionControllerIgnoresNonMediaTools(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		defer ctrl.Stop()
 		ctrl.Start("call-1", "document_search")
 		ctrl.Finish("call-1")
@@ -159,7 +167,7 @@ func TestMediaActionControllerIgnoresNonMediaTools(t *testing.T) {
 func TestMediaActionControllerNoUploadAfterStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		ctrl.Start("call-1", "video_generate")
 		synctest.Wait()
 		ctrl.Stop()
@@ -177,7 +185,7 @@ func TestMediaActionControllerNoUploadAfterStop(t *testing.T) {
 func TestMediaActionControllerStopJoinsIdempotently(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		rn := &recordingNotifier{}
-		ctrl := newMediaActionController(context.Background(), rn, tele.ChatID(7))
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
 		ctrl.Stop()
 		ctrl.Stop()
 	})
@@ -198,7 +206,7 @@ func TestMediaActionControllerNilSafe(t *testing.T) {
 // controller instead of a nil dereference.
 func TestMediaActionControllerWithoutNotifier(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		ctrl := newMediaActionController(context.Background(), nil, tele.ChatID(7))
+		ctrl := startedController(context.Background(), nil, tele.ChatID(7))
 		ctrl.Start("call-1", "video_generate")
 		ctrl.Finish("call-1")
 		ctrl.Stop()
@@ -288,4 +296,81 @@ func TestStatusPaneStopsTheActionOnRunFinished(t *testing.T) {
 		close(ch)
 		<-done
 	})
+}
+
+// TestMediaActionControllerHoldSurvivesTheToolTerminal: the pane finishes a call twice
+// (TOOL_CALL_END then TOOL_CALL_RESULT). Neither may drop an upload that is under way.
+func TestMediaActionControllerHoldSurvivesTheToolTerminal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rn := &recordingNotifier{}
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
+		defer ctrl.Stop()
+		ctrl.Start("call-1", "video_generate")
+		ctrl.Hold("call-1", tele.UploadingVideo)
+		ctrl.Finish("call-1")
+		ctrl.Finish("call-1")
+		synctest.Wait()
+		assertActions(t, rn, tele.Typing, tele.UploadingVideo)
+
+		time.Sleep(typingPulse + time.Millisecond)
+		synctest.Wait()
+		assertActions(t, rn, tele.Typing, tele.UploadingVideo, tele.UploadingVideo)
+
+		ctrl.Release("call-1")
+		synctest.Wait()
+		assertActions(t, rn, tele.Typing, tele.UploadingVideo, tele.UploadingVideo, tele.Typing)
+	})
+}
+
+// TestMediaActionControllerHoldAfterStopIsNoOp: the turn is over, so a late upload may
+// not speak — and must never bring the pulse back.
+func TestMediaActionControllerHoldAfterStopIsNoOp(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rn := &recordingNotifier{}
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
+		ctrl.Stop()
+
+		ctrl.Hold("late", tele.UploadingVideo)
+		ctrl.start(context.Background()) // a restart attempt must be refused too
+		time.Sleep(3 * typingPulse)
+		synctest.Wait()
+		assertActions(t, rn, tele.Typing)
+	})
+}
+
+// TestMediaActionControllerStopDuringAHoldJoins: an upload that never returns must not
+// pin the action or leak the pulse — Stop is the backstop (goleak TestMain proves the
+// join).
+func TestMediaActionControllerStopDuringAHoldJoins(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		rn := &recordingNotifier{}
+		ctrl := startedController(context.Background(), rn, tele.ChatID(7))
+		ctrl.Hold("stuck", tele.UploadingPhoto)
+		synctest.Wait()
+		ctrl.Stop()
+
+		time.Sleep(3 * typingPulse)
+		synctest.Wait()
+		assertActions(t, rn, tele.Typing, tele.UploadingPhoto)
+	})
+}
+
+// TestStatusPaneSharesItsControllerWithTheArtifactConsumer is the wiring proof for the
+// hold: the two consumers the per-turn fanout builds must reach the SAME controller, or
+// the artifact consumer would hold an action nothing is pulsing.
+func TestStatusPaneSharesItsControllerWithTheArtifactConsumer(t *testing.T) {
+	t.Parallel()
+	tg := NewChannel(Deps{Offline: true})
+	status, _, art := tg.consumers(newPaneActionBot(), tele.ChatID(7))
+	pane, isPane := status.(*statusPane)
+	if !isPane {
+		t.Fatalf("status consumer = %T, want *statusPane", status)
+	}
+	consumer, isArtifact := art.(*artifact)
+	if !isArtifact {
+		t.Fatalf("artifact consumer = %T, want *artifact", art)
+	}
+	if pane.actions == nil || pane.actions != consumer.actions {
+		t.Fatal("the pane and the artifact consumer must share ONE chat-action controller")
+	}
 }
