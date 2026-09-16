@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Download, Share2, type LucideIcon } from 'lucide-react';
@@ -15,6 +15,7 @@ import {
   type AssetSource,
 } from '../chat/artifacts/renderers/assetSourceContext';
 import { PreviewLoading, type RendererProps } from '../chat/artifacts/renderers/PreviewStatus';
+import { PreviewByKind } from '../chat/artifacts/renderers/previewDispatch';
 import type { Snapshot, SnapshotArtifact, SnapshotTurn } from '../chat/share/shareTypes';
 
 // SharePage (WEBSHARE-02/03, ADR 0039): the read-only snapshot renderer for BOTH
@@ -28,13 +29,6 @@ import type { Snapshot, SnapshotArtifact, SnapshotTurn } from '../chat/share/sha
 // rule breaking: a forked page forks the redaction and the escaping right along
 // with it. Every 37B renderer (HtmlPreview included) is reused completely
 // unedited through the asset-source seam plan 37F-05 built for exactly this.
-const ImagePreview = lazy(() => import('../chat/artifacts/renderers/ImagePreview'));
-const PdfPreview = lazy(() => import('../chat/artifacts/renderers/PdfPreview'));
-const TextPreview = lazy(() => import('../chat/artifacts/renderers/TextPreview'));
-const HtmlPreview = lazy(() => import('../chat/artifacts/renderers/HtmlPreview'));
-const DocxPreview = lazy(() => import('../chat/artifacts/renderers/DocxPreview'));
-const XlsxPreview = lazy(() => import('../chat/artifacts/renderers/XlsxPreview'));
-const VideoPreview = lazy(() => import('../chat/artifacts/renderers/VideoPreview'));
 
 export type ShareTier = 'public' | 'internal';
 
@@ -307,24 +301,7 @@ function ArtifactGlyph({ Icon }: { readonly Icon: LucideIcon }) {
 }
 
 function renderArtifactKind(kind: PreviewKind, props: RendererProps): ReactNode {
-  switch (kind) {
-    case 'image':
-      return <ImagePreview {...props} />;
-    case 'pdf':
-      return <PdfPreview {...props} />;
-    case 'text':
-      return <TextPreview {...props} />;
-    case 'html':
-      return <HtmlPreview {...props} />;
-    case 'docx':
-      return <DocxPreview {...props} />;
-    case 'xlsx':
-      return <XlsxPreview {...props} />;
-    case 'video':
-      return <VideoPreview {...props} />;
-    case 'download':
-      return <DownloadOnly />;
-  }
+  return <PreviewByKind kind={kind} asset={props} downloadFallback={<DownloadOnly />} />;
 }
 
 /** The affordance for the download-only kinds (SVG chief among them, T-37B-05): no

@@ -27,4 +27,8 @@ if [ ! -d node_modules ]; then
   exit 0
 fi
 
+# The path is passed on the command line, not left to .jscpd.json's `path` key: with no
+# positional argument npx-run jscpd analysed ZERO files here and exited 0, so the hook was
+# silently green on Windows while CI (same command, Linux) found the clone. A gate that
+# reports success having read nothing is the no-skip-as-green failure relocated into a hook.
 npm run dup

@@ -1,9 +1,10 @@
-import { Suspense, lazy } from 'react';
+import { Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, FileDown } from 'lucide-react';
 import type { Asset } from '../attachments/types';
 import { previewKind } from './artifactMeta';
 import { PreviewLoading, type RendererProps } from './renderers/PreviewStatus';
+import { PreviewByKind } from './renderers/previewDispatch';
 import { useAssetSource } from './renderers/assetSourceContext';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 
@@ -15,16 +16,6 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 // a download anchor resolved through useAssetSource() (the 37A auth route by default; a
 // token-scoped public route once a provider is mounted — R-05); Radix owns focus-trap, Esc,
 // backdrop, and the aria wiring (DialogTitle + DialogDescription).
-
-// Each renderer is its own lazy boundary (D-08): the dynamic import() keeps its bytes — and,
-// for docx/xlsx, the heavy parser deps — out of the main + modal chunks until first preview.
-const ImagePreview = lazy(() => import('./renderers/ImagePreview'));
-const PdfPreview = lazy(() => import('./renderers/PdfPreview'));
-const TextPreview = lazy(() => import('./renderers/TextPreview'));
-const HtmlPreview = lazy(() => import('./renderers/HtmlPreview'));
-const DocxPreview = lazy(() => import('./renderers/DocxPreview'));
-const XlsxPreview = lazy(() => import('./renderers/XlsxPreview'));
-const VideoPreview = lazy(() => import('./renderers/VideoPreview'));
 
 export interface PreviewModalProps {
   /** The asset to preview, or undefined when the modal is closed. */
@@ -39,24 +30,13 @@ function renderKind(active: Asset): React.ReactNode {
     mimeType: active.mime_type,
     fileName: active.file_name,
   };
-  switch (previewKind(active.mime_type, active.file_name)) {
-    case 'image':
-      return <ImagePreview {...props} />;
-    case 'pdf':
-      return <PdfPreview {...props} />;
-    case 'text':
-      return <TextPreview {...props} />;
-    case 'html':
-      return <HtmlPreview {...props} />;
-    case 'docx':
-      return <DocxPreview {...props} />;
-    case 'xlsx':
-      return <XlsxPreview {...props} />;
-    case 'video':
-      return <VideoPreview {...props} />;
-    case 'download':
-      return <DownloadCard active={active} />;
-  }
+  return (
+    <PreviewByKind
+      kind={previewKind(active.mime_type, active.file_name)}
+      asset={props}
+      downloadFallback={<DownloadCard active={active} />}
+    />
+  );
 }
 
 /** The affordance for the download-only kinds (svg/pptx/unknown, T-37B-05): no renderer is
