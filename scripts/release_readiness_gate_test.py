@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 
+from critical_mutation_gate import MEDIA_SCOPE_IDS, REQUIRED_SCOPE_IDS
 from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
 
 
@@ -130,17 +131,13 @@ def valid_evidence() -> dict[str, dict[str, object]]:
                 }
             ],
         ),
+        # Derived from the producing gate, so adding a boundary there fails here until the
+        # evidence carries it — the drift this fixture used to hide.
         "mutation-report.json": common(
             passed=True,
             scopes=[
                 {"id": name, "executed": True, "score_percent": 75.0}
-                for name in (
-                    "gateway",
-                    "identity_isolation",
-                    "profile_validation",
-                    "sandbox",
-                    "frontend",
-                )
+                for name in sorted(REQUIRED_SCOPE_IDS)
             ],
         ),
         "capability-eval.json": common(
@@ -355,12 +352,31 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("candidate_commit", result.stderr)
 
+    @staticmethod
+    def mutation_scope(
+        evidence: dict[str, dict[str, object]], scope_id: str
+    ) -> dict[str, object]:
+        scopes = evidence["mutation-report.json"]["scopes"]
+        assert isinstance(scopes, list)
+        for scope in scopes:
+            if isinstance(scope, dict) and scope.get("id") == scope_id:
+                return scope
+        raise AssertionError(f"fixture has no {scope_id} scope")
+
     def test_mutation_threshold_and_required_scenarios_fail_closed(self) -> None:
         evidence = valid_evidence()
-        evidence["mutation-report.json"]["scopes"][2]["score_percent"] = 69.9  # type: ignore[index]
+        self.mutation_scope(evidence, "profile_validation")["score_percent"] = 69.9
         result = self.run_gate(evidence)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("profile_validation", result.stderr)
+
+        for scope_id in sorted(MEDIA_SCOPE_IDS):
+            with self.subTest(scope=scope_id):
+                evidence = valid_evidence()
+                self.mutation_scope(evidence, scope_id)["score_percent"] = 69.9
+                result = self.run_gate(evidence)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(scope_id, result.stderr)
 
         for filename, collection in (
             ("chaos-report.json", "scenarios"),
@@ -371,6 +387,34 @@ class ReleaseReadinessGateTest(unittest.TestCase):
             result = self.run_gate(evidence)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("missing", result.stderr)
+
+    def test_mutation_evidence_predating_the_media_scopes_is_named_as_stale(self) -> None:
+        evidence = valid_evidence()
+        evidence["mutation-report.json"]["scopes"] = [
+            scope
+            for scope in evidence["mutation-report.json"]["scopes"]  # type: ignore[union-attr]
+            if isinstance(scope, dict) and scope.get("id") not in MEDIA_SCOPE_IDS
+        ]
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("predates the media mutation scopes", result.stderr)
+        for scope_id in MEDIA_SCOPE_IDS:
+            self.assertIn(scope_id, result.stderr)
+
+    def test_mutation_passed_boolean_cannot_clear_a_failing_scope(self) -> None:
+        evidence = valid_evidence()
+        self.mutation_scope(evidence, "media_frontend")["score_percent"] = 12.0
+        evidence["mutation-report.json"]["passed"] = True
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("media_frontend", result.stderr)
+
+    def test_mutation_scope_that_did_not_execute_fails(self) -> None:
+        evidence = valid_evidence()
+        self.mutation_scope(evidence, "media_clamp")["executed"] = False
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("media_clamp did not execute", result.stderr)
 
     def test_chaos_zero_postconditions_fail_closed_per_scenario(self) -> None:
         for scenario_id, fields in CHAOS_SCENARIO_ZERO_FIELDS.items():

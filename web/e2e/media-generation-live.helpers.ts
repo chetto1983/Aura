@@ -6,8 +6,21 @@ import { sameOriginFetch } from './live';
 // directly and never mock a generation response. Everything a test asserts about a tool call
 // comes from the persisted thread the daemon wrote while the real agent ran.
 
-/** The one switch that arms the paid suite. Test-only: nothing in the product reads it. */
-export const mediaGenerationEnabled = process.env.AURA_E2E_MEDIA_GENERATION === '1';
+/**
+ * The one switch that arms the paid suite. Test-only: nothing in the product reads it.
+ *
+ * Anything other than "1" or unset throws at collection time rather than quietly disarming:
+ * an operator who typed `true` believes the batch is running, and a silent skip would be
+ * reported as a green acceptance run that generated nothing.
+ */
+function mediaGenerationSwitch(): boolean {
+  const raw = process.env.AURA_E2E_MEDIA_GENERATION;
+  if (raw === undefined || raw.trim() === '') return false;
+  if (raw === '1') return true;
+  throw new Error(`AURA_E2E_MEDIA_GENERATION must be "1" or unset, got ${JSON.stringify(raw)}`);
+}
+
+export const mediaGenerationEnabled = mediaGenerationSwitch();
 
 export const videoInlineWaitKey = 'AURA_VIDEO_INLINE_WAIT_SEC';
 
@@ -76,19 +89,6 @@ async function requireMediaCatalog(page: Page, path: string): Promise<void> {
   }
 }
 
-export async function createMediaConversation(page: Page, title: string): Promise<string> {
-  const response = await sameOriginFetch(page, '/api/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ title }),
-  });
-  if (response.status !== 201) {
-    throw new Error(`Conversation creation failed: ${String(response.status)} ${response.text}`);
-  }
-  const row = JSON.parse(response.text) as { readonly ID: string };
-  expect(row.ID).toMatch(/^[0-9a-f-]{36}$/i);
-  return row.ID;
-}
-
 /** threadSnapshot reads the persisted turn the agent just took: the trace, not the screen. */
 export async function threadSnapshot(page: Page, conversationId: string): Promise<ThreadSnapshot> {
   const response = await sameOriginFetch(
@@ -128,6 +128,10 @@ function recordedToolCalls(snapshot: ThreadSnapshot): readonly RecordedToolCall[
  * tool was discovered by the agent through tool_search — whose result carries the loaded
  * spec — and only then called. A call with no preceding promotion means the tool was already
  * in the manifest or the turn was steered, and the discovery claim is unproven.
+ *
+ * It is about the FIRST call of that tool in the thread, so it refuses a thread that already
+ * held one: discovery happens once per conversation, and answering with a call that predates
+ * the promotion — or with one from an earlier test's turn — would prove nothing.
  */
 export function expectPromotedByToolSearch(
   snapshot: ThreadSnapshot,
@@ -138,6 +142,8 @@ export function expectPromotedByToolSearch(
     (call) => call.name === 'tool_search' && call.result.includes(toolName),
   );
   expect(promotion, `no tool_search result loaded ${toolName}`).toBeGreaterThanOrEqual(0);
+  const before = calls.slice(0, promotion).filter((call) => call.name === toolName);
+  expect(before, `${toolName} was called before tool_search promoted it`).toHaveLength(0);
   const called = calls.slice(promotion + 1).find((call) => call.name === toolName);
   if (called === undefined) {
     throw new Error(`${toolName} was never called after tool_search promoted it`);
@@ -149,15 +155,41 @@ export function countToolCalls(snapshot: ThreadSnapshot, toolName: string): numb
   return recordedToolCalls(snapshot).filter((call) => call.name === toolName).length;
 }
 
-export function lastToolCall(snapshot: ThreadSnapshot, toolName: string): RecordedToolCall {
-  const last = recordedToolCalls(snapshot)
+/**
+ * toolCallsAfter returns the calls of `toolName` a turn added on top of the `skip` that were
+ * already there — in order, so a caller can tell the submit that carries the arguments from
+ * the collect that carries the asset. There is deliberately no "last call" helper: which end
+ * of the turn a caller wants is never the same, and guessing it is how a detached second call
+ * silently replaces the one being asserted.
+ */
+export function toolCallsAfter(
+  snapshot: ThreadSnapshot,
+  toolName: string,
+  skip: number,
+): readonly RecordedToolCall[] {
+  return recordedToolCalls(snapshot)
     .filter((call) => call.name === toolName)
-    .at(-1);
-  if (last === undefined) throw new Error(`the thread holds no ${toolName} call`);
-  return last;
+    .slice(skip);
+}
+
+export function expectToolCallAt(
+  calls: readonly RecordedToolCall[],
+  index: number,
+  what: string,
+): RecordedToolCall {
+  const call = calls[index];
+  if (call === undefined) {
+    throw new Error(
+      `${what}: the turn recorded ${String(calls.length)} calls, wanted ${String(index + 1)}`,
+    );
+  }
+  return call;
 }
 
 export function expectToolResultJSON(call: RecordedToolCall): Record<string, unknown> {
+  if (call.result === '') {
+    throw new Error(`${call.name} call ${call.id} has no tool result in the thread yet`);
+  }
   const parsed = JSON.parse(call.result) as unknown;
   expect(typeof parsed === 'object' && parsed !== null, call.result).toBe(true);
   return parsed as Record<string, unknown>;
@@ -170,22 +202,32 @@ export function toolCallArguments(call: RecordedToolCall): Record<string, unknow
 }
 
 /**
- * waitForDeliveredAsset polls the persisted thread until one call of `toolName` reports an
- * asset id. It is the delivery fact the runtime wrote, so it also covers a detached clip that
- * a later wake collects — which no single rendered turn can show.
+ * waitForDeliveredAsset polls the persisted thread until one call of `toolName` AFTER the
+ * first `skip` of them reports an asset id. It is the delivery fact the runtime wrote, so it
+ * also covers a detached clip that a later wake collects — which no single rendered turn can
+ * show.
+ *
+ * `skip` is what makes it a wait. These tests reuse one conversation, so a plain first-match
+ * scan returns the PREVIOUS test's asset the instant it is called: it would wait zero seconds
+ * for a clip that takes minutes, and the case would then fail on whatever it asserted next,
+ * for a reason having nothing to do with the feature. Pass the count of that tool's calls
+ * taken before the prompt was sent.
  */
 export async function waitForDeliveredAsset(
   page: Page,
   conversationId: string,
   toolName: string,
   timeoutMs: number,
+  skip = 0,
 ): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   let last = '';
   for (;;) {
     const snapshot = await threadSnapshot(page, conversationId);
-    for (const call of recordedToolCalls(snapshot)) {
-      if (call.name !== toolName || call.result === '') continue;
+    for (const call of recordedToolCalls(snapshot)
+      .filter((candidate) => candidate.name === toolName)
+      .slice(skip)) {
+      if (call.result === '') continue;
       last = call.result;
       const assetID = deliveredAssetID(call.result);
       if (assetID !== undefined) return assetID;

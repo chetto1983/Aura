@@ -36,7 +36,26 @@ MEDIA_FRONTEND_FILES = (
     "src/components/image-generation.tsx",
     "src/components/image.tsx",
 )
-REQUIRED_SCOPE_IDS = frozenset({*GO_SCOPES, "frontend", "media_frontend"})
+FRONTEND_SCOPE_IDS = frozenset({"frontend", "media_frontend"})
+# The scopes this plan added (2026-09-16). A mutation report written before them is stale
+# evidence, not a passing one — release readiness says so by name.
+MEDIA_SCOPE_IDS = frozenset({"media_clamp", "media_watcher", "media_frontend"})
+# Spelled out rather than derived from GO_SCOPES: a requirement computed from the thing it
+# checks cannot catch that thing being deleted. The contract test pins the two lists together.
+REQUIRED_SCOPE_IDS = frozenset(
+    {
+        "gateway",
+        "identity_isolation",
+        "profile_validation",
+        "sandbox",
+        "media_clamp",
+        "media_watcher",
+        "frontend",
+        "media_frontend",
+    }
+)
+KILLED_STATUSES = ("Killed", "Timeout")
+SURVIVED_STATUSES = ("Survived", "NoCoverage")
 SUMMARY = re.compile(
     r"mutation score is ([0-9.]+) "
     r"\((\d+) passed, (\d+) failed, (\d+) duplicated, (\d+) skipped"
@@ -78,16 +97,41 @@ def normalized_report_path(path: str) -> str:
     return cleaned
 
 
-def selected_file_reports(
+def mutant_status_counts(file_report: Any) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    if not isinstance(file_report, dict):
+        return counts
+    for mutant in file_report.get("mutants", []):
+        if not isinstance(mutant, dict):
+            continue
+        status = str(mutant.get("status", "Unknown"))
+        counts[status] = counts.get(status, 0) + 1
+    return counts
+
+
+def scored_mutants(counts: dict[str, int]) -> tuple[int, int]:
+    killed = sum(counts.get(status, 0) for status in KILLED_STATUSES)
+    survived = sum(counts.get(status, 0) for status in SURVIVED_STATUSES)
+    return killed, survived
+
+
+def selected_file_counts(
     files: dict[str, Any], only: tuple[str, ...] | None
-) -> list[Any]:
+) -> list[dict[str, int]]:
     if only is None:
-        return list(files.values())
+        return [mutant_status_counts(body) for body in files.values()]
     indexed = {normalized_report_path(name): body for name, body in files.items()}
     missing = [name for name in only if name not in indexed]
     if missing:
         raise ValueError("Stryker report does not mutate: " + ", ".join(missing))
-    return [indexed[name] for name in only]
+    selected = [(name, mutant_status_counts(indexed[name])) for name in only]
+    # Per file, not just per scope: one `// Stryker disable all`, an empty mutants array or a
+    # file that only produced CompileErrors contributes to neither side of the ratio, so its
+    # seven neighbours would carry the score and the file would be silently unmeasured.
+    unmeasured = [name for name, counts in selected if sum(scored_mutants(counts)) == 0]
+    if unmeasured:
+        raise ValueError("Stryker report scores no mutant for: " + ", ".join(unmeasured))
+    return [counts for _, counts in selected]
 
 
 def parse_frontend_report(
@@ -111,20 +155,14 @@ def parse_frontend_report(
         raise ValueError(f"cannot read Stryker report {path}: {exc}") from exc
     if report.get("schemaVersion") != "1.0":
         raise ValueError("Stryker report schemaVersion must be 1.0")
-    counts: dict[str, int] = {}
     files = report.get("files")
     if not isinstance(files, dict):
         raise ValueError("Stryker report files are missing")
-    for file_report in selected_file_reports(files, only):
-        if not isinstance(file_report, dict):
-            continue
-        for mutant in file_report.get("mutants", []):
-            if not isinstance(mutant, dict):
-                continue
-            status = str(mutant.get("status", "Unknown"))
-            counts[status] = counts.get(status, 0) + 1
-    killed = counts.get("Killed", 0) + counts.get("Timeout", 0)
-    survived = counts.get("Survived", 0) + counts.get("NoCoverage", 0)
+    counts: dict[str, int] = {}
+    for file_counts in selected_file_counts(files, only):
+        for status, count in file_counts.items():
+            counts[status] = counts.get(status, 0) + count
+    killed, survived = scored_mutants(counts)
     scored = killed + survived
     if scored == 0:
         raise ValueError("Stryker report has no scored mutants")
@@ -158,28 +196,31 @@ def run_go_scope(
     (log_dir / f"{scope_id}.log").write_text(completed.stdout, encoding="utf-8")
     if completed.returncode != 0:
         raise RuntimeError(f"{scope_id}: go-mutesting exited {completed.returncode}")
-    parsed = parse_go_mutation_output(completed.stdout)
+    return scope(scope_id, [relative_path], parse_go_mutation_output(completed.stdout))
+
+
+def scope(scope_id: str, files: list[str], parsed: dict[str, Any]) -> dict[str, Any]:
+    # `executed` is READ OFF the counts, never asserted: a scope that scored nothing says so
+    # in the field release readiness reads back, instead of claiming it ran.
     return {
         "id": scope_id,
-        "executed": True,
-        "files": [relative_path],
+        "executed": parsed["killed"] + parsed["survived"] > 0,
+        "files": files,
         **parsed,
     }
 
 
 def scope_failures(scopes: list[dict[str, Any]], minimum: float) -> list[str]:
-    present = {scope.get("id") for scope in scopes}
+    present = {item.get("id") for item in scopes}
     failures = [
         f"missing scope {name}" for name in sorted(REQUIRED_SCOPE_IDS - present)
     ]
-    for scope in scopes:
-        scope_id = scope.get("id")
-        if scope.get("executed") is not True:
-            failures.append(f"{scope_id} did not execute")
-        elif scope.get("killed", 0) + scope.get("survived", 0) == 0:
+    for item in scopes:
+        scope_id = item.get("id")
+        if item.get("executed") is not True or item.get("killed", 0) + item.get("survived", 0) == 0:
             failures.append(f"{scope_id} executed no mutants")
-        elif scope.get("score_percent", 0.0) < minimum:
-            failures.append(f"{scope_id}={scope['score_percent']:.2f}%")
+        elif item.get("score_percent", 0.0) < minimum:
+            failures.append(f"{scope_id}={item['score_percent']:.2f}%")
     return failures
 
 
@@ -210,22 +251,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             )
         frontend_report = args.frontend_report.resolve()
         report["scopes"].append(
-            {
-                "id": "frontend",
-                "executed": True,
-                "files": ["web/stryker.config.json"],
-                **parse_frontend_report(frontend_report, args.frontend_max_age_hours),
-            }
+            scope(
+                "frontend",
+                ["web/stryker.config.json"],
+                parse_frontend_report(frontend_report, args.frontend_max_age_hours),
+            )
         )
         report["scopes"].append(
-            {
-                "id": "media_frontend",
-                "executed": True,
-                "files": [f"web/{name}" for name in MEDIA_FRONTEND_FILES],
-                **parse_frontend_report(
+            scope(
+                "media_frontend",
+                [f"web/{name}" for name in MEDIA_FRONTEND_FILES],
+                parse_frontend_report(
                     frontend_report, args.frontend_max_age_hours, MEDIA_FRONTEND_FILES
                 ),
-            }
+            )
         )
         failures = scope_failures(report["scopes"], args.minimum)
         report["passed"] = not failures

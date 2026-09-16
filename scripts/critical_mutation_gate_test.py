@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import tempfile
 import time
 import unittest
@@ -59,6 +60,19 @@ class GoMutationParserTest(unittest.TestCase):
         for relative in critical_mutation_gate.GO_SCOPES.values():
             self.assertTrue((REPO / relative).is_file(), relative)
 
+    def test_required_ids_and_go_scopes_cannot_drift(self) -> None:
+        # REQUIRED_SCOPE_IDS is written out by hand on purpose. Deleting a boundary from
+        # GO_SCOPES must fail the suite here rather than quietly delete its own requirement.
+        self.assertEqual(
+            critical_mutation_gate.REQUIRED_SCOPE_IDS
+            - critical_mutation_gate.FRONTEND_SCOPE_IDS,
+            set(critical_mutation_gate.GO_SCOPES),
+        )
+        self.assertTrue(
+            critical_mutation_gate.MEDIA_SCOPE_IDS
+            <= critical_mutation_gate.REQUIRED_SCOPE_IDS
+        )
+
     def test_parses_killed_total_and_score(self) -> None:
         output = (
             "PASS \"/tmp/example.go.0\" with checksum abc\n"
@@ -109,8 +123,22 @@ class ScopeContractTest(unittest.TestCase):
         scopes = every_required_scope()
         scopes[0]["executed"] = False
         self.assertIn(
-            f"{scopes[0]['id']} did not execute",
+            f"{scopes[0]['id']} executed no mutants",
             critical_mutation_gate.scope_failures(scopes, 70.0),
+        )
+
+    def test_the_executed_flag_is_read_off_the_counts(self) -> None:
+        measured = critical_mutation_gate.scope(
+            "media_clamp", ["internal/mediagen/clamp.go"], {"killed": 7, "survived": 3}
+        )
+        self.assertIs(measured["executed"], True)
+        empty = critical_mutation_gate.scope(
+            "media_clamp", ["internal/mediagen/clamp.go"], {"killed": 0, "survived": 0}
+        )
+        self.assertIs(empty["executed"], False)
+        self.assertIn(
+            "media_clamp executed no mutants",
+            critical_mutation_gate.scope_failures([empty], 70.0),
         )
 
     def test_a_scope_below_the_threshold_fails(self) -> None:
@@ -161,6 +189,49 @@ class MediaFrontendScopeTest(unittest.TestCase):
             )
         self.assertGreaterEqual(aggregate["score_percent"], 70.0)
         self.assertLess(scoped["score_percent"], 70.0)
+
+    def test_a_media_file_with_no_scored_mutant_fails(self) -> None:
+        # The shape that used to pass: two of the eight files measured nothing — one silenced
+        # with `// Stryker disable all`, one that produced no mutants at all — and the other
+        # six carried the scope to 100%.
+        silenced = critical_mutation_gate.MEDIA_FRONTEND_FILES[0]
+        empty = critical_mutation_gate.MEDIA_FRONTEND_FILES[1]
+        report: dict[str, object] = {"schemaVersion": "1.0", "files": {}}
+        files = report["files"]
+        assert isinstance(files, dict)
+        for name in critical_mutation_gate.MEDIA_FRONTEND_FILES:
+            files[name] = {"mutants": [{"id": name, "status": "Killed"}] * 5}
+        files[silenced] = {"mutants": [{"id": "s", "status": "Ignored"}] * 4}
+        files[empty] = {"mutants": []}
+        with tempfile.TemporaryDirectory() as raw:
+            path = pathlib.Path(raw) / "mutation.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "scores no mutant") as caught:
+                critical_mutation_gate.parse_frontend_report(
+                    path, only=critical_mutation_gate.MEDIA_FRONTEND_FILES
+                )
+            self.assertIn(silenced, str(caught.exception))
+            self.assertIn(empty, str(caught.exception))
+            # The aggregate is unaffected — which is exactly why the per-file check is needed.
+            self.assertEqual(
+                critical_mutation_gate.parse_frontend_report(path)["score_percent"], 100.0
+            )
+
+    def test_a_media_file_whose_mutants_all_failed_to_compile_fails(self) -> None:
+        report: dict[str, object] = {"schemaVersion": "1.0", "files": {}}
+        files = report["files"]
+        assert isinstance(files, dict)
+        for name in critical_mutation_gate.MEDIA_FRONTEND_FILES:
+            files[name] = {"mutants": [{"id": name, "status": "Killed"}] * 5}
+        broken = critical_mutation_gate.MEDIA_FRONTEND_FILES[2]
+        files[broken] = {"mutants": [{"id": "c", "status": "CompileError"}] * 3}
+        with tempfile.TemporaryDirectory() as raw:
+            path = pathlib.Path(raw) / "mutation.json"
+            path.write_text(json.dumps(report), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, re.escape(broken)):
+                critical_mutation_gate.parse_frontend_report(
+                    path, only=critical_mutation_gate.MEDIA_FRONTEND_FILES
+                )
 
     def test_a_media_file_absent_from_the_report_fails(self) -> None:
         report = {

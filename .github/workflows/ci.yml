@@ -1551,7 +1551,11 @@ jobs:
     # Run 34224734274, the last green one BEFORE the upgrade: 30m37s, 4.27 tests per mutant,
     # 75.16%. Same work, same score, and the post-upgrade run is the faster of the two — the
     # 45m timeout was a slow runner, not a slower toolchain. Stryker dominates either way;
-    # the four Go scopes cost about a minute.
+    # the six Go scopes cost about a minute.
+    #
+    # UNRE-MEASURED (2026-09-16): the media scopes grew Stryker's mutate list from 34 files to
+    # 42, and no run under the larger list has been timed. The headroom above is a measurement
+    # of the 34-file list; if the job starts approaching 90m, that is the first thing to time.
     #
     # Do not try to buy the headroom back with concurrency or isolation. Both were measured
     # on a two-file probe (160 mutants, 84.38% baseline in 3m21s): `isolate: false` ran
@@ -1559,9 +1563,12 @@ jobs:
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
     timeout-minutes: 90
-    # REL-02: this is deliberately unconditional. The five independently-scored
-    # boundaries publish one fresh candidate-bound report; no strong scope can
+    # REL-02: this is deliberately unconditional. The eight independently-scored
+    # boundaries — six Go files, the frontend aggregate and the media frontend on its own
+    # denominator — publish one fresh candidate-bound report; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
+    # The scope roster lives in scripts/critical_mutation_gate.py (REQUIRED_SCOPE_IDS), which
+    # release readiness imports, so this job needs no edit when a boundary is added.
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

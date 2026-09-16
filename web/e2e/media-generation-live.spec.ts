@@ -1,11 +1,11 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { createConversation } from './live';
 import {
   countToolCalls,
-  createMediaConversation,
   expectPromotedByToolSearch,
+  expectToolCallAt,
   expectToolResultJSON,
-  lastToolCall,
   mediaGenerationEnabled,
   putSetting,
   deleteSetting,
@@ -15,6 +15,7 @@ import {
   sendPrompt,
   threadSnapshot,
   toolCallArguments,
+  toolCallsAfter,
   videoInlineWaitKey,
   waitForDeliveredAsset,
 } from './media-generation-live.helpers';
@@ -26,23 +27,38 @@ import {
 //     e2e/media-generation-live.spec.ts --project=chrome
 //
 // AURA_E2E_MEDIA_GENERATION is a TEST switch — no product code reads it. Without it the file
-// is skipped, which is how ordinary CI stays unpaid. With it, a missing origin, an
-// unreachable media catalog or missing cockpit credentials FAIL the run: a paid acceptance
-// batch that quietly skipped is reported as not executed, never as green.
+// is skipped, which is how ordinary CI stays unpaid; any other value throws rather than
+// disarming silently. With it, a missing origin, an unreachable media catalog or missing
+// cockpit credentials FAIL the run in beforeAll — before the first prompt reaches a composer,
+// and whichever test a --grep happens to select.
 //
 // The suite asserts the real path, not a picture of it. Each case reads the thread the daemon
 // persisted and requires that tool_search promoted the deferred media tool BEFORE the agent
 // called it — a screenshot proves a pixel, the trace proves the tool ran. Nothing here
 // injects an assistant message, calls a Go tool directly or mocks a generation response.
 //
-// Serial: the image the first test generates is the first frame the animation test asks for,
-// and the clip the third test delivers is the one the player test streams. Paid work is
-// reused across cases rather than repeated.
+// Serial, and the conversation is shared: the image the first test generates is the first
+// frame the animation test asks for, and the clip the second delivers is the one the player
+// test streams. That reuse is why every wait counts the tool's calls BEFORE its prompt and
+// asserts only on what the turn added — a thread-wide first match would answer with the
+// previous test's clip and wait for nothing.
 
 const imagePrompt = 'Generate an image of a red wooden boat on a calm mountain lake, 16:9.';
 const videoPrompt =
   'Generate a five second 480p video of a red wooden boat drifting on a calm mountain lake.';
 const animatePrompt = 'Animate this image into a five second 480p clip: let the water ripple.';
+
+function generationFrame(page: Page): Locator {
+  return page.getByTestId('generation-frame');
+}
+
+/**
+ * The running frame is not a checkpoint: a fast turn can deliver before it paints, and a
+ * missing frame there is not a regression. Gate on the frame OR the delivered media.
+ */
+function frameOrResult(page: Page, result: Locator): Locator {
+  return generationFrame(page).or(result).first();
+}
 
 test.describe.serial('media generation (paid, real agent)', () => {
   test.skip(
@@ -54,22 +70,35 @@ test.describe.serial('media generation (paid, real agent)', () => {
   let imageAssetID = '';
   let videoAssetID = '';
 
+  test.beforeAll(async ({ browser }) => {
+    // Guarded because a skipped group must not be able to fail the unpaid run this hook is
+    // there to protect.
+    if (!mediaGenerationEnabled) return;
+    requireLiveOrigin();
+    const page = await browser.newPage();
+    try {
+      await gotoAuthenticated(page, '/');
+      await requireMediaRuntime(page);
+      conversationId = await createConversation(
+        page,
+        `Media generation acceptance ${new Date().toISOString()}`,
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
   test('the real agent generates a visible image', async ({ page }, info) => {
     test.setTimeout(600_000);
-    requireLiveOrigin();
-    await gotoAuthenticated(page, '/');
-    await requireMediaRuntime(page);
-    conversationId = await createMediaConversation(
-      page,
-      `Media generation acceptance ${new Date().toISOString()}`,
-    );
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
+    const image = page.locator('[data-slot="image-preview"] img');
     await sendPrompt(page, imagePrompt);
 
-    await expect(page.getByTestId('generation-frame')).toBeVisible({ timeout: 120_000 });
-    const image = page.locator('[data-slot="image-preview"] img').last();
-    await expect(image).toBeVisible({ timeout: 300_000 });
-    expect(await image.evaluate((el) => (el as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await expect(frameOrResult(page, image)).toBeVisible({ timeout: 120_000 });
+    await expect(image.last()).toBeVisible({ timeout: 300_000 });
+    expect(
+      await image.last().evaluate((el) => (el as HTMLImageElement).naturalWidth),
+    ).toBeGreaterThan(0);
 
     const snapshot = await threadSnapshot(page, conversationId);
     const call = expectPromotedByToolSearch(snapshot, 'image_generate');
@@ -88,10 +117,17 @@ test.describe.serial('media generation (paid, real agent)', () => {
   test('the real agent delivers a clip in the same turn', async ({ page }, info) => {
     test.setTimeout(900_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
+    const before = countToolCalls(await threadSnapshot(page, conversationId), 'video_generate');
     await sendPrompt(page, videoPrompt);
-    await expect(page.getByTestId('generation-frame')).toBeVisible({ timeout: 120_000 });
+    await expect(frameOrResult(page, page.locator('video'))).toBeVisible({ timeout: 120_000 });
 
-    videoAssetID = await waitForDeliveredAsset(page, conversationId, 'video_generate', 600_000);
+    videoAssetID = await waitForDeliveredAsset(
+      page,
+      conversationId,
+      'video_generate',
+      600_000,
+      before,
+    );
     const snapshot = await threadSnapshot(page, conversationId);
     const call = expectPromotedByToolSearch(snapshot, 'video_generate');
     const result = expectToolResultJSON(call);
@@ -122,9 +158,12 @@ test.describe.serial('media generation (paid, real agent)', () => {
     expect(probe.contentType).toMatch(/^video\//);
     expect(probe.bytes).toBe(1024);
 
-    // Motion, not a file signature: the element plays and its clock advances.
+    // Motion, not a file signature: the element plays and its clock advances. Muted first, so
+    // Chromium's autoplay policy cannot reject play() and read as a streaming regression.
     await video.evaluate(async (el) => {
-      await (el as HTMLVideoElement).play();
+      const player = el as HTMLVideoElement;
+      player.muted = true;
+      await player.play();
     });
     await expect
       .poll(async () => video.evaluate((el) => (el as HTMLVideoElement).currentTime), {
@@ -138,19 +177,25 @@ test.describe.serial('media generation (paid, real agent)', () => {
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
     const before = countToolCalls(await threadSnapshot(page, conversationId), 'video_generate');
     await sendPrompt(page, animatePrompt);
-    // A finished generation drops its frame, so the only frame on screen is this turn's.
-    await expect(page.getByTestId('generation-frame')).toHaveCount(1, { timeout: 120_000 });
+    await expect(frameOrResult(page, page.locator('video').nth(before))).toBeVisible({
+      timeout: 120_000,
+    });
 
-    await waitForDeliveredAsset(page, conversationId, 'video_generate', 600_000);
-    const snapshot = await threadSnapshot(page, conversationId);
-    expect(countToolCalls(snapshot, 'video_generate')).toBeGreaterThan(before);
-    const animation = lastToolCall(snapshot, 'video_generate');
-    expect(toolCallArguments(animation).first_frame_asset_id).toBe(imageAssetID);
-    const result = expectToolResultJSON(animation);
-    expect(String(result.mime_type)).toMatch(/^video\//);
+    await waitForDeliveredAsset(page, conversationId, 'video_generate', 600_000, before);
+    const fresh = toolCallsAfter(
+      await threadSnapshot(page, conversationId),
+      'video_generate',
+      before,
+    );
+    // The submit carries the arguments; a detached turn's later collect does not, so the
+    // first_frame claim is asserted on the call that made it.
+    const submit = expectToolCallAt(fresh, 0, 'the animation submit');
+    expect(toolCallArguments(submit).first_frame_asset_id).toBe(imageAssetID);
+    const delivered = expectToolCallAt(fresh, fresh.length - 1, 'the animation delivery');
+    expect(String(expectToolResultJSON(delivered).mime_type)).toMatch(/^video\//);
 
     await info.attach('animation-tool-call', {
-      body: animation.argsText,
+      body: submit.argsText,
       contentType: 'application/json',
     });
   });
@@ -158,7 +203,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
   test('a detached clip replays a static frame and arrives on the wake', async ({ page }, info) => {
     test.setTimeout(1_200_000);
     await gotoAuthenticated(page, '/');
-    const detachedId = await createMediaConversation(
+    const detachedId = await createConversation(
       page,
       `Media generation detached ${new Date().toISOString()}`,
     );
@@ -195,8 +240,13 @@ test.describe.serial('media generation (paid, real agent)', () => {
 
       const settled = await threadSnapshot(page, detachedId);
       expect(countToolCalls(settled, 'video_generate')).toBe(2);
+      const collect = expectToolCallAt(
+        toolCallsAfter(settled, 'video_generate', 1),
+        0,
+        'the wake collect',
+      );
       await info.attach('detached-collect-result', {
-        body: lastToolCall(settled, 'video_generate').result,
+        body: collect.result,
         contentType: 'application/json',
       });
     } finally {

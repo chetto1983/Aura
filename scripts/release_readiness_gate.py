@@ -10,6 +10,7 @@ import sys
 from collections.abc import Callable
 from typing import Any
 
+from critical_mutation_gate import MEDIA_SCOPE_IDS, REQUIRED_SCOPE_IDS
 from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
 
 
@@ -228,23 +229,30 @@ def validate_agent_memory(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
-    require(report.get("passed") is True, "mutation: report did not pass")
+    # The required ids come from critical_mutation_gate itself, so the producing gate and this
+    # independent authority cannot drift apart when a boundary is added. The per-scope contract
+    # is recomputed here BEFORE `passed` is read: a report's own boolean is an assertion, and a
+    # release must not clear because the file that measured it says it did.
     scopes = report.get("scopes")
     require(isinstance(scopes, list), "mutation: scopes must be a list")
     indexed = {
         item.get("id"): item for item in scopes if isinstance(item, dict) and item.get("id")
     }
-    required = {
-        "gateway",
-        "identity_isolation",
-        "profile_validation",
-        "sandbox",
-        "frontend",
-    }
-    missing = required - indexed.keys()
-    require(not missing, f"mutation: missing scopes {sorted(missing)}")
+    missing = REQUIRED_SCOPE_IDS - indexed.keys()
+    if missing:
+        stale = missing & MEDIA_SCOPE_IDS
+        require(
+            False,
+            f"mutation: missing scopes {sorted(missing)}"
+            + (
+                " — this evidence predates the media mutation scopes; rerun"
+                " `make critical-mutation` on the candidate"
+                if stale
+                else ""
+            ),
+        )
     scores: dict[str, float] = {}
-    for scope_id in sorted(required):
+    for scope_id in sorted(REQUIRED_SCOPE_IDS):
         scope = indexed[scope_id]
         score = scope.get("score_percent")
         require(scope.get("executed") is True, f"mutation: {scope_id} did not execute")
@@ -253,6 +261,7 @@ def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
             f"mutation: {scope_id} score {score!r} < 70%",
         )
         scores[scope_id] = float(score)
+    require(report.get("passed") is True, "mutation: report did not pass")
     return {"scores": scores}
 
 

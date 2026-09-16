@@ -28,6 +28,27 @@ export async function sameOriginFetch(
   );
 }
 
+/**
+ * createConversation opens a real conversation the way the cockpit does and returns its id.
+ *
+ * Seven live specs carry a near-verbatim copy of this POST-and-expect-201 block; new specs use
+ * this one. Folding the existing seven onto it is backlog, not this change.
+ */
+export async function createConversation(page: Page, title: string): Promise<string> {
+  const response = await sameOriginFetch(page, '/api/conversations', {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+  if (response.status !== 201) {
+    throw new Error(`Conversation creation failed: ${String(response.status)} ${response.text}`);
+  }
+  const row = JSON.parse(response.text) as { readonly ID: string };
+  if (!/^[0-9a-f-]{36}$/i.test(row.ID)) {
+    throw new Error(`Conversation id is not a uuid: ${response.text}`);
+  }
+  return row.ID;
+}
+
 /** streamFrames decodes an AG-UI SSE body into its JSON frames, skipping anything else. */
 export function streamFrames(body: string): readonly Record<string, unknown>[] {
   return body
