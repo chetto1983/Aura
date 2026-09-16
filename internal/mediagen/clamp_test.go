@@ -1,6 +1,7 @@
 package mediagen
 
 import (
+	"math"
 	"slices"
 	"testing"
 	"testing/quick"
@@ -49,6 +50,170 @@ func TestClampVideoDurationProperty(t *testing.T) {
 	}
 	if err := quick.Check(property, &quick.Config{MaxCount: 2000}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNearestIntKeepsClosestValueAndLowerTie(t *testing.T) {
+	cases := []struct {
+		name      string
+		want      int
+		supported []int
+		expected  int
+	}{
+		{
+			name:      "negative request uses absolute distance",
+			want:      -10,
+			supported: []int{-5, 10},
+			expected:  -5,
+		},
+		{
+			name:      "tie keeps an earlier lower value",
+			want:      7,
+			supported: []int{5, 9},
+			expected:  5,
+		},
+		{
+			name:      "tie replaces an earlier higher value",
+			want:      7,
+			supported: []int{9, 5},
+			expected:  5,
+		},
+		{
+			name:      "closer higher value wins",
+			want:      8,
+			supported: []int{5, 10},
+			expected:  10,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := nearestInt(tc.want, tc.supported); got != tc.expected {
+				t.Fatalf("nearestInt(%d, %v) = %d, want %d", tc.want, tc.supported, got, tc.expected)
+			}
+		})
+	}
+}
+
+func TestResolutionHeightRejectsMalformedAndNonpositiveValues(t *testing.T) {
+	cases := []struct {
+		label    string
+		height   float64
+		measured bool
+	}{
+		{label: " 2K ", height: 2048, measured: true},
+		{label: "4k", height: 4096, measured: true},
+		{label: "512p", height: 512, measured: true},
+		{label: "512", measured: false},
+		{label: "0p", measured: false},
+		{label: "-1p", measured: false},
+		{label: "cinemap", measured: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			got, measured := resolutionHeight(tc.label)
+			if got != tc.height || measured != tc.measured {
+				t.Fatalf("resolutionHeight(%q) = (%v, %t), want (%v, %t)", tc.label, got, measured, tc.height, tc.measured)
+			}
+		})
+	}
+}
+
+func TestAspectRatioValueRejectsInvalidDimensions(t *testing.T) {
+	cases := []struct {
+		label    string
+		value    float64
+		measured bool
+	}{
+		{label: "16:9", value: 16.0 / 9.0, measured: true},
+		{label: "1", measured: false},
+		{label: "wide:1", measured: false},
+		{label: "1:tall", measured: false},
+		{label: "0:1", measured: false},
+		{label: "1:0", measured: false},
+		{label: "-1:1", measured: false},
+		{label: "1:-1", measured: false},
+		{label: "+Inf:1", measured: false},
+		{label: "1:+Inf", measured: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.label, func(t *testing.T) {
+			got, measured := aspectRatioValue(tc.label)
+			if measured != tc.measured || math.Abs(got-tc.value) > 1e-12 {
+				t.Fatalf("aspectRatioValue(%q) = (%v, %t), want (%v, %t)", tc.label, got, measured, tc.value, tc.measured)
+			}
+		})
+	}
+}
+
+func TestClampReferenceLimitsDefendAgainstInvalidCatalogValues(t *testing.T) {
+	negative := -1
+	refs := []string{"r1", "r2"}
+	image, _ := ClampImage(ImageInput{ReferenceAssetIDs: refs}, &Model{
+		Parameters: map[string]Parameter{"input_references": {Max: &negative}},
+	})
+	if len(image.ReferenceAssetIDs) != 0 {
+		t.Fatalf("image references = %q, want none", image.ReferenceAssetIDs)
+	}
+
+	video, _, err := ClampVideo(VideoInput{ReferenceAssetIDs: refs}, &Model{
+		Parameters: map[string]Parameter{"input_references": {Max: &negative}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(video.ReferenceAssetIDs) != 0 {
+		t.Fatalf("video references = %q, want none", video.ReferenceAssetIDs)
+	}
+
+	video, _, err = ClampVideo(VideoInput{ReferenceAssetIDs: refs}, &Model{
+		Parameters: map[string]Parameter{"input_references": {}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(video.ReferenceAssetIDs, refs) {
+		t.Fatalf("video references = %q, want %q", video.ReferenceAssetIDs, refs)
+	}
+}
+
+func TestAdjustmentsChooseKeepsTheFirstEqualCandidate(t *testing.T) {
+	cases := []struct {
+		name      string
+		want      string
+		supported []string
+		values    map[string]float64
+		expected  string
+	}{
+		{
+			name:      "lower numeric tie is retained",
+			want:      "7",
+			supported: []string{"5", "9"},
+			values:    map[string]float64{"7": 7, "5": 5, "9": 9},
+			expected:  "5",
+		},
+		{
+			name:      "equal measurements retain first catalog value",
+			want:      "target",
+			supported: []string{"first", "second"},
+			values:    map[string]float64{"target": 0, "first": 1, "second": 1},
+			expected:  "first",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var notes adjustments
+			got := notes.choose("setting", tc.want, tc.supported, func(value string) (float64, bool) {
+				measured, ok := tc.values[value]
+				return measured, ok
+			})
+			if got != tc.expected {
+				t.Fatalf("choose(%q, %q) = %q, want %q", tc.want, tc.supported, got, tc.expected)
+			}
+			wantNotes := []string{"setting " + tc.want + " is not offered; used " + tc.expected}
+			if !slices.Equal(notes, wantNotes) {
+				t.Fatalf("notes = %q, want %q", notes, wantNotes)
+			}
+		})
 	}
 }
 
