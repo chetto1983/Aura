@@ -86,11 +86,12 @@ moving it.
   a price the result did not report.
 - Duration, resolution and ratio are requests: the model's nearest supported value is used,
   and `adjustments` says what changed — tell the operator.
-- If `adjustments` says reference images were omitted, or `used.reference_asset_ids` is empty
-  after you passed some, **the edit did not happen**: the image is a fresh generation. Say so,
-  suggest an image model that accepts references, and do not retry.
-- `unsupported` "cannot start from an image": the video model has no image-to-video. Stop and
-  say so; never resubmit the same request as text-only.
+- `unsupported` about reference images: the model cannot take them, or not that many.
+  Nothing was generated or billed. Call again with at most the number it names, keeping the
+  ones that matter, or tell the operator to choose a model that accepts references. Never
+  drop the references just to get an image out: that is a different image, and it is billed.
+- `unsupported` "cannot start from an image": the video model has no image-to-video. Nothing
+  was generated. Say so; never resubmit the same request as text-only.
 - A result with `delivered` is **already shown**. Do not send it again, search the workspace
   for it or download it; use its `asset_id` only as a reference for the next edit or animation.
 - `cost_usd` is the real price of that call — mention it when the operator is deciding whether

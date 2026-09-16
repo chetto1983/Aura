@@ -10,34 +10,39 @@ import (
 
 // ClampImage narrows in to what m declares and explains every change. A nil m is a
 // model missing from the catalog: the input passes through and OpenRouter validates
-// it. For a known model an absent descriptor means unsupported, so the ratio or the
-// references are dropped rather than sent to a model that never declared them.
-func ClampImage(in ImageInput, m *Model) (ImageInput, []string) {
+// it. For a known model an absent descriptor means unsupported: an undeclared ratio is
+// dropped with a note, but references the model cannot take refuse the whole request
+// (checkReferences), because dropping them still bills a generation that ignores them.
+func ClampImage(in ImageInput, m *Model) (ImageInput, []string, error) {
 	out := ImageInput{
 		Prompt:            in.Prompt,
 		AspectRatio:       in.AspectRatio,
 		ReferenceAssetIDs: slices.Clone(in.ReferenceAssetIDs),
 	}
 	if m == nil {
-		return out, nil
+		return out, nil, nil
 	}
-	var notes adjustments
-	out.AspectRatio = notes.choose("aspect ratio", in.AspectRatio, m.Parameters["aspect_ratio"].Values, aspectRatioValue)
 	references, declared := m.Parameters["input_references"]
 	switch {
 	case !declared:
-		out.ReferenceAssetIDs = notes.truncate(out.ReferenceAssetIDs, 0)
+		if err := checkReferences(KindImage, len(in.ReferenceAssetIDs), 0); err != nil {
+			return ImageInput{}, nil, err
+		}
 	case references.Max != nil:
-		out.ReferenceAssetIDs = notes.truncate(out.ReferenceAssetIDs, max(*references.Max, 0))
+		if err := checkReferences(KindImage, len(in.ReferenceAssetIDs), *references.Max); err != nil {
+			return ImageInput{}, nil, err
+		}
 	}
-	return out, notes
+	var notes adjustments
+	out.AspectRatio = notes.choose("aspect ratio", in.AspectRatio, m.Parameters["aspect_ratio"].Values, aspectRatioValue)
+	return out, notes, nil
 }
 
 // ClampVideo narrows in to what m declares and explains every change. Unlike images,
 // the video catalog leaves most sets null for many models, so only a nonempty declared
-// set is clamped; an empty one is left for provider validation. A first frame is the
-// exception: animating an image the model cannot take is refused, never silently
-// turned into text-to-video.
+// set is clamped; an empty one is left for provider validation. Images are the
+// exception: a first frame the model cannot start from, or more references than its
+// declared maximum, refuse the request rather than bill a clip that ignores them.
 func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 	out := in
 	out.ReferenceAssetIDs = slices.Clone(in.ReferenceAssetIDs)
@@ -49,7 +54,13 @@ func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 		return out, nil, nil
 	}
 	if in.FirstFrameAssetID != "" && !slices.Contains(m.FrameImages, "first_frame") {
-		return VideoInput{}, nil, &Error{Code: "unsupported", Message: "The selected video model cannot start from an image."}
+		return VideoInput{}, nil, &Error{Code: "unsupported", Message: "The selected video model cannot start from an image. " +
+			"Nothing was generated. Do not resubmit it as a text-only video: ask the operator to choose a video model with image-to-video."}
+	}
+	if references, declared := m.Parameters["input_references"]; declared && references.Max != nil {
+		if err := checkReferences(KindVideo, len(in.ReferenceAssetIDs), *references.Max); err != nil {
+			return VideoInput{}, nil, err
+		}
 	}
 	var notes adjustments
 	if in.Duration != 0 && len(m.Durations) > 0 && !slices.Contains(m.Durations, in.Duration) {
@@ -61,9 +72,6 @@ func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 	}
 	if len(m.AspectRatios) > 0 {
 		out.AspectRatio = notes.choose("aspect ratio", in.AspectRatio, m.AspectRatios, aspectRatioValue)
-	}
-	if references, declared := m.Parameters["input_references"]; declared && references.Max != nil {
-		out.ReferenceAssetIDs = notes.truncate(out.ReferenceAssetIDs, max(*references.Max, 0))
 	}
 	if in.Audio != nil && !m.GenerateAudio {
 		out.Audio = nil
@@ -106,16 +114,32 @@ func (a *adjustments) choose(label, want string, supported []string, measure fun
 	return best
 }
 
-func (a *adjustments) truncate(ids []string, limit int) []string {
-	if len(ids) <= limit {
-		return ids
-	}
-	if limit == 0 {
-		a.add("reference images are not supported by this model; %d omitted", len(ids))
+// checkReferences refuses requested references beyond what the model takes. Dropping the
+// excess used to leave a billed call that ignored them — an edit silently turned into a
+// fresh image, found in review on 2026-09-16 — and which ones to keep is the model's choice,
+// not the first N. The message says nothing was generated and what to do instead, so it
+// works whether or not the media skill is loaded. A negative catalog maximum reads as zero.
+func checkReferences(kind Kind, requested, limit int) error {
+	limit = max(limit, 0)
+	if requested <= limit {
 		return nil
 	}
-	a.add("%d reference images requested; this model accepts at most %d, used the first %d", len(ids), limit, limit)
-	return ids[:limit]
+	if limit == 0 {
+		return &Error{Code: "unsupported", Message: fmt.Sprintf(
+			"The selected %s model cannot use reference images. Nothing was generated. "+
+				"Do not retry without them: ask the operator to choose a %s model that accepts reference images.", kind, kind)}
+	}
+	return &Error{Code: "unsupported", Message: fmt.Sprintf(
+		"The selected %s model accepts at most %d reference %s and %d were given. Nothing was generated. "+
+			"Call again with the %d that matter most, or ask the operator which to keep.",
+		kind, limit, pluralImage(limit), requested, limit)}
+}
+
+func pluralImage(n int) string {
+	if n == 1 {
+		return "image"
+	}
+	return "images"
 }
 
 func nearestInt(want int, supported []int) int {

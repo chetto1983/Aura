@@ -145,7 +145,7 @@ stays under 600 lines. Both specs are `Deferred: true`; their summaries name "im
 |---|---|---|
 | `prompt` | string, required | |
 | `aspect_ratio` | enum `1:1 16:9 9:16 4:3 3:4 3:2 2:3` | clamped to the model's declared set; omitted when the model declares none |
-| `reference_asset_ids` | string[] | images to edit or follow; truncated to the model's `input_references` max, with a note |
+| `reference_asset_ids` | string[] | images to edit or follow; refused with `unsupported` before any call when the model takes fewer than requested (none when it declares no `input_references`) |
 
 Flow: credential → clamp against `supported_parameters` → load each reference through the
 identity-scoped assets service (image modality only, each within `AURA_ASSET_MAX_IMAGE_BYTES`) and
@@ -155,8 +155,16 @@ encode it as `data:<mime>;base64,…` → `client.Images.Generate` with `aspect_
 the run directory → ingest through the helper `send_file` already uses
 (`ingestForDelivery`) → `aura.artifact` meta with `caption` = prompt.
 
-Result preview: `{asset_id, mime_type, model, cost_usd, used: {...}, adjustments: [...]}`, where
-`adjustments` lists every clamped or dropped parameter in plain words.
+Result preview: `{asset_id, mime_type, model, cost_usd, used: {...}, adjustments: [...], delivered}`,
+where `adjustments` lists every clamped or dropped parameter in plain words.
+
+Amended 2026-09-16 after review: references are never dropped. The first design truncated them
+to the model's maximum with a note, which let an edit on a model without `input_references` go
+out as a billed text-to-image that ignored the photo. A request the model cannot take whole is
+now refused before any provider call, with a message that says nothing was generated and what
+to do; which references to keep is the agent's choice, not the first N. The first-frame refusal
+carries the same guidance. Aspect ratio, duration, resolution and audio still clamp with notes:
+the nearest value still produces the requested content.
 
 **`video_generate`**
 
@@ -168,7 +176,7 @@ Result preview: `{asset_id, mime_type, model, cost_usd, used: {...}, adjustments
 | `resolution` | enum `480p 720p 768p 1080p 1K 2K 4K` | nearest supported by pixel height |
 | `aspect_ratio` | enum `16:9 9:16 1:1 4:3 3:4 3:2 2:3 21:9 9:21` | nearest supported by ratio |
 | `first_frame_asset_id` | string | animate an image; sent as `frame_images[{frame_type:"first_frame"}]`; rejected with `unsupported` when the model declares no frame images |
-| `reference_asset_ids` | string[] | `input_references` |
+| `reference_asset_ids` | string[] | `input_references`; refused with `unsupported` when more than a declared maximum |
 | `audio` | boolean | sent only when the model declares `generate_audio` |
 
 Submit flow: credential → clamp → encode images as for `image_generate` →

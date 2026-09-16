@@ -3,6 +3,7 @@ package mediagen
 import (
 	"math"
 	"slices"
+	"strings"
 	"testing"
 	"testing/quick"
 )
@@ -148,24 +149,19 @@ func TestAspectRatioValueRejectsInvalidDimensions(t *testing.T) {
 func TestClampReferenceLimitsDefendAgainstInvalidCatalogValues(t *testing.T) {
 	negative := -1
 	refs := []string{"r1", "r2"}
-	image, _ := ClampImage(ImageInput{ReferenceAssetIDs: refs}, &Model{
+	// A negative maximum reads as zero: the model takes no references, so both refuse.
+	if _, _, err := ClampImage(ImageInput{ReferenceAssetIDs: refs}, &Model{
 		Parameters: map[string]Parameter{"input_references": {Max: &negative}},
-	})
-	if len(image.ReferenceAssetIDs) != 0 {
-		t.Fatalf("image references = %q, want none", image.ReferenceAssetIDs)
+	}); ErrorCode(err) != "unsupported" {
+		t.Fatalf("image with a negative maximum: err = %v, want unsupported", err)
+	}
+	if _, _, err := ClampVideo(VideoInput{ReferenceAssetIDs: refs}, &Model{
+		Parameters: map[string]Parameter{"input_references": {Max: &negative}},
+	}); ErrorCode(err) != "unsupported" {
+		t.Fatalf("video with a negative maximum: err = %v, want unsupported", err)
 	}
 
 	video, _, err := ClampVideo(VideoInput{ReferenceAssetIDs: refs}, &Model{
-		Parameters: map[string]Parameter{"input_references": {Max: &negative}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(video.ReferenceAssetIDs) != 0 {
-		t.Fatalf("video references = %q, want none", video.ReferenceAssetIDs)
-	}
-
-	video, _, err = ClampVideo(VideoInput{ReferenceAssetIDs: refs}, &Model{
 		Parameters: map[string]Parameter{"input_references": {}},
 	})
 	if err != nil {
@@ -358,11 +354,16 @@ func TestClampVideoTable(t *testing.T) {
 			want:  VideoInput{ReferenceAssetIDs: []string{"a", "b", "c"}},
 		},
 		{
-			name:  "video references are truncated to a declared maximum",
-			in:    VideoInput{ReferenceAssetIDs: []string{"a", "b", "c"}},
+			name:      "more video references than the declared maximum are refused",
+			in:        VideoInput{Prompt: "p", ReferenceAssetIDs: []string{"a", "b", "c"}},
+			model:     &Model{Parameters: map[string]Parameter{"input_references": {Type: "range", Min: new(0), Max: new(2)}}},
+			errorCode: "unsupported",
+		},
+		{
+			name:  "video references up to the declared maximum are kept",
+			in:    VideoInput{ReferenceAssetIDs: []string{"a", "b"}},
 			model: &Model{Parameters: map[string]Parameter{"input_references": {Type: "range", Min: new(0), Max: new(2)}}},
 			want:  VideoInput{ReferenceAssetIDs: []string{"a", "b"}},
-			notes: []string{"3 reference images requested; this model accepts at most 2, used the first 2"},
 		},
 	}
 	for _, tc := range cases {
@@ -396,11 +397,12 @@ func TestClampImageTable(t *testing.T) {
 	}
 	refs := []string{"r1", "r2", "r3", "r4", "r5", "r6", "r7"}
 	cases := []struct {
-		name  string
-		in    ImageInput
-		model *Model
-		want  ImageInput
-		notes []string
+		name      string
+		in        ImageInput
+		model     *Model
+		want      ImageInput
+		notes     []string
+		errorCode string
 	}{
 		{
 			name:  "nil model passes every input through",
@@ -422,21 +424,23 @@ func TestClampImageTable(t *testing.T) {
 			notes: []string{"aspect ratio 21:9 is not offered; used 16:9"},
 		},
 		{
-			name:  "references beyond the declared maximum are truncated",
-			in:    ImageInput{Prompt: "p", ReferenceAssetIDs: refs},
-			model: &mai,
-			want:  ImageInput{Prompt: "p", ReferenceAssetIDs: refs[:5]},
-			notes: []string{"7 reference images requested; this model accepts at most 5, used the first 5"},
+			name:      "references beyond the declared maximum are refused",
+			in:        ImageInput{Prompt: "p", ReferenceAssetIDs: refs},
+			model:     &mai,
+			errorCode: "unsupported",
 		},
 		{
-			name:  "a model without descriptors drops ratio and references",
-			in:    ImageInput{Prompt: "p", AspectRatio: "1:1", ReferenceAssetIDs: refs[:2]},
+			name:  "a model without descriptors drops the ratio",
+			in:    ImageInput{Prompt: "p", AspectRatio: "1:1"},
 			model: &Model{ID: "text-only"},
 			want:  ImageInput{Prompt: "p"},
-			notes: []string{
-				"aspect ratio 1:1 is not supported; omitted",
-				"reference images are not supported by this model; 2 omitted",
-			},
+			notes: []string{"aspect ratio 1:1 is not supported; omitted"},
+		},
+		{
+			name:      "an edit on a model declaring no references is refused",
+			in:        ImageInput{Prompt: "p", AspectRatio: "1:1", ReferenceAssetIDs: refs[:2]},
+			model:     &Model{ID: "text-only"},
+			errorCode: "unsupported",
 		},
 		{
 			name:  "a ratio descriptor declaring only auto drops the ratio",
@@ -446,11 +450,10 @@ func TestClampImageTable(t *testing.T) {
 			notes: []string{"aspect ratio 4:3 is not supported; omitted"},
 		},
 		{
-			name:  "a zero reference maximum drops every reference",
-			in:    ImageInput{Prompt: "p", ReferenceAssetIDs: refs[:1]},
-			model: &Model{Parameters: map[string]Parameter{"input_references": {Type: "range", Min: new(0), Max: new(0)}}},
-			want:  ImageInput{Prompt: "p"},
-			notes: []string{"reference images are not supported by this model; 1 omitted"},
+			name:      "a zero reference maximum refuses any reference",
+			in:        ImageInput{Prompt: "p", ReferenceAssetIDs: refs[:1]},
+			model:     &Model{Parameters: map[string]Parameter{"input_references": {Type: "range", Min: new(0), Max: new(0)}}},
+			errorCode: "unsupported",
 		},
 		{
 			name:  "a reference descriptor without a maximum keeps every reference",
@@ -467,7 +470,16 @@ func TestClampImageTable(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			used, notes := ClampImage(tc.in, tc.model)
+			used, notes, err := ClampImage(tc.in, tc.model)
+			if tc.errorCode != "" {
+				if ErrorCode(err) != tc.errorCode || notes != nil || used.Prompt != "" {
+					t.Fatalf("err = %v, used = %#v, notes = %q; want %s refusal", err, used, notes, tc.errorCode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
 			if used.Prompt != tc.want.Prompt || used.AspectRatio != tc.want.AspectRatio ||
 				!slices.Equal(used.ReferenceAssetIDs, tc.want.ReferenceAssetIDs) {
 				t.Fatalf("used = %#v, want %#v", used, tc.want)
@@ -481,12 +493,16 @@ func TestClampImageTable(t *testing.T) {
 
 func TestClampNeverAliasesCallerInput(t *testing.T) {
 	refs := []string{"r1", "r2", "r3"}
-	image, _ := ClampImage(ImageInput{ReferenceAssetIDs: refs}, nil)
+	image, _, _ := ClampImage(ImageInput{ReferenceAssetIDs: refs}, nil)
 	image.ReferenceAssetIDs[0] = "changed"
-	truncated, _ := ClampImage(ImageInput{ReferenceAssetIDs: refs}, &Model{
-		Parameters: map[string]Parameter{"input_references": {Type: "range", Max: new(2)}},
+	bounded, _, err := ClampImage(ImageInput{ReferenceAssetIDs: refs}, &Model{
+		Parameters: map[string]Parameter{"input_references": {Type: "range", Max: new(3)}},
 	})
-	truncated.ReferenceAssetIDs = append(truncated.ReferenceAssetIDs, "appended")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bounded.ReferenceAssetIDs[2] = "changed"
+	bounded.ReferenceAssetIDs = append(bounded.ReferenceAssetIDs, "appended")
 
 	audio := true
 	video, _, err := ClampVideo(VideoInput{ReferenceAssetIDs: refs, Audio: &audio}, &Model{GenerateAudio: true})
@@ -514,3 +530,57 @@ func assertVideoInput(t *testing.T, got, want VideoInput) {
 		t.Fatalf("audio = %v, want %v", got.Audio, want.Audio)
 	}
 }
+
+// TestClampRefusalsTellTheModelWhatToDo pins the wording the model acts on. A reference the
+// model cannot take used to be dropped while the call still went out and was billed: an edit
+// silently turned into a fresh image, found in review on 2026-09-16. Each refusal now says
+// nothing was generated and what to do instead, so it works without the media skill loaded.
+func TestClampRefusalsTellTheModelWhatToDo(t *testing.T) {
+	noRefs := &Model{ID: "text-only"}
+	twoRefs := &Model{Parameters: map[string]Parameter{"input_references": {Type: "range", Max: new(2)}}}
+	three := []string{"a", "b", "c"}
+	for _, tc := range []struct {
+		name string
+		err  error
+		want []string
+	}{
+		{
+			name: "image model without references",
+			err:  imageErr(ClampImage(ImageInput{Prompt: "p", ReferenceAssetIDs: three[:1]}, noRefs)),
+			want: []string{"image model cannot use reference images", "Nothing was generated", "Do not retry without them", "accepts reference images"},
+		},
+		{
+			name: "image model with a lower maximum",
+			err:  imageErr(ClampImage(ImageInput{Prompt: "p", ReferenceAssetIDs: three}, twoRefs)),
+			want: []string{"image model accepts at most 2 reference images and 3 were given", "Nothing was generated", "the 2 that matter most"},
+		},
+		{
+			name: "video model with a lower maximum",
+			err:  videoErr(ClampVideo(VideoInput{Prompt: "p", ReferenceAssetIDs: three}, twoRefs)),
+			want: []string{"video model accepts at most 2 reference images and 3 were given", "Nothing was generated"},
+		},
+		{
+			name: "video model without image-to-video",
+			err:  videoErr(ClampVideo(VideoInput{Prompt: "p", FirstFrameAssetID: "frame"}, noRefs)),
+			want: []string{"cannot start from an image", "Nothing was generated", "Do not resubmit it as a text-only video", "image-to-video"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if ErrorCode(tc.err) != "unsupported" {
+				t.Fatalf("err = %v, want unsupported", tc.err)
+			}
+			for _, part := range tc.want {
+				if !strings.Contains(tc.err.Error(), part) {
+					t.Fatalf("message %q lacks %q", tc.err.Error(), part)
+				}
+			}
+		})
+	}
+	if _, _, err := ClampImage(ImageInput{Prompt: "p"}, noRefs); err != nil {
+		t.Fatalf("a plain generation on a model without references was refused: %v", err)
+	}
+}
+
+func imageErr(_ ImageInput, _ []string, err error) error { return err }
+
+func videoErr(_ VideoInput, _ []string, err error) error { return err }

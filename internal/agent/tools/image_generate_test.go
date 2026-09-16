@@ -354,30 +354,52 @@ func TestImageGenerateDeliversAnOwnedArtifact(t *testing.T) {
 	}
 }
 
-func TestImageGenerateClampsToTheCatalogAndNeverOpensDroppedReferences(t *testing.T) {
+func TestImageGenerateClampsTheRatioToTheCatalog(t *testing.T) {
 	f := newImageFixture(t)
-	res := f.execute(t, `{"prompt":"a lighthouse","aspect_ratio":"4:3","reference_asset_ids":["ref-1","ref-2"]}`)
+	res := f.execute(t, `{"prompt":"a lighthouse","aspect_ratio":"4:3","reference_asset_ids":["ref-1"]}`)
 	artifactMap(t, res)
 
 	var preview imagePreview
 	if err := json.Unmarshal([]byte(res.Preview), &preview); err != nil {
 		t.Fatal(err)
 	}
-	wantNotes := []string{
-		"aspect ratio 4:3 is not offered; used 1:1",
-		"2 reference images requested; this model accepts at most 1, used the first 1",
-	}
-	if !slices.Equal(preview.Adjustments, wantNotes) {
-		t.Fatalf("adjustments = %q, want %q", preview.Adjustments, wantNotes)
+	if want := []string{"aspect ratio 4:3 is not offered; used 1:1"}; !slices.Equal(preview.Adjustments, want) {
+		t.Fatalf("adjustments = %q, want %q", preview.Adjustments, want)
 	}
 	if preview.Used.AspectRatio != "1:1" || !slices.Equal(preview.Used.ReferenceAssetIDs, []string{"ref-1"}) {
-		t.Fatalf("used = %+v, want the clamped request", preview.Used)
+		t.Fatalf("used = %+v, want the clamped ratio and the one reference", preview.Used)
 	}
 	if !slices.Equal(f.references.opened, []string{"ref-1"}) {
-		t.Fatalf("opened references = %v, want only the kept ref-1", f.references.opened)
+		t.Fatalf("opened references = %v, want ref-1", f.references.opened)
 	}
 	if gen, _ := f.provider.lastGeneration(); gen["aspect_ratio"] != "1:1" {
 		t.Fatalf("sent aspect_ratio %v, want the clamped 1:1", gen["aspect_ratio"])
+	}
+}
+
+// TestImageGenerateRefusesReferencesTheModelCannotTakeBeforeSpending pins the fix for a hole a
+// review found on 2026-09-16: the extra reference used to be dropped and the call still went
+// out and was billed, so an edit could silently become an image that ignored the photo.
+func TestImageGenerateRefusesReferencesTheModelCannotTakeBeforeSpending(t *testing.T) {
+	f := newImageFixture(t)
+	res := f.execute(t, `{"prompt":"make it night","reference_asset_ids":["ref-1","ref-2"]}`)
+
+	if res.Meta != nil {
+		t.Fatalf("a refused edit still produced an artifact: %#v", res.Meta)
+	}
+	var body map[string]string
+	if err := json.Unmarshal([]byte(res.Preview), &body); err != nil {
+		t.Fatalf("preview %q: %v", res.Preview, err)
+	}
+	if body["error"] != "unsupported" || !strings.Contains(body["message"], "at most 1 reference image and 2 were given") ||
+		!strings.Contains(body["message"], "Nothing was generated") {
+		t.Fatalf("result = %q, want an unsupported refusal naming the limit", res.Preview)
+	}
+	if n := f.provider.generations(); n != 0 {
+		t.Fatalf("provider generations = %d, want none: nothing may be billed", n)
+	}
+	if len(f.references.opened) != 0 {
+		t.Fatalf("opened references = %v, want none before a refused call", f.references.opened)
 	}
 }
 

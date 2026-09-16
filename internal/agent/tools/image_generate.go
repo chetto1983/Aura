@@ -131,8 +131,11 @@ func (g *ImageGenerate) clamp(ctx context.Context, baseURL, model string, args i
 	if err != nil {
 		return mediagen.ImageInput{}, nil, err
 	}
-	input, notes := mediagen.ClampImage(mediagen.ImageInput{
+	input, notes, err := mediagen.ClampImage(mediagen.ImageInput{
 		Prompt: args.Prompt, AspectRatio: args.AspectRatio, ReferenceAssetIDs: args.ReferenceAssetIDs,
 	}, entry)
+	if err != nil {
+		return mediagen.ImageInput{}, nil, err
+	}
 	return input, append(adjustments, notes...), nil
 }
