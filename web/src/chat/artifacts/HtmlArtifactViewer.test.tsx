@@ -127,7 +127,11 @@ describe('HTML artifact workflow', () => {
     vi.stubGlobal('navigator', { clipboard: { writeText } });
     render(
       <AssetSourceContext.Provider
-        value={{ assetUrl: () => '/share/token/file', credentials: 'omit' }}
+        value={{
+          assetUrl: () => '/share/token/file',
+          streamUrl: () => '/share/token/file/stream',
+          credentials: 'omit',
+        }}
       >
         <ArtifactCopyButton assetId="html-1" />
       </AssetSourceContext.Provider>,

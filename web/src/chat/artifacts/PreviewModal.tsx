@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 
 // PreviewModal (WEBART-05 / D-09): a ~90vw×90vh Radix Dialog that previews an agent-
 // delivered asset in-cockpit. It dispatches by previewKind (plan 03, the pure MIME gate)
-// to one of six SUSPENSE-wrapped lazy renderer chunks — so docx-preview/read-excel-file never enter
+// to one of seven SUSPENSE-wrapped lazy renderer chunks — so docx-preview/read-excel-file never enter
 // this modal's static import graph — or, for the download-only kinds (svg/pptx/unknown),
 // shows a download card WITHOUT mounting any renderer. The header carries the filename and
 // a download anchor resolved through useAssetSource() (the 37A auth route by default; a
@@ -24,6 +24,7 @@ const TextPreview = lazy(() => import('./renderers/TextPreview'));
 const HtmlPreview = lazy(() => import('./renderers/HtmlPreview'));
 const DocxPreview = lazy(() => import('./renderers/DocxPreview'));
 const XlsxPreview = lazy(() => import('./renderers/XlsxPreview'));
+const VideoPreview = lazy(() => import('./renderers/VideoPreview'));
 
 export interface PreviewModalProps {
   /** The asset to preview, or undefined when the modal is closed. */
@@ -51,6 +52,8 @@ function renderKind(active: Asset): React.ReactNode {
       return <DocxPreview {...props} />;
     case 'xlsx':
       return <XlsxPreview {...props} />;
+    case 'video':
+      return <VideoPreview {...props} />;
     case 'download':
       return <DownloadCard active={active} />;
   }

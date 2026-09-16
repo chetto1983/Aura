@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { LocalArtifactDisplay } from '../LocalArtifactDisplay';
@@ -7,6 +7,7 @@ import type { DisplayArtifact, DisplayPayload } from '../types';
 // LocalArtifactDisplay (37A-04): an authenticated download button when the
 // descriptor carries an asset_id, else a render-only filename + size + "delivery
 // unavailable" card. A raw host/container path is NEVER rendered in either branch.
+// Delivered images and MP4/WebM clips preview inline (spec section 5); SVG never does.
 
 const HOST_PATH = '/run/out/report.csv';
 
@@ -94,6 +95,97 @@ describe('LocalArtifactDisplay', () => {
       />,
     );
     expect(screen.getByText('3.0 GB')).toBeTruthy();
+  });
+
+  describe('inline media previews', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    function stubAssetBytes(): ReturnType<typeof vi.fn> {
+      URL.createObjectURL = vi.fn(() => 'blob:inline');
+      URL.revokeObjectURL = vi.fn();
+      const fetchMock = vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          blob: () => Promise.resolve(new Blob(['bytes'], { type: 'image/png' })),
+        } as unknown as Response),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    it('previews a delivered image with its download action on the asset route', async () => {
+      stubAssetBytes();
+      render(
+        <LocalArtifactDisplay
+          payload={payload({
+            filename: 'lake.png',
+            mime_type: 'image/png',
+            asset_id: 'img-1',
+            path: HOST_PATH,
+          })}
+        />,
+      );
+      const img = await screen.findByRole('img', { name: 'lake.png' });
+      expect(img.getAttribute('src')).toBe('blob:inline');
+      expect(screen.getByRole('link', { name: 'Download lake.png' }).getAttribute('href')).toBe(
+        '/api/assets/img-1/download',
+      );
+      expect(document.body.innerHTML).not.toContain(HOST_PATH);
+    });
+
+    it('streams a delivered MP4 inline with a download link and never fetches it', async () => {
+      const fetchMock = stubAssetBytes();
+      const { container } = render(
+        <LocalArtifactDisplay
+          payload={payload({
+            filename: 'sea.mp4',
+            mime_type: 'video/mp4',
+            asset_id: 'vid-1',
+            size_bytes: 2048,
+            path: HOST_PATH,
+          })}
+        />,
+      );
+      const video = await screen.findByLabelText('sea.mp4');
+      expect(video.tagName).toBe('VIDEO');
+      expect(video.getAttribute('src')).toBe('/api/assets/vid-1/stream');
+      expect(video.hasAttribute('autoplay')).toBe(false);
+      expect(screen.getByRole('link', { name: /sea\.mp4/i }).getAttribute('href')).toBe(
+        '/api/assets/vid-1/download',
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(container.innerHTML).not.toContain(HOST_PATH);
+    });
+
+    it('keeps an SVG as a download card: no <img>, no <video>, download link kept', () => {
+      const fetchMock = stubAssetBytes();
+      const { container } = render(
+        <LocalArtifactDisplay
+          payload={payload({ filename: 'logo.svg', mime_type: 'image/svg+xml', asset_id: 'svg-1' })}
+        />,
+      );
+      expect(container.querySelector('img')).toBeNull();
+      expect(container.querySelector('video')).toBeNull();
+      expect(screen.getByRole('link', { name: /logo\.svg/i }).getAttribute('href')).toBe(
+        '/api/assets/svg-1/download',
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('keeps an undelivered image on the degraded card', () => {
+      const fetchMock = stubAssetBytes();
+      const { container } = render(
+        <LocalArtifactDisplay
+          payload={payload({ filename: 'lake.png', mime_type: 'image/png' })}
+        />,
+      );
+      expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByText('Delivery unavailable')).toBeTruthy();
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   it('falls to a safe name when the filename is missing', () => {

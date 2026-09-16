@@ -214,6 +214,7 @@ describe('HtmlPreview (WEBART-07 / T-37B-08)', () => {
     stubFetch({ text: '<h1>shared</h1>' });
     const shareTier: AssetSource = {
       assetUrl: (id) => `/s/tok/asset/${id}`,
+      streamUrl: (id) => `/s/tok/asset/${id}/stream`,
       credentials: 'omit',
     };
     const { container } = render(

@@ -19,8 +19,10 @@ import {
 
 /** How the preview modal should render an asset — or `download` when no safe
  *  in-browser renderer applies. `image/svg+xml` is deliberately `download` (never
- *  `image`) to keep script-bearing SVG out of an executing <img> (T-37B-05). */
-export type PreviewKind = 'image' | 'pdf' | 'text' | 'html' | 'docx' | 'xlsx' | 'download';
+ *  `image`) to keep script-bearing SVG out of an executing <img> (T-37B-05). `video`
+ *  is only the two formats the asset stream route serves; any other clip is `download`. */
+export type PreviewKind =
+  'image' | 'video' | 'pdf' | 'text' | 'html' | 'docx' | 'xlsx' | 'download';
 
 // The raw-<pre> text family (D-07): rendered as escaped monospace, never as
 // interpreted markdown/HTML — zero injection surface.
@@ -53,6 +55,9 @@ export function previewKind(mime: string, filename: string): PreviewKind {
   const ext = extOf(filename);
   if (mime === 'image/svg+xml' || ext === 'svg') return 'download';
   if (mime.startsWith('image/')) return 'image';
+  if (mime === 'video/mp4' || mime === 'video/webm' || ext === 'mp4' || ext === 'webm') {
+    return 'video';
+  }
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
   if (mime === 'text/html' || ext === 'html' || ext === 'htm') return 'html';
   if (ext === 'docx') return 'docx';

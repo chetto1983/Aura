@@ -8,5 +8,5 @@
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx"
   ],
-  "ignoreDependencies": ["assistant-stream", "read-excel-file"]
+  "ignoreDependencies": ["assistant-stream"]
 }

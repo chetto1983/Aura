@@ -34,6 +34,7 @@ const TextPreview = lazy(() => import('../chat/artifacts/renderers/TextPreview')
 const HtmlPreview = lazy(() => import('../chat/artifacts/renderers/HtmlPreview'));
 const DocxPreview = lazy(() => import('../chat/artifacts/renderers/DocxPreview'));
 const XlsxPreview = lazy(() => import('../chat/artifacts/renderers/XlsxPreview'));
+const VideoPreview = lazy(() => import('../chat/artifacts/renderers/VideoPreview'));
 
 export type ShareTier = 'public' | 'internal';
 
@@ -68,19 +69,16 @@ function dataRequestFor(tier: ShareTier, key: string): DataRequest {
 /** The tier-scoped asset provider (the R-05 seam, plan 37F-05): every 37B renderer —
  *  HtmlPreview included — resolves bytes through this value with ZERO edits to any of
  *  them. Exact inverse pairing with dataRequestFor above; the id is percent-encoded,
- *  never interpolated raw into a path segment. */
+ *  never interpolated raw into a path segment. `streamUrl` is the tier's Range route for
+ *  <video src>, the `/stream` sibling of the asset URL. */
 function assetSourceFor(tier: ShareTier, key: string): AssetSource {
-  if (tier === 'public') {
-    return {
-      assetUrl: (assetId) => `/s/${encodeURIComponent(key)}/asset/${encodeURIComponent(assetId)}`,
-      credentials: 'omit',
-    };
-  }
-  return {
-    assetUrl: (assetId) =>
-      `/api/shares/${encodeURIComponent(key)}/asset/${encodeURIComponent(assetId)}`,
-    credentials: 'same-origin',
-  };
+  if (tier === 'public') return tierAssetSource(`/s/${encodeURIComponent(key)}`, 'omit');
+  return tierAssetSource(`/api/shares/${encodeURIComponent(key)}`, 'same-origin');
+}
+
+function tierAssetSource(shareRoot: string, credentials: RequestCredentials): AssetSource {
+  const assetUrl = (assetId: string) => `${shareRoot}/asset/${encodeURIComponent(assetId)}`;
+  return { assetUrl, streamUrl: (assetId) => `${assetUrl(assetId)}/stream`, credentials };
 }
 
 function formatSnapshotDate(iso: string): string {
@@ -322,6 +320,8 @@ function renderArtifactKind(kind: PreviewKind, props: RendererProps): ReactNode 
       return <DocxPreview {...props} />;
     case 'xlsx':
       return <XlsxPreview {...props} />;
+    case 'video':
+      return <VideoPreview {...props} />;
     case 'download':
       return <DownloadOnly />;
   }

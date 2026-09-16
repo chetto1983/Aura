@@ -22,6 +22,8 @@ import { useSourceExplorer } from './displays/sourceExplorerControls';
 import { SourcesButton } from './displays/SourcesButton';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import { hasAnswerText } from './ExternalStoreChat_folds';
+import { GenerationToolDisplay } from './generation/GenerationToolDisplay';
+import { generationState } from './generation/generationState';
 import { MarkdownText } from './MarkdownText';
 import { ReasoningPill } from './ReasoningPill';
 import { ToolActivityCard } from './ToolActivityCard';
@@ -328,9 +330,6 @@ export function ReasoningPillPart({ text }: { readonly text: string }) {
   );
 }
 
-/** Display types that render INLINE with no disclosure row (compact-chat §3.5):
- *  system_event is safety-relevant one-line status; local_artifact is the small
- *  actionable download chip. Everything else lives behind the compact tool row. */
 /**
  * The tools.Fallback render: the single seam where a tool turn becomes UI. It
  * reads the custom `display` payload off the stored message part (the sseAdapter
@@ -342,6 +341,8 @@ export function ReasoningPillPart({ text }: { readonly text: string }) {
  * ToolActivityCard row; the typed display (when attached) becomes the row's
  * EXPANDED body via the card's DisplayRouter dispatch. Inline displays include
  * worker activity: a completed spawn call does not mean its children finished.
+ * Order: a trusted inline display (a delivered image or clip is local_artifact),
+ * then the generation frame of a running or detached media call, then grouping.
  *
  * Citation click-through (D-04): when the payload carries a source registry, a
  * chip click opens the SHARED Source Explorer (the same sheet the answer-level
@@ -381,6 +382,17 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
         onOpenSource={onOpenSource}
         {...(resultText !== undefined ? { result: resultText } : {})}
         {...(isError !== undefined ? { isError } : {})}
+      />
+    );
+  }
+
+  if (generationState(toolName, status.type, resultText) !== 'fallback') {
+    return (
+      <GenerationToolDisplay
+        toolName={toolName}
+        argsText={argsText}
+        statusType={status.type}
+        result={resultText}
       />
     );
   }

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { isGroupableToolPart, toolRun, TOOL_GROUP_MIN } from '../toolGrouping';
 
 // toolGrouping (compact-chat spec §3.3) — run detection: threshold, broken runs
-// (text/reasoning between), running-tail exclusion, inline-exception exclusion.
+// (text/reasoning between), running-tail exclusion, inline-exception and detached
+// media-job exclusion.
 
 function tool(id: string, over: Record<string, unknown> = {}): Record<string, unknown> {
   return { type: 'tool-call', toolCallId: id, toolName: 't', argsText: '', result: 'ok', ...over };
@@ -85,6 +86,31 @@ describe('isGroupableToolPart', () => {
     expect(isGroupableToolPart(spawn)).toBe(false);
     for (const id of ['a', 'b', 'spawn', 'c', 'd']) expect(toolRun(content, id)).toBeNull();
   });
+  it('keeps a detached video job out of the groups on either side', () => {
+    const deferred = tool('v', {
+      toolName: 'video_generate',
+      result: '{"status":"in_progress","job_id":"job-1"}',
+    });
+    expect(isGroupableToolPart(deferred)).toBe(false);
+    const content = [tool('a'), tool('b'), tool('c'), deferred, tool('d'), tool('e'), tool('f')];
+    expect(toolRun(content, 'a')).toEqual({ startIndex: 0, ids: ['a', 'b', 'c'] });
+    expect(toolRun(content, 'v')).toBeNull();
+    expect(toolRun(content, 'd')).toEqual({ startIndex: 4, ids: ['d', 'e', 'f'] });
+    const split = [tool('a'), tool('b'), deferred, tool('c'), tool('d')];
+    for (const id of ['a', 'b', 'v', 'c', 'd']) expect(toolRun(split, id)).toBeNull();
+  });
+
+  it('still groups a finished or failed media call like any settled tool', () => {
+    expect(
+      isGroupableToolPart(tool('i', { toolName: 'image_generate', result: '{"error":"no_key"}' })),
+    ).toBe(true);
+    expect(
+      isGroupableToolPart(
+        tool('v', { toolName: 'video_generate', result: '{"error":"job_failed"}' }),
+      ),
+    ).toBe(true);
+  });
+
   it('accepts settled tool parts, rejects running/inline/foreign parts', () => {
     expect(isGroupableToolPart(tool('a'))).toBe(true);
     expect(isGroupableToolPart(tool('a', { result: undefined }))).toBe(false);

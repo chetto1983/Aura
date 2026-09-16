@@ -39,12 +39,21 @@ describe('useAssetSource (no provider mounted)', () => {
     );
     expect(result.current.assetUrl('a b/c#d')).not.toContain('a b/c#d');
   });
+
+  it('resolves the identity-scoped Range stream route with the same encoding', () => {
+    const { result } = renderHook(() => useAssetSource());
+    expect(result.current.streamUrl('asset-1')).toBe('/api/assets/asset-1/stream');
+    expect(result.current.streamUrl('a b/c#d')).toBe(
+      `/api/assets/${encodeURIComponent('a b/c#d')}/stream`,
+    );
+  });
 });
 
 describe('useAssetSource (provider mounted)', () => {
   it('resolves through the provided token-scoped resolver with omit credentials', () => {
     const tokenScoped: AssetSource = {
       assetUrl: (assetId) => `/s/tok123/asset/${encodeURIComponent(assetId)}`,
+      streamUrl: (assetId) => `/s/tok123/asset/${encodeURIComponent(assetId)}/stream`,
       credentials: 'omit',
     };
     const wrapper = ({ children }: { children: ReactNode }) =>
@@ -72,6 +81,7 @@ describe('useAssetContent + useAssetSource integration', () => {
     const fetchMock = stubFetch();
     const tokenScoped: AssetSource = {
       assetUrl: (assetId) => `/s/tok123/asset/${encodeURIComponent(assetId)}`,
+      streamUrl: (assetId) => `/s/tok123/asset/${encodeURIComponent(assetId)}/stream`,
       credentials: 'omit',
     };
     const wrapper = ({ children }: { children: ReactNode }) =>

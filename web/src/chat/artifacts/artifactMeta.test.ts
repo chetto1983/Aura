@@ -27,6 +27,23 @@ describe('previewKind', () => {
     expect(previewKind('image/webp', 'x.webp')).toBe('image');
   });
 
+  it('routes the two streamable video formats by mime and by extension fallback', () => {
+    expect(previewKind('video/mp4', 'clip.mp4')).toBe('video');
+    expect(previewKind('video/webm', 'clip')).toBe('video');
+    expect(previewKind('application/octet-stream', 'clip.MP4')).toBe('video');
+    expect(previewKind('', 'clip.webm')).toBe('video');
+  });
+
+  it('keeps video formats the stream route refuses download-only', () => {
+    expect(previewKind('video/quicktime', 'clip.mov')).toBe('download');
+    expect(previewKind('video/x-matroska', 'clip.mkv')).toBe('download');
+  });
+
+  it('never routes SVG or raster bytes to the video renderer', () => {
+    expect(previewKind('image/svg+xml', 'clip.mp4')).toBe('download');
+    expect(previewKind('image/png', 'clip.mp4')).toBe('image');
+  });
+
   it('routes pdf by mime and by extension fallback', () => {
     expect(previewKind('application/pdf', 'x.pdf')).toBe('pdf');
     expect(previewKind('application/octet-stream', 'x.pdf')).toBe('pdf');

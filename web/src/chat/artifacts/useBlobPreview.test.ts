@@ -146,4 +146,51 @@ describe('useBlobPreview', () => {
     expect(revokeSpy).toHaveBeenCalledWith('blob:mock-1');
     expect(at(fetchArgs, 1).url).toBe('/api/assets/asset-2/download');
   });
+
+  it('never surfaces the previous asset URL while the next asset is still in flight', async () => {
+    const { result, rerender } = renderHook(
+      ({ id }: { id: string }) => useBlobPreview(id, 'image/png'),
+      { initialProps: { id: 'asset-1' } },
+    );
+    await waitFor(() => {
+      expect(result.current.url).toBe('blob:mock-1');
+    });
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => undefined));
+
+    rerender({ id: 'asset-2' });
+
+    expect(result.current).toEqual({});
+    expect(revokeSpy).toHaveBeenCalledWith('blob:mock-1');
+  });
+
+  it('relabels the same bytes under a new mimeType without refetching or a stale URL', async () => {
+    const { result, rerender } = renderHook(
+      ({ mime }: { mime: string }) => useBlobPreview('asset-1', mime),
+      { initialProps: { mime: 'video/quicktime' } },
+    );
+    await waitFor(() => {
+      expect(result.current.url).toBe('blob:mock-1');
+    });
+
+    rerender({ mime: 'image/png' });
+    expect(result.current.url).not.toBe('blob:mock-1');
+    await waitFor(() => {
+      expect(result.current.url).toBe('blob:mock-2');
+    });
+
+    expect(fetchArgs).toHaveLength(1);
+    expect(revokeSpy).toHaveBeenCalledWith('blob:mock-1');
+    expect(at(relabeled, 1).type).toBe('image/png');
+  });
+
+  it('mints exactly one URL per loaded blob and revokes each one it minted', async () => {
+    const { result, unmount } = renderHook(() => useBlobPreview('asset-1', 'image/png'));
+    await waitFor(() => {
+      expect(result.current.url).toBe('blob:mock-1');
+    });
+    unmount();
+    expect(createSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledTimes(1);
+    expect(revokeSpy).toHaveBeenCalledWith('blob:mock-1');
+  });
 });

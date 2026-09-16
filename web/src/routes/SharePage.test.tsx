@@ -210,6 +210,26 @@ describe('SharePage — public tier (/s/:token)', () => {
     expect(preview?.querySelector('img')).toBeNull();
   });
 
+  it('streams a video artifact from the token-scoped route without fetching its bytes', async () => {
+    const { calls } = stubFetch({
+      snapshot: {
+        ...baseSnapshot,
+        artifacts: [
+          { asset_id: 'a/8', filename: 'sea.mp4', mime_type: 'video/mp4', size_bytes: 4096 },
+        ],
+      },
+    });
+    const { container } = renderShare('/s/tok-123');
+    await waitFor(() => {
+      expect(container.querySelector('video')).not.toBeNull();
+    });
+    const video = container.querySelector('video');
+    expect(video?.getAttribute('src')).toBe('/s/tok-123/asset/a%2F8/stream');
+    expect(video?.hasAttribute('controls')).toBe(true);
+    expect(video?.hasAttribute('autoplay')).toBe(false);
+    expect(calls.filter((c) => c.url.includes('/asset/'))).toEqual([]);
+  });
+
   it('shows a role="status" while loading', () => {
     stubFetch({ dataPending: true });
     renderShare('/s/tok-123');
@@ -376,6 +396,25 @@ describe('SharePage — internal tier (/shared/:id)', () => {
     if (!assetCall) throw new Error('expected an asset fetch');
     expect(assetCall.url).toBe('/api/shares/share-42/asset/a1');
     expect(assetCall.init.credentials).toBe('same-origin');
+  });
+
+  it('streams a video artifact from /api/shares/{id}/asset/{assetId}/stream', async () => {
+    const { calls } = stubFetch({
+      snapshot: {
+        ...baseSnapshot,
+        artifacts: [
+          { asset_id: 'a8', filename: 'sea.webm', mime_type: 'video/webm', size_bytes: 4096 },
+        ],
+      },
+    });
+    const { container } = renderShare('/shared/share-42');
+    await waitFor(() => {
+      expect(container.querySelector('video')).not.toBeNull();
+    });
+    expect(container.querySelector('video')?.getAttribute('src')).toBe(
+      '/api/shares/share-42/asset/a8/stream',
+    );
+    expect(calls.filter((c) => c.url.includes('/asset/'))).toEqual([]);
   });
 
   it('renders the identical snapshot tree as the public tier (title + turns)', async () => {

@@ -2,7 +2,10 @@
 // docs/superpowers/specs/2026-07-23-cockpit-compact-chat-ui-spec.md §3.3).
 // Runs of ≥ TOOL_GROUP_MIN consecutive SETTLED tool parts collapse into one
 // group header; the currently running tool is never a member, and the inline
-// display exceptions (system_event / local_artifact) break a run.
+// display exceptions (system_event / local_artifact) and a detached video job's
+// generation frame break a run.
+
+import { generationState } from './generation/generationState';
 
 /** 2 rows collapse to a header + nothing saved — not worth the indirection. */
 export const TOOL_GROUP_MIN = 3;
@@ -11,6 +14,7 @@ export const TOOL_GROUP_MIN = 3;
 export interface GroupablePart {
   readonly type?: unknown;
   readonly toolCallId?: unknown;
+  readonly toolName?: unknown;
   readonly result?: unknown;
   readonly isError?: unknown;
   readonly display?: { readonly type?: unknown } | undefined;
@@ -27,14 +31,15 @@ export const INLINE_DISPLAY_TYPES = new Set<unknown>([
   'swarm_report',
 ]);
 
-/** Settled tool part, not an inline-exception display — a group member candidate. */
+/** Settled tool part, not an inline display or frame — a group member candidate. */
 export function isGroupableToolPart(part: unknown): part is GroupablePart {
   if (typeof part !== 'object' || part === null) return false;
   const p = part as GroupablePart;
   if (p.type !== 'tool-call' || typeof p.toolCallId !== 'string') return false;
   if (typeof p.result !== 'string' && p.isError !== true) return false; // running
   if (p.display !== undefined && INLINE_DISPLAY_TYPES.has(p.display.type)) return false;
-  return true;
+  const toolName = typeof p.toolName === 'string' ? p.toolName : '';
+  return generationState(toolName, undefined, p.result) !== 'deferred';
 }
 
 /**

@@ -1140,6 +1140,8 @@ git commit -m "feat(settings): select image and video models with capability pri
 
 ### Task 11: Generation frames and image/video previews
 
+> **Split (controller ruling, R22/R24):** 11a — Go streaming routes with HTTP Range (`GET /api/assets/{id}/stream`, `GET /s/{token}/asset/{id}/stream`, `GET /api/shares/{id}/asset/{assetID}/stream`), landed 72120523f, review fix round in progress. 11b — the frontend steps below, with `VideoPreview` on the stream URL instead of a blob.
+
 **Files:** Install the three registry files from the map. Create `generation/GenerationFrame.tsx`, `generationState.ts`, `GenerationToolDisplay.tsx`, `artifacts/renderers/GeneratedImagePreview.tsx`, `VideoPreview.tsx`, their tests and `i18n/resources.media.ts`. Modify `artifacts/useBlobPreview.ts` and tests to reuse `useAssetContent`, `ExternalStoreChat_messages.tsx`, `toolGrouping.ts`, `LocalArtifactDisplay.tsx`, `artifactMeta.ts`, `PreviewModal.tsx`, `SharePage.tsx`, localization aggregation and the npm lock.
 
 **Interfaces:**
@@ -1150,7 +1152,7 @@ git commit -m "feat(settings): select image and video models with capability pri
 - `GeneratedImagePreview` and `VideoPreview` consume existing `RendererProps` and are default exports.
 - Reuse `useBlobPreview(assetId:string,mimeType?:string): BlobPreview` rather than introducing another object-URL lifecycle helper. Refactor its fetch leg onto `useAssetContent(assetId,'blob')`, preserving abort/cleanup/stale-asset guarantees.
 
-- [ ] **Step 1: Write state, grouping and preview tests.**
+- [x] **Step 1: Write state, grouping and preview tests.**
 
 ~~~tsx
 it('a replayed detached video has a static frame', () => {
@@ -1168,7 +1170,7 @@ it('rejects executable or malformed ratio text', () => {
 
 Tests also assert SVG creates no img/video and keeps a download link; video controls/playsInline; blob cleanup; content-filter card with no src; image fullscreen keyboard focus/Escape; download URL uses asset ID; raw `path` never reaches the DOM. Test a deferred media result between other completed tools does not join or duplicate their ToolGroup.
 
-- [ ] **Step 2: Install actual registry elements and run red.**
+- [x] **Step 2: Install actual registry elements and run red.**
 
 ~~~sh
 cd web
@@ -1178,7 +1180,7 @@ npx vitest run src/chat/generation src/chat/artifacts src/chat/displays
 
 Inspect registry diffs and package changes. Reuse existing helper/dependency versions; do not install another assistant runtime, new backend SDK or demo application. Split installed source by concern if necessary to satisfy the existing size gate.
 
-- [ ] **Step 3: Implement explicit rendering states.**
+- [x] **Step 3: Implement explicit rendering states.**
 
 ~~~ts
 export function generationState(
@@ -1208,7 +1210,7 @@ Use the same pure predicate in `isGroupableToolPart` to exclude deferred/blocked
 
 Extend the installed ImageGeneration element with `aspectRatio`, `label` and localizable text props. Apply aspect ratio to its inner visual frame, replacing the hard-coded aspect-square and false "1024 × 1024" label. Render prompt visibly as text while running and settled; omit its inert regenerate button, since message Reload already owns regeneration. A deferred result uses `generating=false` and a static arriving label; it is never an endless loading animation on replay. Preserve reduced-motion behavior.
 
-- [ ] **Step 4: Implement previews and object-URL lifecycle.**
+- [x] **Step 4: Implement previews and object-URL lifecycle.**
 
 ~~~tsx
 export default function VideoPreview({ assetId, mimeType, fileName }: RendererProps) {
@@ -1235,7 +1237,7 @@ Add `video` to PreviewKind; gate recognized video MIME/extensions after SVG reje
 
 Refactor `useBlobPreview` to create a URL only for the current `useAssetContent` blob, revoke it on replacement/unmount, and return no stale URL when assetId/MIME changes. Preserve image/PDF/share existing tests as regression coverage.
 
-- [ ] **Step 5: Localize, verify and commit.**
+- [x] **Step 5: Localize, verify and commit.**
 
 Add English/Italian keys for generating image/video, arriving in this chat, provider-blocked media, zoom/close, download/copy/copied/copy failed and preview failure. Match cockpit CSS tokens, 44px action targets, keyboard focus and dark/light themes.
 

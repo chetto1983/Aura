@@ -25,6 +25,10 @@ export interface AssetSource {
    *  destructuring `const { assetUrl } = useAssetSource()` never trips
    *  `@typescript-eslint/unbound-method` — there is no `this` to lose. */
   readonly assetUrl: (assetId: string) => string;
+  /** The URL a `<video src>` streams `assetId` from: the tier's `/stream` sibling of
+   *  `assetUrl`, which answers HTTP Range requests inline so a clip plays and seeks without
+   *  being downloaded whole (internal/agui/assets_stream_api.go). Encoded like `assetUrl`. */
+  readonly streamUrl: (assetId: string) => string;
   /** The `fetch()` credentials mode a renderer should pair with `assetUrl`. */
   readonly credentials: RequestCredentials;
   /** The URL that serves an HTML artifact as a real DOCUMENT for `<iframe src=>` — sealed
@@ -40,6 +44,7 @@ export interface AssetSource {
 
 const IDENTITY_SCOPED: AssetSource = {
   assetUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/download`,
+  streamUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/stream`,
   credentials: 'same-origin',
   renderUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/render`,
 };

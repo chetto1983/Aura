@@ -1,16 +1,14 @@
 import { useEffect, useState } from 'react';
-import { useAssetSource } from './renderers/assetSourceContext';
+import { useAssetContent } from './renderers/useAssetContent';
 
-// useBlobPreview — the object-URL lifecycle hook for the image/pdf preview
-// renderers (D-06/WEBART-05). One fetch through useAssetSource()'s resolved URL +
-// credentials (the 37A identity-scoped asset route by default; a token/bearer-scoped
-// share route once a provider is mounted — R-05/37F-16), then the octet-stream body
-// is re-labelled with the SSE mime_type (so <img>/<iframe> sniff the right type) and
-// handed out as a blob: object URL. The AbortController + URL.revokeObjectURL live in
-// the SAME cleanup keyed on [assetId, mimeType] (Pitfall 5 / T-37B-11): a rapid
-// open/close or a thread switch aborts the in-flight fetch and frees the previous URL
-// before the next one is minted — no leaked blob: entries, no stale-file flash. The
-// html/text/docx/xlsx renderers consume bytes/text directly and never touch this hook.
+// useBlobPreview — the object-URL lifecycle hook for the image/pdf preview renderers
+// (D-06/WEBART-05). The bytes come from useAssetContent(assetId, 'blob'), which owns the
+// fetch through useAssetSource()'s resolved URL + credentials, its AbortController and its
+// stale-asset guard. This hook only re-labels the current blob with the SSE mime_type (so
+// <img>/<iframe> sniff the right type) and hands it out as a blob: object URL, minting one
+// URL per blob and revoking it when the blob or the mime changes or the component unmounts
+// (Pitfall 5 / T-37B-11): no leaked blob: entries, no stale-file flash. Video streams its
+// asset URL directly and never touches this hook.
 
 export interface BlobPreview {
   /** The blob: object URL for the relabelled asset, once fetched. */
@@ -19,51 +17,33 @@ export interface BlobPreview {
   readonly error?: string;
 }
 
-interface Loaded {
-  /** The [assetId, mimeType] key the url/error belongs to. */
-  readonly key: string;
-  readonly url?: string;
-  readonly error?: string;
+interface Minted {
+  readonly source: Blob;
+  readonly mimeType: string | undefined;
+  readonly url: string;
 }
 
-/** Fetch an asset through the active asset source, relabel it with `mimeType`, and
- *  expose a revocable object URL. Cleanup aborts the fetch and revokes the URL,
- *  keyed on the asset; a result from a previous key is never surfaced while a new
- *  fetch is in flight. */
 export function useBlobPreview(assetId: string, mimeType?: string): BlobPreview {
-  const key = `${assetId} ${mimeType ?? ''}`;
-  const [loaded, setLoaded] = useState<Loaded>();
-  const { assetUrl, credentials } = useAssetSource();
+  const { data, error } = useAssetContent(assetId, 'blob');
+  const [minted, setMinted] = useState<Minted>();
 
   useEffect(() => {
-    const controller = new AbortController();
-    let objectUrl: string | undefined;
-
-    void (async () => {
-      const res = await fetch(assetUrl(assetId), {
-        credentials,
-        signal: controller.signal,
-      });
-      if (!res.ok) throw new Error(`HTTP ${String(res.status)}`);
-      const raw = await res.blob();
-      const blob = mimeType ? new Blob([raw], { type: mimeType }) : raw;
-      objectUrl = URL.createObjectURL(blob);
-      setLoaded({ key, url: objectUrl });
-    })().catch((e: unknown) => {
-      if (!controller.signal.aborted) setLoaded({ key, error: String(e) });
+    if (data === undefined) return;
+    const url = URL.createObjectURL(mimeType ? new Blob([data], { type: mimeType }) : data);
+    let current = true;
+    // Publish outside the effect body, like durationFormat's settle capture: the URL is
+    // minted and owned by this run, whose cleanup revokes it.
+    queueMicrotask(() => {
+      if (current) setMinted({ source: data, mimeType, url });
     });
-
     return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      current = false;
+      URL.revokeObjectURL(url);
     };
-  }, [assetId, mimeType, key, assetUrl, credentials]);
+  }, [data, mimeType]);
 
-  // Surface only a result that belongs to the CURRENT key — a stale (already-revoked)
-  // URL from a prior asset is never returned while its replacement is still loading.
-  // Exactly one of url/error is ever set per load, so the branches are mutually exclusive.
-  if (loaded?.key !== key) return {};
-  if (loaded.url !== undefined) return { url: loaded.url };
-  if (loaded.error !== undefined) return { error: loaded.error };
-  return {};
+  if (error !== undefined) return { error };
+  // A URL minted for another blob or another mime is already revoked: never surface it.
+  if (minted === undefined || minted.source !== data || minted.mimeType !== mimeType) return {};
+  return { url: minted.url };
 }

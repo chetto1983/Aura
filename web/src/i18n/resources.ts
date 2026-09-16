@@ -18,6 +18,7 @@ import { chatEmptyEn, chatEmptyIt } from './resources.empty';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
+import { mediaEn, mediaIt } from './resources.media';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { shareEn, shareIt } from './resources.share';
@@ -154,6 +155,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...mediaEn,
       ...shareEn,
       ...filesEn,
       ...governanceEn,
@@ -396,6 +398,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...mediaIt,
       ...shareIt,
       ...filesIt,
       ...governanceIt,

@@ -92,7 +92,7 @@ graphify-out/*
 .planning/graphs/*
 .agents/skills/*
 internal/channels/telegram/testdata/*
-artifacts/*
+/artifacts/*
 .playwright-mcp/*
 .tmp*
 .audit-build-*
