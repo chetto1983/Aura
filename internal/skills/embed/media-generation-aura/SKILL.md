@@ -48,10 +48,26 @@ Only ask what is missing:
 
 ## Writing an image prompt
 
-Order: what it is and what it is for → subject → framing and scale → style, medium and
-light → text → exclusions.
+Open with the operation ("Create", "Edit", "Transform"), then in order: what it is and what it
+is for → subject → framing and scale → style, medium and light → text → exclusions. The start
+of a prompt weighs most, so the subject never comes last.
 
-- Say "photorealistic" when that is the goal; mood words alone ("epic") do nothing.
+A request with several elements reads better as labelled lines; the last one is where drift is
+stopped, so never leave it empty:
+
+```
+Scene: small florist storefront at blue hour, wet cobblestones
+Subject: woman in a navy apron locking the door, half-turned to camera
+Details: warm interior glow on the pavement, brushed brass handle, soft shadows
+Use: editorial photo
+Constraints: only the sign "Florista" as text, no people in the background
+```
+
+- **Facts, not praise.** "stunning", "epic", "masterpiece", "8k" and style tags ("luxury
+  minimalist") degrade the result; write what they look like — materials, light, surface wear,
+  lens feel ("overcast daylight, brushed aluminium, chipped paint, 50mm feel"). Say
+  "photorealistic" when that is the goal.
+- **Exact colours** as hex: "#0d3d2d deep emerald", not "dark green".
 - Put required text in quotes, say where it goes and "exactly once, no other text"; spell
   unusual names letter by letter.
 - Phrase exclusions as what is there: "an empty beach with no people", not "no people".
@@ -65,20 +81,29 @@ edit of a good image is cheaper than a new one.
 
 ## Writing a video prompt
 
-One readable shot: **camera + subject + visible action + setting + style and light + sound
-(only if wanted)**.
+One readable shot: **subject and camera first, then the visible action, the setting and the
+light; style and quality words last; sound only if wanted**. The first third of the prompt
+carries the most weight.
 
 - **One camera move** per clip: static, slow push-in, tracking, orbit, crane or handheld.
   Two moves in one prompt is the most common reason a clip goes wrong.
 - **Action verbs**, not adjectives; add what moves in the environment (water, leaves, hair,
   light). A clip that barely moves had too many static descriptions.
+- **Name the last frame**: "ends on her face lit by the fridge light" beats "she looks sad".
+  The ending is what the model steers toward.
+- **Fit the action to the seconds**: about one state change per five seconds. A longer story is
+  several clips, not one crowded prompt.
+- **No contradictions**: "still pond" with "flowing water", or "close-up" with "wide
+  landscape", produce artifacts, because the model follows the strongest signal.
+- **Same character in several clips**: repeat the same identity line word for word in every
+  prompt (face, hair, clothes, one distinctive item). Clips share no memory.
 - **Sound**, when wanted: dialogue in quotes ("She says: 'We're late.'"), then effects and
   ambience.
 
 **Animating an image** (`first_frame_asset_id`): the image already carries subject, style and
 light. Describe only **what changes over time** — the subject's motion, the camera's, the
 environment's, the pace and how it ends. Re-describing the picture makes the model stop
-moving it.
+moving it; one line such as "keep the subject from the first frame" protects the identity.
 
 ## Tool rules
 
@@ -102,3 +127,11 @@ moving it.
 - Real people and brands: only edits the person shown would accept — never sexualised, never
   a minor, never placed somewhere they were not. Describe other companies' logos in words
   rather than reproducing them. If the provider refuses, report it; do not reword around it.
+
+---
+
+Parts of the prompt guidance above (labelled image lines, facts over praise, hex colours, the
+weight of the opening, the last frame, action per second, contradictions, the identity line)
+are adapted and rewritten from *Visual Skills* by Serge Shima
+(https://github.com/smixs/visual-skills), licensed CC BY 4.0
+(https://creativecommons.org/licenses/by/4.0/).
