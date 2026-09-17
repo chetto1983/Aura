@@ -114,8 +114,9 @@ export class StudioError extends Error {
   }
 }
 
-/** One screen of history — the server's own default, named so the cursor page matches it. */
-const HISTORY_LIMIT = 24;
+/** One screen of history — the server's own default (studioHistoryDefault), named so a caller
+ *  can tell a full page from the last one. */
+export const STUDIO_HISTORY_LIMIT = 24;
 
 function readInit(signal?: AbortSignal): RequestInit {
   const init: RequestInit = {
@@ -173,7 +174,7 @@ export async function listStudioHistory(
   before: string | undefined,
   signal?: AbortSignal,
 ): Promise<readonly StudioRecord[]> {
-  const query = new URLSearchParams({ limit: String(HISTORY_LIMIT) });
+  const query = new URLSearchParams({ limit: String(STUDIO_HISTORY_LIMIT) });
   if (kind !== undefined) query.set('kind', kind);
   if (before !== undefined && before.length > 0) query.set('before', before);
   const res = await fetch(`/api/studio/history?${query.toString()}`, readInit(signal));
