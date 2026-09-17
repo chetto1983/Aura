@@ -18,32 +18,24 @@ const studioOwner = "0192f6d4-6a3c-7c1e-9b2a-3f4e5d6c7b8c"
 type stubStudioCatalog struct {
 	models []mediagen.Model
 	err    error
-	calls  int
 }
 
 func (s *stubStudioCatalog) List(_ context.Context, _ mediagen.Kind, _ bool) ([]mediagen.Model, error) {
-	s.calls++
 	return s.models, s.err
 }
 
-type stubStudioSettings struct {
-	model string
-	err   error
-}
+type stubStudioSettings struct{ model string }
 
 func (s stubStudioSettings) Model(context.Context, mediagen.Kind) (string, error) {
-	return s.model, s.err
+	return s.model, nil
 }
 
 func (s stubStudioSettings) VideoInlineWait(context.Context) (time.Duration, error) { return 0, nil }
 
-type stubStudioCredentials struct {
-	baseURL string
-	err     error
-}
+type stubStudioCredentials struct{ baseURL string }
 
 func (s stubStudioCredentials) For(context.Context, string) (string, string, error) {
-	return s.baseURL, "sk-test", s.err
+	return s.baseURL, "sk-test", nil
 }
 
 type stubStudioAssets struct {
@@ -116,8 +108,6 @@ type studioFixture struct {
 	submissions []mediagen.VideoSubmission
 	generations []mediagen.ImageGeneration
 	tracked     []mediagen.Job
-	submitErr   error
-	generateErr error
 	generated   mediagen.GeneratedImage
 }
 
@@ -141,17 +131,11 @@ func newStudioFixture(t *testing.T, models ...mediagen.Model) *studioFixture {
 		credentials: stubStudioCredentials{baseURL: "https://openrouter.ai/api/v1"},
 		submit: func(_ context.Context, submission mediagen.VideoSubmission) (mediagen.Job, error) {
 			fixture.submissions = append(fixture.submissions, submission)
-			if fixture.submitErr != nil {
-				return mediagen.Job{}, fixture.submitErr
-			}
 			return mediagen.Job{ID: "job-video-1", IdentityID: submission.Owner, Surface: submission.Surface,
 				Kind: mediagen.KindVideo, Status: mediagen.StatusPending}, nil
 		},
 		generate: func(_ context.Context, generation mediagen.ImageGeneration) (mediagen.GeneratedImage, error) {
 			fixture.generations = append(fixture.generations, generation)
-			if fixture.generateErr != nil {
-				return mediagen.GeneratedImage{}, fixture.generateErr
-			}
 			return fixture.generated, nil
 		},
 		track:  func(job mediagen.Job) { fixture.tracked = append(fixture.tracked, job) },
@@ -338,6 +322,7 @@ func TestStudioReportsAStoredImageThatCouldNotBeSaved(t *testing.T) {
 
 func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
 	fixture := newStudioFixture(t)
+	fixture.assets.recent = []assets.Asset{{ID: "asset-recent", Modality: assets.ModalityImage}}
 
 	if _, err := fixture.backend.History(context.Background(), studioOwner, "job-9", mediagen.KindImage, 7); err != nil {
 		t.Fatalf("History() error = %v", err)
@@ -348,8 +333,12 @@ func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
 			fixture.jobs.listedKind, fixture.jobs.listedLimit)
 	}
 
-	if _, err := fixture.backend.Library(context.Background(), studioOwner, 5); err != nil {
+	library, err := fixture.backend.Library(context.Background(), studioOwner, 5)
+	if err != nil {
 		t.Fatalf("Library() error = %v", err)
+	}
+	if len(library) != 1 || library[0].ID != "asset-recent" {
+		t.Fatalf("library = %#v, want the identity's recent images", library)
 	}
 	if fixture.assets.listedOwner != studioOwner || fixture.assets.listedLimit != 5 {
 		t.Fatalf("library read = %q, %d", fixture.assets.listedOwner, fixture.assets.listedLimit)
