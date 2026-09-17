@@ -71,6 +71,72 @@ describe('ExternalStoreChat — RS-07 live-run attach + Stop→cancel', () => {
     vi.unstubAllGlobals();
   });
 
+  // Measured in the paid media run of 2026-09-17: a thread reopened while its run was still
+  // going showed tool_search and the delivered clip twice, because the run's tool rows are
+  // persisted as they happen and the full replay rebuilds them again on the attached turn.
+  it('shows the persisted tool rows of a live run once after attaching', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (url.startsWith('/threads/')) {
+          return Promise.resolve(
+            messagesSnapshotResponse([
+              { id: 'msg-1', role: 'user', content: 'earlier prompt' },
+              { id: 'msg-2', role: 'assistant', content: 'Earlier answer.' },
+              { id: 'msg-3', role: 'user', content: 'search the weather' },
+              {
+                id: 'msg-4',
+                role: 'assistant',
+                content: '',
+                toolCalls: [
+                  {
+                    id: 'call-live',
+                    type: 'function',
+                    function: { name: 'web_search', arguments: '{"q":"meteo"}' },
+                  },
+                ],
+              },
+              { id: 'msg-5', role: 'tool', toolCallId: 'call-live', content: 'sunny 25C' },
+            ]),
+          );
+        }
+        if (url === '/api/conversations/conv-1') {
+          return Promise.resolve(jsonResponse(LIVE_CONVERSATION));
+        }
+        if (url === '/agent/runs/run-7/events') {
+          return Promise.resolve(
+            sseResponse([
+              { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-7' },
+              { type: 'TOOL_CALL_START', toolCallId: 'call-live', toolCallName: 'web_search' },
+              { type: 'TOOL_CALL_ARGS', toolCallId: 'call-live', delta: '{"q":"meteo"}' },
+              { type: 'TOOL_CALL_END', toolCallId: 'call-live' },
+              { type: 'TOOL_CALL_RESULT', toolCallId: 'call-live', content: 'sunny 25C' },
+              { type: 'TEXT_MESSAGE_START', messageId: 'msg-live' },
+              { type: 'TEXT_MESSAGE_CONTENT', messageId: 'msg-live', delta: 'It is sunny.' },
+              { type: 'TEXT_MESSAGE_END', messageId: 'msg-live' },
+              {
+                type: 'RUN_FINISHED',
+                threadId: 'conv-1',
+                runId: 'run-7',
+                outcome: { type: 'success' },
+              },
+            ]),
+          );
+        }
+        return Promise.resolve(jsonResponse([]));
+      }),
+    );
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+
+    expect(await screen.findByText('It is sunny.')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'web_search activity' })).toHaveLength(1);
+    // Rows before the live run are untouched.
+    expect(screen.getByText('earlier prompt')).toBeTruthy();
+    expect(screen.getByText('Earlier answer.')).toBeTruthy();
+    expect(screen.getByText('search the weather')).toBeTruthy();
+  });
+
   it('attaches to a live run on thread open (live_run_id → full-replay resume GET)', async () => {
     let attachInit: RequestInit | undefined;
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {

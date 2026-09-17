@@ -74,7 +74,10 @@ export function useLiveRunAttach({
           },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           ...(onSteer !== undefined ? { onSteer } : {}),
-          onUpdate,
+          onUpdate: (assistant, usage) => {
+            onUpdate(assistant, usage);
+            setMessages(withoutRowsReplayedByRun);
+          },
         });
       });
       if (!terminal.observed) return;
@@ -126,4 +129,32 @@ export function useLiveRunAttach({
       })
       .catch(() => undefined);
   }, [threadId, liveRunId, historyReadiness, isRunningRef, attachLiveRun]);
+}
+
+/**
+ * The attached turn is the last message and was rebuilt from the run's full replay, but the
+ * snapshot already holds the rows the run persisted as it went: its tool calls and their
+ * results. Seen in the paid media run of 2026-09-17 as tool_search and a delivered clip shown
+ * twice. Every earlier message carrying a tool call the replay also carries is one of those rows,
+ * so it goes; everything before the run is untouched. Returns the same array when nothing changes.
+ */
+function withoutRowsReplayedByRun(messages: ThreadMessageLike[]): ThreadMessageLike[] {
+  const replayed = messages.at(-1);
+  if (replayed === undefined) return messages;
+  const replayedIds = toolCallIds(replayed);
+  if (replayedIds.size === 0) return messages;
+  const earlier = messages.slice(0, -1);
+  const kept = earlier.filter(
+    (message) => ![...toolCallIds(message)].some((id) => replayedIds.has(id)),
+  );
+  return kept.length === earlier.length ? messages : [...kept, replayed];
+}
+
+function toolCallIds(message: ThreadMessageLike): Set<string> {
+  const ids = new Set<string>();
+  if (typeof message.content === 'string') return ids;
+  for (const part of message.content) {
+    if (part.type === 'tool-call' && typeof part.toolCallId === 'string') ids.add(part.toolCallId);
+  }
+  return ids;
 }
