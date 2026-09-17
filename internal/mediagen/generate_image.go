@@ -13,10 +13,14 @@ type ImageGeneration struct {
 }
 
 // GeneratedImage is one paid image and what produced it: the clamped input as the provider
-// received it, and the notes the clamp made.
+// received it, the notes the clamp made, and the origin that was actually paid. The origin
+// travels with the result rather than being looked up again, because a second credential read
+// can answer a different route — the record would then name an endpoint the image never came
+// from.
 type GeneratedImage struct {
 	Result      ImageResult
 	Prompt      string
+	Origin      string
 	Used        ImageInput
 	Adjustments []string
 }
@@ -64,16 +68,21 @@ func (g *ImageGenerator) Generate(ctx context.Context, gen ImageGeneration) (Gen
 	if err != nil {
 		return GeneratedImage{}, err
 	}
-	return GeneratedImage{Result: result, Prompt: input.Prompt, Used: input, Adjustments: append(adjustments, notes...)}, nil
+	return GeneratedImage{
+		Result: result, Prompt: input.Prompt, Origin: baseURL, Used: input,
+		Adjustments: append(adjustments, notes...),
+	}, nil
 }
 
 // ImageRecord is the request a Studio image row persists, in the same shape a video row uses:
 // the prompt redacted by the same rule, the aspect ratio as the clamp left it, the reference
 // asset ids that replace the image data the provider body carried, the clamp's notes and the
-// submission origin. Reading an image row and a video row is therefore one code path.
-func ImageRecord(generated GeneratedImage, origin string) (json.RawMessage, error) {
+// origin the generation was paid to. Reading an image row and a video row is therefore one code
+// path. The origin is the generator's own, so the row can never name a route the image did not
+// come from.
+func ImageRecord(generated GeneratedImage) (json.RawMessage, error) {
 	return JobRequest(
 		VideoRequest{Prompt: generated.Prompt, AspectRatio: generated.Used.AspectRatio},
-		JobAudit{Origin: origin, ReferenceAssetIDs: generated.Used.ReferenceAssetIDs, Adjustments: generated.Adjustments},
+		JobAudit{Origin: generated.Origin, ReferenceAssetIDs: generated.Used.ReferenceAssetIDs, Adjustments: generated.Adjustments},
 	)
 }

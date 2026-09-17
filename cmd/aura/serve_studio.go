@@ -67,38 +67,42 @@ func (b studioBackend) Models(ctx context.Context, kind mediagen.Kind) (string, 
 // listed refuses a model the catalog does not list. The Studio names its model per request, so
 // an unlisted one is a stale or forged form, never a model to try on the operator's money. A
 // catalog that cannot be read refuses the same way: the request is not sent on a guess.
-func (b studioBackend) listed(ctx context.Context, kind mediagen.Kind, model string) error {
+func (b studioBackend) listed(ctx context.Context, kind mediagen.Kind, model string) (*mediagen.Model, error) {
 	models, err := b.catalog.List(ctx, kind, false)
 	if err != nil {
 		if errors.Is(err, agui.ErrMediaCatalogLocalRoute) {
-			return err
+			return nil, err
 		}
 		slog.Error("aura serve: the Studio could not read the model catalog; nothing was generated",
 			"kind", kind, "err", redact.String(err.Error()))
-		return &mediagen.Error{Code: "job_failed", Message: "The model catalog could not be read, so nothing was generated."}
+		return nil, &mediagen.Error{Code: "job_failed", Message: "The model catalog could not be read, so nothing was generated."}
 	}
 	for _, listed := range models {
 		if listed.ID == model {
-			return nil
+			return &listed, nil
 		}
 	}
-	return &mediagen.Error{Code: "unsupported", Message: "That model is not one this route offers."}
+	return nil, &mediagen.Error{Code: "unsupported", Message: "That model is not one this route offers."}
 }
 
 // SubmitVideo submits only a model the catalog lists, on the Studio surface: the job belongs to
 // no conversation and to no tool call, and is tracked without an inline waiter because nothing
 // is waiting for it — the page reads the row back.
 func (b studioBackend) SubmitVideo(ctx context.Context, owner string, req agui.StudioVideoRequest) (mediagen.Job, error) {
-	if err := b.listed(ctx, mediagen.KindVideo, req.Model); err != nil {
+	entry, err := b.listed(ctx, mediagen.KindVideo, req.Model)
+	if err != nil {
 		return mediagen.Job{}, err
 	}
+	// Every option the Studio's form leaves out is filled with the least expensive one the
+	// model declares, because the provider's own default for an absent field is whatever it
+	// sells best — on a per-second SKU, the long, high, audible clip.
+	input := mediagen.CheapestVideoInput(mediagen.VideoInput{
+		Prompt: req.Prompt, Duration: req.Duration, Resolution: req.Resolution, AspectRatio: req.AspectRatio,
+		FirstFrameAssetID: req.FirstFrameAssetID, LastFrameAssetID: req.LastFrameAssetID,
+		Audio: req.Audio, Seed: req.Seed,
+	}, entry)
 	job, err := b.submit(ctx, mediagen.VideoSubmission{
-		Owner: owner, Surface: mediagen.SurfaceStudio, Model: req.Model,
-		Input: mediagen.VideoInput{
-			Prompt: req.Prompt, Duration: req.Duration, Resolution: req.Resolution, AspectRatio: req.AspectRatio,
-			FirstFrameAssetID: req.FirstFrameAssetID, LastFrameAssetID: req.LastFrameAssetID,
-			Audio: req.Audio, Seed: req.Seed,
-		},
+		Owner: owner, Surface: mediagen.SurfaceStudio, Model: req.Model, Input: input,
 	})
 	if err != nil {
 		return mediagen.Job{}, err
@@ -109,14 +113,11 @@ func (b studioBackend) SubmitVideo(ctx context.Context, owner string, req agui.S
 
 // GenerateImage pays once, stores the image as the identity's own asset outside every
 // conversation, and records the generation. A stored image whose record fails is reported as
-// such: the asset is there, so nothing is generated again. The submission origin is resolved
-// before the paid call, never after, so a route that cannot be named costs nothing.
+// such: the asset is there, so nothing is generated again. The recorded origin is the one the
+// generator itself paid, carried back on the result: a second credential read could answer a
+// different route, and the row would then name an endpoint the image never came from.
 func (b studioBackend) GenerateImage(ctx context.Context, owner string, req agui.StudioImageRequest) (mediagen.Job, error) {
-	if err := b.listed(ctx, mediagen.KindImage, req.Model); err != nil {
-		return mediagen.Job{}, err
-	}
-	origin, _, err := b.credentials.For(ctx, owner)
-	if err != nil {
+	if _, err := b.listed(ctx, mediagen.KindImage, req.Model); err != nil {
 		return mediagen.Job{}, err
 	}
 	generated, err := b.generate(ctx, mediagen.ImageGeneration{
@@ -144,7 +145,7 @@ func (b studioBackend) GenerateImage(ctx context.Context, owner string, req agui
 			"provider_job_id", providerID, "err", redact.String(err.Error()))
 		return mediagen.Job{}, &mediagen.Error{Code: "job_failed", Message: "The image was generated but could not be saved."}
 	}
-	request, err := mediagen.ImageRecord(generated, origin)
+	request, err := mediagen.ImageRecord(generated)
 	if err != nil {
 		return mediagen.Job{}, err
 	}

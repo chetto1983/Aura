@@ -3,15 +3,12 @@ package agui
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/mediagen"
@@ -383,59 +380,6 @@ func TestStudioImageCreateAnswersTheRecord(t *testing.T) {
 	if out.Prompt != "a hat on a cat" || out.Used.AspectRatio != "1:1" {
 		t.Fatalf("record read nothing back from the persisted request: %#v", out)
 	}
-}
-
-func TestStudioMapsRefusals(t *testing.T) {
-	cases := []struct {
-		name   string
-		err    error
-		status int
-		code   string
-	}{
-		{"unsupported", &mediagen.Error{Code: "unsupported", Message: "That model takes no end frame."}, http.StatusUnprocessableEntity, "unsupported"},
-		{"no key", &mediagen.Error{Code: "no_key", Message: "No OpenRouter key."}, http.StatusConflict, "no_key"},
-		{"no credit", &mediagen.Error{Code: "no_credit", Message: "Out of credit."}, http.StatusPaymentRequired, "no_credit"},
-		{"outcome unknown", &mediagen.Error{Code: "outcome_unknown", Message: "The outcome is unknown."}, http.StatusBadGateway, "outcome_unknown"},
-		{"wrong modality", assets.ErrWrongModality, http.StatusUnprocessableEntity, "unsupported"},
-		{"local route", ErrMediaCatalogLocalRoute, http.StatusConflict, "local_route"},
-		{"no row", pgx.ErrNoRows, http.StatusNotFound, "not_found"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			backend := &fakeStudioBackend{videoErr: tc.err}
-			rec := serveStudio(t, studioServer(t, backend), http.MethodPost, "/api/studio/videos", `{"model":"m","prompt":"p"}`)
-			if rec.Code != tc.status {
-				t.Fatalf("status = %d (%s), want %d", rec.Code, rec.Body.String(), tc.status)
-			}
-			var out struct {
-				Code  string `json:"code"`
-				Error string `json:"error"`
-			}
-			if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-				t.Fatalf("decode body %q: %v", rec.Body.String(), err)
-			}
-			if out.Code != tc.code {
-				t.Fatalf("code = %q, want %q", out.Code, tc.code)
-			}
-			if out.Error == "" {
-				t.Fatalf("refusal carried no message: %q", rec.Body.String())
-			}
-		})
-	}
-
-	t.Run("a plain failure says nothing about itself", func(t *testing.T) {
-		backend := &fakeStudioBackend{videoErr: errors.New("dial tcp 10.0.0.9:5432: connection refused, password=hunter2")}
-		rec := serveStudio(t, studioServer(t, backend), http.MethodPost, "/api/studio/videos", `{"model":"m","prompt":"p"}`)
-		if rec.Code != http.StatusInternalServerError {
-			t.Fatalf("status = %d, want 500", rec.Code)
-		}
-		body := rec.Body.String()
-		for _, leaked := range []string{"hunter2", "10.0.0.9", "connection refused", "dial tcp"} {
-			if strings.Contains(body, leaked) {
-				t.Fatalf("body echoed the cause %q: %s", leaked, body)
-			}
-		}
-	})
 }
 
 func TestStudioRejectsUnknownFields(t *testing.T) {

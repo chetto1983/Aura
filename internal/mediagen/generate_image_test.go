@@ -201,8 +201,9 @@ func TestImageRecordReadsBackAsAJobRow(t *testing.T) {
 			AspectRatio:       "1:1",
 			ReferenceAssetIDs: []string{"ref-1", "ref-2"},
 		},
+		Origin:      "https://openrouter.ai/api/v1?key=sk-secret",
 		Adjustments: []string{"aspect ratio narrowed to 1:1"},
-	}, "https://openrouter.ai/api/v1?key=sk-secret")
+	})
 	if err != nil {
 		t.Fatalf("ImageRecord() error = %v", err)
 	}
@@ -236,7 +237,7 @@ func TestImageRecordReadsBackAsAJobRow(t *testing.T) {
 }
 
 func TestImageRecordRefusesAnOriginItCannotReduce(t *testing.T) {
-	if _, err := ImageRecord(GeneratedImage{}, "not-a-url"); err == nil {
+	if _, err := ImageRecord(GeneratedImage{Origin: "not-a-url"}); err == nil {
 		t.Fatal("ImageRecord() accepted an origin that is not an absolute http(s) URL")
 	}
 }

@@ -32,9 +32,21 @@ func (s stubStudioSettings) Model(context.Context, mediagen.Kind) (string, error
 
 func (s stubStudioSettings) VideoInlineWait(context.Context) (time.Duration, error) { return 0, nil }
 
-type stubStudioCredentials struct{ baseURL string }
+// stubStudioCredentials counts its reads and answers a DIFFERENT route after the first, so a
+// caller that resolves the origin separately from the paid call records the wrong one.
+type stubStudioCredentials struct {
+	baseURL string
+	calls   *int
+}
 
 func (s stubStudioCredentials) For(context.Context, string) (string, string, error) {
+	if s.calls == nil {
+		return s.baseURL, "sk-test", nil
+	}
+	*s.calls++
+	if *s.calls > 1 {
+		return "https://moved.example/v1", "sk-test", nil
+	}
 	return s.baseURL, "sk-test", nil
 }
 
@@ -109,6 +121,9 @@ type studioFixture struct {
 	generations []mediagen.ImageGeneration
 	tracked     []mediagen.Job
 	generated   mediagen.GeneratedImage
+	// credentialReads counts the backend's OWN credential resolutions, which the image path
+	// must not need: the generator already reports the origin it paid.
+	credentialReads int
 }
 
 func newStudioFixture(t *testing.T, models ...mediagen.Model) *studioFixture {
@@ -119,8 +134,10 @@ func newStudioFixture(t *testing.T, models ...mediagen.Model) *studioFixture {
 		assets:  &stubStudioAssets{},
 		jobs:    &stubStudioJobs{},
 		generated: mediagen.GeneratedImage{
-			Result:      mediagen.ImageResult{Bytes: []byte("PNG-BYTES"), MIMEType: "image/png", CostUSD: &cost},
-			Prompt:      "a cat in a hat",
+			Result: mediagen.ImageResult{Bytes: []byte("PNG-BYTES"), MIMEType: "image/png", CostUSD: &cost},
+			Prompt: "a cat in a hat",
+			// The generator reports the route it actually paid; the record must use this one.
+			Origin:      "https://openrouter.ai/api/v1",
 			Used:        mediagen.ImageInput{Prompt: "a cat in a hat", AspectRatio: "1:1"},
 			Adjustments: []string{"aspect ratio narrowed to 1:1"},
 		},
@@ -128,7 +145,7 @@ func newStudioFixture(t *testing.T, models ...mediagen.Model) *studioFixture {
 	fixture.backend = studioBackend{
 		catalog:     fixture.catalog,
 		settings:    stubStudioSettings{model: "default/model"},
-		credentials: stubStudioCredentials{baseURL: "https://openrouter.ai/api/v1"},
+		credentials: stubStudioCredentials{baseURL: "https://openrouter.ai/api/v1", calls: &fixture.credentialReads},
 		submit: func(_ context.Context, submission mediagen.VideoSubmission) (mediagen.Job, error) {
 			fixture.submissions = append(fixture.submissions, submission)
 			return mediagen.Job{ID: "job-video-1", IdentityID: submission.Owner, Surface: submission.Surface,
@@ -202,6 +219,38 @@ func TestStudioKeepsTheLocalRouteRefusal(t *testing.T) {
 		t.Fatalf("error = %v, want ErrMediaCatalogLocalRoute", err)
 	}
 	fixture.assertNothingGenerated(t)
+}
+
+// The Studio's form leaves every option optional, and an option the body omits is not free:
+// the provider fills an absent field with its own default, which on a per-second SKU is the
+// long, high, audible clip. What leaves for the provider must be the cheapest the model offers.
+func TestStudioSubmitsTheCheapestOptionsWhenTheRequestOmitsThem(t *testing.T) {
+	fixture := newStudioFixture(t, mediagen.Model{
+		ID: "listed/model", Kind: mediagen.KindVideo,
+		Durations: []int{12, 4, 8}, Resolutions: []string{"1080p", "480p", "720p"}, GenerateAudio: true,
+	})
+
+	if _, err := fixture.backend.SubmitVideo(context.Background(), studioOwner,
+		agui.StudioVideoRequest{Model: "listed/model", Prompt: "a cat"}); err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+
+	if len(fixture.submissions) != 1 {
+		t.Fatalf("submissions = %d, want 1", len(fixture.submissions))
+	}
+	input := fixture.submissions[0].Input
+	if input.Duration != 4 {
+		t.Fatalf("duration = %d, want the shortest the model declares (4)", input.Duration)
+	}
+	if input.Resolution != "480p" {
+		t.Fatalf("resolution = %q, want the lowest the model declares (480p)", input.Resolution)
+	}
+	if input.Audio == nil || *input.Audio {
+		t.Fatalf("audio = %v, want an explicit false rather than the provider's choice", input.Audio)
+	}
+	if input.Seed != nil {
+		t.Fatalf("seed = %d, want none: no seed is already the cheapest", *input.Seed)
+	}
 }
 
 func TestStudioSubmitsOnTheStudioSurfaceAndTracksWithoutAnInlineWaiter(t *testing.T) {
@@ -296,6 +345,12 @@ func TestStudioStoresTheImageOutsideEveryConversation(t *testing.T) {
 	}
 	if audit.Origin != "https://openrouter.ai/api/v1" || len(audit.Adjustments) != 1 {
 		t.Fatalf("recorded audit = %#v", audit)
+	}
+	// The recorded origin is the generator's own. A backend that resolved credentials again
+	// would have recorded https://moved.example/v1 — the endpoint the image did NOT come from.
+	if fixture.credentialReads != 0 {
+		t.Fatalf("the image path resolved credentials %d time(s) of its own; the origin must come back with the result",
+			fixture.credentialReads)
 	}
 }
 
