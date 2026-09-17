@@ -246,6 +246,57 @@ func TestImageEndpointsPath(t *testing.T) {
 	}
 }
 
+// TestCatalogReadsNameDescriptionAndSeed pins the fields the Studio picker needs to show a
+// model's name and blurb, and the seed capability the clamp uses to decide whether a caller's
+// seed is sent: a payload that declares none leaves them empty and Seed false.
+func TestCatalogReadsNameDescriptionAndSeed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/images/models":
+			_, _ = io.WriteString(w, `{"data":[
+				{"id":"microsoft/mai-image-2.6","name":"Microsoft: MAI Image 2.6","description":"a still image model"},
+				{"id":"acme/bare-image"}
+			]}`)
+		case "/videos/models":
+			_, _ = io.WriteString(w, `{"data":[
+				{"id":"google/veo-3.1-lite","name":"Google: Veo 3.1 Lite","description":"a video model","seed":true},
+				{"id":"acme/bare-video"}
+			]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	catalog := NewCatalog(srv.Client())
+
+	images, err := catalog.List(context.Background(), srv.URL, KindImage, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mai := findModel(t, images, "microsoft/mai-image-2.6")
+	if mai.Name != "Microsoft: MAI Image 2.6" || mai.Description != "a still image model" || mai.Seed {
+		t.Fatalf("image row = %#v", mai)
+	}
+	bareImage := findModel(t, images, "acme/bare-image")
+	if bareImage.Name != "" || bareImage.Description != "" || bareImage.Seed {
+		t.Fatalf("bare image row = %#v", bareImage)
+	}
+
+	videos, err := catalog.List(context.Background(), srv.URL, KindVideo, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	veo := findModel(t, videos, "google/veo-3.1-lite")
+	if veo.Name != "Google: Veo 3.1 Lite" || veo.Description != "a video model" || !veo.Seed {
+		t.Fatalf("video row = %#v", veo)
+	}
+	bareVideo := findModel(t, videos, "acme/bare-video")
+	if bareVideo.Name != "" || bareVideo.Description != "" || bareVideo.Seed {
+		t.Fatalf("bare video row = %#v", bareVideo)
+	}
+}
+
 func findModel(t *testing.T, models []Model, id string) Model {
 	t.Helper()
 	for _, m := range models {

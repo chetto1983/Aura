@@ -18,19 +18,6 @@ import (
 // stagedMediaBasename is fixed so no caller-controlled text ever reaches the filesystem.
 const stagedMediaBasename = "generated"
 
-// imageExtensions is the closed set of types image generation delivers, not
-// mime.ExtensionsByType: that answer depends on the host (Windows lists .jfif first for
-// image/jpeg), and the extension must round-trip through guessDeliveryMIME, which types the
-// ingested asset. It holds images only, so an image delivery can never stage a clip.
-var imageExtensions = map[string]string{
-	"image/png":     ".png",
-	"image/jpeg":    ".jpg",
-	"image/webp":    ".webp",
-	"image/svg+xml": ".svg",
-}
-
-const uncheckedOptionsNote = "the model catalog is unavailable, so the options were not checked against the model; OpenRouter validates them"
-
 // mediaDeliveredNote tells the model the file is already in front of the user. Measured live on
 // 2026-09-16: a bare asset_id read as "the file exists somewhere", and the model spent the rest
 // of the turn on tool_search, find /workspace and skill list looking for it to send again.
@@ -79,25 +66,11 @@ func mediaRunDir(ctx context.Context) (string, error) {
 	return tc.runDir, nil
 }
 
-// mediaCatalogEntry finds model in the catalog. An unreadable catalog is treated like a model
-// the catalog does not list: no entry, so the request goes out unclamped, and one note, because
-// refusing a paid call over a free lookup helps nobody. Any other catalog error is returned.
-func mediaCatalogEntry(ctx context.Context, catalog *mediagen.Catalog, baseURL string, kind mediagen.Kind, model string) (*mediagen.Model, []string, error) {
-	entry, err := catalog.Find(ctx, baseURL, kind, model)
-	switch {
-	case errors.Is(err, mediagen.ErrCatalogUnavailable):
-		return nil, []string{uncheckedOptionsNote}, nil
-	case err != nil:
-		return nil, nil, err
-	}
-	return entry, []string{}, nil
-}
-
 // stageImage writes a generated image to a fresh staging directory.
 func stageImage(ctx context.Context, data []byte, mimeType string) (path, filename string, err error) {
-	ext, ok := imageExtensions[mimeType]
-	if !ok {
-		return "", "", fmt.Errorf("no staging extension for image type %q", mimeType)
+	ext, err := mediagen.ImageExtension(mimeType)
+	if err != nil {
+		return "", "", err
 	}
 	return stageMedia(ctx, ext, func(w io.Writer) error {
 		_, err := w.Write(data)

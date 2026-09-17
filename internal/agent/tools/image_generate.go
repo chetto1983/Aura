@@ -127,7 +127,7 @@ func (g *ImageGenerate) configured() bool {
 
 // clamp narrows the request to what the catalog declares for model.
 func (g *ImageGenerate) clamp(ctx context.Context, baseURL, model string, args imageGenerateArgs) (mediagen.ImageInput, []string, error) {
-	entry, adjustments, err := mediaCatalogEntry(ctx, g.Catalog, baseURL, mediagen.KindImage, model)
+	entry, adjustments, err := g.Catalog.Entry(ctx, baseURL, mediagen.KindImage, model)
 	if err != nil {
 		return mediagen.ImageInput{}, nil, err
 	}

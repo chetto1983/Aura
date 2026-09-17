@@ -27,6 +27,25 @@ func VideoExtension(mimeType string) (string, error) {
 	return "", &Error{Code: "unsupported", Message: "The generated video is neither MP4 nor WebM."}
 }
 
+// ImageExtension names a generated image of mimeType for storage and delivery: the four types
+// resolveImageMIME can return. The table is fixed rather than mime.ExtensionsByType, whose
+// answer depends on the host — Windows lists .jfif first for image/jpeg — while the extension
+// has to name the same type again when the stored file is typed back from its name. Any other
+// type is refused as unsupported; it holds images only, so an image path can never name a clip.
+func ImageExtension(mimeType string) (string, error) {
+	switch mimeType {
+	case "image/png":
+		return ".png", nil
+	case "image/jpeg":
+		return ".jpg", nil
+	case "image/webp":
+		return ".webp", nil
+	case "image/svg+xml":
+		return ".svg", nil
+	}
+	return "", &Error{Code: "unsupported", Message: "The generated image is neither PNG, JPEG, WebP nor SVG."}
+}
+
 // ImageInput is the caller-requested shape of an image generation call, before
 // ClampImage narrows it to what the target Model actually declares.
 type ImageInput struct {
@@ -43,8 +62,10 @@ type VideoInput struct {
 	Resolution        string
 	AspectRatio       string
 	FirstFrameAssetID string
+	LastFrameAssetID  string
 	ReferenceAssetIDs []string
 	Audio             *bool
+	Seed              *int
 }
 
 // Parameter describes one capability a catalog Model declares: either an
@@ -73,14 +94,19 @@ type PriceLine struct {
 // default is ever invented for it. ImagePricing is nil when enrichment failed:
 // the price is unknown, never free.
 type Model struct {
-	ID            string
-	Kind          Kind
+	ID   string
+	Kind Kind
+	// Name and Description are as the provider names it; empty when it declares none.
+	Name          string
+	Description   string
 	Parameters    map[string]Parameter
 	Durations     []int
 	Resolutions   []string
 	AspectRatios  []string
 	FrameImages   []string
 	GenerateAudio bool
-	PricingSKUs   map[string]string
-	ImagePricing  []PriceLine
+	// Seed reports whether the provider accepts a caller-supplied seed for reproducibility.
+	Seed         bool
+	PricingSKUs  map[string]string
+	ImagePricing []PriceLine
 }

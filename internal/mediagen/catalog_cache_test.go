@@ -293,3 +293,52 @@ func TestCatalogBoundsEachRefresh(t *testing.T) {
 		t.Fatalf("refresh deadline %v is not %v after the call (%v..%v)", deadline, catalogTimeout, before, after)
 	}
 }
+
+// TestCatalogEntryTreatsAnUnreadableCatalogAsAnUnlistedModel pins the one decision Entry adds
+// over Find: refusing a paid generation because a free lookup failed helps nobody, so an
+// unreadable catalog reads as a model the catalog does not list — no entry, and one note the
+// caller shows. Any other failure is still an error, because it is not a catalog verdict.
+func TestCatalogEntryTreatsAnUnreadableCatalogAsAnUnlistedModel(t *testing.T) {
+	const baseURL = "https://openrouter.ai/api/v1"
+	listed := &fakeCatalogSource{models: catalogFixture()}
+	catalog := newCatalog(listed.fetch, time.Now)
+
+	entry, notes, err := catalog.Entry(context.Background(), baseURL, KindImage, "alpha/image")
+	if err != nil || entry == nil || entry.ID != "alpha/image" || len(notes) != 0 {
+		t.Fatalf("listed model = %v, %q, %v; want the entry and no note", entry, notes, err)
+	}
+
+	entry, notes, err = catalog.Entry(context.Background(), baseURL, KindImage, "acme/unlisted")
+	if err != nil || entry != nil || len(notes) != 0 {
+		t.Fatalf("unlisted model = %v, %q, %v; want no entry and no note", entry, notes, err)
+	}
+
+	down := &fakeCatalogSource{err: errors.New("503 Service Unavailable")}
+	entry, notes, err = newCatalog(down.fetch, time.Now).Entry(context.Background(), baseURL, KindImage, "alpha/image")
+	if err != nil || entry != nil || !slices.Equal(notes, []string{uncheckedOptionsNote}) {
+		t.Fatalf("unreadable catalog = %v, %q, %v; want no entry and the unchecked-options note", entry, notes, err)
+	}
+
+	// A refusal that is not the catalog's verdict must still be an error. The only such error
+	// List returns is a waiter giving up, so the slot is held by an in-flight refresh: with the
+	// slot free, the send and the cancellation are both ready and select picks either one.
+	release, started := make(chan struct{}), make(chan struct{})
+	blocking := newCatalog(func(context.Context, string, Kind) ([]Model, error) {
+		close(started)
+		<-release
+		return catalogFixture(), nil
+	}, time.Now)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_, _ = blocking.List(context.Background(), baseURL, KindImage, false)
+	}()
+	<-started
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := blocking.Entry(cancelled, baseURL, KindImage, "alpha/image"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled lookup = %v, want context.Canceled: only a catalog verdict is swallowed", err)
+	}
+	close(release)
+	<-done
+}

@@ -160,7 +160,7 @@ func (g *VideoGenerate) submit(ctx context.Context, owner string, args videoGene
 }
 
 func (g *VideoGenerate) clamp(ctx context.Context, baseURL, model string, args videoGenerateArgs) (mediagen.VideoInput, []string, error) {
-	entry, adjustments, err := mediaCatalogEntry(ctx, g.Catalog, baseURL, mediagen.KindVideo, model)
+	entry, adjustments, err := g.Catalog.Entry(ctx, baseURL, mediagen.KindVideo, model)
 	if err != nil {
 		return mediagen.VideoInput{}, nil, err
 	}

@@ -41,7 +41,7 @@ func ClampImage(in ImageInput, m *Model) (ImageInput, []string, error) {
 // ClampVideo narrows in to what m declares and explains every change. Unlike images,
 // the video catalog leaves most sets null for many models, so only a nonempty declared
 // set is clamped; an empty one is left for provider validation. Images are the
-// exception: a first frame the model cannot start from, or more references than its
+// exception: a first or last frame the model cannot take, or more references than its
 // declared maximum, refuse the request rather than bill a clip that ignores them.
 func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 	out := in
@@ -50,12 +50,20 @@ func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 		audio := *in.Audio
 		out.Audio = &audio
 	}
+	if in.Seed != nil {
+		seed := *in.Seed
+		out.Seed = &seed
+	}
 	if m == nil {
 		return out, nil, nil
 	}
 	if in.FirstFrameAssetID != "" && !slices.Contains(m.FrameImages, "first_frame") {
 		return VideoInput{}, nil, &Error{Code: "unsupported", Message: "The selected video model cannot start from an image. " +
 			"Nothing was generated. Do not resubmit it as a text-only video: ask the operator to choose a video model with image-to-video."}
+	}
+	if in.LastFrameAssetID != "" && !slices.Contains(m.FrameImages, "last_frame") {
+		return VideoInput{}, nil, &Error{Code: "unsupported", Message: "The selected video model cannot end on a given image. " +
+			"Nothing was generated. Remove the end frame, or choose a video model that accepts one."}
 	}
 	if references, declared := m.Parameters["input_references"]; declared && references.Max != nil {
 		if err := checkReferences(KindVideo, len(in.ReferenceAssetIDs), *references.Max); err != nil {
@@ -76,6 +84,10 @@ func ClampVideo(in VideoInput, m *Model) (VideoInput, []string, error) {
 	if in.Audio != nil && !m.GenerateAudio {
 		out.Audio = nil
 		notes.add("audio %t is not supported by this model; omitted", *in.Audio)
+	}
+	if in.Seed != nil && !m.Seed {
+		out.Seed = nil
+		notes.add("seed is not supported by this model; omitted")
 	}
 	return out, notes, nil
 }

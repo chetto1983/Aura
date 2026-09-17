@@ -34,6 +34,8 @@ func NewCatalog(httpClient *http.Client) *Catalog {
 
 type imageModelRow struct {
 	ID                  string                   `json:"id"`
+	Name                string                   `json:"name"`
+	Description         string                   `json:"description"`
 	SupportedParameters map[string]parameterWire `json:"supported_parameters"`
 }
 
@@ -46,6 +48,9 @@ type parameterWire struct {
 
 type videoModelRow struct {
 	ID                    string            `json:"id"`
+	Name                  string            `json:"name"`
+	Description           string            `json:"description"`
+	Seed                  bool              `json:"seed"`
 	SupportedResolutions  []string          `json:"supported_resolutions"`
 	SupportedAspectRatios []string          `json:"supported_aspect_ratios"`
 	SupportedDurations    []int             `json:"supported_durations"`
@@ -75,7 +80,10 @@ func fetchImageModels(ctx context.Context, client *openai.Client) ([]Model, erro
 		if strings.TrimSpace(row.ID) == "" {
 			continue
 		}
-		models = append(models, Model{ID: row.ID, Kind: KindImage, Parameters: parameters(row.SupportedParameters)})
+		models = append(models, Model{
+			ID: row.ID, Kind: KindImage, Name: row.Name, Description: row.Description,
+			Parameters: parameters(row.SupportedParameters),
+		})
 	}
 	enrichImagePricing(ctx, client, models)
 	return models, nil
@@ -92,10 +100,10 @@ func fetchVideoModels(ctx context.Context, client *openai.Client) ([]Model, erro
 			continue
 		}
 		models = append(models, Model{
-			ID: row.ID, Kind: KindVideo,
+			ID: row.ID, Kind: KindVideo, Name: row.Name, Description: row.Description,
 			Durations: row.SupportedDurations, Resolutions: row.SupportedResolutions,
 			AspectRatios: row.SupportedAspectRatios, FrameImages: row.SupportedFrameImages,
-			GenerateAudio: row.GenerateAudio, PricingSKUs: row.PricingSKUs,
+			GenerateAudio: row.GenerateAudio, Seed: row.Seed, PricingSKUs: row.PricingSKUs,
 		})
 	}
 	return models, nil

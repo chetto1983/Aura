@@ -108,6 +108,24 @@ func (c *Catalog) Find(ctx context.Context, baseURL string, kind Kind, id string
 	return nil, nil
 }
 
+// uncheckedOptionsNote tells the caller the request went out as asked because the catalog could
+// not be read, not because the model declared every option in it.
+const uncheckedOptionsNote = "the model catalog is unavailable, so the options were not checked against the model; OpenRouter validates them"
+
+// Entry finds model in the catalog. An unreadable catalog is treated like a model the catalog
+// does not list: no entry, so the request goes out unclamped, and one note, because refusing a
+// paid call over a free lookup helps nobody. Any other catalog error is returned.
+func (c *Catalog) Entry(ctx context.Context, baseURL string, kind Kind, model string) (*Model, []string, error) {
+	entry, err := c.Find(ctx, baseURL, kind, model)
+	switch {
+	case errors.Is(err, ErrCatalogUnavailable):
+		return nil, []string{uncheckedOptionsNote}, nil
+	case err != nil:
+		return nil, nil, err
+	}
+	return entry, []string{}, nil
+}
+
 func (c *Catalog) fresh(key catalogCacheKey) ([]Model, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

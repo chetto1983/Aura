@@ -31,6 +31,7 @@ type VideoRequest struct {
 	FrameImages     []FrameReference `json:"frame_images,omitempty"`
 	InputReferences []ImageReference `json:"input_references,omitempty"`
 	GenerateAudio   *bool            `json:"generate_audio,omitempty"`
+	Seed            *int             `json:"seed,omitempty"`
 }
 
 // RemoteVideo is OpenRouter's video job state, from either the submit
