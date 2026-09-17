@@ -88,6 +88,29 @@ func classifyProviderError(err error) error {
 	return &Error{Code: code, Message: redactedUpstreamMessage(apiErr)}
 }
 
+// paidCallError maps the failure of a request the provider charges for once it accepts it. An
+// HTTP error response is the provider refusing it (classifyProviderError); anything else — no
+// response, a dropped connection, a turn cancelled mid-request — leaves the outcome unknown.
+func paidCallError(err error) error {
+	if _, answered := errors.AsType[*openai.Error](err); answered {
+		return classifyProviderError(err)
+	}
+	return outcomeUnknown(err)
+}
+
+// outcomeUnknown is a paid request whose result Aura could not learn or could not use: the
+// provider may have accepted and billed it. Measured live on 2026-09-17: a video submit failed
+// without a provider answer, the model saw only "Media generation failed." and sent the same
+// request again.
+func outcomeUnknown(cause error) error {
+	return &Error{
+		Code: "outcome_unknown",
+		Message: "The provider gave no usable answer, so this request may have been accepted and billed. " +
+			"Nothing was delivered. Do not submit it again: tell the operator what happened.",
+		cause: cause,
+	}
+}
+
 // redactedUpstreamMessage never returns apiErr.Error() or a Dump* method:
 // both carry the full request (method, URL, and on DumpRequest(true) the
 // body). Only the parsed "message" field is used, and it is bounded.

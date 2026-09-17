@@ -3,10 +3,12 @@ package tools
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/jackc/pgx/v5"
 
 	"github.com/chetto1983/aura/internal/mediagen"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // videoGenerateUsed is the submission's options as the provider received them.
@@ -108,10 +110,15 @@ func videoSubmission(job mediagen.Job) (prompt string, used videoGenerateUsed, a
 	return req.Prompt, used, adjustments, nil
 }
 
+// videoInProgressResult reports a submitted job that is still running. A record that cannot be
+// read back only loses the options and notes: the job exists and was billed, so it is still
+// reported as running rather than as a failure the model might answer by submitting again.
 func videoInProgressResult(job mediagen.Job, status mediagen.Status) ToolResult {
 	_, used, adjustments, err := videoSubmission(job)
 	if err != nil {
-		return mediaErrorResult(err)
+		slog.Error("video_generate: a running job's submission record cannot be read",
+			"job_id", job.ID, "err", redact.String(err.Error()))
+		used, adjustments = videoGenerateUsed{}, []string{}
 	}
 	result, _ := mediaPreviewResult(videoJobStatus{
 		Status: status, JobID: job.ID, Message: videoStillRunning, Model: job.Model, CostUSD: job.CostUSD,

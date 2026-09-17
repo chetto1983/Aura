@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mediagen"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // stagedMediaBasename is fixed so no caller-controlled text ever reaches the filesystem.
@@ -176,15 +178,27 @@ func discardStagedMedia(path string) {
 	_ = os.RemoveAll(filepath.Dir(path))
 }
 
-// mediaErrorResult maps an operational failure to its tool error. Only a coded
-// mediagen.Error carries a message the model may read; any other error text can name
-// infrastructure, so it is replaced.
+// mediaFailedBeforeSubmit answers a plain error. The client codes every failure of the paid
+// call itself (a provider refusal, or outcome_unknown), so a plain error can only come from a
+// step before it: credentials, settings, the catalog or a reference read.
+const mediaFailedBeforeSubmit = "Media generation failed before anything was sent to the provider, so nothing was billed. " +
+	"You may try once more; if it fails again, tell the operator."
+
+// mediaErrorResult maps a failed generation to its tool error and logs the cause, which the model
+// never sees: any error text can name infrastructure. Measured live on 2026-09-17, when a failure
+// answered only "Media generation failed." and left no trace to diagnose it.
 func mediaErrorResult(err error) ToolResult {
-	message := "Media generation failed."
+	code := mediagen.ErrorCode(err)
+	message := mediaFailedBeforeSubmit
 	if mediaErr, ok := errors.AsType[*mediagen.Error](err); ok {
 		message = mediaErr.Message
 	}
-	return errorResult(mediagen.ErrorCode(err), message)
+	attrs := []any{"code", code, "err", redact.String(err.Error())}
+	if cause := errors.Unwrap(err); cause != nil {
+		attrs = append(attrs, "cause", redact.String(cause.Error()))
+	}
+	slog.Warn("media generation failed", attrs...)
+	return errorResult(code, message)
 }
 
 // mediaArtifactResult emits the send_file artifact descriptor for a delivered generation.

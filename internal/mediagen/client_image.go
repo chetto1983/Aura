@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
@@ -86,9 +87,18 @@ func (c *Client) GenerateImage(ctx context.Context, baseURL, apiKey string, req 
 
 	params := openai.ImageGenerateParams{Model: openai.ImageModel(req.Model), Prompt: req.Prompt}
 	if _, err := images.Generate(ctx, params, opts...); err != nil {
-		return ImageResult{}, classifyProviderError(err)
+		return ImageResult{}, paidCallError(err)
 	}
+	result, err := c.imageResult(raw)
+	if _, coded := errors.AsType[*Error](err); err != nil && !coded {
+		return ImageResult{}, outcomeUnknown(err)
+	}
+	return result, err
+}
 
+// imageResult reads the provider's 200 answer. It runs after the charge, so a failure here that
+// is not already a coded refusal is an unknown outcome to the caller.
+func (c *Client) imageResult(raw []byte) (ImageResult, error) {
 	var wire imageGenerationWire
 	if err := json.Unmarshal(raw, &wire); err != nil {
 		return ImageResult{}, fmt.Errorf("mediagen: decode image generation response: %w", err)

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -231,5 +232,19 @@ func TestVideoGenerateCollectDeliversNothingForACancelledTurn(t *testing.T) {
 	}
 	if f.jobs.count("ClaimDelivery") != 0 || f.jobs.job(job.ID).DeliveredAt != nil {
 		t.Fatal("an abandoned collect claimed the delivery")
+	}
+}
+
+// TestVideoInProgressSurvivesAnUnreadableSubmissionRecord: the job was submitted and is running,
+// so a record that cannot be read back must not turn into a failure the model might retry.
+func TestVideoInProgressSurvivesAnUnreadableSubmissionRecord(t *testing.T) {
+	logs := captureLogs(t)
+	res := videoInProgressResult(mediagen.Job{ID: "job-7", Model: "m", Request: json.RawMessage(`{`)}, mediagen.StatusInProgress)
+	preview := decodeVideoPreview(t, res)
+	if preview.Status != string(mediagen.StatusInProgress) || preview.JobID != "job-7" || preview.Message != videoStillRunning {
+		t.Fatalf("preview = %+v, want the running job", preview)
+	}
+	if !strings.Contains(logs.String(), "job-7") {
+		t.Fatalf("log %q, want the unreadable record reported", logs.String())
 	}
 }

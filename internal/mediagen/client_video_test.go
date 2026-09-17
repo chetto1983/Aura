@@ -93,25 +93,35 @@ func TestSubmitVideoSendsFrameAndInputReferencesAndOmitsUnsetFields(t *testing.T
 // TestSubmitVideoNeverResendsAfterFailureOrLostResponse pins the two pre-Insert rows of the
 // spec's recovery boundary: a provider failure and a response lost after the provider read
 // the whole body both surface as an error after exactly one POST, never as a second paid
-// submission.
+// submission. The code tells the model which one it was: a provider that answered with an
+// error refused the job, while a lost or unreadable answer leaves the job — and its charge —
+// unknown, which must stop the model from submitting it again (measured live 2026-09-17).
 func TestSubmitVideoNeverResendsAfterFailureOrLostResponse(t *testing.T) {
-	cases := map[string]func(t *testing.T, w http.ResponseWriter){
-		"provider 5xx": func(_ *testing.T, w http.ResponseWriter) {
+	cases := map[string]struct {
+		respond func(t *testing.T, w http.ResponseWriter)
+		code    string
+	}{
+		"provider 5xx": {code: "job_failed", respond: func(_ *testing.T, w http.ResponseWriter) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusInternalServerError)
 			_, _ = io.WriteString(w, `{"error":{"code":500,"message":"Internal Server Error"}}`)
-		},
-		"response lost after acceptance": func(t *testing.T, w http.ResponseWriter) {
+		}},
+		"response lost after acceptance": {code: "outcome_unknown", respond: func(t *testing.T, w http.ResponseWriter) {
 			conn, _, err := http.NewResponseController(w).Hijack()
 			if err != nil {
 				t.Error(err)
 				return
 			}
 			_ = conn.Close()
-		},
+		}},
+		"accepted with an unreadable answer": {code: "outcome_unknown", respond: func(_ *testing.T, w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"id":`)
+		}},
 	}
-	for name, respond := range cases {
+	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			respond := tc.respond
 			var posts atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
@@ -125,6 +135,9 @@ func TestSubmitVideoNeverResendsAfterFailureOrLostResponse(t *testing.T) {
 				VideoRequest{Model: "minimax/hailuo-3-max", Prompt: "moving sea", Duration: 5})
 			if err == nil {
 				t.Fatal("a failed or lost submit must surface as an error, never as an accepted job")
+			}
+			if ErrorCode(err) != tc.code {
+				t.Fatalf("ErrorCode = %q, want %q (%v)", ErrorCode(err), tc.code, err)
 			}
 			if got := posts.Load(); got != 1 {
 				t.Fatalf("POSTs = %d, want exactly 1: a paid submission is never re-sent", got)

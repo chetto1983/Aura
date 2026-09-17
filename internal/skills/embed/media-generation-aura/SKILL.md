@@ -20,8 +20,9 @@ away:
 
 - the image must contain **exact text** (a name, a date, a slogan) and part of it is missing;
 - an **edit** where it is not obvious which image, or what must stay unchanged;
-- a **video** with no hint of length or shape — *unless* it animates the one image already
-  in the conversation: then take that image, the shortest duration and no sound, and generate;
+- a **video** with no hint of length or shape — *unless* the operator asked to animate the one
+  image in the conversation: then take that image, the shortest duration and no sound, and
+  generate;
 - "animate this" with **more than one** candidate image;
 - a **real person, brand or logo** whose likeness or spelling matters;
 - **several variants**: each is a separate billed call, so settle style and background first;
@@ -100,8 +101,9 @@ carries the most weight.
 - **Sound**, when wanted: dialogue in quotes ("She says: 'We're late.'"), then effects and
   ambience.
 
-**Animating an image** (`first_frame_asset_id`): the image already carries subject, style and
-light. Describe only **what changes over time** — the subject's motion, the camera's, the
+**Animating an image** (`first_frame_asset_id`) happens only when the operator asks to animate
+an image or to start from it. "A video of a boat" is a new clip, even with a boat picture
+above it. The image already carries subject, style and light. Describe only **what changes over time** — the subject's motion, the camera's, the
 environment's, the pace and how it ends. Re-describing the picture makes the model stop
 moving it; one line such as "keep the subject from the first frame" protects the identity.
 
@@ -117,6 +119,10 @@ moving it; one line such as "keep the subject from the first frame" protects the
   drop the references just to get an image out: that is a different image, and it is billed.
 - `unsupported` "cannot start from an image": the video model has no image-to-video. Nothing
   was generated. Say so; never resubmit the same request as text-only.
+- `outcome_unknown`: the provider gave no usable answer, so the request may have been accepted
+  and billed. **Never send it again**; tell the operator what happened.
+- `job_failed` saying nothing was sent to the provider: nothing was billed, and one more try is
+  fine. If it fails again, stop and tell the operator.
 - A result with `delivered` is **already shown**. Do not send it again, search the workspace
   for it or download it; use its `asset_id` only as a reference for the next edit or animation.
 - `cost_usd` is the real price of that call — mention it when the operator is deciding whether

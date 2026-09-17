@@ -321,7 +321,16 @@ While either generation tool runs, the status consumer sends the chat action `up
 Tool errors are `{error, message}` results the model adapts to, never Go errors: `no_key`,
 `no_credit`, `unsupported` (for example a first frame on a text-only model), `asset_not_found`,
 `content_blocked`, `model_rejected` (OpenRouter's message attached), `job_failed`, `job_expired`,
-`too_large`, `already_delivered`.
+`too_large`, `already_delivered`, `outcome_unknown`.
+
+Amended 2026-09-17 after the live run: every failure is logged with its cause, which the model
+never sees. A paid call (image generation, video submit) that gets an HTTP error from the provider
+keeps the provider's code; one that gets no answer, or a 200 it cannot use, is `outcome_unknown`:
+the request may have been accepted and billed, so the model is told not to send it again and to
+tell the operator. A plain `job_failed` therefore only comes from a step before the provider call,
+and says nothing was billed and one more try is safe. Measured cause: a video submit failed
+without a provider answer, the tool said only "Media generation failed.", nothing was logged, and
+the model sent the same request again.
 
 ### Configuration
 

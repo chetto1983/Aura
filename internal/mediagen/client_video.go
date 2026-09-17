@@ -59,9 +59,13 @@ func (c *Client) SubmitVideo(ctx context.Context, baseURL, apiKey string, req Vi
 	client := sdkClient(c.http, baseURL, option.WithAPIKey(apiKey))
 	var raw []byte
 	if err := client.Post(ctx, "videos", req, &raw); err != nil {
-		return RemoteVideo{}, classifyProviderError(err)
+		return RemoteVideo{}, paidCallError(err)
 	}
-	return decodeVideoStatus(raw)
+	remote, err := decodeVideoStatus(raw)
+	if err != nil {
+		return RemoteVideo{}, outcomeUnknown(err)
+	}
+	return remote, nil
 }
 
 // GetVideo polls a submitted job's current state.

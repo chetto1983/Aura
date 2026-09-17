@@ -199,18 +199,23 @@ func TestVideoGenerateRefusesImagesItCannotUse(t *testing.T) {
 }
 
 // The submission interval is excluded from the recovery guarantee (R4): a submit whose answer
-// never arrives, or fails, is reported once and never sent again.
+// never arrives, or fails, is reported once and never sent again. The code says which: a
+// provider that answered with an error refused the job, while a missing answer leaves the
+// charge unknown and tells the model not to send it again.
 func TestVideoGenerateNeverResubmitsAfterAProviderTimeoutOrFailure(t *testing.T) {
-	for name, opt := range map[string]videoProviderOption{
-		"timeout": func(p *fakeVideoProvider) { p.submitHold = true },
-		"5xx":     func(p *fakeVideoProvider) { p.submitStatus = http.StatusBadGateway },
+	for name, tc := range map[string]struct {
+		opt  videoProviderOption
+		code string
+	}{
+		"timeout": {opt: func(p *fakeVideoProvider) { p.submitHold = true }, code: "outcome_unknown"},
+		"5xx":     {opt: func(p *fakeVideoProvider) { p.submitStatus = http.StatusBadGateway }, code: "job_failed"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := newVideoFixture(t, opt)
+			f := newVideoFixture(t, tc.opt)
 			ctx, cancel := context.WithTimeout(f.callCtx("call-video"), 300*time.Millisecond)
 			defer cancel()
-			if code, _ := toolError(t, f.execute(t, ctx, `{"prompt":"waves"}`)); code != "job_failed" {
-				t.Fatalf("code = %q, want job_failed", code)
+			if code, _ := toolError(t, f.execute(t, ctx, `{"prompt":"waves"}`)); code != tc.code {
+				t.Fatalf("code = %q, want %q", code, tc.code)
 			}
 			if f.provider.count("POST /videos") != 1 || f.jobs.count("Insert") != 0 {
 				t.Fatalf("requests %v, %d inserts; want one submit and no job", f.provider.seen(), f.jobs.count("Insert"))

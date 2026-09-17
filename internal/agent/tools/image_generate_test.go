@@ -456,3 +456,23 @@ func TestImageGenerateFailsWithoutChargingWhenTheCatalogLookupIsAbandoned(t *tes
 		t.Fatal("an abandoned catalog lookup still charged or delivered")
 	}
 }
+
+// TestImageGenerateUnreadableAnswerMustNotBeResent: a 200 the client cannot use may already be
+// billed, so the model is told not to send the request again, and the real cause is logged.
+func TestImageGenerateUnreadableAnswerMustNotBeResent(t *testing.T) {
+	logs := captureLogs(t)
+	f := newImageFixture(t, func(p *fakeOpenRouter, _ []byte) {
+		p.imageBody = `{"created":1,"data":[`
+	})
+	code, message := toolError(t, f.execute(t, `{"prompt":"a lighthouse"}`))
+	if code != "outcome_unknown" || !strings.Contains(message, "Do not submit it again") {
+		t.Fatalf("result = %q %q, want outcome_unknown telling the model not to resend", code, message)
+	}
+	if n := f.provider.generations(); n != 1 {
+		t.Fatalf("provider generations = %d, want exactly 1", n)
+	}
+	if logged := logs.String(); !strings.Contains(logged, "code=outcome_unknown") ||
+		!strings.Contains(logged, "decode image generation response") {
+		t.Fatalf("log %q, want the code and the decode failure", logged)
+	}
+}

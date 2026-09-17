@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -277,5 +278,35 @@ func TestMediaDeliveryImageStagingRefusesVideoTypes(t *testing.T) {
 		if dirs := stagedMediaDirs(t, runDir); len(dirs) != 0 {
 			t.Fatalf("refused %s left %v behind", mimeType, dirs)
 		}
+	}
+}
+
+// TestMediaErrorResultSaysNothingWasSentBeforeTheProviderCall: the client codes every failure of
+// the paid call, so a plain error can only come from a step before it — safe to try once more.
+// The cause goes to the log only. Measured live on 2026-09-17, when "Media generation failed."
+// left no trace anywhere and told the model nothing about the charge.
+func TestMediaErrorResultSaysNothingWasSentBeforeTheProviderCall(t *testing.T) {
+	logs := captureLogs(t)
+	code, message := toolError(t, mediaErrorResult(errors.New("objectstore: get frame: connection refused")))
+	if code != "job_failed" || !strings.Contains(message, "before anything was sent to the provider") ||
+		!strings.Contains(message, "nothing was billed") || strings.Contains(message, "objectstore") {
+		t.Fatalf("result = %q %q, want a pre-submit job_failed that hides the cause", code, message)
+	}
+	logged := logs.String()
+	for _, want := range []string{"level=WARN", "code=job_failed", "connection refused"} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("log %q lacks %q", logged, want)
+		}
+	}
+}
+
+func TestMediaErrorResultKeepsACodedRefusalAndLogsIt(t *testing.T) {
+	logs := captureLogs(t)
+	code, message := toolError(t, mediaErrorResult(&mediagen.Error{Code: "no_credit", Message: "Add credit to continue."}))
+	if code != "no_credit" || message != "Add credit to continue." {
+		t.Fatalf("result = %q %q, want the coded refusal unchanged", code, message)
+	}
+	if !strings.Contains(logs.String(), "code=no_credit") {
+		t.Fatalf("log %q lacks the refusal code", logs.String())
 	}
 }

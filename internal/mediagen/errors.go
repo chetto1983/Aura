@@ -20,9 +20,14 @@ import "errors"
 type Error struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	// cause is the failure behind the message, kept for the log and never shown to the model
+	// or stored with a job.
+	cause error
 }
 
 func (e *Error) Error() string { return e.Message }
+
+func (e *Error) Unwrap() error { return e.cause }
 
 // ErrorCode returns "" for a nil error, the Code carried by a *Error, or
 // "job_failed" for any other error — an infrastructure failure with no

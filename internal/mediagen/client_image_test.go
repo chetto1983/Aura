@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -246,10 +249,40 @@ func TestGenerateImageRejectsEmptyOutput(t *testing.T) {
 			if err == nil {
 				t.Fatal("want an error")
 			}
-			if ErrorCode(err) != "job_failed" {
-				t.Fatalf("ErrorCode = %q, want the unclassified job_failed fallback", ErrorCode(err))
+			if ErrorCode(err) != "outcome_unknown" {
+				t.Fatalf("ErrorCode = %q, want outcome_unknown: the provider answered 200, so the image may be billed", ErrorCode(err))
 			}
 		})
+	}
+}
+
+// TestGenerateImageLostResponseIsAnUnknownOutcome: a connection dropped after the request was
+// read leaves the charge unknown, and the one POST is never repeated.
+func TestGenerateImageLostResponseIsAnUnknownOutcome(t *testing.T) {
+	var posts atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	_, err := NewClient(srv.Client(), 1<<20).GenerateImage(context.Background(), srv.URL, "k", ImageRequest{Model: "m", Prompt: "p"})
+	if ErrorCode(err) != "outcome_unknown" || posts.Load() != 1 {
+		t.Fatalf("err = %v (code %q), posts = %d; want outcome_unknown after exactly one POST", err, ErrorCode(err), posts.Load())
+	}
+	for _, part := range []string{"may have been accepted and billed", "Do not submit it again", "tell the operator"} {
+		if !strings.Contains(err.Error(), part) {
+			t.Fatalf("message %q lacks %q", err.Error(), part)
+		}
+	}
+	if errors.Unwrap(err) == nil {
+		t.Fatal("the transport failure must stay reachable for the log")
 	}
 }
 
@@ -260,8 +293,8 @@ func TestGenerateImageRejectsMalformedBase64(t *testing.T) {
 
 	client := NewClient(srv.Client(), 1<<20)
 	_, err := client.GenerateImage(context.Background(), srv.URL, "k", ImageRequest{Model: "m", Prompt: "p"})
-	if err == nil || ErrorCode(err) != "job_failed" {
-		t.Fatalf("err = %v, want an unclassified decode error", err)
+	if err == nil || ErrorCode(err) != "outcome_unknown" {
+		t.Fatalf("err = %v, want outcome_unknown: an unreadable image after a 200 may be billed", err)
 	}
 }
 
