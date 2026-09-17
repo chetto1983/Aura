@@ -116,14 +116,14 @@ Playwright.
   - `func (s *Store) InsertImage(ctx context.Context, job Job) (Job, error)`;
   - `const StudioPageMax = 48`.
 
-- [ ] **Step 1: Measure.** `ls internal/db/migrations/ | tail -1` must print
+- [x] **Step 1: Measure.** `ls internal/db/migrations/ | tail -1` must print
   `0128_media_job.up.sql`. Re-run the read-only live count and expect `0`:
 
   ```bash
   MSYS_NO_PATHCONV=1 wsl -e bash -lc 'docker exec aura-postgres sh -c "psql -U \"\$POSTGRES_USER\" -d \"\${POSTGRES_DB:-aura}\" -At -c \"SELECT count(*) FILTER (WHERE conversation_id = '"''"' OR tool_call_id = '"''"') FROM aura.media_job\""'
   ```
 
-- [ ] **Step 2: Write the migration.** `0129_media_job_studio.up.sql`:
+- [x] **Step 2: Write the migration.** `0129_media_job_studio.up.sql`:
 
   ```sql
   -- Studio generations (Studio plan, Task 1). Number measured with
@@ -176,7 +176,7 @@ Playwright.
   ALTER TABLE aura.media_job DROP COLUMN IF EXISTS surface;
   ```
 
-- [ ] **Step 3: Update the queries** in `internal/db/queries/media_jobs.sql`:
+- [x] **Step 3: Update the queries** in `internal/db/queries/media_jobs.sql`:
   - **`InsertMediaJob`** gains `surface` and `kind` (`$9`, `$10`).
   - **New, for a finished image:**
 
@@ -230,12 +230,12 @@ Playwright.
 
   Run `sqlc generate` (`/c/Users/chett/go/bin/sqlc`) from the repo root.
 
-- [ ] **Step 4: Pin the head** in `internal/db/db_unit_test.go`: append to the comment
+- [x] **Step 4: Pin the head** in `internal/db/db_unit_test.go`: append to the comment
   ` 0129 adds media_job.surface and media_job.kind, so the cockpit Studio's conversationless
   image and video rows are told apart from chat jobs.`, and change `128` to `129` in the
   condition and the message.
 
-- [ ] **Step 5: Write the failing unit test** in `internal/mediagen/store_test.go`:
+- [x] **Step 5: Write the failing unit test** in `internal/mediagen/store_test.go`:
 
   ```go
   func TestValidateNewJobSurfaceScope(t *testing.T) {
@@ -270,7 +270,7 @@ Playwright.
 
   Run `go test ./internal/mediagen/ -run TestValidateNewJobSurfaceScope`: FAIL, undefined.
 
-- [ ] **Step 6: Implement.**
+- [x] **Step 6: Implement.**
   - **`job.go`:** add above `Job`:
 
     ```go
@@ -453,7 +453,7 @@ Playwright.
     internal --include=*_test.go`) sets `Surface` and `Kind`. The tool's `record` (Task 3 moves
     it) sets `Surface: mediagen.SurfaceChat, Kind: mediagen.KindVideo`.
 
-- [ ] **Step 7: Write the failing integration tests** in
+- [x] **Step 7: Write the failing integration tests** in
   `internal/mediagen/store_integration_test.go` (`//go:build db_integration`), reusing the
   file's helpers:
   - `TestStoreStudioJobRoundTrip` — a Studio video job with no conversation reads back with
@@ -482,9 +482,9 @@ Playwright.
   or, with the `aura_cov` DSNs exported as that script does,
   `go test -tags db_integration -run TestStore ./internal/mediagen/`.
 
-- [ ] **Step 8: Verify.** `go vet ./... && go build ./... && go test ./internal/mediagen/ ./internal/agent/tools/ ./internal/db/`, then `go test -race ./internal/mediagen/` in WSL.
+- [x] **Step 8: Verify.** `go vet ./... && go build ./... && go test ./internal/mediagen/ ./internal/agent/tools/ ./internal/db/`, then `go test -race ./internal/mediagen/` in WSL.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
   `git commit -m "feat(mediagen): record the Studio's image and video generations"`, with the
   body explaining the conversationless rows, the finished-image rule, the minted
   `image-<uuid>` and the measured live rows.
