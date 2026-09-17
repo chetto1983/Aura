@@ -5,7 +5,7 @@
 // Studio video, and ListStudio's paging. Shares its pool, identity and asset helpers with
 // store_integration_test.go.
 //
-//	go test -tags db_integration ./internal/mediagen -run TestStoreStudio -count=1
+//	go test -tags db_integration ./internal/mediagen -run 'TestStore(Studio|RejectsChatJob|CompleteMarksStudio|InsertImage|ListStudio)' -count=1
 package mediagen
 
 import (

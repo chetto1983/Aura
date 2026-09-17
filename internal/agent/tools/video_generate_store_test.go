@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"sync"
@@ -85,6 +86,11 @@ func (s *fakeVideoJobs) Insert(ctx context.Context, job mediagen.Job) (mediagen.
 		return mediagen.Job{}, s.insertErr
 	case job.Status != mediagen.StatusPending && job.Status != mediagen.StatusInProgress:
 		return mediagen.Job{}, errors.New("a new job must be active")
+	// The real Store refuses a job whose surface or kind is unset, so every path through the
+	// tool that forgets them fails here too instead of passing against a laxer fake.
+	case job.Surface != mediagen.SurfaceChat || job.Kind != mediagen.KindVideo:
+		return mediagen.Job{}, fmt.Errorf("a chat video job needs surface %q kind %q, got %q/%q",
+			mediagen.SurfaceChat, mediagen.KindVideo, job.Surface, job.Kind)
 	}
 	if _, err := job.Audit(); err != nil {
 		return mediagen.Job{}, err

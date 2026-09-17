@@ -208,7 +208,8 @@ func (g *VideoGenerate) record(ctx context.Context, owner, model string, request
 	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), videoJobRecordTimeout)
 	defer cancel()
 	job, err := g.Jobs.Insert(recordCtx, mediagen.Job{
-		IdentityID: owner, ConversationID: tc.sessionID, ToolCallID: tc.toolCallID, ProviderJobID: remote.ID,
+		IdentityID: owner, Surface: mediagen.SurfaceChat, Kind: mediagen.KindVideo,
+		ConversationID: tc.sessionID, ToolCallID: tc.toolCallID, ProviderJobID: remote.ID,
 		Model: model, Request: request, Status: status, CostUSD: remote.CostUSD,
 	})
 	if err != nil {

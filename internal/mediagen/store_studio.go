@@ -63,7 +63,7 @@ func (s *Store) InsertImage(ctx context.Context, job Job) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
-	row, err := s.withJob(ctx, job.IdentityID, func(q *sqlc.Queries) (sqlc.AuraMediaJob, error) {
+	return s.withJob(ctx, job.IdentityID, func(q *sqlc.Queries) (sqlc.AuraMediaJob, error) {
 		out, err := q.InsertCompletedMediaJob(ctx, sqlc.InsertCompletedMediaJobParams{
 			IdentityID: owner, ProviderJobID: job.ProviderJobID, Model: job.Model,
 			Request: job.Request, CostUsd: cost, AssetID: asset,
@@ -73,18 +73,21 @@ func (s *Store) InsertImage(ctx context.Context, job Job) (Job, error) {
 		}
 		return out, err
 	})
-	if err != nil {
-		return Job{}, err
-	}
-	return row, nil
 }
 
+// validateImageRecord refuses every job InsertCompletedMediaJob would silently rewrite: the
+// query writes the row completed, delivered and conversationless, so a caller that meant
+// anything else is told, not obeyed.
 func validateImageRecord(job Job) error {
 	switch {
 	case job.Kind != KindImage:
 		return fmt.Errorf("mediagen: InsertImage records an image, not %q", job.Kind)
 	case job.Surface != SurfaceStudio:
 		return errors.New("mediagen: only the Studio records a finished generation")
+	case job.ConversationID != "" || job.ToolCallID != "":
+		return errors.New("mediagen: a Studio record belongs to no conversation or tool call")
+	case job.Status != "" && job.Status != StatusCompleted:
+		return fmt.Errorf("mediagen: InsertImage records a completed generation, not %q", job.Status)
 	case job.Model == "" || job.AssetID == "":
 		return errors.New("mediagen: an image record needs its model and asset")
 	}

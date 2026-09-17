@@ -350,6 +350,41 @@ func isDialError(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "dial") || strings.Contains(err.Error(), "connect"))
 }
 
+// validateImageRecord guards a DB-gated call, so its refusals are pinned here where no pool
+// is needed; the matching asset checks live in the query and are covered by the integration
+// test.
+func TestValidateImageRecordRefusals(t *testing.T) {
+	base := Job{Surface: SurfaceStudio, Kind: KindImage, Model: "m", AssetID: "a", ProviderJobID: "image-1"}
+	cases := []struct {
+		name    string
+		mutate  func(*Job)
+		wantErr bool
+	}{
+		{"a finished Studio image", func(*Job) {}, false},
+		{"a completed status is the one it writes", func(j *Job) { j.Status = StatusCompleted }, false},
+		{"a video is not recorded finished", func(j *Job) { j.Kind = KindVideo }, true},
+		{"no kind", func(j *Job) { j.Kind = "" }, true},
+		{"the chat surface", func(j *Job) { j.Surface = SurfaceChat }, true},
+		{"no surface", func(j *Job) { j.Surface = "" }, true},
+		{"a conversation", func(j *Job) { j.ConversationID = "c" }, true},
+		{"a tool call", func(j *Job) { j.ToolCallID = "t" }, true},
+		{"an unfinished status", func(j *Job) { j.Status = StatusPending }, true},
+		{"no model", func(j *Job) { j.Model = "" }, true},
+		{"no asset", func(j *Job) { j.AssetID = "" }, true},
+		{"no provider id", func(j *Job) { j.ProviderJobID = "" }, true},
+		{"a provider id with a path separator", func(j *Job) { j.ProviderJobID = "image/1" }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			job := base
+			tc.mutate(&job)
+			if err := validateImageRecord(job); (err != nil) != tc.wantErr {
+				t.Fatalf("validateImageRecord err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestValidateNewJobSurfaceScope(t *testing.T) {
 	request, err := JobRequest(VideoRequest{Model: "m", Prompt: "p"}, JobAudit{Origin: "https://openrouter.ai/api/v1"})
 	if err != nil {
