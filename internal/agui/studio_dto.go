@@ -54,13 +54,15 @@ type studioModelDTO struct {
 	Name        string `json:"name,omitempty"`
 	Description string `json:"description,omitempty"`
 
-	Durations    []int            `json:"durations,omitempty"`
-	Resolutions  []string         `json:"resolutions,omitempty"`
-	AspectRatios []string         `json:"aspect_ratios,omitempty"`
-	FrameImages  []string         `json:"frame_images,omitempty"`
-	Audio        bool             `json:"audio"`
-	Seed         bool             `json:"seed"`
-	Prices       []studioPriceDTO `json:"prices,omitempty"`
+	Durations    []int    `json:"durations,omitempty"`
+	Resolutions  []string `json:"resolutions,omitempty"`
+	AspectRatios []string `json:"aspect_ratios,omitempty"`
+	FrameImages  []string `json:"frame_images,omitempty"`
+	// Audio and Seed are video axes and are always present rather than omitted: false means
+	// the model declares neither, which is also what an image row reads.
+	Audio  bool             `json:"audio"`
+	Seed   bool             `json:"seed"`
+	Prices []studioPriceDTO `json:"prices,omitempty"`
 
 	ReferenceMax       *int     `json:"reference_max,omitempty"`
 	ImageMinUSD        *float64 `json:"image_min_usd,omitempty"`
