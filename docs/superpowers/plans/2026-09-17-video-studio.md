@@ -505,7 +505,7 @@ Playwright.
   - `func (s *Service) FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error)`;
   - `var ErrWrongModality = errors.New("assets: the asset is not of the expected modality")`.
 
-- [ ] **Step 1: Add the query** after `ListAssetsForLibrary`:
+- [x] **Step 1: Add the query** after `ListAssetsForLibrary`:
 
   ```sql
   -- name: ListRecentImageAssets :many
@@ -522,7 +522,7 @@ Playwright.
 
   Run `sqlc generate`.
 
-- [ ] **Step 2: Write the failing unit tests** beside the existing `Finalize` tests, reusing
+- [x] **Step 2: Write the failing unit tests** beside the existing `Finalize` tests, reusing
   their fakes:
   - `TestFinalizeUnprocessedAcceptsWithoutEnqueueing` — status `accepted`, zero processing
     enqueues.
@@ -531,7 +531,7 @@ Playwright.
 
   Run `go test ./internal/assets/ -run FinalizeUnprocessed`: FAIL, undefined.
 
-- [ ] **Step 3: Implement.** In `service.go`, split `Finalize` into `accept` plus the enqueue,
+- [x] **Step 3: Implement.** In `service.go`, split `Finalize` into `accept` plus the enqueue,
   add the modality check, and add both new methods:
 
   ```go
@@ -563,14 +563,14 @@ Playwright.
   enqueue and its failure branch. `store.go` gains `ListRecentImages`, mirroring
   `ListForLibrary`.
 
-- [ ] **Step 4: Add the integration test** `TestStoreListRecentImages`: an accepted image, a
+- [x] **Step 4: Add the integration test** `TestStoreListRecentImages`: an accepted image, a
   failed image, a deleted image, an accepted document and another identity's image — only the
   first is listed. Run it on `aura_cov`.
 
-- [ ] **Step 5: Verify.** `go test ./internal/assets/` and `-race` in WSL; the existing
+- [x] **Step 5: Verify.** `go test ./internal/assets/` and `-race` in WSL; the existing
   `Finalize` tests pass unchanged.
 
-- [ ] **Step 6: Commit.**
+- [x] **Step 6: Commit.**
   `git commit -m "feat(assets): accept a Studio input image without processing it"`.
 
 ---
