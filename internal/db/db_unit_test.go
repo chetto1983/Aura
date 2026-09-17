@@ -370,8 +370,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0127 admits video in the aura.assets modality CHECK, for bounded MP4/WebM
 	// assets and generated clips. 0128 adds aura.media_job, the identity-scoped
 	// durable video generation jobs resumed after a restart and delivered once.
-	if head != 128 {
-		t.Fatalf("MigrationHead=%d, want embedded head 128", head)
+	// 0129 adds media_job.surface and media_job.kind, so the cockpit Studio's
+	// conversationless image and video rows are told apart from chat jobs.
+	if head != 129 {
+		t.Fatalf("MigrationHead=%d, want embedded head 129", head)
 	}
 }
 

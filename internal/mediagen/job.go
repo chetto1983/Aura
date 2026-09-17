@@ -13,13 +13,28 @@ import (
 	"github.com/chetto1983/aura/internal/redact"
 )
 
-// Job is one durable video generation job, owned by IdentityID and scoped to the
-// conversation that submitted it. ToolCallID is the submitting call; the call that
-// delivers the clip is recorded on the asset instead. CostUSD is nil until the provider
-// reports a cost, and an explicit zero stays a value.
+// Surface says which surface asked for a generation. A chat job was asked for by an agent
+// tool call and is delivered into its conversation; a Studio row has no conversation and is
+// delivered when it finishes.
+type Surface string
+
+// The two surfaces aura.media_job.surface admits (migration 0129).
+const (
+	SurfaceChat   Surface = "chat"
+	SurfaceStudio Surface = "studio"
+)
+
+// Job is one durable generation job, owned by IdentityID. A chat job is scoped to the
+// conversation that submitted it, with ToolCallID its submitting call; the call that
+// delivers the clip is recorded on the asset instead. A Studio job belongs to no
+// conversation or tool call and, for KindImage, is written already completed and delivered:
+// an image is generated synchronously, so there is nothing left to supervise. CostUSD is nil
+// until the provider reports a cost, and an explicit zero stays a value.
 type Job struct {
 	ID             string
 	IdentityID     string
+	Surface        Surface
+	Kind           Kind
 	ConversationID string
 	ToolCallID     string
 	ProviderJobID  string
@@ -62,6 +77,7 @@ func (s Status) active() bool {
 type JobAudit struct {
 	Origin            string   `json:"origin"`
 	FirstFrameAssetID string   `json:"first_frame_asset_id,omitempty"`
+	LastFrameAssetID  string   `json:"last_frame_asset_id,omitempty"`
 	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
 	Adjustments       []string `json:"adjustments,omitempty"`
 }

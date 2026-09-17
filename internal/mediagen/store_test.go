@@ -282,7 +282,8 @@ func TestStoreRefusesMalformedInputBeforeAnyQuery(t *testing.T) {
 	ctx := context.Background()
 	owner, job := uuid.NewString(), uuid.NewString()
 	valid := Job{
-		IdentityID: owner, ConversationID: "thread-a", ToolCallID: "call-1", ProviderJobID: "vid_1",
+		IdentityID: owner, Surface: SurfaceChat, Kind: KindVideo,
+		ConversationID: "thread-a", ToolCallID: "call-1", ProviderJobID: "vid_1",
 		Model:   "minimax/hailuo-3-max",
 		Request: json.RawMessage(`{"model":"minimax/hailuo-3-max","_aura":{"origin":"https://openrouter.ai/api/v1"}}`),
 		Status:  StatusInProgress,
@@ -347,4 +348,33 @@ func TestStoreRefusesMalformedInputBeforeAnyQuery(t *testing.T) {
 
 func isDialError(err error) bool {
 	return err != nil && (strings.Contains(err.Error(), "dial") || strings.Contains(err.Error(), "connect"))
+}
+
+func TestValidateNewJobSurfaceScope(t *testing.T) {
+	request, err := JobRequest(VideoRequest{Model: "m", Prompt: "p"}, JobAudit{Origin: "https://openrouter.ai/api/v1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := Job{Model: "m", Request: request, Status: StatusPending, ProviderJobID: "gen-1", Kind: KindVideo}
+	cases := []struct {
+		name    string
+		mutate  func(*Job)
+		wantErr bool
+	}{
+		{"chat with conversation and call", func(j *Job) { j.Surface, j.ConversationID, j.ToolCallID = SurfaceChat, "c", "t" }, false},
+		{"chat without conversation", func(j *Job) { j.Surface, j.ToolCallID = SurfaceChat, "t" }, true},
+		{"studio without conversation", func(j *Job) { j.Surface = SurfaceStudio }, false},
+		{"studio with conversation", func(j *Job) { j.Surface, j.ConversationID = SurfaceStudio, "c" }, true},
+		{"unknown surface", func(j *Job) { j.Surface, j.ConversationID, j.ToolCallID = "api", "c", "t" }, true},
+		{"image is not submitted as a job", func(j *Job) { j.Surface, j.Kind = SurfaceStudio, KindImage }, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			job := base
+			tc.mutate(&job)
+			if err := validateNewJob(job); (err != nil) != tc.wantErr {
+				t.Fatalf("validateNewJob err = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
 }

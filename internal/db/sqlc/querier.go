@@ -261,6 +261,10 @@ type Querier interface {
 	// and the read side goes through audit_store.go's UNION leg (raw pgx, no sqlc query), not
 	// through a second generated method.
 	InsertCapabilityDenial(ctx context.Context, arg InsertCapabilityDenialParams) error
+	// One synchronous image generation, recorded finished. The asset must be the owner's
+	// accepted, undeleted agent image with no thread: the Studio's own result, never another
+	// identity's or a chat delivery.
+	InsertCompletedMediaJob(ctx context.Context, arg InsertCompletedMediaJobParams) (AuraMediaJob, error)
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	// parent_seq maintains the canonical leaf->root chain the branch walk recurses on
 	// (ListManagedBranchPathPage joins `t.seq = p.parent_seq`). It is derived here rather
@@ -449,6 +453,9 @@ type Querier interface {
 	// (orphan_scan.go) reconciles the live .content files against this referenced
 	// set, so no ORDER BY is needed. Read-only — no schema change (D-07 holds).
 	ListSpilledSeqsForConversation(ctx context.Context, conversationID pgtype.UUID) ([]int32, error)
+	// One history page, newest first, optionally of one kind. before_id is the last row of the
+	// previous page; an id the owner does not hold compares as NULL and yields an empty page.
+	ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	// D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,

@@ -41,7 +41,7 @@ const claimMediaJobDelivery = `-- name: ClaimMediaJobDelivery :one
 UPDATE aura.media_job SET delivered_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2 AND conversation_id = $3
   AND status = 'completed' AND asset_id IS NOT NULL AND delivered_at IS NULL
-RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at
+RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind
 `
 
 type ClaimMediaJobDeliveryParams struct {
@@ -69,6 +69,8 @@ func (q *Queries) ClaimMediaJobDelivery(ctx context.Context, arg ClaimMediaJobDe
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -80,6 +82,7 @@ SET status = 'completed',
     cost_usd = COALESCE($2::numeric, media_job.cost_usd),
     error = NULL,
     completed_at = now(),
+    delivered_at = CASE WHEN media_job.surface = 'studio' THEN now() ELSE media_job.delivered_at END,
     updated_at = now()
 WHERE media_job.id = $3
   AND media_job.identity_id = $4
@@ -90,11 +93,11 @@ WHERE media_job.id = $3
         AND assets.identity_id = media_job.identity_id
         AND assets.thread_id = media_job.conversation_id
         AND assets.source_kind = 'agent'
-        AND assets.modality = 'video'
+        AND assets.modality = media_job.kind
         AND assets.status = 'accepted'
         AND assets.deleted_at IS NULL
   )
-RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at
+RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind
 `
 
 type CompleteMediaJobParams struct {
@@ -130,12 +133,14 @@ func (q *Queries) CompleteMediaJob(ctx context.Context, arg CompleteMediaJobPara
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const getMediaJobForIdentity = `-- name: GetMediaJobForIdentity :one
-SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at FROM aura.media_job WHERE id = $1 AND identity_id = $2
+SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind FROM aura.media_job WHERE id = $1 AND identity_id = $2
 `
 
 type GetMediaJobForIdentityParams struct {
@@ -162,40 +167,51 @@ func (q *Queries) GetMediaJobForIdentity(ctx context.Context, arg GetMediaJobFor
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
 	)
 	return i, err
 }
 
-const insertMediaJob = `-- name: InsertMediaJob :one
+const insertCompletedMediaJob = `-- name: InsertCompletedMediaJob :one
 INSERT INTO aura.media_job (
-    identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, cost_usd
-) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8
+    identity_id, conversation_id, tool_call_id, provider_job_id, model, request,
+    status, cost_usd, surface, kind, asset_id, completed_at, delivered_at
 )
-RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at
+SELECT $1, '', '', $2, $3,
+       $4, 'completed', $5::numeric, 'studio', 'image',
+       assets.id, now(), now()
+FROM aura.assets
+WHERE assets.id = $6
+  AND assets.identity_id = $1
+  AND assets.thread_id = ''
+  AND assets.source_kind = 'agent'
+  AND assets.modality = 'image'
+  AND assets.status = 'accepted'
+  AND assets.deleted_at IS NULL
+RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind
 `
 
-type InsertMediaJobParams struct {
-	IdentityID     pgtype.UUID    `json:"identity_id"`
-	ConversationID string         `json:"conversation_id"`
-	ToolCallID     string         `json:"tool_call_id"`
-	ProviderJobID  string         `json:"provider_job_id"`
-	Model          string         `json:"model"`
-	Request        []byte         `json:"request"`
-	Status         string         `json:"status"`
-	CostUsd        pgtype.Numeric `json:"cost_usd"`
+type InsertCompletedMediaJobParams struct {
+	IdentityID    pgtype.UUID    `json:"identity_id"`
+	ProviderJobID string         `json:"provider_job_id"`
+	Model         string         `json:"model"`
+	Request       []byte         `json:"request"`
+	CostUsd       pgtype.Numeric `json:"cost_usd"`
+	AssetID       pgtype.UUID    `json:"asset_id"`
 }
 
-func (q *Queries) InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) (AuraMediaJob, error) {
-	row := q.db.QueryRow(ctx, insertMediaJob,
+// One synchronous image generation, recorded finished. The asset must be the owner's
+// accepted, undeleted agent image with no thread: the Studio's own result, never another
+// identity's or a chat delivery.
+func (q *Queries) InsertCompletedMediaJob(ctx context.Context, arg InsertCompletedMediaJobParams) (AuraMediaJob, error) {
+	row := q.db.QueryRow(ctx, insertCompletedMediaJob,
 		arg.IdentityID,
-		arg.ConversationID,
-		arg.ToolCallID,
 		arg.ProviderJobID,
 		arg.Model,
 		arg.Request,
-		arg.Status,
 		arg.CostUsd,
+		arg.AssetID,
 	)
 	var i AuraMediaJob
 	err := row.Scan(
@@ -214,12 +230,73 @@ func (q *Queries) InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) 
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
+	)
+	return i, err
+}
+
+const insertMediaJob = `-- name: InsertMediaJob :one
+INSERT INTO aura.media_job (
+    identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, cost_usd,
+    surface, kind
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+)
+RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind
+`
+
+type InsertMediaJobParams struct {
+	IdentityID     pgtype.UUID    `json:"identity_id"`
+	ConversationID string         `json:"conversation_id"`
+	ToolCallID     string         `json:"tool_call_id"`
+	ProviderJobID  string         `json:"provider_job_id"`
+	Model          string         `json:"model"`
+	Request        []byte         `json:"request"`
+	Status         string         `json:"status"`
+	CostUsd        pgtype.Numeric `json:"cost_usd"`
+	Surface        string         `json:"surface"`
+	Kind           string         `json:"kind"`
+}
+
+func (q *Queries) InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) (AuraMediaJob, error) {
+	row := q.db.QueryRow(ctx, insertMediaJob,
+		arg.IdentityID,
+		arg.ConversationID,
+		arg.ToolCallID,
+		arg.ProviderJobID,
+		arg.Model,
+		arg.Request,
+		arg.Status,
+		arg.CostUsd,
+		arg.Surface,
+		arg.Kind,
+	)
+	var i AuraMediaJob
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.ProviderJobID,
+		&i.Model,
+		&i.Request,
+		&i.Status,
+		&i.Error,
+		&i.AssetID,
+		&i.CostUsd,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CompletedAt,
+		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
 	)
 	return i, err
 }
 
 const listRecoverableMediaJobs = `-- name: ListRecoverableMediaJobs :many
-SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at FROM aura.media_job WHERE media_job.identity_id = $1
+SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind FROM aura.media_job WHERE media_job.identity_id = $1
 AND (media_job.status IN ('pending','in_progress') OR
      (media_job.status = 'completed' AND media_job.delivered_at IS NULL AND EXISTS (
          SELECT 1 FROM aura.assets
@@ -261,6 +338,72 @@ func (q *Queries) ListRecoverableMediaJobs(ctx context.Context, identityID pgtyp
 			&i.UpdatedAt,
 			&i.CompletedAt,
 			&i.DeliveredAt,
+			&i.Surface,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStudioMediaJobs = `-- name: ListStudioMediaJobs :many
+SELECT id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind FROM aura.media_job
+WHERE media_job.identity_id = $1
+  AND media_job.surface = 'studio'
+  AND ($2::text IS NULL OR media_job.kind = $2::text)
+  AND ($3::uuid IS NULL OR (media_job.created_at, media_job.id) < (
+      SELECT b.created_at, b.id FROM aura.media_job b
+      WHERE b.id = $3::uuid AND b.identity_id = $1))
+ORDER BY media_job.created_at DESC, media_job.id DESC
+LIMIT $4
+`
+
+type ListStudioMediaJobsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Kind       pgtype.Text `json:"kind"`
+	BeforeID   pgtype.UUID `json:"before_id"`
+	RowLimit   int32       `json:"row_limit"`
+}
+
+// One history page, newest first, optionally of one kind. before_id is the last row of the
+// previous page; an id the owner does not hold compares as NULL and yields an empty page.
+func (q *Queries) ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error) {
+	rows, err := q.db.Query(ctx, listStudioMediaJobs,
+		arg.IdentityID,
+		arg.Kind,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraMediaJob{}
+	for rows.Next() {
+		var i AuraMediaJob
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.ConversationID,
+			&i.ToolCallID,
+			&i.ProviderJobID,
+			&i.Model,
+			&i.Request,
+			&i.Status,
+			&i.Error,
+			&i.AssetID,
+			&i.CostUsd,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompletedAt,
+			&i.DeliveredAt,
+			&i.Surface,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -282,7 +425,7 @@ SET status = $1,
 WHERE id = $4
   AND identity_id = $5
   AND status IN ('pending', 'in_progress')
-RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at
+RETURNING id, identity_id, conversation_id, tool_call_id, provider_job_id, model, request, status, error, asset_id, cost_usd, created_at, updated_at, completed_at, delivered_at, surface, kind
 `
 
 type UpdateMediaJobProgressParams struct {
@@ -319,6 +462,8 @@ func (q *Queries) UpdateMediaJobProgress(ctx context.Context, arg UpdateMediaJob
 		&i.UpdatedAt,
 		&i.CompletedAt,
 		&i.DeliveredAt,
+		&i.Surface,
+		&i.Kind,
 	)
 	return i, err
 }

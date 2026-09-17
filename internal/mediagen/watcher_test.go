@@ -442,7 +442,8 @@ func (h *watcherHarness) insertJob(t *testing.T, providerID string) Job {
 		t.Fatal(err)
 	}
 	job, err := h.store.Insert(context.Background(), Job{
-		IdentityID: uuid.NewString(), ConversationID: "thread-" + providerID, ToolCallID: "call-submit",
+		IdentityID: uuid.NewString(), Surface: SurfaceChat, Kind: KindVideo,
+		ConversationID: "thread-" + providerID, ToolCallID: "call-submit",
 		ProviderJobID: providerID, Model: DefaultVideoModel, Request: request, Status: StatusPending,
 	})
 	if err != nil {

@@ -455,6 +455,10 @@ type AuraMediaJob struct {
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
 	DeliveredAt    pgtype.Timestamptz `json:"delivered_at"`
+	// Which surface asked for the generation (migration 0129): chat (an agent tool call in a conversation) or studio (the cockpit Studio, no conversation, delivered on completion).
+	Surface string `json:"surface"`
+	// What was generated (migration 0129): video (a provider job the watcher supervises) or image (a synchronous generation, recorded already completed and delivered).
+	Kind string `json:"kind"`
 }
 
 // Short-lived Telegram code challenges for self-service Authula password reset.

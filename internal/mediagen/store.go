@@ -50,16 +50,25 @@ func (s *Store) Insert(ctx context.Context, job Job) (Job, error) {
 			IdentityID: owner, ConversationID: job.ConversationID, ToolCallID: job.ToolCallID,
 			ProviderJobID: job.ProviderJobID, Model: job.Model, Request: job.Request,
 			Status: string(job.Status), CostUsd: cost,
+			Surface: string(job.Surface), Kind: string(job.Kind),
 		})
 	})
 }
 
 func validateNewJob(job Job) error {
 	switch {
+	case job.Kind != KindVideo:
+		return fmt.Errorf("mediagen: only a video job is submitted and supervised, not %q", job.Kind)
 	case !job.Status.active():
 		return fmt.Errorf("mediagen: a new job must be pending or in_progress, not %q", job.Status)
-	case job.ConversationID == "" || job.ToolCallID == "" || job.Model == "":
-		return errors.New("mediagen: a new job needs its conversation, tool call and model")
+	case job.Model == "":
+		return errors.New("mediagen: a new job needs its model")
+	case job.Surface == SurfaceChat && (job.ConversationID == "" || job.ToolCallID == ""):
+		return errors.New("mediagen: a chat job needs its conversation and tool call")
+	case job.Surface == SurfaceStudio && (job.ConversationID != "" || job.ToolCallID != ""):
+		return errors.New("mediagen: a Studio job belongs to no conversation or tool call")
+	case job.Surface != SurfaceChat && job.Surface != SurfaceStudio:
+		return fmt.Errorf("mediagen: unknown job surface %q", job.Surface)
 	}
 	if _, err := job.Audit(); err != nil {
 		return fmt.Errorf("mediagen: a new job needs a request built by JobRequest, or no resume can check its origin: %w", err)
@@ -87,26 +96,9 @@ func (s *Store) Recoverable(ctx context.Context, ownerID string) ([]Job, error) 
 	if err != nil {
 		return nil, err
 	}
-	var jobs []Job
-	err = db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
-		rows, err := q.ListRecoverableMediaJobs(ctx, owner)
-		if err != nil {
-			return err
-		}
-		jobs = make([]Job, 0, len(rows))
-		for _, row := range rows {
-			job, err := jobFromRow(row)
-			if err != nil {
-				return err
-			}
-			jobs = append(jobs, job)
-		}
-		return nil
+	return s.withJobs(ctx, ownerID, func(q *sqlc.Queries) ([]sqlc.AuraMediaJob, error) {
+		return q.ListRecoverableMediaJobs(ctx, owner)
 	})
-	if err != nil {
-		return nil, err
-	}
-	return jobs, nil
 }
 
 // Progress records a remote status change of an active job. A non-nil cost is recorded, zero
@@ -141,7 +133,8 @@ func (s *Store) Progress(ctx context.Context, ownerID, jobID string, status Stat
 
 // Complete marks an active job completed with its ingested clip. The asset must be the
 // owner's accepted, undeleted agent video in the job's conversation, the one a delivery claim
-// can bind; any other asset is refused as asset_not_found and the job stays active.
+// can bind; any other asset is refused as asset_not_found and the job stays active. A Studio
+// row is marked delivered in the same statement: there is no conversation to claim it.
 func (s *Store) Complete(ctx context.Context, ownerID, jobID, assetID string, cost *float64) (Job, error) {
 	key, err := jobKey(ownerID, jobID)
 	if err != nil {
@@ -182,6 +175,31 @@ func (s *Store) withJob(ctx context.Context, ownerID string, run func(*sqlc.Quer
 		return Job{}, err
 	}
 	return job, nil
+}
+
+// withJobs runs one owned listing in the owner's identity transaction and maps every row
+// inside it, so a row that cannot be mapped rolls the statement back.
+func (s *Store) withJobs(ctx context.Context, ownerID string, run func(*sqlc.Queries) ([]sqlc.AuraMediaJob, error)) ([]Job, error) {
+	var jobs []Job
+	err := db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
+		rows, err := run(q)
+		if err != nil {
+			return err
+		}
+		jobs = make([]Job, 0, len(rows))
+		for _, row := range rows {
+			job, err := jobFromRow(row)
+			if err != nil {
+				return err
+			}
+			jobs = append(jobs, job)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return jobs, nil
 }
 
 // jobKey parses an owned job's key. A malformed owner is a caller bug and is reported; a
@@ -232,6 +250,7 @@ func jobFromRow(row sqlc.AuraMediaJob) (Job, error) {
 	}
 	return Job{
 		ID: row.ID.String(), IdentityID: row.IdentityID.String(),
+		Surface: Surface(row.Surface), Kind: Kind(row.Kind),
 		ConversationID: row.ConversationID, ToolCallID: row.ToolCallID,
 		ProviderJobID: row.ProviderJobID, Model: row.Model, Request: json.RawMessage(row.Request),
 		Status: Status(row.Status), Error: failure, AssetID: row.AssetID.String(),

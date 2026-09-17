@@ -140,7 +140,8 @@ RETURNING id`,
 
 func newJob(owner string) Job {
 	return Job{
-		IdentityID: owner, ConversationID: "thread-a", ToolCallID: "call-submit",
+		IdentityID: owner, Surface: SurfaceChat, Kind: KindVideo,
+		ConversationID: "thread-a", ToolCallID: "call-submit",
 		ProviderJobID: "vid_" + uuid.NewString(), Model: "minimax/hailuo-3-max",
 		Request: []byte(`{"model":"minimax/hailuo-3-max","_aura":{"origin":"https://openrouter.ai/api/v1"}}`),
 		Status:  StatusPending,

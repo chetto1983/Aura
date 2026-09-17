@@ -294,7 +294,8 @@ func (f *videoFixture) seedJob(t *testing.T, status mediagen.Status, conversatio
 	}
 	cost := 0.4
 	job := mediagen.Job{
-		IdentityID: videoOwner, ConversationID: conversation, ToolCallID: "call-submit", ProviderJobID: "vid_" + uuid.NewString(),
+		IdentityID: videoOwner, Surface: mediagen.SurfaceChat, Kind: mediagen.KindVideo,
+		ConversationID: conversation, ToolCallID: "call-submit", ProviderJobID: "vid_" + uuid.NewString(),
 		Model: mediagen.DefaultVideoModel, Request: request, Status: status, CostUSD: &cost, CreatedAt: time.Now(),
 	}
 	if status == mediagen.StatusCompleted {
