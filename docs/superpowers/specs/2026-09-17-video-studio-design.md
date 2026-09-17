@@ -1,188 +1,247 @@
-# Video Studio and the LTX provider — design
+# Studio — design
 
 Date: 2026-09-17. Status: design approved in conversation, section by section; this document
 is the record the plan is written from.
 
 ## Goal
 
-Give every signed-in identity a **Studio**: a cockpit surface where a video is generated from a
-form, without an agent turn, and kept in a personal gallery. Then add **LTX** (Lightricks,
-`api.ltx.io`) as a second video provider, usable from the Studio and from `video_generate`.
-
-The build order is the operator's call: the Studio first, on the OpenRouter video models Aura
-already supports; LTX second.
+Give every signed-in identity a **Studio**: a cockpit surface where an image or a video is
+generated from one bar, without an agent turn, and kept in a personal history. It runs on the
+OpenRouter image and video models Aura already supports.
 
 ## Decisions taken with the operator
 
 | Question | Decision |
 |---|---|
-| Where LTX is used | Inside Aura's video pipeline, as a second provider — not an MCP server. |
-| Who spends the LTX key | One deployment key, admins only. |
-| Provider shape | A `VideoProvider` contract in `mediagen`; OpenRouter and LTX implement it. |
-| Where Studio results land | A gallery in the Studio; no agent turn, no conversation. |
-| Studio scope | Video only. Images stay in chat. |
-| LTX client | Hand-written `net/http`, checked by a contract test against LTX's OpenAPI document. |
-| Order | Studio (frontend and its API) before LTX. |
+| Where Studio results land | A history owned by the identity; no agent turn, no conversation. |
+| Studio scope | Video **and** images: one bar with a mode pill. |
+| Provider | OpenRouter, through the existing media pipeline. |
+| Shape | BytePlus Lumina's bar, not LTX Studio's two-column form: "ancora più semplice". |
+| From Lumina | Tiled option controls, a History side panel, model names with descriptions, an Advanced popover with seed. |
+| Colours | Aura's, never Lumina's: the cockpit's theme tokens, light and dark. |
+| LTX (Lightricks) | Evaluated and dropped on 2026-09-17: "LTX non si usa più, si fa solo lo studio nel cockpit". |
 
 ## Inventory that shaped the design (2026-09-17)
 
-- **LTX has no generation MCP.** `docs.ltx.io/_mcp/server` searches the documentation only;
-  `hoodtronik/ltx-trainer-mcp` trains LoRAs locally.
-- **OpenRouter lists no LTX model.** `GET /api/v1/videos/models` returned 29 models, none from
-  Lightricks, so `video_generate` cannot reach LTX today.
-- **LTX publishes no SDK in any language.** It publishes an OpenAPI 3.1 document
-  (`https://docs.ltx.io/openapi.json`, 46,568 bytes on 2026-09-17).
-  - The community clients are unusable here: `cluely/unmodel` is TypeScript;
-    `dredozubov/muginn-core/adapters/ltxvideo` is v0.1.0-alpha.1 and its repository returns 404.
-  - `oapi-codegen` would generate all 14 operations. The deadcode gate would flag the ones Aura
-    never calls, and it adds a dependency and a generation step.
-  - `github.com/google/jsonschema-go`, already a direct dependency, can validate request bodies
-    against the document's schemas.
 - **OpenRouter declares per video model:** `supported_resolutions`, `supported_aspect_ratios`,
   `supported_durations`, `supported_frame_images` (15 of 29 models list both `first_frame` and
-  `last_frame`), `generate_audio` and `pricing_skus`. It declares no frame rate.
+  `last_frame`), `generate_audio`, `seed` and `pricing_skus`. It declares no frame rate, so the
+  Studio has no frame-rate control.
+- **It declares per image model** a `supported_parameters` map, among them `aspect_ratio` with
+  its values and `input_references` with its maximum, plus the endpoint pricing lines Aura
+  already reads per image and per output token.
+- **Both catalogs carry `name` and `description`**, which Aura drops today.
+- **`seed` is a documented top-level parameter** of `POST /videos`: "If specified, the
+  generation will sample deterministically, such that repeated requests with the same seed and
+  parameters should return the same result. Determinism is not guaranteed for all providers."
+  (OpenRouter API reference, read 2026-09-17.)
 - **The per-second SKUs match the costs measured on 2026-09-17** for `google/veo-3.1-lite`, 4 s:
   - `duration_seconds_without_audio_720p` 0.03 × 4 ≈ $0.1188;
   - `duration_seconds_with_audio_720p` 0.05 × 4 ≈ $0.198;
   - `duration_seconds_with_audio` 0.08 × 4 ≈ $0.3168.
 
   This convention was measured on one model only.
-- **Parts of the cockpit to reuse:**
-  - the shadcn registry, already configured in `web/components.json`, with the `@assistant-ui`
-    registry;
-  - the owned copies of `model-selector` and `image-generation`;
-  - `PreviewByKind`;
-  - the asset presign/finalize upload;
-  - automatic `Idempotency-Key` headers from `web/src/api/idempotency.ts`.
+- **An image costs about $0.05** on `gpt-image-1-mini` at 3:2, measured 2026-09-16. Image
+  models are billed per image or per output token, and a token-billed model has no per-image
+  price to show before generating.
+- **Image generation is synchronous:** `Client.GenerateImage` returns the bytes, the type and
+  the cost. Video generation is a job the watcher supervises.
+- **Lumina's two pages share one bar** (read with a browser on 2026-09-17): the image page adds
+  a reference-mode pill and a size panel, both provider-specific, and the rest is identical.
+- **Parts of the cockpit to reuse:** the shadcn registry with the `@assistant-ui` registry and
+  the installed `radix-ui`; the owned `model-selector`, `image-generation` and
+  `GenerationFrame`; `PreviewByKind`; the asset presign upload; the automatic
+  `Idempotency-Key` header; react-query.
 - **Assets may have no thread.** `aura.assets.thread_id` defaults to `''`.
-- **Shares are conversation-scoped only.** `POST /api/shares` takes a `conversation_id`, so a
-  standalone asset cannot be shared without a new share kind.
+- **Every JSON mutation needs `Idempotency-Key`**, and its body must be valid JSON of at most
+  1 MiB (`normalizeHTTPMutation`), so an upload cannot be multipart through a mutating route.
+- **`assets.Service.Finalize` always enqueues processing.** An uploaded image gets a paid
+  vision summary and a document id for the knowledge index. A Studio input image is an input to
+  one generation, not knowledge, so it must not be processed.
+- **The background completion dispatcher drops a completion with an empty conversation**, so a
+  Studio video job wakes nobody, with no new code.
+- **Shares are conversation-scoped only**, so a Studio result cannot be shared without a new
+  share kind.
 
-## Part A — the Studio
+## A1. Interface
 
-### A1. Interface
+The reference is BytePlus Lumina's image and video pages
+(`ai.byteplus.com/lumina/en/model/{image,video}`), read with a browser on 2026-09-17, plus the
+operator's screenshots. **Only the layout is taken from it. The colours, type and motion are
+Aura's**: the cockpit's theme tokens, light and dark, never Lumina's black.
 
-The reference is LTX Studio's playground: operator screenshot
-`D:\Immagini\Screenshots\Screenshot 2026-09-17 191937.png`, not committed. The layout is a form
-column on the left and a stage on the right.
+- **Placement.** A new cockpit mode, `studio`, placed after chat in `web/src/shell/modes.ts`.
+  It is not an admin mode.
+- **Page.**
+  - **Centre.** Before anything is generated, a centred title with gradient text ("Dai vita
+    alla tua idea" / "Bring your idea to life"), the gradient built from the cockpit's accent
+    tokens. Afterwards the selected generation fills the centre: the running frame, or the
+    image or clip with **Download** and **Reuse**. The generation bar sits at the bottom,
+    centred, at most 56rem wide.
+  - **Right.** A **History** panel, collapsible, listing the identity's generations newest
+    first as small cards (thumbnail, status, prompt), with a prompt search box. Selecting a
+    card shows it in the centre. Its empty state says nothing has been generated yet. The
+    toggle is a button in the top right, and the panel's state is remembered per viewer in
+    `localStorage`. Below phone width it is a drawer over the page.
+- **Generation bar, top row:**
+  - **`+ frame` / `+ reference` tile,** slightly rotated like the reference's. It opens a menu
+    with **Upload from computer** and **From your images**. A chosen image shows its thumbnail
+    and a remove control.
+    - **In video mode** it is the start frame, and a second `+ end` tile appears when the model
+      declares `last_frame` and a start frame is set.
+    - **In image mode** it holds the reference images, up to the model's declared maximum; the
+      empty tile disappears at the maximum and returns when one is removed.
+    - A tile the model cannot use is disabled, with the reason.
+  - **Prompt.** A textarea that grows as it fills: "Describe the video scene you want to
+    generate" or "Describe the image you want to generate".
+- **Generation bar, bottom row, as pills:**
+  - **Mode**: `Image` / `Video`. Switching keeps the prompt and reloads the rest from that
+    mode's model.
+  - **Model.** The owned `model-selector`, each row showing the catalog's name, its one-line
+    description and its price (per second for video; per image, or per million output tokens,
+    for image); the pill shows the name, not the id.
+    - The first visit selects the deployment's `AURA_VIDEO_MODEL` or `AURA_IMAGE_MODEL`.
+    - After that, the viewer's last choice per mode is kept in `localStorage`, wrapped in
+      try/catch.
+  - **Options.** A popover headed **Video settings** / **Image settings** with **Reset**:
+    - **video:** aspect ratio as a grid of tiles, each with a rectangle icon drawn at that
+      ratio; resolution as a row of tiles; duration as a slider over the declared durations,
+      with the value beside it;
+    - **image:** the same aspect-ratio tiles.
 
-- **Placement.** A new cockpit mode, `studio`, listed with chat, graph and documents in
-  `web/src/shell/modes.ts`. It is not an admin mode.
-- **Form column, top to bottom:**
-  1. **Start frame | End frame.** Two slots side by side.
-     - Each slot takes an image uploaded from the computer (click or drop), or one picked from
-       the identity's recent images.
-     - A slot the selected model does not declare (`first_frame` / `last_frame`) is disabled,
-       and says why.
-     - A filled slot shows the thumbnail and a remove control.
-  2. **Prompt.** A textarea.
-  3. **Model.** The owned `model-selector`, each row with its per-second price range.
-     - The first visit selects the deployment's `AURA_VIDEO_MODEL`.
-     - After that, the viewer's last choice is kept in `localStorage`, wrapped in try/catch.
-  4. **Resolution.** A select with the model's declared values.
-  5. **Duration.** A select with the model's declared values.
-  6. **Audio.** A switch, shown only when the model declares `generate_audio`. OpenRouter
-     declares no frame rate, so the frame-rate control arrives with LTX (Part B).
-  7. **Aspect ratio.** A toggle group with the model's declared ratios.
-  8. **Footer.** `Reset` and **Generate** (`Ctrl+Enter`, shown with `kbd`).
-     - The Generate button carries the estimated cost, "≈ $0.12".
-     - When no price is declared for the chosen options, the button says the price is unknown,
-       never $0.
-- **Defaults are the cheapest declared options:** the lowest resolution, the shortest duration
-  and audio off. Changing model keeps a value the new model declares and otherwise falls back
-  to that model's cheapest.
-- **Stage column:**
-  - **While a job runs:** the owned `image-generation` frame, at the chosen aspect ratio, with
-    the prompt and an elapsed-time readout.
-  - **When done:** the video player (`PreviewByKind`) with **Download**.
-  - **Below:** the gallery of the identity's Studio generations, newest first, as cards with
-    thumbnail (the video's first frame), status, model, duration, cost and prompt. Clicking a
-    card shows it on the stage; **Reuse** loads its options and frames into the form.
-  - **With no generation yet:** an empty state that explains the form. There is no
-    template/example panel.
-- **Phone width.** The form stacks above the stage, with a 16px gutter and no horizontal
-  scroll.
-- **Components added from the shadcn registry:** `select`, `toggle-group`, `switch`, `field`,
-  `kbd`.
-- **Styling.** The cockpit's theme tokens, light and dark; strings in `it` and `en`.
-- **Errors** appear on the job's card with the tool codes' meaning:
-  - `no_key`: connect OpenRouter;
-  - `no_credit`: credit exhausted;
-  - `unsupported`: the model cannot do what was asked;
-  - `content_blocked`, `model_rejected`, `job_failed`, `job_expired`;
-  - `outcome_unknown`: the request may already be billed, so do not generate it again.
-- **Double submit.** Generate is disabled from click until the server answers. A replayed
-  request with the same `Idempotency-Key` returns the stored answer and never submits twice.
-- **Deviation from the approved section.** The approved section listed **Share** next to
-  Download. Shares are conversation-scoped, so sharing a Studio clip needs a new share kind,
-  which is left out of this design. Download only.
+    Each control shows only the model's declared values and is hidden when it declares none.
+    The pill summarizes them (`16:9 · 720p · 4s`, or `1:1`).
+  - **Advanced** (a sliders icon), video only, headed **Advanced** with **Reset**:
+    - **Seed**, a number, empty for "let the provider choose", shown only when the model
+      declares `seed`;
+    - **Sound**, a switch, shown only when the model declares `generate_audio`.
+  - **Generate**, on the right: the estimated cost ("≈ $0.12") and `Ctrl+Enter`.
+    - An image model billed per token has no per-image price, so the button says the price is
+      unknown rather than showing $0. The same holds for any undeclared price.
+    - It is disabled from click until the server answers. A replayed request with the same
+      `Idempotency-Key` returns the stored answer and never generates twice.
+- **Defaults are the cheapest declared options:** the lowest resolution, the shortest duration,
+  audio off and no seed. **Reset** restores them. Changing model keeps a value the new model
+  declares and otherwise falls back to that model's cheapest.
+- **Centre states:**
+  - **Running** (video only): `GenerationFrame` at the job's aspect ratio, with the prompt and
+    the time elapsed since the job was created.
+  - **Completed:** the image or clip (`PreviewByKind`), with model, cost, **Download** and
+    **Reuse**, which loads the prompt, options, seed and input images back into the bar.
+  - **Failed:** the error, with the tool codes' meaning:
+    - `no_key`: connect OpenRouter;
+    - `no_credit`: credit exhausted;
+    - `unsupported`: the model cannot do what was asked;
+    - `content_blocked`, `model_rejected`, `job_failed`, `job_expired`;
+    - `outcome_unknown`: the request may already be billed, so do not generate it again.
+- **Left out of the reference:** the Explore feed (Aura has no community gallery), the Audio
+  mode, the reference-mode and pixel-size panels (provider-specific), "Portrait Gallery", "3D
+  Director's Desk", the prompt expand control, discount badges and a frame-rate control (no
+  OpenRouter model declares one).
+- **Phone width.** The bar stays at the bottom, the centre is one column, History is a drawer,
+  a 16px gutter and no horizontal scroll.
+- **Components added from the shadcn registry:** `toggle-group`, `switch`, `slider`,
+  `dropdown-menu`, `kbd`. The popover, dialog, input and button are already in the cockpit.
+- **Strings** in `it` and `en`.
+- **Download only.** Sharing a Studio result needs a new share kind, so it is left out.
 
-### A2. HTTP API
+## A2. HTTP API
 
-All routes are authenticated and scoped to the calling identity. Every mutating route is added
-to `httpMutationRoutes` (`internal/agui/idempotency_http.go`).
+All routes are authenticated and scoped to the calling identity. The mutating routes are added
+to `httpMutationRoutes` (`internal/agui/idempotency_http.go`) and mounted behind
+`agentRunCapability`, like the other cost-bearing routes. The reads inherit the session gate.
 
 | Route | Purpose |
 |---|---|
-| `GET /api/studio/video-models` | Models for the form, readable by every identity. |
+| `GET /api/studio/models?kind=image\|video` | Models for the bar. |
 | `POST /api/studio/videos` | Submit one video. Mutation `studio_video_create`. |
-| `GET /api/studio/videos?before=<cursor>&limit=<n>` | The gallery, newest first. `limit` ≤ 48. |
-| `GET /api/studio/videos/{id}` | One job, polled every 5 s by the stage while it is active. |
-| `GET /api/studio/images?limit=<n>` | The identity's recent accepted image assets, for the frame picker. |
+| `POST /api/studio/images` | Generate one image. Mutation `studio_image_create`. |
+| `GET /api/studio/jobs?kind=&before=<id>&limit=<n>` | The History panel, newest first. `limit` ≤ 48, default 24. The page polls the first page every 5 s while a listed job is active. |
+| `GET /api/studio/library?limit=<n>` | The identity's recent usable images, for the frame and reference picker. `limit` ≤ 48. |
+| `POST /api/studio/uploads/{id}/finalize` | Accept an image uploaded through `POST /api/assets/presign` as a Studio input, without processing. Mutation `studio_upload_finalize`. |
 
-**`GET /api/studio/video-models`**
+**`GET /api/studio/models`**
 
-- Each model row carries:
-  - `id`;
-  - `durations[]`, `resolutions[]`, `aspect_ratios[]`;
-  - `first_frame` and `last_frame` (booleans);
-  - `audio` (boolean);
-  - `prices[]`: `{resolution, audio, usd_per_second}`.
-- The price matrix is resolved in Go by a new `mediagen.VideoSecondPrice(skus, resolution,
-  audio)`:
-  1. The resolution-suffixed audio SKU wins.
-  2. Then the unsuffixed audio SKU.
-  3. `cents_per_second*` is divided by 100.
-  4. An undeclared price is omitted.
-
-  The browser multiplies by the duration, so the price rule has one home.
-- The catalog is public and uses no credential.
-- The response also names the deployment's default model.
+- The response is `{default_model, models[]}`. Each row carries `id`, `name` and `description`
+  as the catalog declares them (the id when it declares no name), plus:
+  - **video:** `durations[]`, `resolutions[]`, `aspect_ratios[]`, `first_frame`, `last_frame`,
+    `audio`, `seed`, and `prices[] = {resolution, audio, usd_per_second}`;
+  - **image:** `aspect_ratios[]`, `reference_max`, and either `usd_per_image_min/max` or
+    `usd_per_million_tokens_min/max` — whichever the catalog declares, never invented.
+- The per-second price is resolved in Go by `mediagen.VideoSecondPrice(skus, resolution,
+  audio)`, which tries, in order:
+  1. `duration_seconds_{with|without}_audio_{res}`;
+  2. `duration_seconds_{with|without}_audio`;
+  3. `duration_seconds_{res}`;
+  4. `duration_seconds`;
+  5. the same four with `cents_per_second`, divided by 100.
+- The image price reuses `mediagen.ImagePrice` and `ImageTokenPricePerMillion`.
+- The catalog is the tools' catalog on the live route. A non-OpenRouter route answers 409 with
+  the settings picker's sentence.
 
 **`POST /api/studio/videos`**
 
-- Body: `{model, prompt, duration, resolution, aspect_ratio, audio, first_frame_asset_id,
-  last_frame_asset_id}`.
+- Body: `{model, prompt, duration, resolution, aspect_ratio, audio, seed,
+  first_frame_asset_id, last_frame_asset_id}`.
+- The model must be listed by the catalog, or the request is refused (`unsupported`) before
+  anything is sent.
 - It runs the same submission as `video_generate`: credential, catalog entry, clamp, frame
-  read, persisted request, one POST.
-- It answers `201` with the job, including its `adjustments`, as soon as the provider accepts.
-  It never waits inline.
-- A refusal answers `4xx` with `{error, message}`, using the tool's codes and messages.
+  read, persisted request, one POST. It answers `201` with the record as soon as the provider
+  accepts, and never waits inline.
 
-**Job DTO**
+**`POST /api/studio/images`**
 
-`{id, status, model, prompt, used, adjustments, cost_usd, asset_id, error, created_at,
-completed_at}`. `used` is the options the provider received. `asset_id` is set once completed,
-and the stage streams it from `/api/assets/{id}/stream`.
+- Body: `{model, prompt, aspect_ratio, reference_asset_ids}`.
+- It runs the same generation as `image_generate`: credential, catalog entry, clamp, reference
+  read, one paid call. The image is stored as the identity's accepted agent image with no
+  thread, and the generation is recorded like a video job, already completed. It answers `201`
+  with that record.
 
-### A3. Shared submission
+**Refusals** answer `{error, message}` with the tool's codes:
 
-- **One submission path.** The tool's submit steps (credential → model → clamp → frames →
-  `JobRequest` → `SubmitVideo` → `Insert`) move into `mediagen` as a `VideoSubmitter`.
-  `video_generate` and the Studio handler both call it, so the charge-once rules have one
-  implementation.
-  - `video_generate` keeps its inline wait on top.
-  - The Studio tracks the job without an inline waiter.
-- **End frame, for both callers.**
-  - `VideoInput` gains `LastFrameAssetID`.
-  - `ClampVideo` refuses it (`unsupported`, nothing billed) when the model does not declare
-    `last_frame`.
-  - The request adds `{"frame_type":"last_frame"}`.
-  - `video_generate` gains `last_frame_asset_id`, and the media skill's tool rules name it.
-- **The Studio model is chosen per request**, not read from `AURA_VIDEO_MODEL`. It must be in
-  the catalog, or the request is refused before submit.
+| Code | Status |
+|---|---|
+| `unsupported`, `model_rejected`, `asset_not_found`, `too_large`, `content_blocked` | 422 |
+| `no_key` | 409 |
+| `no_credit` | 402 |
+| `job_failed`, `outcome_unknown` | 502 |
 
-### A4. Data
+**Record DTO**
+
+`{id, kind, status, model, prompt, used, adjustments, cost_usd, asset_id, error, created_at,
+completed_at}`, where `used` is what the provider received: for video the duration,
+resolution, aspect ratio, audio, seed and frame asset ids; for image the aspect ratio and the
+reference asset ids.
+
+**Uploads**
+
+The browser presigns an image asset (`scope: "thread"`, `thread_id: ""`), PUTs the file, then
+calls `POST /api/studio/uploads/{id}/finalize`. That route runs
+`assets.Service.FinalizeUnprocessed`: the same checks as `Finalize` (object present, size
+limit, hash and sniffed type), then accepted, with no processing enqueued. The asset must be
+an image.
+
+## A3. Shared generation
+
+- **One video submission path.** The tool's submit steps (credential → catalog entry → clamp →
+  frames → `JobRequest` → `SubmitVideo` → `Insert`) move into `mediagen` as a
+  `VideoSubmitter`, used by `video_generate` and the Studio.
+  - `video_generate` keeps its inline wait on top; the Studio tracks the job with no inline
+    waiter.
+- **One image generation path.** The tool's steps (credential → catalog entry → clamp →
+  references → `GenerateImage`) move into `mediagen` as an `ImageGenerator`.
+  - `image_generate` keeps the staging and the artifact delivery on top.
+  - The Studio ingests the bytes as an asset and records the generation.
+- **End frame.** `VideoInput`, `JobAudit` and the tool's schema gain `LastFrameAssetID`;
+  `ClampVideo` refuses one the model cannot use (`unsupported`, nothing billed).
+- **Seed.** `VideoInput` and `VideoRequest` gain `Seed *int`, and `Model` gains the declared
+  `Seed bool`. `ClampVideo` drops a seed the model does not declare, with a note, rather than
+  refusing: nothing about the clip changes but its reproducibility.
+- **Model names.** The catalog keeps each row's `name` and `description`.
+- **Catalog lookup in one place.** The lookup that tolerates an unreadable catalog
+  (`mediaCatalogEntry`) moves to `mediagen` as `Catalog.Entry`.
+
+## A4. Data
 
 Migration: the next free slot, measured with `ls internal/db/migrations/ | tail -1` when the
 task lands (0128 is the head on 2026-09-17). The same commit updates the head pin in
@@ -190,119 +249,67 @@ task lands (0128 is the head on 2026-09-17). The same commit updates the head pi
 
 ```sql
 ALTER TABLE aura.media_job
-  ADD COLUMN origin text NOT NULL DEFAULT 'chat' CHECK (origin IN ('chat', 'studio'));
-ALTER TABLE aura.media_job ADD CONSTRAINT media_job_origin_scope CHECK (
-  (origin = 'chat'   AND conversation_id <> '' AND tool_call_id <> '') OR
-  (origin = 'studio' AND conversation_id =  '' AND tool_call_id =  ''));
+  ADD COLUMN surface text NOT NULL DEFAULT 'chat' CHECK (surface IN ('chat', 'studio')),
+  ADD COLUMN kind    text NOT NULL DEFAULT 'video' CHECK (kind IN ('image', 'video'));
+ALTER TABLE aura.media_job ADD CONSTRAINT media_job_surface_scope CHECK (
+  (surface = 'chat'   AND conversation_id <> '' AND tool_call_id <> '') OR
+  (surface = 'studio' AND conversation_id =  '' AND tool_call_id =  ''));
+ALTER TABLE aura.media_job ADD CONSTRAINT media_job_image_is_finished CHECK (
+  kind = 'video' OR (status = 'completed' AND delivered_at IS NOT NULL));
 CREATE INDEX media_job_studio_idx ON aura.media_job (identity_id, created_at DESC, id DESC)
-  WHERE origin = 'studio';
+  WHERE surface = 'studio';
 ```
 
-- **Existing rows.** Every chat row must already have a non-empty conversation and tool call,
-  or the `CHECK` fails at migration. Measured on the live database on 2026-09-17: 6 rows, 0
-  with an empty conversation or tool call. The count is repeated before the migration lands.
-- **Delivery.** A Studio job is delivered when it completes: `CompleteMediaJob` sets
-  `delivered_at` for `origin = 'studio'`, so recovery never offers it to a conversation.
-- **Wake.** `mediagen.Completion` carries the origin, and the background completion dispatcher
-  ignores Studio completions: there is no conversation to wake.
-- **Restart.** Active Studio jobs are resumed by the watcher like chat jobs.
-- **Asset.** The clip is stored as an accepted agent video with `thread_id = ''`, the same
-  asset shape `CompleteMediaJob` already checks against the job's `conversation_id`.
+- **`surface`, not `origin`:** in `mediagen` a job's origin is already the submission base URL
+  recorded in its request (`JobAudit.Origin`).
+- **`kind`:** a video row is the durable provider job the watcher supervises; an image row is
+  the record of a synchronous generation, inserted already completed and delivered, so the
+  watcher — which only ever reads active or completed-undelivered rows — never sees one.
+- **`provider_job_id`** is `NOT NULL UNIQUE`. An image has no provider job, so its row carries
+  a locally minted `image-<uuid>`: nothing polls it, and the uniqueness still stops a replayed
+  insert from recording one generation twice.
+- **Existing rows.** Every chat row must have a non-empty conversation and tool call, or the
+  `CHECK` fails at migration. Measured on the live database on 2026-09-17: 6 rows, 0 with an
+  empty conversation or tool call.
+- **Delivery.** A Studio video job is delivered when it completes: `CompleteMediaJob` sets
+  `delivered_at` for `surface = 'studio'`, so recovery never offers it to a conversation.
+- **Asset.** A result is stored as an accepted agent asset with `thread_id = ''`. The
+  completion query's modality check follows the row's kind.
+- **Picker.** A new query lists the identity's image assets that are not deleted and are
+  usable (`accepted`, `processing`, `searchable`, `embedding` or `complete`), newest first.
 
-### A5. Tests and acceptance
+## A5. Tests and acceptance
 
 - **Go.**
-  - Unit tests for the submitter (including the refusal paths), `VideoSecondPrice` and the
-    handlers.
-  - `db_integration` tests for the migration, the Studio history query and the delivered-on-
-    completion rule, on the disposable database only.
+  - Unit tests for `VideoSecondPrice`, the end-frame and seed clamps, the submitter, the image
+    generator (refusal paths included) and the handlers.
+  - `db_integration` tests for the migration, the history query, the image listing,
+    `FinalizeUnprocessed`, the image record and the delivered-on-completion rule, on the
+    disposable database only.
   - Race and goleak as in the rest of `mediagen`.
-  - The coverage and mutation policy entries are updated for the new scopes; mutation runs in
-    CI only.
-- **Web.**
-  - vitest for the capability-driven form (disabled slots, fallbacks on model change, cheapest
-    defaults), the cost estimate and the gallery states.
-  - The jscpd duplication gate.
-- **Live, paid, only with the operator's go.**
-  - One Playwright run on the running stack: generate from the Studio with the cheapest
-    declared options of `google/veo-3.1-lite` (720p, 4 s, audio off, measured ≈ $0.12).
-  - The clip must play on the stage, appear in the gallery after a reload, and leave no
-    conversation turn.
-  - A second, optional run uses a start and an end frame.
+  - Coverage and mutation policy entries for the new scopes; mutation runs in CI only.
+- **Web.** vitest for the form model (declared values, fallbacks on model and mode change,
+  cheapest defaults, cost estimate), the option tiles, the frame and reference tiles, the
+  History panel and the centre states; lint, typecheck, jscpd and knip.
+- **Live, paid, only with the operator's go.** One Playwright run on the running stack:
+  - an image with the cheapest declared image model (≈ $0.05);
+  - a clip with `google/veo-3.1-lite` at 720p, 4 s, audio off (≈ $0.12).
 
-## Part B — LTX as a second provider
-
-Designed and approved before the order changed; built after Part A.
-
-- **Contract.** `mediagen.VideoProvider` has `Submit`, `Status` and `Download`.
-  - The OpenRouter client is the first implementation, unchanged in behaviour.
-  - `internal/mediagen/ltx` is the second: `POST /v2/text-to-video`, `POST /v2/image-to-video`
-    and `GET /v2/{endpoint}/{id}`, with the API key as a Bearer token.
-  - The status endpoint is derived from the persisted request: a first frame means
-    `image-to-video`.
-- **Routing.** LTX model IDs carry the `ltx/` prefix: `ltx/ltx-2-3-fast`, `ltx/ltx-2-3-pro`,
-  `ltx/ltx-2-5-fast`, `ltx/ltx-2-5-pro`. A job records `https://api.ltx.io` as its origin, so
-  the watcher resolves the right provider after a restart.
-- **Credential.**
-  - A new secret setting, `LTX_API_KEY` (upstream naming, like `TELEGRAM_BOT_TOKEN`), encrypted
-    in `aura.settings`.
-  - Submitting requires `governance.write`; everyone else gets `no_key`, and the Studio lists
-    LTX models only to admins.
-  - Polling and downloading a job already paid use the key without the role check.
-- **Catalog.** Declared in code, because LTX has no model list. It cites the Models, LTX-2.3,
-  LTX-2.5 and Pricing pages with their date:
-  - resolutions 720p, 1080p, 1440p and 4K, landscape or portrait (16:9 / 9:16);
-  - the duration matrix per model and frame rate (for example `ltx-2-3-fast` at 24/25 fps:
-    6–20 s);
-  - frame rates 24, 25, 48 and 50;
-  - first and last frame;
-  - audio;
-  - per-second prices per resolution (cheapest: `ltx-2-3-fast` 720p, $0.03/s, 6 s minimum,
-    so $0.18).
-- **Frame rate.** The Studio shows the Frame rate select only for a model that declares frame
-  rates.
-- **Mapping.**
-  - `720p` + `16:9` becomes `1280x720`.
-  - Frames become `image_uri` / `last_frame_uri` data URIs, refused above LTX's 7 MB encoded
-    limit before submit.
-  - `processing` becomes `in_progress`.
-- **Download.**
-  - `result.video_url` is fetched as soon as the job completes, because the link expires.
-  - The fetch is HTTPS-only, carries no `Authorization` header (another host), refuses IP
-    literals and private addresses, and is byte-bounded like every other clip.
-- **Cost.** LTX returns no cost, so it is computed from the declared price × billed seconds.
-  The paid acceptance run compares it with the LTX console.
-- **Errors.**
-
-  | LTX answer | Aura code |
-  |---|---|
-  | 401, 403 | `no_key` |
-  | 402 | `no_credit` |
-  | 422 | `content_blocked` |
-  | 400 | `model_rejected` |
-  | 429, 5xx | `job_failed`: nothing was accepted, so a later try is safe |
-  | no answer, or an unusable 2xx | `outcome_unknown` |
-
-- **Contract test.** It validates every body the client builds against the committed copy of
-  `openapi.json` with `google/jsonschema-go`.
-- **Chat.** `video_generate` routes by the configured model's prefix. If an admin sets an LTX
-  model for chat, a non-admin's chat video answers `no_key`. There is no silent fallback.
+  Both must appear in History, survive a reload, and leave no conversation turn.
 
 ## Out of scope
 
-- Sharing a Studio clip (needs a new share kind).
-- Image generation in the Studio.
-- Templates and examples.
-- LTX's retake, extend, reframe, HDR and audio-to-video.
-- A per-identity LTX key.
-- An LTX MCP server.
+- Sharing a Studio result (needs a new share kind).
+- Audio generation, the Explore feed, templates, portrait galleries and 3D staging.
+- A frame-rate control (no OpenRouter model declares one).
+- LTX, in any form.
 
 ## What this design does not prove
 
 - **The SKU naming rule** behind `VideoSecondPrice` was checked against the measured costs of
   one model. Another model's SKUs may be named differently; its estimate then shows as unknown
   rather than guessed.
-- **LTX's computed cost** is the documented price, not an invoice, until the paid run compares
-  it.
+- **Seed** is documented as best-effort by OpenRouter itself ("Determinism is not guaranteed
+  for all providers"), and this design does not test that two seeded runs match.
 - **The migration's `CHECK`** held for the 6 live rows of 2026-09-17. It says nothing about
   another deployment's rows, which the migration itself checks when it runs.
