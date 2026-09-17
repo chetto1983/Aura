@@ -243,6 +243,77 @@ func TestPostgresAssetStoreDeduplicatesAgentSourceReference(t *testing.T) {
 // so the name has to come back from the row that owns the key. The lookup used to go
 // through the document index instead and returned nothing at all once a folder held more
 // keys than that index accepts filters (117 against a cap of 100, live stack 2026-09-09).
+// The Studio picker offers an identity's usable images only: a failed one is not a frame, a
+// deleted one is gone, a document is the wrong modality, and another identity's image is not
+// this identity's to see.
+func TestStoreListRecentImages(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	now := time.Now().UnixNano()
+	store := NewStore(pool)
+	create := func(owner string, modality Modality, name string) Asset {
+		t.Helper()
+		asset, err := store.Create(ctx, CreateRequest{
+			IdentityID: owner, SourceKind: SourceWeb, Scope: ScopeLibrary, Modality: modality,
+			FileName: name, MIMEType: "image/png", DeclaredSizeBytes: 4,
+			ObjectBucket: "asset-test", ObjectKey: fmt.Sprintf("assets/%d/%s/%s", now, owner, name),
+			Metadata: map[string]any{},
+		})
+		if err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+		if _, err := store.SetStatus(ctx, asset.ID, owner, StatusAccepted, "", ""); err != nil {
+			t.Fatalf("SetStatus %s: %v", name, err)
+		}
+		return asset
+	}
+
+	// Only `local` is seeded by migration 0004, and the isolation leg needs a second owner.
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user') ON CONFLICT (id) DO NOTHING",
+		otherIdentityID, fmt.Sprintf("asset-images-other-%d", now)); err != nil {
+		t.Fatalf("seed second identity: %v", err)
+	}
+
+	wanted := create(localIdentityID, ModalityImage, "wanted.png")
+	failed := create(localIdentityID, ModalityImage, "failed.png")
+	if _, err := store.SetStatus(ctx, failed.ID, localIdentityID, StatusFailed, "boom", "failed"); err != nil {
+		t.Fatalf("SetStatus failed.png: %v", err)
+	}
+	deleted := create(localIdentityID, ModalityImage, "deleted.png")
+	if _, err := store.Delete(ctx, deleted.ID, localIdentityID); err != nil {
+		t.Fatalf("Delete deleted.png: %v", err)
+	}
+	document := create(localIdentityID, ModalityDocument, "manual.pdf")
+	foreign := create(otherIdentityID, ModalityImage, "foreign.png")
+
+	listed, err := store.ListRecentImages(ctx, localIdentityID, 48)
+	if err != nil {
+		t.Fatalf("ListRecentImages: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, asset := range listed {
+		seen[asset.ID] = true
+	}
+	if !seen[wanted.ID] {
+		t.Fatalf("the accepted image %s is missing from %d listed", wanted.ID, len(listed))
+	}
+	for _, unwanted := range []struct {
+		id, why string
+	}{
+		{failed.ID, "a failed image"},
+		{deleted.ID, "a deleted image"},
+		{document.ID, "a document"},
+		{foreign.ID, "another identity's image"},
+	} {
+		if seen[unwanted.id] {
+			t.Fatalf("%s was listed", unwanted.why)
+		}
+	}
+}
+
 func TestNamesByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

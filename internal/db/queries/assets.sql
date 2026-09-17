@@ -44,6 +44,17 @@ WHERE identity_id = $1
 ORDER BY created_at DESC
 LIMIT $2;
 
+-- name: ListRecentImageAssets :many
+-- The images an identity can pick as a Studio frame or reference: usable (the statuses the
+-- cockpit's isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+SELECT * FROM aura.assets
+WHERE identity_id = $1
+  AND modality = 'image'
+  AND status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $2;
+
 -- name: UpdateAssetUploaded :one
 UPDATE aura.assets
 SET status = 'uploaded',

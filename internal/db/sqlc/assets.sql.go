@@ -514,6 +514,75 @@ func (q *Queries) ListAssetsForThread(ctx context.Context, arg ListAssetsForThre
 	return items, nil
 }
 
+const listRecentImageAssets = `-- name: ListRecentImageAssets :many
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
+WHERE identity_id = $1
+  AND modality = 'image'
+  AND status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
+  AND deleted_at IS NULL
+ORDER BY created_at DESC
+LIMIT $2
+`
+
+type ListRecentImageAssetsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Limit      int32       `json:"limit"`
+}
+
+// The images an identity can pick as a Studio frame or reference: usable (the statuses the
+// cockpit's isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+func (q *Queries) ListRecentImageAssets(ctx context.Context, arg ListRecentImageAssetsParams) ([]AuraAssets, error) {
+	rows, err := q.db.Query(ctx, listRecentImageAssets, arg.IdentityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAssets{}
+	for rows.Next() {
+		var i AuraAssets
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.SourceKind,
+			&i.SourceRef,
+			&i.ThreadID,
+			&i.Scope,
+			&i.Modality,
+			&i.Status,
+			&i.FileName,
+			&i.MimeType,
+			&i.DeclaredSizeBytes,
+			&i.SizeBytes,
+			&i.ContentHash,
+			&i.ObjectBucket,
+			&i.ObjectKey,
+			&i.ObjectEtag,
+			&i.DocumentID,
+			&i.Summary,
+			&i.Metadata,
+			&i.ErrorCode,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UploadedAt,
+			&i.AcceptedAt,
+			&i.ProcessedAt,
+			&i.SearchableAt,
+			&i.CompletedAt,
+			&i.DeletedAt,
+			&i.UpdatedAt,
+			&i.PipelineGeneration,
+			&i.ToolCallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markAssetDeleted = `-- name: MarkAssetDeleted :one
 UPDATE aura.assets
 SET status = 'deleted', deleted_at = COALESCE(deleted_at, now()), updated_at = now()

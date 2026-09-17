@@ -326,11 +326,13 @@ func (p *recordingProcessor) ProcessAsset(_ context.Context, asset Asset) (Resul
 
 type recordingProcessingQueue struct {
 	asset Asset
+	calls int
 	err   error
 }
 
 func (q *recordingProcessingQueue) EnqueueAssetProcessing(_ context.Context, asset Asset) error {
 	q.asset = asset
+	q.calls++
 	return q.err
 }
 
@@ -451,6 +453,22 @@ func (s *fakeAssetStore) ListForLibrary(_ context.Context, identityID string, li
 			if limit > 0 && len(out) >= limit {
 				break
 			}
+		}
+	}
+	return out, nil
+}
+
+func (s *fakeAssetStore) ListRecentImages(_ context.Context, identityID string, limit int) ([]Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Asset
+	for _, asset := range s.assets {
+		if asset.IdentityID != identityID || asset.Modality != ModalityImage {
+			continue
+		}
+		out = append(out, asset)
+		if limit > 0 && len(out) >= limit {
+			break
 		}
 	}
 	return out, nil

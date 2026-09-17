@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -27,6 +28,9 @@ type StoreBackend interface {
 	ByObjectKey(context.Context, string, string) (Asset, error)
 	ListForThread(context.Context, string, string) ([]Asset, error)
 	ListForLibrary(context.Context, string, int) ([]Asset, error)
+	// ListRecentImages(ctx, identityID, limit) lists the identity's usable images from any
+	// thread or none, newest first: what the Studio offers as a frame or a reference.
+	ListRecentImages(context.Context, string, int) ([]Asset, error)
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
@@ -141,12 +145,51 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 }
 
 func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Asset, error) {
+	asset, err := s.accept(ctx, identityID, assetID, "")
+	if err != nil {
+		return asset, err
+	}
+	if err := s.enqueueProcessing(ctx, asset); err != nil {
+		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
+		return updated, err
+	}
+	return asset, nil
+}
+
+// ErrWrongModality refuses an asset finalized for a use that needs another modality.
+var ErrWrongModality = errors.New("assets: the asset is not of the expected modality")
+
+// FinalizeUnprocessed accepts an upload that is the input of one generation rather than
+// knowledge: the same checks as Finalize, and no processing, so no vision summary is paid for
+// and nothing is filed for the index. The asset must be of modality.
+func (s *Service) FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error) {
+	return s.accept(ctx, identityID, assetID, modality)
+}
+
+// recentImagesMax bounds the Studio picker.
+const recentImagesMax = 48
+
+// ListRecentImages lists the identity's usable images, newest first, for the Studio picker.
+func (s *Service) ListRecentImages(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+	if s.Store == nil {
+		return nil, fmt.Errorf("asset service is not configured")
+	}
+	return s.Store.ListRecentImages(ctx, identityID, min(max(limit, 1), recentImagesMax))
+}
+
+// accept takes an uploaded object through every check that makes it an asset — it exists, it
+// is within the limits, its bytes are what its name claims — and stops at accepted. An empty
+// modality accepts any; anything else refuses a mismatch before a byte is read.
+func (s *Service) accept(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error) {
 	if s.Store == nil || s.Objects == nil {
 		return Asset{}, fmt.Errorf("asset service is not configured")
 	}
 	asset, err := s.Store.GetForIdentity(ctx, assetID, identityID)
 	if err != nil {
 		return Asset{}, err
+	}
+	if modality != "" && asset.Modality != modality {
+		return Asset{}, ErrWrongModality
 	}
 	objects, _, err := s.objectsFor(identityctx.WithIdentityID(ctx, identityID))
 	if err != nil {
@@ -171,15 +214,7 @@ func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Ass
 	if err != nil {
 		return Asset{}, err
 	}
-	asset, err = s.Store.MarkAccepted(ctx, asset.ID, identityID, attrs.SizeBytes, hash, sniffed)
-	if err != nil {
-		return Asset{}, err
-	}
-	if err := s.enqueueProcessing(ctx, asset); err != nil {
-		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
-		return updated, err
-	}
-	return asset, nil
+	return s.Store.MarkAccepted(ctx, asset.ID, identityID, attrs.SizeBytes, hash, sniffed)
 }
 
 func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {
