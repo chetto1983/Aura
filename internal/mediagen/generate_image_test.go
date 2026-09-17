@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -189,5 +190,53 @@ func TestImageGeneratorConfigured(t *testing.T) {
 				t.Fatalf("a generator missing its %s must not report itself configured", name)
 			}
 		})
+	}
+}
+
+func TestImageRecordReadsBackAsAJobRow(t *testing.T) {
+	record, err := ImageRecord(GeneratedImage{
+		Prompt: "a cat https://cdn.example.com/ref.png?sig=deadbeef",
+		Used: ImageInput{
+			Prompt:            "a cat https://cdn.example.com/ref.png?sig=deadbeef",
+			AspectRatio:       "1:1",
+			ReferenceAssetIDs: []string{"ref-1", "ref-2"},
+		},
+		Adjustments: []string{"aspect ratio narrowed to 1:1"},
+	}, "https://openrouter.ai/api/v1?key=sk-secret")
+	if err != nil {
+		t.Fatalf("ImageRecord() error = %v", err)
+	}
+
+	request, audit, err := Job{ID: "job-1", Request: record}.Submission()
+	if err != nil {
+		t.Fatalf("Submission() error = %v", err)
+	}
+	if request.AspectRatio != "1:1" {
+		t.Fatalf("aspect ratio = %q, want 1:1", request.AspectRatio)
+	}
+	if !slices.Equal(audit.ReferenceAssetIDs, []string{"ref-1", "ref-2"}) {
+		t.Fatalf("reference asset ids = %#v", audit.ReferenceAssetIDs)
+	}
+	if !slices.Equal(audit.Adjustments, []string{"aspect ratio narrowed to 1:1"}) {
+		t.Fatalf("adjustments = %#v", audit.Adjustments)
+	}
+	// The origin is reduced the way a video row reduces it: a key in the query never lands in
+	// the record, and the prompt's signed URL is redacted by the same rule.
+	if audit.Origin != "https://openrouter.ai/api/v1" {
+		t.Fatalf("origin = %q", audit.Origin)
+	}
+	if !strings.Contains(request.Prompt, "a cat") {
+		t.Fatalf("prompt lost its text: %q", request.Prompt)
+	}
+	for _, leaked := range []string{"sk-secret", "deadbeef", "cdn.example.com"} {
+		if strings.Contains(string(record), leaked) {
+			t.Fatalf("the record kept %q: %s", leaked, record)
+		}
+	}
+}
+
+func TestImageRecordRefusesAnOriginItCannotReduce(t *testing.T) {
+	if _, err := ImageRecord(GeneratedImage{}, "not-a-url"); err == nil {
+		t.Fatal("ImageRecord() accepted an origin that is not an absolute http(s) URL")
 	}
 }

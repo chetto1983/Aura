@@ -1,6 +1,9 @@
 package mediagen
 
-import "context"
+import (
+	"context"
+	"encoding/json"
+)
 
 // ImageGeneration is one image to generate: whose it is, with which model, and what was asked.
 type ImageGeneration struct {
@@ -62,4 +65,15 @@ func (g *ImageGenerator) Generate(ctx context.Context, gen ImageGeneration) (Gen
 		return GeneratedImage{}, err
 	}
 	return GeneratedImage{Result: result, Prompt: input.Prompt, Used: input, Adjustments: append(adjustments, notes...)}, nil
+}
+
+// ImageRecord is the request a Studio image row persists, in the same shape a video row uses:
+// the prompt redacted by the same rule, the aspect ratio as the clamp left it, the reference
+// asset ids that replace the image data the provider body carried, the clamp's notes and the
+// submission origin. Reading an image row and a video row is therefore one code path.
+func ImageRecord(generated GeneratedImage, origin string) (json.RawMessage, error) {
+	return JobRequest(
+		VideoRequest{Prompt: generated.Prompt, AspectRatio: generated.Used.AspectRatio},
+		JobAudit{Origin: origin, ReferenceAssetIDs: generated.Used.ReferenceAssetIDs, Adjustments: generated.Adjustments},
+	)
 }
