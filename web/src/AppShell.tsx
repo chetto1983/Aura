@@ -41,6 +41,8 @@ const ExternalStoreChat = lazy(() =>
   import('./chat/ExternalStoreChat').then((mod) => ({ default: mod.ExternalStoreChat })),
 );
 
+const StudioWorkspace = lazy(() => import('./studio/StudioWorkspace'));
+
 const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
@@ -343,19 +345,23 @@ export function AppShell() {
           <Suspense
             fallback={
               <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
-                {surface === 'graph'
-                  ? t('graph.loading')
-                  : surface === 'governance'
-                    ? t('governance.loading')
-                    : surface === 'documents'
-                      ? t('files.loading')
-                      : surface === 'settings'
-                        ? t('settings.loading')
-                        : t('chat.loading')}
+                {surface === 'studio'
+                  ? t('studio.loading')
+                  : surface === 'graph'
+                    ? t('graph.loading')
+                    : surface === 'governance'
+                      ? t('governance.loading')
+                      : surface === 'documents'
+                        ? t('files.loading')
+                        : surface === 'settings'
+                          ? t('settings.loading')
+                          : t('chat.loading')}
               </div>
             }
           >
-            {surface === 'graph' ? (
+            {surface === 'studio' ? (
+              <StudioWorkspace />
+            ) : surface === 'graph' ? (
               <GraphExplorer />
             ) : surface === 'governance' ? (
               <GovernanceWorkspace />

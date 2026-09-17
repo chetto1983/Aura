@@ -1,10 +1,18 @@
 import { useTranslation } from 'react-i18next';
-import { FileText, MessageSquareText, Network, Settings, ShieldCheck } from 'lucide-react';
+import {
+  Clapperboard,
+  FileText,
+  MessageSquareText,
+  Network,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react';
 import { MODES, type SurfaceIntent } from './modes';
 import { Button } from '@/components/ui/button';
 
 const modeIcons = {
   chat: MessageSquareText,
+  studio: Clapperboard,
   graph: Network,
   governance: ShieldCheck,
   documents: FileText,

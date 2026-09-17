@@ -1,7 +1,7 @@
 // Every mode here is a real surface. 'tree' and 'displays' used to sit in this list as
 // disabled "coming soon" tabs; a control that has never done anything is not a promise,
 // it is clutter that costs a click to discover is dead.
-export const MODES = ['chat', 'graph', 'governance', 'documents', 'settings'] as const;
+export const MODES = ['chat', 'studio', 'graph', 'governance', 'documents', 'settings'] as const;
 
 export type SurfaceIntent = (typeof MODES)[number];
 

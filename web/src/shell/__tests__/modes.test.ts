@@ -15,6 +15,14 @@ describe('admin-mode gating (MUSR-01 / D-03)', () => {
     expect(visibleModes(MODES, true)).toEqual([...MODES]);
   });
 
+  it('offers Studio to every identity, beside Chat', () => {
+    // Generating is not an operator privilege: the Studio is gated by the server's own
+    // identity scope, not by governance.write, so it must survive the non-admin filter.
+    expect(MODES).toEqual(['chat', 'studio', 'graph', 'governance', 'documents', 'settings']);
+    expect(isAdminMode('studio')).toBe(false);
+    expect(visibleModes(MODES, false)).toContain('studio');
+  });
+
   it('lists only surfaces that exist — no disabled placeholders', () => {
     // 'tree' and 'displays' were disabled tabs for as long as they were listed. A nav
     // entry is a claim that something is there; these never were.

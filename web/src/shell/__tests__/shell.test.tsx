@@ -224,6 +224,13 @@ describe('shell utilities', () => {
     expect(mobileNav.className).toContain('flex');
     expect(mobileNav.className).toContain('overflow-hidden');
     expect(primary.getByRole('button', { name: 'Governance' }).className).toContain('shrink-0');
+    // Studio is a real surface in both navs, with the icon the mobile bar needs.
+    expect(primary.getByRole('button', { name: 'Studio' }).getAttribute('data-slot')).toBe(
+      'button',
+    );
+    expect(
+      mobile.getByRole('button', { name: 'Studio' }).querySelector('[data-mode-icon]'),
+    ).toBeTruthy();
     // The retired placeholders are gone from BOTH navs — a disabled tab is a promise the
     // product never kept.
     for (const gone of ['Tree', 'Displays']) {

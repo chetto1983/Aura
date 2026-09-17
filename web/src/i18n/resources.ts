@@ -22,6 +22,7 @@ import { mediaEn, mediaIt } from './resources.media';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { shareEn, shareIt } from './resources.share';
+import { studioEn, studioIt } from './resources.studio';
 import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
 
 export const resources = {
@@ -59,6 +60,7 @@ export const resources = {
         logout: 'Sign out',
         modes: {
           chat: 'Chat',
+          studio: 'Studio',
           graph: 'Graph',
           governance: 'Governance',
           documents: 'Documents',
@@ -66,6 +68,7 @@ export const resources = {
         },
         modesCompact: {
           chat: 'Chat',
+          studio: 'Studio',
           graph: 'Graph',
           governance: 'Gov',
           documents: 'Docs',
@@ -156,6 +159,7 @@ export const resources = {
       },
       ...displayEn,
       ...mediaEn,
+      ...studioEn,
       ...shareEn,
       ...filesEn,
       ...governanceEn,
@@ -302,6 +306,7 @@ export const resources = {
         logout: 'Disconnetti',
         modes: {
           chat: 'Chat',
+          studio: 'Studio',
           graph: 'Grafo',
           governance: 'Governance',
           documents: 'Documenti',
@@ -309,6 +314,7 @@ export const resources = {
         },
         modesCompact: {
           chat: 'Chat',
+          studio: 'Studio',
           graph: 'Grafo',
           governance: 'Gov',
           documents: 'Doc',
@@ -399,6 +405,7 @@ export const resources = {
       },
       ...displayIt,
       ...mediaIt,
+      ...studioIt,
       ...shareIt,
       ...filesIt,
       ...governanceIt,

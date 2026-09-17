@@ -6,6 +6,7 @@ import type { StudioRecord } from '../studioApi';
 import {
   STUDIO_HISTORY_POLL_MS,
   hasActiveRecord,
+  useCreateStudioImage,
   useCreateStudioVideo,
   useStudioHistory,
   useStudioLibrary,
@@ -180,26 +181,35 @@ describe('the create mutations', () => {
     vi.unstubAllGlobals();
   });
 
-  it('refreshes the history once the record exists', async () => {
+  it('post to their own route and refresh the history once the record exists', async () => {
     const { urls } = studioFetch([record('job-1', 'completed')]);
     const Wrapper = wrapper();
+    const historyCalls = (): number =>
+      urls.filter((url) => url.startsWith('/api/studio/history')).length;
     const history = renderHook(() => useStudioHistory('video'), { wrapper: Wrapper });
     await waitFor(() => {
       expect(history.result.current.data?.pages).toHaveLength(1);
     });
-    const historyCalls = urls.filter((url) => url.startsWith('/api/studio/history')).length;
+    const afterLoad = historyCalls();
 
-    const create = renderHook(() => useCreateStudioVideo(), { wrapper: Wrapper });
-    await create.result.current.mutateAsync({ model: 'veo', prompt: 'a cat in a hat' });
+    const video = renderHook(() => useCreateStudioVideo(), { wrapper: Wrapper });
+    await video.result.current.mutateAsync({ model: 'veo', prompt: 'a cat in a hat' });
 
     // The new record is only visible once the list is asked again — without this the operator
     // presses Generate and nothing appears.
-    await waitFor(() => {
-      expect(urls.filter((url) => url.startsWith('/api/studio/history')).length).toBeGreaterThan(
-        historyCalls,
-      );
-    });
     expect(urls).toContain('/api/studio/videos');
+    await waitFor(() => {
+      expect(historyCalls()).toBeGreaterThan(afterLoad);
+    });
+    const afterVideo = historyCalls();
+
+    const image = renderHook(() => useCreateStudioImage(), { wrapper: Wrapper });
+    await image.result.current.mutateAsync({ model: 'seedream', prompt: 'a hat on a cat' });
+
+    expect(urls).toContain('/api/studio/images');
+    await waitFor(() => {
+      expect(historyCalls()).toBeGreaterThan(afterVideo);
+    });
   });
 });
 
