@@ -160,3 +160,39 @@ func TestVideoPrice(t *testing.T) {
 		})
 	}
 }
+
+func TestVideoSecondPrice(t *testing.T) {
+	veoLite := map[string]string{ // google/veo-3.1-lite, live catalog 2026-09-17
+		"duration_seconds_with_audio":         "0.08",
+		"duration_seconds_without_audio":      "0.05",
+		"duration_seconds_with_audio_720p":    "0.05",
+		"duration_seconds_without_audio_720p": "0.03",
+	}
+	cases := []struct {
+		name       string
+		skus       map[string]string
+		resolution string
+		audio      bool
+		want       float64
+		ok         bool
+	}{
+		{"resolution and audio SKU", veoLite, "720p", false, 0.03, true},
+		{"resolution with audio", veoLite, "720p", true, 0.05, true},
+		{"unpriced resolution falls back to the audio SKU", veoLite, "1080p", true, 0.08, true},
+		{"no resolution given", veoLite, "", false, 0.05, true},
+		{"plain duration SKU", map[string]string{"duration_seconds": "0.1"}, "720p", true, 0.1, true},
+		{"resolution-only SKU", map[string]string{"duration_seconds_720p": "0.2", "duration_seconds": "0.4"}, "720P", false, 0.2, true},
+		{"cents per second", map[string]string{"cents_per_second_with_audio": "7"}, "", true, 0.07, true},
+		{"unparseable value is skipped", map[string]string{"duration_seconds_720p": "x", "duration_seconds": "0.4"}, "720p", false, 0.4, true},
+		{"negative value is skipped", map[string]string{"duration_seconds": "-1"}, "", false, 0, false},
+		{"no per-second SKU", map[string]string{"per_generation": "1"}, "720p", false, 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := VideoSecondPrice(tc.skus, tc.resolution, tc.audio)
+			if ok != tc.ok || math.Abs(got-tc.want) > 1e-12 {
+				t.Fatalf("VideoSecondPrice = %v, %v; want %v, %v", got, ok, tc.want, tc.ok)
+			}
+		})
+	}
+}

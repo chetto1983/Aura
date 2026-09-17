@@ -64,6 +64,39 @@ func videoSKUDivisor(key string) (float64, bool) {
 	return 0, false
 }
 
+// VideoSecondPrice returns the USD per second of a clip at this resolution and audio choice,
+// from the most specific SKU the model declares: resolution and audio, then audio, then
+// resolution, then the plain rate; dollars before cents. The naming was checked against the
+// costs measured for google/veo-3.1-lite on 2026-09-17, so a model that names its SKUs
+// otherwise reports ok=false rather than a guess.
+func VideoSecondPrice(skus map[string]string, resolution string, audio bool) (float64, bool) {
+	sound := "_without_audio"
+	if audio {
+		sound = "_with_audio"
+	}
+	suffixes := []string{sound, ""}
+	if res := strings.ToLower(strings.TrimSpace(resolution)); res != "" {
+		suffixes = []string{sound + "_" + res, sound, "_" + res, ""}
+	}
+	for _, unit := range []struct {
+		prefix  string
+		divisor float64
+	}{{"duration_seconds", 1}, {"cents_per_second", 100}} {
+		for _, suffix := range suffixes {
+			raw, declared := skus[unit.prefix+suffix]
+			if !declared {
+				continue
+			}
+			value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+			if err != nil || !(value >= 0) || math.IsInf(value, 1) {
+				continue
+			}
+			return value / unit.divisor, true
+		}
+	}
+	return 0, false
+}
+
 // widenPrice folds a finite nonnegative price into the range; anything else is ignored.
 func widenPrice(low, high float64, known bool, price float64) (float64, float64, bool) {
 	if !(price >= 0) || math.IsInf(price, 1) {
