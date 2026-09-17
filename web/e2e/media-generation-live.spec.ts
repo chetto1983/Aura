@@ -45,8 +45,10 @@ import {
 
 const imagePrompt = 'Generate an image of a red wooden boat on a calm mountain lake, 16:9.';
 // A new clip, not an animation of the boat picture above it: the media skill animates an image
-// only when asked to.
-const videoPrompt = 'Generate a short video of waves rolling onto an empty beach at sunset.';
+// only when asked to. Length and shape are stated because the skill asks for them otherwise —
+// the second paid run (2026-09-17) got an ask_user card instead of a clip without them.
+const videoPrompt =
+  'Generate a 4 second horizontal 16:9 video of waves rolling onto an empty beach at sunset.';
 const animatePrompt = 'Animate this image into a five second 480p clip: let the water ripple.';
 
 function generationFrame(page: Page): Locator {
