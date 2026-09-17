@@ -628,7 +628,7 @@ Playwright.
   func (g *ImageGenerator) Generate(ctx context.Context, gen ImageGeneration) (GeneratedImage, error)
   ```
 
-- [ ] **Step 1: Write the failing price test** in `catalog_price_test.go`:
+- [x] **Step 1: Write the failing price test** in `catalog_price_test.go`:
 
   ```go
   func TestVideoSecondPrice(t *testing.T) {
@@ -668,7 +668,7 @@ Playwright.
   }
   ```
 
-- [ ] **Step 2: Implement `VideoSecondPrice`** in `catalog_price.go`:
+- [x] **Step 2: Implement `VideoSecondPrice`** in `catalog_price.go`:
 
   ```go
   // VideoSecondPrice returns the USD per second of a clip at this resolution and audio choice,
@@ -705,7 +705,7 @@ Playwright.
   }
   ```
 
-- [ ] **Step 3: Catalog name, description and seed.** Failing test in `catalog_test.go`:
+- [x] **Step 3: Catalog name, description and seed.** Failing test in `catalog_test.go`:
   a `videos/models` payload with `"name": "Google: Veo 3.1 Lite"`, `"description": "…"`,
   `"seed": true` and an `images/models` payload with a name and description produce `Model`s
   carrying them; a payload without them leaves the fields empty and `Seed` false.
@@ -715,7 +715,7 @@ Playwright.
   gains `Seed bool `json:"seed"``, and both constructors copy them into `Model`, whose new
   fields are documented as "as the provider names it; empty when it declares none".
 
-- [ ] **Step 4: End frame and seed in the clamp.** Failing tests in `clamp_test.go`:
+- [x] **Step 4: End frame and seed in the clamp.** Failing tests in `clamp_test.go`:
 
   ```go
   func TestClampVideoLastFrame(t *testing.T) { /* unsupported when the model lists only first_frame; kept when it lists both; passed through for a nil model */ }
@@ -743,12 +743,12 @@ Playwright.
 
   `ClampVideo` copies `Seed` into `out` the way it copies `Audio` (a fresh pointer).
 
-- [ ] **Step 5: Move the catalog lookup.** Add `Catalog.Entry` (and the
+- [x] **Step 5: Move the catalog lookup.** Add `Catalog.Entry` (and the
   `uncheckedOptionsNote` constant) to `catalog_cache.go` with the doc `mediaCatalogEntry` has
   today, delete `mediaCatalogEntry` and the constant from `internal/agent/tools/media_delivery.go`,
   and move the tools test that pinned it into `internal/mediagen` unchanged in substance.
 
-- [ ] **Step 6: The two shared paths.** Failing tests first:
+- [x] **Step 6: The two shared paths.** Failing tests first:
   - `submit_test.go`: a Studio submission records `Surface`, `Kind`, the empty conversation, a
     `first_frame` plus `last_frame` body, the seed, and the audit's end frame; a refusal
     before the POST leaves zero submits; an `Insert` failure answers coded `job_failed` after
@@ -918,7 +918,7 @@ Playwright.
   }
   ```
 
-- [ ] **Step 7: Rewire the tools.**
+- [x] **Step 7: Rewire the tools.**
   - **`video_generate.go`:** fields become
     `{Submitter *mediagen.VideoSubmitter; Settings mediagen.Settings; Jobs mediagen.JobStore; Watcher *mediagen.Watcher; VideoAssets mediagen.ReferenceReader; MaxVideoBytes int64}`;
     `configured()` checks `g.Submitter.Configured()` and the rest; `clamp`, `request`, `record`
@@ -950,10 +950,10 @@ Playwright.
     gains: "`last_frame_asset_id` makes the clip end on an image; it needs
     `first_frame_asset_id`, and a model without end frames refuses it (nothing billed)."
 
-- [ ] **Step 8: Verify.** `go vet ./... && go build ./... && go test ./internal/mediagen/ ./internal/agent/tools/ ./cmd/aura/ ./internal/skills/...`, `-race` in WSL for `mediagen` and
+- [x] **Step 8: Verify.** `go vet ./... && go build ./... && go test ./internal/mediagen/ ./internal/agent/tools/ ./cmd/aura/ ./internal/skills/...`, `-race` in WSL for `mediagen` and
   `tools`, and `bash scripts/check-file-size.sh`.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
   `git commit -m "refactor(mediagen): generate every image and video through one path"`.
 
 ---
