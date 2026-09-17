@@ -453,7 +453,7 @@
         "react/only-export-components": [
           "warn",
           {
-            "allowExportNames": ["buttonVariants", "badgeVariants"]
+            "allowExportNames": ["buttonVariants", "badgeVariants", "toggleVariants"]
           }
         ]
       },
