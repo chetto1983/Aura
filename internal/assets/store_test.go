@@ -238,11 +238,6 @@ func TestPostgresAssetStoreDeduplicatesAgentSourceReference(t *testing.T) {
 	}
 }
 
-// TestNamesByKeyResolvesNamesTheKeysDoNotCarry is the Postgres half of the cockpit's file
-// manager: the listing shows bucket keys, and a chat attachment's key is a uuid on purpose,
-// so the name has to come back from the row that owns the key. The lookup used to go
-// through the document index instead and returned nothing at all once a folder held more
-// keys than that index accepts filters (117 against a cap of 100, live stack 2026-09-09).
 // The Studio picker offers an identity's usable images only: a failed one is not a frame, a
 // deleted one is gone, a document is the wrong modality, and another identity's image is not
 // this identity's to see.
@@ -277,6 +272,7 @@ func TestStoreListRecentImages(t *testing.T) {
 		t.Fatalf("seed second identity: %v", err)
 	}
 
+	older := create(localIdentityID, ModalityImage, "older.png")
 	wanted := create(localIdentityID, ModalityImage, "wanted.png")
 	failed := create(localIdentityID, ModalityImage, "failed.png")
 	if _, err := store.SetStatus(ctx, failed.ID, localIdentityID, StatusFailed, "boom", "failed"); err != nil {
@@ -297,8 +293,12 @@ func TestStoreListRecentImages(t *testing.T) {
 	for _, asset := range listed {
 		seen[asset.ID] = true
 	}
-	if !seen[wanted.ID] {
-		t.Fatalf("the accepted image %s is missing from %d listed", wanted.ID, len(listed))
+	if !seen[wanted.ID] || !seen[older.ID] {
+		t.Fatalf("an accepted image is missing from the %d listed", len(listed))
+	}
+	// Newest first: the ORDER BY is the picker's whole ordering, nothing above it re-sorts.
+	if listed[0].ID != wanted.ID {
+		t.Fatalf("first listed = %s, want the newest image %s", listed[0].ID, wanted.ID)
 	}
 	for _, unwanted := range []struct {
 		id, why string
@@ -314,6 +314,11 @@ func TestStoreListRecentImages(t *testing.T) {
 	}
 }
 
+// TestNamesByKeyResolvesNamesTheKeysDoNotCarry is the Postgres half of the cockpit's file
+// manager: the listing shows bucket keys, and a chat attachment's key is a uuid on purpose,
+// so the name has to come back from the row that owns the key. The lookup used to go
+// through the document index instead and returned nothing at all once a folder held more
+// keys than that index accepts filters (117 against a cap of 100, live stack 2026-09-09).
 func TestNamesByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

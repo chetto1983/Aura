@@ -65,7 +65,7 @@ func (s *Store) scopedRow(
 	return assetFromSQL(row)
 }
 
-// scopedRows is scopedRow for the two list statements.
+// scopedRows is scopedRow for the list statements.
 func (s *Store) scopedRows(
 	ctx context.Context,
 	identityID string,

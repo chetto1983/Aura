@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"sort"
 	"strings"
 	"sync"
 
@@ -358,6 +359,9 @@ type fakeAssetStore struct {
 	duplicateKey bool
 	// createErr fails Create with something that is NOT a duplicate key.
 	createErr error
+	// lastImageLimit is the limit ListRecentImages was called with, so the service's clamp is
+	// observable where the real store would only pass it to SQL.
+	lastImageLimit int
 }
 
 func newFakeAssetStore() *fakeAssetStore {
@@ -461,17 +465,28 @@ func (s *fakeAssetStore) ListForLibrary(_ context.Context, identityID string, li
 func (s *fakeAssetStore) ListRecentImages(_ context.Context, identityID string, limit int) ([]Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.lastImageLimit = limit
 	var out []Asset
 	for _, asset := range s.assets {
-		if asset.IdentityID != identityID || asset.Modality != ModalityImage {
+		if asset.IdentityID != identityID || asset.Modality != ModalityImage ||
+			!usableAssetStatuses[asset.Status] || !asset.DeletedAt.IsZero() {
 			continue
 		}
 		out = append(out, asset)
-		if limit > 0 && len(out) >= limit {
-			break
-		}
+	}
+	// The query orders by created_at DESC and only then applies the LIMIT; a map's iteration
+	// order would otherwise make this fake answer a different question than the store does.
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
 	}
 	return out, nil
+}
+
+// The statuses ListRecentImageAssets accepts, kept beside the fake that has to agree with it.
+var usableAssetStatuses = map[Status]bool{
+	StatusAccepted: true, StatusProcessing: true, StatusSearchable: true,
+	StatusEmbedding: true, StatusComplete: true,
 }
 
 func (s *fakeAssetStore) MarkUploaded(_ context.Context, id, identityID string, size int64, etag string) (Asset, error) {
