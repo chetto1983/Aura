@@ -986,12 +986,12 @@ Playwright.
 
   and the wire contract of spec §A2, which Task 5 consumes.
 
-- [ ] **Step 1: Split `server.go` first.** Move every `func (s *Server) Set…` into
+- [x] **Step 1: Split `server.go` first.** Move every `func (s *Server) Set…` into
   `server_seams.go` with no edits; `go build ./internal/agui/` passes and `server.go` drops
   well under 600 LOC. Commit alone:
   `refactor(agui): move the server's dependency seams to their own file`.
 
-- [ ] **Step 2: Write the failing handler tests** in `internal/agui/studio_api_test.go`, with a
+- [x] **Step 2: Write the failing handler tests** in `internal/agui/studio_api_test.go`, with a
   fake backend and the package's authenticated-request helper:
   - `TestStudioModelsCarryNamesAndPrices` — a video model with the veo-lite SKUs, both frame
     images, audio and seed yields four price rows (720p/false at 0.03 among them), its name,
@@ -1011,7 +1011,7 @@ Playwright.
     → 422; finalizing an image → 200.
   - `TestStudioNeedsABackendAndAPrincipal` — nil backend → 503, no principal → 401.
 
-- [ ] **Step 3: Implement `studio_dto.go`** — request bodies, the model and record DTOs, and
+- [x] **Step 3: Implement `studio_dto.go`** — request bodies, the model and record DTOs, and
   the error mapping:
 
   ```go
@@ -1048,7 +1048,7 @@ Playwright.
   `unsupported`, `pgx.ErrNoRows` → 404, a coded `*mediagen.Error` → its status from the table,
   and anything else → 500 with a generic sentence after logging the redacted cause.
 
-- [ ] **Step 4: Implement `studio_api.go`** — `StudioBackend`, `registerStudioRoutes`,
+- [x] **Step 4: Implement `studio_api.go`** — `StudioBackend`, `registerStudioRoutes`,
   `studioCaller` (503 without a backend, 401 without a principal), the six handlers, a
   `studioKind` helper (`image`/`video`, and 400 otherwise) and a `studioLimit` helper
   (absent → default, clamped to the ceiling, non-numeric → 400). `server.go` gains the
@@ -1058,7 +1058,7 @@ Playwright.
   `"POST /api/studio/images": httpMutationMeta("studio_image_create")` and
   `"POST /api/studio/uploads/{id}/finalize": httpMutationMeta("studio_upload_finalize")`.
 
-- [ ] **Step 5: Write the failing wiring tests** in `cmd/aura/serve_studio_test.go`:
+- [x] **Step 5: Write the failing wiring tests** in `cmd/aura/serve_studio_test.go`:
   - an unlisted model is refused (`unsupported`) with no call to the submitter or the
     generator;
   - an unavailable catalog answers coded `job_failed` saying nothing was generated;
@@ -1069,7 +1069,7 @@ Playwright.
   - a Studio completion (empty conversation) enqueues nothing in
     `backgroundCompletionDispatcher`.
 
-- [ ] **Step 6: Implement `cmd/aura/serve_studio.go`** — `studioBackend` over the live media
+- [x] **Step 6: Implement `cmd/aura/serve_studio.go`** — `studioBackend` over the live media
   dependencies:
 
   ```go
@@ -1147,10 +1147,10 @@ Playwright.
   the reads on the bare handler, the three POSTs behind `agentRunCapability`.
   `serve_webui_auth_test.go` gains them in its 401 and gate tables.
 
-- [ ] **Step 7: Verify.** `go vet ./... && go build ./... && go test ./internal/agui/ ./cmd/aura/`, `-race` in WSL, `bash scripts/check-file-size.sh`, and
+- [x] **Step 7: Verify.** `go vet ./... && go build ./... && go test ./internal/agui/ ./cmd/aura/`, `-race` in WSL, `bash scripts/check-file-size.sh`, and
   `golangci-lint run ./internal/agui/... ./cmd/aura/...` in WSL.
 
-- [ ] **Step 8: Commit.** `git commit -m "feat(studio): serve the cockpit Studio's API"`.
+- [x] **Step 8: Commit.** `git commit -m "feat(studio): serve the cockpit Studio's API"`.
 
 ---
 
