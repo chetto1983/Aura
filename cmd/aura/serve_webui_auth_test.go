@@ -395,6 +395,50 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 		}
 	})
 
+	// The Studio's reads are owner-scoped and inherit the whole-origin gate; its two
+	// generations and its reference finalize are cost- or asset-bearing and pass the same
+	// capability gate as the asset mutations.
+	t.Run("no cookie Studio routes -> 401, AG-UI never reached", func(t *testing.T) {
+		for _, tc := range []struct{ method, path, body string }{
+			{http.MethodGet, "/api/studio/models?kind=video", ""},
+			{http.MethodGet, "/api/studio/history", ""},
+			{http.MethodGet, "/api/studio/library", ""},
+			{http.MethodPost, "/api/studio/videos", `{}`},
+			{http.MethodPost, "/api/studio/images", `{}`},
+			{http.MethodPost, "/api/studio/uploads/asset-1/finalize", ``},
+		} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body)))
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("%s %s status = %d, want 401 (gate inherited)", tc.method, tc.path, rec.Code)
+			}
+			if len(aguiHits) != 0 {
+				t.Fatalf("unauthenticated %s %s leaked to the AG-UI handler: %v", tc.method, tc.path, aguiHits)
+			}
+		}
+	})
+
+	t.Run("Studio routes with a valid capable cookie reach the AG-UI handler", func(t *testing.T) {
+		for _, tc := range []struct{ method, path, body string }{
+			{http.MethodGet, "/api/studio/models", ""},
+			{http.MethodGet, "/api/studio/history", ""},
+			{http.MethodGet, "/api/studio/library", ""},
+			{http.MethodPost, "/api/studio/videos", `{}`},
+			{http.MethodPost, "/api/studio/images", `{}`},
+			{http.MethodPost, "/api/studio/uploads/asset-1/finalize", ``},
+		} {
+			aguiHits = nil
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+			addAuthulaSession(req)
+			handler.ServeHTTP(rec, req)
+			if len(aguiHits) != 1 || aguiHits[0] != tc.path {
+				t.Fatalf("%s %s did not reach the AG-UI handler: hits=%v code=%d", tc.method, tc.path, aguiHits, rec.Code)
+			}
+		}
+	})
+
 	t.Run("valid cookie reaches the AG-UI handler", func(t *testing.T) {
 		aguiHits = nil
 		rec := httptest.NewRecorder()
@@ -513,6 +557,9 @@ func TestServeWebuiApprovalsCapabilityGate(t *testing.T) {
 		{http.MethodPost, "/api/assets/asset-1/promote", `{}`},
 		{http.MethodPost, "/api/assets/asset-1/retry", `{}`},
 		{http.MethodDelete, "/api/assets/asset-1", ``},
+		{http.MethodPost, "/api/studio/videos", `{}`},
+		{http.MethodPost, "/api/studio/images", `{}`},
+		{http.MethodPost, "/api/studio/uploads/asset-1/finalize", ``},
 	} {
 		aguiHits = nil
 		rec := httptest.NewRecorder()

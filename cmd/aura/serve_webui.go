@@ -262,6 +262,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// RequireCapability(agentRunCapability) (cost-bearing), GET /api/voice/capabilities
 	// RequireAuth-only (a SELF-scoped presence probe, like meRoute).
 	registerVoiceRoutes(mux, aguiHandler, auth)
+	// The cockpit Studio's six routes live in serve_webui_studio.go for the same reason: the
+	// three reads bare, the two generations and the reference finalize capability-gated.
+	registerStudioWebRoutes(mux, aguiHandler, auth)
 	// The 37D WEBSKILL-01 composer skill-picker mount (GET /api/composer/skills) lives in
 	// serve_webui_composer.go to keep this file under the 600-LOC ceiling: bare aguiHandler,
 	// RequireAuth-only (like voiceCapabilitiesRoute/meRoute) — deliberately NOT
