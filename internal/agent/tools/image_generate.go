@@ -13,14 +13,11 @@ import (
 // does. Every dependency is injected at serve boot; the static and manifest registries
 // hold a zero value whose Execute refuses before any request.
 type ImageGenerate struct {
-	Credentials mediagen.MediaCredentials
-	Settings    mediagen.Settings
-	Catalog     *mediagen.Catalog
-	Client      *mediagen.Client
-	References  mediagen.ReferenceReader
-	Assets      AssetDeliverer
-	// MaxImageBytes is the asset image ceiling, bounding both references and output.
-	MaxImageBytes int64
+	// Generator is the shared path that pays for an image; the cockpit Studio generates through
+	// the same one, so the clamp and the reference reads are never decided twice.
+	Generator *mediagen.ImageGenerator
+	Settings  mediagen.Settings
+	Assets    AssetDeliverer
 }
 
 const imageGenerateParameters = `{
@@ -79,63 +76,40 @@ func (g *ImageGenerate) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 		return errorResult("unsupported", "Image generation needs a signed-in conversation to deliver the image into."), nil
 	}
 
-	baseURL, apiKey, err := g.Credentials.For(ctx, owner)
-	if err != nil {
-		return mediaErrorResult(err), nil
-	}
 	model, err := g.Settings.Model(ctx, mediagen.KindImage)
 	if err != nil {
 		return mediaErrorResult(err), nil
 	}
-	input, adjustments, err := g.clamp(ctx, baseURL, model, args)
-	if err != nil {
-		return mediaErrorResult(err), nil
-	}
-	references, err := mediagen.LoadReferences(ctx, g.References, owner, input.ReferenceAssetIDs, g.MaxImageBytes)
-	if err != nil {
-		return mediaErrorResult(err), nil
-	}
-	generated, err := g.Client.GenerateImage(ctx, baseURL, apiKey, mediagen.ImageRequest{
-		Model: model, Prompt: args.Prompt, AspectRatio: input.AspectRatio, References: references,
+	generated, err := g.Generator.Generate(ctx, mediagen.ImageGeneration{
+		Owner: owner, Model: model,
+		Input: mediagen.ImageInput{
+			Prompt: args.Prompt, AspectRatio: args.AspectRatio, ReferenceAssetIDs: args.ReferenceAssetIDs,
+		},
 	})
 	if err != nil {
 		return mediaErrorResult(err), nil
 	}
 
-	path, filename, err := stageImage(ctx, generated.Bytes, generated.MIMEType)
+	path, filename, err := stageImage(ctx, generated.Result.Bytes, generated.Result.MIMEType)
 	if err != nil {
 		return errorResult("job_failed", "The image was generated but could not be staged for delivery."), nil
 	}
-	size := int64(len(generated.Bytes))
+	size := int64(len(generated.Result.Bytes))
 	assetID, mimeType, delivered := ingestForDelivery(ctx, g.Assets, path, filename, size)
 	if !delivered {
 		discardStagedMedia(path)
 		return errorResult("job_failed", "The image was generated but could not be saved, so it was not delivered."), nil
 	}
 	preview := mediaResult{
-		AssetID: assetID, MIMEType: mimeType, Model: model, CostUSD: generated.CostUSD,
-		Used:        imageGenerateUsed{AspectRatio: input.AspectRatio, ReferenceAssetIDs: input.ReferenceAssetIDs},
-		Adjustments: adjustments,
+		AssetID: assetID, MIMEType: mimeType, Model: model, CostUSD: generated.Result.CostUSD,
+		Used: imageGenerateUsed{
+			AspectRatio: generated.Used.AspectRatio, ReferenceAssetIDs: generated.Used.ReferenceAssetIDs,
+		},
+		Adjustments: generated.Adjustments,
 	}
-	return mediaArtifactResult(ctx, path, filename, mimeType, assetID, args.Prompt, size, preview), nil
+	return mediaArtifactResult(ctx, path, filename, mimeType, assetID, generated.Prompt, size, preview), nil
 }
 
 func (g *ImageGenerate) configured() bool {
-	return g.Credentials != nil && g.Settings != nil && g.Catalog != nil && g.Client != nil &&
-		g.References != nil && g.Assets != nil && g.MaxImageBytes > 0
-}
-
-// clamp narrows the request to what the catalog declares for model.
-func (g *ImageGenerate) clamp(ctx context.Context, baseURL, model string, args imageGenerateArgs) (mediagen.ImageInput, []string, error) {
-	entry, adjustments, err := g.Catalog.Entry(ctx, baseURL, mediagen.KindImage, model)
-	if err != nil {
-		return mediagen.ImageInput{}, nil, err
-	}
-	input, notes, err := mediagen.ClampImage(mediagen.ImageInput{
-		Prompt: args.Prompt, AspectRatio: args.AspectRatio, ReferenceAssetIDs: args.ReferenceAssetIDs,
-	}, entry)
-	if err != nil {
-		return mediagen.ImageInput{}, nil, err
-	}
-	return input, append(adjustments, notes...), nil
+	return g.Generator.Configured() && g.Settings != nil && g.Assets != nil
 }

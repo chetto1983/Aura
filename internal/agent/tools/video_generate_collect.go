@@ -17,8 +17,10 @@ type videoGenerateUsed struct {
 	Resolution        string   `json:"resolution,omitempty"`
 	AspectRatio       string   `json:"aspect_ratio,omitempty"`
 	FirstFrameAssetID string   `json:"first_frame_asset_id,omitempty"`
+	LastFrameAssetID  string   `json:"last_frame_asset_id,omitempty"`
 	ReferenceAssetIDs []string `json:"reference_asset_ids,omitempty"`
 	Audio             *bool    `json:"audio,omitempty"`
+	Seed              *int     `json:"seed,omitempty"`
 }
 
 // videoJobStatus answers for a job this call does not deliver. CostUSD stays null until the
@@ -101,7 +103,8 @@ func videoSubmission(job mediagen.Job) (prompt string, used videoGenerateUsed, a
 	}
 	used = videoGenerateUsed{
 		Duration: req.Duration, Resolution: req.Resolution, AspectRatio: req.AspectRatio,
-		FirstFrameAssetID: audit.FirstFrameAssetID, ReferenceAssetIDs: audit.ReferenceAssetIDs, Audio: req.GenerateAudio,
+		FirstFrameAssetID: audit.FirstFrameAssetID, LastFrameAssetID: audit.LastFrameAssetID,
+		ReferenceAssetIDs: audit.ReferenceAssetIDs, Audio: req.GenerateAudio, Seed: req.Seed,
 	}
 	adjustments = audit.Adjustments
 	if adjustments == nil {

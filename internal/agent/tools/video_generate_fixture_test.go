@@ -21,12 +21,14 @@ import (
 
 // videoModelsFixture is the default model as OpenRouter's video catalog declared it on
 // 2026-09-14 (durations 5-15, two resolutions, first and last frames, no aspect ratios, no
-// audio), plus a text-only model that declares no frame images.
+// audio), plus a text-only model that declares no frame images and one that starts from an
+// image but cannot end on one.
 const videoModelsFixture = `{"data":[` +
 	`{"id":"minimax/hailuo-3-max","supported_durations":[5,6,7,8,9,10,11,12,13,14,15],` +
 	`"supported_resolutions":["768p","480p"],"supported_aspect_ratios":null,` +
 	`"supported_frame_images":["first_frame","last_frame"],"generate_audio":false},` +
-	`{"id":"acme/text-to-video","supported_durations":[5],"supported_frame_images":null,"generate_audio":false}]}`
+	`{"id":"acme/text-to-video","supported_durations":[5],"supported_frame_images":null,"generate_audio":false},` +
+	`{"id":"acme/first-frame-only","supported_durations":[5],"supported_frame_images":["first_frame"],"generate_audio":false}]}`
 
 // generatedClip starts with the ftyp box http.DetectContentType recognizes as video/mp4.
 var generatedClip = []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41\x00\x00\x00\x08free")
@@ -197,9 +199,12 @@ type videoFixture struct {
 	jobs        *fakeVideoJobs
 	library     *fakeVideoLibrary
 	watcher     *mediagen.Watcher
-	notices     chan mediagen.Completion
-	tool        *VideoGenerate
-	runDir      string
+	// submitter is the shared path the tool now pays through; a test that strips a dependency
+	// of the submission reaches it here rather than through the tool.
+	submitter *mediagen.VideoSubmitter
+	notices   chan mediagen.Completion
+	tool      *VideoGenerate
+	runDir    string
 }
 
 // newVideoFixture wires the tool to a real watcher polling the fake provider every 5 ms; the
@@ -226,10 +231,13 @@ func newVideoFixture(t *testing.T, opts ...videoProviderOption) *videoFixture {
 		f.library, func(c mediagen.Completion) { f.notices <- c },
 		mediagen.WatcherOptions{PollInterval: 5 * time.Millisecond, MaxAge: mediagen.VideoJobMaxAge, MaxVideoBytes: 1 << 20})
 	t.Cleanup(func() { f.stopWatcher(t) })
+	f.submitter = &mediagen.VideoSubmitter{
+		Credentials: f.credentials, Catalog: mediagen.NewCatalog(provider.server.Client()),
+		Client: client, References: f.references, Jobs: jobs, MaxImageBytes: 1 << 20,
+	}
 	f.tool = &VideoGenerate{
-		Credentials: f.credentials, Settings: f.settings, Catalog: mediagen.NewCatalog(provider.server.Client()),
-		Client: client, References: f.references, Jobs: jobs, Watcher: f.watcher, VideoAssets: f.library,
-		MaxImageBytes: 1 << 20, MaxVideoBytes: 1 << 20,
+		Submitter: f.submitter, Settings: f.settings, Jobs: jobs, Watcher: f.watcher,
+		VideoAssets: f.library, MaxVideoBytes: 1 << 20,
 	}
 	return f
 }

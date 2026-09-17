@@ -176,13 +176,16 @@ func (r *fakeReferenceReader) Open(_ context.Context, owner, id string) (io.Read
 type imageFixture struct {
 	provider    *fakeOpenRouter
 	credentials *fakeMediaCredentials
-	references  *fakeReferenceReader
-	deliverer   *fakeDeliverer
-	tool        *ImageGenerate
-	generated   []byte
-	reference   []byte
-	runDir      string
-	ctx         context.Context
+	// generator is the shared path the tool now pays through; a test that strips a dependency
+	// or drives the catalog directly reaches it here rather than through the tool.
+	generator  *mediagen.ImageGenerator
+	references *fakeReferenceReader
+	deliverer  *fakeDeliverer
+	tool       *ImageGenerate
+	generated  []byte
+	reference  []byte
+	runDir     string
+	ctx        context.Context
 }
 
 func newImageFixture(t *testing.T, opts ...providerOption) *imageFixture {
@@ -201,14 +204,17 @@ func newImageFixture(t *testing.T, opts ...providerOption) *imageFixture {
 		reference: reference,
 		runDir:    t.TempDir(),
 	}
-	f.tool = &ImageGenerate{
+	f.generator = &mediagen.ImageGenerator{
 		Credentials:   f.credentials,
-		Settings:      fakeMediaSettings{model: "microsoft/mai-image-2.6"},
 		Catalog:       mediagen.NewCatalog(provider.server.Client()),
 		Client:        mediagen.NewClient(provider.server.Client(), 1<<20),
 		References:    f.references,
-		Assets:        f.deliverer,
 		MaxImageBytes: 1 << 20,
+	}
+	f.tool = &ImageGenerate{
+		Generator: f.generator,
+		Settings:  fakeMediaSettings{model: "microsoft/mai-image-2.6"},
+		Assets:    f.deliverer,
 	}
 	f.ctx = WithToolCallContext(identityctx.WithIdentityID(context.Background(), "owner-1"), "thread", "call-image", f.runDir, 8192)
 	return f
@@ -437,7 +443,7 @@ func TestImageGenerateFailsWithoutChargingWhenTheCatalogLookupIsAbandoned(t *tes
 	refreshing := make(chan struct{})
 	go func() {
 		defer close(refreshing)
-		_, _ = f.tool.Catalog.List(context.Background(), f.provider.server.URL, mediagen.KindImage, false)
+		_, _ = f.generator.Catalog.List(context.Background(), f.provider.server.URL, mediagen.KindImage, false)
 	}()
 	<-f.provider.catalogHeld
 

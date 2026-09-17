@@ -31,6 +31,12 @@ type mediaDeps struct {
 	references mediaAssetAdapter
 	// jobs is nil without a pool: no job can be persisted or resumed.
 	jobs mediagen.JobStore
+	// submitter and imager are the two shared generation paths: the chat tools and the cockpit
+	// Studio pay through these, so a clamp, a reference read or an audit field is never decided
+	// twice. submitter carries jobs, so it is unusable without a pool; both refuse through
+	// Configured rather than by being nil.
+	submitter *mediagen.VideoSubmitter
+	imager    *mediagen.ImageGenerator
 	// maxVideoBytes is the video ceiling read once at boot for assets.Limits.MaxVideoBytes.
 	maxVideoBytes int64
 }
@@ -61,6 +67,15 @@ func newMediaDeps(chat *chatEnv) *mediaDeps {
 	if chat.pool != nil {
 		media.jobs = mediagen.NewStore(chat.pool)
 	}
+	media.imager = &mediagen.ImageGenerator{
+		Credentials: media.credentials, Catalog: media.catalog, Client: media.client,
+		References: media.references, MaxImageBytes: chat.assets.Limits.MaxImageBytes,
+	}
+	media.submitter = &mediagen.VideoSubmitter{
+		Credentials: media.credentials, Catalog: media.catalog, Client: media.client,
+		References: media.references, Jobs: media.jobs,
+		MaxImageBytes: chat.assets.Limits.MaxImageBytes,
+	}
 	return media
 }
 
@@ -69,16 +84,12 @@ func newMediaDeps(chat *chatEnv) *mediaDeps {
 // running on a partial wiring.
 func wireMediaTools(chat *chatEnv, media *mediaDeps) {
 	image := chat.toolHandles.ImageGenerate
-	if image == nil || media == nil || media.settings == nil {
+	if image == nil || media == nil || media.settings == nil || !media.imager.Configured() {
 		return
 	}
-	image.Credentials = media.credentials
+	image.Generator = media.imager
 	image.Settings = media.settings
-	image.Catalog = media.catalog
-	image.Client = media.client
-	image.References = media.references
 	image.Assets = sendFileAssetAdapter{svc: chat.assets}
-	image.MaxImageBytes = chat.assets.Limits.MaxImageBytes
 }
 
 // wireVideoTool gives the retained video tool its live dependencies once the watcher exists, all
@@ -86,18 +97,15 @@ func wireMediaTools(chat *chatEnv, media *mediaDeps) {
 // so the tool keeps its zero value and refuses before any paid request.
 func wireVideoTool(chat *chatEnv, media *mediaDeps, watcher *mediagen.Watcher) {
 	video := chat.toolHandles.VideoGenerate
-	if video == nil || media == nil || media.settings == nil || watcher == nil {
+	if video == nil || media == nil || media.settings == nil || watcher == nil ||
+		!media.submitter.Configured() {
 		return
 	}
-	video.Credentials = media.credentials
+	video.Submitter = media.submitter
 	video.Settings = media.settings
-	video.Catalog = media.catalog
-	video.Client = media.client
-	video.References = media.references
 	video.Jobs = media.jobs
 	video.Watcher = watcher
 	video.VideoAssets = media.references
-	video.MaxImageBytes = chat.assets.Limits.MaxImageBytes
 	video.MaxVideoBytes = media.maxVideoBytes
 }
 

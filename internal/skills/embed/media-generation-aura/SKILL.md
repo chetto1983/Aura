@@ -113,6 +113,8 @@ moving it; one line such as "keep the subject from the first frame" protects the
   a price the result did not report.
 - Duration, resolution and ratio are requests: the model's nearest supported value is used,
   and `adjustments` says what changed — tell the operator.
+- `last_frame_asset_id` makes the clip end on an image; it needs `first_frame_asset_id`, and a
+  model without end frames refuses it (nothing billed).
 - `unsupported` about reference images: the model cannot take them, or not that many.
   Nothing was generated or billed. Call again with at most the number it names, keeping the
   ones that matter, or tell the operator to choose a model that accepts references. Never

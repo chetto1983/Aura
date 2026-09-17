@@ -240,8 +240,7 @@ func TestImageGenerateHandleRetainedWithoutDependencies(t *testing.T) {
 	if image == nil {
 		t.Fatal("the registry must retain the image_generate handle for serve-boot wiring")
 	}
-	if image.Credentials != nil || image.Settings != nil || image.Catalog != nil || image.Client != nil ||
-		image.References != nil || image.Assets != nil || image.MaxImageBytes != 0 {
+	if image.Generator != nil || image.Settings != nil || image.Assets != nil {
 		t.Fatalf("image_generate carries dependencies at registry build: %+v", image)
 	}
 	registered, ok := reg.Get("image_generate")
@@ -259,25 +258,27 @@ func TestWireMediaToolsInjectsLiveDependencies(t *testing.T) {
 	wireMediaTools(chat, media)
 
 	image := handles.ImageGenerate
-	if image.Catalog == nil || image.Client == nil || image.Settings == nil || image.MaxImageBytes != 12<<20 {
-		t.Fatalf("image_generate = %+v, want catalog, client, settings and the asset image ceiling", image)
+	if image.Generator == nil || image.Settings == nil || !image.Generator.Configured() {
+		t.Fatalf("image_generate = %+v, want a configured shared generator and the live settings", image)
 	}
-	if image.Client != media.client || image.Catalog != media.catalog || image.Credentials != media.credentials {
-		t.Fatal("image_generate must use the one client, catalog and credentials the video watcher shares")
+	generator := image.Generator
+	if generator != media.imager || generator.Client != media.client || generator.Catalog != media.catalog ||
+		generator.Credentials != media.credentials || generator.MaxImageBytes != 12<<20 {
+		t.Fatalf("the image path = %+v, want the one client, catalog and credentials the video watcher shares, at the asset image ceiling", generator)
 	}
 	if media.maxVideoBytes != 30<<20 || media.jobs != nil {
 		t.Fatalf("media video ceiling = %d, jobs = %v; want the asset service's boot ceiling and no job store without a pool",
 			media.maxVideoBytes, media.jobs)
 	}
-	if refs, ok := image.References.(mediaAssetAdapter); !ok || refs.svc != svc {
-		t.Fatalf("References = %#v, want the asset-service reference adapter", image.References)
+	if refs, ok := generator.References.(mediaAssetAdapter); !ok || refs.svc != svc {
+		t.Fatalf("References = %#v, want the asset-service reference adapter", generator.References)
 	}
 	if deliverer, ok := image.Assets.(sendFileAssetAdapter); !ok || deliverer.svc != svc {
 		t.Fatalf("Assets = %#v, want send_file's asset adapter over the same service", image.Assets)
 	}
 	// No identity resolver exists without a pool; the port must still answer no_key rather
 	// than calling through a typed-nil resolver.
-	if _, _, err := image.Credentials.For(context.Background(), "owner-1"); mediagen.ErrorCode(err) != "no_key" {
+	if _, _, err := generator.Credentials.For(context.Background(), "owner-1"); mediagen.ErrorCode(err) != "no_key" {
 		t.Fatalf("credentials without a resolver -> %q (%v), want no_key", mediagen.ErrorCode(err), err)
 	}
 }

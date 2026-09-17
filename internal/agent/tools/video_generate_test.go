@@ -50,7 +50,7 @@ func TestVideoGenerateSchemaAllowsCollectWithoutPrompt(t *testing.T) {
 	if _, exists := properties["model"]; exists {
 		t.Fatal("model cannot be an agent argument")
 	}
-	want := []string{"aspect_ratio", "audio", "duration", "first_frame_asset_id", "job_id", "prompt", "reference_asset_ids", "resolution"}
+	want := []string{"aspect_ratio", "audio", "duration", "first_frame_asset_id", "job_id", "last_frame_asset_id", "prompt", "reference_asset_ids", "resolution"}
 	if got := slices.Sorted(maps.Keys(properties)); !slices.Equal(got, want) || schema["additionalProperties"] != false {
 		t.Fatalf("properties = %v additionalProperties = %v, want %v and false", got, schema["additionalProperties"], want)
 	}

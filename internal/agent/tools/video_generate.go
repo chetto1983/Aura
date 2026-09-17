@@ -3,12 +3,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/mediagen"
-	"github.com/chetto1983/aura/internal/redact"
 )
 
 // VideoGenerate submits one video on the identity's own OpenRouter key with the
@@ -17,17 +15,15 @@ import (
 // with job_id. Every dependency is injected at serve boot; the static and manifest registries
 // hold a zero value whose Execute refuses before any request.
 type VideoGenerate struct {
-	Credentials mediagen.MediaCredentials
-	Settings    mediagen.Settings
-	Catalog     *mediagen.Catalog
-	Client      *mediagen.Client
-	References  mediagen.ReferenceReader
-	Jobs        mediagen.JobStore
-	Watcher     *mediagen.Watcher
+	// Submitter is the shared path that pays for a clip; the cockpit Studio submits through the
+	// same one, so a clamp or an audit field is never decided twice.
+	Submitter *mediagen.VideoSubmitter
+	Settings  mediagen.Settings
+	Jobs      mediagen.JobStore
+	Watcher   *mediagen.Watcher
 	// VideoAssets reads a finished job's clip back for delivery; nothing is ingested twice.
 	VideoAssets mediagen.ReferenceReader
-	// MaxImageBytes bounds the first frame and the references, MaxVideoBytes the delivered clip.
-	MaxImageBytes int64
+	// MaxVideoBytes bounds the delivered clip.
 	MaxVideoBytes int64
 }
 
@@ -43,6 +39,7 @@ const videoGenerateParameters = `{
     "resolution": {"type": "string", "enum": ["480p", "720p", "768p", "1080p", "1K", "2K", "4K"], "description": "Requested resolution; the nearest one the model offers is used."},
     "aspect_ratio": {"type": "string", "enum": ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "9:21"], "description": "Requested shape; the nearest ratio the model offers is used."},
     "first_frame_asset_id": {"type": "string", "description": "Asset id of an image to animate: the video starts from it."},
+    "last_frame_asset_id": {"type": "string", "description": "Asset id of an image the video should end on; needs first_frame_asset_id and a model that accepts an end frame."},
     "reference_asset_ids": {"type": "array", "items": {"type": "string"}, "description": "Asset ids of images the video should follow."},
     "audio": {"type": "boolean", "description": "Ask for sound; sent only when the model can generate audio."}
   },
@@ -62,14 +59,10 @@ type videoGenerateArgs struct {
 	Resolution        string   `json:"resolution"`
 	AspectRatio       string   `json:"aspect_ratio"`
 	FirstFrameAssetID string   `json:"first_frame_asset_id"`
+	LastFrameAssetID  string   `json:"last_frame_asset_id"`
 	ReferenceAssetIDs []string `json:"reference_asset_ids"`
 	Audio             *bool    `json:"audio"`
 }
-
-// videoJobRecordTimeout bounds the Insert that makes an accepted submission durable. The Insert
-// is detached from the turn: a turn cancelled right after the provider accepted the job must
-// still leave the row a watcher and a restart can resume.
-const videoJobRecordTimeout = 10 * time.Second
 
 func (g *VideoGenerate) Spec() Spec {
 	return Spec{
@@ -99,6 +92,8 @@ func (g *VideoGenerate) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 		return errorResult("unsupported", "A prompt is required to generate a video; to collect a finished video, pass its job_id instead."), nil
 	case jobID == "" && args.Duration < 0:
 		return errorResult("unsupported", "duration must be a positive number of seconds."), nil
+	case jobID == "" && args.LastFrameAssetID != "" && args.FirstFrameAssetID == "":
+		return errorResult("unsupported", "last_frame_asset_id needs first_frame_asset_id: a video can only end on an image when it also starts from one. Nothing was generated."), nil
 	case !g.configured():
 		return errorResult("unsupported", "Video generation is not available in this session."), nil
 	}
@@ -113,18 +108,13 @@ func (g *VideoGenerate) Execute(ctx context.Context, raw json.RawMessage) (ToolR
 }
 
 func (g *VideoGenerate) configured() bool {
-	return g.Credentials != nil && g.Settings != nil && g.Catalog != nil && g.Client != nil &&
-		g.References != nil && g.Jobs != nil && g.Watcher != nil && g.VideoAssets != nil &&
-		g.MaxImageBytes > 0 && g.MaxVideoBytes > 0
+	return g.Submitter.Configured() && g.Settings != nil && g.Jobs != nil && g.Watcher != nil &&
+		g.VideoAssets != nil && g.MaxVideoBytes > 0
 }
 
-// submit charges exactly once: credentials, the live model and wait, the clamp, the images and
-// the persisted request are all settled before the one POST, which is never repeated.
+// submit resolves the live model and wait, then hands the submission to the shared path, which
+// charges exactly once. The job it returns is already recorded, so only the inline wait is left.
 func (g *VideoGenerate) submit(ctx context.Context, owner string, args videoGenerateArgs) ToolResult {
-	baseURL, apiKey, err := g.Credentials.For(ctx, owner)
-	if err != nil {
-		return mediaErrorResult(err)
-	}
 	model, err := g.Settings.Model(ctx, mediagen.KindVideo)
 	if err != nil {
 		return mediaErrorResult(err)
@@ -133,90 +123,21 @@ func (g *VideoGenerate) submit(ctx context.Context, owner string, args videoGene
 	if err != nil {
 		return mediaErrorResult(err)
 	}
-	input, adjustments, err := g.clamp(ctx, baseURL, model, args)
-	if err != nil {
-		return mediaErrorResult(err)
-	}
-	req, err := g.request(ctx, owner, model, input)
-	if err != nil {
-		return mediaErrorResult(err)
-	}
-	persisted, err := mediagen.JobRequest(req, mediagen.JobAudit{
-		Origin: baseURL, FirstFrameAssetID: input.FirstFrameAssetID,
-		ReferenceAssetIDs: input.ReferenceAssetIDs, Adjustments: adjustments,
+	tc, _ := toolCallCtx(ctx)
+	job, err := g.Submitter.Submit(ctx, mediagen.VideoSubmission{
+		Owner: owner, ConversationID: tc.sessionID, ToolCallID: tc.toolCallID,
+		Model: model, Surface: mediagen.SurfaceChat,
+		Input: mediagen.VideoInput{
+			Prompt: args.Prompt, Duration: args.Duration, Resolution: args.Resolution,
+			AspectRatio: args.AspectRatio, FirstFrameAssetID: args.FirstFrameAssetID,
+			LastFrameAssetID: args.LastFrameAssetID, ReferenceAssetIDs: args.ReferenceAssetIDs,
+			Audio: args.Audio,
+		},
 	})
 	if err != nil {
 		return mediaErrorResult(err)
-	}
-	remote, err := g.Client.SubmitVideo(ctx, baseURL, apiKey, req)
-	if err != nil {
-		return mediaErrorResult(err)
-	}
-	job, err := g.record(ctx, owner, model, persisted, remote)
-	if err != nil {
-		return errorResult("job_failed", "The video was submitted but could not be recorded, so it cannot be delivered. It was not submitted again.")
 	}
 	return g.awaitInline(ctx, owner, job, inlineWait)
-}
-
-func (g *VideoGenerate) clamp(ctx context.Context, baseURL, model string, args videoGenerateArgs) (mediagen.VideoInput, []string, error) {
-	entry, adjustments, err := g.Catalog.Entry(ctx, baseURL, mediagen.KindVideo, model)
-	if err != nil {
-		return mediagen.VideoInput{}, nil, err
-	}
-	input, notes, err := mediagen.ClampVideo(mediagen.VideoInput{
-		Prompt: args.Prompt, Duration: args.Duration, Resolution: args.Resolution, AspectRatio: args.AspectRatio,
-		FirstFrameAssetID: args.FirstFrameAssetID, ReferenceAssetIDs: args.ReferenceAssetIDs, Audio: args.Audio,
-	}, entry)
-	if err != nil {
-		return mediagen.VideoInput{}, nil, err
-	}
-	return input, append(adjustments, notes...), nil
-}
-
-// request reads the kept first frame and references and builds the provider body.
-func (g *VideoGenerate) request(ctx context.Context, owner, model string, input mediagen.VideoInput) (mediagen.VideoRequest, error) {
-	req := mediagen.VideoRequest{
-		Model: model, Prompt: input.Prompt, Duration: input.Duration, Resolution: input.Resolution,
-		AspectRatio: input.AspectRatio, GenerateAudio: input.Audio,
-	}
-	if input.FirstFrameAssetID != "" {
-		frame, err := mediagen.LoadReferences(ctx, g.References, owner, []string{input.FirstFrameAssetID}, g.MaxImageBytes)
-		if err != nil {
-			return mediagen.VideoRequest{}, err
-		}
-		req.FrameImages = []mediagen.FrameReference{{Type: frame[0].Type, ImageURL: frame[0].ImageURL, FrameType: "first_frame"}}
-	}
-	references, err := mediagen.LoadReferences(ctx, g.References, owner, input.ReferenceAssetIDs, g.MaxImageBytes)
-	if err != nil {
-		return mediagen.VideoRequest{}, err
-	}
-	req.InputReferences = references
-	return req, nil
-}
-
-// record persists the accepted job. Only pending and in_progress rows exist before the watcher
-// has looked, and a provider saying completed has not produced an Aura asset yet, so any answer
-// but pending is stored in_progress and the watcher's first poll decides it. A lost Insert is
-// the excluded submission interval: logged for reconciliation, never submitted again.
-func (g *VideoGenerate) record(ctx context.Context, owner, model string, request json.RawMessage, remote mediagen.RemoteVideo) (mediagen.Job, error) {
-	tc, _ := toolCallCtx(ctx)
-	status := mediagen.StatusInProgress
-	if remote.Status == mediagen.StatusPending {
-		status = mediagen.StatusPending
-	}
-	recordCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), videoJobRecordTimeout)
-	defer cancel()
-	job, err := g.Jobs.Insert(recordCtx, mediagen.Job{
-		IdentityID: owner, Surface: mediagen.SurfaceChat, Kind: mediagen.KindVideo,
-		ConversationID: tc.sessionID, ToolCallID: tc.toolCallID, ProviderJobID: remote.ID,
-		Model: model, Request: request, Status: status, CostUSD: remote.CostUSD,
-	})
-	if err != nil {
-		slog.Error("video_generate: the provider accepted a video job that could not be recorded; it is not submitted again",
-			"owner", owner, "provider_job_id", remote.ID, "err", redact.String(err.Error()))
-	}
-	return job, err
 }
 
 // awaitInline waits the live window for the persisted job. Wait's window is its duration, not a

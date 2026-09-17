@@ -357,7 +357,11 @@ func TestWireVideoToolSharesTheImageToolsDependenciesAndTheWatcher(t *testing.T)
 	svc := &assets.Service{Limits: assets.Limits{MaxImageBytes: 12 << 20, MaxVideoBytes: 30 << 20}}
 	chat := &chatEnv{cfg: &config.Config{}, assets: svc, toolHandles: handles}
 	media := newMediaDeps(chat)
+	// newMediaDeps has no pool here, so it built both without a job store; serve gets one from
+	// the pool before either is read. The submitter holds its own reference, so the fake has to
+	// reach it too.
 	media.jobs = &recoveryJobStore{}
+	media.submitter.Jobs = media.jobs
 	watcher := newMediaWatcher(context.Background(), media, func(mediagen.Completion) {})
 	defer stopWatcher(t, watcher)
 	wireMediaTools(chat, media)
@@ -365,12 +369,20 @@ func TestWireVideoToolSharesTheImageToolsDependenciesAndTheWatcher(t *testing.T)
 	wireVideoTool(chat, media, watcher)
 
 	video, image := handles.VideoGenerate, handles.ImageGenerate
-	if video.Credentials != image.Credentials || video.Settings != image.Settings || video.Catalog != image.Catalog ||
-		video.Client != image.Client || video.References != image.References {
-		t.Fatal("video_generate must reuse the one credential port, settings, catalog, client and reference adapter")
+	submitter, generator := video.Submitter, image.Generator
+	if submitter == nil || !submitter.Configured() {
+		t.Fatalf("video_generate = %+v, want a configured shared submitter", video)
 	}
-	if video.Jobs != media.jobs || video.Watcher != watcher || video.MaxImageBytes != 12<<20 || video.MaxVideoBytes != 30<<20 {
-		t.Fatalf("video_generate = %+v, want the job store, the daemon's watcher and both boot ceilings", video)
+	if submitter.Credentials != generator.Credentials || video.Settings != image.Settings ||
+		submitter.Catalog != generator.Catalog || submitter.Client != generator.Client ||
+		submitter.References != generator.References {
+		t.Fatal("the video path must reuse the one credential port, settings, catalog, client and reference adapter the image path uses")
+	}
+	if submitter.Jobs != media.jobs || submitter.MaxImageBytes != 12<<20 {
+		t.Fatalf("the video path = %+v, want the job store and the boot image ceiling", submitter)
+	}
+	if video.Jobs != media.jobs || video.Watcher != watcher || video.MaxVideoBytes != 30<<20 {
+		t.Fatalf("video_generate = %+v, want the job store, the daemon's watcher and the boot video ceiling", video)
 	}
 	if clips, ok := video.VideoAssets.(mediaAssetAdapter); !ok || clips.svc != svc {
 		t.Fatalf("VideoAssets = %#v, want the asset adapter the watcher ingests through", video.VideoAssets)

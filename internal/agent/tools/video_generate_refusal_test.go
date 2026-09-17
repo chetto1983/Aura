@@ -78,21 +78,26 @@ func TestVideoGenerateRefusesMalformedInvocations(t *testing.T) {
 }
 
 func TestVideoGenerateRefusesWhenADependencyIsMissing(t *testing.T) {
-	for name, strip := range map[string]func(*VideoGenerate){
-		"credentials":     func(g *VideoGenerate) { g.Credentials = nil },
-		"settings":        func(g *VideoGenerate) { g.Settings = nil },
-		"catalog":         func(g *VideoGenerate) { g.Catalog = nil },
-		"client":          func(g *VideoGenerate) { g.Client = nil },
-		"references":      func(g *VideoGenerate) { g.References = nil },
-		"jobs":            func(g *VideoGenerate) { g.Jobs = nil },
-		"watcher":         func(g *VideoGenerate) { g.Watcher = nil },
-		"video assets":    func(g *VideoGenerate) { g.VideoAssets = nil },
-		"max image bytes": func(g *VideoGenerate) { g.MaxImageBytes = 0 },
-		"max video bytes": func(g *VideoGenerate) { g.MaxVideoBytes = 0 },
+	// The submission's own dependencies are stripped through the submitter: the tool refuses on
+	// Submitter.Configured(), so a hole anywhere in the shared path still stops the call before
+	// the provider is reached.
+	for name, strip := range map[string]func(*videoFixture){
+		"credentials":     func(f *videoFixture) { f.submitter.Credentials = nil },
+		"settings":        func(f *videoFixture) { f.tool.Settings = nil },
+		"catalog":         func(f *videoFixture) { f.submitter.Catalog = nil },
+		"client":          func(f *videoFixture) { f.submitter.Client = nil },
+		"references":      func(f *videoFixture) { f.submitter.References = nil },
+		"submitter jobs":  func(f *videoFixture) { f.submitter.Jobs = nil },
+		"submitter":       func(f *videoFixture) { f.tool.Submitter = nil },
+		"jobs":            func(f *videoFixture) { f.tool.Jobs = nil },
+		"watcher":         func(f *videoFixture) { f.tool.Watcher = nil },
+		"video assets":    func(f *videoFixture) { f.tool.VideoAssets = nil },
+		"max image bytes": func(f *videoFixture) { f.submitter.MaxImageBytes = 0 },
+		"max video bytes": func(f *videoFixture) { f.tool.MaxVideoBytes = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newVideoFixture(t)
-			strip(f.tool)
+			strip(f)
 			for _, args := range []string{`{"prompt":"waves"}`, `{"job_id":"` + f.seedJob(t, mediagen.StatusCompleted, videoThread).ID + `"}`} {
 				if code, message := toolError(t, f.execute(t, f.callCtx("call-video"), args)); code != "unsupported" || message == "" {
 					t.Fatalf("missing %s, %s -> %q %q, want unsupported", name, args, code, message)
@@ -132,6 +137,39 @@ func TestVideoGenerateRefusesWithoutADeliverableConversation(t *testing.T) {
 	assertNoVideoSpend(t, f)
 }
 
+// An end frame is the second half of a pair: a clip can only stop on an image when it also
+// starts from one. The tool settles this itself, before it knows which model is selected.
+func TestVideoGenerateRefusesAnEndFrameWithoutAStartFrame(t *testing.T) {
+	f := newVideoFixture(t)
+	code, message := toolError(t, f.execute(t, f.callCtx("call-video"), `{"prompt":"waves","last_frame_asset_id":"frame-1"}`))
+	if code != "unsupported" || !strings.Contains(message, "first_frame_asset_id") {
+		t.Fatalf("got %q %q, want unsupported naming first_frame_asset_id", code, message)
+	}
+	if f.settings.calls != 0 {
+		t.Fatal("a refusal decidable from the arguments alone still read the live settings")
+	}
+	assertNoVideoSpend(t, f)
+}
+
+// The pair is well formed but the selected model declares only first_frame, so the shared
+// clamp refuses it — after the catalog is read, and still before anything is submitted.
+func TestVideoGenerateRefusesAnEndFrameTheModelCannotTake(t *testing.T) {
+	f := newVideoFixture(t)
+	f.settings.model = "acme/first-frame-only"
+	code, message := toolError(t, f.execute(t, f.callCtx("call-video"),
+		`{"prompt":"waves","first_frame_asset_id":"frame-1","last_frame_asset_id":"frame-1"}`))
+	if code != "unsupported" || !strings.Contains(message, "end on a given image") {
+		t.Fatalf("got %q %q, want unsupported saying the model cannot end on an image", code, message)
+	}
+	if posts := f.provider.count("POST /videos"); posts != 0 {
+		t.Fatalf("%d submissions, want none: the refusal precedes the paid call", posts)
+	}
+	if len(f.references.opened) != 0 || f.jobs.count("Insert") != 0 {
+		t.Fatalf("opened %v references and inserted %d jobs; want none",
+			f.references.opened, f.jobs.count("Insert"))
+	}
+}
+
 func TestVideoGenerateReportsCredentialRefusalsWithoutARequest(t *testing.T) {
 	for _, code := range []string{"no_key", "no_credit"} {
 		t.Run(code, func(t *testing.T) {
@@ -141,8 +179,11 @@ func TestVideoGenerateReportsCredentialRefusalsWithoutARequest(t *testing.T) {
 			if gotCode != code || message != "refused by the credit decision" {
 				t.Fatalf("got %q %q, want %q with the port's message", gotCode, message, code)
 			}
-			if f.settings.calls != 0 {
-				t.Fatal("a refused credential still read the live settings")
+			// The settings read now comes first: the tool resolves the operator's model and
+			// inline wait before handing the submission to the shared path, which is where the
+			// credential is resolved. What a refusal must still guarantee is below — no request.
+			if f.settings.calls == 0 {
+				t.Fatal("the live settings were never read")
 			}
 			assertNoVideoSpend(t, f)
 		})
@@ -243,8 +284,11 @@ func TestVideoGenerateReportsAnUnrecordedSubmissionWithoutResubmitting(t *testin
 			t.Errorf("log %q lacks %q", logged, want)
 		}
 	}
-	if strings.Count(logged, "level=") != 1 || strings.Contains(logged, "identity-key") || strings.Contains(logged, "Bearer") {
-		t.Fatalf("log %q, want one record without the identity key", logged)
+	// Two records, one per layer: mediagen reports the unrecorded submission with the detail a
+	// reconciliation needs, and the tool reports the failed generation the way it reports every
+	// other one. Neither may carry the identity's key.
+	if strings.Count(logged, "level=") != 2 || strings.Contains(logged, "identity-key") || strings.Contains(logged, "Bearer") {
+		t.Fatalf("log %q, want the two records without the identity key", logged)
 	}
 }
 

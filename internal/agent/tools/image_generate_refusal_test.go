@@ -55,18 +55,22 @@ func TestImageGenerateRefusesMalformedInvocations(t *testing.T) {
 }
 
 func TestImageGenerateRefusesWhenADependencyIsMissing(t *testing.T) {
-	for name, strip := range map[string]func(*ImageGenerate){
-		"credentials":     func(g *ImageGenerate) { g.Credentials = nil },
-		"settings":        func(g *ImageGenerate) { g.Settings = nil },
-		"catalog":         func(g *ImageGenerate) { g.Catalog = nil },
-		"client":          func(g *ImageGenerate) { g.Client = nil },
-		"references":      func(g *ImageGenerate) { g.References = nil },
-		"assets":          func(g *ImageGenerate) { g.Assets = nil },
-		"max image bytes": func(g *ImageGenerate) { g.MaxImageBytes = 0 },
+	// The generator's own dependencies are stripped through it: the tool refuses on
+	// Generator.Configured(), so a hole anywhere in the shared path still stops the call before
+	// anything is paid for.
+	for name, strip := range map[string]func(*imageFixture){
+		"credentials":     func(f *imageFixture) { f.generator.Credentials = nil },
+		"settings":        func(f *imageFixture) { f.tool.Settings = nil },
+		"catalog":         func(f *imageFixture) { f.generator.Catalog = nil },
+		"client":          func(f *imageFixture) { f.generator.Client = nil },
+		"references":      func(f *imageFixture) { f.generator.References = nil },
+		"generator":       func(f *imageFixture) { f.tool.Generator = nil },
+		"assets":          func(f *imageFixture) { f.tool.Assets = nil },
+		"max image bytes": func(f *imageFixture) { f.generator.MaxImageBytes = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			f := newImageFixture(t)
-			strip(f.tool)
+			strip(f)
 			if code, message := toolError(t, f.execute(t, `{"prompt":"a picture"}`)); code != "unsupported" || message == "" {
 				t.Fatalf("missing %s -> %q %q, want unsupported with a message", name, code, message)
 			}
@@ -155,7 +159,7 @@ func TestImageGenerateRefusesReferencesItCannotUse(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			f := newImageFixture(t)
 			f.references.assets = map[string]ownedReference{"ref-1": tc.ref}
-			f.tool.MaxImageBytes = 32
+			f.generator.MaxImageBytes = 32
 			if code, _ := toolError(t, f.execute(t, `{"prompt":"make it night","reference_asset_ids":["ref-1"]}`)); code != tc.wantCode {
 				t.Fatalf("code = %q, want %q", code, tc.wantCode)
 			}
