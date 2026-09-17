@@ -159,6 +159,20 @@ func TestVideoSubmitterRefusesBeforeSpending(t *testing.T) {
 			mutate:  func(s *VideoSubmission) { s.Input.ReferenceAssetIDs = []string{"someone-elses"} },
 			code:    "asset_not_found",
 		},
+		// The frames are read in request(), ahead of the ordinary references; a rewrite that
+		// moved only the frame reads past the POST would still pass the reference case above.
+		{
+			name:    "a start frame that is not owned",
+			catalog: seededVideoCatalog,
+			mutate:  func(s *VideoSubmission) { s.Input.FirstFrameAssetID = "someone-elses" },
+			code:    "asset_not_found",
+		},
+		{
+			name:    "an end frame that is not owned",
+			catalog: seededVideoCatalog,
+			mutate:  func(s *VideoSubmission) { s.Input.LastFrameAssetID = "someone-elses" },
+			code:    "asset_not_found",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			provider := newFakeSubmitProvider(t, &fakeSubmitProvider{catalog: tc.catalog, accepted: `{}`})

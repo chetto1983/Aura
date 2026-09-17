@@ -6,41 +6,56 @@ import (
 	"testing"
 )
 
-func layout() Layout {
+// native turns a POSIX-looking fixture path into this platform's absolute form. Layout.For
+// resolves the identity base through filepath.Abs (idroot.containedDir), so on Windows a root
+// written "/srv/x" comes back as "D:\srv\x". A fixture that assumes POSIX either fails there —
+// it did — or, worse, passes vacuously: a containment assertion between a drive-qualified path
+// and a drive-less one is true for the wrong reason.
+func native(t *testing.T, path string) string {
+	t.Helper()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		t.Fatalf("resolve %q: %v", path, err)
+	}
+	return abs
+}
+
+func layout(t *testing.T) Layout {
+	t.Helper()
 	return Layout{
-		Global:     "/srv/skills",
-		Identities: "/srv/skills-identities",
-		Export:     "/srv/skills-export",
+		Global:     native(t, "/srv/skills"),
+		Identities: native(t, "/srv/skills-identities"),
+		Export:     native(t, "/srv/skills-export"),
 	}
 }
 
 // The unscoped case is today's behaviour, and it has to stay byte-identical: the CLI listing
 // what the deployment ships, and a deployment with no per-identity base configured.
 func TestUnscopedRootsAreTheDeploymentsOwn(t *testing.T) {
-	r, err := layout().For("")
+	r, err := layout(t).For("")
 	if err != nil {
 		t.Fatalf("For(\"\"): %v", err)
 	}
 	if r.Identity != "" {
 		t.Fatalf("identity root = %q, want none", r.Identity)
 	}
-	if r.Global != "/srv/skills" || r.Export != "/srv/skills-export" {
+	if r.Global != native(t, "/srv/skills") || r.Export != native(t, "/srv/skills-export") {
 		t.Fatalf("roots = %#v", r)
 	}
-	if got := strings.Join(r.LoaderRoots(), ","); got != "/srv/skills" {
+	if got := strings.Join(r.LoaderRoots(), ","); got != native(t, "/srv/skills") {
 		t.Fatalf("loader roots = %q, want the global root alone", got)
 	}
-	if r.WritableRoot() != "/srv/skills" {
+	if r.WritableRoot() != native(t, "/srv/skills") {
 		t.Fatalf("writable root = %q, want the global one", r.WritableRoot())
 	}
 }
 
 func TestScopedRootsDeriveBothPerIdentityPaths(t *testing.T) {
-	r, err := layout().For("alice")
+	r, err := layout(t).For("alice")
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
-	if r.Identity != filepath.Join("/srv/skills-identities", "alice") {
+	if r.Identity != filepath.Join(native(t, "/srv/skills-identities"), "alice") {
 		t.Fatalf("identity root = %q", r.Identity)
 	}
 	if r.Export != filepath.Join(r.Identity, ".export") {
@@ -54,7 +69,7 @@ func TestScopedRootsDeriveBothPerIdentityPaths(t *testing.T) {
 // D-214-3: the global root wins a name collision, so it must be LAST — the Loader merges in
 // order with later-root-wins. Asserting the order is asserting the precedence.
 func TestGlobalRootIsLastSoTheOperatorWinsACollision(t *testing.T) {
-	r, err := layout().For("alice")
+	r, err := layout(t).For("alice")
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
@@ -73,7 +88,7 @@ func TestGlobalRootIsLastSoTheOperatorWinsACollision(t *testing.T) {
 // The per-identity base is separate from the global root precisely so an identity can never
 // name a directory inside the namespace the loader scans for skills.
 func TestIdentityRootsNeverLandInsideTheGlobalRoot(t *testing.T) {
-	r, err := layout().For("alice")
+	r, err := layout(t).For("alice")
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
@@ -84,7 +99,7 @@ func TestIdentityRootsNeverLandInsideTheGlobalRoot(t *testing.T) {
 
 func TestForRefusesAnIdentityThatEscapesEitherBase(t *testing.T) {
 	for _, id := range []string{"../evil", "a/b", ".hidden", strings.Repeat("x", 65)} {
-		if _, err := layout().For(id); err == nil {
+		if _, err := layout(t).For(id); err == nil {
 			t.Fatalf("For(%q) = nil error, want a refusal", id)
 		}
 	}
@@ -93,20 +108,20 @@ func TestForRefusesAnIdentityThatEscapesEitherBase(t *testing.T) {
 // An unconfigured per-identity base is not an error: it is a deployment that has not turned
 // per-identity skills on, and it must behave exactly like the unscoped case.
 func TestAnUnconfiguredIdentityBaseLeavesEveryoneOnTheGlobalRoot(t *testing.T) {
-	l := layout()
+	l := layout(t)
 	l.Identities = "  "
 	r, err := l.For("alice")
 	if err != nil {
 		t.Fatalf("For: %v", err)
 	}
-	if r.Identity != "" || r.WritableRoot() != "/srv/skills" {
+	if r.Identity != "" || r.WritableRoot() != native(t, "/srv/skills") {
 		t.Fatalf("roots = %#v, want the global root alone", r)
 	}
 	// With no identity base there is no per-identity library to export, so the export stays
 	// the deployment's — the same single tree the pre-#214 box was filled from. Scoping it
 	// here would name a directory nothing ever writes into and leave the box holding only
 	// whatever the global source carried anyway.
-	if r.Export != "/srv/skills-export" {
+	if r.Export != native(t, "/srv/skills-export") {
 		t.Fatalf("export = %q, want the deployment export when per-identity skills are off", r.Export)
 	}
 }
@@ -119,7 +134,7 @@ func TestAnUnconfiguredIdentityBaseLeavesEveryoneOnTheGlobalRoot(t *testing.T) {
 // box as /skills/<their-id>/<skill> — present, readable, and invisible to any check that
 // lists only the top level of /skills.
 func TestIdentityExportIsNotReachableFromTheGlobalExport(t *testing.T) {
-	l := layout()
+	l := layout(t)
 	alice, err := l.For("alice")
 	if err != nil {
 		t.Fatalf("For(alice): %v", err)
@@ -155,12 +170,12 @@ func TestZeroLayoutYieldsNothingRatherThanAJoinOfEmptyStrings(t *testing.T) {
 // PREFIX with the writable one, and the identity's own export subtree, which is inside the
 // root but is a materialization staging area rather than a skill the board lists.
 func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
-	r := Roots{Global: "/srv/skills", Identity: "/srv/identities/alice"}
+	r := Roots{Global: native(t, "/srv/skills"), Identity: native(t, "/srv/identities/alice")}
 
 	owned := []string{
-		"/srv/identities/alice/mine",
-		"/srv/identities/alice",
-		"/srv/identities/alice/.export/mine",
+		native(t, "/srv/identities/alice/mine"),
+		native(t, "/srv/identities/alice"),
+		native(t, "/srv/identities/alice/.export/mine"),
 	}
 	for _, dir := range owned {
 		if !r.Owns(dir) {
@@ -169,11 +184,11 @@ func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
 	}
 
 	notOwned := []string{
-		"/srv/skills/house",                    // the house library
-		"/srv/identities/bob/.export/borrowed", // another identity's share
-		"/srv/identities/alice-2/theirs",       // a sibling whose path shares the prefix
-		"/srv/identities",                      // the parent
-		"",                                     // nothing
+		native(t, "/srv/skills/house"),                    // the house library
+		native(t, "/srv/identities/bob/.export/borrowed"), // another identity's share
+		native(t, "/srv/identities/alice-2/theirs"),       // a sibling whose path shares the prefix
+		native(t, "/srv/identities"),                      // the parent
+		"",                                                // nothing
 	}
 	for _, dir := range notOwned {
 		if r.Owns(dir) {
@@ -187,11 +202,11 @@ func TestOwnsSeparatesTheCallersRootFromEverythingElse(t *testing.T) {
 // the house library is exactly what they own. The single-operator deployment keeps today's
 // behaviour rather than losing every verb.
 func TestOwnsFallsBackToTheGlobalRootWhenThereIsNoIdentity(t *testing.T) {
-	r := Roots{Global: "/srv/skills"}
-	if !r.Owns("/srv/skills/house") {
+	r := Roots{Global: native(t, "/srv/skills")}
+	if !r.Owns(native(t, "/srv/skills/house")) {
 		t.Fatal("an unscoped caller must own the global root they write to")
 	}
-	if r.Owns("/srv/identities/alice/mine") {
+	if r.Owns(native(t, "/srv/identities/alice/mine")) {
 		t.Fatal("an unscoped caller must not own an identity's root")
 	}
 }

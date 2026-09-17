@@ -237,6 +237,43 @@ func TestVideoGenerateCollectDeliversNothingForACancelledTurn(t *testing.T) {
 
 // TestVideoInProgressSurvivesAnUnreadableSubmissionRecord: the job was submitted and is running,
 // so a record that cannot be read back must not turn into a failure the model might retry.
+// Every answer about a job repeats the submission, and the end frame and the seed are the two
+// halves that come from different places: the frame from the audit, the seed from the request.
+// Dropping either mapping would be invisible without this.
+func TestVideoSubmissionRepeatsTheEndFrameAndTheSeed(t *testing.T) {
+	seed := 4242
+	request, err := mediagen.JobRequest(
+		mediagen.VideoRequest{
+			Model: "m", Prompt: "waves", Duration: 6, Resolution: "720p", AspectRatio: "16:9",
+			GenerateAudio: &[]bool{true}[0], Seed: &seed,
+		},
+		mediagen.JobAudit{
+			Origin: "https://openrouter.ai/api/v1", FirstFrameAssetID: "frame-1",
+			LastFrameAssetID: "frame-2", ReferenceAssetIDs: []string{"ref-1"},
+			Adjustments: []string{"duration rounded to 6s"},
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, used, adjustments, err := videoSubmission(mediagen.Job{ID: "job-9", Model: "m", Request: request})
+	if err != nil {
+		t.Fatalf("videoSubmission: %v", err)
+	}
+	if prompt != "waves" || used.FirstFrameAssetID != "frame-1" || used.LastFrameAssetID != "frame-2" {
+		t.Fatalf("used = %+v, want both frames of the submission", used)
+	}
+	if used.Seed == nil || *used.Seed != seed {
+		t.Fatalf("seed = %v, want the submitted %d", used.Seed, seed)
+	}
+	if used.Duration != 6 || used.Resolution != "720p" || used.AspectRatio != "16:9" ||
+		used.Audio == nil || !*used.Audio || !slices.Equal(used.ReferenceAssetIDs, []string{"ref-1"}) {
+		t.Fatalf("used = %+v, want the submitted options", used)
+	}
+	if !slices.Equal(adjustments, []string{"duration rounded to 6s"}) {
+		t.Fatalf("adjustments = %v, want the recorded note", adjustments)
+	}
+}
+
 func TestVideoInProgressSurvivesAnUnreadableSubmissionRecord(t *testing.T) {
 	logs := captureLogs(t)
 	res := videoInProgressResult(mediagen.Job{ID: "job-7", Model: "m", Request: json.RawMessage(`{`)}, mediagen.StatusInProgress)
