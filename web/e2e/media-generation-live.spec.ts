@@ -44,8 +44,9 @@ import {
 // previous test's clip and wait for nothing.
 
 const imagePrompt = 'Generate an image of a red wooden boat on a calm mountain lake, 16:9.';
-const videoPrompt =
-  'Generate a five second 480p video of a red wooden boat drifting on a calm mountain lake.';
+// A new clip, not an animation of the boat picture above it: the media skill animates an image
+// only when asked to.
+const videoPrompt = 'Generate a short video of waves rolling onto an empty beach at sunset.';
 const animatePrompt = 'Animate this image into a five second 480p clip: let the water ripple.';
 
 function generationFrame(page: Page): Locator {
@@ -92,7 +93,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
     test.setTimeout(600_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
     const image = page.locator('[data-slot="image-preview"] img');
-    await sendPrompt(page, imagePrompt);
+    await sendPrompt(page, conversationId, imagePrompt);
 
     await expect(frameOrResult(page, image)).toBeVisible({ timeout: 120_000 });
     await expect(image.last()).toBeVisible({ timeout: 300_000 });
@@ -117,31 +118,42 @@ test.describe.serial('media generation (paid, real agent)', () => {
   test('the real agent delivers a clip in the same turn', async ({ page }, info) => {
     test.setTimeout(900_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
-    const before = countToolCalls(await threadSnapshot(page, conversationId), 'video_generate');
-    await sendPrompt(page, videoPrompt);
-    await expect(frameOrResult(page, page.locator('video'))).toBeVisible({ timeout: 120_000 });
+    // The default inline wait is 45 s; google/veo-3.1-lite took about 52 s on 2026-09-17, so the
+    // same-turn path is exercised with a longer window, as the spec asks for a slow provider. The
+    // row is removed below, returning the deployment to its configured wait.
+    await putSetting(page, videoInlineWaitKey, '180');
+    try {
+      const before = countToolCalls(await threadSnapshot(page, conversationId), 'video_generate');
+      await sendPrompt(page, conversationId, videoPrompt);
+      await expect(frameOrResult(page, page.locator('video'))).toBeVisible({ timeout: 120_000 });
 
-    videoAssetID = await waitForDeliveredAsset(
-      page,
-      conversationId,
-      'video_generate',
-      600_000,
-      before,
-    );
-    const snapshot = await threadSnapshot(page, conversationId);
-    const call = expectPromotedByToolSearch(snapshot, 'video_generate');
-    const result = expectToolResultJSON(call);
-    // The same-turn claim is exactly this: the FIRST video_generate answered with the asset,
-    // not with {"status":"in_progress"}. A provider slower than the inline wait must be
-    // recorded as that observation, never relabelled as a same-turn pass.
-    expect(result.status, call.result).toBeUndefined();
-    expect(String(result.asset_id)).toBe(videoAssetID);
-    expect(String(result.mime_type)).toMatch(/^video\//);
+      videoAssetID = await waitForDeliveredAsset(
+        page,
+        conversationId,
+        'video_generate',
+        600_000,
+        before,
+      );
+      const snapshot = await threadSnapshot(page, conversationId);
+      const call = expectPromotedByToolSearch(snapshot, 'video_generate');
+      const result = expectToolResultJSON(call);
+      // The same-turn claim is exactly this: the FIRST video_generate answered with the asset,
+      // not with {"status":"in_progress"} and not with a failure the model then retried.
+      expect(result.status, call.result).toBeUndefined();
+      expect(String(result.asset_id), call.result).toBe(videoAssetID);
+      expect(String(result.mime_type)).toMatch(/^video\//);
+      expect(toolCallArguments(call).first_frame_asset_id, call.argsText).toBeUndefined();
 
-    await expect(page.locator(`video[src="/api/assets/${videoAssetID}/stream"]`)).toBeVisible({
-      timeout: 180_000,
-    });
-    await info.attach('video-tool-result', { body: call.result, contentType: 'application/json' });
+      await expect(page.locator(`video[src="/api/assets/${videoAssetID}/stream"]`)).toBeVisible({
+        timeout: 180_000,
+      });
+      await info.attach('video-tool-result', {
+        body: call.result,
+        contentType: 'application/json',
+      });
+    } finally {
+      await deleteSetting(page, videoInlineWaitKey);
+    }
   });
 
   test('the cockpit streams the delivered clip over HTTP Range', async ({ page }) => {
@@ -176,7 +188,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
     test.setTimeout(900_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
     const before = countToolCalls(await threadSnapshot(page, conversationId), 'video_generate');
-    await sendPrompt(page, animatePrompt);
+    await sendPrompt(page, conversationId, animatePrompt);
     await expect(frameOrResult(page, page.locator('video').nth(before))).toBeVisible({
       timeout: 120_000,
     });
@@ -212,7 +224,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
     await putSetting(page, videoInlineWaitKey, '1');
     try {
       await gotoAuthenticated(page, `/c/${encodeURIComponent(detachedId)}`);
-      await sendPrompt(page, videoPrompt);
+      await sendPrompt(page, detachedId, videoPrompt);
 
       const staticFrame = page.locator('[data-testid="generation-frame"][data-generating="false"]');
       await expect(staticFrame).toBeVisible({ timeout: 300_000 });

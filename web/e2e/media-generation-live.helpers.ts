@@ -298,9 +298,46 @@ export async function rangeProbe(page: Page, url: string, range: string): Promis
   );
 }
 
-export async function sendPrompt(page: Page, prompt: string): Promise<void> {
+/**
+ * sendPrompt starts a new turn. A prompt typed while the previous turn still runs is delivered
+ * as a steer of that turn and replayed as "The previous turn ended before this message could be
+ * delivered…" — measured in the live run of 2026-09-17, where the image test returned as soon as
+ * the picture appeared and the video prompt landed inside the image turn. So it waits for the
+ * conversation to have no live run (the server's view, which holds right after a navigation) and
+ * for the composer to show no Stop control (the page's view) before typing.
+ */
+export async function sendPrompt(
+  page: Page,
+  conversationId: string,
+  prompt: string,
+): Promise<void> {
+  await waitForRunIdle(page, conversationId);
   const input = page.getByRole('textbox', { name: 'Ask Aura', exact: true });
   await expect(input).toBeVisible({ timeout: 30_000 });
   await input.fill(prompt);
   await input.press('Enter');
+}
+
+const runIdleTimeoutMs = 900_000;
+
+async function waitForRunIdle(page: Page, conversationId: string): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await sameOriginFetch(
+          page,
+          `/api/conversations/${encodeURIComponent(conversationId)}`,
+        );
+        if (response.status !== 200) {
+          throw new Error(`Conversation read failed: ${String(response.status)} ${response.text}`);
+        }
+        const row = JSON.parse(response.text) as { readonly live_run_id?: string };
+        return row.live_run_id ?? '';
+      },
+      { timeout: runIdleTimeoutMs, intervals: [1_000] },
+    )
+    .toBe('');
+  await expect(
+    page.getByRole('button', { name: 'Stop the current response', exact: true }),
+  ).toHaveCount(0, { timeout: runIdleTimeoutMs });
 }
