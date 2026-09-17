@@ -1203,12 +1203,12 @@ Playwright.
   export function draftFromRecord(record: StudioRecord, images: readonly StudioImageRef[]): StudioDraft
   ```
 
-- [ ] **Step 1: Add the registry components.** From `web/`:
+- [x] **Step 1: Add the registry components.** From `web/`:
   `npx shadcn@latest add toggle-group switch slider dropdown-menu kbd`, answering "no" to
   overwriting. Read each generated file: it imports from `radix-ui` and `@/lib/utils`, and adds
   no dependency. Then `npm run format && npm run lint && npm run typecheck`.
 
-- [ ] **Step 2: Write the failing form tests** in `__tests__/studioForm.test.ts`, over two
+- [x] **Step 2: Write the failing form tests** in `__tests__/studioForm.test.ts`, over two
   fixtures — `veoLite` (durations `[8,4,6]`, resolutions `['1080p','720p']`, ratios
   `['16:9','9:16']`, both frames, audio, seed, the four price rows) and `seedream` (an image
   model with ratios `['1:1','3:2']`, `reference_max: 4`, `usd_per_image_min/max` 0.05):
@@ -1225,14 +1225,14 @@ Playwright.
     the library;
   - `isActive` is true only for `pending` and `in_progress`.
 
-- [ ] **Step 3: Implement `studioApi.ts`** — the types above, a `StudioError` carrying the
+- [x] **Step 3: Implement `studioApi.ts`** — the types above, a `StudioError` carrying the
   server's code and sentence, `studioJSON` reading `{error, message}` from a failure (a
   non-JSON body leaves the bare status), `readInit` with `credentials: 'same-origin'`, the six
   calls against the spec's routes (history with `limit=24`, `before` and `kind` only when
   given), and `assetDownloadUrl` / `assetStreamUrl` helpers. Its test stubs `fetch` and pins
   the URLs, the POST bodies, and both failure shapes.
 
-- [ ] **Step 4: Implement `studioForm.ts`** — the pure model. `resolutionHeight` mirrors
+- [x] **Step 4: Implement `studioForm.ts`** — the pure model. `resolutionHeight` mirrors
   `mediagen`'s measure (`<n>p`, or 1K/2K/4K); `cheapestOptions` sorts by that height, takes
   `Math.min` of the durations, prefers `16:9` when declared, audio off and no seed;
   `reconcileDraft` keeps only declared values and enforces `maxImages`;
@@ -1240,17 +1240,17 @@ Playwright.
   `usd_per_image_min` for image, returning `undefined` when either is missing; `requestBody`
   builds the two bodies; `draftFromRecord` reads a record's `used`.
 
-- [ ] **Step 5: Implement `frameUpload.ts`** (presign with `thread_id: ''`, `putWithProgress`,
+- [x] **Step 5: Implement `frameUpload.ts`** (presign with `thread_id: ''`, `putWithProgress`,
   then `finalizeStudioUpload`) and `modelChoice.ts` (`aura.studio.model.<kind>` in
   `localStorage`, `initialModel(listed, deploymentDefault)`), each with the tests named in
   their Interfaces.
 
-- [ ] **Step 6: Implement `useStudio.ts`** — `useStudioModels(kind)`,
+- [x] **Step 6: Implement `useStudio.ts`** — `useStudioModels(kind)`,
   `useStudioHistory(kind)` as an infinite query polling the first page every 5 s while a listed
   record is active, `useCreateStudioVideo()` and `useCreateStudioImage()` invalidating the
   history on success, and `useStudioLibrary(enabled)`.
 
-- [ ] **Step 7: Register the mode and the strings.** `MODES` becomes
+- [x] **Step 7: Register the mode and the strings.** `MODES` becomes
   `['chat', 'studio', 'graph', 'governance', 'documents', 'settings']`; `ModeTabBar` and
   `MobileAppSidebar` map `studio` to lucide's `Clapperboard`; `resources.ts` gains
   `shell.modes.studio` / `shell.modesCompact.studio` in both locales and spreads
@@ -1264,12 +1264,12 @@ Playwright.
   `web/src/shell/SurfaceWorkspace.tsx` in this step. `StudioWorkspace.tsx` renders only the
   title for now.
 
-- [ ] **Step 8: Verify.** From `web/`:
+- [x] **Step 8: Verify.** From `web/`:
   `npm run typecheck && npm run lint && npx vitest run src/studio src/shell src/i18n && npm run dup`.
   `npm run deadcode` may flag the hooks until Task 6; if only those, fold this commit into
   Task 6's.
 
-- [ ] **Step 9: Commit.**
+- [x] **Step 9: Commit.**
   `git commit -m "feat(cockpit): add the Studio mode and its data layer"`.
 
 ---
