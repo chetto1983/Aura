@@ -153,9 +153,12 @@ type Server struct {
 	// Nil in production: the handler builds its own client.
 	modelCatalog modelCatalogFetcher
 	mediaCatalog MediaCatalogLister
-	settingsMu   sync.Mutex
-	audit        auditReader
-	idAdmin      identityAdmin
+	// studio serves the cockpit Studio's generation, history and library routes
+	// (studio_api.go); nil until SetStudio, and every Studio route then answers 503.
+	studio     StudioBackend
+	settingsMu sync.Mutex
+	audit      auditReader
+	idAdmin    identityAdmin
 	// credit bundles the CRED-03/CRED-06/CRED-09 credit-cap read/write dependencies
 	// (credit_api.go) in one field rather than four, wired by SetCreditAPI; nil until
 	// wired, matching audit's own 503-until-wired precedent.
@@ -364,6 +367,7 @@ func (s *Server) Mux() http.Handler {
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
 	s.registerAssetRoutes(mux)
+	s.registerStudioRoutes(mux)
 	// WEBSHARE-02/03 (Phase 37F plan 37F-10): the eight share-lifecycle routes across three
 	// trust boundaries — owner-scoped CRUD (POST/GET /api/shares, PATCH .../snapshot, DELETE),
 	// the D-10 bearer-within-auth internal reads (GET .../data, .../asset/{assetID} —

@@ -86,3 +86,9 @@ func (s *Server) SetContextWindow(tokens int) {
 // SetLLMRuntime makes model-dependent read surfaces use the same atomic snapshot
 // as new turns. SetContextWindow remains the fallback for tests and static callers.
 func (s *Server) SetLLMRuntime(runtime *llm.Runtime) { s.llmRuntime = runtime }
+
+// SetStudio wires the cockpit Studio's live half: the media catalog, the two shared
+// generation paths, the job store and the identity's image library. Set by the daemon
+// composition root only when every one of them is configured (cmd/aura/serve_studio.go);
+// until set, every Studio route answers 503 rather than half-serving a page that pays.
+func (s *Server) SetStudio(backend StudioBackend) { s.studio = backend }
