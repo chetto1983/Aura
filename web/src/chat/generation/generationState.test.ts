@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { REPLAYED_RESULT_MARKER, generationArgs, generationState } from './generationState';
+import {
+  REPLAYED_RESULT_MARKER,
+  collectedJobIds,
+  deferredJobId,
+  generationArgs,
+  generationState,
+} from './generationState';
 
 // generationState / generationArgs — the pure gate between a media tool part and the
 // generation frame. Only image_generate and video_generate are ever recognized, only a
@@ -128,5 +134,75 @@ describe('generationArgs', () => {
       prompt: 'A calm lake',
       aspectRatio: '1 / 1',
     });
+  });
+});
+
+describe('deferredJobId', () => {
+  it('reads the job id of a detached result', () => {
+    expect(deferredJobId('{"status":"in_progress","job_id":"job-1"}')).toBe('job-1');
+    expect(deferredJobId({ status: 'pending', job_id: 'job-2' })).toBe('job-2');
+  });
+
+  it('is undefined without a usable id', () => {
+    expect(deferredJobId('{"status":"in_progress"}')).toBeUndefined();
+    expect(deferredJobId('{"job_id":""}')).toBeUndefined();
+    expect(deferredJobId('{"job_id":7}')).toBeUndefined();
+    expect(deferredJobId('not json')).toBeUndefined();
+    expect(deferredJobId(undefined)).toBeUndefined();
+  });
+});
+
+describe('collectedJobIds', () => {
+  const collect = (jobID: string) => ({
+    type: 'tool-call',
+    toolName: 'video_generate',
+    argsText: JSON.stringify({ job_id: jobID }),
+  });
+
+  it('collects every job id a video_generate call names', () => {
+    const ids = collectedJobIds([
+      { role: 'assistant', content: [collect('job-1')] },
+      { role: 'assistant', content: [{ type: 'text', text: 'hi' }, collect('job-2')] },
+    ]);
+    expect([...ids].sort()).toEqual(['job-1', 'job-2']);
+  });
+
+  it('reads a snapshot part that carries its arguments as an object', () => {
+    const ids = collectedJobIds([
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolName: 'video_generate', args: { job_id: 'job-3' } }],
+      },
+    ]);
+    expect([...ids]).toEqual(['job-3']);
+  });
+
+  it('ignores submissions, other tools and malformed content', () => {
+    const ids = collectedJobIds([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool-call', toolName: 'video_generate', argsText: '{"prompt":"waves"}' },
+        ],
+      },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'tool-call', toolName: 'image_generate', argsText: '{"job_id":"job-x"}' },
+        ],
+      },
+      { role: 'assistant', content: 'plain text' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolName: 'video_generate', argsText: 'not json' }],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool-call', toolName: 'video_generate', argsText: '{"job_id":5}' }],
+      },
+      null,
+      'nonsense',
+    ]);
+    expect([...ids]).toEqual([]);
   });
 });

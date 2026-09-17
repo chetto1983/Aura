@@ -68,6 +68,41 @@ export function generationState(
   return ACTIVE_JOB_STATUSES.has(resultObject(result)?.status) ? 'deferred' : 'fallback';
 }
 
+/** The job id an in-progress video_generate result carries, empty when it carries none. */
+export function deferredJobId(result: unknown): string | undefined {
+  const jobID = resultObject(result)?.job_id;
+  return typeof jobID === 'string' && jobID !== '' ? jobID : undefined;
+}
+
+/**
+ * collectedJobIds is every job id a video_generate call names in this thread — that is, every
+ * detached job the model has already asked back for.
+ *
+ * A detached job's card is what the tool answered BEFORE the clip existed ("arriving in this
+ * chat"). Once the clip has been collected, the delivered clip further down is the answer, and
+ * the card above it is a second, empty copy of the same generation. Measured in the cockpit on
+ * 2026-09-17: both were on screen at once.
+ *
+ * Reads the stored parts defensively: content may be a string, a part may carry its arguments
+ * as text (the stream reducer) or as an object (a snapshot), and either may be malformed.
+ */
+export function collectedJobIds(messages: readonly unknown[]): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const message of messages) {
+    const content = asObject(message)?.content;
+    if (!Array.isArray(content)) continue;
+    for (const part of content) {
+      const row = asObject(part);
+      if (row?.type !== 'tool-call' || row.toolName !== 'video_generate') continue;
+      const args =
+        typeof row.argsText === 'string' ? parseObject(row.argsText) : asObject(row.args);
+      const jobID = args?.job_id;
+      if (typeof jobID === 'string' && jobID !== '') ids.add(jobID);
+    }
+  }
+  return ids;
+}
+
 export function generationArgs(argsText: string | undefined): {
   prompt: string;
   aspectRatio: string;

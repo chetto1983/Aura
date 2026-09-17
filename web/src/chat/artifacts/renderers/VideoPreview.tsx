@@ -23,7 +23,10 @@ export default function VideoPreview({ assetId, fileName }: RendererProps) {
       onError={() => {
         setFailedSrc(src);
       }}
-      className="max-h-[70vh] w-full rounded-[var(--radius-md)] bg-surface-2 object-contain"
+      // The element keeps the clip's own proportions: w-full with a capped height left a box
+      // wider than the clip, which the browser filled with black bars on a short window (seen
+      // in the cockpit on 2026-09-17). h-auto/w-auto inside the two maximums cannot letterbox.
+      className="max-h-[70vh] h-auto w-auto max-w-full rounded-[var(--radius-md)] bg-surface-2"
     />
   );
 }

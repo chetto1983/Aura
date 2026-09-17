@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
+import { CollectedJobsContext } from './collectedJobsContext';
 import { REPLAYED_RESULT_MARKER } from './generationState';
 import { GenerationToolDisplay } from './GenerationToolDisplay';
 
@@ -76,5 +77,50 @@ describe('GenerationToolDisplay', () => {
       />,
     );
     expect(container.innerHTML).toBe('');
+  });
+});
+
+describe('a detached job this thread already collected', () => {
+  it('draws nothing, because its clip is already on screen', () => {
+    render(
+      <CollectedJobsContext.Provider value={new Set(['job-1'])}>
+        <GenerationToolDisplay
+          toolName="video_generate"
+          argsText={ARGS}
+          statusType="complete"
+          result={DETACHED}
+        />
+      </CollectedJobsContext.Provider>,
+    );
+    expect(screen.queryByTestId('generation-frame')).toBeNull();
+  });
+
+  it('still draws a detached job nobody has collected', () => {
+    render(
+      <CollectedJobsContext.Provider value={new Set(['job-other'])}>
+        <GenerationToolDisplay
+          toolName="video_generate"
+          argsText={ARGS}
+          statusType="complete"
+          result={DETACHED}
+        />
+      </CollectedJobsContext.Provider>,
+    );
+    expect(screen.getByTestId('generation-frame').getAttribute('data-generating')).toBe('false');
+  });
+
+  it('keeps a RUNNING call visible even when its job id was collected', () => {
+    vi.useFakeTimers();
+    render(
+      <CollectedJobsContext.Provider value={new Set(['job-1'])}>
+        <GenerationToolDisplay
+          toolName="video_generate"
+          argsText={ARGS}
+          statusType="running"
+          result={undefined}
+        />
+      </CollectedJobsContext.Provider>,
+    );
+    expect(screen.getByTestId('generation-frame').getAttribute('data-generating')).toBe('true');
   });
 });
