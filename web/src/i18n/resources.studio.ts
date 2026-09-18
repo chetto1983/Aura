@@ -42,7 +42,6 @@ export const studioEn = {
       lastFrame: 'End frame',
       references: 'References',
       count: '{{used}} of {{max}}',
-      add: 'Add an image',
       upload: 'Upload a file',
       uploading: 'Uploading {{name}}',
       uploadFailed: 'That image could not be attached: {{reason}}',
@@ -54,7 +53,6 @@ export const studioEn = {
     },
     model: {
       label: 'Model',
-      choose: 'Choose a model',
       none: 'No model is available for this kind.',
       perSecond: '${{price}} per second',
       perImage: '${{price}} per image',
@@ -93,8 +91,6 @@ export const studioEn = {
     stage: {
       headline: 'Bring your idea to life',
       idle: 'Nothing here yet — describe what you want and press Generate.',
-      working: 'Generating',
-      elapsed: 'Elapsed {{time}}',
       failed: 'That generation did not finish.',
       unavailable: 'The Studio is not configured on this deployment.',
     },
@@ -144,7 +140,6 @@ export const studioIt = {
       lastFrame: 'Fotogramma finale',
       references: 'Riferimenti',
       count: '{{used}} su {{max}}',
-      add: "Aggiungi un'immagine",
       upload: 'Carica un file',
       uploading: 'Caricamento di {{name}}',
       uploadFailed: 'Non è stato possibile allegare quell’immagine: {{reason}}',
@@ -156,7 +151,6 @@ export const studioIt = {
     },
     model: {
       label: 'Modello',
-      choose: 'Scegli un modello',
       none: 'Nessun modello disponibile per questo tipo.',
       perSecond: '{{price}} $ al secondo',
       perImage: '{{price}} $ a immagine',
@@ -195,8 +189,6 @@ export const studioIt = {
     stage: {
       headline: 'Dai vita alla tua idea',
       idle: 'Ancora niente: descrivi cosa vuoi e premi Genera.',
-      working: 'Generazione in corso',
-      elapsed: 'Trascorsi {{time}}',
       failed: 'La generazione non è arrivata in fondo.',
       unavailable: 'Lo Studio non è configurato su questo deployment.',
     },

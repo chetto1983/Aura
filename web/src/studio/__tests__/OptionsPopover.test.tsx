@@ -229,6 +229,21 @@ describe('AdvancedPopover', () => {
     expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('77');
   });
 
+  it('says a fractional seed is not one instead of dropping it in silence', () => {
+    const onChange = openAdvanced(VIDEO, CHEAPEST);
+    const seed = screen.getByRole('spinbutton', { name: 'Seed' });
+    fireEvent.change(seed, { target: { value: '1.5' } });
+    expect(screen.getByRole('alert').textContent).toBe('A seed is a whole number.');
+    expect(seed.getAttribute('aria-invalid')).toBe('true');
+    // Nothing is sent for it: a silently random seed on a request the operator believes is
+    // repeatable is worse than a refusal.
+    expect(onChange).toHaveBeenLastCalledWith({ ...CHEAPEST, seed: undefined });
+
+    fireEvent.change(seed, { target: { value: '12' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(onChange).toHaveBeenLastCalledWith({ ...CHEAPEST, seed: 12 });
+  });
+
   it('resets sound and the seed together', () => {
     const onChange = openAdvanced(VIDEO, { ...CHEAPEST, audio: true, seed: 9 });
     fireEvent.click(screen.getByRole('button', { name: 'Reset' }));

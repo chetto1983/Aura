@@ -163,7 +163,11 @@ export default function StudioWorkspace() {
           </p>
         )}
 
-        <CatalogState error={models.error} pending={models.isPending} />
+        <CatalogState
+          error={models.error}
+          pending={models.isPending}
+          empty={models.isSuccess && listed.length === 0}
+        />
 
         {draft === undefined || model === undefined ? null : (
           <StudioBar
@@ -195,9 +199,18 @@ export default function StudioWorkspace() {
   );
 }
 
-/** Why there is no composer, when there is none. A deployment routed away from OpenRouter or
- *  missing its key cannot generate at all, and saying so is more useful than an empty bar. */
-function CatalogState({ error, pending }: { readonly error: unknown; readonly pending: boolean }) {
+/** Why there is no composer, when there is none. A deployment routed away from OpenRouter,
+ *  missing its key, or whose catalog lists nothing for this kind cannot generate at all, and
+ *  saying which is more useful than a page with a headline and no bar under it. */
+function CatalogState({
+  error,
+  pending,
+  empty,
+}: {
+  readonly error: unknown;
+  readonly pending: boolean;
+  readonly empty: boolean;
+}) {
   const { t } = useTranslation();
   if (error instanceof StudioError) {
     return (
@@ -210,6 +223,13 @@ function CatalogState({ error, pending }: { readonly error: unknown; readonly pe
     return (
       <p role="alert" className="max-w-md text-center text-sm text-text-muted">
         {t('studio.stage.unavailable')}
+      </p>
+    );
+  }
+  if (empty) {
+    return (
+      <p role="status" className="max-w-md text-center text-sm text-text-muted">
+        {t('studio.model.none')}
       </p>
     );
   }

@@ -76,6 +76,8 @@ interface ServerOptions {
   };
   /** Holds the create route open, so the in-flight window is observable. */
   readonly createGate?: Promise<void>;
+  /** A catalog that answers 200 and lists nothing for the kind. */
+  readonly emptyCatalog?: boolean;
 }
 
 interface Call {
@@ -110,6 +112,7 @@ function stubServer(options: ServerOptions = {}) {
           const { status, ...payload } = options.modelsFailure;
           return json(payload, status);
         }
+        if (options.emptyCatalog === true) return json({ default: '', models: [] });
         return json(url.includes('kind=image') ? IMAGE_MODELS : VIDEO_MODELS);
       }
       if (url.startsWith('/api/studio/history')) return json({ records: options.history ?? [] });
@@ -359,6 +362,14 @@ describe('StudioWorkspace', () => {
     expect(await screen.findByText(/routes its models locally/)).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: 'Prompt' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Generate/ })).toBeNull();
+  });
+
+  it('says a catalog with no model for this kind is empty, rather than showing a bare page', async () => {
+    stubServer({ emptyCatalog: true });
+    mountPage();
+
+    expect(await screen.findByText('No model is available for this kind.')).toBeTruthy();
+    expect(screen.queryByRole('textbox', { name: 'Prompt' })).toBeNull();
   });
 
   it('shows the newest generation by default and follows a card that is clicked', async () => {

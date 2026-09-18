@@ -96,7 +96,13 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
   );
 }
 
-function StageActions({ record, onReuse }: StudioStageProps & { readonly record: StudioRecord }) {
+function StageActions({
+  record,
+  onReuse,
+}: {
+  readonly record: StudioRecord;
+  readonly onReuse: (record: StudioRecord) => void;
+}) {
   const { t } = useTranslation();
   return (
     <div className="flex flex-wrap items-center justify-center gap-2 text-[11px] text-text-faint">

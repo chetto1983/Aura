@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { StudioModel } from './studioApi';
@@ -29,6 +30,14 @@ function parseSeed(raw: string): number | undefined {
 
 export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverProps) {
   const { t } = useTranslation();
+  // What is in the box, which is not always a seed: "1.5" is a number the provider cannot
+  // take, and dropping it without a word would send a random seed for a request the operator
+  // believes is repeatable. The draft wins whenever the two disagree — Reuse writes a seed
+  // nobody typed here, and the box must show the one that will be sent.
+  const [typed, setTyped] = useState('');
+  const shown =
+    parseSeed(typed) === options.seed || options.seed === undefined ? typed : String(options.seed);
+  const invalid = shown.trim() !== '' && parseSeed(shown) === undefined;
   if (!model.seed && !model.audio) return null;
 
   return (
@@ -37,6 +46,7 @@ export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverPro
       pillLabel={t('studio.advanced.title')}
       title={t('studio.advanced.title')}
       onReset={() => {
+        setTyped('');
         onChange({ ...options, audio: false, seed: undefined });
       }}
     >
@@ -47,13 +57,20 @@ export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverPro
             step={1}
             inputMode="numeric"
             aria-label={t('studio.options.seed')}
+            aria-invalid={invalid}
             placeholder={t('studio.options.seedPlaceholder')}
             className="min-h-9 py-1"
-            value={options.seed === undefined ? '' : String(options.seed)}
+            value={shown}
             onChange={(event) => {
+              setTyped(event.target.value);
               onChange({ ...options, seed: parseSeed(event.target.value) });
             }}
           />
+          {invalid ? (
+            <p role="alert" className="text-[11px] text-danger">
+              {t('studio.options.seedInvalid')}
+            </p>
+          ) : null}
         </StudioField>
       ) : null}
 
