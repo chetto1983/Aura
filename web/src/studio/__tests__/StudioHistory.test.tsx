@@ -39,6 +39,8 @@ interface PanelOptions {
   readonly records?: readonly StudioRecord[];
   readonly hasMore?: boolean;
   readonly selectedId?: string;
+  readonly pending?: boolean;
+  readonly failure?: string;
 }
 
 function mountPanel(options: PanelOptions = {}) {
@@ -47,6 +49,8 @@ function mountPanel(options: PanelOptions = {}) {
   const view = render(
     <StudioHistory
       records={options.records ?? [DONE]}
+      pending={options.pending ?? false}
+      failure={options.failure}
       selectedId={options.selectedId}
       hasMore={options.hasMore ?? false}
       loadingMore={false}
@@ -120,9 +124,25 @@ describe('StudioHistory', () => {
     );
   });
 
-  it('says nothing has been generated when the history is empty', () => {
+  it('says nothing has been generated only once the list has answered', () => {
+    const { view } = mountPanel({ records: [], pending: true });
+    // "Nothing generated yet" while the read is in flight is a claim about this identity's
+    // history that nobody has checked.
+    expect(screen.queryByText('Nothing generated yet.')).toBeNull();
+    expect(screen.getByRole('status').textContent).toBe('Reading your generations…');
+    view.unmount();
+
     mountPanel({ records: [] });
     expect(screen.getByText('Nothing generated yet.')).toBeTruthy();
+  });
+
+  it('says why the list could not be read instead of looking empty', () => {
+    mountPanel({ records: [], failure: 'The Studio could not complete that request.' });
+    expect(screen.getByRole('alert').textContent).toBe(
+      'The Studio could not complete that request.',
+    );
+    // A refused read rendering as an empty panel is an error passing silently.
+    expect(screen.queryByText('Nothing generated yet.')).toBeNull();
   });
 
   it('reports the card that was clicked, and marks the selected one', () => {
@@ -176,7 +196,7 @@ describe('StudioHistory', () => {
 
 describe('StudioStage', () => {
   it('shows the gradient headline while nothing is selected', () => {
-    render(<StudioStage record={undefined} onReuse={vi.fn()} />);
+    render(<StudioStage record={undefined} onReuse={vi.fn()} reuseState="ready" />);
     const headline = screen.getByRole('heading', { name: 'Bring your idea to life' });
     expect(headline.className).toContain('studio-title');
   });
@@ -185,14 +205,18 @@ describe('StudioStage', () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.parse('2026-09-17T10:01:05Z'));
     render(
-      <StudioStage record={{ ...RUNNING, created_at: '2026-09-17T10:00:00Z' }} onReuse={vi.fn()} />,
+      <StudioStage
+        record={{ ...RUNNING, created_at: '2026-09-17T10:00:00Z' }}
+        onReuse={vi.fn()}
+        reuseState="ready"
+      />,
     );
     expect(screen.getByRole('timer').textContent).toBe('1:05');
     vi.useRealTimers();
   });
 
   it('gives a failed record the sentence for its code, not the raw server string', () => {
-    render(<StudioStage record={FAILED} onReuse={vi.fn()} />);
+    render(<StudioStage record={FAILED} onReuse={vi.fn()} reuseState="ready" />);
     expect(screen.getByRole('alert').textContent).toContain(
       'This deployment has no OpenRouter key',
     );
@@ -209,6 +233,7 @@ describe('StudioStage', () => {
           error: { code: 'outcome_unknown', message: 'no terminal status' },
         })}
         onReuse={vi.fn()}
+        reuseState="ready"
       />,
     );
     expect(screen.getByRole('alert').textContent).toContain('may already have been billed');
@@ -217,7 +242,7 @@ describe('StudioStage', () => {
   });
 
   it('still offers Reuse for a refusal that cost nothing', () => {
-    render(<StudioStage record={FAILED} onReuse={vi.fn()} />);
+    render(<StudioStage record={FAILED} onReuse={vi.fn()} reuseState="ready" />);
     expect(screen.getByRole('button', { name: /Reuse/ })).toBeTruthy();
   });
 
@@ -226,6 +251,7 @@ describe('StudioStage', () => {
       <StudioStage
         record={{ ...FAILED, error: { code: 'quarantined', message: 'Prompt was refused.' } }}
         onReuse={vi.fn()}
+        reuseState="ready"
       />,
     );
     expect(screen.getByRole('alert').textContent).toContain('Prompt was refused.');
@@ -236,6 +262,7 @@ describe('StudioStage', () => {
       <StudioStage
         record={{ ...FAILED, error: { code: 'content_blocked', message: 'policy_violation' } }}
         onReuse={vi.fn()}
+        reuseState="ready"
       />,
     );
     expect(screen.getByRole('alert').textContent).toContain(
@@ -246,7 +273,7 @@ describe('StudioStage', () => {
 
   it('offers Download and Reuse on a finished generation, with its cost', () => {
     const onReuse = vi.fn();
-    render(<StudioStage record={DONE} onReuse={onReuse} />);
+    render(<StudioStage record={DONE} onReuse={onReuse} reuseState="ready" />);
     expect(screen.getByRole('link', { name: /Download/ }).getAttribute('href')).toBe(
       '/api/assets/asset-1/download',
     );
@@ -268,7 +295,7 @@ describe('StudioStage', () => {
       asset_id: 'asset-5',
       created_at: '2026-09-17T11:00:00Z',
     };
-    render(<StudioStage record={priceless} onReuse={vi.fn()} />);
+    render(<StudioStage record={priceless} onReuse={vi.fn()} reuseState="ready" />);
     expect(screen.getByText('Cost unknown')).toBeTruthy();
     expect(screen.queryByText('$0.00')).toBeNull();
   });

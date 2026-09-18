@@ -31,6 +31,12 @@ function readOpen(): boolean {
 
 interface StudioHistoryProps {
   readonly records: readonly StudioRecord[];
+  /** The list has not answered yet. "Nothing generated yet" would be a claim about the
+   *  identity's history that nobody has checked. */
+  readonly pending: boolean;
+  /** Why the list could not be read, when it could not. A refused read that renders as an
+   *  empty panel is an error passing silently. */
+  readonly failure: string | undefined;
   readonly selectedId: string | undefined;
   readonly hasMore: boolean;
   readonly loadingMore: boolean;
@@ -40,6 +46,8 @@ interface StudioHistoryProps {
 
 export function StudioHistory({
   records,
+  pending,
+  failure,
   selectedId,
   hasMore,
   loadingMore,
@@ -120,7 +128,15 @@ export function StudioHistory({
               }}
             />
 
-            {shown.length === 0 ? (
+            {failure !== undefined ? (
+              <p role="alert" className="px-1 py-6 text-center text-xs text-danger">
+                {failure}
+              </p>
+            ) : pending ? (
+              <p role="status" className="px-1 py-6 text-center text-xs text-text-muted">
+                {t('studio.history.loading')}
+              </p>
+            ) : shown.length === 0 ? (
               <p className="px-1 py-6 text-center text-xs text-text-muted">
                 {records.length === 0 ? t('studio.history.empty') : t('studio.history.emptySearch')}
               </p>

@@ -1,169 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import '../../i18n/i18n';
-import StudioWorkspace from '../StudioWorkspace';
+import { mountPage, openedOnVideo, posts, prompt, stubServer } from './studioPageHarness';
 
-// The page, against a stubbed server. Every assertion here is about the whole loop an
-// operator runs: what the catalog decides the bar opens on, what the pills read, what the
-// exact body posted is, and what is said when the server refuses.
-
-const VIDEO_MODELS = {
-  default: 'google/veo-3.1-lite',
-  models: [
-    {
-      id: 'google/veo-3.1-lite',
-      name: 'Veo 3.1 Lite',
-      description: 'Fast clips with optional sound',
-      durations: [4, 8],
-      resolutions: ['720p', '1080p'],
-      aspect_ratios: ['16:9', '9:16'],
-      frame_images: ['first_frame'],
-      audio: true,
-      seed: true,
-      prices: [
-        { resolution: '720p', audio: false, usd_per_second: 0.0297 },
-        { resolution: '720p', audio: true, usd_per_second: 0.05 },
-        { resolution: '1080p', audio: false, usd_per_second: 0.08 },
-      ],
-    },
-    {
-      id: 'minimax/hailuo-2.3',
-      name: 'Hailuo 2.3',
-      description: 'Longer takes',
-      durations: [6],
-      resolutions: ['768p'],
-      aspect_ratios: ['16:9'],
-      audio: false,
-      seed: false,
-      prices: [{ resolution: '768p', audio: false, usd_per_second: 0.05 }],
-    },
-  ],
-};
-
-const IMAGE_MODELS = {
-  default: 'openai/gpt-image-1-mini',
-  models: [
-    {
-      id: 'openai/gpt-image-1-mini',
-      name: 'GPT Image 1 mini',
-      description: 'Cheap stills',
-      aspect_ratios: ['3:2', '1:1'],
-      audio: false,
-      seed: false,
-      reference_max: 2,
-      image_min_usd: 0.05,
-      image_max_usd: 0.05,
-    },
-  ],
-};
-
-const LIBRARY = {
-  assets: [{ id: 'asset-ref', file_name: 'moodboard.png', mime_type: 'image/png' }],
-};
-
-interface ServerOptions {
-  readonly history?: readonly unknown[];
-  readonly modelsFailure?: {
-    readonly status: number;
-    readonly code: string;
-    readonly error: string;
-  };
-  readonly createFailure?: {
-    readonly status: number;
-    readonly code: string;
-    readonly error: string;
-  };
-  /** Holds the create route open, so the in-flight window is observable. */
-  readonly createGate?: Promise<void>;
-  /** A catalog that answers 200 and lists nothing for the kind. */
-  readonly emptyCatalog?: boolean;
-}
-
-interface Call {
-  readonly url: string;
-  readonly method: string;
-  readonly body: unknown;
-}
-
-function urlOf(input: RequestInfo | URL): string {
-  if (typeof input === 'string') return input;
-  if (input instanceof URL) return input.href;
-  return input.url;
-}
-
-function stubServer(options: ServerOptions = {}) {
-  const calls: Call[] = [];
-  const json = (body: unknown, status = 200) =>
-    Promise.resolve(new Response(JSON.stringify(body), { status }));
-
-  vi.stubGlobal(
-    'fetch',
-    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = urlOf(input);
-      const method = init?.method ?? 'GET';
-      calls.push({
-        url,
-        method,
-        body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
-      });
-      if (url.startsWith('/api/studio/models')) {
-        if (options.modelsFailure !== undefined) {
-          const { status, ...payload } = options.modelsFailure;
-          return json(payload, status);
-        }
-        if (options.emptyCatalog === true) return json({ default: '', models: [] });
-        return json(url.includes('kind=image') ? IMAGE_MODELS : VIDEO_MODELS);
-      }
-      if (url.startsWith('/api/studio/history')) return json({ records: options.history ?? [] });
-      if (url.startsWith('/api/studio/library')) return json(LIBRARY);
-      if (url.startsWith('/api/studio/videos') || url.startsWith('/api/studio/images')) {
-        if (options.createFailure !== undefined) {
-          const { status, ...payload } = options.createFailure;
-          return json(payload, status);
-        }
-        const accepted = json(
-          {
-            id: 'job-new',
-            kind: url.includes('images') ? 'image' : 'video',
-            status: 'pending',
-            model: 'google/veo-3.1-lite',
-            prompt: 'a harbour at dawn',
-            used: {},
-            created_at: '2026-09-17T10:00:00Z',
-          },
-          201,
-        );
-        return options.createGate === undefined
-          ? accepted
-          : options.createGate.then(async () => accepted);
-      }
-      return Promise.reject(new Error(`unexpected fetch: ${url}`));
-    }),
-  );
-  return calls;
-}
-
-function mountPage() {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={client}>
-      <StudioWorkspace />
-    </QueryClientProvider>,
-  );
-}
-
-function prompt(): HTMLElement {
-  return screen.getByRole('textbox', { name: 'Prompt' });
-}
-
-async function openedOnVideo() {
-  await screen.findByPlaceholderText('Describe the video scene you want to generate');
-}
-
-function posts(calls: readonly Call[]): readonly Call[] {
-  return calls.filter((call) => call.method === 'POST');
-}
+// The composer half of the page, against a stubbed server: what the catalog decides the bar
+// opens on, what each mode keeps across a switch, the exact body posted, and what is said
+// when the server refuses. The read-side states live in StudioWorkspace.reads.test.tsx.
 
 beforeEach(() => {
   localStorage.clear();
@@ -173,7 +14,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('StudioWorkspace', () => {
+describe('StudioWorkspace composing', () => {
   it('opens on the headline, the deployment video model and its cheapest estimate', async () => {
     stubServer();
     mountPage();
@@ -453,45 +294,5 @@ describe('StudioWorkspace', () => {
 
     expect(await screen.findByText('No model is available for this kind.')).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: 'Prompt' })).toBeNull();
-  });
-
-  it('shows the newest generation by default and follows a card that is clicked', async () => {
-    stubServer({
-      history: [
-        {
-          id: 'job-new',
-          kind: 'image',
-          status: 'completed',
-          model: 'openai/gpt-image-1-mini',
-          prompt: 'the newest',
-          used: { aspect_ratio: '1:1' },
-          cost_usd: 0.05,
-          asset_id: 'asset-new',
-          created_at: '2026-09-17T12:00:00Z',
-        },
-        {
-          id: 'job-old',
-          kind: 'video',
-          status: 'failed',
-          model: 'google/veo-3.1-lite',
-          prompt: 'the older one',
-          used: {},
-          created_at: '2026-09-17T09:00:00Z',
-          error: { code: 'no_credit', message: 'provider answered 402' },
-        },
-      ],
-    });
-    mountPage();
-    await openedOnVideo();
-
-    // The newest row is on the stage without anything being clicked.
-    expect(screen.getByRole('link', { name: /Download/ }).getAttribute('href')).toBe(
-      '/api/assets/asset-new/download',
-    );
-    fireEvent.click(screen.getByRole('button', { name: /the older one/ }));
-    expect(screen.getByRole('alert').textContent).toContain(
-      'The OpenRouter account is out of credit.',
-    );
-    expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
   });
 });

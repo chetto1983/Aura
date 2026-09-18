@@ -1,8 +1,9 @@
+import type { TFunction } from 'i18next';
 import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StudioBar } from './StudioBar';
 import { StudioHistory } from './StudioHistory';
-import { StudioStage } from './StudioStage';
+import { StudioStage, type ReuseState } from './StudioStage';
 import { initialModel, rememberModel } from './modelChoice';
 import {
   StudioError,
@@ -14,6 +15,7 @@ import {
 import { studioErrorSentence } from './studioErrors';
 import {
   draftFromRecord,
+  inputAssetIds,
   reconcileDraft,
   requestBody,
   type StudioDraft,
@@ -66,6 +68,8 @@ export default function StudioWorkspace() {
   });
   const [selectedId, setSelectedId] = useState<string>();
   const [failure, setFailure] = useState<string>();
+  /** A warning, not a refusal: the page did something, and the operator has to know what. */
+  const [notice, setNotice] = useState<string>();
   const inFlight = useRef(false);
 
   const models = useStudioModels(kind);
@@ -146,11 +150,7 @@ export default function StudioWorkspace() {
         setSelectedId(record.id);
       },
       onError: (error: unknown) => {
-        setFailure(
-          error instanceof StudioError
-            ? studioErrorSentence(t, error.code, error.message)
-            : t('studio.error.generic'),
-        );
+        setFailure(failureSentence(t, error, t('studio.error.generic')));
       },
       onSettled: () => {
         inFlight.current = false;
@@ -163,8 +163,26 @@ export default function StudioWorkspace() {
     else createVideo.mutate(request.body, handlers);
   }
 
+  /** Whether Reuse can resolve this record's inputs. A record that named none is always
+   *  ready; one that named some needs the library, and `library.data ?? []` cannot tell a
+   *  successful empty list from a read that has not happened. */
+  function reuseStateFor(record: StudioRecord | undefined): ReuseState {
+    if (record === undefined || inputAssetIds(record).length === 0) return 'ready';
+    if (library.isSuccess) return 'ready';
+    return library.isPending ? 'waiting' : 'unavailable';
+  }
+
   function reuse(record: StudioRecord) {
-    const reused = draftFromRecord(record, library.data ?? []);
+    const assets = library.data;
+    // The button is disabled without it; this is the second lock, because a click that
+    // resolved nothing would hand back a different, cheaper request than the one shown.
+    if (assets === undefined && inputAssetIds(record).length > 0) return;
+    const reused = draftFromRecord(record, assets ?? []);
+    // An id the library no longer lists is a DELETED asset, not an unread query — the query
+    // succeeded. Saying so is the difference between "your reference is gone" and a request
+    // that silently costs less than the one it claims to repeat.
+    const dropped = inputAssetIds(record).length - reused.images.length - (reused.endFrame ? 1 : 0);
+    setNotice(dropped > 0 ? t('studio.history.reuseDropped', { count: dropped }) : undefined);
     setKind(record.kind);
     keep(record.kind, reused, record.model);
   }
@@ -176,7 +194,7 @@ export default function StudioWorkspace() {
     >
       <div className="flex min-w-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-4 py-4">
         <div className="flex min-h-0 w-full flex-1 items-center justify-center py-4">
-          <StudioStage record={shown} onReuse={reuse} />
+          <StudioStage record={shown} onReuse={reuse} reuseState={reuseStateFor(shown)} />
         </div>
 
         {failure === undefined ? null : (
@@ -185,6 +203,15 @@ export default function StudioWorkspace() {
             className="w-full max-w-4xl rounded-[var(--radius-md)] border border-danger/40 bg-surface px-3 py-2 text-xs text-danger"
           >
             {failure}
+          </p>
+        )}
+
+        {notice === undefined ? null : (
+          <p
+            role="status"
+            className="w-full max-w-4xl rounded-[var(--radius-md)] border border-warning/40 bg-surface px-3 py-2 text-xs text-warning"
+          >
+            {notice}
           </p>
         )}
 
@@ -210,6 +237,8 @@ export default function StudioWorkspace() {
 
       <StudioHistory
         records={records}
+        pending={history.isPending}
+        failure={failureSentence(t, history.error, t('studio.error.generic'))}
         selectedId={shown?.id}
         hasMore={history.hasNextPage}
         loadingMore={history.isFetchingNextPage}
@@ -222,6 +251,16 @@ export default function StudioWorkspace() {
       />
     </section>
   );
+}
+
+/** What a failed read says, or undefined when it did not fail. A refusal Aura knows carries
+ *  its own sentence; anything else — a dropped connection, a body that is not the envelope —
+ *  gets the caller's fallback rather than a stack trace. */
+function failureSentence(t: TFunction, error: unknown, fallback: string): string | undefined {
+  if (error === null || error === undefined) return undefined;
+  return error instanceof StudioError
+    ? studioErrorSentence(t, error.code, error.message)
+    : fallback;
 }
 
 /** Why there is no composer, when there is none. A deployment routed away from OpenRouter,
@@ -237,17 +276,11 @@ function CatalogState({
   readonly empty: boolean;
 }) {
   const { t } = useTranslation();
-  if (error instanceof StudioError) {
+  const refused = failureSentence(t, error, t('studio.stage.unavailable'));
+  if (refused !== undefined) {
     return (
       <p role="alert" className="max-w-md text-center text-sm text-text-muted">
-        {studioErrorSentence(t, error.code, error.message)}
-      </p>
-    );
-  }
-  if (error !== null && error !== undefined) {
-    return (
-      <p role="alert" className="max-w-md text-center text-sm text-text-muted">
-        {t('studio.stage.unavailable')}
+        {refused}
       </p>
     );
   }

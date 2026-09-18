@@ -74,6 +74,10 @@ export const studioEn = {
       empty: 'Nothing generated yet.',
       emptySearch: 'No generation matches that.',
       more: 'Load more',
+      loading: 'Reading your generations…',
+      reuseUnavailable: 'Your images could not be read, so this cannot be reused yet.',
+      reuseDropped_one: 'One input image is no longer available and was left out.',
+      reuseDropped_other: '{{count}} input images are no longer available and were left out.',
       reuse: 'Reuse',
       download: 'Download',
       adjusted: 'Adjusted: {{notes}}',
@@ -180,6 +184,12 @@ export const studioIt = {
       empty: 'Non hai ancora generato nulla.',
       emptySearch: 'Nessuna generazione corrisponde.',
       more: 'Carica altro',
+      loading: 'Lettura delle tue generazioni…',
+      reuseUnavailable:
+        'Non è stato possibile leggere le tue immagini, quindi non si può ancora riusare.',
+      reuseDropped_one: "Un'immagine di partenza non è più disponibile ed è stata esclusa.",
+      reuseDropped_other:
+        '{{count}} immagini di partenza non sono più disponibili e sono state escluse.',
       reuse: 'Riusa',
       download: 'Scarica',
       adjusted: 'Adattato: {{notes}}',

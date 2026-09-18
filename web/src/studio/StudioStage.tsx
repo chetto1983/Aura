@@ -15,9 +15,16 @@ import { Button } from '@/components/ui/button';
 // things that can be done with it; a running one is the frame with the job's own clock; a
 // failed one is the reason, not a blank rectangle.
 
+/** Whether Reuse can run, and why not when it cannot. Reuse has to turn the record's asset
+ *  ids back into images the bar can show, which it cannot do before the library answers and
+ *  cannot do at all if that read failed — and a Reuse that quietly drops the reference images
+ *  hands back a different, cheaper request than the one that was clicked. */
+export type ReuseState = 'ready' | 'waiting' | 'unavailable';
+
 interface StudioStageProps {
   readonly record: StudioRecord | undefined;
   readonly onReuse: (record: StudioRecord) => void;
+  readonly reuseState: ReuseState;
 }
 
 /** The ratio the frame is drawn at, in CSS form. A record that never carried one (an image
@@ -26,7 +33,7 @@ function cssRatio(ratio: string | undefined): string {
   return ratio === undefined || ratio === '' ? '1 / 1' : ratio.replace(':', ' / ');
 }
 
-export function StudioStage({ record, onReuse }: StudioStageProps) {
+export function StudioStage({ record, onReuse, reuseState }: StudioStageProps) {
   const { t } = useTranslation();
 
   if (record === undefined) {
@@ -72,7 +79,7 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
         <StageActions
           record={record}
           onReuse={onReuse}
-          reusable={record.error?.code !== 'outcome_unknown'}
+          reuseState={record.error?.code === 'outcome_unknown' ? 'forbidden' : reuseState}
         />
       </div>
     );
@@ -97,7 +104,7 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
       </div>
       <figcaption className="flex w-full flex-col items-center gap-2">
         <p className="max-w-2xl text-center text-sm text-text-muted">{record.prompt}</p>
-        <StageActions record={record} onReuse={onReuse} reusable />
+        <StageActions record={record} onReuse={onReuse} reuseState={reuseState} />
       </figcaption>
     </figure>
   );
@@ -106,12 +113,12 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
 function StageActions({
   record,
   onReuse,
-  reusable,
+  reuseState,
 }: {
   readonly record: StudioRecord;
   readonly onReuse: (record: StudioRecord) => void;
-  /** False for a record that must not seed another paid attempt. */
-  readonly reusable: boolean;
+  /** 'forbidden' for a record that must not seed another paid attempt at all. */
+  readonly reuseState: ReuseState | 'forbidden';
 }) {
   const { t } = useTranslation();
   return (
@@ -135,10 +142,20 @@ function StageActions({
           </a>
         </Button>
       )}
-      {reusable ? (
+      {reuseState === 'forbidden' ? null : (
         <Button
           size="sm"
           variant="ghost"
+          disabled={reuseState !== 'ready'}
+          // A disabled control that does not say why is a bug report waiting to happen; this
+          // one says whether the library is still being read or could not be read at all.
+          title={
+            reuseState === 'waiting'
+              ? t('studio.frames.libraryLoading')
+              : reuseState === 'unavailable'
+                ? t('studio.history.reuseUnavailable')
+                : undefined
+          }
           className="min-h-8 gap-1.5 py-1 text-xs"
           onClick={() => {
             onReuse(record);
@@ -147,7 +164,7 @@ function StageActions({
           <RotateCcw aria-hidden="true" className="size-3.5" />
           {t('studio.history.reuse')}
         </Button>
-      ) : null}
+      )}
     </div>
   );
 }
