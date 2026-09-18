@@ -1285,13 +1285,13 @@ Playwright.
 - Test: `web/src/studio/__tests__/{StudioWorkspace,StudioBar,ImageTile,StudioHistory}.test.tsx`,
   `web/src/chat/generation/__tests__/GenerationFrame.test.tsx`
 
-- [ ] **Step 1: `GenerationFrame` takes a start time.** Failing test: with
+- [x] **Step 1: `GenerationFrame` takes a start time.** Failing test: with
   `startedAt = Date.now() - 65_000` under fake timers the timer reads the clock's 65-second
   form. Implementation: an optional `readonly startedAt?: number` threaded into
   `useElapsedClock`, defaulting to mount, documented as "a Studio card passes the job's
   creation time, so a reload does not restart the clock".
 
-- [ ] **Step 2: Write the failing page tests** (`StudioWorkspace.test.tsx`), rendering inside a
+- [x] **Step 2: Write the failing page tests** (`StudioWorkspace.test.tsx`), rendering inside a
   fresh `QueryClientProvider` with the i18n setup the other workspace tests use and `fetch`
   stubbed per URL:
   - **Empty page:** the gradient title, the prompt placeholder for video, and Generate reading
@@ -1307,7 +1307,7 @@ Playwright.
   - **Model memory:** choosing another model writes `aura.studio.model.video`, a remount keeps
     it, and a throwing `localStorage` does not break the choice.
   - **Catalog refusal:** a 409 `local_route` shows its sentence and no bar.
-- [ ] **Step 3: Write the failing component tests.**
+- [x] **Step 3: Write the failing component tests.**
   - `StudioBar.test.tsx`: the options pill summarizes `16:9 · 720p · 4s`; the popover is headed
     "Video settings" and its Reset returns the cheapest; choosing 1080p and turning on Sound in
     Advanced updates the pill and the estimate; a model without audio or seed shows neither
@@ -1321,7 +1321,7 @@ Playwright.
     a card calls `onSelect`, "Load more" appears only with a next page, and the toggle
     collapses the panel and remembers it.
 
-- [ ] **Step 4: Implement the pieces.**
+- [x] **Step 4: Implement the pieces.**
   - **`RatioTiles.tsx`** — a `ToggleGroup` of tiles, each drawing a rectangle at its ratio
     (`style={{ aspectRatio: ratio.replace(':', ' / ') }}` inside a fixed box) with the label
     under it.
@@ -1351,17 +1351,17 @@ Playwright.
     plain colour under `forced-colors`), and a staggered card reveal disabled under
     `prefers-reduced-motion`. Aura's tokens only.
 
-- [ ] **Step 5: Run the tests.** `npx vitest run src/studio src/chat/generation`.
+- [x] **Step 5: Run the tests.** `npx vitest run src/studio src/chat/generation`.
 
-- [ ] **Step 6: Verify the gates.** From `web/`:
+- [x] **Step 6: Verify the gates.** From `web/`:
   `npm run typecheck && npm run lint && npm run test && npm run dup && npm run deadcode && npm run format:check && npm run contrast`,
   then `npm run build` (which regenerates `internal/webui/dist`).
 
-- [ ] **Step 7: Look at it.** `npm run dev`, sign in, open Studio at 1280 px and 390 px, light
+- [x] **Step 7: Look at it.** `npm run dev`, sign in, open Studio at 1280 px and 390 px, light
   and dark: the empty page, both modes, every popover, the tile menu, the History panel and the
   drawer. Do not press Generate — that is Task 7's paid run.
 
-- [ ] **Step 8: Commit** the web files and `internal/webui/dist`:
+- [x] **Step 8: Commit** the web files and `internal/webui/dist`:
   `git commit -m "feat(cockpit): build the Studio page"`.
 
 ---
