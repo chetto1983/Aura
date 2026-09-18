@@ -75,6 +75,10 @@ export function StudioHistoryCard({ record, index, selected, onSelect }: StudioH
   return (
     <button
       type="button"
+      data-testid="studio-history-card"
+      // The row a live acceptance run looks for after a reload. Its prompt is not an identity:
+      // two runs of the same prompt are two rows, and the record id is what tells them apart.
+      data-record-id={record.id}
       aria-current={selected ? 'true' : undefined}
       onClick={() => {
         onSelect(record);

@@ -7,20 +7,20 @@ import { sameOriginFetch } from './live';
 // comes from the persisted thread the daemon wrote while the real agent ran.
 
 /**
- * The one switch that arms the paid suite. Test-only: nothing in the product reads it.
+ * The one switch that arms a paid suite. Test-only: nothing in the product reads these vars.
  *
  * Anything other than "1" or unset throws at collection time rather than quietly disarming:
  * an operator who typed `true` believes the batch is running, and a silent skip would be
  * reported as a green acceptance run that generated nothing.
  */
-function mediaGenerationSwitch(): boolean {
-  const raw = process.env.AURA_E2E_MEDIA_GENERATION;
+export function paidRunSwitch(name: string): boolean {
+  const raw = process.env[name];
   if (raw === undefined || raw.trim() === '') return false;
   if (raw === '1') return true;
-  throw new Error(`AURA_E2E_MEDIA_GENERATION must be "1" or unset, got ${JSON.stringify(raw)}`);
+  throw new Error(`${name} must be "1" or unset, got ${JSON.stringify(raw)}`);
 }
 
-export const mediaGenerationEnabled = mediaGenerationSwitch();
+export const mediaGenerationEnabled = paidRunSwitch('AURA_E2E_MEDIA_GENERATION');
 
 export const videoInlineWaitKey = 'AURA_VIDEO_INLINE_WAIT_SEC';
 
@@ -58,12 +58,10 @@ export interface RecordedToolCall {
  * spends against. A silent fallback to the Playwright default origin could start a managed
  * `aura serve` with no credentials and turn a paid acceptance run into a green no-op.
  */
-export function requireLiveOrigin(): string {
+export function requireLiveOrigin(armedBy: string): string {
   const origin = process.env.AURA_E2E_ORIGIN;
   if (origin === undefined || origin.trim() === '') {
-    throw new Error(
-      'AURA_E2E_MEDIA_GENERATION=1 requires AURA_E2E_ORIGIN pointing at the running stack',
-    );
+    throw new Error(`${armedBy}=1 requires AURA_E2E_ORIGIN pointing at the running stack`);
   }
   return origin;
 }

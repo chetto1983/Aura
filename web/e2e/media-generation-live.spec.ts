@@ -77,7 +77,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
     // Guarded because a skipped group must not be able to fail the unpaid run this hook is
     // there to protect.
     if (!mediaGenerationEnabled) return;
-    requireLiveOrigin();
+    requireLiveOrigin('AURA_E2E_MEDIA_GENERATION');
     const page = await browser.newPage();
     try {
       await gotoAuthenticated(page, '/');

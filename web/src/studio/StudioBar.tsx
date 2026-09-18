@@ -117,6 +117,7 @@ export function StudioBar({
 
         <div className="ms-auto flex items-center gap-2">
           <span
+            data-testid="studio-estimate"
             className="text-[11px] text-text-faint tabular-nums"
             {...(estimate === undefined ? { title: t('studio.generate.costUnknownHint') } : {})}
           >
