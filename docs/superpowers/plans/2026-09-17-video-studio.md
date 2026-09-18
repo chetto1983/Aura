@@ -1373,7 +1373,7 @@ Playwright.
 - Modify: `scripts/critical_mutation_gate.py` (the new frontend files in the media scope),
   `scripts/coverage_package_policy.json` (only if a measured ratio moved), this plan's boxes
 
-- [ ] **Step 1: Write the paid spec**, gated by `AURA_E2E_STUDIO=1` and skipped otherwise (so
+- [x] **Step 1: Write the paid spec**, gated by `AURA_E2E_STUDIO=1` and skipped otherwise (so
   CI never runs it), reusing `gotoAuthenticated` and `sameOriginFetch` from
   `media-generation-live.helpers.ts`. It:
   1. opens the Studio with `aura.shell.surface = 'studio'` preset;
@@ -1385,16 +1385,16 @@ Playwright.
   5. asserts `GET /api/conversations` is unchanged in length;
   6. attaches both records as annotations.
 
-- [ ] **Step 2: Run the full local gates.** In WSL, `make quality`; then
+- [x] **Step 2: Run the full local gates.** In WSL, `make quality`; then
   `bash scripts/coverage_docker.sh` (only `aura_cov`); then the web gate list.
 
-- [ ] **Step 3: Build and deploy the acceptance image.**
+- [x] **Step 3: Build and deploy the acceptance image.**
   `docker build -f docker/aura/Dockerfile -t aura:acceptance --build-arg VCS_REF=$(git rev-parse HEAD) .`,
   then in `/opt/aura` recreate `aura-migrate` first (migration 0129) and then `aura` with
   `AURA_IMAGE=aura:acceptance AURA_PULL_POLICY=never`. Confirm health and that the migration
   head is 129.
 
-- [ ] **Step 4: Ask for the go, then run the paid spec.** State the expected spend (≈ $0.05 for
+- [x] **Step 4: Ask for the go, then run the paid spec.** State the expected spend (≈ $0.05 for
   the image, ≈ $0.12 for the clip). With the go:
 
   ```bash
@@ -1404,11 +1404,11 @@ Playwright.
   Record both records' ids, asset ids and costs, and check by hand that Download works and the
   History survives a reload.
 
-- [ ] **Step 5: Write the evidence** in `docs/testing/studio.md`: the gates, the migration head,
+- [x] **Step 5: Write the evidence** in `docs/testing/studio.md`: the gates, the migration head,
   the paid run's ids and costs against the estimates, and what the run does not prove (one
   model per kind, the SKU naming checked on veo-lite only, seed determinism untested).
 
-- [ ] **Step 6: Commit, tick this plan, report.**
+- [x] **Step 6: Commit, tick this plan, report.**
   `git commit -m "test(studio): record the live Studio acceptance"`, then tell the operator the
   commits are local, push only when asked, watch CI to green, and move `/opt/aura` back to
   `:edge` once the published image carries the Studio.
