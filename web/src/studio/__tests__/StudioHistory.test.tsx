@@ -199,6 +199,28 @@ describe('StudioStage', () => {
     expect(screen.getByRole('alert').textContent).not.toContain('credential missing');
   });
 
+  it('refuses to reuse an outcome nobody knows, and says it may already be billed', () => {
+    render(
+      <StudioStage
+        record={record({
+          id: 'job-u',
+          status: 'failed',
+          prompt: 'a clip that vanished',
+          error: { code: 'outcome_unknown', message: 'no terminal status' },
+        })}
+        onReuse={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alert').textContent).toContain('may already have been billed');
+    // Reuse under that sentence is an offer to pay for the same clip twice.
+    expect(screen.queryByRole('button', { name: /Reuse/ })).toBeNull();
+  });
+
+  it('still offers Reuse for a refusal that cost nothing', () => {
+    render(<StudioStage record={FAILED} onReuse={vi.fn()} />);
+    expect(screen.getByRole('button', { name: /Reuse/ })).toBeTruthy();
+  });
+
   it('falls back to what the server said for a code with no sentence here', () => {
     render(
       <StudioStage

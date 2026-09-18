@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { StudioBar } from './StudioBar';
 import { StudioHistory } from './StudioHistory';
@@ -56,6 +56,7 @@ export default function StudioWorkspace() {
   const [picked, setPicked] = useState<Partial<Record<StudioKind, string>>>({});
   const [selectedId, setSelectedId] = useState<string>();
   const [failure, setFailure] = useState<string>();
+  const inFlight = useRef(false);
 
   const models = useStudioModels(kind);
   const history = useStudioHistory(undefined);
@@ -116,7 +117,14 @@ export default function StudioWorkspace() {
   }
 
   function submit() {
+    // A ref, not `submitting`: that prop is a render behind, so two invocations inside one
+    // frame — the shortcut fired twice, a click racing the keystroke — would both pass a
+    // check on it. Every headerless POST gets a fresh Idempotency-Key from the fetch wrapper
+    // (api/idempotency.ts), so the server would not coalesce them: that is two paid
+    // generations, and the only thing that can stop them is synchronous.
+    if (inFlight.current) return;
     if (draft === undefined || model === undefined) return;
+    inFlight.current = true;
     setFailure(undefined);
     const handlers = {
       onSuccess: (record: StudioRecord) => {
@@ -128,6 +136,9 @@ export default function StudioWorkspace() {
             ? studioErrorSentence(t, error.code, error.message)
             : t('studio.error.generic'),
         );
+      },
+      onSettled: () => {
+        inFlight.current = false;
       },
     };
     // `requestBody` shapes the body from the same `draft.kind` this branches on, so the two

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
 import StudioWorkspace from '../StudioWorkspace';
@@ -257,6 +257,49 @@ describe('StudioWorkspace', () => {
       expect(screen.getByRole('button', { name: /Generate/ }).hasAttribute('disabled')).toBe(false);
     });
     expect(posts(calls)).toHaveLength(1);
+  });
+
+  it('posts once when the shortcut fires twice inside one frame', async () => {
+    const calls = stubServer();
+    mountPage();
+    await openedOnVideo();
+    fireEvent.change(prompt(), { target: { value: 'a harbour at dawn' } });
+
+    // Both events in ONE act, so React never re-renders between them and `submitting` is
+    // still false on the second — exactly the window a render-lagged guard leaves open, and
+    // exactly what a held key or a double tap does in a browser. fireEvent would flush
+    // between the two and never open it. Every headerless POST gets its own
+    // Idempotency-Key, so a second one here is a second paid generation.
+    const box = prompt();
+    act(() => {
+      for (let press = 0; press < 3; press += 1) {
+        box.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }),
+        );
+      }
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Generate/ })).toBeTruthy();
+    });
+    expect(posts(calls)).toHaveLength(1);
+  });
+
+  it('reopens Generate after a refusal, so a fixable request can be sent again', async () => {
+    const calls = stubServer({
+      createFailure: { status: 409, code: 'no_key', error: 'no credential' },
+    });
+    mountPage();
+    await openedOnVideo();
+    fireEvent.change(prompt(), { target: { value: 'a harbour at dawn' } });
+    fireEvent.keyDown(prompt(), { key: 'Enter', ctrlKey: true });
+    await screen.findByRole('alert');
+
+    // The in-flight lock must clear on a refusal too, or one 409 bricks the page.
+    fireEvent.keyDown(prompt(), { key: 'Enter', ctrlKey: true });
+    await waitFor(() => {
+      expect(posts(calls)).toHaveLength(2);
+    });
   });
 
   it('posts an image with the reference it was given', async () => {

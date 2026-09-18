@@ -66,7 +66,14 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
         <p className="text-sm text-text-muted">
           {studioErrorSentence(t, record.error?.code ?? '', record.error?.message ?? '')}
         </p>
-        <StageActions record={record} onReuse={onReuse} />
+        {/* `outcome_unknown` means the provider accepted the job and never reported how it
+            ended, so it may already be on the bill. Offering Reuse under that sentence is
+            offering to pay for the same clip twice. */}
+        <StageActions
+          record={record}
+          onReuse={onReuse}
+          reusable={record.error?.code !== 'outcome_unknown'}
+        />
       </div>
     );
   }
@@ -90,7 +97,7 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
       </div>
       <figcaption className="flex w-full flex-col items-center gap-2">
         <p className="max-w-2xl text-center text-sm text-text-muted">{record.prompt}</p>
-        <StageActions record={record} onReuse={onReuse} />
+        <StageActions record={record} onReuse={onReuse} reusable />
       </figcaption>
     </figure>
   );
@@ -99,9 +106,12 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
 function StageActions({
   record,
   onReuse,
+  reusable,
 }: {
   readonly record: StudioRecord;
   readonly onReuse: (record: StudioRecord) => void;
+  /** False for a record that must not seed another paid attempt. */
+  readonly reusable: boolean;
 }) {
   const { t } = useTranslation();
   return (
@@ -125,17 +135,19 @@ function StageActions({
           </a>
         </Button>
       )}
-      <Button
-        size="sm"
-        variant="ghost"
-        className="min-h-8 gap-1.5 py-1 text-xs"
-        onClick={() => {
-          onReuse(record);
-        }}
-      >
-        <RotateCcw aria-hidden="true" className="size-3.5" />
-        {t('studio.history.reuse')}
-      </Button>
+      {reusable ? (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="min-h-8 gap-1.5 py-1 text-xs"
+          onClick={() => {
+            onReuse(record);
+          }}
+        >
+          <RotateCcw aria-hidden="true" className="size-3.5" />
+          {t('studio.history.reuse')}
+        </Button>
+      ) : null}
     </div>
   );
 }

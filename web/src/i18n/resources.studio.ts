@@ -97,7 +97,8 @@ export const studioEn = {
     error: {
       no_key: 'This deployment has no OpenRouter key, so nothing can be generated yet.',
       no_credit: 'The OpenRouter account is out of credit.',
-      outcome_unknown: 'The provider took the job but never said how it ended.',
+      outcome_unknown:
+        'The provider took the job but never said how it ended. It may already have been billed, so do not generate it again.',
       local_route: 'This deployment routes its models locally, and the Studio needs OpenRouter.',
       generic: 'The Studio could not complete that request.',
     },
@@ -195,7 +196,8 @@ export const studioIt = {
     error: {
       no_key: 'Questo deployment non ha una chiave OpenRouter, quindi non può generare nulla.',
       no_credit: "L'account OpenRouter ha esaurito il credito.",
-      outcome_unknown: "Il provider ha preso il lavoro ma non ha mai detto com'è finito.",
+      outcome_unknown:
+        "Il provider ha preso il lavoro ma non ha mai detto com'è finito. Potrebbe essere già stato addebitato: non rigenerarlo.",
       local_route: 'Questo deployment instrada i modelli in locale, ma lo Studio usa OpenRouter.',
       generic: 'Lo Studio non è riuscito a completare la richiesta.',
     },
