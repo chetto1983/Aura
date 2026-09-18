@@ -102,13 +102,18 @@ export function StudioBar({
           }}
         />
 
-        <AdvancedPopover
-          model={model}
-          options={draft.options}
-          onChange={(options) => {
-            onDraftChange({ ...draft, options });
-          }}
-        />
+        {/* Video only, by route rather than by capability: POST /api/studio/images takes
+            neither a seed nor an audio flag, so a row that happens to declare them must not
+            offer controls whose values requestBody would silently drop. */}
+        {draft.kind === 'video' ? (
+          <AdvancedPopover
+            model={model}
+            options={draft.options}
+            onChange={(options) => {
+              onDraftChange({ ...draft, options });
+            }}
+          />
+        ) : null}
 
         <div className="ms-auto flex items-center gap-2">
           <span

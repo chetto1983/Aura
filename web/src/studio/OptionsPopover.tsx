@@ -26,9 +26,21 @@ export function OptionsPopover({ kind, model, options, onChange }: OptionsPopove
   // the provider listed them.
   const durations = [...(model.durations ?? [])].sort((a, b) => a - b);
   const seconds = (value: number) => t('studio.options.durationValue', { seconds: value });
-  const summary = optionsSummary(options, seconds);
+  // Resolution and duration are axes of POST /api/studio/videos and of nothing else. A model
+  // the catalog happens to list under both kinds can declare them and still have them dropped
+  // by requestBody on the image route, so what decides whether they are shown is the ROUTE the
+  // Generate button will call, not what the row declares.
+  const video = kind === 'video';
+  // The pill reads what will be SENT, so an image request summarises its ratio alone even
+  // when the row it is built from declares the video axes too.
+  const summary = optionsSummary(
+    video ? options : { ...options, resolution: '', duration: undefined },
+    seconds,
+  );
 
-  if (ratios.length === 0 && resolutions.length === 0 && durations.length === 0) return null;
+  if (ratios.length === 0 && (!video || (resolutions.length === 0 && durations.length === 0))) {
+    return null;
+  }
 
   const durationIndex = Math.max(
     0,
@@ -46,8 +58,7 @@ export function OptionsPopover({ kind, model, options, onChange }: OptionsPopove
         const cheapest = cheapestOptions(model);
         onChange({
           ...options,
-          resolution: cheapest.resolution,
-          duration: cheapest.duration,
+          ...(video ? { resolution: cheapest.resolution, duration: cheapest.duration } : {}),
           aspectRatio: cheapest.aspectRatio,
         });
       }}
@@ -65,7 +76,7 @@ export function OptionsPopover({ kind, model, options, onChange }: OptionsPopove
         </StudioField>
       ) : null}
 
-      {resolutions.length > 0 ? (
+      {video && resolutions.length > 0 ? (
         <StudioField label={t('studio.options.resolution')}>
           <ToggleGroup
             type="single"
@@ -91,7 +102,7 @@ export function OptionsPopover({ kind, model, options, onChange }: OptionsPopove
         </StudioField>
       ) : null}
 
-      {durations.length > 0 ? (
+      {video && durations.length > 0 ? (
         <StudioField
           label={t('studio.options.duration')}
           hint={seconds(options.duration ?? durations[durationIndex] ?? 0)}

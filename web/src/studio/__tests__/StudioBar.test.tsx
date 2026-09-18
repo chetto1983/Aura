@@ -163,6 +163,34 @@ describe('StudioBar', () => {
     expect(screen.queryByRole('button', { name: 'Advanced' })).toBeNull();
   });
 
+  it('shows an image model only its ratios, however much its row declares', () => {
+    // A catalog row is free to carry video axes on a model the image route will be called
+    // for; requestBody drops every one of them, so offering the controls would be offering
+    // choices that never leave the browser.
+    const OVERDECLARED: StudioModel = {
+      id: 'odd/image',
+      name: 'Overdeclared',
+      aspect_ratios: ['1:1', '3:2'],
+      resolutions: ['720p', '1080p'],
+      durations: [4, 8],
+      audio: true,
+      seed: true,
+      reference_max: 1,
+      image_min_usd: 0.03,
+      image_max_usd: 0.03,
+    };
+    mountBar(OVERDECLARED, { kind: 'image' });
+
+    expect(screen.queryByRole('button', { name: 'Advanced' })).toBeNull();
+    // The pill reads what will be sent: the ratio, not a resolution the body omits.
+    expect(screen.getByRole('button', { name: 'Options' }).textContent).toBe('1:1');
+    fireEvent.click(screen.getByRole('button', { name: 'Options' }));
+    expect(screen.getByRole('radiogroup', { name: 'Aspect ratio' })).toBeTruthy();
+    expect(screen.queryByRole('radiogroup', { name: 'Resolution' })).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Duration' })).toBeNull();
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
+
   it('shows each model row with its name, its description and its price', () => {
     mountBar(VEO, { models: [VEO, PLAIN_VIDEO] });
     // The pill reads the name, never the id.
