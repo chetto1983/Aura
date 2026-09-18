@@ -42,7 +42,7 @@ export function StudioStage({ record, onReuse }: StudioStageProps) {
 
   if (isActive(record)) {
     return (
-      <div className="flex w-full max-w-2xl flex-col gap-2">
+      <div className="flex w-full max-w-2xl flex-col items-center gap-2">
         <GenerationFrame
           kind={record.kind}
           prompt={record.prompt}

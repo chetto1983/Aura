@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { ImagePlus, Plus, X } from 'lucide-react';
+import { ImagePlus, Images, Plus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { assetDownloadUrl, type StudioImageRef } from './studioApi';
 import { uploadStudioFrame } from './frameUpload';
@@ -141,6 +141,7 @@ export function ImageTile({ label, image, onChange }: ImageTileProps) {
                 setLibraryOpen(true);
               }}
             >
+              <Images aria-hidden="true" />
               {t('studio.frames.library')}
             </DropdownMenuItem>
           </DropdownMenuContent>

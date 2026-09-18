@@ -48,10 +48,12 @@ export function StudioModelPill({ models, value, onChange }: StudioModelPillProp
               key={model.id}
               model={{ id: model.id, name: nameOf(model), keywords: [model.id] }}
             >
+              {/* The secondary lines dim by opacity rather than by a muted token: the row
+                  under the cursor turns accent, and a fixed grey on it is unreadable. */}
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="truncate text-[13px] font-medium text-text">{nameOf(model)}</span>
+                <span className="truncate text-[13px] font-medium">{nameOf(model)}</span>
                 {model.description === undefined || model.description === '' ? null : (
-                  <span className="truncate text-xs text-text-muted">{model.description}</span>
+                  <span className="truncate text-xs opacity-80">{model.description}</span>
                 )}
                 <ModelPriceLine model={model} />
               </span>
@@ -75,5 +77,5 @@ function ModelPriceLine({ model }: { readonly model: StudioModel }) {
       : price.unit === 'image'
         ? t('studio.model.perImage', { price: price.amount })
         : t('studio.model.perTokens', { price: price.amount });
-  return <span className="text-[11px] text-text-faint tabular-nums">{label}</span>;
+  return <span className="text-[11px] opacity-70 tabular-nums">{label}</span>;
 }
