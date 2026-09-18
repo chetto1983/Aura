@@ -126,6 +126,26 @@ export function reconcileDraft(draft: StudioDraft, model: StudioModel): StudioDr
   };
 }
 
+/** The composer pill's text: `16:9 · 720p · 4s` for a clip, `1:1` for an image. An axis the
+ *  model never declared is absent from the draft, so it is absent from the summary rather
+ *  than shown blank — the pill has to read as the request that is about to be sent.
+ *
+ *  It lives here rather than beside the popover that renders it because a .tsx exporting a
+ *  pure function next to a component loses fast refresh (react-refresh/only-export-components,
+ *  the same rule collectedJobsContext.ts documents). */
+export function optionsSummary(
+  options: StudioOptions,
+  formatSeconds: (seconds: number) => string,
+): string {
+  return [
+    options.aspectRatio,
+    options.resolution,
+    options.duration === undefined ? '' : formatSeconds(options.duration),
+  ]
+    .filter((part) => part !== '')
+    .join(' · ');
+}
+
 /** What this request will cost, or undefined when the catalog never priced it.
  *
  *  Undefined is not zero. A price the catalog did not declare is unknown, and a Generate button
