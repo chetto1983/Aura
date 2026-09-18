@@ -1,4 +1,11 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type InfiniteData,
+} from '@tanstack/react-query';
 import {
   STUDIO_HISTORY_LIMIT,
   createStudioImage,
@@ -44,22 +51,49 @@ export function useStudioModels(kind: StudioKind) {
   });
 }
 
+type StudioHistoryData = InfiniteData<readonly StudioRecord[], string | undefined>;
+
 /** The identity's generations, newest first, paged on the oldest row of a full page.
  *
- *  While a listed record is active the query re-reads itself every 5 s. React Query refetches
- *  the pages it holds, which is the first one for as long as an operator is watching something
- *  generate — the newest row is the one that changes, and it is always on that page. */
+ *  While a listed record is active, the FIRST page re-reads itself every 5 s and replaces
+ *  itself in the cache. Only the first page: a generation that has not finished is always the
+ *  newest row, and the query's own refetchInterval would re-request every page the operator has
+ *  scrolled through — history that cannot change, once per tick, for as long as they watch. */
 export function useStudioHistory(kind: StudioKind | undefined) {
-  return useInfiniteQuery({
+  const client = useQueryClient();
+  const query = useInfiniteQuery({
     queryKey: studioKeys.history(kind),
     queryFn: ({ pageParam, signal }) => listStudioHistory(kind, pageParam, signal),
     initialPageParam: undefined as string | undefined,
     // A page shorter than the server's own size is the last one.
     getNextPageParam: (lastPage: readonly StudioRecord[]) =>
       lastPage.length < STUDIO_HISTORY_LIMIT ? undefined : lastPage.at(-1)?.id,
-    refetchInterval: (query) =>
-      hasActiveRecord(query.state.data?.pages) ? STUDIO_HISTORY_POLL_MS : false,
   });
+  const polling = hasActiveRecord(query.data?.pages);
+  useEffect(() => {
+    if (!polling) return;
+    const key = studioKeys.history(kind);
+    const controller = new AbortController();
+    const tick = async () => {
+      let page: readonly StudioRecord[];
+      try {
+        page = await listStudioHistory(kind, undefined, controller.signal);
+      } catch {
+        // Explicitly silenced: the next tick is 5 s away, the panel keeps the rows it has, and
+        // a failure that is not transient surfaces through the query's own refetch path.
+        return;
+      }
+      client.setQueryData(key, (old: StudioHistoryData | undefined) =>
+        old === undefined ? old : { ...old, pages: [page, ...old.pages.slice(1)] },
+      );
+    };
+    const timer = setInterval(() => void tick(), STUDIO_HISTORY_POLL_MS);
+    return () => {
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [polling, kind, client]);
+  return query;
 }
 
 /** Both create routes answer the accepted record, and both make every history list stale — a

@@ -169,6 +169,20 @@ export async function fetchStudioModels(
   return studioJSON<StudioModels>(res);
 }
 
+/** The list routes always write their member (internal/agui/studio_dto.go), so a body without it
+ *  is a server this client does not understand — not an empty page. Answering [] there would
+ *  print "nothing yet" over a renamed field or a proxy's error body, and the operator would read
+ *  it as an empty history rather than as a failure. */
+function envelope<T, K extends string>(body: Record<K, readonly T[]>, member: K): readonly T[] {
+  // Array.isArray widens a readonly array to any[], so the check is its own guard.
+  const isRows = (value: readonly T[] | undefined): value is readonly T[] => Array.isArray(value);
+  const rows = body[member];
+  if (!isRows(rows)) {
+    throw new StudioError(0, '', `the response carried no ${member} array`);
+  }
+  return rows;
+}
+
 export async function listStudioHistory(
   kind: StudioKind | undefined,
   before: string | undefined,
@@ -178,8 +192,7 @@ export async function listStudioHistory(
   if (kind !== undefined) query.set('kind', kind);
   if (before !== undefined && before.length > 0) query.set('before', before);
   const res = await fetch(`/api/studio/history?${query.toString()}`, readInit(signal));
-  const page = await studioJSON<{ readonly records?: readonly StudioRecord[] }>(res);
-  return page.records ?? [];
+  return envelope(await studioJSON<{ readonly records: readonly StudioRecord[] }>(res), 'records');
 }
 
 export async function createStudioVideo(body: StudioVideoBody): Promise<StudioRecord> {
@@ -194,8 +207,7 @@ export async function createStudioImage(body: StudioImageBody): Promise<StudioRe
 
 export async function listStudioLibrary(signal?: AbortSignal): Promise<readonly StudioImageRef[]> {
   const res = await fetch('/api/studio/library', readInit(signal));
-  const page = await studioJSON<{ readonly assets?: readonly StudioImageRef[] }>(res);
-  return page.assets ?? [];
+  return envelope(await studioJSON<{ readonly assets: readonly StudioImageRef[] }>(res), 'assets');
 }
 
 export async function finalizeStudioUpload(id: string): Promise<StudioImageRef> {

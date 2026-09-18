@@ -120,6 +120,20 @@ describe('studio API client', () => {
     expect(callOf(fetchMock, 2).url).toBe('/api/studio/history?limit=24&before=a+b%26kind%3Dimage');
   });
 
+  // A body without its array is a server this client does not understand. Answering [] would
+  // print "nothing yet" over a renamed field or a proxy's error page, and the operator would
+  // read a failure as an empty history.
+  it.each([
+    ['history', () => listStudioHistory(undefined, undefined), { rows: [] }, 'records'],
+    ['library', () => listStudioLibrary(), { images: [] }, 'assets'],
+  ])('refuses a %s body that carries no array', async (_name, call, body, member) => {
+    stubFetch(jsonResponse(body));
+
+    const err = await refusalOf(call());
+
+    expect(err.message).toContain(member);
+  });
+
   it('reads the library envelope', async () => {
     const fetchMock = stubFetch(
       jsonResponse({
