@@ -14,9 +14,19 @@ export interface GenerationFrameProps {
   readonly prompt: string;
   readonly aspectRatio: string;
   readonly generating: boolean;
+  /** When the work being counted actually began. A Studio card passes the job's creation
+   *  time, so a reload does not restart the clock; a chat part omits it, and the count
+   *  starts at mount as it always has. */
+  readonly startedAt?: number;
 }
 
-export function GenerationFrame({ kind, prompt, aspectRatio, generating }: GenerationFrameProps) {
+export function GenerationFrame({
+  kind,
+  prompt,
+  aspectRatio,
+  generating,
+  startedAt,
+}: GenerationFrameProps) {
   const { t } = useTranslation();
   const runningLabel =
     kind === 'video'
@@ -30,16 +40,16 @@ export function GenerationFrame({ kind, prompt, aspectRatio, generating }: Gener
       aspectRatio={aspectRatio}
       generating={generating}
       label={generating ? runningLabel : t('media.generation.arriving')}
-      meta={generating ? <ElapsedClock /> : undefined}
+      meta={generating ? <ElapsedClock startedAt={startedAt} /> : undefined}
     />
   );
 }
 
 // The ticking number is a timer, whose implicit aria-live is off: its name carries the
 // value when a reader reaches it, and nothing is announced once a second.
-function ElapsedClock() {
+function ElapsedClock({ startedAt }: { readonly startedAt: number | undefined }) {
   const { t } = useTranslation();
-  const clock = useElapsedClock();
+  const clock = useElapsedClock(startedAt);
   return (
     <span role="timer" aria-label={t('media.generation.elapsed', { time: clock })}>
       {clock}
@@ -47,7 +57,7 @@ function ElapsedClock() {
   );
 }
 
-function useElapsedClock(): string {
+function useElapsedClock(startedAt: number | undefined): string {
   const [mountedAt] = useState(() => Date.now());
   const [now, setNow] = useState(mountedAt);
   useEffect(() => {
@@ -58,6 +68,6 @@ function useElapsedClock(): string {
       clearInterval(id);
     };
   }, []);
-  const seconds = Math.max(0, Math.floor((now - mountedAt) / 1000));
+  const seconds = Math.max(0, Math.floor((now - (startedAt ?? mountedAt)) / 1000));
   return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
 }

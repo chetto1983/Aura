@@ -66,6 +66,53 @@ describe('GenerationFrame', () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 
+  it('counts from the job start time it is given, not from mount', () => {
+    vi.useFakeTimers();
+    const startedAt = Date.now() - 65_000;
+    const { unmount } = render(
+      <GenerationFrame
+        kind="video"
+        prompt="A moving sea"
+        aspectRatio="16 / 9"
+        generating
+        startedAt={startedAt}
+      />,
+    );
+    expect(screen.getByRole('timer').textContent).toBe('1:05');
+    act(() => {
+      vi.advanceTimersByTime(1_000);
+    });
+    expect(screen.getByRole('timer').textContent).toBe('1:06');
+    unmount();
+
+    // The point of the prop: a reload re-mounts the card on the same job, and the clock has
+    // to keep reading the job's age rather than restarting at zero.
+    render(
+      <GenerationFrame
+        kind="video"
+        prompt="A moving sea"
+        aspectRatio="16 / 9"
+        generating
+        startedAt={startedAt}
+      />,
+    );
+    expect(screen.getByRole('timer').textContent).toBe('1:06');
+  });
+
+  it('never shows a negative clock for a start time in the future', () => {
+    vi.useFakeTimers();
+    render(
+      <GenerationFrame
+        kind="video"
+        prompt="p"
+        aspectRatio="16 / 9"
+        generating
+        startedAt={Date.now() + 30_000}
+      />,
+    );
+    expect(screen.getByRole('timer').textContent).toBe('0:00');
+  });
+
   it('keeps the ticking number out of any live region', () => {
     vi.useFakeTimers();
     render(<GenerationFrame kind="image" prompt="p" aspectRatio="1 / 1" generating />);
