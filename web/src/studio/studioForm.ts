@@ -160,13 +160,18 @@ export function estimateCost(model: StudioModel, options: StudioOptions): number
   return model.image_min_usd;
 }
 
+/** A body together with the route it belongs to. The two body shapes overlap structurally —
+ *  both are `{model, prompt}` plus optional fields — so a bare union lets a video body be
+ *  handed to the image mutation without a word from the compiler. Tagging it means the wrong
+ *  pairing cannot typecheck. */
+export type StudioRequest =
+  | { readonly kind: 'video'; readonly body: StudioVideoBody }
+  | { readonly kind: 'image'; readonly body: StudioImageBody };
+
 /** The body for this draft, carrying only the fields the model declares. The create routes
  *  strict-decode, and an axis the model does not offer earns a "not supported" adjustment about
  *  a choice the operator never made — so an undeclared field is absent, not zeroed. */
-export function requestBody(
-  draft: StudioDraft,
-  model: StudioModel,
-): StudioVideoBody | StudioImageBody {
+export function requestBody(draft: StudioDraft, model: StudioModel): StudioRequest {
   const { options } = draft;
   const ratio = options.aspectRatio === '' ? {} : { aspect_ratio: options.aspectRatio };
   if (draft.kind === 'image') {
@@ -177,7 +182,7 @@ export function requestBody(
       ...ratio,
       ...(ids.length > 0 ? { reference_asset_ids: ids } : {}),
     };
-    return image;
+    return { kind: 'image', body: image };
   }
   const firstFrame = draft.images[0];
   const video: StudioVideoBody = {
@@ -191,7 +196,18 @@ export function requestBody(
     ...(firstFrame === undefined ? {} : { first_frame_asset_id: firstFrame.id }),
     ...(draft.endFrame === undefined ? {} : { last_frame_asset_id: draft.endFrame.id }),
   };
-  return video;
+  return { kind: 'video', body: video };
+}
+
+/** Every asset id a record asked the provider to use. Reuse has to resolve all of them, and
+ *  the count is how a dropped image is told from a record that never had one. */
+export function inputAssetIds(record: StudioRecord): readonly string[] {
+  const used = record.used;
+  return [
+    ...(used.reference_asset_ids ?? []),
+    used.first_frame_asset_id,
+    used.last_frame_asset_id,
+  ].filter((id): id is string => id !== undefined && id !== '');
 }
 
 /** A generation the history should keep watching. */

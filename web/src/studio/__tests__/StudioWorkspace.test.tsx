@@ -205,6 +205,46 @@ describe('StudioWorkspace', () => {
     expect(screen.getByText('≈ $0.05')).toBeTruthy();
   });
 
+  it('keeps each mode’s own options across a round trip, prompt edit or not', async () => {
+    stubServer();
+    mountPage();
+    await openedOnVideo();
+
+    // Move the video draft off its cheapest defaults.
+    fireEvent.click(screen.getByRole('button', { name: 'Options' }));
+    fireEvent.click(screen.getByRole('radio', { name: '1080p' }));
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    expect(screen.getByRole('button', { name: 'Options' }).textContent).toBe('16:9 · 1080p · 4s');
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Image' }));
+    await screen.findByPlaceholderText('Describe the image you want to generate');
+    // Editing the prompt in image mode writes the image half — and must not reach the video
+    // half, which is the bug this pins: a prompt edit changing unrelated mode state.
+    fireEvent.change(prompt(), { target: { value: 'a quiet room' } });
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Video' }));
+    await screen.findByPlaceholderText('Describe the video scene you want to generate');
+    expect(screen.getByRole('button', { name: 'Options' }).textContent).toBe('16:9 · 1080p · 4s');
+    // The prompt is deliberately shared, as A1 says a mode switch keeps it.
+    expect((prompt() as HTMLTextAreaElement).value).toBe('a quiet room');
+  });
+
+  it('survives the same round trip with nothing typed in the other mode', async () => {
+    stubServer();
+    mountPage();
+    await openedOnVideo();
+    fireEvent.click(screen.getByRole('button', { name: 'Options' }));
+    fireEvent.click(screen.getByRole('radio', { name: '9:16' }));
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Image' }));
+    await screen.findByPlaceholderText('Describe the image you want to generate');
+    fireEvent.click(screen.getByRole('radio', { name: 'Video' }));
+    await screen.findByPlaceholderText('Describe the video scene you want to generate');
+
+    expect(screen.getByRole('button', { name: 'Options' }).textContent).toBe('9:16 · 720p · 4s');
+  });
+
   it('posts one video with exactly the options the pills read, and refetches the history', async () => {
     const calls = stubServer();
     mountPage();

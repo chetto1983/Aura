@@ -30,14 +30,13 @@ function parseSeed(raw: string): number | undefined {
 
 export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverProps) {
   const { t } = useTranslation();
-  // What is in the box, which is not always a seed: "1.5" is a number the provider cannot
-  // take, and dropping it without a word would send a random seed for a request the operator
-  // believes is repeatable. The draft wins whenever the two disagree — Reuse writes a seed
-  // nobody typed here, and the box must show the one that will be sent.
-  const [typed, setTyped] = useState('');
-  const shown =
-    parseSeed(typed) === options.seed || options.seed === undefined ? typed : String(options.seed);
-  const invalid = shown.trim() !== '' && parseSeed(shown) === undefined;
+  // The buffer holds ONLY a keystroke that is not a seed — "1.5", a lone "-". A valid seed
+  // lives in the draft and nowhere else, so the box can never read a value the body will not
+  // carry: an external write (Reuse, Reset) clearing the seed clears the box with it, because
+  // there is nothing local left to fall back to.
+  const [rejected, setRejected] = useState('');
+  const shown = options.seed === undefined ? rejected : String(options.seed);
+  const invalid = shown !== '' && parseSeed(shown) === undefined;
   if (!model.seed && !model.audio) return null;
 
   return (
@@ -46,7 +45,7 @@ export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverPro
       pillLabel={t('studio.advanced.title')}
       title={t('studio.advanced.title')}
       onReset={() => {
-        setTyped('');
+        setRejected('');
         onChange({ ...options, audio: false, seed: undefined });
       }}
     >
@@ -62,8 +61,9 @@ export function AdvancedPopover({ model, options, onChange }: AdvancedPopoverPro
             className="min-h-9 py-1"
             value={shown}
             onChange={(event) => {
-              setTyped(event.target.value);
-              onChange({ ...options, seed: parseSeed(event.target.value) });
+              const seed = parseSeed(event.target.value);
+              setRejected(seed === undefined ? event.target.value : '');
+              onChange({ ...options, seed });
             }}
           />
           {invalid ? (

@@ -29,31 +29,41 @@ import {
 
 // StudioWorkspace — one composer, one stage, one history, for the signed-in identity.
 //
-// The draft is DERIVED, not stored: the page holds what the operator typed and chose, and
-// reconciles it against the current model on every render. That is what makes a mode switch
-// keep the prompt and drop nothing else quietly — there is no second copy of the draft that
-// can disagree with the catalog, and no effect racing the catalog's answer to write one.
+// The draft is DERIVED, not stored: the page holds what the operator chose PER KIND plus one
+// shared prompt, and reconciles the pair against the current model on every render. Per kind
+// is what makes the state order-independent — writing back the image draft cannot reach the
+// video one, so editing a prompt after a mode switch no longer quietly discards the options
+// the other mode is still holding. The prompt is shared because A1 says a mode switch keeps
+// it and reloads the rest from that mode's model.
 
-/** The draft's starting point: nothing chosen. `reconcileDraft` fills every axis with the
- *  cheapest the model declares, so there is no second table of defaults here to drift. */
-const NO_OPTIONS: StudioOptions = {
-  resolution: '',
-  duration: undefined,
-  aspectRatio: '',
-  audio: false,
-  seed: undefined,
+/** One kind's half of the composer. `model: undefined` means "whatever the catalog and the
+ *  remembered choice say"; a concrete id is a pick made in this session. */
+interface KindDraft {
+  readonly model: string | undefined;
+  readonly options: StudioOptions;
+  readonly images: readonly StudioImageRef[];
+  readonly endFrame: StudioImageRef | undefined;
+}
+
+/** Nothing chosen. `reconcileDraft` fills every axis with the cheapest the model declares, so
+ *  there is no second table of defaults here to drift. */
+const BLANK: KindDraft = {
+  model: undefined,
+  options: { resolution: '', duration: undefined, aspectRatio: '', audio: false, seed: undefined },
+  images: [],
+  endFrame: undefined,
 };
 
 export default function StudioWorkspace() {
   const { t } = useTranslation();
   const [kind, setKind] = useState<StudioKind>('video');
   const [prompt, setPrompt] = useState('');
-  const [options, setOptions] = useState<StudioOptions>(NO_OPTIONS);
-  const [images, setImages] = useState<readonly StudioImageRef[]>([]);
-  const [endFrame, setEndFrame] = useState<StudioImageRef>();
-  // The in-session choice per kind. localStorage is the durable half and can throw, so a
-  // browser that refuses it still keeps the model the operator just picked.
-  const [picked, setPicked] = useState<Partial<Record<StudioKind, string>>>({});
+  // Both halves are kept: the in-session model too, because localStorage is only the durable
+  // half of that choice and a browser that refuses it must still honour the pick just made.
+  const [byKind, setByKind] = useState<Record<StudioKind, KindDraft>>({
+    image: BLANK,
+    video: BLANK,
+  });
   const [selectedId, setSelectedId] = useState<string>();
   const [failure, setFailure] = useState<string>();
   const inFlight = useRef(false);
@@ -74,7 +84,8 @@ export default function StudioWorkspace() {
     () => initialModel(kind, listed, catalogDefault),
     [kind, listed, catalogDefault],
   );
-  const inSession = picked[kind];
+  const current = byKind[kind];
+  const inSession = current.model;
   const modelId =
     inSession !== undefined && listed.some((row) => row.id === inSession) ? inSession : remembered;
   const model: StudioModel | undefined = listed.find((row) => row.id === modelId);
@@ -82,7 +93,7 @@ export default function StudioWorkspace() {
   const draft: StudioDraft | undefined =
     model === undefined
       ? undefined
-      : reconcileDraft({ kind, model: model.id, prompt, options, images, endFrame }, model);
+      : reconcileDraft({ ...current, kind, model: model.id, prompt }, model);
 
   const records = useMemo(
     () => (history.data?.pages ?? []).flat() as readonly StudioRecord[],
@@ -91,29 +102,33 @@ export default function StudioWorkspace() {
   const shown = records.find((record) => record.id === selectedId) ?? records[0];
   const submitting = createVideo.isPending || createImage.isPending;
 
-  /** Write back the axes the operator owns. The bar never changes the mode or the model
-   *  through this path — each has its own callback, because each needs a reconcile. */
-  function applyDraft(next: StudioDraft) {
+  /** Write one kind's half back. The bar never changes the mode or the model through this
+   *  path — each has its own callback, because each needs a reconcile — and writing only
+   *  `into` is what keeps a prompt edit in one mode out of the other mode's options. */
+  function keep(into: StudioKind, next: StudioDraft, modelId?: string) {
     setPrompt(next.prompt);
-    setOptions(next.options);
-    setImages(next.images);
-    setEndFrame(next.endFrame);
+    setByKind((held) => ({
+      ...held,
+      [into]: {
+        model: modelId ?? held[into].model,
+        options: next.options,
+        images: next.images,
+        endFrame: next.endFrame,
+      },
+    }));
   }
 
-  /** Re-aim the stored draft at a model, so what is kept is what that model declares rather
-   *  than a value the pills are only hiding. */
-  function reaim(at: StudioModel, nextKind: StudioKind) {
-    applyDraft(
-      reconcileDraft({ kind: nextKind, model: at.id, prompt, options, images, endFrame }, at),
-    );
+  function applyDraft(next: StudioDraft) {
+    keep(kind, next);
   }
 
   function chooseModel(nextId: string) {
     const chosen = listed.find((row) => row.id === nextId);
     if (chosen === undefined) return;
     rememberModel(kind, nextId);
-    setPicked({ ...picked, [kind]: nextId });
-    reaim(chosen, kind);
+    // Re-aimed on the way in, so what is stored is what this model declares rather than a
+    // value the pills are only hiding.
+    keep(kind, reconcileDraft({ ...current, kind, model: nextId, prompt }, chosen), nextId);
   }
 
   function submit() {
@@ -141,18 +156,17 @@ export default function StudioWorkspace() {
         inFlight.current = false;
       },
     };
-    // `requestBody` shapes the body from the same `draft.kind` this branches on, so the two
-    // cannot disagree; the body types overlap structurally, which is why neither needs a cast.
-    const body = requestBody(draft, model);
-    if (draft.kind === 'image') createImage.mutate(body, handlers);
-    else createVideo.mutate(body, handlers);
+    // The request carries the route it belongs to, so the body and the mutation cannot be
+    // paired wrongly: the compiler rejects it rather than the server.
+    const request = requestBody(draft, model);
+    if (request.kind === 'image') createImage.mutate(request.body, handlers);
+    else createVideo.mutate(request.body, handlers);
   }
 
   function reuse(record: StudioRecord) {
     const reused = draftFromRecord(record, library.data ?? []);
     setKind(record.kind);
-    setPicked({ ...picked, [record.kind]: record.model });
-    applyDraft(reused);
+    keep(record.kind, reused, record.model);
   }
 
   return (

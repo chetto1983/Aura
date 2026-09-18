@@ -229,6 +229,37 @@ describe('AdvancedPopover', () => {
     expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('77');
   });
 
+  it('never shows a seed the body will not carry when the draft clears it', () => {
+    // A controlled rerender, which is what Reuse on a record with no seed does. The box has
+    // to follow the draft: reading 42 beside a body that omits the seed is the page lying
+    // about what is being paid for.
+    const view = render(
+      <AdvancedPopover model={VIDEO} options={{ ...CHEAPEST, seed: 42 }} onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('42');
+
+    view.rerender(<AdvancedPopover model={VIDEO} options={CHEAPEST} onChange={vi.fn()} />);
+    expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('keeps a rejected keystroke on screen, then lets the draft take it back', () => {
+    const view = render(<AdvancedPopover model={VIDEO} options={CHEAPEST} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }));
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Seed' }), {
+      target: { value: '1.5' },
+    });
+    expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('1.5');
+
+    // An external write of a real seed wins over the buffer, and the complaint goes with it.
+    view.rerender(
+      <AdvancedPopover model={VIDEO} options={{ ...CHEAPEST, seed: 8 }} onChange={vi.fn()} />,
+    );
+    expect(screen.getByRole('spinbutton', { name: 'Seed' }).getAttribute('value')).toBe('8');
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
   it('says a fractional seed is not one instead of dropping it in silence', () => {
     const onChange = openAdvanced(VIDEO, CHEAPEST);
     const seed = screen.getByRole('spinbutton', { name: 'Seed' });

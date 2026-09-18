@@ -259,7 +259,8 @@ describe('requestBody', () => {
       veoLite,
     );
 
-    expect(body).toStrictEqual({
+    expect(body.kind).toBe('video');
+    expect(body.body).toStrictEqual({
       model: 'google/veo-3.1-lite',
       prompt: 'a cat in a hat',
       duration: 8,
@@ -284,7 +285,8 @@ describe('requestBody', () => {
 
     // Asking a silent model for silence earns a "not supported" note about a choice the
     // operator never made — so the field is absent, not false.
-    expect(body).toStrictEqual({
+    expect(body.kind).toBe('video');
+    expect(body.body).toStrictEqual({
       model: 'google/veo-3.1-lite',
       prompt: 'a cat in a hat',
       duration: 4,
@@ -298,12 +300,15 @@ describe('requestBody', () => {
     // generate audio; the form says the same thing rather than leaving the provider its own
     // preference. toStrictEqual, so a `seed: undefined` key would fail rather than pass.
     expect(requestBody(videoDraft(), veoLite)).toStrictEqual({
-      model: 'google/veo-3.1-lite',
-      prompt: 'a cat in a hat',
-      duration: 4,
-      resolution: '720p',
-      aspect_ratio: '16:9',
-      audio: false,
+      kind: 'video',
+      body: {
+        model: 'google/veo-3.1-lite',
+        prompt: 'a cat in a hat',
+        duration: 4,
+        resolution: '720p',
+        aspect_ratio: '16:9',
+        audio: false,
+      },
     });
   });
 
@@ -320,7 +325,10 @@ describe('requestBody', () => {
       seedream,
     );
 
-    expect(body).toStrictEqual({
+    // The tag is what stops this body reaching createStudioVideo: the two shapes overlap
+    // structurally, so without it the wrong pairing typechecks.
+    expect(body.kind).toBe('image');
+    expect(body.body).toStrictEqual({
       model: 'bytedance/seedream-4',
       prompt: 'a hat on a cat',
       aspect_ratio: '1:1',
