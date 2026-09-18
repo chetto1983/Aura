@@ -6,7 +6,8 @@
     "vitest.stryker.config.ts",
     "src/components/model-selector.tsx",
     "src/components/ui/command.tsx",
-    "src/components/ui/popover.tsx"
+    "src/components/ui/popover.tsx",
+    "src/components/ui/dropdown-menu.tsx"
   ],
   "ignoreDependencies": ["assistant-stream"]
 }

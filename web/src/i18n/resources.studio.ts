@@ -51,12 +51,14 @@ export const studioEn = {
       libraryEmpty: 'No images uploaded yet.',
       remove: 'Remove {{name}}',
       unsupported: 'That model takes no images.',
-      endFrameNeedsStart: 'Set a start frame first.',
     },
     model: {
       label: 'Model',
       choose: 'Choose a model',
       none: 'No model is available for this kind.',
+      perSecond: '${{price}} per second',
+      perImage: '${{price}} per image',
+      perTokens: '${{price}} per million output tokens',
     },
     generate: {
       action: 'Generate',
@@ -151,12 +153,14 @@ export const studioIt = {
       libraryEmpty: 'Nessuna immagine caricata finora.',
       remove: 'Rimuovi {{name}}',
       unsupported: 'Questo modello non accetta immagini.',
-      endFrameNeedsStart: 'Imposta prima il fotogramma iniziale.',
     },
     model: {
       label: 'Modello',
       choose: 'Scegli un modello',
       none: 'Nessun modello disponibile per questo tipo.',
+      perSecond: '{{price}} $ al secondo',
+      perImage: '{{price}} $ a immagine',
+      perTokens: '{{price}} $ per milione di token in uscita',
     },
     generate: {
       action: 'Genera',
