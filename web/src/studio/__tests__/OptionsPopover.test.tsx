@@ -174,6 +174,18 @@ describe('OptionsPopover', () => {
     expect(screen.queryByRole('slider')).toBeNull();
   });
 
+  it('draws a tile for a ratio label it cannot parse rather than dropping the choice', () => {
+    // The catalog is free to declare a label that is not `w:h`; refusing to draw it would
+    // hide an option the model really offers.
+    openOptions(
+      { id: 'odd', audio: false, seed: false, aspect_ratios: ['auto', '9:16'] },
+      { ...CHEAPEST, resolution: '', duration: undefined, aspectRatio: 'auto' },
+      'image',
+    );
+    expect(screen.getByRole('radio', { name: 'auto' })).toBeTruthy();
+    expect(screen.getByRole('radio', { name: '9:16' })).toBeTruthy();
+  });
+
   it('renders no pill at all for a model that declares no option', () => {
     render(
       <OptionsPopover

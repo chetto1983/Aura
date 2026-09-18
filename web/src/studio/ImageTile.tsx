@@ -20,11 +20,9 @@ interface ImageTileProps {
   /** What this slot is — the start frame, the end frame, a reference. Names the tile. */
   readonly label: string;
   readonly image: StudioImageRef | undefined;
-  /** Why this slot cannot be filled, when it cannot. Shown, not merely implied by a greyed
-   *  control: a tile that does nothing and says nothing is a bug report waiting to happen. */
-  readonly disabledReason: string | undefined;
-  readonly onPick: (image: StudioImageRef) => void;
-  readonly onRemove: () => void;
+  /** The slot's new contents: an image when one is attached, undefined when it is emptied.
+   *  One callback rather than two, so every state of the tile has exactly one it can call. */
+  readonly onChange: (image: StudioImageRef | undefined) => void;
 }
 
 const TILE = 'size-14 shrink-0 rounded-[var(--radius-md)] border border-dashed border-border';
@@ -33,9 +31,35 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function ImageTile({ label, image, disabledReason, onPick, onRemove }: ImageTileProps) {
-  const { t } = useTranslation();
+/** A slot the model cannot use. It stays on screen and says why: a tile that does nothing and
+ *  says nothing is a bug report waiting to happen. It is its own component because it accepts
+ *  nothing, so it needs no change handler to leave unused. */
+export function DisabledTile({
+  label,
+  reason,
+}: {
+  readonly label: string;
+  readonly reason: string;
+}) {
   const reasonId = useId();
+  return (
+    <span
+      role="button"
+      aria-disabled="true"
+      aria-label={label}
+      aria-describedby={reasonId}
+      className={`${TILE} grid cursor-not-allowed place-items-center text-text-disabled`}
+    >
+      <Plus aria-hidden="true" className="size-4" />
+      <span id={reasonId} className="sr-only">
+        {reason}
+      </span>
+    </span>
+  );
+}
+
+export function ImageTile({ label, image, onChange }: ImageTileProps) {
+  const { t } = useTranslation();
   const fileInput = useRef<HTMLInputElement>(null);
   const openingLibrary = useRef(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -47,7 +71,9 @@ export function ImageTile({ label, image, disabledReason, onPick, onRemove }: Im
     return (
       <button
         type="button"
-        onClick={onRemove}
+        onClick={() => {
+          onChange(undefined);
+        }}
         aria-label={t('studio.frames.remove', { name: image.file_name })}
         className={`${TILE} group relative overflow-hidden border-solid bg-surface-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none`}
       >
@@ -63,28 +89,11 @@ export function ImageTile({ label, image, disabledReason, onPick, onRemove }: Im
     );
   }
 
-  if (disabledReason !== undefined) {
-    return (
-      <span
-        role="button"
-        aria-disabled="true"
-        aria-label={label}
-        aria-describedby={reasonId}
-        className={`${TILE} grid cursor-not-allowed place-items-center text-text-disabled`}
-      >
-        <Plus aria-hidden="true" className="size-4" />
-        <span id={reasonId} className="sr-only">
-          {disabledReason}
-        </span>
-      </span>
-    );
-  }
-
   async function attach(file: File) {
     setFailure(undefined);
     setUploading(file.name);
     try {
-      onPick(await uploadStudioFrame(file, () => undefined));
+      onChange(await uploadStudioFrame(file, () => undefined));
     } catch (error) {
       setFailure(t('studio.frames.uploadFailed', { reason: reasonOf(error) }));
     } finally {
@@ -164,7 +173,7 @@ export function ImageTile({ label, image, disabledReason, onPick, onRemove }: Im
                     aria-label={asset.file_name}
                     onClick={() => {
                       setLibraryOpen(false);
-                      onPick(asset);
+                      onChange(asset);
                     }}
                     className="block aspect-square w-full overflow-hidden rounded-[var(--radius-sm)] border border-border focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                   >

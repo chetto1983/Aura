@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '../../i18n/i18n';
-import { ImageTile } from '../ImageTile';
+import { DisabledTile, ImageTile } from '../ImageTile';
 import type { StudioImageRef } from '../studioApi';
 
 // ImageTile owns the whole attach lifecycle, so what is asserted here is what the operator
@@ -24,22 +24,14 @@ const HARBOUR: StudioImageRef = {
 };
 
 function mountTile(over: Partial<Parameters<typeof ImageTile>[0]> = {}) {
-  const onPick = vi.fn();
-  const onRemove = vi.fn();
+  const onChange = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ImageTile
-        label="Start frame"
-        image={undefined}
-        disabledReason={undefined}
-        onPick={onPick}
-        onRemove={onRemove}
-        {...over}
-      />
+      <ImageTile label="Start frame" image={undefined} onChange={onChange} {...over} />
     </QueryClientProvider>,
   );
-  return { onPick, onRemove };
+  return { onChange };
 }
 
 function openMenu() {
@@ -81,31 +73,31 @@ describe('ImageTile', () => {
 
   it('uploads the chosen file and reports the frame it became', async () => {
     uploadStudioFrame.mockResolvedValue(SUNSET);
-    const { onPick } = mountTile();
+    const { onChange } = mountTile();
     const file = new File(['bytes'], 'sunset.png', { type: 'image/png' });
     fireEvent.change(screen.getByLabelText('Upload a file'), { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(onPick).toHaveBeenCalledWith(SUNSET);
+      expect(onChange).toHaveBeenCalledWith(SUNSET);
     });
     expect(uploadStudioFrame.mock.calls[0]?.[0]).toBe(file);
   });
 
   it('says why an upload was refused instead of leaving an empty tile', async () => {
     uploadStudioFrame.mockRejectedValue(new Error('That file is larger than 20 MB.'));
-    const { onPick } = mountTile();
+    const { onChange } = mountTile();
     fireEvent.change(screen.getByLabelText('Upload a file'), {
       target: { files: [new File(['bytes'], 'huge.png', { type: 'image/png' })] },
     });
 
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toContain('That file is larger than 20 MB.');
-    expect(onPick).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('lists the identity library and reports the image that was picked', async () => {
     const fetchSpy = stubLibrary([SUNSET, HARBOUR]);
-    const { onPick } = mountTile();
+    const { onChange } = mountTile();
     openMenu();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Your images' }));
 
@@ -115,8 +107,8 @@ describe('ImageTile', () => {
     ).toBe(true);
     fireEvent.click(harbour);
     // The one that was clicked, not the first row of the list.
-    expect(onPick).toHaveBeenCalledWith(HARBOUR);
-    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(HARBOUR);
+    expect(onChange).toHaveBeenCalledTimes(1);
     // Picking closes the picker: a popover left open covers the bar it was opened from.
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'harbour.png' })).toBeNull();
@@ -143,7 +135,7 @@ describe('ImageTile', () => {
   });
 
   it('carries aria-disabled and the reason when the model cannot use the slot', () => {
-    mountTile({ disabledReason: 'That model takes no images.' });
+    render(<DisabledTile label="Start frame" reason="That model takes no images." />);
     const tile = screen.getByRole('button', { name: 'Start frame' });
     expect(tile.getAttribute('aria-disabled')).toBe('true');
     const reason = tile.getAttribute('aria-describedby');
@@ -155,13 +147,14 @@ describe('ImageTile', () => {
     expect(screen.queryByRole('menuitem')).toBeNull();
   });
 
-  it('shows the attached thumbnail and removes it on click', () => {
-    const { onRemove } = mountTile({ image: SUNSET });
+  it('shows the attached thumbnail and empties the slot on click', () => {
+    const { onChange } = mountTile({ image: SUNSET });
     const thumbnail = screen.getByAltText('sunset.png');
     expect(thumbnail.getAttribute('src')).toBe('/api/assets/asset-sunset/download');
     // A filled tile is not a menu: it is the one control that empties the slot.
     expect(screen.queryByRole('button', { name: 'Start frame' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Remove sunset.png' }));
-    expect(onRemove).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith(undefined);
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });

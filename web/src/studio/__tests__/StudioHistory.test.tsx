@@ -101,6 +101,25 @@ describe('StudioHistory', () => {
     expect(screen.queryByText('Nothing generated yet.')).toBeNull();
   });
 
+  it('names the statuses it knows and shows a later one verbatim rather than blank', () => {
+    mountPanel({
+      records: [
+        record({ id: 'job-x', status: 'expired', prompt: 'an expired one' }),
+        record({ id: 'job-y', status: 'cancelled', prompt: 'a cancelled one' }),
+        // A status the server mints after this build: showing it raw is the only honest
+        // option, and it is better than an empty label.
+        record({ id: 'job-z', status: 'quarantined', prompt: 'a future one' }),
+      ],
+    });
+    expect(screen.getByRole('button', { name: /an expired one/ }).textContent).toContain('Expired');
+    expect(screen.getByRole('button', { name: /a cancelled one/ }).textContent).toContain(
+      'Cancelled',
+    );
+    expect(screen.getByRole('button', { name: /a future one/ }).textContent).toContain(
+      'quarantined',
+    );
+  });
+
   it('says nothing has been generated when the history is empty', () => {
     mountPanel({ records: [] });
     expect(screen.getByText('Nothing generated yet.')).toBeTruthy();

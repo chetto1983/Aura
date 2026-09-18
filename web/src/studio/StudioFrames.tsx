@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { ImageTile } from './ImageTile';
+import { DisabledTile, ImageTile } from './ImageTile';
 import type { StudioImageRef, StudioModel } from './studioApi';
 import { maxImages, type StudioDraft } from './studioForm';
 
@@ -22,17 +22,7 @@ export function StudioFrames({ draft, model, onChange }: StudioFramesProps) {
     draft.kind === 'image' ? t('studio.frames.references') : t('studio.frames.firstFrame');
 
   if (max === 0) {
-    return (
-      <div className="flex items-center gap-2">
-        <ImageTile
-          label={slotLabel}
-          image={undefined}
-          disabledReason={t('studio.frames.unsupported')}
-          onPick={() => undefined}
-          onRemove={() => undefined}
-        />
-      </div>
-    );
+    return <DisabledTile label={slotLabel} reason={t('studio.frames.unsupported')} />;
   }
 
   const setImages = (images: readonly StudioImageRef[]) => {
@@ -55,10 +45,12 @@ export function StudioFrames({ draft, model, onChange }: StudioFramesProps) {
           key={image.id}
           label={slotLabel}
           image={image}
-          disabledReason={undefined}
-          onPick={() => undefined}
-          onRemove={() => {
-            setImages(draft.images.filter((_, at) => at !== index));
+          onChange={(next) => {
+            setImages(
+              next === undefined
+                ? draft.images.filter((_, at) => at !== index)
+                : draft.images.map((current, at) => (at === index ? next : current)),
+            );
           }}
         />
       ))}
@@ -67,11 +59,9 @@ export function StudioFrames({ draft, model, onChange }: StudioFramesProps) {
         <ImageTile
           label={slotLabel}
           image={undefined}
-          disabledReason={undefined}
-          onPick={(image) => {
-            setImages([...draft.images, image]);
+          onChange={(next) => {
+            if (next !== undefined) setImages([...draft.images, next]);
           }}
-          onRemove={() => undefined}
         />
       ) : null}
 
@@ -79,12 +69,8 @@ export function StudioFrames({ draft, model, onChange }: StudioFramesProps) {
         <ImageTile
           label={t('studio.frames.lastFrame')}
           image={draft.endFrame}
-          disabledReason={undefined}
-          onPick={(endFrame) => {
+          onChange={(endFrame) => {
             onChange({ ...draft, endFrame });
-          }}
-          onRemove={() => {
-            onChange({ ...draft, endFrame: undefined });
           }}
         />
       ) : null}
