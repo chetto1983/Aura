@@ -4,6 +4,13 @@ import '../../i18n/i18n';
 import { StudioHistory } from '../StudioHistory';
 import { StudioStage } from '../StudioStage';
 import type { StudioRecord } from '../studioApi';
+import { mediaQueryList } from '../../test/mediaQuery';
+
+/** The panel and the drawer are the same component at two widths, so every test says which
+ *  one it is exercising. jsdom has no layout, so the width IS this stub. */
+function viewport(sideBySide: boolean) {
+  window.matchMedia = (query: string) => mediaQueryList(query, sideBySide);
+}
 
 // The history panel and the centre it drives. What is asserted is what the operator can act
 // on: a card per generation with the status it actually has, a search that narrows to the
@@ -61,11 +68,15 @@ function mountPanel(options: PanelOptions = {}) {
   return { onSelect, onLoadMore, view };
 }
 
+const realMatchMedia = window.matchMedia;
+
 beforeEach(() => {
   localStorage.clear();
+  viewport(true);
 });
 
 afterEach(() => {
+  window.matchMedia = realMatchMedia;
   vi.restoreAllMocks();
 });
 
@@ -180,6 +191,35 @@ describe('StudioHistory', () => {
     mountPanel();
     expect(screen.queryByRole('searchbox')).toBeNull();
     expect(screen.getByRole('button', { name: 'Show the history' })).toBeTruthy();
+  });
+
+  it('is a real dialog below the side-by-side width, not a floating box', () => {
+    viewport(false);
+    // No stored choice at a narrow width: closed, because the drawer would open over the
+    // composer the operator came here to use.
+    const { view } = mountPanel();
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show the history' }));
+    const drawer = screen.getByRole('dialog', { name: 'History' });
+    expect(drawer.getAttribute('aria-modal')).toBe('true');
+    // The page behind must not scroll under an overlay that covers it.
+    expect(document.body.style.overflow).toBe('hidden');
+    // Focus is inside the drawer, not still walking the obscured composer.
+    expect(drawer.contains(document.activeElement)).toBe(true);
+    expect(screen.getByRole('searchbox', { name: 'Search the history' })).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.body.style.overflow).not.toBe('hidden');
+    view.unmount();
+  });
+
+  it('is a panel, never a dialog, when there is room beside the page', () => {
+    mountPanel();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('complementary', { name: 'History' })).toBeTruthy();
+    expect(document.body.style.overflow).not.toBe('hidden');
   });
 
   it('still opens when localStorage throws', () => {

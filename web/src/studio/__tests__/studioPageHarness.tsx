@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import '../../i18n/i18n';
 import StudioWorkspace from '../StudioWorkspace';
+import { mediaQueryList } from '../../test/mediaQuery';
 
 // studioPageHarness — the fixtures and the stubbed server the Studio page's two test files
 // share. Not a test file itself: vitest collects only *.test.*, and keeping the harness out
@@ -202,4 +203,10 @@ export async function openedOnVideo() {
 
 export function posts(calls: readonly Call[]): readonly Call[] {
   return calls.filter((call) => call.method === 'POST');
+}
+
+/** jsdom has no layout, so the width the history panel reads IS this stub. The page tests
+ *  run side by side; the drawer at narrow widths is StudioHistory's own test. */
+export function viewport(sideBySide: boolean) {
+  window.matchMedia = (query: string) => mediaQueryList(query, sideBySide);
 }

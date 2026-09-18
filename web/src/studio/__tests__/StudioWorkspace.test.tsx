@@ -1,16 +1,20 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mountPage, openedOnVideo, posts, prompt, stubServer } from './studioPageHarness';
+import { mountPage, openedOnVideo, posts, prompt, stubServer, viewport } from './studioPageHarness';
 
 // The composer half of the page, against a stubbed server: what the catalog decides the bar
 // opens on, what each mode keeps across a switch, the exact body posted, and what is said
 // when the server refuses. The read-side states live in StudioWorkspace.reads.test.tsx.
 
+const realMatchMedia = window.matchMedia;
+
 beforeEach(() => {
   localStorage.clear();
+  viewport(true);
 });
 
 afterEach(() => {
+  window.matchMedia = realMatchMedia;
   vi.unstubAllGlobals();
 });
 

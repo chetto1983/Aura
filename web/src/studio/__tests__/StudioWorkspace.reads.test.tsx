@@ -5,6 +5,7 @@ import {
   openedOnVideo,
   prompt,
   stubServer,
+  viewport,
   NO_INPUTS,
   WITH_INPUTS,
 } from './studioPageHarness';
@@ -13,11 +14,15 @@ import {
 // history says while it is loading or after it was refused. Every one of these is a state
 // that `data ?? []` used to flatten into "there is nothing".
 
+const realMatchMedia = window.matchMedia;
+
 beforeEach(() => {
   localStorage.clear();
+  viewport(true);
 });
 
 afterEach(() => {
+  window.matchMedia = realMatchMedia;
   vi.unstubAllGlobals();
 });
 
