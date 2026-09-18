@@ -4,9 +4,11 @@ import type { TFunction } from 'i18next';
 // the operator twice: as the alert over a refused submission and as the body of a failed
 // record in the history.
 //
-// Only the codes with a localized sentence are translated. A code the server mints later has
-// none, and the server's own message is shown instead of a made-up one; the generic fallback
-// exists for the case where there is no message either, and says only what is true.
+// Every code the design's A2 tables name is here, in both locales. Falling through to the
+// server's own message translated nothing: that string is written in English by Go, so an
+// Italian operator read an English sentence for a failure Aura already knows how to name.
+// The fallback stays for a code the server mints after this build — there IS no sentence for
+// one of those, and the server's own words beat an invented paraphrase.
 
 export function studioErrorSentence(t: TFunction, code: string, message: string): string {
   switch (code) {
@@ -14,6 +16,20 @@ export function studioErrorSentence(t: TFunction, code: string, message: string)
       return t('studio.error.no_key');
     case 'no_credit':
       return t('studio.error.no_credit');
+    case 'unsupported':
+      return t('studio.error.unsupported');
+    case 'model_rejected':
+      return t('studio.error.model_rejected');
+    case 'content_blocked':
+      return t('studio.error.content_blocked');
+    case 'asset_not_found':
+      return t('studio.error.asset_not_found');
+    case 'too_large':
+      return t('studio.error.too_large');
+    case 'job_failed':
+      return t('studio.error.job_failed');
+    case 'job_expired':
+      return t('studio.error.job_expired');
     case 'outcome_unknown':
       return t('studio.error.outcome_unknown');
     case 'local_route':

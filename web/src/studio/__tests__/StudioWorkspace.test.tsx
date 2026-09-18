@@ -158,7 +158,7 @@ function prompt(): HTMLElement {
 }
 
 async function openedOnVideo() {
-  await screen.findByPlaceholderText('Describe the shot');
+  await screen.findByPlaceholderText('Describe the video scene you want to generate');
 }
 
 function posts(calls: readonly Call[]): readonly Call[] {
@@ -193,7 +193,7 @@ describe('StudioWorkspace', () => {
     fireEvent.change(prompt(), { target: { value: 'a harbour at dawn' } });
 
     fireEvent.click(screen.getByRole('radio', { name: 'Image' }));
-    await screen.findByPlaceholderText('Describe the image');
+    await screen.findByPlaceholderText('Describe the image you want to generate');
 
     expect((prompt() as HTMLTextAreaElement).value).toBe('a harbour at dawn');
     expect(screen.getByRole('combobox', { name: 'Model' }).textContent).toContain(
@@ -307,7 +307,7 @@ describe('StudioWorkspace', () => {
     mountPage();
     await openedOnVideo();
     fireEvent.click(screen.getByRole('radio', { name: 'Image' }));
-    await screen.findByPlaceholderText('Describe the image');
+    await screen.findByPlaceholderText('Describe the image you want to generate');
 
     // Attach a reference from the identity's own library.
     fireEvent.keyDown(screen.getByRole('button', { name: 'References' }), { key: 'Enter' });

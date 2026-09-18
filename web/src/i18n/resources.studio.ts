@@ -17,8 +17,8 @@ export const studioEn = {
     },
     prompt: {
       label: 'Prompt',
-      image: 'Describe the image',
-      video: 'Describe the shot',
+      image: 'Describe the image you want to generate',
+      video: 'Describe the video scene you want to generate',
     },
     options: {
       open: 'Options',
@@ -96,6 +96,13 @@ export const studioEn = {
     },
     error: {
       no_key: 'This deployment has no OpenRouter key, so nothing can be generated yet.',
+      unsupported: 'That model cannot do what was asked.',
+      model_rejected: 'The model refused the request.',
+      content_blocked: 'The provider blocked this prompt or these images.',
+      asset_not_found: 'One of the images is no longer there.',
+      too_large: 'One of the images is larger than the provider accepts.',
+      job_failed: 'The generation failed at the provider.',
+      job_expired: 'The job expired before the provider finished it.',
       no_credit: 'The OpenRouter account is out of credit.',
       outcome_unknown:
         'The provider took the job but never said how it ended. It may already have been billed, so do not generate it again.',
@@ -116,8 +123,8 @@ export const studioIt = {
     },
     prompt: {
       label: 'Prompt',
-      image: "Descrivi l'immagine",
-      video: "Descrivi l'inquadratura",
+      image: "Descrivi l'immagine che vuoi generare",
+      video: 'Descrivi la scena video che vuoi generare',
     },
     options: {
       open: 'Opzioni',
@@ -195,6 +202,13 @@ export const studioIt = {
     },
     error: {
       no_key: 'Questo deployment non ha una chiave OpenRouter, quindi non può generare nulla.',
+      unsupported: 'Questo modello non può fare ciò che è stato chiesto.',
+      model_rejected: 'Il modello ha rifiutato la richiesta.',
+      content_blocked: 'Il provider ha bloccato questo prompt o queste immagini.',
+      asset_not_found: "Una delle immagini non c'è più.",
+      too_large: 'Una delle immagini supera la dimensione accettata dal provider.',
+      job_failed: 'La generazione è fallita dal provider.',
+      job_expired: 'Il lavoro è scaduto prima che il provider lo completasse.',
       no_credit: "L'account OpenRouter ha esaurito il credito.",
       outcome_unknown:
         "Il provider ha preso il lavoro ma non ha mai detto com'è finito. Potrebbe essere già stato addebitato: non rigenerarlo.",

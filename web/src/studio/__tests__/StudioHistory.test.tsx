@@ -221,14 +221,27 @@ describe('StudioStage', () => {
     expect(screen.getByRole('button', { name: /Reuse/ })).toBeTruthy();
   });
 
-  it('falls back to what the server said for a code with no sentence here', () => {
+  it('falls back to what the server said for a code minted after this build', () => {
     render(
       <StudioStage
-        record={{ ...FAILED, error: { code: 'content_blocked', message: 'Prompt was refused.' } }}
+        record={{ ...FAILED, error: { code: 'quarantined', message: 'Prompt was refused.' } }}
         onReuse={vi.fn()}
       />,
     );
     expect(screen.getByRole('alert').textContent).toContain('Prompt was refused.');
+  });
+
+  it('names a blocked prompt in Aura’s own words, not the provider’s', () => {
+    render(
+      <StudioStage
+        record={{ ...FAILED, error: { code: 'content_blocked', message: 'policy_violation' } }}
+        onReuse={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole('alert').textContent).toContain(
+      'The provider blocked this prompt or these images.',
+    );
+    expect(screen.getByRole('alert').textContent).not.toContain('policy_violation');
   });
 
   it('offers Download and Reuse on a finished generation, with its cost', () => {
