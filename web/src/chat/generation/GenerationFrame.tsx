@@ -5,9 +5,11 @@ import { ImageGeneration } from '@/components/image-generation';
 
 // GenerationFrame (spec §5 "While running", R22/R23): the ImageGeneration element for a
 // running image_generate/video_generate call, or for a detached video job replayed from the
-// thread. Running shows elapsed time from mount, not a percentage: the video client reads
-// only the job status, so there is no progress value. A detached job is static, because a
-// replayed part must not look like work still in flight.
+// thread. Running shows elapsed time, not a percentage: the video client reads only the job
+// status, so there is no progress value. The count runs from mount by default — a chat part
+// appears when its call starts — or from `startedAt` when the caller knows better, which is
+// how a Studio card survives a reload without resetting the clock. A detached job is static,
+// because a replayed part must not look like work still in flight.
 
 export interface GenerationFrameProps {
   readonly kind: MediaKind;
