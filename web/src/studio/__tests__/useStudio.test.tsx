@@ -3,9 +3,7 @@ import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { StudioRecord } from '../studioApi';
-import {
-  STUDIO_HISTORY_LIMIT,
-} from '../studioApi';
+import { STUDIO_HISTORY_LIMIT } from '../studioApi';
 import {
   STUDIO_HISTORY_POLL_MS,
   hasActiveRecord,
@@ -90,7 +88,9 @@ describe('useStudioHistory polling', () => {
   // Refetching the whole infinite query would re-request every retained page, once per tick,
   // for as long as they watch something generate.
   it('re-reads only the first page while a generation is unfinished', async () => {
-    const full = Array.from({ length: STUDIO_HISTORY_LIMIT }, (_, i) => record(`job-${String(i)}`, 'completed'));
+    const full = Array.from({ length: STUDIO_HISTORY_LIMIT }, (_, i) =>
+      record(`job-${String(i)}`, 'completed'),
+    );
     full[0] = record('job-0', 'in_progress');
     const urls: string[] = [];
     vi.stubGlobal(
@@ -99,7 +99,9 @@ describe('useStudioHistory polling', () => {
         const url = urlOf(input);
         urls.push(url);
         // A full first page, then a short one: the cursor stops after the second.
-        return Promise.resolve(jsonBody({ records: url.includes('before=') ? [record('old', 'completed')] : full }));
+        return Promise.resolve(
+          jsonBody({ records: url.includes('before=') ? [record('old', 'completed')] : full }),
+        );
       }),
     );
 
