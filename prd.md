@@ -410,19 +410,6 @@ capability. OCR/transcription/extraction use shared services and settings. Teleg
 an attachment wrapper, not a competing pipeline. Runs that need indexing wait for the
 relevant indexed state and show it to the user. Filename prose is not image transmission.
 
-Audio is the exception, and it is deliberate: speech reaches the model as its
-transcript, never as bytes. Measured 2026-09-19, a voice note took the attachment path
-on both channels — `assets.TurnMediaLoader` accepted `ModalityAudio`, so the turn
-carried an `input_audio` content part while the transcript the STT sidecar had already
-written into `Asset.Summary` rode along in the attachment block unread. Two
-representations of the same words, free to disagree, and the cheaper, inspectable,
-searchable one ignored. `TurnMediaLoader` now accepts `ModalityImage` alone, and both
-callers (the AG-UI gateway and the Telegram channel) build the projection from images
-only; an audio attachment is described by its transcript like every other non-image
-modality. This does not measure transcription quality, and it does not claim a
-transcript equals audio for a model that could read tone or accent from the waveform:
-it decides that one legible representation beats two that can diverge.
-
 ## 12. Workspace, shell and web
 
 Tools and artifact delivery resolve the persistent working root consistently. Sandbox
@@ -442,47 +429,6 @@ renders inline and expanded, its button executes, and showing source preserves
 the preview state. This is a viewing/export workflow; it does not establish direct
 editing, version history, React bundling or arbitrary external network access.
 Acceptance and verification details: `.planning/artifact-workspace-plan.md`.
-
-The cockpit has a hands-free voice mode beside composer dictation: an overlay whose
-orb carries the phase — listening, transcribing, thinking, answering — while the loop
-runs. The microphone is opened once for the session and stays open, because the level
-meter is both what ends an utterance on silence and what hears the person talking over
-an answer; reopening it per utterance also re-runs the browser's gain ramp, which eats
-the first syllable. Every utterance is sent through the ordinary composer, so a spoken
-turn is a text turn: same run, same persistence, same thread behind the overlay.
-
-assistant-ui 0.15.18 ships a `RealtimeVoiceAdapter` and the external store accepts one,
-but it cannot carry this: measured in the installed bundle on 2026-09-19, its
-transcripts are appended to a private `_voiceMessages` display list and never reach
-`onNew`, so a turn built on it renders and arrives nowhere. The loop is therefore ours,
-over the `/api/stt` and `/api/tts` routes that already existed. The toggle appears only
-where both legs are configured, since a mode that can listen but not answer aloud — or
-the reverse — is not a mode; and where speech-to-text is absent there is no microphone
-at all, because the audio-attachment fallback it replaced sent the model bytes instead
-of words. A mic that is absent says "not here"; a mic that quietly sends something else
-says nothing and is believed.
-
-This does not establish realtime duplex voice, speaker diarization, or barge-in latency
-in a real room: headless acceptance ends the utterance with the overlay's own button and
-stubs the audio graph, so level-driven endpointing and barge-in are proven by their unit
-tests and remain manual checks end to end.
-
-What the voice says is decided ONCE, for every channel. There were two
-"prepare this answer for speech" implementations and they had drifted: measured
-2026-09-19 by diffing them rule by rule, the cockpit stripped Markdown, tables, HTML
-and URLs but read emoji aloud, while Telegram stripped emoji but read bare URLs aloud,
-dictated fenced code, missed ordered lists, and removed every underscore — including
-the one inside `user_id`. Same product, same synthesizer, two answers to the same
-question, and no way to fix one without remembering the other. `multimodal.SpeechText`
-is now the union and `multimodal.PrepareSpeech` the normalize-then-cap step both lanes
-call; the "is a synthesizer reachable" predicate, previously written out at each
-composition root with opposite polarity, is `TTSConfig.Configured`.
-
-Two Telegram behaviours change and are meant to: a bare URL is no longer read out, and
-a fenced code block is dropped whole rather than dictated. This does not measure
-synthesized audio quality on either channel, and it does not claim the union is the
-right rule set — only that one rule set, testable in one table, beats two that can
-disagree silently.
 
 The chat composer remains anchored to the workspace bottom; only the transcript
 scrolls. HTML preview fetch/XHR may reach any HTTPS origin: `connect-src` is `*`,
