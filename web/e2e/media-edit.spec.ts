@@ -8,8 +8,9 @@ import { gotoAuthenticated } from './auth';
 
 // The editors against the real `aura serve` of the E2E suite: the fixture bytes are uploaded
 // through the real asset routes and read back through the real download route. Only the Studio's
-// own routes are stubbed, because a CI deployment has no OpenRouter key and serves the Studio as
-// unwired (503); the stubs are what a wired Studio answers.
+// own routes and the agent's run are stubbed, because a CI deployment has no OpenRouter key: it
+// serves the Studio as unwired (503) and cannot answer a turn. The stubs are what a wired
+// deployment answers.
 
 const FIXTURES = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/media-edit');
 
@@ -46,6 +47,45 @@ async function upload(page: Page, file: string, mimeType: string): Promise<strin
     },
     { bytes, file, mimeType },
   );
+}
+
+interface Tone {
+  readonly width: number;
+  readonly height: number;
+  readonly red: number;
+  readonly blue: number;
+  /** The share of pixels at red ≥ green ≥ blue, where a sepia matrix puts every pixel. */
+  readonly warm: number;
+}
+
+/** Decodes image bytes in the page, which throws on anything that is not an image, and
+ *  measures their colour. */
+async function tone(page: Page, bytes: Buffer): Promise<Tone> {
+  return page.evaluate(async (base64) => {
+    const data = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([data]));
+    const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext('2d');
+    if (context === null) throw new Error('no 2d context');
+    context.drawImage(bitmap, 0, 0);
+    const { data: rgba } = context.getImageData(0, 0, bitmap.width, bitmap.height);
+    let red = 0;
+    let blue = 0;
+    let warm = 0;
+    for (let i = 0; i < rgba.length; i += 4) {
+      const [r = 0, g = 0, b = 0] = rgba.subarray(i, i + 3);
+      red += r;
+      blue += b;
+      if (r >= g && g >= b) warm += 1;
+    }
+    const pixels = rgba.length / 4;
+    return {
+      width: bitmap.width,
+      height: bitmap.height,
+      red: red / pixels,
+      blue: blue / pixels,
+      warm: warm / pixels,
+    };
+  }, bytes.toString('base64'));
 }
 
 function record(kind: 'image' | 'video', assetId: string): StudioRecord {
@@ -117,6 +157,16 @@ test.describe('media editing', () => {
   test('saves an edited photo to the Studio library', async ({ page }, testInfo) => {
     await gotoAuthenticated(page, '/');
     const assetId = await upload(page, 'photo.png', 'image/png');
+    // The presign and the PUT to the object store are real. The PUT's body is the file the
+    // editor exported; the Studio's finalize is stubbed, so the asset row never learns its size
+    // and the download route could not hand those bytes back.
+    const stored: Buffer[] = [];
+    await page.route(/\.png\?/, (route) => {
+      if (route.request().method() !== 'PUT') return route.fallback();
+      const body = route.request().postDataBuffer();
+      if (body !== null) stored.push(body);
+      return route.continue();
+    });
     let finalized = false;
     await page.route('**/api/studio/uploads/*/finalize', (route) => {
       finalized = true;
@@ -137,6 +187,16 @@ test.describe('media editing', () => {
     await editor.getByRole('button', { name: 'Save to library' }).click();
     await expect(editor.getByText('Saved to the Studio library')).toBeVisible();
     expect(finalized).toBe(true);
+    const edited = stored.at(-1);
+    if (edited === undefined) throw new Error('the edited photo never reached the object store');
+    expect(edited.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+    const after = await tone(page, edited);
+    const before = await tone(page, readFileSync(resolve(FIXTURES, 'photo.png')));
+    expect(after).toMatchObject({ width: 256, height: 256 });
+    // Konva's sepia matrix leaves every pixel at red ≥ green ≥ blue; testsrc2's bars do not.
+    expect(after.warm).toBeGreaterThan(0.95);
+    expect(before.warm).toBeLessThan(0.8);
+    expect(after.red - after.blue).toBeGreaterThan(before.red - before.blue);
   });
 
   test('keeps Download when the Studio is not active', async ({ page }) => {
@@ -152,5 +212,26 @@ test.describe('media editing', () => {
     const downloading = page.waitForEvent('download');
     await editor.getByRole('button', { name: 'Download' }).click();
     expect((await downloading).suggestedFilename()).toBe('photo-edited.png');
+  });
+
+  test('opens a clip attached in the chat from its attachment card', async ({ page }) => {
+    // Held open: the turn stays in flight, so the operator's message and its card stay on screen.
+    await page.route('**/agent/run', () => undefined);
+    await gotoAuthenticated(page, '/');
+    const composer = page.getByRole('textbox', { name: /Ask Aura/ });
+    await expect(composer).toBeVisible({ timeout: 30_000 });
+    const chooser = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Add files' }).click();
+    await (await chooser).setFiles(resolve(FIXTURES, 'clip.mp4'));
+    await composer.fill('here is the clip');
+    // Send stays disabled until the upload is done.
+    const send = page.getByRole('button', { name: 'Send message' });
+    await expect(send).toBeEnabled({ timeout: 30_000 });
+    await send.click();
+    await page.getByRole('button', { name: 'Edit clip.mp4' }).click();
+    const editor = page.getByRole('dialog', { name: 'Edit clip.mp4' });
+    await expect(editor.getByRole('slider', { name: 'Start of the selection' })).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });
