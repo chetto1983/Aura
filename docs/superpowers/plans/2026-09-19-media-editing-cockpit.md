@@ -2811,7 +2811,7 @@ git commit -m "feat(media-edit): add the photo editor" -m "Filerobot inside Aura
   `EditMediaButton({ assetId, kind, mimeType?, fileName?, compact?, className?, onOpen? })`;
   `AssetSource.editable?: true`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `web/src/mediaEdit/__tests__/EditMediaButton.test.tsx`:
 ```tsx
@@ -2953,12 +2953,12 @@ describe('MediaEditorHost', () => {
 });
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run src/mediaEdit/__tests__/EditMediaButton.test.tsx src/mediaEdit/__tests__/MediaEditorHost.test.tsx`
 Expected: FAIL — unresolved imports.
 
-- [ ] **Step 3: Add `editable` to the asset source**
+- [x] **Step 3: Add `editable` to the asset source**
 
 In `web/src/chat/artifacts/renderers/assetSourceContext.ts`, add to `interface AssetSource` after `renderUrl?`:
 ```ts
@@ -2969,7 +2969,7 @@ In `web/src/chat/artifacts/renderers/assetSourceContext.ts`, add to `interface A
 ```
 and add `editable: true,` to `IDENTITY_SCOPED`.
 
-- [ ] **Step 4: Implement the context, provider, host and button**
+- [x] **Step 4: Implement the context, provider, host and button**
 
 `web/src/mediaEdit/mediaEditorContext.ts`:
 ```ts
@@ -3172,12 +3172,12 @@ export function EditMediaButton({ assetId, kind, mimeType, fileName, compact = f
 
 In `web/src/AppShell.tsx`: import `import { MediaEditorProvider } from './mediaEdit/MediaEditorProvider';` and wrap the whole returned tree — make `<MediaEditorProvider>` the outermost element of the `return (…)` at line 391 (outside `WorkerWatchProvider`) and close it at the end. The file stays under 600 lines.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `npx vitest run src/mediaEdit src/chat/artifacts`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/mediaEdit/mediaEditorContext.ts web/src/mediaEdit/MediaEditorProvider.tsx web/src/mediaEdit/MediaEditorHost.tsx web/src/mediaEdit/EditMediaButton.tsx web/src/mediaEdit/__tests__/EditMediaButton.test.tsx web/src/mediaEdit/__tests__/MediaEditorHost.test.tsx web/src/chat/artifacts/renderers/assetSourceContext.ts web/src/AppShell.tsx
