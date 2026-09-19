@@ -1,14 +1,20 @@
-# Media editing (Studio + chat) — design
+# Media editing and video to the model — design
 
-Date: 2026-09-19. Status: design approved in conversation, section by section; this document
-is the record the plan is written from. Evidence: spike 105
+Date: 2026-09-19. Status: design approved in conversation, section by section, then revised
+after an adversarial review (13 findings, the five serious ones re-checked against the code)
+and two operator additions: video attachments, and video reaching the model when the selected
+LLM accepts it. This document is the record the plan is written from. Evidence: spike 105
 (`.planning/spikes/105-studio-media-editing/README.md`).
 
 ## Goal
 
-Let the operator edit an image or a video they already have in Aura — a Studio result, a
-generated image or clip in chat, an attachment — **in the browser, with no AI model**: crop,
-adjust, filter and annotate a photo; trim, crop, rotate and mute a clip.
+1. Let the operator edit an image or a video they already have in Aura — a Studio result, a
+   generated image or clip in chat, a file the agent delivered, a chat attachment — **in the
+   browser, with no AI model**: crop, adjust, filter and annotate a photo; trim, crop, rotate
+   and mute a clip.
+2. Send a video attachment to the model **natively when, and only when, the selected LLM
+   declares video input**, on every backend Aura drives through the OpenAI SDK (OpenRouter,
+   llama.cpp, Ollama); otherwise the model keeps receiving the stored text reference.
 
 ## Decisions taken with the operator
 
@@ -17,70 +23,106 @@ adjust, filter and annotate a photo; trim, crop, rotate and mute a clip.
 | AI in the editing path | None. Everything runs client-side. |
 | Photo library | Filerobot Image Editor (`react-filerobot-image-editor`, MIT). |
 | Video library | Mediabunny (MPL-2.0) plus a timeline Aura writes. |
-| Where a result goes | Photo → the Studio library (reusable as reference/first frame) + download. Video → download. No server change. |
+| Where a result goes | Photo → the Studio library + download. Video → download. |
 | Video operations | Trim, remove audio, rotate, crop. |
-| Where "Edit" appears | Studio result, chat generated image, chat generated video, attachment preview. |
+| Where "Edit" appears | Studio result; chat generated image and video; agent-delivered files (`PreviewModal`); chat attachments, **image and video**. |
 | Shape | Shared lazy module `web/src/mediaEdit/` (approach 1 of 3; a separate route and inline editing were rejected). |
-| Visual reference | Professional web editors captured on 2026-09-19: Adobe Express *Trim video*, 123apps *Video Cutter* (desktop and phone), Pixlr Express (photo). |
+| Video to the model | Native only if the active model's capability source reports `video`; one rule for the web and Telegram. Speech stays text-only (unchanged). |
+| Visual reference | Adobe Express *Trim video*, 123apps *Video Cutter* (desktop and phone), Pixlr Express, captured 2026-09-19. |
 
 ## Inventory that shaped the design (2026-09-19)
 
-- **The Studio library already takes images.** `uploadStudioFrame` (presign → PUT →
-  `POST /api/studio/uploads/{id}/finalize`) stores an identity-scoped image that
-  `GET /api/studio/library` (`ListRecentImages`) lists. `FinalizeUpload` accepts images only,
-  which is why a trimmed video is downloaded rather than stored.
-- **The Studio history is `aura.media_job`**, paid generations with provider ids and cost. An
-  edit is not a generation and is not written there.
-- **Previews are shared.** `PreviewByKind` serves the Studio stage, chat and the share pages;
-  `AssetSourceContext` already lets a share tier omit an optional capability (`renderUrl`).
-- **The cockpit sends no Content-Security-Policy** (only artifact renders do), so
-  styled-components' injected `<style>` and `blob:` object URLs need no header change.
-- **Mediabunny 1.58.1** copies on trim by default. With `copy: { boundaryPolicy: 'expand' }`
-  an MP4 keeps the preceding key frame behind an edit list, and ffmpeg plus the `<video>`
-  element of Chrome, Edge and Firefox start exactly on the requested frame (spike 105). The
-  online guide saying a non-zero start forces a transcode is outdated.
-- **Filerobot 5.0.0-beta.159** is `latest` on npm, peers React 19; defaults fetch
-  translations from Scaleflex (`i18n-fastly.ultrafast.io`) and save at pixel ratio 4.
+**Cockpit**
+- `uploadStudioFrame` = presign → PUT → `POST /api/studio/uploads/{id}/finalize` (image-only,
+  `serve_studio.go:169`); `GET /api/studio/library` lists it; `studioKeys.library()` is the
+  query key (`useStudio.ts:37`). The finalize route requires an `Idempotency-Key`, which
+  `installMutationIdempotency` attaches globally.
+- **The Studio can be unwired**: every Studio route answers 503 while `s.studio == nil`
+  (`internal/agui/studio_api.go:45`), which happens whenever a media dependency is missing.
+- **A Studio record carries no file name or MIME type** (`StudioRecord`, `studioApi.ts`;
+  `StudioStage` passes `mimeType: ''` and the prompt as the name), and
+  `/api/assets/{id}/download` always answers `application/octet-stream`
+  (`assets_render_api.go:21`). `getAsset(id)` (`chat/attachments/api.ts:27`) returns both.
+- `PreviewModal` is opened only from `ArtifactsPanel` (agent-delivered files). Operator
+  attachments render through `AttachmentCard` / `AttachmentImage`.
+- **Video attachments already exist server-side**: `InferModality` classifies `.mp4`/`.webm`
+  as `video` (`internal/assets/limits.go:50-70`) even when the browser sends the hint
+  `unknown`, but the client type `AssetModality` has no `'video'` (`types.ts:22`) and
+  `AttachmentCard` draws such an asset as a bare file card. `.mov` is refused by that
+  allowlist.
+- Image upload ceiling: `AURA_ASSET_MAX_IMAGE_BYTES`, default 25 MiB (`config.go:501`).
+- No Content-Security-Policy on the cockpit (only artifact renders and MCP views).
+- Reusable pieces: `useAssetContent(id, 'blob')` / `useBlobPreview` (credentialed fetch +
+  object-URL lifetime), `chat/durationFormat.ts`, `components/ui/confirm-dialog.tsx`.
 
-## Architecture
+**Libraries (installed sources read)**
+- Mediabunny 1.58.1: `copy` defaults to `{}` with `boundaryPolicy: 'expand'`; `cancel()`,
+  `isValid`, `discardedTracks` (reasons include `undecodable_source_codec`);
+  `CanvasSink.canvasesAtTimestamps` for thumbnails; `rotate` is applied **before** `crop`
+  and in addition to the file's rotation metadata; `displayWidth` is post-rotation.
+- Filerobot 5.0.0-beta.159: peers React 19; defaults `useBackendTranslations: true`
+  (Scaleflex fetch) and `savingPixelRatio: 4`; `savingPixelRatio` **and**
+  `previewPixelRatio` are required props in its typings; `onBeforeSave` returning `false`
+  saves without the name/format modal (`SaveButton`, v5-dev `3087621`); its close button
+  already shows a discard confirmation; `@scaleflex/ui` portals menus, pickers and modals to
+  `document.body`; filter names are raw labels, never translated.
+
+**Model side**
+- `ContentCapabilitySource` already resolves the active model's input modalities per backend:
+  OpenRouter `architecture.input_modalities` (`video` is an allowed token), llama.cpp
+  `GET /props` `modalities`, Ollama `/api/show` `capabilities` (only `vision` is mapped).
+  `ProviderContentCapabilities.SupportsMIME` maps `video/*` to the `video` modality.
+- `TurnMediaLoader` (`internal/assets/turn_media_loader.go:56`), the AG-UI attachment loop
+  (`internal/agui/server_context.go:72`) and Telegram (`bot_dispatch_media.go:29`) admit
+  **images only**; `openai_compat.nativeContentPart` writes `image_url` and `input_audio`,
+  nothing for video.
+- **The three backends disagree on the wire.** OpenRouter: `{"type":"video_url",
+  "video_url":{"url":"data:video/mp4;base64,…"}}` (formats mp4, mpeg, mov, webm). llama.cpp,
+  since PR #24269 (merged 2026-06-08): `{"type":"input_video","input_video":{"data":"<base64>"}}`,
+  decoded by an `ffmpeg` the server image must provide; issue #17660 was closed as stale, not
+  by that PR. Ollama: no video content part and no `video` capability.
+- openai-go v3.61.0's `ChatCompletionContentPartUnionParam` has no video variant, but
+  `param.Override` serialises a caller-supplied part (`packages/param/encoder.go:89`).
+
+## Part 1 — Editing (cockpit)
+
+### Architecture
 
 ```
 web/src/mediaEdit/
-  EditMediaButton.tsx        the "Edit" button; lazy-loads the right dialog
-  PhotoEditorDialog.tsx      Filerobot in a full-screen dialog
-  VideoEditorDialog.tsx      preview + tools + timeline + save
+  EditMediaButton.tsx        the "Edit" button; lazy-loads the right editor
+  MediaEditorLayer.tsx       full-screen layer (not a Radix Dialog — see below)
+  PhotoEditor.tsx            Filerobot + save to library / download
+  VideoEditor.tsx            preview + tools + timeline + save
   VideoTimeline.tsx          filmstrip, two handles, playhead
-  videoEdit.ts               pure: Mediabunny options, discarded-track guard, output name
-  cropMath.ts                pure: preset → centred, clamped, even-sided rectangle
-  timecode.ts                pure: seconds ⇄ "mm:ss.s"
+  videoEdit.ts               pure: Mediabunny options, discarded-track guard, output names
+  cropMath.ts                pure: preset → rectangle in post-rotation display space
+  timecode.ts                pure: parse "mm:ss.s" (display reuses durationFormat.ts)
   filerobotTheme.ts          Aura CSS tokens → Filerobot theme
 web/src/i18n/resources.mediaEdit.ts   UI strings + Filerobot's 128 keys, en + it
 ```
 
-`EditMediaButton` takes `{ assetId, kind: 'image' | 'video', fileName, mimeType }`. It renders
-nothing when the asset source is not editable, when the image is SVG or GIF, or for any other
-kind. Each dialog is a `React.lazy` chunk: Filerobot (~273 KB gzip) and Mediabunny (~143 KB
-gzip) load on the first click, never with chat or the Studio.
+- `EditMediaButton` takes `{ assetId, kind }`. The editor resolves the file name and MIME type
+  with `getAsset(id)` — the one source that has them on every surface — and fetches the bytes
+  through `useAssetContent(id, 'blob')`. The button renders nothing when the asset source is
+  not editable, for SVG and GIF (known once `getAsset` answers; the button is disabled until
+  then), and for any other kind.
+- `AssetSource` gains an optional `editable?: true`; `IDENTITY_SCOPED` sets it and the share
+  tiers leave it out, following the `renderUrl` precedent.
+- **Placements:** `StudioStage` (`StageActions`), `GeneratedImagePreview` (`ImageActions`
+  gains an optional extra-action prop), `VideoPreview` (a small action row under the player),
+  `PreviewModal` header (image and video kinds), `AttachmentCard` action row (ready image and
+  video assets). `AssetModality` gains `'video'`; `AttachmentCard` keeps the file-card look
+  for video (no inline player — out of scope).
+- **Surface:** `MediaEditorLayer` is a full-screen layer portalled into `document.body` with
+  `role="dialog"`, `aria-modal="true"` and a label; while it is open the app root is marked
+  `inert`, Escape closes it and focus returns to the button. It is **not** a Radix Dialog:
+  Filerobot's menus, colour picker and modals portal to `document.body` and a Radix focus
+  trap / outside-dismiss would treat them as outside. A component test opens a Filerobot
+  menu inside the layer and asserts the layer stays open.
+- Both editors are `React.lazy` chunks (Filerobot ~273 KB gzip, Mediabunny ~143 KB gzip).
 
-`AssetSource` gains an optional `editable?: true`. `IDENTITY_SCOPED` sets it; the share tiers
-leave it out, so a public page never offers editing.
-
-The button is placed in four existing components: `StudioStage` (`StageActions`, beside
-Download and Reuse), `GeneratedImagePreview` (beside Download and Copy), `VideoPreview` (a
-small action row under the player) and `PreviewModal` (header, image and video kinds only).
-
-### Data flow
-
-1. Click → the dialog opens full screen and fetches the file through the identity-scoped
-   `assetUrl` (same-origin, credentials) as a Blob.
-2. Editing happens in the browser.
-3. Save:
-   - **Photo** → a `File` named `<base>-modificata.<ext>` → `uploadStudioFrame` with progress
-     → invalidate `studioKeys.library()` → success state "Saved to the Studio library" with
-     **Download** and **Close**.
-   - **Video** → a `Blob` from Mediabunny → download as `<base>-modificato.<ext>`.
-
-## Video editor
+### Video editor
 
 Layout after 123apps and Adobe Express, in Aura's tokens:
 
@@ -96,71 +138,112 @@ Layout after 123apps and Adobe Express, in Aura's tokens:
 └───────────────────────────────────────────────────────────────┘
 ```
 
-- **Trim.** A filmstrip of about 10 frames decoded with Mediabunny; two handles (start, end)
-  dim what is cut; Start/End fields stay in sync. Handles are `role="slider"`: arrows ±0.1 s,
-  Shift+arrows ±1 s. ▶ plays the selected range only.
-- **Crop.** Presets Original · 1:1 · 9:16 · 16:9 · 4:3 · 3:4. The box can be moved, not
-  resized (free resize is out of scope). The resulting size in pixels is shown.
-- **Rotate.** 90° left / 90° right; the preview rotates with CSS immediately.
+- **Trim.** About 10 thumbnails from `CanvasSink`; two handles (start, end) dim what is cut;
+  Start/End fields stay in sync. Handles are `role="slider"`: arrows ±0.1 s, Shift+arrows
+  ±1 s. ▶ plays the selected range only.
+- **Crop.** Presets Original · 1:1 · 9:16 · 16:9 · 4:3 · 3:4. The box moves, it does not
+  resize. `cropMath` works in **display space after the total rotation** (file metadata +
+  the user's turns), because Mediabunny rotates before cropping; sides are even for H.264.
+- **Rotate.** 90° left / right; the preview rotates with CSS immediately.
 - **Audio.** "Remove audio" switch, disabled when the clip has no audio track.
-- **Save.** Always `copy: { boundaryPolicy: 'expand' }` plus the transforms; Mediabunny copies
-  or transcodes per track. Trim and mute stay instant and frame-exact on MP4; crop and WebM
-  transcode. Whether rotate alone stays on the copy path (rotation metadata) is measured by a
-  test, not assumed. A progress bar with **Cancel** (`conversion.cancel()`) shows while saving.
+- **Save.** Always `copy: { boundaryPolicy: 'expand' }` plus the transforms; Mediabunny
+  copies or transcodes per track. Trim and mute stay instant and frame-exact on MP4; crop and
+  WebM transcode; whether rotate alone stays on the copy path is measured by a test. The output
+  container follows the source MIME from `getAsset` (MP4 or WebM), never `blob.type`. A
+  progress bar with **Cancel** shows while saving; the file downloads as
+  `<base>-modificato.<ext>` and every object URL is revoked after use.
+- **Memory.** The source and the output live in memory (`BlobSource` + `BufferTarget`). The
+  source is an existing asset, so the server's video limit (`assets.Limits.MaxVideoBytes`,
+  derived by `assetMaxVideoBytesFor`) already bounds it; the editor shows the size before
+  loading and asks for confirmation above 500 MB.
 - **Phone.** Tools become a dropdown, controls stack, the filmstrip is full width, handles
   have 44 px targets.
 
-## Photo editor
+### Photo editor
 
-- Filerobot in a full-screen dialog. Tabs: Adjust (crop presets, rotate, flip), Finetune
-  (brightness, contrast, HSV, warmth, blur), Filters, Annotate (text, arrow, shapes, pen),
-  Resize. **Watermark and AI tabs are off** (AI calls Scaleflex's cloud).
-- Mandatory config: `useBackendTranslations={false}`, `savingPixelRatio={1}`,
-  `translations` from `resources.mediaEdit.ts` for the current language, `theme` from
-  `filerobotTheme.ts`, and a `StyleSheetManager shouldForwardProp` using
-  `@emotion/is-prop-valid` (without it styled-components 6 logs ~35 warnings per mount).
-- **Save skips Filerobot's name/format modal**: the name is `<base>-modificata`, the format is
-  the source's (PNG, JPEG, WebP; quality 0.92 for lossy), set through
-  `defaultSavedImageName` / `defaultSavedImageType`. `onBeforeSave` returns `false`, which
-  makes the Save button call `validateInfoThenSave()` and then `onSave` without opening the
-  modal (read in `components/buttons/SaveButton/index.jsx`, v5-dev `3087621`).
-- Closing with unsaved changes asks for confirmation (`confirm-dialog`).
+- Filerobot inside `MediaEditorLayer`. Tabs: Adjust (crop presets, rotate, flip), Finetune,
+  Filters, Annotate, Resize. **Watermark and AI tabs are off** (AI calls Scaleflex's cloud).
+- Config: `useBackendTranslations={false}`, `savingPixelRatio={1}`,
+  `previewPixelRatio={window.devicePixelRatio}`, `translations` from `resources.mediaEdit.ts`,
+  `theme` from `filerobotTheme.ts`, `StyleSheetManager shouldForwardProp` with
+  `@emotion/is-prop-valid`, `onBeforeSave={() => false}`, `defaultSavedImageName` =
+  `<base>-modificata`, `defaultSavedImageType` = the source's (PNG, JPEG, WebP; quality 0.92).
+- **Two actions, both available from the start:** **Save to library** and **Download**.
+  - Save to library uploads with progress, invalidates `studioKeys.library()`, then says
+    "Saved to the Studio library".
+  - If the Studio is unwired (503) the action is disabled after the first refusal with the
+    sentence "The Studio is not active: download the photo instead"; Retry exists only for
+    transient failures (network, 5xx other than 503).
+  - If the upload is refused as too large, the photo is re-encoded once as JPEG 0.92 and the
+    operator is told why.
+- Unsaved changes on close: Filerobot's own discard confirmation (no second dialog).
+- Known limit: filter names (Original, Clarendon, Sepia…) stay English — Filerobot does not
+  translate them.
 
-## Errors
+## Part 2 — Video to the model (daemon)
+
+**Measure first** (CLAUDE.md "PRD-first"): before the llama.cpp branch is written, a spike on
+the live stack records, with a llama.cpp build containing PR #24269 and a video model
+(Qwen3-VL or Gemma 4): whether the official server image ships `ffmpeg`, the exact `/props`
+key that reports video, and one real `input_video` request. The OpenRouter branch is measured
+the same way with one video-capable model. The code follows the measurement; if llama.cpp
+cannot take video in the image Aura ships, its branch is dropped, not guessed.
+
+- **One admission rule.** `TurnMediaLoader`, the AG-UI attachment loop and Telegram admit
+  `image` **and** `video` (audio stays text-only). The shared loader decides; channels only
+  pass references.
+- **Capability decides, per backend.** `projectNativeMedia` already asks the active model's
+  `ContentCapabilitySource`; a video part is projected only when `SupportsMIME("video/…")` is
+  true, otherwise the turn keeps the stored text reference. No model-name guessing.
+- **Wire shape per backend,** in `nativeContentPart`, through `param.Override`:
+  OpenRouter → `video_url` with a data URL; llama.cpp → `input_video` with raw base64; any
+  other target (Ollama included) → no part, because none advertises video.
+- **Probes.** llama.cpp: map the measured `/props` video key to `video`. Ollama: unchanged
+  (it reports no video and its OpenAI endpoint has no video part).
+- **Size.** Only current-turn references are projected (unchanged). A video larger than the
+  provider accepts fails the request like any provider refusal today; a per-request video
+  ceiling is added only if the measurement shows one is needed.
+
+## Errors (both parts)
 
 - **A discarded track blocks the export.** If `discardedTracks` holds a video or audio track
-  for any reason other than `discarded_by_user`, no file is produced and the dialog says which
+  for any reason other than `discarded_by_user`, no file is produced and the editor says which
   track this browser cannot process (e.g. HEVC on Firefox: "try Chrome or Edge").
-  `conversion.isValid` alone is not enough: spike 105 saw Firefox return a valid audio-only
-  file from an HEVC clip.
 - A failed fetch of the source shows the preview error sentence already used by previews.
-- A failed photo upload keeps the dialog and the edits, with **Retry**.
-- **Known limit, documented, not handled:** on Firefox a transcoded MP4 with audio carries
-  Opus instead of AAC (Firefox cannot encode AAC).
+- **Known limit, documented:** on Firefox a transcoded MP4 with audio carries Opus, not AAC.
+- A video the model cannot take is never an error: it falls back to the text reference.
 
 ## Testing
 
-- **Vitest, pure logic:** `cropMath` (every preset centred, clamped, even sides), `timecode`
-  round trips, `videoEdit` (options per tool combination, the discarded-track guard, output
-  names), and a table test that Italian and English cover exactly Filerobot's
-  `defaultTranslations` keys.
+- **Vitest, pure logic:** `cropMath` (every preset, with 0/90/180/270 total rotation, centred,
+  clamped, even sides), `timecode` parsing, `videoEdit` (options per tool combination, the
+  discarded-track guard, output names and containers), and a table test that Italian and
+  English cover Filerobot's `defaultTranslations` keys.
 - **Component tests** with Filerobot and Mediabunny mocked: `EditMediaButton` visibility
-  (image/video yes; SVG, GIF, non-editable source no); handles and fields stay in sync,
-  keyboard included; Save passes the right options; the HEVC guard stops the export; the
-  photo upload path, including Retry after a failure.
-- **Playwright E2E with real media:** tiny ffmpeg-generated fixtures (a few KB) under
-  `web/e2e/fixtures/`; trim a clip and read the downloaded file's duration with Mediabunny;
-  edit a photo and find it in the Studio library. Chrome, plus Firefox for the HEVC guard.
-- **Definition of done:** the stack updated to the new image, the real flows exercised on
-  `https://localhost` — a Studio image, a chat-generated video, a phone attachment — with
-  desktop and phone screenshots.
-- **Gates:** lefthook (eslint, tsc, prettier, knip, jscpd, 600-line limit), web coverage
-  ≥ 85 %, webui dist rebuilt, and a check that `konva` and `mediabunny` live only in lazy
-  chunks.
+  (image/video yes; SVG, GIF, non-editable source, unresolved asset no); the layer stays open
+  when a Filerobot portal menu is clicked; handles and fields in sync, keyboard included; Save
+  options; the HEVC guard; photo Save to library, 503 → disabled with the sentence, transient
+  failure → Retry, too-large → JPEG.
+- **Go:** loader admits image and video, refuses audio, per channel; `nativeContentPart` emits
+  the exact OpenRouter and llama.cpp JSON (golden bytes) and nothing for Ollama; projection
+  skips video when the capability source lacks it; the llama.cpp probe maps the measured key.
+- **Playwright E2E (Chrome, CI project unchanged)** with tiny ffmpeg-generated fixtures under
+  `web/e2e/fixtures/`: trim a clip and read the downloaded file's duration with Mediabunny;
+  edit a photo and find it in the Studio library; edit a video attachment. Firefox is checked
+  by hand in the live verification.
+- **Definition of done on the live stack** (`https://localhost`): a Studio image, a
+  chat-generated video, an image and an MP4 attachment edited, desktop and phone screenshots;
+  a video attachment sent to a video-capable OpenRouter model (answer describes the clip) and
+  to a text-only model (falls back); the llama.cpp leg if the measurement kept it.
+- **Gates:** lefthook pre-commit and pre-push (oxlint type-aware, tsc, prettier, knip — with
+  `konva` checked as a declared peer —, jscpd, 600-line limit, Go vet/lint/deadcode), web
+  coverage ≥ 85 %, Go package coverage policy, Stryker ≥ 70 % in CI only, webui dist rebuilt,
+  and a check that `konva` and `mediabunny` live only in lazy chunks.
 
 ## Out of scope
 
-- Storing edited videos on the server or a video library.
-- Recording edits in the Studio history.
-- Free-resize crop, speed, text on video, multi-clip timelines.
-- Safari/iOS verification (not measured by the spike; WebCodecs support there is unproven).
+- Storing edited videos on the server or a video library; edits in the Studio history.
+- `.mov` attachments (the server allowlist is MP4/WebM); an inline player in attachment cards.
+- Free-resize crop, speed, text or captions on video, multi-clip timelines.
+- Native audio to the model (speech stays text).
+- Safari/iOS verification (WebCodecs support there is unproven by the spike).
