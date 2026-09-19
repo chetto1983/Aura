@@ -3420,7 +3420,7 @@ git commit -m "feat(media-edit): offer Edit on Studio results, chat media and at
 - Create: `web/e2e/fixtures/media-edit/clip.mp4`, `web/e2e/fixtures/media-edit/photo.png`, `web/e2e/media-edit.spec.ts`
 - Modify: `internal/webui/dist/**` (rebuilt)
 
-- [ ] **Step 1: Generate the fixtures (a few KB each)**
+- [x] **Step 1: Generate the fixtures (a few KB each)**
 
 From `D:/Repo/Aura` in Git Bash:
 ```bash
@@ -3434,7 +3434,7 @@ ls -la web/e2e/fixtures/media-edit
 ```
 Expected: `clip.mp4` under 150 KB, `photo.png` under 150 KB.
 
-- [ ] **Step 2: Write the E2E spec**
+- [x] **Step 2: Write the E2E spec**
 
 `web/e2e/media-edit.spec.ts`:
 ```ts
@@ -3566,7 +3566,7 @@ test.describe('media editing', () => {
 ```
 If the Studio page with a 503 library still loads its stage (the library is only read by pickers), the third case holds; if the Studio page itself refuses to render with the stubbed routes, read `web/src/studio/StudioWorkspace.tsx` for the other routes it calls and stub them too.
 
-- [ ] **Step 3: Run the E2E locally**
+- [x] **Step 3: Run the E2E locally**
 
 Run (needs the local `aura` binary and stack the suite already uses): `npx playwright test e2e/media-edit.spec.ts --project=chrome`
 Expected: 3 passed. On failure, open the trace (`npx playwright show-trace`) before changing anything.
