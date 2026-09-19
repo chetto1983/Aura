@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -101,16 +102,46 @@ func TestServerRunCarriesVerifiedGarageMediaProjection(t *testing.T) {
 }
 
 func TestGarageMediaProjectionRejectsDigestDrift(t *testing.T) {
+	// An IMAGE, deliberately: audio is refused a step earlier (modality), so an audio
+	// fixture here would make this test green without ever reaching the digest compare.
 	assetSvc := &fakeAssetService{
 		openAsset: assets.Asset{
-			ID: "a1", ThreadID: "t1", MIMEType: "audio/wav", Modality: assets.ModalityAudio,
+			ID: "a1", ThreadID: "t1", MIMEType: "image/png", Modality: assets.ModalityImage,
 			SizeBytes: 3, ContentHash: strings.Repeat("0", 64),
 		},
-		openResp: io.NopCloser(strings.NewReader("wav")),
+		openResp: io.NopCloser(strings.NewReader("png")),
 	}
 	loader := assets.TurnMediaLoader{Opener: assetSvc, ThreadID: "t1", Allowed: map[string]bool{"a1": true}}
-	if _, err := loader.LoadContentPart(context.Background(), "", assetAPIIdentityID, "a1"); err == nil {
+	_, err := loader.LoadContentPart(context.Background(), "", assetAPIIdentityID, "a1")
+	if err == nil {
 		t.Fatal("digest drift was accepted")
+	}
+	if !strings.Contains(err.Error(), "digest changed") {
+		t.Fatalf("LoadContentPart error = %v, want the digest check", err)
+	}
+}
+
+// Speech reaches the model as WORDS, never as bytes: an audio asset is refused by the
+// native-media loader, so a voice turn carries its STT transcript (Asset.Summary,
+// rendered into the attachment block) and nothing else.
+func TestGarageMediaProjectionRefusesAudioAsNativeMedia(t *testing.T) {
+	body := []byte("ogg-bytes")
+	digest := sha256.Sum256(body)
+	assetSvc := &fakeAssetService{
+		openAsset: assets.Asset{
+			ID: "a1", ThreadID: "t1", MIMEType: "audio/ogg", Modality: assets.ModalityAudio,
+			SizeBytes: int64(len(body)), ContentHash: hex.EncodeToString(digest[:]),
+			Summary: "ciao, che coppia eroga il servo?",
+		},
+		openResp: io.NopCloser(bytes.NewReader(body)),
+	}
+	loader := assets.TurnMediaLoader{Opener: assetSvc, ThreadID: "t1", Allowed: map[string]bool{"a1": true}}
+	_, err := loader.LoadContentPart(context.Background(), "", assetAPIIdentityID, "a1")
+	if err == nil {
+		t.Fatal("an audio asset was projected as native media")
+	}
+	if !strings.Contains(err.Error(), "not native media") {
+		t.Fatalf("LoadContentPart error = %v, want the modality refusal", err)
 	}
 }
 

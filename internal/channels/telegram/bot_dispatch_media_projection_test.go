@@ -17,8 +17,9 @@ func TestWithTurnMediaProjectionArmsImagesOnly(t *testing.T) {
 	tg := &Telegram{deps: Deps{Assets: ingress}}
 	image := assetspkg.Asset{ID: "a-img", IdentityID: "id-1", Modality: assetspkg.ModalityImage}
 	doc := assetspkg.Asset{ID: "a-doc", IdentityID: "id-1", Modality: assetspkg.ModalityDocument}
+	voice := assetspkg.Asset{ID: "a-voice", IdentityID: "id-1", Modality: assetspkg.ModalityAudio}
 
-	ctx := tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{image, doc})
+	ctx := tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{image, doc, voice})
 	proj, ok := llm.ContentProjectionFromContext(ctx)
 	if !ok {
 		t.Fatal("an image attachment must arm the content projection")
@@ -33,8 +34,14 @@ func TestWithTurnMediaProjectionArmsImagesOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("loader must be the shared assets.TurnMediaLoader, got %T", proj.Loader)
 	}
-	if loader.ThreadID != convID(7) || !loader.Allowed["a-img"] || loader.Allowed["a-doc"] {
+	if loader.ThreadID != convID(7) || !loader.Allowed["a-img"] || loader.Allowed["a-doc"] || loader.Allowed["a-voice"] {
 		t.Fatalf("loader must scope to this chat's thread and allow the image only, got thread=%q allowed=%v", loader.ThreadID, loader.Allowed)
+	}
+
+	// A voice note is words, not bytes: it must not arm the projection at all, so the
+	// model reads the STT transcript from the attachment block instead of hearing audio.
+	if _, armed := llm.ContentProjectionFromContext(tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{voice})); armed {
+		t.Fatal("a voice-note turn must not arm the content projection")
 	}
 
 	if _, armed := llm.ContentProjectionFromContext(tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{doc})); armed {

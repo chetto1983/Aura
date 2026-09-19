@@ -1,9 +1,10 @@
 // Package telegram — native-media projection for attachment turns. The channel does
-// not read image or audio bytes itself: it arms the SAME llm.ContentProjection seam
-// the AG-UI gateway arms, and the provider client decides (via its capability probe)
-// whether the active model receives the bytes. Without this, a Telegram photo reached
-// the model as a file name in the attachment catalog and the model confabulated the
-// content (amendment #198).
+// not read image bytes itself: it arms the SAME llm.ContentProjection seam the AG-UI
+// gateway arms, and the provider client decides (via its capability probe) whether the
+// active model receives the bytes. Without this, a Telegram photo reached the model as
+// a file name in the attachment catalog and the model confabulated the content
+// (amendment #198). A voice note is NOT projected: it reaches the model as the
+// transcript in the attachment block, the same words the web lane sends.
 package telegram
 
 import (
@@ -13,10 +14,10 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// withTurnMediaProjection arms the content projection for this turn's image and audio
-// attachments. Non-media attachments (documents) stay catalog-only. The principal is
-// the assets' owner — every attachment of a Telegram turn belongs to the linked
-// identity that ingested it.
+// withTurnMediaProjection arms the content projection for this turn's image
+// attachments. Every other modality — a voice note included — stays catalog-only, i.e.
+// reaches the model as text. The principal is the assets' owner: every attachment of a
+// Telegram turn belongs to the linked identity that ingested it.
 func (t *Telegram) withTurnMediaProjection(ctx context.Context, chatID int64, attachments []assets.Asset) context.Context {
 	if t.deps.Assets == nil {
 		return ctx
@@ -25,7 +26,7 @@ func (t *Telegram) withTurnMediaProjection(ctx context.Context, chatID int64, at
 	allowed := make(map[string]bool, len(attachments))
 	ownerID := ""
 	for _, attachment := range attachments {
-		if attachment.Modality != assets.ModalityImage && attachment.Modality != assets.ModalityAudio {
+		if attachment.Modality != assets.ModalityImage {
 			continue
 		}
 		mediaIDs = append(mediaIDs, attachment.ID)

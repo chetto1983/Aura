@@ -23,6 +23,14 @@ type MediaOpener interface {
 // the AG-UI gateway and the Telegram channel both use it, so which bytes a model may
 // see is decided once (allow-list + thread scope + modality + digest), never per
 // channel. Moved here from internal/agui (amendment #198).
+//
+// IMAGE is the only native modality. Audio used to ride here too, and that is precisely
+// what made a voice turn reach the model as an ATTACHMENT rather than as words: the
+// bytes were projected as an input_audio part while the transcript the STT sidecar had
+// already produced sat unused in the attachment block. Speech now reaches the model as
+// TEXT on every channel — the transcript AudioProcessor writes into Asset.Summary,
+// rendered by BuildAttachmentBlock — so there is one representation of speech, not two
+// that can disagree.
 type TurnMediaLoader struct {
 	Opener   MediaOpener
 	ThreadID string
@@ -45,7 +53,7 @@ func (l TurnMediaLoader) LoadContentPart(ctx context.Context, _ string, ownerID,
 	if asset.ID != id || (asset.ThreadID != "" && asset.ThreadID != l.ThreadID) {
 		return llm.VerifiedContentPart{}, fmt.Errorf("asset content scope changed")
 	}
-	if asset.Modality != ModalityImage && asset.Modality != ModalityAudio {
+	if asset.Modality != ModalityImage {
 		return llm.VerifiedContentPart{}, fmt.Errorf("asset modality %q is not native media", asset.Modality)
 	}
 	if asset.SizeBytes <= 0 || strings.TrimSpace(asset.ContentHash) == "" {
