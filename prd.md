@@ -467,6 +467,23 @@ in a real room: headless acceptance ends the utterance with the overlay's own bu
 stubs the audio graph, so level-driven endpointing and barge-in are proven by their unit
 tests and remain manual checks end to end.
 
+What the voice says is decided ONCE, for every channel. There were two
+"prepare this answer for speech" implementations and they had drifted: measured
+2026-09-19 by diffing them rule by rule, the cockpit stripped Markdown, tables, HTML
+and URLs but read emoji aloud, while Telegram stripped emoji but read bare URLs aloud,
+dictated fenced code, missed ordered lists, and removed every underscore — including
+the one inside `user_id`. Same product, same synthesizer, two answers to the same
+question, and no way to fix one without remembering the other. `multimodal.SpeechText`
+is now the union and `multimodal.PrepareSpeech` the normalize-then-cap step both lanes
+call; the "is a synthesizer reachable" predicate, previously written out at each
+composition root with opposite polarity, is `TTSConfig.Configured`.
+
+Two Telegram behaviours change and are meant to: a bare URL is no longer read out, and
+a fenced code block is dropped whole rather than dictated. This does not measure
+synthesized audio quality on either channel, and it does not claim the union is the
+right rule set — only that one rule set, testable in one table, beats two that can
+disagree silently.
+
 The chat composer remains anchored to the workspace bottom; only the transcript
 scrolls. HTML preview fetch/XHR may reach any HTTPS origin: `connect-src` is `*`,
 and there is no operator allowlist. `AURA_ARTIFACT_CONNECT_ORIGINS` was retired on
