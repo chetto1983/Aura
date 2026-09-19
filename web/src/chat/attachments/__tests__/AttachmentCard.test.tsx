@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import '../../../i18n/i18n';
+import { OpenEditorContext } from '../../../mediaEdit/mediaEditorContext';
 import { AttachmentCard } from '../AttachmentCard';
 import type { Asset } from '../types';
 
@@ -88,5 +89,43 @@ describe('AttachmentCard status honesty', () => {
     render(<AttachmentCard asset={{ ...processing, modality: 'document' }} />);
 
     expect(screen.queryByAltText('screenshot.png')).toBeNull();
+  });
+});
+
+describe('AttachmentCard editing', () => {
+  function card(over: Partial<Asset>) {
+    const open = vi.fn();
+    const asset: Asset = {
+      id: 'att-1',
+      status: 'complete',
+      modality: 'video',
+      file_name: 'phone.mp4',
+      mime_type: 'video/mp4',
+      declared_size_bytes: 1,
+      size_bytes: 1,
+      ...over,
+    };
+    render(
+      <OpenEditorContext.Provider value={open}>
+        <AttachmentCard asset={asset} />
+      </OpenEditorContext.Provider>,
+    );
+    return open;
+  }
+
+  it('offers to edit a ready video attachment', () => {
+    const open = card({});
+    fireEvent.click(screen.getByRole('button', { name: 'Edit phone.mp4' }));
+    expect(open).toHaveBeenCalledWith({ assetId: 'att-1', kind: 'video' });
+  });
+
+  it('offers to edit a ready image attachment', () => {
+    card({ modality: 'image', file_name: 'shot.jpg', mime_type: 'image/jpeg' });
+    expect(screen.getByRole('button', { name: 'Edit shot.jpg' })).toBeTruthy();
+  });
+
+  it('does not offer it while uploading or for a document', () => {
+    card({ status: 'uploaded' });
+    expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so the modal's t() keys resolve
 import type { Asset } from '../attachments/types';
+import { OpenEditorContext } from '../../mediaEdit/mediaEditorContext';
 import { PreviewModal } from './PreviewModal';
 
 // PreviewModal (WEBART-05 / D-09): the click-to-preview modal. The seven renderers are MOCKED
@@ -104,5 +105,42 @@ describe('PreviewModal chrome', () => {
     render(<PreviewModal active={asset({})} onClose={onClose} />);
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('PreviewModal editing', () => {
+  const image: Asset = {
+    id: 'p1',
+    status: 'complete',
+    modality: 'image',
+    file_name: 'shot.png',
+    mime_type: 'image/png',
+    declared_size_bytes: 1,
+    size_bytes: 1,
+  };
+
+  it('closes itself and hands the image to the editor', () => {
+    const open = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <OpenEditorContext.Provider value={open}>
+        <PreviewModal active={image} onClose={onClose} />
+      </OpenEditorContext.Provider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Edit shot.png' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(open).toHaveBeenCalledWith({ assetId: 'p1', kind: 'image' });
+  });
+
+  it('offers nothing to edit on a PDF', () => {
+    render(
+      <OpenEditorContext.Provider value={vi.fn()}>
+        <PreviewModal
+          active={{ ...image, file_name: 'spec.pdf', mime_type: 'application/pdf' }}
+          onClose={vi.fn()}
+        />
+      </OpenEditorContext.Provider>,
+    );
+    expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
   });
 });

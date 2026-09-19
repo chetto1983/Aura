@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { GenerationFrame } from '../chat/generation/GenerationFrame';
 import { PreviewLoading } from '../chat/artifacts/renderers/PreviewStatus';
 import { PreviewByKind } from '../chat/artifacts/renderers/previewDispatch';
+import { EditMediaButton } from '../mediaEdit/EditMediaButton';
 import { assetDownloadUrl, type StudioRecord } from './studioApi';
 import { studioErrorSentence } from './studioErrors';
 import { isActive } from './studioForm';
@@ -11,8 +12,8 @@ import { formatEstimate } from './studioPrice';
 import { Button } from '@/components/ui/button';
 
 // StudioStage — the centre of the page: the headline before anything exists, then whichever
-// generation is selected. A finished one is the artefact itself, with what it cost and the two
-// things that can be done with it; a running one is the frame with the job's own clock; a
+// generation is selected. A finished one is the artefact itself, with what it cost and what can
+// be done with it (download, edit, reuse); a running one is the frame with the job's own clock; a
 // failed one is the reason, not a blank rectangle.
 
 /** Whether Reuse can run, and why not when it cannot. Reuse has to turn the record's asset
@@ -135,12 +136,15 @@ function StageActions({
         </span>
       ) : null}
       {record.asset_id === undefined ? null : (
-        <Button asChild size="sm" variant="ghost" className="min-h-8 gap-1.5 py-1 text-xs">
-          <a href={assetDownloadUrl(record.asset_id)} download>
-            <Download aria-hidden="true" className="size-3.5" />
-            {t('studio.history.download')}
-          </a>
-        </Button>
+        <>
+          <Button asChild size="sm" variant="ghost" className="min-h-8 gap-1.5 py-1 text-xs">
+            <a href={assetDownloadUrl(record.asset_id)} download>
+              <Download aria-hidden="true" className="size-3.5" />
+              {t('studio.history.download')}
+            </a>
+          </Button>
+          <EditMediaButton assetId={record.asset_id} kind={record.kind} className="py-1 text-xs" />
+        </>
       )}
       {reuseState === 'forbidden' ? null : (
         <Button

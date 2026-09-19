@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() keys resolve
+import { OpenEditorContext } from '../../../mediaEdit/mediaEditorContext';
 import { AssetSourceContext, type AssetSource } from './assetSourceContext';
 import GeneratedImagePreview from './GeneratedImagePreview';
 
@@ -168,6 +169,18 @@ describe('GeneratedImagePreview', () => {
     await loadedImage();
     fireEvent.click(screen.getByRole('button', { name: 'Copy image' }));
     expect(await screen.findByRole('alert')).toBeTruthy();
+  });
+
+  it('hands the image to the editor from its actions', async () => {
+    const open = vi.fn();
+    render(
+      <OpenEditorContext.Provider value={open}>
+        <GeneratedImagePreview assetId="img/1" mimeType="image/png" fileName="beach.png" />
+      </OpenEditorContext.Provider>,
+    );
+    await screen.findByRole('img', { name: 'beach.png' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit beach.png' }));
+    expect(open).toHaveBeenCalledWith({ assetId: 'img/1', kind: 'image' });
   });
 
   it('keeps its copy and download controls at the 44px touch floor', async () => {

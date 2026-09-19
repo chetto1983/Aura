@@ -1,5 +1,6 @@
 import { RefreshCw, UploadCloud } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { EditMediaButton } from '../../mediaEdit/EditMediaButton';
 import { RemoteImagePreview } from './AttachmentImage';
 import type { Asset } from './types';
 import { isReadyAsset } from './upload';
@@ -40,6 +41,16 @@ export function AttachmentCard({ asset, onRetry, onPromote }: AttachmentCardProp
           ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {(asset.modality === 'image' || asset.modality === 'video') && isReadyAsset(asset) ? (
+            <EditMediaButton
+              assetId={asset.id}
+              kind={asset.modality}
+              mimeType={asset.mime_type}
+              fileName={asset.file_name}
+              compact
+              className="px-2 text-text-muted hover:bg-surface-3 hover:text-text"
+            />
+          ) : null}
           {onRetry !== undefined && asset.status === 'failed' ? (
             <Button
               type="button"

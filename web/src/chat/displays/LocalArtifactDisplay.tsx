@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { lazy, Suspense } from 'react';
 import { AlertTriangle, Download, File } from 'lucide-react';
+import { EditMediaButton } from '../../mediaEdit/EditMediaButton';
 import { formatSize, previewKind } from '../artifacts/artifactMeta';
 import { useAssetSource } from '../artifacts/renderers/assetSourceContext';
 import { PreviewLoading } from '../artifacts/renderers/PreviewStatus';
@@ -63,7 +64,16 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
           <span className="min-w-0 truncate font-mono text-sm text-text" title={filename}>
             {filename}
           </span>
-          <DownloadLink assetId={assetId} filename={filename} />
+          <span className="flex shrink-0 items-center gap-1">
+            <EditMediaButton
+              assetId={assetId}
+              kind="video"
+              mimeType={mimeType}
+              fileName={filename}
+              compact
+            />
+            <DownloadLink assetId={assetId} filename={filename} />
+          </span>
         </figcaption>
       </figure>
     );

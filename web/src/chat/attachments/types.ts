@@ -19,6 +19,8 @@ export type AssetStatus =
   | 'indexed'
   | 'recovered';
 
+// 'video' is what the server assigns to an .mp4/.webm upload (internal/assets/limits.go
+// InferModality) even when the browser hinted 'unknown'.
 export type AssetModality = 'document' | 'image' | 'audio' | 'video' | 'unknown';
 
 export interface Asset {

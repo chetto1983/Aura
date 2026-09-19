@@ -48,7 +48,8 @@ export function EditMediaButton({
         onOpen?.();
         open({ assetId, kind });
       }}
-      className={cn('min-h-8 gap-1.5 py-1 text-xs', className)}
+      // No min-h here: size="sm" carries the 44px floor data-required-touch-target promises.
+      className={cn('gap-1.5 text-xs', compact && 'min-w-[44px]', className)}
     >
       <Pencil aria-hidden="true" className="size-3.5" />
       {compact ? null : t('mediaEdit.edit')}

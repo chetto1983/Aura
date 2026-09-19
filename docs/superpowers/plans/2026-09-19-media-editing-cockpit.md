@@ -3196,7 +3196,7 @@ git commit -m "feat(media-edit): open the editors from one shell-level host" -m 
 - Consumes: `EditMediaButton` (Task 9), `previewKind(mime, filename)` (`artifactMeta.ts`).
 - Produces: `ImageActions` prop `extra?: ReactNode` rendered before the download link.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 For each surface add one test that renders it inside `OpenEditorContext.Provider value={open}` and asserts the button and the hand-off. Example for `AttachmentCard` (`web/src/chat/attachments/__tests__/AttachmentCard.test.tsx`; append to the existing file if it exists):
 ```tsx
@@ -3331,12 +3331,12 @@ describe('PreviewModal editing', () => {
 
 `LocalArtifactDisplay` (its existing test file): render a payload whose artifact is `{ asset_id: 'v1', filename: 'clip.mp4', mime_type: 'video/mp4' }` inside the provider, click `Edit clip.mp4`, expect `open` called with `{ assetId: 'v1', kind: 'video' }`.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `npx vitest run src/chat src/studio`
 Expected: FAIL — no `Edit` buttons yet.
 
-- [ ] **Step 3: Implement the placements**
+- [x] **Step 3: Implement the placements**
 
 `web/src/chat/attachments/types.ts`: `export type AssetModality = 'document' | 'image' | 'audio' | 'video' | 'unknown';` and above it:
 ```ts
@@ -3398,12 +3398,12 @@ to `ImageActions`.
           <EditMediaButton assetId={record.asset_id} kind={record.kind} className="py-1 text-xs" />
 ```
 
-- [ ] **Step 4: Run the suites to verify they pass**
+- [x] **Step 4: Run the suites to verify they pass**
 
 Run: `npx vitest run src/chat src/studio src/mediaEdit src/components`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/studio/StudioStage.tsx web/src/components/image.tsx web/src/chat/artifacts/renderers/GeneratedImagePreview.tsx web/src/chat/displays/LocalArtifactDisplay.tsx web/src/chat/artifacts/PreviewModal.tsx web/src/chat/attachments/AttachmentCard.tsx web/src/chat/attachments/types.ts

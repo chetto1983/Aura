@@ -58,4 +58,14 @@ describe('EditMediaButton', () => {
     mount(<EditMediaButton assetId="a1" kind="image" mimeType="image/png" compact />);
     expect(screen.getByRole('button', { name: 'Edit' }).textContent).not.toContain('Edit');
   });
+
+  // It declares data-required-touch-target, which the coarse-pointer E2E measures at 44×44
+  // (e2e/support/calmPrismGeometry.ts expectCoarseTargets).
+  it.each([false, true])('keeps the 44px touch floor it declares (compact: %s)', (compact) => {
+    mount(<EditMediaButton assetId="a1" kind="image" compact={compact} />);
+    const button = screen.getByRole('button', { name: 'Edit' });
+    expect(button.hasAttribute('data-required-touch-target')).toBe(true);
+    expect(button.className).toContain('min-h-[44px]');
+    if (compact) expect(button.className).toContain('min-w-[44px]');
+  });
 });
