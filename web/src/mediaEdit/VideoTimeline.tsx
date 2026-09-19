@@ -14,6 +14,16 @@ function tenth(value: number): number {
   return Math.round(value * 10) / 10;
 }
 
+// A handle's bound snaps inward to the tenth grid, never past the span it guards: an end at 7.36
+// lets the start reach 7.2, not 7.3. The epsilon absorbs float noise such as 0.3 - 0.1.
+function tenthBelow(value: number): number {
+  return Math.floor(value * 10 + 1e-9) / 10;
+}
+
+function tenthAbove(value: number): number {
+  return Math.ceil(value * 10 - 1e-9) / 10;
+}
+
 function Frame({ source }: { readonly source: CanvasImageSource }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -83,17 +93,23 @@ export function VideoTimeline({
   endLabel,
 }: VideoTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
+  // A duration that is not a positive number leaves nothing to trim, and a clip shorter than one
+  // step keeps its handles apart by the whole clip; either way every min stays below its max.
+  const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const span = Math.min(MIN_SPAN, length);
+  const startMax = Math.max(0, tenthBelow(end - span));
+  const endMin = Math.min(tenthAbove(start + span), length);
   const setStart = (value: number) => {
-    onChange(clamp(tenth(value), 0, tenth(end - MIN_SPAN)), end);
+    onChange(clamp(tenth(value), 0, startMax), end);
   };
   const setEnd = (value: number) => {
-    onChange(start, clamp(tenth(value), tenth(start + MIN_SPAN), duration));
+    onChange(start, clamp(tenth(value), endMin, length));
   };
 
   function timeAt(clientX: number): number {
     const box = trackRef.current?.getBoundingClientRect();
     if (box === undefined || box.width === 0) return 0;
-    return clamp((clientX - box.left) / box.width, 0, 1) * duration;
+    return clamp((clientX - box.left) / box.width, 0, 1) * length;
   }
 
   function keys(set: (value: number) => void, value: number) {
@@ -120,8 +136,9 @@ export function VideoTimeline({
     };
   }
 
-  const at = (value: number) => `${String((value / duration) * 100)}%`;
-  const fromEnd = `${String(100 - (end / duration) * 100)}%`;
+  const percent = (value: number) => (length > 0 ? clamp(value / length, 0, 1) * 100 : 0);
+  const at = (value: number) => `${String(percent(value))}%`;
+  const fromEnd = `${String(100 - percent(end))}%`;
 
   return (
     <div
@@ -154,7 +171,7 @@ export function VideoTimeline({
         label={startLabel}
         value={start}
         min={0}
-        max={end - MIN_SPAN}
+        max={startMax}
         position={at(start)}
         onKeyDown={keys(setStart, start)}
         onPointerDown={grab(setStart)}
@@ -163,8 +180,8 @@ export function VideoTimeline({
       <Handle
         label={endLabel}
         value={end}
-        min={start + MIN_SPAN}
-        max={duration}
+        min={endMin}
+        max={length}
         position={at(end)}
         onKeyDown={keys(setEnd, end)}
         onPointerDown={grab(setEnd)}

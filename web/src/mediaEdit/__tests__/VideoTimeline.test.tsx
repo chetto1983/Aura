@@ -77,6 +77,63 @@ describe('VideoTimeline', () => {
     fireEvent.pointerMove(start, { pointerId: 1, clientX: 40 });
     expect(onChange).toHaveBeenLastCalledWith(4, 6);
   });
+
+  it('keeps the start a whole step before an end that is off the tenth grid', () => {
+    const onChange = mount(7.2, 7.36);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Start of the selection' }), {
+      key: 'ArrowRight',
+    });
+    expect(onChange).toHaveBeenLastCalledWith(7.2, 7.36);
+  });
+});
+
+describe('VideoTimeline on a degenerate clip', () => {
+  function draw(duration: number, start: number, end: number) {
+    const onChange = vi.fn();
+    render(
+      <VideoTimeline
+        duration={duration}
+        start={start}
+        end={end}
+        frames={[]}
+        onChange={onChange}
+        startLabel="Start"
+        endLabel="End"
+      />,
+    );
+    return onChange;
+  }
+
+  function expectOrderedBounds(name: string) {
+    const handle = screen.getByRole('slider', { name });
+    const [min, now, max] = ['aria-valuemin', 'aria-valuenow', 'aria-valuemax'].map((name) =>
+      Number(handle.getAttribute(name)),
+    );
+    expect(min).toBeLessThanOrEqual(now ?? Number.NaN);
+    expect(now).toBeLessThanOrEqual(max ?? Number.NaN);
+  }
+
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    'draws a clip %s seconds long without NaN, Infinity or inverted bounds',
+    (duration) => {
+      const onChange = draw(duration, 0, 0);
+      expect(screen.getByTestId('video-timeline').outerHTML).not.toMatch(/NaN|Infinity/);
+      expectOrderedBounds('Start');
+      expectOrderedBounds('End');
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'ArrowRight' });
+      expect(onChange).toHaveBeenLastCalledWith(0, 0);
+    },
+  );
+
+  it('keeps a clip shorter than one step whole: start at zero, end at its length', () => {
+    const onChange = draw(0.04, 0, 0.04);
+    expectOrderedBounds('Start');
+    expectOrderedBounds('End');
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Start' }), { key: 'ArrowRight' });
+    expect(onChange).toHaveBeenLastCalledWith(0, 0.04);
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'End' }), { key: 'ArrowLeft' });
+    expect(onChange).toHaveBeenLastCalledWith(0, 0.04);
+  });
 });
 
 describe('TimeField', () => {
