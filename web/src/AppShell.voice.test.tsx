@@ -8,9 +8,10 @@ import { AppShell } from './AppShell';
 
 // AppShell 37C-04 — the ephemeral voice-mode header toggle. The heavy shell children
 // are mocked to trivial stubs so the test isolates AppShell's own VoiceModeProvider +
-// VoiceModeToggle wiring. The toggle is caps.tts-gated (WEBVOICE-03): it appears only
-// once GET /api/voice/capabilities resolves {tts:true}, flips voiceMode on click, and
-// is absent when tts is unconfigured.
+// VoiceModeToggle wiring. The toggle opens the hands-free overlay, so it is gated on
+// BOTH legs (WEBVOICE-03): it appears once GET /api/voice/capabilities resolves
+// {tts:true,stt:true}, flips voiceMode on click, and is absent when either is missing —
+// a loop that can listen but not answer aloud, or answer but not listen, is not a mode.
 
 vi.mock('./chat/ExternalStoreChat', () => ({
   ExternalStoreChat: (props: { threadId: string }) => (
@@ -88,8 +89,8 @@ afterEach(() => {
 });
 
 describe('AppShell — voice-mode header toggle (D-06 / WEBVOICE-03)', () => {
-  it('shows the toggle when tts is configured and flips voiceMode on click', async () => {
-    stubCapabilities(true);
+  it('shows the toggle when both legs are configured and flips voiceMode on click', async () => {
+    stubCapabilities(true, true);
     renderShell();
     await screen.findByTestId('chat-lane');
 
@@ -105,8 +106,12 @@ describe('AppShell — voice-mode header toggle (D-06 / WEBVOICE-03)', () => {
     expect(screen.queryByLabelText('Voice mode off')).toBeNull();
   });
 
-  it('hides the toggle when tts is not configured (graceful degrade)', async () => {
-    stubCapabilities(false);
+  it.each([
+    ['neither leg', false, false],
+    ['tts only — nothing would listen', true, false],
+    ['stt only — nothing would answer aloud', false, true],
+  ])('hides the toggle with %s (graceful degrade)', async (_name, tts, stt) => {
+    stubCapabilities(tts, stt);
     renderShell();
     await screen.findByTestId('chat-lane');
 

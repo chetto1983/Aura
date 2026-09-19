@@ -85,13 +85,15 @@ describe('useAutoSpeak (shouldSpeak-gated, D-07)', () => {
     expect(hoisted.speakSpy).not.toHaveBeenCalled();
   });
 
-  it('speaks a new assistant reply once when voice mode is on', () => {
+  // Voice mode opens the hands-free overlay, and the overlay plays the reply as part of
+  // its own loop. Speaking here too is the same answer twice, out of sync with itself.
+  it('does NOT speak while voice mode is on — the overlay owns playback', () => {
     const { rerender } = renderHarness();
     fireEvent.click(screen.getByText('toggle'));
+    expect(screen.getByTestId('voice').textContent).toBe('true');
     setThread([{ id: 'a1', role: 'assistant' }]);
     rerender(makeTree());
-    expect(hoisted.speakSpy).toHaveBeenCalledTimes(1);
-    expect(hoisted.speakSpy).toHaveBeenCalledWith('a1');
+    expect(hoisted.speakSpy).not.toHaveBeenCalled();
   });
 
   it('a dictated turn auto-speaks with voice mode off, then is consumed so the next typed turn is silent', () => {
@@ -117,14 +119,14 @@ describe('useAutoSpeak (shouldSpeak-gated, D-07)', () => {
   it('never speaks a rehydrated reply already present on mount (init adopts, does not speak)', () => {
     setThread([{ id: 'old', role: 'assistant' }]);
     const { rerender } = renderHarness();
-    fireEvent.click(screen.getByText('toggle'));
+    fireEvent.click(screen.getByText('mark'));
     rerender(makeTree());
     expect(hoisted.speakSpy).not.toHaveBeenCalled();
   });
 
   it('waits until the turn settles (isRunning) before speaking', () => {
     const { rerender } = renderHarness();
-    fireEvent.click(screen.getByText('toggle'));
+    fireEvent.click(screen.getByText('mark'));
     setThread([{ id: 'a1', role: 'assistant' }], true);
     rerender(makeTree());
     expect(hoisted.speakSpy).not.toHaveBeenCalled();

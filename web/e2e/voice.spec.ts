@@ -127,7 +127,7 @@ async function installConversationRoutes(page: Page) {
   );
 }
 
-test.describe('cockpit voice lane — speaker + dictation + degrade against the live container (WEBVOICE-01..04)', () => {
+test.describe('cockpit voice lane — speaker + dictation + hands-free + degrade against the live container (WEBVOICE-01..04)', () => {
   test('the rebuilt binary MOUNTS the voice routes (capabilities 200 + /api/tts + /api/stt not 404) — the pre-voice binary 404s them', async ({
     page,
   }) => {
@@ -301,7 +301,7 @@ test.describe('cockpit voice lane — speaker + dictation + degrade against the 
     const composer = page.getByPlaceholder('Ask Aura');
     await expect(composer).toBeVisible();
 
-    // caps.stt=true → the mic renders as "Dictate", not the "Record audio" attachment path.
+    // caps.stt=true → the mic is "Dictate". There is no audio-attachment path any more.
     const dictate = page.getByRole('button', { name: 'Dictate' });
     await expect(dictate).toBeVisible({ timeout: 10000 });
     await expect(page.getByRole('button', { name: 'Record audio' })).toHaveCount(0);
@@ -352,7 +352,129 @@ test.describe('cockpit voice lane — speaker + dictation + degrade against the 
     expect(assertions).toBeGreaterThanOrEqual(5);
   });
 
-  test('degrade: capabilities {false,false} hides the speaker, keeps the mic in attachment mode, no console errors', async ({
+  test('voice mode: the hands-free overlay sends the transcript as a TEXT turn and speaks the reply', async ({
+    page,
+    context,
+  }) => {
+    test.setTimeout(120_000);
+    let assertions = 0;
+    await context.grantPermissions(['microphone']);
+
+    // Two init scripts make the loop deterministic headless:
+    //  - no AudioContext ⇒ no microphone levels ⇒ no silence endpointing and no barge-in,
+    //    so the utterance ends when (and only when) the overlay's own button is pressed.
+    //    Level-driven endpointing and barge-in are Manual-Only (a fake media device emits a
+    //    synthetic tone, which is neither speech nor silence).
+    //  - a fake Audio that never fires onended, so the speaking state holds for assertion.
+    await page.addInitScript(() => {
+      (window as unknown as { AudioContext?: unknown }).AudioContext = undefined;
+      class FakeAudio {
+        public onended: (() => void) | null = null;
+        public onerror: (() => void) | null = null;
+        public src: string;
+        constructor(src?: string) {
+          this.src = src ?? '';
+          const w = window as unknown as { __auraAudioPlays?: number };
+          w.__auraAudioPlays = (w.__auraAudioPlays ?? 0) + 1;
+        }
+        play(): Promise<void> {
+          return Promise.resolve();
+        }
+        pause(): void {
+          // no-op: headless has no audio sink.
+        }
+      }
+      (window as unknown as { Audio: unknown }).Audio = FakeAudio;
+    });
+
+    await installConversationRoutes(page);
+    await page.route('**/api/voice/capabilities', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ tts: true, stt: true }),
+      }),
+    );
+    await page.route('**/api/stt', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ text: TRANSCRIPT }),
+      }),
+    );
+    await page.route('**/api/tts', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'audio/mpeg',
+        body: Buffer.from([0xff, 0xf3, 0x00, 0x00]),
+      }),
+    );
+    await page.route('**/agent/run', (route) =>
+      sseResponse(route, sseFromFrames(assistantTurnFrames())),
+    );
+
+    await gotoAuthenticated(page, `/c/${CONV_ID}`);
+
+    // The toggle is offered only with BOTH legs wired; it opens the overlay.
+    await page.getByRole('button', { name: /Voice mode/ }).click();
+    const overlay = page.getByTestId('voice-overlay');
+    await expect(overlay).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId('voice-orb')).toBeVisible();
+    await expect(page.getByTestId('voice-status')).toHaveText('Listening…', { timeout: 10000 });
+    assertions += 1;
+
+    // End the utterance: /api/stt answers, and the transcript is sent as an ORDINARY turn —
+    // a real POST /agent/run, exactly what a typed message produces. THE contract.
+    const [sttRes, runRequest] = await Promise.all([
+      page.waitForResponse(
+        (res) => res.url().includes('/api/stt') && res.request().method() === 'POST',
+      ),
+      page.waitForRequest((req) => req.url().includes('/agent/run') && req.method() === 'POST'),
+      page.getByRole('button', { name: 'Send now' }).click(),
+    ]);
+    expect(sttRes.status()).toBe(200);
+    assertions += 1;
+
+    // The words that crossed the wire are the transcript, as TEXT — no audio attachment.
+    const runBody = JSON.parse(runRequest.postData() ?? '{}') as {
+      messages?: { role: string; content: string }[];
+      aura?: { attachment_ids?: unknown[] };
+    };
+    const spoken = (runBody.messages ?? []).filter((m) => m.role === 'user').at(-1);
+    expect(spoken?.content.toLowerCase()).toContain(TRANSCRIPT);
+    // buildAuraRunBody nests attachment ids under `aura`; a spoken turn carries none,
+    // so the run is byte-identical to a typed one.
+    expect(runBody.aura?.attachment_ids ?? []).toEqual([]);
+    assertions += 1;
+
+    // The transcript is echoed in the overlay, and the spoken turn is a real thread message.
+    await expect(page.getByTestId('voice-transcript')).toContainText(TRANSCRIPT, {
+      timeout: 10000,
+    });
+    await expect(page.getByText(new RegExp(TRANSCRIPT, 'i')).first()).toBeVisible({
+      timeout: 15000,
+    });
+    assertions += 1;
+
+    // The reply is read aloud by the overlay itself, and shown while it speaks.
+    await expect(page.getByTestId('voice-status')).toHaveText('Answering…', { timeout: 20000 });
+    await expect(page.getByTestId('voice-reply')).toContainText(REPLY_TEXT);
+    const plays = await page.evaluate(
+      () => (window as unknown as { __auraAudioPlays?: number }).__auraAudioPlays ?? 0,
+    );
+    expect(plays).toBeGreaterThan(0);
+    assertions += 1;
+
+    // Closing returns to the thread with the spoken turn in it — nothing lives only here.
+    await page.getByRole('button', { name: 'Close' }).click();
+    await expect(overlay).toHaveCount(0);
+    await expect(page.getByText(REPLY_TEXT).first()).toBeVisible();
+    assertions += 1;
+
+    expect(assertions).toBeGreaterThanOrEqual(6);
+  });
+
+  test('degrade: capabilities {false,false} hides the speaker, the mic and voice mode, no console errors', async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -407,9 +529,11 @@ test.describe('cockpit voice lane — speaker + dictation + degrade against the 
     await expect(page.getByRole('button', { name: 'Stop reading' })).toHaveCount(0);
     assertions += 1;
 
-    // The mic stays in attachment-record mode ("Record audio"), NOT dictation ("Dictate").
-    await expect(page.getByRole('button', { name: 'Record audio' })).toBeVisible();
+    // No mic at all: the audio-attachment fallback is gone, because an attachment reached
+    // the model as bytes rather than as words. Nor is the hands-free toggle offered.
     await expect(page.getByRole('button', { name: 'Dictate' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Record audio' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Voice mode/ })).toHaveCount(0);
     assertions += 1;
 
     // No console errors leaked while degrading (WEBVOICE-03/04).

@@ -1,4 +1,5 @@
 import type { SpeechSynthesisAdapter } from '@assistant-ui/react';
+import { synthesizeSpeech } from './voiceApi';
 
 // speechAdapter — a custom assistant-ui SpeechSynthesisAdapter that backs the
 // per-message speaker control (D-03). `speak(text)` POSTs the text to /api/tts,
@@ -29,8 +30,6 @@ export interface SpeechAdapter extends SpeechSynthesisAdapter {
   /** Revoke every cached object URL. Invoked on chat/thread unmount by 37C-05 (Landmine #5). */
   dispose: () => void;
 }
-
-const TRUNCATED_HEADER = 'X-Aura-TTS-Truncated';
 
 interface CacheEntry {
   readonly url: string;
@@ -102,19 +101,7 @@ export function createSpeechAdapter(): SpeechAdapter {
     } else {
       void (async () => {
         try {
-          const res = await fetch('/api/tts', {
-            method: 'POST',
-            headers: { Accept: 'audio/mpeg', 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify({ text }),
-          });
-          if (!res.ok) {
-            end('error');
-            return;
-          }
-          const truncated = res.headers.get(TRUNCATED_HEADER) === 'true';
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
+          const { url, truncated } = await synthesizeSpeech(text);
           cache.set(text, { url, truncated });
           if (utterance.status.type === 'ended') return; // cancelled before the blob arrived
           play(url, truncated);

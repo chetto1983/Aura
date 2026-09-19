@@ -1,4 +1,5 @@
 import type { DictationAdapter } from '@assistant-ui/react';
+import { transcribeAudio } from './voiceApi';
 
 // dictationAdapter — a custom assistant-ui DictationAdapter that backs the Composer's
 // in-place dictation (D-09). `listen()` opens the mic via getUserMedia, records with a
@@ -18,8 +19,6 @@ import type { DictationAdapter } from '@assistant-ui/react';
 
 type Result = DictationAdapter.Result;
 type ResultCallback = (result: Result) => void;
-
-const STT_ROUTE = '/api/stt';
 
 export function createDictationAdapter(): DictationAdapter {
   return {
@@ -89,21 +88,8 @@ export function createDictationAdapter(): DictationAdapter {
         if (isCancelled()) return; // cancel() already ended the session; never POST
         try {
           const blob = new Blob(chunks, { type: recorder?.mimeType ?? 'audio/webm' });
-          const form = new FormData();
-          form.append('audio', blob, 'dictation');
-          const res = await fetch(STT_ROUTE, {
-            method: 'POST',
-            credentials: 'same-origin',
-            body: form,
-          });
+          const transcript = await transcribeAudio(blob);
           if (isCancelled()) return;
-          if (!res.ok) {
-            session.status = { type: 'ended', reason: 'error' }; // Composer degrades (D-10)
-            return;
-          }
-          const data = (await res.json()) as { text?: unknown };
-          if (isCancelled()) return;
-          const transcript = typeof data.text === 'string' ? data.text : '';
           // Insert via onSpeech (isFinal) — the ONLY path the core writes into the composer.
           if (transcript.length > 0) {
             for (const cb of speechCbs) cb({ transcript, isFinal: true });
@@ -111,6 +97,8 @@ export function createDictationAdapter(): DictationAdapter {
           session.status = { type: 'ended', reason: 'stopped' };
           for (const cb of endCbs) cb({ transcript }); // cleanup (payload ignored by core)
         } catch {
+          // A non-2xx /api/stt and a network failure are one dead end for the composer:
+          // end reason:error with NO onSpeech, so the mic stays usable (D-10).
           session.status = { type: 'ended', reason: 'error' };
         }
       };

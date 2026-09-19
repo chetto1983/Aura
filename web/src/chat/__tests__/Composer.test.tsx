@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import '../../i18n/i18n';
 import { Composer } from '../Composer';
 import type { ComposerSkillRow } from '../composer/api';
-import { stubGetUserMedia, stubMediaRecorder, type GetUserMediaStub } from '../voice/voiceMocks';
 
 // Shared mutable doubles for the mocked runtime + voice-mode context. vi.hoisted runs
 // before the (hoisted) vi.mock factories, so both can close over `h`; tests mutate
@@ -61,8 +60,6 @@ vi.mock('../voice/voiceModeContext', () => ({
   }),
 }));
 
-let mediaStub: GetUserMediaStub | undefined;
-
 beforeEach(() => {
   vi.resetAllMocks();
   h.caps = { tts: false, stt: false };
@@ -73,8 +70,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  mediaStub?.restore();
-  mediaStub = undefined;
   vi.unstubAllGlobals();
 });
 
@@ -128,6 +123,7 @@ describe('Composer attachments', () => {
 
 describe('Composer approval lock', () => {
   it('exposes a stable localized lock relationship and natively disables every primary action', () => {
+    h.caps = { tts: false, stt: true }; // the mic exists only as dictation now
     h.auiState.composer.text = '/';
     const onEffortChange = vi.fn();
     const { rerender } = render(
@@ -149,7 +145,7 @@ describe('Composer approval lock', () => {
     );
     expect(screen.getByPlaceholderText('Ask Aura')).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Add files' })).toHaveProperty('disabled', true);
-    expect(screen.getByRole('button', { name: 'Record audio' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Dictate' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Send message' })).toHaveProperty('disabled', true);
     expect(screen.getByRole('combobox', { name: 'Reasoning effort' })).toHaveProperty(
       'disabled',
@@ -197,19 +193,16 @@ describe('Composer approval lock', () => {
 });
 
 describe('Composer dictation', () => {
-  it('caps.stt=false → the Mic records an audio attachment (no regression, WEBVOICE-04)', async () => {
-    stubMediaRecorder();
-    mediaStub = stubGetUserMedia();
+  // Speech must reach the model as WORDS. Without STT there is nothing that can turn it
+  // into words here, so there is no mic — the audio-attachment fallback that used to
+  // stand in its place sent bytes the model heard instead of a transcript it could read.
+  it('caps.stt=false → there is no mic at all (never an audio attachment)', () => {
     render(<Composer />);
 
-    fireEvent.click(screen.getByLabelText('Record audio'));
-    await waitFor(() => screen.getByLabelText('Stop recording'));
-    fireEvent.click(screen.getByLabelText('Stop recording'));
-
-    expect(mediaStub.getUserMedia).toHaveBeenCalledTimes(1);
-    // The voice note goes through the same adapter as any other attachment (D-10).
-    expect(h.addAttachment).toHaveBeenCalledTimes(1);
-    expect(h.startDictation).not.toHaveBeenCalled(); // never dictation when STT is off
+    expect(screen.queryByLabelText('Dictate')).toBeNull();
+    expect(screen.queryByLabelText('Stop dictation')).toBeNull();
+    expect(h.addAttachment).not.toHaveBeenCalled();
+    expect(h.startDictation).not.toHaveBeenCalled();
   });
 
   it('caps.stt=true → the Mic starts a runtime dictation session (not an attachment)', () => {
@@ -274,22 +267,17 @@ describe('Composer dictation', () => {
     expect(status.textContent).toContain('No transcription');
   });
 
-  // D-10, driven by the signal production reads. The mic used to try startDictation and fall
-  // back in the catch; the primitive does not throw when there is no adapter, it renders a
-  // DISABLED button — which is the dead end D-10 forbids — so availability is asked up front
-  // (the thread's dictation CAPABILITY) and the recorder branch is rendered instead.
-  it('caps.stt=true but dictation unavailable → degrades to the attachment record path (D-10)', async () => {
+  // Availability is asked up front (the thread's dictation CAPABILITY) rather than by
+  // calling startDictation and catching: the primitive does not throw when no adapter is
+  // configured, it renders a DISABLED button, and a control that never enables is a dead
+  // end. The answer to that dead end is no control, not a different one.
+  it('caps.stt=true but dictation unavailable → the mic is absent, not disabled', () => {
     h.caps = { tts: false, stt: true };
     h.auiState.thread = { ...h.auiState.thread, capabilities: { dictation: false } };
-    stubMediaRecorder();
-    mediaStub = stubGetUserMedia();
     render(<Composer />);
 
-    fireEvent.click(screen.getByLabelText('Record audio'));
-
-    await waitFor(() => {
-      expect(mediaStub?.getUserMedia).toHaveBeenCalledTimes(1);
-    });
+    expect(screen.queryByLabelText('Dictate')).toBeNull();
+    expect(h.addAttachment).not.toHaveBeenCalled();
     expect(h.startDictation).not.toHaveBeenCalled();
   });
 });
