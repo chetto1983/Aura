@@ -28,6 +28,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -114,6 +115,7 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 	}
 	audio, err := s.tts.Synthesize(r.Context(), text)
 	if err != nil {
+		slog.WarnContext(r.Context(), "agui: tts synthesis failed", "err", err)
 		http.Error(w, "tts synthesis failed", http.StatusBadGateway)
 		return
 	}
@@ -156,6 +158,7 @@ func (s *Server) handleSTT(w http.ResponseWriter, r *http.Request) {
 	format := assets.AudioFormat(header.Header.Get("Content-Type"))
 	transcript, err := s.stt.Transcribe(r.Context(), audioBytes, header.Filename, format)
 	if err != nil {
+		slog.WarnContext(r.Context(), "agui: stt transcription failed", "err", err)
 		http.Error(w, "stt transcription failed", http.StatusBadGateway)
 		return
 	}

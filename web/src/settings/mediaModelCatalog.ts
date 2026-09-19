@@ -36,6 +36,8 @@ export interface VideoCatalogModel {
 export interface VoiceCatalogModel {
   readonly kind: 'transcription' | 'speech';
   readonly id: string;
+  /** Exact model-specific ids accepted by OpenRouter /audio/speech. */
+  readonly voices?: readonly string[];
   readonly has_price: boolean;
 }
 

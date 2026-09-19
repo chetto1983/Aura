@@ -79,6 +79,9 @@ type modelsWire struct {
 			SupportedEfforts []string `json:"supported_efforts"`
 			Mandatory        bool     `json:"mandatory"`
 		} `json:"reasoning"`
+		// OpenRouter's speech catalogue publishes the exact voice ids accepted by
+		// /audio/speech. They are model-specific and cannot be shared across rows.
+		SupportedVoices []string `json:"supported_voices"`
 	} `json:"data"`
 }
 

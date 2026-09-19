@@ -23,8 +23,10 @@ func TestAllowed(t *testing.T) {
 		"AURA_LLM_MAX_TOKENS",
 		"AURA_MODEL_CONTEXT_WINDOW",
 		"AURA_MODEL_MAX_OUTPUT_TOKENS",
+		"AURA_TTS_CLOUD_VOICE",
 	} {
-		if m, ok := Allowed(key); !ok || m.Secret || m.Kind != KindInt && key != "AURA_LLM_BASE_URL" {
+		if m, ok := Allowed(key); !ok || m.Secret || m.Kind != KindInt &&
+			key != "AURA_LLM_BASE_URL" && key != "AURA_TTS_CLOUD_VOICE" {
 			t.Errorf("%s should be an allowlisted non-secret model/token setting, got ok=%v meta=%+v", key, ok, m)
 		}
 	}
@@ -105,6 +107,7 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		{Key: "AURA_EMBED_BASE_URL", Value: "https://settings-embed.example"},
 		{Key: "AURA_EMBED_DIMENSIONS", Value: "444"},
 		{Key: "AURA_TTS_MODEL", Value: "settings-tts-model"},
+		{Key: "AURA_TTS_CLOUD_VOICE", Value: "settings-tts-voice"},
 		{Key: "AURA_STT_CLOUD_MODEL", Value: "settings-stt-model"},
 	}}
 	if err := OverlayEnv(t.Context(), l); err != nil {
@@ -150,6 +153,9 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	}
 	if got := cfg.TTSModel; got != "settings-tts-model" {
 		t.Errorf("TTSModel = %q, want overlaid settings TTS model", got)
+	}
+	if got := cfg.TTSCloudVoice; got != "settings-tts-voice" {
+		t.Errorf("TTSCloudVoice = %q, want overlaid settings TTS voice", got)
 	}
 	if got := cfg.STTCloudModel; got != "settings-stt-model" {
 		t.Errorf("STTCloudModel = %q, want overlaid settings STT cloud model", got)
@@ -212,6 +218,7 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 		"AURA_EMBED_BASE_URL",
 		"AURA_EMBED_DIMENSIONS",
 		"AURA_TTS_MODEL",
+		"AURA_TTS_CLOUD_VOICE",
 		"AURA_STT_CLOUD_MODEL",
 	} {
 		t.Setenv(key, "")

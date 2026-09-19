@@ -26,6 +26,9 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.TTSVoice != "if_sara" {
 		t.Errorf("TTSVoice default = %q, want if_sara", cfg.TTSVoice)
 	}
+	if cfg.TTSCloudVoice != "" {
+		t.Errorf("TTSCloudVoice default = %q, want empty", cfg.TTSCloudVoice)
+	}
 	if cfg.TTSFormat != "opus" {
 		t.Errorf("TTSFormat default = %q, want opus", cfg.TTSFormat)
 	}
@@ -43,6 +46,7 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("STT_MODEL", "large-v3-turbo")
 	t.Setenv("TTS_BASE_URL", "http://aura-tts:8880/v1")
 	t.Setenv("TTS_VOICE", "if_other")
+	t.Setenv("AURA_TTS_CLOUD_VOICE", "cloud_voice")
 	t.Setenv("TTS_FORMAT", "mp3")
 
 	cfg = LoadDB()
@@ -61,8 +65,9 @@ func TestPhase13ConfigDefaultsAndOverrides(t *testing.T) {
 	if cfg.STTBaseURL != "http://aura-stt:9000/v1" || cfg.STTModel != "large-v3-turbo" {
 		t.Errorf("STT override = %q / %q", cfg.STTBaseURL, cfg.STTModel)
 	}
-	if cfg.TTSBaseURL != "http://aura-tts:8880/v1" || cfg.TTSVoice != "if_other" || cfg.TTSFormat != "mp3" {
-		t.Errorf("TTS override = %q / %q / %q", cfg.TTSBaseURL, cfg.TTSVoice, cfg.TTSFormat)
+	if cfg.TTSBaseURL != "http://aura-tts:8880/v1" || cfg.TTSVoice != "if_other" ||
+		cfg.TTSCloudVoice != "cloud_voice" || cfg.TTSFormat != "mp3" {
+		t.Errorf("TTS override = %q / %q / %q / %q", cfg.TTSBaseURL, cfg.TTSVoice, cfg.TTSCloudVoice, cfg.TTSFormat)
 	}
 }
 

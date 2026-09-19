@@ -146,6 +146,7 @@ func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
 		TTSVoice:          cfg.TTSVoice,
 		TTSFormat:         cfg.TTSFormat,
 		TTSModel:          cfg.TTSModel,
+		TTSCloudVoice:     cfg.TTSCloudVoice,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }

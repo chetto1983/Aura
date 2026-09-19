@@ -248,6 +248,7 @@ type Config struct {
 	STTLanguage          string // STT_LANGUAGE — transcription language hint (default "it"; "" = whisper auto-detect, unreliable on short clips — spike-027)
 	TTSBaseURL           string // TTS_BASE_URL — aura-tts OpenAI-compat base
 	TTSModel             string // AURA_TTS_MODEL — set to a cloud TTS model (e.g. hexgrad/kokoro-82m) to swap TTS to OpenRouter; empty = local Kokoro sidecar
+	TTSCloudVoice        string // AURA_TTS_CLOUD_VOICE — voice id published for AURA_TTS_MODEL; separate from the local Kokoro TTS_VOICE
 	TTSVoice             string // TTS_VOICE — Kokoro voice id (default if_sara)
 	TTSFormat            string // TTS_FORMAT — voice-note audio format (default opus)
 	MultimodalTimeoutSec int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
@@ -536,6 +537,7 @@ func loadBase() *Config {
 		STTLanguage:          envDefault("STT_LANGUAGE", "it"),
 		TTSBaseURL:           os.Getenv("TTS_BASE_URL"),
 		TTSModel:             os.Getenv("AURA_TTS_MODEL"),
+		TTSCloudVoice:        os.Getenv("AURA_TTS_CLOUD_VOICE"),
 		TTSVoice:             envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:            envDefault("TTS_FORMAT", "opus"),
 		MultimodalTimeoutSec: envutil.IntDefault("MULTIMODAL_TIMEOUT_SEC", 120),

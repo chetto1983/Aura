@@ -40,7 +40,10 @@ func TestVoiceModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T)
 		{"/api/settings/speech-models?base_url=http%3A%2F%2Fattacker.test%2Fv1", "speech"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
-			catalog := &fakeVoiceCatalog{models: []llm.ModelCatalogEntry{{ID: "openai/whisper-1"}, {ID: "qwen/qwen3-asr-1.7b"}}}
+			catalog := &fakeVoiceCatalog{models: []llm.ModelCatalogEntry{
+				{ID: "openai/whisper-1", SupportedVoices: []string{"alloy"}},
+				{ID: "qwen/qwen3-asr-1.7b", SupportedVoices: []string{"nova"}},
+			}}
 			rows := decodeMediaRows(t, getMediaModels(t, voiceCatalogServer(catalog), tc.target))
 			if len(catalog.asked) != 1 || catalog.asked[0] != tc.modality {
 				t.Fatalf("catalog asked for %v, want exactly [%s]", catalog.asked, tc.modality)
@@ -49,9 +52,28 @@ func TestVoiceModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T)
 				t.Fatalf("rows = %v, want the two listed models", rows)
 			}
 			// No unit is published for a speech model's rate, so no price rides the row.
-			assertRow(t, rows[0], map[string]any{"id": "openai/whisper-1", "kind": tc.modality, "has_price": false})
+			want := map[string]any{"id": "openai/whisper-1", "kind": tc.modality, "has_price": false}
+			if tc.modality == voiceModalitySpeech {
+				want["voices"] = []any{"alloy"}
+			}
+			assertRow(t, rows[0], want)
 		})
 	}
+}
+
+func TestSpeechModelsReturnSupportedVoicesAndDropUncallableRows(t *testing.T) {
+	catalog := &fakeVoiceCatalog{models: []llm.ModelCatalogEntry{
+		{ID: "fish-audio/s1"},
+		{ID: "qwen/qwen-audio-3.0-tts-flash", SupportedVoices: []string{"loongjohn", "longanhuan_v3.6"}},
+	}}
+	rows := decodeMediaRows(t, getMediaModels(t, voiceCatalogServer(catalog), "/api/settings/speech-models"))
+	if len(rows) != 1 {
+		t.Fatalf("rows = %v, want only the model with published voices", rows)
+	}
+	assertRow(t, rows[0], map[string]any{
+		"id": "qwen/qwen-audio-3.0-tts-flash", "kind": "speech", "has_price": false,
+		"voices": []any{"loongjohn", "longanhuan_v3.6"},
+	})
 }
 
 func TestVoiceModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {

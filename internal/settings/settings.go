@@ -88,6 +88,7 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_EMBED_MODEL":                 {Kind: KindString, Label: "Embedding cloud model"},
 	"AURA_EMBED_BASE_URL":              {Kind: KindString, Label: "Embedding base URL"},
 	"AURA_TTS_MODEL":                   {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_TTS_CLOUD_VOICE":             {Kind: KindString, Label: "TTS cloud voice"},
 	"AURA_STT_CLOUD_MODEL":             {Kind: KindString, Label: "STT cloud model"},
 	"TELEGRAM_BOT_TOKEN":               {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 	// The four live media-generation settings (image/video plan, ruling R3): rows in

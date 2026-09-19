@@ -6,9 +6,9 @@ import { Spinner } from '../components/Spinner';
 import { SettingsFields, type PickerBindings } from './SettingField';
 import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings, type SaveOutcome } from './modelSettingsState';
-import { useModelCatalog } from './useModelCatalog';
+import { useModelCatalog, type ModelCatalogState } from './useModelCatalog';
 import { useMediaModelCatalog } from './useMediaModelCatalog';
-import type { ModelRow } from './mediaModelCatalog';
+import type { MediaCatalogModel, ModelRow, VoiceCatalogModel } from './mediaModelCatalog';
 import { modelRowMeta, type MediaLabels } from './mediaModelCatalogFormat';
 import {
   MODEL_SETTINGS_GROUPS,
@@ -43,6 +43,19 @@ function mediaLabels(t: TFunction): MediaLabels {
       }),
     imageToVideo: t('settings.models.imageToVideo'),
     imageTokens: (price) => t('settings.models.imageTokens', { price }),
+  };
+}
+
+function ttsVoiceCatalog(
+  catalog: ModelCatalogState<MediaCatalogModel>,
+  modelID: string,
+): ModelCatalogState<ModelRow> {
+  const model = catalog.models.find(
+    (row): row is VoiceCatalogModel => row.kind === 'speech' && row.id === modelID,
+  );
+  return {
+    ...catalog,
+    models: (model?.voices ?? []).map((id) => ({ kind: 'speech', id, has_price: false })),
   };
 }
 
@@ -121,6 +134,7 @@ export function ModelSettingsPanel({
     groups.includes('backends');
   const transcriptionCatalog = useMediaModelCatalog('transcription', voiceEnabled, savedRoute);
   const speechCatalog = useMediaModelCatalog('speech', voiceEnabled, savedRoute);
+  const cloudVoiceCatalog = ttsVoiceCatalog(speechCatalog, loaded?.values.AURA_TTS_MODEL ?? '');
 
   if (loadStatus === 'loading') {
     return (
@@ -157,6 +171,19 @@ export function ModelSettingsPanel({
     label: t('settings.models.useLocalSidecar'),
     description: t('settings.models.useLocalSidecarDescription'),
   };
+  const selectTTSModel = (modelID: string) => {
+    setValue('AURA_TTS_MODEL', modelID);
+    if (modelID === '') {
+      setValue('AURA_TTS_CLOUD_VOICE', '');
+      return;
+    }
+    const model = speechCatalog.models.find(
+      (row): row is VoiceCatalogModel => row.kind === 'speech' && row.id === modelID,
+    );
+    const voices = model?.voices ?? [];
+    const currentVoice = loaded.values.AURA_TTS_CLOUD_VOICE ?? '';
+    if (!voices.includes(currentVoice)) setValue('AURA_TTS_CLOUD_VOICE', voices[0] ?? '');
+  };
   const pickers: PickerBindings = {
     AURA_LLM_MODEL: { catalog, formatRow },
     AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
@@ -166,7 +193,13 @@ export function ModelSettingsPanel({
       formatRow,
       emptyOption: localVoiceOption,
     },
-    AURA_TTS_MODEL: { catalog: speechCatalog, formatRow, emptyOption: localVoiceOption },
+    AURA_TTS_MODEL: {
+      catalog: speechCatalog,
+      formatRow,
+      emptyOption: localVoiceOption,
+      onValueChange: selectTTSModel,
+    },
+    AURA_TTS_CLOUD_VOICE: { catalog: cloudVoiceCatalog, formatRow },
   };
 
   return (
@@ -223,7 +256,12 @@ export function ModelSettingsPanel({
           ) : null}
 
           <SettingsFields
-            defs={group.fields.filter((def) => def.cloudOnly !== true || provider === 'cloud')}
+            defs={group.fields.filter(
+              (def) =>
+                (def.cloudOnly !== true || provider === 'cloud') &&
+                (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
+                  (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
+            )}
             loaded={loaded}
             resetting={resetting}
             onValueChange={setValue}

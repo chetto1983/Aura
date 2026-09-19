@@ -172,6 +172,7 @@ func TestCallTimeSettingsReadAsLiveWithNoSavedValue(t *testing.T) {
 		"AURA_OPENROUTER_SERVICES_CAP_USD": appliedLive,
 		"AURA_ASSET_MAX_VIDEO_BYTES":       appliedBoot,
 		"AURA_TTS_MODEL":                   appliedBoot,
+		"AURA_TTS_CLOUD_VOICE":             appliedBoot,
 		// A hot profile key, not a call-time one: live only through the wired reloader.
 		"AURA_LLM_MODEL": appliedBoot,
 	} {

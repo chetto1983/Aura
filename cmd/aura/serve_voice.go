@@ -68,6 +68,7 @@ func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
 		Voice:             cfg.TTSVoice,
 		Format:            "mp3",
 		CloudModel:        cfg.TTSModel,
+		CloudVoice:        cfg.TTSCloudVoice,
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,

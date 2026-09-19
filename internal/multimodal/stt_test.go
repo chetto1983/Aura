@@ -86,7 +86,7 @@ func TestSTTCloudJSONInputAudio(t *testing.T) {
 
 	audio := []byte("OPUSBYTES")
 	c := NewSTTClient(STTConfig{
-		CloudModel:        "openai/whisper-large-v3",
+		CloudModel:        "google/chirp-3",
 		Language:          "it",
 		OpenRouterBaseURL: srv.URL,
 		OpenRouterAPIKey:  "shared-key",
@@ -108,8 +108,8 @@ func TestSTTCloudJSONInputAudio(t *testing.T) {
 	if gotPath != "/audio/transcriptions" {
 		t.Errorf("path = %q, want /audio/transcriptions", gotPath)
 	}
-	if body.Model != "openai/whisper-large-v3" {
-		t.Errorf("model = %q", body.Model)
+	if body.Model != "google/chirp-3" {
+		t.Errorf("model = %q, want the selected OpenRouter catalogue id", body.Model)
 	}
 	if body.InputAudio.Format != "ogg" {
 		t.Errorf("format = %q, want ogg", body.InputAudio.Format)

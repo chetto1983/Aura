@@ -22,7 +22,7 @@ func voiceModelsServer(t *testing.T, seen *[]*http.Request) *http.Client {
 			http.NotFound(w, r)
 			return
 		}
-		_, _ = w.Write([]byte(`{"data":[{"id":"microsoft/mai-voice-2-flash"},{"id":"fish-audio/s1"}]}`))
+		_, _ = w.Write([]byte(`{"data":[{"id":"microsoft/mai-voice-2-flash","supported_voices":["en-US-Harper:MAI-Voice-2"]},{"id":"fish-audio/s1"}]}`))
 	}))
 	t.Cleanup(server.Close)
 	target, err := url.Parse(server.URL)
@@ -42,6 +42,9 @@ func TestVoiceCatalogRouteListsTheModalityFromTheOpenRouterRoute(t *testing.T) {
 	}
 	if len(models) != 2 || models[0].ID != "fish-audio/s1" || models[1].ID != "microsoft/mai-voice-2-flash" {
 		t.Fatalf("models = %+v, want both ids sorted", models)
+	}
+	if got := models[1].SupportedVoices; len(got) != 1 || got[0] != "en-US-Harper:MAI-Voice-2" {
+		t.Fatalf("supported voices = %v, want the OpenRouter model voice", got)
 	}
 	if len(seen) != 1 {
 		t.Fatalf("provider reads = %d, want 1", len(seen))

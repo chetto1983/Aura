@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // voiceCaps drives the real GET /api/voice/capabilities handler on a wired server and
@@ -54,16 +55,37 @@ func TestWireVoiceProviders_Mp3(t *testing.T) {
 // still maps TTSFormat=opus — building the web client never mutates the Telegram path.
 func TestWireVoiceProviders_OpusUntouched(t *testing.T) {
 	cfg := &config.Config{
-		TTSModel:  "hexgrad/kokoro-82m",
-		TTSVoice:  "if_sara",
-		TTSFormat: "opus", // the Telegram voice-note container (config default)
+		TTSModel:      "hexgrad/kokoro-82m",
+		TTSCloudVoice: "af_sarah",
+		TTSVoice:      "if_sara",
+		TTSFormat:     "opus", // the Telegram voice-note container (config default)
 	}
 	web := buildWebTTSClient(cfg)
 	if web == nil || web.AudioFormat() != "mp3" {
 		t.Fatalf("web TTS is not mp3: nil=%v", web == nil)
 	}
-	if tg := multimodalConfig(cfg); tg.TTSFormat != "opus" {
-		t.Fatalf("telegram TTSFormat = %q, want opus (untouched by the web mp3 override)", tg.TTSFormat)
+	if tg := multimodalConfig(cfg); tg.TTSFormat != "opus" || tg.TTSCloudVoice != "af_sarah" {
+		t.Fatalf("telegram TTS format/cloud voice = %q/%q, want opus/af_sarah", tg.TTSFormat, tg.TTSCloudVoice)
+	}
+}
+
+func TestBuildWebTTSClient_CloudUsesTheSelectedModelVoice(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		_, _ = w.Write([]byte("mp3-bytes"))
+	}))
+	defer ts.Close()
+
+	client := buildWebTTSClient(&config.Config{
+		TTSModel: "qwen/qwen-audio-3.0-tts-flash", TTSCloudVoice: "longanhuan_v3.6",
+		TTSVoice: "if_sara", LLM: llm.Config{BaseURL: ts.URL},
+	})
+	if _, err := client.Synthesize(t.Context(), "ciao"); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if gotBody["voice"] != "longanhuan_v3.6" {
+		t.Fatalf("cloud voice = %v, want longanhuan_v3.6 (never the local if_sara)", gotBody["voice"])
 	}
 }
 

@@ -53,7 +53,18 @@ func (s *Server) listVoiceModels(w http.ResponseWriter, r *http.Request, modalit
 	}
 	out := mediaCatalogDTO{Models: make([]mediaCatalogModelDTO, 0, len(models))}
 	for _, model := range models {
-		out.Models = append(out.Models, mediaCatalogModelDTO{ID: model.ID, Kind: modality})
+		row := mediaCatalogModelDTO{ID: model.ID, Kind: modality}
+		if modality == voiceModalitySpeech {
+			// OpenRouter requires a model-specific voice on /audio/speech (documented at
+			// https://openrouter.ai/docs/guides/overview/multimodal/tts). A row with no
+			// published voice cannot be made valid by Aura's generic picker, so do not offer
+			// it as though selecting the model alone were sufficient.
+			if len(model.SupportedVoices) == 0 {
+				continue
+			}
+			row.Voices = model.SupportedVoices
+		}
+		out.Models = append(out.Models, row)
 	}
 	writeJSON(w, out)
 }

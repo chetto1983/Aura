@@ -50,6 +50,7 @@ type mediaCatalogModelDTO struct {
 	ImageToVideo       *bool    `json:"image_to_video,omitempty"`
 	SecondMinUSD       *float64 `json:"second_min_usd,omitempty"`
 	SecondMaxUSD       *float64 `json:"second_max_usd,omitempty"`
+	Voices             []string `json:"voices,omitempty"`
 	HasPrice           bool     `json:"has_price"`
 }
 

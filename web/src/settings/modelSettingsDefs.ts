@@ -29,6 +29,7 @@ export type SettingsKey =
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_TTS_MODEL'
+  | 'AURA_TTS_CLOUD_VOICE'
   | 'AURA_STT_CLOUD_MODEL'
   | 'AURA_IMAGE_MODEL'
   | 'AURA_VIDEO_MODEL';
@@ -165,6 +166,7 @@ export const BACKEND_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_EMBED_MODEL', kind: 'string', labelKey: 'settings.fields.embedModel' },
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
+  { key: 'AURA_TTS_CLOUD_VOICE', kind: 'string', labelKey: 'settings.fields.ttsCloudVoice' },
 ];
 
 export const ALL_SETTINGS: readonly SettingDef[] = [

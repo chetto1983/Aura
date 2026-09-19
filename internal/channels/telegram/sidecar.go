@@ -22,7 +22,8 @@ type MultimodalConfig struct {
 	TTSFormat  string
 	TTSCaption string
 	// TTSModel — AURA_TTS_MODEL — cloud TTS model; empty = local Kokoro sidecar.
-	TTSModel string
+	TTSModel      string
+	TTSCloudVoice string
 
 	// OpenRouterBaseURL/APIKey are the shared cloud endpoint + key (the same
 	// credential the agent loop uses), used by the cloud TTS leg. The key is set ONLY

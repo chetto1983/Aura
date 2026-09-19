@@ -70,6 +70,7 @@ func TestTTSCloudModelAndBearer(t *testing.T) {
 	c := NewTTSClient(TTSConfig{
 		CloudModel:        "hexgrad/kokoro-82m",
 		Voice:             "if_sara",
+		CloudVoice:        "af_sarah",
 		OpenRouterBaseURL: srv.URL,
 		OpenRouterAPIKey:  "shared-key",
 		HTTPClient:        srv.Client(),
@@ -82,6 +83,29 @@ func TestTTSCloudModelAndBearer(t *testing.T) {
 	}
 	if req["model"] != "hexgrad/kokoro-82m" {
 		t.Errorf("model = %v, want hexgrad/kokoro-82m", req["model"])
+	}
+	if req["voice"] != "af_sarah" {
+		t.Errorf("voice = %v, want the model-specific cloud voice af_sarah", req["voice"])
+	}
+}
+
+func TestTTSCloudVoiceFallsBackForExistingKokoroConfig(t *testing.T) {
+	var req map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req = decodeTTSReq(t, r)
+		_, _ = w.Write([]byte("MP3"))
+	}))
+	defer srv.Close()
+
+	c := NewTTSClient(TTSConfig{
+		CloudModel: "hexgrad/kokoro-82m", Voice: "if_sara",
+		OpenRouterBaseURL: srv.URL, HTTPClient: srv.Client(),
+	})
+	if _, err := c.Synthesize(t.Context(), "hi"); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	if req["voice"] != "if_sara" {
+		t.Errorf("voice = %v, want the legacy TTS_VOICE fallback if_sara", req["voice"])
 	}
 }
 

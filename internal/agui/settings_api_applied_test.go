@@ -40,6 +40,7 @@ func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 		"AURA_EMBED_MODEL":     appliedBoot,
 		"AURA_LOOP_MAX_STEPS":  appliedLive,
 		"AURA_TTS_MODEL":       appliedBoot,
+		"AURA_TTS_CLOUD_VOICE": appliedBoot,
 	}
 	for _, item := range got.Settings {
 		if state, ok := want[item.Key]; ok && item.Applied != state {

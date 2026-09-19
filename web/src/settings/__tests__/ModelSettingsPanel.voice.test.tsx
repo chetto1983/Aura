@@ -20,7 +20,7 @@ function setting(key: string, value: string) {
   };
 }
 
-function settingsBody(provider: string, baseURL: string, stt = '', tts = '') {
+function settingsBody(provider: string, baseURL: string, stt = '', tts = '', ttsVoice = '') {
   return {
     restart_required: false,
     restart_keys: [],
@@ -29,6 +29,7 @@ function settingsBody(provider: string, baseURL: string, stt = '', tts = '') {
       setting('AURA_LLM_BASE_URL', baseURL),
       setting('AURA_STT_CLOUD_MODEL', stt),
       setting('AURA_TTS_MODEL', tts),
+      setting('AURA_TTS_CLOUD_VOICE', ttsVoice),
     ],
   };
 }
@@ -40,7 +41,20 @@ const TRANSCRIPTION_BODY = {
   ],
 };
 const SPEECH_BODY = {
-  models: [{ kind: 'speech', id: 'microsoft/mai-voice-2-flash', has_price: false }],
+  models: [
+    {
+      kind: 'speech',
+      id: 'microsoft/mai-voice-2-flash',
+      voices: ['en-US-Harper:MAI-Voice-2'],
+      has_price: false,
+    },
+    {
+      kind: 'speech',
+      id: 'qwen/qwen-audio-3.0-tts-flash',
+      voices: ['loongjohn', 'longanhuan_v3.6'],
+      has_price: false,
+    },
+  ],
 };
 
 function json(body: unknown): Response {
@@ -119,7 +133,7 @@ describe('ModelSettingsPanel voice models', () => {
     });
     await waitFor(() => {
       expect(
-        within(fieldCard('Text-to-speech model')).getByText(/1 model published here/),
+        within(fieldCard('Text-to-speech model')).getByText(/2 models published here/),
       ).toBeTruthy();
     });
     expect(gets).toEqual(['/api/settings/transcription-models', '/api/settings/speech-models']);
@@ -135,6 +149,7 @@ describe('ModelSettingsPanel voice models', () => {
         'https://openrouter.ai/api/v1',
         'google/chirp-3',
         'qwen/qwen-audio-3.0-tts-flash',
+        'longanhuan_v3.6',
       ),
     );
     renderBackends();
@@ -159,6 +174,34 @@ describe('ModelSettingsPanel voice models', () => {
       expect(writes).toEqual([
         { key: 'AURA_STT_CLOUD_MODEL', value: '' },
         { key: 'AURA_TTS_MODEL', value: '' },
+        { key: 'AURA_TTS_CLOUD_VOICE', value: '' },
+      ]);
+    });
+  });
+
+  it('selects a supported OpenRouter voice with the TTS model and saves both', async () => {
+    const { writes } = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+    renderBackends();
+
+    const tts = await screen.findByLabelText('Text-to-speech model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Text-to-speech model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    fireEvent.click(tts);
+    fireEvent.click(screen.getByRole('option', { name: /qwen\/qwen-audio-3\.0-tts-flash/ }));
+
+    const voice = screen.getByLabelText('Text-to-speech cloud voice');
+    expect(voice.textContent).toContain('loongjohn');
+    fireEvent.click(voice);
+    fireEvent.click(screen.getByRole('option', { name: /longanhuan_v3\.6/ }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    await waitFor(() => {
+      expect(writes).toEqual([
+        { key: 'AURA_TTS_MODEL', value: 'qwen/qwen-audio-3.0-tts-flash' },
+        { key: 'AURA_TTS_CLOUD_VOICE', value: 'longanhuan_v3.6' },
       ]);
     });
   });

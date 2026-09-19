@@ -12,7 +12,9 @@ import (
 // text is POSTed to the local aura-tts (Kokoro) sidecar at
 // LocalBaseURL+"/audio/speech" (no model id — Kokoro is single-model and selects
 // the voice via the Voice field, no auth). Set CloudModel to swap to OpenRouter's
-// /audio/speech with the shared Bearer key + the cloud model id. Both arms speak
+// /audio/speech with the shared Bearer key + the cloud model id and its own CloudVoice.
+// OpenRouter requires a model-specific voice (the catalogue's supported_voices); see
+// https://openrouter.ai/docs/guides/overview/multimodal/tts. Both arms speak
 // OpenAI /audio/speech, so the base already carries any version segment and only
 // "/audio/speech" is appended (no /v1 doubling).
 type TTSConfig struct {
@@ -20,6 +22,7 @@ type TTSConfig struct {
 	Voice             string
 	Format            string // response_format (e.g. "opus"); defaults to "opus"
 	CloudModel        string
+	CloudVoice        string
 	OpenRouterBaseURL string
 	OpenRouterAPIKey  string
 	TimeoutSec        int
@@ -72,7 +75,7 @@ func (c *TTSClient) Synthesize(ctx context.Context, text string) ([]byte, error)
 	body, err := json.Marshal(ttsRequest{
 		Model:          model,
 		Input:          text,
-		Voice:          c.cfg.Voice,
+		Voice:          c.voice(model),
 		ResponseFormat: c.AudioFormat(),
 	})
 	if err != nil {
@@ -95,6 +98,17 @@ func (c *TTSClient) Synthesize(ctx context.Context, text string) ([]byte, error)
 		return nil, &StatusError{Endpoint: "tts", StatusCode: resp.StatusCode}
 	}
 	return io.ReadAll(resp.Body)
+}
+
+// voice keeps the local Kokoro voice and the OpenRouter model voice independent. Voice ids
+// are model-specific on OpenRouter; reusing TTS_VOICE there is what made every cloud model
+// except Kokoro fail with an upstream 4xx. An empty cloud value retains the legacy fallback
+// for existing deployments that already pair hexgrad/kokoro-82m with if_sara.
+func (c *TTSClient) voice(cloudModel string) string {
+	if cloudModel != "" && c.cfg.CloudVoice != "" {
+		return c.cfg.CloudVoice
+	}
+	return c.cfg.Voice
 }
 
 // route is the SINGLE config-only TTS branch. Cloud (CloudModel set) → OpenRouter

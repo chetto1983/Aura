@@ -39,6 +39,7 @@ type ModelCatalogEntry struct {
 	TopProviderContextWindow int
 	Price                    Price
 	HasPrice                 bool
+	SupportedVoices          []string
 }
 
 // FetchModelCatalog returns the models baseURL publishes, sorted by id. The API key is
@@ -103,7 +104,20 @@ func FetchOutputModalityCatalog(
 	entries := make([]ModelCatalogEntry, 0, len(wire.Data))
 	for _, m := range wire.Data {
 		if id := strings.TrimSpace(m.ID); id != "" {
-			entries = append(entries, ModelCatalogEntry{ID: id})
+			entry := ModelCatalogEntry{ID: id}
+			seen := make(map[string]struct{}, len(m.SupportedVoices))
+			for _, rawVoice := range m.SupportedVoices {
+				voice := strings.TrimSpace(rawVoice)
+				if voice == "" {
+					continue
+				}
+				if _, duplicate := seen[voice]; duplicate {
+					continue
+				}
+				seen[voice] = struct{}{}
+				entry.SupportedVoices = append(entry.SupportedVoices, voice)
+			}
+			entries = append(entries, entry)
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })

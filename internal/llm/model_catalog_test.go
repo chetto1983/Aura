@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -138,7 +139,7 @@ func TestFetchOutputModalityCatalogFiltersByModalityWithoutACredential(t *testin
 		}
 		query, auth = r.URL.RawQuery, r.Header.Get("Authorization")
 		_, _ = w.Write([]byte(`{"data":[{"id":"qwen/qwen3-asr-1.7b","pricing":{"prompt":"0.0000075"}},
-			{"id":"  "},{"id":"microsoft/mai-transcribe-2"}]}`))
+			{"id":"  "},{"id":"microsoft/mai-transcribe-2","supported_voices":[" alloy ","","alloy","nova"]}]}`))
 	}))
 	t.Cleanup(srv.Close)
 
@@ -153,8 +154,12 @@ func TestFetchOutputModalityCatalogFiltersByModalityWithoutACredential(t *testin
 		t.Fatalf("Authorization = %q, want none on a public list", auth)
 	}
 	// Sorted, the blank id dropped, and no price: the rate has no unit in the payload.
-	want := []ModelCatalogEntry{{ID: "microsoft/mai-transcribe-2"}, {ID: "qwen/qwen3-asr-1.7b"}}
-	if len(entries) != len(want) || entries[0] != want[0] || entries[1] != want[1] {
+	want := []ModelCatalogEntry{
+		{ID: "microsoft/mai-transcribe-2", SupportedVoices: []string{"alloy", "nova"}},
+		{ID: "qwen/qwen3-asr-1.7b"},
+	}
+	if len(entries) != len(want) || entries[0].ID != want[0].ID || entries[1].ID != want[1].ID ||
+		!slices.Equal(entries[0].SupportedVoices, want[0].SupportedVoices) || entries[1].SupportedVoices != nil {
 		t.Fatalf("entries = %+v, want %+v", entries, want)
 	}
 }
