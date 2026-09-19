@@ -253,11 +253,11 @@ describe('exportVideo', () => {
     expect(state.disposed).toBe(1);
   });
 
-  it('fails an export that wrote no bytes, and still releases the file', async () => {
+  it('reports an export that wrote no bytes as empty, and still releases the file', async () => {
     state.writesBytes = false;
     await expect(
       exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), new AbortController().signal),
-    ).rejects.toThrow('the export produced no bytes');
+    ).resolves.toEqual({ kind: 'empty' });
     expect(state.disposed).toBe(1);
   });
 

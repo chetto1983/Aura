@@ -28,9 +28,12 @@ export interface VideoInfo {
   readonly hasAudio: boolean;
 }
 
+/** `empty`: the conversion ran and wrote nothing. A kind rather than an Error, so the editor
+ *  words it in the operator's language instead of showing this file's English. */
 export type ExportResult =
   | { readonly kind: 'done'; readonly blob: Blob }
   | { readonly kind: 'blocked'; readonly tracks: readonly BlockedTrack[] }
+  | { readonly kind: 'empty' }
   | { readonly kind: 'canceled' };
 
 const CANCELED: ExportResult = { kind: 'canceled' };
@@ -136,7 +139,7 @@ export async function exportVideo(
       return CANCELED;
     }
     const buffer = output.target.buffer;
-    if (buffer === null) throw new Error('the export produced no bytes');
+    if (buffer === null) return { kind: 'empty' };
     return { kind: 'done', blob: new Blob([buffer], { type: output.format.mimeType }) };
   } finally {
     input.dispose();

@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import '../../i18n/i18n';
+import i18n from '../../i18n/i18n';
 import type { Asset } from '../../chat/attachments/types';
 
 const media = vi.hoisted(() => ({
@@ -49,7 +49,7 @@ beforeEach(() => {
 
 async function mount(onClose = vi.fn()) {
   const view = render(<VideoEditor asset={ASSET} source={new Blob()} onClose={onClose} />);
-  await screen.findByRole('slider', { name: 'Start of the selection' });
+  await screen.findByRole('slider', { name: i18n.t('mediaEdit.video.startHandle') });
   return view;
 }
 
@@ -247,6 +247,22 @@ describe('VideoEditor', () => {
       expect(downloadBlob).toHaveBeenCalledTimes(1);
     });
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it.each([
+    ['en', 'The export produced an empty file.'],
+    ['it', "L'esportazione ha prodotto un file vuoto."],
+  ])('words an empty export in %s and downloads nothing', async (language, sentence) => {
+    media.exportVideo.mockResolvedValue({ kind: 'empty' });
+    await i18n.changeLanguage(language);
+    try {
+      await mount();
+      fireEvent.click(screen.getByRole('button', { name: i18n.t('mediaEdit.video.save') }));
+      expect((await screen.findByRole('alert')).textContent).toBe(sentence);
+      expect(downloadBlob).not.toHaveBeenCalled();
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   it('says so when the clip cannot be opened', async () => {

@@ -135,6 +135,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
         controller.signal,
       );
       if (result.kind === 'blocked') setProblem(blockedSentence(result.tracks));
+      if (result.kind === 'empty') setProblem(t('mediaEdit.video.emptyExport'));
       if (result.kind === 'done') {
         downloadBlob(
           result.blob,
