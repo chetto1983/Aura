@@ -137,6 +137,18 @@ describe('VideoTimeline on a degenerate clip', () => {
 });
 
 describe('TimeField', () => {
+  it('commits on Enter and on no other key', () => {
+    const onCommit = vi.fn();
+    render(<TimeField label="End" value={4} onCommit={onCommit} />);
+    const input = screen.getByLabelText<HTMLInputElement>('End');
+    input.focus();
+    fireEvent.change(input, { target: { value: '00:05.5' } });
+    fireEvent.keyDown(input, { key: 'Tab' });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(5.5);
+  });
+
   it('commits a valid time on blur and restores an invalid one', () => {
     const onCommit = vi.fn();
     render(<TimeField label="Start" value={2} onCommit={onCommit} />);
