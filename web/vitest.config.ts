@@ -17,6 +17,9 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['./src/test/setup.ts'],
+    // react-filerobot-image-editor ships ESM `lib/*.js` without "type": "module"; Node would
+    // read it as CommonJS. Inlining lets Vite transform it (the parity test imports its table).
+    server: { deps: { inline: ['react-filerobot-image-editor'] } },
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
