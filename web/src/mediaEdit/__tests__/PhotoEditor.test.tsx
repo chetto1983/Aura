@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
 import type { Asset } from '../../chat/attachments/types';
 import { StudioError } from '../../studio/studioApi';
+import { studioKeys } from '../../studio/useStudio';
 import { FILEROBOT_IT } from '../filerobotSetup';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
@@ -68,8 +69,26 @@ const ASSET: Asset = {
   size_bytes: 10,
 };
 
-function mount(onClose = vi.fn()) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function newClient() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
+/** A library answer the test gives later: `answer(error)` settles the pending refetch. */
+function pendingLibrary() {
+  let answer: (error: unknown) => void = () => undefined;
+  listStudioLibrary.mockReturnValue(
+    new Promise((_resolve, reject) => {
+      answer = reject;
+    }),
+  );
+  return (error: unknown) => {
+    answer(error);
+  };
+}
+
+const STUDIO_OFF = 'The Studio is not active: download the photo instead.';
+
+function mount(onClose = vi.fn(), client = newClient()) {
   render(
     <QueryClientProvider client={client}>
       <PhotoEditor asset={ASSET} source={new Blob()} onClose={onClose} />
@@ -141,14 +160,52 @@ describe('PhotoEditor', () => {
   it('disables Save to library when the Studio is not active', async () => {
     listStudioLibrary.mockRejectedValue(new StudioError(503, '', 'studio unavailable'));
     mount();
-    expect(
-      await screen.findByText('The Studio is not active: download the photo instead.'),
-    ).toBeTruthy();
+    expect(await screen.findByText(STUDIO_OFF)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Save to library' })).toHaveProperty(
       'disabled',
       true,
     );
     expect(screen.getByRole('button', { name: 'Download' })).toHaveProperty('disabled', false);
+  });
+
+  it('keeps Save to library off until the Studio answers afresh, and off on a 503', async () => {
+    const answer = pendingLibrary();
+    const client = newClient();
+    client.setQueryData(studioKeys.library(), []);
+    mount(vi.fn(), client);
+    const save = await screen.findByRole('button', { name: 'Save to library' });
+    await waitFor(() => {
+      expect(listStudioLibrary).toHaveBeenCalled();
+    });
+    expect(save).toHaveProperty('disabled', true);
+    answer(new StudioError(503, '', 'studio unavailable'));
+    expect(await screen.findByText(STUDIO_OFF)).toBeTruthy();
+    expect(save).toHaveProperty('disabled', true);
+    expect(uploadStudioFrame).not.toHaveBeenCalled();
+  });
+
+  it('holds a library Retry while the Studio is asked again', async () => {
+    uploadStudioFrame.mockRejectedValueOnce(new Error('network down'));
+    const client = newClient();
+    mount(vi.fn(), client);
+    const save = await screen.findByRole('button', { name: 'Save to library' });
+    await waitFor(() => {
+      expect(save).toHaveProperty('disabled', false);
+    });
+    fireEvent.click(save);
+    await screen.findByRole('alert');
+    const answer = pendingLibrary();
+    act(() => {
+      void client.invalidateQueries({ queryKey: studioKeys.library() });
+    });
+    const retry = screen.getByRole('button', { name: 'Retry' });
+    await waitFor(() => {
+      expect(retry).toHaveProperty('disabled', true);
+    });
+    answer(new StudioError(503, '', 'studio unavailable'));
+    expect(await screen.findByText(STUDIO_OFF)).toBeTruthy();
+    expect(retry).toHaveProperty('disabled', true);
+    expect(uploadStudioFrame).toHaveBeenCalledTimes(1);
   });
 
   it('shows the server sentence on a failed upload and retries', async () => {

@@ -50,6 +50,9 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
   const [confirmClose, setConfirmClose] = useState(false);
 
   const studioOff = library.error instanceof StudioError && library.error.status === 503;
+  // Cached rows say nothing about the Studio now: upload only after a fresh answer that is not a
+  // refusal, so a background refetch that ends in 503 never races an orphan upload.
+  const studioReady = library.isSuccess && !library.isFetching;
   const extension = imageExtension(asset.mime_type);
   const base = editedBase(asset.file_name, t('mediaEdit.suffix.image'));
   const fileName = `${base}.${extension}`;
@@ -120,7 +123,7 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
         <Button
           type="button"
           size="sm"
-          disabled={saving || studioOff || library.isPending}
+          disabled={saving || !studioReady}
           onClick={() => void saveToLibrary()}
         >
           <Library aria-hidden="true" className="size-4" />
@@ -146,6 +149,7 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
             type="button"
             variant="ghost"
             size="sm"
+            disabled={state.action === 'library' && !studioReady}
             onClick={() => void (state.action === 'download' ? download() : saveToLibrary())}
           >
             {t('mediaEdit.photo.retry')}
