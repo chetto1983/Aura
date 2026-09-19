@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
+import { useObjectUrl } from '@/mediaEdit/useObjectUrl';
 
 // The picture itself, for the two places an image attachment is shown.
 //
@@ -27,7 +28,7 @@ export function LocalImagePreview({
   readonly file: File;
   readonly className?: string | undefined;
 }) {
-  return <AttachmentImage src={useObjectURL(file)} alt={file.name} className={className} />;
+  return <AttachmentImage src={useObjectUrl(file)} alt={file.name} className={className} />;
 }
 
 export function RemoteImagePreview({
@@ -71,21 +72,4 @@ function AttachmentImage({
       className={className}
     />
   );
-}
-
-/** An object URL for file, revoked when the file changes or the chip unmounts.
- *
- * Derived rather than stored: creating it in an effect and pushing it through setState
- * costs a paint with no image in it, and the effect would be writing state the render
- * could have computed. The effect is left with the only job that genuinely belongs to it
- * -- releasing the blob, which otherwise lives as long as the tab does. */
-function useObjectURL(file: File): string {
-  const url = useMemo(() => URL.createObjectURL(file), [file]);
-  useEffect(
-    () => () => {
-      URL.revokeObjectURL(url);
-    },
-    [url],
-  );
-  return url;
 }

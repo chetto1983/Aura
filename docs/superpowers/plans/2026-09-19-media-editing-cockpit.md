@@ -899,7 +899,7 @@ git commit -m "feat(media-edit): give Filerobot Aura's Italian, colours and prop
   `MediaEditorLayer({ label: string; onEscape: () => void; children: ReactNode })`;
   `useObjectUrl(blob: Blob): string`; `downloadBlob(blob: Blob, fileName: string): void`.
 
-- [ ] **Step 1: Add the strings**
+- [x] **Step 1: Add the strings**
 
 `web/src/i18n/resources.mediaEdit.ts`:
 ```ts
@@ -1023,7 +1023,7 @@ export const mediaEditIt = {
 In `web/src/i18n/resources.ts` add the import beside the others
 `import { mediaEditEn, mediaEditIt } from './resources.mediaEdit';` and spread `...mediaEditEn,` right after `...studioEn,` and `...mediaEditIt,` right after `...studioIt,`.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `web/src/mediaEdit/__tests__/MediaEditorLayer.test.tsx`:
 ```tsx
@@ -1119,12 +1119,12 @@ describe('downloadBlob', () => {
 });
 ```
 
-- [ ] **Step 3: Run them to verify they fail**
+- [x] **Step 3: Run them to verify they fail**
 
 Run: `npx vitest run src/mediaEdit/__tests__/MediaEditorLayer.test.tsx src/mediaEdit/__tests__/download.test.ts`
 Expected: FAIL — unresolved imports.
 
-- [ ] **Step 4: Implement**
+- [x] **Step 4: Implement**
 
 `web/src/mediaEdit/MediaEditorLayer.tsx`:
 ```tsx
@@ -1214,12 +1214,12 @@ export function downloadBlob(blob: Blob, fileName: string): void {
 }
 ```
 
-- [ ] **Step 5: Run them to verify they pass, plus the i18n gates**
+- [x] **Step 5: Run them to verify they pass, plus the i18n gates**
 
 Run: `npx vitest run src/mediaEdit/__tests__ src/i18n/__tests__`
 Expected: PASS, including `resources.parity.test.ts`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/i18n/resources.mediaEdit.ts web/src/i18n/resources.ts web/src/mediaEdit/MediaEditorLayer.tsx web/src/mediaEdit/useObjectUrl.ts web/src/mediaEdit/download.ts web/src/mediaEdit/__tests__/MediaEditorLayer.test.tsx web/src/mediaEdit/__tests__/download.test.ts
