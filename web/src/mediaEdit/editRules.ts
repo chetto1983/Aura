@@ -76,7 +76,8 @@ export function conversionOptions(edit: VideoEdit): EditConversion {
 
 export interface BlockedTrack {
   readonly type: 'video' | 'audio';
-  readonly codec: string;
+  /** `null` when the track declares no codec; the UI words that in the operator's language. */
+  readonly codec: string | null;
   readonly reason: DiscardedTrack['reason'];
 }
 
@@ -88,7 +89,7 @@ export function blockingDiscards(discarded: readonly DiscardedTrack[]): BlockedT
     if (reason === 'discarded_by_user') continue;
     if (track.type !== 'video' && track.type !== 'audio') continue;
     // oxlint-disable-next-line typescript/no-deprecated -- getCodec() is async; this guard runs synchronously right after Conversion.init and only names the codec for the operator.
-    blocked.push({ type: track.type, codec: track.codec ?? 'unknown', reason });
+    blocked.push({ type: track.type, codec: track.codec, reason });
   }
   return blocked;
 }

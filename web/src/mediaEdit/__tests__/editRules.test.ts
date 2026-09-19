@@ -92,7 +92,7 @@ describe('blockingDiscards', () => {
       ]),
     ).toEqual([
       { type: 'video', codec: 'hevc', reason: 'undecodable_source_codec' },
-      { type: 'audio', codec: 'unknown', reason: 'no_encodable_target_codec' },
+      { type: 'audio', codec: null, reason: 'no_encodable_target_codec' },
     ]);
   });
 });
