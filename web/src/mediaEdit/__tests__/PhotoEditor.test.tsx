@@ -9,7 +9,10 @@ import { FILEROBOT_IT } from '../filerobotSetup';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgo=';
 const exportImage = vi.hoisted(() => vi.fn());
-const seen = vi.hoisted(() => ({ props: undefined as Record<string, unknown> | undefined }));
+const seen = vi.hoisted(() => ({
+  props: undefined as Record<string, unknown> | undefined,
+  sources: [] as unknown[],
+}));
 
 vi.mock('react-filerobot-image-editor', () => ({
   TABS: {
@@ -21,10 +24,12 @@ vi.mock('react-filerobot-image-editor', () => ({
   },
   TOOLS: { CROP: 'Crop' },
   default: function FakeFilerobot(props: {
+    source: unknown;
     getCurrentImgDataFnRef: { current?: unknown };
     onModify: () => void;
   }) {
     seen.props = props;
+    seen.sources.push(props.source);
     useEffect(() => {
       props.getCurrentImgDataFnRef.current = exportImage;
     });
@@ -74,6 +79,7 @@ function mount(onClose = vi.fn()) {
 }
 
 beforeEach(() => {
+  seen.sources = [];
   Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:photo'), revokeObjectURL: vi.fn() });
   exportImage.mockReset().mockReturnValue({
     imageData: { imageBase64: PNG, mimeType: 'image/png' },
@@ -99,6 +105,12 @@ describe('PhotoEditor', () => {
       removeSaveButton: true,
       source: 'blob:photo',
     });
+  });
+
+  it('opens Filerobot only once the photo has a URL', async () => {
+    mount();
+    await screen.findByText('fake edit');
+    expect(seen.sources).not.toContain(undefined);
   });
 
   it('downloads the edited photo under the edited name', async () => {

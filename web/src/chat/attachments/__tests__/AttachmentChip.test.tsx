@@ -68,7 +68,7 @@ describe('AttachmentChip', () => {
 
   // An image is shown, not named: the question a composer preview answers is "is that the
   // right screenshot?", which a filename answers badly.
-  it('previews an image attachment instead of listing its name', () => {
+  it('previews an image attachment instead of listing its name', async () => {
     const file = new File(['x'], 'shot.png', { type: 'image/png' });
     render(
       <AttachmentChip
@@ -83,7 +83,7 @@ describe('AttachmentChip', () => {
       />,
     );
 
-    const image = screen.getByAltText('shot.png');
+    const image = await screen.findByAltText('shot.png');
     expect(image.tagName).toBe('IMG');
     expect(image.getAttribute('src')).toContain('blob:');
     expect(screen.queryByText('shot.png')).toBeNull();

@@ -9,6 +9,18 @@ const media = vi.hoisted(() => ({
   exportVideo: vi.fn(),
 }));
 vi.mock('../videoMedia', () => media);
+// The real hook always runs; `pending` withholds its URL to show what the editor draws before
+// the URL exists, which the async probe otherwise hides.
+const objectUrl = vi.hoisted(() => ({ pending: false }));
+vi.mock('../useObjectUrl', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../useObjectUrl')>();
+  return {
+    useObjectUrl: (blob: Blob) => {
+      const url = real.useObjectUrl(blob);
+      return objectUrl.pending ? undefined : url;
+    },
+  };
+});
 const downloadBlob = vi.hoisted(() => vi.fn());
 vi.mock('../download', () => ({ downloadBlob }));
 
@@ -25,6 +37,7 @@ const ASSET: Asset = {
 };
 
 beforeEach(() => {
+  objectUrl.pending = false;
   Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:source'), revokeObjectURL: vi.fn() });
   media.probeVideo.mockResolvedValue({ duration: 10, width: 1280, height: 720, hasAudio: true });
   media.exportVideo.mockResolvedValue({
@@ -40,6 +53,13 @@ async function mount() {
 }
 
 describe('VideoEditor', () => {
+  it('draws the preview only once the clip has a URL', async () => {
+    objectUrl.pending = true;
+    await mount();
+    expect(screen.getByRole('status').textContent).toBe('Opening the file…');
+    expect(document.querySelector('video')).toBeNull();
+  });
+
   it('saves the whole clip untouched by default and downloads it', async () => {
     await mount();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));

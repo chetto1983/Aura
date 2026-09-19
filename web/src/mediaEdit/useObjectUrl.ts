@@ -1,30 +1,32 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useState } from 'react';
 
-interface PendingRevoke {
+interface Minted {
+  readonly blob: Blob;
   readonly url: string;
-  readonly timer: ReturnType<typeof setTimeout>;
 }
 
-/** An object URL for `blob`, revoked when the blob changes or the component unmounts.
+/** An object URL for `blob`, or `undefined` until the component has committed: callers draw
+ *  nothing (or their loading state) until then.
  *
- * Derived rather than stored: minting it in an effect and pushing it through setState costs a
- * paint with nothing in it. The revoke waits one task because Strict Mode runs every effect's
- * cleanup and then the effect again on the same memoised URL; that second run takes the pending
- * revoke back, so the URL on screen is never a dead one. (Strict Mode also calls the memo twice
- * and drops one URL unrevoked — a development-only leak React's double render imposes.) */
-export function useObjectUrl(blob: Blob): string {
-  const url = useMemo(() => URL.createObjectURL(blob), [blob]);
-  const pendingRevoke = useRef<PendingRevoke>(undefined);
+ *  The URL is minted in an effect, never during render. A render React throws away — Strict
+ *  Mode's second pass, an abandoned concurrent render — would otherwise mint a URL nobody
+ *  revokes, pinning the whole blob for the life of the tab. The effect's cleanup revokes what
+ *  that effect minted. */
+export function useObjectUrl(blob: Blob): string | undefined {
+  const [minted, setMinted] = useState<Minted>();
   useEffect(() => {
-    if (pendingRevoke.current?.url === url) clearTimeout(pendingRevoke.current.timer);
+    const url = URL.createObjectURL(blob);
+    let current = true;
+    // Published outside the effect body, like useBlobPreview: a run already cleaned up (Strict
+    // Mode's first effect) publishes nothing.
+    queueMicrotask(() => {
+      if (current) setMinted({ blob, url });
+    });
     return () => {
-      pendingRevoke.current = {
-        url,
-        timer: setTimeout(() => {
-          URL.revokeObjectURL(url);
-        }, 0),
-      };
+      current = false;
+      URL.revokeObjectURL(url);
     };
-  }, [url]);
-  return url;
+  }, [blob]);
+  // A URL minted for an earlier blob is already revoked: never hand it out.
+  return minted?.blob === blob ? minted.url : undefined;
 }

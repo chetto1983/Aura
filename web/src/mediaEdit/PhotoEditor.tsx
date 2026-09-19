@@ -153,27 +153,33 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
         </div>
       ) : null}
       <div className="min-h-0 flex-1">
-        <StyleSheetManager shouldForwardProp={forwardDomProp}>
-          <FilerobotImageEditor
-            source={url}
-            savingPixelRatio={1}
-            previewPixelRatio={window.devicePixelRatio || 1}
-            useBackendTranslations={false}
-            language={translations === undefined ? 'en' : 'it'}
-            {...(translations === undefined ? {} : { translations })}
-            theme={theme}
-            tabsIds={[TABS.ADJUST, TABS.FINETUNE, TABS.FILTERS, TABS.ANNOTATE, TABS.RESIZE]}
-            defaultTabId={TABS.ADJUST}
-            defaultToolId={TOOLS.CROP}
-            Rotate={{ angle: 90, componentType: 'buttons' }}
-            removeSaveButton
-            getCurrentImgDataFnRef={exportRef}
-            onModify={() => {
-              setDirty(true);
-              setState((current) => (current.kind === 'saved' ? { kind: 'idle' } : current));
-            }}
-          />
-        </StyleSheetManager>
+        {url === undefined ? (
+          <p role="status" className="p-4 text-sm text-text-muted">
+            {t('mediaEdit.loading')}
+          </p>
+        ) : (
+          <StyleSheetManager shouldForwardProp={forwardDomProp}>
+            <FilerobotImageEditor
+              source={url}
+              savingPixelRatio={1}
+              previewPixelRatio={window.devicePixelRatio || 1}
+              useBackendTranslations={false}
+              language={translations === undefined ? 'en' : 'it'}
+              {...(translations === undefined ? {} : { translations })}
+              theme={theme}
+              tabsIds={[TABS.ADJUST, TABS.FINETUNE, TABS.FILTERS, TABS.ANNOTATE, TABS.RESIZE]}
+              defaultTabId={TABS.ADJUST}
+              defaultToolId={TOOLS.CROP}
+              Rotate={{ angle: 90, componentType: 'buttons' }}
+              removeSaveButton
+              getCurrentImgDataFnRef={exportRef}
+              onModify={() => {
+                setDirty(true);
+                setState((current) => (current.kind === 'saved' ? { kind: 'idle' } : current));
+              }}
+            />
+          </StyleSheetManager>
+        )}
       </div>
       <ConfirmDialog
         open={confirmClose}

@@ -218,7 +218,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
           <p role="alert" className="text-sm text-danger">
             {t('mediaEdit.loadFailed')}
           </p>
-        ) : frame === undefined ? (
+        ) : frame === undefined || url === undefined ? (
           <p role="status" className="text-sm text-text-muted">
             {t('mediaEdit.loading')}
           </p>

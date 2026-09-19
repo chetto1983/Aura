@@ -28,7 +28,10 @@ export function LocalImagePreview({
   readonly file: File;
   readonly className?: string | undefined;
 }) {
-  return <AttachmentImage src={useObjectUrl(file)} alt={file.name} className={className} />;
+  const url = useObjectUrl(file);
+  return url === undefined ? null : (
+    <AttachmentImage src={url} alt={file.name} className={className} />
+  );
 }
 
 export function RemoteImagePreview({
