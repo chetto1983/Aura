@@ -22,10 +22,10 @@ type MediaCatalogLister interface {
 	List(ctx context.Context, kind mediagen.Kind, refresh bool) ([]mediagen.Model, error)
 }
 
-// ErrMediaCatalogLocalRoute refuses the media catalogues on a llama.cpp, Ollama or other
-// non-OpenRouter route: generation is served by OpenRouter only.
+// ErrMediaCatalogLocalRoute refuses the media and voice catalogues on a llama.cpp, Ollama or
+// other non-OpenRouter route: generation and cloud speech are served by OpenRouter only.
 var ErrMediaCatalogLocalRoute = errors.New(
-	"image and video models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
+	"image, video and voice models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
 )
 
 // SetMediaCatalog wires the shared media catalog. Until set, both routes answer 503.

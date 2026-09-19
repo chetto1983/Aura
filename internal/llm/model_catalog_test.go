@@ -129,3 +129,44 @@ func TestFetchModelCatalogUnreachableIsWrapped(t *testing.T) {
 		t.Fatalf("err = %q, want the upstream status in the message", got)
 	}
 }
+
+func TestFetchOutputModalityCatalogFiltersByModalityWithoutACredential(t *testing.T) {
+	var query, auth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path = %s, want /v1/models", r.URL.Path)
+		}
+		query, auth = r.URL.RawQuery, r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"data":[{"id":"qwen/qwen3-asr-1.7b","pricing":{"prompt":"0.0000075"}},
+			{"id":"  "},{"id":"microsoft/mai-transcribe-2"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	entries, err := FetchOutputModalityCatalog(context.Background(), srv.Client(), srv.URL+"/v1", "transcription")
+	if err != nil {
+		t.Fatalf("FetchOutputModalityCatalog: %v", err)
+	}
+	if query != "output_modalities=transcription" {
+		t.Fatalf("query = %q, want output_modalities=transcription", query)
+	}
+	if auth != "" {
+		t.Fatalf("Authorization = %q, want none on a public list", auth)
+	}
+	// Sorted, the blank id dropped, and no price: the rate has no unit in the payload.
+	want := []ModelCatalogEntry{{ID: "microsoft/mai-transcribe-2"}, {ID: "qwen/qwen3-asr-1.7b"}}
+	if len(entries) != len(want) || entries[0] != want[0] || entries[1] != want[1] {
+		t.Fatalf("entries = %+v, want %+v", entries, want)
+	}
+}
+
+func TestFetchOutputModalityCatalogMarksAnUnreadableListUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	t.Cleanup(srv.Close)
+
+	_, err := FetchOutputModalityCatalog(context.Background(), srv.Client(), srv.URL+"/v1", "speech")
+	if !errors.Is(err, ErrModelCatalogUnavailable) || !strings.Contains(err.Error(), "503") {
+		t.Fatalf("err = %v, want ErrModelCatalogUnavailable carrying the status", err)
+	}
+}

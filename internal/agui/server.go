@@ -153,6 +153,7 @@ type Server struct {
 	// Nil in production: the handler builds its own client.
 	modelCatalog modelCatalogFetcher
 	mediaCatalog MediaCatalogLister
+	voiceCatalog VoiceCatalogLister
 	// studio serves the cockpit Studio's generation, history and library routes
 	// (studio_api.go); nil until SetStudio, and every Studio route then answers 503.
 	studio     StudioBackend

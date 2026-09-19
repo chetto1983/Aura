@@ -73,5 +73,13 @@ export function videoModelMeta(model: VideoCatalogModel, labels: MediaLabels): s
 /** Any picker row: an LLM row keeps its context and token-rate label. */
 export function modelRowMeta(row: ModelRow, freeLabel: string, labels: MediaLabels): string {
   if (!('kind' in row)) return modelMeta(row, freeLabel);
-  return row.kind === 'image' ? imageModelMeta(row, labels) : videoModelMeta(row, labels);
+  switch (row.kind) {
+    case 'image':
+      return imageModelMeta(row, labels);
+    case 'video':
+      return videoModelMeta(row, labels);
+    default:
+      // A voice row is its id: its rate is published without a unit.
+      return '';
+  }
 }

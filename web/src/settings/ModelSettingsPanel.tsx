@@ -113,6 +113,14 @@ export function ModelSettingsPanel({
   const savedRoute = `${savedProvider} ${savedBaseURL}`;
   const imageCatalog = useMediaModelCatalog('image', mediaEnabled, savedRoute);
   const videoCatalog = useMediaModelCatalog('video', mediaEnabled, savedRoute);
+  // The cloud STT and TTS models are rows of the backends pane, and the clients that use them
+  // ride the same saved OpenRouter route, so their lists are asked for on that route only.
+  const voiceEnabled =
+    loaded !== undefined &&
+    resolveProvider(savedProvider, savedBaseURL) === 'cloud' &&
+    groups.includes('backends');
+  const transcriptionCatalog = useMediaModelCatalog('transcription', voiceEnabled, savedRoute);
+  const speechCatalog = useMediaModelCatalog('speech', voiceEnabled, savedRoute);
 
   if (loadStatus === 'loading') {
     return (
@@ -149,6 +157,8 @@ export function ModelSettingsPanel({
     AURA_LLM_MODEL: { catalog, formatRow },
     AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
     AURA_VIDEO_MODEL: { catalog: videoCatalog, formatRow },
+    AURA_STT_CLOUD_MODEL: { catalog: transcriptionCatalog, formatRow },
+    AURA_TTS_MODEL: { catalog: speechCatalog, formatRow },
   };
 
   return (
@@ -210,7 +220,7 @@ export function ModelSettingsPanel({
             resetting={resetting}
             onValueChange={setValue}
             onReset={(key) => void resetSetting(key)}
-            pickers={group.id === 'routing' ? pickers : undefined}
+            pickers={pickers}
           />
         </section>
       ))}

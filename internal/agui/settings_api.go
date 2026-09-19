@@ -97,6 +97,8 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings/llm-models", s.handleListLLMModels)
 	mux.HandleFunc("GET /api/settings/image-models", s.handleListImageModels)
 	mux.HandleFunc("GET /api/settings/video-models", s.handleListVideoModels)
+	mux.HandleFunc("GET /api/settings/transcription-models", s.handleListTranscriptionModels)
+	mux.HandleFunc("GET /api/settings/speech-models", s.handleListSpeechModels)
 	mux.HandleFunc("PUT /api/settings/llm-profile", s.handlePutLLMProfile)
 	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
 	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)

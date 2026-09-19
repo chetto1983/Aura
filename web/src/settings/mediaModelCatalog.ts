@@ -1,6 +1,6 @@
 import { readJSON, type LLMCatalogModel } from './settingsApi';
 
-export type MediaKind = 'image' | 'video';
+export type MediaKind = 'image' | 'video' | 'transcription' | 'speech';
 
 // A capability or price the catalogue did not declare is absent, never zero: zero is a real
 // price, and an invented limit would clamp nothing the tools actually clamp.
@@ -29,7 +29,17 @@ export interface VideoCatalogModel {
   readonly has_price: boolean;
 }
 
-export type MediaCatalogModel = ImageCatalogModel | VideoCatalogModel;
+/**
+ * A speech-to-text ('transcription') or text-to-speech ('speech') model. OpenRouter publishes
+ * its rate with no unit, so the row carries the id and nothing a unit would be guessed for.
+ */
+export interface VoiceCatalogModel {
+  readonly kind: 'transcription' | 'speech';
+  readonly id: string;
+  readonly has_price: boolean;
+}
+
+export type MediaCatalogModel = ImageCatalogModel | VideoCatalogModel | VoiceCatalogModel;
 
 /** A row of any catalogue the model picker lists. */
 export type ModelRow = LLMCatalogModel | MediaCatalogModel;

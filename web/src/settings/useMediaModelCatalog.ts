@@ -16,7 +16,7 @@ interface CatalogAnswer {
   readonly error: string | undefined;
 }
 
-// useMediaModelCatalog keeps the image or video catalogue of the SAVED route. The daemon
+// useMediaModelCatalog keeps the image, video or voice catalogue of the SAVED route. The daemon
 // answers from the route it runs on, so `route` names that saved route: saving a different one
 // asks again, and `enabled` is true only while the rows show on a saved Cloud route.
 //

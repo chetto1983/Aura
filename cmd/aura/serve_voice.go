@@ -18,8 +18,13 @@ package main
 // 600-LOC ceiling.
 
 import (
+	"context"
+	"net/http"
+	"time"
+
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/multimodal"
 )
 
@@ -92,4 +97,30 @@ func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
 		return nil
 	}
 	return multimodal.NewSTTClient(voiceCfg)
+}
+
+// voiceCatalogRoute lists the cloud STT/TTS models for the settings pickers on the live
+// route — the one the cloud voice clients are built on — so a route switch saved from
+// Settings applies to the next list, exactly like mediaCatalogRoute.
+type voiceCatalogRoute struct {
+	runtime *llm.Runtime
+	client  *http.Client
+}
+
+var _ agui.VoiceCatalogLister = voiceCatalogRoute{}
+
+// voiceCatalogTimeout bounds one catalogue read: the picker waits on it, and a list that
+// takes longer is better reported as unavailable than left spinning.
+const voiceCatalogTimeout = 30 * time.Second
+
+func newVoiceCatalogRoute(runtime *llm.Runtime) voiceCatalogRoute {
+	return voiceCatalogRoute{runtime: runtime, client: &http.Client{Timeout: voiceCatalogTimeout}}
+}
+
+func (v voiceCatalogRoute) List(ctx context.Context, modality string) ([]llm.ModelCatalogEntry, error) {
+	route := v.runtime.Snapshot().Config
+	if !openRouterMediaRoute(route) {
+		return nil, agui.ErrMediaCatalogLocalRoute
+	}
+	return llm.FetchOutputModalityCatalog(ctx, v.client, route.BaseURL, modality)
 }

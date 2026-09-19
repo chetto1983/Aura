@@ -152,7 +152,7 @@ func FetchModelProfile(
 		}
 		return metadata, nil
 	}
-	wire, err := fetchModels(ctx, client, baseURL, catalogueKey)
+	wire, err := fetchModels(ctx, client, baseURL, catalogueKey, nil)
 	if err != nil {
 		// The cause travels. It used to be dropped for "GET /models failed", which reads
 		// the same whether the key was missing, DNS was not up yet, or the endpoint
@@ -245,8 +245,14 @@ func ollamaShowURL(baseURL string) (string, error) {
 	return parsed.String(), nil
 }
 
-func fetchModels(ctx context.Context, client *http.Client, baseURL, apiKey string) (modelsWire, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/models", nil)
+// fetchModels reads GET /models. query narrows the list where the provider supports it
+// (OpenRouter's output_modalities); nil reads the provider's default list.
+func fetchModels(ctx context.Context, client *http.Client, baseURL, apiKey string, query url.Values) (modelsWire, error) {
+	endpoint := strings.TrimRight(baseURL, "/") + "/models"
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return modelsWire{}, err
 	}
@@ -295,7 +301,7 @@ func FetchModelPrice(ctx context.Context, client *http.Client, baseURL, apiKey, 
 		return Price{}, fmt.Errorf("%w: empty model id", ErrPricingUnavailable)
 	}
 
-	wire, err := fetchModels(ctx, client, baseURL, apiKey)
+	wire, err := fetchModels(ctx, client, baseURL, apiKey, nil)
 	if err != nil {
 		return Price{}, fmt.Errorf("%w: %w", ErrPricingUnavailable, err)
 	}

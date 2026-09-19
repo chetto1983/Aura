@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -51,7 +52,7 @@ func FetchModelCatalog(
 	if provider == "openrouter" {
 		catalogueKey = apiKey
 	}
-	wire, err := fetchModels(ctx, client, baseURL, catalogueKey)
+	wire, err := fetchModels(ctx, client, baseURL, catalogueKey, nil)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrModelCatalogUnavailable, err)
 	}
@@ -81,6 +82,29 @@ func FetchModelCatalog(
 			}
 		}
 		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
+	return entries, nil
+}
+
+// FetchOutputModalityCatalog lists the models OpenRouter publishes for one output modality:
+// "transcription" (speech-to-text) or "speech" (text-to-speech). Those ids are absent from the
+// default /models list, which is text-only; measured 2026-09-19, the filter returns 21 and 18
+// models. Their rows carry a prompt rate with no unit in the payload, so no price is read: the
+// picker shows the id rather than a number whose unit it would have to guess.
+func FetchOutputModalityCatalog(
+	ctx context.Context, client *http.Client, baseURL, modality string,
+) ([]ModelCatalogEntry, error) {
+	// No credential: the list is public, and a query we build is not a reason to send one.
+	wire, err := fetchModels(ctx, client, baseURL, "", url.Values{"output_modalities": {modality}})
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModelCatalogUnavailable, err)
+	}
+	entries := make([]ModelCatalogEntry, 0, len(wire.Data))
+	for _, m := range wire.Data {
+		if id := strings.TrimSpace(m.ID); id != "" {
+			entries = append(entries, ModelCatalogEntry{ID: id})
+		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].ID < entries[j].ID })
 	return entries, nil
