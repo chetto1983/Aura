@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AdvancedPopover } from './AdvancedPopover';
 import { OptionsPopover } from './OptionsPopover';
@@ -40,17 +42,37 @@ export function StudioBar({
   onSubmit,
 }: StudioBarProps) {
   const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
   const estimate = estimateCost(model, draft.options);
   const ready = draft.prompt.trim() !== '' && !submitting;
 
   return (
     <form
-      className="flex w-full max-w-4xl flex-col gap-3 rounded-[var(--radius-lg)] border border-border bg-surface/95 p-3 shadow-[var(--shadow-popover)] backdrop-blur"
+      className="studio-composer flex w-full max-w-4xl flex-col gap-3 rounded-[var(--radius-lg)] border border-border bg-surface/95 p-3 shadow-[var(--shadow-popover)] backdrop-blur"
+      data-expanded={expanded}
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) onSubmit();
       }}
     >
+      <Button
+        type="button"
+        size="icon"
+        variant="ghost"
+        aria-label={expanded ? t('studio.composer.collapse') : t('studio.composer.expand')}
+        aria-pressed={expanded}
+        className="studio-composer-expand absolute top-2 right-2 z-10 hidden size-8 min-h-8 rounded-full p-0 text-text-faint hover:bg-surface-2 hover:text-text"
+        onClick={() => {
+          setExpanded((current) => !current);
+        }}
+      >
+        {expanded ? (
+          <Minimize2 aria-hidden="true" className="size-3.5" />
+        ) : (
+          <Maximize2 aria-hidden="true" className="size-3.5" />
+        )}
+      </Button>
+
       <StudioFrames draft={draft} model={model} onChange={onDraftChange} />
 
       <Textarea
@@ -58,7 +80,7 @@ export function StudioBar({
         placeholder={draft.kind === 'image' ? t('studio.prompt.image') : t('studio.prompt.video')}
         value={draft.prompt}
         rows={2}
-        className="max-h-40 resize-none border-0 bg-transparent px-1 text-[14px] text-text shadow-none focus-visible:border-0 focus-visible:ring-0"
+        className="studio-prompt max-h-40 resize-none border-0 bg-transparent px-1 text-[14px] text-text shadow-none focus-visible:border-0 focus-visible:ring-0"
         onChange={(event) => {
           onDraftChange({ ...draft, prompt: event.target.value });
         }}
@@ -69,53 +91,55 @@ export function StudioBar({
         }}
       />
 
-      <div className="flex flex-wrap items-center gap-2">
-        <ToggleGroup
-          type="single"
-          spacing={0}
-          value={draft.kind}
-          aria-label={t('studio.kind.label')}
-          onValueChange={(next: string) => {
-            if (next === 'image' || next === 'video') onKindChange(next);
-          }}
-          className="h-8 rounded-[var(--radius-pill)] border border-border bg-surface-2 p-0.5"
-        >
-          {(['image', 'video'] as const).map((kind) => (
-            <ToggleGroupItem
-              key={kind}
-              value={kind}
-              className="h-7 rounded-[var(--radius-pill)] px-3 text-xs text-text-muted data-[state=on]:bg-accent data-[state=on]:text-accent-text"
-            >
-              {kind === 'image' ? t('studio.kind.image') : t('studio.kind.video')}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
+      <div className="studio-controls">
+        <div className="studio-controls-rail">
+          <ToggleGroup
+            type="single"
+            spacing={0}
+            value={draft.kind}
+            aria-label={t('studio.kind.label')}
+            onValueChange={(next: string) => {
+              if (next === 'image' || next === 'video') onKindChange(next);
+            }}
+            className="h-8 rounded-[var(--radius-pill)] border border-border bg-surface-2 p-0.5"
+          >
+            {(['image', 'video'] as const).map((kind) => (
+              <ToggleGroupItem
+                key={kind}
+                value={kind}
+                className="h-7 rounded-[var(--radius-pill)] px-3 text-xs text-text-muted data-[state=on]:bg-accent data-[state=on]:text-accent-text"
+              >
+                {kind === 'image' ? t('studio.kind.image') : t('studio.kind.video')}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
 
-        <StudioModelPill models={models} value={draft.model} onChange={onModelChange} />
+          <StudioModelPill models={models} value={draft.model} onChange={onModelChange} />
 
-        <OptionsPopover
-          kind={draft.kind}
-          model={model}
-          options={draft.options}
-          onChange={(options) => {
-            onDraftChange({ ...draft, options });
-          }}
-        />
-
-        {/* Video only, by route rather than by capability: POST /api/studio/images takes
-            neither a seed nor an audio flag, so a row that happens to declare them must not
-            offer controls whose values requestBody would silently drop. */}
-        {draft.kind === 'video' ? (
-          <AdvancedPopover
+          <OptionsPopover
+            kind={draft.kind}
             model={model}
             options={draft.options}
             onChange={(options) => {
               onDraftChange({ ...draft, options });
             }}
           />
-        ) : null}
 
-        <div className="ms-auto flex items-center gap-2">
+          {/* Video only, by route rather than by capability: POST /api/studio/images takes
+              neither a seed nor an audio flag, so a row that happens to declare them must not
+              offer controls whose values requestBody would silently drop. */}
+          {draft.kind === 'video' ? (
+            <AdvancedPopover
+              model={model}
+              options={draft.options}
+              onChange={(options) => {
+                onDraftChange({ ...draft, options });
+              }}
+            />
+          ) : null}
+        </div>
+
+        <div className="studio-actions">
           <span
             data-testid="studio-estimate"
             className="text-[11px] text-text-faint tabular-nums"

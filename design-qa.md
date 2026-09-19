@@ -60,6 +60,75 @@ The assistant-ui example owns its workbench UI in application code. Aura reuses
 its installed assistant-ui message rendering and existing artifact routes,
 React context selection, lazy renderers, Shiki and resizable-panel components.
 
+---
+
+# Studio mobile design QA — 2026-09-19
+
+## Comparison target
+
+- Source visual truth: `.playwright-mcp/source-mobile.png` and
+  `.playwright-mcp/source-mobile-expanded.png`, captured from the BytePlus Lumina video page.
+- Implementation: `.playwright-mcp/aura-studio-after.png` and
+  `.playwright-mcp/aura-studio-after-expanded.png`.
+- Side-by-side evidence: `.playwright-mcp/aura-studio-after-comparison.png` and
+  `.playwright-mcp/aura-studio-after-expanded-comparison.png`.
+- Viewport and density: both source and implementation are 390 × 844 CSS px and 390 × 844
+  image px at deviceScaleFactor 1; no density normalization was required.
+- State: mobile, light Aura theme, video mode, empty prompt, collapsed and expanded composer.
+
+## Findings
+
+No actionable P0, P1 or P2 mismatches remain. The mobile composer now measures 366.75 px wide
+with 11.625 px side margins; the source measures 366 px with 12 px side margins. Both keep one
+bottom control rail, a fixed primary action, a large angled material tile and an expand control.
+The expanded state uses the same 12 px side inset as the source.
+
+Aura intentionally retains its own shell, bottom navigation, Fraunces/Atkinson typography,
+light/dark tokens, localized copy, model catalog, cost estimate and image/video segmented mode.
+Those are product constraints rather than source drift. The composer geometry, hierarchy and
+interaction placement follow the source.
+
+## Focused evidence
+
+- Settings popover: `.playwright-mcp/aura-studio-after-options.png`; it opens upward at nearly
+  full mobile width and remains above the composer.
+- Model picker: `.playwright-mcp/aura-studio-after-models.png`; it opens upward and remains fully
+  reachable above the fixed action edge.
+- Desktop regression: `.playwright-mcp/aura-studio-after-desktop.png` at 1440 × 1000.
+- Real authenticated baseline: `.playwright-mcp/aura-studio-before.png`, captured from
+  `localhost:9080` with the delivered video/history state before implementation.
+
+## Fidelity surfaces
+
+- Fonts and typography: Aura brand families, hierarchy, weights, wrapping and line heights are
+  preserved; mobile prompt copy remains readable without truncation.
+- Spacing and layout rhythm: source-width composer, 14 px radius, 12 px insets, 88 px material
+  tile, 62 px prompt field and single 32 px control rail verified at 390 px.
+- Colors and tokens: all surfaces use existing Aura theme tokens in light and dark modes; no
+  BytePlus brand colors were copied.
+- Image and icon fidelity: Aura's real logo and Lucide controls are retained; no placeholder,
+  handmade SVG or CSS-drawn asset was introduced.
+- Copy and content: Aura's Italian localization, live model names, prices and actions are
+  preserved.
+
+## Interaction and verification history
+
+1. Baseline showed a 319.25 px composer split across three rows because the mobile history rail
+   consumed 40 px.
+2. The history trigger moved to an overlay, the composer became 366.75 px wide, options became a
+   horizontal rail and the action edge remained fixed.
+3. First visual pass exposed an uncentered empty state; responsive alignment was corrected and
+   recaptured.
+4. Focused popover capture led to full-width settings and an upward-opening model picker.
+5. Expand, collapse, settings and model-picker interactions were exercised. Browser console
+   errors checked: 0.
+
+Verification: 174 Studio tests pass; TypeScript, type-aware lint, targeted formatting and the
+production build pass. The repository-wide format check remains blocked only by the unrelated
+pre-existing `web/src/settings/__tests__/ModelSettingsPanel.voice.test.tsx` change.
+
+final result: passed
+
 ## Follow-up operational checks
 
 - The current weather artifact loaded seven live forecast cards inside Aura's

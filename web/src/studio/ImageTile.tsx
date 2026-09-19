@@ -25,7 +25,8 @@ interface ImageTileProps {
   readonly onChange: (image: StudioImageRef | undefined) => void;
 }
 
-const TILE = 'size-14 shrink-0 rounded-[var(--radius-md)] border border-dashed border-border';
+const TILE =
+  'studio-frame-tile size-14 shrink-0 rounded-[var(--radius-md)] border border-dashed border-border';
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);

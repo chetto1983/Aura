@@ -39,7 +39,7 @@ export function StudioFrames({ draft, model, onChange }: StudioFramesProps) {
     draft.images.length > 0;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="studio-frame-row flex flex-wrap items-center gap-2">
       {draft.images.map((image, index) => (
         <ImageTile
           key={image.id}

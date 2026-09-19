@@ -215,6 +215,23 @@ describe('StudioBar', () => {
     expect(screen.getByRole('button', { name: /Generate/ }).hasAttribute('disabled')).toBe(false);
   });
 
+  it('expands and collapses the mobile composer without changing the draft', () => {
+    mountBar(VEO);
+    type('a harbour at dawn');
+    const expand = screen.getByRole('button', { name: 'Expand the composer' });
+    fireEvent.click(expand);
+
+    const collapse = screen.getByRole('button', { name: 'Collapse the composer' });
+    expect(collapse.getAttribute('aria-pressed')).toBe('true');
+    expect(collapse.closest('form')?.dataset.expanded).toBe('true');
+    expect(screen.getByRole<HTMLTextAreaElement>('textbox', { name: 'Prompt' }).value).toBe(
+      'a harbour at dawn',
+    );
+
+    fireEvent.click(collapse);
+    expect(screen.getByRole('button', { name: 'Expand the composer' })).toBeTruthy();
+  });
+
   it('submits on Ctrl+Enter, once, and not on a bare Enter', () => {
     const { onSubmit } = mountBar(VEO);
     type('a harbour at dawn');

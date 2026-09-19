@@ -1,6 +1,72 @@
-/* studio.css — the three rules the Studio surface cannot express as Tailwind utilities:
-   the composer pill, the gradient headline and the history reveal. Every colour is an Aura
-   theme token, so the surface follows the cockpit into light and dark with no second palette. */
+/* The mobile composer keeps its action visible while the option rail scrolls underneath the
+   thumb. The same markup stays a normal inline bar on wide screens. */
+.studio-controls {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.studio-controls-rail {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+}
+
+.studio-controls-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.studio-controls-rail > * {
+  flex: none;
+}
+
+.studio-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  margin-inline-start: auto;
+}
+
+@media (max-width: 63.999rem) {
+  .studio-composer {
+    position: relative;
+    flex: none;
+    border-radius: var(--radius-md);
+  }
+
+  .studio-composer-expand {
+    display: inline-flex;
+  }
+
+  .studio-frame-row {
+    padding-inline-end: 2.5rem;
+  }
+
+  .studio-frame-tile {
+    width: 5.5rem;
+    height: 5.5rem;
+  }
+
+  .studio-composer[data-expanded='true'] {
+    position: absolute;
+    inset: 0.75rem;
+    z-index: 30;
+    max-width: none;
+  }
+
+  .studio-composer[data-expanded='true'] .studio-prompt {
+    min-height: 8rem;
+    max-height: none;
+    flex: 1;
+  }
+}
 
 /* The composer's option pills. A rounded-full bordered chip sized to the bar's 32px row;
    `data-state=open` is what Radix writes on an open popover trigger, and `aria-expanded`

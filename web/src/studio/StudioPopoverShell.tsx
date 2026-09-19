@@ -32,7 +32,7 @@ export function StudioPopoverShell({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-72 rounded-[var(--radius-md)] border-border bg-surface p-3 shadow-[var(--shadow-popover)]"
+        className="w-[min(22.5rem,calc(100vw-2rem))] rounded-[var(--radius-md)] border-border bg-surface p-3 shadow-[var(--shadow-popover)]"
       >
         <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-[13px] font-semibold text-text">{title}</h2>

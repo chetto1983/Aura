@@ -192,8 +192,12 @@ export default function StudioWorkspace() {
       aria-label={t('studio.title')}
       className="relative flex h-full min-h-0 overflow-hidden bg-bg"
     >
-      <div className="flex min-w-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-4 py-4">
-        <div className="flex min-h-0 w-full flex-1 items-center justify-center py-4">
+      <div className="flex min-w-0 flex-1 flex-col items-center gap-3 overflow-y-auto px-3 py-3 sm:px-4 sm:py-4">
+        <div
+          className={`flex min-h-0 w-full flex-1 py-0 sm:items-center sm:justify-center sm:py-4 ${
+            shown === undefined ? 'items-center justify-center' : 'items-start justify-start'
+          }`}
+        >
           <StudioStage record={shown} onReuse={reuse} reuseState={reuseStateFor(shown)} />
         </div>
 

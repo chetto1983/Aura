@@ -104,7 +104,9 @@ export function StudioHistory(props: StudioHistoryProps) {
   if (!sideBySide) {
     return (
       <>
-        <div className="flex shrink-0 flex-col border-l border-border bg-surface p-1">{toggle}</div>
+        <div className="absolute top-1 right-1 z-20 rounded-[var(--radius-md)] bg-bg/80 p-1 backdrop-blur">
+          {toggle}
+        </div>
         <Drawer
           open={open}
           title={t('studio.history.title')}

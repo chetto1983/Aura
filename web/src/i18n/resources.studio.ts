@@ -20,6 +20,10 @@ export const studioEn = {
       image: 'Describe the image you want to generate',
       video: 'Describe the video scene you want to generate',
     },
+    composer: {
+      expand: 'Expand the composer',
+      collapse: 'Collapse the composer',
+    },
     options: {
       open: 'Options',
       titleVideo: 'Video settings',
@@ -129,6 +133,10 @@ export const studioIt = {
       label: 'Prompt',
       image: "Descrivi l'immagine che vuoi generare",
       video: 'Descrivi la scena video che vuoi generare',
+    },
+    composer: {
+      expand: 'Espandi il composer',
+      collapse: 'Riduci il composer',
     },
     options: {
       open: 'Opzioni',

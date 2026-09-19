@@ -41,7 +41,7 @@ export function StudioModelPill({ models, value, onChange }: StudioModelPillProp
         aria-label={t('studio.model.label')}
         className="studio-pill max-w-44"
       />
-      <ModelSelectorContent align="start" className="w-80">
+      <ModelSelectorContent align="start" side="top" className="w-[min(21.25rem,calc(100vw-2rem))]">
         <ModelSelectorList>
           {models.map((model) => (
             <ModelSelectorItem
