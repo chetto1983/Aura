@@ -105,6 +105,18 @@ describe('VideoEditor', () => {
     });
   });
 
+  it('exports the tenth a typed bound shows, not the digits past it', async () => {
+    await mount();
+    const start = screen.getByLabelText('Start');
+    fireEvent.change(start, { target: { value: '3.25' } });
+    fireEvent.blur(start);
+    expect(screen.getByLabelText('Start')).toHaveProperty('value', '00:03.3');
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => {
+      expect(media.exportVideo.mock.lastCall?.[2]).toMatchObject({ start: 3.3, end: 10 });
+    });
+  });
+
   it('crops to a centred square in the rotated frame', async () => {
     await mount();
     fireEvent.click(screen.getByRole('radio', { name: 'Crop' }));

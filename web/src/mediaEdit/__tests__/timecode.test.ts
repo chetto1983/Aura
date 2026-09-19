@@ -31,6 +31,18 @@ describe('parseTimecode', () => {
     },
   );
 
+  it.each([
+    ['3.25', 3.3],
+    ['00:03.24', 3.2],
+    ['1:15.25', 75.3],
+    ['0.05', 0.1],
+    ['59.97', 60],
+  ])('rounds %s to the tenth the field shows, %s', (text, seconds) => {
+    const parsed = parseTimecode(text);
+    expect(parsed).toBe(seconds);
+    expect(formatTimecode(parsed ?? Number.NaN)).toBe(formatTimecode(seconds));
+  });
+
   it('reads back every tenth it writes over ten minutes', () => {
     for (let tenth = 0; tenth < 6000; tenth += 1) {
       expect(parseTimecode(formatTimecode(tenth / 10))).toBeCloseTo(tenth / 10, 5);
