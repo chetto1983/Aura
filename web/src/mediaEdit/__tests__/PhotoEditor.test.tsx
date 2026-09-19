@@ -242,9 +242,23 @@ describe('PhotoEditor', () => {
     mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Download' }));
     expect((await screen.findByRole('alert')).textContent).toContain(
-      'the editor returned no image',
+      'Saving failed: The editor returned no image',
     );
     expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('words the editor failures in Italian too', async () => {
+    exportImage.mockReturnValue({ imageData: {}, designState: {}, hideLoadingSpinner: vi.fn() });
+    await i18n.changeLanguage('it');
+    try {
+      mount();
+      fireEvent.click(await screen.findByRole('button', { name: 'Scarica' }));
+      expect((await screen.findByRole('alert')).textContent).toContain(
+        "Salvataggio non riuscito: L'editor non ha restituito un'immagine",
+      );
+    } finally {
+      await i18n.changeLanguage('en');
+    }
   });
 
   it('shows the upload progress', async () => {

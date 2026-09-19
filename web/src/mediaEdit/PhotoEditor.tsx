@@ -60,9 +60,9 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
 
   async function editedImage(): Promise<Blob> {
     const exportImage = exportRef.current;
-    if (exportImage === undefined) throw new Error('the editor is not ready');
+    if (exportImage === undefined) throw new Error(t('mediaEdit.photo.notReady'));
     const { imageData } = exportImage({ name: base, extension, quality: QUALITY }, 1);
-    if (imageData.imageBase64 === undefined) throw new Error('the editor returned no image');
+    if (imageData.imageBase64 === undefined) throw new Error(t('mediaEdit.photo.noImage'));
     return (await fetch(imageData.imageBase64)).blob();
   }
 
