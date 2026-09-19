@@ -33,6 +33,8 @@ export type ExportResult =
   | { readonly kind: 'blocked'; readonly tracks: readonly BlockedTrack[] }
   | { readonly kind: 'canceled' };
 
+const CANCELED: ExportResult = { kind: 'canceled' };
+
 function openInput(source: Blob): Input {
   return new Input({ source: new BlobSource(source), formats: ALL_FORMATS });
 }
@@ -85,6 +87,10 @@ export async function exportVideo(
   onProgress: (fraction: number) => void,
   signal: AbortSignal,
 ): Promise<ExportResult> {
+  // A call, not the property: TypeScript narrows `signal.aborted` after the first check and
+  // cannot see an await flip it.
+  const aborted = () => signal.aborted;
+  if (aborted()) return CANCELED;
   const input = openInput(source);
   const output = new Output({
     format:
@@ -100,27 +106,38 @@ export async function exportVideo(
       ...conversionOptions(edit),
       showWarnings: false,
     });
+    // cancel() releases the output asynchronously. It runs once, and every canceled return awaits
+    // that same promise, so the input is disposed only after the output has let go.
+    let cancellation: Promise<void> | undefined;
+    const cancel = () => (cancellation ??= conversion.cancel());
+    const onAbort = () => {
+      void cancel();
+    };
+    // An abort during init reached no listener: stop here rather than run the whole export.
+    if (aborted()) {
+      await cancel();
+      return CANCELED;
+    }
     const blocked = blockingDiscards(conversion.discardedTracks);
     if (!conversion.isValid || blocked.length > 0) return { kind: 'blocked', tracks: blocked };
     conversion.onProgress = (fraction) => {
       onProgress(fraction);
     };
-    const cancel = () => {
-      void conversion.cancel();
-    };
-    signal.addEventListener('abort', cancel, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
     try {
       await conversion.execute();
+    } catch (error) {
+      if (!aborted()) throw error;
     } finally {
-      signal.removeEventListener('abort', cancel);
+      signal.removeEventListener('abort', onAbort);
     }
-    if (signal.aborted) return { kind: 'canceled' };
+    if (aborted()) {
+      await cancel();
+      return CANCELED;
+    }
     const buffer = output.target.buffer;
     if (buffer === null) throw new Error('the export produced no bytes');
     return { kind: 'done', blob: new Blob([buffer], { type: output.format.mimeType }) };
-  } catch (error) {
-    if (signal.aborted) return { kind: 'canceled' };
-    throw error;
   } finally {
     input.dispose();
   }

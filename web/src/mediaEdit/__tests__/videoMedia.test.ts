@@ -7,8 +7,12 @@ const state = vi.hoisted(() => ({
   initOptions: undefined as unknown,
   discarded: [] as unknown[],
   valid: true,
-  cancel: vi.fn(),
+  cancel: vi.fn<() => Promise<void>>(),
+  initGate: undefined as Promise<void> | undefined,
   executeGate: undefined as Promise<void> | undefined,
+  executeError: undefined as Error | undefined,
+  executed: 0,
+  writesBytes: true,
   disposed: 0,
   video: {
     getDisplayWidth: () => Promise.resolve(1280),
@@ -55,19 +59,24 @@ vi.mock('mediabunny', () => {
     }
   }
   const Conversion = {
-    init: (options: { output: Output }) => {
+    init: async (options: { output: Output }) => {
       state.initOptions = options;
-      return Promise.resolve({
+      if (state.initGate) await state.initGate;
+      return {
         isValid: state.valid,
         discardedTracks: state.discarded,
         onProgress: undefined as ((p: number) => void) | undefined,
         cancel: state.cancel,
         async execute(this: { onProgress?: (p: number) => void }) {
+          state.executed += 1;
           this.onProgress?.(0.5);
           if (state.executeGate) await state.executeGate;
-          options.output.target.buffer = new ArrayBuffer(8);
+          // Like Mediabunny's, a cancelled conversion's execute() rejects.
+          if (state.cancel.mock.calls.length > 0) throw new Error('ConversionCanceledError');
+          if (state.executeError) throw state.executeError;
+          if (state.writesBytes) options.output.target.buffer = new ArrayBuffer(8);
         },
-      });
+      };
     },
   };
   return {
@@ -86,13 +95,33 @@ vi.mock('mediabunny', () => {
 const { exportVideo, filmstrip, probeVideo } = await import('../videoMedia');
 
 beforeEach(() => {
+  state.initOptions = undefined;
   state.discarded = [];
   state.valid = true;
+  state.initGate = undefined;
   state.executeGate = undefined;
-  state.cancel.mockReset();
+  state.executeError = undefined;
+  state.executed = 0;
+  state.writesBytes = true;
+  state.cancel.mockReset().mockImplementation(() => Promise.resolve());
   state.disposed = 0;
   state.audio = {};
 });
+
+/** Lets every pending microtask run. */
+function settle(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
+  });
+}
+
+function gate(): { readonly promise: Promise<void>; readonly open: () => void } {
+  let open: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { promise, open };
+}
 
 const EDIT = { start: 1, end: 3, rotation: 0 as const, mute: false };
 
@@ -175,5 +204,68 @@ describe('exportVideo', () => {
     release();
     await expect(running).resolves.toEqual({ kind: 'canceled' });
     expect(state.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens nothing when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), controller.signal),
+    ).resolves.toEqual({ kind: 'canceled' });
+    expect(state.initOptions).toBeUndefined();
+    expect(state.disposed).toBe(0);
+  });
+
+  it('cancels before executing when the signal aborts while the conversion initialises', async () => {
+    const init = gate();
+    state.initGate = init.promise;
+    const controller = new AbortController();
+    const running = exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), controller.signal);
+    controller.abort();
+    init.open();
+    await expect(running).resolves.toEqual({ kind: 'canceled' });
+    expect(state.cancel).toHaveBeenCalledTimes(1);
+    expect(state.executed).toBe(0);
+    expect(state.disposed).toBe(1);
+  });
+
+  it('lets go of the file only once the cancellation has released the output', async () => {
+    const cancellation = gate();
+    state.cancel.mockImplementation(() => cancellation.promise);
+    const execution = gate();
+    state.executeGate = execution.promise;
+    const controller = new AbortController();
+    let settled = false;
+    const running = exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), controller.signal).then(
+      (result) => {
+        settled = true;
+        return result;
+      },
+    );
+    await settle();
+    controller.abort();
+    execution.open();
+    await settle();
+    expect(settled).toBe(false);
+    expect(state.disposed).toBe(0);
+    cancellation.open();
+    await expect(running).resolves.toEqual({ kind: 'canceled' });
+    expect(state.disposed).toBe(1);
+  });
+
+  it('fails an export that wrote no bytes, and still releases the file', async () => {
+    state.writesBytes = false;
+    await expect(
+      exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), new AbortController().signal),
+    ).rejects.toThrow('the export produced no bytes');
+    expect(state.disposed).toBe(1);
+  });
+
+  it('passes an export error on, and still releases the file', async () => {
+    state.executeError = new Error('encoder failed');
+    await expect(
+      exportVideo(new Blob(), 'video/mp4', EDIT, vi.fn(), new AbortController().signal),
+    ).rejects.toThrow('encoder failed');
+    expect(state.disposed).toBe(1);
   });
 });
