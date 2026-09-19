@@ -41,6 +41,12 @@ func NewSTTClient(cfg STTConfig) *STTClient {
 	return &STTClient{cfg: cfg, httpClient: resolveClient(cfg.HTTPClient)}
 }
 
+// Configured reports whether this config can reach a transcriber at all: a local
+// sidecar base URL OR a cloud model. The TTSConfig.Configured note applies here too.
+func (c STTConfig) Configured() bool {
+	return c.LocalBaseURL != "" || c.CloudModel != ""
+}
+
 // Cloud reports whether this client is configured for the cloud (OpenRouter)
 // route. Callers may use it to pick the right base URL guard / error copy.
 func (c *STTClient) Cloud() bool { return c.cfg.CloudModel != "" }

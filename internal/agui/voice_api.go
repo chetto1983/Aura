@@ -3,7 +3,9 @@ package agui
 // voice_api.go is the 37C web-voice backend (WEBVOICE-01/02/03): three thin,
 // identity-scoped handlers over narrow interface seams —
 //
-//   - POST /api/tts — text → audio/mpeg synthesized bytes, with a soft rune char cap
+//   - POST /api/tts — text → audio/mpeg synthesized bytes. The text is normalized and
+//     capped by the SHARED multimodal.PrepareSpeech (the same step the Telegram voice
+//     note goes through), with a soft rune char cap
 //     (AURA_TTS_MAX_CHARS, D-05) that truncates the input to the ttsMaxChars-length
 //     prefix and signals it with an X-Aura-TTS-Truncated: true response header. The
 //     audio is streamed straight to the caller and NEVER persisted.
@@ -32,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 // maxSTTAudioBytes bounds the POST /api/stt multipart upload (T-12-12 DoS guard): 25
@@ -104,16 +107,16 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "text required", http.StatusBadRequest)
 		return
 	}
-	// Markdown syntax is stripped BEFORE the cap (operator directive: raw markers
-	// read aloud "sound like a robot"; capping clean runes also moves the D-05
-	// truncation point onto real prose). A message that strips to nothing (e.g. a
-	// code-block-only answer) has no speakable content — an honest 400.
-	spoken := speechText(body.Text)
-	if spoken == "" {
+	// multimodal.PrepareSpeech is the ONE normalize-then-cap step every speaking
+	// channel shares: markup is stripped BEFORE the cap (operator directive — raw
+	// markers read aloud "sound like a robot", and capping clean runes moves the D-05
+	// truncation point onto real prose). A message that strips to nothing (a
+	// code-block-only or emoji-only answer) has no speakable content — an honest 400.
+	text, truncated := multimodal.PrepareSpeech(body.Text, s.ttsMaxChars)
+	if text == "" {
 		http.Error(w, "text required", http.StatusBadRequest)
 		return
 	}
-	text, truncated := capText(spoken, s.ttsMaxChars)
 	audio, err := s.tts.Synthesize(r.Context(), text)
 	if err != nil {
 		http.Error(w, "tts synthesis failed", http.StatusBadGateway)
@@ -126,20 +129,6 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 		h.Set("X-Aura-TTS-Truncated", "true")
 	}
 	_, _ = w.Write(audio)
-}
-
-// capText returns the rune-safe prefix of text bounded to maxChars and whether it was
-// truncated. A non-positive maxChars disables the cap (the whole text passes). Runes
-// (not bytes) are counted so a multi-byte input is never split mid-character.
-func capText(text string, maxChars int) (string, bool) {
-	if maxChars <= 0 {
-		return text, false
-	}
-	runes := []rune(text)
-	if len(runes) <= maxChars {
-		return text, false
-	}
-	return string(runes[:maxChars]), true
 }
 
 // handleSTT transcribes an uploaded audio part and DISCARDS it (D-08): nil client →

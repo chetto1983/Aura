@@ -378,36 +378,6 @@ func TestVoiceCapabilities_Unauth(t *testing.T) {
 	}
 }
 
-// TestCapText is the direct rune-cap unit: a non-positive cap disables truncation, an
-// input at/under the cap is untouched, and an over-cap input is cut to the rune-safe
-// prefix (multi-byte runes counted as one, never split mid-character).
-func TestCapText(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name      string
-		text      string
-		maxChars  int
-		wantText  string
-		wantTrunc bool
-	}{
-		{"cap disabled (zero)", "abcdef", 0, "abcdef", false},
-		{"cap disabled (negative)", "abcdef", -1, "abcdef", false},
-		{"under cap", "abc", 8, "abc", false},
-		{"at cap", "abcdefgh", 8, "abcdefgh", false},
-		{"over cap ascii", "abcdefghXY", 8, "abcdefgh", true},
-		{"over cap multibyte (rune-safe)", "àéîõü✓漢字", 4, "àéîõ", true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got, trunc := capText(tc.text, tc.maxChars)
-			if got != tc.wantText || trunc != tc.wantTrunc {
-				t.Fatalf("capText(%q, %d) = (%q, %v), want (%q, %v)", tc.text, tc.maxChars, got, trunc, tc.wantText, tc.wantTrunc)
-			}
-		})
-	}
-}
-
 // TestTTS_SynthError: a synthesizer failure is a 502 (BadGateway) — an upstream fault,
 // not a server bug (500).
 func TestTTS_SynthError(t *testing.T) {
@@ -520,5 +490,50 @@ func TestVoiceCapabilities_NoPrincipal(t *testing.T) {
 	s.Mux().ServeHTTP(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401 (no principal on the bare mux)", rec.Code)
+	}
+}
+
+// The two handleTTS integration tests below moved here when voice_speech_text.go folded
+// into multimodal.PrepareSpeech: the NORMALIZER's own table now lives beside it in
+// internal/multimodal, and what is still agui's to prove is the wiring — that the
+// synthesizer is handed CLEAN text, and that an answer with nothing speakable in it
+// never reaches (and never bills) the synthesizer at all.
+
+func TestHandleTTSStripsMarkdownBeforeSynthesis(t *testing.T) {
+	t.Parallel()
+	tts := &fakeTTS{audio: []byte("ID3fake")}
+	s := newVoiceServer()
+	s.SetVoice(tts, &fakeSTT{}, 4096)
+
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/tts",
+		strings.NewReader(`{"text":"## Titolo\n**grassetto** e [link](https://x.y) qui"}`)), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.ContainsAny(tts.gotText, "#*[]()") || strings.Contains(tts.gotText, "https://") {
+		t.Fatalf("synthesizer received raw markdown: %q", tts.gotText)
+	}
+	if !strings.Contains(tts.gotText, "grassetto e link qui") {
+		t.Fatalf("prose lost in stripping: %q", tts.gotText)
+	}
+}
+
+func TestHandleTTSCodeOnlyBodyIs400(t *testing.T) {
+	t.Parallel()
+	tts := &fakeTTS{audio: []byte("x")}
+	s := newVoiceServer()
+	s.SetVoice(tts, &fakeSTT{}, 4096)
+
+	req := withPrincipal(httptest.NewRequest(http.MethodPost, "/api/tts",
+		strings.NewReader("{\"text\":\"```\\ncode only\\n```\"}")), localIdentityID)
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("code-only text: status = %d, want 400 (no speakable content)", rec.Code)
+	}
+	if tts.calls != 0 {
+		t.Fatalf("synthesizer reached %d time(s) for unspeakable input, want 0", tts.calls)
 	}
 }
