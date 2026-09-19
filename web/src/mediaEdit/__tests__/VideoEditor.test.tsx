@@ -287,4 +287,21 @@ describe('VideoEditor', () => {
     expect(signal()?.aborted).toBe(true);
     expect(downloadBlob).not.toHaveBeenCalled();
   });
+
+  it('says so when the clip refuses to play, but not when a pause interrupts it', async () => {
+    const play = vi
+      .spyOn(HTMLMediaElement.prototype, 'play')
+      .mockRejectedValueOnce(new DOMException('interrupted by pause()', 'AbortError'))
+      .mockRejectedValueOnce(new DOMException('autoplay blocked', 'NotAllowedError'));
+    await mount();
+    const button = screen.getByRole('button', { name: 'Play the selection' });
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(play).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+    fireEvent.click(button);
+    expect((await screen.findByRole('alert')).textContent).toBe('The clip could not play.');
+    play.mockRestore();
+  });
 });

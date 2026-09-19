@@ -170,7 +170,11 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
     const video = videoRef.current;
     if (video === null) return;
     video.currentTime = range.start;
-    void video.play();
+    video.play().catch((error: unknown) => {
+      // A pause that interrupts play() rejects with AbortError: nothing went wrong.
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setProblem(t('mediaEdit.video.playFailed'));
+    });
   }
 
   const quarter = rotation === 90 || rotation === 270;

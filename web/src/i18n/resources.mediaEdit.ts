@@ -56,6 +56,7 @@ export const mediaEditEn = {
       codecUnknown: 'unknown codec',
       blockedUnknown: 'This browser cannot process this file. Try Chrome or Edge.',
       failed: 'The export failed: {{reason}}',
+      playFailed: 'The clip could not play.',
     },
   },
 };
@@ -116,6 +117,7 @@ export const mediaEditIt = {
       codecUnknown: 'codec sconosciuto',
       blockedUnknown: 'Questo browser non riesce a elaborare questo file. Prova con Chrome o Edge.',
       failed: 'Esportazione non riuscita: {{reason}}',
+      playFailed: 'Impossibile riprodurre la clip.',
     },
   },
 };
