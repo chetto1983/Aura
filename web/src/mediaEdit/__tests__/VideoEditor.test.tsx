@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
 import type { Asset } from '../../chat/attachments/types';
@@ -277,6 +277,27 @@ describe('VideoEditor', () => {
     await mount();
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', false);
+  });
+
+  it('draws the export progress as a bar a screen reader can read', async () => {
+    let report: (fraction: number) => void = () => undefined;
+    media.exportVideo.mockImplementation(
+      (_s: Blob, _m: string, _e: unknown, onProgress: (fraction: number) => void) => {
+        report = onProgress;
+        return new Promise(() => undefined);
+      },
+    );
+    await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    const bar = await screen.findByRole('progressbar', { name: 'Export progress' });
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('100');
+    expect(bar.getAttribute('aria-valuenow')).toBe('0');
+    act(() => {
+      report(0.424);
+    });
+    expect(bar.getAttribute('aria-valuenow')).toBe('42');
+    expect(bar.querySelector<HTMLElement>('[data-progress-fill]')?.style.width).toBe('42%');
   });
 
   it('cancels a running export', async () => {

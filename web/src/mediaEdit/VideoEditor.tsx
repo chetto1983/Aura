@@ -179,6 +179,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
   }
 
   const quarter = rotation === 90 || rotation === 270;
+  const percent = progress === undefined ? undefined : Math.round(progress * 100);
   const toolLabel = (item: Tool) => t(`mediaEdit.video.tool.${item}`);
 
   return (
@@ -390,10 +391,25 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
               </span>
             )}
             <div className="ms-auto flex items-center gap-2">
-              {progress === undefined ? null : (
+              {percent === undefined ? null : (
                 <>
+                  {/* The components/ui set has no progress bar: this is ContextBudgetGauge's. */}
+                  <div
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={percent}
+                    aria-label={t('mediaEdit.video.progress')}
+                    className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"
+                  >
+                    <div
+                      data-progress-fill
+                      className="h-full rounded-full bg-accent transition-[width] motion-reduce:transition-none"
+                      style={{ width: `${String(percent)}%` }}
+                    />
+                  </div>
                   <span role="status" className="text-xs text-text-muted tabular-nums">
-                    {t('mediaEdit.video.saving', { percent: Math.round(progress * 100) })}
+                    {t('mediaEdit.video.saving', { percent })}
                   </span>
                   <Button
                     type="button"
