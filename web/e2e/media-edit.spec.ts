@@ -80,16 +80,14 @@ async function openStudioWith(page: Page, rec: StudioRecord, library: 'ok' | 'of
     window.localStorage.setItem('aura.shell.surface', 'studio');
   });
   await gotoAuthenticated(page, '/');
+  // A loaded square image is what pushes the stage's action row toward the phone's pinned
+  // composer; tapping Edit before it arrives would race past that layout.
+  if (rec.kind === 'image') {
+    await expect(page.getByRole('img', { name: rec.prompt })).toBeVisible({ timeout: 30_000 });
+  }
 }
 
 test.describe('media editing', () => {
-  // On a phone the Studio composer covers the stage's Download/Edit/Reuse row once a tall result
-  // has loaded, and Filerobot moves its tabs behind a menu: the desktop layout is the one proven.
-  test.skip(
-    ({ isMobile }) => isMobile,
-    'the phone Studio stage hides its actions under the composer',
-  );
-
   test('trims a clip on the copy path and downloads the cut', async ({ page }, info) => {
     await gotoAuthenticated(page, '/');
     const assetId = await upload(page, 'clip.mp4', 'video/mp4');
@@ -116,7 +114,7 @@ test.describe('media editing', () => {
     expect(duration).toBeLessThan(2.2);
   });
 
-  test('saves an edited photo to the Studio library', async ({ page }) => {
+  test('saves an edited photo to the Studio library', async ({ page }, testInfo) => {
     await gotoAuthenticated(page, '/');
     const assetId = await upload(page, 'photo.png', 'image/png');
     let finalized = false;
@@ -129,6 +127,10 @@ test.describe('media editing', () => {
     await openStudioWith(page, record('image', assetId), 'ok');
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const editor = page.getByRole('dialog', { name: 'Edit photo.png' });
+    // Below 760px Filerobot moves its tabs into a drawer behind the topbar's menu button.
+    if (testInfo.project.name.startsWith('mobile')) {
+      await editor.getByTestId('FIE-topbar-menu-button').click({ timeout: 30_000 });
+    }
     await expect(editor.getByText('Filters', { exact: true })).toBeVisible({ timeout: 30_000 });
     await editor.getByText('Filters', { exact: true }).click();
     await editor.getByText('Sepia', { exact: true }).click();
