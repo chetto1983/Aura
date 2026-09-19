@@ -3623,7 +3623,7 @@ Measure the one open question the spec leaves: export the same MP4 with **rotati
 
 Write `docs/superpowers/verification/2026-09-19-media-editing.md`: what was run, on which revision, results per flow, screenshot paths, the Firefox outcome, and what this does **not** prove (Safari/iOS, very large clips).
 
-- [ ] **Step 4: Commit and push**
+- [x] **Step 4: Commit and push**
 
 ```bash
 git add docs/superpowers/verification/2026-09-19-media-editing.md
