@@ -13,7 +13,10 @@ const state = vi.hoisted(() => ({
   executeError: undefined as Error | undefined,
   executed: 0,
   writesBytes: true,
+  opened: 0,
   disposed: 0,
+  readGate: undefined as Promise<void> | undefined,
+  frameGate: undefined as Promise<void> | undefined,
   video: {
     getDisplayWidth: () => Promise.resolve(1280),
     getDisplayHeight: () => Promise.resolve(720),
@@ -24,11 +27,20 @@ const state = vi.hoisted(() => ({
 
 vi.mock('mediabunny', () => {
   class Input {
-    constructor(readonly options: unknown) {}
-    getPrimaryVideoTrack = () => Promise.resolve(state.video);
+    #disposed = false;
+    constructor(readonly options: unknown) {
+      state.opened += 1;
+    }
+    getPrimaryVideoTrack = async () => {
+      if (state.readGate) await state.readGate;
+      return state.video;
+    };
     getPrimaryAudioTrack = () => Promise.resolve(state.audio);
     computeDuration = () => Promise.resolve(10);
+    // Idempotent, like Mediabunny's own: a second call returns at once.
     dispose = () => {
+      if (this.#disposed) return;
+      this.#disposed = true;
       state.disposed += 1;
     };
   }
@@ -53,9 +65,11 @@ vi.mock('mediabunny', () => {
     constructor(readonly blob: Blob) {}
   }
   class CanvasSink {
-    // A plain generator: `for await` reads it like the library's async one.
-    *canvasesAtTimestamps(stamps: number[]) {
-      for (const timestamp of stamps) yield { canvas: { timestamp }, timestamp, duration: 0 };
+    async *canvasesAtTimestamps(stamps: number[]) {
+      for (const timestamp of stamps) {
+        if (state.frameGate) await state.frameGate;
+        yield { canvas: { timestamp }, timestamp, duration: 0 };
+      }
     }
   }
   const Conversion = {
@@ -104,7 +118,10 @@ beforeEach(() => {
   state.executed = 0;
   state.writesBytes = true;
   state.cancel.mockReset().mockImplementation(() => Promise.resolve());
+  state.opened = 0;
   state.disposed = 0;
+  state.readGate = undefined;
+  state.frameGate = undefined;
   state.audio = {};
 });
 
@@ -137,6 +154,31 @@ describe('probeVideo', () => {
     await expect(probeVideo(new Blob())).resolves.toMatchObject({ hasAudio: false });
     expect(state.disposed).toBe(2);
   });
+
+  it('lets go of the file the moment its signal aborts, before the read completes', async () => {
+    const read = gate();
+    state.readGate = read.promise;
+    const controller = new AbortController();
+    const probing = probeVideo(new Blob(), controller.signal);
+    await settle();
+    expect(state.disposed).toBe(0);
+    controller.abort();
+    expect(state.disposed).toBe(1);
+    await expect(probing).rejects.toHaveProperty('name', 'AbortError');
+    read.open();
+    await settle();
+    expect(state.disposed).toBe(1);
+  });
+
+  it('opens nothing when its signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(probeVideo(new Blob(), controller.signal)).rejects.toHaveProperty(
+      'name',
+      'AbortError',
+    );
+    expect(state.opened).toBe(0);
+  });
 });
 
 describe('filmstrip', () => {
@@ -145,6 +187,22 @@ describe('filmstrip', () => {
     expect(frames.map((f) => (f as unknown as { timestamp: number }).timestamp)).toEqual([
       1.25, 3.75, 6.25, 8.75,
     ]);
+    expect(state.disposed).toBe(1);
+  });
+
+  it('stops decoding the moment its signal aborts, before the frames are drawn', async () => {
+    const frame = gate();
+    state.frameGate = frame.promise;
+    const controller = new AbortController();
+    const drawing = filmstrip(new Blob(), 4, 90, controller.signal);
+    await settle();
+    expect(state.disposed).toBe(0);
+    controller.abort();
+    expect(state.disposed).toBe(1);
+    await expect(drawing).rejects.toHaveProperty('name', 'AbortError');
+    frame.open();
+    await settle();
+    expect(state.disposed).toBe(1);
   });
 });
 

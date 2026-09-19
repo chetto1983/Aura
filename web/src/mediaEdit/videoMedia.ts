@@ -42,9 +42,38 @@ function openInput(source: Blob): Input {
   return new Input({ source: new BlobSource(source), formats: ALL_FORMATS });
 }
 
-export async function probeVideo(source: Blob): Promise<VideoInfo> {
+function abortError(): DOMException {
+  return new DOMException('The read was aborted.', 'AbortError');
+}
+
+/** Runs `read` on the file, then lets go of it. An abort disposes the Input at once, which makes
+ *  Mediabunny cancel the read or decode it has in flight, and rejects with an AbortError without
+ *  waiting for that read to notice: a step such as canDecode() is not tied to the Input at all. */
+async function reading<T>(
+  source: Blob,
+  signal: AbortSignal | undefined,
+  read: (input: Input) => Promise<T>,
+): Promise<T> {
+  if (signal?.aborted) throw abortError();
   const input = openInput(source);
+  let stop: () => void = () => undefined;
+  const stopped = new Promise<never>((_resolve, reject) => {
+    stop = () => {
+      input.dispose();
+      reject(abortError());
+    };
+  });
+  signal?.addEventListener('abort', stop, { once: true });
   try {
+    return await Promise.race([read(input), stopped]);
+  } finally {
+    signal?.removeEventListener('abort', stop);
+    input.dispose();
+  }
+}
+
+export function probeVideo(source: Blob, signal?: AbortSignal): Promise<VideoInfo> {
+  return reading(source, signal, async (input) => {
     const video = await input.getPrimaryVideoTrack();
     if (video === null) throw new Error('the file has no video track');
     const audio = await input.getPrimaryAudioTrack();
@@ -54,20 +83,18 @@ export async function probeVideo(source: Blob): Promise<VideoInfo> {
       height: await video.getDisplayHeight(),
       hasAudio: audio !== null,
     };
-  } finally {
-    input.dispose();
-  }
+  });
 }
 
 /** `count` frames `height` pixels tall, one from the middle of each equal slot of the clip. An
  *  undecodable track yields none: the timeline still works, without pictures. */
-export async function filmstrip(
+export function filmstrip(
   source: Blob,
   count: number,
   height: number,
+  signal?: AbortSignal,
 ): Promise<CanvasImageSource[]> {
-  const input = openInput(source);
-  try {
+  return reading(source, signal, async (input) => {
     const video = await input.getPrimaryVideoTrack();
     if (video === null || !(await video.canDecode())) return [];
     const slot = (await input.computeDuration()) / count;
@@ -78,9 +105,7 @@ export async function filmstrip(
       if (wrapped !== null) frames.push(wrapped.canvas);
     }
     return frames;
-  } finally {
-    input.dispose();
-  }
+  });
 }
 
 export async function exportVideo(

@@ -5,7 +5,10 @@ import type { Asset } from '../../chat/attachments/types';
 
 const media = vi.hoisted(() => ({
   probeVideo: vi.fn(),
-  filmstrip: vi.fn(() => Promise.resolve([])),
+  filmstrip: vi.fn(
+    (_source: Blob, _count: number, _height: number, _signal?: AbortSignal) =>
+      Promise.resolve([]) as Promise<CanvasImageSource[]>,
+  ),
   exportVideo: vi.fn(),
 }));
 vi.mock('../videoMedia', () => media);
@@ -335,6 +338,19 @@ describe('VideoEditor', () => {
     unmount();
     expect(signal()?.aborted).toBe(true);
     expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('stops reading the clip when the editor goes away', () => {
+    media.probeVideo.mockReturnValueOnce(new Promise(() => undefined));
+    media.filmstrip.mockReturnValueOnce(new Promise(() => undefined));
+    const { unmount } = render(<VideoEditor asset={ASSET} source={new Blob()} onClose={vi.fn()} />);
+    const probing = media.probeVideo.mock.lastCall?.[1] as AbortSignal | undefined;
+    const drawing = media.filmstrip.mock.lastCall?.[3];
+    expect(probing?.aborted).toBe(false);
+    expect(drawing?.aborted).toBe(false);
+    unmount();
+    expect(probing?.aborted).toBe(true);
+    expect(drawing?.aborted).toBe(true);
   });
 
   it('says so when the clip refuses to play, but not when a pause interrupts it', async () => {

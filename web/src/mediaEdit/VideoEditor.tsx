@@ -66,7 +66,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
 
   useEffect(() => {
     const controller = new AbortController();
-    probeVideo(source).then(
+    probeVideo(source, controller.signal).then(
       (probed) => {
         if (controller.signal.aborted) return;
         setInfo(probed);
@@ -83,7 +83,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
 
   useEffect(() => {
     const controller = new AbortController();
-    filmstrip(source, FILMSTRIP_FRAMES, 90).then(
+    filmstrip(source, FILMSTRIP_FRAMES, 90, controller.signal).then(
       (strip) => {
         if (!controller.signal.aborted) setFrames(strip);
       },
