@@ -3571,12 +3571,12 @@ If the Studio page with a 503 library still loads its stage (the library is only
 Run (needs the local `aura` binary and stack the suite already uses): `npx playwright test e2e/media-edit.spec.ts --project=chrome`
 Expected: 3 passed. On failure, open the trace (`npx playwright show-trace`) before changing anything.
 
-- [ ] **Step 4: Full web gates**
+- [x] **Step 4: Full web gates**
 
 Run: `npm run lint && npm run typecheck && npm run format:check && npm run deadcode && npm run dup && npm test`
 Expected: all green; Vitest coverage ≥ 85 % on all four metrics. Fix formatting with `npx prettier --write <file>` on the files you touched only.
 
-- [ ] **Step 5: Rebuild the bundle and check the chunks**
+- [x] **Step 5: Rebuild the bundle and check the chunks**
 
 ```bash
 npm run build
@@ -3588,7 +3588,7 @@ grep -l "Mp4OutputFormat" ../internal/webui/dist/assets/*.js | head -3
 ```
 Expected: `0` and `0` for the entry chunk; each library found in its own lazy chunk (not `index-*.js`).
 
-- [ ] **Step 6: Commit and push**
+- [x] **Step 6: Commit and push**
 
 ```bash
 git add web/e2e/media-edit.spec.ts web/e2e/fixtures/media-edit/clip.mp4 web/e2e/fixtures/media-edit/photo.png internal/webui/dist
