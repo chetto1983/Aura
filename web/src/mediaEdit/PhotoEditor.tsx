@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Download, Library, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import FilerobotImageEditor, {
   TABS,
   TOOLS,
@@ -50,8 +50,11 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
   const [confirmClose, setConfirmClose] = useState(false);
 
   const studioOff = library.error instanceof StudioError && library.error.status === 503;
-  // Cached rows say nothing about the Studio now: upload only after a fresh answer that is not a
-  // refusal, so a background refetch that ends in 503 never races an orphan upload.
+  // Any other failed read (a dropped connection, a 500) is not "the Studio is off": it gets its
+  // own sentence and a Retry instead of a Save button that is silently disabled.
+  const studioUnreachable = library.isError && !studioOff;
+  // Cached rows say nothing about the Studio now: Save waits for a fresh answer that is not a
+  // refusal, and saveToLibrary asks once more before it uploads.
   const studioReady = library.isSuccess && !library.isFetching;
   const extension = imageExtension(asset.mime_type);
   const base = editedBase(asset.file_name, t('mediaEdit.suffix.image'));
@@ -78,6 +81,12 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
     setState({ kind: 'saving', progress: 0 });
     try {
       const blob = await editedImage();
+      // The answer that enabled the button is a render old, and editedImage() has yielded since:
+      // a refusal in that gap must not become an orphan upload. A failed read words itself above.
+      if (!(await library.refetch()).isSuccess) {
+        setState({ kind: 'idle' });
+        return;
+      }
       await uploadStudioFrame(new File([blob], fileName, { type: blob.type }), (progress) => {
         setState({ kind: 'saving', progress });
       });
@@ -139,22 +148,23 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
           <X aria-hidden="true" className="size-4" />
         </Button>
       </header>
+      {studioUnreachable ? (
+        <RetryAlert
+          retryLabel={t('mediaEdit.photo.retry')}
+          disabled={library.isFetching}
+          onRetry={() => void library.refetch()}
+        >
+          {t('mediaEdit.photo.studioUnreachable')}
+        </RetryAlert>
+      ) : null}
       {state.kind === 'failed' ? (
-        <div
-          role="alert"
-          className="flex items-center gap-2 border-b border-danger/40 px-4 py-2 text-sm text-danger"
+        <RetryAlert
+          retryLabel={t('mediaEdit.photo.retry')}
+          disabled={state.action === 'library' && !studioReady}
+          onRetry={() => void (state.action === 'download' ? download() : saveToLibrary())}
         >
           {t('mediaEdit.photo.failed', { reason: state.reason })}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={state.action === 'library' && !studioReady}
-            onClick={() => void (state.action === 'download' ? download() : saveToLibrary())}
-          >
-            {t('mediaEdit.photo.retry')}
-          </Button>
-        </div>
+        </RetryAlert>
       ) : null}
       <div className="min-h-0 flex-1">
         {url === undefined ? (
@@ -198,5 +208,29 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
         onConfirm={onClose}
       />
     </MediaEditorLayer>
+  );
+}
+
+function RetryAlert({
+  children,
+  retryLabel,
+  disabled,
+  onRetry,
+}: {
+  readonly children: ReactNode;
+  readonly retryLabel: string;
+  readonly disabled: boolean;
+  readonly onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex items-center gap-2 border-b border-danger/40 px-4 py-2 text-sm text-danger"
+    >
+      {children}
+      <Button type="button" variant="ghost" size="sm" disabled={disabled} onClick={onRetry}>
+        {retryLabel}
+      </Button>
+    </div>
   );
 }

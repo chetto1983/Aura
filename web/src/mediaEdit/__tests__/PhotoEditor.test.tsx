@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { useEffect } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
@@ -87,6 +87,7 @@ function pendingLibrary() {
 }
 
 const STUDIO_OFF = 'The Studio is not active: download the photo instead.';
+const UNREACHABLE = 'The Studio did not answer. Try again.';
 
 function mount(onClose = vi.fn(), client = newClient()) {
   render(
@@ -182,6 +183,47 @@ describe('PhotoEditor', () => {
     expect(await screen.findByText(STUDIO_OFF)).toBeTruthy();
     expect(save).toHaveProperty('disabled', true);
     expect(uploadStudioFrame).not.toHaveBeenCalled();
+  });
+
+  it('asks the Studio again after the click, and uploads nothing on a 503', async () => {
+    mount();
+    const save = await screen.findByRole('button', { name: 'Save to library' });
+    await waitFor(() => {
+      expect(save).toHaveProperty('disabled', false);
+    });
+    listStudioLibrary.mockRejectedValueOnce(new StudioError(503, '', 'studio unavailable'));
+    fireEvent.click(save);
+    expect(await screen.findByText(STUDIO_OFF)).toBeTruthy();
+    expect(uploadStudioFrame).not.toHaveBeenCalled();
+    expect(save).toHaveProperty('disabled', true);
+    expect(screen.queryByText('Saved to the Studio library')).toBeNull();
+  });
+
+  it('says the Studio did not answer, and uploads nothing, when the read after the click fails', async () => {
+    mount();
+    const save = await screen.findByRole('button', { name: 'Save to library' });
+    await waitFor(() => {
+      expect(save).toHaveProperty('disabled', false);
+    });
+    listStudioLibrary.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    fireEvent.click(save);
+    expect((await screen.findByRole('alert')).textContent).toContain(UNREACHABLE);
+    expect(uploadStudioFrame).not.toHaveBeenCalled();
+  });
+
+  it('says the Studio did not answer a first read that failed, and asks again on Retry', async () => {
+    listStudioLibrary.mockRejectedValueOnce(new StudioError(500, '', 'internal error'));
+    mount();
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain(UNREACHABLE);
+    const save = screen.getByRole('button', { name: 'Save to library' });
+    expect(save).toHaveProperty('disabled', true);
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    await waitFor(() => {
+      expect(save).toHaveProperty('disabled', false);
+    });
+    expect(screen.queryByText(UNREACHABLE)).toBeNull();
+    expect(listStudioLibrary).toHaveBeenCalledTimes(2);
   });
 
   it('holds a library Retry while the Studio is asked again', async () => {
