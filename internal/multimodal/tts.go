@@ -37,6 +37,16 @@ func NewTTSClient(cfg TTSConfig) *TTSClient {
 	return &TTSClient{cfg: cfg, httpClient: resolveClient(cfg.HTTPClient)}
 }
 
+// Configured reports whether this config can reach a synthesizer at all: a local
+// sidecar base URL OR a cloud model. It is a method rather than a line at each call
+// site because it was TWO lines at two call sites, written with opposite polarity —
+// `TTSModel == "" && TTSBaseURL == ""` in the cockpit's composition root and
+// `TTSBaseURL != "" || TTSModel != ""` in the Telegram channel — which is how the same
+// rule stops meaning the same thing.
+func (c TTSConfig) Configured() bool {
+	return c.LocalBaseURL != "" || c.CloudModel != ""
+}
+
 // AudioFormat returns the configured response_format (the container of the bytes
 // Synthesize returns), defaulting to "opus" so callers tag the voice note MIME.
 func (c *TTSClient) AudioFormat() string {

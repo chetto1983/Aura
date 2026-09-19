@@ -54,6 +54,7 @@ import { cancelRun, streamRunResilient } from './sseResume';
 import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
 import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
 import { AutoSpeak } from './voice/AutoSpeak';
+import { VoiceOverlay } from './voice/VoiceOverlay';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
 import { useApprovalFocus } from './useApprovalFocus';
 import { useWorkerReportRefresh } from './workers/useWorkerReportRefresh';
@@ -485,6 +486,9 @@ export function ExternalStoreChat({
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <AutoSpeak />
+      {/* The hands-free overlay lives INSIDE the runtime provider because it sends its
+          transcripts through this thread's composer — a spoken turn is a text turn. */}
+      <VoiceOverlay />
       {/* The shared read-only Source Explorer (D-13): one sheet, two entry points
           (the "Sources (N)" button + the citation click-through), one registry. */}
       <CollectedJobsContext.Provider value={collectedJobs}>

@@ -14,11 +14,16 @@ import { Button } from '@/components/ui/button';
 // ComposerPrimitive.Cancel → api.thread().cancelRun() → the external-store
 // onCancel aborts the in-flight fetch (the server streamSSE unwinds on ctx.Done).
 //
-// The Mic is dictation-primary when caps.stt (WEBVOICE-02): it toggles the runtime
-// dictation session (the dictationAdapter's onSpeech inserts an editable transcript
-// natively) and announces listening/transcribing/error via an aria-live region. When
-// STT is unconfigured OR dictation is unavailable it reverts to the KEPT attachment-
-// record path (MediaRecorder → composer.addAttachment), so there is no regression (D-10).
+// The Mic is DICTATION, and only dictation: it toggles the runtime dictation session
+// (the dictationAdapter's onSpeech inserts an editable transcript natively) and
+// announces listening/transcribing/error via an aria-live region. Where STT is not
+// configured, or dictation is otherwise unavailable, the mic is NOT rendered at all.
+//
+// It used to fall back to recording an audio ATTACHMENT (MediaRecorder →
+// composer.addAttachment) so the control was never a dead end. That fallback is gone:
+// the attachment reached the model as audio bytes, not as words, which is precisely
+// the thing speech in this product must never be. A mic that is absent says "not here";
+// a mic that quietly sends something else says nothing and is believed.
 //
 // Accent is reserved for the primary Send CTA only (UI-SPEC §Color list item 1);
 // Stop is a neutral danger-tinted control so the accent stays scarce.
@@ -76,12 +81,6 @@ export function Composer({
   const { caps, markTurnDictated } = useVoiceMode();
   const fallbackComposerInputRef = useRef<HTMLTextAreaElement | null>(null);
   const composerInputRef = inputRef ?? fallbackComposerInputRef;
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const recordingStreamRef = useRef<MediaStream | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const recordingRequestRef = useRef(false);
-  const captureEpochRef = useRef(0);
-  const approvalLockedRef = useRef(approvalLocked);
   const previousApprovalLockedRef = useRef(approvalLocked);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
   const [captureGeneration, setCaptureGeneration] = useState({
@@ -95,7 +94,6 @@ export function Composer({
     });
   }
   const captureEpoch = captureGeneration.epoch;
-  const [recordingEpoch, setRecordingEpoch] = useState<number | null>(null);
   const [dictationCaptureEpoch, setDictationCaptureEpoch] = useState(0);
   const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
   const dictationStartLen = useRef(0);
@@ -103,9 +101,9 @@ export function Composer({
   const suppressedDictationRef = useRef<{ readonly draft: string; sawActive: boolean } | undefined>(
     undefined,
   );
-  // Whether the mic can be a DICTATION button at all — if it cannot, the recorder fallback
-  // takes its place, because ComposerPrimitive.Dictate renders itself DISABLED rather than
-  // absent, and a disabled button is precisely the dead end D-10 forbids.
+  // Whether the mic can be a DICTATION button at all — if it cannot, there is no mic,
+  // because ComposerPrimitive.Dictate renders itself DISABLED rather than absent, and a
+  // disabled control that never becomes enabled is a dead end.
   //
   // Read from the runtime state directly rather than through useComposerDictate's `disabled`,
   // which answers a different question: it is `dictation != null || !capabilities.dictation ||
@@ -119,7 +117,6 @@ export function Composer({
   );
   const canDictate = caps.stt && !dictationUnavailable;
   const isDictating = dictation != null;
-  const isRecording = recordingEpoch === captureEpoch;
   const activeDictationPhase = dictationCaptureEpoch === captureEpoch ? dictationPhase : 'idle';
   // An attachment still being uploaded blocks the send, exactly as hasBlockingUploads did —
   // but the state is the runtime's, published by the adapter's generator.
@@ -144,22 +141,9 @@ export function Composer({
   }, [composerInputRef, onInputAvailable]);
 
   useLayoutEffect(() => {
-    captureEpochRef.current = captureEpoch;
-    approvalLockedRef.current = approvalLocked;
     const becameLocked = approvalLocked && !previousApprovalLockedRef.current;
     previousApprovalLockedRef.current = approvalLocked;
     if (!becameLocked) return;
-
-    const recorder = recorderRef.current;
-    if (recorder !== null) {
-      recorder.ondataavailable = null;
-      recorder.onstop = null;
-      if (recorder.state !== 'inactive') recorder.stop();
-    }
-    for (const track of recordingStreamRef.current?.getTracks() ?? []) track.stop();
-    chunksRef.current = [];
-    recordingStreamRef.current = null;
-    recorderRef.current = null;
 
     const dictationBusy =
       dictationPhase === 'listening' || dictationPhase === 'transcribing' || isDictating;
@@ -241,63 +225,6 @@ export function Composer({
   // was not merely redundant: the primitive added the pasted file and the handler beside it
   // added the same file again, so one paste produced two attachments.
 
-  const stopRecording = () => {
-    recorderRef.current?.stop();
-  };
-
-  const startRecording = async () => {
-    if (approvalLocked || isRecording || recordingRequestRef.current) {
-      return;
-    }
-    const mediaDevices = (navigator as Partial<Pick<Navigator, 'mediaDevices'>>).mediaDevices;
-    if (mediaDevices === undefined) return;
-    if (typeof MediaRecorder === 'undefined') return;
-    const captureEpoch = captureEpochRef.current;
-    recordingRequestRef.current = true;
-    let stream: MediaStream | null = null;
-    try {
-      stream = await mediaDevices.getUserMedia({ audio: true });
-      recordingRequestRef.current = false;
-      if (approvalLockedRef.current || captureEpochRef.current !== captureEpoch) {
-        for (const track of stream.getTracks()) track.stop();
-        return;
-      }
-      recordingStreamRef.current = stream;
-      chunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
-      recorderRef.current = recorder;
-      recorder.ondataavailable = (event) => {
-        if (
-          event.data.size > 0 &&
-          !approvalLockedRef.current &&
-          captureEpochRef.current === captureEpoch
-        ) {
-          chunksRef.current.push(event.data);
-        }
-      };
-      recorder.onstop = () => {
-        const shouldAttach = !approvalLockedRef.current && captureEpochRef.current === captureEpoch;
-        const type = recorder.mimeType || 'audio/webm';
-        const file = new File(chunksRef.current, 'voice-note.webm', { type });
-        for (const track of stream?.getTracks() ?? []) track.stop();
-        chunksRef.current = [];
-        recordingStreamRef.current = null;
-        recorderRef.current = null;
-        setRecordingEpoch(null);
-        if (shouldAttach) void aui.composer.addAttachment(file);
-      };
-      recorder.start();
-      setRecordingEpoch(captureEpoch);
-    } catch {
-      recordingRequestRef.current = false;
-      for (const track of stream?.getTracks() ?? []) track.stop();
-      chunksRef.current = [];
-      recordingStreamRef.current = null;
-      recorderRef.current = null;
-      setRecordingEpoch(null);
-    }
-  };
-
   // armDictation records what the session is about to be measured against. ComposerPrimitive
   // .Dictate opens the session itself; this only notes the epoch the phase belongs to and the
   // text length, because "did a transcript arrive" is length-after > length-before and there
@@ -310,19 +237,10 @@ export function Composer({
     setDictationPhase('listening');
   };
 
-  const handleRecordToggle = () => {
-    if (approvalLocked) return;
-    if (isRecording) stopRecording();
-    else void startRecording();
-  };
-
   const visibleDictationPhase = approvalLocked ? 'idle' : activeDictationPhase;
   const dictationBusy =
     visibleDictationPhase === 'listening' || visibleDictationPhase === 'transcribing';
-  const micActive = canDictate ? dictationBusy : !approvalLocked && isRecording;
-  const micLabel = canDictate
-    ? t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start')
-    : t(micActive ? 'chat.attachments.micStop' : 'chat.attachments.mic');
+  const micLabel = t(dictationBusy ? 'chat.dictation.stop' : 'chat.dictation.start');
   const dictationAnnouncement =
     visibleDictationPhase === 'listening'
       ? t('chat.dictation.listening')
@@ -438,14 +356,12 @@ export function Composer({
               />
               {/* Dictation is ComposerPrimitive.Dictate / StopDictation — the same two buttons
                 assistant-ui's own composer renders. They call the runtime's dictation session
-                directly and disable themselves when no DictationAdapter is configured, so the
-                onClick here carries only what the primitives do NOT know about: the phase our
-                aria-live region announces, and the text length that tells a transcript-inserted
-                session from an empty one.
-                The MediaRecorder branch stays for !canDictate and is NOT a duplicate of them:
-                it records an audio ATTACHMENT rather than dictating text, which is the whole
-                point of the fallback (D-10) — the mic must not dead-end where STT is
-                unconfigured, and a disabled button is a dead end. */}
+                directly, so the onClick here carries only what the primitives do NOT know
+                about: the phase our aria-live region announces, and the text length that tells
+                a transcript-inserted session from an empty one.
+                No mic at all where dictation is unavailable: the primitives render themselves
+                DISABLED rather than absent, and the audio-attachment fallback that used to
+                stand in its place sent the model bytes instead of words. */}
               {canDictate ? (
                 dictationBusy ? (
                   <ComposerPrimitive.StopDictation
@@ -484,24 +400,7 @@ export function Composer({
                     }
                   />
                 )
-              ) : (
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label={micLabel}
-                  aria-pressed={micActive}
-                  disabled={approvalLocked}
-                  onClick={handleRecordToggle}
-                  className="rounded-full text-text-muted hover:text-text"
-                >
-                  {micActive ? (
-                    <Square data-icon aria-hidden="true" className="size-3.5 fill-current" />
-                  ) : (
-                    <Mic data-icon aria-hidden="true" className="size-4" />
-                  )}
-                </Button>
-              )}
+              ) : null}
               {/* Reasoning-effort selector (WEBMODEL-01/03, D-13): a compact native select — keyboard-
             and screen-reader-correct out of the box, and separate from the textbox so it never
             reclassifies the input or intercepts Enter-send / paste / drop. It renders ONLY the

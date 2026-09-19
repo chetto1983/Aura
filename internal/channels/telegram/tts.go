@@ -49,18 +49,21 @@ type ttsClient struct {
 
 // newTTSClient builds a TTS client over the multimodal config.
 func newTTSClient(cfg MultimodalConfig) *ttsClient {
+	voiceCfg := multimodal.TTSConfig{
+		LocalBaseURL:      cfg.TTSBaseURL,
+		Voice:             cfg.TTSVoice,
+		Format:            cfg.TTSFormat,
+		CloudModel:        cfg.TTSModel,
+		OpenRouterBaseURL: cfg.OpenRouterBaseURL,
+		OpenRouterAPIKey:  cfg.OpenRouterAPIKey,
+		TimeoutSec:        cfg.TimeoutSec,
+	}
 	return &ttsClient{
-		tts: multimodal.NewTTSClient(multimodal.TTSConfig{
-			LocalBaseURL:      cfg.TTSBaseURL,
-			Voice:             cfg.TTSVoice,
-			Format:            cfg.TTSFormat,
-			CloudModel:        cfg.TTSModel,
-			OpenRouterBaseURL: cfg.OpenRouterBaseURL,
-			OpenRouterAPIKey:  cfg.OpenRouterAPIKey,
-			TimeoutSec:        cfg.TimeoutSec,
-		}),
-		caption:    cfg.TTSCaption,
-		configured: cfg.TTSBaseURL != "" || cfg.TTSModel != "",
+		tts:     multimodal.NewTTSClient(voiceCfg),
+		caption: cfg.TTSCaption,
+		// The SAME predicate the cockpit's composition root reads — it used to be this
+		// line, written the other way round, in two files.
+		configured: voiceCfg.Configured(),
 	}
 }
 
@@ -69,7 +72,10 @@ func newTTSClient(cfg MultimodalConfig) *ttsClient {
 // msg.Voice the caller asserts on). The caption is ASCII-sanitized so it never
 // 400s. A sidecar error surfaces and no voice note is sent.
 func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient, text string) (*tele.Message, error) {
-	spoken := sanitizeForSpeech(text)
+	// The SHARED normalizer — the same one the cockpit's /api/tts uses, so a reply is
+	// spoken the same way on both channels. maxChars 0: Telegram has no input ceiling
+	// of its own today; giving it one is this argument, not another code path.
+	spoken, _ := multimodal.PrepareSpeech(text, 0)
 	if spoken == "" {
 		return nil, nil // nothing speakable (e.g. an emoji-only reply) — skip the voice note
 	}

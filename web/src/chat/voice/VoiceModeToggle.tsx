@@ -3,15 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { useVoiceMode } from './voiceModeContext';
 import { Button } from '@/components/ui/button';
 
-// VoiceModeToggle — the ephemeral session voice-mode switch that lives in the chat
-// workspace controls row beside the Artefatti toggle (D-06). Rendered only
-// when TTS is configured (caps.tts, WEBVOICE-03); flips the in-memory voiceMode with
-// aria-pressed reflecting state. Extracted from AppShell to keep it under the 600-LOC
-// cap; matches the ArtifactsToggle shape (BLUE accent on active).
+// VoiceModeToggle — the ephemeral session switch that opens the hands-free voice
+// overlay, in the chat workspace controls row beside the Artefatti toggle (D-06).
+//
+// It needs BOTH voice legs configured: hands-free is listen → answer → speak → listen,
+// so a stack with only one of them cannot run the loop. Without STT the composer's mic
+// still dictates; without TTS the per-message speaker is still there. Showing the
+// toggle anyway would offer a mode that opens onto a dead end.
 export function VoiceModeToggle() {
   const { t } = useTranslation();
   const { caps, voiceMode, toggleVoiceMode } = useVoiceMode();
-  if (!caps.tts) return null;
+  if (!caps.tts || !caps.stt) return null;
   const label = t(voiceMode ? 'chat.voiceMode.on' : 'chat.voiceMode.off');
   return (
     <Button

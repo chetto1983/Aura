@@ -1,0 +1,124 @@
+/* voice.css — the hands-free voice overlay's orb.
+   One hue for every phase (the accent blue the rest of the cockpit reserves for the
+   primary action), because four coloured states on one circle reads as a toy; the
+   PHASE is carried by motion and by the status line beside it, and only `error`
+   breaks the hue. The live microphone level arrives as ONE --orb-level custom
+   property (0..1), so halo, core and ring all read the same number and the browser
+   interpolates transform and colour off it; the alternative, a class per loudness
+   band, would quantize the swell into visible steps. */
+
+.voice-orb {
+  --orb-level: 0;
+  --orb-hue: var(--color-ring);
+  --orb-swell: calc(1 + var(--orb-level) * 0.28);
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: clamp(8.5rem, 36vmin, 14rem);
+  aspect-ratio: 1;
+  color: var(--orb-hue);
+}
+
+.voice-orb[data-phase='error'] {
+  --orb-hue: var(--color-danger);
+}
+
+/* The halo: a soft field that swells with the voice. Sits under everything. */
+.voice-orb::before {
+  content: '';
+  position: absolute;
+  inset: -18%;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    color-mix(in oklab, var(--orb-hue) 34%, transparent),
+    transparent 68%
+  );
+  transform: scale(var(--orb-swell));
+  transition: transform 90ms linear;
+}
+
+/* The core: glass over the page atmosphere, with a low sheen that never spins at rest. */
+.voice-orb__core {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 72%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklab, var(--orb-hue) 45%, var(--color-border));
+  background:
+    radial-gradient(
+      circle at 32% 26%,
+      color-mix(in oklab, var(--orb-hue) 30%, transparent),
+      transparent 58%
+    ),
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--color-surface-2) 92%, var(--orb-hue)),
+      var(--color-surface)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in oklab, var(--color-text) 8%, transparent),
+    0 18px 48px -24px color-mix(in oklab, var(--orb-hue) 70%, transparent);
+  transform: scale(calc(1 + var(--orb-level) * 0.06));
+  transition: transform 90ms linear;
+}
+
+/* The ring: one stroke that reads the level while listening and sweeps while busy. */
+.voice-orb__ring {
+  position: absolute;
+  inset: 4%;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: color-mix(in oklab, var(--orb-hue) 80%, transparent);
+  border-right-color: color-mix(in oklab, var(--orb-hue) 24%, transparent);
+  opacity: 0.85;
+}
+
+.voice-orb[data-phase='listening'] .voice-orb__ring {
+  border-color: color-mix(in oklab, var(--orb-hue) calc(22% + var(--orb-level) * 58%), transparent);
+  transform: scale(calc(1 + var(--orb-level) * 0.12));
+  transition:
+    transform 90ms linear,
+    border-color 90ms linear;
+}
+
+.voice-orb__glyph {
+  position: relative;
+  color: color-mix(in oklab, var(--orb-hue) 82%, var(--color-text));
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .voice-orb[data-phase='transcribing'] .voice-orb__ring,
+  .voice-orb[data-phase='thinking'] .voice-orb__ring {
+    animation: voice-orb-sweep 1.4s linear infinite;
+  }
+
+  .voice-orb[data-phase='thinking']::before {
+    animation: voice-orb-breathe 2.6s ease-in-out infinite;
+  }
+
+  /* Speaking has no microphone level to read — the halo carries the cadence instead. */
+  .voice-orb[data-phase='speaking']::before {
+    animation: voice-orb-breathe 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes voice-orb-sweep {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes voice-orb-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+}

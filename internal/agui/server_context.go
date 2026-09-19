@@ -64,10 +64,12 @@ func (s *Server) buildTurnUserMessage(ctx context.Context, r *http.Request, thre
 	if s.assets == nil {
 		return ctx, userMsg, 0, ""
 	}
+	// Images only. An audio attachment reaches the model as its TRANSCRIPT (the STT
+	// summary BuildTurnContext renders below), never as bytes — see TurnMediaLoader.
 	mediaIDs := make([]string, 0, len(attachments))
 	allowed := make(map[string]bool, len(attachments))
 	for _, attachment := range attachments {
-		if attachment.Modality != assets.ModalityImage && attachment.Modality != assets.ModalityAudio {
+		if attachment.Modality != assets.ModalityImage {
 			continue
 		}
 		mediaIDs = append(mediaIDs, attachment.ID)

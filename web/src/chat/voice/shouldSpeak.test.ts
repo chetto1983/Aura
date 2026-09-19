@@ -1,18 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { shouldSpeak } from './shouldSpeak';
 
-describe('shouldSpeak (Telegram ShouldSpeak parity)', () => {
+describe('shouldSpeak (composer auto-speak gate)', () => {
   it.each([
     [false, false, false],
-    [true, false, true],
+    [true, false, false],
     [false, true, true],
-    [true, true, true],
-  ])('shouldSpeak(%s, %s) === %s', (voiceMode, turnWasDictated, expected) => {
+    [true, true, false],
+  ])('shouldSpeak(voiceMode=%s, dictated=%s) === %s', (voiceMode, turnWasDictated, expected) => {
     expect(shouldSpeak(voiceMode, turnWasDictated)).toBe(expected);
   });
 
-  it('is a pure OR — a dictated turn auto-speaks even with voice mode off', () => {
+  it('a dictated composer turn reads its reply aloud', () => {
     expect(shouldSpeak(false, true)).toBe(true);
-    expect(shouldSpeak(true, false)).toBe(true);
+  });
+
+  it('voice mode SUPPRESSES it — the hands-free overlay speaks the reply itself', () => {
+    // A plain OR here played every answer twice, once per path.
+    expect(shouldSpeak(true, true)).toBe(false);
+    expect(shouldSpeak(true, false)).toBe(false);
   });
 });

@@ -1,9 +1,11 @@
-// shouldSpeak — the client-side auto-speak predicate, a direct port of Telegram's
-// ShouldSpeak (internal/channels/telegram/tts.go:24 → `voiceMode || inboundWasVoice`).
-// Auto-speak a new assistant reply when the session voice-mode toggle is on OR the
-// user produced that turn by dictation (echo-modality parity with Telegram's
-// inboundWasVoice). Pure and side-effect free so it is trivially unit- and
-// mutation-tested (37C-06 Stryker gate).
+// shouldSpeak — the client-side auto-speak predicate for the COMPOSER lane: a reply is
+// read aloud when the person produced that turn by dictating it (echo-modality parity
+// with Telegram's inboundWasVoice, internal/channels/telegram/tts.go:24).
+//
+// It is deliberately FALSE while voice mode is on. Voice mode opens the hands-free
+// overlay, and the overlay speaks the reply itself as part of its loop — leaving this
+// predicate a plain OR made the same answer play twice, once through each path.
+// Pure and side-effect free so it stays trivially unit- and mutation-tested.
 export function shouldSpeak(voiceMode: boolean, turnWasDictated: boolean): boolean {
-  return voiceMode || turnWasDictated;
+  return turnWasDictated && !voiceMode;
 }

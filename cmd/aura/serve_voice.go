@@ -58,10 +58,9 @@ func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
 // the caller leaves the tts capability absent. Extracted so serve_voice_test.go asserts
 // AudioFormat()=="mp3" + the local/cloud selection with no live call.
 func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
-	if cfg.TTSModel == "" && cfg.TTSBaseURL == "" {
-		return nil
-	}
-	return multimodal.NewTTSClient(multimodal.TTSConfig{
+	// The config is built first and asked whether it is usable — the predicate belongs
+	// to the config, not to each composition root that writes it out again.
+	voiceCfg := multimodal.TTSConfig{
 		LocalBaseURL:      cfg.TTSBaseURL,
 		Voice:             cfg.TTSVoice,
 		Format:            "mp3",
@@ -69,7 +68,11 @@ func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
-	})
+	}
+	if !voiceCfg.Configured() {
+		return nil
+	}
+	return multimodal.NewTTSClient(voiceCfg)
 }
 
 // buildWebSTTClient builds the web STT client. Local↔cloud SELECTABLE:
@@ -78,10 +81,7 @@ func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
 // OpenRouter's JSON transcription route over the shared credential. Returns nil only when
 // NEITHER a local base URL NOR a cloud model is set, leaving the stt capability absent.
 func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
-	if cfg.STTCloudModel == "" && cfg.STTBaseURL == "" {
-		return nil
-	}
-	return multimodal.NewSTTClient(multimodal.STTConfig{
+	voiceCfg := multimodal.STTConfig{
 		LocalBaseURL:      cfg.STTBaseURL,
 		LocalModel:        cfg.STTModel,
 		Language:          cfg.STTLanguage,
@@ -89,5 +89,9 @@ func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
 		OpenRouterBaseURL: cfg.LLM.BaseURL,
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
-	})
+	}
+	if !voiceCfg.Configured() {
+		return nil
+	}
+	return multimodal.NewSTTClient(voiceCfg)
 }

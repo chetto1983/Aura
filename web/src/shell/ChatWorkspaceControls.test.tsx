@@ -11,8 +11,9 @@ import { ChatWorkspaceControls } from './ChatWorkspaceControls';
 // the order assertion moves here instead — same locked intent
 // ([VoiceModeToggle, ShareToggle, ArtifactsToggle]), corrected DOM location.
 
+// Both legs: the hands-free toggle is offered only when the loop can actually run.
 const VOICE_ENABLED: VoiceModeState = {
-  caps: { tts: true, stt: false },
+  caps: { tts: true, stt: true },
   voiceMode: false,
   turnWasDictated: false,
   toggleVoiceMode: () => undefined,
