@@ -165,6 +165,17 @@ databases and the existing ArcadeDB client.
 - Keep fact and conversation quotas independent; do not infer retrieval quality
   from graph connectivity or coreness.
 
+### studio-media-editing
+
+The Studio needs manual editing of its images and videos: crop, filters and annotations on
+photos, trimming on clips. It must work in the browser, without AI models. Spike 105 measures
+Filerobot (photos) and Mediabunny (video) on the cockpit's own stack.
+
+**Requirements:**
+
+- No AI model in the editing path; everything runs client-side (operator, 2026-09-19).
+- No request may leave the origin: Scaleflex's translation backend stays off.
+
 ## Spikes
 
 | # | Idea | Name | Type | Validates | Verdict | Tags |
@@ -177,3 +188,4 @@ databases and the existing ArcadeDB client.
 | 100a | durable-delegation | substrate-single-table | comparison | Given a delegation in flight, when the worker dies mid-flight / the daemon restarts / delivery fails 8 consecutive times, then the delegation is never silently lost and converges to a readable terminal state | PENDING | postgres, durability, lease |
 | 100b | durable-delegation | substrate-generalized-queue | comparison | The same question, generalizing the proven `aura.ingestion_jobs` lease engine instead of adding a new table | PENDING | postgres, durability, lease, reuse |
 | 101 | durable-delegation | message-channel-necessity | standard | Given the delegation ledger plus the steer rail, when a background delegation must return a result AND its worker must ask the operator, then either no agent-to-agent message channel is needed, or the spike names exactly what cannot be expressed without one | PENDING | scope, messaging |
+| 105 | studio-media-editing | studio-media-editing | standard | Given Studio outputs and phone uploads, when a photo is edited with Filerobot or a clip trimmed with Mediabunny in the browser, then the file is valid, oriented and cut where asked, offline | **VALIDATED** - React 19/Vite 8 build clean (gzip 273 KB Filerobot, 143 KB Mediabunny, lazy); copy-trim `expand` is frame-exact on MP4 via edit list in 10-60 ms; `shrink` loses picture; Firefox drops HEVC video silently and writes Opus-in-MP4; EXIF honoured; Scaleflex i18n backend must be off, Italian table is ours | studio, web, filerobot, mediabunny, webcodecs |

@@ -1,0 +1,19 @@
+body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #f4f4f6; color: #1b1b1f; }
+main { padding: 12px; }
+header { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; }
+header nav { display: flex; gap: 4px; flex: 1; }
+button { padding: 6px 10px; border: 1px solid #c8c8d0; background: #fff; border-radius: 6px; cursor: pointer; }
+button.on, button.primary { background: #1b1b1f; color: #fff; }
+.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+.file input { max-width: 180px; }
+.editor { height: 620px; background: #fff; border-radius: 8px; overflow: hidden; }
+.saved { display: flex; gap: 12px; margin-top: 12px; }
+.saved img { max-width: 360px; max-height: 360px; border: 1px solid #ccc; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.split video { width: 100%; max-height: 360px; background: #000; }
+.form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; margin-bottom: 8px; }
+.form label { display: flex; flex-direction: column; font-size: 12px; }
+.form input[type='number'] { width: 90px; }
+pre { font-size: 11px; background: #fff; padding: 8px; overflow: auto; max-height: 260px; }
+.muted { color: #666; }
+.err { color: #b00020; }
