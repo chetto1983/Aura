@@ -1,0 +1,11 @@
+:root { --bg: #14110f; --ink: #efe6d8; --muted: #9c8f7d; --accent: #e8a33d; --line: #3a322a; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 'Atkinson Hyperlegible Next', system-ui, sans-serif; }
+header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+nav { display: flex; gap: 4px; flex-wrap: wrap; }
+button { background: #231e19; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+button.on { border-color: var(--accent); color: var(--accent); }
+.lab { padding: 12px 16px; display: grid; gap: 12px; }
+.player { width: 100%; max-width: 640px; aspect-ratio: 16 / 9; background: #000; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); padding: 0 16px; }

@@ -1,0 +1,13 @@
+.timeline { position: relative; border: 1px solid var(--line); background: #1b1713; overflow: hidden; user-select: none; }
+.ruler { position: relative; height: 22px; border-bottom: 1px solid var(--line); cursor: pointer; touch-action: none; }
+.ruler span { position: absolute; top: 3px; font-size: 11px; color: var(--muted); padding-left: 2px; border-left: 1px solid var(--line); }
+.track { border-bottom: 1px solid #2a241e; }
+.track-label { font-size: 11px; color: var(--muted); padding: 10px 6px; }
+.clip { flex: 1; margin: 4px 0; border-radius: 4px; padding: 4px 8px; font-size: 12px; overflow: hidden; white-space: nowrap; border: 1px solid #0006; }
+.clip-video { background: #3f6b5c; }
+.clip-text { background: #8a5a2b; }
+.clip-image { background: #5a4a7a; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; }
+/* react-timeline-editor leaves touch-action: auto on its actions, so on a phone the browser claims the
+   swipe as a pan and cancels the pointer stream (pointercancel) before interact.js can drag. */
+.timeline-editor-action { touch-action: none; }
