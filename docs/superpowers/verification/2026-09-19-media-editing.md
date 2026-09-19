@@ -1,22 +1,30 @@
 # Media editing — live verification (Plan A, Task 12)
 
-Run on 2026-09-19 between 21:34 and 21:46 UTC. Target: the running appliance at
-`https://localhost`. No product code, compose file, Caddy file or `.env` was changed.
+Two runs against the running appliance at `https://localhost`, both on revision
+`09b764cfd`. No product code, compose file, Caddy file or `.env` was changed by either.
+
+- **First run, 2026-09-19 21:34–21:46 UTC.** Every flow. It found that no browser upload
+  works on the appliance (Bug 1), so flows 1 and 3 were carried past it with an in-test
+  forward to Garage.
+- **Second run, 2026-09-19 22:14–22:16 UTC**, after the front door was fixed by
+  `839e62efd` ("route every per-identity bucket to Garage, not only aura-assets") and Caddy
+  was reloaded on the live stack. Flows 1 and 3 again, **with no forward at all**.
 
 ## Verdict
 
-| Flow | Unmodified appliance | With the Garage forward (see Method) | Key number |
+| Flow | Before `839e62efd` | After `839e62efd`, no forward | Key number |
 |---|---|---|---|
-| 1. Studio image → Filters → Save to library → picker | **FAIL**: "Saving failed: upload failed" | PASS on desktop and phone | stored WebP warm share 0.242 → 0.997 |
-| 2. Agent video → trim 1–3 s → download | PASS (no upload involved) | — | ffprobe 2.042 s on Chrome, phone and Firefox |
-| 3. Phone MP4 + JPEG as chat attachments → Edit | **FAIL**: the attachment chip says "Failed" | PASS on desktop and phone | trimmed phone clip 2.000 s, rotation kept |
-| 4. Firefox trim + HEVC | Trim PASS | HEVC trim is **not** refused; HEVC crop **is** refused with the sentence | Firefox trim 165 ms, 2.042 s |
-| 5. Rotation-only export | — | **Copy path** | 52–65 ms, codec parameters identical to the source |
+| 1. Studio image → Filters → Save to library → picker | **FAIL**: "Saving failed: upload failed" | **PASS** on desktop and phone | stored WebP warm share 0.242 → 0.997 |
+| 2. Agent video → trim 1–3 s → download | PASS (no upload involved) | unchanged | ffprobe 2.042 s on Chrome, phone and Firefox |
+| 3. Phone MP4 + JPEG as chat attachments → Edit | **FAIL**: the attachment chip says "Failed" | **PASS** on desktop and phone | trimmed phone clip 2.000 s, rotation kept |
+| 4. Firefox trim + HEVC | Trim PASS | unchanged | HEVC trim is **not** refused; HEVC crop **is**, with the app's sentence |
+| 5. Rotation-only export | **Copy path** | unchanged | 52–65 ms, codec parameters identical to the source |
 
-The editors do their part on every surface tried. **Every browser upload on this appliance
-fails**, because Caddy does not route the per-identity bucket path to Garage (Bug 1). Until
-that is fixed, Save to library and chat attachments do not work for a real operator.
-Trimming, rotating, cropping and downloading involve no upload, so they work unmodified.
+The editors do their part on every surface tried. Trimming, rotating, cropping and
+downloading involve no upload, so they always worked. Saving and attaching did not until
+`839e62efd`: Caddy routed only `/aura-assets/*` to Garage while a presigned PUT goes to the
+per-identity bucket path (Bug 1). With the fix on the live stack, both flows pass end to
+end with nothing intercepted but the agent run.
 
 ## What was run
 
@@ -40,19 +48,20 @@ Real media already on the stack:
 conversations are text only; `/threads/{id}/messages` carries no media. The Veo clip above
 is the only agent-generated video, so flow 2 trims it on the Studio stage.
 
-Uploads, generated with ffmpeg for this run:
+Uploads, generated with ffmpeg for these runs:
 - `phone.mp4`: coded 1920×1080 H.264 High L4.0, 30 fps, 6 s, AAC 48 kHz. Display matrix rotation 90, so it displays at 1080×1920. 2 922 497 B.
 - `photo.jpg`: 1600×1200 baseline JPEG, 109 927 B.
 - `hevc.mp4`: HEVC Main L3.1 (`hvc1`), 1280×720, 30 fps, 4 s, AAC. 837 693 B.
 
 ## Method
 
-The run did not start a paid generation or a model turn.
+Neither run started a paid generation or a model turn.
 - **No Studio Generate.** The Studio was only read and edited.
 - **The run was held in the browser.** `**/agent/run` was routed to a handler that never
   answers, so the request never left Chromium or Firefox. Server evidence:
-  - The 7 conversations the sends created all read `TotalInputTokens 0`, `TotalOutputTokens 0`, `TotalCostUSD 0`.
-  - The aura log for 21:30–21:46 UTC holds only MCP grant and embed-backfill lines, with no run.
+  - Every conversation the sends created read `TotalInputTokens 0`, `TotalOutputTokens 0`, `TotalCostUSD 0`.
+  - The aura log holds only MCP grant and embed-backfill lines across both windows
+    (21:30–21:46 and 22:10–22:25 UTC), with no run.
 - **No vision summary.** A chat image's regular finalize (`internal/assets/service.go:147`)
   queues the image processor. Its vision call goes to the primary model whenever that
   model takes images (`internal/multimodal/vision.go:145`), which can be a paid OpenRouter
@@ -62,58 +71,64 @@ The run did not start a paid generation or a model turn.
   processing. The MP4 and HEVC files took the regular finalize, because no processor is
   wired for video.
 
-**The Garage forward.** This is the substitution that let flows 1 and 3 continue past Bug 1.
+**The Garage forward — first run only.** This was the substitution that let flows 1 and 3
+continue past Bug 1 before it was fixed. **The second run used none of it**: the only route
+left in place was the held agent run and the JPEG's finalize above.
 - The browser's PUT to `https://172.31.131.222/aura-<identity>/…` was carried to Garage on
   `127.0.0.1:3900`. It kept its signed `Host` and its presigned query, and got a CORS
   answer.
-- Nothing else changed: presign, signature, finalize, Studio library and download are all
+- Nothing else changed: presign, signature, finalize, Studio library and download were all
   the running server's.
 - The chat composer uploads a `File` by XHR, and Playwright's interception exposes no body
   for that. So for those PUTs the forward sent the attached file itself, named by the
-  signed `x-amz-meta-filename` header.
-- Checked afterwards: every stored object reads back through `/api/assets/{id}/download`
+  signed `x-amz-meta-filename` header. In the second run the composer's own body went to
+  Garage, because nothing intercepted it.
+- Checked after both runs: every stored object reads back through `/api/assets/{id}/download`
   with the local file's SHA-256 (`phone.mp4` `ba65bbfd…`, `photo.jpg` `3fa80881…`).
-- The Studio's Save to library uploads with `fetch` and a Blob. Its real browser body was
-  forwarded as is.
 
 ## Flow 1 — Studio image → Filters → Save to library → library picker
 
 Steps: Studio → select the image record → Edit → Filters (on the phone behind Filerobot's ☰
 menu) → Sepia → Save to library. Then close the editor and open Start frame → Your images.
 
-**Unmodified appliance: FAIL (desktop).**
+**Before `839e62efd`: FAIL (desktop).**
 - `POST /api/assets/presign` returned 200.
 - The `PUT https://172.31.131.222/aura-214f9d28-…/chat/52396265-….webp` failed with
   `net::ERR_FAILED`.
 - The editor shows "Saving failed: upload failed" with Retry.
-- The asset row `c5265375…` stays `presigned` with 0 bytes, and nothing reached the library.
+- The asset row `c5265375…` stayed `presigned` with 0 bytes, and nothing reached the library.
 
-![Save to library fails on the unmodified appliance](media-editing-2026-09-19/desktop-studio-save-upload-failed.png)
+![Save to library fails before the Caddy fix](media-editing-2026-09-19/desktop-studio-save-upload-failed.png)
 
-**With the forward: PASS on desktop and phone.**
+**After `839e62efd`, nothing forwarded: PASS on desktop and phone.** The presigned PUT goes
+straight to `https://172.31.131.222/aura-214f9d28-…/chat/<uuid>.webp` and Caddy hands it to
+Garage.
 
 | | desktop | phone |
 |---|---|---|
-| Save to library → "Saved to the Studio library" | 443 ms | 364 ms |
-| New library asset | `be8db27e…` `generated-edited.webp`, image/webp, 82 932 B | `3d56b2ec…` `generated-edited.webp`, 73 016 B |
+| Save to library → "Saved to the Studio library" | **438 ms** | **461 ms** |
+| New library asset | `87fb0223…` `generated-edited.webp`, image/webp, 82 932 B | `5bbe58d5…` `generated-edited.webp`, 73 016 B |
 | Stored image | 1024×1024 | 1024×1024 |
-| Warm share (R ≥ G ≥ B), source 0.242 | **0.997** | **0.997** |
+| Warm share (R ≥ G ≥ B), source 0.242 | **0.9972** | **0.9965** |
 | Mean R−B, source −2.4 | **+38.9** | **+38.9** |
-| `/api/studio/library` count | 6 → 7 | 9 → 10 |
+| `/api/studio/library` count | 10 → 11 | 12 → 13 |
 | First tile in "Your images" | `generated-edited.webp` | `generated-edited.webp` |
 
 The warm share and R−B are measured on the bytes read back from the download route, not on
-the canvas.
+the canvas. The library counts start high because the first run's items were still there;
+everything this verification created has since been deleted (see Leftovers).
+
+The first run, through the forward, measured the same picture: 443 ms and 364 ms, the same
+byte counts, warm 0.997, and the new item first in the picker.
 
 ![Photo editor, Sepia, desktop](media-editing-2026-09-19/desktop-studio-photo-sepia.png)
 ![The new photo first in the Studio picker, desktop](media-editing-2026-09-19/desktop-studio-library-picker.png)
 
 <img src="media-editing-2026-09-19/phone-studio-photo-sepia.png" alt="Photo editor, Sepia, phone" width="260"> <img src="media-editing-2026-09-19/phone-studio-library-picker.png" alt="The Studio picker, phone" width="260">
 
-In the phone picker the broken `photo.jpg` tile is residue of this run, not of the app. It
-was a 0-byte chat attachment my first forward attempt stored (see Bug 2), deleted
-afterwards. The colour-bar `photo.jpg` is the desktop chat attachment of flow 3.
-"Your images" lists usable images from any thread by design (`service.go:31`).
+Both screenshots are from the second run. The picker also holds the earlier sepia copies and
+the colour-bar `photo.jpg` chat attachments of flow 3: "Your images" lists usable images
+from any thread by design (`service.go:31`). All of them were deleted afterwards.
 
 ## Flow 2 — agent-generated video → trim 1–3 s → download
 
@@ -144,30 +159,44 @@ run held. Then the attachment card's Edit (pencil).
 offers only Remove. The Edit button lives on the sent message's `AttachmentCard`. So the
 message was sent with `/agent/run` held.
 
-**Unmodified appliance: FAIL.**
+**Before `839e62efd`: FAIL.**
 - The chip reads **Failed**.
 - The console reports the CORS block on `https://172.31.131.222/aura-214f9d28-…/chat/….mp4`,
   and the PUT fails with `net::ERR_FAILED`.
-- Asset `1fa1ff9f…` stays `presigned`, 0 bytes.
+- Asset `1fa1ff9f…` stayed `presigned`, 0 bytes.
 
-![Chat attachment fails on the unmodified appliance](media-editing-2026-09-19/desktop-chat-upload-failed.png)
+![Chat attachment fails before the Caddy fix](media-editing-2026-09-19/desktop-chat-upload-failed.png)
 
-**With the forward: PASS on desktop and phone.**
+**After `839e62efd`, nothing forwarded: PASS on desktop and phone.**
 
-Requests the browser made:
-1. `presign` ×2, then `PUT` ×2.
+Requests the browser made, in order:
+1. `presign` ×2, then `PUT` ×2 straight to `https://172.31.131.222/aura-214f9d28-…/chat/<uuid>.<ext>`.
 2. `finalize` ×2: the MP4's regular, the JPEG's the Studio's unprocessed one (see Method).
 3. `POST /api/conversations` 201.
 4. `POST /agent/run`, held.
+
+Both uploads were stored whole, with the composer's own XHR body:
+
+| Asset | desktop | phone |
+|---|---|---|
+| `phone.mp4`, 2 922 497 B, SHA-256 `ba65bbfd…` | `f0260e9d…`, `complete` | `7ef7b529…`, `complete` |
+| `photo.jpg`, 109 927 B, SHA-256 `3fa80881…` | `4a7740e3…`, `accepted` | `8a921a5d…`, `accepted` |
+
+Each was read back through `/api/assets/{id}/download`: the same byte count and the same
+SHA-256 as the local file.
 
 The cards show a pencil named "Edit phone.mp4" and "Edit photo.jpg".
 
 ![The sent message's attachment cards](media-editing-2026-09-19/desktop-chat-cards.png)
 
+The "Untitled" rows in that sidebar are the conversations the held sends opened; they have
+since been deleted. The `photo.jpg` card's preview had not finished loading when the shot
+was taken; the phone run shows it drawn.
+
 | | desktop | phone |
 |---|---|---|
 | `phone.mp4` editor size label | **1080 × 1920** (file rotation applied) | **1080 × 1920** |
-| Trim 1–3 s → download `phone-edited.mp4` | 58 ms | 74 ms |
+| Trim 1–3 s → download `phone-edited.mp4` | **59 ms** (58 ms in the first run) | **63 ms** (74 ms) |
 | ffprobe of the cut | video **2.000 s**, 60 frames, H.264 High L4.0, coded 1920×1080, **display matrix rotation 90 kept**; AAC 2.008 s; 977 093 B | identical |
 | `photo.jpg` → Filters → Inkwell → Download | `photo-edited.jpeg`, 65 280 B, `ffd8ff`, 1600×1200 | 51 346 B, `ffd8ff`, 1600×1200 |
 | Grey share (\|R−G\|, \|G−B\| ≤ 6), source 0.00003 | **1.000** | **1.000** |
@@ -184,8 +213,8 @@ Chrome writes. The filmstrip drew 10 frames.
 
 ![Firefox, trim](media-editing-2026-09-19/firefox-studio-video-trim.png)
 
-**HEVC, uploaded as a chat attachment.** Firefox needed no body substitution: its PUT body
-reached the forward.
+**HEVC, uploaded as a chat attachment** (first run, through the forward; Firefox's own PUT
+body reached it, no substitution needed).
 
 | | Firefox 155 | Chrome 153 on this host |
 |---|---|---|
@@ -222,39 +251,47 @@ separate the two paths; the codec parameters do.
 
 ![Rotation only, 90° right, phone MP4](media-editing-2026-09-19/desktop-chat-phone-mp4-rot90.png)
 
-## Bugs found (not fixed here; the controller decides)
+## Bugs found
 
-### Bug 1 — every browser upload fails on the appliance (blocker)
+### Bug 1 — every browser upload failed on the appliance (blocker) — FIXED by `839e62efd`
 
-The presigned PUT and Caddy do not match.
+The presigned PUT and Caddy did not match.
 - `AURA_OBJECTSTORE_PUBLIC_ENDPOINT=https://172.31.131.222`, and per-identity isolation
   names the bucket `aura-<identity>`. The presigned URL is therefore
   `https://172.31.131.222/aura-214f9d28-a020-4627-8611-4ee85ab4e1dc/chat/<uuid>.<ext>`.
 - `caddy/Caddyfile:33` sends only `/aura-assets/*` to `garage:3900`. Everything else goes
   to `aura:9080`, which answers the preflight with 401 and no CORS headers.
 
-Preflight measured with `curl -k -X OPTIONS -H 'Origin: https://localhost' -H 'Access-Control-Request-Method: PUT'`:
+Preflight measured with `curl -k -X OPTIONS -H 'Origin: https://localhost' -H 'Access-Control-Request-Method: PUT'`, before and after the fix:
 
-| Path | via `https://localhost` | via `https://172.31.131.222` |
-|---|---|---|
-| `/aura-assets/x` | 200 | 200 |
-| `/aura-214f9d28-…/chat/x.webp` | **401** | **401** |
+| Path | before, via `https://localhost` | before, via `https://172.31.131.222` | after, via `https://172.31.131.222` |
+|---|---|---|---|
+| `/aura-assets/x` | 200 | 200 | 200, `Access-Control-Allow-Origin: *` |
+| `/aura-214f9d28-…/chat/x.webp` | **401** | **401** | **200**, `Access-Control-Allow-Origin: *` |
+| `/aura-probe-identity/x` | — | — | 200, `Access-Control-Allow-Origin: *` |
 
-Effects seen:
+Effects seen before the fix:
 - Save to library: "Saving failed: upload failed".
 - Chat attachments: the chip says "Failed".
-- The Studio's own "Upload a file" frame upload takes the same presign route, so it
-  presumably fails too. That was not exercised.
-- Failed attempts leave `presigned` 0-byte asset rows (`c5265375…`, `1fa1ff9f…`).
+- The Studio's own "Upload a file" frame upload takes the same presign route
+  (`frameUpload.ts` calls `presignAsset`), so it failed too. That was not exercised directly.
+- Failed attempts left `presigned` 0-byte asset rows (`c5265375…`, `1fa1ff9f…`).
 - The committed E2E (`web/e2e/media-edit.spec.ts`) cannot catch this. It runs against a
   side stack with a shared bucket and no Caddy in front.
+
+**The fix**, `839e62efd`, replaces the `/aura-assets/*` handle with
+`@objectstore path_regexp ^/aura-[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/` in `caddy/Caddyfile` and
+`caddy/Caddyfile.domain`, and was applied to the live `/opt/aura/caddy/Caddyfile` with a
+Caddy reload. Flows 1 and 3 were then re-run with no forward at all and pass, on desktop and
+phone: see the two flow sections above.
 
 ### Bug 2 — finalize accepts an object shorter than declared (minor, server)
 
 `accept` (`internal/assets/service.go:183-217`) checks the stored size only against the
 modality limit. It never compares it with `declared_size_bytes` and does not refuse 0 bytes.
 
-This run's first forward attempt stored empty objects. The server accepted them:
+Still open. The first run's first forward attempt stored empty objects, and the server
+accepted them:
 - `ea7a6a19…` `phone.mp4`: declared 2 922 497 B, stored 0 B, status `complete`.
 - `9395b01f…` `photo.jpg`: declared 109 927 B, stored 0 B, status `accepted`.
 - Both have the content hash of the empty string (`e3b0c442…`).
@@ -281,18 +318,25 @@ measurement (`DELETE /api/assets/{id}` → 200, now `deleting`).
 - The phone MP4 filmstrips above show horizontal bars smeared across each slot, while the
   preview above them is correct.
 
-## Left on the stack by this run
+## Leftovers — all removed
 
-- **Studio library:** two `generated-edited.webp` (`be8db27e…`, `3d56b2ec…`).
-- **Chat attachments:**
-  - `phone.mp4` (`a412e854…`, `99e3a259…`) and `photo.jpg` (`27caec9a…`, `59000641…`).
-    The two JPEGs also appear in the Studio picker.
-  - `hevc.mp4` ×4 (`8cfcab37…`, `7ade2453…`, `f50e974b…`, `342db6bc…`).
-- **Failed attempts:** `presigned` 0-byte rows `c5265375…` and `1fa1ff9f…`.
-- **Deleted:** the empty `ea7a6a19…` and `9395b01f…`, now `deleting`.
-- **Conversations:** 7 empty "Untitled" ones (`01a0bb9c…`, `01a0bb9e…`, `01a0bb9f…`,
-  `01a0bba0-9ed7…`, `01a0bba0-ce5a…`, `01a0bba1-9b58…`, `01a0bba1-b6b0…`). Send creates the
-  conversation (`POST /api/conversations` 201) before the held run. They were not deleted.
+After the second run everything the two runs created was deleted, and the stack reads as it
+did before them: 6 images in the Studio library (`generated.webp` and five `generated.png`,
+all from 2026-09-16/17) and 3 conversations.
+
+Deleted:
+- **20 assets**, `DELETE /api/assets/{id}` → 200 each: four `generated-edited.webp`
+  (`be8db27e…`, `3d56b2ec…`, `87fb0223…`, `5bbe58d5…`), four `phone.mp4`, four `photo.jpg`,
+  four `hevc.mp4`, the two `presigned` 0-byte rows (`c5265375…`, `1fa1ff9f…`) and the two
+  empty ones of Bug 2 (`ea7a6a19…`, `9395b01f…`, deleted right after that measurement).
+- **9 empty conversations**, `DELETE /api/conversations/{id}` → 204 each. Send opens the
+  conversation (`POST /api/conversations` 201) before the held run, so each send left one.
+
+Kept, because they are not mine: the two Studio-generated assets (`generated.webp`,
+`generated.mp4`), the older library images, and the three real conversations. The delete
+filter matched only the four test file names, created at or after 2026-09-19 21:30 UTC, with
+`source_kind: web`; conversations only when created in that window with an empty title and
+zero tokens and cost.
 
 ## What this does not prove
 
@@ -302,12 +346,16 @@ measurement (`DELETE /api/assets/{id}` → 200, now `deleting`).
   Chrome's codec stack or memory limits.
 - **Very large clips.** The largest source was 3.4 MB and 6 s. Neither the 500 MB "Open
   anyway" gate nor memory under a long 4K clip was exercised.
-- **Uploads on the appliance as it stands.**
-  - Every successful Save to library and chat attachment here went through the in-test
-    Garage forward (Bug 1).
-  - The chat composer's PUT body was re-sent from the attached file, not from the browser.
-  - Whether a real browser also trusts Caddy's internal certificate for `172.31.131.222` was
-    not measured: the harness ignores HTTPS errors.
+- **Uploads beyond what the second run touched.**
+  - The upload path is proven only for this host's origin, `https://localhost` with the
+    object store at `https://172.31.131.222`. `caddy/Caddyfile.domain` carries the same fix
+    but was not exercised.
+  - The harness ignores HTTPS errors, so whether a real browser trusts Caddy's internal
+    certificate for `172.31.131.222` is still not measured.
+  - Only two uploads per viewport, 2.9 MB and 110 KB, and no resumable or interrupted
+    upload.
+  - The Studio's own "Upload a file" frame picker was never used; it shares the presign
+    route, so the fix should cover it, but that is inference, not measurement.
 - **The regular chat image path.** The JPEG took the Studio's unprocessed finalize, so the
   vision summary and document naming of a chat image did not run.
 - **A persisted chat message.** With the run held, the cards are the client's optimistic
