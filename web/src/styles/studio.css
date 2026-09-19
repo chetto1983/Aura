@@ -41,6 +41,12 @@
     border-radius: var(--radius-md);
   }
 
+  /* The pinned composer paints over whatever the stage cannot fit, so a tall result scrolls
+     inside the stage instead, keeping its Download, Edit and Reuse row reachable. */
+  .studio-stage {
+    overflow-y: auto;
+  }
+
   .studio-composer-expand {
     display: inline-flex;
   }
