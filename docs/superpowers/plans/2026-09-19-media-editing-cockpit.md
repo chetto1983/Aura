@@ -1242,7 +1242,7 @@ git commit -m "feat(media-edit): add the editor layer, its strings and downloads
   `type ExportResult = { kind: 'done'; blob: Blob } | { kind: 'blocked'; tracks: readonly BlockedTrack[] } | { kind: 'canceled' }`;
   `exportVideo(source: Blob, mimeType: string, edit: VideoEdit, onProgress: (fraction: number) => void, signal: AbortSignal): Promise<ExportResult>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/mediaEdit/__tests__/videoMedia.test.ts`:
 ```ts
@@ -1398,12 +1398,12 @@ describe('exportVideo', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/videoMedia.test.ts`
 Expected: FAIL — `Failed to resolve import "../videoMedia"`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `web/src/mediaEdit/videoMedia.ts`:
 ```ts
@@ -1532,12 +1532,12 @@ export async function exportVideo(
 }
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/videoMedia.test.ts`
 Expected: PASS. Then `npx tsc --noEmit -p .` — if the typings of `Output`/`BufferTarget` make `output.target.buffer` unknown, annotate `const target = new BufferTarget();` and read `target.buffer`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/mediaEdit/videoMedia.ts web/src/mediaEdit/__tests__/videoMedia.test.ts
