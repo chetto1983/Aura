@@ -97,9 +97,15 @@ type sttInputAudio struct {
 	Format string `json:"format"`
 }
 
+// sttCloudRequest is OpenRouter's JSON transcription body. Language is the same
+// ISO-639-1 pin the local sidecar gets: OpenRouter documents it as a top-level field,
+// "auto-detected if omitted" (openrouter.ai/docs/guides/overview/multimodal/stt), and
+// auto-detect is what misread a 2.8s Italian clip as Japanese on the local route
+// (spike-027). Without it the cloud route had exactly that failure the local one pins.
 type sttCloudRequest struct {
 	Model      string        `json:"model"`
 	InputAudio sttInputAudio `json:"input_audio"`
+	Language   string        `json:"language,omitempty"`
 }
 
 func (c *STTClient) buildCloudRequest(ctx context.Context, audio []byte, format string) (*http.Request, error) {
@@ -112,6 +118,7 @@ func (c *STTClient) buildCloudRequest(ctx context.Context, audio []byte, format 
 			Data:   base64.StdEncoding.EncodeToString(audio),
 			Format: format,
 		},
+		Language: c.cfg.Language,
 	})
 	if err != nil {
 		return nil, err

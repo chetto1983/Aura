@@ -87,6 +87,7 @@ func TestSTTCloudJSONInputAudio(t *testing.T) {
 	audio := []byte("OPUSBYTES")
 	c := NewSTTClient(STTConfig{
 		CloudModel:        "openai/whisper-large-v3",
+		Language:          "it",
 		OpenRouterBaseURL: srv.URL,
 		OpenRouterAPIKey:  "shared-key",
 		HTTPClient:        srv.Client(),
@@ -115,6 +116,37 @@ func TestSTTCloudJSONInputAudio(t *testing.T) {
 	}
 	if want := base64.StdEncoding.EncodeToString(audio); body.InputAudio.Data != want {
 		t.Errorf("input_audio.data = %q, want base64(audio)", body.InputAudio.Data)
+	}
+	// The cloud route pins the language exactly as the local one does.
+	if body.Language != "it" {
+		t.Errorf("language = %q, want it", body.Language)
+	}
+}
+
+// With no language configured the field is omitted, so OpenRouter auto-detects rather
+// than receiving an empty code it might reject.
+func TestSTTCloudOmitsEmptyLanguage(t *testing.T) {
+	var raw []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ = io.ReadAll(r.Body)
+		_, _ = io.WriteString(w, `{"text":"ok"}`)
+	}))
+	defer srv.Close()
+
+	c := NewSTTClient(STTConfig{
+		CloudModel:        "openai/whisper-large-v3",
+		OpenRouterBaseURL: srv.URL,
+		HTTPClient:        srv.Client(),
+	})
+	if _, err := c.Transcribe(t.Context(), []byte("x"), "voice.ogg", "ogg"); err != nil {
+		t.Fatalf("Transcribe: %v", err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if _, present := fields["language"]; present {
+		t.Errorf("empty language was sent: %s", raw)
 	}
 }
 
