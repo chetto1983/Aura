@@ -3604,7 +3604,7 @@ Expected: lefthook pre-push green (build, web gate, deadcode, payload manifest).
 **Files:**
 - Create: `docs/superpowers/verification/2026-09-19-media-editing.md`
 
-- [ ] **Step 1: Update the stack once the edge image carries the commit**
+- [x] **Step 1: Update the stack once the edge image carries the commit**
 
 In WSL, from a script file (never piped through `bash -s`):
 ```bash
@@ -3613,13 +3613,13 @@ docker inspect aura --format '{{index .Config.Labels "org.opencontainers.image.r
 ```
 Expected: the revision label equals the pushed commit.
 
-- [ ] **Step 2: Exercise the real flows on `https://localhost`**
+- [x] **Step 2: Exercise the real flows on `https://localhost`**
 
 With `AURA_E2E_ORIGIN=https://localhost` and Playwright (Chrome), in one scripted pass: edit an existing Studio image (Filters → Save to library → it appears in the Studio library picker); open a chat where the agent generated a video, Edit → trim 1–3 s → download → duration ≈ 2 s; upload a phone MP4 and a JPEG as chat attachments, Edit each. Take desktop (1440×900) and phone (390×844) screenshots of both editors. Repeat the video trim in Firefox and record whether an HEVC source is refused with the sentence.
 
 Measure the one open question the spec leaves: export the same MP4 with **rotation only** (90°, no trim change, no crop) and record the export time and `ffprobe` of the result — a copy path shows the original codec parameters plus a 90° display matrix and finishes in milliseconds; a transcode shows new encoder parameters and takes seconds.
 
-- [ ] **Step 3: Record the evidence**
+- [x] **Step 3: Record the evidence**
 
 Write `docs/superpowers/verification/2026-09-19-media-editing.md`: what was run, on which revision, results per flow, screenshot paths, the Firefox outcome, and what this does **not** prove (Safari/iOS, very large clips).
 
