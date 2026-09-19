@@ -171,7 +171,7 @@ Layout after 123apps and Adobe Express, in Aura's tokens:
 - Filerobot inside `MediaEditorLayer`. Tabs: Adjust (crop presets, rotate, flip), Finetune,
   Filters, Annotate, Resize. **Watermark and AI tabs are off** (AI calls Scaleflex's cloud).
 - Config: `useBackendTranslations={false}`, `savingPixelRatio={1}`,
-  `previewPixelRatio={window.devicePixelRatio}`, `translations` from `resources.mediaEdit.ts`,
+  `previewPixelRatio={window.devicePixelRatio || 1}`, `translations` from `resources.mediaEdit.ts`,
   `theme` from `filerobotTheme.ts`, `StyleSheetManager shouldForwardProp` with
   `@emotion/is-prop-valid`, `removeSaveButton`. Filerobot's own Save button is hidden: the
   photo is exported through `getCurrentImgDataFnRef` from Aura's header (Download, Save to
@@ -231,10 +231,11 @@ cannot take video in the image Aura ships, its branch is dropped, not guessed.
   combination, the discarded-track guard, output names and containers), and a table test that Italian and
   English cover Filerobot's `defaultTranslations` keys.
 - **Component tests** with Filerobot and Mediabunny mocked: `EditMediaButton` visibility
-  (image/video yes; SVG, GIF, non-editable source, unresolved asset no); the layer stays open
-  when a Filerobot portal menu is clicked; handles and fields in sync, keyboard included; Save
+  (image/video yes; SVG, GIF with a known MIME type and non-editable source no; unknown MIME
+  type yes, and the editor rejects an unsupported format); the layer stays open when a
+  Filerobot portal menu is clicked; handles and fields in sync, keyboard included; Save
   options; the HEVC guard; photo Save to library, 503 → disabled with the sentence, transient
-  failure → Retry, too-large → JPEG.
+  failure → Retry, a refused upload → the server's 400 sentence with Download still available.
 - **Go:** loader admits image and video, refuses audio, per channel; `nativeContentPart` emits
   the exact OpenRouter and llama.cpp JSON (golden bytes) and nothing for Ollama; projection
   skips video when the capability source lacks it; the llama.cpp probe maps the measured key.

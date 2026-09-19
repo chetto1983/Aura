@@ -24,7 +24,7 @@ describe('parseTimecode', () => {
     expect(parseTimecode(text)).toBeCloseTo(seconds, 5);
   });
 
-  it.each(['', 'abc', '1:2:3', '1:60', '1.5:10', '-1', '0x10', '1e3', '1..2', ':5'])(
+  it.each(['', 'abc', '1:2:3', '1:60', '1.5:10', '-1', '0x10', '1e3', '1..2', ':5', '.', '1:.'])(
     'refuses %j',
     (text) => {
       expect(parseTimecode(text)).toBeUndefined();

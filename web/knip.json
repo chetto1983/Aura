@@ -9,5 +9,11 @@
     "src/components/ui/popover.tsx",
     "src/components/ui/dropdown-menu.tsx"
   ],
-  "ignoreDependencies": ["assistant-stream"]
+  "ignoreDependencies": [
+    "assistant-stream",
+    "mediabunny",
+    "react-filerobot-image-editor",
+    "styled-components",
+    "@emotion/is-prop-valid"
+  ]
 }
