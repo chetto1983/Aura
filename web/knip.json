@@ -11,7 +11,6 @@
   ],
   "ignoreDependencies": [
     "assistant-stream",
-    "mediabunny",
     "react-filerobot-image-editor",
     "styled-components",
     "@emotion/is-prop-valid"
