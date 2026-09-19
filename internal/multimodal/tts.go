@@ -37,12 +37,9 @@ func NewTTSClient(cfg TTSConfig) *TTSClient {
 	return &TTSClient{cfg: cfg, httpClient: resolveClient(cfg.HTTPClient)}
 }
 
-// Configured reports whether this config can reach a synthesizer at all: a local
-// sidecar base URL OR a cloud model. It is a method rather than a line at each call
-// site because it was TWO lines at two call sites, written with opposite polarity —
-// `TTSModel == "" && TTSBaseURL == ""` in the cockpit's composition root and
-// `TTSBaseURL != "" || TTSModel != ""` in the Telegram channel — which is how the same
-// rule stops meaning the same thing.
+// Configured reports whether the config reaches a synthesizer at all: a local sidecar
+// OR a cloud model. The rule lives here because it was written out at both composition
+// roots, once per channel, with opposite polarity.
 func (c TTSConfig) Configured() bool {
 	return c.LocalBaseURL != "" || c.CloudModel != ""
 }

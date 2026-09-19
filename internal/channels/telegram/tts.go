@@ -59,10 +59,8 @@ func newTTSClient(cfg MultimodalConfig) *ttsClient {
 		TimeoutSec:        cfg.TimeoutSec,
 	}
 	return &ttsClient{
-		tts:     multimodal.NewTTSClient(voiceCfg),
-		caption: cfg.TTSCaption,
-		// The SAME predicate the cockpit's composition root reads — it used to be this
-		// line, written the other way round, in two files.
+		tts:        multimodal.NewTTSClient(voiceCfg),
+		caption:    cfg.TTSCaption,
 		configured: voiceCfg.Configured(),
 	}
 }
@@ -72,9 +70,7 @@ func newTTSClient(cfg MultimodalConfig) *ttsClient {
 // msg.Voice the caller asserts on). The caption is ASCII-sanitized so it never
 // 400s. A sidecar error surfaces and no voice note is sent.
 func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient, text string) (*tele.Message, error) {
-	// The SHARED normalizer — the same one the cockpit's /api/tts uses, so a reply is
-	// spoken the same way on both channels. maxChars 0: Telegram has no input ceiling
-	// of its own today; giving it one is this argument, not another code path.
+	// The same normalizer the cockpit's /api/tts uses. 0 = no char cap on this lane.
 	spoken, _ := multimodal.PrepareSpeech(text, 0)
 	if spoken == "" {
 		return nil, nil // nothing speakable (e.g. an emoji-only reply) — skip the voice note

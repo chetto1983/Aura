@@ -41,8 +41,8 @@ func NewSTTClient(cfg STTConfig) *STTClient {
 	return &STTClient{cfg: cfg, httpClient: resolveClient(cfg.HTTPClient)}
 }
 
-// Configured reports whether this config can reach a transcriber at all: a local
-// sidecar base URL OR a cloud model. The TTSConfig.Configured note applies here too.
+// Configured reports whether the config reaches a transcriber: a local sidecar OR a
+// cloud model.
 func (c STTConfig) Configured() bool {
 	return c.LocalBaseURL != "" || c.CloudModel != ""
 }

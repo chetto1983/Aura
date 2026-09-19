@@ -58,8 +58,6 @@ func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
 // the caller leaves the tts capability absent. Extracted so serve_voice_test.go asserts
 // AudioFormat()=="mp3" + the local/cloud selection with no live call.
 func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
-	// The config is built first and asked whether it is usable — the predicate belongs
-	// to the config, not to each composition root that writes it out again.
 	voiceCfg := multimodal.TTSConfig{
 		LocalBaseURL:      cfg.TTSBaseURL,
 		Voice:             cfg.TTSVoice,

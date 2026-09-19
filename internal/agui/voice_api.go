@@ -3,9 +3,7 @@ package agui
 // voice_api.go is the 37C web-voice backend (WEBVOICE-01/02/03): three thin,
 // identity-scoped handlers over narrow interface seams —
 //
-//   - POST /api/tts — text → audio/mpeg synthesized bytes. The text is normalized and
-//     capped by the SHARED multimodal.PrepareSpeech (the same step the Telegram voice
-//     note goes through), with a soft rune char cap
+//   - POST /api/tts — text → audio/mpeg synthesized bytes, with a soft rune char cap
 //     (AURA_TTS_MAX_CHARS, D-05) that truncates the input to the ttsMaxChars-length
 //     prefix and signals it with an X-Aura-TTS-Truncated: true response header. The
 //     audio is streamed straight to the caller and NEVER persisted.
@@ -107,11 +105,8 @@ func (s *Server) handleTTS(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "text required", http.StatusBadRequest)
 		return
 	}
-	// multimodal.PrepareSpeech is the ONE normalize-then-cap step every speaking
-	// channel shares: markup is stripped BEFORE the cap (operator directive — raw
-	// markers read aloud "sound like a robot", and capping clean runes moves the D-05
-	// truncation point onto real prose). A message that strips to nothing (a
-	// code-block-only or emoji-only answer) has no speakable content — an honest 400.
+	// The same normalize-then-cap step the Telegram voice note goes through. An answer
+	// that normalizes to nothing (code-only, emoji-only) has no speakable content: 400.
 	text, truncated := multimodal.PrepareSpeech(body.Text, s.ttsMaxChars)
 	if text == "" {
 		http.Error(w, "text required", http.StatusBadRequest)

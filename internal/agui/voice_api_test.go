@@ -493,12 +493,9 @@ func TestVoiceCapabilities_NoPrincipal(t *testing.T) {
 	}
 }
 
-// The two handleTTS integration tests below moved here when voice_speech_text.go folded
-// into multimodal.PrepareSpeech: the NORMALIZER's own table now lives beside it in
-// internal/multimodal, and what is still agui's to prove is the wiring — that the
-// synthesizer is handed CLEAN text, and that an answer with nothing speakable in it
-// never reaches (and never bills) the synthesizer at all.
-
+// The normalizer's own cases live beside it in internal/multimodal; what is agui's to
+// prove is the wiring: the synthesizer gets clean text, and an answer with nothing
+// speakable in it never reaches (or bills) the synthesizer.
 func TestHandleTTSStripsMarkdownBeforeSynthesis(t *testing.T) {
 	t.Parallel()
 	tts := &fakeTTS{audio: []byte("ID3fake")}
