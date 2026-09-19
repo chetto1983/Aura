@@ -124,8 +124,13 @@ describe('AttachmentCard editing', () => {
     expect(screen.getByRole('button', { name: 'Edit shot.jpg' })).toBeTruthy();
   });
 
-  it('does not offer it while uploading or for a document', () => {
+  it('does not offer it while uploading', () => {
     card({ status: 'uploaded' });
+    expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
+  });
+
+  it('does not offer it for a finished document', () => {
+    card({ modality: 'document', file_name: 'manual.pdf', mime_type: 'application/pdf' });
     expect(screen.queryByRole('button', { name: /^Edit/ })).toBeNull();
   });
 });
