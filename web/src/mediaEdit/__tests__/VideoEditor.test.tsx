@@ -47,9 +47,25 @@ beforeEach(() => {
   downloadBlob.mockReset();
 });
 
-async function mount() {
-  render(<VideoEditor asset={ASSET} source={new Blob()} onClose={vi.fn()} />);
+async function mount(onClose = vi.fn()) {
+  const view = render(<VideoEditor asset={ASSET} source={new Blob()} onClose={onClose} />);
   await screen.findByRole('slider', { name: 'Start of the selection' });
+  return view;
+}
+
+/** An export that runs until its signal aborts, as exportVideo does; returns the signal it got. */
+function pendingExport(): () => AbortSignal | undefined {
+  let signal: AbortSignal | undefined;
+  media.exportVideo.mockImplementation(
+    (_s: Blob, _m: string, _e: unknown, _p: unknown, abort: AbortSignal) =>
+      new Promise((resolve) => {
+        signal = abort;
+        abort.addEventListener('abort', () => {
+          resolve({ kind: 'canceled' });
+        });
+      }),
+  );
+  return () => signal;
 }
 
 describe('VideoEditor', () => {
@@ -236,23 +252,39 @@ describe('VideoEditor', () => {
   });
 
   it('cancels a running export', async () => {
-    let signal: AbortSignal | undefined;
-    media.exportVideo.mockImplementation(
-      (_s: Blob, _m: string, _e: unknown, _p: unknown, abort: AbortSignal) =>
-        new Promise((resolve) => {
-          signal = abort;
-          abort.addEventListener('abort', () => {
-            resolve({ kind: 'canceled' });
-          });
-        }),
-    );
+    const signal = pendingExport();
     await mount();
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
-    expect(signal?.aborted).toBe(true);
+    expect(signal()?.aborted).toBe(true);
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Save' })).toHaveProperty('disabled', false);
     });
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('stops a running export when the editor is closed', async () => {
+    const signal = pendingExport();
+    const onClose = vi.fn();
+    await mount(onClose);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Cancel' });
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(signal()?.aborted).toBe(true);
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    });
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('stops a running export when the editor goes away', async () => {
+    const signal = pendingExport();
+    const { unmount } = await mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await screen.findByRole('button', { name: 'Cancel' });
+    unmount();
+    expect(signal()?.aborted).toBe(true);
     expect(downloadBlob).not.toHaveBeenCalled();
   });
 });

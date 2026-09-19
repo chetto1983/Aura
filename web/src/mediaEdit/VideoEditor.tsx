@@ -95,6 +95,14 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
     };
   }, [source]);
 
+  // An export outlives nothing: leaving the editor stops it, so no download lands afterwards.
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    [],
+  );
+
   const frame = info === undefined ? undefined : rotateSize(info, rotation);
   const crop =
     frame === undefined || preset === 'original' ? undefined : (moved ?? presetRect(frame, preset));
@@ -145,6 +153,11 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
     }
   }
 
+  function close() {
+    abortRef.current?.abort();
+    onClose();
+  }
+
   function reset() {
     if (info !== undefined) setRange({ start: 0, end: info.duration });
     setRotation(0);
@@ -164,7 +177,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
   const toolLabel = (item: Tool) => t(`mediaEdit.video.tool.${item}`);
 
   return (
-    <MediaEditorLayer label={t('mediaEdit.editName', { name: asset.file_name })} onEscape={onClose}>
+    <MediaEditorLayer label={t('mediaEdit.editName', { name: asset.file_name })} onEscape={close}>
       <header className="flex items-center gap-3 border-b border-border px-4 py-2">
         <h2 className="min-w-0 flex-1 truncate font-mono text-sm">{asset.file_name}</h2>
         <Button type="button" variant="ghost" size="sm" onClick={reset}>
@@ -175,7 +188,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
           variant="ghost"
           size="sm"
           aria-label={t('mediaEdit.close')}
-          onClick={onClose}
+          onClick={close}
         >
           <X aria-hidden="true" className="size-4" />
         </Button>
