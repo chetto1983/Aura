@@ -57,6 +57,9 @@ export interface VideoEdit {
   readonly mute: boolean;
 }
 
+/** The shortest cut in seconds: one step of the tenth-of-a-second timeline and time fields. */
+export const MIN_SPAN = 0.1;
+
 export type EditConversion = Pick<ConversionOptions, 'trim' | 'copy' | 'video' | 'audio'>;
 
 /** Always the `expand` copy path: Mediabunny copies what it can (a trim, a mute) and transcodes

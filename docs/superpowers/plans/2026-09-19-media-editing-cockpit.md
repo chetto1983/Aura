@@ -1558,7 +1558,7 @@ git commit -m "feat(media-edit): run clip probing, thumbnails and export through
   `VideoTimeline({ duration, start, end, frames: readonly CanvasImageSource[], onChange: (start: number, end: number) => void, startLabel: string, endLabel: string })`;
   `TimeField({ label: string; value: number; onCommit: (seconds: number) => void })` — mount with `key={formatTimecode(value)}` so an outside change resets the text.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/mediaEdit/__tests__/VideoTimeline.test.tsx`:
 ```tsx
@@ -1650,12 +1650,12 @@ describe('TimeField', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/VideoTimeline.test.tsx`
 Expected: FAIL — unresolved imports.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `web/src/mediaEdit/VideoTimeline.tsx`:
 ```tsx
@@ -1860,12 +1860,12 @@ export function TimeField({
 }
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/VideoTimeline.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/mediaEdit/VideoTimeline.tsx web/src/mediaEdit/TimeField.tsx web/src/mediaEdit/__tests__/VideoTimeline.test.tsx
