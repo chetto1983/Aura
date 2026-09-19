@@ -103,6 +103,7 @@ describe('PhotoEditor', () => {
       useBackendTranslations: false,
       savingPixelRatio: 1,
       removeSaveButton: true,
+      avoidChangesNotSavedAlertOnLeave: true,
       source: 'blob:photo',
     });
   });

@@ -172,6 +172,8 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
               defaultToolId={TOOLS.CROP}
               Rotate={{ angle: 90, componentType: 'buttons' }}
               removeSaveButton
+              // Its default registers a beforeunload prompt; Aura's ConfirmDialog is the only one.
+              avoidChangesNotSavedAlertOnLeave
               getCurrentImgDataFnRef={exportRef}
               onModify={() => {
                 setDirty(true);
