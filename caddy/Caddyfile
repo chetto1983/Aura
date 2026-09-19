@@ -29,8 +29,11 @@
 		reverse_proxy aura-pim-mcp:8080
 	}
 
-	# Presigned object-store downloads (chat/document assets) → garage.
-	handle /aura-assets/* {
+	# Presigned object-store requests → garage: every per-identity bucket aura-<identity>
+	# (browser PUT uploads and GET downloads) and the shared aura-assets bucket. The
+	# identity charset mirrors internal/idroot identityPattern; no cockpit route starts /aura-.
+	@objectstore path_regexp ^/aura-[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/
+	handle @objectstore {
 		reverse_proxy garage:3900
 	}
 

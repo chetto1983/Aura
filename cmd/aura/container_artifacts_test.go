@@ -226,8 +226,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// Google OAuth redirect callback routed to the PIM sidecar, ahead of the catch-all.
 		"handle /admin/auth/google/callback {",
 		"reverse_proxy aura-pim-mcp:8080",
-		// Presigned object-store asset downloads → garage.
-		"handle /aura-assets/*",
+		// Presigned object-store requests → garage, for every aura-<identity> bucket
+		// (caddy_objectstore_route_test.go pins which paths the matcher takes).
+		"handle @objectstore {",
 		"reverse_proxy garage:3900",
 		// First-run operator setup wizard (the 9081 server self-gates with AURA_SETUP_TOKEN).
 		"handle /setup",
