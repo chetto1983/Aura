@@ -19,6 +19,7 @@ import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
 import { loginEn, loginIt } from './resources.login';
 import { mediaEn, mediaIt } from './resources.media';
+import { mediaEditEn, mediaEditIt } from './resources.mediaEdit';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
 import { shareEn, shareIt } from './resources.share';
@@ -179,6 +180,7 @@ export const resources = {
       ...displayEn,
       ...mediaEn,
       ...studioEn,
+      ...mediaEditEn,
       ...shareEn,
       ...filesEn,
       ...governanceEn,
@@ -444,6 +446,7 @@ export const resources = {
       ...displayIt,
       ...mediaIt,
       ...studioIt,
+      ...mediaEditIt,
       ...shareIt,
       ...filesIt,
       ...governanceIt,

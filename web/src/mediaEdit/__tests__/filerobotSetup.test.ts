@@ -45,7 +45,9 @@ describe('filerobotTheme', () => {
   it('leaves out a token the page does not define', () => {
     const root = document.createElement('div');
     document.body.append(root);
-    expect(filerobotTheme(root).palette).toEqual({});
+    const theme = filerobotTheme(root);
+    expect(theme.palette).toEqual({});
+    expect(theme.typography).toBeUndefined();
     root.remove();
   });
 });
