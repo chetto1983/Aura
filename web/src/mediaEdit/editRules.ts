@@ -60,6 +60,34 @@ export interface VideoEdit {
 /** The shortest cut in seconds: one step of the tenth-of-a-second timeline and time fields. */
 export const MIN_SPAN = 0.1;
 
+/** The length the trim works on: a duration that is not a positive number leaves nothing. */
+export function trimLength(duration: number): number {
+  return Number.isFinite(duration) && duration > 0 ? duration : 0;
+}
+
+export interface TrimRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/** The range once the operator types `value` into Start or End: inside the clip, and at least
+ *  the shortest cut from the other bound — MIN_SPAN, or the whole clip when it is shorter, the
+ *  rule VideoTimeline's handles follow. */
+export function typedRange(
+  range: TrimRange,
+  edge: 'start' | 'end',
+  value: number,
+  duration: number,
+): TrimRange {
+  const length = trimLength(duration);
+  const span = Math.min(MIN_SPAN, length);
+  if (edge === 'start') {
+    return { start: Math.min(Math.max(0, value), Math.max(0, range.end - span)), end: range.end };
+  }
+  const endMin = Math.min(range.start + span, length);
+  return { start: range.start, end: Math.max(Math.min(length, value), endMin) };
+}
+
 export type EditConversion = Pick<ConversionOptions, 'trim' | 'copy' | 'video' | 'audio'>;
 
 /** Always the `expand` copy path: Mediabunny copies what it can (a trim, a mute) and transcodes

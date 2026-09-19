@@ -7,6 +7,8 @@ import {
   editedBase,
   editedName,
   imageExtension,
+  trimLength,
+  typedRange,
   videoContainer,
 } from '../editRules';
 
@@ -94,5 +96,32 @@ describe('blockingDiscards', () => {
       { type: 'video', codec: 'hevc', reason: 'undecodable_source_codec' },
       { type: 'audio', codec: null, reason: 'no_encodable_target_codec' },
     ]);
+  });
+});
+
+describe('typedRange', () => {
+  it('keeps a typed start inside the clip and a tenth before the end', () => {
+    expect(typedRange({ start: 2, end: 6 }, 'start', -3, 10)).toEqual({ start: 0, end: 6 });
+    expect(typedRange({ start: 2, end: 6 }, 'start', 9, 10)).toEqual({ start: 5.9, end: 6 });
+    expect(typedRange({ start: 2, end: 6 }, 'start', 3.5, 10)).toEqual({ start: 3.5, end: 6 });
+  });
+
+  it('keeps a typed end inside the clip and a tenth after the start', () => {
+    expect(typedRange({ start: 2, end: 6 }, 'end', 40, 10)).toEqual({ start: 2, end: 10 });
+    expect(typedRange({ start: 2, end: 6 }, 'end', 1, 10)).toEqual({ start: 2, end: 2.1 });
+    expect(typedRange({ start: 2, end: 6 }, 'end', 7.25, 10)).toEqual({ start: 2, end: 7.25 });
+  });
+
+  it('keeps both bounds inside a clip shorter than a tenth', () => {
+    expect(typedRange({ start: 0, end: 0.05 }, 'start', 1, 0.05)).toEqual({ start: 0, end: 0.05 });
+    expect(typedRange({ start: 0, end: 0.05 }, 'end', 5, 0.05)).toEqual({ start: 0, end: 0.05 });
+    expect(typedRange({ start: 0, end: 0.05 }, 'end', 0, 0.05)).toEqual({ start: 0, end: 0.05 });
+  });
+
+  it('treats a duration that is not a positive number as nothing to trim', () => {
+    expect(trimLength(Number.NaN)).toBe(0);
+    expect(trimLength(-1)).toBe(0);
+    expect(trimLength(Infinity)).toBe(0);
+    expect(typedRange({ start: 0, end: 0 }, 'end', 3, Number.NaN)).toEqual({ start: 0, end: 0 });
   });
 });

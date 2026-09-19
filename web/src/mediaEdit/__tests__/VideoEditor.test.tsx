@@ -304,4 +304,35 @@ describe('VideoEditor', () => {
     expect((await screen.findByRole('alert')).textContent).toBe('The clip could not play.');
     play.mockRestore();
   });
+
+  describe('on a clip shorter than the shortest cut', () => {
+    beforeEach(() => {
+      media.probeVideo.mockResolvedValue({ duration: 0.05, width: 64, height: 64, hasAudio: true });
+    });
+
+    function type(label: string, value: string) {
+      const field = screen.getByLabelText(label);
+      fireEvent.change(field, { target: { value } });
+      fireEvent.blur(field);
+    }
+
+    it('never lets a typed start go below zero', async () => {
+      await mount();
+      type('Start', '1');
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect(media.exportVideo.mock.calls[0]?.[2]).toMatchObject({ start: 0, end: 0.05 });
+      });
+    });
+
+    it('never lets a typed end pass the end of the clip', async () => {
+      await mount();
+      type('End', '5');
+      type('Start', '1');
+      fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+      await waitFor(() => {
+        expect(media.exportVideo.mock.calls[0]?.[2]).toMatchObject({ start: 0, end: 0.05 });
+      });
+    });
+  });
 });

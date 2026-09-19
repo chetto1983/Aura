@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from 'react';
-import { MIN_SPAN } from './editRules';
+import { MIN_SPAN, trimLength } from './editRules';
 import { formatTimecode } from './timecode';
 
 // VideoTimeline — the filmstrip with two handles (start, end), after Adobe Express and 123apps.
@@ -93,9 +93,9 @@ export function VideoTimeline({
   endLabel,
 }: VideoTimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
-  // A duration that is not a positive number leaves nothing to trim, and a clip shorter than one
-  // step keeps its handles apart by the whole clip; either way every min stays below its max.
-  const length = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  // A clip shorter than one step keeps its handles apart by the whole clip, so every min stays
+  // below its max.
+  const length = trimLength(duration);
   const span = Math.min(MIN_SPAN, length);
   const startMax = Math.max(0, tenthBelow(end - span));
   const endMin = Math.min(tenthAbove(start + span), length);

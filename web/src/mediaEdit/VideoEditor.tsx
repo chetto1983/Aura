@@ -14,7 +14,7 @@ import {
 import { downloadBlob } from './download';
 import {
   editedName,
-  MIN_SPAN,
+  typedRange,
   videoContainer,
   type BlockedTrack,
   type VideoEdit,
@@ -372,10 +372,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
               label={t('mediaEdit.video.start')}
               value={range.start}
               onCommit={(value) => {
-                setRange({
-                  start: Math.min(Math.max(0, value), range.end - MIN_SPAN),
-                  end: range.end,
-                });
+                setRange(typedRange(range, 'start', value, info.duration));
               }}
             />
             <TimeField
@@ -383,10 +380,7 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
               label={t('mediaEdit.video.end')}
               value={range.end}
               onCommit={(value) => {
-                setRange({
-                  start: range.start,
-                  end: Math.max(Math.min(info.duration, value), range.start + MIN_SPAN),
-                });
+                setRange(typedRange(range, 'end', value, info.duration));
               }}
             />
             {output === undefined ? null : (
