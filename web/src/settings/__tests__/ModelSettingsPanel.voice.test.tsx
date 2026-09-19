@@ -20,15 +20,15 @@ function setting(key: string, value: string) {
   };
 }
 
-function settingsBody(provider: string, baseURL: string) {
+function settingsBody(provider: string, baseURL: string, stt = '', tts = '') {
   return {
     restart_required: false,
     restart_keys: [],
     settings: [
       setting('AURA_LLM_PROVIDER', provider),
       setting('AURA_LLM_BASE_URL', baseURL),
-      setting('AURA_STT_CLOUD_MODEL', ''),
-      setting('AURA_TTS_MODEL', ''),
+      setting('AURA_STT_CLOUD_MODEL', stt),
+      setting('AURA_TTS_MODEL', tts),
     ],
   };
 }
@@ -50,12 +50,27 @@ function json(body: unknown): Response {
   });
 }
 
-function stubFetch(settings: unknown): string[] {
+interface SettingWrite {
+  readonly key: string;
+  readonly value: string;
+}
+
+function stubFetch(settings: unknown): {
+  readonly gets: string[];
+  readonly writes: SettingWrite[];
+} {
   const gets: string[] = [];
+  const writes: SettingWrite[] = [];
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: RequestInfo | URL) => {
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (init?.method === 'PUT') {
+        if (typeof init.body !== 'string') throw new Error('expected a JSON string body');
+        const body = JSON.parse(init.body) as { readonly value: string };
+        writes.push({ key: decodeURIComponent(url.split('/').at(-1) ?? ''), value: body.value });
+        return Promise.resolve(json({}));
+      }
       if (url.startsWith('/api/settings/transcription-models')) {
         gets.push(url);
         return Promise.resolve(json(TRANSCRIPTION_BODY));
@@ -69,7 +84,7 @@ function stubFetch(settings: unknown): string[] {
       return Promise.resolve(json(settings));
     }),
   );
-  return gets;
+  return { gets, writes };
 }
 
 function renderBackends() {
@@ -93,7 +108,7 @@ describe('ModelSettingsPanel voice models', () => {
   });
 
   it('offers the OpenRouter speech-to-text and text-to-speech lists on the Cloud route', async () => {
-    const gets = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+    const { gets } = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
     renderBackends();
 
     const stt = await screen.findByLabelText('Speech-to-text cloud model');
@@ -113,8 +128,43 @@ describe('ModelSettingsPanel voice models', () => {
     expect(screen.getByRole('option', { name: /qwen\/qwen3-asr-1\.7b/ })).toBeTruthy();
   });
 
+  it('clears either cloud voice model through the local-sidecar choice', async () => {
+    const { writes } = stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        'google/chirp-3',
+        'qwen/qwen-audio-3.0-tts-flash',
+      ),
+    );
+    renderBackends();
+
+    const stt = await screen.findByLabelText('Speech-to-text cloud model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Speech-to-text cloud model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    fireEvent.click(stt);
+    fireEvent.click(screen.getByRole('option', { name: /Use local sidecar/ }));
+    expect(stt.textContent).toContain('Use local sidecar');
+
+    const tts = screen.getByLabelText('Text-to-speech model');
+    fireEvent.click(tts);
+    fireEvent.click(screen.getByRole('option', { name: /Use local sidecar/ }));
+    expect(tts.textContent).toContain('Use local sidecar');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    await waitFor(() => {
+      expect(writes).toEqual([
+        { key: 'AURA_STT_CLOUD_MODEL', value: '' },
+        { key: 'AURA_TTS_MODEL', value: '' },
+      ]);
+    });
+  });
+
   it('asks for no voice catalogue on a local route', async () => {
-    const gets = stubFetch(settingsBody('llamacpp', 'http://aura-llm:8084/v1'));
+    const { gets } = stubFetch(settingsBody('llamacpp', 'http://aura-llm:8084/v1'));
     renderBackends();
 
     await screen.findByLabelText('Speech-to-text cloud model');

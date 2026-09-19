@@ -32,7 +32,13 @@ interface ModelPickerProps<M extends { readonly id: string }> {
   readonly catalog: ModelCatalogState<M>;
   readonly onChange: (value: string) => void;
   readonly formatRow: (model: M, freeLabel: string) => string;
+  readonly emptyOption?: {
+    readonly label: string;
+    readonly description?: string;
+  };
 }
+
+const EMPTY_MODEL_VALUE = '__aura_empty_model__';
 
 interface ModelGroup {
   readonly name: string;
@@ -79,10 +85,25 @@ export function ModelPicker<M extends { readonly id: string }>({
   catalog,
   onChange,
   formatRow,
+  emptyOption,
 }: ModelPickerProps<M>) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
-  const options = toModelOptions(catalog.models, t('settings.models.noCharge'), formatRow);
+  const publishedOptions = toModelOptions(catalog.models, t('settings.models.noCharge'), formatRow);
+  const options: readonly ModelOption[] =
+    emptyOption === undefined
+      ? publishedOptions
+      : [
+          {
+            id: EMPTY_MODEL_VALUE,
+            name: emptyOption.label,
+            ...(emptyOption.description === undefined
+              ? {}
+              : { description: emptyOption.description }),
+          },
+          ...publishedOptions,
+        ];
+  const pickerValue = emptyOption !== undefined && value.trim() === '' ? EMPTY_MODEL_VALUE : value;
   // The saved model may not be in the catalogue (an alias, or a route the endpoint no
   // longer serves). It still has to render as the current value rather than disappear.
   const known = options.some((option) => option.id === value);
@@ -102,7 +123,13 @@ export function ModelPicker<M extends { readonly id: string }>({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <ModelSelectorRoot models={selectable} value={value} onValueChange={onChange}>
+      <ModelSelectorRoot
+        models={selectable}
+        value={pickerValue}
+        onValueChange={(next) => {
+          onChange(next === EMPTY_MODEL_VALUE ? '' : next);
+        }}
+      >
         <ModelSelectorTrigger id={id} className="w-full font-mono text-[13px]" />
         <ModelSelectorContent searchable className="w-(--radix-popover-trigger-width)">
           <ModelSelectorSearch

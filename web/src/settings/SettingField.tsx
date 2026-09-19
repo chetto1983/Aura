@@ -23,6 +23,11 @@ function SettingsGrid({ children }: { readonly children: ReactNode }) {
 export interface PickerBinding {
   readonly catalog: ModelCatalogState<ModelRow>;
   readonly formatRow: (row: ModelRow, freeLabel: string) => string;
+  /** Optional choice that stores an empty model id (for example, use the local sidecar). */
+  readonly emptyOption?: {
+    readonly label: string;
+    readonly description?: string;
+  };
 }
 
 export type PickerBindings = Partial<Readonly<Record<SettingsKey, PickerBinding>>>;
@@ -121,6 +126,7 @@ function SettingField({
           value={value}
           catalog={picker.catalog}
           formatRow={picker.formatRow}
+          {...(picker.emptyOption === undefined ? {} : { emptyOption: picker.emptyOption })}
           onChange={onChange}
         />
       ) : def.secret ? (

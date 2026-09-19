@@ -153,12 +153,20 @@ export function ModelSettingsPanel({
       : (saveLabel ?? t('settings.actions.save'));
   const labels = mediaLabels(t);
   const formatRow = (row: ModelRow, freeLabel: string) => modelRowMeta(row, freeLabel, labels);
+  const localVoiceOption = {
+    label: t('settings.models.useLocalSidecar'),
+    description: t('settings.models.useLocalSidecarDescription'),
+  };
   const pickers: PickerBindings = {
     AURA_LLM_MODEL: { catalog, formatRow },
     AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
     AURA_VIDEO_MODEL: { catalog: videoCatalog, formatRow },
-    AURA_STT_CLOUD_MODEL: { catalog: transcriptionCatalog, formatRow },
-    AURA_TTS_MODEL: { catalog: speechCatalog, formatRow },
+    AURA_STT_CLOUD_MODEL: {
+      catalog: transcriptionCatalog,
+      formatRow,
+      emptyOption: localVoiceOption,
+    },
+    AURA_TTS_MODEL: { catalog: speechCatalog, formatRow, emptyOption: localVoiceOption },
   };
 
   return (
