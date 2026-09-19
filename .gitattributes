@@ -46,3 +46,4 @@ go.sum                  linguist-generated=true
 *.webp  binary
 *.avif  binary
 *.wasm  binary
+*.mp4   binary
