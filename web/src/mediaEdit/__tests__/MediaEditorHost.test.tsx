@@ -77,6 +77,16 @@ describe('MediaEditorHost', () => {
     expect(await screen.findByText('The file could not be opened.')).toBeTruthy();
   });
 
+  it('says so when the bytes cannot be downloaded', async () => {
+    getAsset.mockResolvedValue(asset({}));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('', { status: 404 }))),
+    );
+    mount();
+    expect(await screen.findByText('The file could not be opened.')).toBeTruthy();
+  });
+
   it('asks before loading a very large clip', async () => {
     getAsset.mockResolvedValue(
       asset({
