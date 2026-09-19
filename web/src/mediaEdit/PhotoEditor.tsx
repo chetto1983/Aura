@@ -98,12 +98,15 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
     }
   }
 
+  const saving = state.kind === 'saving';
+
+  /** Not while a save runs: aborting it could not recall a finalize the server already has, so a
+   *  "Discard" might still leave the photo in the library. The status line says "Saving…". */
   function requestClose() {
+    if (saving) return;
     if (dirty) setConfirmClose(true);
     else onClose();
   }
-
-  const saving = state.kind === 'saving';
 
   return (
     <MediaEditorLayer
@@ -143,6 +146,7 @@ export default function PhotoEditor({ asset, source, onClose }: EditorProps) {
           variant="ghost"
           size="sm"
           aria-label={t('mediaEdit.close')}
+          disabled={saving}
           onClick={requestClose}
         >
           <X aria-hidden="true" className="size-4" />

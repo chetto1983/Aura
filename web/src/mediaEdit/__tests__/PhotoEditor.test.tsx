@@ -321,6 +321,27 @@ describe('PhotoEditor', () => {
     expect(screen.getByRole('button', { name: 'Download' })).toHaveProperty('disabled', true);
   });
 
+  it('cannot be closed or discarded while the photo is uploading', async () => {
+    uploadStudioFrame.mockImplementation(
+      (_file: File, onProgress: (progress: number) => void) =>
+        new Promise(() => {
+          onProgress(0.5);
+        }),
+    );
+    const onClose = mount();
+    fireEvent.click(await screen.findByText('fake edit'));
+    const save = screen.getByRole('button', { name: 'Save to library' });
+    await waitFor(() => {
+      expect(save).toHaveProperty('disabled', false);
+    });
+    fireEvent.click(save);
+    expect(await screen.findByText('Saving… 50%')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveProperty('disabled', true);
+    fireEvent.keyDown(screen.getByRole('dialog', { name: 'Edit beach.png' }), { key: 'Escape' });
+    expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('forgets the saved notice at the next edit and asks again before closing', async () => {
     const onClose = mount();
     const save = await screen.findByRole('button', { name: 'Save to library' });
