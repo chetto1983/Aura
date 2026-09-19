@@ -90,23 +90,30 @@ LLM accepts it. This document is the record the plan is written from. Evidence: 
 
 ```
 web/src/mediaEdit/
-  EditMediaButton.tsx        the "Edit" button; lazy-loads the right editor
+  EditMediaButton.tsx        the "Edit" button; hands its target to the provider
+  MediaEditorProvider.tsx    mounted in AppShell; owns the open editor, lazy-loads it
   MediaEditorLayer.tsx       full-screen layer (not a Radix Dialog — see below)
   PhotoEditor.tsx            Filerobot + save to library / download
   VideoEditor.tsx            preview + tools + timeline + save
   VideoTimeline.tsx          filmstrip, two handles, playhead
   videoEdit.ts               pure: Mediabunny options, discarded-track guard, output names
   cropMath.ts                pure: preset → rectangle in post-rotation display space
-  timecode.ts                pure: parse "mm:ss.s" (display reuses durationFormat.ts)
+  timecode.ts                pure: format and parse "mm:ss.s" (a round-tripping pair)
   filerobotTheme.ts          Aura CSS tokens → Filerobot theme
 web/src/i18n/resources.mediaEdit.ts   UI strings + Filerobot's 128 keys, en + it
 ```
 
-- `EditMediaButton` takes `{ assetId, kind }`. The editor resolves the file name and MIME type
-  with `getAsset(id)` — the one source that has them on every surface — and fetches the bytes
-  through `useAssetContent(id, 'blob')`. The button renders nothing when the asset source is
-  not editable, for SVG and GIF (known once `getAsset` answers; the button is disabled until
-  then), and for any other kind.
+- The open editor lives in a `MediaEditorProvider` mounted in `AppShell`, not inside each
+  button. `EditMediaButton` hands its target to the provider; a modal closes itself first
+  (`PreviewModal` is a Radix Dialog whose focus trap would swallow an editor opened inside
+  it). The share page is not under `AppShell`, a second guard beside `AssetSource.editable`.
+- `EditMediaButton` takes `{ assetId, kind }` and, when the surface knows them, the MIME type
+  and file name. The editor resolves the file name and MIME type with `getAsset(id)` — the one
+  source that has them on every surface — and fetches the bytes through
+  `useAssetContent(id, 'blob')`. The button renders nothing when the asset source is not
+  editable, for any other kind, and for SVG and GIF when the surface knows the MIME type; on
+  the Studio stage (which does not) the editor resolves it and says "This format cannot be
+  edited here" if needed.
 - `AssetSource` gains an optional `editable?: true`; `IDENTITY_SCOPED` sets it and the share
   tiers leave it out, following the `renderUrl` precedent.
 - **Placements:** `StudioStage` (`StageActions`), `GeneratedImagePreview` (`ImageActions`
@@ -166,17 +173,21 @@ Layout after 123apps and Adobe Express, in Aura's tokens:
 - Config: `useBackendTranslations={false}`, `savingPixelRatio={1}`,
   `previewPixelRatio={window.devicePixelRatio}`, `translations` from `resources.mediaEdit.ts`,
   `theme` from `filerobotTheme.ts`, `StyleSheetManager shouldForwardProp` with
-  `@emotion/is-prop-valid`, `onBeforeSave={() => false}`, `defaultSavedImageName` =
-  `<base>-modificata`, `defaultSavedImageType` = the source's (PNG, JPEG, WebP; quality 0.92).
+  `@emotion/is-prop-valid`, `removeSaveButton`. Filerobot's own Save button is hidden: the
+  photo is exported through `getCurrentImgDataFnRef` from Aura's header (Download, Save to
+  library, Close), named `<base>-modificata` in the source's format (PNG, JPEG, WebP;
+  quality 0.92). `onBeforeSave` is not used.
 - **Two actions, both available from the start:** **Save to library** and **Download**.
   - Save to library uploads with progress, invalidates `studioKeys.library()`, then says
     "Saved to the Studio library".
-  - If the Studio is unwired (503) the action is disabled after the first refusal with the
-    sentence "The Studio is not active: download the photo instead"; Retry exists only for
+  - Studio availability is read before uploading from the library query
+    (`useStudioLibrary`); a 503 disables Save to library with the sentence "The Studio is not
+    active: download the photo instead", so no orphan upload is created. Retry exists only for
     transient failures (network, 5xx other than 503).
-  - If the upload is refused as too large, the photo is re-encoded once as JPEG 0.92 and the
-    operator is told why.
-- Unsaved changes on close: Filerobot's own discard confirmation (no second dialog).
+  - A refused upload shows the server's own sentence (the presign route answers 400 with it);
+    Download stays available.
+- Unsaved changes on close: Aura's `ConfirmDialog` only. Filerobot gets no `onClose`, so its
+  own close button and discard confirmation never render (`components/buttons/CloseButton.js`).
 - Known limit: filter names (Original, Clarendon, Sepia…) stay English — Filerobot does not
   translate them.
 
@@ -216,8 +227,8 @@ cannot take video in the image Aura ships, its branch is dropped, not guessed.
 ## Testing
 
 - **Vitest, pure logic:** `cropMath` (every preset, with 0/90/180/270 total rotation, centred,
-  clamped, even sides), `timecode` parsing, `videoEdit` (options per tool combination, the
-  discarded-track guard, output names and containers), and a table test that Italian and
+  clamped, even sides), `timecode` (format/parse round trip), `videoEdit` (options per tool
+  combination, the discarded-track guard, output names and containers), and a table test that Italian and
   English cover Filerobot's `defaultTranslations` keys.
 - **Component tests** with Filerobot and Mediabunny mocked: `EditMediaButton` visibility
   (image/video yes; SVG, GIF, non-editable source, unresolved asset no); the layer stays open
