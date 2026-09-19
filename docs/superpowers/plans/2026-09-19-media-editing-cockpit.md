@@ -2468,7 +2468,7 @@ git commit -m "feat(media-edit): add the clip editor" -m "Trim, crop, rotate and
 - Consumes: `EditorProps` (Task 7), `editedBase`, `imageExtension` (Task 2), `FILEROBOT…` helpers (Task 3), `MediaEditorLayer`, `useObjectUrl`, `downloadBlob` (Task 4); `uploadStudioFrame` (`web/src/studio/frameUpload.ts`), `useStudioLibrary`, `studioKeys` (`web/src/studio/useStudio.ts`), `StudioError` (`web/src/studio/studioApi.ts`), `ConfirmDialog` (`web/src/components/ui/confirm-dialog.tsx`).
 - Produces: default export `PhotoEditor(props: EditorProps)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/mediaEdit/__tests__/PhotoEditor.test.tsx`:
 ```tsx
@@ -2614,12 +2614,12 @@ describe('PhotoEditor', () => {
 });
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/PhotoEditor.test.tsx`
 Expected: FAIL — `Failed to resolve import "../PhotoEditor"`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `web/src/mediaEdit/PhotoEditor.tsx`:
 ```tsx
@@ -2783,12 +2783,12 @@ Notes for the implementer:
 - Check `confirmVariant` values in `web/src/components/ui/button.tsx` (`destructive` or `danger`) and use the one that exists.
 - The `ConfirmDialog` is a Radix dialog portalled to `document.body`, outside `#root`, so the inert root does not block it.
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/PhotoEditor.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add web/src/mediaEdit/PhotoEditor.tsx web/src/mediaEdit/__tests__/PhotoEditor.test.tsx
