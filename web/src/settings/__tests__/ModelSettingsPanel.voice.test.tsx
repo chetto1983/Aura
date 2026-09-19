@@ -64,7 +64,8 @@ function stubFetch(settings: unknown): string[] {
         gets.push(url);
         return Promise.resolve(json(SPEECH_BODY));
       }
-      if (url.startsWith('/api/settings/')) return Promise.resolve(json({ models: [], routes: [] }));
+      if (url.startsWith('/api/settings/'))
+        return Promise.resolve(json({ models: [], routes: [] }));
       return Promise.resolve(json(settings));
     }),
   );
