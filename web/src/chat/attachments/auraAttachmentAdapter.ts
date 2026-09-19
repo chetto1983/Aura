@@ -18,9 +18,10 @@ import { inferModality, isReadyAsset, pollUntilReady, putWithProgress } from './
 // 100% — measured live 2026-08-17. assetFor() maps the stable id onto the asset the run
 // envelope needs, which keeps the identity the UI keys on separate from the server's.
 
-/** What the presigner accepts today; the browser file dialog filters on it. */
+/** What the presigner accepts today; the browser file dialog filters on it. Video goes by
+ *  extension because the presigner does (assets.videoExts): not every video/* plays. */
 const ACCEPTED_TYPES =
-  'image/*,audio/*,application/pdf,.docx,.pptx,.xlsx,.xlsm,.html,.htm,.csv,.md,.markdown,.txt,.json,.xml,.epub';
+  'image/*,audio/*,application/pdf,.docx,.pptx,.xlsx,.xlsm,.html,.htm,.csv,.md,.markdown,.txt,.json,.xml,.epub,.mp4,.webm';
 
 /** The adapter plus the one thing the AttachmentAdapter shape cannot carry: the Aura Asset
  * behind an attachment id. CompleteAttachment has no free-form metadata field, and the

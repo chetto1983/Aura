@@ -61,6 +61,12 @@ describe('createAuraAttachmentAdapter', () => {
   // Measured live 2026-08-17: the first yield carried the file name as its id and later ones
   // the asset id, so the runtime kept BOTH — one chip frozen at 0%, one at 100%, for a single
   // file. The id must not move once the runtime has seen it.
+  it('takes the clips the presigner takes, MP4 and WebM, and no other video', () => {
+    const accepted = createAuraAttachmentAdapter({ threadId: 't' }).accept.split(',');
+    expect(accepted).toEqual(expect.arrayContaining(['.mp4', '.webm']));
+    expect(accepted).not.toContain('video/*');
+  });
+
   it('keeps one identity for the whole upload', async () => {
     const adapter = createAuraAttachmentAdapter({ threadId: 'conv-1' });
 
