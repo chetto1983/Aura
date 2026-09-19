@@ -1885,7 +1885,7 @@ git commit -m "feat(media-edit): add the trim timeline and time fields" -m "A fi
 - Produces: `interface EditorProps { asset: Asset; source: Blob; onClose: () => void }` (exported from `VideoEditor.tsx`, reused by `PhotoEditor.tsx`); default export `VideoEditor(props: EditorProps)`;
   `CropOverlay({ frame: Size; rect: CropRect; onMove: (rect: CropRect) => void; label: string })`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `web/src/mediaEdit/__tests__/VideoEditor.test.tsx`:
 ```tsx
@@ -2028,12 +2028,12 @@ describe('VideoEditor', () => {
 ```
 Check the toggle-group item role in `web/src/components/ui/toggle-group.tsx` before running: Radix `ToggleGroup type="single"` items are `role="radio"`. If the project's wrapper renders them otherwise, use that role in the test.
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `npx vitest run src/mediaEdit/__tests__/VideoEditor.test.tsx`
 Expected: FAIL — `Failed to resolve import "../VideoEditor"`.
 
-- [ ] **Step 3: Implement `CropOverlay`**
+- [x] **Step 3: Implement `CropOverlay`**
 
 `web/src/mediaEdit/CropOverlay.tsx`:
 ```tsx
@@ -2117,7 +2117,7 @@ export function CropOverlay({
 }
 ```
 
-- [ ] **Step 4: Implement `VideoEditor`**
+- [x] **Step 4: Implement `VideoEditor`**
 
 `web/src/mediaEdit/VideoEditor.tsx`:
 ```tsx
@@ -2444,12 +2444,12 @@ Notes for the implementer:
 - Keep the file under 600 lines; if prettier pushes it over, move the tool panels into `VideoTools.tsx`.
 - If `toggle-group`'s `ToggleGroup` in this repo exposes a different prop API, adapt to it (read `web/src/components/ui/toggle-group.tsx`); the test addresses items by `role="radio"` and their label.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run src/mediaEdit/__tests__/VideoEditor.test.tsx`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add web/src/mediaEdit/CropOverlay.tsx web/src/mediaEdit/VideoEditor.tsx web/src/mediaEdit/__tests__/VideoEditor.test.tsx

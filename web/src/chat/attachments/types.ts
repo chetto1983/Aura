@@ -19,7 +19,7 @@ export type AssetStatus =
   | 'indexed'
   | 'recovered';
 
-export type AssetModality = 'document' | 'image' | 'audio' | 'unknown';
+export type AssetModality = 'document' | 'image' | 'audio' | 'video' | 'unknown';
 
 export interface Asset {
   readonly id: string;
