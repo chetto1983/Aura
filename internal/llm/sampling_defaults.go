@@ -140,5 +140,18 @@ func llamaCppPublishedSampling(ctx context.Context, client *http.Client, baseURL
 	if err != nil {
 		return samplingDefaults{}
 	}
-	return samplingDefaultsFromNumbers(props.DefaultGenerationSettings.Params)
+	return samplingDefaultsFromNumbers(numbersOnly(props.DefaultGenerationSettings.Params))
+}
+
+// numbersOnly narrows a decoded JSON object to its numeric members, which is the same
+// rule parseOllamaSamplingParameters follows for its own source: a member that is not a
+// number is skipped, never a reason to discard the set.
+func numbersOnly(values map[string]any) map[string]float64 {
+	out := make(map[string]float64, len(values))
+	for name, value := range values {
+		if number, ok := value.(float64); ok {
+			out[name] = number
+		}
+	}
+	return out
 }

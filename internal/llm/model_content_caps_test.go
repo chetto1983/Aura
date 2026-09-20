@@ -24,6 +24,22 @@ func TestLlamaCppPropsVideoKey(t *testing.T) {
 	}{
 		{"video model", `{"modalities":{"vision":true,"video":true,"audio":false}}`, true},
 		{"image-only model", `{"modalities":{"vision":true,"audio":false}}`, false},
+		// The body a real llama-server sends, not a reduction of it: beside the
+		// modalities it carries default_generation_settings.params, whose members are
+		// NOT all numbers. Measured on b10951 (2026-09-20) that block holds
+		// "ignore_eos": false, "samplers": [...], "chat_format": "Content-only" and a
+		// dozen more. A params field typed map[string]float64 makes encoding/json
+		// reject the WHOLE document over the first bool, and the modalities sitting
+		// beside it die with it — which is how a video-capable local server ended up
+		// advertising nothing at all.
+		{"video model, real params block", `{
+			"modalities":{"vision":true,"video":true,"audio":false},
+			"default_generation_settings":{"params":{
+				"temperature":0.8,"top_k":40,"top_p":0.95,"min_p":0.05,
+				"ignore_eos":false,"stream":false,"chat_format":"Content-only",
+				"samplers":["penalties","top_k","top_p","min_p","temperature"],
+				"speculative.types":"none","lora":[]
+			}}}`, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			src := newLlamaCppContentCaps(Config{Provider: "llamacpp", BaseURL: "http://localhost:8080/v1"})

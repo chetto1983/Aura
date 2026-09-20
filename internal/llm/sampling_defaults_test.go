@@ -92,3 +92,24 @@ func TestApplyDiscoveredSamplingIsANoOpWhenNothingIsPublished(t *testing.T) {
 		t.Errorf("an empty publication changed the config: %+v", cfg.Sampling)
 	}
 }
+
+// The params block a live llama-server b10951 returned for Qwen3-VL-2B on 2026-09-20.
+// It is JSON, but the members are not all numbers -- "ignore_eos" is a bool, "samplers"
+// an array, "chat_format" a string -- which is why the sampler is read through
+// numbersOnly. Without it the whole /props document is rejected over the first bool and
+// both the sampler and the modalities beside it are lost.
+func TestNumbersOnlyKeepsTheSamplerBesideNonNumericParams(t *testing.T) {
+	got := samplingDefaultsFromNumbers(numbersOnly(map[string]any{
+		"temperature": 0.8, "top_k": 40.0, "top_p": 0.95, "min_p": 0.05,
+		"repeat_penalty": 1.1,
+		"ignore_eos":     false, "stream": false, "chat_format": "Content-only",
+		"samplers": []any{"penalties", "top_k", "temperature"}, "lora": []any{},
+	}))
+	floatAt(t, got.Temperature, 0.8, "temperature")
+	floatAt(t, got.Sampling.TopP, 0.95, "top_p")
+	floatAt(t, got.Sampling.MinP, 0.05, "min_p")
+	floatAt(t, got.Sampling.RepetitionPenalty, 1.1, "repeat_penalty")
+	if got.Sampling.TopK == nil || *got.Sampling.TopK != 40 {
+		t.Errorf("top_k = %v, want 40", got.Sampling.TopK)
+	}
+}

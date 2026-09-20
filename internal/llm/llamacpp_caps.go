@@ -36,8 +36,14 @@ type llamaCppPropsResponse struct {
 	// command-line flags and built-ins already merged by llama-server. Measured
 	// 2026-09-03 -- it reports Gemma's own temperature 1.0 / top_k 64, which are NOT
 	// llama.cpp's built-in 0.8 / 40, so this is the model's card and not the server's.
+	// Decoded as `any`, not float64: the block mixes the sampler numbers with
+	// booleans, strings and arrays ("ignore_eos", "chat_format", "samplers", "lora",
+	// ... measured on b10951, 2026-09-20). A numeric map here makes encoding/json
+	// reject the whole document over the first bool, taking Modalities down with it —
+	// which left every llama.cpp backend advertising no native input at all.
+	// samplingDefaultsFromNumbers gets the numeric members via numbersOnly.
 	DefaultGenerationSettings struct {
-		Params map[string]float64 `json:"params"`
+		Params map[string]any `json:"params"`
 	} `json:"default_generation_settings"`
 }
 
