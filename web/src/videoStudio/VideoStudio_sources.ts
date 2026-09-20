@@ -19,9 +19,22 @@ import { loadProject, type LoadedProject, type ProjectAssetSource } from './proj
 export const REFUSAL_UNDECODABLE = 'videoStudio.refusal.sourceUndecodable';
 export const REFUSAL_MISSING_ASSET = 'videoStudio.refusal.sourceMissingAsset';
 
-/** What the file picker takes: exactly what the asset route accepts as a video
- *  (internal/assets/limits.go `videoExts`), so the server has nothing left to refuse. */
-export const SOURCE_ACCEPT = 'video/mp4,video/webm';
+/**
+ * What the file picker takes. The clips are exactly what the asset route accepts as a video
+ * (internal/assets/limits.go `videoExts`), so the server has nothing left to refuse. The stills
+ * are OURS to choose: `ModalityImage` has no extension allowlist at all, so the gate is the list
+ * below plus the decode probe — and it holds the three raster formats every browser this cockpit
+ * targets decodes. GIF is left out on purpose: the video lane would show one frame of it and
+ * say nothing about the rest, and a silent loss is the defect class this cycle keeps refusing.
+ */
+export const SOURCE_ACCEPT = 'video/mp4,video/webm,image/png,image/jpeg,image/webp';
+
+/**
+ * How long a still is on screen when it is added. A number this module CHOOSES rather than
+ * measures — an image has no length of its own — and the item is what carries it, so a trim
+ * handle or the inspector changes it like any other clip's.
+ */
+const IMAGE_SECONDS = 5;
 
 /** What a project is opened on. Three shapes because there are three doors: the quick editor
  *  hands over a project it built from the clip it was trimming, the Studio hands over one
@@ -41,11 +54,33 @@ const STARTING_FPS = 30;
  *  not depend on the history to describe what it returns. */
 type Edit = (project: VideoProject) => VideoProject;
 
-/** What the probe found: the three numbers a source needs, and nothing about the file. */
+/** What the probe found: what kind of source it is, the numbers it needs, and nothing about the
+ *  file. A still's `duration` is 0 — the model's own convention for a source with no length. */
 export interface ProbedSource {
+  readonly kind: ProjectSource['kind'];
   readonly duration: number;
   readonly width: number;
   readonly height: number;
+}
+
+/**
+ * Read a still, or refuse it. `createImageBitmap` IS the decode — it is to an image what
+ * `canDecode` is to a video track — so a file the browser cannot turn into pixels is refused at
+ * the same door and with the same sentence, rather than becoming a layer VideoFlow disables.
+ */
+async function probeImage(bytes: Blob): Promise<ProbedSource> {
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(bytes);
+  } catch {
+    throw new CommandRefusal(REFUSAL_UNDECODABLE);
+  }
+  try {
+    return { kind: 'image', duration: 0, width: bitmap.width, height: bitmap.height };
+  } finally {
+    // The pixels were wanted for their size only, and a bitmap left open holds them all.
+    bitmap.close();
+  }
 }
 
 /**
@@ -59,8 +94,13 @@ export interface ProbedSource {
  * and a duration, and nothing but `decodable` distinguishes it from a clip that would play.
  * The single-clip editor still opens such a file, because a copy-trim never decodes a frame;
  * a COMPOSITION always does, and VideoFlow answers a layer it cannot decode with black.
+ *
+ * Which probe runs is the bytes' own declared type — a picked file's from the browser, a fetched
+ * asset's from the route's Content-Type. It is a routing question, not a verdict: whatever it
+ * says, the probe it picks is the one that really decodes, and refuses when it cannot.
  */
 export async function probeSource(bytes: Blob): Promise<ProbedSource> {
+  if (bytes.type.startsWith('image/')) return probeImage(bytes);
   let probed;
   try {
     probed = await probeVideo(bytes);
@@ -68,7 +108,12 @@ export async function probeSource(bytes: Blob): Promise<ProbedSource> {
     throw new CommandRefusal(REFUSAL_UNDECODABLE);
   }
   if (!probed.decodable) throw new CommandRefusal(REFUSAL_UNDECODABLE);
-  return probed;
+  return {
+    kind: 'video',
+    duration: probed.duration,
+    width: probed.width,
+    height: probed.height,
+  };
 }
 
 /**
@@ -101,7 +146,7 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
     const source: ProjectSource = {
       id: crypto.randomUUID(),
       assetId,
-      kind: 'video',
+      kind: probed.kind,
       duration: probed.duration,
       size,
       fps: project.fps,
@@ -112,7 +157,9 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
         size: framedByDefault(project) ? size : project.size,
         sources: [...project.sources, source],
       },
-      { sourceId: source.id, duration: probed.duration },
+      // A still lasts as long as its ITEM says: the source's own duration is zero, and `addClip`
+      // refuses a clip of no length.
+      { sourceId: source.id, duration: probed.kind === 'image' ? IMAGE_SECONDS : probed.duration },
     );
   };
 }
@@ -125,8 +172,8 @@ export async function uploadSource(file: File): Promise<string> {
     file_name: file.name,
     mime_type: file.type,
     // Named rather than guessed: the server files an .mp4 under media/, and a hint reading
-    // 'unknown' is how a clip ends up beside the documents.
-    modality_hint: 'video',
+    // 'unknown' is how a clip ends up beside the documents. A still is filed as one.
+    modality_hint: file.type.startsWith('image/') ? 'image' : 'video',
     size_bytes: file.size,
   });
   await putWithProgress(presign.upload.upload_url, file, presign.upload.required_headers, () => {

@@ -227,6 +227,37 @@ describe('VideoStudio', () => {
     expect(assets.finalizeAsset).toHaveBeenCalledWith('asset-new');
   });
 
+  it('takes a still through the same door and files it as an image', async () => {
+    // The spec's scope line is "several clips AND images in sequence on the video lane". The
+    // model, the renderer adapter and the lane carried the branch from the first task; this is
+    // the door that reaches them.
+    vi.stubGlobal(
+      'createImageBitmap',
+      vi.fn(() => Promise.resolve({ width: 800, height: 600, close: () => undefined })),
+    );
+    mount();
+    await screen.findByTestId('video-stage');
+
+    fireEvent.change(screen.getByLabelText(i18n.t('videoStudio.source.pick')), {
+      target: { files: [new File(['x'], 'still.png', { type: 'image/png' })] },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) }),
+      ).toBeTruthy();
+    });
+    // Filed by what it is: a hint of 'video' would put a .png under media/ beside the clips.
+    expect(assets.presignAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ modality_hint: 'image', file_name: 'still.png' }),
+    );
+    // Five seconds on screen, and the still itself has no length to run past.
+    expect(
+      screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) })
+        .textContent,
+    ).toBe('00:05.0');
+  });
+
   it('says an overlay will go BEFORE the edit lands, and leaves the project alone if it is refused', async () => {
     mount();
     await screen.findByTestId('video-stage');

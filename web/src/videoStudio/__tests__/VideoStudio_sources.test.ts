@@ -26,7 +26,21 @@ const SOURCE = {
 };
 
 const DEFAULT_SIZE = { width: 1920, height: 1080 };
-const PORTRAIT = { duration: 6, width: 1080, height: 1920 };
+const PORTRAIT = { kind: 'video' as const, duration: 6, width: 1080, height: 1920 };
+const STILL = { kind: 'image' as const, duration: 0, width: 800, height: 600 };
+
+/** A decoder that answers, or one that does not: `createImageBitmap` is the image's `canDecode`
+ *  and jsdom has neither. */
+function decodesImages(yes: boolean): void {
+  vi.stubGlobal(
+    'createImageBitmap',
+    vi.fn(() =>
+      yes
+        ? Promise.resolve({ width: STILL.width, height: STILL.height, close: () => undefined })
+        : Promise.reject(new Error('not an image this browser knows')),
+    ),
+  );
+}
 
 /** Answer every fetch with `status`, and a one-byte body so a 200 yields a blob. */
 function serve(status: number): void {
@@ -57,6 +71,28 @@ describe('probeSource', () => {
   });
 });
 
+describe('probeSource, on a still', () => {
+  it('measures it with a real decode, and gives it no length of its own', async () => {
+    decodesImages(true);
+    expect(await probeSource(new File([], 'a.png', { type: 'image/png' }))).toEqual(STILL);
+  });
+
+  it('refuses a still this browser cannot decode, the way it refuses a clip', async () => {
+    // `createImageBitmap` IS the decode: a file that reaches VideoFlow undecodable becomes a
+    // layer it disables, which is the same black picture an undecodable clip produces.
+    decodesImages(false);
+    await expect(probeSource(new File([], 'a.png', { type: 'image/png' }))).rejects.toThrow(
+      REFUSAL_UNDECODABLE,
+    );
+  });
+
+  it('never sends a still to the video probe', async () => {
+    decodesImages(true);
+    media.probeVideo.mockRejectedValue(new Error('no video track'));
+    await expect(probeSource(new File([], 'a.png', { type: 'image/png' }))).resolves.toEqual(STILL);
+  });
+});
+
 describe('sourceEdit and the project frame', () => {
   it('takes the first source frame when nothing has chosen one', () => {
     const framed = sourceEdit(PORTRAIT, 'asset-a')(emptyProject('', DEFAULT_SIZE, 30));
@@ -68,7 +104,10 @@ describe('sourceEdit and the project frame', () => {
 
   it('leaves the frame alone for the SECOND source, whatever shape it is', () => {
     const first = sourceEdit(PORTRAIT, 'asset-a')(emptyProject('', DEFAULT_SIZE, 30));
-    const second = sourceEdit({ duration: 3, width: 3840, height: 2160 }, 'asset-b')(first);
+    const second = sourceEdit(
+      { kind: 'video', duration: 3, width: 3840, height: 2160 },
+      'asset-b',
+    )(first);
     expect(second.size).toEqual({ width: 1080, height: 1920 });
     expect(second.video).toHaveLength(2);
   });
@@ -96,6 +135,23 @@ describe('sourceEdit and the project frame', () => {
       ],
     };
     expect(sourceEdit(PORTRAIT, 'asset-a')(seeded).size).toEqual(DEFAULT_SIZE);
+  });
+});
+
+describe('sourceEdit, on a still', () => {
+  it('gives the clip a length to be seen for and the source none of its own', () => {
+    const added = sourceEdit(STILL, 'asset-i')(emptyProject('', DEFAULT_SIZE, 30));
+    // A still has no duration to read, so the model's zero stays zero on the SOURCE and the
+    // five seconds the editor chose sit on the ITEM, where a trim can change them.
+    expect(added.sources[0]).toMatchObject({ kind: 'image', duration: 0 });
+    expect(added.video[0]?.duration).toBe(5);
+  });
+
+  it('takes its frame the way a clip does when nothing has chosen one', () => {
+    expect(sourceEdit(STILL, 'asset-i')(emptyProject('', DEFAULT_SIZE, 30)).size).toEqual({
+      width: 800,
+      height: 600,
+    });
   });
 });
 

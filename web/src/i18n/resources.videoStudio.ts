@@ -37,7 +37,7 @@ export const videoStudioEn = {
       redo: 'Redo',
     },
     source: {
-      pick: 'Choose a video file',
+      pick: 'Choose a clip or a still',
       reading: 'Reading the clip…',
       uploading: 'Uploading {{name}}…',
       failed: 'The clip could not be added: {{reason}}',
@@ -148,7 +148,7 @@ export const videoStudioIt = {
       redo: 'Ripristina',
     },
     source: {
-      pick: 'Scegli un file video',
+      pick: 'Scegli una clip o un’immagine',
       reading: 'Lettura della clip…',
       uploading: 'Caricamento di {{name}}…',
       failed: 'Non è stato possibile aggiungere la clip: {{reason}}',
