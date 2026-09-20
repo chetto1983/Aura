@@ -173,7 +173,7 @@ export function RemoteAccessStatus({
       </div>
       <div className="flex flex-col gap-3 rounded-md border border-border bg-surface p-4">
         <p className="text-sm leading-relaxed text-text-muted">{t('remoteAccess.rotation.body')}</p>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 [&>*]:w-full [&>*]:whitespace-normal sm:[&>*]:w-auto">
           <a
             href="https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/"
             target="_blank"

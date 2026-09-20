@@ -64,6 +64,48 @@ describe('RemoteAccessStatus', () => {
     expect(screen.getByLabelText('Cloudflare API token')).toBeTruthy();
   });
 
+  it('replaces credentials with the current enabled state and configured labels', async () => {
+    const requests: unknown[] = [];
+    const disabled = {
+      ...status,
+      enabled: false,
+      phase: 'disabled',
+      account_id: 'account',
+      zone_name: 'example.com',
+      public_hostname: 'custom.example.com',
+      warp_hostname: 'private.example.com',
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+        if (url.endsWith('/token/verify'))
+          return Promise.resolve(
+            new Response(JSON.stringify({ accounts: [{ id: 'account', name: 'Account' }] })),
+          );
+        if (init?.method === 'PUT') requests.push(JSON.parse(String(init.body)));
+        return Promise.resolve(new Response(JSON.stringify(disabled)));
+      }),
+    );
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <RemoteAccessPanel />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(await screen.findByLabelText('Cloudflare API token'), {
+      target: { value: 'replacement' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify token' }));
+    await waitFor(() =>
+      expect(requests).toEqual([
+        expect.objectContaining({ enabled: false, public_label: 'custom', warp_label: 'private' }),
+      ]),
+    );
+  });
+
   it('contains a rejected management action in localized alert feedback', async () => {
     render(
       <RemoteAccessStatus

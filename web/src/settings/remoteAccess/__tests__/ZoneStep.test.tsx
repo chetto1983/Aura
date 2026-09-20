@@ -12,6 +12,7 @@ describe('ZoneStep', () => {
           { id: 'two', name: 'Two' },
         ]}
         generation={1}
+        initialDomain="example.com"
         onSave={vi.fn(() => Promise.resolve())}
       />,
     );
@@ -23,6 +24,6 @@ describe('ZoneStep', () => {
     fireEvent.change(account, { target: { value: 'two' } });
     expect(
       (screen.getByRole('button', { name: 'Save and start setup' }) as HTMLButtonElement).disabled,
-    ).toBe(true);
+    ).toBe(false);
   });
 });

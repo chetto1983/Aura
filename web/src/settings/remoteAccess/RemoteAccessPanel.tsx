@@ -55,7 +55,7 @@ export function RemoteAccessPanel() {
     const account = accounts.find((item) => item.id === status.account_id);
     if (!account || !status.zone_name) throw new Error('replacement unavailable');
     await configureRemoteAccess({
-      enabled: true,
+      enabled: status.enabled,
       generation: status.generation,
       account_id: account.id,
       zone_name: status.zone_name,
@@ -91,7 +91,6 @@ export function RemoteAccessPanel() {
       accepting={remote.acceptExternal.isPending}
       onAcceptExternal={async () => {
         await remote.acceptExternal.mutateAsync(status.generation);
-        await refresh();
       }}
     />
   );
