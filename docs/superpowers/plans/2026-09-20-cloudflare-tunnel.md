@@ -405,6 +405,12 @@ type remoteAccessDTO struct {
 
 Register dedicated routes before `PUT /api/settings/{key}`. Candidate-token verification does not store it. Final PUT stores only after validation. DELETE requires typed current hostname. Reuse the existing administrative capability check, strict body cap and idempotency middleware.
 
+Candidate verification proves token activity and account enumeration; final configuration also
+proves selected-account/zone readability before atomic storage. Cloudflare does not expose granted
+scopes in token verification or a non-mutating proof of write permission. The first real
+Tunnel/DNS/Access mutation therefore proves write access; refusal is a terminal sanitized status
+and must never be reported as pre-verified success.
+
 Authenticated acceptance is browser-driven: direct HTTPS listeners strip the internal marker and
 only unexposed Caddy `:8080` sets it. The endpoint additionally requires the configured public Host,
 current generation, current healthy owned connector and an Aura administrator. Persist the accepted

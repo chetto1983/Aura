@@ -149,8 +149,12 @@ References:
 The onboarding is a persisted, idempotent state machine. Closing the browser, restarting Aura,
 or retrying a failed Cloudflare request resumes the incomplete phase.
 
-1. **Credential check** — accept the API token once, verify it against Cloudflare, discover
-   accounts, and report missing permissions without storing an unusable token.
+1. **Credential check** — accept the API token once, verify that it is active, discover accounts,
+   and prove selected-account/zone readability without storing an invalid token. Cloudflare's token
+   verification response does not enumerate granted scopes and its public API offers no
+   non-mutating proof of write capability. Tunnel, DNS and Access write permissions are therefore
+   proven by the first real reconciliation mutation; a refusal becomes a terminal sanitized status
+   and the encrypted token remains replaceable from the cockpit.
 2. **Account selection** — auto-select a single account or require an explicit choice.
 3. **Zone** — discover an existing zone or create one for the entered registered domain.
 4. **Nameservers** — display Cloudflare's assigned nameservers and poll until the zone is active.
