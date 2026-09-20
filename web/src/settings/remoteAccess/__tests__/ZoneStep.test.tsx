@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import '../../../i18n/i18n';
 import { ZoneStep } from '../ZoneStep';
 
@@ -15,6 +15,14 @@ describe('ZoneStep', () => {
         onSave={vi.fn(() => Promise.resolve())}
       />,
     );
-    expect(screen.getByLabelText('Cloudflare account').getAttribute('value') ?? '').toBe('');
+    const account = screen.getByLabelText('Cloudflare account') as HTMLSelectElement;
+    expect(account.value).toBe('');
+    expect(
+      (screen.getByRole('button', { name: 'Save and start setup' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(account, { target: { value: 'two' } });
+    expect(
+      (screen.getByRole('button', { name: 'Save and start setup' }) as HTMLButtonElement).disabled,
+    ).toBe(true);
   });
 });

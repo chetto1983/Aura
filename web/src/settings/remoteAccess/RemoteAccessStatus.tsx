@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
 
-export type RemoteAccessAction = 'reconcile' | 'refresh' | 'disable';
+export type RemoteAccessAction = 'reconcile' | 'refresh' | 'disable' | 'reenable';
 
 interface RemoteAccessStatusProps {
   readonly status: RemoteAccessStatusDTO;
@@ -134,7 +134,7 @@ export function RemoteAccessStatus({
           {t('remoteAccess.status.lastReconciled', { time: status.last_reconciled_at })}
         </p>
       ) : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 [&>[data-slot=button]]:w-full [&>[data-slot=button]]:whitespace-normal sm:[&>[data-slot=button]]:w-auto">
         <Button
           type="button"
           variant="outline"
@@ -151,11 +151,10 @@ export function RemoteAccessStatus({
           variant="outline"
           disabled={pending}
           onClick={() => {
-            void runAction('disable');
+            void runAction(status.enabled ? 'disable' : 'reenable');
           }}
         >
-          {pending ? <Spinner /> : null}
-          {t('remoteAccess.actions.disable')}
+          {status.enabled ? t('remoteAccess.actions.disable') : t('remoteAccess.actions.reenable')}
         </Button>
         {hostname ? (
           <Button
@@ -277,6 +276,11 @@ export function RemoteAccessStatus({
           }
         }}
       >
+        {deleteFailed ? (
+          <p role="alert" className="text-sm text-destructive">
+            {t('remoteAccess.status.actionError')}
+          </p>
+        ) : null}
         <div className="grid gap-1.5">
           <Label htmlFor="remote-access-delete-confirm">
             {t('remoteAccess.delete.label', { hostname })}

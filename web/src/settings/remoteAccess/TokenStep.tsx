@@ -46,6 +46,17 @@ export function TokenStep({ onVerified }: TokenStepProps) {
         <Label htmlFor="remote-access-token">{t('remoteAccess.token.label')}</Label>
       </div>
       <p className="text-sm leading-relaxed text-text-muted">{t('remoteAccess.token.hint')}</p>
+      <p className="text-sm leading-relaxed text-text-muted">
+        {t('remoteAccess.permissions.body')}
+      </p>
+      <a
+        href="https://dash.cloudflare.com/profile/api-tokens"
+        target="_blank"
+        rel="noreferrer noopener"
+        className="min-h-[44px] text-sm font-semibold text-accent-text underline underline-offset-2"
+      >
+        {t('remoteAccess.permissions.documentation')}
+      </a>
       <SecretInput
         id="remote-access-token"
         value={token}

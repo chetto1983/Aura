@@ -112,4 +112,28 @@ describe('RemoteAccessWizard', () => {
       expect(JSON.stringify(client.getMutationCache().getAll())).not.toContain('top-secret');
     });
   });
+
+  it('shows scoped token permissions before a first token is verified', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({
+              enabled: false,
+              phase: 'disabled',
+              api_token_set: false,
+              tunnel_token_set: false,
+              connector: 'disconnected',
+              generation: 1,
+              acceptance_required: false,
+            }),
+          ),
+        ),
+      ),
+    );
+    renderRemoteAccess();
+    expect(await screen.findByText(/Account Settings Read/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Open Cloudflare API token creation' })).toBeTruthy();
+  });
 });

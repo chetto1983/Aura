@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../../i18n/i18n';
 import { RemoteAccessStatus } from '../RemoteAccessStatus';
@@ -74,5 +74,23 @@ describe('RemoteAccessStatus', () => {
     );
     fireEvent.click(screen.getByRole('button', { name: 'Retry reconciliation' }));
     expect((await screen.findByRole('alert')).textContent).toContain('remote access action');
+  });
+
+  it('keeps a rejected delete error inside its open confirmation dialog', async () => {
+    render(
+      <RemoteAccessStatus
+        status={status}
+        onAction={() => Promise.resolve()}
+        onDelete={() => Promise.reject(new Error('secret'))}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Delete remote access' }));
+    fireEvent.change(screen.getByLabelText('Type aura.example.com to confirm'), {
+      target: { value: 'aura.example.com' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+    const dialog = screen.getByRole('alertdialog');
+    expect(await within(dialog).findByRole('alert')).toBeTruthy();
+    expect(dialog.textContent).toContain('remote access action');
   });
 });

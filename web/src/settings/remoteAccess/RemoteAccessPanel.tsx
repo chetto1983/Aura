@@ -45,7 +45,10 @@ export function RemoteAccessPanel() {
     if (name === 'reconcile') await remote.reconcile.mutateAsync(status.generation);
     if (name === 'refresh') await remote.refreshToken.mutateAsync(status.generation);
     if (name === 'disable') await remote.disable.mutateAsync();
-    await refresh();
+    if (name === 'reenable') {
+      await configureRemoteAccess(reenableConfiguration(status));
+      await refresh();
+    }
   };
   const replace = async (token: string) => {
     const accounts = await verifyRemoteAccessToken(token);
@@ -68,7 +71,6 @@ export function RemoteAccessPanel() {
       onAction={action}
       onDelete={async (hostname) => {
         await remote.remove.mutateAsync(hostname);
-        await refresh();
       }}
       onReplaceToken={replace}
       pending={
@@ -104,4 +106,21 @@ function isManaged(status: RemoteAccessStatusDTO): boolean {
     (status.phase === 'disabled' &&
       (status.public_hostname !== undefined || status.warp_hostname !== undefined))
   );
+}
+
+function reenableConfiguration(status: RemoteAccessStatusDTO): RemoteAccessConfiguration {
+  if (!status.account_id || !status.zone_name) throw new Error('configuration unavailable');
+  return {
+    enabled: true,
+    generation: status.generation,
+    account_id: status.account_id,
+    zone_name: status.zone_name,
+    public_label: hostnameLabel(status.public_hostname, status.zone_name, 'aura'),
+    warp_label: hostnameLabel(status.warp_hostname, status.zone_name, 'aura-warp'),
+  };
+}
+
+function hostnameLabel(hostname: string | undefined, zone: string, fallback: string): string {
+  const suffix = `.${zone}`;
+  return hostname?.endsWith(suffix) ? hostname.slice(0, -suffix.length) : fallback;
 }

@@ -86,6 +86,7 @@ export const remoteAccessEn = {
       rotate: 'Rotate token in Cloudflare Dashboard',
       refresh: 'Refresh Dashboard-rotated token',
       disable: 'Disable remote access',
+      reenable: 'Re-enable remote access',
       delete: 'Delete remote access',
       deleteForever: 'Delete permanently',
       cancel: 'Cancel',
@@ -104,7 +105,7 @@ export const remoteAccessEn = {
       body: 'The WARP hostname requires the Cloudflare One client enrolled in this same organization through Gateway. Aura creates no private LAN, CIDR, or Docker route.',
       documentation: 'Open Gateway enrollment guidance',
       dependency:
-        'Aura does not receive an organization or team slug from the current API. An organization-specific enrollment link is a Task 6 live/API contract dependency.',
+        'Enroll the Cloudflare One client in the same organization. Aura cannot open an organization-specific enrollment link today.',
     },
     delete: {
       title: 'Delete Cloudflare remote access?',
@@ -202,6 +203,7 @@ export const remoteAccessIt = {
       rotate: 'Ruota token nel Dashboard Cloudflare',
       refresh: 'Aggiorna token ruotato nel Dashboard',
       disable: 'Disabilita accesso remoto',
+      reenable: 'Riattiva accesso remoto',
       delete: 'Elimina accesso remoto',
       deleteForever: 'Elimina definitivamente',
       cancel: 'Annulla',
@@ -220,7 +222,7 @@ export const remoteAccessIt = {
       body: 'L’hostname WARP richiede il client Cloudflare One registrato nella stessa organizzazione tramite Gateway. Aura non crea route LAN private, CIDR o Docker.',
       documentation: 'Apri guida registrazione Gateway',
       dependency:
-        'L’API attuale non fornisce ad Aura uno slug di organizzazione o team. Un link di registrazione specifico dell’organizzazione e una dipendenza di contratto/live Task 6.',
+        'Registra il client Cloudflare One nella stessa organizzazione. Aura non puo aprire oggi un link di registrazione specifico dell’organizzazione.',
     },
     delete: {
       title: 'Eliminare l’accesso remoto Cloudflare?',
