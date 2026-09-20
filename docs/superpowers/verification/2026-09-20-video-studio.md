@@ -50,15 +50,24 @@ colour `#ff00ff`.
 **The title is inside its window and nowhere else.** The frames were decoded in the browser from
 the downloaded bytes and diffed against their twins:
 
-| Pair | Pixels changed (of 57 600) | …in the title's colour |
+| Pair | Pixels changed (of 57 600) | …where the title's colour appeared |
 |---|---|---|
-| t = 1.0 s vs t = 5.0 s (inside the 0–3 s window) | **1 966** | **960** |
+| t = 1.0 s vs t = 5.0 s (inside the 0–3 s window) | **1 966** | **949** |
 | t = 3.5 s vs t = 7.5 s (outside it) | **0** | **0** |
 
-The control is a hard zero, not a tolerance: the two halves encode the same picture the same way,
-so anything above the noise line is the editor's. For scale, re-encoding the two fixtures end to
-end with x264 and diffing the same twin frames leaves 24 and 52 pixels above that line — the
-codec's own noise. The threshold is 48 of 255 on one channel.
+On this host the control is a hard zero: the two halves encode the same picture the same way, so
+anything above the noise line is the editor's. For scale, re-encoding the two fixtures end to end
+with x264 and diffing the same twin frames leaves 24 and 52 pixels above that line — the codec's
+own noise. The threshold is 48 of 255 on one channel.
+
+“The title's colour appeared” is the exact wording of the second column and it was earned. The
+first version of this measurement counted a changed pixel that merely *was* near the title's
+colour, and CI's encoder — a different one from this host's — left **4** such pixels outside the
+window, all of them jitter inside `testsrc2`'s own magenta bar, where both frames are that colour
+already. A pixel that was the colour before the title existed is not evidence the title is there.
+The metric now requires the colour to be near in the first frame and **not** near in its twin, and
+the assertion is that the ink outside the window is under a hundredth of the ink inside — the
+claim that survives an encoder nobody controls. A title is a word, not four pixels.
 
 ![Exported frame at t = 1 s — source time 00:00:01.000, frame 30, with the title](2026-09-20-video-studio/export-frame-1s.png)
 ![Exported frame at t = 5 s — the same source frame, no title](2026-09-20-video-studio/export-frame-5s.png)
