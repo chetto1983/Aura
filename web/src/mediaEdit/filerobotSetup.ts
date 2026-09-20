@@ -155,29 +155,52 @@ export function filerobotTranslations(
 }
 
 // Scaleflex palette key → Aura token. The editor reads the tokens once, when it opens.
+//
+// Every key a Scaleflex or Filerobot component reads and this map does not answer keeps the
+// value from `lightPalette` (@scaleflex/ui theme-provider merges the override ON TOP of it),
+// so a gap here is not a missing accent: it is a light-theme colour painted into Aura's dark
+// cockpit. The keys below are the ones the photo editor actually reaches, found by reading
+// the two packages rather than by trying colours; the brand identities (`instagram`,
+// `dropbox`, `indigo`…) are deliberately left to Scaleflex.
 const PALETTE_TOKENS: Readonly<Record<string, string>> = {
-  'accent-primary': '--color-on-accent',
-  'accent-primary-hover': '--color-on-accent',
-  'accent-primary-active': '--color-on-accent',
-  'accent-stateless': '--color-on-accent',
-  'bg-stateless': '--color-surface-3',
-  'bg-active': '--color-surface-3',
-  'bg-hover': '--color-surface-3',
-  'bg-primary': '--color-surface',
-  'bg-secondary': '--color-surface-2',
-  'bg-primary-active': '--color-accent',
   'txt-primary': '--color-text',
   'txt-secondary': '--color-text-muted',
+  'txt-secondary-invert': '--color-text',
   'txt-placeholder': '--color-text-faint',
-  'borders-primary': '--color-border',
-  'borders-secondary': '--color-border-strong',
-  'borders-button': '--color-border-strong',
-  'borders-item': '--color-border',
-  'borders-disabled': '--color-text-disabled',
+  'txt-warning': '--color-warning',
+  'txt-error': '--color-danger',
+  'txt-info': '--color-info',
+  // `accent-stateless` is a primary button's BACKGROUND and `btn-primary-text` its label
+  // (core/button/button.mixin.js), while `accent-primary` is a foreground: link text, a
+  // focused field's border, the crop handle's stroke. Aura's accent splits into a surface
+  // (--color-accent) and its foreground (--color-on-accent), and only the foreground stays
+  // legible in both roles, so that is the one both keys take.
+  'accent-primary': '--color-on-accent',
+  'accent-stateless': '--color-on-accent',
+  'accent-primary-hover': '--color-ring',
+  'accent-primary-disabled': '--color-surface-3',
+  'bg-primary': '--color-surface',
+  'bg-primary-hover': '--color-surface-3',
+  'bg-primary-active': '--color-accent',
+  'bg-primary-stateless': '--color-surface-3',
+  'bg-secondary': '--color-surface-2',
+  'bg-stateless': '--color-surface-3',
+  // The chosen row of a menu — the crop ratio the image is on. Sharing `bg-stateless`'s
+  // surface left it indistinguishable from the menu behind it; the accent makes it read as
+  // chosen, like the selected tab, which is also `bg-primary-active`.
+  'bg-active': '--color-accent',
+  'bg-hover': '--color-surface-3',
+  'bg-grey': '--color-surface-3',
   'icon-primary': '--color-text-muted',
+  // Filerobot's global stylesheet colours every non-button svg through the PLURAL spelling,
+  // which is not in Scaleflex's own Color enum: unanswered, the declaration was dropped and
+  // those icons fell back to whatever text colour they inherited.
+  'icons-primary': '--color-text-muted',
   'icons-primary-hover': '--color-text',
   'icons-secondary': '--color-text-faint',
   'icons-secondary-hover': '--color-text-muted',
+  'icons-muted': '--color-text-faint',
+  'icons-placeholder': '--color-border',
   'icons-invert': '--color-accent',
   'btn-primary-text': '--color-accent',
   'btn-secondary-text': '--color-text',
@@ -186,16 +209,100 @@ const PALETTE_TOKENS: Readonly<Record<string, string>> = {
   'link-stateless': '--color-accent-text',
   'link-hover': '--color-text',
   'link-active': '--color-accent-text',
+  'borders-primary': '--color-border',
+  'borders-secondary': '--color-border',
+  'borders-item': '--color-border',
+  'borders-strong': '--color-border-strong',
+  'borders-button': '--color-border-strong',
+  'borders-primary-hover': '--color-border-strong',
+  'border-primary-stateless': '--color-border-strong',
+  'border-active-bottom': '--color-on-accent',
+  'borders-disabled': '--color-text-disabled',
+  error: '--color-danger',
+  warning: '--color-warning',
+  success: '--color-success',
+  info: '--color-info',
+  modified: '--color-info',
+  'active-secondary': '--color-surface',
+  // Filerobot asks the palette for "access-primary" when it fills the crop and transform
+  // handles (components/Layers/TransformersLayer/CropTransformer.js). The key is a typo for
+  // `accent-primary` and exists nowhere in Scaleflex's enum, so the handles fell through to
+  // Konva's own white; on a light canvas that is a white dot on a white photo.
+  'access-primary': '--color-surface',
 };
+
+/** Keys Scaleflex fills with a tint rather than a colour: an Aura token at an opacity. */
+const PALETTE_ALPHA: Readonly<Record<string, readonly [string, number]>> = {
+  accent_1_2_opacity: ['--color-on-accent', 0.12],
+  accent_1_8_opacity: ['--color-on-accent', 0.18],
+  accent_2_8_opacity: ['--color-on-accent', 0.28],
+  accent_4_0_opacity: ['--color-on-accent', 0.4],
+  'accent-stateless_0_4_opacity': ['--color-on-accent', 0.4],
+  'border-hover-bottom': ['--color-on-accent', 0.18],
+  'bg-blue': ['--color-info', 0.14],
+  'bg-green': ['--color-success', 0.14],
+  'bg-orange': ['--color-warning', 0.14],
+  'bg-red': ['--color-danger', 0.14],
+  'bg-red-light': ['--color-danger', 0.08],
+  'white-0-7-8-overlay': ['--color-surface', 0.78],
+};
+
+/** Steps Scaleflex expects to sit past their resting colour. Aura has no token for "accent,
+ *  pressed" that still carries `btn-primary-text` in both themes, so the pressed step is
+ *  derived from the hover one. */
+const PALETTE_BLEND: Readonly<Record<string, readonly [string, string, number]>> = {
+  'accent-primary-active': ['--color-ring', '--color-text', 0.25],
+};
+
+/** Shadows and the modal scrim. These are black alphas in Aura's light theme as well as its
+ *  dark one (--shadow-popover, the cockpit's own dialog overlay), so they are not tokens. */
+const PALETTE_LITERALS: Readonly<Record<string, string>> = {
+  'light-shadow': 'rgb(0 0 0 / 0.18)',
+  'medium-shadow': 'rgb(0 0 0 / 0.24)',
+  'large-shadow': 'rgb(0 0 0 / 0.28)',
+  'extra-0-3-overlay': 'rgb(0 0 0 / 0.6)',
+};
+
+/** The three channels of `#rrggbb`. Aura's generated tokens are all hex; anything else is a
+ *  token this file has no arithmetic for, and its key is left to Scaleflex rather than
+ *  guessed at. */
+function channels(value: string): readonly [number, number, number] | undefined {
+  if (!/^#[0-9a-f]{6}$/i.test(value)) return undefined;
+  const packed = Number.parseInt(value.slice(1), 16);
+  return [(packed >> 16) & 255, (packed >> 8) & 255, packed & 255];
+}
+
+function withAlpha(value: string, alpha: number): string | undefined {
+  const rgb = channels(value);
+  return rgb === undefined ? undefined : `rgb(${rgb.join(' ')} / ${String(alpha)})`;
+}
+
+function blend(from: string, to: string, weight: number): string | undefined {
+  const start = channels(from);
+  const end = channels(to);
+  if (start === undefined || end === undefined) return undefined;
+  const step = (a: number, b: number): number => Math.round(a + (b - a) * weight);
+  const mixed = [step(start[0], end[0]), step(start[1], end[1]), step(start[2], end[2])];
+  return `rgb(${mixed.join(' ')})`;
+}
 
 export function filerobotTheme(root: Element = document.documentElement): FilerobotTheme {
   const style = getComputedStyle(root);
-  const palette: Record<string, string> = {};
-  for (const [key, token] of Object.entries(PALETTE_TOKENS)) {
-    const value = style.getPropertyValue(token).trim();
+  const token = (name: string): string => style.getPropertyValue(name).trim();
+  const palette: Record<string, string> = { ...PALETTE_LITERALS };
+  for (const [key, name] of Object.entries(PALETTE_TOKENS)) {
+    const value = token(name);
     if (value !== '') palette[key] = value;
   }
-  const font = style.getPropertyValue('--font-sans').trim();
+  for (const [key, [name, alpha]] of Object.entries(PALETTE_ALPHA)) {
+    const value = withAlpha(token(name), alpha);
+    if (value !== undefined) palette[key] = value;
+  }
+  for (const [key, [from, to, weight]] of Object.entries(PALETTE_BLEND)) {
+    const value = blend(token(from), token(to), weight);
+    if (value !== undefined) palette[key] = value;
+  }
+  const font = token('--font-sans');
   return { palette, ...(font === '' ? {} : { typography: { fontFamily: font } }) };
 }
 

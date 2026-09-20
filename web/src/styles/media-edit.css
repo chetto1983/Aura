@@ -1,0 +1,46 @@
+/* media-edit.css — the photo editor's surfaces that no Scaleflex palette key can reach.
+   Everything else about the editor's colour is a token mapping in mediaEdit/filerobotSetup.ts;
+   only the three rules below are beyond it, and each says which library file forces it.
+
+   The editor draws into three roots: its own .FIE_root, the popper layer it portals menus to,
+   and the modal layer it portals the colour picker to. All three are named here because the
+   library's own rules are single-class, and two classes beat one without !important. */
+
+/* @scaleflex/ui's Input asks `lightPalette` directly for its resting background, border and
+   text (core/input/input.utils.js) — the theme never reaches them. In Aura's dark cockpit the
+   font, size and hex fields rendered as white boxes with dark text, and because the :hover and
+   :focus-within rules DO read the theme the field flipped to a dark surface under the pointer.
+   The resting rule steps aside for both states so the library keeps drawing them from Aura's
+   tokens; only the text colour, which no state rule touches, is set unconditionally. */
+.FIE_root .SfxInput-root,
+#SfxPopper .SfxInput-root,
+.SfxModal-root .SfxInput-root {
+  color: var(--color-text);
+}
+
+.FIE_root .SfxInput-root:not(:hover):not(:focus-within),
+#SfxPopper .SfxInput-root:not(:hover):not(:focus-within),
+.SfxModal-root .SfxInput-root:not(:hover):not(:focus-within) {
+  background-color: var(--color-surface-2);
+  border-color: var(--color-border-strong);
+}
+
+/* The tool and filter carousels fade their overflowing edge with a hardcoded white gradient
+   (react-filerobot-image-editor/components/common/Carousel/Carousel.styled.js). No palette key
+   feeds it, so on a phone the dark tools bar ended in a white smear over the last tool. */
+.FIE_root .FIE_carousel-prev-button {
+  background: linear-gradient(90deg, var(--color-surface-2) 0%, transparent 100%);
+}
+
+.FIE_root .FIE_carousel-next-button {
+  background: linear-gradient(270deg, var(--color-surface-2) 0%, transparent 100%);
+}
+
+/* Every Scaleflex button sets `outline: none` and adds no focus style of its own, so keyboard
+   focus was invisible on every control inside the editor. Aura's own ring token restores it. */
+.FIE_root :focus-visible,
+#SfxPopper :focus-visible,
+.SfxModal-root :focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+}
