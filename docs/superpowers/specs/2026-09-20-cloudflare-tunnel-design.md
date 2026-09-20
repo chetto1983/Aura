@@ -165,8 +165,12 @@ or retrying a failed Cloudflare request resumes the incomplete phase.
    CIDR or Docker route is created.
 9. **Connector** — retrieve the tunnel token, store it encrypted in PostgreSQL, project it, and
    wait for the supervisor plus Cloudflare tunnel health.
-10. **Acceptance probe** — verify the external hostname, Access redirect and authenticated Aura
-    health before declaring the integration healthy.
+10. **Interactive acceptance** — an administrator opens the public hostname, completes Access OTP
+    and Authula, then confirms the current generation through an admin-only endpoint reached through
+    Caddy's unexposed tunnel listener. The direct HTTPS listeners strip the tunnel marker; only the
+    internal `:8080` listener sets it. Aura therefore needs no Access service token or third durable
+    credential. The accepted generation is persisted and invalidated by a desired generation change
+    or loss of Cloudflare connector health.
 
 The default public label is `aura`, producing `aura.<zone>`. The WARP-required label defaults to
 `aura-warp`, producing `aura-warp.<zone>`. Both are editable single DNS labels and both use
@@ -224,7 +228,8 @@ when selected and follows existing settings-panel, capability and secret-input p
 - Public and WARP-required hostnames, copy/open actions, tunnel and connector health.
 - Last successful reconciliation, last sanitized error and retry.
 - Access membership summary, WARP posture status and enrollment instructions.
-- API-token replacement, token rotation, disable and delete actions.
+- API-token replacement, connector-token refresh after an operator rotates it in Cloudflare,
+  disable and delete actions.
 - A permanent warning states that direct `0.0.0.0:443` / router access bypasses Cloudflare Access
   and relies on Authula.
 
@@ -241,13 +246,26 @@ settings:
   accounts without storing it;
 - `PUT /api/settings/remote-access` — save desired account/domain/hostnames and encrypted token;
 - `POST /api/settings/remote-access/reconcile` — resume or retry immediately;
-- `POST /api/settings/remote-access/rotate-token` — refresh and project the connector token;
+- `POST /api/settings/remote-access/token/refresh` — retrieve, encrypt and project the current
+  connector token after the operator rotates it in Cloudflare's dashboard;
+- `POST /api/settings/remote-access/accept-external` — persist authenticated acceptance of the
+  current generation only when called by an Aura administrator through the tunnel listener;
 - `POST /api/settings/remote-access/disable` — stop the connector while preserving remote resources;
 - `DELETE /api/settings/remote-access` — delete only verified Aura-owned remote resources;
 - `GET /api/settings/remote-access/events` — bounded recent reconciliation events, sanitized.
 
 Every route requires the existing governance-write capability. Request bodies are strict-decoded,
 bounded and idempotency-protected where they mutate external state.
+
+Cloudflare's documented public API exposes `GET /accounts/{account_id}/cfd_tunnel/{tunnel_id}/token`
+but no tunnel-token rotation mutation. The cockpit must not pretend that a GET rotated or revoked a
+credential: it links to Cloudflare's documented Dashboard rotation, then refreshes the newly current
+token into encrypted PostgreSQL state. Aura does not use undocumented Cloudflare endpoints.
+
+References:
+
+- [Cloudflare Tunnel token retrieval and Dashboard rotation](https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/)
+- [Get a Cloudflare Tunnel token API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/tunnels/subresources/cloudflared/subresources/token/methods/get/)
 
 ## Sidecar and Compose contract
 
@@ -347,8 +365,9 @@ resource. It must prove:
 8. an enrolled WARP client reaches the WARP-required Aura hostname and an unenrolled client is denied;
 9. the Cloudflare account contains no Aura-created private-network route, and no Docker service or
    LAN address is reachable through the connector;
-10. API-token and tunnel-token rotation leave no plaintext in API responses, logs, process args,
-    PostgreSQL raw values or runtime files after disable;
+10. API-token replacement plus Dashboard tunnel-token rotation and cockpit refresh leave no
+    plaintext in API responses, logs, process args, PostgreSQL raw values or runtime files after
+    disable;
 11. direct `https://<server-ip>` access still works through Authula;
 12. delete integration removes only Aura-owned resources and preserves the zone plus unrelated DNS;
 13. a fresh self-extracting Ubuntu Server install starts the idle sidecar, completes cockpit

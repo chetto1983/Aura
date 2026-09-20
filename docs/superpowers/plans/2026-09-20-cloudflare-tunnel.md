@@ -351,6 +351,7 @@ git commit -m "chore(payload): rehash Cloudflare sidecar configuration"
 - Create: `cmd/aura/serve_remote_access.go`
 - Create: `cmd/aura/serve_remote_access_test.go`
 - Modify: `cmd/aura/serve_agui.go`
+- Modify: `cmd/aura/serve_webui.go`
 - Modify: `internal/agui/server.go`
 - Create: `internal/agui/remote_access_api.go`
 - Create: `internal/agui/remote_access_api_test.go`
@@ -359,9 +360,13 @@ git commit -m "chore(payload): rehash Cloudflare sidecar configuration"
 - Modify: `internal/agui/onboarding_provision_test.go`
 - Modify: `internal/agui/deprovision_route.go`
 - Modify: `internal/agui/deprovision_route_test.go`
+- Modify: `caddy/Caddyfile`
+- Modify: `caddy/Caddyfile.domain`
+- Modify: `cmd/aura/container_artifacts_test.go`
+- Modify after source commit: `scripts/payload_manifest.txt`
 
 **Interfaces:**
-- Produces: `Server.SetRemoteAccess`, status/verify/configure/reconcile/rotate/disable/delete/events endpoints.
+- Produces: `Server.SetRemoteAccess`, status/verify/configure/reconcile/token-refresh/external-acceptance/disable/delete/events endpoints.
 
 - [ ] **Step 1: Write failing wiring, authorization and redaction tests**
 
@@ -400,19 +405,31 @@ type remoteAccessDTO struct {
 
 Register dedicated routes before `PUT /api/settings/{key}`. Candidate-token verification does not store it. Final PUT stores only after validation. DELETE requires typed current hostname. Reuse the existing administrative capability check, strict body cap and idempotency middleware.
 
+Authenticated acceptance is browser-driven: direct HTTPS listeners strip the internal marker and
+only unexposed Caddy `:8080` sets it. The endpoint additionally requires the configured public Host,
+current generation, current healthy owned connector and an Aura administrator. Persist the accepted
+generation through existing observed-health state; never trust client-supplied Cloudflare headers or
+introduce an Access service-token secret.
+
+Cloudflare documents Dashboard rotation but exposes only a GET for the tunnel token in the public
+API. Implement `token/refresh` to retrieve, encrypt and project the token after manual Dashboard
+rotation. Do not call an undocumented endpoint or report that Aura itself rotated/revoked it.
+
 - [ ] **Step 5: Run backend gates and commit**
 
 ```bash
 go test ./internal/remotetunnel ./internal/agui ./cmd/aura
 go vet ./internal/remotetunnel ./internal/agui ./cmd/aura
 wsl bash -lc 'cd /mnt/d/Repo/Aura && go test -race ./internal/remotetunnel ./internal/agui ./cmd/aura'
-git add cmd/aura internal/agui internal/remotetunnel
+git add cmd/aura internal/agui internal/remotetunnel caddy scripts/payload_manifest.txt
 git commit -m "feat(remote-access): wire Cloudflare controls into Aura"
 ```
 
 ### Task 5: Build the complete cockpit onboarding and status surface
 
-**Deliverable:** An administrator can configure, resume, observe, rotate, disable and delete Cloudflare remote access entirely from Settings in English or Italian.
+**Deliverable:** An administrator can configure, resume, observe, complete external acceptance,
+refresh a Dashboard-rotated connector token, disable and delete Cloudflare remote access from
+Settings in English or Italian.
 
 **Files:**
 - Create: `web/src/settings/remoteAccess/remoteAccessApi.ts`
@@ -460,7 +477,7 @@ Use discriminated types for every phase and shared `readJSON/httpErrorFrom`. Pol
 
 - [ ] **Step 3: Implement the resumable wizard and configured status**
 
-Steps: Account → Domain → Nameservers → Tunnel → Access → WARP → Verify. Server phase selects the current step. Token must verify before saving. Domain purchase is explicitly external. Preview both URLs. Status shows connector/reconcile health, both links, membership, direct-ingress bypass warning, retry, rotation, disable and typed delete.
+Steps: Account → Domain → Nameservers → Tunnel → Access → WARP → Verify. Server phase selects the current step. Token must verify before saving. Domain purchase is explicitly external. Preview both URLs. Verify opens the public URL so the administrator completes Access OTP plus Authula before accepting the current generation. Status shows connector/reconcile health, both links, membership, direct-ingress bypass warning, retry, Dashboard rotation plus token refresh, disable and typed delete.
 
 - [ ] **Step 4: Add bilingual resources and accessibility tests**
 
@@ -510,9 +527,12 @@ Require `AURA_E2E_CLOUDFLARE=1`, API token, account ID, registered test zone and
 
 Public: guided onboarding, OTP, Authula, incremental chat SSE, steer/cancel, Garage upload/finalize/download, Studio edit/save and Service Worker. WARP: enrolled client admitted, unenrolled denied. Assert no Aura-created private IP/CIDR route and no access to Postgres/Garage/MCP addresses.
 
-- [ ] **Step 4: Prove rotation, restart and ownership-safe cleanup**
+- [ ] **Step 4: Prove token refresh, restart and ownership-safe cleanup**
 
-Rotate token during continuous public health polling with zero failed poll. Restart Aura and sidecar separately and recover from PostgreSQL. Delete integration and prove Aura resources vanish while zone and a pre-seeded unrelated TXT record remain.
+Rotate the token through Cloudflare's documented Dashboard action, refresh it through the cockpit
+during continuous public health polling, and record any unavoidable connector handoff interruption
+truthfully. Restart Aura and sidecar separately and recover from PostgreSQL. Delete integration and
+prove Aura resources vanish while the zone and a pre-seeded unrelated TXT record remain.
 
 - [ ] **Step 5: Complete and test installer integration**
 
