@@ -154,6 +154,18 @@ describe('VideoEditor', () => {
     expect(screen.getByText('This clip has no audio')).toBeTruthy();
   });
 
+  // The select's own class reached only the <select>; its wrapper kept drawing the chevron next
+  // to the wide-screen tool row (seen in every desktop screenshot of the live check, 2026-09-19).
+  it('hides the narrow-screen tool list with its chevron, not just the select', async () => {
+    await mount();
+    const select = screen.getByRole('combobox', { name: 'Tools' });
+    const wrapper = select.closest('[data-slot="native-select-wrapper"]');
+    const hidden = document.querySelector('.sm\\:hidden');
+
+    expect(wrapper).toBeTruthy();
+    expect(hidden?.contains(wrapper as Node)).toBe(true);
+  });
+
   it('drops the audio when asked, from the narrow-screen tool list too', async () => {
     await mount();
     fireEvent.change(screen.getByRole('combobox', { name: 'Tools' }), {

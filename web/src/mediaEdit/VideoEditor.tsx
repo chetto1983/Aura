@@ -216,20 +216,23 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        <NativeSelect
-          aria-label={t('mediaEdit.video.tools')}
-          value={tool}
-          onChange={(event) => {
-            setTool(event.target.value as Tool);
-          }}
-          className="sm:hidden"
-        >
-          {TOOLS.map((item) => (
-            <NativeSelectOption key={item} value={item}>
-              {toolLabel(item)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
+        {/* The class has to sit here: NativeSelect passes its own to the inner <select>, and the
+            wrapper that draws the chevron would stay behind on a wide screen. */}
+        <div className="sm:hidden">
+          <NativeSelect
+            aria-label={t('mediaEdit.video.tools')}
+            value={tool}
+            onChange={(event) => {
+              setTool(event.target.value as Tool);
+            }}
+          >
+            {TOOLS.map((item) => (
+              <NativeSelectOption key={item} value={item}>
+                {toolLabel(item)}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto px-4">
