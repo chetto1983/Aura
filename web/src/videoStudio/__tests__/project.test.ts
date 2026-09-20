@@ -40,9 +40,17 @@ function project(): VideoProject {
         items: [
           {
             id: 'title',
+            kind: 'text',
             anchor: { clipId: 'clip-2', offset: 0.5 },
             duration: 1,
             props: { text: 'ciao' },
+          },
+          {
+            id: 'logo',
+            kind: 'image',
+            anchor: { clipId: 'clip-1', offset: 0 },
+            duration: 1,
+            props: { assetId: 'asset-b' },
           },
         ],
       },
@@ -87,6 +95,38 @@ describe('an overlay follows its clip', () => {
       start: 0,
       end: 0,
     });
+  });
+
+  it('is an empty window at the clip boundary, never an inverted one', () => {
+    expect(overlayWindow(project(), { clipId: 'clip-2', offset: 2 }, 1)).toEqual({
+      start: 5,
+      end: 5,
+    });
+  });
+
+  it('stays inside the clip when the offset is past its end', () => {
+    expect(overlayWindow(project(), { clipId: 'clip-2', offset: 3 }, 1)).toEqual({
+      start: 5,
+      end: 5,
+    });
+  });
+
+  it('never ends before it starts, whatever duration it is given', () => {
+    expect(overlayWindow(project(), { clipId: 'clip-2', offset: 0.5 }, -1)).toEqual({
+      start: 3.5,
+      end: 3.5,
+    });
+  });
+});
+
+describe('an overlay item declares what it is', () => {
+  it('keeps its kind, and each kind resolves against its own clip', () => {
+    const items = project().overlays.flatMap((lane) => lane.items);
+    expect(items.map((item) => item.kind)).toEqual(['text', 'image']);
+    expect(items.map((item) => overlayWindow(project(), item.anchor, item.duration))).toEqual([
+      { start: 3.5, end: 4.5 },
+      { start: 0, end: 1 },
+    ]);
   });
 });
 

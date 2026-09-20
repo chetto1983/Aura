@@ -34,6 +34,7 @@ export interface OverlayAnchor {
 
 export interface OverlayItem {
   readonly id: string;
+  readonly kind: 'text' | 'image';
   readonly anchor: OverlayAnchor;
   readonly duration: number;
   readonly props: Readonly<Record<string, unknown>>;
@@ -89,7 +90,12 @@ export function clipStart(project: VideoProject, clipId: string): number | undef
   return index === -1 ? undefined : clipStarts(project)[index];
 }
 
-/** An overlay's window in project time. It never outlives the clip it hangs on. */
+/**
+ * An overlay's window in project time. It never outlives the clip it hangs on, and it never comes
+ * back inverted: an offset past the clip's end, or a negative duration, collapses it to an empty
+ * window at the boundary. Overlap detection reads this, and `end < start` would silently read as
+ * "no overlap".
+ */
 export function overlayWindow(
   project: VideoProject,
   anchor: OverlayAnchor,
@@ -98,8 +104,9 @@ export function overlayWindow(
   const clip = project.video.find((item) => item.id === anchor.clipId);
   const base = clipStart(project, anchor.clipId);
   if (clip === undefined || base === undefined) return { start: 0, end: 0 };
-  const start = base + Math.max(0, anchor.offset);
-  return { start, end: Math.min(start + duration, base + clip.duration) };
+  const clipEnd = base + clip.duration;
+  const start = Math.min(base + Math.max(0, anchor.offset), clipEnd);
+  return { start, end: Math.min(start + Math.max(0, duration), clipEnd) };
 }
 
 export function sourceOf(project: VideoProject, sourceId: string): ProjectSource | undefined {
