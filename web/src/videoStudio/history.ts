@@ -62,14 +62,24 @@ function mergeInto(draft: unknown, base: unknown, next: unknown): void {
   const target = draft as Indexed;
   const before = base as Indexed;
   const after = next as Indexed;
+  // `__proto__` is not a property to a draft: reading it walks into Object.prototype and writing
+  // it runs the prototype setter, so immer keeps neither the value nor the bookkeeping it patches
+  // from — measured on 11.1.18, the edit vanishes and no step is recorded. An overlay prop takes
+  // any name, so this is reachable input; it is refused here rather than lost in silence.
+  if (Object.hasOwn(before, '__proto__') || Object.hasOwn(after, '__proto__')) {
+    throw new Error('videoStudio: history cannot record a property named __proto__');
+  }
   for (const key of Object.keys(after)) mergeKey(target, before, after, key);
   if (Array.isArray(next)) {
     // An array that lost its tail shrinks by its length; deleting those indices would leave holes.
     if (before.length !== after.length) target.length = after.length;
     return;
   }
+  // `hasOwn`, not `in`: an overlay prop may be named after something Object.prototype already
+  // carries, and `'toString' in after` answers yes whether or not the edit dropped it — which
+  // would leave the stale property in the draft, record no patch, and lose the edit in silence.
   for (const key of Object.keys(before)) {
-    if (!(key in after)) Reflect.deleteProperty(target, key);
+    if (!Object.hasOwn(after, key)) Reflect.deleteProperty(target, key);
   }
 }
 

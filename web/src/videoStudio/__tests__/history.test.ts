@@ -76,6 +76,11 @@ function dropProp(current: VideoProject, itemId: string, key: string): VideoProj
   };
 }
 
+/** What an overlay carries now, so a test can watch one property come and go. */
+function propsOf(current: VideoProject, itemId: string): unknown {
+  return current.overlays.flatMap((lane) => lane.items).find((item) => item.id === itemId)?.props;
+}
+
 describe('history', () => {
   it('undoes one command and redoes it', () => {
     const history = createHistory(project());
@@ -172,8 +177,44 @@ describe('history', () => {
     history.apply((p) => addClip(p, { sourceId: 'src-a', duration: 3 }));
     history.apply((p) => removeItem(p, { itemId: 'clip-2' }));
     expect(history.current.video).toHaveLength(2);
+    const edited = history.current;
     for (let step = 0; step < 4; step += 1) history.undo();
     expect(history.current).toEqual(start);
     expect(history.canUndo).toBe(false);
+    for (let step = 0; step < 4; step += 1) history.redo();
+    expect(history.current).toEqual(edited);
+    expect(history.canRedo).toBe(false);
+  });
+
+  // `setProperty` writes the key it is given, and an overlay's props take any string — so a
+  // property can be named after one Object.prototype already carries. Asking `key in props`
+  // whether such a property is still there answers yes forever: the drop records no patch, and
+  // the edit is silently lost.
+  it('undoes a property named after an inherited one', () => {
+    const start = project();
+    const history = createHistory(start);
+    history.apply((p) => setProperty(p, { itemId: 'title', key: 'toString', value: 'a title' }));
+    expect(propsOf(history.current, 'title')).toEqual({ toString: 'a title' });
+    history.apply((p) => dropProp(p, 'title', 'toString'));
+    expect(propsOf(history.current, 'title')).toEqual({});
+    expect(history.canUndo).toBe(true);
+    expect(propsOf(history.undo(), 'title')).toEqual({ toString: 'a title' });
+    expect(history.undo()).toEqual(start);
+    history.redo();
+    expect(propsOf(history.redo(), 'title')).toEqual({});
+  });
+
+  // The other name a draft cannot carry, and the one that would pollute rather than vanish.
+  it('refuses a __proto__ property instead of losing it, and survives the refusal', () => {
+    const start = project();
+    const history = createHistory(start);
+    expect(() =>
+      history.apply((p) => setProperty(p, { itemId: 'title', key: '__proto__', value: 'x' })),
+    ).toThrow(/__proto__/);
+    expect(history.current).toBe(start);
+    expect(history.canUndo).toBe(false);
+    expect(
+      projectDuration(history.apply((p) => trimClip(p, { clipId: 'clip-1', start: 0, end: 2 }))),
+    ).toBe(6);
   });
 });
