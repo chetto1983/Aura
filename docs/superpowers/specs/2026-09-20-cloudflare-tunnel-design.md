@@ -116,7 +116,8 @@ A dedicated singleton state row records non-secret desired and observed state:
 - zone ID and zone name;
 - tunnel ID and name;
 - public and WARP-required hostnames;
-- both DNS records, both Access applications/policies, and the WARP posture-check identifier;
+- both DNS records, both Access applications/policies, the OTP identity-provider ID, and the
+  WARP posture-check identifier;
 - current phase, observed health, last successful reconciliation and sanitized last error;
 - administrator who changed the desired state and timestamps.
 
@@ -155,8 +156,9 @@ or retrying a failed Cloudflare request resumes the incomplete phase.
 4. **Nameservers** — display Cloudflare's assigned nameservers and poll until the zone is active.
    Aura cannot buy the domain or modify an arbitrary registrar.
 5. **Tunnel** — create an Aura-owned remotely managed tunnel or reconcile the persisted tunnel ID.
-6. **Access first** — create the public and private Access applications and an allow policy before
-   publishing DNS. An empty allowlist is a hard refusal.
+6. **Access first** — discover or create Cloudflare's One-time PIN identity provider, then create
+   both Access applications and their email allow policies before publishing DNS. An empty
+   allowlist is a hard refusal.
 7. **Public route** — configure tunnel ingress to internal Caddy and create the Aura-owned CNAME.
 8. **WARP-only route** — create a second published hostname with the same origin, then require the
    Cloudflare One Client's WARP posture check in that hostname's Access policy. No private-network,
@@ -178,6 +180,8 @@ Name matching alone never grants ownership.
 
 Cloudflare Access is a first gate; Authula remains the application gate.
 
+- One-time PIN is the default Cloudflare identity provider, so an operator needs no separate
+  Okta/Entra/SAML setup. Aura creates it only when the account has no suitable OTP provider.
 - Active Aura identity emails form the Access allowlist.
 - Identity creation, disable and deletion enqueue reconciliation instead of blocking the identity
   transaction on a Cloudflare network call.
@@ -195,6 +199,7 @@ References:
 
 - [Require WARP in an Access policy](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-warp/)
 - [Cloudflare Access policy selectors](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/)
+- [One-time PIN identity provider](https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/one-time-pin/)
 
 ## Cockpit experience
 
