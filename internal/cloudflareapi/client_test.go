@@ -95,7 +95,7 @@ func TestPaginationContracts(t *testing.T) {
 			calls++
 			_, _ = fmt.Fprintf(w, `{"success":true,"result":[],"result_info":%s}`, tc.info)
 		}))
-		_, err := New(s.URL, "", s.Client()).ListAccounts(t.Context())
+		_, err := New(s.URL, "fixture-token", s.Client()).ListAccounts(t.Context())
 		s.Close()
 		if (err != nil) != tc.wantErr || calls != tc.calls {
 			t.Fatalf("info=%s calls=%d err=%v", tc.info, calls, err)

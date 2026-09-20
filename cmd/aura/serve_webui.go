@@ -205,6 +205,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// same gate as the MCP/skills writes. Method+path-specific so each wins Go 1.22
 	// longest-pattern precedence over the bare "/api/" carve-out.
 	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mountRemoteAccessRoutes(mux, aguiHandler, auth)
 	mux.Handle("GET /api/settings/llm-routes", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	// llm-models is a GET behind governance.WRITE on purpose: it makes the daemon fetch
 	// an operator-supplied URL, which is the same power as pointing the chat route at it.

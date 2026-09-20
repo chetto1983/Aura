@@ -46,6 +46,7 @@
 }
 
 :443 {
+	request_header -X-Aura-Remote-Ingress
 	tls internal {
 		on_demand
 	}
@@ -54,6 +55,7 @@
 
 # Only reachable inside Docker; cloudflared uses the same routing authority.
 http://:8080 {
+	request_header X-Aura-Remote-Ingress tunnel
 	import aura_frontdoor
 }
 
@@ -74,6 +76,7 @@ http://:8080 {
 # itself is served under `default-src 'none'` so it can fetch nothing regardless.
 # An operator with DNS to spare should still prefer a distinct name.
 :8444 {
+	request_header -X-Aura-Remote-Ingress
 	tls internal {
 		on_demand
 	}

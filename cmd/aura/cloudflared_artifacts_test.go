@@ -38,8 +38,11 @@ func TestCloudflaredPackagingBoundary(t *testing.T) {
 	}
 	for _, rel := range []string{"caddy/Caddyfile", "caddy/Caddyfile.domain"} {
 		text := readProjectFile(t, root, rel)
-		if strings.Count(text, "(aura_frontdoor) {") != 1 || !strings.Contains(text, "http://:8080 {\n\timport aura_frontdoor\n}") {
+		if strings.Count(text, "(aura_frontdoor) {") != 1 || !strings.Contains(text, "http://:8080 {\n\trequest_header X-Aura-Remote-Ingress tunnel\n\timport aura_frontdoor\n}") {
 			t.Fatalf("%s does not share routing", rel)
+		}
+		if !strings.Contains(text, "request_header -X-Aura-Remote-Ingress") {
+			t.Fatalf("%s permits spoofed direct-ingress acceptance", rel)
 		}
 		if strings.Count(text, "reverse_proxy garage:3900") != 1 {
 			t.Fatalf("%s duplicates object-store route", rel)

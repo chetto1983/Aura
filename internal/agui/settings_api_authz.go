@@ -49,6 +49,10 @@ func isCallTimeSetting(key string) bool {
 // true when the write may go ahead.
 func (s *Server) authorizeSettingWrite(w http.ResponseWriter, r *http.Request, actor string, requireAdmin bool, keys ...string) bool {
 	for _, key := range keys {
+		if key == "CLOUDFLARE_API_TOKEN" || key == "CLOUDFLARE_TUNNEL_TOKEN" {
+			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "use the dedicated Remote access controls"})
+			return false
+		}
 		if _, minted := mintedSettingKeys[key]; minted {
 			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": key + " is minted by Aura and cannot be set"})
 			return false

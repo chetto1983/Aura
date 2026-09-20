@@ -52,6 +52,15 @@ var _ identityRemover = (*Deprovisioner)(nil)
 // (matches SetAuditStore's precedent).
 func (s *Server) SetIdentityRemover(r identityRemover) { s.idRemover = r }
 
+// SetIdentityChanged wires a nonblocking wake after durable identity mutations.
+func (s *Server) SetIdentityChanged(wake func()) { s.identityChanged = wake }
+
+func (s *Server) notifyIdentityChanged() {
+	if s.identityChanged != nil {
+		s.identityChanged()
+	}
+}
+
 func (s *Server) registerIdentityRemovalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/identities/{id}", s.handleRemoveIdentity)
 }
@@ -82,7 +91,11 @@ func (s *Server) handleRemoveIdentity(w http.ResponseWriter, r *http.Request) {
 		if err := s.idRemover.Deactivate(ctx, targetID); err != nil {
 			return removalOutcome{}, err
 		}
-		return removalOutcome{}, s.idRemover.PurgeOne(ctx, targetID)
+		if err := s.idRemover.PurgeOne(ctx, targetID); err != nil {
+			return removalOutcome{}, err
+		}
+		s.notifyIdentityChanged()
+		return removalOutcome{}, nil
 	})
 	if err != nil {
 		if errors.Is(err, identity.ErrLastAdministrator) {

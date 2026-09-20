@@ -249,7 +249,11 @@ func (s *Server) handleOnboardingStart(w http.ResponseWriter, r *http.Request) {
 // hashed immediately by the service and never echoed in the response.
 func (s *Server) handleOnboardingProvision(w http.ResponseWriter, r *http.Request) {
 	handleOnboardingMutation(s, w, r, validateOnboardingProvision, func(ctx context.Context, requester, token string, req OnboardingProvisionRequest) (OnboardingProvisionResponse, error) {
-		return s.onboarding.Provision(ctx, requester, token, req)
+		response, err := s.onboarding.Provision(ctx, requester, token, req)
+		if err == nil {
+			s.notifyIdentityChanged()
+		}
+		return response, err
 	})
 }
 

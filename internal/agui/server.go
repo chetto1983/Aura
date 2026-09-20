@@ -172,8 +172,10 @@ type Server struct {
 	// two concurrent removals of the SAME identity into one saga run (singleflight,
 	// already used elsewhere in this repo: internal/mcp/oauth_tokensource.go,
 	// internal/skills/catalog_search.go).
-	idRemover      identityRemover
-	idRemovalGroup singleflight.Group
+	idRemover       identityRemover
+	idRemovalGroup  singleflight.Group
+	identityChanged func()
+	remoteAccess    RemoteAccessService
 	// spendOverview bundles plan 02-09's account-wide reconciliation ports
 	// (spend_overview_api.go), wired by SetSpendOverview; nil until wired, matching the
 	// credit/audit 503-until-wired precedent.
@@ -423,6 +425,7 @@ func (s *Server) Mux() http.Handler {
 	// PUT/DELETE /api/settings/{key}. Colocated with their
 	// handlers; the parent-mux mount (RequireCapability(governance.read) on GET,
 	// governance.write on PUT/DELETE) lives in cmd/aura/serve_webui.go.
+	s.registerRemoteAccessRoutes(mux)
 	s.registerSettingsRoutes(mux)
 	// MUSR-01 admin/user distinction (Phase 36 plan 10, D-03/D-26/D-28): GET /api/me
 	// (self-scoped capabilities the SPA reads to hide admin surfaces) + the

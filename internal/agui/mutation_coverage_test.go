@@ -52,11 +52,14 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 	// to leave no skill and no audit row behind
 	// (TestGovernanceWriteSkillsValidateDryRun).
 	readOnlyPOST := map[string]bool{
-		"POST /api/graph/query":                true,
-		"POST /api/settings/telegram/check":    true,
-		"POST /api/stt":                        true,
-		"POST /api/tts":                        true,
-		"POST /api/governance/skills/validate": true,
+		// Candidate verification only reads Cloudflare; rotation only returns manual guidance.
+		"POST /api/settings/remote-access/token/verify": true,
+		"POST /api/settings/remote-access/rotate-token": true,
+		"POST /api/graph/query":                         true,
+		"POST /api/settings/telegram/check":             true,
+		"POST /api/stt":                                 true,
+		"POST /api/tts":                                 true,
+		"POST /api/governance/skills/validate":          true,
 	}
 	matcher := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:POST|PUT|PATCH|DELETE) [^"]+)"`)
 	entries, err := os.ReadDir(".")

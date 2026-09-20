@@ -148,7 +148,7 @@ func TestOTPReuseAndCreation(t *testing.T) {
 				_, _ = w.Write(fixture(t, "otp-provider"))
 			}))
 			defer s.Close()
-			p, err := New(s.URL, "", s.Client()).EnsureOTPProvider(t.Context(), "account-one")
+			p, err := New(s.URL, "fixture-token", s.Client()).EnsureOTPProvider(t.Context(), "account-one")
 			want := 2
 			if exists {
 				want = 1
@@ -197,7 +197,7 @@ func TestDNSOwnershipAndPublication(t *testing.T) {
 				_, _ = io.WriteString(w, `{"success":true,"result":{"id":"dns-one"}}`)
 			}))
 			defer s.Close()
-			c := New(s.URL, "", s.Client())
+			c := New(s.URL, "fixture-token", s.Client())
 			id := "dns-one"
 			if mode == "new" || mode == "untracked" {
 				id = ""
@@ -232,7 +232,7 @@ func TestGatewayPostureOwnership(t *testing.T) {
 			}
 			_, _ = w.Write(body)
 		}))
-		c := New(s.URL, "", s.Client())
+		c := New(s.URL, "fixture-token", s.Client())
 		_, err := c.EnsureGatewayPosture(t.Context(), "account-one", "posture-one", "Aura", "aura-owner")
 		if (err != nil) != foreign {
 			t.Fatalf("foreign=%v err=%v", foreign, err)

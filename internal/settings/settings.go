@@ -18,6 +18,7 @@ package settings
 import (
 	"context"
 	"crypto/cipher"
+	"fmt"
 	"log/slog"
 	"os"
 	"sort"
@@ -212,6 +213,15 @@ func (s *Store) EncryptPlaintextSecrets(ctx context.Context) (int, error) {
 // Upsert writes (or replaces) an allowlisted key. The is_secret flag is taken from
 // the allowlist, not the caller, so a value is consistently redacted by the API.
 func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSettings, error) {
+	return s.UpsertWith(ctx, key, value, by, nil)
+}
+
+// UpsertWith commits one encrypted setting and its companion state atomically.
+// The companion must use the supplied transaction, never call Upsert recursively.
+func (s *Store) UpsertWith(ctx context.Context, key, value, by string, companion func(sqlc.DBTX) error) (sqlc.AuraSettings, error) {
+	if _, allowed := Allowed(key); !allowed {
+		return sqlc.AuraSettings{}, fmt.Errorf("settings: unknown key")
+	}
 	meta := AllowedKeys[key]
 	stored, err := s.storedValue(key, value)
 	if err != nil {
@@ -222,12 +232,16 @@ func (s *Store) Upsert(ctx context.Context, key, value, by string) (sqlc.AuraSet
 		updatedBy = pgtype.Text{String: by, Valid: true}
 	}
 	var row sqlc.AuraSettings
-	err = s.withWriteLock(ctx, func(q *sqlc.Queries) error {
+	err = s.withWriteTransaction(ctx, func(tx sqlc.DBTX) error {
+		q := sqlc.New(tx)
 		var err error
 		row, err = q.UpsertSetting(ctx, sqlc.UpsertSettingParams{
 			Key: key, Value: stored, IsSecret: meta.Secret, UpdatedBy: updatedBy,
 		})
-		return err
+		if err != nil || companion == nil {
+			return err
+		}
+		return companion(tx)
 	})
 	if err != nil {
 		return row, err
@@ -294,6 +308,10 @@ const settingsWriteAdvisoryKey int64 = 4707759426009125972
 func (s *Store) withWriteLock(
 	ctx context.Context, fn func(*sqlc.Queries) error,
 ) (err error) {
+	return s.withWriteTransaction(ctx, func(tx sqlc.DBTX) error { return fn(sqlc.New(tx)) })
+}
+
+func (s *Store) withWriteTransaction(ctx context.Context, fn func(sqlc.DBTX) error) (err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
@@ -314,7 +332,7 @@ func (s *Store) withWriteLock(
 	); err != nil {
 		return err
 	}
-	return fn(sqlc.New(tx))
+	return fn(tx)
 }
 
 // OverlayEnv applies the allowlisted, non-secret aura.settings rows onto the process

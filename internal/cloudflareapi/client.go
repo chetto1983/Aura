@@ -95,6 +95,9 @@ func (c *Client) request(ctx context.Context, method, path string, query url.Val
 	if err != nil {
 		return info, failure("invalid request")
 	}
+	if strings.TrimSpace(c.token.Reveal()) == "" {
+		return info, failure("API token required")
+	}
 	req.Header.Set("Authorization", "Bearer "+c.token.Reveal())
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
