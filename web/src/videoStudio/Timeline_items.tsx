@@ -24,6 +24,8 @@ interface HandleProps {
   readonly min: number;
   readonly max: number;
   readonly side: 'start' | 'end';
+  /** Whether this edge of the clip has a neighbour on the other side of it. */
+  readonly abuts: boolean;
 }
 
 /**
@@ -31,8 +33,21 @@ interface HandleProps {
  * to the handle's own bounds BEFORE it notifies, the way mediaEdit/VideoTimeline does it — a
  * handle at the source's start that asked for a negative position would only collect a refusal,
  * and an arrow held at the end would collect one per keystroke.
+ *
+ * How wide it is depends on what is next to it, and that is geometry rather than taste. dnd-timeline
+ * reads a press as a resize when it lands within `resizeHandleWidth / 2` of the item's own edge
+ * (`getDragDirection`), so the band is 22 px each side of every edge. Where a clip abuts its
+ * neighbour the two bands coincide EXACTLY, and the handle painted later takes all 44 px: the clip
+ * before it loses its end handle to the clip after it, with nothing said. So a handle beside a
+ * neighbour stays inside its own clip — press left of a boundary and you trim what ends there,
+ * press right and you trim what starts there — and only an edge with nothing beyond it straddles.
+ *
+ * The cost is stated rather than hidden: an interior handle is 22 px, half the cycle's coarse
+ * floor, and does not claim the marker. Two clips share one boundary; making both 44 px means
+ * widening the boundary itself, which is a lane redesign and not this fix. The keyboard steps and
+ * the inspector's Start and End fields reach every edge whatever the width.
  */
-function Handle({ label, value, min, max, side, frame, onSet }: HandleProps) {
+function Handle({ label, value, min, max, side, frame, abuts, onSet }: HandleProps) {
   return (
     <div
       role="slider"
@@ -42,7 +57,7 @@ function Handle({ label, value, min, max, side, frame, onSet }: HandleProps) {
       aria-valuemax={atMilli(max)}
       aria-valuenow={atMilli(value)}
       aria-valuetext={formatTimecode(value)}
-      data-required-touch-target
+      {...(abuts ? {} : { 'data-required-touch-target': true })}
       onKeyDown={stepOnArrow({
         frame,
         onStep: (delta) => {
@@ -54,10 +69,10 @@ function Handle({ label, value, min, max, side, frame, onSet }: HandleProps) {
         position: 'absolute',
         top: 0,
         bottom: 0,
-        minWidth: TOUCH_FLOOR,
-        width: TOUCH_FLOOR,
+        minWidth: abuts ? TOUCH_FLOOR / 2 : TOUCH_FLOOR,
+        width: abuts ? TOUCH_FLOOR / 2 : TOUCH_FLOOR,
         [side === 'start' ? 'left' : 'right']: 0,
-        transform: `translateX(${side === 'start' ? '-50%' : '50%'})`,
+        ...(abuts ? {} : { transform: `translateX(${side === 'start' ? '-50%' : '50%'})` }),
       }}
       className="z-10 flex cursor-ew-resize touch-none items-center justify-center focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
@@ -189,6 +204,7 @@ export function ClipItem({
       </div>
       <Handle
         side="start"
+        abuts={index > 0}
         label={t('videoStudio.timeline.trimStart', position)}
         value={clip.sourceStart}
         min={0}
@@ -202,6 +218,7 @@ export function ClipItem({
       />
       <Handle
         side="end"
+        abuts={index < count - 1}
         label={t('videoStudio.timeline.trimEnd', position)}
         value={clip.sourceStart + clip.duration}
         min={clip.sourceStart + frame}

@@ -281,6 +281,25 @@ describe('Timeline lanes', () => {
     expect(clips.map((clip) => clip.getAttribute('aria-current'))).toEqual([null, 'true', null]);
   });
 
+  it('never lets two trim handles claim the same band at a clip boundary', () => {
+    mount();
+    // A handle that straddles its clip's edge reaches 22 px into the neighbour, and where two
+    // clips abut both bands coincide exactly — the one painted later takes all 44 px and the
+    // other clip's handle cannot be pressed at all. At an INTERIOR edge each handle stays inside
+    // the clip that owns it, which is also the side of the boundary dnd-timeline reads the press
+    // against. An edge with no neighbour still straddles: there is nothing there to take.
+    const handle = (name: string) => screen.getByRole('slider', { name });
+    const straddles = (element: HTMLElement) => element.style.transform !== '';
+
+    expect(straddles(handle('videoStudio.timeline.trimEnd 1'))).toBe(false);
+    expect(straddles(handle('videoStudio.timeline.trimStart 2'))).toBe(false);
+    expect(straddles(handle('videoStudio.timeline.trimEnd 2'))).toBe(false);
+    expect(straddles(handle('videoStudio.timeline.trimStart 3'))).toBe(false);
+    // The lane's own two ends, where a handle has the whole 44 px to itself.
+    expect(straddles(handle('videoStudio.timeline.trimStart 1'))).toBe(true);
+    expect(straddles(handle('videoStudio.timeline.trimEnd 3'))).toBe(true);
+  });
+
   it('gives every item and handle the 44 px floor', () => {
     mount();
     const clip = screen.getByRole('button', { name: 'videoStudio.timeline.clip 1' });
@@ -289,6 +308,11 @@ describe('Timeline lanes', () => {
     const handle = screen.getByRole('slider', { name: 'videoStudio.timeline.trimStart 1' });
     expect(handle.style.minWidth).toBe('44px');
     expect(handle.hasAttribute('data-required-touch-target')).toBe(true);
+    // An interior handle cannot have it, and does not claim it: two clips share one boundary, so
+    // each owns half of it. The keyboard and the inspector reach both ends whatever the width.
+    const interior = screen.getByRole('slider', { name: 'videoStudio.timeline.trimStart 2' });
+    expect(interior.style.minWidth).toBe('22px');
+    expect(interior.hasAttribute('data-required-touch-target')).toBe(false);
   });
 });
 
