@@ -1,0 +1,22 @@
+/* Served as a standalone stylesheet, not bundled: the video renderer links it into the document
+   by href (see useLocalFonts in src/videoStudio/videoflow.ts) and its FontEmbedder reads the
+   @font-face rules back out to inline the family into each rasterized SVG frame. src/styles/
+   fonts.css declares the same family for the cockpit's own UI through the bundler, which never
+   produces a URL a renderer could link. */
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  /* block, not swap: a frame rasterized before the face arrives would burn the fallback into the
+     exported video, where nothing can swap it back. */
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'Atkinson Hyperlegible Next';
+  src: url('/fonts/atkinson-hyperlegible-next-italic-variable.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: block;
+}

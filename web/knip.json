@@ -7,13 +7,8 @@
     "src/components/model-selector.tsx",
     "src/components/ui/command.tsx",
     "src/components/ui/popover.tsx",
-    "src/components/ui/dropdown-menu.tsx"
+    "src/components/ui/dropdown-menu.tsx",
+    "public/fonts/*.css"
   ],
-  "ignoreDependencies": [
-    "assistant-stream",
-    "@videoflow/core",
-    "@videoflow/renderer-browser",
-    "@videoflow/renderer-dom",
-    "dnd-timeline"
-  ]
+  "ignoreDependencies": ["assistant-stream", "@videoflow/renderer-dom", "dnd-timeline"]
 }
