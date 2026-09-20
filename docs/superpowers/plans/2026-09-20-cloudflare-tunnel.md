@@ -489,6 +489,9 @@ git commit -m "feat(remote-access): configure Cloudflare from the cockpit"
 - Create: `web/e2e/remote-access-live.spec.ts`
 - Create: `scripts/cloudflare_tunnel_live_e2e.sh`
 - Create: `docs/cloudflare-remote-access.md`
+- Modify: `scripts/install.sh`
+- Modify: `scripts/install_config_test.sh`
+- Modify: `scripts/build_installer_test.sh`
 - Modify: `web/playwright.config.ts`
 - Modify: `README.md`
 - Modify: `.env.example`
@@ -511,11 +514,19 @@ Public: guided onboarding, OTP, Authula, incremental chat SSE, steer/cancel, Gar
 
 Rotate token during continuous public health polling with zero failed poll. Restart Aura and sidecar separately and recover from PostgreSQL. Delete integration and prove Aura resources vanish while zone and a pre-seeded unrelated TXT record remain.
 
-- [ ] **Step 5: Write operator documentation**
+- [ ] **Step 5: Complete and test installer integration**
+
+The repository installer and self-extracting appliance installer must ship the updated Compose and
+Caddy payload, pull/start the published sidecar healthy-idle, and direct the operator to the cockpit
+for Cloudflare onboarding. They must never prompt for or persist a Cloudflare credential. Add a
+fresh-install plus rerun/update regression that proves PostgreSQL state and the projection volume are
+preserved.
+
+- [ ] **Step 6: Write operator documentation**
 
 Document exact token permissions, registered-domain prerequisite, nameservers, OTP delivery, WARP enrollment, outbound firewall, direct 443 bypass, troubleshooting, PostgreSQL backup authority and disable/delete semantics. State that trusting a CA on Ubuntu does not trust remote browsers.
 
-- [ ] **Step 6: Rebuild and run all gates**
+- [ ] **Step 7: Rebuild and run all gates**
 
 ```bash
 cd web && npm test && npm run build && npm run typecheck && npm run lint && npm run contrast && npm run format:check
@@ -525,15 +536,18 @@ go build ./...
 go test ./internal/cloudflareapi ./internal/remotetunnel ./internal/cloudflaresupervisor ./internal/agui ./cmd/aura ./cmd/aura-cloudflared-supervisor
 wsl bash -lc 'cd /mnt/d/Repo/Aura && go test -race ./internal/cloudflareapi ./internal/remotetunnel ./internal/cloudflaresupervisor ./internal/agui ./cmd/aura ./cmd/aura-cloudflared-supervisor'
 bash scripts/sqlc_sync_gate.sh
+bash scripts/install_lib_test.sh
+bash scripts/install_config_test.sh
+bash scripts/build_installer_test.sh
 AURA_E2E_CLOUDFLARE=1 bash scripts/cloudflare_tunnel_live_e2e.sh
 ```
 
-Expected: all gates and twelve live acceptance assertions pass; cleanup reports zero leaked Aura resources.
+Expected: all gates and thirteen live acceptance assertions pass; cleanup reports zero leaked Aura resources.
 
-- [ ] **Step 7: Commit E2E, docs and embedded UI**
+- [ ] **Step 8: Commit E2E, installer, docs and embedded UI**
 
 ```bash
-git add web/e2e web/playwright.config.ts scripts/cloudflare_tunnel_live_e2e.sh docs README.md .env.example internal/webui/dist
+git add web/e2e web/playwright.config.ts scripts/cloudflare_tunnel_live_e2e.sh scripts/install.sh scripts/install_config_test.sh scripts/build_installer_test.sh docs README.md .env.example internal/webui/dist
 git commit -m "test(remote-access): verify Cloudflare Tunnel end to end"
 ```
 

@@ -321,6 +321,17 @@ Visible states are `disabled`, `validating`, `waiting_nameservers`, `provisionin
   are not directly reachable.
 - Caddy's internal listener preserves per-identity Garage PUTs and cockpit routes.
 
+### Installer acceptance
+
+- Both the repository installer and the self-extracting appliance installer ship the updated
+  Compose/Caddy payload, pull the published cloudflared sidecar image and start it healthy-idle.
+- The installer never asks for or writes a Cloudflare credential: onboarding remains in the
+  authenticated cockpit and PostgreSQL remains the only durable credential authority.
+- A fresh Ubuntu Server install exposes the guided Remote Access entry point after setup, while an
+  installer rerun or edge-channel update preserves the PostgreSQL state and projection volume.
+- Installer completion identifies the cockpit as the place to enable remote access and does not
+  claim that the temporary local-CA workflow makes remote browsers trusted.
+
 ### Live Cloudflare acceptance
 
 A separately gated live suite uses a dedicated test domain/account and cleans up every owned
@@ -339,7 +350,9 @@ resource. It must prove:
 10. API-token and tunnel-token rotation leave no plaintext in API responses, logs, process args,
     PostgreSQL raw values or runtime files after disable;
 11. direct `https://<server-ip>` access still works through Authula;
-12. delete integration removes only Aura-owned resources and preserves the zone plus unrelated DNS.
+12. delete integration removes only Aura-owned resources and preserves the zone plus unrelated DNS;
+13. a fresh self-extracting Ubuntu Server install starts the idle sidecar, completes cockpit
+    onboarding without an installer credential, and survives an installer rerun/update.
 
 The phase closes only after this live path passes on the Ubuntu Server appliance. Mocked Cloudflare
 tests alone are not completion evidence.
