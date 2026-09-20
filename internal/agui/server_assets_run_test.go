@@ -52,101 +52,89 @@ func TestServerRunPrependsAttachmentBlock(t *testing.T) {
 	}
 }
 
+// A clip travels the same seam as a still: the gateway arms the projection for video too, and
+// the provider client decides from the model's declared input modalities whether the bytes are
+// actually sent. Both run the same flow, so they share it — two copies would have to be kept
+// in step by hand.
 func TestServerRunCarriesVerifiedGarageMediaProjection(t *testing.T) {
-	const tid = "88888888-8888-4888-8888-888888888888"
-	body := []byte("real-png-bytes")
-	digest := sha256.Sum256(body)
-	asset := assets.Asset{
-		ID:          "asset-image",
-		IdentityID:  assetAPIIdentityID,
-		ThreadID:    tid,
-		FileName:    "panel.png",
-		MIMEType:    "image/png",
-		Modality:    assets.ModalityImage,
-		Status:      assets.StatusComplete,
-		SizeBytes:   int64(len(body)),
-		ContentHash: hex.EncodeToString(digest[:]),
-		Summary:     "control panel",
-	}
-	run := &scriptedRunner{events: textTurn("ok")}
-	assetSvc := &fakeAssetService{
-		getResp:   asset,
-		openAsset: asset,
-		openResp:  io.NopCloser(strings.NewReader(string(body))),
-	}
-	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-	s.SetAssetService(assetSvc)
+	for _, tc := range []struct {
+		name     string
+		threadID string
+		asset    assets.Asset
+		body     string
+		prompt   string
+	}{
+		{
+			name:     "image",
+			threadID: "88888888-8888-4888-8888-888888888888",
+			body:     "real-png-bytes",
+			prompt:   "describe it",
+			asset: assets.Asset{
+				ID:       "asset-image",
+				FileName: "panel.png",
+				MIMEType: "image/png",
+				Modality: assets.ModalityImage,
+				Summary:  "control panel",
+			},
+		},
+		{
+			name:     "video",
+			threadID: "99999999-9999-4999-8999-999999999999",
+			body:     "real-mp4-bytes",
+			prompt:   "what happens in the clip?",
+			asset: assets.Asset{
+				ID:       "asset-video",
+				FileName: "clip.mp4",
+				MIMEType: "video/mp4",
+				Modality: assets.ModalityVideo,
+				Summary:  "a servo panel, filmed",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := []byte(tc.body)
+			digest := sha256.Sum256(body)
+			asset := tc.asset
+			asset.IdentityID = assetAPIIdentityID
+			asset.ThreadID = tc.threadID
+			asset.Status = assets.StatusComplete
+			asset.SizeBytes = int64(len(body))
+			asset.ContentHash = hex.EncodeToString(digest[:])
 
-	requestBody := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"describe it"}],"aura":{"attachment_ids":["asset-image"]}}`
-	rec := serveRunWithPrincipal(t, s, requestBody)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	projection, ok := llm.ContentProjectionFromContext(run.turnCtx)
-	if !ok {
-		t.Fatal("run context has no content projection")
-	}
-	if projection.Principal.OwnerID != assetAPIIdentityID || len(projection.ReferenceIDs) != 1 || projection.ReferenceIDs[0] != "asset-image" {
-		t.Fatalf("projection = %+v", projection)
-	}
-	part, err := projection.Loader.LoadContentPart(context.Background(), "", projection.Principal.OwnerID, "asset-image")
-	if err != nil {
-		t.Fatalf("LoadContentPart: %v", err)
-	}
-	if string(part.Bytes) != string(body) || part.MIMEType != "image/png" || part.FallbackText != "control panel" {
-		t.Fatalf("verified part = %+v", part)
-	}
-	if assetSvc.openIdentityID != assetAPIIdentityID {
-		t.Fatalf("OpenForIdentity owner = %q", assetSvc.openIdentityID)
-	}
-}
+			run := &scriptedRunner{events: textTurn("ok")}
+			assetSvc := &fakeAssetService{
+				getResp:   asset,
+				openAsset: asset,
+				openResp:  io.NopCloser(strings.NewReader(tc.body)),
+			}
+			s := NewServer(run, &fakeConvStore{known: map[string]bool{tc.threadID: true}}, ServerConfig{})
+			s.SetAssetService(assetSvc)
 
-// A clip travels the same seam as a still: the gateway arms the projection for video
-// too, and the provider client decides from the model's declared input modalities
-// whether the bytes are actually sent.
-func TestServerRunCarriesVerifiedGarageVideoProjection(t *testing.T) {
-	const tid = "99999999-9999-4999-8999-999999999999"
-	body := []byte("real-mp4-bytes")
-	digest := sha256.Sum256(body)
-	asset := assets.Asset{
-		ID:          "asset-video",
-		IdentityID:  assetAPIIdentityID,
-		ThreadID:    tid,
-		FileName:    "clip.mp4",
-		MIMEType:    "video/mp4",
-		Modality:    assets.ModalityVideo,
-		Status:      assets.StatusComplete,
-		SizeBytes:   int64(len(body)),
-		ContentHash: hex.EncodeToString(digest[:]),
-		Summary:     "a servo panel, filmed",
-	}
-	run := &scriptedRunner{events: textTurn("ok")}
-	assetSvc := &fakeAssetService{
-		getResp:   asset,
-		openAsset: asset,
-		openResp:  io.NopCloser(strings.NewReader(string(body))),
-	}
-	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
-	s.SetAssetService(assetSvc)
-
-	requestBody := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"what happens in the clip?"}],"aura":{"attachment_ids":["asset-video"]}}`
-	rec := serveRunWithPrincipal(t, s, requestBody)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
-	}
-	projection, ok := llm.ContentProjectionFromContext(run.turnCtx)
-	if !ok {
-		t.Fatal("run context has no content projection")
-	}
-	if len(projection.ReferenceIDs) != 1 || projection.ReferenceIDs[0] != "asset-video" {
-		t.Fatalf("projection = %+v", projection)
-	}
-	part, err := projection.Loader.LoadContentPart(context.Background(), "", projection.Principal.OwnerID, "asset-video")
-	if err != nil {
-		t.Fatalf("LoadContentPart: %v", err)
-	}
-	if string(part.Bytes) != string(body) || part.MIMEType != "video/mp4" {
-		t.Fatalf("verified part = %+v", part)
+			requestBody := `{"threadId":"` + tc.threadID + `","messages":[{"id":"m1","role":"user","content":"` +
+				tc.prompt + `"}],"aura":{"attachment_ids":["` + asset.ID + `"]}}`
+			rec := serveRunWithPrincipal(t, s, requestBody)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+			}
+			projection, ok := llm.ContentProjectionFromContext(run.turnCtx)
+			if !ok {
+				t.Fatal("run context has no content projection")
+			}
+			if projection.Principal.OwnerID != assetAPIIdentityID ||
+				len(projection.ReferenceIDs) != 1 || projection.ReferenceIDs[0] != asset.ID {
+				t.Fatalf("projection = %+v", projection)
+			}
+			part, err := projection.Loader.LoadContentPart(context.Background(), "", projection.Principal.OwnerID, asset.ID)
+			if err != nil {
+				t.Fatalf("LoadContentPart: %v", err)
+			}
+			if string(part.Bytes) != tc.body || part.MIMEType != asset.MIMEType || part.FallbackText != asset.Summary {
+				t.Fatalf("verified part = %+v", part)
+			}
+			if assetSvc.openIdentityID != assetAPIIdentityID {
+				t.Fatalf("OpenForIdentity owner = %q", assetSvc.openIdentityID)
+			}
+		})
 	}
 }
 
