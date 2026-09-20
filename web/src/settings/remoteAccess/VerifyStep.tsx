@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { CheckCircle2, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../../components/Spinner';
@@ -8,11 +9,12 @@ interface VerifyStepProps {
   readonly status: RemoteAccessStatusDTO;
   readonly busy: boolean;
   readonly accepted: boolean;
-  readonly onAccept: () => void;
+  readonly onAccept: () => Promise<void>;
 }
 
 export function VerifyStep({ status, busy, accepted, onAccept }: VerifyStepProps) {
   const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
   const publicHostname = status.public_hostname;
   const onPublicHostname =
     publicHostname !== undefined &&
@@ -31,7 +33,16 @@ export function VerifyStep({ status, busy, accepted, onAccept }: VerifyStepProps
         </a>
       ) : null}
       {onPublicHostname ? (
-        <Button type="button" className="w-fit" disabled={busy} onClick={onAccept}>
+        <Button
+          type="button"
+          className="w-fit"
+          disabled={busy}
+          onClick={() => {
+            void onAccept().catch(() => {
+              setFailed(true);
+            });
+          }}
+        >
           {busy ? <Spinner /> : <CheckCircle2 aria-hidden="true" />}
           {t('remoteAccess.verify.accept')}
         </Button>
@@ -43,6 +54,11 @@ export function VerifyStep({ status, busy, accepted, onAccept }: VerifyStepProps
       {accepted ? (
         <p role="status" className="text-sm text-success">
           {t('remoteAccess.verify.accepted')}
+        </p>
+      ) : null}
+      {failed ? (
+        <p role="alert" className="text-sm text-destructive">
+          {t('remoteAccess.status.actionError')}
         </p>
       ) : null}
     </div>

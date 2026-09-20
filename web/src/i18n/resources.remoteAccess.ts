@@ -60,6 +60,10 @@ export const remoteAccessEn = {
         'Direct IP or LAN ingress bypasses Cloudflare Access and remains protected by Authula.',
       lastError: 'Remote access needs attention. Retry or replace the API token.',
       accepted: 'Action accepted. Refreshing status…',
+      actionError: 'The remote access action was not accepted. Refresh the status and try again.',
+      failedDeletion:
+        'Deletion is still in progress or needs attention. Aura remains disabled until the owned resources are removed.',
+      lastReconciled: 'Last reconciled {{time}}',
       phases: {
         disabled: 'Disabled',
         validating: 'Validating configuration',
@@ -89,6 +93,18 @@ export const remoteAccessEn = {
     rotation: {
       body: 'Cloudflare does not expose a token-rotation API. Rotate the tunnel token manually in the Cloudflare Dashboard, then refresh Aura’s projected token.',
       documentation: 'Open Cloudflare token instructions',
+    },
+    permissions: {
+      heading: 'API token permissions',
+      body: 'Create a scoped Cloudflare API token with: Account Settings Read; Zone Read and Zone Write; Cloudflare Tunnel/Connector Write; DNS Write; Access Organizations/Identity Providers/Groups Write; Access Apps/Policies Write; and Zero Trust Write.',
+      documentation: 'Open Cloudflare API token creation',
+    },
+    warp: {
+      heading: 'WARP organization enrollment',
+      body: 'The WARP hostname requires the Cloudflare One client enrolled in this same organization through Gateway. Aura creates no private LAN, CIDR, or Docker route.',
+      documentation: 'Open Gateway enrollment guidance',
+      dependency:
+        'Aura does not receive an organization or team slug from the current API. An organization-specific enrollment link is a Task 6 live/API contract dependency.',
     },
     delete: {
       title: 'Delete Cloudflare remote access?',
@@ -160,6 +176,10 @@ export const remoteAccessIt = {
         'L’ingresso diretto da IP o LAN ignora Cloudflare Access e resta protetto da Authula.',
       lastError: 'L’accesso remoto richiede attenzione. Riprova o sostituisci il token API.',
       accepted: 'Azione accettata. Aggiornamento stato…',
+      actionError: 'L’azione di accesso remoto non e stata accettata. Aggiorna lo stato e riprova.',
+      failedDeletion:
+        'L’eliminazione e ancora in corso o richiede attenzione. Aura resta disabilitata finche le risorse possedute non vengono rimosse.',
+      lastReconciled: 'Ultima riconciliazione {{time}}',
       phases: {
         disabled: 'Disabilitato',
         validating: 'Configurazione in verifica',
@@ -189,6 +209,18 @@ export const remoteAccessIt = {
     rotation: {
       body: 'Cloudflare non espone un’API per ruotare il token. Ruota manualmente il token tunnel nel Dashboard Cloudflare, poi aggiorna il token proiettato da Aura.',
       documentation: 'Apri istruzioni token Cloudflare',
+    },
+    permissions: {
+      heading: 'Permessi token API',
+      body: 'Crea un token API Cloudflare con scope: Account Settings Read; Zone Read e Zone Write; Cloudflare Tunnel/Connector Write; DNS Write; Access Organizations/Identity Providers/Groups Write; Access Apps/Policies Write; e Zero Trust Write.',
+      documentation: 'Apri creazione token API Cloudflare',
+    },
+    warp: {
+      heading: 'Registrazione organizzazione WARP',
+      body: 'L’hostname WARP richiede il client Cloudflare One registrato nella stessa organizzazione tramite Gateway. Aura non crea route LAN private, CIDR o Docker.',
+      documentation: 'Apri guida registrazione Gateway',
+      dependency:
+        'L’API attuale non fornisce ad Aura uno slug di organizzazione o team. Un link di registrazione specifico dell’organizzazione e una dipendenza di contratto/live Task 6.',
     },
     delete: {
       title: 'Eliminare l’accesso remoto Cloudflare?',

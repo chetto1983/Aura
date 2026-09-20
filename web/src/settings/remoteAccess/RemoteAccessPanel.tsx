@@ -1,7 +1,12 @@
 import { useTranslation } from 'react-i18next';
 import { RemoteAccessStatus, type RemoteAccessAction } from './RemoteAccessStatus';
 import { RemoteAccessWizard } from './RemoteAccessWizard';
-import type { RemoteAccessConfiguration } from './remoteAccessApi';
+import {
+  configureRemoteAccess,
+  verifyRemoteAccessToken,
+  type RemoteAccessConfiguration,
+  type RemoteAccessStatusDTO,
+} from './remoteAccessApi';
 import { useRemoteAccess } from './useRemoteAccess';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -32,17 +37,21 @@ export function RemoteAccessPanel() {
         </AlertDescription>
       </Alert>
     );
-  const configured = ['healthy', 'degraded', 'error', 'deleting'].includes(status.phase);
-  const action = (name: RemoteAccessAction) => {
-    if (name === 'reconcile') remote.reconcile.mutate(status.generation);
-    if (name === 'refresh') remote.refreshToken.mutate(status.generation);
-    if (name === 'disable') remote.disable.mutate();
+  const configured = isManaged(status);
+  const refresh = async () => {
+    await remote.query.refetch();
+  };
+  const action = async (name: RemoteAccessAction) => {
+    if (name === 'reconcile') await remote.reconcile.mutateAsync(status.generation);
+    if (name === 'refresh') await remote.refreshToken.mutateAsync(status.generation);
+    if (name === 'disable') await remote.disable.mutateAsync();
+    await refresh();
   };
   const replace = async (token: string) => {
-    const accounts = await remote.verifyToken.mutateAsync(token);
+    const accounts = await verifyRemoteAccessToken(token);
     const account = accounts.find((item) => item.id === status.account_id);
     if (!account || !status.zone_name) throw new Error('replacement unavailable');
-    await remote.configure.mutateAsync({
+    await configureRemoteAccess({
       enabled: true,
       generation: status.generation,
       account_id: account.id,
@@ -51,32 +60,48 @@ export function RemoteAccessPanel() {
       warp_label: status.warp_hostname?.split('.')[0] ?? 'aura-warp',
       api_token: token,
     });
+    await refresh();
   };
   return configured ? (
     <RemoteAccessStatus
       status={status}
       onAction={action}
-      onDelete={(hostname) => remote.remove.mutateAsync(hostname)}
+      onDelete={async (hostname) => {
+        await remote.remove.mutateAsync(hostname);
+        await refresh();
+      }}
       onReplaceToken={replace}
       pending={
         remote.reconcile.isPending ||
         remote.refreshToken.isPending ||
         remote.disable.isPending ||
-        remote.remove.isPending ||
-        remote.configure.isPending
+        remote.remove.isPending
       }
     />
   ) : (
     <RemoteAccessWizard
       status={status}
-      onVerifyToken={(token) => remote.verifyToken.mutateAsync(token)}
-      onConfigure={(configuration: RemoteAccessConfiguration) =>
-        remote.configure.mutateAsync(configuration)
-      }
+      onVerifyToken={verifyRemoteAccessToken}
+      onConfigure={async (configuration: RemoteAccessConfiguration) => {
+        await configureRemoteAccess(configuration);
+        await refresh();
+      }}
       accepting={remote.acceptExternal.isPending}
-      onAcceptExternal={() => {
-        remote.acceptExternal.mutate(status.generation);
+      onAcceptExternal={async () => {
+        await remote.acceptExternal.mutateAsync(status.generation);
+        await refresh();
       }}
     />
+  );
+}
+
+function isManaged(status: RemoteAccessStatusDTO): boolean {
+  return (
+    status.phase === 'healthy' ||
+    status.phase === 'degraded' ||
+    status.phase === 'error' ||
+    status.phase === 'deleting' ||
+    (status.phase === 'disabled' &&
+      (status.public_hostname !== undefined || status.warp_hostname !== undefined))
   );
 }

@@ -13,6 +13,8 @@ interface ZoneStepProps {
   readonly token?: string | undefined;
   readonly initialAccount?: string | undefined;
   readonly initialDomain?: string | undefined;
+  readonly initialPublicLabel?: string | undefined;
+  readonly initialWarpLabel?: string | undefined;
   readonly onSave: (configuration: RemoteAccessConfiguration) => Promise<void>;
 }
 
@@ -22,15 +24,21 @@ export function ZoneStep({
   token,
   initialAccount = '',
   initialDomain = '',
+  initialPublicLabel = 'aura',
+  initialWarpLabel = 'aura-warp',
   onSave,
 }: ZoneStepProps) {
   const { t } = useTranslation();
   const [account, setAccount] = useState(
-    initialAccount !== '' ? initialAccount : (accounts.at(0)?.id ?? ''),
+    initialAccount !== ''
+      ? initialAccount
+      : accounts.length === 1
+        ? (accounts.at(0)?.id ?? '')
+        : '',
   );
   const [domain, setDomain] = useState(initialDomain);
-  const [publicLabel, setPublicLabel] = useState('aura');
-  const [warpLabel, setWarpLabel] = useState('aura-warp');
+  const [publicLabel, setPublicLabel] = useState(initialPublicLabel);
+  const [warpLabel, setWarpLabel] = useState(initialWarpLabel);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const cleanDomain = domain.trim().toLowerCase();
@@ -75,6 +83,9 @@ export function ZoneStep({
             }}
             className="min-h-[44px] rounded-md border border-input bg-bg px-3 text-sm text-text"
           >
+            {accounts.length > 1 ? (
+              <option value="">{t('remoteAccess.domain.account')}</option>
+            ) : null}
             {accounts.map((item) => (
               <option key={item.id} value={item.id}>
                 {item.name || item.id}

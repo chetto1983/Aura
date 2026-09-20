@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HostnamesStep } from './HostnamesStep';
 import { TokenStep } from './TokenStep';
@@ -15,7 +15,7 @@ interface RemoteAccessWizardProps {
   readonly onVerifyToken: (token: string) => Promise<readonly CloudflareAccount[]>;
   readonly onConfigure: (configuration: RemoteAccessConfiguration) => Promise<void>;
   readonly accepting: boolean;
-  readonly onAcceptExternal: () => void;
+  readonly onAcceptExternal: () => Promise<void>;
 }
 
 const steps = ['account', 'domain', 'nameservers', 'tunnel', 'access', 'warp', 'verify'] as const;
@@ -28,14 +28,27 @@ export function RemoteAccessWizard({
   onAcceptExternal,
 }: RemoteAccessWizardProps) {
   const { t } = useTranslation();
-  const [candidate, setCandidate] = useState<string | undefined>();
+  const [candidate, setCandidate] = useState<string | undefined>(undefined);
+  const candidateRef = useRef<string | undefined>(undefined);
   const [accounts, setAccounts] = useState<readonly CloudflareAccount[]>([]);
   const current = currentStep(status, candidate !== undefined);
   async function verify(token: string) {
     const found = await onVerifyToken(token);
+    candidateRef.current = token;
     setCandidate(token);
     setAccounts(found);
     return found;
+  }
+  useEffect(
+    () => () => {
+      candidateRef.current = undefined;
+    },
+    [],
+  );
+  async function configure(configuration: RemoteAccessConfiguration) {
+    await onConfigure(configuration);
+    candidateRef.current = undefined;
+    setCandidate(undefined);
   }
   const availableAccounts =
     accounts.length > 0
@@ -80,7 +93,9 @@ export function RemoteAccessWizard({
           token={candidate}
           initialAccount={status.account_id}
           initialDomain={status.zone_name}
-          onSave={onConfigure}
+          initialPublicLabel={hostnameLabel(status.public_hostname, status.zone_name, 'aura')}
+          initialWarpLabel={hostnameLabel(status.warp_hostname, status.zone_name, 'aura-warp')}
+          onSave={configure}
         />
       ) : null}
       {status.phase === 'waiting_nameservers' ? <HostnamesStep status={status} /> : null}
@@ -97,6 +112,16 @@ export function RemoteAccessWizard({
       ) : null}
     </section>
   );
+}
+
+function hostnameLabel(
+  hostname: string | undefined,
+  zone: string | undefined,
+  fallback: string,
+): string {
+  if (hostname === undefined || zone === undefined) return fallback;
+  const suffix = `.${zone}`;
+  return hostname.endsWith(suffix) ? hostname.slice(0, -suffix.length) : fallback;
 }
 
 function currentStep(status: RemoteAccessStatusDTO, hasCandidate: boolean): (typeof steps)[number] {

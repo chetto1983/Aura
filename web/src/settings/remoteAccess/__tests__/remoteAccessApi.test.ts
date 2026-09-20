@@ -6,10 +6,16 @@ describe('remote access API', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('sends the typed public hostname to the controlled delete endpoint', async () => {
-    const received: { method?: string | undefined; body?: string | undefined } = {};
+    const received: {
+      url?: string | undefined;
+      method?: string | undefined;
+      body?: string | undefined;
+    } = {};
     vi.stubGlobal(
       'fetch',
       vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        received.url =
+          typeof _input === 'string' ? _input : _input instanceof URL ? _input.href : _input.url;
         received.method = init?.method;
         received.body = init?.body as string;
         return Promise.resolve(
@@ -21,6 +27,7 @@ describe('remote access API', () => {
     await deleteRemoteAccess('aura.example.com');
 
     expect(received).toEqual({
+      url: '/api/settings/remote-access',
       method: 'DELETE',
       body: JSON.stringify({ hostname: 'aura.example.com' }),
     });

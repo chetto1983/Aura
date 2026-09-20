@@ -1,14 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   acceptExternalRemoteAccess,
-  configureRemoteAccess,
   deleteRemoteAccess,
   disableRemoteAccess,
   fetchRemoteAccess,
   reconcileRemoteAccess,
   refreshRemoteAccessToken,
-  verifyRemoteAccessToken,
-  type RemoteAccessConfiguration,
   type RemoteAccessPhase,
 } from './remoteAccessApi';
 
@@ -37,8 +34,6 @@ export function useRemoteAccess() {
     refetchInterval: (state) => remoteAccessPollInterval(state.state.data?.phase),
   });
   const invalidate = () => client.invalidateQueries({ queryKey: REMOTE_ACCESS_KEY });
-  const configure = useMutation({ mutationFn: configureRemoteAccess, onSettled: invalidate });
-  const verifyToken = useMutation({ mutationFn: verifyRemoteAccessToken });
   const reconcile = useMutation({ mutationFn: reconcileRemoteAccess, onSettled: invalidate });
   const refreshToken = useMutation({ mutationFn: refreshRemoteAccessToken, onSettled: invalidate });
   const disable = useMutation({ mutationFn: disableRemoteAccess, onSettled: invalidate });
@@ -49,8 +44,6 @@ export function useRemoteAccess() {
   });
   return {
     query,
-    configure,
-    verifyToken,
     reconcile,
     refreshToken,
     disable,
@@ -58,5 +51,3 @@ export function useRemoteAccess() {
     acceptExternal,
   };
 }
-
-export type { RemoteAccessConfiguration };

@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../../i18n/i18n';
 import { RemoteAccessStatus } from '../RemoteAccessStatus';
+import { RemoteAccessPanel } from '../RemoteAccessPanel';
 import type { RemoteAccessStatusDTO } from '../remoteAccessApi';
 
 const status: RemoteAccessStatusDTO = {
@@ -42,5 +43,36 @@ describe('RemoteAccessStatus', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(trigger);
     });
+  });
+
+  it('keeps management controls available for disabled configured state', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(
+          new Response(JSON.stringify({ ...status, enabled: false, phase: 'disabled' })),
+        ),
+      ),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <RemoteAccessPanel />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByRole('button', { name: 'Delete remote access' })).toBeTruthy();
+    expect(screen.getByLabelText('Cloudflare API token')).toBeTruthy();
+  });
+
+  it('contains a rejected management action in localized alert feedback', async () => {
+    render(
+      <RemoteAccessStatus
+        status={status}
+        onAction={() => Promise.reject(new Error('top-secret'))}
+        onDelete={() => Promise.resolve()}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Retry reconciliation' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('remote access action');
   });
 });

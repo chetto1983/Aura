@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { KeyRound, ShieldCheck } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../../components/Spinner';
@@ -14,8 +14,15 @@ interface TokenStepProps {
 export function TokenStep({ onVerified }: TokenStepProps) {
   const { t } = useTranslation();
   const [token, setToken] = useState('');
+  const tokenRef = useRef('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  useEffect(
+    () => () => {
+      tokenRef.current = '';
+    },
+    [],
+  );
 
   async function verify() {
     if (token.trim() === '' || busy) return;
@@ -24,6 +31,7 @@ export function TokenStep({ onVerified }: TokenStepProps) {
     try {
       await onVerified(token);
       setToken('');
+      tokenRef.current = '';
     } catch {
       setFailed(true);
     } finally {
@@ -43,6 +51,7 @@ export function TokenStep({ onVerified }: TokenStepProps) {
         value={token}
         onChange={(event) => {
           setToken(event.target.value);
+          tokenRef.current = event.target.value;
           setFailed(false);
         }}
         showLabel={t('secret.show', { label: t('remoteAccess.token.label') })}
