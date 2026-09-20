@@ -9,7 +9,8 @@ The measurement the export rests on:
 | | |
 |---|---|
 | Image before the update | `ghcr.io/chetto1983/aura:edge`, built by CI 2026-09-20 21:57 from `be83178e0` — its dist had **no** VideoStudio chunk at all |
-| Image the cases ran on | built from this working tree; `aura version` → `commit: task9-worktree-50d66107a` |
+| Image the cases first ran on | built from this working tree; `aura version` → `commit: task9-worktree-50d66107a` |
+| Image the cases were **repeated** on | the published `ghcr.io/chetto1983/aura:edge` after the push; `aura version` → `commit: be4a7748a9e4acfb2cc9f5fddf66b44e44755415`. All six cases pass on the artifact an operator receives, unchanged |
 | Bundle the browser loaded | entry `assets/index-g4THe68B.js`, SHA-256 `e125d0d515ecf469205d2e05573a09239dac7fa5e9bf61d974e17a53ce4b73b0` — **byte-identical** to the `internal/webui/dist` committed with this change |
 | Browsers | Chrome (`chrome` project) and Pixel 5 emulation (`mobile-chrome`). No WebKit — see *Not proven* |
 | Front door | Caddy `:443`, internal CA, on-demand TLS; object store fronted on the same authority at `^/aura-…` |
