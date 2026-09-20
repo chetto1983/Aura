@@ -77,8 +77,43 @@ function dropProp(current: VideoProject, itemId: string, key: string): VideoProj
 }
 
 /** What an overlay carries now, so a test can watch one property come and go. */
-function propsOf(current: VideoProject, itemId: string): unknown {
+function propsOf(
+  current: VideoProject,
+  itemId: string,
+): Readonly<Record<string, unknown>> | undefined {
   return current.overlays.flatMap((lane) => lane.items).find((item) => item.id === itemId)?.props;
+}
+
+/**
+ * The value a holder OWNS under `key`, or undefined when it owns none — read by descriptor,
+ * because `holder.__proto__` answers with the prototype whether or not the property is there,
+ * which is the confusion these tests are about.
+ */
+function own(holder: unknown, key: string): unknown {
+  return Object.getOwnPropertyDescriptor(holder ?? {}, key)?.value;
+}
+
+/** The same question asked of an overlay's props. */
+function ownProp(current: VideoProject, itemId: string, key: string): unknown {
+  return own(propsOf(current, itemId), key);
+}
+
+/** A project from somewhere else — an import, a fixture — whose props already own that key. */
+function withOwnProto(): VideoProject {
+  const start = project();
+  return {
+    ...start,
+    overlays: start.overlays.map((lane) => ({
+      ...lane,
+      items: lane.items.map((item) => ({
+        ...item,
+        props: Object.fromEntries([
+          ['__proto__', 'legacy'],
+          ['text', 'old'],
+        ]),
+      })),
+    })),
+  };
 }
 
 describe('history', () => {
@@ -204,17 +239,56 @@ describe('history', () => {
     expect(propsOf(history.redo(), 'title')).toEqual({});
   });
 
-  // The other name a draft cannot carry, and the one that would pollute rather than vanish.
-  it('refuses a __proto__ property instead of losing it, and survives the refusal', () => {
+  // The other name the walk cannot carry — and the one that must not reach the prototype every
+  // object shares. `Object.keys(Object.prototype)` is empty unless something assigned through it.
+  it('carries a property named __proto__ through undo and redo', () => {
     const start = project();
     const history = createHistory(start);
-    expect(() =>
-      history.apply((p) => setProperty(p, { itemId: 'title', key: '__proto__', value: 'x' })),
-    ).toThrow(/__proto__/);
-    expect(history.current).toBe(start);
-    expect(history.canUndo).toBe(false);
+    history.apply((p) => setProperty(p, { itemId: 'title', key: '__proto__', value: 'x' }));
+    expect(ownProp(history.current, 'title', '__proto__')).toBe('x');
+    expect(history.undo()).toEqual(start);
+    expect(ownProp(history.current, 'title', '__proto__')).toBeUndefined();
+    expect(ownProp(history.redo(), 'title', '__proto__')).toBe('x');
+    expect(Object.keys(Object.prototype)).toEqual([]);
+    // the walk threw to get here, so prove the next edit still records normally
     expect(
       projectDuration(history.apply((p) => trimClip(p, { clipId: 'clip-1', start: 0, end: 2 }))),
     ).toBe(6);
+  });
+
+  it('edits an overlay whose props already own __proto__, and undoes it', () => {
+    const start = withOwnProto();
+    const history = createHistory(start);
+    history.apply((p) => setProperty(p, { itemId: 'title', key: 'text', value: 'new' }));
+    expect(ownProp(history.current, 'title', 'text')).toBe('new');
+    expect(ownProp(history.current, 'title', '__proto__')).toBe('legacy');
+    expect(history.canUndo).toBe(true);
+    expect(history.undo()).toEqual(start);
+    expect(ownProp(history.current, 'title', 'text')).toBe('old');
+    expect(ownProp(history.current, 'title', '__proto__')).toBe('legacy');
+    // and the other side of the guard: dropping the key, where the delete would go unrecorded
+    history.apply((p) => dropProp(p, 'title', '__proto__'));
+    expect(ownProp(history.current, 'title', '__proto__')).toBeUndefined();
+    expect(ownProp(history.undo(), 'title', '__proto__')).toBe('legacy');
+    expect(Object.keys(Object.prototype)).toEqual([]);
+  });
+
+  // The walk did not step into this one — a string became an object, so the value is written
+  // whole. Its patch would be rebuilt key by key on the way back, dropping what is buried inside.
+  it('carries a __proto__ buried inside a value written whole', () => {
+    const history = createHistory(project());
+    history.apply((p) => setProperty(p, { itemId: 'title', key: 'meta', value: 'plain' }));
+    history.apply((p) =>
+      setProperty(p, {
+        itemId: 'title',
+        key: 'meta',
+        value: Object.fromEntries([['__proto__', 'deep']]),
+      }),
+    );
+    expect(own(ownProp(history.current, 'title', 'meta'), '__proto__')).toBe('deep');
+    history.undo();
+    expect(ownProp(history.current, 'title', 'meta')).toBe('plain');
+    expect(own(ownProp(history.redo(), 'title', 'meta'), '__proto__')).toBe('deep');
+    expect(Object.keys(Object.prototype)).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@
 // before anything changed, so there is nothing to undo — and a step landing after an undo drops
 // the redo branch, because the future it led to no longer exists.
 
-import { applyPatches, enablePatches, produceWithPatches, type Patch } from 'immer';
+import { applyPatches, castDraft, enablePatches, produceWithPatches, type Patch } from 'immer';
 import type { VideoProject } from './project';
 
 // Patches, not snapshots: a project carries every clip and overlay, and an editing session is
@@ -39,13 +39,38 @@ type Indexed = Record<string, unknown>;
 
 /**
  * Whether the walk descends into a value or replaces it whole. Arrays and plain objects are all a
- * project holds; anything else — a Date, a Map, a class instance someone put in an overlay's
- * props — is written as one value, which is coarser but never wrong.
+ * project holds — both answer to `Object.keys`, which is why the narrowing covers them together;
+ * anything else — a Date, a Map, a class instance someone put in an overlay's props — is written
+ * as one value, which is coarser but never wrong.
  */
-function walkable(value: unknown): boolean {
+function walkable(value: unknown): value is Indexed {
   if (Array.isArray(value)) return true;
   if (typeof value !== 'object' || value === null) return false;
   return (value as { constructor?: unknown }).constructor === Object;
+}
+
+/**
+ * The one name none of this can carry. A draft refuses to define it (`Object.defineProperty()
+ * cannot be used on an Immer draft`), assigning it through a draft runs the prototype setter
+ * instead of writing a property, and `applyPatches` deep-clones a patch's value by assignment, so
+ * the key goes missing on the way back. Measured on immer 11.1.18.
+ *
+ * An overlay's props take any name, so this is data someone can hold — it is not refused. The walk
+ * stops, and `diff` records that step as one replacement of the root, where the project is handed
+ * over whole and survives both directions. `__proto__` therefore never appears in a patch's PATH,
+ * which is the only way it could have reached `Object.prototype`.
+ */
+class Unwalkable extends Error {
+  constructor() {
+    super('videoStudio: a __proto__ property cannot be walked');
+  }
+}
+
+/** Whether a value written whole hides a `__proto__` anywhere inside it, where a patch would drop it. */
+function carriesProto(value: unknown): boolean {
+  if (!walkable(value)) return false;
+  if (Object.hasOwn(value, '__proto__')) return true;
+  return Object.keys(value).some((key) => carriesProto(value[key]));
 }
 
 /**
@@ -62,12 +87,8 @@ function mergeInto(draft: unknown, base: unknown, next: unknown): void {
   const target = draft as Indexed;
   const before = base as Indexed;
   const after = next as Indexed;
-  // `__proto__` is not a property to a draft: reading it walks into Object.prototype and writing
-  // it runs the prototype setter, so immer keeps neither the value nor the bookkeeping it patches
-  // from — measured on 11.1.18, the edit vanishes and no step is recorded. An overlay prop takes
-  // any name, so this is reachable input; it is refused here rather than lost in silence.
   if (Object.hasOwn(before, '__proto__') || Object.hasOwn(after, '__proto__')) {
-    throw new Error('videoStudio: history cannot record a property named __proto__');
+    throw new Unwalkable();
   }
   for (const key of Object.keys(after)) mergeKey(target, before, after, key);
   if (Array.isArray(next)) {
@@ -91,7 +112,26 @@ function mergeKey(target: Indexed, base: Indexed, next: Indexed, key: string): v
     mergeInto(target[key], before, after);
     return;
   }
+  // Written whole, so the deep look: a patch carries this value, and `applyPatches` would rebuild
+  // it key by key on the way back.
+  if (carriesProto(before) || carriesProto(after)) throw new Unwalkable();
   target[key] = after;
+}
+
+/**
+ * The step from `base` to `next`, both ways, and the project to keep. Normally the leaves that
+ * changed; for the one shape the walk cannot enter, a single replacement of the root — coarser,
+ * but it carries what a leaf patch cannot, and it keeps a valid project editable.
+ */
+function diff(base: VideoProject, next: VideoProject): readonly [VideoProject, Patch[], Patch[]] {
+  try {
+    return produceWithPatches(base, (draft) => {
+      mergeInto(draft, base, next);
+    });
+  } catch (error) {
+    if (!(error instanceof Unwalkable)) throw error;
+    return produceWithPatches(base, () => castDraft(next));
+  }
 }
 
 export function createHistory(initial: VideoProject): History {
@@ -104,9 +144,7 @@ export function createHistory(initial: VideoProject): History {
     // The edit runs on the project itself rather than on a draft: the commands are pure, and a
     // refusal has to throw here, before a step exists to push.
     const next = edit(base);
-    const [merged, forward, back] = produceWithPatches(base, (draft) => {
-      mergeInto(draft, base, next);
-    });
+    const [merged, forward, back] = diff(base, next);
     if (forward.length === 0) return current;
     done.push({ forward, back });
     undone.length = 0;
