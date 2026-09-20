@@ -11,6 +11,9 @@ import (
 // ErrStaleGeneration means newer operator intent won the compare-and-swap.
 var ErrStaleGeneration = errors.New("remote access: desired generation changed")
 
+// ErrAddressLocked requires cleanup before changing resource-addressing intent.
+var ErrAddressLocked = errors.New("remote access: delete integration before changing account, zone, or hostnames")
+
 // Store persists non-secret state through the generated SQL authority.
 type Store struct{ q *sqlc.Queries }
 
@@ -29,7 +32,31 @@ func (s *Store) SaveDesired(ctx context.Context, expectedGeneration int64, d Des
 		ExpectedGeneration: expectedGeneration, Enabled: d.Enabled, AccountID: d.AccountID,
 		ZoneName: d.ZoneName, PublicLabel: d.PublicLabel, WarpLabel: d.WARPLabel, UpdatedBy: by,
 	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return State{}, s.desiredFailure(ctx, expectedGeneration, d)
+	}
 	return changedState(row, err)
+}
+
+func (s *Store) desiredFailure(ctx context.Context, generation int64, desired Desired) error {
+	current, err := s.Load(ctx)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrStaleGeneration
+	}
+	if err != nil {
+		return err
+	}
+	if current.Generation != generation {
+		return ErrStaleGeneration
+	}
+	resources := current.Resources
+	resources.AccountID = ""
+	previous := current.Desired
+	previous.Enabled = desired.Enabled
+	if resources != (Resources{}) && previous != desired {
+		return ErrAddressLocked
+	}
+	return ErrStaleGeneration
 }
 
 // Advance collapses arbitrary error text to a safe diagnostic because response bodies

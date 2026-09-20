@@ -15,6 +15,21 @@ import (
 )
 
 func TestStorePersistsGenerationAndEncryptedCredentials(t *testing.T) {
+	pool := remoteAccessPool(t)
+	s := NewStore(pool)
+	initial, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial.Resources = Resources{AccountID: initial.Resources.AccountID}
+	if _, err := s.Advance(t.Context(), initial); err != nil {
+		t.Fatal(err)
+	}
+	testStorePersistence(t, s, pool, initial)
+}
+
+func remoteAccessPool(t *testing.T) *pgxpool.Pool {
+	t.Helper()
 	dsn := os.Getenv("AURA_DB_MIGRATE_URL")
 	if dsn == "" {
 		if os.Getenv("CI") != "" {
@@ -34,12 +49,12 @@ func TestStorePersistsGenerationAndEncryptedCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer pool.Close()
-	s := NewStore(pool)
-	initial, err := s.Load(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(pool.Close)
+	return pool
+}
+
+func testStorePersistence(t *testing.T, s *Store, pool *pgxpool.Pool, initial State) {
+	t.Helper()
 	d := Desired{Enabled: true, AccountID: "account", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
 	state, err := s.SaveDesired(t.Context(), initial.Generation, d, "admin")
 	if err != nil || state.Generation != initial.Generation+1 {
@@ -82,5 +97,74 @@ func TestStorePersistsGenerationAndEncryptedCredentials(t *testing.T) {
 		if err := secrets.Delete(t.Context(), key); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestStoreRejectsAddressChangesWithAnyResource(t *testing.T) {
+	s := NewStore(remoteAccessPool(t))
+	state, err := s.Load(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Resources = Resources{AccountID: state.Resources.AccountID}
+	state, err = s.Advance(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := Desired{Enabled: true, AccountID: "original", ZoneName: "example.com", PublicLabel: "aura", WARPLabel: "aura-warp"}
+	state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, resource := range []Resources{{ZoneID: "owned"}, {TunnelID: "owned"}, {PublicDNSID: "owned"}, {WARPDNSID: "owned"}, {OTPProviderID: "owned"}, {PublicAppID: "owned"}, {PublicPolicyID: "owned"}, {WARPAppID: "owned"}, {WARPPolicyID: "owned"}, {GatewayPostureID: "owned"}} {
+		resource.AccountID = d.AccountID
+		state.Resources = resource
+		state, err = s.Advance(t.Context(), state)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"account", "zone", "public", "warp"} {
+			changed := d
+			switch field {
+			case "account":
+				changed.AccountID = "other"
+			case "zone":
+				changed.ZoneName = "other.com"
+			case "public":
+				changed.PublicLabel = "other"
+			case "warp":
+				changed.WARPLabel = "other"
+			}
+			if _, err = s.SaveDesired(t.Context(), state.Generation, changed, "admin"); !errors.Is(err, ErrAddressLocked) || errors.Is(err, ErrStaleGeneration) {
+				t.Fatalf("locked %s change with %+v returned %v", field, resource, err)
+			}
+			if _, err = s.SaveDesired(t.Context(), state.Generation-1, changed, "admin"); !errors.Is(err, ErrStaleGeneration) || errors.Is(err, ErrAddressLocked) {
+				t.Fatalf("stale %s change returned %v", field, err)
+			}
+			after, e := s.Load(t.Context())
+			if e != nil {
+				t.Fatal(e)
+			}
+			if after.Desired != d || after.Resources != resource || after.Generation != state.Generation {
+				t.Fatal("rejected update changed ownership context")
+			}
+		}
+		d.Enabled = !d.Enabled
+		state, err = s.SaveDesired(t.Context(), state.Generation, d, "admin")
+		if err != nil {
+			t.Fatalf("enable toggle refused: %v", err)
+		}
+	}
+	state.Resources = Resources{AccountID: d.AccountID}
+	state, err = s.Advance(t.Context(), state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.AccountID = "after-delete"
+	d.ZoneName = "new.example"
+	d.PublicLabel = "new"
+	d.WARPLabel = "new-warp"
+	if _, err = s.SaveDesired(t.Context(), state.Generation, d, "admin"); err != nil {
+		t.Fatalf("re-onboarding refused: %v", err)
 	}
 }

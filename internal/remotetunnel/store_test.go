@@ -25,7 +25,9 @@ func (*stubDB) Exec(context.Context, string, ...any) (pgconn.CommandTag, error) 
 }
 func (*stubDB) Query(context.Context, string, ...any) (pgx.Rows, error) { panic("unexpected Query") }
 func (d *stubDB) QueryRow(_ context.Context, _ string, args ...any) pgx.Row {
-	d.args = args
+	if len(args) > 0 {
+		d.args = args
+	}
 	return errorRow{d.err}
 }
 

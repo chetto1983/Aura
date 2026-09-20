@@ -3,6 +3,7 @@ package cloudflareapi
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 // Secret requires Reveal for plaintext; logs and serializers receive a redaction.
@@ -49,10 +50,12 @@ type Zone struct {
 
 // Tunnel omits credentials returned as extra fields during creation.
 type Tunnel struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	Status       string `json:"status"`
-	RemoteConfig bool   `json:"remote_config"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	Status       string     `json:"status"`
+	RemoteConfig bool       `json:"remote_config"`
+	ConfigSource string     `json:"config_src"`
+	DeletedAt    *time.Time `json:"deleted_at"`
 }
 
 // Ingress omits hostname on the mandatory final catch-all rule.

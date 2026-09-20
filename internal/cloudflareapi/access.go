@@ -102,6 +102,11 @@ func (c *Client) DeleteApplication(ctx context.Context, accountID, id string) er
 	return c.remove(ctx, "accounts", accountID, "access", "apps", id)
 }
 
+// ListPolicies detects ambiguous creations and unrelated rules before policy writes.
+func (c *Client) ListPolicies(ctx context.Context, accountID, appID string) ([]AccessPolicy, error) {
+	return listResource[AccessPolicy](ctx, c, nil, "accounts", accountID, "access", "apps", appID, "policies")
+}
+
 // GetPolicy reads an application-specific policy, not a reusable account policy.
 func (c *Client) GetPolicy(ctx context.Context, accountID, appID, id string) (AccessPolicy, error) {
 	return get[AccessPolicy](ctx, c, http.MethodGet, nil, "accounts", accountID, "access", "apps", appID, "policies", id)

@@ -132,6 +132,12 @@ SET enabled = $1, account_id = $2,
     phase = CASE WHEN $1::boolean THEN 'validating' ELSE 'disabled' END,
     observed_healthy = false, last_error = '', updated_at = clock_timestamp(), updated_by = $6
 WHERE singleton = true AND generation = $7
+  AND ((account_id = $2 AND zone_name = $3
+    AND public_label = $4 AND warp_label = $5) OR (
+    zone_id = '' AND tunnel_id = '' AND public_dns_id = '' AND warp_dns_id = ''
+    AND otp_idp_id = '' AND public_app_id = '' AND public_policy_id = ''
+    AND warp_app_id = '' AND warp_policy_id = '' AND warp_posture_id = ''
+  ))
 RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, last_error, observed_healthy, last_reconciled_at, updated_at, updated_by
 `
 

@@ -9,6 +9,12 @@ SET enabled = sqlc.arg(enabled), account_id = sqlc.arg(account_id),
     phase = CASE WHEN sqlc.arg(enabled)::boolean THEN 'validating' ELSE 'disabled' END,
     observed_healthy = false, last_error = '', updated_at = clock_timestamp(), updated_by = sqlc.arg(updated_by)
 WHERE singleton = true AND generation = sqlc.arg(expected_generation)
+  AND ((account_id = sqlc.arg(account_id) AND zone_name = sqlc.arg(zone_name)
+    AND public_label = sqlc.arg(public_label) AND warp_label = sqlc.arg(warp_label)) OR (
+    zone_id = '' AND tunnel_id = '' AND public_dns_id = '' AND warp_dns_id = ''
+    AND otp_idp_id = '' AND public_app_id = '' AND public_policy_id = ''
+    AND warp_app_id = '' AND warp_policy_id = '' AND warp_posture_id = ''
+  ))
 RETURNING *;
 
 -- name: AdvanceCloudflareRemoteAccess :one
