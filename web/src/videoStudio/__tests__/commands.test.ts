@@ -27,7 +27,6 @@ function project(): VideoProject {
         kind: 'video',
         duration: 10,
         size: { width: 1920, height: 1080 },
-        fps: 30,
       },
     ],
     video: [
@@ -62,7 +61,6 @@ function stills(): VideoProject {
         kind: 'image',
         duration: 0,
         size: { width: 8, height: 6 },
-        fps: 0,
       },
     ],
     video: [{ id: 'still-1', sourceId: 'src-img', duration: 3, sourceStart: 0, muted: true }],

@@ -149,7 +149,6 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
       kind: probed.kind,
       duration: probed.duration,
       size,
-      fps: project.fps,
     };
     return addClip(
       {
@@ -245,7 +244,6 @@ export function projectFromClip(
     kind: 'video',
     duration: probed.duration,
     size,
-    fps: STARTING_FPS,
   };
   return addClip(
     { ...emptyProject(name, size, STARTING_FPS), sources: [source] },

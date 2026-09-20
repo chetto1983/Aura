@@ -22,7 +22,6 @@ function project(overlay?: OverlayItem): VideoProject {
         kind: 'video',
         duration: 20,
         size: { width: 1920, height: 1080 },
-        fps: 25,
       },
     ],
     video: [

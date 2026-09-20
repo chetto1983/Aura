@@ -16,7 +16,6 @@ export interface ProjectSource {
   readonly kind: 'video' | 'image';
   readonly duration: number; // seconds; 0 for an image, which takes the duration its item asks for
   readonly size: ProjectSize;
-  readonly fps: number;
 }
 
 export interface VideoItem {

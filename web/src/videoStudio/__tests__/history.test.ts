@@ -24,7 +24,6 @@ function project(): VideoProject {
         kind: 'video',
         duration: 10,
         size: { width: 1920, height: 1080 },
-        fps: 30,
       },
     ],
     video: [

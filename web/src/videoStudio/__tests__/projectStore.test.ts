@@ -48,7 +48,6 @@ function project(): VideoProject {
         kind: 'video',
         duration: 12.5,
         size: { width: 1920, height: 1080 },
-        fps: 30,
       },
       {
         id: 'src-b',
@@ -56,7 +55,6 @@ function project(): VideoProject {
         kind: 'image',
         duration: 0,
         size: { width: 800, height: 600 },
-        fps: 30,
       },
     ],
     video: [
@@ -161,6 +159,16 @@ describe('saveProject', () => {
     expect(api.finalizeAsset).toHaveBeenCalledWith('file-1');
   });
 
+  it('writes no frame rate onto a source, because nothing ever measured one', async () => {
+    // `probeVideo` does not report a frame rate, so the field could only ever hold the PROJECT's
+    // default while calling itself the clip's. Saved, it would become a fact cycle 2 reads.
+    await saveProject(project());
+    const [written] = uploaded.files;
+    if (written === undefined) throw new Error('saveProject uploaded nothing');
+    const saved = JSON.parse(await written.text()) as { sources: Record<string, unknown>[] };
+    for (const source of saved.sources) expect(source).not.toHaveProperty('fps');
+  });
+
   it('names the file after the project without letting its name reach the path', async () => {
     await saveProject({ ...project(), name: '../../etc/passwd' });
     const request = api.presignAsset.mock.calls[0]?.[0] as Record<string, unknown>;
@@ -191,6 +199,20 @@ describe('loadProject', () => {
     const loaded = await loadProject('file-1', SOURCE);
     expect(loaded.project).toEqual(original);
     expect(loaded.missing).toEqual([]);
+  });
+
+  it('still reads a file saved while sources carried an fps, and ignores it', async () => {
+    const legacy = project();
+    serve(
+      JSON.stringify({
+        ...legacy,
+        sources: legacy.sources.map((source) => ({ ...source, fps: 30 })),
+      }),
+    );
+
+    const loaded = await loadProject('file-1', SOURCE);
+    expect(loaded.project.sources).toHaveLength(2);
+    expect(loaded.project.video).toHaveLength(2);
   });
 
   it('reads through the identity-scoped route when it is given only an asset id', async () => {

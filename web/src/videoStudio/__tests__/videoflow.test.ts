@@ -120,7 +120,6 @@ function project(): VideoProject {
         kind: 'video',
         duration: 10,
         size: { width: 1920, height: 1080 },
-        fps: 30,
       },
       {
         id: 'src-still',
@@ -128,7 +127,6 @@ function project(): VideoProject {
         kind: 'image',
         duration: 0,
         size: { width: 1920, height: 1080 },
-        fps: 0,
       },
     ],
     video: [

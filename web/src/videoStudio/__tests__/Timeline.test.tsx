@@ -66,7 +66,6 @@ function project(): VideoProject {
         kind: 'video',
         duration: 20,
         size: { width: 1920, height: 1080 },
-        fps: 25,
       },
     ],
     video: [
@@ -128,7 +127,6 @@ function twoHourStill(): VideoProject {
         kind: 'image',
         duration: 0,
         size: { width: 800, height: 600 },
-        fps: 25,
       },
     ],
     video: [{ id: 'clip-1', sourceId: 'img', duration: 7200, sourceStart: 0, muted: false }],

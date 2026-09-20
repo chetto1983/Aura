@@ -124,7 +124,8 @@ function isSource(value: unknown): value is ProjectSource {
     typeof source.assetId === 'string' &&
     (source.kind === 'video' || source.kind === 'image') &&
     typeof source.duration === 'number' &&
-    typeof source.fps === 'number' &&
+    // No `fps`: nothing ever measured a source's frame rate — `probeVideo` does not report one —
+    // and a file saved while the field existed still loads, with the number simply ignored.
     isSize(source.size)
   );
 }
