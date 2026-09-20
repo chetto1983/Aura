@@ -155,6 +155,9 @@ test.describe('media editing', () => {
   });
 
   test('saves an edited photo to the Studio library', async ({ page }, testInfo) => {
+    if (testInfo.project.name === 'chrome') {
+      await page.setViewportSize({ width: 996, height: 800 });
+    }
     await gotoAuthenticated(page, '/');
     const assetId = await upload(page, 'photo.png', 'image/png');
     // The presign and the PUT to the object store are real. The PUT's body is the file the
@@ -175,12 +178,41 @@ test.describe('media editing', () => {
       });
     });
     await openStudioWith(page, record('image', assetId), 'ok');
-    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const stage = page.locator('.studio-stage');
+    const composerBox = await page.locator('.studio-composer').boundingBox();
+    if (composerBox === null) throw new Error('the Studio composer has no layout box');
+    for (const action of [
+      stage.getByRole('link', { name: 'Download' }),
+      stage.getByRole('button', { name: 'Edit', exact: true }),
+      stage.getByRole('button', { name: 'Reuse' }),
+    ]) {
+      await expect(action).toBeVisible();
+      const actionBox = await action.boundingBox();
+      if (actionBox === null) throw new Error('a Studio action has no layout box');
+      expect(actionBox.y + actionBox.height).toBeLessThanOrEqual(composerBox.y);
+    }
+    await stage.getByRole('button', { name: 'Edit', exact: true }).click();
     const editor = page.getByRole('dialog', { name: 'Edit photo.png' });
     // Below 760px Filerobot moves its tabs into a drawer behind the topbar's menu button.
     if (testInfo.project.name.startsWith('mobile')) {
       await editor.getByTestId('FIE-topbar-menu-button').click({ timeout: 30_000 });
     }
+    await expect(editor.getByTestId('FIE-tab-adjust')).toHaveCSS(
+      'background-color',
+      'rgb(31, 55, 96)',
+    );
+    await expect(editor.getByTestId('FIE-tab-item-label-adjust')).toHaveCSS(
+      'color',
+      'rgb(211, 227, 253)',
+    );
+    await expect(editor.getByTestId('FIE-tab-filters')).toHaveCSS(
+      'background-color',
+      'rgb(48, 55, 65)',
+    );
+    await expect(editor.getByTestId('FIE-tab-item-label-filters')).toHaveCSS(
+      'color',
+      'rgb(238, 242, 246)',
+    );
     await expect(editor.getByText('Filters', { exact: true })).toBeVisible({ timeout: 30_000 });
     await editor.getByText('Filters', { exact: true }).click();
     await editor.getByText('Sepia', { exact: true }).click();

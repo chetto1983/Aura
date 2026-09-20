@@ -31,13 +31,29 @@ describe('filerobotTranslations', () => {
 describe('filerobotTheme', () => {
   it('reads the colours and the font from the Aura tokens', () => {
     const root = document.createElement('div');
-    root.style.setProperty('--color-accent', '#ff5500');
-    root.style.setProperty('--color-surface', '#101010');
+    root.style.setProperty('--color-accent', '#1f3760');
+    root.style.setProperty('--color-on-accent', '#d3e3fd');
+    root.style.setProperty('--color-surface', '#191c20');
+    root.style.setProperty('--color-surface-3', '#303741');
+    root.style.setProperty('--color-text', '#eef2f6');
+    root.style.setProperty('--color-text-muted', '#c8d0d8');
+    root.style.setProperty('--color-text-disabled', '#6f7377');
     root.style.setProperty('--font-sans', 'Test Sans');
     document.body.append(root);
     const theme = filerobotTheme(root);
-    expect(theme.palette?.['accent-primary']).toBe('#ff5500');
-    expect(theme.palette?.['bg-primary']).toBe('#101010');
+    expect(theme.palette).toMatchObject({
+      'accent-primary': '#d3e3fd',
+      'accent-primary-active': '#d3e3fd',
+      'accent-stateless': '#d3e3fd',
+      'bg-stateless': '#303741',
+      'bg-primary': '#191c20',
+      'bg-primary-active': '#1f3760',
+      'txt-primary': '#eef2f6',
+      'icon-primary': '#c8d0d8',
+      'icons-invert': '#1f3760',
+      'btn-primary-text': '#1f3760',
+      'btn-disabled-text': '#6f7377',
+    });
     expect(theme.typography?.fontFamily).toBe('Test Sans');
     root.remove();
   });

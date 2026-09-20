@@ -87,8 +87,8 @@ export function StudioStage({ record, onReuse, reuseState }: StudioStageProps) {
   }
 
   return (
-    <figure className="flex w-full max-w-3xl flex-col items-center gap-3">
-      <div className="flex max-h-[58vh] w-full justify-center overflow-hidden">
+    <figure className="flex h-full min-h-0 w-full max-w-3xl flex-col items-center gap-3">
+      <div className="flex min-h-0 w-full flex-1 max-h-[58vh] justify-center overflow-hidden">
         <Suspense fallback={<PreviewLoading />}>
           <PreviewByKind
             kind={record.kind}
@@ -103,7 +103,7 @@ export function StudioStage({ record, onReuse, reuseState }: StudioStageProps) {
           />
         </Suspense>
       </div>
-      <figcaption className="flex w-full flex-col items-center gap-2">
+      <figcaption className="flex w-full flex-none flex-col items-center gap-2">
         <p className="max-w-2xl text-center text-sm text-text-muted">{record.prompt}</p>
         <StageActions record={record} onReuse={onReuse} reuseState={reuseState} />
       </figcaption>
