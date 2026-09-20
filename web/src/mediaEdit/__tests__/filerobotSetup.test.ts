@@ -173,14 +173,23 @@ describe('filerobotTheme', () => {
     root.remove();
   });
 
-  it('derives the tints, the pressed step and the shadows', () => {
+  it('derives the tints and the shadows', () => {
     const root = themedRoot();
     const { palette } = filerobotTheme(root);
     expect(palette.accent_1_2_opacity).toBe('rgb(211 227 253 / 0.12)');
     expect(palette['bg-red']).toBe('rgb(242 139 130 / 0.14)');
-    // --color-ring a quarter of the way to --color-text.
-    expect(palette['accent-primary-active']).toBe('rgb(163 196 248)');
     expect(palette['light-shadow']).toBe('rgb(0 0 0 / 0.18)');
+    root.remove();
+  });
+
+  // Filerobot paints the selected tab's label with `accent-primary-active` over the accent
+  // surface. A colour derived between the ring and the text washed it out; the E2E pins the
+  // rendered value, so this pins the token it comes from.
+  it('gives the selected tab its label in the accent foreground', () => {
+    const root = themedRoot();
+    const { palette } = filerobotTheme(root);
+    expect(palette['accent-primary-active']).toBe('#d3e3fd');
+    expect(palette['bg-primary-active']).toBe('#1f3760');
     root.remove();
   });
 

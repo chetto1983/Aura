@@ -177,6 +177,12 @@ const PALETTE_TOKENS: Readonly<Record<string, string>> = {
   // legible in both roles, so that is the one both keys take.
   'accent-primary': '--color-on-accent',
   'accent-stateless': '--color-on-accent',
+  // `accent-primary-active` carries the same double duty: Filerobot paints the SELECTED tab's
+  // label and icon with it over `bg-primary-active` (Tabs.styled.js), while @scaleflex/ui's
+  // button mixin uses it as a pressed background under `btn-primary-text`. A colour derived
+  // between the ring and the text read as a washed-out label on the chosen tab, so it takes
+  // the accent's foreground too — which is also what `btn-primary-text` inverts against.
+  'accent-primary-active': '--color-on-accent',
   'accent-primary-hover': '--color-ring',
   'accent-primary-disabled': '--color-surface-3',
   'bg-primary': '--color-surface',
@@ -247,13 +253,6 @@ const PALETTE_ALPHA: Readonly<Record<string, readonly [string, number]>> = {
   'white-0-7-8-overlay': ['--color-surface', 0.78],
 };
 
-/** Steps Scaleflex expects to sit past their resting colour. Aura has no token for "accent,
- *  pressed" that still carries `btn-primary-text` in both themes, so the pressed step is
- *  derived from the hover one. */
-const PALETTE_BLEND: Readonly<Record<string, readonly [string, string, number]>> = {
-  'accent-primary-active': ['--color-ring', '--color-text', 0.25],
-};
-
 /** Shadows and the modal scrim. These are black alphas in Aura's light theme as well as its
  *  dark one (--shadow-popover, the cockpit's own dialog overlay), so they are not tokens. */
 const PALETTE_LITERALS: Readonly<Record<string, string>> = {
@@ -277,15 +276,6 @@ function withAlpha(value: string, alpha: number): string | undefined {
   return rgb === undefined ? undefined : `rgb(${rgb.join(' ')} / ${String(alpha)})`;
 }
 
-function blend(from: string, to: string, weight: number): string | undefined {
-  const start = channels(from);
-  const end = channels(to);
-  if (start === undefined || end === undefined) return undefined;
-  const step = (a: number, b: number): number => Math.round(a + (b - a) * weight);
-  const mixed = [step(start[0], end[0]), step(start[1], end[1]), step(start[2], end[2])];
-  return `rgb(${mixed.join(' ')})`;
-}
-
 export function filerobotTheme(root: Element = document.documentElement): FilerobotTheme {
   const style = getComputedStyle(root);
   const token = (name: string): string => style.getPropertyValue(name).trim();
@@ -296,10 +286,6 @@ export function filerobotTheme(root: Element = document.documentElement): Filero
   }
   for (const [key, [name, alpha]] of Object.entries(PALETTE_ALPHA)) {
     const value = withAlpha(token(name), alpha);
-    if (value !== undefined) palette[key] = value;
-  }
-  for (const [key, [from, to, weight]] of Object.entries(PALETTE_BLEND)) {
-    const value = blend(token(from), token(to), weight);
     if (value !== undefined) palette[key] = value;
   }
   const font = token('--font-sans');
