@@ -26,6 +26,15 @@ vi.mock('../useObjectUrl', async (importOriginal) => {
 });
 const downloadBlob = vi.hoisted(() => vi.fn());
 vi.mock('../download', () => ({ downloadBlob }));
+// The composition itself is another cycle's surface and pulls VideoFlow's 147 KB font list in
+// with it, which only the build stubs. What this editor owes it is the project it hands over.
+const studio = vi.hoisted(() => ({ opened: [] as unknown[] }));
+vi.mock('../../videoStudio/VideoStudio', () => ({
+  default: ({ open }: { open: { kind: string } }) => {
+    studio.opened.push(open);
+    return <div role="dialog" aria-label="the composition" />;
+  },
+}));
 
 const { default: VideoEditor } = await import('../VideoEditor');
 
@@ -42,12 +51,19 @@ const ASSET: Asset = {
 beforeEach(() => {
   objectUrl.pending = false;
   Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:source'), revokeObjectURL: vi.fn() });
-  media.probeVideo.mockResolvedValue({ duration: 10, width: 1280, height: 720, hasAudio: true });
+  media.probeVideo.mockResolvedValue({
+    duration: 10,
+    width: 1280,
+    height: 720,
+    hasAudio: true,
+    decodable: true,
+  });
   media.exportVideo.mockResolvedValue({
     kind: 'done',
     blob: new Blob(['x'], { type: 'video/mp4' }),
   });
   downloadBlob.mockReset();
+  studio.opened.length = 0;
 });
 
 async function mount(onClose = vi.fn()) {
@@ -410,6 +426,35 @@ describe('VideoEditor', () => {
       await waitFor(() => {
         expect(media.exportVideo.mock.calls[0]?.[2]).toMatchObject({ start: 0, end: 0.05 });
       });
+    });
+  });
+  describe('the way forward into the multi-track editor', () => {
+    const forward = 'Open in the multi-track editor';
+
+    it('opens the composition on the trim as it stands', async () => {
+      await mount();
+      fireEvent.click(screen.getByRole('button', { name: forward }));
+      expect(await screen.findByRole('dialog', { name: 'the composition' })).toBeTruthy();
+      expect(studio.opened).toHaveLength(1);
+      expect(screen.queryByRole('alert')).toBeNull();
+    });
+
+    it('refuses a clip this browser cannot decode, and says why', async () => {
+      // This editor opens such a file on purpose — a copy-trim never decodes a frame — so it is
+      // the one door that can hand a composition a source that would export as black.
+      media.probeVideo.mockResolvedValue({
+        duration: 10,
+        width: 1280,
+        height: 720,
+        hasAudio: true,
+        decodable: false,
+      });
+      await mount();
+      fireEvent.click(screen.getByRole('button', { name: forward }));
+      expect((await screen.findByRole('alert')).textContent).toBe(
+        i18n.t('videoStudio.refusal.sourceUndecodable'),
+      );
+      expect(studio.opened).toEqual([]);
     });
   });
 });

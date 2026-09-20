@@ -2,6 +2,7 @@ import { RotateCcw, RotateCw, Play, X } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Asset } from '../chat/attachments/types';
+import { CommandRefusal } from '../videoStudio/commands';
 import { projectFromClip, type StudioOpen } from '../videoStudio/VideoStudio_sources';
 import { CropOverlay } from './CropOverlay';
 import {
@@ -219,11 +220,25 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
           disabled={info === undefined}
           onClick={() => {
             if (info === undefined) return;
+            // The composition refuses what this editor allows, so the way forward can be
+            // declined: a clip with no decoder here trims by copy but composes to black frames.
+            // The refusal is shown, never swallowed — a button that does nothing is the same
+            // defect wearing a different face.
+            let project;
+            try {
+              project = projectFromClip(asset.file_name, asset.id, info, range);
+            } catch (error) {
+              setProblem(
+                error instanceof CommandRefusal
+                  ? t(error.reasonKey)
+                  : t('mediaEdit.video.failed', {
+                      reason: error instanceof Error ? error.message : String(error),
+                    }),
+              );
+              return;
+            }
             abortRef.current?.abort();
-            setStudio({
-              kind: 'project',
-              project: projectFromClip(asset.file_name, asset.id, info, range),
-            });
+            setStudio({ kind: 'project', project });
           }}
         >
           {t('videoStudio.open.fromClip')}

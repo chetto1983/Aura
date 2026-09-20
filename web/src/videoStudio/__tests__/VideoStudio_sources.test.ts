@@ -4,6 +4,7 @@ import { emptyProject, type VideoProject } from '../project';
 import {
   openedProject,
   probeSource,
+  projectFromClip,
   REFUSAL_MISSING_ASSET,
   REFUSAL_UNDECODABLE,
   sourceEdit,
@@ -140,5 +141,35 @@ describe('openedProject', () => {
       project: saved,
       missing: ['src-a'],
     });
+  });
+});
+
+describe('projectFromClip', () => {
+  const RANGE = { start: 1, end: 3 };
+
+  it('carries the trim across when the clip decodes', () => {
+    const project = projectFromClip(
+      'clip.mp4',
+      'asset-a',
+      { ...PORTRAIT, hasAudio: true, decodable: true },
+      RANGE,
+    );
+    expect(project.video).toHaveLength(1);
+    expect(project.video[0]).toMatchObject({ sourceStart: 1, duration: 2 });
+    expect(project.size).toEqual({ width: 1080, height: 1920 });
+  });
+
+  it('refuses a clip this browser cannot decode, the way the other two doors do', () => {
+    // The quick editor WELCOMES an undecodable file — a copy-trim never decodes a frame — so it
+    // is the one door that can hand a composition a source nobody can play. VideoFlow answers
+    // such a layer by disabling it and exporting black, which is what the refusal exists for.
+    expect(() =>
+      projectFromClip(
+        'clip.mp4',
+        'asset-a',
+        { ...PORTRAIT, hasAudio: true, decodable: false },
+        RANGE,
+      ),
+    ).toThrow(REFUSAL_UNDECODABLE);
   });
 });

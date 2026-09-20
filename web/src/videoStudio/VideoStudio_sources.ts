@@ -1,6 +1,6 @@
 import { finalizeAsset, presignAsset } from '../chat/attachments/api';
 import { putWithProgress } from '../chat/attachments/upload';
-import { probeVideo } from '../mediaEdit/videoMedia';
+import { probeVideo, type VideoInfo } from '../mediaEdit/videoMedia';
 import { addClip, CommandRefusal } from './commands';
 import { emptyProject, type ProjectSource, type VideoProject } from './project';
 import { loadProject, type LoadedProject, type ProjectAssetSource } from './projectStore';
@@ -174,14 +174,23 @@ export async function openedProject(
   };
 }
 
-/** A new project holding one stretch of one clip: the quick editor's way forward, where the
- *  bytes have already been probed and only the trim has to survive the crossing. */
+/**
+ * A new project holding one stretch of one clip: the quick editor's way forward, where the bytes
+ * have already been probed and only the trim has to survive the crossing.
+ *
+ * It takes the quick editor's OWN probe — a `VideoInfo`, not a `ProbedSource` — because that probe
+ * is the only place the answer lives, and this is the one door that can arrive with a no. The
+ * single-clip editor welcomes a file this browser cannot decode: a copy-trim never decodes a
+ * frame. A composition always does, and VideoFlow answers a layer it cannot decode by disabling
+ * it and rendering black, so the third door refuses exactly what the other two refuse.
+ */
 export function projectFromClip(
   name: string,
   assetId: string,
-  probed: ProbedSource,
+  probed: VideoInfo,
   range: { readonly start: number; readonly end: number },
 ): VideoProject {
+  if (!probed.decodable) throw new CommandRefusal(REFUSAL_UNDECODABLE);
   const size = { width: probed.width, height: probed.height };
   const source: ProjectSource = {
     id: crypto.randomUUID(),
