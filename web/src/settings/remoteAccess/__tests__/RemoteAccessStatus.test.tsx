@@ -84,7 +84,8 @@ describe('RemoteAccessStatus', () => {
           return Promise.resolve(
             new Response(JSON.stringify({ accounts: [{ id: 'account', name: 'Account' }] })),
           );
-        if (init?.method === 'PUT') requests.push(JSON.parse(String(init.body)));
+        if (init?.method === 'PUT' && typeof init.body === 'string')
+          requests.push(JSON.parse(init.body));
         return Promise.resolve(new Response(JSON.stringify(disabled)));
       }),
     );
@@ -99,11 +100,11 @@ describe('RemoteAccessStatus', () => {
       target: { value: 'replacement' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Verify token' }));
-    await waitFor(() =>
+    await waitFor(() => {
       expect(requests).toEqual([
         expect.objectContaining({ enabled: false, public_label: 'custom', warp_label: 'private' }),
-      ]),
-    );
+      ]);
+    });
   });
 
   it('keeps enabled true when replacing a healthy configured token', async () => {
@@ -118,7 +119,8 @@ describe('RemoteAccessStatus', () => {
           return Promise.resolve(
             new Response(JSON.stringify({ accounts: [{ id: 'account', name: 'Account' }] })),
           );
-        if (init?.method === 'PUT') requests.push(JSON.parse(String(init.body)));
+        if (init?.method === 'PUT' && typeof init.body === 'string')
+          requests.push(JSON.parse(init.body));
         return Promise.resolve(new Response(JSON.stringify(healthy)));
       }),
     );
@@ -133,7 +135,9 @@ describe('RemoteAccessStatus', () => {
       target: { value: 'replacement' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Verify token' }));
-    await waitFor(() => expect(requests).toEqual([expect.objectContaining({ enabled: true })]));
+    await waitFor(() => {
+      expect(requests).toEqual([expect.objectContaining({ enabled: true })]);
+    });
   });
 
   it('contains a rejected management action in localized alert feedback', async () => {

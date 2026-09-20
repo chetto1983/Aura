@@ -47,6 +47,33 @@ declare -F sync_payload >/dev/null || fail "sync_payload undefined after sourcin
 [[ ! -s "$calls" ]] || fail "sourcing the updater ran it: $(cat "$calls")"
 echo "ok: the updater sources without running"
 
+# Exercise main's sidecar dispatch, not a source-text assertion. No Docker mutation is allowed.
+(
+  export INSTALL_DIR="$fixture/update-dispatch" AURA_IMAGE_UPDATE_LOCK="$fixture/update.lock"
+  mkdir -p "$INSTALL_DIR"
+  touch "$INSTALL_DIR/compose.yaml"
+  printf 'database state' >"$INSTALL_DIR/postgres-sentinel"
+  printf 'projection state' >"$INSTALL_DIR/projection-sentinel"
+  container_image_id() { echo image-id; }
+  sync_payload() { UPDATER_CHANGED=0; }
+  retire_env_keys() { :; }
+  wait_healthy() { :; }
+  refresh_sandbox_images() { :; }
+  remove_superseded_images() { :; }
+  update_sidecar() { echo "$1" >>"$fixture/updated-services"; }
+  bash() { [[ "$1" == scripts/appliance_posture.sh ]] || fail 'unexpected bash'; }
+  docker() {
+    case "$*" in
+      'compose pull aura aura-migrate garage-bootstrap'|'compose up -d aura'|'compose exec -T aura aura version'|'image prune --force') ;;
+      *) fail "unexpected Docker mutation: $*" ;;
+    esac
+  }
+  main
+  grep -qx aura-cloudflared "$fixture/updated-services" || fail 'cloudflared excluded from update'
+  [[ "$(cat "$INSTALL_DIR/postgres-sentinel")" == 'database state' ]] || fail 'database state changed'
+  [[ "$(cat "$INSTALL_DIR/projection-sentinel")" == 'projection state' ]] || fail 'projection state changed'
+)
+
 write() {
   mkdir -p "$(dirname "$1")"
   printf '%s' "$2" >"$1"

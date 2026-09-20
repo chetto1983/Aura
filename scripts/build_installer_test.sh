@@ -83,3 +83,4 @@ grep -q 'config not found' "$dashdash_err" \
   || { echo "FAIL: '--' did not carry the flag through to install.sh: $(cat "$dashdash_err")" >&2; exit 1; }
 
 echo "ok: the artifact self-checks, its payload round-trips, and '--' gates every installer flag"
+bash "$repo_root/scripts/install_remote_access_test.sh" --artifact "$artifact"

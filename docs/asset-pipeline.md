@@ -8,6 +8,13 @@ processed result to the existing document, OCR, or speech-to-text processors.
 Use this guide when you configure local development, bring up Garage, or debug an
 asset that is stuck in the UI.
 
+For [Cloudflare Remote Access](cloudflare-remote-access.md), browser presigns use the request's
+public HTTPS origin. Cloudflared reaches Caddy's private HTTP listener, which forwards the
+HTTPS browser scheme to Aura and shares the direct frontdoor's per-identity Garage routes.
+Uploads, finalization, downloads and Studio saves must work on that same public hostname after
+Access OTP and Authula. No Garage service/admin port is published through WARP. An HTTP URL or
+private Docker hostname in a browser presign is a failure, not a reason to disable TLS checks.
+
 ## Components
 
 - `internal/assets` owns asset metadata, status transitions, retry, promote, and

@@ -183,6 +183,22 @@ retire_env_keys() {
   echo "env: retired ${found% } removed from .env."
 }
 
+ensure_cloudflared_edge_env() {
+  [[ "$(env_value AURA_IMAGE)" == *:edge ]] || return 0
+  local key value
+  for key in AURA_CLOUDFLARED_IMAGE AURA_CLOUDFLARED_PULL_POLICY; do
+    [[ -z "$(env_value "$key")" ]] || continue
+    case "$key" in
+      AURA_CLOUDFLARED_IMAGE) value=ghcr.io/chetto1983/aura-cloudflared:edge ;;
+      AURA_CLOUDFLARED_PULL_POLICY) value=always ;;
+    esac
+    # GNU sed preserves .env's mode/owner; no backup or log may copy its secret values.
+    sed -i "/^${key}=/d" "${INSTALL_DIR}/.env"
+    printf '%s=%s\n' "$key" "$value" >>"${INSTALL_DIR}/.env"
+    echo "env: initialized ${key}."
+  done
+}
+
 # repository[:tag][@digest] -> repository, keeping a registry port (host:5000/name) intact.
 image_repository() {
   local ref="${1%%@*}"
@@ -313,6 +329,7 @@ main() {
     AURA_IMAGE_UPDATE_REEXEC=1 exec "${UPDATER_BIN}"
   fi
   retire_env_keys
+  ensure_cloudflared_edge_env
 
   # A pre-existing .env used to omit these keys forever, silently retaining dev.
   bash scripts/appliance_posture.sh .env
@@ -343,6 +360,7 @@ main() {
   # as aura itself); on a machine pinned to :local these skip via pull tolerance.
   update_sidecar caddy
   update_sidecar aura-ingest
+  update_sidecar aura-cloudflared
 
   refresh_sandbox_images
 

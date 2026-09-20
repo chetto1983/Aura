@@ -149,6 +149,12 @@ its MCP sidecars from GHCR on its own, migrations and Compose payload included, 
 no operator involved. Without `--appliance` (no systemd units, no timer), the stack still
 starts; updates stay manual.
 
+The default stack also starts the Cloudflare supervisor healthy-idle. Enable it after setup in
+**Settings > Remote access**; the installer requires no Cloudflare credential. Existing edge
+appliances receive the sidecar through the payload updater without replacing database volumes.
+See [Cloudflare Remote Access](docs/cloudflare-remote-access.md) for registered-domain prerequisites,
+Access OTP, organization WARP, token refresh and safe disable/delete.
+
 Add `--gvisor` on native Linux Docker hosts that should run Aura under `runsc`.
 Docker Desktop is intentionally not supported for that isolation tier.
 
@@ -215,6 +221,11 @@ trust the local CA root from the `caddy-data` volume:
 ```bash
 docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > aura-caddy-root.crt
 ```
+
+Trust on the Ubuntu server does not make remote browsers trust that CA. Cloudflare named-tunnel
+hostnames use the public edge certificate; direct port 443 bypasses Cloudflare Access and retains
+Authula. Quick Tunnels are temporary testing only and cannot validate Aura chat because they do
+not support SSE.
 
 ## Updates
 

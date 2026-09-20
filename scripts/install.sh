@@ -551,6 +551,7 @@ fi
 
 ensure_sandbox_image
 ensure_embed_model
+docker compose pull aura-cloudflared
 docker compose up -d --wait --wait-timeout 300
 if [ "$TRUST_LOCAL_CA" -eq 1 ]; then
   trust_caddy_local_ca
@@ -572,6 +573,9 @@ Next steps:
   docker compose -f ${INSTALL_DIR}/compose.yaml ps
   docker compose -f ${INSTALL_DIR}/compose.yaml logs -f aura
   Import Caddy's local CA from the caddy-data volume on LAN clients if the browser warns.
+  Enable Cloudflare in Settings > Remote access after completing the cockpit setup.
+  A registered domain is required. No Cloudflare credential belongs in this installer or .env.
+  Trusting the CA on this server does not establish trust in remote browsers.
 
 Re-running preserves secrets and explicit settings; known-safe deployment defaults may be migrated.
 EOF

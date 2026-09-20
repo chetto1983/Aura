@@ -85,7 +85,10 @@
 	}
 
 	# Everything else → the full cockpit + Authula login on 9080.
-	reverse_proxy aura:9080
+	reverse_proxy aura:9080 {
+		# Both frontdoors terminate browser HTTPS, including the tunnel's HTTP hop.
+		header_up X-Forwarded-Proto https
+	}
 }
 
 {$AURA_PUBLIC_HOST} {

@@ -19,11 +19,11 @@ describe('ZoneStep', () => {
     const account = screen.getByLabelText('Cloudflare account') as HTMLSelectElement;
     expect(account.value).toBe('');
     expect(
-      (screen.getByRole('button', { name: 'Save and start setup' }) as HTMLButtonElement).disabled,
+      screen.getByRole('button', { name: 'Save and start setup' }).hasAttribute('disabled'),
     ).toBe(true);
     fireEvent.change(account, { target: { value: 'two' } });
     expect(
-      (screen.getByRole('button', { name: 'Save and start setup' }) as HTMLButtonElement).disabled,
+      screen.getByRole('button', { name: 'Save and start setup' }).hasAttribute('disabled'),
     ).toBe(false);
   });
 });

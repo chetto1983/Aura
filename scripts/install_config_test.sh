@@ -65,7 +65,7 @@ expect_refused "$fixture_root/definitely-absent.conf" 'config not found' 'a miss
 # Inside a known format a key naming nothing can only be a typo or corruption. The embed keys
 # the 0.1.x wizard sent would be a second authority over the backend install.sh detects, and
 # the llm_ and openrouter_ keys a second authority over the web setup: all are refused.
-for key in not_a_real_key embed_image_base64 embed_ngl_base64 llm_provider_base64 \
+for key in cloudflare_api_token_base64 cloudflare_tunnel_token_base64 not_a_real_key embed_image_base64 embed_ngl_base64 llm_provider_base64 \
            llm_base_url_base64 llm_model_base64 openrouter_api_key_base64; do
   printf 'format=2\n%s=%s\n' "$key" "$(b64 x)" > "$fixture_root/$key.conf"
   expect_refused "$fixture_root/$key.conf" "unknown key '$key'" "a config carrying $key"

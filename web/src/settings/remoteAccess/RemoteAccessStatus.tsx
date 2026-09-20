@@ -314,7 +314,7 @@ function HostnameCard({
           href={`https://${hostname}`}
           target="_blank"
           rel="noreferrer noopener"
-          className="mt-1 block break-all text-sm font-medium text-accent-text underline underline-offset-2"
+          className="mt-1 flex min-h-[44px] items-center break-all text-sm font-medium text-accent-text underline underline-offset-2"
         >
           https://{hostname}
         </a>

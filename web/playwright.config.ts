@@ -98,8 +98,31 @@ export default defineConfig({
   // Source Explorer sheet, pagination) is validated on all three so the cockpit holds
   // on a touch viewport, not just desktop.
   projects: [
-    { name: 'chrome', use: { ...devices['Desktop Chrome'], ...CHROMIUM_CHANNEL } },
-    { name: 'mobile-chrome', use: { ...devices['Pixel 5'], ...CHROMIUM_CHANNEL } },
+    {
+      name: 'chrome',
+      testIgnore: '**/remote-access-live.spec.ts',
+      use: { ...devices['Desktop Chrome'], ...CHROMIUM_CHANNEL },
+    },
+    {
+      name: 'mobile-chrome',
+      testIgnore: '**/remote-access-live.spec.ts',
+      use: { ...devices['Pixel 5'], ...CHROMIUM_CHANNEL },
+    },
+    ...(process.env.AURA_E2E_CLOUDFLARE === '1'
+      ? [
+          {
+            name: 'remote-access-live',
+            testMatch: '**/remote-access-live.spec.ts',
+            use: {
+              ...devices['Desktop Chrome'],
+              ...CHROMIUM_CHANNEL,
+              trace: 'off' as const,
+              screenshot: 'off' as const,
+              video: 'off' as const,
+            },
+          },
+        ]
+      : []),
     // mobile-safari is enabled only when an HTTPS origin is provided (the __Host-/Secure
     // cookie needs https for WebKit — see HTTPS_ORIGIN above). It overrides baseURL to the
     // TLS proxy and ignores the self-signed cert.
@@ -107,6 +130,7 @@ export default defineConfig({
       ? [
           {
             name: 'mobile-safari',
+            testIgnore: '**/remote-access-live.spec.ts',
             use: { ...devices['iPhone 13'], baseURL: HTTPS_ORIGIN },
           },
         ]
