@@ -9,5 +9,12 @@
     "src/components/ui/popover.tsx",
     "src/components/ui/dropdown-menu.tsx"
   ],
-  "ignoreDependencies": ["assistant-stream"]
+  "ignoreDependencies": [
+    "assistant-stream",
+    "@videoflow/core",
+    "@videoflow/renderer-browser",
+    "@videoflow/renderer-dom",
+    "dnd-timeline",
+    "immer"
+  ]
 }
