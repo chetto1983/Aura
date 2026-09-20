@@ -53,14 +53,14 @@ docs/superpowers/verification/2026-09-19-video-to-model.md (Task 5)
 - Create: `.planning/spikes/106-video-to-model/README.md`, `.planning/spikes/106-video-to-model/probe.sh`, `.planning/spikes/106-video-to-model/.gitignore` (`out/`)
 - Modify: `.planning/spikes/MANIFEST.md` (row 106, idea `studio-media-editing`)
 
-- [ ] **Step 1: Pick a video model that exists**
+- [x] **Step 1: Pick a video model that exists**
 
 ```bash
 curl -s https://huggingface.co/api/models/ggml-org/Qwen3-VL-2B-Instruct-GGUF | head -c 300; echo
 ```
 Expected: JSON with `"id":"ggml-org/Qwen3-VL-2B-Instruct-GGUF"`. If 404, try `ggml-org/gemma-4-E4B-it-GGUF` (the two models PR #24269 was tested with) and use whichever answers.
 
-- [ ] **Step 2: Start a throwaway llama-server with it**
+- [x] **Step 2: Start a throwaway llama-server with it**
 
 ```bash
 docker run -d --name aura-video-probe -p 18080:8080 -v aura-video-probe-cache:/root/.cache \
@@ -70,7 +70,7 @@ curl -s http://localhost:18080/props | python3 -c 'import json,sys; p=json.load(
 ```
 Record the `modalities` object verbatim. The download is ~2–3 GB into the named volume.
 
-- [ ] **Step 3: Send one real video**
+- [x] **Step 3: Send one real video**
 
 Use a clip with burned-in timestamps (`.planning/spikes/105-studio-media-editing/media/clip-h264-silent.mp4`; regenerate with that spike's `make-media.sh` if absent). Write `probe.sh`:
 ```bash
@@ -91,7 +91,7 @@ time curl -s http://localhost:18080/v1/chat/completions -H 'Content-Type: applic
 ```
 Run `mkdir -p out && bash probe.sh <clip>`. Expected: an answer that names timestamps near 00:00 and 00:07; record it, the time, and `docker logs aura-video-probe | tail -40` (frames decoded). If the server answers "video input is not supported", record that and stop the llama.cpp branch here.
 
-- [ ] **Step 4: Send the same video to one OpenRouter video model**
+- [x] **Step 4: Send the same video to one OpenRouter video model**
 
 Pick a model whose `architecture.input_modalities` contains `video`:
 ```bash
@@ -99,14 +99,14 @@ curl -s 'https://openrouter.ai/api/v1/models' | jq -r '.data[] | select(.archite
 ```
 Ask the operator, in one line, for an OpenRouter key for this probe. Then send `{"type":"video_url","video_url":{"url":"data:video/mp4;base64,…"}}` with the same prompt to one listed model (prefer a cheap Gemini Flash), and record the answer, the reported cost and the model id.
 
-- [ ] **Step 5: Tear down and write the README**
+- [x] **Step 5: Tear down and write the README**
 
 ```bash
 docker rm -f aura-video-probe
 ```
 `.planning/spikes/106-video-to-model/README.md` with the frontmatter used by spike 105 (`spike: 106`, `idea: studio-media-editing`, `type: standard`, `verdict: VALIDATED|PARTIAL|INVALIDATED`), sections What This Validates / How to Run / Investigation Trail / Results. Results must state: the exact `/props` key, whether `input_video` worked on b10951, the OpenRouter part shape and model used, and **the decision**: which backend branches Task 3 implements. Add the MANIFEST row.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add .planning/spikes/106-video-to-model/README.md .planning/spikes/106-video-to-model/probe.sh .planning/spikes/106-video-to-model/.gitignore .planning/spikes/MANIFEST.md
@@ -497,19 +497,19 @@ git commit -m "test(llm): pin how llama.cpp reports video input" -m "The /props 
 **Files:**
 - Create: `docs/superpowers/verification/2026-09-19-video-to-model.md`
 
-- [ ] **Step 1: Full local gate**
+- [x] **Step 1: Full local gate**
 
 Run (WSL): `make quality` (vet, file-size, contracts, lint, deadcode, test-race, govulncheck, build).
 Expected: `ok: quality gate passed`.
 
-- [ ] **Step 2: Push**
+- [x] **Step 2: Push**
 
 ```bash
 git push origin master
 ```
 Expected: lefthook pre-push green.
 
-- [ ] **Step 3: Update the stack**
+- [x] **Step 3: Update the stack**
 
 When the edge image carries the commit (in WSL, from a script file):
 ```bash
@@ -517,7 +517,7 @@ cd /opt/aura && docker compose pull aura && docker compose up -d aura && docker 
 docker inspect aura --format '{{index .Config.Labels "org.opencontainers.image.revision"}}'
 ```
 
-- [ ] **Step 4: Exercise it for real**
+- [x] **Step 4: Exercise it for real**
 
 Note the current primary model (Settings → Model routing) so it can be restored. Then, on `https://localhost`:
 1. Route to the OpenRouter video model used in spike 106; in a new chat attach an MP4 (the burned-in-timestamp clip) and ask what the first and last frames show. Expected: the answer reads the timestamps. Confirm in the daemon log that the request carried a `video_url` part (log the part types only, never bytes).
@@ -526,7 +526,7 @@ Note the current primary model (Settings → Model routing) so it can be restore
 4. Send a video note on Telegram to the linked chat with the video model routed; expected as in 1.
 5. Restore the operator's original primary model.
 
-- [ ] **Step 5: Record and commit**
+- [x] **Step 5: Record and commit**
 
 Write `docs/superpowers/verification/2026-09-19-video-to-model.md`: revision, model ids, per-case outcome, what it does not prove (per-model duration limits, very large clips). Then:
 ```bash
