@@ -16,8 +16,13 @@ import { expect, type Page } from '@playwright/test';
 
 type BrowserContext = ReturnType<Page['context']>;
 type BrowserStorageState = Awaited<ReturnType<BrowserContext['storageState']>>;
+type BrowserCookies = BrowserStorageState['cookies'];
 
-const authStateVersion = 1;
+// Version 2 caches the cookies alone. Version 1 stored the whole storageState and replayed its
+// localStorage into every later test, so whichever worker happened to sign in first handed the
+// others its language, theme and density — an English spec run after the Italian one looked for
+// English labels on an Italian panel. The session is a cookie; the rest belongs to each fixture.
+const authStateVersion = 2;
 const authLockStaleMs = 120_000;
 const authLockPollMs = 250;
 
@@ -64,33 +69,33 @@ function authStatePath(): string {
   return resolve(process.cwd(), 'test-results', '.auth', `authula-${digest}.json`);
 }
 
-function readAuthState(): BrowserStorageState | undefined {
+function readAuthState(): BrowserCookies | undefined {
   const path = authStatePath();
   if (!existsSync(path)) return undefined;
   try {
     const raw = JSON.parse(readFileSync(path, 'utf8')) as {
       version?: unknown;
-      state?: unknown;
+      cookies?: unknown;
     };
-    if (raw.version !== authStateVersion || typeof raw.state !== 'object' || raw.state === null) {
+    if (raw.version !== authStateVersion || !Array.isArray(raw.cookies)) {
       return undefined;
     }
-    const state = raw.state as BrowserStorageState;
+    const cookies = raw.cookies as BrowserCookies;
     const now = Date.now() / 1000;
-    const hasLiveSession = state.cookies.some(
+    const hasLiveSession = cookies.some(
       (cookie) =>
         /session/i.test(cookie.name) && (cookie.expires === -1 || cookie.expires > now + 30),
     );
-    return hasLiveSession ? state : undefined;
+    return hasLiveSession ? cookies : undefined;
   } catch {
     return undefined;
   }
 }
 
-function writeAuthState(state: BrowserStorageState) {
+function writeAuthState(cookies: BrowserCookies) {
   const path = authStatePath();
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify({ version: authStateVersion, state }), { encoding: 'utf8' });
+  writeFileSync(path, JSON.stringify({ version: authStateVersion, cookies }), { encoding: 'utf8' });
 }
 
 function clearAuthState() {
@@ -153,20 +158,10 @@ async function withAuthStateLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function applyAuthState(page: Page): Promise<boolean> {
-  const state = readAuthState();
-  if (state === undefined) return false;
-  if (state.cookies.length > 0) {
-    await page.context().addCookies(state.cookies);
-  }
-  if (state.origins.length > 0) {
-    await page.addInitScript((origins) => {
-      for (const originState of origins) {
-        if (originState.origin !== window.location.origin) continue;
-        for (const item of originState.localStorage) {
-          window.localStorage.setItem(item.name, item.value);
-        }
-      }
-    }, state.origins);
+  const cookies = readAuthState();
+  if (cookies === undefined) return false;
+  if (cookies.length > 0) {
+    await page.context().addCookies(cookies);
   }
   return true;
 }
@@ -296,7 +291,7 @@ async function ensureAuthState(page: Page) {
   await withAuthStateLock(async () => {
     if (await applyAuthState(page)) return;
     await authenticateViaApi(page);
-    writeAuthState(await page.context().storageState());
+    writeAuthState((await page.context().storageState()).cookies);
   });
 }
 
@@ -348,8 +343,13 @@ async function installRuntimeHealthFixture(page: Page) {
 }
 
 export async function gotoAuthenticated(page: Page, path: string) {
+  // English is the default the role- and label-based assertions read, but a fixture that
+  // pinned another language registers its init script first and this one would overwrite it
+  // (init scripts run in registration order, last writer wins) — so only fill an empty slot.
   await page.addInitScript(() => {
-    window.localStorage.setItem('aura.language', 'en');
+    if (window.localStorage.getItem('aura.language') === null) {
+      window.localStorage.setItem('aura.language', 'en');
+    }
   });
   await installCompletedProfileFixture(page);
   await installRuntimeHealthFixture(page);

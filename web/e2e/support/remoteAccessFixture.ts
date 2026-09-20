@@ -1,5 +1,6 @@
 import { expect, type Page } from '@playwright/test';
 import type { RemoteAccessStatusDTO } from '../../src/settings/remoteAccess/remoteAccessApi';
+import { gotoAuthenticated } from '../auth';
 import { installCalmPrismFixture } from './calmPrismFixture';
 
 export const initialRemoteStatus: RemoteAccessStatusDTO = {
@@ -108,9 +109,12 @@ export async function remoteAccessFixture(
 }
 
 export async function openRemoteAccess(page: Page) {
-  await page.goto('/?settings=remote-access');
-  // Settings is a lazily-loaded chunk. The documented local run serves it from a dev server
-  // that compiles it on first request, which outruns the default five-second expectation.
+  // RequireAuth gates the whole origin (internal/agui/auth.go): a bare goto answers
+  // 302 /login without a session, and the sign-in form has no settings panel to find.
+  // The routes above are page-level stubs, so the panel stays hermetic behind a real session.
+  await gotoAuthenticated(page, '/?settings=remote-access');
+  // Settings is a lazily-loaded chunk fetched on first open, which outruns the default
+  // five-second expectation.
   await expect(page.locator('#remote-access-heading')).toBeVisible({ timeout: 30_000 });
   await page.evaluate(() => document.fonts.ready);
 }
