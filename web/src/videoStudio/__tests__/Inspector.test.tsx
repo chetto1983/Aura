@@ -145,6 +145,71 @@ describe('Inspector, on a clip', () => {
     expect(field).toHaveProperty('value', '00:04.0');
   });
 
+  describe('removing a middle range', () => {
+    // The spec's cycle-1 list names it beside trim, split, mute and reorder. Split-split-remove
+    // reaches the same end state through three undo steps and is not the same gesture.
+    it('offers the clip’s own bounds to narrow', () => {
+      mount(project(), 'clip-2');
+
+      expect(screen.getByLabelText('videoStudio.inspector.rangeFrom')).toHaveProperty(
+        'value',
+        '00:04.0',
+      );
+      expect(screen.getByLabelText('videoStudio.inspector.rangeTo')).toHaveProperty(
+        'value',
+        '00:08.0',
+      );
+    });
+
+    it('takes a stretch out of the middle and closes the lane over it', () => {
+      const view = mount(project(), 'clip-2');
+
+      commit(screen.getByLabelText('videoStudio.inspector.rangeFrom'), '00:05.0');
+      commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:06.0');
+      expect(view.commands).toHaveLength(0);
+      fireEvent.click(screen.getByRole('button', { name: 'videoStudio.inspector.removeRange' }));
+
+      // The fields read SOURCE time, `removeRange` takes PROJECT time, and clip-2 starts at 4 in
+      // the lane and at 4 in its source. The second of the two is what goes.
+      const next = view.applied();
+      expect(next.video).toHaveLength(3);
+      expect(next.video[1]).toMatchObject({ sourceStart: 4, duration: 1 });
+      expect(next.video[2]).toMatchObject({ sourceStart: 6, duration: 2 });
+    });
+
+    it('converts by the clip’s place in the lane, not by its place in the source', () => {
+      // A clip whose source time and project time disagree: it starts at 4 in the lane and at 10
+      // in the file. A conversion that forgot one of the two would remove the wrong second.
+      const shifted: VideoProject = {
+        ...project(),
+        video: [
+          { id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 0, muted: false },
+          { id: 'clip-2', sourceId: 'src-a', duration: 4, sourceStart: 10, muted: false },
+        ],
+      };
+      const view = mount(shifted, 'clip-2');
+
+      commit(screen.getByLabelText('videoStudio.inspector.rangeFrom'), '00:11.0');
+      commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:12.0');
+      fireEvent.click(screen.getByRole('button', { name: 'videoStudio.inspector.removeRange' }));
+
+      const next = view.applied(shifted);
+      expect(next.video).toHaveLength(3);
+      expect(next.video[1]).toMatchObject({ sourceStart: 10, duration: 1 });
+      expect(next.video[2]).toMatchObject({ sourceStart: 12, duration: 2 });
+    });
+
+    it('lets the command refuse a range that is not one', () => {
+      const view = mount(project(), 'clip-2');
+
+      commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:04.0');
+      fireEvent.click(screen.getByRole('button', { name: 'videoStudio.inspector.removeRange' }));
+
+      // The refusal belongs to the workspace, which words it: the panel only hands over the edit.
+      expect(() => view.applied()).toThrow('videoStudio.refusal.emptyRange');
+    });
+  });
+
   it('mutes the clip', () => {
     const view = mount(project(), 'clip-2');
 

@@ -2,8 +2,15 @@ import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
 import { TimeField } from '../mediaEdit/TimeField';
-import { setMuted, setProperty, trimClip } from './commands';
-import { overlayWindow, type OverlayItem, type VideoItem, type VideoProject } from './project';
+import { removeRange, setMuted, setProperty, trimClip } from './commands';
+import {
+  clipStart,
+  overlayWindow,
+  type OverlayItem,
+  type VideoItem,
+  type VideoProject,
+} from './project';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 import { Switch } from '@/components/ui/switch';
@@ -155,7 +162,51 @@ function PropertyField<T>({ label, value, type = 'text', read, onCommit }: Prope
   );
 }
 
+interface RangeFieldsProps {
+  readonly project: VideoProject;
+  readonly clip: VideoItem;
+  readonly onCommand: Commit;
+}
+
+/**
+ * Take a stretch out of the middle of this clip and close the lane over it. The spec's cycle-1
+ * list names it beside trim, split, mute and reorder, and it is the only one of the five with no
+ * control: reaching it as split, split and remove is three undo steps and a different gesture.
+ *
+ * The two fields read SOURCE time, the frame the Start and End fields above already show, because
+ * that is what the operator is looking at while typing these. `removeRange` reads PROJECT time, so
+ * each is converted once by where the clip sits in the lane — the same conversion a dragged handle
+ * makes through `trimArgsFromSpan`, in the other direction.
+ *
+ * The removal waits for the button. A time field commits on blur, and a blur on the way to the
+ * second field must not take a stretch of the film with it.
+ */
+function RangeFields({ project, clip, onCommand }: RangeFieldsProps) {
+  const { t } = useTranslation();
+  const [from, setFrom] = useState(clip.sourceStart);
+  const [to, setTo] = useState(clip.sourceStart + clip.duration);
+  return (
+    <>
+      <TimeField label={t('videoStudio.inspector.rangeFrom')} value={from} onCommit={setFrom} />
+      <TimeField label={t('videoStudio.inspector.rangeTo')} value={to} onCommit={setTo} />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          const base = clipStart(project, clip.id) ?? 0;
+          const inLane = (source: number) => base + (source - clip.sourceStart);
+          onCommand((current) => removeRange(current, { from: inLane(from), to: inLane(to) }));
+        }}
+      >
+        {t('videoStudio.inspector.removeRange')}
+      </Button>
+    </>
+  );
+}
+
 interface ClipFieldsProps {
+  readonly project: VideoProject;
   readonly clip: VideoItem;
   readonly onCommand: Commit;
 }
@@ -171,7 +222,7 @@ interface ClipFieldsProps {
  * the same point of the same source, and a key made of the value alone would let a time typed
  * against one of them survive the switch to the other and commit there.
  */
-function ClipFields({ clip, onCommand }: ClipFieldsProps) {
+function ClipFields({ project, clip, onCommand }: ClipFieldsProps) {
   const { t } = useTranslation();
   const id = useId();
   const end = clip.sourceStart + clip.duration;
@@ -212,6 +263,14 @@ function ClipFields({ clip, onCommand }: ClipFieldsProps) {
         />
         <label htmlFor={id}>{t('videoStudio.inspector.mute')}</label>
       </div>
+      {/* Re-seeded whenever the clip it measures moves: the range is this clip's own bounds to
+          narrow, and bounds held from before an edit would name a stretch that has gone. */}
+      <RangeFields
+        key={`range-${clip.id}-${formatTimecode(clip.sourceStart)}-${formatTimecode(end)}`}
+        project={project}
+        clip={clip}
+        onCommand={onCommand}
+      />
     </>
   );
 }
@@ -375,7 +434,7 @@ export function Inspector({ project, selectedId, onCommand }: InspectorProps) {
       className="flex flex-col gap-3 rounded-[var(--radius-md)] bg-surface-1 p-3"
     >
       {clip !== undefined ? (
-        <ClipFields clip={clip} onCommand={onCommand} />
+        <ClipFields project={project} clip={clip} onCommand={onCommand} />
       ) : overlay !== undefined ? (
         <OverlayFields project={project} item={overlay} onCommand={onCommand} />
       ) : (
