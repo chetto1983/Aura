@@ -112,6 +112,16 @@ mkdir -p "$fixture_root/edge"
   cd "$fixture_root/edge"
   printf 'AURA_IMAGE=ghcr.io/chetto1983/aura:edge\n' > .env
   ensure_edge_channel_env
+  [ "$(env_value AURA_CLOUDFLARED_IMAGE)" = "ghcr.io/chetto1983/aura-cloudflared:edge" ] \
+    || { echo "FAIL: Cloudflare sidecar edge image missing" >&2; exit 1; }
+  set_env_value AURA_CLOUDFLARED_IMAGE example.invalid/operator/cloudflared:pinned
+  set_env_value AURA_CLOUDFLARED_PULL_POLICY missing
+  ensure_edge_channel_env
+  [ "$(env_value AURA_CLOUDFLARED_IMAGE)" = "example.invalid/operator/cloudflared:pinned" ] \
+    || { echo "FAIL: explicit Cloudflare image overwritten" >&2; exit 1; }
+  [ "$(env_value AURA_CLOUDFLARED_PULL_POLICY)" = "missing" ] \
+    || { echo "FAIL: explicit Cloudflare pull policy overwritten" >&2; exit 1; }
+  set_env_value AURA_CLOUDFLARED_PULL_POLICY always
   for policy in $never_policies; do
     [ "$(env_value "$policy")" = "always" ] \
       || { echo "FAIL: an :edge install leaves $policy at its compose default 'never'" >&2; exit 1; }

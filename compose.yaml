@@ -326,6 +326,7 @@ services:
       - aura-web
     volumes:
       - aura-home:/var/lib/aura
+      - aura-cloudflared-state:/var/lib/aura/cloudflared
       - ${AURA_BACKUP_DIR:-./backups}:/backups
       # Amendment #88: the fixed /workspace working root (AURA_WORKSPACE_DIR), durable
       # across recreates — the entrypoint bootstrap above lays out its subdirs on boot.
@@ -467,6 +468,33 @@ services:
       retries: 6
       start_period: 10s
 
+  aura-cloudflared:
+    build:
+      context: .
+      dockerfile: docker/cloudflared/Dockerfile
+    image: ${AURA_CLOUDFLARED_IMAGE:-aura-cloudflared:local}
+    pull_policy: ${AURA_CLOUDFLARED_PULL_POLICY:-never}
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: ${AURA_CLOUDFLARED_MEM_LIMIT:-192m}
+    cpus: ${AURA_CLOUDFLARED_CPUS:-0.50}
+    pids_limit: 64
+    stop_grace_period: 30s
+    networks:
+      - aura-tunnel
+    volumes:
+      - aura-cloudflared-state:/state:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1m,mode=0700,uid=65532,gid=65532
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/aura-cloudflared-supervisor", "healthcheck", "http://127.0.0.1:8085/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
   caddy:
     # Built, not pulled: the official caddy image ships no ACME DNS provider
     # modules, and DNS-01 is what lets this appliance hold a certificate a browser
@@ -479,6 +507,9 @@ services:
     pull_policy: ${AURA_CADDY_PULL_POLICY:-never}
     container_name: aura-caddy
     restart: unless-stopped
+    networks:
+      - default
+      - aura-tunnel
     depends_on:
       aura:
         condition: service_healthy
@@ -1543,6 +1574,7 @@ services:
       start_period: 20s
 
 volumes:
+  aura-cloudflared-state:
   aura-arcadedb:
   # One subdirectory per identity database, tiered retention (7 daily / 4 weekly /
   # 6 monthly) — see the arcadedb service for why the scheduler owns this and we do not.
@@ -1571,6 +1603,8 @@ volumes:
   aura-uv-cache-host:
 
 networks:
+  aura-tunnel:
+    driver: bridge
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress
   # remains enabled so metasearch can reach upstream engines.
   aura-web:

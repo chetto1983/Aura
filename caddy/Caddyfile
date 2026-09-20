@@ -16,11 +16,7 @@
 # is configured). The earlier token-gated proxy never exposed the cockpit SPA or the
 # Authula login — only the AG-UI API + the 9081 setup wizard — so an end user could not
 # reach a login page at all.
-:443 {
-	tls internal {
-		on_demand
-	}
-
+(aura_frontdoor) {
 	# Google OAuth redirect callback → PIM calendar sidecar. Unauthenticated by design
 	# (Google sends the browser here with ?code&state and no Aura session; the OAuth state
 	# binds the exchange). Register AURA_PIM_EXTERNAL_BASE_URL as https://<host> so the
@@ -47,6 +43,18 @@
 
 	# Everything else → the full cockpit + Authula login on 9080.
 	reverse_proxy aura:9080
+}
+
+:443 {
+	tls internal {
+		on_demand
+	}
+	import aura_frontdoor
+}
+
+# Only reachable inside Docker; cloudflared uses the same routing authority.
+http://:8080 {
+	import aura_frontdoor
 }
 
 # The MCP Apps sandbox origin (SEP-1865). A view is HTML a mounted MCP server

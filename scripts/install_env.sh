@@ -178,6 +178,8 @@ ensure_edge_channel_env() {
       # install).
       ensure_env_default AURA_CADDY_IMAGE ghcr.io/chetto1983/aura-caddy:edge
       ensure_env_default AURA_CADDY_PULL_POLICY always
+      ensure_env_default AURA_CLOUDFLARED_IMAGE ghcr.io/chetto1983/aura-cloudflared:edge
+      ensure_env_default AURA_CLOUDFLARED_PULL_POLICY always
       ensure_env_default AURA_INGEST_IMAGE ghcr.io/chetto1983/aura-ingest:edge
       ensure_env_default AURA_INGEST_PULL_POLICY always
       ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge

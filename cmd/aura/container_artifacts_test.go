@@ -201,8 +201,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")
 	}
 	for _, retired := range []string{
-		"read_only: true",
-		"cap_drop:",
 		"aura-runs:",
 		"aura-skills:",
 		"aura-exported-skills:",
@@ -257,8 +255,8 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		}
 	}
 	for _, retired := range []string{"cap_drop", "read_only"} {
-		if strings.Contains(compose, retired) {
-			t.Fatalf("compose.yaml should not contain %q:\n%s", retired, compose)
+		if strings.Contains(composeServiceBlock(t, compose, "aura"), retired) {
+			t.Fatalf("aura service should not contain %q", retired)
 		}
 	}
 	// The isolation tier must not silently disappear: runc is the default, so a typo in the

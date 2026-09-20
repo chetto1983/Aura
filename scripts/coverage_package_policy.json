@@ -24,6 +24,7 @@
     "github.com/chetto1983/aura/internal/canonicaljson": {"mode": "target"},
     "github.com/chetto1983/aura/internal/channels": {"mode": "target"},
     "github.com/chetto1983/aura/internal/channels/telegram": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/cloudflaresupervisor": {"mode": "target"},
     "github.com/chetto1983/aura/internal/config": {"mode": "target"},
     "github.com/chetto1983/aura/internal/conversations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron": {"mode": "target"},

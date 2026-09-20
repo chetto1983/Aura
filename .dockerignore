@@ -7,6 +7,8 @@
 !cmd/aura/**
 !cmd/arcadedb-mcp/
 !cmd/arcadedb-mcp/**
+!cmd/aura-cloudflared-supervisor/
+!cmd/aura-cloudflared-supervisor/**
 !internal/
 !internal/**
 !web/
@@ -18,6 +20,8 @@
 !docker/arcadedb-mcp/**
 !docker/caddy/
 !docker/caddy/**
+!docker/cloudflared/
+!docker/cloudflared/**
 !services/
 !services/ingest/
 !services/ingest/**

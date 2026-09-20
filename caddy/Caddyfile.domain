@@ -59,9 +59,7 @@
 	}
 }
 
-{$AURA_PUBLIC_HOST} {
-	import desec_tls
-
+(aura_frontdoor) {
 	# Google OAuth redirect callback → PIM calendar sidecar. Unauthenticated by design
 	# (Google sends the browser here with ?code&state and no Aura session; the OAuth state
 	# binds the exchange). Register AURA_PIM_EXTERNAL_BASE_URL as https://<host> so the
@@ -88,6 +86,15 @@
 
 	# Everything else → the full cockpit + Authula login on 9080.
 	reverse_proxy aura:9080
+}
+
+{$AURA_PUBLIC_HOST} {
+	import desec_tls
+	import aura_frontdoor
+}
+
+http://:8080 {
+	import aura_frontdoor
 }
 
 # The MCP Apps sandbox origin (SEP-1865). A view is HTML a mounted MCP server
@@ -126,22 +133,5 @@
 	tls internal {
 		on_demand
 	}
-
-	handle /admin/auth/google/callback {
-		reverse_proxy aura-pim-mcp:8080
-	}
-
-	@objectstore path_regexp ^/aura-[A-Za-z0-9][A-Za-z0-9_.-]{0,63}/
-	handle @objectstore {
-		reverse_proxy garage:3900
-	}
-
-	handle /setup {
-		reverse_proxy aura:9081
-	}
-	handle /setup/* {
-		reverse_proxy aura:9081
-	}
-
-	reverse_proxy aura:9080
+	import aura_frontdoor
 }
