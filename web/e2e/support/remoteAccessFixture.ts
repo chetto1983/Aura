@@ -109,6 +109,8 @@ export async function remoteAccessFixture(
 
 export async function openRemoteAccess(page: Page) {
   await page.goto('/?settings=remote-access');
-  await expect(page.locator('#remote-access-heading')).toBeVisible();
+  // Settings is a lazily-loaded chunk. The documented local run serves it from a dev server
+  // that compiles it on first request, which outruns the default five-second expectation.
+  await expect(page.locator('#remote-access-heading')).toBeVisible({ timeout: 30_000 });
   await page.evaluate(() => document.fonts.ready);
 }
