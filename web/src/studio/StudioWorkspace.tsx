@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
-import { useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { StudioOpen } from '../videoStudio/VideoStudio_sources';
 import { StudioBar } from './StudioBar';
 import { StudioHistory } from './StudioHistory';
 import { StudioStage, type ReuseState } from './StudioStage';
@@ -28,6 +29,11 @@ import {
   useStudioLibrary,
   useStudioModels,
 } from './useStudio';
+import { Button } from '@/components/ui/button';
+
+// The multi-track editor is a surface of its own and a heavy one (VideoFlow, the timeline
+// library): it is loaded when it is opened, not with the page.
+const VideoStudio = lazy(() => import('../videoStudio/VideoStudio'));
 
 // StudioWorkspace — one composer, one stage, one history, for the signed-in identity.
 //
@@ -67,6 +73,9 @@ export default function StudioWorkspace() {
     video: BLANK,
   });
   const [selectedId, setSelectedId] = useState<string>();
+  // What the editor is open on, and where its last save landed so it can be picked up again.
+  const [studio, setStudio] = useState<StudioOpen>();
+  const [savedProjectId, setSavedProjectId] = useState<string>();
   const [failure, setFailure] = useState<string>();
   /** A warning, not a refusal: the page did something, and the operator has to know what. */
   const [notice, setNotice] = useState<string>();
@@ -219,6 +228,33 @@ export default function StudioWorkspace() {
           </p>
         )}
 
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {shown?.kind === 'video' && shown.asset_id !== undefined ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="min-h-8 py-1 text-xs"
+              onClick={() => {
+                setStudio({ kind: 'source', assetId: shown.asset_id ?? '', name: shown.prompt });
+              }}
+            >
+              {t('videoStudio.open.fromStudio')}
+            </Button>
+          ) : null}
+          {savedProjectId === undefined ? null : (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="min-h-8 py-1 text-xs"
+              onClick={() => {
+                setStudio({ kind: 'saved', assetId: savedProjectId });
+              }}
+            >
+              {t('videoStudio.open.resume')}
+            </Button>
+          )}
+        </div>
+
         <CatalogState
           error={models.error}
           pending={models.isPending}
@@ -253,6 +289,18 @@ export default function StudioWorkspace() {
           void history.fetchNextPage();
         }}
       />
+
+      {studio === undefined ? null : (
+        <Suspense fallback={null}>
+          <VideoStudio
+            open={studio}
+            onSaved={setSavedProjectId}
+            onClose={() => {
+              setStudio(undefined);
+            }}
+          />
+        </Suspense>
+      )}
     </section>
   );
 }

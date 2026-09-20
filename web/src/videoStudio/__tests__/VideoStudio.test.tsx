@@ -1,0 +1,352 @@
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import i18n from '../../i18n/i18n';
+import type { VideoProject } from '../project';
+import type { StudioOpen } from '../VideoStudio_sources';
+
+// The workspace is where the parts become an editor, so these tests read the REAL bundle rather
+// than a `t` that echoes keys: a refusal reaches the screen through `t(error.reasonKey)`, which
+// the static i18n usage gate cannot see, and a key that resolves to nothing would otherwise ship
+// as an empty alert.
+
+const renderers = vi.hoisted(() => ({ instances: [] as { destroyed: number }[] }));
+
+vi.mock('@videoflow/renderer-dom', () => ({
+  default: class {
+    loadedFonts: Record<string, string> = {};
+    destroyed = 0;
+    constructor() {
+      renderers.instances.push(this);
+    }
+    loadFont(): Promise<void> {
+      return Promise.resolve();
+    }
+    loadVideo(): Promise<void> {
+      return Promise.resolve();
+    }
+    seek(): Promise<void> {
+      return Promise.resolve();
+    }
+    destroy(): void {
+      this.destroyed += 1;
+    }
+  },
+}));
+
+vi.mock('@videoflow/renderer-browser', () => ({
+  default: class {
+    loadedFonts: Record<string, string> = {};
+  },
+}));
+
+const flow = vi.hoisted(() => ({ exportProject: vi.fn() }));
+vi.mock('../videoflow', async (original) => ({
+  ...(await original<typeof import('../videoflow')>()),
+  exportProject: flow.exportProject,
+}));
+
+const media = vi.hoisted(() => ({ probeVideo: vi.fn() }));
+vi.mock('../../mediaEdit/videoMedia', () => media);
+
+const downloadBlob = vi.hoisted(() => vi.fn());
+vi.mock('../../mediaEdit/download', () => ({ downloadBlob }));
+
+const store = vi.hoisted(() => ({ saveProject: vi.fn(), loadProject: vi.fn() }));
+// Partially: `projectFileName` is the real rule, and it is what names the download.
+vi.mock('../projectStore', async (original) => ({
+  ...(await original<typeof import('../projectStore')>()),
+  ...store,
+}));
+
+const assets = vi.hoisted(() => ({ presignAsset: vi.fn(), finalizeAsset: vi.fn() }));
+vi.mock('../../chat/attachments/api', () => assets);
+vi.mock('../../chat/attachments/upload', () => ({ putWithProgress: () => Promise.resolve() }));
+
+const { default: VideoStudio } = await import('../VideoStudio');
+
+function project(): VideoProject {
+  return {
+    id: 'p',
+    name: 'demo',
+    size: { width: 1920, height: 1080 },
+    fps: 25,
+    sources: [
+      {
+        id: 'src-a',
+        assetId: 'asset-a',
+        kind: 'video',
+        duration: 20,
+        size: { width: 1920, height: 1080 },
+        fps: 25,
+      },
+    ],
+    video: [
+      { id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 0, muted: false },
+      { id: 'clip-2', sourceId: 'src-a', duration: 4, sourceStart: 4, muted: false },
+    ],
+    // The title hangs on clip-1, so removing that clip takes it with it.
+    overlays: [
+      {
+        id: 'lane-1',
+        items: [
+          {
+            id: 'title-1',
+            kind: 'text',
+            anchor: { clipId: 'clip-1', offset: 1 },
+            duration: 2,
+            props: { text: 'Ciao' },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function mount(open: StudioOpen = { kind: 'project', project: project() }, onSaved = vi.fn()) {
+  const onClose = vi.fn();
+  const view = render(<VideoStudio open={open} onClose={onClose} onSaved={onSaved} />);
+  return { ...view, onClose, onSaved };
+}
+
+function button(key: string): HTMLElement {
+  return screen.getByRole('button', { name: i18n.t(key) });
+}
+
+function item(key: string, index: number): HTMLElement {
+  return screen.getByRole('button', { name: i18n.t(key, { index }) });
+}
+
+/** The warning dialog, named so it is not confused with the editor's own full-screen layer —
+ *  `MediaEditorLayer` is a `role="dialog"` too. */
+function confirmation(): Promise<HTMLElement> {
+  return screen.findByRole('dialog', { name: i18n.t('videoStudio.confirm.title', { count: 1 }) });
+}
+
+/** Select the first item of `key`, ask to remove it and agree to lose its overlays. */
+async function removeSelected(key: string): Promise<void> {
+  fireEvent.click(item(key, 1));
+  fireEvent.click(button('videoStudio.command.remove'));
+  const dialog = await confirmation();
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: i18n.t('videoStudio.confirm.proceed') }),
+  );
+  await waitFor(() => {
+    expect(
+      screen.queryByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 2 }) }),
+    ).toBeNull();
+  });
+}
+
+beforeEach(() => {
+  renderers.instances = [];
+  flow.exportProject.mockResolvedValue(new Blob(['x'], { type: 'video/mp4' }));
+  media.probeVideo.mockResolvedValue({ duration: 9, width: 1280, height: 720, hasAudio: true });
+  store.saveProject.mockResolvedValue('file-1');
+  store.loadProject.mockResolvedValue({ project: project(), missing: [] });
+  assets.presignAsset.mockResolvedValue({
+    asset: { id: 'asset-new' },
+    upload: { upload_url: 'https://store/put', method: 'PUT', required_headers: {} },
+  });
+  assets.finalizeAsset.mockResolvedValue({ id: 'asset-new' });
+});
+
+afterEach(() => {
+  vi.clearAllMocks();
+  downloadBlob.mockReset();
+});
+
+describe('VideoStudio', () => {
+  it('opens on the project it was handed and draws the three panels', async () => {
+    mount();
+    expect(
+      await screen.findByRole('group', { name: i18n.t('videoStudio.timeline.label') }),
+    ).toBeTruthy();
+    expect(screen.getByTestId('video-stage')).toBeTruthy();
+    expect(
+      screen.getByRole('region', { name: i18n.t('videoStudio.inspector.label') }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 1 }) }),
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['en', 'There is nothing to cut here: the playhead sits on a clip’s edge.'],
+    ['it', "Qui non c'è niente da tagliare: l'indicatore è sul bordo di una clip."],
+  ])('says in %s why a command was refused', async (language, sentence) => {
+    await i18n.changeLanguage(language);
+    try {
+      mount();
+      await screen.findByTestId('video-stage');
+      // The playhead is at 0, which is clip-1's own edge: splitAt refuses rather than making a
+      // clip a nanosecond long.
+      fireEvent.click(button('videoStudio.command.split'));
+      expect((await screen.findByRole('alert')).textContent).toBe(sentence);
+    } finally {
+      await i18n.changeLanguage('en');
+    }
+  });
+
+  it('refuses a source the browser cannot decode before a byte is uploaded', async () => {
+    media.probeVideo.mockRejectedValue(new Error('no video track'));
+    mount();
+    await screen.findByTestId('video-stage');
+
+    const input = screen.getByLabelText(i18n.t('videoStudio.source.pick'));
+    fireEvent.change(input, {
+      target: { files: [new File(['x'], 'clip.mp4', { type: 'video/mp4' })] },
+    });
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      i18n.t('videoStudio.refusal.sourceUndecodable'),
+    );
+    expect(assets.presignAsset).not.toHaveBeenCalled();
+  });
+
+  it('uploads a source the browser can decode and puts it on the lane', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+
+    fireEvent.change(screen.getByLabelText(i18n.t('videoStudio.source.pick')), {
+      target: { files: [new File(['x'], 'clip.mp4', { type: 'video/mp4' })] },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) }),
+      ).toBeTruthy();
+    });
+    expect(assets.finalizeAsset).toHaveBeenCalledWith('asset-new');
+  });
+
+  it('says an overlay will go BEFORE the edit lands, and leaves the project alone if it is refused', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(item('videoStudio.timeline.clip', 1));
+    fireEvent.click(button('videoStudio.command.remove'));
+
+    const dialog = await confirmation();
+    expect(within(dialog).getByText(i18n.t('videoStudio.confirm.body', { count: 1 }))).toBeTruthy();
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: i18n.t('videoStudio.confirm.cancel') }),
+    );
+    // Still two clips and still a title: the question was asked without applying anything.
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 2 }) }),
+      ).toBeTruthy();
+    });
+    expect(item('videoStudio.timeline.overlayText', 1)).toBeTruthy();
+  });
+
+  it('removes the clip and its title once the operator agrees', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    await removeSelected('videoStudio.timeline.clip');
+
+    expect(
+      screen.queryByRole('button', {
+        name: i18n.t('videoStudio.timeline.overlayText', { index: 1 }),
+      }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 2 }) }),
+    ).toBeNull();
+  });
+
+  it('undoes the confirmed edit as one step', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    await removeSelected('videoStudio.timeline.clip');
+
+    fireEvent.click(button('videoStudio.command.undo'));
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 2 }) }),
+      ).toBeTruthy();
+    });
+    expect(
+      screen.getByRole('button', {
+        name: i18n.t('videoStudio.timeline.overlayText', { index: 1 }),
+      }),
+    ).toBeTruthy();
+  });
+
+  it('selects the title it just added, although the command cannot return its id', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.command.addText'));
+
+    // The inspector shows an overlay's fields only for a selected overlay.
+    expect(await screen.findByLabelText(i18n.t('videoStudio.inspector.text'))).toBeTruthy();
+  });
+
+  it('draws the export bar with its values and cancels the work it started', async () => {
+    let signal: AbortSignal | undefined;
+    flow.exportProject.mockImplementation(
+      (_p: unknown, _u: unknown, options: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          signal = options.signal;
+          options.signal?.addEventListener('abort', () => {
+            reject(new DOMException('aborted', 'AbortError'));
+          });
+        }),
+    );
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.export.action'));
+
+    const bar = await screen.findByRole('progressbar', {
+      name: i18n.t('videoStudio.export.progress'),
+    });
+    expect(bar.getAttribute('aria-valuemin')).toBe('0');
+    expect(bar.getAttribute('aria-valuemax')).toBe('100');
+    expect(bar.getAttribute('aria-valuenow')).toBe('0');
+
+    fireEvent.click(button('videoStudio.export.cancel'));
+    await waitFor(() => {
+      expect(signal?.aborted).toBe(true);
+    });
+    expect(downloadBlob).not.toHaveBeenCalled();
+    // An abort is the operator's own decision: it is not reported back as a failure.
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('downloads the finished export', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.export.action'));
+    await waitFor(() => {
+      expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), 'demo.mp4');
+    });
+  });
+
+  it('saves the project and says where it went', async () => {
+    const { onSaved } = mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.save.action'));
+
+    await waitFor(() => {
+      expect(store.saveProject).toHaveBeenCalled();
+    });
+    expect(onSaved).toHaveBeenCalledWith('file-1');
+    expect(await screen.findByText(i18n.t('videoStudio.save.saved'))).toBeTruthy();
+  });
+
+  it('says so when a saved project names a source the library no longer holds', async () => {
+    store.loadProject.mockResolvedValue({ project: project(), missing: ['src-a'] });
+    mount({ kind: 'saved', assetId: 'file-1' });
+
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      i18n.t('videoStudio.refusal.sourceMissingAsset'),
+    );
+  });
+
+  it('stops the preview renderer when it closes', async () => {
+    const { unmount } = mount();
+    await screen.findByTestId('video-stage');
+    unmount();
+    expect(renderers.instances.every((instance) => instance.destroyed > 0)).toBe(true);
+  });
+});

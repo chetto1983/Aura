@@ -25,6 +25,7 @@ import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settin
 import { remoteAccessEn, remoteAccessIt } from './resources.remoteAccess';
 import { shareEn, shareIt } from './resources.share';
 import { studioEn, studioIt } from './resources.studio';
+import { videoStudioEn, videoStudioIt } from './resources.videoStudio';
 import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
 
 export const resources = {
@@ -182,6 +183,7 @@ export const resources = {
       ...mediaEn,
       ...studioEn,
       ...mediaEditEn,
+      ...videoStudioEn,
       ...shareEn,
       ...filesEn,
       ...governanceEn,
@@ -449,6 +451,7 @@ export const resources = {
       ...mediaIt,
       ...studioIt,
       ...mediaEditIt,
+      ...videoStudioIt,
       ...shareIt,
       ...filesIt,
       ...governanceIt,

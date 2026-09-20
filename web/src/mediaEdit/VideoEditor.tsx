@@ -1,7 +1,8 @@
 import { RotateCcw, RotateCw, Play, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Asset } from '../chat/attachments/types';
+import { projectFromClip, type StudioOpen } from '../videoStudio/VideoStudio_sources';
 import { CropOverlay } from './CropOverlay';
 import {
   CROP_PRESETS,
@@ -32,6 +33,13 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 // VideoEditor — trim, crop, rotate and mute a clip in the browser, after the layout of Adobe
 // Express's and 123apps' trimmers: preview on top, filmstrip below, Start/End and Save last.
+//
+// It stays the phone's first answer for ONE clip. The multi-track editor is a way forward from
+// here, not a replacement: it opens on a project holding the trim as it stands, IN PLACE of this
+// surface rather than over it — two `MediaEditorLayer`s at once would leave the page underneath
+// reachable again as soon as the inner one closed.
+
+const VideoStudio = lazy(() => import('../videoStudio/VideoStudio'));
 
 export interface EditorProps {
   readonly asset: Asset;
@@ -63,6 +71,9 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
   const [progress, setProgress] = useState<number>();
   const [problem, setProblem] = useState<string>();
   const [unreadable, setUnreadable] = useState(false);
+  // Held rather than rebuilt per render: the multi-track editor re-opens whenever this value
+  // changes identity, and a new project on every keystroke would throw the history away.
+  const [studio, setStudio] = useState<StudioOpen>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -182,10 +193,41 @@ export default function VideoEditor({ asset, source, onClose }: EditorProps) {
   const percent = progress === undefined ? undefined : Math.round(progress * 100);
   const toolLabel = (item: Tool) => t(`mediaEdit.video.tool.${item}`);
 
+  // After every hook, and before this editor's own surface: only one full-screen layer is ever
+  // mounted, so closing the multi-track editor comes back to exactly this one.
+  if (studio !== undefined) {
+    return (
+      <Suspense fallback={null}>
+        <VideoStudio
+          open={studio}
+          onClose={() => {
+            setStudio(undefined);
+          }}
+        />
+      </Suspense>
+    );
+  }
+
   return (
     <MediaEditorLayer label={t('mediaEdit.editName', { name: asset.file_name })} onEscape={close}>
       <header className="flex items-center gap-3 border-b border-border px-4 py-2">
         <h2 className="min-w-0 flex-1 truncate font-mono text-sm">{asset.file_name}</h2>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          disabled={info === undefined}
+          onClick={() => {
+            if (info === undefined) return;
+            abortRef.current?.abort();
+            setStudio({
+              kind: 'project',
+              project: projectFromClip(asset.file_name, asset.id, info, range),
+            });
+          }}
+        >
+          {t('videoStudio.open.fromClip')}
+        </Button>
         <Button type="button" variant="ghost" size="sm" onClick={reset}>
           {t('mediaEdit.video.reset')}
         </Button>
