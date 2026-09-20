@@ -80,6 +80,16 @@ The public Cloudflare certificate terminates at the edge. External clients do no
 Caddy's internal CA. Direct IP/LAN clients continue to use the existing Caddy certificate and
 Authula flow.
 
+Measured correction (2026-09-20, Task 6): a disposable Caddy container using the shipped
+frontdoor, with no external network and a loopback echo backend, forwarded
+`http://remote.example.test` to Aura from the tunnel's HTTP listener even when the incoming
+`X-Forwarded-Proto` said `https`. Caddy replaces untrusted forwarded scheme headers by default.
+The shared Aura upstream must therefore explicitly send `X-Forwarded-Proto: https`: both
+supported browser paths terminate HTTPS (at Caddy or Cloudflare). This is required for Garage
+presigning and Authula origin handling. It does not establish trusted-client IP forwarding or
+prove the live Cloudflare path. Regression: `scripts/cloudflare_caddy_origin_test.sh`.
+Reference: [Caddy upstream headers](https://caddyserver.com/docs/caddyfile/directives/reverse_proxy#headers).
+
 ### Package boundaries
 
 - `internal/cloudflareapi`: typed Cloudflare REST client, request/response validation, pagination,
