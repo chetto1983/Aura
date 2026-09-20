@@ -177,6 +177,28 @@ func (s *Service) ListRecentImages(ctx context.Context, identityID string, limit
 	return s.Store.ListRecentImages(ctx, identityID, min(max(limit, 1), recentImagesMax))
 }
 
+// storedSizeMatchesUpload compares the object the store actually holds with the size the upload
+// declared. A presigned PUT that never carried its body leaves a 0-byte object the browser
+// believes it uploaded, and finalize used to accept it: a broken tile in the Studio picker and a
+// chat card over nothing (live, 2026-09-19). A declared 0 still refuses an empty object.
+func storedSizeMatchesUpload(declared, stored int64) error {
+	if stored == 0 {
+		return fmt.Errorf("%w: the uploaded object is empty", ErrAssetIncomplete)
+	}
+	if declared > 0 && stored != declared {
+		return fmt.Errorf("%w: %d bytes stored, %d declared", ErrAssetIncomplete, stored, declared)
+	}
+	return nil
+}
+
+// refuse marks the asset refused with the reason, drops the object no one will read, and hands
+// the caller the same error — the one exit every acceptance check takes.
+func (s *Service) refuse(ctx context.Context, objects objectstore.Store, ref objectstore.ObjectRef, asset Asset, identityID string, cause error) (Asset, error) {
+	updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusRefused, "asset_refused", cause.Error())
+	_ = objects.Delete(context.WithoutCancel(ctx), ref)
+	return updated, cause
+}
+
 // accept takes an uploaded object through every check that makes it an asset — it exists, it
 // is within the limits, its bytes are what its name claims — and stops at accepted. An empty
 // modality accepts any; anything else refuses a mismatch before a byte is read.
@@ -202,9 +224,10 @@ func (s *Service) accept(ctx context.Context, identityID, assetID string, modali
 		return Asset{}, err
 	}
 	if err = s.Limits.Validate(asset.Modality, asset.FileName, attrs.SizeBytes); err != nil {
-		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusRefused, "asset_refused", err.Error())
-		_ = objects.Delete(context.WithoutCancel(ctx), ref)
-		return updated, err
+		return s.refuse(ctx, objects, ref, asset, identityID, err)
+	}
+	if err = storedSizeMatchesUpload(asset.DeclaredSizeBytes, attrs.SizeBytes); err != nil {
+		return s.refuse(ctx, objects, ref, asset, identityID, err)
 	}
 	asset, err = s.Store.MarkUploaded(ctx, asset.ID, identityID, attrs.SizeBytes, attrs.ETag)
 	if err != nil {

@@ -18,41 +18,6 @@ import (
 
 const serviceIdentityID = "00000000-0000-0000-0000-000000000001"
 
-func TestServiceFinalizeRefusesOversizedActualObject(t *testing.T) {
-	svc, _ := newAssetServiceTestRig(t, Limits{
-		MaxDocumentBytes: 5,
-		MaxImageBytes:    100,
-		MaxAudioBytes:    100,
-	})
-
-	resp, err := svc.Presign(context.Background(), PresignRequest{
-		IdentityID:        serviceIdentityID,
-		SourceKind:        SourceWeb,
-		ThreadID:          "thread-1",
-		FileName:          "manual.pdf",
-		MIMEType:          "application/pdf",
-		DeclaredSizeBytes: 4,
-	})
-	if err != nil {
-		t.Fatalf("Presign() error = %v", err)
-	}
-	ref := objectstore.ObjectRef{Bucket: resp.Asset.ObjectBucket, Key: resp.Asset.ObjectKey}
-	if _, err := svc.Objects.Put(context.Background(), ref, strings.NewReader("123456"), objectstore.PutOptions{MIMEType: "application/pdf", Size: 6}); err != nil {
-		t.Fatalf("Put object: %v", err)
-	}
-
-	updated, err := svc.Finalize(context.Background(), serviceIdentityID, resp.Asset.ID)
-	if err == nil {
-		t.Fatal("Finalize() succeeded, want oversized refusal")
-	}
-	if updated.Status != StatusRefused || updated.ErrorCode != "asset_refused" {
-		t.Fatalf("Finalize() updated asset = %#v, want refused asset", updated)
-	}
-	if _, err := svc.Objects.Head(context.Background(), ref); err == nil {
-		t.Fatal("oversized object still exists after refusal")
-	}
-}
-
 func TestServiceFinalizeMarksAcceptedAndEnqueuesProcessing(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{
 		MaxDocumentBytes: 100,

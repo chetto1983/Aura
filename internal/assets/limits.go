@@ -15,6 +15,7 @@ import (
 var (
 	ErrAssetTooLarge    = errors.New("asset exceeds the size ceiling")
 	ErrAssetUnsupported = errors.New("unsupported asset type")
+	ErrAssetIncomplete  = errors.New("the uploaded object is not the size the upload declared")
 )
 
 type Limits struct {
