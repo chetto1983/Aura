@@ -14,6 +14,11 @@ source "$repo_root/scripts/install.sh"
 declare -F download_file >/dev/null || { echo "FAIL: download_file undefined after source" >&2; exit 1; }
 declare -F ensure_env_default >/dev/null || { echo "FAIL: ensure_env_default undefined after source" >&2; exit 1; }
 declare -F set_env_value >/dev/null || { echo "FAIL: set_env_value undefined after source" >&2; exit 1; }
+declare -F trust_caddy_local_ca >/dev/null || { echo "FAIL: trust_caddy_local_ca undefined after source" >&2; exit 1; }
+
+help="$(bash "$repo_root/scripts/install.sh" --help)"
+printf '%s\n' "$help" | grep -q -- '--trust-local-ca' \
+  || { echo "FAIL: installer help omits --trust-local-ca" >&2; exit 1; }
 
 # A sourcing script is not always argument-free: the argument loop in install.sh must not
 # treat the SOURCING script's arguments as its own, because a stray --help would call

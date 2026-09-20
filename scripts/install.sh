@@ -30,16 +30,18 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then AURA_EXECUTED=1; else AURA_EXECUTED=
 
 APPLIANCE=0
 GVISOR=0
+TRUST_LOCAL_CA=0
 INSTALL_DIR="${AURA_INSTALL_DIR:-}"
 CONFIG_FILE=""
 CFG_INSTALL_DIR=""; CFG_APPLIANCE=""; CFG_GVISOR=""
 
 usage() {
   cat <<'EOF'
-usage: install.sh [--appliance] [--gvisor] [--dir PATH] [--config PATH]
+usage: install.sh [--appliance] [--gvisor] [--trust-local-ca] [--dir PATH] [--config PATH]
 
   --appliance    install and enable the systemd aura.service unit
   --gvisor       provision runsc and set AURA_RUNTIME=runsc in .env
+  --trust-local-ca  trust Caddy's local CA for the current desktop user
   --dir PATH     installation directory (default: /opt/aura on Linux)
   --config PATH  read answers from an absolute-path config file (see the spec)
 EOF
@@ -50,6 +52,7 @@ if [ "$AURA_EXECUTED" = 1 ]; then
     case "$1" in
       --appliance) APPLIANCE=1 ;;
       --gvisor) APPLIANCE=1; GVISOR=1 ;;
+      --trust-local-ca) TRUST_LOCAL_CA=1 ;;
       --dir)
         [ "$#" -ge 2 ] || { echo "FAIL: --dir requires a path" >&2; exit 2; }
         INSTALL_DIR="$2"
@@ -393,6 +396,42 @@ install_systemd_unit() {
   esac
 }
 
+trust_caddy_local_ca() {
+  cert_dir="$(mktemp -d)"
+  cert_path="$cert_dir/aura-caddy-root.crt"
+  if ! docker cp aura-caddy:/data/caddy/pki/authorities/local/root.crt "$cert_path"; then
+    rm -rf "$cert_dir"
+    echo "FAIL: could not export Caddy's local CA from aura-caddy." >&2
+    return 1
+  fi
+
+  if [ "$OS" = "Linux" ] && grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
+    && command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    windows_cert_path="$(wslpath -w "$cert_path")"
+    if ! powershell.exe -NoLogo -NoProfile -NonInteractive -Command \
+      "\$result = Import-Certificate -FilePath '$windows_cert_path' -CertStoreLocation 'Cert:\CurrentUser\Root'; if (\$null -eq \$result) { exit 1 }"; then
+      rm -rf "$cert_dir"
+      echo "FAIL: Windows refused Caddy's local CA import." >&2
+      return 1
+    fi
+  elif [ "$OS" = "Darwin" ]; then
+    if ! security add-trusted-cert -r trustRoot -k "$HOME/Library/Keychains/login.keychain-db" "$cert_path"; then
+      rm -rf "$cert_dir"
+      echo "FAIL: macOS refused Caddy's local CA import." >&2
+      return 1
+    fi
+  elif [ "$OS" = "Linux" ] && command -v update-ca-certificates >/dev/null 2>&1; then
+    as_root install -m 0644 "$cert_path" /usr/local/share/ca-certificates/aura-caddy-local.crt
+    as_root update-ca-certificates
+  else
+    echo "FAIL: automatic CA trust is unsupported on ${OS}; import ${cert_path} manually." >&2
+    return 1
+  fi
+
+  rm -rf "$cert_dir"
+  echo "==> Caddy's local CA is trusted; fully restart the browser before opening Aura"
+}
+
 host_for_summary() {
   if command -v hostname >/dev/null 2>&1; then
     if hostname -I >/dev/null 2>&1; then
@@ -513,6 +552,9 @@ fi
 ensure_sandbox_image
 ensure_embed_model
 docker compose up -d --wait --wait-timeout 300
+if [ "$TRUST_LOCAL_CA" -eq 1 ]; then
+  trust_caddy_local_ca
+fi
 scripts/observability_sidecar_check.sh
 install_systemd_unit
 
