@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
-import { addOverlay, CommandRefusal, removeItem, splitAt } from './commands';
+import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem, splitAt } from './commands';
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
 import { clipAt, clipStart, projectDuration, type VideoProject } from './project';
@@ -223,9 +223,12 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     const offset = playhead - (clipStart(current, clip.id) ?? 0);
     const duration = Math.min(TITLE_SECONDS, clip.duration - offset);
     const props = { text: t('videoStudio.newTitle') };
-    run((current) =>
-      addOverlay(current, { kind: 'text', anchor: { clipId: clip.id, offset }, duration, props }),
-    );
+    const anchor = { clipId: clip.id, offset };
+    // The lane is chosen, not opened: a title joins the first lane that is free over its window,
+    // and only a title with nowhere to go gets a lane of its own. `undefined` IS that case, and
+    // it is the value `addOverlay` reads as "open one".
+    const trackId = freeOverlayTrack(current, anchor, duration);
+    run((current) => addOverlay(current, { trackId, kind: 'text', anchor, duration, props }));
   }
 
   async function save() {

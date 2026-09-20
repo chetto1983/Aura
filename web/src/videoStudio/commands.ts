@@ -317,6 +317,39 @@ export interface AddOverlayArgs {
   readonly trackId?: string | undefined;
 }
 
+/** Whether anything already on this lane covers `span`. One rule, read from both sides: the
+ *  command enforces it, and `freeOverlayTrack` asks it before choosing where to put an overlay. */
+function laneIsBusy(
+  project: VideoProject,
+  track: OverlayTrack,
+  span: { readonly start: number; readonly end: number },
+): boolean {
+  return track.items.some((other) => {
+    const window = overlayWindow(project, other.anchor, other.duration);
+    return span.start < window.end && window.start < span.end;
+  });
+}
+
+/**
+ * The lane an overlay can join, or `undefined` when every lane is busy over its window — which is
+ * what a caller passes as `trackId` to `addOverlay`, and `undefined` is exactly the value that
+ * opens a new one.
+ *
+ * This is the spec's "a third title needs a third lane, which the editor adds ON DEMAND". Adding a
+ * lane per overlay instead would be a lane per title, and two titles that never meet would sit on
+ * two lanes for no reason an operator could name.
+ */
+export function freeOverlayTrack(
+  project: VideoProject,
+  anchor: OverlayAnchor,
+  duration: number,
+): string | undefined {
+  // `overlayWindow` clamps the anchor exactly as `addOverlay` does before storing it, so the lane
+  // is judged against the window the overlay will really occupy.
+  const span = overlayWindow(project, anchor, duration);
+  return project.overlays.find((lane) => !laneIsBusy(project, lane, span))?.id;
+}
+
 /**
  * Hang a text or an image on a clip. Without a `trackId` it opens a lane of its own, which is how
  * a third title gets a third lane; with one it has to fit, because two overlays over the same
@@ -345,11 +378,7 @@ export function addOverlay(project: VideoProject, args: AddOverlayArgs): VideoPr
   }
   const track = project.overlays.find((lane) => lane.id === args.trackId);
   if (track === undefined) throw new Error(`videoStudio: no overlay track named ${args.trackId}`);
-  const collides = track.items.some((other) => {
-    const window = overlayWindow(project, other.anchor, other.duration);
-    return span.start < window.end && window.start < span.end;
-  });
-  if (collides) throw new CommandRefusal(REFUSAL.overlayOverlap);
+  if (laneIsBusy(project, track, span)) throw new CommandRefusal(REFUSAL.overlayOverlap);
   return withTrackItems(project, track.id, (items) => [...items, item]);
 }
 

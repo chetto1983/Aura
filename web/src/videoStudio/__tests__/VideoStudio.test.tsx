@@ -281,6 +281,53 @@ describe('VideoStudio', () => {
     ).toBeTruthy();
   });
 
+  /** Walk the playhead forward `seconds` whole seconds — shift-arrow is a second, plain is a
+   *  frame — which is the only way to move it without a layout jsdom does not have. */
+  function scrubForward(seconds: number) {
+    const slider = screen.getByRole('slider', { name: i18n.t('videoStudio.timeline.playhead') });
+    for (let step = 0; step < seconds; step += 1) {
+      fireEvent.keyDown(slider, { key: 'ArrowRight', shiftKey: true });
+    }
+  }
+
+  function lane(index: number): HTMLElement | null {
+    return screen.queryByText(i18n.t('videoStudio.timeline.overlayLane', { index }));
+  }
+
+  it('puts a second title on the lane that is free rather than opening another', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    // `lane-1` already holds a title over clip-1's 1s..3s. At 4s — clip-2's first frame — a new
+    // three-second title runs 4s..7s and meets nothing, so it belongs on that same lane.
+    scrubForward(4);
+    fireEvent.click(button('videoStudio.command.addText'));
+
+    await waitFor(() => {
+      expect(screen.getAllByRole('button', { name: /^Title/ })).toHaveLength(2);
+    });
+    expect(lane(1)).toBeTruthy();
+    expect(lane(2)).toBeNull();
+  });
+
+  it('opens the next lane for a title that would cover an instant already taken', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    // The playhead is at 0, so this title runs 0s..3s and overlaps the one already on `lane-1`.
+    // A lane on demand is what the spec asks for, and this is the demand.
+    fireEvent.click(button('videoStudio.command.addText'));
+
+    await waitFor(() => {
+      expect(lane(2)).toBeTruthy();
+    });
+    // One item per lane: the label counts within its own lane, so two "Title 1"s are two lanes
+    // holding one title each — not one lane holding two.
+    expect(
+      screen.getAllByRole('button', {
+        name: i18n.t('videoStudio.timeline.overlayText', { index: 1 }),
+      }),
+    ).toHaveLength(2);
+  });
+
   it('selects the title it just added, although the command cannot return its id', async () => {
     mount();
     await screen.findByTestId('video-stage');

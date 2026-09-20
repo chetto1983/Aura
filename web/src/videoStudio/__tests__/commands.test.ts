@@ -3,6 +3,7 @@ import {
   addClip,
   addOverlay,
   CommandRefusal,
+  freeOverlayTrack,
   moveClip,
   removeItem,
   removeRange,
@@ -441,5 +442,36 @@ describe('every command is pure', () => {
     setProperty(before, { itemId: 'title', key: 'text', value: 'x' });
     removeItem(before, { itemId: 'title' });
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe('freeOverlayTrack', () => {
+  // The lane an overlay JOINS, which is what makes the spec's third lane arrive on demand
+  // instead of once per title. `lane-1` is busy over 5s..6s — its title hangs on clip-2, which
+  // starts at 4 — and free everywhere else.
+  it('names the first lane whose window is free', () => {
+    expect(freeOverlayTrack(project(), { clipId: 'clip-1', offset: 0 }, 2)).toBe('lane-1');
+  });
+
+  it('names nothing when every lane is busy over that window', () => {
+    expect(freeOverlayTrack(project(), { clipId: 'clip-2', offset: 0.5 }, 1)).toBeUndefined();
+  });
+
+  it('names nothing when there is no lane at all', () => {
+    expect(
+      freeOverlayTrack({ ...project(), overlays: [] }, { clipId: 'clip-1', offset: 0 }, 1),
+    ).toBeUndefined();
+  });
+
+  it('passes a busy lane by for the next free one', () => {
+    const two = addOverlay(project(), {
+      kind: 'text',
+      anchor: { clipId: 'clip-1', offset: 0 },
+      duration: 1,
+      props: {},
+    });
+    // 5s..5.5s sits inside lane-1's title and outside the new lane's, so the answer is the
+    // SECOND lane — the picker walks past a busy one rather than stopping at it.
+    expect(freeOverlayTrack(two, { clipId: 'clip-2', offset: 1 }, 0.5)).toBe(two.overlays[1]?.id);
   });
 });
