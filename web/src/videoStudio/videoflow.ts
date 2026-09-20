@@ -58,33 +58,63 @@ export interface FontLoadingRenderer {
   loadedFonts: Record<string, string>;
 }
 
+/** The stylesheet a family is waiting on, so two layers asking for the same one share a single
+ *  `<link>` and a single wait. The promise rides on the element rather than in a map of its own:
+ *  when the link goes, the memory of it goes too, which is what makes a failure retryable. */
+const STYLESHEET_LOADS = new WeakMap<HTMLLinkElement, Promise<void>>();
+
+function linkStylesheet(name: string, href: string): Promise<void> {
+  const existing = document.querySelector<HTMLLinkElement>(`link[data-local-font="${name}"]`);
+  if (existing !== null) return STYLESHEET_LOADS.get(existing) ?? Promise.resolve();
+  const link = document.createElement('link');
+  link.rel = 'stylesheet';
+  link.href = href;
+  link.dataset.localFont = name;
+  const loading = new Promise<void>((resolve, reject) => {
+    link.onload = () => {
+      resolve();
+    };
+    link.onerror = () => {
+      reject(new Error(`videoStudio: ${href} did not load`));
+    };
+  }).catch((failure: unknown) => {
+    // A stylesheet that failed must not become permanent. Dropping the link drops the only record
+    // of the attempt, so the next layer asking for this family gets a fresh one.
+    link.remove();
+    throw failure;
+  });
+  STYLESHEET_LOADS.set(link, loading);
+  document.head.appendChild(link);
+  return loading;
+}
+
 /**
  * Point a renderer's font loading at our own origin. Replacing the one public method keeps the
  * whole pipeline — `document.fonts` plus the FontEmbedder's SVG inlining, which reads
  * `loadedFonts` — and a family we do not serve is left to the fallback stack rather than fetched.
+ *
+ * Not a React hook, whatever the shape suggests: it takes a renderer and gives it back.
  */
-export function useLocalFonts<R extends FontLoadingRenderer>(renderer: R): R {
+export function withLocalFonts<R extends FontLoadingRenderer>(renderer: R): R {
   renderer.loadFont = async (name: string): Promise<void> => {
-    if (name in renderer.loadedFonts) return;
-    const href = LOCAL_FONTS[name];
+    // `hasOwn`, not `in`: a family called `constructor` or `toString` would otherwise answer for
+    // the prototype's and be handed a function as its stylesheet.
+    if (Object.hasOwn(renderer.loadedFonts, name)) return;
+    const href = Object.hasOwn(LOCAL_FONTS, name) ? LOCAL_FONTS[name] : undefined;
     if (href === undefined) return;
-    renderer.loadedFonts[name] = href;
-    if (!document.querySelector(`link[data-local-font="${name}"]`)) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = href;
-      link.dataset.localFont = name;
-      const loaded = new Promise<void>((resolve, reject) => {
-        link.onload = () => {
-          resolve();
-        };
-        link.onerror = () => {
-          reject(new Error(`videoStudio: ${href} did not load`));
-        };
-      });
-      document.head.appendChild(link);
-      await loaded;
+    try {
+      await linkStylesheet(name, href);
+    } catch {
+      // Explicitly silenced, and it lands where a family we do not serve lands: the fallback
+      // stack. Nothing is recorded, so the next layer asking for it tries the stylesheet again
+      // instead of inheriting this failure — and failing a whole export over a font would be
+      // harsher than VideoFlow is with its own.
+      return;
     }
+    // Recorded only once the face is really there: `loadedFonts` is what the FontEmbedder inlines
+    // into every rasterized frame, so an entry pointing at a stylesheet that never loaded would
+    // embed nothing and burn the fallback font into the video.
+    renderer.loadedFonts[name] = href;
     await document.fonts.load(`1em "${name}"`);
   };
   return renderer;
@@ -202,9 +232,10 @@ interface PrimableRenderer {
  * 2 880 512 samples. The render-time saving is the noisy figure (−22 % and −40 % in two runs); the
  * decode collapse is the exact one.
  */
-async function primeDecodedBuffers(renderer: BrowserRenderer): Promise<void> {
+async function primeDecodedBuffers(renderer: BrowserRenderer, signal?: AbortSignal): Promise<void> {
   const primable = renderer as unknown as PrimableRenderer;
   await primable.initLayers();
+  signal?.throwIfAborted();
   const audioCtx = new OfflineAudioContext(2, MIX_SAMPLE_RATE, MIX_SAMPLE_RATE);
   const bySource = new Map<string, Promise<AudioBuffer | null>>();
   for (const layer of primable.layers) {
@@ -217,13 +248,17 @@ async function primeDecodedBuffers(renderer: BrowserRenderer): Promise<void> {
       // decoder anyway because `RuntimeVideoLayer.hasAudio` is hard-coded true — resolves null and
       // is left to the mixer's own path, which catches the same failure. Failing the export here
       // would be stricter than VideoFlow is with itself.
-      decoding = fetch(source)
+      decoding = fetch(source, signal ? { signal } : undefined)
         .then((response) => response.arrayBuffer())
         .then((bytes) => audioCtx.decodeAudioData(bytes))
         .catch(() => null);
       bySource.set(source, decoding);
     }
     const buffer = await decoding;
+    // That catch swallows an aborted fetch along with an undecodable source, so the signal is what
+    // tells the two apart. `decodeAudioData` has no cancellation of its own: a decode already
+    // running finishes, and nothing after it is ever scheduled.
+    signal?.throwIfAborted();
     if (buffer) layer.decodedBuffer = buffer;
   }
 }
@@ -244,28 +279,33 @@ export async function exportProject(
   urls: MediaUrls,
   options: ExportOptions = {},
 ): Promise<Blob> {
-  options.signal?.throwIfAborted();
+  const { signal } = options;
+  signal?.throwIfAborted();
   const json = await toVideoJSON(project, urls);
-  // Not a React hook: `useLocalFonts` is VideoFlow's own name for the font seam (spike 107), and
-  // this module is not part of any component tree.
-  // eslint-disable-next-line react-hooks/rules-of-hooks
-  const renderer = useLocalFonts(new BrowserRenderer(json));
+  // Rechecked after every await, because the listener below cannot cover what happens before it
+  // exists: an abort landing while the project compiles would otherwise construct a renderer that
+  // nothing ever destroys.
+  signal?.throwIfAborted();
+  const renderer = withLocalFonts(new BrowserRenderer(json));
   let closed = false;
   const close = (): void => {
     if (closed) return;
     closed = true;
     renderer.destroy();
   };
-  options.signal?.addEventListener('abort', close, { once: true });
+  signal?.addEventListener('abort', close, { once: true });
   try {
-    await primeDecodedBuffers(renderer);
+    await primeDecodedBuffers(renderer, signal);
+    // The priming loop reaches its own check only when there is audio to prime; a lane of stills
+    // would otherwise fall straight through into an export the editor has already closed.
+    signal?.throwIfAborted();
     return await renderer.exportVideo({
       worker: true,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
-      ...(options.signal ? { signal: options.signal } : {}),
+      ...(signal ? { signal } : {}),
     });
   } finally {
-    options.signal?.removeEventListener('abort', close);
+    signal?.removeEventListener('abort', close);
     close();
   }
 }

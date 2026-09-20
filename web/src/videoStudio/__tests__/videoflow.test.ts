@@ -3,7 +3,7 @@ import {
   exportProject,
   LOCAL_FONTS,
   toVideoJSON,
-  useLocalFonts,
+  withLocalFonts,
   type FontLoadingRenderer,
 } from '../videoflow';
 import type { VideoProject } from '../project';
@@ -103,6 +103,10 @@ vi.mock('@videoflow/renderer-browser', () => ({
 
 const decoded = { calls: [] as ArrayBuffer[] };
 
+// What the browser does with the stylesheet link this module appends: a test that exercises a
+// failed font switches it to 'error'.
+const stylesheet = { outcome: 'load' as 'load' | 'error' };
+
 function project(): VideoProject {
   return {
     id: 'p',
@@ -166,6 +170,7 @@ beforeEach(() => {
   renderer.exportOptions.length = 0;
   renderer.exportImpl = null;
   decoded.calls.length = 0;
+  stylesheet.outcome = 'load';
 
   vi.stubGlobal(
     'fetch',
@@ -188,7 +193,7 @@ beforeEach(() => {
   });
   vi.spyOn(document.head, 'appendChild').mockImplementation(<T extends Node>(node: T): T => {
     Node.prototype.appendChild.call(document.head, node);
-    queueMicrotask(() => node.dispatchEvent(new Event('load')));
+    queueMicrotask(() => node.dispatchEvent(new Event(stylesheet.outcome)));
     return node;
   });
 });
@@ -299,10 +304,10 @@ describe('toVideoJSON', () => {
   });
 });
 
-describe('useLocalFonts', () => {
+describe('withLocalFonts', () => {
   it('serves a known family from our own origin instead of Google Fonts', async () => {
     const stockLoadFont = vi.fn(() => Promise.resolve());
-    const patched = useLocalFonts<FontLoadingRenderer>({
+    const patched = withLocalFonts<FontLoadingRenderer>({
       loadedFonts: {},
       loadFont: stockLoadFont,
     });
@@ -315,7 +320,7 @@ describe('useLocalFonts', () => {
   });
 
   it('links a family once, however many layers ask for it', async () => {
-    const patched = useLocalFonts<FontLoadingRenderer>({
+    const patched = withLocalFonts<FontLoadingRenderer>({
       loadedFonts: {},
       loadFont: vi.fn(() => Promise.resolve()),
     });
@@ -325,12 +330,35 @@ describe('useLocalFonts', () => {
     expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(1);
   });
 
+  it('lets a family be retried after its stylesheet failed', async () => {
+    const patched = withLocalFonts<FontLoadingRenderer>({
+      loadedFonts: {},
+      loadFont: vi.fn(() => Promise.resolve()),
+    });
+    stylesheet.outcome = 'error';
+    await patched.loadFont('Atkinson Hyperlegible Next');
+
+    // Nothing of the failure survives: no dead link, and no entry that would make the next
+    // attempt return at once and leave the text on the fallback stack for good.
+    expect(patched.loadedFonts).toEqual({});
+    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(0);
+
+    stylesheet.outcome = 'load';
+    await patched.loadFont('Atkinson Hyperlegible Next');
+
+    expect(patched.loadedFonts['Atkinson Hyperlegible Next']).toBe('/fonts/atkinson.css');
+    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(1);
+  });
+
   it('leaves an unknown family to the fallback stack rather than fetching it', async () => {
-    const patched = useLocalFonts<FontLoadingRenderer>({
+    const patched = withLocalFonts<FontLoadingRenderer>({
       loadedFonts: {},
       loadFont: vi.fn(() => Promise.resolve()),
     });
     await patched.loadFont('Comic Sans MS');
+    // A family whose name is a property of Object.prototype is still an unknown family, not a
+    // function to link as a stylesheet.
+    await patched.loadFont('toString');
 
     expect(patched.loadedFonts).toEqual({});
     expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(0);
@@ -435,6 +463,58 @@ describe('exportProject', () => {
     controller.abort();
 
     await expect(running).rejects.toThrow();
+    expect(renderer.instances[0]?.destroyed).toBe(1);
+  });
+
+  it('constructs no renderer when the abort lands while the project is being compiled', async () => {
+    const controller = new AbortController();
+
+    const running = exportProject(project(), urls, { signal: controller.signal });
+    // Synchronously after the call: `exportProject` is suspended inside `toVideoJSON`, past the
+    // first check and before any listener could exist.
+    controller.abort();
+
+    await expect(running).rejects.toThrow();
+    expect(renderer.instances).toHaveLength(0);
+  });
+
+  it('stops the pre-decode when the abort lands before the export starts', async () => {
+    const controller = new AbortController();
+    const started: AbortSignal[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init?: { signal?: AbortSignal }) => {
+        if (init?.signal) started.push(init.signal);
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              reject(new DOMException('aborted', 'AbortError'));
+            },
+            { once: true },
+          );
+        });
+      }),
+    );
+    renderer.layers = [
+      {
+        json: { settings: { source: '/api/assets/asset-a/download' } },
+        hasAudio: true,
+        decodedBuffer: null,
+      },
+    ];
+
+    const running = exportProject(project(), urls, { signal: controller.signal });
+    await vi.waitFor(() => {
+      expect(started).toHaveLength(1);
+    });
+    controller.abort();
+
+    await expect(running).rejects.toThrow();
+    // The fetch was cancellable, the decode never ran, and the export was never asked for.
+    expect(started[0]).toBe(controller.signal);
+    expect(decoded.calls).toHaveLength(0);
+    expect(renderer.exportOptions).toHaveLength(0);
     expect(renderer.instances[0]?.destroyed).toBe(1);
   });
 
