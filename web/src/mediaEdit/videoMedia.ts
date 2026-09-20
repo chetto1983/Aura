@@ -26,6 +26,10 @@ export interface VideoInfo {
   readonly width: number;
   readonly height: number;
   readonly hasAudio: boolean;
+  /** Whether this browser holds a decoder for the video track. Parsing the container is not
+   *  the same question: an MPEG-4 Part 2 clip answers a size and a duration and still has no
+   *  decoder anywhere, and a caller that composes it gets black frames rather than an error. */
+  readonly decodable: boolean;
 }
 
 /** `empty`: the conversion ran and wrote nothing. A kind rather than an Error, so the editor
@@ -82,6 +86,7 @@ export function probeVideo(source: Blob, signal?: AbortSignal): Promise<VideoInf
       width: await video.getDisplayWidth(),
       height: await video.getDisplayHeight(),
       hasAudio: audio !== null,
+      decodable: await video.canDecode(),
     };
   });
 }

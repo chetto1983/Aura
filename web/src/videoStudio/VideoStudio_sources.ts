@@ -52,13 +52,23 @@ export interface ProbedSource {
  * Read the bytes, or refuse them. Separate from `sourceEdit` so a PICKED file is probed before
  * it is uploaded: a clip this browser cannot decode is refused without paying for the transfer,
  * and the refusal names the browser rather than the server.
+ *
+ * Two different failures, one refusal. A file that will not parse throws on the way in. A file
+ * that parses and has no decoder here — MPEG-4 Part 2, HEVC in a browser without it — is the
+ * commoner one and the only one the refusal's own sentence describes: it arrives with a size
+ * and a duration, and nothing but `decodable` distinguishes it from a clip that would play.
+ * The single-clip editor still opens such a file, because a copy-trim never decodes a frame;
+ * a COMPOSITION always does, and VideoFlow answers a layer it cannot decode with black.
  */
 export async function probeSource(bytes: Blob): Promise<ProbedSource> {
+  let probed;
   try {
-    return await probeVideo(bytes);
+    probed = await probeVideo(bytes);
   } catch {
     throw new CommandRefusal(REFUSAL_UNDECODABLE);
   }
+  if (!probed.decodable) throw new CommandRefusal(REFUSAL_UNDECODABLE);
+  return probed;
 }
 
 /**

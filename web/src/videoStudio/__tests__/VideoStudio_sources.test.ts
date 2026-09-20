@@ -36,14 +36,22 @@ function serve(status: number): void {
 }
 
 describe('probeSource', () => {
-  it('refuses what the browser cannot decode, by key', async () => {
+  it('refuses a file it cannot even read, by key', async () => {
     media.probeVideo.mockRejectedValue(new Error('no video track'));
     await expect(probeSource(new Blob())).rejects.toThrow(CommandRefusal);
     await expect(probeSource(new Blob())).rejects.toThrow(REFUSAL_UNDECODABLE);
   });
 
+  it('refuses a file it can read but not decode, which is the commoner one', async () => {
+    // The case the refusal sentence describes and the one a parse alone cannot see: an
+    // MPEG-4 Part 2 clip parses, answers a display size and a duration, and has no decoder
+    // in any browser. Accepting it puts a layer in the composition that exports black.
+    media.probeVideo.mockResolvedValue({ ...PORTRAIT, hasAudio: true, decodable: false });
+    await expect(probeSource(new Blob())).rejects.toThrow(REFUSAL_UNDECODABLE);
+  });
+
   it('passes the three numbers through when it decodes', async () => {
-    media.probeVideo.mockResolvedValue({ ...PORTRAIT, hasAudio: true });
+    media.probeVideo.mockResolvedValue({ ...PORTRAIT, hasAudio: true, decodable: true });
     expect(await probeSource(new Blob())).toMatchObject(PORTRAIT);
   });
 });
@@ -101,7 +109,7 @@ describe('openedProject', () => {
 
   it('builds a project from a seeded asset, through the same probe', async () => {
     serve(200);
-    media.probeVideo.mockResolvedValue({ ...PORTRAIT, hasAudio: false });
+    media.probeVideo.mockResolvedValue({ ...PORTRAIT, hasAudio: false, decodable: true });
     const opened = await openedProject(
       { kind: 'source', assetId: 'asset-a', name: '  a prompt  ' },
       SOURCE,

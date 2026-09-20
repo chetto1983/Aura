@@ -141,7 +141,13 @@ async function removeSelected(key: string): Promise<void> {
 beforeEach(() => {
   renderers.instances = [];
   flow.exportProject.mockResolvedValue(new Blob(['x'], { type: 'video/mp4' }));
-  media.probeVideo.mockResolvedValue({ duration: 9, width: 1280, height: 720, hasAudio: true });
+  media.probeVideo.mockResolvedValue({
+    duration: 9,
+    width: 1280,
+    height: 720,
+    hasAudio: true,
+    decodable: true,
+  });
   store.saveProject.mockResolvedValue('file-1');
   store.loadProject.mockResolvedValue({ project: project(), missing: [] });
   assets.presignAsset.mockResolvedValue({
@@ -423,7 +429,13 @@ describe('VideoStudio', () => {
   });
 
   it('says so when the first source re-frames an empty project', async () => {
-    media.probeVideo.mockResolvedValue({ duration: 6, width: 1080, height: 1920, hasAudio: true });
+    media.probeVideo.mockResolvedValue({
+      duration: 6,
+      width: 1080,
+      height: 1920,
+      hasAudio: true,
+      decodable: true,
+    });
     mount({ kind: 'project', project: { ...project(), sources: [], video: [], overlays: [] } });
     await screen.findByTestId('video-stage');
 
@@ -437,7 +449,13 @@ describe('VideoStudio', () => {
   });
 
   it('says nothing about the frame when a second source does not change it', async () => {
-    media.probeVideo.mockResolvedValue({ duration: 6, width: 1080, height: 1920, hasAudio: true });
+    media.probeVideo.mockResolvedValue({
+      duration: 6,
+      width: 1080,
+      height: 1920,
+      hasAudio: true,
+      decodable: true,
+    });
     mount();
     await screen.findByTestId('video-stage');
 

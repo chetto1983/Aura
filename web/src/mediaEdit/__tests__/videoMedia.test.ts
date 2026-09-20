@@ -123,6 +123,11 @@ beforeEach(() => {
   state.readGate = undefined;
   state.frameGate = undefined;
   state.audio = {};
+  state.video = {
+    getDisplayWidth: () => Promise.resolve(1280),
+    getDisplayHeight: () => Promise.resolve(720),
+    canDecode: () => Promise.resolve(true),
+  };
 });
 
 /** Lets every pending microtask run. */
@@ -143,16 +148,29 @@ function gate(): { readonly promise: Promise<void>; readonly open: () => void } 
 const EDIT = { start: 1, end: 3, rotation: 0 as const, mute: false };
 
 describe('probeVideo', () => {
-  it('reports duration, display size and audio, and releases the file', async () => {
+  it('reports duration, display size, audio and whether the track decodes here', async () => {
     await expect(probeVideo(new Blob())).resolves.toEqual({
       duration: 10,
       width: 1280,
       height: 720,
       hasAudio: true,
+      decodable: true,
     });
     state.audio = null;
     await expect(probeVideo(new Blob())).resolves.toMatchObject({ hasAudio: false });
     expect(state.disposed).toBe(2);
+  });
+
+  it('reports a track this browser holds no decoder for, rather than hiding it', async () => {
+    // Measured on an MPEG-4 Part 2 clip (`mp4v`): Mediabunny parses the container, answers
+    // `codec: null` and a display size, and only `canDecode()` says the picture will never
+    // arrive. A probe that does not ask cannot tell that file from a playable one.
+    state.video = {
+      getDisplayWidth: () => Promise.resolve(320),
+      getDisplayHeight: () => Promise.resolve(180),
+      canDecode: () => Promise.resolve(false),
+    };
+    await expect(probeVideo(new Blob())).resolves.toMatchObject({ decodable: false });
   });
 
   it('lets go of the file the moment its signal aborts, before the read completes', async () => {
