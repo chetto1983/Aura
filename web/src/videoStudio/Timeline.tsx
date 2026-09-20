@@ -3,6 +3,7 @@ import {
   useRow,
   useTimelineContext,
   useTimelineMonitor,
+  type DragEndEvent,
   type ResizeEndEvent,
   type Span,
 } from 'dnd-timeline';
@@ -170,8 +171,8 @@ interface LanesProps extends Omit<TimelineProps, 'onCommand'> {
 }
 
 /**
- * Everything inside the timeline element, which is where the bag lives: the drop's distance comes
- * from the library's own pixel scale, and the sequence's answer to it is `insertIndexFor`.
+ * Everything inside the timeline element, which is where the bag lives. The drop's span is the
+ * library's answer; the sequence's answer to that span is `insertIndexFor`.
  */
 function Lanes({
   project,
@@ -186,13 +187,19 @@ function Lanes({
   onTrim,
 }: LanesProps) {
   const { t } = useTranslation();
-  const { style, setTimelineRef, pixelsToValue } = useTimelineContext();
+  const { style, setTimelineRef } = useTimelineContext();
   useTimelineMonitor({
     onDragEnd: (event) => {
-      const clipId = String(event.active.id);
-      const from = clipStart(project, clipId);
-      if (from === undefined) return;
-      onMove(clipId, insertIndexFor(project, clipId, from + pixelsToValue(event.delta.x)));
+      // The span is the library's to compute: the item's own strategy knows the timeline's scale
+      // and whatever snapping it was given, and rebuilding it from a pixel delta would drift from
+      // both. `useTimelineMonitor` types the callback with dnd-kit's event, whose `data` is the
+      // untyped bag; dnd-timeline's own DragEndEvent is that same event with the bag named, and
+      // this is the one line that says so.
+      const drag = event as DragEndEvent;
+      const span = drag.active.data.current.getSpanFromDragEvent?.(drag);
+      if (span === null || span === undefined) return;
+      const clipId = String(drag.active.id);
+      onMove(clipId, insertIndexFor(project, clipId, span.start));
     },
   });
   const starts = clipStarts(project);

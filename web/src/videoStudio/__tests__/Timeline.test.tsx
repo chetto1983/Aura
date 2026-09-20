@@ -1,4 +1,11 @@
 import { fireEvent, render, screen } from '@testing-library/react';
+import type {
+  DragEndEvent,
+  ResizeEndEvent,
+  Span,
+  TimelineContextProps,
+  useTimelineMonitor,
+} from 'dnd-timeline';
 import { describe, expect, it, vi } from 'vitest';
 import { trimClip } from '../commands';
 import type { VideoProject } from '../project';
@@ -7,9 +14,34 @@ import {
   insertIndexFor,
   rulerMarks,
   rulerStep,
+  sourceEndOf,
   trimArgsFromSpan,
   zoomedRange,
 } from '../timelineView';
+
+// jsdom lays nothing out, so a real pointer drag through dnd-kit would measure zeros and assert
+// jsdom's geometry rather than this component's. The library is kept real and only its two
+// completion callbacks are intercepted, which is the seam a gesture actually arrives through: the
+// tests below hand them the span dnd-timeline would have computed and read back the thunk.
+const gestures = vi.hoisted(() => ({
+  drag: undefined as ((event: DragEndEvent) => void) | undefined,
+  resize: undefined as ((event: ResizeEndEvent) => void) | undefined,
+}));
+
+vi.mock('dnd-timeline', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('dnd-timeline')>();
+  return {
+    ...actual,
+    TimelineContext: (props: TimelineContextProps) => {
+      gestures.resize = props.onResizeEnd;
+      return <actual.TimelineContext {...props} />;
+    },
+    useTimelineMonitor: (args: Parameters<typeof useTimelineMonitor>[0]) => {
+      gestures.drag = args.onDragEnd;
+      actual.useTimelineMonitor(args);
+    },
+  };
+});
 
 // Task 8 writes the sentences. Asserting on keys keeps these tests about what a gesture emits
 // instead of about copy that does not exist yet, and a literal that slipped into the component
@@ -59,11 +91,64 @@ function project(): VideoProject {
   };
 }
 
-function mount({ playhead = 0, selectedId }: { playhead?: number; selectedId?: string } = {}) {
+/**
+ * The completion event dnd-timeline hands back: the item, and the span its own strategy computed
+ * for the release. Nothing else of the event is read, so nothing else is built — a fake with a
+ * pixel delta in it would only invite the adapter to go back to doing the arithmetic itself.
+ */
+function completed(id: string, span: Span | null) {
+  const strategy = () => span;
+  return {
+    active: {
+      id,
+      data: {
+        current: { span, getSpanFromDragEvent: strategy, getSpanFromResizeEvent: strategy },
+      },
+    },
+  } as unknown as DragEndEvent & ResizeEndEvent;
+}
+
+/** One clip that plays its source to the last frame: the end handle has nowhere left to go. */
+function lastFrames(): VideoProject {
+  return {
+    ...project(),
+    video: [{ id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 16, muted: false }],
+    overlays: [],
+  };
+}
+
+/** A still already longer than the hour the handle would otherwise offer. */
+function twoHourStill(): VideoProject {
+  return {
+    ...project(),
+    sources: [
+      {
+        id: 'img',
+        assetId: 'a',
+        kind: 'image',
+        duration: 0,
+        size: { width: 800, height: 600 },
+        fps: 25,
+      },
+    ],
+    video: [{ id: 'clip-1', sourceId: 'img', duration: 7200, sourceStart: 0, muted: false }],
+    overlays: [],
+  };
+}
+
+/** A fixture index that must exist; a miss is a broken fixture, not a case to handle. */
+function never(): never {
+  throw new Error('fixture has no clip at that index');
+}
+
+function mount({
+  playhead = 0,
+  selectedId,
+  base = project(),
+}: { playhead?: number; selectedId?: string; base?: VideoProject } = {}) {
   const onCommand = vi.fn();
   const onSelect = vi.fn();
   const onScrub = vi.fn();
-  const base = project();
   render(
     <Timeline
       project={base}
@@ -194,10 +279,38 @@ describe('Timeline lanes', () => {
 });
 
 describe('moving a clip', () => {
-  it('emits moveClip for the place the arrow asks for', () => {
+  it('reads the span the library computed and inserts at the place it names', () => {
+    const { base, onCommand } = mount();
+    // clip-1 released with its head at 7: past the middle of both clips it left behind.
+    gestures.drag?.(completed('clip-1', { start: 7, end: 11 }));
+    expect(applied(onCommand, base).video.map((clip) => clip.id)).toEqual([
+      'clip-2',
+      'clip-3',
+      'clip-1',
+    ]);
+  });
+
+  it('inserts before a clip when the drop stops short of its middle', () => {
+    const { base, onCommand } = mount();
+    gestures.drag?.(completed('clip-3', { start: 3, end: 7 }));
+    expect(applied(onCommand, base).video.map((clip) => clip.id)).toEqual([
+      'clip-1',
+      'clip-3',
+      'clip-2',
+    ]);
+  });
+
+  it('asks for nothing when the strategy has no span for the release', () => {
+    const { onCommand } = mount();
+    gestures.drag?.(completed('clip-1', null));
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('emits moveClip for the place Alt+Arrow asks for', () => {
     const { base, onCommand } = mount();
     fireEvent.keyDown(screen.getByRole('button', { name: 'videoStudio.timeline.clip 1' }), {
       key: 'ArrowRight',
+      altKey: true,
     });
     expect(applied(onCommand, base).video.map((clip) => clip.id)).toEqual([
       'clip-2',
@@ -207,16 +320,42 @@ describe('moving a clip', () => {
     expect(base.video.map((clip) => clip.id)).toEqual(['clip-1', 'clip-2', 'clip-3']);
   });
 
+  it('leaves a plain arrow to navigation, and says which keys do move a clip', () => {
+    const { onCommand } = mount();
+    const clip = screen.getByRole('button', { name: 'videoStudio.timeline.clip 1' });
+    fireEvent.keyDown(clip, { key: 'ArrowRight' });
+    fireEvent.keyDown(clip, { key: 'ArrowLeft' });
+    expect(onCommand).not.toHaveBeenCalled();
+    expect(clip.getAttribute('aria-keyshortcuts')).toBe('Alt+ArrowLeft Alt+ArrowRight');
+  });
+
   it('asks for nothing when the clip is already at the end it is pushed against', () => {
     const { onCommand } = mount();
     fireEvent.keyDown(screen.getByRole('button', { name: 'videoStudio.timeline.clip 1' }), {
       key: 'ArrowLeft',
+      altKey: true,
     });
     expect(onCommand).not.toHaveBeenCalled();
   });
 });
 
 describe('trimming a clip', () => {
+  it('reads the released span as a trim of the clip it belongs to', () => {
+    const { base, onCommand } = mount();
+    // clip-2 starts at 4 in project time; a handle left at 5 takes a second off its head.
+    gestures.resize?.(completed('clip-2', { start: 5, end: 8 }));
+    const next = applied(onCommand, base);
+    expect(next.video[1]?.sourceStart).toBe(5);
+    expect(next.video[1]?.duration).toBe(3);
+  });
+
+  it('asks for nothing for a release on something that is not a clip', () => {
+    const { onCommand } = mount();
+    gestures.resize?.(completed('title', { start: 5, end: 8 }));
+    gestures.resize?.(completed('clip-2', null));
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
   it('moves the start handle a frame and measures it from the clip, not the source', () => {
     const { base, onCommand } = mount();
     fireEvent.keyDown(screen.getByRole('slider', { name: 'videoStudio.timeline.trimStart 2' }), {
@@ -248,6 +387,24 @@ describe('trimming a clip', () => {
     expect(next.video[1]?.duration).toBeCloseTo(3.96, 6);
   });
 
+  it('asks for nothing at the source start rather than a trim the command refuses', () => {
+    const { onCommand } = mount();
+    // clip-1 plays its source from zero: there is nothing before it to hand back.
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'videoStudio.timeline.trimStart 1' }), {
+      key: 'ArrowLeft',
+      shiftKey: true,
+    });
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
+  it('asks for nothing at the source end either', () => {
+    const { onCommand } = mount({ base: lastFrames() });
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'videoStudio.timeline.trimEnd 1' }), {
+      key: 'ArrowRight',
+    });
+    expect(onCommand).not.toHaveBeenCalled();
+  });
+
   it('says where each handle sits in the source it plays', () => {
     mount();
     const start = screen.getByRole('slider', { name: 'videoStudio.timeline.trimStart 2' });
@@ -255,6 +412,15 @@ describe('trimming a clip', () => {
     expect(start.getAttribute('aria-valuenow')).toBe('4');
     expect(end.getAttribute('aria-valuenow')).toBe('8');
     expect(end.getAttribute('aria-valuemax')).toBe('20');
+  });
+
+  it('never announces a maximum below the end the clip already has', () => {
+    // An image is measured against no source, so its handle keeps offering more — but a still
+    // already running two hours reports two hours, not the hour the handle would have offered.
+    const still = twoHourStill();
+    expect(sourceEndOf(still, still.video[0] ?? never())).toBe(7200);
+    const clip = project();
+    expect(sourceEndOf(clip, clip.video[0] ?? never())).toBe(20);
   });
 
   it('writes nothing while the pointer is still down', () => {

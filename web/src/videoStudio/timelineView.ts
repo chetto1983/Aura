@@ -22,8 +22,9 @@ const STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300] as const;
 /** Past an hour on screen the marks stay ten minutes apart: nothing coarser still reads as time. */
 const COARSEST_STEP = 600;
 /**
- * An image has no source length — `runsPastSource` exempts it — so its end handle is bounded only
- * by what the lane is willing to show. A slider needs a maximum; an hour is it.
+ * How long a still keeps being offered more. This is the handle's announced range, not a rule:
+ * `runsPastSource` exempts an image, so no command refuses a longer one, and a clip that already
+ * runs past this keeps its own end as the bound rather than reporting a maximum below its value.
  */
 const IMAGE_LIMIT = 3600;
 
@@ -98,10 +99,15 @@ export function trimArgsFromSpan(start: number, span: Span): TrimSpan {
   return { start: span.start - start, end: span.end - start };
 }
 
-/** How far into its source a clip can be trimmed. An image is not measured against one. */
+/**
+ * How far out a clip's end handle may go. A video stops at its source; an image is measured
+ * against nothing, so it stops at the hour the handle offers. Either way the bound is never below
+ * the end the clip already has: a slider whose maximum sits under its own value says nothing true.
+ */
 export function sourceEndOf(project: VideoProject, clip: VideoItem): number {
   const source = sourceOf(project, clip.sourceId);
-  return source?.kind !== 'video' ? IMAGE_LIMIT : source.duration;
+  const end = clip.sourceStart + clip.duration;
+  return Math.max(source?.kind === 'video' ? source.duration : IMAGE_LIMIT, end);
 }
 
 interface StepKeys {

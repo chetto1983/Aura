@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
 import type { OverlayItem, VideoItem } from './project';
-import { atMilli, stepOnArrow, TOUCH_FLOOR, type TrimSpan } from './timelineView';
+import { atMilli, clamp, stepOnArrow, TOUCH_FLOOR, type TrimSpan } from './timelineView';
 
 // Timeline_items.tsx — what sits on a lane: a clip with its two trim handles, and an overlay that
 // only selects, because cycle 1 has no command that moves one.
@@ -12,9 +12,13 @@ import { atMilli, stepOnArrow, TOUCH_FLOOR, type TrimSpan } from './timelineView
 // resize band and the release reaches the shell as `onResizeEnd` — so nothing in this file writes
 // to the project. A keystroke is its own release, and that is the only edit these items emit.
 
+/** Announced on the clip itself, so the reorder is discoverable and not folklore. */
+const REORDER_KEYS = 'Alt+ArrowLeft Alt+ArrowRight';
+
 interface HandleProps {
   readonly frame: number;
-  readonly onStep: (delta: number) => void;
+  /** Where the handle should now sit in the source, already inside its own bounds. */
+  readonly onSet: (at: number) => void;
   readonly label: string;
   readonly value: number;
   readonly min: number;
@@ -22,8 +26,13 @@ interface HandleProps {
   readonly side: 'start' | 'end';
 }
 
-/** A trim handle: a slider that reads where the clip sits in the source it plays. */
-function Handle({ label, value, min, max, side, frame, onStep }: HandleProps) {
+/**
+ * A trim handle: a slider that reads where the clip sits in the source it plays. A step is clamped
+ * to the handle's own bounds BEFORE it notifies, the way mediaEdit/VideoTimeline does it — a
+ * handle at the source's start that asked for a negative position would only collect a refusal,
+ * and an arrow held at the end would collect one per keystroke.
+ */
+function Handle({ label, value, min, max, side, frame, onSet }: HandleProps) {
   return (
     <div
       role="slider"
@@ -34,7 +43,13 @@ function Handle({ label, value, min, max, side, frame, onStep }: HandleProps) {
       aria-valuenow={atMilli(value)}
       aria-valuetext={formatTimecode(value)}
       data-required-touch-target
-      onKeyDown={stepOnArrow({ frame, onStep })}
+      onKeyDown={stepOnArrow({
+        frame,
+        onStep: (delta) => {
+          const at = clamp(value + delta, min, max);
+          if (at !== value) onSet(at);
+        },
+      })}
       style={{
         position: 'absolute',
         top: 0,
@@ -61,6 +76,7 @@ interface ItemButtonProps {
   readonly idle: string;
   readonly onSelect: () => void;
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLButtonElement>) => void) | undefined;
+  readonly keyShortcuts?: string | undefined;
   readonly activatorRef?: ((element: HTMLElement | null) => void) | undefined;
   readonly attributes?: ItemAttributes | undefined;
 }
@@ -73,6 +89,7 @@ function ItemButton({
   idle,
   onSelect,
   onKeyDown,
+  keyShortcuts,
   activatorRef,
   attributes,
 }: ItemButtonProps) {
@@ -83,6 +100,7 @@ function ItemButton({
       type="button"
       aria-label={label}
       aria-current={selected ? 'true' : undefined}
+      aria-keyshortcuts={keyShortcuts}
       data-required-touch-target
       style={{ minHeight: TOUCH_FLOOR }}
       onClick={onSelect}
@@ -147,11 +165,13 @@ export function ClipItem({
           onSelect={() => {
             onSelect(clip.id);
           }}
-          // The lane is a sequence: an arrow on a clip has one meaning, which is to move it a
-          // place along. A drag says the same thing with a time instead of a step.
+          keyShortcuts={REORDER_KEYS}
+          // The keyboard's answer to the drag, because a drag no mouse can make is unusable. It
+          // takes Alt: a plain arrow navigates, and a navigation key that silently reorders the
+          // film is not a thing anyone asked for.
           onKeyDown={(event) => {
             const back = event.key === 'ArrowLeft';
-            if (!back && event.key !== 'ArrowRight') return;
+            if (!event.altKey || (!back && event.key !== 'ArrowRight')) return;
             event.preventDefault();
             const toIndex = index + (back ? -1 : 1);
             if (toIndex < 0 || toIndex >= count) return;
@@ -166,8 +186,10 @@ export function ClipItem({
         min={0}
         max={clip.sourceStart + clip.duration - frame}
         frame={frame}
-        onStep={(delta) => {
-          onTrim(clip.id, { start: delta, end: clip.duration });
+        // The handle speaks in source time and `trimClip` counts from the clip's own start, so
+        // the announced position converts back by subtracting it — never by adding it again.
+        onSet={(at) => {
+          onTrim(clip.id, { start: at - clip.sourceStart, end: clip.duration });
         }}
       />
       <Handle
@@ -177,8 +199,8 @@ export function ClipItem({
         min={clip.sourceStart + frame}
         max={sourceEnd}
         frame={frame}
-        onStep={(delta) => {
-          onTrim(clip.id, { start: 0, end: clip.duration + delta });
+        onSet={(at) => {
+          onTrim(clip.id, { start: 0, end: at - clip.sourceStart });
         }}
       />
     </div>
