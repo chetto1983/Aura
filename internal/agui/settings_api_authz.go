@@ -29,6 +29,8 @@ var mintedSettingKeys = map[string]struct{}{"OPENROUTER_API_KEY": {}}
 
 // callTimeSettingKeys are read from the store on every use, so a saved value is live at once.
 var callTimeSettingKeys = map[string]struct{}{
+	"CLOUDFLARE_API_TOKEN":             {},
+	"CLOUDFLARE_TUNNEL_TOKEN":          {},
 	"AURA_OPENROUTER_MANAGEMENT_KEY":   {},
 	"AURA_OPENROUTER_SERVICES_CAP_USD": {},
 	// The two media models and the inline wait are read fresh on every generation

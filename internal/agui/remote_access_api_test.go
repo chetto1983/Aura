@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,8 +10,34 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/cloudflareapi"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/remotetunnel"
 )
+
+func TestRemoteAccessCredentialsNeverRequestAuraRestart(t *testing.T) {
+	rows := []sqlc.AuraSettings{}
+	for _, key := range []string{"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_TUNNEL_TOKEN"} {
+		t.Setenv(key, "")
+		rows = append(rows, sqlc.AuraSettings{Key: key, Value: "private-token", IsSecret: true})
+	}
+	s := &Server{settings: &fakeSettingsStore{rows: rows}}
+	rec := httptest.NewRecorder()
+	s.handleListSettings(rec, httptest.NewRequest("GET", "/api/settings", nil))
+	var out settingsListDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.RestartRequired || len(out.RestartKeys) != 0 {
+		t.Fatalf("hot credentials request restart: %v", out.RestartKeys)
+	}
+	for _, item := range out.Settings {
+		if item.Key == "CLOUDFLARE_API_TOKEN" || item.Key == "CLOUDFLARE_TUNNEL_TOKEN" {
+			if item.Applied != appliedLive || !item.HasValue || item.Value != "" {
+				t.Fatalf("incorrect hot credential metadata for %s", item.Key)
+			}
+		}
+	}
+}
 
 type fakeRemoteAccess struct {
 	calls  int
