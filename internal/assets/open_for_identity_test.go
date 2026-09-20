@@ -52,7 +52,7 @@ func newOpenForIdentityRig(t *testing.T) (*Service, *fakeAssetStore, *recordingO
 
 func seedOwnedAsset(t *testing.T, svc *Service, store *fakeAssetStore, identityID, body string) Asset {
 	t.Helper()
-	key := objectstore.AssetKey(identityID, "seed-"+identityID)
+	key := objectstore.AssetKey(identityID, "seed-"+identityID, objectstore.FolderChat)
 	asset, err := store.Create(context.Background(), CreateRequest{
 		IdentityID:   identityID,
 		SourceKind:   SourceAgent,

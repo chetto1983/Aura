@@ -69,7 +69,7 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 	if err != nil {
 		return Asset{}, err
 	}
-	place := objectstore.PlaceAsset(objectAssetID(scope, in.identityID, in.sourceRef, name), name)
+	place := objectstore.PlaceAsset(objectAssetID(scope, in.identityID, in.sourceRef, name), name, folderFor(modality))
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        in.identityID,
 		ThreadID:          in.threadID,
@@ -97,7 +97,7 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 	if in.sourceRef != "" && asset.Status == StatusAccepted {
 		return asset, nil
 	}
-	place = objectstore.PlaceAsset(asset.ID, asset.FileName)
+	place = objectstore.PlaceAsset(asset.ID, asset.FileName, folderFor(asset.Modality))
 	ref := objectstore.ObjectRef{Bucket: asset.ObjectBucket, Key: asset.ObjectKey}
 	attrs, err := objects.Put(ctx, ref, in.reader,
 		objectstore.PutOptions{MIMEType: mimeType, Size: in.sizeBytes, Metadata: place.Metadata})

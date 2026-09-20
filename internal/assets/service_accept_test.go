@@ -90,3 +90,40 @@ func TestServiceFinalizeRefusesAnObjectShorterThanDeclared(t *testing.T) {
 		})
 	}
 }
+
+// Pictures and clips land in their own folder. The bucket is the identity's own and the file
+// manager shows it, so a person browsing it used to find one bag of ids: their PDF, their
+// screenshot and a generated clip all under `chat/`.
+func TestServicePresignPutsMediaInItsOwnFolder(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		fileName string
+		mimeType string
+		want     string
+	}{
+		{name: "a clip", fileName: "clip.mp4", mimeType: "video/mp4", want: "media/"},
+		{name: "a picture", fileName: "panel.png", mimeType: "image/png", want: "media/"},
+		{name: "a document", fileName: "manual.pdf", mimeType: "application/pdf", want: "chat/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _ := newAssetServiceTestRig(t, Limits{
+				MaxDocumentBytes: 100, MaxImageBytes: 100, MaxAudioBytes: 100, MaxVideoBytes: 100,
+			})
+
+			resp, err := svc.Presign(context.Background(), PresignRequest{
+				IdentityID:        serviceIdentityID,
+				SourceKind:        SourceWeb,
+				ThreadID:          "thread-1",
+				FileName:          tc.fileName,
+				MIMEType:          tc.mimeType,
+				DeclaredSizeBytes: 10,
+			})
+			if err != nil {
+				t.Fatalf("Presign() error = %v", err)
+			}
+			if !strings.HasPrefix(resp.Asset.ObjectKey, tc.want) {
+				t.Fatalf("ObjectKey = %q, want the %q folder", resp.Asset.ObjectKey, tc.want)
+			}
+		})
+	}
+}

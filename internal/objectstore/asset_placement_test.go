@@ -16,7 +16,7 @@ import (
 // separate calls is one a third upload path can forget, and forgetting is silent: the object
 // lands, the row lands, and only the name is wrong.
 func TestPlaceAssetCarriesTheNameBesideTheKeyNotInsideIt(t *testing.T) {
-	place := PlaceAsset("019f8a2b-0000-7000-8000-000000000001", "Contratto ACME 2026.pdf")
+	place := PlaceAsset("019f8a2b-0000-7000-8000-000000000001", "Contratto ACME 2026.pdf", FolderChat)
 
 	if place.Key != "chat/019f8a2b-0000-7000-8000-000000000001.pdf" {
 		t.Fatalf("key = %q", place.Key)
@@ -45,7 +45,7 @@ func TestPlaceAssetEncodesNamesS3CannotCarry(t *testing.T) {
 		`"virgolette" e 'apici'.md`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			encoded := PlaceAsset("id", name).Metadata[MetadataFileName]
+			encoded := PlaceAsset("id", name, FolderChat).Metadata[MetadataFileName]
 			for i := 0; i < len(encoded); i++ {
 				if encoded[i] > 0x7e || encoded[i] < 0x20 {
 					t.Fatalf("byte %d of %q is not printable ASCII", i, encoded)
@@ -64,7 +64,7 @@ func TestPlaceAssetEncodesNamesS3CannotCarry(t *testing.T) {
 // extension is what the extractor routes on.
 func TestPlaceAssetBoundsTheNameSoAnUploadCannotFailOnIt(t *testing.T) {
 	long := strings.Repeat("à", 2000) + ".pdf"
-	encoded := PlaceAsset("id", long).Metadata[MetadataFileName]
+	encoded := PlaceAsset("id", long, FolderChat).Metadata[MetadataFileName]
 
 	if len(encoded) > maxFileNameMetadataBytes {
 		t.Fatalf("encoded name is %d bytes, over the %d cap", len(encoded), maxFileNameMetadataBytes)
@@ -108,7 +108,7 @@ func TestDecodeFileNameRefusesWhatItCannotTrust(t *testing.T) {
 // change to either is caught here rather than by a wrong name in the index.
 func TestEncodedNameIsPlainPercentEncoding(t *testing.T) {
 	name := "Perizia città (bozza).pdf"
-	encoded := PlaceAsset("id", name).Metadata[MetadataFileName]
+	encoded := PlaceAsset("id", name, FolderChat).Metadata[MetadataFileName]
 	if encoded != url.PathEscape(name) {
 		t.Fatalf("encoding drifted from url.PathEscape: %q", encoded)
 	}

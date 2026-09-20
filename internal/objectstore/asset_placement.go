@@ -37,15 +37,39 @@ type AssetPlacement struct {
 //
 // Returned together, not as two functions, because a caller that builds a key without the
 // metadata fails silently: the object lands, the row lands, only the name is wrong.
-func PlaceAsset(assetID, fileName string) AssetPlacement {
+func PlaceAsset(assetID, fileName string, folder AssetFolder) AssetPlacement {
 	return AssetPlacement{
-		Key:      AssetKey(assetID, fileName),
+		Key:      AssetKey(assetID, fileName, folder),
 		Metadata: map[string]string{MetadataFileName: encodeFileName(fileName)},
 	}
 }
 
+// AssetFolder is the tree an upload lands in, inside the identity's own bucket. It is a
+// closed set rather than a caller's string because the value becomes part of an object key,
+// which travels into presigned URLs and is what the file manager's reserved-path check reads.
+type AssetFolder string
+
+const (
+	// FolderChat holds what the index sweep and the file cards already look for: documents,
+	// and anything whose kind Aura could not place.
+	FolderChat AssetFolder = "chat/"
+	// FolderMedia holds pictures and clips. They are browsed, reused as generation inputs and
+	// edited, so they are their own tree rather than ids mixed among documents.
+	FolderMedia AssetFolder = "media/"
+)
+
+// folderPrefix keeps an unknown value out of the key: an upload path that passes something
+// this package does not define lands in the documents tree instead of inventing one.
+func folderPrefix(folder AssetFolder) string {
+	if folder == FolderMedia {
+		return string(FolderMedia)
+	}
+	return string(FolderChat)
+}
+
 // AssetKey places an uploaded file where its owner can see it and the reconciler can read
-// it: "chat/<assetID><.ext>" in the identity's own bucket.
+// it: "<folder>/<assetID><.ext>" in the identity's own bucket — media/ for pictures and
+// clips, chat/ for documents (see AssetFolder).
 //
 // It used to be "identity/<id>/asset/<id>/original", and every part of that has stopped
 // earning its place:
@@ -63,8 +87,8 @@ func PlaceAsset(assetID, fileName string) AssetPlacement {
 // The EXTENSION is carried and the name is NOT: ".pdf" leaks nothing and is exactly what the
 // extractor routes on. The name rides in metadata instead — see PlaceAsset, which is what
 // callers should use.
-func AssetKey(assetID, fileName string) string {
-	return "chat/" + assetID + assetExtension(fileName)
+func AssetKey(assetID, fileName string, folder AssetFolder) string {
+	return folderPrefix(folder) + assetID + assetExtension(fileName)
 }
 
 // assetExtension returns a lowercase ".ext", or "" when the name has none.

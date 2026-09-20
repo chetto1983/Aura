@@ -81,7 +81,7 @@ func TestShareKeyNamespaceDisjoint(t *testing.T) {
 		if strings.HasPrefix(ShareArtifactKey(shareA, snapshotID, assetID), "identity/") {
 			t.Fatalf("ShareArtifactKey(%s, %s, %s) is identity/-prefixed", shareA, snapshotID, assetID)
 		}
-		if strings.HasPrefix(AssetKey(shareA.String(), assetID.String()), "share/") {
+		if strings.HasPrefix(AssetKey(shareA.String(), assetID.String(), FolderChat), "share/") {
 			t.Fatalf("AssetKey(%s, %s) is share/-prefixed", shareA, assetID)
 		}
 		if shareA != shareB && ShareKeyPrefix(shareA) == ShareKeyPrefix(shareB) {

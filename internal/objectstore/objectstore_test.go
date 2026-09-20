@@ -15,7 +15,7 @@ import (
 // does, because ".pdf" identifies a format and not a document, and without it the extractor
 // cannot tell how to read the bytes.
 func TestAssetKeyCarriesTheExtensionAndNeverTheName(t *testing.T) {
-	key := AssetKey("asset-2", `C:\Users\me\Quarterly Secrets.pdf`)
+	key := AssetKey("asset-2", `C:\Users\me\Quarterly Secrets.pdf`, FolderChat)
 	if key != "chat/asset-2.pdf" {
 		t.Fatalf("AssetKey() = %q, want chat/asset-2.pdf", key)
 	}
@@ -36,7 +36,7 @@ func TestAssetKeyCarriesTheExtensionAndNeverTheName(t *testing.T) {
 		"lungo.averylongext": "chat/asset-2",
 		"REL.PDF":            "chat/asset-2.pdf",
 	} {
-		if got := AssetKey("asset-2", name); got != want {
+		if got := AssetKey("asset-2", name, FolderChat); got != want {
 			t.Fatalf("AssetKey(%q) = %q, want %q", name, got, want)
 		}
 	}
@@ -45,7 +45,7 @@ func TestAssetKeyCarriesTheExtensionAndNeverTheName(t *testing.T) {
 func TestFakeRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	store := NewFake()
-	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt")}
+	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt", FolderChat)}
 	original := []byte("hello asset")
 	putAttrs, err := store.Put(ctx, ref, strings.NewReader(string(original)), PutOptions{MIMEType: "text/plain", Size: int64(len(original))})
 	if err != nil {
@@ -293,7 +293,7 @@ func TestBrowserUploadCORSConfigurationAllowsPresignedBrowserPut(t *testing.T) {
 func TestFilesystemRoundTripAndRejectsUnsafeKeys(t *testing.T) {
 	ctx := context.Background()
 	store := NewFilesystem(t.TempDir())
-	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt")}
+	ref := ObjectRef{Bucket: "bucket", Key: AssetKey("asset", "nota.txt", FolderChat)}
 
 	putAttrs, err := store.Put(ctx, ref, strings.NewReader("file asset"), PutOptions{MIMEType: "text/plain", Size: int64(len("file asset"))})
 	if err != nil {

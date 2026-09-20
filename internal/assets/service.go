@@ -114,7 +114,7 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	if err != nil {
 		return PresignResponse{}, err
 	}
-	place := objectstore.PlaceAsset(objectAssetID(scope, req.IdentityID, "", name), name)
+	place := objectstore.PlaceAsset(objectAssetID(scope, req.IdentityID, "", name), name, folderFor(modality))
 	key := place.Key
 	asset, err := s.Store.Create(ctx, CreateRequest{
 		IdentityID:        req.IdentityID,
@@ -166,6 +166,21 @@ var ErrWrongModality = errors.New("assets: the asset is not of the expected moda
 // and nothing is filed for the index. The asset must be of modality.
 func (s *Service) FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error) {
 	return s.accept(ctx, identityID, assetID, modality)
+}
+
+// folderFor sends pictures and clips to their own tree and everything else to the documents
+// one. A person browsing the bucket found one bag of ids: a PDF they wrote, a screenshot they
+// pasted and a clip a model generated all landed in `chat/`, which says nothing about any of
+// them. Media is browsed, reused as a generation input and edited, so it is its own folder;
+// documents keep theirs, because the index sweep and the file cards already look there.
+//
+// Only new uploads move. Every existing object keeps the key its row records, which is the
+// key every read already uses, so nothing has to be migrated or re-uploaded.
+func folderFor(modality Modality) objectstore.AssetFolder {
+	if modality == ModalityImage || modality == ModalityVideo {
+		return objectstore.FolderMedia
+	}
+	return objectstore.FolderChat
 }
 
 // recentImagesMax bounds the Studio picker.

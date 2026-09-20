@@ -56,7 +56,7 @@ func TestBuildObjectStoreBackends(t *testing.T) {
 		if !ok {
 			t.Fatalf("buildObjectStore(filesystem-dev compose default endpoint) = %T, want *objectstore.FilesystemStore", store)
 		}
-		ref := objectstore.ObjectRef{Bucket: "bucket", Key: objectstore.AssetKey("id", "asset")}
+		ref := objectstore.ObjectRef{Bucket: "bucket", Key: objectstore.AssetKey("id", "asset", objectstore.FolderChat)}
 		if _, err := fs.Put(context.Background(), ref, strings.NewReader("asset"), objectstore.PutOptions{MIMEType: "text/plain", Size: 5}); err != nil {
 			t.Fatalf("filesystem-dev fallback Put() error = %v", err)
 		}
