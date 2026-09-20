@@ -71,6 +71,50 @@ func TestAssetPresignAcceptsLibraryScope(t *testing.T) {
 	}
 }
 
+func TestAssetPresignUsesTheCaddyFacingOriginForBrowserUploads(t *testing.T) {
+	assetSvc := &fakeAssetService{}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/assets/presign", strings.NewReader(
+		`{"file_name":"boat.webp","mime_type":"image/webp","size_bytes":128}`,
+	))
+	req.Host = "localhost"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req = withPrincipal(req, assetAPIIdentityID)
+	rec := httptest.NewRecorder()
+
+	s.Mux().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if assetSvc.presignReq.PublicBase != "https://localhost" {
+		t.Fatalf("public base = %q, want https://localhost", assetSvc.presignReq.PublicBase)
+	}
+}
+
+func TestAssetPresignKeepsTheConfiguredEndpointWithoutCaddy(t *testing.T) {
+	assetSvc := &fakeAssetService{}
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/assets/presign", strings.NewReader(
+		`{"file_name":"boat.webp","mime_type":"image/webp","size_bytes":128}`,
+	))
+	req = withPrincipal(req, assetAPIIdentityID)
+	rec := httptest.NewRecorder()
+
+	s.Mux().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if assetSvc.presignReq.PublicBase != "" {
+		t.Fatalf("public base = %q, want the configured endpoint fallback", assetSvc.presignReq.PublicBase)
+	}
+}
+
 func TestAssetAPIListUsesPrincipalAndThread(t *testing.T) {
 	assetSvc := &fakeAssetService{
 		listResp: []assets.Asset{{

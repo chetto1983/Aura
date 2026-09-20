@@ -70,7 +70,7 @@ function auraPwaPlugin(): Plugin {
     generateBundle(_, bundle) {
       const manifestSource = JSON.stringify(pwaManifest);
       const registerSource =
-        "if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js',{scope:'/'})})}\n";
+        "if('serviceWorker' in navigator){window.addEventListener('load',()=>{navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(()=>undefined)})}\n";
 
       this.emitFile({ type: 'asset', fileName: 'manifest.webmanifest', source: manifestSource });
       this.emitFile({ type: 'asset', fileName: 'registerSW.js', source: registerSource });

@@ -8,6 +8,16 @@ import (
 	"github.com/chetto1983/aura/internal/objectstore"
 )
 
+type presignRecordingStore struct {
+	objectstore.Store
+	req objectstore.PresignPutRequest
+}
+
+func (s *presignRecordingStore) PresignPut(ctx context.Context, req objectstore.PresignPutRequest) (objectstore.PresignedPut, error) {
+	s.req = req
+	return s.Store.PresignPut(ctx, req)
+}
+
 // The presign half of the asset service: what it refuses, what scope it assigns, and what
 // it is allowed to write into an object key. Split from service_test.go when that file
 // crossed the 600-LOC cap (CLAUDE.md refactor-on-touch); no test body changed.
@@ -109,6 +119,32 @@ func TestServicePresignCarriesTheFilenameInSignedMetadata(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(resp.Asset.ObjectKey), "perizia") {
 		t.Fatalf("the name reached the key after all: %q", resp.Asset.ObjectKey)
+	}
+}
+
+func TestServicePresignCarriesTheBrowserPublicBaseToTheObjectStore(t *testing.T) {
+	svc, _ := newAssetServiceTestRig(t, Limits{
+		MaxDocumentBytes: 100,
+		MaxImageBytes:    100,
+		MaxAudioBytes:    100,
+	})
+	objects := &presignRecordingStore{Store: svc.Objects}
+	svc.Objects = objects
+
+	_, err := svc.Presign(context.Background(), PresignRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		PublicBase:        "https://localhost",
+		ThreadID:          "thread-1",
+		FileName:          "boat.webp",
+		MIMEType:          "image/webp",
+		DeclaredSizeBytes: 10,
+	})
+	if err != nil {
+		t.Fatalf("Presign() error = %v", err)
+	}
+	if objects.req.PublicBase != "https://localhost" {
+		t.Fatalf("object-store public base = %q, want https://localhost", objects.req.PublicBase)
 	}
 }
 

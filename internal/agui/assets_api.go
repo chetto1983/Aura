@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/assets"
 )
@@ -83,6 +84,7 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 	resp, err := s.assets.Presign(r.Context(), assets.PresignRequest{
 		IdentityID:        identityID,
 		SourceKind:        assets.SourceWeb,
+		PublicBase:        browserObjectStoreBase(r),
 		ThreadID:          body.ThreadID,
 		Scope:             assets.Scope(body.Scope),
 		FileName:          body.FileName,
@@ -95,6 +97,16 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resp)
+}
+
+// Caddy proxies each identity bucket to Garage on the cockpit origin. Signing that origin
+// keeps browser uploads on the certificate the operator already opened; direct daemon calls
+// have no forwarded scheme and retain the configured object-store endpoint.
+func browserObjectStoreBase(r *http.Request) string {
+	if strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")) == "" {
+		return ""
+	}
+	return requestOrigin(r)
 }
 
 func decodeAssetPresignBody(w http.ResponseWriter, r *http.Request) (assetPresignBody, error) {

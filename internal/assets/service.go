@@ -76,6 +76,7 @@ func (s *Service) objectsFor(ctx context.Context) (objectstore.Store, string, er
 type PresignRequest struct {
 	IdentityID        string     `json:"identity_id"`
 	SourceKind        SourceKind `json:"source_kind"`
+	PublicBase        string     `json:"-"`
 	ThreadID          string     `json:"thread_id"`
 	Scope             Scope      `json:"scope"`
 	FileName          string     `json:"file_name"`
@@ -132,11 +133,12 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		return PresignResponse{}, err
 	}
 	upload, err := objects.PresignPut(ctx, objectstore.PresignPutRequest{
-		Ref:       objectstore.ObjectRef{Bucket: bucket, Key: key},
-		MIMEType:  asset.MIMEType,
-		Size:      req.DeclaredSizeBytes,
-		Metadata:  place.Metadata,
-		ExpiresIn: s.ttl(),
+		Ref:        objectstore.ObjectRef{Bucket: bucket, Key: key},
+		MIMEType:   asset.MIMEType,
+		Size:       req.DeclaredSizeBytes,
+		Metadata:   place.Metadata,
+		ExpiresIn:  s.ttl(),
+		PublicBase: req.PublicBase,
 	})
 	if err != nil {
 		return PresignResponse{}, err
