@@ -46,3 +46,26 @@ export function splitLayer(json, layerId, atTimelineSec) {
   layers.splice(i, 1, left, right);
   return { ...json, layers };
 }
+
+// Two clips with audio, the second split in two, the third muted: the shape the editor's
+// video lane produces, and the one spike 107 never rendered.
+export async function buildAudioComposition({ a = '/clip-a.mp4', b = '/clip-b.mp4' } = {}) {
+  const $ = new VideoFlow({ name: 'spike-108', width: 320, height: 180, fps: 30, backgroundColor: '#000000' });
+  $.addVideo({ fit: 'cover' }, { name: 'one', source: a, startTime: 0, sourceStart: 0, sourceDuration: 4 });
+  $.addVideo({ fit: 'cover' }, { name: 'two', source: b, startTime: 4, sourceStart: 0, sourceDuration: 2 });
+  $.addVideo({ fit: 'cover' }, { name: 'three', source: b, startTime: 6, sourceStart: 2, sourceDuration: 2, muted: true });
+  $.wait('8s');
+  return $.compile();
+}
+
+// Spike 108: one source cut into `n` equal layers, to measure whether the mixer's cost tracks the
+// number of layers or the number of distinct files. `seconds` is the source's full length.
+export async function buildSplitComposition(n, { a = '/clip-a.mp4', seconds = 4 } = {}) {
+  const $ = new VideoFlow({ name: `spike-108-split-${n}`, width: 320, height: 180, fps: 30, backgroundColor: '#000000' });
+  const slice = seconds / n;
+  for (let i = 0; i < n; i++) {
+    $.addVideo({ fit: 'cover' }, { name: `part-${i}`, source: a, startTime: i * slice, sourceStart: i * slice, sourceDuration: slice });
+  }
+  $.wait(`${seconds}s`);
+  return $.compile();
+}
