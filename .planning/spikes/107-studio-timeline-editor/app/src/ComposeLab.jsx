@@ -17,6 +17,8 @@ const nudge = (json) => {
 
 // Spike 108 scenarios, all at 30 fps over two clips that carry an audio track:
 //  audio            the brief's three-layer lane, verbatim (`muted` in SETTINGS, not properties)
+//  audio24          the SAME lane at 24 fps over the same 30 fps sources — project fps alone moves
+//  audio24src       the same lane at 24 fps over 24 fps sources — spike 107's 1:1 sampling ratio
 //  audio-mute-prop  the same with `mute` set where the mixer actually reads it (properties)
 //  split-<n>        the 4 s source cut into n layers, to see what the mixer's cost tracks
 //  long-<n>         the same over a 60 s stereo source, the length a phone clip actually has
@@ -27,6 +29,8 @@ async function scenario108(name) {
   let json;
   if (base.startsWith('split-')) json = await buildSplitComposition(Number(base.slice('split-'.length)));
   else if (base.startsWith('long-')) json = await buildSplitComposition(Number(base.slice('long-'.length)), { a: '/clip-long.mp4', seconds: 60 });
+  else if (base === 'audio24') json = await buildAudioComposition({ fps: 24 });
+  else if (base === 'audio24src') json = await buildAudioComposition({ a: '/clip-a24.mp4', b: '/clip-b24.mp4', fps: 24 });
   else json = await buildAudioComposition();
   if (base === 'audio-mute-prop') json.layers.at(-1).properties.mute = true;
   return wantsNudge ? nudge(json) : json;

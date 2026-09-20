@@ -4,8 +4,9 @@
 //  2. Audio — per-second RMS and a Goertzel reading of 440 Hz (clip-a) against 880 Hz (clip-b), so
 //     each second of the lane says which source it came from, and whether the third clip is silent.
 //  3. Frames — every output frame matched to the source frame it shows (argmin of the full-frame
-//     difference over the 120 source frames), with and without the 1e-4 s `sourceStart` nudge.
-//     Expected at 30 fps: frame n < 120 shows n, frame n >= 120 shows n - 120.
+//     difference over the source's own frames), for the SAME composition at 24 and at 30 fps, over
+//     a 24 fps and a 30 fps source, with and without the 1e-4 s `sourceStart` nudge, so that frame
+//     rate, sampling ratio and composition each move one at a time.
 //
 // Usage: node probe-audio.mjs        (after run-audio.mjs; reads and writes out/)
 import { execFileSync } from 'node:child_process';
@@ -109,36 +110,74 @@ for (const file of RENDERS) {
 }
 
 console.log('\n== frames ==');
-// Both clips are the same testsrc2 video (only the sine differs); assert it rather than assume it,
-// because every frame match below is made against clip-a's frames alone.
-const srcA = frames('clip-a.mp4');
-const srcB = frames('clip-b.mp4');
-const abDiff = Math.max(...srcA.map((f, i) => meanDiff(f, srcB[i])));
-report.frames.sourcesIdentical = { maxMeanDiff: Number(abDiff.toFixed(4)), frames: srcA.length };
-console.log(`clip-a vs clip-b video: ${srcA.length} frames, worst mean per-channel difference ${abDiff.toFixed(4)}`);
+// Every frame match is made against ONE clip's frames, so assert the a/b pairs are the same video.
+const sourceFrames = {};
+for (const [a, b] of [['clip-a.mp4', 'clip-b.mp4'], ['clip-a24.mp4', 'clip-b24.mp4']]) {
+  const fa = frames(a);
+  const fb = frames(b);
+  const worst = Math.max(...fa.map((f, i) => meanDiff(f, fb[i])));
+  sourceFrames[a] = fa;
+  report.frames[`${a} vs ${b}`] = { maxMeanDiff: Number(worst.toFixed(4)), frames: fa.length };
+  console.log(`${a} vs ${b}: ${fa.length} frames, worst mean per-channel difference ${worst.toFixed(4)}`);
+}
 
-const expected = (n) => (n < 120 ? n : n - 120);
-for (const file of ['audio-worker-0.mp4', 'audio-nudge-worker-0.mp4']) {
-  const out = frames(file);
+// The controlled comparison. The lane is always the same three layers over 0-4 / 4-6 / 6-8 s; what
+// varies is the project frame rate and the source frame rate, one at a time. Output frame n shows
+// timeline second n/projectFps, so the source frame whose presentation interval contains it is
+// kRaw = floor(n * srcFps / projectFps) for layer one, and kRaw - 4*srcFps for the other two (layer
+// two is sourceStart 0 at timeline 4, layer three sourceStart 2 at timeline 6 — the same source
+// time). Both ratios used here, 1 and 1.25, are exact in binary, so the floor is not a rounding
+// artefact.
+const CASES = [
+  { file: 'audio-worker-0.mp4', label: '30 fps project / 30 fps source, no nudge', projectFps: 30, srcFps: 30, src: 'clip-a.mp4' },
+  { file: 'audio-nudge-worker-0.mp4', label: '30 fps project / 30 fps source, nudge', projectFps: 30, srcFps: 30, src: 'clip-a.mp4' },
+  { file: 'audio24-worker-0.mp4', label: '24 fps project / 30 fps source, no nudge', projectFps: 24, srcFps: 30, src: 'clip-a.mp4' },
+  { file: 'audio24-nudge-worker-0.mp4', label: '24 fps project / 30 fps source, nudge', projectFps: 24, srcFps: 30, src: 'clip-a.mp4' },
+  { file: 'audio24src-worker-0.mp4', label: '24 fps project / 24 fps source, no nudge', projectFps: 24, srcFps: 24, src: 'clip-a24.mp4' },
+  { file: 'audio24src-nudge-worker-0.mp4', label: '24 fps project / 24 fps source, nudge', projectFps: 24, srcFps: 24, src: 'clip-a24.mp4' },
+];
+
+for (const c of CASES) {
+  const src = sourceFrames[c.src];
+  const out = frames(c.file);
+  const expected = (n) => {
+    const kRaw = Math.floor((n * c.srcFps) / c.projectFps);
+    return n / c.projectFps < 4 ? kRaw : kRaw - 4 * c.srcFps;
+  };
   const mismatches = [];
   const margins = [];
   out.forEach((f, n) => {
-    const diffs = srcA.map((g) => meanDiff(f, g));
+    const diffs = src.map((g) => meanDiff(f, g));
     const best = diffs.indexOf(Math.min(...diffs));
     const sorted = [...diffs].sort((a, b) => a - b);
     margins.push(sorted[1] - sorted[0]);
     if (best !== expected(n)) mismatches.push({ n, shows: best, expected: expected(n), off: best - expected(n) });
   });
+  // A frame can only hit the boundary defect when its timeline second lands exactly on a source
+  // frame boundary, i.e. n * srcFps is divisible by projectFps. That denominator is what makes two
+  // frame rates comparable at all, so it is reported beside the count.
+  const atRisk = out.filter((_, n) => (n * c.srcFps) % c.projectFps === 0).length;
+  const perLayer = [
+    ['one (0-4 s, sourceStart 0)', 0, 4 * c.projectFps],
+    ['two (4-6 s, sourceStart 0)', 4 * c.projectFps, 6 * c.projectFps],
+    ['three (6-8 s, sourceStart 2)', 6 * c.projectFps, 8 * c.projectFps],
+  ].map(([name, from, to]) => ({ layer: name, frames: to - from, mismatches: mismatches.filter((m) => m.n >= from && m.n < to).length }));
   const row = {
+    ...c,
     frames: out.length,
+    atRiskFrames: atRisk,
+    mismatchCount: mismatches.length,
+    offsets: [...new Set(mismatches.map((m) => m.off))],
+    perLayer,
     mismatches,
     pass: mismatches.length === 0,
     worstMargin: Number(Math.min(...margins).toFixed(4)),
   };
-  report.frames[file] = row;
+  report.frames[c.file] = row;
   console.log(
-    `${file}: ${out.length} frames, ${mismatches.length} mismatch(es) ${JSON.stringify(mismatches.slice(0, 8))} ` +
-      `→ ${row.pass ? 'PASS' : 'FAIL'} (worst argmin margin ${row.worstMargin})`,
+    `${c.label.padEnd(42)} ${String(mismatches.length).padStart(3)} / ${out.length} mismatches, ` +
+      `${atRisk} frames on a source boundary, offsets ${JSON.stringify(row.offsets)}, ` +
+      `per layer ${perLayer.map((l) => l.mismatches + '/' + l.frames).join(' ')} -> ${row.pass ? 'PASS' : 'FAIL'}`,
   );
 }
 

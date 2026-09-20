@@ -49,8 +49,10 @@ export function splitLayer(json, layerId, atTimelineSec) {
 
 // Two clips with audio, the second split in two, the third muted: the shape the editor's
 // video lane produces, and the one spike 107 never rendered.
-export async function buildAudioComposition({ a = '/clip-a.mp4', b = '/clip-b.mp4' } = {}) {
-  const $ = new VideoFlow({ name: 'spike-108', width: 320, height: 180, fps: 30, backgroundColor: '#000000' });
+// `fps` and the sources are parameters so the SAME composition can be rendered at 24 and at 30, and
+// over a 24 fps or a 30 fps source: frame rate, sampling ratio and composition each move alone.
+export async function buildAudioComposition({ a = '/clip-a.mp4', b = '/clip-b.mp4', fps = 30 } = {}) {
+  const $ = new VideoFlow({ name: `spike-108-${fps}fps`, width: 320, height: 180, fps, backgroundColor: '#000000' });
   $.addVideo({ fit: 'cover' }, { name: 'one', source: a, startTime: 0, sourceStart: 0, sourceDuration: 4 });
   $.addVideo({ fit: 'cover' }, { name: 'two', source: b, startTime: 4, sourceStart: 0, sourceDuration: 2 });
   $.addVideo({ fit: 'cover' }, { name: 'three', source: b, startTime: 6, sourceStart: 2, sourceDuration: 2, muted: true });

@@ -160,6 +160,12 @@ const plan = [
   ...Array.from({ length: RUNS }, () => ['audio', true]),
   ['audio', false],
   ['audio-nudge', true],
+  // The controlled frame-rate comparison: one composition, four renders, two things varied one at
+  // a time — project fps (30 vs 24 over the same 30 fps source) and sampling ratio (24 fps source).
+  ['audio24', true],
+  ['audio24-nudge', true],
+  ['audio24src', true],
+  ['audio24src-nudge', true],
   ['audio-mute-prop', true],
   ...[1, 2, 4, 8, 16].map((n) => [`split-${n}`, true]),
   ...[1, 4, 8].map((n) => [`long-${n}`, true]),
