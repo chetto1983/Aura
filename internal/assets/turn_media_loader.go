@@ -18,19 +18,24 @@ type MediaOpener interface {
 	OpenForIdentity(ctx context.Context, id, identityID string) (io.ReadCloser, Asset, error)
 }
 
+// NativeMedia is the one admission rule for bytes that may reach the model: the loader,
+// the AG-UI gateway and the Telegram channel all ask it, so no channel can drift.
+func NativeMedia(modality Modality) bool {
+	return modality == ModalityImage || modality == ModalityVideo
+}
+
 // TurnMediaLoader loads one turn attachment as a digest-verified native content part
 // for the model request. It is the channel-agnostic seam behind llm.ContentProjection:
 // the AG-UI gateway and the Telegram channel both use it, so which bytes a model may
 // see is decided once (allow-list + thread scope + modality + digest), never per
 // channel. Moved here from internal/agui (amendment #198).
 //
-// IMAGE is the only native modality. Audio used to ride here too, and that is precisely
-// what made a voice turn reach the model as an ATTACHMENT rather than as words: the
-// bytes were projected as an input_audio part while the transcript the STT sidecar had
-// already produced sat unused in the attachment block. Speech now reaches the model as
-// TEXT on every channel — the transcript AudioProcessor writes into Asset.Summary,
-// rendered by BuildAttachmentBlock — so there is one representation of speech, not two
-// that can disagree.
+// Images and video are native media: their bytes may reach the model, and the provider
+// client still decides per request, from the active model's declared input modalities,
+// whether they do (llm.ContentCapabilitySource). Audio is not: a voice turn used to reach
+// the model as an input_audio ATTACHMENT while the transcript the STT sidecar had already
+// produced sat unused, so speech now reaches the model as TEXT on every channel — the
+// transcript AudioProcessor writes into Asset.Summary, rendered by BuildAttachmentBlock.
 type TurnMediaLoader struct {
 	Opener   MediaOpener
 	ThreadID string
@@ -53,7 +58,7 @@ func (l TurnMediaLoader) LoadContentPart(ctx context.Context, _ string, ownerID,
 	if asset.ID != id || (asset.ThreadID != "" && asset.ThreadID != l.ThreadID) {
 		return llm.VerifiedContentPart{}, fmt.Errorf("asset content scope changed")
 	}
-	if asset.Modality != ModalityImage {
+	if !NativeMedia(asset.Modality) {
 		return llm.VerifiedContentPart{}, fmt.Errorf("asset modality %q is not native media", asset.Modality)
 	}
 	if asset.SizeBytes <= 0 || strings.TrimSpace(asset.ContentHash) == "" {

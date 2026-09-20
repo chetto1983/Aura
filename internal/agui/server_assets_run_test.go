@@ -101,6 +101,55 @@ func TestServerRunCarriesVerifiedGarageMediaProjection(t *testing.T) {
 	}
 }
 
+// A clip travels the same seam as a still: the gateway arms the projection for video
+// too, and the provider client decides from the model's declared input modalities
+// whether the bytes are actually sent.
+func TestServerRunCarriesVerifiedGarageVideoProjection(t *testing.T) {
+	const tid = "99999999-9999-4999-8999-999999999999"
+	body := []byte("real-mp4-bytes")
+	digest := sha256.Sum256(body)
+	asset := assets.Asset{
+		ID:          "asset-video",
+		IdentityID:  assetAPIIdentityID,
+		ThreadID:    tid,
+		FileName:    "clip.mp4",
+		MIMEType:    "video/mp4",
+		Modality:    assets.ModalityVideo,
+		Status:      assets.StatusComplete,
+		SizeBytes:   int64(len(body)),
+		ContentHash: hex.EncodeToString(digest[:]),
+		Summary:     "a servo panel, filmed",
+	}
+	run := &scriptedRunner{events: textTurn("ok")}
+	assetSvc := &fakeAssetService{
+		getResp:   asset,
+		openAsset: asset,
+		openResp:  io.NopCloser(strings.NewReader(string(body))),
+	}
+	s := NewServer(run, &fakeConvStore{known: map[string]bool{tid: true}}, ServerConfig{})
+	s.SetAssetService(assetSvc)
+
+	requestBody := `{"threadId":"` + tid + `","messages":[{"id":"m1","role":"user","content":"what happens in the clip?"}],"aura":{"attachment_ids":["asset-video"]}}`
+	rec := serveRunWithPrincipal(t, s, requestBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	projection, ok := llm.ContentProjectionFromContext(run.turnCtx)
+	if !ok {
+		t.Fatal("run context has no content projection")
+	}
+	if len(projection.ReferenceIDs) != 1 || projection.ReferenceIDs[0] != "asset-video" {
+		t.Fatalf("projection = %+v", projection)
+	}
+	part, err := projection.Loader.LoadContentPart(context.Background(), "", projection.Principal.OwnerID, "asset-video")
+	if err != nil {
+		t.Fatalf("LoadContentPart: %v", err)
+	}
+	if string(part.Bytes) != string(body) || part.MIMEType != "video/mp4" {
+		t.Fatalf("verified part = %+v", part)
+	}
+}
+
 func TestGarageMediaProjectionRejectsDigestDrift(t *testing.T) {
 	// An IMAGE, deliberately: audio is refused a step earlier (modality), so an audio
 	// fixture here would make this test green without ever reaching the digest compare.

@@ -125,7 +125,7 @@ git commit -m "docs(spike-106): measure video input on llama.cpp and OpenRouter"
 **Interfaces:**
 - Produces: `func NativeMedia(modality Modality) bool` in package `assets` (true for `ModalityImage`, `ModalityVideo`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `internal/assets/turn_media_loader_test.go`:
 ```go
@@ -209,12 +209,12 @@ pass `[]assetspkg.Asset{image, video, doc, voice}`, and expect `ReferenceIDs == 
 
 In `internal/agui/server_assets_run_test.go`, next to the image-projection test that reads `llm.ContentProjectionFromContext(run.turnCtx)` (line ~85), add a case whose attachment is `Modality: assets.ModalityVideo, MIMEType: "video/mp4"` and assert it is in `projection.ReferenceIDs`. Copy the image test's setup verbatim and change only the asset.
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run (WSL): `go test ./internal/assets/ ./internal/agui/ ./internal/channels/telegram/ -run 'NativeMedia|TurnMediaLoader|TurnMediaProjection|Projection'`
 Expected: FAIL — `undefined: NativeMedia`, then the video cases.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/assets/turn_media_loader.go`, replace the "IMAGE is the only native modality…" paragraph of the `TurnMediaLoader` comment with:
 ```go
@@ -242,7 +242,7 @@ and `if attachment.Modality != assets.ModalityImage {` with `if !assets.NativeMe
 
 In `internal/channels/telegram/bot_dispatch_media.go` update the package comment's last sentences to say images and video are projected and a voice note is not, rename nothing else, and replace the modality check with `if !assets.NativeMedia(attachment.Modality) {`.
 
-- [ ] **Step 4: Run the checks**
+- [x] **Step 4: Run the checks**
 
 Run (WSL):
 ```bash
@@ -252,7 +252,7 @@ go test -race ./internal/assets/ ./internal/agui/ ./internal/channels/telegram/
 ```
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/assets/turn_media_loader.go internal/assets/turn_media_loader_test.go internal/agui/server_context.go internal/agui/server_assets_run_test.go internal/channels/telegram/bot_dispatch_media.go internal/channels/telegram/bot_dispatch_media_projection_test.go

@@ -8,24 +8,27 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// TestWithTurnMediaProjectionArmsImagesOnly pins amendment #198's second defect:
+// TestWithTurnMediaProjectionArmsImagesAndVideo pins amendment #198's second defect:
 // Telegram turns must arm the SAME llm.ContentProjection seam the AG-UI gateway arms,
-// scoped to this turn's native media only — a document stays catalog-only.
-func TestWithTurnMediaProjectionArmsImagesOnly(t *testing.T) {
+// scoped to this turn's native media only — images and video, so a clip can reach a
+// model that declares video input, while a document stays catalog-only and a voice note
+// is words, not bytes.
+func TestWithTurnMediaProjectionArmsImagesAndVideo(t *testing.T) {
 	t.Parallel()
 	ingress := &recordingAssetIngress{}
 	tg := &Telegram{deps: Deps{Assets: ingress}}
 	image := assetspkg.Asset{ID: "a-img", IdentityID: "id-1", Modality: assetspkg.ModalityImage}
+	video := assetspkg.Asset{ID: "a-vid", IdentityID: "id-1", Modality: assetspkg.ModalityVideo}
 	doc := assetspkg.Asset{ID: "a-doc", IdentityID: "id-1", Modality: assetspkg.ModalityDocument}
 	voice := assetspkg.Asset{ID: "a-voice", IdentityID: "id-1", Modality: assetspkg.ModalityAudio}
 
-	ctx := tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{image, doc, voice})
+	ctx := tg.withTurnMediaProjection(context.Background(), 7, []assetspkg.Asset{image, video, doc, voice})
 	proj, ok := llm.ContentProjectionFromContext(ctx)
 	if !ok {
 		t.Fatal("an image attachment must arm the content projection")
 	}
-	if len(proj.ReferenceIDs) != 1 || proj.ReferenceIDs[0] != "a-img" {
-		t.Fatalf("projection must reference the image only, got %v", proj.ReferenceIDs)
+	if len(proj.ReferenceIDs) != 2 || proj.ReferenceIDs[0] != "a-img" || proj.ReferenceIDs[1] != "a-vid" {
+		t.Fatalf("projection must reference the native media only, got %v", proj.ReferenceIDs)
 	}
 	if proj.Principal.OwnerID != "id-1" {
 		t.Fatalf("projection principal must be the asset owner, got %q", proj.Principal.OwnerID)
@@ -34,8 +37,8 @@ func TestWithTurnMediaProjectionArmsImagesOnly(t *testing.T) {
 	if !ok {
 		t.Fatalf("loader must be the shared assets.TurnMediaLoader, got %T", proj.Loader)
 	}
-	if loader.ThreadID != convID(7) || !loader.Allowed["a-img"] || loader.Allowed["a-doc"] || loader.Allowed["a-voice"] {
-		t.Fatalf("loader must scope to this chat's thread and allow the image only, got thread=%q allowed=%v", loader.ThreadID, loader.Allowed)
+	if loader.ThreadID != convID(7) || !loader.Allowed["a-img"] || !loader.Allowed["a-vid"] || loader.Allowed["a-doc"] || loader.Allowed["a-voice"] {
+		t.Fatalf("loader must scope to this chat's thread and allow the native media only, got thread=%q allowed=%v", loader.ThreadID, loader.Allowed)
 	}
 
 	// A voice note is words, not bytes: it must not arm the projection at all, so the
