@@ -472,7 +472,7 @@ it('resumes at nameservers without asking for the token again', async () => {
 it('sends typed hostname confirmation on delete', async () => {
   await deleteRemoteAccess('aura.example.com');
   expect(fetch).toHaveBeenCalledWith('/api/settings/remote-access', expect.objectContaining({
-    method:'DELETE', body:JSON.stringify({confirm:'aura.example.com'}),
+    method:'DELETE', body:JSON.stringify({hostname:'aura.example.com'}),
   }));
 });
 ```
