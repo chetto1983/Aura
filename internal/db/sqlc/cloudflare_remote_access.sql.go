@@ -125,20 +125,33 @@ func (q *Queries) GetCloudflareRemoteAccess(ctx context.Context) (AuraCloudflare
 }
 
 const saveCloudflareRemoteAccessDesired = `-- name: SaveCloudflareRemoteAccessDesired :one
-UPDATE aura.cloudflare_remote_access
-SET enabled = $1, account_id = $2,
+WITH intent AS (
+  SELECT singleton, phase = 'deleting' OR (phase = 'error' AND NOT enabled AND (
+    zone_id <> '' OR tunnel_id <> '' OR public_dns_id <> '' OR warp_dns_id <> ''
+    OR otp_idp_id <> '' OR public_app_id <> '' OR public_policy_id <> ''
+    OR warp_app_id <> '' OR warp_policy_id <> '' OR warp_posture_id <> ''
+  )) AS deleting
+  FROM aura.cloudflare_remote_access WHERE singleton = true FOR UPDATE
+)
+UPDATE aura.cloudflare_remote_access AS state
+SET enabled = CASE WHEN intent.deleting THEN false ELSE $1::boolean END,
+    account_id = $2,
     zone_name = $3, public_label = $4, warp_label = $5,
-    generation = generation + 1,
-    phase = CASE WHEN $1::boolean THEN 'validating' ELSE 'disabled' END,
-    observed_healthy = false, last_error = '', updated_at = clock_timestamp(), updated_by = $6
-WHERE singleton = true AND generation = $7
+    generation = state.generation + 1,
+    phase = CASE WHEN intent.deleting THEN 'deleting'
+      WHEN $1::boolean THEN 'validating' ELSE 'disabled' END,
+    observed_healthy = false,
+    last_error = CASE WHEN intent.deleting THEN state.last_error ELSE '' END,
+    updated_at = clock_timestamp(), updated_by = $6
+FROM intent
+WHERE state.singleton = intent.singleton AND state.generation = $7
   AND ((account_id = $2 AND zone_name = $3
     AND public_label = $4 AND warp_label = $5) OR (
     zone_id = '' AND tunnel_id = '' AND public_dns_id = '' AND warp_dns_id = ''
     AND otp_idp_id = '' AND public_app_id = '' AND public_policy_id = ''
     AND warp_app_id = '' AND warp_policy_id = '' AND warp_posture_id = ''
   ))
-RETURNING singleton, enabled, generation, phase, account_id, zone_id, zone_name, tunnel_id, tunnel_name, public_label, warp_label, public_dns_id, warp_dns_id, otp_idp_id, public_app_id, public_policy_id, warp_app_id, warp_policy_id, warp_posture_id, last_error, observed_healthy, last_reconciled_at, updated_at, updated_by
+RETURNING state.singleton, state.enabled, state.generation, state.phase, state.account_id, state.zone_id, state.zone_name, state.tunnel_id, state.tunnel_name, state.public_label, state.warp_label, state.public_dns_id, state.warp_dns_id, state.otp_idp_id, state.public_app_id, state.public_policy_id, state.warp_app_id, state.warp_policy_id, state.warp_posture_id, state.last_error, state.observed_healthy, state.last_reconciled_at, state.updated_at, state.updated_by
 `
 
 type SaveCloudflareRemoteAccessDesiredParams struct {

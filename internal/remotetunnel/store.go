@@ -27,6 +27,9 @@ func (s *Store) Load(ctx context.Context) (State, error) {
 }
 
 // SaveDesired atomically advances generation and rejects stale operator writes.
+// Persisted deletion intent overrides re-enable requests until cleanup completes;
+// its diagnostic survives credential replacement and explicit retries. Disabled +
+// error is reserved for failed deletion; disabled membership sync is refused locally.
 func (s *Store) SaveDesired(ctx context.Context, expectedGeneration int64, d Desired, by string) (State, error) {
 	row, err := s.q.SaveCloudflareRemoteAccessDesired(ctx, sqlc.SaveCloudflareRemoteAccessDesiredParams{
 		ExpectedGeneration: expectedGeneration, Enabled: d.Enabled, AccountID: d.AccountID,

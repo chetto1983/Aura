@@ -120,7 +120,6 @@ func (r *Reconciler) Delete(ctx context.Context, by string) error {
 	}
 	s.Phase = PhaseDeleting
 	s.ObservedHealthy = false
-	s.LastError = ""
 	if err = r.persist(ctx, &s); err != nil {
 		return err
 	}

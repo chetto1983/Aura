@@ -212,6 +212,9 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	if errors.Is(err, ErrStaleGeneration) || errors.Is(err, context.Canceled) {
 		return err
 	}
+	// Disabled operations never call failed except deletion: disabled member sync is
+	// refused locally and disableProjection returns directly. SaveDesired relies on
+	// error + disabled + retained references to recover terminal deletion intent.
 	deleting := s.Phase == PhaseDeleting
 	s.Phase = PhaseError
 	s.ObservedHealthy = false

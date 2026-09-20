@@ -137,7 +137,7 @@ func (r *Reconciler) SyncMembers(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if s.Phase == PhaseDeleting {
+	if !s.Desired.Enabled || s.Phase == PhaseDeleting {
 		return ErrConfiguration
 	}
 	if s.Phase == PhaseError {
