@@ -126,7 +126,7 @@ describe('history', () => {
 
   it('keeps a gesture to one step, however many commands it ran', () => {
     const history = createHistory(project());
-    history.transaction((p) => {
+    history.apply((p) => {
       let next = p;
       for (let end = 4; end > 2; end -= 0.1)
         next = trimClip(next, { clipId: 'clip-1', start: 0, end });
@@ -147,7 +147,7 @@ describe('history', () => {
   it('records one step for a gesture that ran several different commands', () => {
     const start = project();
     const history = createHistory(start);
-    history.transaction((p) =>
+    history.apply((p) =>
       setMuted(splitAt(trimClip(p, { clipId: 'clip-1', start: 0, end: 3 }), { time: 1 }), {
         clipId: 'clip-1',
         muted: true,

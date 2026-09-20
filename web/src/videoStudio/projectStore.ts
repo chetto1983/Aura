@@ -169,12 +169,22 @@ function isOverlayTrack(value: unknown): value is OverlayTrack {
 }
 
 /**
- * Whether the bytes are a project. A saved project file is EXTERNAL INPUT — it round-trips
- * through a store anyone with the asset id can overwrite — so the whole persisted shape is
- * checked, not only the containers: a lane holding a string, or a clip with no `sourceStart`,
- * reaches `clipStarts` as `NaN` and takes the timeline with it.
+ * Whether every id the project points with has something to point at. A shape check cannot see
+ * this, and both ways of failing it are already known: a clip naming a source the file does not
+ * hold reaches `videoflow.ts`, which throws an untranslated internal sentence into the alert, and
+ * an overlay anchored to a clip that is not there becomes a zero-length ghost on a lane. Neither
+ * belongs on the far side of the load.
  */
-function isProject(value: unknown): value is VideoProject {
+function referencesHold(project: VideoProject): boolean {
+  const sources = new Set(project.sources.map((source) => source.id));
+  const clips = new Set(project.video.map((clip) => clip.id));
+  return (
+    project.video.every((clip) => sources.has(clip.sourceId)) &&
+    project.overlays.every((lane) => lane.items.every((item) => clips.has(item.anchor.clipId)))
+  );
+}
+
+function hasProjectShape(value: unknown): value is VideoProject {
   const project = bagOf(value);
   return (
     project !== undefined &&
@@ -189,6 +199,17 @@ function isProject(value: unknown): value is VideoProject {
     Array.isArray(project.overlays) &&
     project.overlays.every(isOverlayTrack)
   );
+}
+
+/**
+ * Whether the bytes are a project. A saved project file is EXTERNAL INPUT — it round-trips
+ * through a store anyone with the asset id can overwrite — so the whole persisted shape is
+ * checked, not only the containers: a lane holding a string, or a clip with no `sourceStart`,
+ * reaches `clipStarts` as `NaN` and takes the timeline with it. And the shape is only half of
+ * it: the ids have to point somewhere too.
+ */
+function isProject(value: unknown): value is VideoProject {
+  return hasProjectShape(value) && referencesHold(value);
 }
 
 /**

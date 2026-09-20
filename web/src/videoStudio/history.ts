@@ -1,10 +1,10 @@
 // history.ts — undo and redo, one step per gesture.
 //
-// A step is one CALL, not one command: `apply` records the command a button ran, `transaction`
-// records whatever a gesture ran between grab and release, so a drag that re-trims on thirty
-// pointer events collapses into one undo. A refusal never reaches the stacks — the command threw
-// before anything changed, so there is nothing to undo — and a step landing after an undo drops
-// the redo branch, because the future it led to no longer exists.
+// A step is one CALL, not one command: `apply` records whatever the edit it is handed did, so a
+// button's single command and a drag's thirty re-trims between grab and release are each one
+// undo. A refusal never reaches the stacks — the command threw before anything changed, so there
+// is nothing to undo — and a step landing after an undo drops the redo branch, because the future
+// it led to no longer exists.
 
 import { applyPatches, castDraft, enablePatches, produceWithPatches, type Patch } from 'immer';
 import type { VideoProject } from './project';
@@ -26,10 +26,9 @@ export interface History {
   readonly current: VideoProject;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
-  /** Run one command and record it as one step. A refusal propagates and records nothing. */
+  /** Run an edit and record it as ONE step, however many commands it ran. A refusal propagates
+   *  and records nothing. */
   apply(edit: Edit): VideoProject;
-  /** Run a gesture and record it as ONE step, however many commands it ran. */
-  transaction(gesture: Edit): VideoProject;
   undo(): VideoProject;
   redo(): VideoProject;
 }
@@ -176,9 +175,6 @@ export function createHistory(initial: VideoProject): History {
       return undone.length > 0;
     },
     apply: record,
-    // The same operation under the name each caller uses: a button applies a command, a drag
-    // commits a gesture on release. One call is one step either way.
-    transaction: record,
     undo: () => replay(done, undone, (step) => step.back),
     redo: () => replay(undone, done, (step) => step.forward),
   };

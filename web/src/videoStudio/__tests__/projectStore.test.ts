@@ -272,6 +272,29 @@ describe('loadProject', () => {
     ],
     ['a lane that is not a lane', { overlays: ['lane-1'] }],
     [
+      'a clip naming a source the file does not hold',
+      { video: [{ id: 'c', sourceId: 'src-gone', duration: 1, sourceStart: 0, muted: false }] },
+    ],
+    [
+      'an overlay anchored to a clip the file does not hold',
+      {
+        overlays: [
+          {
+            id: 'lane-1',
+            items: [
+              {
+                id: 'i',
+                kind: 'text',
+                duration: 1,
+                anchor: { clipId: 'clip-gone', offset: 0 },
+                props: {},
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    [
       'an overlay with no anchor',
       { overlays: [{ id: 'lane-1', items: [{ id: 'i', kind: 'text', duration: 1, props: {} }] }] },
     ],

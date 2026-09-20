@@ -41,8 +41,8 @@ import {
 //
 // Nothing here owns the project. A gesture in flight is view state — dnd-timeline animates the
 // item it is moving and tells us nothing until it is let go — and only the release hands the shell
-// a command thunk. The shell applies it, decides whether it is a transaction, and translates a
-// refusal; this component never catches one.
+// a command thunk. The shell applies it as one undo step and translates a refusal; this
+// component never catches one.
 //
 // The video lane is a sequence, so a drop is an INSERT: the drop's time picks a place among the
 // clips the dragged one has left, never a free position and never an overlap.
