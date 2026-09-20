@@ -10,5 +10,5 @@
     "src/components/ui/dropdown-menu.tsx",
     "public/fonts/*.css"
   ],
-  "ignoreDependencies": ["assistant-stream", "@videoflow/renderer-dom", "dnd-timeline"]
+  "ignoreDependencies": ["assistant-stream", "@videoflow/renderer-dom"]
 }
