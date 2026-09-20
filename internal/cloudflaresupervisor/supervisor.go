@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -24,7 +25,10 @@ type Launcher interface {
 }
 
 // Options bounds polling, candidate readiness and retry pressure.
-type Options struct{ PollInterval, ReadyTimeout, RetryInterval time.Duration }
+type Options struct {
+	PollInterval, ReadyTimeout, RetryInterval time.Duration
+	Logger                                    *slog.Logger
+}
 
 // Status intentionally contains no process errors, credential paths or token hashes.
 type Status struct {
@@ -65,6 +69,9 @@ func NewSupervisor(root string, launcher Launcher, opts Options) *Supervisor {
 	if opts.RetryInterval <= 0 {
 		opts.RetryInterval = 30 * time.Second
 	}
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
 	return &Supervisor{root: root, launcher: launcher, opts: opts, status: Status{State: "idle"}}
 }
 
@@ -92,6 +99,7 @@ func (s *Supervisor) Run(ctx context.Context) {
 func (s *Supervisor) stopCandidate() {
 	if s.candidate != nil {
 		s.candidate.Stop()
+		s.event("candidate_stopped", s.candidateGeneration)
 		s.candidate = nil
 		s.candidateToken = nil
 	}
@@ -101,6 +109,7 @@ func (s *Supervisor) stop() {
 	s.stopCandidate()
 	if s.active != nil {
 		s.active.Stop()
+		s.event("connector_stopped", s.activeGeneration)
 		s.active = nil
 	}
 	s.activeGeneration = 0
@@ -109,8 +118,17 @@ func (s *Supervisor) stop() {
 func (s *Supervisor) publish(ctx context.Context, state string, generation int64, code string) {
 	ready := s.active != nil && s.active.Ready(ctx)
 	s.mu.Lock()
+	previous := s.status
 	s.status = Status{State: state, Generation: generation, ActiveGeneration: s.activeGeneration, Ready: ready, ErrorCode: code}
+	changed := previous != s.status
 	s.mu.Unlock()
+	if changed && code != "" {
+		s.event(code, generation)
+	}
+}
+
+func (s *Supervisor) event(code string, generation int64) {
+	s.opts.Logger.Info("tunnel_lifecycle", "code", code, "generation", generation)
 }
 
 func (s *Supervisor) step(ctx context.Context, now time.Time) {
@@ -133,8 +151,10 @@ func (s *Supervisor) step(ctx context.Context, now time.Time) {
 	}
 	if s.active != nil && s.active.Exited() {
 		s.active.Stop()
+		s.event("connector_exited", s.activeGeneration)
 		s.active = nil
 		s.activeGeneration = 0
+		s.retryAt = now.Add(s.opts.RetryInterval)
 	}
 	if s.candidate != nil {
 		info, statErr := os.Stat(filepath.Join(s.root, "token"))
@@ -152,9 +172,11 @@ func (s *Supervisor) step(ctx context.Context, now time.Time) {
 		if s.candidate.Ready(ctx) {
 			if s.active != nil {
 				s.active.Stop()
+				s.event("connector_stopped", s.activeGeneration)
 			}
 			s.active, s.activeGeneration = s.candidate, s.candidateGeneration
 			s.candidate, s.candidateToken = nil, nil
+			s.event("candidate_promoted", s.activeGeneration)
 		}
 	}
 	if s.active != nil && s.activeGeneration == desired.Generation {
@@ -180,6 +202,7 @@ func (s *Supervisor) step(ctx context.Context, now time.Time) {
 		}
 		s.candidate, s.candidateGeneration, s.candidateToken = child, desired.Generation, info
 		s.candidateDeadline = now.Add(s.opts.ReadyTimeout)
+		s.event("candidate_started", desired.Generation)
 	}
 	state, code := "connecting", ""
 	if s.candidate == nil {

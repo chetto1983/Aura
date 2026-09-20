@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -52,6 +53,9 @@ func (p *FileProjection) Apply(ctx context.Context, state ProjectionState) error
 	if err := os.Chmod(p.root, 0o750); err != nil { // #nosec G302 -- directory traversal for the sidecar group; token itself is 0600.
 		return errors.New("set projection directory permissions failed")
 	}
+	if err := p.removeAbandoned(); err != nil {
+		return err
+	}
 	if state.Enabled {
 		if err := p.write("token", []byte(state.Token.Reveal()), 0o600); err != nil {
 			return err
@@ -69,6 +73,24 @@ func (p *FileProjection) Apply(ctx context.Context, state ProjectionState) error
 	if !state.Enabled {
 		if err := os.Remove(p.TokenPath()); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return errors.New("remove tunnel projection failed")
+		}
+	}
+	return p.syncDir()
+}
+
+func (p *FileProjection) removeAbandoned() error {
+	entries, err := os.ReadDir(p.root)
+	if err != nil {
+		return errors.New("read projection recovery directory failed")
+	}
+	for _, entry := range entries {
+		// This prefix is reserved for our CreateTemp files. Never recurse or follow
+		// symlinks: a similarly named directory/link is not an abandoned token.
+		if !strings.HasPrefix(entry.Name(), ".projection-") || !entry.Type().IsRegular() {
+			continue
+		}
+		if err := os.Remove(filepath.Join(p.root, entry.Name())); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return errors.New("remove abandoned projection failed")
 		}
 	}
 	return p.syncDir()

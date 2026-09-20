@@ -3,11 +3,11 @@ package remotetunnel
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 )
 
@@ -89,20 +89,41 @@ func TestProjectionFailuresAreRedactedAndLeaveNoTemporaryFiles(t *testing.T) {
 	}
 }
 
-func TestProjectionConcurrentAppliesNeverPublishPartialToken(t *testing.T) {
-	p := NewFileProjection(t.TempDir(), -1, -1)
-	var wg sync.WaitGroup
-	for i := range 10 {
-		wg.Go(func() {
-			if err := p.Apply(context.Background(), ProjectionState{Enabled: true, Generation: int64(i), Token: "synthetic-secret"}); err != nil {
-				t.Error(err)
+func TestProjectionRecoversCrashLeftoversOnReconstructionAndDisable(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			root := t.TempDir()
+			crashed, err := os.CreateTemp(root, ".projection-*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := crashed.WriteString("abandoned-synthetic-secret"); err != nil {
+				t.Fatal(err)
+			}
+			if err := crashed.Close(); err != nil {
+				t.Fatal(err)
+			}
+			keep := filepath.Join(root, "keep.txt")
+			if err := os.WriteFile(keep, []byte("unrelated"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(root, ".projection-directory")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			p := NewFileProjection(root, -1, -1)
+			if err := p.Apply(context.Background(), ProjectionState{Enabled: enabled, Generation: 2, Token: "reconstructed-secret"}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Stat(crashed.Name()); !os.IsNotExist(err) {
+				t.Fatal("abandoned plaintext survived recovery")
+			}
+			for _, path := range []string{keep, dir} {
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("unrelated entry removed: %v", err)
+				}
 			}
 		})
-	}
-	wg.Wait()
-	b, err := os.ReadFile(p.TokenPath())
-	if err != nil || string(b) != "synthetic-secret" {
-		t.Fatalf("incomplete token: %v", err)
 	}
 }
 

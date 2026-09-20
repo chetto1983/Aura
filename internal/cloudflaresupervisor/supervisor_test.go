@@ -120,6 +120,8 @@ func TestCandidateFailureAndCrashRetry(t *testing.T) {
 	}
 	old.exited.Store(true)
 	s.step(ctx, now)
+	now = now.Add(time.Second)
+	s.step(ctx, now)
 	failed.exited.Store(true)
 	s.step(ctx, now)
 	if s.Status().Ready || s.Status().ActiveGeneration != 0 {

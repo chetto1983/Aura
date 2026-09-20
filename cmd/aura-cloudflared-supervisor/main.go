@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,7 +29,8 @@ func run(ctx context.Context, args []string) int {
 	if len(args) != 0 {
 		return 2
 	}
-	s := cloudflaresupervisor.NewSupervisor("/state", cloudflaresupervisor.ProcessLauncher{}, cloudflaresupervisor.Options{})
+	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	s := cloudflaresupervisor.NewSupervisor("/state", cloudflaresupervisor.ProcessLauncher{}, cloudflaresupervisor.Options{Logger: logger})
 	return serve(ctx, "0.0.0.0:8085", s)
 }
 
