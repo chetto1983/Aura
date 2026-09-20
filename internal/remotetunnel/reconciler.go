@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 
@@ -205,6 +206,9 @@ func (r *Reconciler) current(ctx context.Context, s *State) error {
 	return nil
 }
 func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 	if errors.Is(err, ErrStaleGeneration) || errors.Is(err, context.Canceled) {
 		return err
 	}
@@ -212,7 +216,8 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 	s.Phase = PhaseError
 	s.ObservedHealthy = false
 	s.LastError = "Remote access reconciliation failed; retry or check credentials."
-	if cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) {
+	var timeout net.Error
+	if cloudflareapi.Retryable(err) || errors.Is(err, ErrRemotePresent) || errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout() {
 		s.Phase = PhaseDegraded
 		if deleting {
 			s.Phase = PhaseDeleting
