@@ -252,6 +252,22 @@ describe('Timeline lanes', () => {
     expect(screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' })).toBeTruthy();
   });
 
+  it('selects on the PRESS, not only on the click', () => {
+    // Measured in Chrome, 2026-09-20: a bare click on a clip selected nothing. dnd-kit's
+    // PointerSensor has no activation distance here, so `handleStart` runs on pointerdown and
+    // adds a capturing document `click` listener that calls `stopPropagation`
+    // (@dnd-kit/core core.esm.js:1504) — the button's own onClick never fires. jsdom cannot
+    // reproduce that (it lays nothing out, so the sensor never engages), so this test holds the
+    // contract the browser needs instead of the failure: a press selects.
+    const { onSelect } = mount();
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'videoStudio.timeline.clip 2' }));
+    expect(onSelect).toHaveBeenCalledWith('clip-2');
+    fireEvent.pointerDown(
+      screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' }),
+    );
+    expect(onSelect).toHaveBeenLastCalledWith('title');
+  });
+
   it('tells the shell what was clicked, and asks for no command', () => {
     const { onSelect, onCommand } = mount();
     fireEvent.click(screen.getByRole('button', { name: 'videoStudio.timeline.clip 2' }));

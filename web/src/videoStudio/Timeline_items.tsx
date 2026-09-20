@@ -103,6 +103,14 @@ function ItemButton({
       aria-keyshortcuts={keyShortcuts}
       data-required-touch-target
       style={{ minHeight: TOUCH_FLOOR }}
+      // The PRESS selects, and the click is kept for the keyboard. Measured in Chrome on
+      // 2026-09-20: a click on a clip selected nothing. dnd-kit's PointerSensor is configured
+      // here with no activation distance, so a plain press already counts as the start of a
+      // drag — `handleStart` adds a capturing document `click` listener that calls
+      // `stopPropagation` (@dnd-kit/core core.esm.js:1504) and the button's onClick never runs.
+      // Selecting on pointerdown is also what the gesture means: what you press is what you are
+      // about to drag. Enter and Space still arrive as clicks, with no drag before them.
+      onPointerDown={onSelect}
       onClick={onSelect}
       onKeyDown={onKeyDown}
       className={`flex h-full w-full items-center overflow-hidden rounded-[var(--radius-md)] border px-2 text-left text-xs ${
