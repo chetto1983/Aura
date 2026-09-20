@@ -46,7 +46,11 @@ export interface AssetSource {
   readonly editable?: true;
 }
 
-const IDENTITY_SCOPED: AssetSource = {
+/** The identity-scoped tier, exported as a VALUE as well as being this context's default: a
+ *  module that is not a component — `videoStudio/projectStore.ts` reads a saved project file —
+ *  cannot call `useAssetSource()`, and spelling the same two routes a second time is how the two
+ *  copies drift. A share tier still overrides it through the provider. */
+export const IDENTITY_SCOPED: AssetSource = {
   assetUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/download`,
   streamUrl: (assetId) => `/api/assets/${encodeURIComponent(assetId)}/stream`,
   credentials: 'same-origin',

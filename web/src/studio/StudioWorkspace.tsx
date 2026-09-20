@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import { lazy, Suspense, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { lastSavedProject } from '../videoStudio/projectStore';
 import type { StudioOpen } from '../videoStudio/VideoStudio_sources';
 import { StudioBar } from './StudioBar';
 import { StudioHistory } from './StudioHistory';
@@ -75,7 +76,10 @@ export default function StudioWorkspace() {
   const [selectedId, setSelectedId] = useState<string>();
   // What the editor is open on, and where its last save landed so it can be picked up again.
   const [studio, setStudio] = useState<StudioOpen>();
-  const [savedProjectId, setSavedProjectId] = useState<string>();
+  // Seeded from storage, so a save survives the reload that follows it: state alone made the
+  // entrance a door that closed behind you. A listing of every saved project needs the library
+  // route, which is cycle 2's.
+  const [savedProjectId, setSavedProjectId] = useState<string | undefined>(lastSavedProject);
   const [failure, setFailure] = useState<string>();
   /** A warning, not a refusal: the page did something, and the operator has to know what. */
   const [notice, setNotice] = useState<string>();

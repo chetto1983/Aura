@@ -6,8 +6,8 @@ import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
 import { addOverlay, CommandRefusal, removeItem, splitAt } from './commands';
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
-import { clipAt, clipStart, type VideoProject } from './project';
-import { projectFileName, saveProject } from './projectStore';
+import { clipAt, clipStart, projectDuration, type VideoProject } from './project';
+import { projectFileName, rememberSavedProject, saveProject } from './projectStore';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
 import { ExportPanel } from './VideoStudio_export';
@@ -36,6 +36,12 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // pure function has nobody to ask. Every edit is therefore run once against the current project
 // BEFORE it is committed: if it would leave fewer overlays than it found, the operator is told
 // how many and asked. The edit is pure, so running it twice costs arithmetic and changes nothing.
+//
+// The third is what a project may NOT do. A source the library no longer holds is not a warning
+// to read past: VideoFlow answers a URL that 404s by disabling the layer, so the preview lies and
+// the export writes black frames and calls it a success. While any clip still plays a missing
+// source, there is no preview and there is no export — and the lane stays editable, because
+// removing those clips is how the operator gets both back.
 
 /** A string the operator will read, kept unresolved so the language can still change under it. */
 interface Sentence {
@@ -69,6 +75,24 @@ function addedOverlay(before: VideoProject, after: VideoProject): string | undef
   return after.overlays.flatMap((lane) => lane.items).find((item) => !had.has(item.id))?.id;
 }
 
+/** Whether the project still holds this id. A removed clip, or one an undo took away, leaves the
+ *  selection pointing at nothing — and a Remove button live over nothing. */
+function holds(project: VideoProject, id: string | undefined): boolean {
+  if (id === undefined) return false;
+  return (
+    project.video.some((clip) => clip.id === id) ||
+    project.overlays.some((lane) => lane.items.some((item) => item.id === id))
+  );
+}
+
+/** The clips a project cannot play: those on a source the load reported gone. Derived rather
+ *  than stored, so removing the last one clears the block — which is the only way cycle 1 offers
+ *  to unblock, the replace door being the library's and cycle 2's. Counted in CLIPS because that
+ *  is what the operator has to remove, not in sources, which are a thing they never see. */
+function unplayableClips(project: VideoProject, missing: readonly string[]): readonly string[] {
+  return project.video.filter((clip) => missing.includes(clip.sourceId)).map((clip) => clip.id);
+}
+
 /**
  * The sentence an error becomes. A refusal speaks for itself and is shown unchanged, whichever
  * of the seven it is; anything else — a caller out of step with the model, a dropped connection
@@ -94,6 +118,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const [problem, setProblem] = useState<Sentence>();
   const [status, setStatus] = useState<Sentence>();
   const [pending, setPending] = useState<{ readonly edit: Edit; readonly lost: number }>();
+  /** The sources the load could not find. Kept, not just announced: they are what forbids the
+   *  preview and the export until the clips that use them are gone. */
+  const [missing, setMissing] = useState<readonly string[]>([]);
 
   useEffect(() => {
     let live = true;
@@ -102,6 +129,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
         if (!live) return;
         setHistory(createHistory(loaded.project));
         setProject(loaded.project);
+        setMissing(loaded.missing);
         if (loaded.missing.length > 0) setProblem(says(REFUSAL_MISSING_ASSET));
       },
       (error: unknown) => {
@@ -114,14 +142,30 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     };
   }, [open, assetSource]);
 
+  /** What the selection is after a project changed under it: the overlay the edit just added, or
+   *  what was selected if it is still there, or nothing. Every committed transition goes through
+   *  here — an edit, an undo, a redo — so no button is ever live over an item that is gone. */
+  function reselect(next: VideoProject, added?: string) {
+    setSelectedId((current) => added ?? (holds(next, current) ? current : undefined));
+  }
+
   function commit(edit: Edit) {
     if (history === undefined) return;
     try {
       const before = history.current;
       const next = history.apply(edit);
       setProject(next);
-      const added = addedOverlay(before, next);
-      if (added !== undefined) setSelectedId(added);
+      reselect(next, addedOverlay(before, next));
+      // The frame can only change by a project taking its first source's, and it has to be said:
+      // a silent re-frame is the same class of surprise as the silent crop it prevents.
+      if (before.size.width !== next.size.width || before.size.height !== next.size.height) {
+        setStatus(
+          says('videoStudio.frameAdopted', {
+            width: next.size.width,
+            height: next.size.height,
+          }),
+        );
+      }
     } catch (error) {
       setProblem(failure(error, 'videoStudio.problem'));
     }
@@ -148,7 +192,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   function step(move: (stack: History) => VideoProject) {
     if (history === undefined) return;
     setProblem(undefined);
-    setProject(move(history));
+    const next = move(history);
+    setProject(next);
+    reselect(next);
   }
 
   async function addFile(file: File) {
@@ -158,8 +204,11 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
       // Probed first, uploaded second: a clip this browser cannot decode never costs a transfer.
       const probed = await probeSource(file);
       setStatus(says('videoStudio.source.uploading', { name: file.name }));
-      run(sourceEdit(probed, await uploadSource(file)));
+      const assetId = await uploadSource(file);
+      // Cleared BEFORE the commit, never after: the commit may replace this line with the frame
+      // the project has just taken from this source, and clearing afterwards would eat it.
       setStatus(undefined);
+      run(sourceEdit(probed, assetId));
     } catch (error) {
       setStatus(undefined);
       setProblem(failure(error, 'videoStudio.source.failed'));
@@ -185,7 +234,8 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     setProblem(undefined);
     setStatus(says('videoStudio.save.saving'));
     try {
-      const assetId = await saveProject(current);
+      const assetId = await saveProject(current, name);
+      rememberSavedProject(assetId);
       setStatus(says('videoStudio.save.saved'));
       onSaved?.(assetId);
     } catch (error) {
@@ -198,6 +248,14 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     project === undefined || project.name === '' ? t('videoStudio.untitled') : project.name;
   // A title hangs on a clip, so there has to be one under the playhead to hang it on.
   const underPlayhead = project === undefined ? undefined : clipAt(project, playhead);
+  const unplayable = project === undefined ? [] : unplayableClips(project, missing);
+
+  /** Why the export cannot run, worded once and in one place: a clip whose bytes are gone, or a
+   *  lane with nothing on it. `undefined` is the only value that lets the button run. */
+  function exportRefusal(shown: VideoProject): string | undefined {
+    if (unplayable.length > 0) return t(REFUSAL_MISSING_ASSET);
+    return projectDuration(shown) <= 0 ? t('videoStudio.export.empty') : undefined;
+  }
 
   return (
     <MediaEditorLayer label={t('videoStudio.title')} onEscape={onClose}>
@@ -215,8 +273,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
         {project === undefined ? null : (
           <ExportPanel
             project={project}
-            fileName={projectFileName(project, 'mp4')}
+            fileName={projectFileName(project, 'mp4', name)}
             urls={assetSource}
+            refusal={exportRefusal(project)}
           />
         )}
         <Button
@@ -324,13 +383,24 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
 
           <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 lg:flex-row">
             <div className="min-w-0 flex-1">
-              <Stage
-                project={project}
-                time={playhead}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                onCommand={run}
-              />
+              {unplayable.length > 0 ? (
+                // No renderer at all: handing VideoFlow a source that 404s gets a disabled layer
+                // and a black picture, which reads as a preview and is not one.
+                <p
+                  role="status"
+                  className="flex aspect-video w-full items-center justify-center rounded-[var(--radius-md)] bg-surface-1 p-4 text-center text-sm text-text-muted"
+                >
+                  {t('videoStudio.unplayable', { count: unplayable.length })}
+                </p>
+              ) : (
+                <Stage
+                  project={project}
+                  time={playhead}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  onCommand={run}
+                />
+              )}
             </div>
             <div className="w-full lg:w-72 lg:flex-none">
               <Inspector project={project} selectedId={selectedId} onCommand={run} />

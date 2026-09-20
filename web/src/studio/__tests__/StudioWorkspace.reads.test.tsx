@@ -164,3 +164,48 @@ describe('StudioWorkspace reading', () => {
     expect(screen.queryByRole('link', { name: /Download/ })).toBeNull();
   });
 });
+
+describe('the way back into the video editor', () => {
+  const COMPLETED_VIDEO = {
+    id: 'job-clip',
+    kind: 'video',
+    status: 'completed',
+    model: 'google/veo-3.1-lite',
+    prompt: 'a harbour at dawn',
+    used: { aspect_ratio: '16:9' },
+    cost_usd: 0.05,
+    asset_id: 'asset-clip',
+    created_at: '2026-09-17T12:00:00Z',
+  };
+
+  it('offers the selected clip to the multi-track editor', async () => {
+    stubServer({ history: [COMPLETED_VIDEO] });
+    mountPage();
+    await openedOnVideo();
+
+    expect(screen.getByRole('button', { name: 'Open in the video editor' })).toBeTruthy();
+  });
+
+  it('offers the last project saved here, restored from storage on mount', async () => {
+    // The state alone made this a door that closed behind you: it vanished on the reload that
+    // often follows a save. This mount is that reload.
+    localStorage.setItem('aura.videoStudio.lastSavedProject', 'file-7');
+    stubServer({ history: [COMPLETED_VIDEO] });
+    mountPage();
+    await openedOnVideo();
+
+    expect(
+      screen.getByRole('button', { name: 'Reopen the last project you saved here' }),
+    ).toBeTruthy();
+  });
+
+  it('offers nothing to reopen when nothing has been saved here', async () => {
+    stubServer({ history: [COMPLETED_VIDEO] });
+    mountPage();
+    await openedOnVideo();
+
+    expect(
+      screen.queryByRole('button', { name: 'Reopen the last project you saved here' }),
+    ).toBeNull();
+  });
+});

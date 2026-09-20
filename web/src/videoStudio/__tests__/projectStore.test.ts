@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset, PresignResponse } from '../../chat/attachments/types';
 import type { VideoProject } from '../project';
-import { loadProject, saveProject } from '../projectStore';
+import {
+  lastSavedProject,
+  loadProject,
+  projectFileName,
+  rememberSavedProject,
+  saveProject,
+} from '../projectStore';
 
 // The project file is an ASSET, so the only thing worth testing here is the round trip through
 // that route and what a load says about a source whose bytes are gone. The transport itself —
@@ -98,11 +104,36 @@ function presigned(id: string): PresignResponse {
   };
 }
 
-/** Answer the next GET of the project file with `body`. */
-function serve(body: string, ok = true): void {
+/**
+ * Answer the project file's GET with `body`, and every source's HEAD with `sourceStatus`. The
+ * two are separate because they mean different things: the first is whether the project reads,
+ * the second is whether one clip's bytes are still there.
+ */
+function serve(body: string, options: { ok?: boolean; sourceStatus?: number } = {}): void {
+  const { ok = true, sourceStatus = 200 } = options;
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve(new Response(body, { status: ok ? 200 : 404 }))),
+    vi.fn((_url: string, init?: RequestInit) =>
+      Promise.resolve(
+        init?.method === 'HEAD'
+          ? new Response(null, { status: sourceStatus })
+          : new Response(body, { status: ok ? 200 : 404 }),
+      ),
+    ),
+  );
+}
+
+/** Every URL the stubbed fetch was called with, and how. */
+function fetched(): readonly (readonly [string, RequestInit | undefined])[] {
+  const stub = globalThis.fetch as unknown as { mock: { calls: [string, RequestInit?][] } };
+  return stub.mock.calls.map(([url, init]) => [url, init] as const);
+}
+
+/** A `getAsset` that fails the way the route does when the row is not there: an Error carrying
+ *  no status at all, which is exactly why the HEAD below exists. */
+function metadataFails(forId: string): void {
+  api.getAsset.mockImplementation((id: string) =>
+    id === forId ? Promise.reject(new Error('asset not found')) : Promise.resolve(asset(id)),
   );
 }
 
@@ -136,6 +167,17 @@ describe('saveProject', () => {
     expect(String(request.file_name)).not.toContain('/');
     expect(String(request.file_name)).not.toContain('..');
   });
+
+  it('uses the name the caller resolved, so no English fallback is written here', () => {
+    // What the workspace passes is t('videoStudio.untitled'); the store never writes that word.
+    expect(projectFileName({ ...project(), name: '' }, 'mp4', 'Progetto senza nome')).toBe(
+      'Progetto-senza-nome.mp4',
+    );
+  });
+
+  it('falls back to the project id rather than to a word, when a name slugs to nothing', () => {
+    expect(projectFileName({ ...project(), name: '' }, 'json', '?!?')).toBe('project-1.json');
+  });
 });
 
 describe('loadProject', () => {
@@ -151,18 +193,37 @@ describe('loadProject', () => {
     expect(loaded.missing).toEqual([]);
   });
 
-  it('marks a source whose asset is gone and still returns the project', async () => {
+  it('reads through the identity-scoped route when it is given only an asset id', async () => {
     serve(JSON.stringify(project()));
-    api.getAsset.mockImplementation((id: string) =>
-      id === 'asset-b' ? Promise.reject(new Error('HTTP 404')) : Promise.resolve(asset(id)),
-    );
+    const loaded = await loadProject('file-1');
+    expect(loaded.project.id).toBe('project-1');
+    expect(fetched()[0]?.[0]).toBe('/api/assets/file-1/download');
+  });
+
+  it('marks a source the route answers 404 for, and still returns the project', async () => {
+    serve(JSON.stringify(project()), { sourceStatus: 404 });
+    metadataFails('asset-b');
 
     const loaded = await loadProject('file-1', SOURCE);
     expect(loaded.missing).toEqual(['src-b']);
     expect(loaded.project.video).toHaveLength(2);
   });
 
-  it('counts an asset the sweeper deleted as gone, not as present', async () => {
+  it('does NOT call a 500 a deletion - it propagates as the failure it is', async () => {
+    serve(JSON.stringify(project()), { sourceStatus: 500 });
+    metadataFails('asset-b');
+
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/500/);
+  });
+
+  it('does NOT call an expired session a deletion', async () => {
+    serve(JSON.stringify(project()), { sourceStatus: 401 });
+    metadataFails('asset-a');
+
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/401/);
+  });
+
+  it('counts a row the sweeper marked terminal as gone, without asking for its bytes', async () => {
     serve(JSON.stringify(project()));
     api.getAsset.mockImplementation((id: string) =>
       Promise.resolve(asset(id, id === 'asset-a' ? 'deleted' : 'complete')),
@@ -170,6 +231,8 @@ describe('loadProject', () => {
 
     const loaded = await loadProject('file-1', SOURCE);
     expect(loaded.missing).toEqual(['src-a']);
+    // The metadata answered, so nothing asked for bytes.
+    expect(fetched().filter(([, init]) => init?.method === 'HEAD')).toEqual([]);
   });
 
   it('refuses a body that is not a project', async () => {
@@ -177,8 +240,68 @@ describe('loadProject', () => {
     await expect(loadProject('file-1', SOURCE)).rejects.toThrow();
   });
 
+  it.each([
+    ['a source that is not an object', { sources: ['src-a'] }],
+    ['a source naming no asset', { sources: [{ id: 'src-a', kind: 'video' }] }],
+    ['a clip with no sourceStart', { video: [{ id: 'c', sourceId: 'src-a', duration: 1 }] }],
+    [
+      'a clip whose duration is a string',
+      { video: [{ id: 'c', sourceId: 'src-a', duration: '4', sourceStart: 0, muted: false }] },
+    ],
+    ['a lane that is not a lane', { overlays: ['lane-1'] }],
+    [
+      'an overlay with no anchor',
+      { overlays: [{ id: 'lane-1', items: [{ id: 'i', kind: 'text', duration: 1, props: {} }] }] },
+    ],
+    [
+      'an overlay whose props are an array',
+      {
+        overlays: [
+          {
+            id: 'lane-1',
+            items: [
+              {
+                id: 'i',
+                kind: 'text',
+                duration: 1,
+                anchor: { clipId: 'c', offset: 0 },
+                props: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  ])('refuses a saved file carrying %s', async (_case, broken) => {
+    serve(JSON.stringify({ ...project(), ...broken }));
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/not a project/);
+  });
+
   it('refuses a read the route did not answer', async () => {
-    serve('nope', false);
+    serve('nope', { ok: false });
     await expect(loadProject('file-1', SOURCE)).rejects.toThrow();
+  });
+});
+
+describe('the last project saved here', () => {
+  it('is remembered across a reload and read back', () => {
+    rememberSavedProject('file-9');
+    expect(lastSavedProject()).toBe('file-9');
+  });
+
+  it('is simply absent when the browser refuses storage', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('denied');
+      },
+      setItem: () => {
+        throw new Error('denied');
+      },
+    });
+    // Neither call throws: a browser without storage is one where the entrance does not appear.
+    expect(() => {
+      rememberSavedProject('file-9');
+    }).not.toThrow();
+    expect(lastSavedProject()).toBeUndefined();
   });
 });

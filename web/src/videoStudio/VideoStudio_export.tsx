@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { downloadBlob } from '../mediaEdit/download';
-import { projectDuration, type VideoProject } from './project';
+import type { VideoProject } from './project';
 import { exportProject, type MediaUrls } from './videoflow';
 import { Button } from '@/components/ui/button';
 
@@ -19,13 +19,17 @@ interface ExportPanelProps {
    *  as `videoStudio.untitled` on screen and must read the same on disk. */
   readonly fileName: string;
   readonly urls: MediaUrls;
+  /** Why this project cannot be rendered, already worded — an empty lane, a source the library
+   *  no longer holds. The workspace decides, because it is the one that knows; here it is the
+   *  difference between a disabled button and a disabled button that says why. */
+  readonly refusal?: string | undefined;
 }
 
 function reason(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function ExportPanel({ project, fileName, urls }: ExportPanelProps) {
+export function ExportPanel({ project, fileName, urls, refusal }: ExportPanelProps) {
   const { t } = useTranslation();
   const [percent, setPercent] = useState<number>();
   const [failure, setFailure] = useState<string>();
@@ -37,8 +41,6 @@ export function ExportPanel({ project, fileName, urls }: ExportPanelProps) {
     },
     [],
   );
-
-  const empty = projectDuration(project) <= 0;
 
   async function run() {
     const controller = new AbortController();
@@ -94,8 +96,8 @@ export function ExportPanel({ project, fileName, urls }: ExportPanelProps) {
       <Button
         type="button"
         size="sm"
-        disabled={percent !== undefined || empty}
-        title={empty ? t('videoStudio.export.empty') : undefined}
+        disabled={percent !== undefined || refusal !== undefined}
+        title={refusal}
         onClick={() => void run()}
       >
         {t('videoStudio.export.action')}

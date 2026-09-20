@@ -15,11 +15,16 @@ export const videoStudioEn = {
     empty: 'Add a clip to begin.',
     commands: 'Editing commands',
     newTitle: 'Your title',
+    frameAdopted: 'The project now uses this clip’s frame: {{width}} × {{height}}.',
+    unplayable_one:
+      'One clip plays a source the library no longer holds. Remove it to preview and export again.',
+    unplayable_other:
+      '{{count}} clips play a source the library no longer holds. Remove them to preview and export again.',
     problem: 'That edit could not be made: {{reason}}',
     open: {
       fromStudio: 'Open in the video editor',
       fromClip: 'Open in the multi-track editor',
-      resume: 'Resume the saved project',
+      resume: 'Reopen the last project you saved here',
       loading: 'Opening the project…',
       failed: 'The project could not be opened.',
     },
@@ -118,11 +123,16 @@ export const videoStudioIt = {
     empty: 'Aggiungi una clip per cominciare.',
     commands: 'Comandi di modifica',
     newTitle: 'Il tuo titolo',
+    frameAdopted: 'Il progetto usa ora il fotogramma di questa clip: {{width}} × {{height}}.',
+    unplayable_one:
+      'Una clip riproduce una sorgente che la libreria non ha più. Rimuovila per tornare a vedere in anteprima e a esportare.',
+    unplayable_other:
+      '{{count}} clip riproducono una sorgente che la libreria non ha più. Rimuovile per tornare a vedere in anteprima e a esportare.',
     problem: 'Non è stato possibile applicare la modifica: {{reason}}',
     open: {
       fromStudio: "Apri nell'editor video",
       fromClip: "Apri nell'editor multitraccia",
-      resume: 'Riprendi il progetto salvato',
+      resume: "Riapri l'ultimo progetto che hai salvato qui",
       loading: 'Apertura del progetto…',
       failed: 'Non è stato possibile aprire il progetto.',
     },

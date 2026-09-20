@@ -31,7 +31,9 @@ export type StudioOpen =
   | { readonly kind: 'source'; readonly assetId: string; readonly name: string }
   | { readonly kind: 'saved'; readonly assetId: string };
 
-/** A frame before there is a clip to measure. The first source replaces it (`sourceEdit`). */
+/** A frame before there is a clip to measure. A project still wearing EXACTLY this, with no
+ *  source in it, is one nobody has chosen a frame for — which is the only project `sourceEdit`
+ *  is allowed to re-frame. */
 const STARTING_SIZE = { width: 1920, height: 1080 };
 const STARTING_FPS = 30;
 
@@ -60,11 +62,28 @@ export async function probeSource(bytes: Blob): Promise<ProbedSource> {
 }
 
 /**
+ * Whether this project's frame is still the one nobody picked: no source in it, and the default
+ * size untouched. A project built from a clip already carries that clip's frame, and a saved one
+ * carries whatever it was saved with — neither is re-framed by what is added to it next.
+ */
+function framedByDefault(project: VideoProject): boolean {
+  return (
+    project.sources.length === 0 &&
+    project.size.width === STARTING_SIZE.width &&
+    project.size.height === STARTING_SIZE.height
+  );
+}
+
+/**
  * The edit that puts a probed source in the project, with a clip of its whole length.
  *
- * The FIRST source also sets the frame. A generated vertical clip in a 1920×1080 project is not
- * letterboxed by VideoFlow, it is cropped (`fit: 'cover'`), so a project that kept its default
- * would quietly throw away the sides of every portrait clip the Studio makes.
+ * The first source of an UNFRAMED project also sets its frame. VideoFlow does not letterbox a
+ * clip that does not fit, it crops it (`fit: 'cover'`), so a portrait clip in a project still
+ * wearing the 1920×1080 default would lose its sides with nothing said — and silent cropping is
+ * the defect class this cycle keeps refusing. The narrowing is what keeps the cure from becoming
+ * the same disease: a SECOND source never re-frames the project, and neither does the first
+ * source of a project whose frame came from somewhere (a clip, a saved file). The workspace
+ * watches the size across the commit and says so when it changes.
  */
 export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
   const size = { width: probed.width, height: probed.height };
@@ -77,9 +96,12 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
       size,
       fps: project.fps,
     };
-    const first = project.sources.length === 0;
     return addClip(
-      { ...project, size: first ? size : project.size, sources: [...project.sources, source] },
+      {
+        ...project,
+        size: framedByDefault(project) ? size : project.size,
+        sources: [...project.sources, source],
+      },
       { sourceId: source.id, duration: probed.duration },
     );
   };
@@ -105,9 +127,21 @@ export async function uploadSource(file: File): Promise<string> {
   return finalized.id;
 }
 
+/** The two statuses the asset route uses for "this is not here" (internal/agui/assets_api.go
+ *  collapses gone AND not-yours to 404 — existence-hiding, D-12). */
+const GONE_STATUSES = new Set([404, 410]);
+
+/**
+ * The bytes of a source the editor was pointed at. Only a 404/410 is "the asset is gone": an
+ * expired session, a proxy in the way or a 500 is a different sentence, and dressing it as a
+ * permanent deletion tells the operator to give up on a file that is still there.
+ */
 async function fetchSource(assetId: string, source: ProjectAssetSource): Promise<Blob> {
   const response = await fetch(source.assetUrl(assetId), { credentials: source.credentials });
-  if (!response.ok) throw new CommandRefusal(REFUSAL_MISSING_ASSET);
+  if (GONE_STATUSES.has(response.status)) throw new CommandRefusal(REFUSAL_MISSING_ASSET);
+  if (!response.ok) {
+    throw new Error(`videoStudio: source ${assetId} answered ${String(response.status)}`);
+  }
   return response.blob();
 }
 

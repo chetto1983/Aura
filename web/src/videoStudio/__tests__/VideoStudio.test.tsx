@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
 import type { VideoProject } from '../project';
+import { lastSavedProject } from '../projectStore';
 import type { StudioOpen } from '../VideoStudio_sources';
 
 // The workspace is where the parts become an editor, so these tests read the REAL bundle rather
@@ -153,6 +154,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.clearAllMocks();
   downloadBlob.mockReset();
+  localStorage.clear();
 });
 
 describe('VideoStudio', () => {
@@ -341,6 +343,126 @@ describe('VideoStudio', () => {
     expect((await screen.findByRole('alert')).textContent).toBe(
       i18n.t('videoStudio.refusal.sourceMissingAsset'),
     );
+  });
+
+  it('will not preview or export a project whose source is gone', async () => {
+    store.loadProject.mockResolvedValue({ project: project(), missing: ['src-a'] });
+    mount({ kind: 'saved', assetId: 'file-1' });
+    await screen.findByRole('alert');
+
+    // No renderer at all: a VideoFlow layer over a URL that 404s is a black rectangle that
+    // reads as a preview, and an export of it is a file of black frames that reports success.
+    expect(screen.queryByTestId('video-stage')).toBeNull();
+    expect(screen.getByText(i18n.t('videoStudio.unplayable', { count: 2 }))).toBeTruthy();
+
+    const exportButton = button('videoStudio.export.action');
+    expect(exportButton.hasAttribute('disabled')).toBe(true);
+    expect(exportButton.getAttribute('title')).toBe(
+      i18n.t('videoStudio.refusal.sourceMissingAsset'),
+    );
+    fireEvent.click(exportButton);
+    await waitFor(() => {
+      expect(renderers.instances.length).toBe(0);
+    });
+    expect(flow.exportProject).not.toHaveBeenCalled();
+    expect(downloadBlob).not.toHaveBeenCalled();
+  });
+
+  it('gives the preview and the export back once the clips that used it are gone', async () => {
+    store.loadProject.mockResolvedValue({ project: project(), missing: ['src-a'] });
+    mount({ kind: 'saved', assetId: 'file-1' });
+    await screen.findByRole('alert');
+
+    // Both clips play the missing source; removing them is the only way cycle 1 offers to
+    // unblock, and the lane stays editable precisely so it can be taken.
+    await removeSelected('videoStudio.timeline.clip');
+    fireEvent.click(item('videoStudio.timeline.clip', 1));
+    fireEvent.click(button('videoStudio.command.remove'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('video-stage')).toBeTruthy();
+    });
+    // Nothing on the lane now, so the export refuses for the OTHER reason and says which.
+    expect(button('videoStudio.export.action').getAttribute('title')).toBe(
+      i18n.t('videoStudio.export.empty'),
+    );
+  });
+
+  it('drops a selection the edit took away, so Remove is never live over nothing', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    await removeSelected('videoStudio.timeline.clip');
+
+    expect(button('videoStudio.command.remove').hasAttribute('disabled')).toBe(true);
+    expect(screen.getByText(i18n.t('videoStudio.inspector.empty'))).toBeTruthy();
+  });
+
+  it('drops a selection an undo took away', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.command.addText'));
+    await screen.findByLabelText(i18n.t('videoStudio.inspector.text'));
+
+    fireEvent.click(button('videoStudio.command.undo'));
+    await waitFor(() => {
+      expect(screen.queryByLabelText(i18n.t('videoStudio.inspector.text'))).toBeNull();
+    });
+    expect(button('videoStudio.command.remove').hasAttribute('disabled')).toBe(true);
+  });
+
+  it('keeps a selection an edit left alone', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(item('videoStudio.timeline.clip', 2));
+    // Muting clip 2 rebuilds the lane by value; the clip is still there and stays selected.
+    fireEvent.click(screen.getByLabelText(i18n.t('videoStudio.inspector.mute')));
+
+    await waitFor(() => {
+      expect(button('videoStudio.command.remove').hasAttribute('disabled')).toBe(false);
+    });
+  });
+
+  it('says so when the first source re-frames an empty project', async () => {
+    media.probeVideo.mockResolvedValue({ duration: 6, width: 1080, height: 1920, hasAudio: true });
+    mount({ kind: 'project', project: { ...project(), sources: [], video: [], overlays: [] } });
+    await screen.findByTestId('video-stage');
+
+    fireEvent.change(screen.getByLabelText(i18n.t('videoStudio.source.pick')), {
+      target: { files: [new File(['x'], 'tall.mp4', { type: 'video/mp4' })] },
+    });
+
+    expect(
+      await screen.findByText(i18n.t('videoStudio.frameAdopted', { width: 1080, height: 1920 })),
+    ).toBeTruthy();
+  });
+
+  it('says nothing about the frame when a second source does not change it', async () => {
+    media.probeVideo.mockResolvedValue({ duration: 6, width: 1080, height: 1920, hasAudio: true });
+    mount();
+    await screen.findByTestId('video-stage');
+
+    fireEvent.change(screen.getByLabelText(i18n.t('videoStudio.source.pick')), {
+      target: { files: [new File(['x'], 'tall.mp4', { type: 'video/mp4' })] },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) }),
+      ).toBeTruthy();
+    });
+    expect(
+      screen.queryByText(i18n.t('videoStudio.frameAdopted', { width: 1080, height: 1920 })),
+    ).toBeNull();
+  });
+
+  it('remembers where the save went, so the Studio can offer it back after a reload', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    fireEvent.click(button('videoStudio.save.action'));
+
+    await waitFor(() => {
+      expect(lastSavedProject()).toBe('file-1');
+    });
   });
 
   it('stops the preview renderer when it closes', async () => {
