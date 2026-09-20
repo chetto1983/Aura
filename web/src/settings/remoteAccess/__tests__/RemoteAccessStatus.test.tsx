@@ -106,6 +106,21 @@ describe('RemoteAccessStatus', () => {
     );
   });
 
+  it('keeps enabled true when replacing a healthy configured token', async () => {
+    const requests: unknown[] = [];
+    const healthy = { ...status, account_id: 'account', zone_name: 'example.com' };
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url.endsWith('/token/verify')) return Promise.resolve(new Response(JSON.stringify({ accounts: [{ id: 'account', name: 'Account' }] })));
+      if (init?.method === 'PUT') requests.push(JSON.parse(String(init.body)));
+      return Promise.resolve(new Response(JSON.stringify(healthy)));
+    }));
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><RemoteAccessPanel /></QueryClientProvider>);
+    fireEvent.change(await screen.findByLabelText('Cloudflare API token'), { target: { value: 'replacement' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Verify token' }));
+    await waitFor(() => expect(requests).toEqual([expect.objectContaining({ enabled: true })]));
+  });
+
   it('contains a rejected management action in localized alert feedback', async () => {
     render(
       <RemoteAccessStatus
