@@ -1,6 +1,7 @@
 import { finalizeAsset, presignAsset } from '../chat/attachments/api';
 import { putWithProgress } from '../chat/attachments/upload';
 import { probeVideo, type VideoInfo } from '../mediaEdit/videoMedia';
+import { assetIsGone } from './assetStatus';
 import { addClip, CommandRefusal } from './commands';
 import { emptyProject, type ProjectSource, type VideoProject } from './project';
 import { loadProject, type LoadedProject, type ProjectAssetSource } from './projectStore';
@@ -183,21 +184,14 @@ export async function uploadSource(file: File): Promise<string> {
   return finalized.id;
 }
 
-/** The two statuses the asset route uses for "this is not here" (internal/agui/assets_api.go
- *  collapses gone AND not-yours to 404 — existence-hiding, D-12). */
-const GONE_STATUSES = new Set([404, 410]);
-
 /**
- * The bytes of a source the editor was pointed at. Only a 404/410 is "the asset is gone": an
- * expired session, a proxy in the way or a 500 is a different sentence, and dressing it as a
- * permanent deletion tells the operator to give up on a file that is still there.
+ * The bytes of a source the editor was pointed at. `assetIsGone` is what reads the status — the
+ * same reading a load uses — and this is what the editor DOES with it: a gone asset is a refusal
+ * the operator can act on, anything else is the failure it already is.
  */
 async function fetchSource(assetId: string, source: ProjectAssetSource): Promise<Blob> {
   const response = await fetch(source.assetUrl(assetId), { credentials: source.credentials });
-  if (GONE_STATUSES.has(response.status)) throw new CommandRefusal(REFUSAL_MISSING_ASSET);
-  if (!response.ok) {
-    throw new Error(`videoStudio: source ${assetId} answered ${String(response.status)}`);
-  }
+  if (assetIsGone(assetId, response)) throw new CommandRefusal(REFUSAL_MISSING_ASSET);
   return response.blob();
 }
 

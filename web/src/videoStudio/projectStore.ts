@@ -1,6 +1,7 @@
 import { IDENTITY_SCOPED } from '../chat/artifacts/renderers/assetSourceContext';
 import { finalizeAsset, getAsset, presignAsset } from '../chat/attachments/api';
 import { isTerminalAsset, putWithProgress } from '../chat/attachments/upload';
+import { assetIsGone } from './assetStatus';
 import type { OverlayItem, OverlayTrack, ProjectSource, VideoItem, VideoProject } from './project';
 
 // projectStore.ts — the project as a file. It is a `.json` DOCUMENT uploaded through the same
@@ -29,9 +30,6 @@ export interface LoadedProject {
 const PROJECT_MIME = 'application/json';
 /** Long enough to recognise the project, short enough that no store has to think about it. */
 const NAME_MAX = 60;
-/** The two statuses the asset route uses for "this is not here": 404 is its own existence-hiding
- *  answer for gone-or-not-yours (internal/agui/assets_api.go, D-12). Nothing else means gone. */
-const GONE_STATUSES = new Set([404, 410]);
 
 /**
  * What the project is called on disk, saved or exported. Its name is operator input — a Studio
@@ -196,22 +194,14 @@ function isProject(value: unknown): value is VideoProject {
 /**
  * Whether the bytes are gone, asked of the route the renderer will really fetch. `HEAD` because
  * the answer wanted is the status and not the file; Go's ServeMux matches a `GET` pattern for
- * `HEAD` too, so this is the download route answering about itself.
- *
- * Only 404/410 mean gone. A 401, a 403 or a 500 is a different sentence and is thrown as itself:
- * saying "your clip was permanently deleted" because a session expired is the worse of the two
- * wrong answers, and it is the one an operator acts on.
+ * `HEAD` too, so this is the download route answering about itself. What the status MEANS is
+ * `assetIsGone`'s, which is the same reading the editor's own fetch uses.
  */
 async function bytesAreGone(assetId: string, source: ProjectAssetSource): Promise<boolean> {
-  const response = await fetch(source.assetUrl(assetId), {
-    method: 'HEAD',
-    credentials: source.credentials,
-  });
-  if (GONE_STATUSES.has(response.status)) return true;
-  if (!response.ok) {
-    throw new Error(`videoStudio: source ${assetId} answered ${String(response.status)}`);
-  }
-  return false;
+  return assetIsGone(
+    assetId,
+    await fetch(source.assetUrl(assetId), { method: 'HEAD', credentials: source.credentials }),
+  );
 }
 
 /**
