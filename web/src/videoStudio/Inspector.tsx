@@ -62,6 +62,18 @@ function readAmount(text: string): number | undefined {
   return Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+/** Any string is a legal title or colour, so there is nothing here to refuse. */
+function keepText(text: string): string {
+  return text;
+}
+
+/** An asset id, or nothing at all: `videoflow.ts` refuses an image overlay that names no asset,
+ *  and a blank one would only resolve to a URL that answers 404. */
+function readAsset(text: string): string | undefined {
+  const id = text.trim();
+  return id === '' ? undefined : id;
+}
+
 /**
  * The opacity a fade IS. A property whose value is a list of keyframes compiles to an animation
  * (`BaseLayer.toJSON` promotes it), so the choice needs no field of its own in the model and
@@ -109,6 +121,11 @@ interface PropertyFieldProps<T> {
  * A property as an input: it keeps what is being typed, commits on Enter or blur, and restores a
  * value it cannot read instead of letting it reach the project. That is `TimeField`'s discipline
  * over a value space that is not a timecode — the two time fields below ARE TimeField.
+ *
+ * The draft is state, so a caller remounts the field with a key carrying BOTH the item and the
+ * incoming value — TimeField states the same contract. Without the item in that key, typing into
+ * one overlay's field and then selecting another of the same kind would leave the first one's
+ * words on screen and commit them into the second; without the value, an undo would not reach it.
  */
 function PropertyField<T>({ label, value, type = 'text', read, onCommit }: PropertyFieldProps<T>) {
   const id = useId();
@@ -149,6 +166,10 @@ interface ClipFieldsProps {
  * Both fields show SOURCE time and `trimClip` counts from where the clip already starts in that
  * source, so each commits the difference. Adding the clip's own start back would count it twice —
  * once in the argument and once in the command — and move the clip twice as far as it was asked.
+ *
+ * Each is remounted on the clip's id as well as on its value: two clips can legitimately begin at
+ * the same point of the same source, and a key made of the value alone would let a time typed
+ * against one of them survive the switch to the other and commit there.
  */
 function ClipFields({ clip, onCommand }: ClipFieldsProps) {
   const { t } = useTranslation();
@@ -157,7 +178,7 @@ function ClipFields({ clip, onCommand }: ClipFieldsProps) {
   return (
     <>
       <TimeField
-        key={`start-${formatTimecode(clip.sourceStart)}`}
+        key={`start-${clip.id}-${formatTimecode(clip.sourceStart)}`}
         label={t('videoStudio.inspector.start')}
         value={clip.sourceStart}
         onCommit={(at) => {
@@ -171,7 +192,7 @@ function ClipFields({ clip, onCommand }: ClipFieldsProps) {
         }}
       />
       <TimeField
-        key={`end-${formatTimecode(end)}`}
+        key={`end-${clip.id}-${formatTimecode(end)}`}
         label={t('videoStudio.inspector.end')}
         value={end}
         onCommit={(at) => {
@@ -229,14 +250,92 @@ interface OverlayFieldsProps {
   readonly onCommand: Commit;
 }
 
+interface KindFieldsProps {
+  readonly item: OverlayItem;
+  readonly set: (key: string, value: unknown) => void;
+}
+
+/** A title: the words, how big they are, and what colour. */
+function TextFields({ item, set }: KindFieldsProps) {
+  const { t } = useTranslation();
+  const words = asText(item.props.text, '');
+  const size = String(asAmount(item.props.fontSize, 4));
+  const colour = asText(item.props.color, '#FFFFFF');
+  return (
+    <>
+      <PropertyField
+        key={`text-${item.id}-${words}`}
+        label={t('videoStudio.inspector.text')}
+        value={words}
+        read={keepText}
+        onCommit={(next) => {
+          set('text', next);
+        }}
+      />
+      <PropertyField
+        key={`size-${item.id}-${size}`}
+        label={t('videoStudio.inspector.size')}
+        value={size}
+        read={readAmount}
+        onCommit={(next) => {
+          set('fontSize', next);
+        }}
+      />
+      <PropertyField
+        key={`color-${item.id}-${colour}`}
+        label={t('videoStudio.inspector.color')}
+        type="color"
+        value={colour}
+        read={keepText}
+        onCommit={(next) => {
+          set('color', next);
+        }}
+      />
+    </>
+  );
+}
+
 /**
- * An overlay's properties, which are VideoFlow's own: `text`, `fontSize` and `color` on a title,
- * `scale` on a still, `opacity` for the fade. The fade is measured against the window the
+ * A still: which asset it shows, and how big.
+ *
+ * `props.assetId` is the ONLY thing in the model that can name an image — `OverlayItem` carries
+ * no source of its own and `videoflow.ts` reads the id straight out of the props — so without
+ * this field an image overlay could never be given one, or have a wrong one corrected.
+ */
+function ImageFields({ item, set }: KindFieldsProps) {
+  const { t } = useTranslation();
+  const asset = asText(item.props.assetId, '');
+  const scale = String(asAmount(item.props.scale, 1));
+  return (
+    <>
+      <PropertyField
+        key={`asset-${item.id}-${asset}`}
+        label={t('videoStudio.inspector.asset')}
+        value={asset}
+        read={readAsset}
+        onCommit={(next) => {
+          set('assetId', next);
+        }}
+      />
+      <PropertyField
+        key={`scale-${item.id}-${scale}`}
+        label={t('videoStudio.inspector.scale')}
+        value={scale}
+        read={readAmount}
+        onCommit={(next) => {
+          set('scale', next);
+        }}
+      />
+    </>
+  );
+}
+
+/**
+ * An overlay's properties, which are VideoFlow's own. The fade is measured against the window the
  * renderer really gets — an overlay clipped by the end of the clip it hangs on is shorter than
  * its own duration, and a fade-out past that edge would never arrive.
  */
 function OverlayFields({ project, item, onCommand }: OverlayFieldsProps) {
-  const { t } = useTranslation();
   const span = overlayWindow(project, item.anchor, item.duration);
   function set(key: string, value: unknown) {
     onCommand((current) => setProperty(current, { itemId: item.id, key, value }));
@@ -244,42 +343,9 @@ function OverlayFields({ project, item, onCommand }: OverlayFieldsProps) {
   return (
     <>
       {item.kind === 'text' ? (
-        <>
-          <PropertyField
-            label={t('videoStudio.inspector.text')}
-            value={asText(item.props.text, '')}
-            read={(text) => text}
-            onCommit={(text) => {
-              set('text', text);
-            }}
-          />
-          <PropertyField
-            label={t('videoStudio.inspector.size')}
-            value={String(asAmount(item.props.fontSize, 4))}
-            read={readAmount}
-            onCommit={(size) => {
-              set('fontSize', size);
-            }}
-          />
-          <PropertyField
-            label={t('videoStudio.inspector.color')}
-            type="color"
-            value={asText(item.props.color, '#FFFFFF')}
-            read={(text) => text}
-            onCommit={(color) => {
-              set('color', color);
-            }}
-          />
-        </>
+        <TextFields item={item} set={set} />
       ) : (
-        <PropertyField
-          label={t('videoStudio.inspector.scale')}
-          value={String(asAmount(item.props.scale, 1))}
-          read={readAmount}
-          onCommit={(scale) => {
-            set('scale', scale);
-          }}
-        />
+        <ImageFields item={item} set={set} />
       )}
       <AnimationField
         value={animationOf(item.props)}

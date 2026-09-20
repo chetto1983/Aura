@@ -126,6 +126,14 @@ function SelectionBox({ label, at, onMove }: SelectionBoxProps) {
     onMove(moved(at, arrow[0] * step, arrow[1] * step));
   }
 
+  /** The gesture is over, whatever ended it: nothing is held and the box goes back to what the
+   *  project says. A cancelled touch that kept its position would show a move nobody made and
+   *  hand it to the next release. */
+  function release() {
+    from.current = undefined;
+    setDragged(undefined);
+  }
+
   return (
     <button
       type="button"
@@ -146,10 +154,13 @@ function SelectionBox({ label, at, onMove }: SelectionBoxProps) {
       }}
       onPointerMove={drag}
       onPointerUp={() => {
-        from.current = undefined;
         if (dragged !== undefined) onMove(dragged);
-        setDragged(undefined);
+        release();
       }}
+      // A capture is released implicitly AFTER pointerup is dispatched, so the commit above has
+      // already happened by the time this runs and it only clears what is left.
+      onPointerCancel={release}
+      onLostPointerCapture={release}
       onKeyDown={keys}
     />
   );

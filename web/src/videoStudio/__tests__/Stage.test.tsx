@@ -265,6 +265,45 @@ describe('Stage', () => {
     expect(edited?.overlays[0]?.items[0]?.props.position).toEqual([1, 0]);
   });
 
+  // A touch drag the browser takes away — a call arriving, a gesture the OS claims — never sends
+  // pointerup. Left alone, the box would keep showing a move nobody made and hand it to whatever
+  // release came next.
+  it('drops a cancelled drag instead of keeping it on screen', () => {
+    const view = mount(project(), 'title', 2);
+    const box = screen.getByRole('button', { name: 'videoStudio.stage.selection' });
+    measured(screen.getByTestId('video-stage'), 200, 100);
+
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 140, clientY: 60 });
+    expect(box.style.left).toBe('70%');
+
+    fireEvent.pointerCancel(box, { pointerId: 1 });
+
+    expect(view.commands).toHaveLength(0);
+    expect(box.style.left).toBe('50%');
+
+    // Nothing is held any more, so a move with no press behind it moves nothing and the release
+    // after it commits nothing.
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 180, clientY: 60 });
+    fireEvent.pointerUp(box, { pointerId: 1 });
+
+    expect(view.commands).toHaveLength(0);
+    expect(box.style.left).toBe('50%');
+  });
+
+  it('lets go when the capture is taken away', () => {
+    const view = mount(project(), 'title', 2);
+    const box = screen.getByRole('button', { name: 'videoStudio.stage.selection' });
+    measured(screen.getByTestId('video-stage'), 200, 100);
+
+    fireEvent.pointerDown(box, { pointerId: 1, clientX: 100, clientY: 50 });
+    fireEvent.pointerMove(box, { pointerId: 1, clientX: 140, clientY: 60 });
+    fireEvent.lostPointerCapture(box, { pointerId: 1 });
+
+    expect(view.commands).toHaveLength(0);
+    expect(box.style.left).toBe('50%');
+  });
+
   it('moves the box with the arrow keys, because a drag no mouse can make is unusable', () => {
     const view = mount(project(), 'title', 2);
 
