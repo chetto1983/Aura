@@ -469,20 +469,20 @@ git commit -m "feat(llm): send video in the shape each backend reads" -m "OpenRo
 - Modify: `internal/llm/model_content_caps.go` (only if spike 106 measured a key other than `video`)
 - Test: the existing llama.cpp modality probe test file (find it with `grep -rln "llamaCppModalities\|modalities" internal/llm/*_test.go`)
 
-- [ ] **Step 1: Write the failing (or pinning) test**
+- [x] **Step 1: Write the failing (or pinning) test**
 
 Add a case to the llama.cpp `/props` probe test: a fake server answering `{"modalities":{"vision":true,"<measured key>":true}}` must yield `ProviderContentCapabilities.Modalities` containing `image` and `video`, so `SupportsMIME("video/mp4")` is true. Model it on the existing vision case in that file.
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run (WSL): `go test ./internal/llm/ -run <that test name>`
 Expected: PASS already if the measured key is `video` (then this task only pins the behaviour); FAIL otherwise.
 
-- [ ] **Step 3: Map the key if it is not `video`**
+- [x] **Step 3: Map the key if it is not `video`**
 
 In `llamaCppModalities`, beside `if name == "vision" { name = "image" }`, add the measured rename, with a comment citing spike 106.
 
-- [ ] **Step 4: Run the checks and commit**
+- [x] **Step 4: Run the checks and commit**
 
 ```bash
 go vet ./internal/llm/ && go test -race ./internal/llm/
