@@ -1,0 +1,1 @@
+{"success":true,"errors":[],"result":{"id":"zone-one","name":"example.com","status":"pending","account":{"id":"account-one"},"name_servers":["first.ns.cloudflare.com","second.ns.cloudflare.com"]}}

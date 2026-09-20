@@ -22,6 +22,7 @@ type Querier interface {
 	// Only an UNCLAIMED asset is adopted. A row that already names a thread is left exactly as
 	// it is, so this can never move someone's attachment between conversations.
 	AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoThreadParams) (AuraAssets, error)
+	AdvanceCloudflareRemoteAccess(ctx context.Context, arg AdvanceCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
@@ -170,6 +171,7 @@ type Querier interface {
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
+	GetCloudflareRemoteAccess(ctx context.Context) (AuraCloudflareRemoteAccess, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).
 	// Returns pgx.ErrNoRows when the branch has never been compacted, which is the normal
@@ -612,6 +614,7 @@ type Querier interface {
 	// Advance an active task's next fire to now so the next tick claims it. Returns rows
 	// affected so the caller distinguishes a hit from a non-active (pending/cancelled) task.
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
+	SaveCloudflareRemoteAccessDesired(ctx context.Context, arg SaveCloudflareRemoteAccessDesiredParams) (AuraCloudflareRemoteAccess, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.

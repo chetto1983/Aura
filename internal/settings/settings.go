@@ -51,6 +51,8 @@ type KeyMeta struct {
 // OverlayEnv + the API enforce it: a key outside this map is rejected/ignored, so
 // the settings layer can never reach connection or security env.
 var AllowedKeys = map[string]KeyMeta{
+	"CLOUDFLARE_API_TOKEN":         {Secret: true, Kind: KindString, Label: "Cloudflare API token"},
+	"CLOUDFLARE_TUNNEL_TOKEN":      {Secret: true, Kind: KindString, Label: "Cloudflare tunnel token"},
 	"AURA_LLM_PROVIDER":            {Kind: KindString, Label: "Primary LLM provider (openrouter|llamacpp|ollama)"},
 	"AURA_LLM_MODEL":               {Kind: KindString, Label: "Primary LLM model"},
 	"AURA_LLM_BASE_URL":            {Kind: KindString, Label: "Primary LLM base URL"},

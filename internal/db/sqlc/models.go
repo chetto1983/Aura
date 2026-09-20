@@ -132,6 +132,34 @@ type AuraCapabilityGrants struct {
 	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
 }
 
+type AuraCloudflareRemoteAccess struct {
+	Singleton      bool   `json:"singleton"`
+	Enabled        bool   `json:"enabled"`
+	Generation     int64  `json:"generation"`
+	Phase          string `json:"phase"`
+	AccountID      string `json:"account_id"`
+	ZoneID         string `json:"zone_id"`
+	ZoneName       string `json:"zone_name"`
+	TunnelID       string `json:"tunnel_id"`
+	TunnelName     string `json:"tunnel_name"`
+	PublicLabel    string `json:"public_label"`
+	WarpLabel      string `json:"warp_label"`
+	PublicDnsID    string `json:"public_dns_id"`
+	WarpDnsID      string `json:"warp_dns_id"`
+	OtpIdpID       string `json:"otp_idp_id"`
+	PublicAppID    string `json:"public_app_id"`
+	PublicPolicyID string `json:"public_policy_id"`
+	WarpAppID      string `json:"warp_app_id"`
+	WarpPolicyID   string `json:"warp_policy_id"`
+	// Gateway posture ID for the WARP-required hostname; requires this Zero Trust organization, not consumer WARP.
+	WarpPostureID    string             `json:"warp_posture_id"`
+	LastError        string             `json:"last_error"`
+	ObservedHealthy  bool               `json:"observed_healthy"`
+	LastReconciledAt pgtype.Timestamptz `json:"last_reconciled_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy        string             `json:"updated_by"`
+}
+
 // L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).
 type AuraContextRotEvents struct {
 	Ts             pgtype.Timestamptz `json:"ts"`

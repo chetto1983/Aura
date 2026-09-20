@@ -47,6 +47,22 @@ func TestAllowed(t *testing.T) {
 	}
 }
 
+func TestCloudflareKeysAreSecret(t *testing.T) {
+	for _, key := range []string{"CLOUDFLARE_API_TOKEN", "CLOUDFLARE_TUNNEL_TOKEN"} {
+		meta, ok := Allowed(key)
+		if !ok || !meta.Secret || meta.Kind != KindString {
+			t.Fatalf("%s = %#v", key, meta)
+		}
+		t.Setenv(key, "inherited-value")
+		if err := OverlayEnv(t.Context(), fakeLister{rows: []sqlc.AuraSettings{{Key: key, Value: "database-secret", IsSecret: true}}}); err != nil {
+			t.Fatal(err)
+		}
+		if os.Getenv(key) != "inherited-value" {
+			t.Fatal("secret overlaid into environment")
+		}
+	}
+}
+
 // TestOpenRouterManagementKeyAllowlistedAndSecret proves the plan 02-06 management
 // credential is allowlisted and redacted like every other secret setting — distinct
 // from OPENROUTER_API_KEY, which TestAllowed already covers.

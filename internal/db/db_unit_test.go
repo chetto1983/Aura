@@ -372,8 +372,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// durable video generation jobs resumed after a restart and delivered once.
 	// 0129 adds media_job.surface and media_job.kind, so the cockpit Studio's
 	// conversationless image and video rows are told apart from chat jobs.
-	if head != 129 {
-		t.Fatalf("MigrationHead=%d, want embedded head 129", head)
+	// 0130 persists non-secret Cloudflare remote-access intent and resumable resource IDs.
+	if head != 130 {
+		t.Fatalf("MigrationHead=%d, want embedded head 130", head)
 	}
 }
 

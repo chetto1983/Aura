@@ -1,0 +1,1 @@
+{"success":true,"errors":[],"result":{"id":"app-one","name":"aura-owned","domain":"aura.example.com","type":"self_hosted","allowed_idps":["otp-one"],"session_duration":"24h","auto_redirect_to_identity":false}}

@@ -1,0 +1,1 @@
+{"success":true,"errors":[],"result":{"id":"dns-one","type":"CNAME","name":"aura.example.com","content":"foreign.example.com","comment":"another-owner","proxied":true,"ttl":1}}
