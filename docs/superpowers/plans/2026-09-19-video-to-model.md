@@ -273,7 +273,7 @@ Implement only the branches Task 1 kept. The code below assumes both were kept; 
 - Consumes: `llm.ReasoningTarget(provider, baseURL) llm.ReasoningTargetKind` and its constants.
 - Produces: `toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart, target llm.ReasoningTargetKind)`; `nativeContentPart(media llm.ProjectedRequestPart, target llm.ReasoningTargetKind)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `internal/llm/openai_compat/request_video_test.go`:
 ```go
@@ -397,12 +397,12 @@ func TestLlamaCppRequestCarriesTheVideoOnlyWhenTheModelTakesIt(t *testing.T) {
 }
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run (WSL): `go test ./internal/llm/openai_compat/ -run 'VideoPart|CarriesTheVideo'`
 Expected: FAIL — `too many arguments in call to nativeContentPart`.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `internal/llm/openai_compat/request.go`:
 1. `buildSDKRequest`: `messages, err := toSDKMessages(req.Messages, native, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))`.
@@ -444,7 +444,7 @@ If the compiler cannot infer `param.Override`'s second type parameter, write `pa
 
 In `internal/llm/openai_compat/wire_message_test.go` pass `llm.ReasoningTargetNone` as the new third argument at both call sites.
 
-- [ ] **Step 4: Run the checks**
+- [x] **Step 4: Run the checks**
 
 Run (WSL):
 ```bash
@@ -454,7 +454,7 @@ go test -race ./internal/llm/openai_compat/ ./internal/llm/
 ```
 Expected: PASS, including the existing image/audio multimodal tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add internal/llm/openai_compat/request.go internal/llm/openai_compat/request_video_test.go internal/llm/openai_compat/wire_message_test.go

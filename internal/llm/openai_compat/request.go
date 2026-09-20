@@ -17,7 +17,7 @@ import (
 
 func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.ChatCompletionNewParams, []option.RequestOption, int, error) {
 	native := c.projectNativeMedia(ctx, req.ContentProjection)
-	messages, err := toSDKMessages(req.Messages, native)
+	messages, err := toSDKMessages(req.Messages, native, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
 	if err != nil {
 		return openai.ChatCompletionNewParams{}, nil, 0, err
 	}
@@ -82,7 +82,7 @@ func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.Content
 	return out
 }
 
-func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart) ([]openai.ChatCompletionMessageParamUnion, error) {
+func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart, target llm.ReasoningTargetKind) ([]openai.ChatCompletionMessageParamUnion, error) {
 	lastUser := -1
 	if len(native) > 0 {
 		for i, message := range slices.Backward(messages) {
@@ -112,7 +112,7 @@ func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart) ([
 			}
 			parts := []openai.ChatCompletionContentPartUnionParam{openai.TextContentPart(message.Content)}
 			for _, media := range native {
-				if part, ok := nativeContentPart(media); ok {
+				if part, ok := nativeContentPart(media, target); ok {
 					parts = append(parts, part)
 				}
 			}
@@ -149,7 +149,7 @@ func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart) ([
 	return out, nil
 }
 
-func nativeContentPart(media llm.ProjectedRequestPart) (openai.ChatCompletionContentPartUnionParam, bool) {
+func nativeContentPart(media llm.ProjectedRequestPart, target llm.ReasoningTargetKind) (openai.ChatCompletionContentPartUnionParam, bool) {
 	major, _, ok := strings.Cut(strings.ToLower(strings.TrimSpace(media.MIMEType)), "/")
 	if !ok {
 		return openai.ChatCompletionContentPartUnionParam{}, false
@@ -167,6 +167,34 @@ func nativeContentPart(media llm.ProjectedRequestPart) (openai.ChatCompletionCon
 		}
 		return openai.InputAudioContentPart(openai.ChatCompletionContentPartInputAudioInputAudioParam{
 			Data: encoded, Format: format,
+		}), true
+	case "video":
+		return videoContentPart(media.MIMEType, encoded, target)
+	default:
+		return openai.ChatCompletionContentPartUnionParam{}, false
+	}
+}
+
+// videoContentPart writes the one video part each backend reads. openai-go has no video
+// variant, so the part is serialised through param.Override (packages/param/encoder.go
+// MarshalUnion writes the override when no variant is set). OpenRouter documents
+// {"type":"video_url","video_url":{"url":<data URL>}}
+// (openrouter.ai/docs/guides/overview/multimodal/videos); llama-server documents
+// {"type":"input_video","input_video":{"data":<base64>}} (tools/server/README.md, PR #24269,
+// measured in spike 106). No other backend has a video part — Ollama's OpenAI bridge
+// included — and none of their capability sources reports video, so the default is a
+// guard, not a path.
+func videoContentPart(mimeType, encoded string, target llm.ReasoningTargetKind) (openai.ChatCompletionContentPartUnionParam, bool) {
+	switch target {
+	case llm.ReasoningTargetOpenRouter:
+		return param.Override[openai.ChatCompletionContentPartUnionParam](map[string]any{
+			"type":      "video_url",
+			"video_url": map[string]any{"url": "data:" + mimeType + ";base64," + encoded},
+		}), true
+	case llm.ReasoningTargetLlamaCpp:
+		return param.Override[openai.ChatCompletionContentPartUnionParam](map[string]any{
+			"type":        "input_video",
+			"input_video": map[string]any{"data": encoded},
 		}), true
 	default:
 		return openai.ChatCompletionContentPartUnionParam{}, false
