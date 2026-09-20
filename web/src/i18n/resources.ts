@@ -22,6 +22,7 @@ import { mediaEn, mediaIt } from './resources.media';
 import { mediaEditEn, mediaEditIt } from './resources.mediaEdit';
 import { onboardingEn, onboardingIt } from './resources.onboarding';
 import { profileEn, profileIt, settingsEn, settingsIt } from './resources.settings';
+import { remoteAccessEn, remoteAccessIt } from './resources.remoteAccess';
 import { shareEn, shareIt } from './resources.share';
 import { studioEn, studioIt } from './resources.studio';
 import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
@@ -186,6 +187,7 @@ export const resources = {
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
+      ...remoteAccessEn,
       ...profileEn,
       ...adminEn,
       ...onboardingEn,
@@ -452,6 +454,7 @@ export const resources = {
       ...governanceIt,
       ...graphIt,
       ...settingsIt,
+      ...remoteAccessIt,
       ...profileIt,
       ...adminIt,
       ...onboardingIt,

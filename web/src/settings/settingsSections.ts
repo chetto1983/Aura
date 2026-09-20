@@ -1,4 +1,4 @@
-import { Gauge, Link2, Send, Server, UserRound, Users, Waypoints } from 'lucide-react';
+import { Cloud, Gauge, Link2, Send, Server, UserRound, Users, Waypoints } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 // The Settings rail (Material's "15+ settings belong on their own screens"): seven panes in
@@ -6,7 +6,14 @@ import type { LucideIcon } from 'lucide-react';
 // PANE'S OWN heading key, not a rail-only string — the entry that opens a section and the
 // section's title are then the same string by construction and cannot drift apart.
 export type SettingsSectionId =
-  'profile' | 'model' | 'budget' | 'backends' | 'identities' | 'channels' | 'sharing';
+  | 'profile'
+  | 'model'
+  | 'budget'
+  | 'backends'
+  | 'identities'
+  | 'channels'
+  | 'sharing'
+  | 'remote-access';
 
 export type SettingsGroupId = 'personal' | 'runtime' | 'access';
 
@@ -69,6 +76,13 @@ export const SETTINGS_SECTIONS: readonly SettingsSectionDef[] = [
     group: 'access',
     icon: Link2,
     labelKey: 'share.settings.heading',
+    adminOnly: true,
+  },
+  {
+    id: 'remote-access',
+    group: 'access',
+    icon: Cloud,
+    labelKey: 'remoteAccess.heading',
     adminOnly: true,
   },
 ];

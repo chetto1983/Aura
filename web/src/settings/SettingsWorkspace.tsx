@@ -7,6 +7,7 @@ import { ProfilePanel } from './ProfilePanel';
 import { SettingsRail } from './SettingsRail';
 import { SharedLinksSection } from './SharedLinksSection';
 import { TelegramSettingsPanel } from './TelegramSettingsPanel';
+import { RemoteAccessPanel } from './remoteAccess/RemoteAccessPanel';
 import { visibleSections, type SettingsSectionId } from './settingsSections';
 import { useSettingsSection } from './useSettingsSection';
 
@@ -93,5 +94,7 @@ function SettingsPane({
       return <TelegramSettingsPanel />;
     case 'sharing':
       return <SharedLinksSection />;
+    case 'remote-access':
+      return <RemoteAccessPanel />;
   }
 }

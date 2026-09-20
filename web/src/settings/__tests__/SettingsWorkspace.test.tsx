@@ -16,6 +16,9 @@ vi.mock('../TelegramSettingsPanel', () => ({
 vi.mock('../SharedLinksSection', () => ({
   SharedLinksSection: () => <div>Shared links panel</div>,
 }));
+vi.mock('../remoteAccess/RemoteAccessPanel', () => ({
+  RemoteAccessPanel: () => <div>Remote access panel</div>,
+}));
 
 const SECTION_LABELS = [
   'Your profile',
@@ -25,6 +28,7 @@ const SECTION_LABELS = [
   'Identities & access',
   'Telegram',
   'Shared links',
+  'Remote access',
 ];
 
 function stubFetch(capabilities: readonly string[]) {
