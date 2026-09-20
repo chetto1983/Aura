@@ -24,13 +24,42 @@ function tenthAbove(value: number): number {
   return Math.ceil(value * 10 - 1e-9) / 10;
 }
 
+/** The frame's own pixels. Mediabunny hands back canvases; a VideoFrame names them differently. */
+function frameSize(source: CanvasImageSource): { readonly width: number; readonly height: number } {
+  if ('displayWidth' in source) return { width: source.displayWidth, height: source.displayHeight };
+  const { width, height } = source;
+  return typeof width === 'number' && typeof height === 'number'
+    ? { width, height }
+    : { width: 0, height: 0 };
+}
+
 function Frame({ source }: { readonly source: CanvasImageSource }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    // Cover, not stretch: a portrait clip's frames are taller than the slot, and drawing them
+    // whole squashed every thumbnail into a smear.
+    const { width, height } = frameSize(source);
+    if (width <= 0 || height <= 0) {
+      context.drawImage(source, 0, 0, canvas.width, canvas.height);
+      return;
+    }
+    const slot = canvas.width / canvas.height;
+    const cropWidth = Math.min(width, height * slot);
+    const cropHeight = Math.min(height, width / slot);
+    context.drawImage(
+      source,
+      (width - cropWidth) / 2,
+      (height - cropHeight) / 2,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      canvas.width,
+      canvas.height,
+    );
   }, [source]);
   return (
     <canvas

@@ -85,6 +85,40 @@ describe('VideoTimeline', () => {
     });
     expect(onChange).toHaveBeenLastCalledWith(7.2, 7.36);
   });
+  // A portrait clip's frames arrive about 51x90 and were drawn into the 160x90 slot whole, so
+  // every thumbnail came out about 3x too wide (live check, 2026-09-19).
+  it('fills a filmstrip slot with the middle of a portrait frame, not a stretched one', () => {
+    const drawImage = vi.fn();
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage,
+    } as unknown as CanvasRenderingContext2D);
+    const portrait = { width: 51, height: 90 } as unknown as CanvasImageSource;
+
+    render(
+      <VideoTimeline
+        duration={10}
+        start={0}
+        end={10}
+        frames={[portrait]}
+        onChange={vi.fn()}
+        startLabel="Start of the selection"
+        endLabel="End of the selection"
+      />,
+    );
+
+    expect(drawImage).toHaveBeenCalledExactlyOnceWith(
+      portrait,
+      0,
+      30.65625,
+      51,
+      28.6875,
+      0,
+      0,
+      160,
+      90,
+    );
+    vi.restoreAllMocks();
+  });
 });
 
 describe('VideoTimeline on a degenerate clip', () => {
