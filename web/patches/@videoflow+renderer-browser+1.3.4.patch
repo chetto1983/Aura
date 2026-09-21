@@ -1,0 +1,23 @@
+diff --git a/node_modules/@videoflow/renderer-browser/dist/googleFontLoader.js b/node_modules/@videoflow/renderer-browser/dist/googleFontLoader.js
+--- a/node_modules/@videoflow/renderer-browser/dist/googleFontLoader.js
++++ b/node_modules/@videoflow/renderer-browser/dist/googleFontLoader.js
+@@ -9,7 +9,17 @@
+  *
+  */
+-import allFonts from './googlefonts.json';
+-const fontList = allFonts.items;
++const fontList = [
++    {
++        family: 'Noto Sans',
++        variants: ['regular'],
++        axes: [{ tag: 'wght', start: 100, end: 900 }],
++    },
++    {
++        family: 'Atkinson Hyperlegible Next',
++        variants: ['regular'],
++        axes: [{ tag: 'wght', start: 200, end: 800 }],
++    },
++];
+ /**
+  * Build the Google Fonts CSS2 URL for `fontName`.
+  *

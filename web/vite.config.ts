@@ -189,11 +189,49 @@ export default defineConfig({
         pluginTimings: false,
       },
       output: {
+        strictExecutionOrder: true,
         // Keep heavy chat/display dependencies off route chunks. Shiki stays lazy,
         // but splits by concern so one highlighter path cannot breach Vite's 500 kB
         // chunk-warning threshold.
         codeSplitting: {
           groups: [
+            {
+              name: 'video-videoflow',
+              test: /[\\/]node_modules[\\/]@videoflow[\\/]/,
+              includeDependenciesRecursively: false,
+              priority: 20,
+            },
+            {
+              name: 'video-mediabunny',
+              test: /[\\/]node_modules[\\/]mediabunny[\\/]/,
+              includeDependenciesRecursively: false,
+              maxSize: 400_000,
+              priority: 20,
+            },
+            {
+              name: 'photo-filerobot',
+              test: /[\\/]node_modules[\\/]react-filerobot-image-editor[\\/]/,
+              includeDependenciesRecursively: false,
+              priority: 20,
+            },
+            {
+              name: 'photo-scaleflex',
+              test: /[\\/]node_modules[\\/]@scaleflex[\\/]/,
+              includeDependenciesRecursively: false,
+              priority: 20,
+            },
+            {
+              name: 'photo-konva',
+              test: /[\\/]node_modules[\\/](konva|react-konva(?:-utils)?)[\\/]/,
+              includeDependenciesRecursively: false,
+              priority: 20,
+            },
+            {
+              name: 'photo-tooltip',
+              test: /[\\/]node_modules[\\/](@tippyjs[\\/]|tippy\.js[\\/])/,
+              includeDependenciesRecursively: false,
+              priority: 20,
+            },
             {
               name: 'cytoscape-core',
               test: /[\\/]node_modules[\\/]cytoscape[\\/]/,
