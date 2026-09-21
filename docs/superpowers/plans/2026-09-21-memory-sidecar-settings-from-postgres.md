@@ -4,7 +4,7 @@
 
 **Goal:** `cmd/arcadedb-mcp` reads its configuration from Postgres `aura.settings` at its own boot instead of from environment variables, so the daemon and the memory sidecar cannot disagree about the embedder.
 
-**Architecture:** At sidecar boot, before any existing env read, open a pgx pool on `AURA_DB_URL`, build a `settings.Store`, and call `settings.OverlayEnv` — which writes the allowlisted non-secret rows into the process environment. The existing env readers then pick them up unchanged, so no per-field mapping is invented. The cloud embedding credential is a secret and never passes through the environment: it is read with `store.Secret`. This is exactly what `cmd/aura-media-index/main.go` already does; the seam is reused, not re-designed.
+**Architecture:** At sidecar boot, before any existing env read, open a pgx pool on `AURA_DB_URL`, build a `settings.Store`, and call `settings.OverlayEnv` — which writes the allowlisted non-secret rows into the process environment. The existing env readers then pick them up unchanged, so no per-field mapping is invented. The cloud embedding credential is a secret and never passes through the environment: it is read with `store.Secret`, and it is the **services** key rather than a per-identity one (see the self-review notes). This is exactly what `cmd/aura-media-index/main.go` already does; the seam is reused, not re-designed.
 
 **Tech Stack:** Go, `github.com/jackc/pgx/v5/pgxpool`, `internal/settings`, `internal/arcadedb`, Docker Compose.
 
@@ -172,9 +172,15 @@ func applySettings(ctx context.Context, logger *slog.Logger) (string, error) {
 	if err = overlayFrom(ctx, store); err != nil {
 		return "", err
 	}
-	// The same single credential the daemon's cloud routes ride (config.EmbedRoute returns
-	// LLM.APIKey). There is deliberately no embed-specific key: a second one could only ever
-	// be the one that is stale.
+	// The SERVICES key, not a per-person one. aura.settings' OPENROUTER_API_KEY row is the
+	// key Aura mints as "aura-services" under its own monthly cap
+	// (internal/agui/openrouter_reconcile.go:20-22), and embeddings are one of its declared
+	// legs alongside speech and vision (internal/agui/settings_api_validate.go:23-25).
+	// Per-IDENTITY keys are a different thing entirely: they live in internal/identitykey,
+	// sealed per identity, and cmd/aura/identity_llm_resolver.go swaps them in per request
+	// for the chat route. identitykey.Store.Load even requires an identity in the context,
+	// which a process boot does not have. Embedding memory is a service cost with a service
+	// cap, so it rides the service key.
 	key, err := store.Secret(ctx, "OPENROUTER_API_KEY")
 	if err != nil {
 		return "", fmt.Errorf("settings secret: %w", err)
@@ -382,6 +388,7 @@ Append the two observed log lines to this plan under a `## Live run` heading, wi
 ## Self-review notes
 
 - **Spec coverage.** Spec facts 1-4 → Task 1. Fact 7 (the dark credential) → Task 2. Facts 6 and 8 → Task 3. Fact 8's "manual burden" → Task 4. Fact 9 (the daemon's new embed shape) is read-only context and constrains Task 2's credential choice.
-- **Open question the spec raised and this plan ANSWERS:** the spec asked whether a separate embed credential row should exist. It should not — the daemon's `EmbedRoute` returns `LLM.APIKey`, so the sidecar uses the same `OPENROUTER_API_KEY` secret, exactly as `cmd/aura-media-index` does. A second key could only ever be the stale one.
+- **Open question the spec raised and this plan ANSWERS:** the spec asked whether a separate embed credential row should exist. It should not, and the reason is not "the daemon uses the same key" — since the multi-tenant work, OpenRouter credentials come in TWO kinds and only one of them is right here. `aura.settings`' `OPENROUTER_API_KEY` is the **services** key, minted as `aura-services` with its own monthly cap (`internal/agui/openrouter_reconcile.go:20-22`), and embeddings are a declared leg of it next to speech and vision (`internal/agui/settings_api_validate.go:23-25`). Per-**identity** keys are separate: sealed per identity in `internal/identitykey`, swapped in per request for the chat route by `cmd/aura/identity_llm_resolver.go`, and `identitykey.Store.Load` requires an identity in the context that a process boot does not have. Embedding a tenant's memory is a service cost against a service cap, so the sidecar reads `OPENROUTER_API_KEY` through `Store.Secret`, exactly as `cmd/aura-media-index` does. An embed-specific third key could only ever be the stale one.
+- **What this does NOT do:** it does not bill a tenant's memory embedding to that tenant's own key. If per-identity attribution of embedding cost is wanted, that is a different change — the sidecar would need an identity in scope at embed time, not at boot — and it needs its own spec.
 - **Open question this plan does NOT answer:** whether boot-time-only is enough. The overlay makes the sidecar correct at restart, not live. Nothing here builds a reload path; if one is wanted it is separate work with its own spec.
 - **ArcadeDB credentials stay in compose.** `internal/settings`' package comment states the allowlist exists precisely so a settings row can never clobber connection/security env (`POSTGRES_*`, `ARCADEDB_PASSWORD`, `AURA_WEB_AUTH_SECRET`). Moving them would contradict a stated invariant to save one line of YAML.
