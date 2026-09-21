@@ -34,19 +34,19 @@ A feature named in an old design does not authorize recreating it.
 
 ## 2. Architecture and ownership
 
-| Layer | Responsibility | Source |
-|---|---|---|
-| Composition | Wire runtime, stores, channels, workers and clients | `cmd/aura` |
-| Turns | History, context, persistence, pause/resume, capture and delivery | `internal/runner` |
-| Agent | Model rounds, tools, events, budgets and completion | `internal/agent` |
-| Policy | Tool decisions, approvals, grants and reservations | `internal/gateway`, `internal/approvalgrants` |
-| Control data | Identities, conversations, settings, jobs and audit | Postgres, `internal/db` |
-| Memory/retrieval | Facts, graph relationships and derived search records | `internal/arcadedb`, `cmd/arcadedb-mcp` |
-| Objects | Original files and identity-bound storage | `internal/objectstore`, Garage |
-| Ingestion | Reconcile sources into cards and passages | `internal/ingestsupervisor`, `services/ingest` |
-| Extensions | MCP connections and owned/shared skills | `internal/mcp`, `internal/mcpregistry`, `internal/skills`, `internal/skillacl` |
-| Execution | Workspace and per-identity sandbox boxes | `internal/sandbox/usersandbox` |
-| Surfaces | HTTP/SSE, embedded cockpit, Telegram and CLI | `internal/agui`, `internal/webui`, `internal/channels` |
+| Layer            | Responsibility                                                    | Source                                                                         |
+| ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Composition      | Wire runtime, stores, channels, workers and clients               | `cmd/aura`                                                                     |
+| Turns            | History, context, persistence, pause/resume, capture and delivery | `internal/runner`                                                              |
+| Agent            | Model rounds, tools, events, budgets and completion               | `internal/agent`                                                               |
+| Policy           | Tool decisions, approvals, grants and reservations                | `internal/gateway`, `internal/approvalgrants`                                  |
+| Control data     | Identities, conversations, settings, jobs and audit               | Postgres, `internal/db`                                                        |
+| Memory/retrieval | Facts, graph relationships and derived search records             | `internal/arcadedb`, `cmd/arcadedb-mcp`                                        |
+| Objects          | Original files and identity-bound storage                         | `internal/objectstore`, Garage                                                 |
+| Ingestion        | Reconcile sources into cards and passages                         | `internal/ingestsupervisor`, `services/ingest`                                 |
+| Extensions       | MCP connections and owned/shared skills                           | `internal/mcp`, `internal/mcpregistry`, `internal/skills`, `internal/skillacl` |
+| Execution        | Workspace and per-identity sandbox boxes                          | `internal/sandbox/usersandbox`                                                 |
+| Surfaces         | HTTP/SSE, embedded cockpit, Telegram and CLI                      | `internal/agui`, `internal/webui`, `internal/channels`                         |
 
 Consumer interfaces and composition-root injection keep boundaries explicit. The
 agent runtime must not depend on AG-UI. Events are the common delivery contract;
@@ -440,6 +440,31 @@ and downloads the delivered file. Closing returns to the originating chat withou
 remounting its runtime. The same card is used for live deliveries and saved-message
 attachments. Rendering reuses the authenticated sealed document route and an
 opaque-origin iframe; source highlighting never executes artifact markup.
+
+The multi-track video editor is one dense full-screen workspace, not a preview,
+inspector and timeline stacked as unrelated blocks. Measured 2026-09-21 against the
+live Clideo editor at 1,920 x 945 and 1,100 x 599: a 54--58 px project bar spans the
+top, a 70--76 px tool rail continues beside both canvas and timeline, the contextual
+property panel occupies about 34% of the 1,100 px viewport and caps near 443 px, the
+preview always fits without cropping, and the timeline consumes the lower third while
+excluding only the rail. Aura keeps its existing command/project model, local media,
+44 px edit targets, translated refusals, save and export semantics; the reference is
+a workspace and interaction-density contract, not a claim of Clideo feature parity.
+Implementation ownership is `web/src/videoStudio/` plus
+`web/src/styles/video-studio.css`. The same measurement does not establish long-project
+performance, real-phone touch behavior, or support for Clideo-only stock media,
+effects, subtitles, recording and generation tools.
+
+Every video `Edit` entrance opens that workspace directly; the retired single-clip
+surface is not a second editor. A selected clip exposes the measured Clideo control
+families in one contextual panel: transform/crop/flip/rotate, VideoFlow transition
+presets, opacity and colour adjustments, audio, playback speed and source timing.
+Those controls use the installed VideoFlow renderers, dnd-timeline and shared
+Radix/shadcn primitives. The photo editor and its save-to-library path remain unchanged.
+The source-available VideoFlow React editor and the React-Native-only 100ms virtual
+background plugin are references, not shipped dependencies; the dependency and license
+decision is recorded in
+`docs/superpowers/specs/2026-09-21-video-studio-clideo-controls.md`.
 
 Measured 2026-09-08 using an agent-generated weather demo: the accepted HTML asset
 renders inline and expanded, its button executes, and showing source preserves
