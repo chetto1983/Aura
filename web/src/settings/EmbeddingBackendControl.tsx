@@ -94,7 +94,9 @@ export function EmbeddingBackendControl({
   ];
 
   return (
-    <div className="flex flex-col gap-5 rounded-[var(--radius-md)] border border-border bg-surface-2 p-5">
+    // Capped at the width the section's own prose uses: a full-bleed card around a single URL
+    // leaves half a row of nothing, and the tiles under it are not full width either.
+    <div className="flex max-w-3xl flex-col gap-5 rounded-[var(--radius-md)] border border-border bg-surface-2 p-5">
       <div className="flex flex-col gap-1">
         <h3 className="text-[15px] font-semibold text-text">{t('settings.embedding.heading')}</h3>
         <p className="max-w-2xl text-[13px] leading-relaxed text-text-muted">

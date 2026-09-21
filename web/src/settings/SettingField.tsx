@@ -29,9 +29,7 @@ function SettingsGrid({
   return (
     <div
       className={
-        variant === 'inline'
-          ? 'flex max-w-xl flex-col gap-5'
-          : 'grid gap-4 md:grid-cols-2 xl:grid-cols-3'
+        variant === 'inline' ? 'flex flex-col gap-5' : 'grid gap-4 md:grid-cols-2 xl:grid-cols-3'
       }
     >
       {children}
