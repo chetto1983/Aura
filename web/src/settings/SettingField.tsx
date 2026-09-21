@@ -39,6 +39,8 @@ export function SettingsFields({
   onReset,
   onValueChange,
   pickers,
+  invalidKeys,
+  describedBy,
   resetting,
 }: {
   readonly defs: readonly SettingDef[];
@@ -48,6 +50,9 @@ export function SettingsFields({
   readonly onReset: (key: SettingsKey) => void;
   /** The catalogue each model field picks from; a field without one stays free text. */
   readonly pickers?: PickerBindings | undefined;
+  /** Invalid fields expose aria-invalid; valid fields deliberately omit it. */
+  readonly invalidKeys?: ReadonlySet<SettingsKey> | undefined;
+  readonly describedBy?: Partial<Record<SettingsKey, string>> | undefined;
 }) {
   return (
     <SettingsGrid>
@@ -58,6 +63,8 @@ export function SettingsFields({
           item={settingRow(loaded, def)}
           value={loaded.values[def.key] ?? ''}
           picker={pickers?.[def.key]}
+          invalid={invalidKeys?.has(def.key) === true}
+          describedBy={describedBy?.[def.key]}
           onChange={(value) => {
             onValueChange(def.key, value);
           }}
@@ -77,6 +84,8 @@ function SettingField({
   onChange,
   onReset,
   picker,
+  invalid,
+  describedBy,
   resetting,
   value,
 }: {
@@ -87,6 +96,8 @@ function SettingField({
   readonly onReset: () => void;
   readonly resetting: boolean;
   readonly picker?: PickerBinding | undefined;
+  readonly invalid: boolean;
+  readonly describedBy: string | undefined;
 }) {
   const { t } = useTranslation();
   const inputId = `setting-${def.key}`;
@@ -149,6 +160,8 @@ function SettingField({
           inputMode={def.kind === 'int' ? 'numeric' : undefined}
           value={value}
           placeholder={def.placeholder}
+          {...(invalid ? { 'aria-invalid': true } : {})}
+          {...(describedBy === undefined ? {} : { 'aria-describedby': describedBy })}
           onChange={(event) => {
             onChange(event.target.value);
           }}

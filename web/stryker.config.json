@@ -5,6 +5,7 @@
   "tsconfigFile": "",
   "coverageAnalysis": "perTest",
   "mutate": [
+    "src/settings/embeddingBackendState.ts",
     "src/api/json.ts",
     "src/chat/artifacts/artifactMeta.ts",
     "src/chat/artifacts/downloadAll.ts",

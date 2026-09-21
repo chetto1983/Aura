@@ -28,6 +28,7 @@ export type SettingsKey =
   | 'AURA_LOOP_MAX_WALLCLOCK_SEC'
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
+  | 'AURA_EMBED_CLOUD_BASE_URL'
   | 'AURA_TTS_MODEL'
   | 'AURA_TTS_CLOUD_VOICE'
   | 'AURA_STT_CLOUD_MODEL'
@@ -161,9 +162,19 @@ export const TOKEN_SETTINGS: readonly SettingDef[] = [
   },
 ];
 
-export const BACKEND_SETTINGS: readonly SettingDef[] = [
+export const EMBEDDING_SETTINGS: readonly SettingDef[] = [
   { key: 'AURA_EMBED_BASE_URL', kind: 'string', labelKey: 'settings.fields.embedBaseUrl' },
+  {
+    key: 'AURA_EMBED_CLOUD_BASE_URL',
+    kind: 'string',
+    labelKey: 'settings.fields.embedCloudBaseUrl',
+    placeholder: 'https://embeddings.example',
+  },
   { key: 'AURA_EMBED_MODEL', kind: 'string', labelKey: 'settings.fields.embedModel' },
+];
+
+export const BACKEND_SETTINGS: readonly SettingDef[] = [
+  ...EMBEDDING_SETTINGS,
   { key: 'AURA_STT_CLOUD_MODEL', kind: 'string', labelKey: 'settings.fields.sttCloudModel' },
   { key: 'AURA_TTS_MODEL', kind: 'string', labelKey: 'settings.fields.ttsModel' },
   { key: 'AURA_TTS_CLOUD_VOICE', kind: 'string', labelKey: 'settings.fields.ttsCloudVoice' },

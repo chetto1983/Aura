@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { TFunction } from 'i18next';
 import { Cloud, Cpu, RefreshCw, Save, Server } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields, type PickerBindings } from './SettingField';
+import { EmbeddingBackendControl } from './EmbeddingBackendControl';
 import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog, type ModelCatalogState } from './useModelCatalog';
@@ -83,6 +84,7 @@ export function ModelSettingsPanel({
   skippable = true,
 }: ModelSettingsPanelProps) {
   const { t } = useTranslation();
+  const [embeddingRouteValid, setEmbeddingRouteValid] = useState(true);
   const activeGroups = useMemo(
     () => MODEL_SETTINGS_GROUPS.filter((group) => groups.includes(group.id)),
     [groups],
@@ -209,6 +211,8 @@ export function ModelSettingsPanel({
     },
     AURA_TTS_CLOUD_VOICE: { catalog: cloudVoiceCatalog, formatRow },
   };
+  const embeddingPicker = pickers.AURA_EMBED_MODEL;
+  if (embeddingPicker === undefined) throw new Error('embedding picker must be configured');
 
   return (
     <div className={cn('flex flex-col gap-7', className)}>
@@ -263,19 +267,47 @@ export function ModelSettingsPanel({
             </div>
           ) : null}
 
-          <SettingsFields
-            defs={group.fields.filter(
-              (def) =>
-                (def.cloudOnly !== true || provider === 'cloud') &&
-                (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
-                  (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
-            )}
-            loaded={loaded}
-            resetting={resetting}
-            onValueChange={setValue}
-            onReset={(key) => void resetSetting(key)}
-            pickers={pickers}
-          />
+          {group.id === 'backends' ? (
+            <>
+              <EmbeddingBackendControl
+                loaded={loaded}
+                resetting={resetting}
+                onValueChange={setValue}
+                onReset={(key) => void resetSetting(key)}
+                modelPicker={embeddingPicker}
+                openRouterAvailable={savedRouteIsCloud}
+                onRouteValidityChange={setEmbeddingRouteValid}
+              />
+              <SettingsFields
+                defs={group.fields.filter(
+                  (def) =>
+                    !def.key.startsWith('AURA_EMBED_') &&
+                    (def.cloudOnly !== true || provider === 'cloud') &&
+                    (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
+                      (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
+                )}
+                loaded={loaded}
+                resetting={resetting}
+                onValueChange={setValue}
+                onReset={(key) => void resetSetting(key)}
+                pickers={pickers}
+              />
+            </>
+          ) : (
+            <SettingsFields
+              defs={group.fields.filter(
+                (def) =>
+                  (def.cloudOnly !== true || provider === 'cloud') &&
+                  (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
+                    (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
+              )}
+              loaded={loaded}
+              resetting={resetting}
+              onValueChange={setValue}
+              onReset={(key) => void resetSetting(key)}
+              pickers={pickers}
+            />
+          )}
         </section>
       ))}
 
@@ -315,7 +347,7 @@ export function ModelSettingsPanel({
       <div className="flex flex-wrap items-center gap-2 border-t border-border pt-5">
         <Button
           type="button"
-          disabled={saving}
+          disabled={saving || (groups.includes('backends') && !embeddingRouteValid)}
           aria-busy={saving}
           onClick={() => void save(onComplete)}
         >

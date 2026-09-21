@@ -28,6 +28,7 @@ function settingsBody(
   tts = '',
   ttsVoice = '',
   embed = '',
+  embedCloudBaseURL = '',
 ) {
   return {
     restart_required: false,
@@ -39,6 +40,7 @@ function settingsBody(
       setting('AURA_TTS_MODEL', tts),
       setting('AURA_TTS_CLOUD_VOICE', ttsVoice),
       setting('AURA_EMBED_MODEL', embed),
+      setting('AURA_EMBED_CLOUD_BASE_URL', embedCloudBaseURL),
     ],
   };
 }
@@ -268,7 +270,7 @@ describe('ModelSettingsPanel backend models', () => {
     ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('option', { name: /Use local sidecar/ }));
-    expect(embed.textContent).toContain('Use local sidecar');
+    expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
     await waitFor(() => {
@@ -276,12 +278,63 @@ describe('ModelSettingsPanel backend models', () => {
     });
   });
 
-  // The endpoint field stays: an OpenAI-compatible embedder that is not the bundled sidecar is
-  // a real deployment. It is a text box on purpose -- no catalogue can list a host.
-  it('keeps the embedding base URL as a typed endpoint', async () => {
-    stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+  it('uses a manual cloud endpoint without leaving its /v1 suffix to double up', async () => {
+    const { writes } = stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        '',
+        '',
+        '',
+        'qwen/qwen3-embedding-8b',
+      ),
+    );
     renderBackends();
-    const base = await screen.findByLabelText('Embedding base URL');
-    expect(base.tagName).toBe('INPUT');
+    await screen.findByRole('button', { name: 'Manual endpoint' });
+    fireEvent.click(screen.getByRole('button', { name: 'Manual endpoint' }));
+
+    const base = screen.getByLabelText('Embedding cloud base URL');
+    expect(base.getAttribute('aria-invalid')).toBe('true');
+    expect(base.getAttribute('aria-describedby')).toBe('embedding-manual-url-error');
+    expect(screen.getByRole('button', { name: 'Save runtime settings' }).hasAttribute('disabled')).toBe(
+      true,
+    );
+
+    fireEvent.change(base, { target: { value: 'https://embed.example/v1/' } });
+    expect(base.hasAttribute('aria-invalid')).toBe(false);
+    expect(base.hasAttribute('aria-describedby')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    await waitFor(() => {
+      expect(writes).toEqual([
+        { key: 'AURA_EMBED_CLOUD_BASE_URL', value: 'https://embed.example' },
+      ]);
+    });
+  });
+
+  it('clears the cloud route values when returning to the local sidecar', async () => {
+    const { writes } = stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        '',
+        '',
+        '',
+        'qwen/qwen3-embedding-8b',
+        'https://embed.example',
+      ),
+    );
+    renderBackends();
+    await screen.findByRole('button', { name: 'Local' });
+    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
+    expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    await waitFor(() => {
+      expect(writes).toEqual([
+        { key: 'AURA_EMBED_CLOUD_BASE_URL', value: '' },
+        { key: 'AURA_EMBED_MODEL', value: '' },
+      ]);
+    });
   });
 });
