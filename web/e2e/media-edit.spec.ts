@@ -106,8 +106,18 @@ test.describe('media editing', () => {
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
     const editor = page.getByRole('dialog', { name: 'Video editor' });
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 30_000 });
-    await editor.getByRole('button', { name: 'Clip 1' }).click();
-    await editor.getByRole('tab', { name: 'Time' }).click();
+    if (info.project.name.startsWith('mobile')) {
+      await editor
+        .getByRole('navigation', { name: 'Mobile editing tools' })
+        .getByRole('button', { name: 'Time', exact: true })
+        .click();
+      await expect(editor.locator('.video-studio-properties')).toHaveAttribute(
+        'data-mobile-open',
+        'true',
+      );
+    } else {
+      await editor.getByRole('tab', { name: 'Time' }).click();
+    }
     await editor.getByLabel('Start', { exact: true }).fill('1');
     await editor.getByLabel('Start', { exact: true }).blur();
     await editor.getByLabel('End', { exact: true }).fill('3');
@@ -213,7 +223,7 @@ test.describe('media editing', () => {
     await openTool('Speed');
     await editor.getByRole('button', { name: '2×' }).click();
     if (mobile) {
-      await mobileTools.getByRole('button', { name: 'Speed', exact: true }).click();
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
       await expect(properties).toHaveAttribute('data-mobile-open', 'false');
       await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
     }
@@ -221,7 +231,7 @@ test.describe('media editing', () => {
     await openTool('Time');
     await expect(editor.getByLabel('End', { exact: true })).toBeVisible();
     if (mobile) {
-      await mobileTools.getByRole('button', { name: 'Time', exact: true }).click();
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
       await expect(properties).toHaveAttribute('data-mobile-open', 'false');
       await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
     }

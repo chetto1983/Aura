@@ -564,6 +564,17 @@ describe('VideoStudio', () => {
     });
   });
 
+  it('opens a mobile inspector tool without toggling it closed', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    const tools = screen.getByRole('navigation', { name: i18n.t('videoStudio.mobileTools') });
+    fireEvent.click(within(tools).getByRole('button', { name: i18n.t('videoStudio.mobile.time') }));
+
+    const properties = document.querySelector('.video-studio-properties');
+    expect(properties?.getAttribute('data-mobile-open')).toBe('true');
+    expect(screen.getByLabelText(i18n.t('videoStudio.inspector.start'))).toBeTruthy();
+  });
+
   it('stops the preview renderer when it closes', async () => {
     const { unmount } = mount();
     await screen.findByTestId('video-stage');

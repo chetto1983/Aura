@@ -285,7 +285,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   function showInspector(tab: ClipTab) {
     setSelectedJunction(undefined);
     setInspectorTab(tab);
-    setMobileInspectorOpen((open) => (open && inspectorTab === tab ? false : true));
+    setMobileInspectorOpen(true);
   }
 
   return (

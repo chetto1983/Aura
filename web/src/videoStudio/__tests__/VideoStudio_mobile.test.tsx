@@ -69,7 +69,7 @@ describe('MobileVideoTools', () => {
 
     const tools = screen.getByRole('navigation', { name: 'videoStudio.mobileTools' });
     fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addSource' }));
-    fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addTitle' }));
+    fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addText' }));
     expect(onAddClip).toHaveBeenCalledOnce();
     expect(onAddTitle).toHaveBeenCalledOnce();
   });

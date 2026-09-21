@@ -75,7 +75,7 @@ export function MobileVideoTools({
           onClick={onAddTitle}
         >
           <Type aria-hidden="true" />
-          <span>{t('videoStudio.command.addTitle')}</span>
+          <span>{t('videoStudio.command.addText')}</span>
         </Button>
       </nav>
     );
