@@ -55,11 +55,18 @@ def parse_latency_marker(raw: str) -> dict[str, Any]:
     return {"samples": samples, "cold_retained": True, "path": LATENCY_PATH, **values}
 
 
+# A failing gate must say why without a second CI run, but a report is an artifact other
+# tools read: the tail is enough to name the cause and bounded enough to stay small.
+FAILURE_OUTPUT_MAX_CHARS = 2000
+
+
 def parse_go_test_json(output: str) -> dict[str, Any]:
     tests: dict[str, list[dict[str, Any]]] = {}
     latency_metrics: dict[str, list[dict[str, Any]]] = {}
     runtime_metadata: dict[str, list[dict[str, Any]]] = {}
     skipped: set[str] = set()
+    # Every line go test emits for a test, kept only long enough to describe a failure.
+    emitted_lines: dict[str, list[str]] = {}
     package_failed = False
     protocol_errors: list[str] = []
     for line_number, raw in enumerate(output.splitlines(), 1):
@@ -86,6 +93,8 @@ def parse_go_test_json(output: str) -> dict[str, Any]:
                 runtime_metadata.setdefault(name, []).append(parse_runtime_marker(emitted.partition(RUNTIME_MARKER)[2]))
             except ValueError as exc:
                 protocol_errors.append(f"test {name}: {exc}")
+        if action == "output" and isinstance(name, str) and isinstance(emitted, str):
+            emitted_lines.setdefault(name, []).append(emitted)
         if action == "fail" and name is None:
             package_failed = True
         if not isinstance(name, str) or action not in {"pass", "fail", "skip"}:
@@ -94,7 +103,12 @@ def parse_go_test_json(output: str) -> dict[str, Any]:
         if not isinstance(elapsed, (int, float)) or isinstance(elapsed, bool) or elapsed < 0:
             protocol_errors.append(f"test {name} has invalid elapsed time")
             continue
-        tests.setdefault(name, []).append({"status": action.upper(), "elapsed_ms": float(elapsed) * 1000})
+        record: dict[str, Any] = {"status": action.upper(), "elapsed_ms": float(elapsed) * 1000}
+        buffered = "".join(emitted_lines.pop(name, []))
+        if action == "fail" and buffered.strip():
+            # The tail, because t.Fatalf's message is the last thing a test says.
+            record["output"] = buffered[-FAILURE_OUTPUT_MAX_CHARS:]
+        tests.setdefault(name, []).append(record)
         if action == "skip":
             skipped.add(name)
     return {

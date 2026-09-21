@@ -424,6 +424,48 @@ class GoTestParserTest(unittest.TestCase):
         self.assertEqual(parsed["skipped_tests"], ["TestLive"])
         self.assertTrue(parsed["package_failed"])
 
+    # A red gate that does not say WHY costs a whole CI round trip to learn it. Measured
+    # 2026-09-21 on Actions job 106355044827: TestAgentMemoryCLILiveSearchP95 failed and the
+    # report carried {"status": "FAIL", "elapsed_ms": 170.0} and nothing else, so the cause
+    # was unknowable from the very artifact the gate exists to produce.
+    def test_failing_test_keeps_its_output(self) -> None:
+        fatal = "    live_test.go:61: issue live Memory access token: no such host"
+        output = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "Action": "output",
+                        "Package": "example.test",
+                        "Test": "TestLive",
+                        "Output": fatal + "\n",
+                    }
+                ),
+                event("fail", "TestLive", 0.17),
+            ]
+        )
+        parsed = evaluator.parse_go_test_json(output)
+        record = parsed["tests"]["TestLive"][0]
+        self.assertEqual(record["status"], "FAIL")
+        self.assertIn("issue live Memory access token", record["output"])
+
+    # Only failures carry it, so a green suite's report does not grow by every "=== RUN" line.
+    def test_passing_test_carries_no_output(self) -> None:
+        output = "\n".join(
+            [
+                json.dumps(
+                    {
+                        "Action": "output",
+                        "Package": "example.test",
+                        "Test": "TestOK",
+                        "Output": "=== RUN TestOK" + "\n",
+                    }
+                ),
+                event("pass", "TestOK", 0.01),
+            ]
+        )
+        parsed = evaluator.parse_go_test_json(output)
+        self.assertNotIn("output", parsed["tests"]["TestOK"][0])
+
     def test_malformed_protocol_is_reported(self) -> None:
         parsed = evaluator.parse_go_test_json("not-json\n" + event("pass", "TestOK", 0.1))
         self.assertEqual(parsed["protocol_errors"], ["line 1 is not go test JSON"])
