@@ -211,12 +211,12 @@ func TestStudioReportsAnUnavailableCatalogAsNothingGenerated(t *testing.T) {
 // the cockpit prints its own sentence for it, so the sentinel has to survive the wrapping.
 func TestStudioKeepsTheLocalRouteRefusal(t *testing.T) {
 	fixture := newStudioFixture(t)
-	fixture.catalog.err = agui.ErrMediaCatalogLocalRoute
+	fixture.catalog.err = agui.ErrCatalogLocalRoute
 
 	_, err := fixture.backend.SubmitVideo(context.Background(), studioOwner, agui.StudioVideoRequest{Model: "m"})
 
-	if !errors.Is(err, agui.ErrMediaCatalogLocalRoute) {
-		t.Fatalf("error = %v, want ErrMediaCatalogLocalRoute", err)
+	if !errors.Is(err, agui.ErrCatalogLocalRoute) {
+		t.Fatalf("error = %v, want ErrCatalogLocalRoute", err)
 	}
 	fixture.assertNothingGenerated(t)
 }

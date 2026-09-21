@@ -1,30 +1,32 @@
 package config
 
-import (
-	"net"
-	"net/url"
-	"strings"
-)
+import "strings"
 
 // config_routes.go holds the model-backend route resolvers — the ONE-knob
 // local↔cloud swap (D-28). Split out of config.go to keep that file under the
 // 600-LOC cap (CLAUDE.md §No god class).
 
-// EmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap
-// (D-28): with AURA_EMBED_MODEL unset it is the local embedding sidecar at
-// Embed.BaseURL with no auth; set AURA_EMBED_MODEL to a cloud model (e.g.
-// a hosted embedding model) and it routes to the shared OpenRouter endpoint with
-// the SINGLE OPENROUTER_API_KEY. A non-loopback Embed.BaseURL overrides the
-// OpenRouter base for a custom cloud embedder.
+// EmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap (D-28),
+// the same shape STT and TTS already use: the cloud MODEL is the switch, and the local
+// base is never a candidate for the cloud route. Empty model means the local sidecar at
+// Embed.BaseURL with no auth; a model set means the cloud route — Embed.CloudBaseURL if
+// the operator named a non-OpenRouter embedder, otherwise the shared LLM route — always
+// with the single OPENROUTER_API_KEY.
+//
+// The previous version chose the base by asking whether Embed.BaseURL looked like
+// loopback. It does not on the shipped product (compose.yaml:119 hands the daemon a
+// Compose DNS name), so a cloud model was sent to the local sidecar, which answers it
+// with local vectors and no error. See EmbedConfig for the measurement.
 func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
-	if strings.TrimSpace(c.Embed.Model) == "" {
+	model = strings.TrimSpace(c.Embed.CloudModel)
+	if model == "" {
 		return c.Embed.BaseURL, "", "" // local sidecar, no auth
 	}
-	base := c.Embed.BaseURL
-	if isLoopbackURL(base) {
+	base := strings.TrimSpace(c.Embed.CloudBaseURL)
+	if base == "" {
 		base = sharedCloudBase(c.LLM.BaseURL)
 	}
-	return base, c.LLM.APIKey, c.Embed.Model
+	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1"), c.LLM.APIKey, model
 }
 
 // sharedCloudBase strips a trailing /v1 from the shared OpenRouter base. The
@@ -34,19 +36,4 @@ func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
 // "/v1/v1/<endpoint>" that 404s.
 func sharedCloudBase(llmBase string) string {
 	return strings.TrimSuffix(strings.TrimRight(llmBase, "/"), "/v1")
-}
-
-// isLoopbackURL reports whether a base URL points at the local host (127.0.0.1/::1/
-// localhost) — used by EmbedRoute to decide when a set model should swap the local
-// default base for the shared OpenRouter endpoint.
-func isLoopbackURL(raw string) bool {
-	u, err := url.Parse(raw)
-	if err != nil || u.Hostname() == "" {
-		return false
-	}
-	if u.Hostname() == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(u.Hostname())
-	return ip != nil && ip.IsLoopback()
 }

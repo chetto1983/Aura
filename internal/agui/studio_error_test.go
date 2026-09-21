@@ -36,7 +36,7 @@ func TestStudioMapsRefusals(t *testing.T) {
 		{"job failed", &mediagen.Error{Code: "job_failed", Message: "The job failed."}, http.StatusBadGateway, "job_failed"},
 		{"outcome unknown", &mediagen.Error{Code: "outcome_unknown", Message: "The outcome is unknown."}, http.StatusBadGateway, "outcome_unknown"},
 		{"wrong modality", assets.ErrWrongModality, http.StatusUnprocessableEntity, "unsupported"},
-		{"local route", ErrMediaCatalogLocalRoute, http.StatusConflict, "local_route"},
+		{"local route", ErrCatalogLocalRoute, http.StatusConflict, "local_route"},
 		{"no row", pgx.ErrNoRows, http.StatusNotFound, "not_found"},
 	}
 	for _, tc := range cases {

@@ -222,7 +222,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// GET /api/voice/capabilities reports {false,false}); the Telegram opus path
 	// (multimodalConfig) is untouched.
 	wireVoiceProviders(aguiServer, chat.cfg)
-	aguiServer.SetVoiceCatalog(newVoiceCatalogRoute(chat.llmRuntime))
+	aguiServer.SetModalityCatalog(newModalityCatalogRoute(chat.llmRuntime))
 	// Wire the 37E reasoning-capability source (WEBMODEL-01/D-13): the active model's advertised
 	// effort set, selected by llm.ReasoningTarget and warmed once at boot (never blocking). It
 	// backs the composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run effort

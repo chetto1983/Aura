@@ -156,8 +156,8 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	if got := cfg.LLM.MaxOutputTokens; got != 4096 {
 		t.Errorf("LLM.MaxOutputTokens = %d, want 4096", got)
 	}
-	if got := cfg.Embed.Model; got != "settings/embed-model" {
-		t.Errorf("Embed.Model = %q, want overlaid settings embed model", got)
+	if got := cfg.Embed.CloudModel; got != "settings/embed-model" {
+		t.Errorf("Embed.CloudModel = %q, want overlaid settings embed model", got)
 	}
 	if got := cfg.Embed.BaseURL; got != "https://settings-embed.example" {
 		t.Errorf("Embed.BaseURL = %q, want overlaid settings embed base URL", got)
@@ -177,9 +177,15 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		t.Errorf("STTCloudModel = %q, want overlaid settings STT cloud model", got)
 	}
 
+	// This assertion used to want the OVERLAID EMBED BASE here, which was the defect
+	// rather than the contract: it sent the OpenRouter credential and a cloud model name
+	// to whatever AURA_EMBED_BASE_URL named. AURA_EMBED_BASE_URL is the LOCAL sidecar and
+	// nothing else -- the overlay of it is still proven above, on cfg.Embed.BaseURL. With a
+	// cloud model set the route is the shared LLM one, exactly as STT and TTS resolve
+	// theirs, with the /v1 stripped because this client appends /v1/embeddings.
 	embedBase, embedKey, embedModel := cfg.EmbedRoute()
-	if embedBase != "https://settings-embed.example" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
-		t.Errorf("EmbedRoute() = (%q, %q, %q), want overlaid base and model with the environment's key", embedBase, embedKey, embedModel)
+	if embedBase != "https://settings-llm.example" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
+		t.Errorf("EmbedRoute() = (%q, %q, %q), want the shared cloud route with the environment's key", embedBase, embedKey, embedModel)
 	}
 }
 

@@ -6,9 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/conversations"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/settings"
@@ -107,33 +105,6 @@ func wireVideoTool(chat *chatEnv, media *mediaDeps, watcher *mediagen.Watcher) {
 	video.Watcher = watcher
 	video.VideoAssets = media.references
 	video.MaxVideoBytes = media.maxVideoBytes
-}
-
-// mediaCatalogRoute lists the shared catalog for the settings picker on the live route, the
-// runtime every identity-scoped generation client is built on, so the picker fills the same
-// cache entry the tools read. A route switch saved from Settings applies to the next list.
-type mediaCatalogRoute struct {
-	catalog *mediagen.Catalog
-	runtime *llm.Runtime
-}
-
-var _ agui.MediaCatalogLister = mediaCatalogRoute{}
-
-func (m mediaCatalogRoute) List(ctx context.Context, kind mediagen.Kind, refresh bool) ([]mediagen.Model, error) {
-	route := m.runtime.Snapshot().Config
-	if !openRouterMediaRoute(route) {
-		return nil, agui.ErrMediaCatalogLocalRoute
-	}
-	return m.catalog.List(ctx, route.BaseURL, kind, refresh)
-}
-
-// wireMediaCatalog gives the settings picker the tools' catalog; without media dependencies the
-// picker routes stay unwired and answer 503.
-func wireMediaCatalog(server *agui.Server, chat *chatEnv, media *mediaDeps) {
-	if media == nil {
-		return
-	}
-	server.SetMediaCatalog(mediaCatalogRoute{catalog: media.catalog, runtime: chat.llmRuntime})
 }
 
 // newMediaWatcher builds the daemon's one video watcher, living as long as ctx, or returns nil

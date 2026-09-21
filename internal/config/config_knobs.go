@@ -149,6 +149,10 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_RETENTION_DISK_URGENT_PERCENT", Kind: KindInt, Default: "80"},
 		{Name: "AURA_RETENTION_DISK_STOP_PERCENT", Kind: KindInt, Default: "85"},
 		{Name: "AURA_EMBED_DIMENSIONS", Kind: KindInt, Default: "768"},
+		// The optional non-OpenRouter cloud endpoint. Kept apart from AURA_EMBED_BASE_URL,
+		// which names the LOCAL sidecar and nothing else. The switch itself is
+		// AURA_EMBED_MODEL, which the cockpit writes into aura.settings.
+		{Name: "AURA_EMBED_CLOUD_BASE_URL", Kind: KindString, Default: ""},
 		{Name: "AURA_TTS_MAX_CHARS", Kind: KindInt, Default: "4096"},
 
 		// The multi-identity provisioning switch. Catalogued so `aura config validate`

@@ -4,8 +4,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
 
-// The cloud speech-to-text and text-to-speech fields pick from OpenRouter's lists the way
-// the image and video fields do: same combobox, same saved-route rule.
+// The backends pane's cloud model fields -- speech-to-text, text-to-speech and embeddings --
+// pick from OpenRouter's lists the way the image and video fields do: same combobox, same
+// saved-route rule, same "Use local sidecar" for the empty choice.
 
 function setting(key: string, value: string) {
   return {
@@ -20,7 +21,14 @@ function setting(key: string, value: string) {
   };
 }
 
-function settingsBody(provider: string, baseURL: string, stt = '', tts = '', ttsVoice = '') {
+function settingsBody(
+  provider: string,
+  baseURL: string,
+  stt = '',
+  tts = '',
+  ttsVoice = '',
+  embed = '',
+) {
   return {
     restart_required: false,
     restart_keys: [],
@@ -30,6 +38,7 @@ function settingsBody(provider: string, baseURL: string, stt = '', tts = '', tts
       setting('AURA_STT_CLOUD_MODEL', stt),
       setting('AURA_TTS_MODEL', tts),
       setting('AURA_TTS_CLOUD_VOICE', ttsVoice),
+      setting('AURA_EMBED_MODEL', embed),
     ],
   };
 }
@@ -54,6 +63,13 @@ const SPEECH_BODY = {
       voices: ['loongjohn', 'longanhuan_v3.6'],
       has_price: false,
     },
+  ],
+};
+
+const EMBEDDINGS_BODY = {
+  models: [
+    { kind: 'embeddings', id: 'liquid/lfm-2.5-embedding-350m:free', has_price: false },
+    { kind: 'embeddings', id: 'qwen/qwen3-embedding-8b', has_price: false },
   ],
 };
 
@@ -93,6 +109,10 @@ function stubFetch(settings: unknown): {
         gets.push(url);
         return Promise.resolve(json(SPEECH_BODY));
       }
+      if (url.startsWith('/api/settings/embeddings-models')) {
+        gets.push(url);
+        return Promise.resolve(json(EMBEDDINGS_BODY));
+      }
       if (url.startsWith('/api/settings/'))
         return Promise.resolve(json({ models: [], routes: [] }));
       return Promise.resolve(json(settings));
@@ -116,7 +136,7 @@ function fieldCard(label: string): HTMLElement {
   return card;
 }
 
-describe('ModelSettingsPanel voice models', () => {
+describe('ModelSettingsPanel backend models', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -136,7 +156,11 @@ describe('ModelSettingsPanel voice models', () => {
         within(fieldCard('Text-to-speech model')).getByText(/2 models published here/),
       ).toBeTruthy();
     });
-    expect(gets).toEqual(['/api/settings/transcription-models', '/api/settings/speech-models']);
+    expect(gets).toEqual([
+      '/api/settings/transcription-models',
+      '/api/settings/speech-models',
+      '/api/settings/embeddings-models',
+    ]);
 
     fireEvent.click(stt);
     expect(screen.getByRole('option', { name: /qwen\/qwen3-asr-1\.7b/ })).toBeTruthy();
@@ -213,5 +237,51 @@ describe('ModelSettingsPanel voice models', () => {
     await screen.findByLabelText('Speech-to-text cloud model');
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(gets).toEqual([]);
+  });
+
+  // The embedding field used to be a free-text box, which is how a cloud model name reached
+  // the LOCAL sidecar: llama.cpp ignores the model and answers with its own vectors, so the
+  // typo never surfaced. Picking from the published list removes the typo, and the empty
+  // choice is the local sidecar rather than a blank the operator has to interpret.
+  it('picks the embedding model from the OpenRouter list and clears it to the local sidecar', async () => {
+    const { writes } = stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        '',
+        '',
+        '',
+        'qwen/qwen3-embedding-8b',
+      ),
+    );
+    renderBackends();
+
+    const embed = await screen.findByLabelText('Embedding model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Embedding model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    fireEvent.click(embed);
+    expect(
+      screen.getByRole('option', { name: /liquid\/lfm-2\.5-embedding-350m:free/ }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('option', { name: /Use local sidecar/ }));
+    expect(embed.textContent).toContain('Use local sidecar');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    await waitFor(() => {
+      expect(writes).toEqual([{ key: 'AURA_EMBED_MODEL', value: '' }]);
+    });
+  });
+
+  // The endpoint field stays: an OpenAI-compatible embedder that is not the bundled sidecar is
+  // a real deployment. It is a text box on purpose -- no catalogue can list a host.
+  it('keeps the embedding base URL as a typed endpoint', async () => {
+    stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+    renderBackends();
+    const base = await screen.findByLabelText('Embedding base URL');
+    expect(base.tagName).toBe('INPUT');
   });
 });

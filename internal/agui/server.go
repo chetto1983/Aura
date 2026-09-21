@@ -151,9 +151,9 @@ type Server struct {
 	llmRouteReloader llmRouteReloader
 	// modelCatalog overrides the outbound GET /models probe (settings_llm_models.go).
 	// Nil in production: the handler builds its own client.
-	modelCatalog modelCatalogFetcher
-	mediaCatalog MediaCatalogLister
-	voiceCatalog VoiceCatalogLister
+	modelCatalog    modelCatalogFetcher
+	mediaCatalog    MediaCatalogLister
+	modalityCatalog ModalityCatalogLister
 	// studio serves the cockpit Studio's generation, history and library routes
 	// (studio_api.go); nil until SetStudio, and every Studio route then answers 503.
 	studio     StudioBackend

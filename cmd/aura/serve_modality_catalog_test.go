@@ -34,7 +34,7 @@ func voiceModelsServer(t *testing.T, seen *[]*http.Request) *http.Client {
 
 func TestVoiceCatalogRouteListsTheModalityFromTheOpenRouterRoute(t *testing.T) {
 	var seen []*http.Request
-	route := voiceCatalogRoute{runtime: routeRuntime("openrouter", openRouterBaseURL), client: voiceModelsServer(t, &seen)}
+	route := modalityCatalogRoute{runtime: routeRuntime("openrouter", openRouterBaseURL), client: voiceModelsServer(t, &seen)}
 
 	models, err := route.List(context.Background(), "speech")
 	if err != nil {
@@ -70,9 +70,9 @@ func TestVoiceCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var seen []*http.Request
-			route := voiceCatalogRoute{runtime: tc.runtime, client: voiceModelsServer(t, &seen)}
+			route := modalityCatalogRoute{runtime: tc.runtime, client: voiceModelsServer(t, &seen)}
 			models, err := route.List(context.Background(), "transcription")
-			if !errors.Is(err, agui.ErrMediaCatalogLocalRoute) || models != nil {
+			if !errors.Is(err, agui.ErrCatalogLocalRoute) || models != nil {
 				t.Fatalf("List = %v, %v, want the local-route refusal", models, err)
 			}
 			if len(seen) != 0 {
@@ -83,8 +83,8 @@ func TestVoiceCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
 }
 
 func TestNewVoiceCatalogRouteBoundsItsReads(t *testing.T) {
-	route := newVoiceCatalogRoute(nil)
-	if route.client == nil || route.client.Timeout != voiceCatalogTimeout {
-		t.Fatalf("client = %+v, want one bounded by voiceCatalogTimeout", route.client)
+	route := newModalityCatalogRoute(nil)
+	if route.client == nil || route.client.Timeout != modalityCatalogTimeout {
+		t.Fatalf("client = %+v, want one bounded by modalityCatalogTimeout", route.client)
 	}
 }

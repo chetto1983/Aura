@@ -1,8 +1,9 @@
 package agui
 
-// Handler tests for GET /api/settings/transcription-models and /speech-models, over a
-// recording VoiceCatalogLister so no branch touches the network. The route rule and the
-// real OpenRouter read are exercised in cmd/aura and internal/llm.
+// Handler tests for GET /api/settings/transcription-models, /speech-models and
+// /embeddings-models, over a recording ModalityCatalogLister so no branch touches the
+// network. The route rule and the real OpenRouter read are exercised in cmd/aura and
+// internal/llm.
 
 import (
 	"context"
@@ -15,36 +16,37 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-type fakeVoiceCatalog struct {
+type fakeModalityCatalog struct {
 	models []llm.ModelCatalogEntry
 	err    error
 	asked  []string
 }
 
-func (f *fakeVoiceCatalog) List(_ context.Context, modality string) ([]llm.ModelCatalogEntry, error) {
+func (f *fakeModalityCatalog) List(_ context.Context, modality string) ([]llm.ModelCatalogEntry, error) {
 	f.asked = append(f.asked, modality)
 	return f.models, f.err
 }
 
-func voiceCatalogServer(catalog VoiceCatalogLister) *Server {
+func modalityCatalogServer(catalog ModalityCatalogLister) *Server {
 	s := NewServer(nil, nil, ServerConfig{})
-	s.SetVoiceCatalog(catalog)
+	s.SetModalityCatalog(catalog)
 	return s
 }
 
-func TestVoiceModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T) {
+func TestModalityModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T) {
 	for _, tc := range []struct{ target, modality string }{
 		{"/api/settings/transcription-models", "transcription"},
 		{"/api/settings/speech-models", "speech"},
+		{"/api/settings/embeddings-models", "embeddings"},
 		// The browser cannot point the daemon at a host: a base_url is simply not read.
 		{"/api/settings/speech-models?base_url=http%3A%2F%2Fattacker.test%2Fv1", "speech"},
 	} {
 		t.Run(tc.target, func(t *testing.T) {
-			catalog := &fakeVoiceCatalog{models: []llm.ModelCatalogEntry{
+			catalog := &fakeModalityCatalog{models: []llm.ModelCatalogEntry{
 				{ID: "openai/whisper-1", SupportedVoices: []string{"alloy"}},
 				{ID: "qwen/qwen3-asr-1.7b", SupportedVoices: []string{"nova"}},
 			}}
-			rows := decodeMediaRows(t, getMediaModels(t, voiceCatalogServer(catalog), tc.target))
+			rows := decodeMediaRows(t, getMediaModels(t, modalityCatalogServer(catalog), tc.target))
 			if len(catalog.asked) != 1 || catalog.asked[0] != tc.modality {
 				t.Fatalf("catalog asked for %v, want exactly [%s]", catalog.asked, tc.modality)
 			}
@@ -53,7 +55,7 @@ func TestVoiceModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T)
 			}
 			// No unit is published for a speech model's rate, so no price rides the row.
 			want := map[string]any{"id": "openai/whisper-1", "kind": tc.modality, "has_price": false}
-			if tc.modality == voiceModalitySpeech {
+			if tc.modality == modalitySpeech {
 				want["voices"] = []any{"alloy"}
 			}
 			assertRow(t, rows[0], want)
@@ -62,11 +64,11 @@ func TestVoiceModelRoutesAskForTheirOwnModalityAndReturnPickerRows(t *testing.T)
 }
 
 func TestSpeechModelsReturnSupportedVoicesAndDropUncallableRows(t *testing.T) {
-	catalog := &fakeVoiceCatalog{models: []llm.ModelCatalogEntry{
+	catalog := &fakeModalityCatalog{models: []llm.ModelCatalogEntry{
 		{ID: "fish-audio/s1"},
 		{ID: "qwen/qwen-audio-3.0-tts-flash", SupportedVoices: []string{"loongjohn", "longanhuan_v3.6"}},
 	}}
-	rows := decodeMediaRows(t, getMediaModels(t, voiceCatalogServer(catalog), "/api/settings/speech-models"))
+	rows := decodeMediaRows(t, getMediaModels(t, modalityCatalogServer(catalog), "/api/settings/speech-models"))
 	if len(rows) != 1 {
 		t.Fatalf("rows = %v, want only the model with published voices", rows)
 	}
@@ -76,8 +78,8 @@ func TestSpeechModelsReturnSupportedVoicesAndDropUncallableRows(t *testing.T) {
 	})
 }
 
-func TestVoiceModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
-	rr := getMediaModels(t, voiceCatalogServer(&fakeVoiceCatalog{err: ErrMediaCatalogLocalRoute}), "/api/settings/transcription-models")
+func TestModalityModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
+	rr := getMediaModels(t, modalityCatalogServer(&fakeModalityCatalog{err: ErrCatalogLocalRoute}), "/api/settings/transcription-models")
 	if rr.Code != http.StatusConflict {
 		t.Fatalf("status = %d (%s), want 409", rr.Code, rr.Body.String())
 	}
@@ -86,17 +88,21 @@ func TestVoiceModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
 	}
 }
 
-func TestVoiceModelsMapCatalogFailuresToBadGateway(t *testing.T) {
+func TestModalityModelsMapCatalogFailuresToBadGateway(t *testing.T) {
 	err := fmt.Errorf("%w: %w", llm.ErrModelCatalogUnavailable, errors.New("GET /models returned 503"))
-	rr := getMediaModels(t, voiceCatalogServer(&fakeVoiceCatalog{err: err}), "/api/settings/speech-models")
+	rr := getMediaModels(t, modalityCatalogServer(&fakeModalityCatalog{err: err}), "/api/settings/speech-models")
 	if rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "returned 503") {
 		t.Fatalf("status = %d body = %s, want 502 carrying the catalog's reason", rr.Code, rr.Body.String())
 	}
 }
 
-func TestVoiceModelsAnswerUnavailableUntilTheCatalogIsWired(t *testing.T) {
+func TestModalityModelsAnswerUnavailableUntilTheCatalogIsWired(t *testing.T) {
 	s := NewServer(nil, nil, ServerConfig{})
-	for _, target := range []string{"/api/settings/transcription-models", "/api/settings/speech-models"} {
+	for _, target := range []string{
+		"/api/settings/transcription-models",
+		"/api/settings/speech-models",
+		"/api/settings/embeddings-models",
+	} {
 		if rr := getMediaModels(t, s, target); rr.Code != http.StatusServiceUnavailable {
 			t.Fatalf("%s: status = %d, want 503", target, rr.Code)
 		}

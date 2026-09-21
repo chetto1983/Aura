@@ -321,8 +321,8 @@ func TestLoad_EmbedDefaultsApplied(t *testing.T) {
 	if cfg.Embed.BaseURL != "http://127.0.0.1:8081" {
 		t.Errorf("Embed.BaseURL: want default http://127.0.0.1:8081, got %q", cfg.Embed.BaseURL)
 	}
-	if cfg.Embed.Model != "" {
-		t.Errorf("Embed.Model: want empty (local sidecar route), got %q", cfg.Embed.Model)
+	if cfg.Embed.CloudModel != "" {
+		t.Errorf("Embed.CloudModel: want empty (local sidecar route), got %q", cfg.Embed.CloudModel)
 	}
 }
 
@@ -343,8 +343,8 @@ func TestLoad_EmbedEnvOverrides(t *testing.T) {
 	if cfg.Embed.Dimensions != 1024 {
 		t.Errorf("Embed.Dimensions override not applied: %d", cfg.Embed.Dimensions)
 	}
-	if cfg.Embed.Model != "qwen/qwen3-embedding-8b" {
-		t.Errorf("Embed.Model override not applied: %q", cfg.Embed.Model)
+	if cfg.Embed.CloudModel != "qwen/qwen3-embedding-8b" {
+		t.Errorf("Embed.CloudModel override not applied: %q", cfg.Embed.CloudModel)
 	}
 }
 

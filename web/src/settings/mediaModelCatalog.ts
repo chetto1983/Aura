@@ -1,6 +1,6 @@
 import { readJSON, type LLMCatalogModel } from './settingsApi';
 
-export type MediaKind = 'image' | 'video' | 'transcription' | 'speech';
+export type MediaKind = 'image' | 'video' | 'transcription' | 'speech' | 'embeddings';
 
 // A capability or price the catalogue did not declare is absent, never zero: zero is a real
 // price, and an invented limit would clamp nothing the tools actually clamp.
@@ -41,7 +41,18 @@ export interface VoiceCatalogModel {
   readonly has_price: boolean;
 }
 
-export type MediaCatalogModel = ImageCatalogModel | VideoCatalogModel | VoiceCatalogModel;
+/**
+ * A cloud embedding model. Like the voice rows OpenRouter publishes its rate with no unit, so
+ * the row carries the id and nothing a unit would have to be guessed for.
+ */
+export interface EmbeddingCatalogModel {
+  readonly kind: 'embeddings';
+  readonly id: string;
+  readonly has_price: boolean;
+}
+
+export type MediaCatalogModel =
+  ImageCatalogModel | VideoCatalogModel | VoiceCatalogModel | EmbeddingCatalogModel;
 
 /** A row of any catalogue the model picker lists. */
 export type ModelRow = LLMCatalogModel | MediaCatalogModel;

@@ -70,7 +70,7 @@ func (b studioBackend) Models(ctx context.Context, kind mediagen.Kind) (string, 
 func (b studioBackend) listed(ctx context.Context, kind mediagen.Kind, model string) (*mediagen.Model, error) {
 	models, err := b.catalog.List(ctx, kind, false)
 	if err != nil {
-		if errors.Is(err, agui.ErrMediaCatalogLocalRoute) {
+		if errors.Is(err, agui.ErrCatalogLocalRoute) {
 			return nil, err
 		}
 		slog.Error("aura serve: the Studio could not read the model catalog; nothing was generated",

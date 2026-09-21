@@ -195,7 +195,7 @@ func TestVideoModelsCarryCapabilitiesAndOnlyPerSecondPrices(t *testing.T) {
 }
 
 func TestMediaModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
-	catalog := &fakeMediaCatalog{err: ErrMediaCatalogLocalRoute}
+	catalog := &fakeMediaCatalog{err: ErrCatalogLocalRoute}
 	for _, target := range []string{"/api/settings/image-models", "/api/settings/video-models?refresh=1"} {
 		rr := getMediaModels(t, mediaServer(catalog), target)
 		if rr.Code != http.StatusConflict {

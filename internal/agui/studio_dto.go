@@ -233,7 +233,7 @@ type studioErrorDTO struct {
 func writeStudioError(w http.ResponseWriter, err error) {
 	var media *mediagen.Error
 	switch {
-	case errors.Is(err, ErrMediaCatalogLocalRoute):
+	case errors.Is(err, ErrCatalogLocalRoute):
 		writeJSONStatus(w, http.StatusConflict, studioErrorDTO{Code: "local_route", Error: err.Error()})
 	case errors.Is(err, assets.ErrWrongModality):
 		writeJSONStatus(w, http.StatusUnprocessableEntity, studioErrorDTO{

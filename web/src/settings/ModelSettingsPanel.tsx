@@ -118,22 +118,23 @@ export function ModelSettingsPanel({
   // a save that changes the saved route asks again.
   const savedProvider = loaded?.initial.AURA_LLM_PROVIDER ?? '';
   const savedBaseURL = loaded?.initial.AURA_LLM_BASE_URL ?? '';
-  const mediaEnabled =
-    loaded !== undefined &&
-    provider === 'cloud' &&
-    resolveProvider(savedProvider, savedBaseURL) === 'cloud' &&
-    groups.includes('routing');
   const savedRoute = `${savedProvider} ${savedBaseURL}`;
+  // ONE rule for every picker: the daemon lists from the route it runs on, so a list exists
+  // only while the SAVED route is OpenRouter, and only the pane on screen asks for one. The
+  // media and backend pickers used to spell this out separately and could therefore disagree.
+  const savedRouteIsCloud =
+    loaded !== undefined && resolveProvider(savedProvider, savedBaseURL) === 'cloud';
+  // The media rows additionally sit under the routing pane's Cloud button, so they follow the
+  // FORM provider as well: choosing Local hides them before the choice is saved.
+  const mediaEnabled = savedRouteIsCloud && groups.includes('routing') && provider === 'cloud';
+  // The cloud STT, TTS and embedding models are rows of the backends pane, and the clients
+  // that use them ride the same saved OpenRouter route.
+  const backendsEnabled = savedRouteIsCloud && groups.includes('backends');
   const imageCatalog = useMediaModelCatalog('image', mediaEnabled, savedRoute);
   const videoCatalog = useMediaModelCatalog('video', mediaEnabled, savedRoute);
-  // The cloud STT and TTS models are rows of the backends pane, and the clients that use them
-  // ride the same saved OpenRouter route, so their lists are asked for on that route only.
-  const voiceEnabled =
-    loaded !== undefined &&
-    resolveProvider(savedProvider, savedBaseURL) === 'cloud' &&
-    groups.includes('backends');
-  const transcriptionCatalog = useMediaModelCatalog('transcription', voiceEnabled, savedRoute);
-  const speechCatalog = useMediaModelCatalog('speech', voiceEnabled, savedRoute);
+  const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled, savedRoute);
+  const speechCatalog = useMediaModelCatalog('speech', backendsEnabled, savedRoute);
+  const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled, savedRoute);
   const cloudVoiceCatalog = ttsVoiceCatalog(speechCatalog, loaded?.values.AURA_TTS_MODEL ?? '');
 
   if (loadStatus === 'loading') {
@@ -167,7 +168,7 @@ export function ModelSettingsPanel({
       : (saveLabel ?? t('settings.actions.save'));
   const labels = mediaLabels(t);
   const formatRow = (row: ModelRow, freeLabel: string) => modelRowMeta(row, freeLabel, labels);
-  const localVoiceOption = {
+  const localSidecarOption = {
     label: t('settings.models.useLocalSidecar'),
     description: t('settings.models.useLocalSidecarDescription'),
   };
@@ -188,15 +189,22 @@ export function ModelSettingsPanel({
     AURA_LLM_MODEL: { catalog, formatRow },
     AURA_IMAGE_MODEL: { catalog: imageCatalog, formatRow },
     AURA_VIDEO_MODEL: { catalog: videoCatalog, formatRow },
+    // Empty is the LOCAL embedding sidecar, exactly as it is for STT and TTS: the model is
+    // the whole local-versus-cloud switch, and AURA_EMBED_BASE_URL never names a cloud one.
+    AURA_EMBED_MODEL: {
+      catalog: embeddingCatalog,
+      formatRow,
+      emptyOption: localSidecarOption,
+    },
     AURA_STT_CLOUD_MODEL: {
       catalog: transcriptionCatalog,
       formatRow,
-      emptyOption: localVoiceOption,
+      emptyOption: localSidecarOption,
     },
     AURA_TTS_MODEL: {
       catalog: speechCatalog,
       formatRow,
-      emptyOption: localVoiceOption,
+      emptyOption: localSidecarOption,
       onValueChange: selectTTSModel,
     },
     AURA_TTS_CLOUD_VOICE: { catalog: cloudVoiceCatalog, formatRow },

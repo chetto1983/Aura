@@ -128,7 +128,7 @@ func TestMediaCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
 			provider := newFakeOpenRouter(t)
 			route := mediaCatalogRoute{catalog: mediagen.NewCatalog(provider.client), runtime: tc.runtime}
 			models, err := route.List(context.Background(), mediagen.KindImage, true)
-			if !errors.Is(err, agui.ErrMediaCatalogLocalRoute) || models != nil {
+			if !errors.Is(err, agui.ErrCatalogLocalRoute) || models != nil {
 				t.Fatalf("List = %v, %v, want the local-route refusal", models, err)
 			}
 			if provider.reads() != 0 {
@@ -143,7 +143,7 @@ func TestMediaCatalogRouteFollowsARouteSwitchWithoutARestart(t *testing.T) {
 	runtime := routeRuntime("llamacpp", "http://aura-llm:8084/v1")
 	route := mediaCatalogRoute{catalog: mediagen.NewCatalog(provider.client), runtime: runtime}
 
-	if _, err := route.List(context.Background(), mediagen.KindVideo, false); !errors.Is(err, agui.ErrMediaCatalogLocalRoute) {
+	if _, err := route.List(context.Background(), mediagen.KindVideo, false); !errors.Is(err, agui.ErrCatalogLocalRoute) {
 		t.Fatalf("List on the local route = %v, want the refusal", err)
 	}
 	runtime.Replace(nil, llm.Config{Provider: "openrouter", BaseURL: openRouterBaseURL})

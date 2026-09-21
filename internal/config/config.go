@@ -12,7 +12,6 @@ import (
 	"net"
 	"net/url"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
@@ -412,23 +411,15 @@ func loadBase() *Config {
 			Password:     pgPassword,
 		},
 		DocumentRetrieval: loadDocumentRetrievalConfig(),
-		Embed: EmbedConfig{
-			BaseURL:    envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-			Dimensions: envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
-			Model:      os.Getenv("AURA_EMBED_MODEL"),
-			Revision:   strings.TrimSpace(os.Getenv("AURA_EMBED_REVISION")),
-			Fingerprint: strings.ToLower(strings.TrimSpace(
-				os.Getenv("AURA_EMBED_FINGERPRINT"),
-			)),
-		},
-		ArcadeDB:       loadArcadeDB(),
-		RunDir:         runDir,
-		RunDirErr:      runDirErr,
-		ToolPreviewCap: envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", defaultToolPreviewCapBytes),
-		Timezone:       envDefault("AURA_TIMEZONE", ""),
-		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
-		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
-		MetricsBind:    envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
+		Embed:             loadEmbed(),
+		ArcadeDB:          loadArcadeDB(),
+		RunDir:            runDir,
+		RunDirErr:         runDirErr,
+		ToolPreviewCap:    envutil.IntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", defaultToolPreviewCapBytes),
+		Timezone:          envDefault("AURA_TIMEZONE", ""),
+		OtelExporter:      envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
+		OtelEndpoint:      envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
+		MetricsBind:       envDefault("AURA_METRICS_BIND", "127.0.0.1:9464"),
 		ObservabilityCheckEnabled: envutil.BoolDefault(
 			"AURA_OBSERVABILITY_CHECK_ENABLED", false,
 		),
