@@ -296,9 +296,9 @@ describe('ModelSettingsPanel backend models', () => {
     const base = screen.getByLabelText('Embedding cloud base URL');
     expect(base.getAttribute('aria-invalid')).toBe('true');
     expect(base.getAttribute('aria-describedby')).toBe('embedding-manual-url-error');
-    expect(screen.getByRole('button', { name: 'Save runtime settings' }).hasAttribute('disabled')).toBe(
-      true,
-    );
+    expect(
+      screen.getByRole('button', { name: 'Save runtime settings' }).hasAttribute('disabled'),
+    ).toBe(true);
 
     fireEvent.change(base, { target: { value: 'https://embed.example/v1/' } });
     expect(base.hasAttribute('aria-invalid')).toBe(false);

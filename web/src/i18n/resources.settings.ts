@@ -307,7 +307,8 @@ export const settingsIt = {
       local: 'Locale',
       openrouter: 'OpenRouter',
       manual: 'Endpoint manuale',
-      openrouterUnavailable: 'Gli embedding OpenRouter richiedono OpenRouter come percorso del modello primario.',
+      openrouterUnavailable:
+        'Gli embedding OpenRouter richiedono OpenRouter come percorso del modello primario.',
       manualURLRequired: 'Un endpoint manuale richiede il suo URL base.',
       modelRequired: 'Scegli o digita un modello embedding prima di salvare questo percorso cloud.',
     },
