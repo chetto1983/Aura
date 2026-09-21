@@ -1,19 +1,18 @@
 // Package settings is the cockpit-editable runtime override layer for Aura's
-// model-backend knobs — the "Settings" page where the operator swaps any backend
-// local↔cloud (embed/STT/TTS/vision) and sets the OpenRouter management key. It does NOT
+// model-backend and service-tuning knobs. The "Settings" page swaps any backend
+// local↔cloud (embed/STT/TTS/vision), tunes memory bounds and sets credentials. It does NOT
 // pick the embedding width: AURA_EMBED_DIMENSIONS is deliberately absent from AllowedKeys,
 // because the width is fixed by the deployed model file and the vector indexes built at it,
 // so a row that changed it would only produce vectors nothing can search.
 // Rows live in aura.settings (migration 0024); secret rows are
 // AES-GCM ciphertext (secrets.go), which the Store decrypts for its callers. At
-// daemon boot OverlayEnv applies the non-secret rows onto the process environment (secret
-// rows never reach it) BEFORE config.Load, so the existing env readers pick them up with NO
-// per-field mapping; DB values WIN over pre-set env (the operator's UI choice is
-// authoritative).
+// each owning process's boot OverlayEnv applies the non-secret rows onto the process
+// environment (secret rows never reach it) BEFORE config loading, so the existing env
+// readers pick them up with NO per-field mapping; DB values WIN over pre-set env.
 // The primary LLM profile is also published to the live runtime by the Settings API;
 // the remaining backend knobs still take effect on restart.
 //
-// The overlay applies ONLY an allowlist of model-backend keys, so a settings row
+// The overlay applies ONLY an allowlist of product configuration keys, so a settings row
 // can never clobber connection/security env (POSTGRES_*, ARCADEDB_PASSWORD,
 // AURA_WEB_AUTH_SECRET).
 package settings
@@ -90,13 +89,29 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_OPENROUTER_MANAGEMENT_KEY": {Secret: true, Kind: KindString, Label: "OpenRouter management key (mint/revoke, not inference)"},
 	// The monthly cap of the aura-services key the reconciler mints. It is read when the key is
 	// minted, never overlaid into a running config.
-	"AURA_OPENROUTER_SERVICES_CAP_USD": {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},
-	"AURA_EMBED_MODEL":                 {Kind: KindString, Label: "Embedding cloud model"},
-	"AURA_EMBED_BASE_URL":              {Kind: KindString, Label: "Embedding base URL"},
-	"AURA_TTS_MODEL":                   {Kind: KindString, Label: "TTS cloud model"},
-	"AURA_TTS_CLOUD_VOICE":             {Kind: KindString, Label: "TTS cloud voice"},
-	"AURA_STT_CLOUD_MODEL":             {Kind: KindString, Label: "STT cloud model"},
-	"TELEGRAM_BOT_TOKEN":               {Secret: true, Kind: KindString, Label: "Telegram bot token"},
+	"AURA_OPENROUTER_SERVICES_CAP_USD":  {Kind: KindString, Label: "OpenRouter services key monthly cap (USD)"},
+	"AURA_EMBED_MODEL":                  {Kind: KindString, Label: "Embedding cloud model"},
+	"AURA_EMBED_BASE_URL":               {Kind: KindString, Label: "Embedding base URL"},
+	"AURA_EMBED_CLOUD_BASE_URL":         {Kind: KindString, Label: "Embedding cloud base URL"},
+	"ARCADEDB_TIMEOUT_SECONDS":          {Kind: KindInt, Label: "Memory database timeout (seconds)"},
+	"AURA_MEMORY_QUERY_MAX_RUNES":       {Kind: KindInt, Label: "Memory query character limit"},
+	"AURA_MEMORY_ENTITY_MAX_RUNES":      {Kind: KindInt, Label: "Memory entity character limit"},
+	"AURA_MEMORY_STATEMENT_MAX_RUNES":   {Kind: KindInt, Label: "Memory statement character limit"},
+	"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT": {Kind: KindInt, Label: "Memory digest scan limit"},
+	"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT": {
+		Kind: KindInt, Label: "Memory hybrid candidate limit",
+	},
+	"AURA_MEMORY_GRAPH_MAX_RECORDS":        {Kind: KindInt, Label: "Memory graph record limit"},
+	"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO": {Kind: KindString, Label: "Memory dense maximum distance"},
+	"AURA_MEMORY_MIN_RELEVANCE":            {Kind: KindString, Label: "Memory minimum relevance"},
+	"AURA_MEMORY_LEXICAL_MIN_SCORE":        {Kind: KindString, Label: "Memory lexical minimum score"},
+	"AURA_MEMORY_MENTION_HUB_SHARE":        {Kind: KindString, Label: "Memory mention hub share"},
+	"AURA_MEMORY_OPERATOR_DISPLAY_NAME":    {Kind: KindString, Label: "Memory operator display name"},
+	"AURA_ARCADEDB_MCP_BODY_MAX_BYTES":     {Kind: KindInt, Label: "Memory MCP request byte limit"},
+	"AURA_TTS_MODEL":                       {Kind: KindString, Label: "TTS cloud model"},
+	"AURA_TTS_CLOUD_VOICE":                 {Kind: KindString, Label: "TTS cloud voice"},
+	"AURA_STT_CLOUD_MODEL":                 {Kind: KindString, Label: "STT cloud model"},
+	"TELEGRAM_BOT_TOKEN":                   {Secret: true, Kind: KindString, Label: "Telegram bot token"},
 	// The four live media-generation settings (image/video plan, ruling R3): rows in
 	// aura.settings exactly like the primary LLM model, read fresh by
 	// cmd/aura's mediagen.Settings implementation on every call — nothing reads

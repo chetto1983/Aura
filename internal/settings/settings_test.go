@@ -247,17 +247,40 @@ func clearRuntimeConfigEnvForOverlayTest(t *testing.T) {
 	}
 }
 
-// The two AURA_MEMORY_EMBED_* keys were sidecar-owned compose/.env vars whose
-// cockpit overlay was a silent no-op (the daemon's os.Setenv cannot reach a
-// running sidecar). They were removed from AllowedKeys; the agent-memory sidecar
-// still consumes them from compose/.env at container start.
-func TestMemoryEmbedKeysRemovedFromAllowlist(t *testing.T) {
+// The old AURA_MEMORY_EMBED_* aliases stay retired: both processes now consume the
+// canonical AURA_EMBED_* settings rows at their own boot.
+func TestLegacyMemoryEmbedKeysRemainOutsideAllowlist(t *testing.T) {
 	for _, key := range []string{"AURA_MEMORY_EMBED_BASE_URL", "AURA_MEMORY_EMBED_API_KEY"} {
 		if _, ok := AllowedKeys[key]; ok {
-			t.Errorf("%s must NOT be cockpit-overridable — it is a sidecar-owned compose/.env var", key)
+			t.Errorf("%s must NOT be allowlisted; use the canonical AURA_EMBED_* setting", key)
 		}
 		if _, ok := Allowed(key); ok {
 			t.Errorf("Allowed(%q) = true, want false after removal", key)
+		}
+	}
+}
+
+func TestMemorySidecarRuntimeSettingsAreAllowlisted(t *testing.T) {
+	want := map[string]Kind{
+		"AURA_EMBED_CLOUD_BASE_URL":              KindString,
+		"ARCADEDB_TIMEOUT_SECONDS":               KindInt,
+		"AURA_MEMORY_QUERY_MAX_RUNES":            KindInt,
+		"AURA_MEMORY_ENTITY_MAX_RUNES":           KindInt,
+		"AURA_MEMORY_STATEMENT_MAX_RUNES":        KindInt,
+		"AURA_MEMORY_DIGEST_SCAN_MAX_COUNT":      KindInt,
+		"AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT": KindInt,
+		"AURA_MEMORY_GRAPH_MAX_RECORDS":          KindInt,
+		"AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO":   KindString,
+		"AURA_MEMORY_MIN_RELEVANCE":              KindString,
+		"AURA_MEMORY_LEXICAL_MIN_SCORE":          KindString,
+		"AURA_MEMORY_MENTION_HUB_SHARE":          KindString,
+		"AURA_MEMORY_OPERATOR_DISPLAY_NAME":      KindString,
+		"AURA_ARCADEDB_MCP_BODY_MAX_BYTES":       KindInt,
+	}
+	for key, kind := range want {
+		meta, ok := Allowed(key)
+		if !ok || meta.Secret || meta.Kind != kind {
+			t.Errorf("Allowed(%q) = (%+v, %v), want non-secret %s", key, meta, ok, kind)
 		}
 	}
 }

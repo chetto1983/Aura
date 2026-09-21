@@ -95,7 +95,7 @@ func newAgentMemoryLiveMCPWithOptions(
 	}
 	embedURL := agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081")
 	embedder := arcadedb.NewSidecarEmbedder(
-		embedURL, os.Getenv("AURA_EMBED_MODEL"), os.Getenv("AURA_EMBED_API_KEY"), 60*time.Second)
+		embedURL, os.Getenv("AURA_EMBED_MODEL"), os.Getenv("OPENROUTER_API_KEY"), 60*time.Second)
 	if embedder == nil {
 		agentMemoryLiveDependencyGap(t, options.strictDependencies, "EmbeddingGemma endpoint is not configured")
 	}

@@ -22,9 +22,11 @@ var ErrMissingAPIKey = errors.New("llm: API key is empty (connect OpenRouter in 
 // load-order base tier; later tiers (.env, ~/.aura/llm.json, AURA_LLM_*)
 // override these. The model id uses the `:nitro` routing variant.
 const (
-	defaultProvider          = "openrouter"
-	defaultModel             = "deepseek/deepseek-v4-flash:nitro"
-	defaultBaseURL           = "https://openrouter.ai/api/v1"
+	defaultProvider = "openrouter"
+	defaultModel    = "deepseek/deepseek-v4-flash:nitro"
+	// DefaultBaseURL is exported so sidecars resolving the shared embedding route use
+	// the same fallback instead of copying a second OpenRouter address.
+	DefaultBaseURL           = "https://openrouter.ai/api/v1"
 	defaultTemperature       = 0.7
 	defaultMaxTokens         = 4096
 	defaultTotalTimeoutSec   = 120
@@ -261,7 +263,7 @@ func load(allowEmptyKey bool) (*Config, error) {
 	cfg := &Config{
 		Provider:                 defaultProvider,
 		Model:                    defaultModel,
-		BaseURL:                  defaultBaseURL,
+		BaseURL:                  DefaultBaseURL,
 		Temperature:              defaultTemperature,
 		MaxTokens:                defaultMaxTokens,
 		AdaptiveReasoning:        defaultAdaptiveReasoning,

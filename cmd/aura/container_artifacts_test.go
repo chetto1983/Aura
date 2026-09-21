@@ -399,10 +399,26 @@ func TestMCPServicesOwnTheirNetworkLifecycleAndLoopbackPublishes(t *testing.T) {
 		if strings.Contains(service, "network_mode:") {
 			t.Fatalf("%s must not share Aura's replaceable network namespace:\n%s", name, service)
 		}
-		for _, want := range []string{"aura:\n        condition: service_started", "healthcheck:"} {
+		for _, want := range []string{"healthcheck:"} {
 			if !strings.Contains(service, want) {
 				t.Fatalf("%s missing %q:\n%s", name, want, service)
 			}
+		}
+	}
+	memory := composeServiceBlock(t, compose, "arcadedb-mcp")
+	for _, want := range []string{
+		"aura-migrate:\n        condition: service_completed_successfully",
+		"postgres:\n        condition: service_healthy",
+		"AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}",
+	} {
+		if !strings.Contains(memory, want) {
+			t.Fatalf("arcadedb-mcp missing Postgres settings bootstrap %q:\n%s", want, memory)
+		}
+	}
+	for _, name := range []string{"aura-pim-mcp", "whatsapp"} {
+		service := composeServiceBlock(t, compose, name)
+		if want := "aura:\n        condition: service_started"; !strings.Contains(service, want) {
+			t.Fatalf("%s missing %q:\n%s", name, want, service)
 		}
 	}
 	for _, want := range []string{

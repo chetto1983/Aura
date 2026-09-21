@@ -46,6 +46,10 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	embedAPIKey, err := loadBootSettings(context.Background())
+	if err != nil {
+		return err
+	}
 	cfg, addr, err := configFromEnv()
 	if err != nil {
 		return err
@@ -57,21 +61,15 @@ func run(logger *slog.Logger) error {
 	// cfg is the TENANT template: the resolver overrides User/Password/Database per
 	// identity. No client is opened against it here, because there is no shared
 	// database left to open.
-	// The dense leg is OPTIONAL by construction: NewSidecarEmbedder returns nil
-	// for an empty AURA_EMBED_BASE_URL, and a nil embedder leaves retrieval
-	// lexical. So an operator with no embedding sidecar gets the behaviour that
-	// shipped, and one with a sidecar that is merely DOWN gets it too — the
-	// search falls back per call rather than at boot.
-	embedder := arcadedb.NewSidecarEmbedder(
-		os.Getenv("AURA_EMBED_BASE_URL"),
-		os.Getenv("AURA_EMBED_MODEL"),
-		os.Getenv("AURA_EMBED_API_KEY"),
-		0,
-	)
+	// The stored cloud model is the route switch: it selects the shared cloud base
+	// and sealed credential, never the local sidecar. An explicitly empty local base
+	// disables dense retrieval; per-call embedder failures still fall back to lexical.
+	embedRoute := embeddingRouteFromEnv(embedAPIKey)
+	embedder := arcadedb.NewSidecarEmbedder(embedRoute.baseURL, embedRoute.model, embedRoute.apiKey, 0)
 	if embedder != nil {
 		// NOT attached to `client`: that one only ever runs DDL as the admin, and
 		// the per-tenant clients the resolver builds get the embedder themselves.
-		logger.Info("dense retrieval enabled", "embed_url", os.Getenv("AURA_EMBED_BASE_URL"))
+		logger.Info("dense retrieval enabled", "embed_url", embedRoute.baseURL)
 	} else {
 		logger.Info("dense retrieval disabled: no AURA_EMBED_BASE_URL; retrieval is lexical only")
 	}

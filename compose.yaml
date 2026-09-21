@@ -729,11 +729,17 @@ services:
     mem_limit: 512m
     pids_limit: 256
     depends_on:
-      aura:
-        condition: service_started
+      aura-migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       arcadedb:
         condition: service_healthy
     environment:
+      # Postgres settings bootstrap: the DSN locates the authority, and the Authula
+      # secret opens its sealed embedding credential. Security/topology inputs stay below.
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
       ARCADEDB_URL: http://arcadedb:2480
       ARCADEDB_DATABASE: ${ARCADEDB_DATABASE:-aura_memory}
       # NOT root. root is the server superuser — it can drop any database and
@@ -789,38 +795,11 @@ services:
       # slashed form keep validating.
       MCP_OAUTH_RESOURCE: ${AURA_ARCADEDB_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8096/mcp,http://127.0.0.1:8096/mcp/,http://aura-arcadedb-mcp:8096/mcp/,http://aura-arcadedb-mcp:8096/mcp}
       MCP_OAUTH_SCOPE: mcp:tools
-      # The dense leg of memory retrieval. An empty value selects bounded lexical
-      # retrieval. Per-call embedder failures use the same fallback and the MCP
-      # response names that mode so dense degradation is never silent.
-      AURA_EMBED_BASE_URL: ${AURA_MEMORY_EMBED_BASE_URL:-http://aura-llama-embed:8081}
-      AURA_EMBED_MODEL: ${AURA_EMBED_MODEL:-}
-      AURA_MEMORY_QUERY_MAX_RUNES: ${AURA_MEMORY_QUERY_MAX_RUNES:-2048}
-      AURA_MEMORY_ENTITY_MAX_RUNES: ${AURA_MEMORY_ENTITY_MAX_RUNES:-512}
-      AURA_MEMORY_STATEMENT_MAX_RUNES: ${AURA_MEMORY_STATEMENT_MAX_RUNES:-4096}
-      AURA_MEMORY_DIGEST_SCAN_MAX_COUNT: ${AURA_MEMORY_DIGEST_SCAN_MAX_COUNT:-2000}
-      AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT: ${AURA_MEMORY_HYBRID_CANDIDATE_MAX_COUNT:-400}
-      AURA_MEMORY_GRAPH_MAX_RECORDS: ${AURA_MEMORY_GRAPH_MAX_RECORDS:-10000}
-      AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO: ${AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO:-0.72}
-      AURA_MEMORY_MIN_RELEVANCE: ${AURA_MEMORY_MIN_RELEVANCE:-0.28}
-      AURA_MEMORY_LEXICAL_MIN_SCORE: ${AURA_MEMORY_LEXICAL_MIN_SCORE:-2}
-      AURA_MEMORY_MENTION_HUB_SHARE: ${AURA_MEMORY_MENTION_HUB_SHARE:-0.20}
-      # The operator's human name. canonicalSubject collapses a subject naming the
-      # operator -- by identity UUID or by this name -- onto one canonical form, so a
-      # fact written under either is recallable under the other (MEM-04). Left empty
-      # the collapse is inert BY DESIGN: the UUID stays canonical because there is no
-      # human form to become, and the two spellings mint two Entity vertices. Phase 45
-      # shipped the read without this line, which made the knob unreachable from the
-      # deployment however it was set in .env -- measured 2026-08-15.
-      AURA_MEMORY_OPERATOR_DISPLAY_NAME: ${AURA_MEMORY_OPERATOR_DISPLAY_NAME:-}
-      AURA_ARCADEDB_MCP_BODY_MAX_BYTES: ${AURA_ARCADEDB_MCP_BODY_MAX_BYTES:-1048576}
     ports:
       - "127.0.0.1:${AURA_ARCADEDB_MCP_PORT:-8096}:8096"
     healthcheck:
-      # The `aura` service gates its boot on this: memory is mounted INTO the agent
-      # loop at startup and the in-process mount has no boot-retry, so a sidecar that
-      # is merely still starting means an agent with ZERO memory tools until the next
-      # restart. /health is deliberately liveness-only (it does not touch ArcadeDB —
-      # see cmd/arcadedb-mcp/main.go), so an ArcadeDB blip cannot restart this process.
+      # Deliberately liveness-only: Postgres is a fail-closed BOOT dependency, while an
+      # ArcadeDB blip after boot must not restart this process for someone else's outage.
       # BusyBox wget ships in the Alpine runtime, so the probe adds no interpreter
       # or package solely for health checking.
       test: ["CMD", "wget", "--spider", "-q", "-T", "3", "http://127.0.0.1:8096/health"]

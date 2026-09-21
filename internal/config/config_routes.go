@@ -18,15 +18,21 @@ import "strings"
 // Compose DNS name), so a cloud model was sent to the local sidecar, which answers it
 // with local vectors and no error. See EmbedConfig for the measurement.
 func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
-	model = strings.TrimSpace(c.Embed.CloudModel)
+	return ResolveEmbedRoute(c.Embed, c.LLM.BaseURL, c.LLM.APIKey)
+}
+
+// ResolveEmbedRoute exposes the daemon's route contract to processes that read the same
+// aura.settings rows without loading the daemon's full configuration.
+func ResolveEmbedRoute(embed EmbedConfig, llmBaseURL, apiKey string) (baseURL, credential, model string) {
+	model = strings.TrimSpace(embed.CloudModel)
 	if model == "" {
-		return c.Embed.BaseURL, "", "" // local sidecar, no auth
+		return embed.BaseURL, "", "" // local sidecar, no auth
 	}
-	base := strings.TrimSpace(c.Embed.CloudBaseURL)
+	base := strings.TrimSpace(embed.CloudBaseURL)
 	if base == "" {
-		base = sharedCloudBase(c.LLM.BaseURL)
+		base = sharedCloudBase(llmBaseURL)
 	}
-	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1"), c.LLM.APIKey, model
+	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1"), apiKey, model
 }
 
 // sharedCloudBase strips a trailing /v1 from the shared OpenRouter base. The

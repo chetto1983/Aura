@@ -87,7 +87,7 @@ func agentMemoryLiveTenantClient(t *testing.T, ctx context.Context, identityID s
 	}
 	embedder := arcadedb.NewSidecarEmbedder(
 		agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		os.Getenv("AURA_EMBED_MODEL"), os.Getenv("AURA_EMBED_API_KEY"), time.Minute,
+		os.Getenv("AURA_EMBED_MODEL"), os.Getenv("OPENROUTER_API_KEY"), time.Minute,
 	)
 	client, err := newTenants(base, admin, embedder, credentials).For(ctx, identityID)
 	if err != nil {
