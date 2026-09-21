@@ -322,14 +322,71 @@ i[class*=' wxi-']:before {
   animation: fa-spin 2s linear infinite;
 }
 
-/* The three theme roots set --wx-font-family to "Open Sans"/Roboto, which @svar-ui's own CSS
-   declares as @font-face rules served from cdn.svar.dev. Nothing fetches a face no element
-   asks for, so pointing the variable at the typeface the cockpit already ships is what keeps
-   those requests from being made at all -- and the widget stops being the one surface in the
-   app with its own typography. Two classes so the override wins wherever the bundler orders
-   the two stylesheets. */
-.wx-theme.wx-willow-theme,
-.wx-theme.wx-willow-dark-theme,
-.wx-theme.wx-material-theme {
+/* The theme roots set --wx-font-family to "Open Sans"/Roboto, which @svar-ui's own CSS declares
+   as @font-face rules served from cdn.svar.dev. Pointing the variable at the typeface the
+   cockpit already ships stops those faces from ever being asked for, and the widget stops being
+   the one surface in the app with its own typography. The class is repeated to outweigh the
+   package's own single-class rule wherever the bundler orders the two stylesheets; it is NOT
+   written `.wx-theme.wx-willow-theme`, because the menu/tooltip portal is stamped
+   `wx-<theme>-theme` WITHOUT `wx-theme` (@svar-ui/react-core, the portal div) and that is the
+   subtree that was still fetching Open Sans after the first pass at this. */
+.wx-willow-theme.wx-willow-theme,
+.wx-willow-dark-theme.wx-willow-dark-theme,
+.wx-material-theme.wx-material-theme {
   --wx-font-family: var(--font-sans);
+}
+
+/* The backstop, and the reason the fix is not one selector away from breaking again: a family
+   name is only a name, so the six faces the package declares against the CDN are redeclared
+   here against a file this origin serves. Whatever still asks for "Open Sans" or Roboto -- a
+   portal, a rule not found, a package upgrade -- resolves same-origin instead of leaving the
+   appliance. Same move as public/fonts/noto-sans-alias.css makes for the video renderer.
+   Descriptors match the package's exactly (Roboto 400/500, Open Sans 400/500/600/700): a face
+   overrides an earlier one only when family, style and weight all agree. */
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Roboto';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Open Sans';
+  src: url('/fonts/atkinson-hyperlegible-next-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
 }
