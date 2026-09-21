@@ -10,6 +10,7 @@ import {
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
+import '@/styles/svar.css';
 import { createFileManagerProvider, directURL, parseDates } from './filesApi';
 import { filesWords } from './filesLocale';
 import { useThemeMode } from '@/theme/useThemeMode';
@@ -134,10 +135,15 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
       {/* The theme wrapper is a plain div with no height of its own, so the manager inside
           it collapses to its content unless the wrapper is stretched — the demo layout
           gives its container the same explicit full height. */}
+      {/* fonts={false} + icons="simple": left to itself the widget links a preconnect and an
+          icon stylesheet from cdn.svar.dev and fetches one SVG per file type from there. The
+          appliance answers offline and must not phone anyone, so the icon font is served from
+          this origin (src/styles/svar.css) and the per-type artwork is dropped for the font
+          glyph the widget falls back to. */}
       <div className="min-h-0 flex-1 [&>*]:h-full">
-        <Theme>
+        <Theme fonts={false}>
           <Locale words={filesWords(i18n.language)}>
-            <Filemanager data={data} init={init} onRequestData={requestData} />
+            <Filemanager data={data} init={init} onRequestData={requestData} icons="simple" />
           </Locale>
         </Theme>
       </div>

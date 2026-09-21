@@ -81,6 +81,21 @@ describe('FilesWorkspace', () => {
     });
   });
 
+  it('asks no CDN for its fonts, icon sheet, or file-type artwork', async () => {
+    const { container } = render(<FilesWorkspace />);
+    await waitFor(() => {
+      expect(container.querySelector('[data-id=":/clip.mp4"]')).not.toBeNull();
+    });
+    // The widget links a preconnect + an icon stylesheet, and sources one SVG per file type,
+    // from cdn.svar.dev unless it is told otherwise. Nothing may leave this origin: the
+    // appliance answers offline, and web/e2e/video-studio.spec.ts fails the run over it —
+    // from the media picker, which mounts this component (GarageMediaPicker).
+    const remote = [...document.querySelectorAll('link[href], img[src], script[src]')].filter(
+      (node) => (node.getAttribute('href') ?? node.getAttribute('src') ?? '').startsWith('http'),
+    );
+    expect(remote.map((node) => node.getAttribute('href') ?? node.getAttribute('src'))).toEqual([]);
+  });
+
   it('hands an opened file to a picker instead of opening a browser tab', async () => {
     const onOpenFile = vi.fn();
     const { container } = render(<FilesWorkspace onOpenFile={onOpenFile} />);
