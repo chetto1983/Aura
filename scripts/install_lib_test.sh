@@ -149,22 +149,44 @@ make_stubs "$fixture_root/bin-smi" nvidia-smi
 mkdir -p "$fixture_root/bin-none" "$fixture_root/dri-none" "$fixture_root/dri-render"
 : > "$fixture_root/dri-render/renderD128"
 
+# The sysfs side of the probe. A render node alone proves nothing about Vulkan; the DRM
+# driver behind it is what decides, so every fixture pairs the node with a driver.
+make_drm() {
+  dir="$1"
+  driver="$2"
+  mkdir -p "$dir/renderD128/device"
+  printf 'DRIVER=%s\nPCI_CLASS=30000\n' "$driver" > "$dir/renderD128/device/uevent"
+}
+make_drm "$fixture_root/drm-intel" i915
+make_drm "$fixture_root/drm-amd" amdgpu
+# VMware's virtual adapter, measured on the 26.04 guest this probe was fixed for.
+make_drm "$fixture_root/drm-vmware" vmwgfx
+# A render node whose driver the kernel does not name at all.
+mkdir -p "$fixture_root/drm-silent/renderD128/device"
+
 expect_backend() {
   want="$1"
   bin="$2"
   dri="$3"
-  got="$(PATH="$bin:/usr/bin:/bin" detect_embed_backend "$dri")"
+  drm="${4:-$fixture_root/drm-intel}"
+  got="$(PATH="$bin:/usr/bin:/bin" detect_embed_backend "$dri" "$drm")"
   [ "$got" = "$want" ] \
-    || { echo "FAIL: detect_embed_backend with $(basename "$bin") and $(basename "$dri") gave '$got', want '$want'" >&2; exit 1; }
+    || { echo "FAIL: detect_embed_backend with $(basename "$bin"), $(basename "$dri") and $(basename "$drm") gave '$got', want '$want'" >&2; exit 1; }
 }
 # A GPU nvidia-smi sees but Docker cannot drive is NOT CUDA: without a hook Docker has no
 # `nvidia` device driver and the reservation kills `up`.
 expect_backend cuda "$fixture_root/bin-hook" "$fixture_root/dri-none"
 expect_backend cuda "$fixture_root/bin-cdi" "$fixture_root/dri-render"
-expect_backend vulkan "$fixture_root/bin-smi" "$fixture_root/dri-render"
-expect_backend vulkan "$fixture_root/bin-none" "$fixture_root/dri-render"
+expect_backend vulkan "$fixture_root/bin-smi" "$fixture_root/dri-render" "$fixture_root/drm-intel"
+expect_backend vulkan "$fixture_root/bin-none" "$fixture_root/dri-render" "$fixture_root/drm-amd"
 expect_backend cpu "$fixture_root/bin-smi" "$fixture_root/dri-none"
 expect_backend cpu "$fixture_root/bin-none" "$fixture_root/dri-none"
+# The regression this probe exists for: a virtual display adapter publishes a render node
+# and has no Vulkan behind it, so choosing the Vulkan overlay yields a sidecar with no
+# device. An unnamed driver takes the same safe road -- the CPU works, a wrong Vulkan
+# guess does not start.
+expect_backend cpu "$fixture_root/bin-none" "$fixture_root/dri-render" "$fixture_root/drm-vmware"
+expect_backend cpu "$fixture_root/bin-none" "$fixture_root/dri-render" "$fixture_root/drm-silent"
 
 echo "ok: detect_embed_backend picks CUDA only when Docker can drive it, then Vulkan, then CPU"
 
@@ -198,7 +220,7 @@ mkdir -p "$fixture_root/posture-upgrade"
 (
   cd "$fixture_root/posture-upgrade"
   printf 'AURA_EMBED_IMAGE=ghcr.io/ggml-org/llama.cpp:server\nAURA_EMBED_NGL=0\n' > .env
-  PATH="$fixture_root/bin-none:/usr/bin:/bin" ensure_embed_backend_env "$fixture_root/dri-render"
+  PATH="$fixture_root/bin-none:/usr/bin:/bin" ensure_embed_backend_env "$fixture_root/dri-render" "$fixture_root/drm-intel"
   for pair in AURA_EMBED_BACKEND=vulkan COMPOSE_FILE=compose.yaml:compose.vulkan.yaml AURA_EMBED_NGL=99; do
     grep -qx "$pair" .env || { echo "FAIL: upgrading a CPU install on a Vulkan host did not write $pair" >&2; exit 1; }
   done

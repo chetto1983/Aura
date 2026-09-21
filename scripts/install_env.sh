@@ -208,18 +208,41 @@ ensure_edge_channel_env() {
 # reach a Docker container on macOS, so a Mac lands on the CPU.
 detect_embed_backend() {
   dri_dir="${1:-/dev/dri}"
+  drm_sys="${2:-/sys/class/drm}"
   if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1 &&
     { command -v nvidia-container-runtime-hook >/dev/null 2>&1 || command -v nvidia-cdi-hook >/dev/null 2>&1; }; then
     echo cuda
     return
   fi
   for node in "$dri_dir"/renderD*; do
-    if [ -e "$node" ]; then
+    if [ -e "$node" ] && vulkan_capable_render_node "$node" "$drm_sys"; then
       echo vulkan
       return
     fi
   done
   echo cpu
+}
+
+# A render node is NECESSARY but not SUFFICIENT: a virtual display adapter publishes one
+# too, with no Vulkan implementation behind it. Measured 2026-09-21 on a VMware guest --
+# /dev/dri/renderD128 present, backed by vmwgfx (PCI 15AD:0405) -- where the old
+# presence-only probe chose the Vulkan overlay and the pinned llama.cpp server-vulkan
+# image had no device to run on. The discriminator is the DRM driver behind the node,
+# which the kernel states in its uevent.
+#
+# This is an ALLOWLIST on purpose, and the asymmetry of the two mistakes is the reason: a
+# real GPU whose driver is missing here lands on the CPU, which is slower but works and
+# which the operator can override with AURA_EMBED_BACKEND; a virtual adapter mistaken for
+# a GPU produces a stack that does not start at all. Add a driver here only when a real
+# device has been measured with it.
+vulkan_capable_render_node() {
+  node_path="$1"
+  drm_sys="${2:-/sys/class/drm}"
+  driver="$(sed -n 's/^DRIVER=//p' "${drm_sys}/$(basename "$node_path")/device/uevent" 2>/dev/null)"
+  case "$driver" in
+    i915 | xe | amdgpu | radeon) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 # One knob: AURA_EMBED_BACKEND is detected once and is the operator's to change after that.
