@@ -95,11 +95,9 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/settings", s.handleListSettings)
 	mux.HandleFunc("GET /api/settings/llm-routes", s.handleListLLMRoutes)
 	mux.HandleFunc("GET /api/settings/llm-models", s.handleListLLMModels)
-	mux.HandleFunc("GET /api/settings/image-models", s.handleListImageModels)
-	mux.HandleFunc("GET /api/settings/video-models", s.handleListVideoModels)
-	mux.HandleFunc("GET /api/settings/transcription-models", s.handleListTranscriptionModels)
-	mux.HandleFunc("GET /api/settings/speech-models", s.handleListSpeechModels)
-	mux.HandleFunc("GET /api/settings/embeddings-models", s.handleListEmbeddingModels)
+	for pattern, handler := range settingsCatalogHandlers(s) {
+		mux.HandleFunc(pattern, handler)
+	}
 	mux.HandleFunc("PUT /api/settings/llm-profile", s.handlePutLLMProfile)
 	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
 	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)
@@ -108,6 +106,34 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/settings/{key}", s.handleDeleteSetting)
 	// The restart is how a saved boot-bound row takes effect (restart_api.go).
 	mux.HandleFunc("POST /api/admin/restart", s.handleRestart)
+}
+
+// settingsCatalogHandlers maps each picker-catalogue pattern to its handler. It is the ONE
+// place these routes are named. cmd/aura mounts the same patterns a second time behind
+// RequireCapability, and naming them twice is exactly how GET /api/settings/embeddings-models
+// shipped registered here and missing there: measured 2026-09-21 on the live deployment, an
+// authenticated cockpit got models from speech, transcription, image and video and a bare
+// "404 page not found" from embeddings -- for a route this daemon was serving.
+func settingsCatalogHandlers(s *Server) map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		"GET /api/settings/image-models":         s.handleListImageModels,
+		"GET /api/settings/video-models":         s.handleListVideoModels,
+		"GET /api/settings/transcription-models": s.handleListTranscriptionModels,
+		"GET /api/settings/speech-models":        s.handleListSpeechModels,
+		"GET /api/settings/embeddings-models":    s.handleListEmbeddingModels,
+	}
+}
+
+// SettingsCatalogRoutes is what cmd/aura mounts behind RequireCapability. Deriving it from
+// the same map the AG-UI mux registers is what makes the two mounts unable to disagree.
+func SettingsCatalogRoutes() []string {
+	handlers := settingsCatalogHandlers(&Server{})
+	patterns := make([]string, 0, len(handlers))
+	for pattern := range handlers {
+		patterns = append(patterns, pattern)
+	}
+	sort.Strings(patterns)
+	return patterns
 }
 
 // settingItemDTO is one row of the Settings page: the allowlist metadata + the

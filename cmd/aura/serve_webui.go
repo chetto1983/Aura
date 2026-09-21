@@ -212,10 +212,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle("GET /api/settings/llm-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The media catalogues take no URL from the browser, but refresh=1 makes the daemon call
 	// the provider, so they share llm-models' gate rather than governance.read.
-	mux.Handle("GET /api/settings/image-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle("GET /api/settings/video-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle("GET /api/settings/transcription-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle("GET /api/settings/speech-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	for _, pattern := range agui.SettingsCatalogRoutes() {
+		mux.Handle(pattern, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	}
 	mux.Handle("PUT /api/settings/llm-profile", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("PUT /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("DELETE /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
