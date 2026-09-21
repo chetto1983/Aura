@@ -84,18 +84,20 @@ describe('ModelSettingsPanel routes', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
-    // Scoped to its group: the embedding backend control publishes a 'Local' button of its
+    // Scoped to its group: the embedding backend control publishes a 'Local' route of its
     // own, so a panel-wide query by name is ambiguous. A screen reader is not — each control
-    // is a role="group" with its own aria-label.
-    const providerRoutes = within(screen.getByRole('group', { name: 'Primary model provider' }));
-    expect(providerRoutes.getByRole('button', { name: 'Cloud' }).getAttribute('aria-pressed')).toBe(
+    // is a role="radiogroup" with its own aria-label.
+    const providerRoutes = within(
+      screen.getByRole('radiogroup', { name: 'Primary model provider' }),
+    );
+    expect(providerRoutes.getByRole('radio', { name: 'Cloud' }).getAttribute('aria-checked')).toBe(
       'true',
     );
     expect(screen.queryByDisplayValue('sk-should-never-render')).toBeNull();
     expect(screen.queryByText('sk-should-never-render')).toBeNull();
     expect(screen.getAllByText('Configured').length).toBeGreaterThan(0);
 
-    fireEvent.click(providerRoutes.getByRole('button', { name: 'Local' }));
+    fireEvent.click(providerRoutes.getByRole('radio', { name: 'Local' }));
     // The model box is a picker over the endpoint's catalogue; an id the endpoint does not
     // publish is still committable, which is the path this asserts.
     fireEvent.click(screen.getByLabelText('Primary model'));

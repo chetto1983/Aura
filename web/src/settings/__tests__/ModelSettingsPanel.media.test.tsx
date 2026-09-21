@@ -109,9 +109,11 @@ function mediaGets(calls: readonly Call[]): readonly string[] {
     .map((call) => call.url);
 }
 
+// The field, found by the hook it carries rather than by the frame it happens to wear: a row
+// inside a route control has no card chrome to reach for.
 function fieldCard(label: string): HTMLElement {
-  const card = screen.getByText(label).closest('div.rounded-md');
-  if (!(card instanceof HTMLElement)) throw new Error(`no field card for ${label}`);
+  const card = screen.getByText(label).closest('[data-setting]');
+  if (!(card instanceof HTMLElement)) throw new Error(`no field for ${label}`);
   return card;
 }
 
@@ -262,7 +264,7 @@ describe('ModelSettingsPanel media models', () => {
     renderPanel();
 
     await screen.findByLabelText('Primary model');
-    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
     await screen.findByLabelText('Image generation model');
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(mediaGets(calls)).toEqual([]);

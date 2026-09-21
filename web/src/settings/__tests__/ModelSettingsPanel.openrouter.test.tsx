@@ -102,10 +102,10 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
 
     expect(shown()).toEqual([true, true]);
     for (const route of ['Local', 'Ollama']) {
-      fireEvent.click(screen.getByRole('button', { name: route }));
+      fireEvent.click(screen.getByRole('radio', { name: route }));
       expect(shown()).toEqual([false, false]);
     }
-    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
     expect(shown()).toEqual([true, true]);
   });
 

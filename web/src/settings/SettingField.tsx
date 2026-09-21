@@ -15,8 +15,28 @@ import { Label } from '@/components/ui/label';
 import { SecretInput } from '@/components/ui/secret-input';
 import { cn } from '@/lib/utils';
 
-function SettingsGrid({ children }: { readonly children: ReactNode }) {
-  return <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{children}</div>;
+/** How a field is framed. `card` tiles a pane of many settings; `inline` drops the chrome for
+ *  the one or two fields that belong to a control that already has its own card and heading. */
+export type SettingFieldVariant = 'card' | 'inline';
+
+function SettingsGrid({
+  variant,
+  children,
+}: {
+  readonly variant: SettingFieldVariant;
+  readonly children: ReactNode;
+}) {
+  return (
+    <div
+      className={
+        variant === 'inline'
+          ? 'flex max-w-xl flex-col gap-5'
+          : 'grid gap-4 md:grid-cols-2 xl:grid-cols-3'
+      }
+    >
+      {children}
+    </div>
+  );
 }
 
 /** One model field's catalogue and the formatter that writes its rows. */
@@ -42,10 +62,12 @@ export function SettingsFields({
   invalidKeys,
   describedBy,
   resetting,
+  variant = 'card',
 }: {
   readonly defs: readonly SettingDef[];
   readonly loaded: LoadedState;
   readonly resetting: string | undefined;
+  readonly variant?: SettingFieldVariant;
   readonly onValueChange: (key: SettingsKey, value: string) => void;
   readonly onReset: (key: SettingsKey) => void;
   /** The catalogue each model field picks from; a field without one stays free text. */
@@ -55,11 +77,12 @@ export function SettingsFields({
   readonly describedBy?: Partial<Record<SettingsKey, string>> | undefined;
 }) {
   return (
-    <SettingsGrid>
+    <SettingsGrid variant={variant}>
       {defs.map((def) => (
         <SettingField
           key={def.key}
           def={def}
+          variant={variant}
           item={settingRow(loaded, def)}
           value={loaded.values[def.key] ?? ''}
           picker={pickers?.[def.key]}
@@ -88,8 +111,10 @@ function SettingField({
   describedBy,
   resetting,
   value,
+  variant,
 }: {
   readonly def: SettingDef;
+  readonly variant: SettingFieldVariant;
   readonly item: SettingItem;
   readonly value: string;
   readonly onChange: (value: string) => void;
@@ -111,9 +136,27 @@ function SettingField({
         ? t('settings.status.configured')
         : t('settings.status.notConfigured');
 
+  const inline = variant === 'inline';
+
   return (
-    <div className="flex min-h-32 flex-col gap-2 rounded-md border border-border bg-surface px-3 py-3">
-      <div className="flex min-w-0 items-start justify-between gap-2">
+    <div
+      // The field's own hook for tests and for the applied-state banner: the frame it wears
+      // is a layout choice, and a query that reaches for `.min-h-32` breaks the day one row
+      // stops being a tile.
+      data-setting={def.key}
+      className={cn(
+        'flex flex-col gap-2',
+        !inline && 'min-h-32 rounded-md border border-border bg-surface px-3 py-3',
+      )}
+    >
+      <div
+        className={cn(
+          'flex min-w-0 gap-2',
+          // A tile is a column: label left, status right. A full-width row has no right edge
+          // worth reaching for, so the badge sits where the reading stops instead.
+          inline ? 'flex-wrap items-center' : 'items-start justify-between',
+        )}
+      >
         <Label htmlFor={inputId} className="min-w-0 break-words text-[13px]">
           {label}
         </Label>
@@ -172,8 +215,13 @@ function SettingField({
         <p className="text-[12px] leading-snug text-text-muted">{t(def.helpKey)}</p>
       )}
       <div className="mt-auto flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-1">
+        <div className={cn('flex min-w-0 gap-1', inline ? 'items-baseline gap-2' : 'flex-col')}>
           <code className="min-w-0 break-all text-[12px] text-text-faint">{def.key}</code>
+          {inline ? (
+            <span aria-hidden="true" className="text-[12px] text-text-faint">
+              ·
+            </span>
+          ) : null}
           {/* Amendment #188: each field says how it reaches the running daemon, so a
               pending restart is attributed to THIS row instead of a pane-level banner. */}
           <span

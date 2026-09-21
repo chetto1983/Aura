@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { SettingsFields, type PickerBindings } from './SettingField';
 import { EmbeddingBackendControl } from './EmbeddingBackendControl';
+import { RouteToggle } from './RouteToggle';
 import { RestartAuraControl } from './RestartAuraControl';
 import { useModelSettings, type SaveOutcome } from './modelSettingsState';
 import { useModelCatalog, type ModelCatalogState } from './useModelCatalog';
@@ -232,39 +233,30 @@ export function ModelSettingsPanel({
           </div>
 
           {group.id === 'routing' ? (
-            <div
-              className="flex flex-wrap items-center gap-2"
-              role="group"
-              aria-label={t('settings.provider.label')}
-            >
-              {PROVIDER_OPTIONS.map((option) => {
-                const Icon = PROVIDER_ICONS[option.id];
-                return (
-                  <Button
-                    key={option.id}
-                    type="button"
-                    variant={provider === option.id ? 'default' : 'outline'}
-                    aria-pressed={provider === option.id}
-                    onClick={() => {
-                      // The route comes from what this provider was last saved or booted
-                      // with; the compiled-in constant is only reached by a provider this
-                      // deployment has never configured.
-                      const route = routeForProvider(option, routes, {
-                        provider: loaded.initial.AURA_LLM_PROVIDER ?? '',
-                        baseURL: loaded.initial.AURA_LLM_BASE_URL ?? '',
-                        model: loaded.initial.AURA_LLM_MODEL ?? '',
-                      });
-                      setValue('AURA_LLM_BASE_URL', route.baseURL);
-                      setValue('AURA_LLM_MODEL', route.model);
-                      setValue('AURA_LLM_PROVIDER', option.provider);
-                    }}
-                  >
-                    <Icon aria-hidden="true" />
-                    {t(option.labelKey)}
-                  </Button>
-                );
-              })}
-            </div>
+            <RouteToggle
+              label={t('settings.provider.label')}
+              value={provider}
+              options={PROVIDER_OPTIONS.map((option) => ({
+                id: option.id,
+                label: t(option.labelKey),
+                icon: PROVIDER_ICONS[option.id],
+              }))}
+              onChange={(next) => {
+                const option = PROVIDER_OPTIONS.find((candidate) => candidate.id === next);
+                if (option === undefined) return;
+                // The route comes from what this provider was last saved or booted with; the
+                // compiled-in constant is only reached by a provider this deployment has
+                // never configured.
+                const route = routeForProvider(option, routes, {
+                  provider: loaded.initial.AURA_LLM_PROVIDER ?? '',
+                  baseURL: loaded.initial.AURA_LLM_BASE_URL ?? '',
+                  model: loaded.initial.AURA_LLM_MODEL ?? '',
+                });
+                setValue('AURA_LLM_BASE_URL', route.baseURL);
+                setValue('AURA_LLM_MODEL', route.model);
+                setValue('AURA_LLM_PROVIDER', option.provider);
+              }}
+            />
           ) : null}
 
           {group.id === 'backends' ? (

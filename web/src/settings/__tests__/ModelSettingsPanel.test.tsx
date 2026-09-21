@@ -196,11 +196,13 @@ describe('ModelSettingsPanel', () => {
     );
     await screen.findByRole('heading', { name: 'Model routing' });
 
-    // Scoped to its group: the embedding backend control publishes a 'Local' button of its
+    // Scoped to its group: the embedding backend control publishes a 'Local' route of its
     // own, so a panel-wide query by name is ambiguous. A screen reader is not — each control
-    // is a role="group" with its own aria-label.
-    const providerRoutes = within(screen.getByRole('group', { name: 'Primary model provider' }));
-    fireEvent.click(providerRoutes.getByRole('button', { name: route.button }));
+    // is a role="radiogroup" with its own aria-label.
+    const providerRoutes = within(
+      screen.getByRole('radiogroup', { name: 'Primary model provider' }),
+    );
+    fireEvent.click(providerRoutes.getByRole('radio', { name: route.button }));
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
@@ -278,7 +280,7 @@ describe('ModelSettingsPanel', () => {
     );
     await screen.findByRole('heading', { name: 'Model routing' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
     fireEvent.change(screen.getByLabelText('OpenRouter management key'), {
       target: { value: 'sk-or-v1-mgmt' },
     });
