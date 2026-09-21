@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactElement } from 'react';
 import '../../i18n/i18n';
@@ -196,7 +196,11 @@ describe('ModelSettingsPanel', () => {
     );
     await screen.findByRole('heading', { name: 'Model routing' });
 
-    fireEvent.click(screen.getByRole('button', { name: route.button }));
+    // Scoped to its group: the embedding backend control publishes a 'Local' button of its
+    // own, so a panel-wide query by name is ambiguous. A screen reader is not — each control
+    // is a role="group" with its own aria-label.
+    const providerRoutes = within(screen.getByRole('group', { name: 'Primary model provider' }));
+    fireEvent.click(providerRoutes.getByRole('button', { name: route.button }));
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
