@@ -1,7 +1,12 @@
 # Unified cloud routing — mini-PC appliance (config now, Go refactor later)
 
 **Date:** 2026-07-17
-**Status:** Part 1 (config override) shipped & deployed; Part 2 (Go refactor) proposed, not started.
+**Status:** Part 1 (config override) shipped & deployed. Part 2 (Go refactor) landed for
+**embed** on 2026-09-21 in `2b7825cb4`, two months after this document named the bug: the
+`isLoopbackURL` swap below is deleted, and the local and cloud bases are separate fields so
+the broken combination cannot be expressed. **Rerank no longer exists** — `internal/rerank`
+was deleted once ArcadeDB's own `vector.rerank` was found to cover it, so the rerank rows of
+the table below are history, not a plan. Vision's `AURA_VISION_CLOUD` bool is unchanged.
 **Constraint:** deploy on the existing `aura:local` image — **no rebuild**.
 
 ## Context

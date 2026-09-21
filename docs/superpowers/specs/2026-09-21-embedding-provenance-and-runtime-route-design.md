@@ -1,7 +1,11 @@
 # Embedding provenance and runtime route — design
 
-Status: proposed, not implemented. Written for the implementer; it assumes no
-knowledge of the conversation that produced it.
+Status: the **runtime route** half shipped on 2026-09-21 in `2b7825cb4` — the local and
+cloud bases are separate fields, the loopback heuristic is gone, and the cockpit picks the
+embedding model from OpenRouter's published list instead of a free-text box. The
+**provenance** half (embedding identity written beside each vector) is still proposed. Read
+the route sections as a record of what was done and the provenance sections as a plan.
+Written for the implementer; it assumes no knowledge of the conversation that produced it.
 
 ## Goal
 
@@ -270,7 +274,10 @@ Stated because a number without its perimeter is a supposition wearing a hat.
 - **Whether the three writers are currently in agreement in any live deployment.** This
   design adds the means to answer that; it does not assert the answer.
 
-## Defects found while measuring, not fixed here
+## Defects found while measuring
+
+All three were fixed in `2b7825cb4`; they are kept here because each was one page away from
+being noticed and the record of how they hid is worth more than the diff.
 
 - `.env.example:339` proposes `AURA_MEMORY_EMBED_BASE_URL=https://openrouter.ai/api/v1`.
   That client is the same `internal/embeddings.Client`, which appends

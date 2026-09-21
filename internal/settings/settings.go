@@ -1,7 +1,10 @@
 // Package settings is the cockpit-editable runtime override layer for Aura's
 // model-backend knobs — the "Settings" page where the operator swaps any backend
-// local↔cloud (embed/STT/TTS/vision), sets the OpenRouter management key, and picks
-// the embed dimension. Rows live in aura.settings (migration 0024); secret rows are
+// local↔cloud (embed/STT/TTS/vision) and sets the OpenRouter management key. It does NOT
+// pick the embedding width: AURA_EMBED_DIMENSIONS is deliberately absent from AllowedKeys,
+// because the width is fixed by the deployed model file and the vector indexes built at it,
+// so a row that changed it would only produce vectors nothing can search.
+// Rows live in aura.settings (migration 0024); secret rows are
 // AES-GCM ciphertext (secrets.go), which the Store decrypts for its callers. At
 // daemon boot OverlayEnv applies the non-secret rows onto the process environment (secret
 // rows never reach it) BEFORE config.Load, so the existing env readers pick them up with NO
