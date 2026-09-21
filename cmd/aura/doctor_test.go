@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -177,21 +176,22 @@ func TestDoctorDefaultPostgresProbeNamesEmptyURL(t *testing.T) {
 	}
 }
 
-func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
+// The probe must not buy an inference to state something it already knew. The old one
+// POSTed /v1/embeddings and returned len(vector), which TruncateMRL had already pinned to
+// cfg.Embed.Dimensions -- so it could not report any other number. This pins the
+// replacement: ask the sidecar what it IS, and do not request an embedding at all.
+func TestDoctorEmbedProbeReportsWhatTheSidecarActuallyLoaded(t *testing.T) {
+	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
-		// The client reads the sidecar's input limit from its catalogue first.
-		if r.URL.Path == "/v1/models" {
-			_, _ = w.Write([]byte(`{"data":[{"id":"embeddinggemma.gguf","meta":{"n_ctx":2048}}]}`))
-			return
-		}
-		if r.URL.Path != "/v1/embeddings" {
-			t.Fatalf("path = %s, want /v1/embeddings", r.URL.Path)
-		}
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"data": []map[string]any{{"index": 0, "embedding": []float64{0.1, 0.2, 0.3}}},
-		}); err != nil {
-			t.Fatalf("encode response: %v", err)
+		switch r.URL.Path {
+		case "/health":
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+		case "/props":
+			_, _ = w.Write([]byte(`{"model_path":"/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf","total_slots":1,"default_generation_settings":{"n_ctx":2048}}`))
+		default:
+			t.Errorf("unexpected request to %s", r.URL.Path)
 		}
 	}))
 	defer srv.Close()
@@ -200,13 +200,69 @@ func TestDoctorDefaultEmbedProbeChecksDimension(t *testing.T) {
 	doctorHTTPClient = srv.Client()
 	t.Cleanup(func() { doctorHTTPClient = oldClient })
 
-	cfg := &config.Config{Embed: config.EmbedConfig{BaseURL: srv.URL, Dimensions: 3}}
+	cfg := &config.Config{Embed: config.EmbedConfig{BaseURL: srv.URL, Dimensions: 768}}
 	detail, err := defaultDoctorProbeEmbed(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
 	}
-	if detail != "dimension 3" {
-		t.Fatalf("detail = %q, want dimension 3", detail)
+	for _, want := range []string{"embeddinggemma-300M-Q8_0.gguf", "n_ctx 2048", "1 slot"} {
+		if !strings.Contains(detail, want) {
+			t.Errorf("detail = %q, want it to contain %q", detail, want)
+		}
+	}
+	for _, path := range seen {
+		if strings.Contains(path, "embeddings") {
+			t.Errorf("the probe requested %s; it must cost no inference", path)
+		}
+	}
+}
+
+// A sidecar still loading its model is not unreachable, and the operator's move is
+// different: wait, do not go looking for a broken address. llama.cpp answers 503 with this
+// body while loading -- observed on a restart of the live sidecar, 2026-09-21.
+func TestDoctorEmbedProbeSaysTheModelIsStillLoading(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"code":503,"message":"Loading model","type":"unavailable_error"}}`))
+	}))
+	defer srv.Close()
+
+	oldClient := doctorHTTPClient
+	doctorHTTPClient = srv.Client()
+	t.Cleanup(func() { doctorHTTPClient = oldClient })
+
+	cfg := &config.Config{Embed: config.EmbedConfig{BaseURL: srv.URL, Dimensions: 768}}
+	_, err := defaultDoctorProbeEmbed(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "loading") {
+		t.Fatalf("err = %v, want it to name the loading state", err)
+	}
+}
+
+// A hosted embedder's health belongs to its provider, and probing it would bill a call on
+// every `aura doctor`. The route is what this stack can get wrong, so that is what is shown.
+func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("the cloud route must not be probed, got %s", r.URL.Path)
+	}))
+	defer srv.Close()
+
+	oldClient := doctorHTTPClient
+	doctorHTTPClient = srv.Client()
+	t.Cleanup(func() { doctorHTTPClient = oldClient })
+
+	cfg := &config.Config{Embed: config.EmbedConfig{
+		BaseURL:      srv.URL,
+		CloudModel:   "perplexity/pplx-embed-v1-0.6b",
+		CloudBaseURL: srv.URL,
+		Dimensions:   768,
+	}}
+	detail, err := defaultDoctorProbeEmbed(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
+	}
+	if !strings.Contains(detail, "perplexity/pplx-embed-v1-0.6b") {
+		t.Fatalf("detail = %q, want it to name the cloud model", detail)
 	}
 }
 

@@ -99,23 +99,6 @@ func defaultDoctorProbePostgres(ctx context.Context, cfg *config.Config) (string
 	return fmt.Sprintf("reachable (%s)", latency.Round(time.Millisecond)), nil
 }
 
-func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, error) {
-	client := doctorHTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: 10 * time.Second}
-	}
-	defer client.CloseIdleConnections()
-	embedder := embeddingClient(cfg, client)
-	vectors, err := embedder.Embed(ctx, []string{"aura doctor probe"})
-	if err != nil {
-		return "", err
-	}
-	if len(vectors) == 0 {
-		return "", fmt.Errorf("embedding sidecar returned no vectors")
-	}
-	return fmt.Sprintf("dimension %d", len(vectors[0])), nil
-}
-
 // defaultDoctorProbeMCPServers live-probes ONLY the enabled + runnable +
 // streamable-HTTP managed MCP servers (D-16/D-17/D-18, MCPH-09) via mcp.ProbeServer,
 // bounded per-server by AURA_MCP_PROBE_TIMEOUT. It does NOT dial disabled,
