@@ -15,6 +15,13 @@ export const mediaEditEn = {
       confirm: 'Open anyway',
     },
     suffix: { image: 'edited', video: 'edited' },
+    upload: {
+      action: 'Upload and edit',
+      choose: 'Choose an image or video to edit',
+      uploading: 'Uploading…',
+      unsupported: 'Choose a PNG, JPEG, WebP, MP4, or WebM file.',
+      failed: 'The file could not be uploaded.',
+    },
     photo: {
       download: 'Download',
       saveLibrary: 'Save to library',
@@ -78,6 +85,13 @@ export const mediaEditIt = {
       confirm: 'Apri comunque',
     },
     suffix: { image: 'modificata', video: 'modificato' },
+    upload: {
+      action: 'Carica e modifica',
+      choose: 'Scegli un’immagine o un video da modificare',
+      uploading: 'Caricamento…',
+      unsupported: 'Scegli un file PNG, JPEG, WebP, MP4 o WebM.',
+      failed: 'Non è stato possibile caricare il file.',
+    },
     photo: {
       download: 'Scarica',
       saveLibrary: 'Salva in libreria',
