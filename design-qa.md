@@ -156,3 +156,75 @@ unique dates and temperatures; XLSX retains its chart. A final comparison caught
 different per-file timestamps, so both files were synchronized from one new API
 response with the shared retrieval time `2026-09-08T18:25:51+00:00`, reopened and
 compared, then redelivered by Aura. Both formats render and download successfully.
+
+---
+
+# Unified video editor design QA — 2026-09-22
+
+## Comparison target and evidence
+
+- Live source: `https://clideo.com/editor/`, measured with real video media at 1100 × 599 desktop
+  and 393 px mobile. Reference captures:
+  `.planning/tmp/clideo-live-transform-controls.png`,
+  `.planning/tmp/clideo-live-adjust-controls.png`,
+  `.planning/tmp/clideo-duration-reference-open.png`,
+  `.planning/tmp/clideo-mobile-selected-live.png` and the supplied transition screenshot.
+- Implementation:
+  `.planning/tmp/aura-video-final-transform.png`,
+  `.planning/tmp/aura-video-final-animation.png`,
+  `.planning/tmp/aura-mobile-timeline-final.png`,
+  `.planning/tmp/aura-mobile-transform-final.png`,
+  `.planning/tmp/aura-transition-desktop.png` and
+  `.planning/tmp/aura-transition-mobile.png`.
+- Code surfaces: `web/src/videoStudio/`, `web/src/styles/video-studio*.css` and the direct video
+  entry in `web/src/mediaEdit/VideoEditor.tsx`. The Filerobot photo editor source was not changed.
+
+## Fidelity review
+
+- Desktop structure matches the measured editor: project bar, narrow command rail, contextual
+  property panel, fitted preview with transport, and a lower timeline spanning the working width.
+- Mobile is a distinct composition rather than scaled desktop: compact back/undo/redo/export bar,
+  dominant preview, transport, fitted timeline and a fixed horizontally scrollable clip-action
+  rail. A tool replaces the timeline row with a scrollable bottom sheet; Back closes the sheet and
+  then returns to Add clip/Add title tools.
+- The timeline now uses one contiguous Visuals lane for video and still-image clips, real repeated
+  thumbnails, compact Clideo-style ruler labels, a single playhead, yellow selection/trim grips,
+  image/text layers above the main lane and junction nodes between adjacent clips.
+- Transform, crop presets, flip, quarter-turn rotation, adjustments, audio, speed, source timing,
+  clip In/Out animations and duration all use the shared Aura Button, Radix Tabs/ToggleGroup,
+  Slider and Switch controls. Light and dark colors resolve only through Aura semantic tokens.
+- Junction transitions are separate from clip animations. Crossfade, Zoom and Blur overlap the two
+  real VideoFlow layers; Fade to Black/White reuse VideoFlow Shape layers. The selected junction
+  owns its duration and shortens project time by the real overlap.
+- The transition panel follows Clideo's three-column thumbnail card layout. Desktop and mobile
+  captures show the selected Crossfade card, duration control and the yellow timeline junction.
+
+## Reuse and licensing
+
+- Retained permissive installed dependencies: Apache-2.0 VideoFlow renderers, `dnd-timeline`,
+  Radix/shadcn and Lucide.
+- `@videoflow/react-video-editor` was inspected only under
+  `D:/tmp/videoflow-react-video-editor-reference` because its two-tier source-available license is
+  not open source for every Aura deployment.
+- `100mslive/react-native-video-plugin` is MIT but React-Native/conferencing-specific, so it is a
+  behavior reference rather than a web dependency.
+- MIT `MartinDelophy/ai-video-editor` commit `d5e9b3f` was inspected under
+  `D:/tmp/ai-video-editor-reference`. Its custom 3,600-line application timeline was not copied;
+  its contiguous-visuals/layer model confirmed the `dnd-timeline` implementation.
+
+## Verification
+
+- Full frontend suite: 321 files and 2,875 tests passed.
+- Coverage: statements 91.67%, branches 85.38%, functions 90.51%, lines 93.63%.
+- Real authenticated media E2E: 10/10 passed across desktop Chrome and Pixel 5 mobile Chrome,
+  covering trim/export duration, functional controls, real junction transitions, theme switching,
+  mobile sheet open/close, viewport-fitted timeline, unchanged photo save/download and chat-clip
+  entry.
+- TypeScript, type-aware lint, formatting, dead-code scan, zero-duplicate scan and production build
+  passed. The build emits no chunk-size warning; the largest JavaScript chunk is 440.5 KiB,
+  VideoStudio is 159.7 KiB and PhotoEditor is 220.0 KiB.
+- No actionable P0, P1 or P2 visual mismatch remains in the implemented editing surface. Clideo
+  stock libraries, recording, subtitles and generative media are outside Aura's current renderer
+  capabilities and are not represented by inert controls.
+
+final result: passed
