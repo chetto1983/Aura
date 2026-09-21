@@ -582,7 +582,7 @@ git commit -m "test(remote-access): verify Cloudflare Tunnel end to end"
 **Deliverable:** Evidence proves secret containment, ownership-safe deletion, sidecar isolation and full release readiness.
 
 **Files:**
-- Create: `docs/audit/cloudflare-remote-access-review.md`
+- Create: `docs/superpowers/verification/2026-09-21-cloudflare-remote-access-review.md`
 - Modify only for findings: files owned by Tasks 1–6.
 
 - [ ] **Step 1: Audit both credential paths**
@@ -600,7 +600,7 @@ Run `make quality-full` in WSL with the real stack. Do not accept skipped integr
 - [ ] **Step 4: Commit review evidence and any atomic fixes**
 
 ```bash
-git add docs/audit/cloudflare-remote-access-review.md
+git add docs/superpowers/verification/2026-09-21-cloudflare-remote-access-review.md
 git commit -m "docs(remote-access): record Cloudflare security verification"
 ```
 
