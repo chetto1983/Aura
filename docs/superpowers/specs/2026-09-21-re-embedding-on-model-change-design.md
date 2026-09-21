@@ -19,7 +19,9 @@ be warned before it starts.
 
 ## Decisions taken by the operator (2026-09-21)
 
-1. **Scope: documents (Postgres) AND memory (ArcadeDB).** Both hold vectors; both go stale.
+1. **Scope: every durable vector store.** Not only documents and memory facts -- also
+   conversation turns, reasoning traces and the ETL passage cards. All five are enumerated
+   in the design; all of them go stale together.
 2. **Trigger: the operator confirms a warning.** Changing the model does not silently start
    spending compute or money.
 3. **During the transition, search keeps working over everything**, with the operator told
@@ -84,44 +86,83 @@ Cost is known, not guessed: measured 2026-09-21, the local sidecar runs at ~400 
 at identical token cost. So a full re-embed is minutes-to-hours locally and minutes on a
 cloud route, and the warning must say which.
 
-### 3. Memory: a re-embed pass, because there is no engine to delegate to
+### 3. Every vector store, enumerated
 
-ArcadeDB holds one database per identity with a native vector index, and nothing there
-tracks lineage. This half is real work:
+"Memory" was too small a word for this. Enumerated on 2026-09-21, the durable vector
+stores are **five**:
 
-- read facts whose stored fingerprint differs from the active one,
-- re-embed them through the same `internal/embeddings` client the daemon uses,
-- write the vector back, bitemporally consistent with the fact's existing validity.
+| store | where | owner |
+|---|---|---|
+| `aura.document_embeddings` | Postgres, one fingerprint per row | CocoIndex (§2) |
+| `Fact.embedding` | ArcadeDB edge | memory writes |
+| `ConversationTurn.embedding` | ArcadeDB vertex, `LSM_VECTOR` index | conversation capture |
+| `ReasoningTrace.embedding` | ArcadeDB vertex, `LSM_VECTOR` index | reasoning capture |
+| `Passage.embedding` | ArcadeDB vertex, the ETL cards | document ingest |
 
-It is bounded by `AURA_MEMORY_*` limits already in `aura.settings`, and it must be
-restartable: a pass interrupted halfway leaves a mixed corpus, which is the state decision 3
-already accepts.
+Two more places embed but store nothing durable, and therefore need no pass:
 
-**Measured 2026-09-21: they do not.** The `Fact` edge carries an `embedding` property
-(`internal/arcadedb/memory.go:301`), but the schema it declares is `statement`, `predicate`,
-`valid_from`, `valid_to`, `created_at`, `expired_at`, `fact_key`, `sources`
-(`memory.go:39-52`) — no model, no fingerprint, no dimension. So "which facts are stale" is
-today an **unanswerable question**, and a schema addition recording the fingerprint at write
-time must land before the memory half can begin.
+- the reasoning-tier classifier's anchors are rebuilt per process behind a `singleflight`
+  and its own comment calls the unconditional publish "the whole invalidation story", so
+  they already follow whatever model is current;
+- `internal/semindex` holds its index in memory and states that a failed add is not
+  persisted, so a restart re-derives it.
 
-That ordering has a consequence worth stating: facts written before that change carry no
-fingerprint, so they are indistinguishable from current ones. The pass must treat an absent
-fingerprint as stale — the only safe reading, and one that re-embeds the whole existing
-corpus exactly once.
+### 4. The ArcadeDB side: re-embed all of it, and do not track what went stale
 
-### 4. The warning
+None of those four ArcadeDB types records which model produced its vector. The `Fact` edge
+carries `embedding` (`internal/arcadedb/memory.go:301`) but its schema declares only
+`statement`, `predicate`, `valid_from`, `valid_to`, `created_at`, `expired_at`, `fact_key`,
+`sources` (`memory.go:39-52`); the other three are the same shape. The obvious reading is
+that a per-row fingerprint must be added so a pass can select what went stale.
+
+**Do not add it.** Changing the embedding model is a rare, deliberate act — that is the
+whole reason it is behind a confirmed warning rather than a save button. Optimising a rare
+operation buys nothing and costs a schema change on four types, a migration ordering
+constraint, selective queries, and partial-pass states to reason about forever after. The
+warning already makes the cost explicit and the operator already agreed to pay it.
+
+So: **on a model change, re-embed everything in ArcadeDB.** One scalar decides it — the
+fingerprint the corpus was last embedded with, stored once for the database, not once per
+row. Compare it to the active route's fingerprint; if they differ, walk each type, re-embed
+its text through the same `internal/embeddings` client the daemon uses, write the vector
+back, and store the new fingerprint only when the whole pass completes. Writing it at the
+end is what makes an interrupted pass simply run again — the cheapest correct recovery, and
+no resume state to maintain.
+
+No ArcadeDB schema change, no migration, no prerequisite. The whole ArcadeDB half is a walk
+and a comparison.
+
+Sizing is a stated cost, not a risk to design around. `Fact` was measured at 102 rows during
+the `f4830e0b7` calibration — about 3k tokens, ~8 s at the measured ~400 tok/s locally.
+`ConversationTurn` and `Passage` grow without bound and were NOT counted (the per-tenant
+ArcadeDB credential is derived by HMAC and the sidecar's own credentials do not open that
+database from outside). They could be minutes or hours locally, and ~26x less on a cloud
+route. That number belongs in the warning, computed at the time — not in a design that tries
+to avoid it.
+
+The asymmetry with documents is not a different philosophy: `deps` makes CocoIndex redo
+every chunk the embedder touched. Same semantics, delegated to an engine that already
+implements it incrementally and for free.
+
+### 5. The warning
 
 Shown when the operator changes the embedding model, before anything is written. It states:
 how many vectors are stale (documents and memory, counted separately), that retrieval
 quality degrades until the pass completes, and — when the target is a cloud route — that the
 pass bills tokens. Confirming starts the pass; declining leaves the model unchanged.
 
-### 5. The mitigation decision 3 requires
+### 6. The mitigation decision 3 requires
 
-Because search keeps running over a mixed corpus, every result carries the fingerprint it
-was embedded with, and the UI shows that a pass is in progress. This does not make the
-scores comparable — nothing can — but it makes the mixture **visible** rather than silent,
-which is the difference between a degraded answer and an unexplained one.
+Because search keeps running over a mixed corpus, a **document** result carries the
+fingerprint it was embedded with — `document_embeddings` already stores one per row — and
+the UI shows that a pass is in progress. This does not make the scores comparable, nothing
+can, but it makes the mixture **visible** rather than silent, which is the difference
+between a degraded answer and an unexplained one.
+
+The ArcadeDB side gets no per-row equivalent, because that would mean adding exactly the
+per-row fingerprint the design declined. What it gets instead is the pass's own state: while
+a re-embed is running, the operator has been told so, and that is the honest signal at the
+granularity the design keeps.
 
 ## What this design does NOT do
 
@@ -133,10 +174,14 @@ which is the difference between a degraded answer and an unexplained one.
 
 ## Open questions to close before implementation
 
-1. ~~Do ArcadeDB memory facts record the embedding model?~~ **Closed 2026-09-21: no.** The
-   schema addition is a prerequisite, and an absent fingerprint counts as stale.
-2. Where does the pass run — the daemon, `services/ingest`, or the memory sidecar? The
+1. ~~Do the ArcadeDB types record the embedding model?~~ **Closed: no, and it stays that
+   way.** Changing embedder is rare and confirmed, so the pass redoes everything rather
+   than earning the right to skip work.
+2. How large are `ConversationTurn` and `Passage` in a real deployment? Unmeasured — the
+   per-tenant credential is derived and did not open the database from outside. The number
+   is needed for the warning's estimate, not for the design.
+3. Where does the pass run — the daemon, `services/ingest`, or the memory sidecar? The
    sidecar owns the ArcadeDB credentials and now reads `aura.settings` at boot, which makes
    it the candidate, but it has no job runner today.
-3. How is progress reported to the cockpit? There is an existing `/healthz` seam and a
+4. How is progress reported to the cockpit? There is an existing `/healthz` seam and a
    scheduler; neither is obviously right for a long pass.
