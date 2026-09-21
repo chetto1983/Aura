@@ -1,46 +1,11 @@
-import { RotateCcw, RotateCw, Play, X } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Asset } from '../chat/attachments/types';
 import { CommandRefusal } from '../videoStudio/commands';
-import { projectFromClip, type StudioOpen } from '../videoStudio/VideoStudio_sources';
-import { CropOverlay } from './CropOverlay';
-import {
-  CROP_PRESETS,
-  presetRect,
-  rotateSize,
-  type CropPreset,
-  type CropRect,
-  type Rotation,
-} from './cropMath';
-import { downloadBlob } from './download';
-import {
-  editedName,
-  typedRange,
-  videoContainer,
-  type BlockedTrack,
-  type VideoEdit,
-} from './editRules';
+import VideoStudio from '../videoStudio/VideoStudio';
+import { projectFromClip, uploadSource, type StudioOpen } from '../videoStudio/VideoStudio_sources';
 import { MediaEditorLayer } from './MediaEditorLayer';
-import { TimeField } from './TimeField';
-import { formatTimecode } from './timecode';
-import { useObjectUrl } from './useObjectUrl';
-import { exportVideo, filmstrip, probeVideo, type VideoInfo } from './videoMedia';
-import { VideoTimeline } from './VideoTimeline';
-import { Button } from '@/components/ui/button';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
-import { Switch } from '@/components/ui/switch';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-
-// VideoEditor — trim, crop, rotate and mute a clip in the browser, after the layout of Adobe
-// Express's and 123apps' trimmers: preview on top, filmstrip below, Start/End and Save last.
-//
-// It stays the phone's first answer for ONE clip. The multi-track editor is a way forward from
-// here, not a replacement: it opens on a project holding the trim as it stands, IN PLACE of this
-// surface rather than over it — two `MediaEditorLayer`s at once would leave the page underneath
-// reachable again as soon as the inner one closed.
-
-const VideoStudio = lazy(() => import('../videoStudio/VideoStudio'));
+import { probeVideo } from './videoMedia';
 
 export interface EditorProps {
   readonly asset: Asset;
@@ -48,456 +13,72 @@ export interface EditorProps {
   readonly onClose: () => void;
 }
 
-type Tool = 'trim' | 'crop' | 'rotate' | 'audio';
-const TOOLS: readonly Tool[] = ['trim', 'crop', 'rotate', 'audio'];
-const FILMSTRIP_FRAMES = 10;
+type Opening =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'ready'; readonly open: StudioOpen }
+  | { readonly kind: 'failed'; readonly key: string };
 
-function turn(rotation: Rotation, quarter: 1 | -1): Rotation {
-  return ((((rotation + quarter * 90) % 360) + 360) % 360) as Rotation;
-}
-
+/**
+ * The former single-clip editor ended here in a second, incompatible workspace. A clip now enters
+ * the composition directly: trim, crop, rotation, audio, titles and multi-track edits all share
+ * one history and one export. Garage files first receive a durable Aura asset id, because a saved
+ * project cannot point at the temporary `garage:` identity this host used while downloading it.
+ */
 export default function VideoEditor({ asset, source, onClose }: EditorProps) {
   const { t } = useTranslation();
-  const url = useObjectUrl(source);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const abortRef = useRef<AbortController | undefined>(undefined);
-  const [info, setInfo] = useState<VideoInfo>();
-  const [frames, setFrames] = useState<CanvasImageSource[]>([]);
-  const [tool, setTool] = useState<Tool>('trim');
-  const [range, setRange] = useState({ start: 0, end: 0 });
-  const [rotation, setRotation] = useState<Rotation>(0);
-  const [preset, setPreset] = useState<CropPreset>('original');
-  const [moved, setMoved] = useState<CropRect>();
-  const [mute, setMute] = useState(false);
-  const [progress, setProgress] = useState<number>();
-  const [problem, setProblem] = useState<string>();
-  const [unreadable, setUnreadable] = useState(false);
-  // Held rather than rebuilt per render: the multi-track editor re-opens whenever this value
-  // changes identity, and a new project on every keystroke would throw the history away.
-  const [studio, setStudio] = useState<StudioOpen>();
+  const [opening, setOpening] = useState<Opening>({ kind: 'loading' });
+  const preparation = useRef<Promise<StudioOpen> | undefined>(undefined);
 
   useEffect(() => {
+    let live = true;
     const controller = new AbortController();
-    probeVideo(source, controller.signal).then(
-      (probed) => {
-        if (controller.signal.aborted) return;
-        setInfo(probed);
-        setRange({ start: 0, end: probed.duration });
-      },
-      () => {
-        if (!controller.signal.aborted) setUnreadable(true);
-      },
-    );
-    return () => {
-      controller.abort();
-    };
-  }, [source]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    filmstrip(source, FILMSTRIP_FRAMES, 90, controller.signal).then(
-      (strip) => {
-        if (!controller.signal.aborted) setFrames(strip);
-      },
-      // The pictures are decoration: without them the timeline still trims.
-      () => undefined,
-    );
-    return () => {
-      controller.abort();
-    };
-  }, [source]);
-
-  // An export outlives nothing: leaving the editor stops it, so no download lands afterwards.
-  useEffect(
-    () => () => {
-      abortRef.current?.abort();
-    },
-    [],
-  );
-
-  const frame = info === undefined ? undefined : rotateSize(info, rotation);
-  const crop =
-    frame === undefined || preset === 'original' ? undefined : (moved ?? presetRect(frame, preset));
-  const output = crop ?? (frame === undefined ? undefined : presetRect(frame, 'original'));
-
-  function blockedSentence(tracks: readonly BlockedTrack[]): string {
-    const first = tracks[0];
-    if (first === undefined) return t('mediaEdit.video.blockedUnknown');
-    const track =
-      first.type === 'video' ? t('mediaEdit.video.trackVideo') : t('mediaEdit.video.trackAudio');
-    return t('mediaEdit.video.blocked', {
-      track,
-      codec: first.codec ?? t('mediaEdit.video.codecUnknown'),
-    });
-  }
-
-  async function save() {
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setProblem(undefined);
-    setProgress(0);
-    const base = { start: range.start, end: range.end, rotation, mute };
-    const edit: VideoEdit = crop === undefined ? base : { ...base, crop };
-    try {
-      const result = await exportVideo(
-        source,
-        asset.mime_type,
-        edit,
-        setProgress,
-        controller.signal,
-      );
-      if (result.kind === 'blocked') setProblem(blockedSentence(result.tracks));
-      if (result.kind === 'empty') setProblem(t('mediaEdit.video.emptyExport'));
-      if (result.kind === 'done') {
-        downloadBlob(
-          result.blob,
-          editedName(asset.file_name, t('mediaEdit.suffix.video'), videoContainer(asset.mime_type)),
-        );
-      }
-    } catch (error) {
-      setProblem(
-        t('mediaEdit.video.failed', {
-          reason: error instanceof Error ? error.message : String(error),
+    preparation.current ??= (async () => {
+      const info = await probeVideo(source, controller.signal);
+      const assetId = asset.id.startsWith('garage:')
+        ? await uploadSource(
+            new File([source], asset.file_name, { type: asset.mime_type || source.type }),
+          )
+        : asset.id;
+      const dot = asset.file_name.lastIndexOf('.');
+      const projectName = dot > 0 ? asset.file_name.slice(0, dot) : asset.file_name;
+      return {
+        kind: 'project',
+        project: projectFromClip(projectName, assetId, info, {
+          start: 0,
+          end: info.duration,
         }),
-      );
-    } finally {
-      abortRef.current = undefined;
-      setProgress(undefined);
-    }
-  }
-
-  function close() {
-    abortRef.current?.abort();
-    onClose();
-  }
-
-  function reset() {
-    if (info !== undefined) setRange({ start: 0, end: info.duration });
-    setRotation(0);
-    setPreset('original');
-    setMoved(undefined);
-    setMute(false);
-  }
-
-  function playSelection() {
-    const video = videoRef.current;
-    if (video === null) return;
-    video.currentTime = range.start;
-    video.play().catch((error: unknown) => {
-      // A pause that interrupts play() rejects with AbortError: nothing went wrong.
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-      setProblem(t('mediaEdit.video.playFailed'));
-    });
-  }
-
-  const quarter = rotation === 90 || rotation === 270;
-  const percent = progress === undefined ? undefined : Math.round(progress * 100);
-  const toolLabel = (item: Tool) => t(`mediaEdit.video.tool.${item}`);
-
-  // After every hook, and before this editor's own surface: only one full-screen layer is ever
-  // mounted, so closing the multi-track editor comes back to exactly this one.
-  if (studio !== undefined) {
-    return (
-      <Suspense fallback={null}>
-        <VideoStudio
-          open={studio}
-          onClose={() => {
-            setStudio(undefined);
-          }}
-        />
-      </Suspense>
+      } satisfies StudioOpen;
+    })();
+    preparation.current.then(
+      (open) => {
+        if (live) setOpening({ kind: 'ready', open });
+      },
+      (error: unknown) => {
+        if (!live || controller.signal.aborted) return;
+        setOpening({
+          kind: 'failed',
+          key: error instanceof CommandRefusal ? error.reasonKey : 'mediaEdit.loadFailed',
+        });
+      },
     );
+    return () => {
+      live = false;
+      controller.abort();
+    };
+  }, [asset, source]);
+
+  if (opening.kind === 'ready') {
+    return <VideoStudio open={opening.open} onClose={onClose} />;
   }
 
   return (
-    <MediaEditorLayer label={t('mediaEdit.editName', { name: asset.file_name })} onEscape={close}>
-      <header className="flex items-center gap-3 border-b border-border px-4 py-2">
-        <h2 className="min-w-0 flex-1 truncate font-mono text-sm">{asset.file_name}</h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={info === undefined}
-          onClick={() => {
-            if (info === undefined) return;
-            // The composition refuses what this editor allows, so the way forward can be
-            // declined: a clip with no decoder here trims by copy but composes to black frames.
-            // The refusal is shown, never swallowed — a button that does nothing is the same
-            // defect wearing a different face.
-            let project;
-            try {
-              project = projectFromClip(asset.file_name, asset.id, info, range);
-            } catch (error) {
-              setProblem(
-                error instanceof CommandRefusal
-                  ? t(error.reasonKey)
-                  : t('mediaEdit.video.failed', {
-                      reason: error instanceof Error ? error.message : String(error),
-                    }),
-              );
-              return;
-            }
-            abortRef.current?.abort();
-            setStudio({ kind: 'project', project });
-          }}
-        >
-          {t('videoStudio.open.fromClip')}
-        </Button>
-        <Button type="button" variant="ghost" size="sm" onClick={reset}>
-          {t('mediaEdit.video.reset')}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t('mediaEdit.close')}
-          onClick={close}
-        >
-          <X aria-hidden="true" className="size-4" />
-        </Button>
-      </header>
-
-      <div className="flex items-center gap-2 px-4 py-2">
-        <ToggleGroup
-          type="single"
-          value={tool}
-          onValueChange={(value) => {
-            if (value !== '') setTool(value as Tool);
-          }}
-          aria-label={t('mediaEdit.video.tools')}
-          className="hidden sm:flex"
-        >
-          {TOOLS.map((item) => (
-            <ToggleGroupItem key={item} value={item}>
-              {toolLabel(item)}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-        {/* The class has to sit here: NativeSelect passes its own to the inner <select>, and the
-            wrapper that draws the chevron would stay behind on a wide screen. */}
-        <div className="sm:hidden">
-          <NativeSelect
-            aria-label={t('mediaEdit.video.tools')}
-            value={tool}
-            onChange={(event) => {
-              setTool(event.target.value as Tool);
-            }}
-          >
-            {TOOLS.map((item) => (
-              <NativeSelectOption key={item} value={item}>
-                {toolLabel(item)}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 overflow-auto px-4">
-        {unreadable ? (
-          <p role="alert" className="text-sm text-danger">
-            {t('mediaEdit.loadFailed')}
-          </p>
-        ) : frame === undefined || url === undefined ? (
-          <p role="status" className="text-sm text-text-muted">
-            {t('mediaEdit.loading')}
-          </p>
-        ) : (
-          <div
-            className="relative w-full overflow-hidden rounded-[var(--radius-md)] bg-black"
-            style={{
-              aspectRatio: `${String(frame.width)} / ${String(frame.height)}`,
-              maxWidth: `min(100%, calc(52vh * ${String(frame.width / frame.height)}))`,
-            }}
-          >
-            {/* eslint-disable-next-line jsx-a11y/media-has-caption -- the operator's own clip carries no captions and this element is a preview, not playback of content. */}
-            <video
-              ref={videoRef}
-              src={url}
-              muted={mute}
-              playsInline
-              onTimeUpdate={(event) => {
-                if (event.currentTarget.currentTime >= range.end) event.currentTarget.pause();
-              }}
-              className="absolute top-1/2 left-1/2 max-w-none object-fill"
-              style={{
-                width: quarter ? `${String((frame.height / frame.width) * 100)}%` : '100%',
-                height: quarter ? `${String((frame.width / frame.height) * 100)}%` : '100%',
-                transform: `translate(-50%, -50%) rotate(${String(rotation)}deg)`,
-              }}
-            />
-            {crop === undefined ? null : (
-              <CropOverlay
-                frame={frame}
-                rect={crop}
-                onMove={setMoved}
-                label={t('mediaEdit.video.cropArea')}
-              />
-            )}
-          </div>
-        )}
-
-        {tool === 'crop' && frame !== undefined ? (
-          <div
-            role="group"
-            aria-label={t('mediaEdit.video.presets')}
-            className="flex flex-wrap justify-center gap-1"
-          >
-            {CROP_PRESETS.map((item) => (
-              <Button
-                key={item}
-                type="button"
-                size="sm"
-                variant={preset === item ? 'default' : 'ghost'}
-                aria-pressed={preset === item}
-                onClick={() => {
-                  setPreset(item);
-                  setMoved(undefined);
-                }}
-              >
-                {item === 'original' ? t('mediaEdit.video.original') : item}
-              </Button>
-            ))}
-          </div>
-        ) : null}
-
-        {tool === 'rotate' ? (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={t('mediaEdit.video.rotateLeft')}
-              onClick={() => {
-                setRotation(turn(rotation, -1));
-                setMoved(undefined);
-              }}
-            >
-              <RotateCcw aria-hidden="true" className="size-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={t('mediaEdit.video.rotateRight')}
-              onClick={() => {
-                setRotation(turn(rotation, 1));
-                setMoved(undefined);
-              }}
-            >
-              <RotateCw aria-hidden="true" className="size-4" />
-            </Button>
-          </div>
-        ) : null}
-
-        {tool === 'audio' && info !== undefined ? (
-          <div className="flex items-center gap-2 text-sm">
-            <Switch
-              id="media-edit-mute"
-              checked={mute}
-              disabled={!info.hasAudio}
-              onCheckedChange={setMute}
-              aria-label={t('mediaEdit.video.mute')}
-            />
-            <label htmlFor="media-edit-mute">{t('mediaEdit.video.mute')}</label>
-            {info.hasAudio ? null : (
-              <span className="text-text-muted">{t('mediaEdit.video.noAudio')}</span>
-            )}
-          </div>
-        ) : null}
-      </div>
-
-      {info === undefined ? null : (
-        <footer className="flex flex-col gap-3 border-t border-border px-4 py-3">
-          <VideoTimeline
-            duration={info.duration}
-            start={range.start}
-            end={range.end}
-            frames={frames}
-            onChange={(start, end) => {
-              setRange({ start, end });
-            }}
-            startLabel={t('mediaEdit.video.startHandle')}
-            endLabel={t('mediaEdit.video.endHandle')}
-          />
-          <div className="flex flex-wrap items-end gap-3">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              aria-label={t('mediaEdit.video.play')}
-              onClick={playSelection}
-            >
-              <Play aria-hidden="true" className="size-4" />
-            </Button>
-            <TimeField
-              key={`start-${formatTimecode(range.start)}`}
-              label={t('mediaEdit.video.start')}
-              value={range.start}
-              onCommit={(value) => {
-                setRange(typedRange(range, 'start', value, info.duration));
-              }}
-            />
-            <TimeField
-              key={`end-${formatTimecode(range.end)}`}
-              label={t('mediaEdit.video.end')}
-              value={range.end}
-              onCommit={(value) => {
-                setRange(typedRange(range, 'end', value, info.duration));
-              }}
-            />
-            {output === undefined ? null : (
-              <span className="font-mono text-xs text-text-muted tabular-nums">
-                {t('mediaEdit.video.size', { width: output.width, height: output.height })}
-              </span>
-            )}
-            <div className="ms-auto flex items-center gap-2">
-              {percent === undefined ? null : (
-                <>
-                  {/* The components/ui set has no progress bar: this is ContextBudgetGauge's. */}
-                  <div
-                    role="progressbar"
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-valuenow={percent}
-                    aria-label={t('mediaEdit.video.progress')}
-                    className="h-1.5 w-24 overflow-hidden rounded-full bg-surface-2"
-                  >
-                    <div
-                      data-progress-fill
-                      className="h-full rounded-full bg-accent transition-[width] motion-reduce:transition-none"
-                      style={{ width: `${String(percent)}%` }}
-                    />
-                  </div>
-                  <span role="status" className="text-xs text-text-muted tabular-nums">
-                    {t('mediaEdit.video.saving', { percent })}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => abortRef.current?.abort()}
-                  >
-                    {t('mediaEdit.video.cancel')}
-                  </Button>
-                </>
-              )}
-              <Button
-                type="button"
-                size="sm"
-                disabled={progress !== undefined}
-                onClick={() => void save()}
-              >
-                {t('mediaEdit.video.save')}
-              </Button>
-            </div>
-          </div>
-          {problem === undefined ? null : (
-            <p role="alert" className="text-sm text-danger">
-              {problem}
-            </p>
-          )}
-        </footer>
-      )}
+    <MediaEditorLayer label={t('mediaEdit.editName', { name: asset.file_name })} onEscape={onClose}>
+      <p
+        role={opening.kind === 'failed' ? 'alert' : 'status'}
+        className="flex flex-1 items-center justify-center p-6 text-sm text-text-muted"
+      >
+        {opening.kind === 'failed' ? t(opening.key) : t('mediaEdit.loading')}
+      </p>
     </MediaEditorLayer>
   );
 }

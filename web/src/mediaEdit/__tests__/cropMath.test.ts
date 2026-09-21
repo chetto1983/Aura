@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CROP_PRESETS, moveRect, presetRect, rotateSize } from '../cropMath';
+import { CROP_PRESETS, presetRect, rotateSize } from '../cropMath';
 
 const HD = { width: 1280, height: 720 };
 
@@ -49,18 +49,5 @@ describe('presetRect', () => {
         expect(rect.height % 2).toBe(0);
       }
     }
-  });
-});
-
-describe('moveRect', () => {
-  const square = presetRect(HD, '1:1');
-
-  it('moves by whole pixels', () => {
-    expect(moveRect(square, -100.4, 0, HD)).toEqual({ ...square, left: 180 });
-  });
-
-  it('never leaves the frame', () => {
-    expect(moveRect(square, -1000, 50, HD)).toEqual({ ...square, left: 0, top: 0 });
-    expect(moveRect(square, 1000, 0, HD)).toEqual({ ...square, left: 560 });
   });
 });

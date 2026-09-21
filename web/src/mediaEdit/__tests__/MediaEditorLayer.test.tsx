@@ -29,6 +29,7 @@ describe('MediaEditorLayer', () => {
     );
     const layer = screen.getByRole('dialog', { name: 'Edit clip.mp4' });
     expect(layer.parentElement).toBe(document.body);
+    expect(layer.className).toContain('z-[80]');
     expect(root.hasAttribute('inert')).toBe(true);
     expect(document.activeElement).toBe(layer);
     unmount();
