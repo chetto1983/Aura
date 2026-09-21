@@ -5,7 +5,7 @@ import { GenerationFrame } from '../chat/generation/GenerationFrame';
 import { PreviewLoading } from '../chat/artifacts/renderers/PreviewStatus';
 import { PreviewByKind } from '../chat/artifacts/renderers/previewDispatch';
 import { EditMediaButton } from '../mediaEdit/EditMediaButton';
-import { UploadMediaButton } from '../mediaEdit/UploadMediaButton';
+import { GarageMediaPicker } from '../mediaEdit/GarageMediaPicker';
 import { assetDownloadUrl, type StudioRecord } from './studioApi';
 import { studioErrorSentence } from './studioErrors';
 import { isActive } from './studioForm';
@@ -45,7 +45,7 @@ export function StudioStage({ record, onReuse, reuseState }: StudioStageProps) {
           {t('studio.stage.headline')}
         </h1>
         <p className="max-w-md text-sm text-text-muted">{t('studio.stage.idle')}</p>
-        <UploadMediaButton />
+        <GarageMediaPicker />
       </div>
     );
   }
@@ -148,7 +148,7 @@ function StageActions({
           <EditMediaButton assetId={record.asset_id} kind={record.kind} className="py-1 text-xs" />
         </>
       )}
-      <UploadMediaButton />
+      <GarageMediaPicker />
       {reuseState === 'forbidden' ? null : (
         <Button
           size="sm"

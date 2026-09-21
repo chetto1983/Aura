@@ -5,6 +5,7 @@ import {
   WillowDark,
   type IApi,
   type IEntity,
+  type IParsedEntity,
 } from '@svar-ui/react-filemanager';
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +16,7 @@ import { useThemeMode } from '@/theme/useThemeMode';
 
 interface FilesWorkspaceProps {
   readonly mobileMenu?: ReactNode;
+  readonly onOpenFile?: (file: IParsedEntity) => void;
 }
 
 /**
@@ -27,7 +29,7 @@ interface FilesWorkspaceProps {
  * only ever had rows for documents uploaded through it, so a file reconciled from the
  * bucket was invisible here no matter that it was fully indexed and answerable.
  */
-export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
+export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspaceProps) {
   const { t, i18n } = useTranslation();
   const [data, setData] = useState<IEntity[]>([]);
   const [error, setError] = useState('');
@@ -79,13 +81,18 @@ export default function FilesWorkspace({ mobileMenu }: FilesWorkspaceProps) {
       // Open renders in a tab, download saves. The backend distinguishes the two and makes
       // inline safe with a sandbox CSP rather than by refusing to render at all.
       api.on('open-file', ({ id }: { id: string }) => {
+        const file = api.getFile(id);
+        if (onOpenFile !== undefined && file !== null) {
+          onOpenFile(file);
+          return;
+        }
         window.open(directURL(id, false), '_blank', 'noopener,noreferrer');
       });
       api.on('download-file', ({ id }: { id: string }) => {
         window.location.assign(directURL(id, true));
       });
     },
-    [provider],
+    [onOpenFile, provider],
   );
 
   const requestData = useCallback(

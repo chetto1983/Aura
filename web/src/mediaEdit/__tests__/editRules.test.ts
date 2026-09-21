@@ -4,6 +4,7 @@ import {
   blockingDiscards,
   conversionOptions,
   editableKind,
+  editableKindForFileName,
   editedBase,
   editedName,
   imageExtension,
@@ -41,6 +42,15 @@ describe('editableKind', () => {
       expect(editableKind(mime)).toBeUndefined();
     },
   );
+
+  it.each([
+    ['photo.PNG', 'image'],
+    ['holiday.jpeg', 'image'],
+    ['clip.mp4', 'video'],
+    ['archive.tar', undefined],
+  ])('recognises %s from its Garage name', (name, kind) => {
+    expect(editableKindForFileName(name)).toBe(kind);
+  });
 });
 
 describe('names and containers', () => {

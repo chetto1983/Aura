@@ -19,6 +19,15 @@ const EDITABLE: Readonly<Record<string, EditKind>> = {
   'video/webm': 'video',
 };
 
+const EDITABLE_EXTENSIONS: Readonly<Record<string, EditKind>> = {
+  png: 'image',
+  jpg: 'image',
+  jpeg: 'image',
+  webp: 'image',
+  mp4: 'video',
+  webm: 'video',
+};
+
 /** The media type without parameters, lower-cased ("video/webm; codecs=…" → "video/webm"). */
 function essence(mimeType: string): string {
   return (mimeType.split(';')[0] ?? '').trim().toLowerCase();
@@ -26,6 +35,11 @@ function essence(mimeType: string): string {
 
 export function editableKind(mimeType: string): EditKind | undefined {
   return EDITABLE[essence(mimeType)];
+}
+
+export function editableKindForFileName(fileName: string): EditKind | undefined {
+  const dot = fileName.lastIndexOf('.');
+  return dot < 0 ? undefined : EDITABLE_EXTENSIONS[fileName.slice(dot + 1).toLowerCase()];
 }
 
 export function imageExtension(mimeType: string): ImageExtension {

@@ -4,9 +4,15 @@ import { MediaEditorProvider } from '../MediaEditorProvider';
 import { useOpenEditor } from '../mediaEditorContext';
 
 vi.mock('../MediaEditorHost', () => ({
-  default: ({ assetId, kind, onClose }: { assetId: string; kind: string; onClose: () => void }) => (
+  default: ({
+    target,
+    onClose,
+  }: {
+    target: { assetId: string; kind: string };
+    onClose: () => void;
+  }) => (
     <button type="button" onClick={onClose}>
-      host {assetId} {kind}
+      host {target.assetId} {target.kind}
     </button>
   ),
 }));

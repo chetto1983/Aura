@@ -14,9 +14,8 @@ export function MediaEditorProvider({ children }: { readonly children: ReactNode
       {target === undefined ? null : (
         <Suspense fallback={null}>
           <MediaEditorHost
-            key={target.assetId}
-            assetId={target.assetId}
-            kind={target.kind}
+            key={'assetId' in target ? target.assetId : target.garageObjectId}
+            target={target}
             onClose={() => {
               setTarget(undefined);
             }}

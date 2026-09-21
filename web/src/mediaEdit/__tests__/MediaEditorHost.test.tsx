@@ -32,11 +32,20 @@ function asset(over: Partial<Asset>): Asset {
   };
 }
 
-function mount(kind: 'image' | 'video' = 'image') {
+function mount(
+  target:
+    | { assetId: string; kind: 'image' | 'video' }
+    | {
+        garageObjectId: string;
+        fileName: string;
+        sizeBytes: number;
+        kind: 'image' | 'video';
+      } = { assetId: 'a1', kind: 'image' },
+) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <MediaEditorHost assetId="a1" kind={kind} onClose={vi.fn()} />
+      <MediaEditorHost target={target} onClose={vi.fn()} />
     </QueryClientProvider>,
   );
 }
@@ -44,6 +53,7 @@ function mount(kind: 'image' | 'video' = 'image') {
 // A string body, not `new Blob(['abc'])`: under jsdom the Blob is jsdom's, which Node's Response
 // does not recognise and serialises as "[object Blob]".
 beforeEach(() => {
+  getAsset.mockReset();
   vi.stubGlobal(
     'fetch',
     vi.fn(() => Promise.resolve(new Response('abc'))),
@@ -61,8 +71,27 @@ describe('MediaEditorHost', () => {
     getAsset.mockResolvedValue(
       asset({ modality: 'video', file_name: 'clip.mp4', mime_type: 'video/mp4' }),
     );
-    mount('video');
+    mount({ assetId: 'a1', kind: 'video' });
     expect(await screen.findByText('video clip.mp4')).toBeTruthy();
+  });
+
+  it('opens a Garage video directly without looking for a Postgres asset', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve(new Response('clip', { headers: { 'Content-Type': 'video/mp4' } })),
+      ),
+    );
+    mount({
+      garageObjectId: '/media/clip.mp4',
+      fileName: 'clip.mp4',
+      sizeBytes: 4,
+      kind: 'video',
+    });
+
+    expect(await screen.findByText('video clip.mp4')).toBeTruthy();
+    expect(getAsset).not.toHaveBeenCalled();
+    expect(fetch).toHaveBeenCalledWith('/api/filemanager/direct?id=%2Fmedia%2Fclip.mp4');
   });
 
   it('says so when the format cannot be edited', async () => {
@@ -96,7 +125,7 @@ describe('MediaEditorHost', () => {
         size_bytes: 600 * 1024 * 1024,
       }),
     );
-    mount('video');
+    mount({ assetId: 'a1', kind: 'video' });
     fireEvent.click(await screen.findByRole('button', { name: 'Open anyway' }));
     expect(await screen.findByText('video long.mp4')).toBeTruthy();
   });

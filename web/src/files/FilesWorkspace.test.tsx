@@ -11,7 +11,11 @@ vi.mock('./filesApi', async () => {
   return {
     ...actual,
     createFileManagerProvider: () => ({
-      loadFiles: () => Promise.resolve([{ id: 'chat', name: 'chat', type: 'folder', lazy: true }]),
+      loadFiles: () =>
+        Promise.resolve([
+          { id: 'chat', name: 'chat', type: 'folder', lazy: true },
+          { id: '/clip.mp4', name: 'clip.mp4', type: 'file', size: 4 },
+        ]),
       on: () => undefined,
       setNext: () => undefined,
       exec: () => Promise.resolve(),
@@ -74,6 +78,24 @@ describe('FilesWorkspace', () => {
     });
     await waitFor(() => {
       expect(themeClass(container)).toContain('wx-willow-dark-theme');
+    });
+  });
+
+  it('hands an opened file to a picker instead of opening a browser tab', async () => {
+    const onOpenFile = vi.fn();
+    const { container } = render(<FilesWorkspace onOpenFile={onOpenFile} />);
+
+    const card = await waitFor(() => {
+      const found = container.querySelector('[data-id=":/clip.mp4"]');
+      if (found === null) throw new Error('file card not rendered');
+      return found;
+    });
+    fireEvent.doubleClick(card);
+
+    await waitFor(() => {
+      expect(onOpenFile).toHaveBeenCalledWith(
+        expect.objectContaining({ id: '/clip.mp4', name: 'clip.mp4', size: 4 }),
+      );
     });
   });
 });

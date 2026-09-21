@@ -6,18 +6,15 @@ import { getAsset } from '../chat/attachments/api';
 import type { Asset } from '../chat/attachments/types';
 import { formatSize } from '../chat/artifacts/artifactMeta';
 import { useAssetContent } from '../chat/artifacts/renderers/useAssetContent';
+import { directURL } from '../files/filesApi';
 import { editableKind, type EditKind } from './editRules';
+import type { AssetEditTarget, EditTarget, GarageEditTarget } from './mediaEditorContext';
 import { MediaEditorLayer } from './MediaEditorLayer';
 import { Button } from '@/components/ui/button';
-
-// MediaEditorHost — resolves what the asset is (the Studio stage does not know its MIME type or
-// file name; getAsset does on every surface), loads its bytes, then picks the editor.
 
 const PhotoEditor = lazy(() => import('./PhotoEditor'));
 const VideoEditor = lazy(() => import('./VideoEditor'));
 
-// Source and output both sit in memory while a clip is edited; past this size the operator is
-// asked first. The server's own video limit already bounds what can exist at all.
 const LARGE_VIDEO_BYTES = 500 * 1024 * 1024;
 
 function Notice({
@@ -51,56 +48,154 @@ function Notice({
   );
 }
 
-function LoadedEditor({ asset, onClose }: { readonly asset: Asset; readonly onClose: () => void }) {
+function LargeVideoGate({
+  kind,
+  size,
+  onClose,
+  children,
+}: {
+  readonly kind: EditKind;
+  readonly size: number;
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+}) {
   const { t } = useTranslation();
-  const { data, error } = useAssetContent(asset.id, 'blob');
-  if (error !== undefined) return <Notice onClose={onClose}>{t('mediaEdit.loadFailed')}</Notice>;
-  if (data === undefined) return <Notice onClose={onClose}>{t('mediaEdit.loading')}</Notice>;
+  const [accepted, setAccepted] = useState(false);
+  if (kind !== 'video' || size <= LARGE_VIDEO_BYTES || accepted) return children;
+  return (
+    <Notice onClose={onClose}>
+      <p>{t('mediaEdit.large.body', { size: formatSize(size, t) })}</p>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => {
+          setAccepted(true);
+        }}
+      >
+        {t('mediaEdit.large.confirm')}
+      </Button>
+    </Notice>
+  );
+}
+
+function ReadyEditor({
+  asset,
+  source,
+  onClose,
+}: {
+  readonly asset: Asset;
+  readonly source: Blob;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
   const Editor = editableKind(asset.mime_type) === 'image' ? PhotoEditor : VideoEditor;
   return (
     <Suspense fallback={<Notice onClose={onClose}>{t('mediaEdit.loading')}</Notice>}>
-      <Editor asset={asset} source={data} onClose={onClose} />
+      <Editor asset={asset} source={source} onClose={onClose} />
     </Suspense>
   );
 }
 
-export default function MediaEditorHost({
-  assetId,
-  kind,
+function DownloadedAssetEditor({
+  asset,
   onClose,
 }: {
-  readonly assetId: string;
-  readonly kind: EditKind;
+  readonly asset: Asset;
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [largeAccepted, setLargeAccepted] = useState(false);
+  const { data, error } = useAssetContent(asset.id, 'blob');
+  if (error !== undefined) return <Notice onClose={onClose}>{t('mediaEdit.loadFailed')}</Notice>;
+  if (data === undefined) return <Notice onClose={onClose}>{t('mediaEdit.loading')}</Notice>;
+  return <ReadyEditor asset={asset} source={data} onClose={onClose} />;
+}
+
+function AssetTargetEditor({
+  target,
+  onClose,
+}: {
+  readonly target: AssetEditTarget;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
   const asset = useQuery({
-    queryKey: ['media-edit', 'asset', assetId],
-    queryFn: () => getAsset(assetId),
+    queryKey: ['media-edit', 'asset', target.assetId],
+    queryFn: () => getAsset(target.assetId),
     retry: false,
   });
 
   if (asset.isPending) return <Notice onClose={onClose}>{t('mediaEdit.loading')}</Notice>;
   if (asset.isError) return <Notice onClose={onClose}>{t('mediaEdit.loadFailed')}</Notice>;
-  if (editableKind(asset.data.mime_type) !== kind) {
+  if (editableKind(asset.data.mime_type) !== target.kind) {
     return <Notice onClose={onClose}>{t('mediaEdit.notEditable')}</Notice>;
   }
-  if (kind === 'video' && asset.data.size_bytes > LARGE_VIDEO_BYTES && !largeAccepted) {
-    return (
-      <Notice onClose={onClose}>
-        <p>{t('mediaEdit.large.body', { size: formatSize(asset.data.size_bytes, t) })}</p>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            setLargeAccepted(true);
-          }}
-        >
-          {t('mediaEdit.large.confirm')}
-        </Button>
-      </Notice>
-    );
+  return (
+    <LargeVideoGate kind={target.kind} size={asset.data.size_bytes} onClose={onClose}>
+      <DownloadedAssetEditor asset={asset.data} onClose={onClose} />
+    </LargeVideoGate>
+  );
+}
+
+function GarageTargetEditor({
+  target,
+  onClose,
+}: {
+  readonly target: GarageEditTarget;
+  readonly onClose: () => void;
+}) {
+  return (
+    <LargeVideoGate kind={target.kind} size={target.sizeBytes} onClose={onClose}>
+      <GarageFileEditor target={target} onClose={onClose} />
+    </LargeVideoGate>
+  );
+}
+
+function GarageFileEditor({
+  target,
+  onClose,
+}: {
+  readonly target: GarageEditTarget;
+  readonly onClose: () => void;
+}) {
+  const { t } = useTranslation();
+  const file = useQuery({
+    queryKey: ['media-edit', 'garage', target.garageObjectId],
+    queryFn: async () => {
+      const response = await fetch(directURL(target.garageObjectId, false));
+      if (!response.ok) throw new Error(`HTTP ${String(response.status)}`);
+      const source = await response.blob();
+      const asset: Asset = {
+        id: `garage:${target.garageObjectId}`,
+        status: 'accepted',
+        modality: target.kind,
+        file_name: target.fileName,
+        mime_type: source.type,
+        declared_size_bytes: target.sizeBytes,
+        size_bytes: source.size,
+      };
+      return { asset, source };
+    },
+    retry: false,
+  });
+
+  if (file.isPending) return <Notice onClose={onClose}>{t('mediaEdit.loading')}</Notice>;
+  if (file.isError) return <Notice onClose={onClose}>{t('mediaEdit.loadFailed')}</Notice>;
+  if (editableKind(file.data.asset.mime_type) !== target.kind) {
+    return <Notice onClose={onClose}>{t('mediaEdit.notEditable')}</Notice>;
   }
-  return <LoadedEditor asset={asset.data} onClose={onClose} />;
+  return <ReadyEditor asset={file.data.asset} source={file.data.source} onClose={onClose} />;
+}
+
+export default function MediaEditorHost({
+  target,
+  onClose,
+}: {
+  readonly target: EditTarget;
+  readonly onClose: () => void;
+}) {
+  return 'assetId' in target ? (
+    <AssetTargetEditor target={target} onClose={onClose} />
+  ) : (
+    <GarageTargetEditor target={target} onClose={onClose} />
+  );
 }
