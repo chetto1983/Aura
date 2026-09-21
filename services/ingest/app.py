@@ -16,6 +16,7 @@ import dataclasses
 import datetime
 import hashlib
 import json
+import math
 import os
 import pathlib
 import re
@@ -172,44 +173,133 @@ def _card(path: str, file_name: str) -> str:
     return done.stdout.decode("utf-8", "replace")
 
 
-@coco.fn(memo=True)
-def _embed(text: str) -> list[float]:
-    # EmbeddingGemma is asymmetric: documents carry "title: none | text: …" (queries
-    # carry a different prefix) -- omitting it measured recall@1 0.25 -> 0.05. The
-    # prefix is a chunk.py constant because the chunk budget has to subtract it; see
-    # chunk.document_budget().
-    payload = json.dumps(
-        {"input": chunk.EMBED_DOC_PREFIX + text, "model": "embeddinggemma"}
-    ).encode()
-    try:
-        return _embed_once(text)
-    except urllib.error.HTTPError as exc:
-        detail = _embed_failure_detail(exc, text)
-        head = _head_within_ceiling(text)
-        if head is None:
-            raise RuntimeError(detail) from exc
-        # Losing the vector loses the WHOLE FILE: CocoIndex catches the component failure,
-        # prints "component build failed" and carries on, so the document simply never
-        # reaches the index -- and in live mode audit_pass() never runs to notice. Against
-        # that, embedding the head of an over-long chunk is a small, honest degradation:
-        # the Passage keeps its full text, so document_open and the card are unaffected,
-        # and only the vector is computed from less than the whole.
-        print(f"[embed] {detail}; retrying on the head that fits", flush=True)
-        try:
-            return _embed_once(head)
-        except urllib.error.HTTPError as retry:
-            raise RuntimeError(_embed_failure_detail(retry, head)) from retry
+# One request carries several chunks, bounded by BOTH a count and a token budget -- the two
+# bounds internal/embeddings/fit.go:22-25 already applies, for the reason measured there: a
+# 2048-token input took 5.7 s on the appliance sidecar, so 32 of them behind one deadline is
+# a timeout, not a speed-up. A single input over the budget still goes alone.
+EMBED_MAX_BATCH = 32
+EMBED_REQUEST_TOKEN_BUDGET = 4096
+# What the server prepends and appends to every input. chunk.count_tokens(add_special=True)
+# measures it properly; this is the same two tokens, added to an estimate that never asks.
+EMBED_SPECIAL_TOKENS = 2
 
 
-def _embed_once(text: str) -> list[float]:
-    payload = json.dumps(
-        {"input": chunk.EMBED_DOC_PREFIX + text, "model": "embeddinggemma"}
-    ).encode()
+def _estimated_tokens(text: str) -> int:
+    """A free upper bound on what the server will count for this chunk.
+
+    chunk.CHARS_PER_TOKEN_FALLBACK is 3 where the tokenizer measured ~5.32, and chunk.py
+    picked that ratio precisely because it always OVERSHOOTS -- so a text this bound clears
+    is never actually longer. Using it here keeps the happy path free of round trips: asking
+    /tokenize per chunk would trade N embedding requests for N tokenizing ones, which is the
+    cost this batching exists to remove. The price is under-packed requests, and against a
+    25.9x saving that is not a price worth optimising.
+    """
+    chars = len(chunk.EMBED_DOC_PREFIX + text)
+    return math.ceil(chars / chunk.CHARS_PER_TOKEN_FALLBACK) + EMBED_SPECIAL_TOKENS
+
+
+def _fit_for_embedding(text: str) -> tuple[str, int]:
+    """The text as it will be sent, and what it is expected to cost.
+
+    Cutting happens BEFORE the request, not in reaction to its failure. In a batch one
+    oversized chunk would fail every other chunk travelling with it, so the reactive retry
+    this replaced is not merely slower here -- it is wrong. It is also what
+    _head_within_ceiling already says it believes: "The decision is the MEASUREMENT, never
+    the provider's error string."
+    """
+    cost = _estimated_tokens(text)
+    if cost <= chunk.MODEL_MAX_TOKENS:
+        return text, cost
+    head = _head_within_ceiling(text)
+    if head is None:  # the real tokenizer disagrees with the overshooting estimate
+        return text, cost
+    # Losing the vector loses the WHOLE FILE: CocoIndex catches the component failure,
+    # prints "component build failed" and carries on, so the document simply never reaches
+    # the index -- and in live mode audit_pass() never runs to notice. Against that,
+    # embedding the head of an over-long chunk is a small, honest degradation: the Passage
+    # keeps its full text, so document_open and the card are unaffected, and only the vector
+    # is computed from less than the whole.
+    print(
+        f"[embed] a chunk exceeds the {chunk.MODEL_MAX_TOKENS}-token ceiling; "
+        f"embedding the head that fits", flush=True,
+    )
+    return head, _estimated_tokens(head)
+
+
+def _request_end(costs: list[int], start: int) -> int:
+    """Where the request that begins at `start` stops. Mirrors requestEnd in fit.go."""
+    end, tokens = start + 1, costs[start]
+    while (
+        end < len(costs)
+        and end - start < EMBED_MAX_BATCH
+        and tokens + costs[end] <= EMBED_REQUEST_TOKEN_BUDGET
+    ):
+        tokens += costs[end]
+        end += 1
+    return end
+
+
+@coco.fn.as_async(memo=True, batching=True, max_batch_size=EMBED_MAX_BATCH)
+def _embed(texts: list[str]) -> list[list[float]]:
+    """Embed a batch of chunks, one HTTP request per group rather than per chunk.
+
+    CocoIndex groups concurrent calls itself (batching=True), so the call sites still pass
+    ONE text and await ONE vector. Measured 2026-09-21 from the appliance: against the local
+    sidecar this is 1.0x -- it is compute-bound at one slot -- but against a cloud embedder
+    it is 25.9x (9.95 s -> 0.38 s for 32 chunks), because there each chunk was a network
+    round trip. The token count, and therefore the bill, is identical either way.
+    """
+    fitted = [_fit_for_embedding(text) for text in texts]
+    costs = [cost for _, cost in fitted]
+    out: list[list[float]] = []
+    start = 0
+    while start < len(fitted):
+        end = _request_end(costs, start)
+        out.extend(_embed_batch([text for text, _ in fitted[start:end]]))
+        start = end
+    return out
+
+
+def _embed_batch(texts: list[str]) -> list[list[float]]:
+    """One request for several chunks, restored to the caller's order.
+
+    The response is placed by its own `index` rather than by arrival: the field exists
+    because the order is not promised, and trusting arrival order would attach each vector
+    to the wrong passage -- silently, since every vector is well-formed.
+    """
+    # Whether batching is actually happening is otherwise invisible: the vectors look the
+    # same either way, and the only symptom of it silently degrading to one chunk per
+    # request is a slow cloud ingest nobody can explain.
+    print(f"[embed] {len(texts)} chunk(s) in one request", flush=True)
+    payload = json.dumps({
+        "input": [chunk.EMBED_DOC_PREFIX + text for text in texts],
+        "model": "embeddinggemma",
+    }).encode()
     req = urllib.request.Request(
         f"{EMBED_BASE_URL.rstrip('/')}/v1/embeddings", data=payload,
         headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
-        return json.loads(resp.read())["data"][0]["embedding"]
+    try:
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read())["data"]
+    except urllib.error.HTTPError as exc:
+        # The longest input is the one a size-related failure is about.
+        raise RuntimeError(_embed_failure_detail(exc, max(texts, key=len))) from exc
+    if len(data) != len(texts):
+        raise RuntimeError(
+            f"embedding endpoint returned {len(data)} vectors for {len(texts)} inputs"
+        )
+    out: list[list[float] | None] = [None] * len(texts)
+    for item in data:
+        index = item.get("index")
+        if not isinstance(index, int) or not 0 <= index < len(out):
+            raise RuntimeError(f"embedding response carries an unusable index {index!r}")
+        if out[index] is not None:
+            raise RuntimeError(f"embedding response repeats index {index}")
+        out[index] = item["embedding"]
+    missing = [i for i, vector in enumerate(out) if vector is None]
+    if missing:
+        raise RuntimeError(f"embedding response is missing indexes {missing}")
+    return out
 
 
 def _head_within_ceiling(text: str) -> str | None:
@@ -283,7 +373,7 @@ async def process_chunk(
         heading_path=list(piece.heading_path),
         char_start=piece.start,
         char_end=piece.end,
-        embedding=_embed(piece.text),
+        embedding=await _embed(piece.text),
     ))
 
 
@@ -377,7 +467,7 @@ async def process_file(
         card=card,
         # The card describes the file; embedding it is what makes "which file knows this?"
         # answerable for a document that has no passages at all.
-        embedding=_embed(card) if card.strip() else [0.0] * EMBED_DIMENSIONS,
+        embedding=await _embed(card) if card.strip() else [0.0] * EMBED_DIMENSIONS,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
 

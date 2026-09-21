@@ -6,6 +6,7 @@ which is where llama.cpp names the actual fault. That silence cost two reproduct
 settled by a token count the error can carry itself.
 """
 
+import asyncio
 import io
 import json
 import urllib.error
@@ -13,6 +14,12 @@ import urllib.error
 import pytest
 
 from ingest import app, chunk
+
+
+async def _embed_texts(texts: list[str]) -> list[list[float]]:
+    """Drive the batched function the way CocoIndex does: one awaited call per text,
+    grouped by the decorator. Written out because the decorated object is a coroutine."""
+    return list(await asyncio.gather(*(app._embed(text) for text in texts)))
 
 
 def http_error(code: int, body: bytes | None) -> urllib.error.HTTPError:
@@ -63,7 +70,7 @@ def test_embed_raises_with_the_detail_instead_of_the_bare_http_error(monkeypatch
     monkeypatch.setattr(app.urllib.request, "urlopen", boom)
 
     with pytest.raises(RuntimeError) as caught:
-        app._embed("una perizia lunga")
+        app._embed_batch(["una perizia lunga"])
 
     assert "input is too large to process" in str(caught.value)
     # Chained, so the traceback still reaches the transport-level cause.
@@ -85,30 +92,82 @@ def test_an_oversized_input_is_cut_to_something_the_model_takes():
     ) <= chunk.MODEL_MAX_TOKENS
 
 
-def test_an_overflow_self_corrects_instead_of_costing_the_whole_document(monkeypatch):
+def test_an_overflow_is_cut_BEFORE_the_request_not_after_it_fails(monkeypatch):
     """The failure that loses a document is the one worth recovering from.
 
     CocoIndex catches a component failure, prints "component build failed" and carries on,
     so a chunk that cannot embed takes the WHOLE FILE out of the index -- and live mode
     never runs audit_pass() to notice. Embedding the head is the small loss; losing the
     document is the large one.
+
+    The mechanism changed on 2026-09-21 and the guarantee did not. It used to send the chunk,
+    read a 500 and retry on the head. That cannot survive batching: one oversized chunk would
+    fail every chunk travelling with it, so the loss would grow instead of shrink. The cut now
+    happens before the request, which is what _head_within_ceiling already claimed to believe
+    -- "The decision is the MEASUREMENT, never the provider's error string."
     """
-    seen: list[int] = []
+    def never_called(*_args, **_kwargs):
+        raise AssertionError("fitting must not need the server to fail first")
+
+    monkeypatch.setattr(app.urllib.request, "urlopen", never_called)
+
+    oversized = "Perizia tecnica dettagliata. " * 4000
+    fitted, cost = app._fit_for_embedding(oversized)
+
+    assert len(fitted) < len(oversized), "the oversized chunk was not cut"
+    assert chunk.count_tokens(
+        chunk.EMBED_DOC_PREFIX + fitted, add_special=True
+    ) <= chunk.MODEL_MAX_TOKENS
+    assert cost <= chunk.MODEL_MAX_TOKENS
+
+
+def test_an_oversized_chunk_does_not_take_its_batch_mates_down_with_it(monkeypatch):
+    """The failure mode batching introduces, and the reason the cut moved earlier."""
+    sent: list[list[str]] = []
 
     def urlopen(req, *_args, **_kwargs):
-        body = json.loads(req.data)["input"]
-        seen.append(chunk.count_tokens(body, add_special=True))
-        if len(seen) == 1:
-            raise http_error(500, b"input is too large to process")
-        return io.BytesIO(json.dumps({"data": [{"embedding": [0.5, 0.5]}]}).encode())
+        inputs = json.loads(req.data)["input"]
+        sent.append(inputs)
+        for text in inputs:
+            if chunk.count_tokens(text, add_special=True) > chunk.MODEL_MAX_TOKENS:
+                raise http_error(500, b"input is too large to process")
+        return io.BytesIO(json.dumps({
+            "data": [{"index": i, "embedding": [0.5, 0.5]} for i in range(len(inputs))]
+        }).encode())
 
     monkeypatch.setattr(app.urllib.request, "urlopen", urlopen)
 
-    vector = app._embed("Perizia tecnica dettagliata. " * 4000)
+    vectors = asyncio.run(_embed_texts(["Perizia tecnica dettagliata. " * 4000, "corto"]))
 
-    assert vector == [0.5, 0.5]
-    assert len(seen) == 2, "the oversized input was not retried"
-    assert seen[1] < seen[0] and seen[1] <= chunk.MODEL_MAX_TOKENS
+    assert vectors == [[0.5, 0.5], [0.5, 0.5]], "the healthy chunk was lost with the oversized one"
+    # Every input that reached the wire was already within the ceiling: nothing relied on a
+    # 500 to discover it. Whether the two shared ONE request is CocoIndex's scheduling, not
+    # this module's -- a bare asyncio.gather does not group, the flow does, and that is
+    # verified end to end against a real document rather than asserted here.
+    for inputs in sent:
+        for text in inputs:
+            assert chunk.count_tokens(text, add_special=True) <= chunk.MODEL_MAX_TOKENS
+
+
+def test_vectors_are_placed_by_the_response_index_not_by_arrival(monkeypatch):
+    """The endpoint does not promise order, and a misplaced vector is silently wrong:
+    every vector is well-formed, it is simply attached to the wrong passage."""
+    def urlopen(req, *_args, **_kwargs):
+        inputs = json.loads(req.data)["input"]
+        rows = [{"index": i, "embedding": [float(i)]} for i in range(len(inputs))]
+        return io.BytesIO(json.dumps({"data": list(reversed(rows))}).encode())
+
+    monkeypatch.setattr(app.urllib.request, "urlopen", urlopen)
+
+    assert app._embed_batch(["a", "b", "c"]) == [[0.0], [1.0], [2.0]]
+
+
+def test_a_request_is_bounded_by_tokens_as_well_as_by_count():
+    """A count alone would put 32 ceiling-sized chunks behind one deadline."""
+    big = app.EMBED_REQUEST_TOKEN_BUDGET // 2
+    assert app._request_end([big, big, big], 0) == 2
+    # An input over the budget on its own still goes, alone, rather than never.
+    assert app._request_end([app.EMBED_REQUEST_TOKEN_BUDGET * 2, 1], 0) == 1
 
 
 def test_a_failure_that_is_not_an_overflow_is_raised_rather_than_retried(monkeypatch):
@@ -123,5 +182,5 @@ def test_a_failure_that_is_not_an_overflow_is_raised_rather_than_retried(monkeyp
     monkeypatch.setattr(app.urllib.request, "urlopen", urlopen)
 
     with pytest.raises(RuntimeError, match="503"):
-        app._embed("una perizia corta")
+        app._embed_batch(["una perizia corta"])
     assert calls == 1, "a non-overflow failure must not be retried"
