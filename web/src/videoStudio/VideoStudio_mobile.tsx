@@ -12,8 +12,8 @@ import {
   Volume2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/components/ui/button';
 import type { ClipTab } from './Inspector_clip';
+import { Button } from '@/components/ui/button';
 
 interface MobileVideoToolsProps {
   readonly selectedId: string | undefined;
