@@ -1,3 +1,6 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it, vi } from 'vitest';
@@ -115,5 +118,47 @@ describe('collectSettings', () => {
     };
 
     await expect(collectSettings(prompt, createTranslator('en'), '/opt/aura')).resolves.toBeNull();
+  });
+});
+
+// The regression that mattered to the operator: the first version asked for the key as a
+// free text field defaulting to empty, so pressing Enter -- the obvious thing -- walked
+// straight into a password per connection. When the machine holds keys, the question must
+// be a choice among them.
+describe('collectTarget key selection', () => {
+  it('offers the discovered keys instead of an empty text field', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'create-aura-prompt-'));
+    const keyPath = join(home, 'aura_appliance');
+    await writeFile(keyPath, 'private');
+
+    vi.resetModules();
+    vi.doMock('../identity.js', () => ({ discoverIdentityFiles: () => [keyPath] }));
+    const { collectTarget: collect } = await import('../prompts.js');
+
+    const prompt = {
+      select: vi.fn()
+        .mockResolvedValueOnce('remote')
+        .mockResolvedValueOnce(keyPath),
+      input: vi.fn()
+        .mockResolvedValueOnce('192.168.1.40')
+        .mockResolvedValueOnce('22')
+        .mockResolvedValueOnce('ubuntu')
+        .mockResolvedValueOnce('/opt/aura'),
+      confirm: vi.fn(),
+    };
+
+    const collected = await collect(prompt, createTranslator('en'));
+    expect(collected.remote?.identityFile).toBe(keyPath);
+    // The key question went through select, and consumed no text field of its own: the
+    // four inputs are host, port, username and install dir.
+    expect(prompt.select).toHaveBeenCalledTimes(2);
+    expect(prompt.input).toHaveBeenCalledTimes(4);
+    // Declining a key stays possible, and is the empty value.
+    const keyQuestion = prompt.select.mock.calls[1]?.[0] as { choices: { value: string }[] };
+    expect(keyQuestion.choices.map((choice) => choice.value)).toContain('');
+
+    vi.doUnmock('../identity.js');
+    vi.resetModules();
+    await rm(home, { recursive: true, force: true });
   });
 });

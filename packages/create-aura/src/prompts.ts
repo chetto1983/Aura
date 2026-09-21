@@ -1,5 +1,6 @@
 import { confirm, input, select } from '@inquirer/prompts';
 
+import { discoverIdentityFiles } from './identity.js';
 import type { Translator } from './i18n.js';
 import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import {
@@ -43,6 +44,31 @@ export interface TargetSelection {
   remote?: RemoteTarget;
 }
 
+// The key question, asked as a CHOICE when there is something to choose from. Asked as a
+// free path only when the machine holds no key at all, because an empty text field is the
+// one shape that quietly sends the operator back to six password prompts -- which is what
+// the first version of this did.
+const OTHER_PATH = '::type-another-path::';
+
+async function askIdentityFile(prompt: PromptPort, t: Translator): Promise<string | undefined> {
+  const discovered = discoverIdentityFiles();
+  if (discovered.length === 0) {
+    return validateIdentityFile(await prompt.input({ message: t('remoteIdentityFile'), default: '' }));
+  }
+
+  const chosen = await prompt.select({
+    message: t('remoteIdentityChoose'),
+    choices: [
+      ...discovered.map((path) => ({ name: path, value: path })),
+      { name: t('remoteIdentityOther'), value: OTHER_PATH },
+      { name: t('remoteIdentityNone'), value: '' },
+    ],
+  });
+
+  if (chosen !== OTHER_PATH) return validateIdentityFile(chosen);
+  return validateIdentityFile(await prompt.input({ message: t('remoteIdentityFile'), default: '' }));
+}
+
 export async function collectTarget(
   prompt: PromptPort,
   t: Translator,
@@ -64,9 +90,7 @@ export async function collectTarget(
       // Aura's remote target is a clean Ubuntu Server mini-PC, not a Raspberry Pi -- 'ubuntu'
       // is that image's standard default account, replacing the reference's 'pi'.
       username: validateUsername(await prompt.input({ message: t('remoteUsername'), default: 'ubuntu' })),
-      // Asked because the alternative is typing the password once per connection, and an
-      // install makes six of them. Empty is a valid answer and keeps ssh's own behaviour.
-      identityFile: validateIdentityFile(await prompt.input({ message: t('remoteIdentityFile'), default: '' })),
+      identityFile: await askIdentityFile(prompt, t),
     };
   }
 
