@@ -358,6 +358,15 @@ provision_gvisor() {
   as_root apt-get install -y apt-transport-https ca-certificates curl gnupg
   curl -fsSL https://gvisor.dev/archive.key \
     | as_root gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+  # apt verifies a signed-by repository with gpgv running as the UNPRIVILEGED `_apt`
+  # user, so a keyring left at root's umask (0600 on Ubuntu 26.04) is unreadable to the
+  # very process that must read it. Measured 2026-09-21 on a fresh 26.04 VM: the file
+  # was written correctly (1165 bytes) and `apt-get update` still refused the repo with
+  # "the file is not readable by user executing gpgv" plus a misleading "unsupported
+  # filetype", which is only what an unreadable file looks like to gpgv. Without this
+  # the whole --gvisor install dies at exit 100. Docker's own install docs carry the
+  # same chmod for the same reason.
+  as_root chmod 0644 /usr/share/keyrings/gvisor-archive-keyring.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
     | as_root tee /etc/apt/sources.list.d/gvisor.list >/dev/null
   as_root apt-get update

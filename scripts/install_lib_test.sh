@@ -278,3 +278,34 @@ elif [ -n "${CI:-}" ]; then
 else
   echo "skip: docker compose unavailable; the embed overlay merge is checked in CI"
 fi
+
+# provision_gvisor writes an apt keyring that apt itself must be able to read. apt runs
+# gpgv as the unprivileged `_apt` user, so root's umask (0600 on Ubuntu 26.04) makes the
+# repository unverifiable and `apt-get update` fails the whole --gvisor install with
+# "not readable by user executing gpgv". Measured on a fresh 26.04 VM 2026-09-21: the
+# keyring was written correctly at 1165 bytes and still refused. Assert the chmod exists
+# and lands BEFORE the update that consumes it, which is the part ordering can silently
+# break later.
+gvisor_root="$fixture_root/gvisor"
+mkdir -p "$gvisor_root"
+gvisor_log="$gvisor_root/commands.log"
+: > "$gvisor_log"
+(
+  GVISOR=1
+  native_linux_docker() { return 0; }
+  as_root() { echo "$*" >> "$gvisor_log"; }
+  curl() { printf 'key-bytes'; }
+  dpkg() { echo amd64; }
+  tee() { cat >/dev/null; }
+  provision_gvisor
+) || { echo "FAIL: provision_gvisor returned non-zero against stubs" >&2; exit 1; }
+
+grep -qx 'chmod 0644 /usr/share/keyrings/gvisor-archive-keyring.gpg' "$gvisor_log" \
+  || { echo "FAIL: provision_gvisor never makes the gvisor keyring readable by _apt; apt-get update will refuse the repository" >&2; exit 1; }
+
+chmod_line="$(grep -n 'chmod 0644 /usr/share/keyrings/gvisor-archive-keyring.gpg' "$gvisor_log" | head -1 | cut -d: -f1)"
+runsc_line="$(grep -n 'apt-get install -y runsc' "$gvisor_log" | head -1 | cut -d: -f1)"
+[ -n "$chmod_line" ] && [ -n "$runsc_line" ] && [ "$chmod_line" -lt "$runsc_line" ] \
+  || { echo "FAIL: the gvisor keyring chmod must precede the runsc install that needs the verified repository (chmod=$chmod_line runsc=$runsc_line)" >&2; exit 1; }
+
+echo "ok: provision_gvisor leaves the gvisor keyring readable by the _apt user before apt consumes it"
