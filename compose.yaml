@@ -1124,8 +1124,11 @@ services:
     # tops out lower, so the GPU image fails to start. To run STT on GPU after a
     # driver update: AURA_STT_IMAGE=hwdsl2/whisper-server:cuda STT_DEVICE=cuda
     # STT_COMPUTE_TYPE=int8_float16 + add the nvidia deploy block (see aura-ocr-vl).
-    # hwdsl2 publishes no version tags, so the pin is the digest :latest carried on 2026-09-14.
-    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest@sha256:257302e5ea7efb041546d1b5d8ee11bcba2235711ab94f08c4dcc54be074ac36}
+    # hwdsl2 publishes no version tags, so the pin is the digest :latest carried on 2026-09-21.
+    # The repo has a single tag, so a republish leaves the previous manifest untagged and Hub
+    # collects it: the 2026-09-14 digest now 404s ("manifest unknown"). Re-read the digest from
+    # hub.docker.com/v2/repositories/hwdsl2/whisper-server/tags when this pin stops resolving.
+    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest@sha256:1751ee8c3c889482d0bdd1d91a42511be4a1156d9a905e860b56b474675f9d72}
     container_name: aura-stt
     restart: unless-stopped
     environment:
