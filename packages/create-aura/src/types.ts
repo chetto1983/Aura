@@ -6,6 +6,14 @@ export interface RemoteTarget {
   host: string;
   port: number;
   username: string;
+  // The private key ssh should authenticate with. Optional, and empty means "whatever ssh
+  // would do on its own" -- but supplying it is what makes an install bearable: a remote
+  // run opens SIX separate ssh/scp connections (probe, stale cleanup, upload, run, cleanup,
+  // final check) and each one authenticates independently, so without a key the operator
+  // types the password six times. Connection multiplexing would have been the other fix and
+  // is not available: Windows OpenSSH, where this wizard usually runs, does not implement
+  // ControlMaster.
+  identityFile?: string;
 }
 
 // Shared by local.ts's preflightLocal and remote.ts's preflightRemote: architecture and

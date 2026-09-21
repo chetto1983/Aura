@@ -169,6 +169,18 @@ export function sshDestination(target: RemoteTarget): string {
   return `${username}@${isIP(host) === 6 ? `[${host}]` : host}`;
 }
 
+// Prepended to EVERY ssh and scp invocation, because a remote install is six of them and a
+// key supplied for one is useless on the other five. `IdentitiesOnly` is what makes the
+// flag mean what the operator thinks: without it ssh still offers every key the agent
+// holds, and a server with a low MaxAuthTries can reject the connection before reaching
+// the one that was asked for. Both tools take `-i` with the same spelling; only the port
+// flag differs between them, which is why that one stays at each call site.
+export function identityArgs(target: RemoteTarget): string[] {
+  const identity = target.identityFile?.trim();
+  if (!identity) return [];
+  return ['-i', identity, '-o', 'IdentitiesOnly=yes'];
+}
+
 function parseProbeOutput(output: string): PreflightResult {
   const values = new Map<string, string>();
   for (const line of output.split(/\r?\n/)) {
@@ -227,6 +239,7 @@ export async function preflightRemote(
   const result = await runner.run(
     'ssh',
     [
+      ...identityArgs(target),
       '-p',
       String(validatePort(String(target.port))),
       sshDestination(target),
@@ -258,7 +271,7 @@ export async function installRemote(
 
   await runner.run(
     'ssh',
-    ['-p', port, destination, remoteScriptCommand(STALE_CLEANUP)],
+    [...identityArgs(target), '-p', port, destination, remoteScriptCommand(STALE_CLEANUP)],
     terminal,
   );
 
@@ -269,6 +282,7 @@ export async function installRemote(
     await runner.run(
       'scp',
       [
+        ...identityArgs(target),
         '-P',
         port,
         staged.installerPath,
@@ -280,7 +294,7 @@ export async function installRemote(
     );
     await runner.run(
       'ssh',
-      ['-tt', '-p', port, destination, 'sh', runnerPath, installerPath, configPath],
+      [...identityArgs(target), '-tt', '-p', port, destination, 'sh', runnerPath, installerPath, configPath],
       terminal,
     );
   } catch (error) {
@@ -290,6 +304,7 @@ export async function installRemote(
       await runner.run(
         'ssh',
         [
+          ...identityArgs(target),
           '-p',
           port,
           destination,

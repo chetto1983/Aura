@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   REMOTE_INSTALL_SCRIPT,
+  identityArgs,
   installRemote,
   preflightRemote,
   sshDestination,
@@ -268,3 +269,60 @@ describe('remote installer', () => {
   });
 });
 
+
+// The password this flag exists to stop is paid per CONNECTION, and one install opens
+// several. Asserting the flag on one call would pass while the other five still prompt, so
+// this walks every ssh/scp invocation the install makes. A new connection added later
+// without the identity fails here instead of in an operator's terminal.
+describe('identity propagation', () => {
+  const keyed = { ...target, identityFile: '/home/op/.ssh/aura_key' };
+
+  it('gives every ssh and scp invocation the requested key', async () => {
+    const probeOutput = [
+      'architecture=aarch64',
+      'existing_install=false',
+      'cpu_cores=8',
+      'memory_kib=41943040',
+      'disk_available_kb=41943040',
+      '',
+    ].join('\n');
+    const runner = {
+      run: vi.fn()
+        // ssh -V, then the scp availability check, then the probe whose output is parsed.
+        .mockResolvedValueOnce(success)
+        .mockResolvedValueOnce(success)
+        .mockResolvedValueOnce({ ...success, stdout: probeOutput })
+        .mockResolvedValue(success),
+    };
+    const files = await makeTransferFiles();
+
+    await preflightRemote(runner, keyed, '/opt/aura', 'linux');
+    await installRemote(
+      runner,
+      keyed,
+      { path: files.artifactPath, cleanup: vi.fn() },
+      { path: files.configPath, cleanup: vi.fn() },
+      remoteId,
+      undefined,
+      files.stagingRoot,
+    );
+
+    const connections = runner.run.mock.calls.filter(([command, args]) =>
+      (command === 'ssh' || command === 'scp')
+      // `ssh -V` prints a version and never opens a connection, so it has nothing to
+      // authenticate and no key to carry.
+      && !(command === 'ssh' && (args as string[])?.length === 1));
+    expect(connections.length).toBeGreaterThan(1);
+    for (const [command, args] of connections) {
+      const argv = args as string[];
+      expect(argv, `${command} ${argv.join(' ')}`).toContain('-i');
+      expect(argv[argv.indexOf('-i') + 1]).toBe('/home/op/.ssh/aura_key');
+      expect(argv).toContain('IdentitiesOnly=yes');
+    }
+  });
+
+  it('adds nothing when no key was given, leaving ssh its own behaviour', () => {
+    expect(identityArgs(target)).toEqual([]);
+    expect(identityArgs({ ...target, identityFile: '  ' })).toEqual([]);
+  });
+});

@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it, vi } from 'vitest';
 
 import { createTranslator } from '../i18n.js';
@@ -11,6 +13,7 @@ describe('collectTarget', () => {
         .mockResolvedValueOnce('192.168.1.40')
         .mockResolvedValueOnce('22')
         .mockResolvedValueOnce('ubuntu')
+        .mockResolvedValueOnce('')
         .mockResolvedValueOnce('/opt/aura/'),
       confirm: vi.fn(),
     };
@@ -21,6 +24,45 @@ describe('collectTarget', () => {
       remote: { host: '192.168.1.40', port: 22, username: 'ubuntu' },
     });
     expect(prompt.select).toHaveBeenCalledOnce();
+  });
+
+  // An empty key is the documented answer and must not become the string "": ssh -i ''
+  // is not "no key", it is an unreadable one, and the operator lands back on six password
+  // prompts wondering what they did wrong.
+  it('treats an empty key answer as no key at all', async () => {
+    const prompt = {
+      select: vi.fn().mockResolvedValue('remote'),
+      input: vi.fn()
+        .mockResolvedValueOnce('192.168.1.40')
+        .mockResolvedValueOnce('22')
+        .mockResolvedValueOnce('ubuntu')
+        .mockResolvedValueOnce('   ')
+        .mockResolvedValueOnce('/opt/aura'),
+      confirm: vi.fn(),
+    };
+
+    const collected = await collectTarget(prompt, createTranslator('en'));
+    expect(collected.remote?.identityFile).toBeUndefined();
+  });
+
+  it('keeps a readable key and refuses one it cannot read', async () => {
+    const readable = fileURLToPath(import.meta.url);
+    const ask = (key: string) => ({
+      select: vi.fn().mockResolvedValue('remote'),
+      input: vi.fn()
+        .mockResolvedValueOnce('192.168.1.40')
+        .mockResolvedValueOnce('22')
+        .mockResolvedValueOnce('ubuntu')
+        .mockResolvedValueOnce(key)
+        .mockResolvedValueOnce('/opt/aura'),
+      confirm: vi.fn(),
+    });
+
+    const collected = await collectTarget(ask(readable), createTranslator('en'));
+    expect(collected.remote?.identityFile).toBe(readable);
+
+    await expect(collectTarget(ask('/nope/missing-key'), createTranslator('en')))
+      .rejects.toMatchObject({ code: 'unreadableIdentityFile' });
   });
 
   it('uses a requested mode without asking the mode question', async () => {

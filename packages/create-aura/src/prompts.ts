@@ -5,6 +5,7 @@ import type { InstallMode, InstallSettings, RemoteTarget } from './types.js';
 import {
   validateHost,
   validateInstallDir,
+  validateIdentityFile,
   validatePort,
   validateUsername,
 } from './validation.js';
@@ -63,6 +64,9 @@ export async function collectTarget(
       // Aura's remote target is a clean Ubuntu Server mini-PC, not a Raspberry Pi -- 'ubuntu'
       // is that image's standard default account, replacing the reference's 'pi'.
       username: validateUsername(await prompt.input({ message: t('remoteUsername'), default: 'ubuntu' })),
+      // Asked because the alternative is typing the password once per connection, and an
+      // install makes six of them. Empty is a valid answer and keeps ssh's own behaviour.
+      identityFile: validateIdentityFile(await prompt.input({ message: t('remoteIdentityFile'), default: '' })),
     };
   }
 

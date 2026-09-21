@@ -1,3 +1,4 @@
+import { accessSync, constants as fsConstants } from 'node:fs';
 import { isIP } from 'node:net';
 import { posix } from 'node:path';
 
@@ -60,3 +61,19 @@ export function assertNoLineBreak(raw: string, code: string): void {
   if (/[\n\r]/.test(raw)) throw new ValidationError(code);
 }
 
+
+// An empty answer is legitimate and means "let ssh decide" -- agent, ~/.ssh/config or a
+// password prompt. Anything else must be a path ssh can actually read, checked here rather
+// than six connections later: `ssh -i` on a missing file does not fail, it silently falls
+// back to asking for a password, which is the very thing the operator supplied a key to
+// avoid.
+export function validateIdentityFile(raw: string): string | undefined {
+  const value = raw.trim().replace(/^"(.*)"$/, '$1');
+  if (value === '') return undefined;
+  try {
+    accessSync(value, fsConstants.R_OK);
+  } catch {
+    throw new ValidationError('unreadableIdentityFile');
+  }
+  return value;
+}
