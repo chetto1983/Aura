@@ -15,7 +15,6 @@ import { clipTimelineDuration, sourceOf, type VideoItem, type VideoProject } fro
 export const TOUCH_FLOOR = 44;
 /** Zoom stops here. Below a second on screen the ruler says nothing a frame number would not. */
 export const MIN_VISIBLE = 1;
-export const SIDEBAR_WIDTH = 120;
 const MAX_MARKS = 10;
 /** Steps a viewer reads without arithmetic: halves, seconds, the clock's own divisions. */
 const STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300] as const;
@@ -37,6 +36,18 @@ export function clamp(value: number, min: number, max: number): number {
 /** Slider values are read aloud: a millisecond is as fine as a spoken number gets. */
 export function atMilli(value: number): number {
   return Math.round(value * 1000) / 1000;
+}
+
+export function formatRulerTime(value: number): string {
+  const time = Math.max(0, atMilli(value));
+  const hours = Math.floor(time / 3600);
+  const minutes = Math.floor((time % 3600) / 60);
+  const seconds = time % 60;
+  const whole = Number.isInteger(seconds);
+  const secondText = (whole ? String(seconds) : seconds.toFixed(1)).padStart(whole ? 2 : 4, '0');
+  return hours > 0
+    ? `${String(hours)}:${String(minutes).padStart(2, '0')}:${secondText}`
+    : `${String(minutes)}:${secondText}`;
 }
 
 /** The step whose marks fit the ruler at this zoom, coarsening until they do. */

@@ -23,12 +23,12 @@ import { ClipItem, OverlayItemView } from './Timeline_items';
 import {
   atMilli,
   clamp,
+  formatRulerTime,
   insertIndexFor,
   MIN_VISIBLE,
   offsetOf,
   rulerMarks,
   rulerStep,
-  SIDEBAR_WIDTH,
   sourceEndOf,
   stepOnArrow,
   TOUCH_FLOOR,
@@ -57,18 +57,18 @@ interface LaneProps {
 }
 
 function Lane({ id, label, droppable, children }: LaneProps) {
-  const { setNodeRef, rowWrapperStyle, rowSidebarStyle, rowStyle } = useRow({
+  const { setNodeRef, rowWrapperStyle, rowStyle } = useRow({
     id,
     disabled: !droppable,
   });
   return (
-    <div style={{ ...rowWrapperStyle, width: '100%' }}>
-      <div
-        style={rowSidebarStyle}
-        className="video-studio-lane-label items-center px-2 text-xs text-fg-muted"
-      >
-        {label}
-      </div>
+    <div
+      role="group"
+      aria-label={label}
+      data-lane={id}
+      style={{ ...rowWrapperStyle, width: '100%' }}
+    >
+      <span className="sr-only">{label}</span>
       <div
         ref={setNodeRef}
         style={{ ...rowStyle, minHeight: TOUCH_FLOOR + 8 }}
@@ -153,7 +153,7 @@ function Scrubber({ range, playhead, total, frame, onScrub }: ScrubberProps) {
           style={{ left: offsetOf(mark, range) }}
           className="video-studio-ruler-mark absolute top-0 border-l border-border pt-1 pl-1 text-[10px] text-fg-muted tabular-nums"
         >
-          {formatTimecode(mark)}
+          {formatRulerTime(mark)}
         </span>
       ))}
     </div>
@@ -219,8 +219,9 @@ function Lanes({
       style={style}
       className="video-studio-timeline w-full rounded-[var(--radius-md)] bg-surface-1"
     >
-      <div style={{ display: 'flex', width: '100%' }}>
-        <div style={{ width: SIDEBAR_WIDTH }} className="flex items-center gap-1 px-2">
+      <div className="video-studio-ruler-row">
+        <Scrubber range={range} playhead={playhead} total={total} frame={frame} onScrub={onScrub} />
+        <div className="video-studio-timeline-zoom">
           <ZoomButton
             label={t('videoStudio.timeline.zoomOut')}
             direction="out"
@@ -236,26 +237,7 @@ function Lanes({
             }}
           />
         </div>
-        <Scrubber range={range} playhead={playhead} total={total} frame={frame} onScrub={onScrub} />
       </div>
-      <Lane id="video" label={t('videoStudio.timeline.videoLane')} droppable>
-        {project.video.map((clip, index) => (
-          <ClipItem
-            key={clip.id}
-            clip={clip}
-            source={project.sources.find((source) => source.id === clip.sourceId)}
-            index={index}
-            count={project.video.length}
-            start={starts[index] ?? 0}
-            sourceEnd={sourceEndOf(project, clip)}
-            frame={frame}
-            selected={clip.id === selectedId}
-            onSelect={onSelect}
-            onMove={onMove}
-            onTrim={onTrim}
-          />
-        ))}
-      </Lane>
       {project.overlays.map((track, index) => (
         <Lane
           key={track.id}
@@ -275,9 +257,27 @@ function Lanes({
           ))}
         </Lane>
       ))}
+      <Lane id="video" label={t('videoStudio.timeline.videoLane')} droppable>
+        {project.video.map((clip, index) => (
+          <ClipItem
+            key={clip.id}
+            clip={clip}
+            source={project.sources.find((source) => source.id === clip.sourceId)}
+            index={index}
+            count={project.video.length}
+            start={starts[index] ?? 0}
+            sourceEnd={sourceEndOf(project, clip)}
+            frame={frame}
+            selected={clip.id === selectedId}
+            onSelect={onSelect}
+            onMove={onMove}
+            onTrim={onTrim}
+          />
+        ))}
+      </Lane>
       <div
         aria-hidden="true"
-        style={{ position: 'absolute', top: 0, bottom: 0, left: SIDEBAR_WIDTH, right: 0 }}
+        style={{ position: 'absolute', inset: 0 }}
         className="pointer-events-none"
       >
         <div
@@ -312,7 +312,7 @@ export function Timeline({
   return (
     <TimelineContext
       range={range}
-      sidebarWidth={SIDEBAR_WIDTH}
+      sidebarWidth={0}
       onRangeChanged={(update) => {
         setView(update(range));
       }}

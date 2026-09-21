@@ -12,6 +12,7 @@ import type { VideoProject } from '../project';
 import { Timeline } from '../Timeline';
 import {
   insertIndexFor,
+  formatRulerTime,
   rulerMarks,
   rulerStep,
   sourceEndOf,
@@ -83,6 +84,13 @@ function project(): VideoProject {
             anchor: { clipId: 'clip-2', offset: 1 },
             duration: 2,
             props: { text: 'hi' },
+          },
+          {
+            id: 'badge',
+            kind: 'image',
+            anchor: { clipId: 'clip-1', offset: 0.5 },
+            duration: 1,
+            props: { assetId: 'photo' },
           },
         ],
       },
@@ -218,6 +226,13 @@ describe('trimArgsFromSpan — the clip is its own frame of reference', () => {
 });
 
 describe('zoom', () => {
+  it('keeps ruler labels compact at subsecond, minute and hour scales', () => {
+    expect(formatRulerTime(0)).toBe('0:00');
+    expect(formatRulerTime(0.5)).toBe('0:00.5');
+    expect(formatRulerTime(62)).toBe('1:02');
+    expect(formatRulerTime(3662.5)).toBe('1:01:02.5');
+  });
+
   it('halves and doubles around the middle of what is on screen', () => {
     expect(zoomedRange({ start: 0, end: 12 }, 0.5, 12)).toEqual({ start: 3, end: 9 });
     expect(zoomedRange({ start: 3, end: 9 }, 2, 12)).toEqual({ start: 0, end: 12 });
@@ -248,6 +263,14 @@ describe('Timeline lanes', () => {
     expect(screen.getByText('videoStudio.timeline.overlayLane 1')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /videoStudio\.timeline\.clip/ })).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' })).toBeTruthy();
+    const image = screen.getByRole('button', { name: 'videoStudio.timeline.overlayImage 2' });
+    expect(image.querySelector('img')?.getAttribute('src')).toContain('/api/assets/photo/download');
+
+    const overlayLane = screen.getByRole('group', { name: 'videoStudio.timeline.overlayLane 1' });
+    const videoLane = screen.getByRole('group', { name: 'videoStudio.timeline.videoLane' });
+    expect(
+      overlayLane.compareDocumentPosition(videoLane) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
   });
 
   it('selects on the PRESS, not only on the click', () => {

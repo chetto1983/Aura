@@ -12,6 +12,7 @@
   --video-studio-accent: var(--color-ring);
   --video-studio-accent-fill: var(--color-accent);
   --video-studio-on-accent: var(--color-on-accent);
+  --video-studio-selection: color-mix(in oklab, var(--color-warning) 82%, #ffd400);
   display: grid;
   position: relative;
   grid-template-columns: 76px clamp(300px, 34vw, 443px) minmax(0, 1fr);
@@ -324,19 +325,30 @@
   background: transparent;
 }
 
+.video-studio-ruler-row {
+  display: flex;
+  width: 100%;
+  align-items: stretch;
+  border-bottom: 1px solid var(--video-studio-border);
+}
+
+.video-studio-timeline-zoom {
+  z-index: 3;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  background: var(--video-studio-panel);
+}
+
 .video-studio-lane {
   border-top-color: var(--video-studio-border);
   background: var(--video-studio-panel);
 }
 
-.video-studio-lane-label {
-  color: var(--video-studio-muted);
-  font-size: 11px;
-  font-weight: 600;
-}
-
 .video-studio-ruler {
-  border-bottom: 1px solid var(--video-studio-border);
+  min-width: 0;
 }
 
 .video-studio-ruler-mark {
@@ -368,7 +380,7 @@
   grid-template-columns: repeat(6, minmax(0, 1fr));
   overflow: hidden;
   border-radius: inherit;
-  opacity: 0.74;
+  opacity: 0.9;
 }
 
 .video-studio-clip-strip img,
@@ -388,14 +400,21 @@
 }
 
 .video-studio-clip .video-studio-item-time {
-  position: absolute;
-  bottom: 4px;
-  left: 5px;
+  display: none;
 }
 
 .video-studio-clip[aria-current='true'] {
-  border-color: var(--video-studio-accent);
-  box-shadow: inset 0 0 0 1px var(--video-studio-accent);
+  border-color: var(--video-studio-selection);
+  box-shadow: inset 0 0 0 2px var(--video-studio-selection);
+}
+
+[data-selected='false'] .video-studio-trim-grip {
+  opacity: 0;
+}
+
+.video-studio-trim-grip {
+  background: var(--video-studio-selection);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--video-studio-bg) 72%, transparent);
 }
 
 .video-studio-overlay {
@@ -403,6 +422,32 @@
   border-radius: 5px;
   background: var(--video-studio-panel-strong);
   color: var(--video-studio-text);
+}
+
+.video-studio-overlay-name {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--video-studio-text);
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-studio-overlay-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.86;
+}
+
+.video-studio-overlay[aria-current='true'] {
+  border-color: var(--video-studio-selection);
+  box-shadow: inset 0 0 0 1px var(--video-studio-selection);
 }
 
 .video-studio-playhead {

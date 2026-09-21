@@ -38,6 +38,16 @@ transitions, keyframes and filters. This change implements the controls supporte
 browser renderer; it does not claim Blender scopes, masking, 32-track parity or background
 segmentation.
 
+`MartinDelophy/ai-video-editor` was inspected at MIT commit `d5e9b3f` under
+`D:/tmp/ai-video-editor-reference`. It is an application-level custom timeline rather than a
+published React control, so Aura does not add it as a dependency or copy its 3,600-line timeline.
+It confirms the same interaction model observed in Clideo: one contiguous Visuals track for video
+and still-image clips, repeated still/video thumbnails, timed picture-in-picture rows above it,
+independent audio/caption rows, a single playhead crossing every row, and zoom controls outside the
+media lane. Aura implements that contract through the already-installed `dnd-timeline`: base media
+stays sequential, text/image overlays occupy separate rows, image overlays show their asset
+thumbnail, and selection/trim grips are visible without consuming timeline width.
+
 ## Evidence and limits
 
 The browser E2E drives crop, rotation, brightness, mute, VideoFlow fade/blur transitions, 2x speed

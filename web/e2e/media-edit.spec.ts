@@ -212,9 +212,19 @@ test.describe('media editing', () => {
     );
     await openTool('Speed');
     await editor.getByRole('button', { name: '2×' }).click();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Speed', exact: true }).click();
+      await expect(properties).toHaveAttribute('data-mobile-open', 'false');
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+    }
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toHaveText('00:02.0');
     await openTool('Time');
     await expect(editor.getByLabel('End', { exact: true })).toBeVisible();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Time', exact: true }).click();
+      await expect(properties).toHaveAttribute('data-mobile-open', 'false');
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+    }
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible();
   });
 

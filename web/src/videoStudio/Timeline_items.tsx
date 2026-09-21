@@ -32,6 +32,7 @@ interface HandleProps {
   readonly side: 'start' | 'end';
   /** Whether this edge of the clip has a neighbour on the other side of it. */
   readonly abuts: boolean;
+  readonly selected: boolean;
 }
 
 /**
@@ -53,7 +54,7 @@ interface HandleProps {
  * widening the boundary itself, which is a lane redesign and not this fix. The keyboard steps and
  * the inspector's Start and End fields reach every edge whatever the width.
  */
-function Handle({ label, value, min, max, side, frame, abuts, onSet }: HandleProps) {
+function Handle({ label, value, min, max, side, frame, abuts, selected, onSet }: HandleProps) {
   return (
     <div
       role="slider"
@@ -64,6 +65,7 @@ function Handle({ label, value, min, max, side, frame, abuts, onSet }: HandlePro
       aria-valuenow={atMilli(value)}
       aria-valuetext={formatTimecode(value)}
       {...(abuts ? {} : { 'data-required-touch-target': true })}
+      data-selected={selected ? 'true' : 'false'}
       onKeyDown={stepOnArrow({
         frame,
         onStep: (delta) => {
@@ -82,7 +84,7 @@ function Handle({ label, value, min, max, side, frame, abuts, onSet }: HandlePro
       }}
       className="z-10 flex cursor-ew-resize touch-none items-center justify-center focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <span aria-hidden="true" className="h-2/3 w-1.5 rounded-full bg-accent" />
+      <span aria-hidden="true" className="video-studio-trim-grip h-2/3 w-1.5 rounded-full" />
     </div>
   );
 }
@@ -265,6 +267,7 @@ export function ClipItem({
       <Handle
         side="start"
         abuts={index > 0}
+        selected={selected}
         label={t('videoStudio.timeline.trimStart', position)}
         value={clip.sourceStart}
         min={0}
@@ -279,6 +282,7 @@ export function ClipItem({
       <Handle
         side="end"
         abuts={index < count - 1}
+        selected={selected}
         label={t('videoStudio.timeline.trimEnd', position)}
         value={clip.sourceStart + clip.duration}
         min={clip.sourceStart + frame}
@@ -303,6 +307,7 @@ interface OverlayItemProps {
 /** An overlay rides the clip it hangs on, and cycle 1 has no command to move it: it selects only. */
 export function OverlayItemView({ item, index, span, selected, onSelect }: OverlayItemProps) {
   const { t } = useTranslation();
+  const { assetUrl } = useAssetSource();
   const { setNodeRef, itemStyle, itemContentStyle } = useItem({
     id: item.id,
     span,
@@ -313,6 +318,8 @@ export function OverlayItemView({ item, index, span, selected, onSelect }: Overl
     item.kind === 'text'
       ? t('videoStudio.timeline.overlayText', position)
       : t('videoStudio.timeline.overlayImage', position);
+  const assetId = typeof item.props.assetId === 'string' ? item.props.assetId : undefined;
+  const text = typeof item.props.text === 'string' ? item.props.text : label;
   return (
     <div ref={setNodeRef} style={itemStyle}>
       <div style={itemContentStyle}>
@@ -321,6 +328,19 @@ export function OverlayItemView({ item, index, span, selected, onSelect }: Overl
           length={span.end - span.start}
           selected={selected}
           kind="overlay"
+          preview={
+            item.kind === 'image' && assetId !== undefined ? (
+              <img
+                aria-hidden="true"
+                className="video-studio-overlay-thumbnail"
+                src={assetUrl(assetId)}
+                alt=""
+                draggable={false}
+              />
+            ) : (
+              <span className="video-studio-overlay-name">{text}</span>
+            )
+          }
           idle="border-border bg-surface-4"
           onSelect={() => {
             onSelect(item.id);
