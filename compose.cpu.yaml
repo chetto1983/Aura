@@ -7,5 +7,5 @@
 # here beside compose.yaml's CUDA one and changes with it (see the comment there).
 services:
   aura-llama-embed:
-    image: ghcr.io/ggml-org/llama.cpp:server-b10951
+    image: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
     deploy: !reset null

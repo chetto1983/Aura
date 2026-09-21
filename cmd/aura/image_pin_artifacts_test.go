@@ -20,7 +20,11 @@ func TestThirdPartyImagesArePinnedWhereTheUpdaterDeliversThem(t *testing.T) {
 	}
 
 	imageLine := regexp.MustCompile(`(?m)^\s+image:\s*(\S+)\s*$`)
-	llamaBuild := regexp.MustCompile(`llama\.cpp:server(?:-cuda|-vulkan)?-b(\d+)`)
+	// ggml-org moved from bNNNN CI build numbers to semver releases and now publishes
+	// server-*-vX.Y.Z for every variant this stack runs. A release tag is a STRONGER pin
+	// than a build number, so both forms are accepted -- and the single-version check
+	// below still holds CUDA, Vulkan, CPU and CI to ONE llama.cpp, which is the point.
+	llamaBuild := regexp.MustCompile(`llama\.cpp:server(?:-cuda|-vulkan)?-(b\d+|v\d+\.\d+\.\d+)`)
 	builds := map[string][]string{}
 	for rel, contents := range files {
 		for _, match := range imageLine.FindAllStringSubmatch(contents, -1) {
@@ -34,12 +38,12 @@ func TestThirdPartyImagesArePinnedWhereTheUpdaterDeliversThem(t *testing.T) {
 			if build := llamaBuild.FindStringSubmatch(ref); build != nil {
 				builds[build[1]] = append(builds[build[1]], rel)
 			} else if strings.Contains(ref, "llama.cpp:") {
-				t.Errorf("%s: %s is not pinned to a llama.cpp build", rel, match[1])
+				t.Errorf("%s: %s is not pinned to a llama.cpp build or release", rel, match[1])
 			}
 		}
 	}
 	if len(builds) != 1 {
-		t.Errorf("the stack runs more than one llama.cpp build, so CUDA, Vulkan, CPU and CI hosts do not test the same server: %v", builds)
+		t.Errorf("the stack runs more than one llama.cpp version, so CUDA, Vulkan, CPU and CI hosts do not test the same server: %v", builds)
 	}
 }
 
