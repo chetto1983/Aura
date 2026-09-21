@@ -1,11 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SettingsFields, type PickerBinding } from './SettingField';
-import {
-  EMBEDDING_SETTINGS,
-  type SettingDef,
-  type SettingsKey,
-} from './modelSettingsDefs';
+import { EMBEDDING_SETTINGS, type SettingDef, type SettingsKey } from './modelSettingsDefs';
 import {
   embeddingBackendChoice,
   embeddingBackendValues,
@@ -49,15 +45,22 @@ export function EmbeddingBackendControl({
     loaded.values.AURA_EMBED_MODEL ?? '',
     loaded.values.AURA_EMBED_CLOUD_BASE_URL ?? '',
   );
+  const persisted = JSON.stringify([
+    loaded.initial.AURA_EMBED_MODEL ?? '',
+    loaded.initial.AURA_EMBED_CLOUD_BASE_URL ?? '',
+  ]);
   const [choice, setChoice] = useState<EmbeddingBackendChoice>(configuredChoice);
-  useEffect(() => {
+  // Re-derived during render rather than in an effect: a save rewrites the persisted route,
+  // and setState in an effect would cascade a second render to show it.
+  const [syncedFrom, setSyncedFrom] = useState(persisted);
+  if (syncedFrom !== persisted) {
+    setSyncedFrom(persisted);
     setChoice(configuredChoice);
-  }, [loaded.initial.AURA_EMBED_MODEL, loaded.initial.AURA_EMBED_CLOUD_BASE_URL]);
+  }
 
   const manualURLMissing =
     choice === 'manual' && (loaded.values.AURA_EMBED_CLOUD_BASE_URL ?? '').trim() === '';
-  const modelMissing =
-    choice !== 'local' && (loaded.values.AURA_EMBED_MODEL ?? '').trim() === '';
+  const modelMissing = choice !== 'local' && (loaded.values.AURA_EMBED_MODEL ?? '').trim() === '';
   useEffect(() => {
     onRouteValidityChange(!manualURLMissing && !modelMissing);
   }, [manualURLMissing, modelMissing, onRouteValidityChange]);
@@ -96,7 +99,9 @@ export function EmbeddingBackendControl({
               variant={choice === option ? 'default' : 'outline'}
               aria-pressed={choice === option}
               disabled={unavailable}
-              onClick={() => choose(option)}
+              onClick={() => {
+                choose(option);
+              }}
             >
               {t(`settings.embedding.${option}`)}
             </Button>
@@ -104,7 +109,9 @@ export function EmbeddingBackendControl({
         })}
       </div>
       {!openRouterAvailable ? (
-        <p className="text-[12px] text-text-muted">{t('settings.embedding.openrouterUnavailable')}</p>
+        <p className="text-[12px] text-text-muted">
+          {t('settings.embedding.openrouterUnavailable')}
+        </p>
       ) : null}
       {choice === 'local' ? (
         <SettingsFields
@@ -120,12 +127,12 @@ export function EmbeddingBackendControl({
           defs={[cloudBaseURL, model]}
           loaded={loaded}
           resetting={resetting}
-          onValueChange={(key, value) =>
+          onValueChange={(key, value) => {
             onValueChange(
               key,
               key === 'AURA_EMBED_CLOUD_BASE_URL' ? normalizeEmbeddingCloudBaseURL(value) : value,
-            )
-          }
+            );
+          }}
           onReset={onReset}
           pickers={{ AURA_EMBED_MODEL: picker }}
           invalidKeys={manualURLMissing ? new Set(['AURA_EMBED_CLOUD_BASE_URL']) : undefined}
@@ -152,7 +159,11 @@ export function EmbeddingBackendControl({
           role="alert"
           className="text-[13px] text-danger"
         >
-          {t(manualURLMissing ? 'settings.embedding.manualURLRequired' : 'settings.embedding.modelRequired')}
+          {t(
+            manualURLMissing
+              ? 'settings.embedding.manualURLRequired'
+              : 'settings.embedding.modelRequired',
+          )}
         </p>
       ) : null}
     </div>
