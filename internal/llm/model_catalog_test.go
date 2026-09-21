@@ -2,17 +2,19 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
 )
 
-// The three payloads are the three real catalogue shapes: OpenRouter publishes
-// context_length and pricing as JSON STRINGS, llama.cpp publishes meta.n_ctx and nothing
-// else, Ollama's /v1/models publishes ids alone.
+// These are the two OpenAI-compatible catalogue shapes: OpenRouter publishes
+// context_length and pricing as JSON STRINGS, while llama.cpp publishes meta.n_ctx.
 const (
 	openRouterCatalogBody = `{"data":[
 		{"id":"z-ai/glm-5.3","context_length":204800,"top_provider":{"context_length":200000},
@@ -22,8 +24,13 @@ const (
 		{"id":"  ","context_length":4096,"pricing":{"prompt":"0","completion":"0"}}
 	]}`
 	llamaCppCatalogBody = `{"data":[{"id":"gemma-4-12b","meta":{"n_ctx":131072}}]}`
-	ollamaCatalogBody   = `{"data":[{"id":"qwen4:14b"},{"id":"gemma4:31b-cloud"}]}`
 )
+
+type catalogRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f catalogRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func catalogServer(t *testing.T, body string, authSeen *string) *httptest.Server {
 	t.Helper()
@@ -70,7 +77,7 @@ func TestFetchModelCatalogOpenRouterSortsAndPricesEntries(t *testing.T) {
 	}
 }
 
-func TestFetchModelCatalogLocalProvidersCarryNoPriceAndNoKey(t *testing.T) {
+func TestFetchModelCatalogLlamaCppCarriesNoPriceAndNoKey(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
 		provider      string
@@ -80,7 +87,6 @@ func TestFetchModelCatalogLocalProvidersCarryNoPriceAndNoKey(t *testing.T) {
 		wantHasPrices bool
 	}{
 		{"llamacpp reads meta.n_ctx", "llamacpp", llamaCppCatalogBody, []string{"gemma-4-12b"}, 131072, false},
-		{"ollama publishes ids only", "ollama", ollamaCatalogBody, []string{"gemma4:31b-cloud", "qwen4:14b"}, 0, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var auth string
@@ -111,6 +117,110 @@ func TestFetchModelCatalogLocalProvidersCarryNoPriceAndNoKey(t *testing.T) {
 				t.Fatalf("Authorization = %q, want no credential on a local catalogue", auth)
 			}
 		})
+	}
+}
+
+func TestFetchModelCatalogOllamaCombinesLocalAndPublicCloudTags(t *testing.T) {
+	var calls []string
+	client := &http.Client{Transport: catalogRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls = append(calls, req.Method+" "+req.URL.String())
+		if auth := req.Header.Get("Authorization"); auth != "" {
+			t.Errorf("Authorization = %q, want no credential on either Ollama catalogue", auth)
+		}
+		body := ""
+		switch req.URL.String() {
+		case "http://ollama.local/api/tags":
+			body = `{"models":[
+				{"name":"qwen2.5:7b"},
+				{"name":"gemma4:31b-cloud"},
+				{"name":"  "}
+			]}`
+		case "https://ollama.com/api/tags":
+			body = `{"models":[
+				{"name":"glm-5.3","model":"glm-5.3","modified_at":"2026-08-28T08:00:00-07:00","size":755433728000,"digest":"632dfda18c6d","details":{"format":"","family":"","families":null,"parameter_size":"","quantization_level":""}},
+				{"name":"gemma4:31b","model":"gemma4:31b"},
+				{"name":"  ","model":"ignored"}
+			]}`
+		default:
+			t.Fatalf("unexpected catalogue request: %s %s", req.Method, req.URL)
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}, nil
+	})}
+
+	entries, err := FetchModelCatalog(
+		context.Background(), client, "ollama", "http://ollama.local/v1", "must-not-leak",
+	)
+	if err != nil {
+		t.Fatalf("FetchModelCatalog: %v", err)
+	}
+	want := []ModelCatalogEntry{
+		{ID: "gemma4:31b-cloud"},
+		{ID: "glm-5.3:cloud"},
+		{ID: "qwen2.5:7b"},
+	}
+	if !reflect.DeepEqual(entries, want) {
+		t.Fatalf("entries = %+v, want %+v", entries, want)
+	}
+	wantCalls := []string{
+		"GET http://ollama.local/api/tags",
+		"GET https://ollama.com/api/tags",
+	}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", calls, wantCalls)
+	}
+}
+
+func TestFetchModelProfileOllamaCloudProbesTheBridgeThenUsesPublicShow(t *testing.T) {
+	var calls []string
+	client := &http.Client{Transport: catalogRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls = append(calls, req.Method+" "+req.URL.String())
+		body := ""
+		status := http.StatusOK
+		switch req.URL.String() {
+		case "http://ollama.local/api/show":
+			status = http.StatusNotFound
+		case "https://ollama.com/api/show":
+			var request struct {
+				Model string `json:"model"`
+			}
+			if err := json.NewDecoder(req.Body).Decode(&request); err != nil {
+				t.Fatalf("decode request: %v", err)
+			}
+			if request.Model != "glm-5.3" {
+				t.Fatalf("public show model = %q, want glm-5.3", request.Model)
+			}
+			body = `{"model_info":{"glm_dsa_moe.context_length":1048576},"capabilities":["completion","thinking","tools"]}`
+		default:
+			t.Fatalf("unexpected metadata request: %s %s", req.Method, req.URL)
+		}
+		if auth := req.Header.Get("Authorization"); auth != "" {
+			t.Fatalf("Authorization = %q, want no retained credential", auth)
+		}
+		return &http.Response{
+			StatusCode: status,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    req,
+		}, nil
+	})}
+
+	profile, err := FetchModelProfile(
+		context.Background(), client, "ollama", "http://ollama.local/v1", "must-not-leak", "glm-5.3:cloud",
+	)
+	if err != nil {
+		t.Fatalf("FetchModelProfile: %v", err)
+	}
+	if profile.ContextWindow != 1048576 || profile.HasPrice {
+		t.Fatalf("profile = %+v, want public context and no token price", profile)
+	}
+	wantCalls := []string{"POST http://ollama.local/api/show", "POST https://ollama.com/api/show"}
+	if !reflect.DeepEqual(calls, wantCalls) {
+		t.Fatalf("calls = %v, want %v", calls, wantCalls)
 	}
 }
 

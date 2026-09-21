@@ -267,14 +267,14 @@ func TestResolveOllamaCloudProfileUsesShowWithoutCloudCredentialOrPrice(t *testi
 	cfg := llm.Config{
 		Provider:        "ollama",
 		BaseURL:         srv.URL + "/v1",
-		Model:           "gemma4:31b-cloud",
+		Model:           "glm-5.3:cloud",
 		APIKey:          "retained-openrouter-secret",
 		ContextWindow:   1_000_000,
 		MaxOutputTokens: 32768,
 		MaxTokens:       4096,
 		TotalTimeoutSec: 120,
 		Prices: map[string]llm.Price{
-			"gemma4:31b-cloud": {InputPer1M: 99, OutputPer1M: 99},
+			"glm-5.3:cloud": {InputPer1M: 99, OutputPer1M: 99},
 		},
 	}
 	if err := cfg.ResolveModelProfile(context.Background()); err != nil {
@@ -283,7 +283,7 @@ func TestResolveOllamaCloudProfileUsesShowWithoutCloudCredentialOrPrice(t *testi
 	if seenAuth != "" {
 		t.Fatal("Ollama model metadata request received a retained cloud credential")
 	}
-	if seenModel != "gemma4:31b-cloud" {
+	if seenModel != "glm-5.3:cloud" {
 		t.Fatalf("show model = %q", seenModel)
 	}
 	if cfg.ContextWindow != 262144 || cfg.MaxOutputTokens != 32768 {

@@ -25,6 +25,8 @@ services:
     pull_policy: ${AURA_PULL_POLICY:-never}
     container_name: aura
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # Tier di isolamento opzionale (PRD amendment #63): AURA_RUNTIME=runsc mette gVisor
     # sotto il container. Era un compose.gvisor.yaml di tre righe piu' un drop-in systemd
     # che riscriveva ExecStart per aggiungere un -f; come variabile e' la stessa cosa senza

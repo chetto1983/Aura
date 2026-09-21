@@ -87,6 +87,16 @@ type modelsWire struct {
 
 const maxOllamaShowResponseBytes = 1 << 20
 
+const ollamaCloudBaseURL = "https://ollama.com/v1"
+
+type ollamaShowHTTPError struct {
+	StatusCode int
+}
+
+func (e *ollamaShowHTTPError) Error() string {
+	return fmt.Sprintf("POST /api/show returned %d", e.StatusCode)
+}
+
 type ollamaShowWire struct {
 	ModelInfo    map[string]json.RawMessage `json:"model_info"`
 	Capabilities []string                   `json:"capabilities"`
@@ -119,7 +129,7 @@ func fetchOllamaShow(ctx context.Context, client *http.Client, baseURL, model st
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only response
 	if resp.StatusCode != http.StatusOK {
-		return wire, fmt.Errorf("POST /api/show returned %d", resp.StatusCode)
+		return wire, &ollamaShowHTTPError{StatusCode: resp.StatusCode}
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxOllamaShowResponseBytes)).Decode(&wire); err != nil {
 		return wire, fmt.Errorf("decode /api/show: %w", err)
@@ -149,6 +159,9 @@ func FetchModelProfile(
 	}
 	if provider == "ollama" {
 		metadata, err := fetchOllamaModelProfile(ctx, client, baseURL, want)
+		if direct, cloud := ollamaDirectCloudModelName(want); cloud && isOllamaShowNotFound(err) {
+			metadata, err = fetchOllamaModelProfile(ctx, client, ollamaCloudBaseURL, direct)
+		}
 		if err != nil {
 			return ModelProfileMetadata{}, fmt.Errorf("%w: %w: POST /api/show: %w",
 				ErrModelProfileUnavailable, ErrModelCatalogueUnreachable, err)
@@ -235,6 +248,10 @@ func fetchOllamaModelProfile(
 }
 
 func ollamaShowURL(baseURL string) (string, error) {
+	return ollamaAPIURL(baseURL, "/api/show")
+}
+
+func ollamaAPIURL(baseURL, endpointPath string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(baseURL))
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
 		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
@@ -243,9 +260,26 @@ func ollamaShowURL(baseURL string) (string, error) {
 	if strings.TrimRight(parsed.Path, "/") != "/v1" {
 		return "", errors.New("ollama base URL must end in /v1")
 	}
-	parsed.Path = "/api/show"
+	parsed.Path = endpointPath
 	parsed.RawPath = ""
 	return parsed.String(), nil
+}
+
+func ollamaDirectCloudModelName(model string) (string, bool) {
+	model = strings.TrimSpace(model)
+	lower := strings.ToLower(model)
+	for _, suffix := range []string{":cloud", "-cloud"} {
+		if strings.HasSuffix(lower, suffix) {
+			direct := strings.TrimSpace(model[:len(model)-len(suffix)])
+			return direct, direct != ""
+		}
+	}
+	return "", false
+}
+
+func isOllamaShowNotFound(err error) bool {
+	var statusErr *ollamaShowHTTPError
+	return errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusNotFound
 }
 
 // fetchModels reads GET /models. query narrows the list where the provider supports it
@@ -371,7 +405,7 @@ func (c *Config) ResolveModelProfile(ctx context.Context) error {
 		candidate.Prices[c.Model] = Price{}
 		candidate.CostStatus = CostStatusLocalIncluded
 	case "ollama":
-		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(c.Model)), "-cloud") {
+		if _, cloud := ollamaDirectCloudModelName(c.Model); cloud {
 			delete(candidate.Prices, c.Model)
 			candidate.CostStatus = CostStatusSubscriptionIncluded
 		} else {
