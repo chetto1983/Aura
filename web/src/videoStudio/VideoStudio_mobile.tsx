@@ -3,10 +3,12 @@ import {
   Clock3,
   Crop,
   Gauge,
+  Plus,
   Scissors,
   SlidersHorizontal,
   Sparkles,
   Trash2,
+  Type,
   Volume2,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -20,6 +22,8 @@ interface MobileVideoToolsProps {
   readonly onBack: () => void;
   readonly onSplit: () => void;
   readonly onRemove: () => void;
+  readonly onAddClip: () => void;
+  readonly onAddTitle: () => void;
   readonly onOpenInspector: (tab: ClipTab) => void;
 }
 
@@ -45,10 +49,37 @@ export function MobileVideoTools({
   onBack,
   onSplit,
   onRemove,
+  onAddClip,
+  onAddTitle,
   onOpenInspector,
 }: MobileVideoToolsProps) {
   const { t } = useTranslation();
   const hasSelection = selectedId !== undefined;
+
+  if (!hasSelection) {
+    return (
+      <nav className="video-studio-mobile-tools" aria-label={t('videoStudio.mobileTools')}>
+        <Button
+          type="button"
+          variant="ghost"
+          className="video-studio-mobile-tool"
+          onClick={onAddClip}
+        >
+          <Plus aria-hidden="true" />
+          <span>{t('videoStudio.command.addSource')}</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="video-studio-mobile-tool"
+          onClick={onAddTitle}
+        >
+          <Type aria-hidden="true" />
+          <span>{t('videoStudio.command.addTitle')}</span>
+        </Button>
+      </nav>
+    );
+  }
 
   return (
     <nav className="video-studio-mobile-tools" aria-label={t('videoStudio.mobileTools')}>
@@ -61,13 +92,7 @@ export function MobileVideoTools({
       >
         <ChevronLeft aria-hidden="true" />
       </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        className="video-studio-mobile-tool"
-        disabled={!hasSelection}
-        onClick={onSplit}
-      >
+      <Button type="button" variant="ghost" className="video-studio-mobile-tool" onClick={onSplit}>
         <Scissors aria-hidden="true" />
         <span>{t('videoStudio.mobile.split')}</span>
       </Button>
@@ -78,7 +103,6 @@ export function MobileVideoTools({
           variant="ghost"
           className="video-studio-mobile-tool"
           aria-pressed={inspectorOpen && inspectorTab === tab}
-          disabled={!hasSelection}
           onClick={() => {
             onOpenInspector(tab);
           }}
@@ -87,13 +111,7 @@ export function MobileVideoTools({
           <span>{t(labelKey)}</span>
         </Button>
       ))}
-      <Button
-        type="button"
-        variant="ghost"
-        className="video-studio-mobile-tool"
-        disabled={!hasSelection}
-        onClick={onRemove}
-      >
+      <Button type="button" variant="ghost" className="video-studio-mobile-tool" onClick={onRemove}>
         <Trash2 aria-hidden="true" />
         <span>{t('videoStudio.mobile.delete')}</span>
       </Button>
@@ -104,7 +122,6 @@ export function MobileVideoTools({
           variant="ghost"
           className="video-studio-mobile-tool"
           aria-pressed={inspectorOpen && inspectorTab === tab}
-          disabled={!hasSelection}
           onClick={() => {
             onOpenInspector(tab);
           }}

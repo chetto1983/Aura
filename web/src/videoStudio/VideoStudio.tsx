@@ -99,9 +99,6 @@ function failure(error: unknown, fallbackKey: string): Sentence {
 export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps) {
   const { t } = useTranslation();
   const assetSource = useAssetSource();
-  // The history is state rather than a ref although it is never replaced: `canUndo` and
-  // `canRedo` are read while rendering the two buttons, and a ref read during render is a value
-  // React has not promised is current.
   const [history, setHistory] = useState<History>();
   const fileInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
@@ -116,8 +113,6 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const [pending, setPending] = useState<{ readonly edit: Edit; readonly lost: number }>();
   const propertiesRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
-  /** The sources the load could not find. Kept, not just announced: they are what forbids the
-   *  preview and the export until the clips that use them are gone. */
   const [missing, setMissing] = useState<readonly string[]>([]);
 
   useEffect(() => {
@@ -141,9 +136,6 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     };
   }, [open, assetSource]);
 
-  /** What the selection is after a project changed under it: the overlay the edit just added, or
-   *  what was selected if it is still there, or nothing. Every committed transition goes through
-   *  here — an edit, an undo, a redo — so no button is ever live over an item that is gone. */
   function reselect(next: VideoProject, added?: string) {
     setSelectedId((current) => added ?? (holds(next, current) ? current : undefined));
     setSelectedJunction((current) => {
@@ -551,7 +543,11 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               inspectorTab={inspectorTab}
               inspectorOpen={mobileInspectorOpen && selectedJunction === undefined}
               onBack={() => {
-                setMobileInspectorOpen(false);
+                if (mobileInspectorOpen) setMobileInspectorOpen(false);
+                else {
+                  setSelectedJunction(undefined);
+                  setSelectedId(undefined);
+                }
               }}
               onSplit={() => {
                 setSelectedJunction(undefined);
@@ -562,6 +558,8 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                 if (selectedId !== undefined)
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}
+              onAddClip={() => fileInput.current?.click()}
+              onAddTitle={addTitle}
               onOpenInspector={showInspector}
             />
           </>

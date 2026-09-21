@@ -20,6 +20,8 @@ describe('MobileVideoTools', () => {
         onBack={onBack}
         onSplit={onSplit}
         onRemove={onRemove}
+        onAddClip={vi.fn()}
+        onAddTitle={vi.fn()}
         onOpenInspector={onOpenInspector}
       />,
     );
@@ -48,7 +50,9 @@ describe('MobileVideoTools', () => {
     expect(onOpenInspector).toHaveBeenNthCalledWith(6, 'time');
   });
 
-  it('disables commands that require a selected clip', () => {
+  it('switches to the general add tools when no clip is selected', () => {
+    const onAddClip = vi.fn();
+    const onAddTitle = vi.fn();
     render(
       <MobileVideoTools
         selectedId={undefined}
@@ -57,13 +61,16 @@ describe('MobileVideoTools', () => {
         onBack={vi.fn()}
         onSplit={vi.fn()}
         onRemove={vi.fn()}
+        onAddClip={onAddClip}
+        onAddTitle={onAddTitle}
         onOpenInspector={vi.fn()}
       />,
     );
 
     const tools = screen.getByRole('navigation', { name: 'videoStudio.mobileTools' });
-    for (const button of within(tools).getAllByRole('button').slice(1)) {
-      expect((button as HTMLButtonElement).disabled).toBe(true);
-    }
+    fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addSource' }));
+    fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addTitle' }));
+    expect(onAddClip).toHaveBeenCalledOnce();
+    expect(onAddTitle).toHaveBeenCalledOnce();
   });
 });

@@ -240,6 +240,9 @@ test.describe('media editing', () => {
     if (mobile) {
       await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
       await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(mobileTools.getByRole('button', { name: 'Add a clip' })).toBeVisible();
+      await expect(mobileTools.getByRole('button', { name: 'Add a title' })).toBeVisible();
     }
   });
 
