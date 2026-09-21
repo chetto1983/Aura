@@ -16,7 +16,22 @@ export interface ProjectSource {
   readonly kind: 'video' | 'image';
   readonly duration: number; // seconds; 0 for an image, which takes the duration its item asks for
   readonly size: ProjectSize;
+  readonly hasAudio?: boolean;
 }
+
+export type ClipTransition =
+  | 'none'
+  | 'fade'
+  | 'blurResolve'
+  | 'zoom'
+  | 'slideUp'
+  | 'slideDown'
+  | 'slideLeft'
+  | 'slideRight'
+  | 'overshootPop'
+  | 'glitchResolve'
+  | 'wipeReveal'
+  | 'lightSweepReveal';
 
 export interface VideoItem {
   readonly id: string;
@@ -24,7 +39,31 @@ export interface VideoItem {
   readonly duration: number;
   readonly sourceStart: number;
   readonly muted: boolean;
+  readonly volume?: number;
+  readonly rotation?: 0 | 90 | 180 | 270;
+  readonly fit?: 'contain' | 'cover';
+  readonly flipX?: boolean;
+  readonly flipY?: boolean;
+  readonly brightness?: number;
+  readonly contrast?: number;
+  readonly saturation?: number;
+  readonly hue?: number;
+  readonly blur?: number;
+  readonly opacity?: number;
+  readonly animation?: 'none' | 'fadeIn' | 'fadeOut';
+  readonly fadeIn?: boolean;
+  readonly fadeOut?: boolean;
+  readonly speed?: number;
+  readonly transitionIn?: ClipTransition;
+  readonly transitionOut?: ClipTransition;
+  readonly transitionInDuration?: number;
+  readonly transitionOutDuration?: number;
 }
+
+export type ClipEditProperties = Omit<
+  VideoItem,
+  'id' | 'sourceId' | 'duration' | 'sourceStart' | 'muted'
+>;
 
 export interface OverlayAnchor {
   readonly clipId: string;
@@ -54,6 +93,10 @@ export interface VideoProject {
   readonly overlays: readonly OverlayTrack[];
 }
 
+export function clipTimelineDuration(clip: VideoItem): number {
+  return clip.duration / Math.abs(clip.speed ?? 1);
+}
+
 export function emptyProject(name: string, size: ProjectSize, fps: number): VideoProject {
   return { id: crypto.randomUUID(), name, size, fps, sources: [], video: [], overlays: [] };
 }
@@ -64,13 +107,13 @@ export function clipStarts(project: VideoProject): number[] {
   let at = 0;
   for (const clip of project.video) {
     starts.push(at);
-    at += clip.duration;
+    at += clipTimelineDuration(clip);
   }
   return starts;
 }
 
 export function projectDuration(project: VideoProject): number {
-  return project.video.reduce((total, clip) => total + clip.duration, 0);
+  return project.video.reduce((total, clip) => total + clipTimelineDuration(clip), 0);
 }
 
 /** The clip covering `time`, start inclusive and end exclusive, or undefined past the end. */
@@ -78,7 +121,7 @@ export function clipAt(project: VideoProject, time: number): VideoItem | undefin
   if (time < 0) return undefined;
   let end = 0;
   for (const clip of project.video) {
-    end += clip.duration;
+    end += clipTimelineDuration(clip);
     if (time < end) return clip;
   }
   return undefined;
@@ -103,8 +146,9 @@ export function overlayWindow(
   const clip = project.video.find((item) => item.id === anchor.clipId);
   const base = clipStart(project, anchor.clipId);
   if (clip === undefined || base === undefined) return { start: 0, end: 0 };
-  const clipEnd = base + clip.duration;
-  const start = Math.min(base + Math.max(0, anchor.offset), clipEnd);
+  const speed = Math.abs(clip.speed ?? 1);
+  const clipEnd = base + clipTimelineDuration(clip);
+  const start = Math.min(base + Math.max(0, anchor.offset) / speed, clipEnd);
   return { start, end: Math.min(start + Math.max(0, duration), clipEnd) };
 }
 

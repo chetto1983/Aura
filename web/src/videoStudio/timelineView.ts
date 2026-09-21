@@ -1,7 +1,7 @@
 import type { Span } from 'dnd-timeline';
 import type { KeyboardEvent } from 'react';
 import type { TrimClipArgs } from './commands';
-import { sourceOf, type VideoItem, type VideoProject } from './project';
+import { clipTimelineDuration, sourceOf, type VideoItem, type VideoProject } from './project';
 
 // timelineView.ts — the arithmetic between a gesture and the model: how much of the project a
 // zoom level shows, where a mark or the playhead sits inside it, and what a drop or a dragged
@@ -83,8 +83,9 @@ export function insertIndexFor(project: VideoProject, clipId: string, time: numb
   let index = 0;
   for (const clip of project.video) {
     if (clip.id === clipId) continue;
-    if (at + clip.duration / 2 <= time) index += 1;
-    at += clip.duration;
+    const duration = clipTimelineDuration(clip);
+    if (at + duration / 2 <= time) index += 1;
+    at += duration;
   }
   return index;
 }
@@ -95,8 +96,9 @@ export function insertIndexFor(project: VideoProject, clipId: string, time: numb
  * clip's start and nothing else. Adding `sourceStart` here would count it twice, once in the
  * argument and once in `resliceLane`.
  */
-export function trimArgsFromSpan(start: number, span: Span): TrimSpan {
-  return { start: span.start - start, end: span.end - start };
+export function trimArgsFromSpan(start: number, span: Span, speed = 1): TrimSpan {
+  const rate = Math.abs(speed);
+  return { start: (span.start - start) * rate, end: (span.end - start) * rate };
 }
 
 /**

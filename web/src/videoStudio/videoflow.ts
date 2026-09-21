@@ -51,6 +51,28 @@ const CUT_NUDGE = 1e-4;
 /** The rate BrowserRenderer mixes at (`renderAudio`, `sampleRate: 48000`) — primed buffers match. */
 const MIX_SAMPLE_RATE = 48000;
 
+function clipOpacity(clip: VideoItem): unknown {
+  const value = clip.opacity ?? 1;
+  const fadeIn = clip.fadeIn === true || clip.animation === 'fadeIn';
+  const fadeOut = clip.fadeOut === true || clip.animation === 'fadeOut';
+  if (!fadeIn && !fadeOut) return value;
+  const edge = Math.min(0.5, clip.duration / 2);
+  return [
+    ...(fadeIn
+      ? [
+          { time: 0, value: 0 },
+          { time: edge, value },
+        ]
+      : []),
+    ...(fadeOut
+      ? [
+          { time: clip.duration - edge, value },
+          { time: clip.duration, value: 0 },
+        ]
+      : []),
+  ];
+}
+
 /** The part of a renderer the font override touches. Both renderers expose it; neither declares it
  *  in a shared interface, so this is the seam rather than an import of either class. */
 export interface FontLoadingRenderer {
@@ -138,6 +160,23 @@ function addClip(
     source: urls.assetUrl(source.assetId),
     startTime,
     sourceDuration: clip.duration,
+    speed: clip.speed ?? 1,
+    ...(clip.transitionIn === undefined || clip.transitionIn === 'none'
+      ? {}
+      : {
+          transitionIn: {
+            transition: clip.transitionIn,
+            duration: Math.min(clip.transitionInDuration ?? 1, clip.duration / 2),
+          },
+        }),
+    ...(clip.transitionOut === undefined || clip.transitionOut === 'none'
+      ? {}
+      : {
+          transitionOut: {
+            transition: clip.transitionOut,
+            duration: Math.min(clip.transitionOutDuration ?? 1, clip.duration / 2),
+          },
+        }),
   };
   // A still has one frame and no audio: no source window to sample, so no nudge and no mute.
   if (source.kind === 'image') {
@@ -148,7 +187,21 @@ function addClip(
     // `muted` in a layer's SETTINGS is a no-op — the mixer reads `mute` in its PROPERTIES
     // (spike 108 §6: a clip carrying `settings.muted` played at full volume). Muting does not
     // save the decode either, which is one more reason the cache below belongs to us.
-    { fit: 'cover', mute: clip.muted },
+    {
+      fit: clip.fit ?? 'cover',
+      mute: clip.muted,
+      volume: clip.volume ?? 1,
+      rotation: clip.rotation ?? 0,
+      scale: [clip.flipX === true ? -1 : 1, clip.flipY === true ? -1 : 1],
+      filterBrightness: clip.brightness ?? 1,
+      filterContrast: clip.contrast ?? 1,
+      filterSaturate: clip.saturation ?? 1,
+      filterHueRotate: clip.hue ?? 0,
+      filterBlur: clip.blur ?? 0,
+      // Runtime accepts property keyframes; the package's static property type names only the
+      // scalar form. Overlay properties cross the same VideoJSON seam.
+      opacity: clipOpacity(clip) as number,
+    },
     { ...settings, sourceStart: clip.sourceStart + CUT_NUDGE },
   );
 }

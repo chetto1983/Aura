@@ -228,6 +228,57 @@ describe('toVideoJSON', () => {
     expect(calls.videos[1]?.settings).not.toHaveProperty('muted');
   });
 
+  it('carries the selected clip rotation, fit and volume into VideoFlow', async () => {
+    const base = project();
+    const first = base.video[0];
+    const second = base.video[1];
+    if (first === undefined || second === undefined) throw new Error('project fixture lost a clip');
+    const styled: VideoProject = {
+      ...base,
+      video: [
+        {
+          ...first,
+          rotation: 90,
+          fit: 'contain',
+          volume: 0.4,
+          flipX: true,
+          brightness: 1.2,
+          contrast: 0.8,
+          saturation: 1.3,
+          hue: 20,
+          blur: 0.5,
+          animation: 'fadeIn',
+          speed: 2,
+          transitionIn: 'blurResolve',
+          transitionOut: 'glitchResolve',
+        },
+        second,
+      ],
+    };
+    await toVideoJSON(styled, urls);
+    expect(calls.videos[0]?.props).toMatchObject({
+      rotation: 90,
+      fit: 'contain',
+      volume: 0.4,
+      scale: [-1, 1],
+      filterBrightness: 1.2,
+      filterContrast: 0.8,
+      filterSaturate: 1.3,
+      filterHueRotate: 20,
+      filterBlur: 0.5,
+      opacity: [
+        { time: 0, value: 0 },
+        { time: 0.5, value: 1 },
+      ],
+    });
+    expect(calls.videos[0]?.settings).toMatchObject({
+      speed: 2,
+      sourceDuration: 4,
+      transitionIn: { transition: 'blurResolve', duration: 1 },
+      transitionOut: { transition: 'glitchResolve', duration: 1 },
+    });
+  });
+
   it('resolves an overlay against its clip, not against the timeline', async () => {
     await toVideoJSON(project(), urls);
 

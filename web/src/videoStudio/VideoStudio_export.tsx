@@ -66,7 +66,7 @@ export function ExportPanel({ project, fileName, urls, refusal }: ExportPanelPro
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="video-studio-export flex flex-wrap items-center gap-2">
       {percent === undefined ? null : (
         <>
           {/* The components/ui set has no progress bar: this is the one the single-clip

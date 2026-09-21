@@ -7,6 +7,7 @@ import {
   type ResizeEndEvent,
   type Span,
 } from 'dnd-timeline';
+import { Minus, Plus } from 'lucide-react';
 import { useState, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
@@ -35,6 +36,7 @@ import {
   zoomedRange,
   type TrimSpan,
 } from './timelineView';
+import { Button } from '@/components/ui/button';
 
 // Timeline.tsx — the lanes, the ruler, the playhead, the zoom and the two gestures that edit:
 // drag a clip to another place in the sequence, drag a handle to change what it plays.
@@ -61,13 +63,16 @@ function Lane({ id, label, droppable, children }: LaneProps) {
   });
   return (
     <div style={{ ...rowWrapperStyle, width: '100%' }}>
-      <div style={rowSidebarStyle} className="items-center px-2 text-xs text-fg-muted">
+      <div
+        style={rowSidebarStyle}
+        className="video-studio-lane-label items-center px-2 text-xs text-fg-muted"
+      >
         {label}
       </div>
       <div
         ref={setNodeRef}
         style={{ ...rowStyle, minHeight: TOUCH_FLOOR + 8 }}
-        className="relative border-t border-border py-1"
+        className="video-studio-lane relative border-t border-border py-1"
       >
         {children}
       </div>
@@ -77,22 +82,24 @@ function Lane({ id, label, droppable, children }: LaneProps) {
 
 interface ZoomButtonProps {
   readonly label: string;
-  readonly glyph: string;
+  readonly direction: 'in' | 'out';
   readonly onPress: () => void;
 }
 
-function ZoomButton({ label, glyph, onPress }: ZoomButtonProps) {
+function ZoomButton({ label, direction, onPress }: ZoomButtonProps) {
   return (
-    <button
+    <Button
       type="button"
       aria-label={label}
       data-required-touch-target
+      variant="outline"
+      size="icon"
       style={{ minHeight: TOUCH_FLOOR, minWidth: TOUCH_FLOOR }}
       onClick={onPress}
-      className="rounded-[var(--radius-md)] border border-border text-sm text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="video-studio-zoom-button rounded-[var(--radius-md)] border border-border text-sm text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <span aria-hidden="true">{glyph}</span>
-    </button>
+      {direction === 'in' ? <Plus aria-hidden="true" /> : <Minus aria-hidden="true" />}
+    </Button>
   );
 }
 
@@ -136,7 +143,7 @@ function Scrubber({ range, playhead, total, frame, onScrub }: ScrubberProps) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) onScrub(timeAt(event));
       }}
       style={{ minHeight: TOUCH_FLOOR }}
-      className="relative flex-1 touch-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="video-studio-ruler relative flex-1 touch-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {rulerMarks(range, rulerStep(range.end - range.start)).map((mark) => (
         <span
@@ -144,7 +151,7 @@ function Scrubber({ range, playhead, total, frame, onScrub }: ScrubberProps) {
           data-testid="timeline-mark"
           data-time={mark}
           style={{ left: offsetOf(mark, range) }}
-          className="absolute top-0 border-l border-border pt-1 pl-1 text-[10px] text-fg-muted tabular-nums"
+          className="video-studio-ruler-mark absolute top-0 border-l border-border pt-1 pl-1 text-[10px] text-fg-muted tabular-nums"
         >
           {formatTimecode(mark)}
         </span>
@@ -210,20 +217,20 @@ function Lanes({
       role="group"
       aria-label={t('videoStudio.timeline.label')}
       style={style}
-      className="w-full rounded-[var(--radius-md)] bg-surface-1"
+      className="video-studio-timeline w-full rounded-[var(--radius-md)] bg-surface-1"
     >
       <div style={{ display: 'flex', width: '100%' }}>
         <div style={{ width: SIDEBAR_WIDTH }} className="flex items-center gap-1 px-2">
           <ZoomButton
             label={t('videoStudio.timeline.zoomOut')}
-            glyph="−"
+            direction="out"
             onPress={() => {
               onZoom(2);
             }}
           />
           <ZoomButton
             label={t('videoStudio.timeline.zoomIn')}
-            glyph="+"
+            direction="in"
             onPress={() => {
               onZoom(0.5);
             }}
@@ -236,6 +243,7 @@ function Lanes({
           <ClipItem
             key={clip.id}
             clip={clip}
+            source={project.sources.find((source) => source.id === clip.sourceId)}
             index={index}
             count={project.video.length}
             start={starts[index] ?? 0}
@@ -275,7 +283,7 @@ function Lanes({
         <div
           data-testid="timeline-playhead"
           style={{ left: offsetOf(playhead, range) }}
-          className="absolute top-0 bottom-0 w-px bg-accent"
+          className="video-studio-playhead absolute top-0 bottom-0 w-px bg-accent"
         />
       </div>
     </div>
@@ -311,9 +319,10 @@ export function Timeline({
       onResizeEnd={(event: ResizeEndEvent) => {
         const clipId = String(event.active.id);
         const from = clipStart(project, clipId);
+        const clip = project.video.find((item) => item.id === clipId);
         const span = event.active.data.current.getSpanFromResizeEvent?.(event);
-        if (from === undefined || span === null || span === undefined) return;
-        onTrim(clipId, trimArgsFromSpan(from, span));
+        if (from === undefined || clip === undefined || span === null || span === undefined) return;
+        onTrim(clipId, trimArgsFromSpan(from, span, clip.speed));
       }}
     >
       <Lanes

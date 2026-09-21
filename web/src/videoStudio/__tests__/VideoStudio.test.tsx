@@ -498,6 +498,10 @@ describe('VideoStudio', () => {
     await screen.findByTestId('video-stage');
     fireEvent.click(item('videoStudio.timeline.clip', 2));
     // Muting clip 2 rebuilds the lane by value; the clip is still there and stays selected.
+    fireEvent.mouseDown(
+      screen.getByRole('tab', { name: i18n.t('videoStudio.inspector.tabs.audio') }),
+      { button: 0, ctrlKey: false },
+    );
     fireEvent.click(screen.getByLabelText(i18n.t('videoStudio.inspector.mute')));
 
     await waitFor(() => {

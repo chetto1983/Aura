@@ -62,6 +62,7 @@ export interface ProbedSource {
   readonly duration: number;
   readonly width: number;
   readonly height: number;
+  readonly hasAudio?: boolean;
 }
 
 /**
@@ -114,6 +115,7 @@ export async function probeSource(bytes: Blob): Promise<ProbedSource> {
     duration: probed.duration,
     width: probed.width,
     height: probed.height,
+    hasAudio: probed.hasAudio,
   };
 }
 
@@ -150,6 +152,7 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
       kind: probed.kind,
       duration: probed.duration,
       size,
+      ...(probed.hasAudio === undefined ? {} : { hasAudio: probed.hasAudio }),
     };
     return addClip(
       {
@@ -238,6 +241,7 @@ export function projectFromClip(
     kind: 'video',
     duration: probed.duration,
     size,
+    hasAudio: probed.hasAudio,
   };
   return addClip(
     { ...emptyProject(name, size, STARTING_FPS), sources: [source] },

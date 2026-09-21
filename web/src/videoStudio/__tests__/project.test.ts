@@ -65,6 +65,16 @@ describe('the video lane is a sequence', () => {
     expect(projectDuration(project())).toBe(5);
   });
 
+  it('uses playback speed for starts and project duration', () => {
+    const base = project();
+    const first = base.video[0];
+    if (first === undefined) throw new Error('project fixture lost clip 1');
+    const sped = { ...base, video: [{ ...first, speed: 2 }, ...base.video.slice(1)] };
+    expect(clipStarts(sped)).toEqual([0, 1.5]);
+    expect(projectDuration(sped)).toBe(3.5);
+    expect(clipAt(sped, 1.6)?.id).toBe('clip-2');
+  });
+
   it('answers which clip covers an instant, and which does not', () => {
     expect(clipAt(project(), 2.9)?.id).toBe('clip-1');
     expect(clipAt(project(), 3)?.id).toBe('clip-2');

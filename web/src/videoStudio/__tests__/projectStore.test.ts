@@ -58,7 +58,21 @@ function project(): VideoProject {
       },
     ],
     video: [
-      { id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 1.25, muted: true },
+      {
+        id: 'clip-1',
+        sourceId: 'src-a',
+        duration: 4,
+        sourceStart: 1.25,
+        muted: true,
+        volume: 0.75,
+        rotation: 90,
+        fit: 'contain',
+        speed: 1.5,
+        transitionIn: 'blurResolve',
+        transitionOut: 'fade',
+        transitionInDuration: 0.8,
+        transitionOutDuration: 1.2,
+      },
       { id: 'clip-2', sourceId: 'src-b', duration: 3, sourceStart: 0, muted: false },
     ],
     overlays: [

@@ -107,12 +107,56 @@ function commit(field: HTMLElement, value: string): void {
   fireEvent.blur(field);
 }
 
+function openTab(name: string): void {
+  const tab = screen.getByRole('tab', { name });
+  fireEvent.mouseDown(tab, { button: 0, ctrlKey: false });
+  fireEvent.click(tab);
+}
+
 describe('Inspector, on a clip', () => {
   it('shows where the clip sits in its source', () => {
     mount(project(), 'clip-2');
+    openTab('videoStudio.inspector.tabs.time');
 
     expect(screen.getByLabelText('videoStudio.inspector.start')).toHaveProperty('value', '00:04.0');
     expect(screen.getByLabelText('videoStudio.inspector.end')).toHaveProperty('value', '00:08.0');
+  });
+
+  it('crops the shared canvas from the same inspector', () => {
+    const view = mount(project(), 'clip-1');
+    fireEvent.click(screen.getByRole('radio', { name: 'videoStudio.inspector.transform.crop' }));
+    fireEvent.click(screen.getByRole('button', { name: '1:1' }));
+    expect(view.applied().size).toEqual({ width: 1080, height: 1080 });
+  });
+
+  it('rotates the selected clip from the same inspector', () => {
+    const view = mount(project(), 'clip-1');
+    fireEvent.click(screen.getByRole('button', { name: 'mediaEdit.video.rotateRight' }));
+    expect(view.applied().video[0]).toMatchObject({ rotation: 90 });
+  });
+
+  it('changes playback speed from the shared controls', () => {
+    const view = mount(project(), 'clip-1');
+    openTab('videoStudio.inspector.tabs.speed');
+    fireEvent.click(screen.getByRole('button', { name: '2×' }));
+    expect(view.applied().video[0]).toMatchObject({ speed: 2 });
+  });
+
+  it('uses VideoFlow transition presets for clip animations', () => {
+    const view = mount(project(), 'clip-1');
+    openTab('videoStudio.inspector.tabs.animation');
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'videoStudio.inspector.animations.presets.blurResolve',
+      }),
+    );
+    const updated = view.applied();
+    expect(updated.video[0]).toMatchObject({ transitionIn: 'blurResolve' });
+    view.show(updated, 'clip-1');
+    const duration = screen.getByRole('group', {
+      name: 'videoStudio.inspector.transitionDuration',
+    });
+    expect(duration.querySelector('[role="slider"]')?.getAttribute('aria-valuenow')).toBe('1');
   });
 
   // The one arithmetic this panel can get wrong: `trimClip` counts from where the clip already
@@ -120,6 +164,7 @@ describe('Inspector, on a clip', () => {
   // would move the clip twice — here, to 6 s instead of 2 s.
   it('commits a start measured from the clip, never from the source zero', () => {
     const view = mount(project(), 'clip-2');
+    openTab('videoStudio.inspector.tabs.time');
 
     commit(screen.getByLabelText('videoStudio.inspector.start'), '00:02.0');
 
@@ -128,6 +173,7 @@ describe('Inspector, on a clip', () => {
 
   it('commits an end measured the same way', () => {
     const view = mount(project(), 'clip-2');
+    openTab('videoStudio.inspector.tabs.time');
 
     commit(screen.getByLabelText('videoStudio.inspector.end'), '00:06.0');
 
@@ -136,6 +182,7 @@ describe('Inspector, on a clip', () => {
 
   it('restores a time it cannot read and commits nothing', () => {
     const view = mount(project(), 'clip-2');
+    openTab('videoStudio.inspector.tabs.time');
     const field = screen.getByLabelText('videoStudio.inspector.start');
 
     commit(field, 'later');
@@ -149,6 +196,7 @@ describe('Inspector, on a clip', () => {
     // reaches the same end state through three undo steps and is not the same gesture.
     it('offers the clip’s own bounds to narrow', () => {
       mount(project(), 'clip-2');
+      openTab('videoStudio.inspector.tabs.time');
 
       expect(screen.getByLabelText('videoStudio.inspector.rangeFrom')).toHaveProperty(
         'value',
@@ -162,6 +210,7 @@ describe('Inspector, on a clip', () => {
 
     it('takes a stretch out of the middle and closes the lane over it', () => {
       const view = mount(project(), 'clip-2');
+      openTab('videoStudio.inspector.tabs.time');
 
       commit(screen.getByLabelText('videoStudio.inspector.rangeFrom'), '00:05.0');
       commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:06.0');
@@ -187,6 +236,7 @@ describe('Inspector, on a clip', () => {
         ],
       };
       const view = mount(shifted, 'clip-2');
+      openTab('videoStudio.inspector.tabs.time');
 
       commit(screen.getByLabelText('videoStudio.inspector.rangeFrom'), '00:11.0');
       commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:12.0');
@@ -200,6 +250,7 @@ describe('Inspector, on a clip', () => {
 
     it('lets the command refuse a range that is not one', () => {
       const view = mount(project(), 'clip-2');
+      openTab('videoStudio.inspector.tabs.time');
 
       commit(screen.getByLabelText('videoStudio.inspector.rangeTo'), '00:04.0');
       fireEvent.click(screen.getByRole('button', { name: 'videoStudio.inspector.removeRange' }));
@@ -211,6 +262,7 @@ describe('Inspector, on a clip', () => {
 
   it('mutes the clip', () => {
     const view = mount(project(), 'clip-2');
+    openTab('videoStudio.inspector.tabs.audio');
 
     fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.inspector.mute' }));
 
@@ -222,11 +274,13 @@ describe('Inspector, on a clip', () => {
   it('never carries a time from one clip into the next', () => {
     const twins = sameStart();
     const view = mount(twins, 'clip-1');
+    openTab('videoStudio.inspector.tabs.time');
     fireEvent.change(screen.getByLabelText('videoStudio.inspector.start'), {
       target: { value: '00:03.0' },
     });
 
     view.show(twins, 'clip-2');
+    openTab('videoStudio.inspector.tabs.time');
 
     expect(screen.getByLabelText('videoStudio.inspector.start')).toHaveProperty('value', '00:00.0');
   });

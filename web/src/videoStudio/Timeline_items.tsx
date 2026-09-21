@@ -1,8 +1,14 @@
 import { useItem, type Span } from 'dnd-timeline';
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, ReactNode, SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { formatTimecode } from '../mediaEdit/timecode';
-import type { OverlayItem, VideoItem } from './project';
+import {
+  clipTimelineDuration,
+  type OverlayItem,
+  type ProjectSource,
+  type VideoItem,
+} from './project';
 import { atMilli, clamp, stepOnArrow, TOUCH_FLOOR, type TrimSpan } from './timelineView';
 
 // Timeline_items.tsx — what sits on a lane: a clip with its two trim handles, and an overlay that
@@ -88,6 +94,8 @@ interface ItemButtonProps {
   readonly label: string;
   readonly length: number;
   readonly selected: boolean;
+  readonly kind: 'clip' | 'overlay';
+  readonly preview?: ReactNode;
   readonly idle: string;
   readonly onSelect: () => void;
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLButtonElement>) => void) | undefined;
@@ -101,6 +109,8 @@ function ItemButton({
   label,
   length,
   selected,
+  kind,
+  preview,
   idle,
   onSelect,
   onKeyDown,
@@ -128,17 +138,63 @@ function ItemButton({
       onPointerDown={onSelect}
       onClick={onSelect}
       onKeyDown={onKeyDown}
-      className={`flex h-full w-full items-center overflow-hidden rounded-[var(--radius-md)] border px-2 text-left text-xs ${
+      className={`video-studio-${kind} flex h-full w-full items-center overflow-hidden rounded-[var(--radius-md)] border px-2 text-left text-xs ${
         selected ? 'border-accent bg-surface-2' : idle
       }`}
     >
-      <span className="truncate">{formatTimecode(length)}</span>
+      {preview}
+      <span className="video-studio-item-time truncate">{formatTimecode(length)}</span>
     </button>
+  );
+}
+
+const THUMBNAILS = 6;
+
+interface ClipStripProps {
+  readonly clip: VideoItem;
+  readonly source: ProjectSource | undefined;
+}
+
+function ClipStrip({ clip, source }: ClipStripProps) {
+  const { assetUrl, streamUrl } = useAssetSource();
+  if (source === undefined) return null;
+  if (source.kind === 'image') {
+    return (
+      <span className="video-studio-clip-strip" aria-hidden="true">
+        {Array.from({ length: THUMBNAILS }, (_, index) => (
+          <img key={index} src={assetUrl(source.assetId)} alt="" draggable={false} />
+        ))}
+      </span>
+    );
+  }
+  function seekThumbnail(event: SyntheticEvent<HTMLVideoElement>, index: number) {
+    const video = event.currentTarget;
+    const time = clip.sourceStart + (clip.duration * (index + 0.5)) / THUMBNAILS;
+    video.currentTime = Math.min(time, Math.max(0, video.duration - 0.001));
+  }
+  return (
+    <span className="video-studio-clip-strip" aria-hidden="true">
+      {Array.from({ length: THUMBNAILS }, (_, index) => (
+        // Decorative, muted timeline frames do not communicate audio content.
+        // oxlint-disable-next-line jsx-a11y/media-has-caption
+        <video
+          key={index}
+          src={streamUrl(source.assetId)}
+          muted
+          playsInline
+          preload="metadata"
+          onLoadedMetadata={(event) => {
+            seekThumbnail(event, index);
+          }}
+        />
+      ))}
+    </span>
   );
 }
 
 interface ClipItemProps {
   readonly clip: VideoItem;
+  readonly source: ProjectSource | undefined;
   readonly index: number;
   readonly count: number;
   readonly start: number;
@@ -152,6 +208,7 @@ interface ClipItemProps {
 
 export function ClipItem({
   clip,
+  source,
   index,
   count,
   start,
@@ -163,10 +220,11 @@ export function ClipItem({
   onTrim,
 }: ClipItemProps) {
   const { t } = useTranslation();
+  const timelineDuration = clipTimelineDuration(clip);
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, itemStyle, itemContentStyle } =
     useItem({
       id: clip.id,
-      span: { start, end: start + clip.duration },
+      span: { start, end: start + timelineDuration },
       resizeHandleWidth: TOUCH_FLOOR,
     });
   const position = { index: index + 1 };
@@ -180,8 +238,10 @@ export function ClipItem({
       <div style={itemContentStyle}>
         <ItemButton
           label={t('videoStudio.timeline.clip', position)}
-          length={clip.duration}
+          length={timelineDuration}
           selected={selected}
+          kind="clip"
+          preview={<ClipStrip clip={clip} source={source} />}
           idle="border-border bg-surface-3"
           attributes={attributes}
           activatorRef={setActivatorNodeRef}
@@ -260,6 +320,7 @@ export function OverlayItemView({ item, index, span, selected, onSelect }: Overl
           label={label}
           length={span.end - span.start}
           selected={selected}
+          kind="overlay"
           idle="border-border bg-surface-4"
           onSelect={() => {
             onSelect(item.id);

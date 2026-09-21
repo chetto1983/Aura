@@ -102,6 +102,20 @@ export function lastSavedProject(): string | undefined {
 }
 
 type Bag = Record<string, unknown>;
+const CLIP_TRANSITIONS = new Set([
+  'none',
+  'fade',
+  'blurResolve',
+  'zoom',
+  'slideUp',
+  'slideDown',
+  'slideLeft',
+  'slideRight',
+  'overshootPop',
+  'glitchResolve',
+  'wipeReveal',
+  'lightSweepReveal',
+]);
 
 function bagOf(value: unknown): Bag | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -122,6 +136,7 @@ function isSource(value: unknown): value is ProjectSource {
     typeof source.assetId === 'string' &&
     (source.kind === 'video' || source.kind === 'image') &&
     typeof source.duration === 'number' &&
+    (source.hasAudio === undefined || typeof source.hasAudio === 'boolean') &&
     // No `fps`: nothing ever measured a source's frame rate — `probeVideo` does not report one —
     // and a file saved while the field existed still loads, with the number simply ignored.
     isSize(source.size)
@@ -136,7 +151,31 @@ function isClip(value: unknown): value is VideoItem {
     typeof clip.sourceId === 'string' &&
     typeof clip.duration === 'number' &&
     typeof clip.sourceStart === 'number' &&
-    typeof clip.muted === 'boolean'
+    typeof clip.muted === 'boolean' &&
+    (clip.volume === undefined || typeof clip.volume === 'number') &&
+    (clip.rotation === undefined || [0, 90, 180, 270].includes(clip.rotation as number)) &&
+    (clip.fit === undefined || clip.fit === 'contain' || clip.fit === 'cover') &&
+    (clip.flipX === undefined || typeof clip.flipX === 'boolean') &&
+    (clip.flipY === undefined || typeof clip.flipY === 'boolean') &&
+    (clip.brightness === undefined || typeof clip.brightness === 'number') &&
+    (clip.contrast === undefined || typeof clip.contrast === 'number') &&
+    (clip.saturation === undefined || typeof clip.saturation === 'number') &&
+    (clip.hue === undefined || typeof clip.hue === 'number') &&
+    (clip.blur === undefined || typeof clip.blur === 'number') &&
+    (clip.opacity === undefined || typeof clip.opacity === 'number') &&
+    (clip.animation === undefined ||
+      clip.animation === 'none' ||
+      clip.animation === 'fadeIn' ||
+      clip.animation === 'fadeOut') &&
+    (clip.fadeIn === undefined || typeof clip.fadeIn === 'boolean') &&
+    (clip.fadeOut === undefined || typeof clip.fadeOut === 'boolean') &&
+    (clip.speed === undefined || typeof clip.speed === 'number') &&
+    (clip.transitionIn === undefined ||
+      (typeof clip.transitionIn === 'string' && CLIP_TRANSITIONS.has(clip.transitionIn))) &&
+    (clip.transitionOut === undefined ||
+      (typeof clip.transitionOut === 'string' && CLIP_TRANSITIONS.has(clip.transitionOut))) &&
+    (clip.transitionInDuration === undefined || typeof clip.transitionInDuration === 'number') &&
+    (clip.transitionOutDuration === undefined || typeof clip.transitionOutDuration === 'number')
   );
 }
 
