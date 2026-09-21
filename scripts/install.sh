@@ -471,9 +471,24 @@ if [ -n "$CONFIG_FILE" ]; then
   if [ "$CFG_GVISOR" = "true" ]; then APPLIANCE=1; GVISOR=1; fi
 fi
 
+# The main sequence is minutes of docker layer identifiers scrolling past with nothing to
+# say where it has got to -- roughly 7 GB of images come down before the stack starts. A
+# percentage would be a lie: neither the pull sizes nor how long `compose up --wait` takes
+# are known in advance. "Which phase, of how many" is true, costs one printf, and is what
+# an operator watching an unfamiliar install actually needs.
+STEP_TOTAL=10
+STEP_INDEX=0
+step() {
+  STEP_INDEX=$((STEP_INDEX + 1))
+  printf '\n==> [%s/%s] %s\n' "$STEP_INDEX" "$STEP_TOTAL" "$1"
+}
+
+step "Checking hardware"
 preflight_hw
+step "Installing Docker"
 install_docker
 provision_gvisor
+step "Installing the Compose payload"
 
 as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "$INSTALL_DIR/searxng" \
   "$INSTALL_DIR/observability/grafana/dashboards" \
@@ -542,6 +557,7 @@ chmod +x scripts/garage_bootstrap.sh scripts/fetch_embedding_model.sh scripts/ob
 
 # shellcheck source=scripts/install_env.sh
 source scripts/install_env.sh
+step "Writing the configuration"
 write_env_if_missing
 ensure_embed_backend_env
 
@@ -553,19 +569,25 @@ if [ "$GVISOR" -eq 1 ]; then
   set_env_value AURA_RUNTIME runsc
 fi
 
+step "Downloading the Aura image"
 aura_image="$(env_value AURA_IMAGE)"
 if [ "${aura_image}" != "aura:local" ]; then
   docker pull "$aura_image"
 fi
 
+step "Downloading the sandbox images"
 ensure_sandbox_image
+step "Downloading the embedding model"
 ensure_embed_model
+step "Starting the stack (this waits for every service to report healthy)"
 docker compose pull aura-cloudflared
 docker compose up -d --wait --wait-timeout 300
 if [ "$TRUST_LOCAL_CA" -eq 1 ]; then
   trust_caddy_local_ca
 fi
+step "Verifying observability"
 scripts/observability_sidecar_check.sh
+step "Enabling autostart"
 install_systemd_unit
 
 token="$(env_value AURA_ACCESS_TOKEN)"

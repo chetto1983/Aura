@@ -331,3 +331,15 @@ runsc_line="$(grep -n 'apt-get install -y runsc' "$gvisor_log" | head -1 | cut -
   || { echo "FAIL: the gvisor keyring chmod must precede the runsc install that needs the verified repository (chmod=$chmod_line runsc=$runsc_line)" >&2; exit 1; }
 
 echo "ok: provision_gvisor leaves the gvisor keyring readable by the _apt user before apt consumes it"
+
+# The phase counter is hand-maintained, and the first version of it shipped as [10/9]
+# because a phase was added without moving the total. An operator reading "10 of 9" learns
+# that the number lying to them is the one thing they were given to trust.
+declared_total="$(grep -c '^step "' "$repo_root/scripts/install.sh")"
+stated_total="$(sed -n 's/^STEP_TOTAL=\([0-9]\{1,\}\)$/\1/p' "$repo_root/scripts/install.sh")"
+[ -n "$stated_total" ] \
+  || { echo "FAIL: install.sh declares no STEP_TOTAL for its phase counter" >&2; exit 1; }
+[ "$declared_total" = "$stated_total" ] \
+  || { echo "FAIL: install.sh announces $stated_total phases but calls step() $declared_total times" >&2; exit 1; }
+
+echo "ok: the installer's phase counter counts the phases it actually has"
