@@ -68,11 +68,17 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		HealthDetails: func() map[string]any {
 			// WEB-04/D-07: the read-only health panel reads bind + build from this
 			// EXISTING /healthz body — no new backend endpoint. Both are non-secret
-			// (a bind address and a build version, not a DSN/credential).
-			buildVersion, _, _ := buildInfo()
+			// (a bind address and build provenance, not a DSN/credential).
+			buildVersion, buildCommit, buildDate := buildInfo()
 			details := map[string]any{
 				"bind_address":  chat.cfg.AGUIBind,
 				"build_version": buildVersion,
+			}
+			if buildCommit != "" {
+				details["build_commit"] = buildCommit
+			}
+			if buildDate != "" {
+				details["build_date"] = buildDate
 			}
 			last := scheduler.LastTick()
 			if last.IsZero() {

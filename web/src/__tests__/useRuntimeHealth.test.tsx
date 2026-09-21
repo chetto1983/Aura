@@ -26,7 +26,13 @@ describe('useRuntimeHealth', () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const body = urlOf(input).includes('/readyz')
         ? { ready: true, deps: { postgres: 'ok', memory: 'ok' } }
-        : { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' };
+        : {
+            ok: true,
+            bind_address: '127.0.0.1:9080',
+            build_version: 'dev',
+            build_commit: 'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+            build_date: '2026-09-21T14:19:00Z',
+          };
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -55,6 +61,10 @@ describe('useRuntimeHealth', () => {
     expect(result.current.healthz?.status).toBe(200);
     expect(result.current.healthz?.body.ok).toBe(true);
     expect(result.current.healthz?.body.bind_address).toBe('127.0.0.1:9080');
+    expect(result.current.healthz?.body.build_commit).toBe(
+      'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+    );
+    expect(result.current.healthz?.body.build_date).toBe('2026-09-21T14:19:00Z');
     expect(result.current.readyz?.body.ready).toBe(true);
     expect(result.current.readyz?.body.deps.postgres).toBe('ok');
 

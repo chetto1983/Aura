@@ -10,6 +10,7 @@ interface RowState {
   status: string;
   tone: Tone;
   mono?: boolean;
+  title?: string;
 }
 
 const TONE_CLASS: Record<Tone, string> = {
@@ -29,16 +30,22 @@ function StatusDot({ tone }: { tone: Tone }) {
   );
 }
 
-function StatusRow({ label, status, tone, mono }: RowState) {
+function StatusRow({ label, status, tone, mono, title }: RowState) {
   return (
     <div className="flex min-h-[var(--row-h)] items-center justify-between gap-4 py-1">
       <span className="text-sm text-text-muted">{label}</span>
       <span className="flex items-center gap-2">
         <StatusDot tone={tone} />
-        <span className={`text-sm text-text ${mono ? 'font-mono' : ''}`}>{status}</span>
+        <span title={title} className={`text-sm text-text ${mono ? 'font-mono' : ''}`}>
+          {status}
+        </span>
       </span>
     </div>
   );
+}
+
+function shortCommit(commit: string): string {
+  return commit.slice(0, 12);
 }
 
 function liveness(
@@ -135,6 +142,8 @@ export function RuntimeHealthPanel() {
 
   const bind = healthz?.body.bind_address;
   const build = healthz?.body.build_version;
+  const buildCommit = healthz?.body.build_commit;
+  const buildDate = healthz?.body.build_date;
 
   const rows: RowState[] = [
     liveness(healthz, healthzError, t),
@@ -173,6 +182,23 @@ export function RuntimeHealthPanel() {
               mono
             />
             <StatusRow label={t('health.labels.build')} status={build ?? '-'} tone="success" mono />
+            {buildCommit ? (
+              <StatusRow
+                label={t('health.labels.commit')}
+                status={shortCommit(buildCommit)}
+                title={buildCommit}
+                tone="success"
+                mono
+              />
+            ) : null}
+            {buildDate ? (
+              <StatusRow
+                label={t('health.labels.buildDate')}
+                status={buildDate}
+                tone="success"
+                mono
+              />
+            ) : null}
           </div>
         </>
       )}

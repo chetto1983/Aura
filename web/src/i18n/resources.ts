@@ -270,6 +270,8 @@ export const resources = {
           memory: 'Memory',
           bindAddress: 'Bind address',
           build: 'Build',
+          commit: 'Commit',
+          buildDate: 'Built',
         },
         status: {
           unavailable: 'Unavailable',
@@ -538,6 +540,8 @@ export const resources = {
           memory: 'Memoria',
           bindAddress: 'Indirizzo bind',
           build: 'Build',
+          commit: 'Commit',
+          buildDate: 'Build date',
         },
         status: {
           unavailable: 'Non disponibile',

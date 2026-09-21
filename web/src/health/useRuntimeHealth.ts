@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
 // The two existing same-origin REST endpoints (D-07: no new backend endpoint).
-//   GET /healthz → 200 {"ok":true,"scheduler_last_tick":"...","bind_address":"...","build_version":"..."}
+//   GET /healthz → 200 {"ok":true,"scheduler_last_tick":"...","bind_address":"...","build_version":"...","build_commit":"...","build_date":"..."}
 //                  503 {"ok":false,"error":"..."}
 //   GET /readyz  → 200 {"ready":true,"deps":{"postgres":"ok","memory":"ok"}}
 //                  503 {"ready":false,"deps":{"postgres":"<err>","memory":"ok"}}
@@ -13,6 +13,8 @@ export interface HealthzBody {
   scheduler_last_tick?: string;
   bind_address?: string;
   build_version?: string;
+  build_commit?: string;
+  build_date?: string;
   error?: string;
 }
 

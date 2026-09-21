@@ -67,6 +67,8 @@ describe('RuntimeHealthPanel', () => {
             scheduler_last_tick: '2026-06-16T18:00:00Z',
             bind_address: '127.0.0.1:9080',
             build_version: 'dev',
+            build_commit: 'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+            build_date: '2026-09-21T14:19:00Z',
           },
         },
         { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
@@ -83,6 +85,8 @@ describe('RuntimeHealthPanel', () => {
         'Memory',
         'Bind address',
         'Build',
+        'Commit',
+        'Built',
       ]) {
         await waitFor(() => {
           expect(screen.getByText(label)).toBeTruthy();
@@ -103,6 +107,13 @@ describe('RuntimeHealthPanel', () => {
       await waitFor(() => {
         expect(screen.getByText('dev')).toBeTruthy();
       });
+      await waitFor(() => {
+        expect(screen.getByText('e94b2511fdd6')).toBeTruthy();
+        expect(screen.getByText('e94b2511fdd6').getAttribute('title')).toBe(
+          'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+        );
+      });
+      expect(screen.getByText('2026-09-21T14:19:00Z')).toBeTruthy();
     });
   });
 
@@ -156,7 +167,16 @@ describe('RuntimeHealthPanel', () => {
   it('renders the runtime health panel in Italian', async () => {
     await i18n.changeLanguage('it');
     stubHealth(
-      { status: 200, body: { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' } },
+      {
+        status: 200,
+        body: {
+          ok: true,
+          bind_address: '127.0.0.1:9080',
+          build_version: 'dev',
+          build_commit: 'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+          build_date: '2026-09-21T14:19:00Z',
+        },
+      },
       { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
     );
 
@@ -170,5 +190,7 @@ describe('RuntimeHealthPanel', () => {
     });
     expect(screen.getAllByText('Pronto').length).toBeGreaterThan(0);
     expect(screen.getByText('Indirizzo bind')).toBeTruthy();
+    expect(screen.getByText('Commit')).toBeTruthy();
+    expect(screen.getByText('Build date')).toBeTruthy();
   });
 });

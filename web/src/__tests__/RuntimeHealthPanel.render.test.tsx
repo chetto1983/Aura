@@ -16,7 +16,13 @@ const { RuntimeHealthPanel } = await import('../health/RuntimeHealthPanel');
 const base: UseRuntimeHealthResult = {
   healthz: {
     status: 200,
-    body: { ok: true, bind_address: '127.0.0.1:9080', build_version: 'dev' },
+    body: {
+      ok: true,
+      bind_address: '127.0.0.1:9080',
+      build_version: 'dev',
+      build_commit: 'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+      build_date: '2026-09-21T14:19:00Z',
+    },
   },
   readyz: { status: 200, body: { ready: true, deps: { postgres: 'ok', memory: 'ok' } } },
   healthzError: false,
@@ -85,6 +91,11 @@ describe('RuntimeHealthPanel rendering', () => {
     expect(statusOf('Postgres')).toBe('Ready');
     expect(statusOf('Bind address')).toBe('127.0.0.1:9080');
     expect(statusOf('Build')).toBe('dev');
+    expect(statusOf('Commit')).toBe('e94b2511fdd6');
+    expect(screen.getByText('e94b2511fdd6').getAttribute('title')).toBe(
+      'e94b2511fdd6f2ffd7b245281a5cf5c1638d948e',
+    );
+    expect(statusOf('Built')).toBe('2026-09-21T14:19:00Z');
   });
 
   it('maps a not-ok /healthz to a danger Unavailable liveness', () => {
@@ -115,11 +126,13 @@ describe('RuntimeHealthPanel rendering', () => {
     expect(dotClass('Memory')).toContain('bg-warning');
   });
 
-  it('renders an em-dash when bind/build are absent from /healthz', () => {
+  it('renders an em-dash for absent bind/build and omits absent provenance', () => {
     set({ healthz: { status: 200, body: { ok: true } } });
     render(<RuntimeHealthPanel />);
     expect(statusOf('Bind address')).toBe('-');
     expect(statusOf('Build')).toBe('-');
+    expect(screen.queryByText('Commit')).toBeNull();
+    expect(screen.queryByText('Built')).toBeNull();
   });
 
   it('formats the Last checked caption across the relative-time buckets', () => {
