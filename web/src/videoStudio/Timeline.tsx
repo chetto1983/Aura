@@ -7,7 +7,7 @@ import {
   type ResizeEndEvent,
   type Span,
 } from 'dnd-timeline';
-import { Minus, Plus } from 'lucide-react';
+import { Blend, Minus, Plus } from 'lucide-react';
 import { useState, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
@@ -15,9 +15,11 @@ import { moveClip, trimClip } from './commands';
 import {
   clipStart,
   clipStarts,
+  junctionDurationAt,
   overlayWindow,
   projectDuration,
   type VideoProject,
+  type ClipJunction,
 } from './project';
 import { ClipItem, OverlayItemView } from './Timeline_items';
 import {
@@ -167,6 +169,8 @@ interface TimelineProps {
   readonly onSelect: (id: string) => void;
   readonly onCommand: (edit: (current: VideoProject) => VideoProject) => void;
   readonly onScrub: (time: number) => void;
+  readonly selectedJunction?: ClipJunction | undefined;
+  readonly onSelectJunction?: ((junction: ClipJunction) => void) | undefined;
 }
 
 interface LanesProps extends Omit<TimelineProps, 'onCommand'> {
@@ -192,6 +196,8 @@ function Lanes({
   onZoom,
   onMove,
   onTrim,
+  selectedJunction,
+  onSelectJunction,
 }: LanesProps) {
   const { t } = useTranslation();
   const { style, setTimelineRef } = useTimelineContext();
@@ -274,6 +280,40 @@ function Lanes({
             onTrim={onTrim}
           />
         ))}
+        {project.video.slice(1).map((incoming, offset) => {
+          const toIndex = offset + 1;
+          const outgoing = project.video[toIndex - 1];
+          if (outgoing === undefined) return null;
+          const duration = junctionDurationAt(project, toIndex);
+          const junction = { fromClipId: outgoing.id, toClipId: incoming.id };
+          const selected =
+            selectedJunction?.fromClipId === outgoing.id &&
+            selectedJunction.toClipId === incoming.id;
+          return (
+            <button
+              key={`${outgoing.id}-${incoming.id}`}
+              type="button"
+              data-required-touch-target
+              data-active={duration > 0 ? 'true' : 'false'}
+              aria-pressed={selected}
+              aria-label={t('videoStudio.timeline.transition', {
+                index: toIndex,
+                next: toIndex + 1,
+              })}
+              className="video-studio-junction"
+              style={{ left: offsetOf((starts[toIndex] ?? 0) + duration / 2, range) }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectJunction?.(junction);
+              }}
+            >
+              <Blend aria-hidden="true" />
+            </button>
+          );
+        })}
       </Lane>
       <div
         aria-hidden="true"
@@ -297,6 +337,8 @@ export function Timeline({
   onSelect,
   onCommand,
   onScrub,
+  selectedJunction,
+  onSelectJunction,
 }: TimelineProps) {
   const total = Math.max(projectDuration(project), MIN_VISIBLE);
   // Null is "fit the project". A range held from before is re-clamped against the project as it is
@@ -338,6 +380,8 @@ export function Timeline({
         }}
         onMove={onMove}
         onTrim={onTrim}
+        selectedJunction={selectedJunction}
+        onSelectJunction={onSelectJunction}
       />
     </TimelineContext>
   );

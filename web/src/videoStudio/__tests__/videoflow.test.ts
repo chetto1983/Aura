@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  exportProject,
-  LOCAL_FONTS,
-  toVideoJSON,
-  withLocalFonts,
-  type FontLoadingRenderer,
-} from '../videoflow';
+import { exportProject, LOCAL_FONTS, toVideoJSON } from '../videoflow';
 import type { VideoProject } from '../project';
 
 // The shape we hand VideoFlow is the whole contract of this module, so the builder is mocked and
@@ -15,6 +9,7 @@ const calls = vi.hoisted(() => ({
   videos: [] as { props: Record<string, unknown>; settings: Record<string, unknown> }[],
   texts: [] as { props: Record<string, unknown>; settings: Record<string, unknown> }[],
   images: [] as { props: Record<string, unknown>; settings: Record<string, unknown> }[],
+  shapes: [] as { props: Record<string, unknown>; settings: Record<string, unknown> }[],
   waits: [] as unknown[],
   project: [] as unknown[],
   compiled: 0,
@@ -35,6 +30,10 @@ vi.mock('@videoflow/core', () => ({
     }
     addImage(props: Record<string, unknown>, settings: Record<string, unknown>) {
       calls.images.push({ props, settings });
+      return { animate: vi.fn() };
+    }
+    addShape(props: Record<string, unknown>, settings: Record<string, unknown>) {
+      calls.shapes.push({ props, settings });
       return { animate: vi.fn() };
     }
     wait(time: unknown) {
@@ -103,10 +102,6 @@ vi.mock('@videoflow/renderer-browser', () => ({
 
 const decoded = { calls: [] as ArrayBuffer[] };
 
-// What the browser does with the stylesheet link this module appends: a test that exercises a
-// failed font switches it to 'error'.
-const stylesheet = { outcome: 'load' as 'load' | 'error' };
-
 function project(): VideoProject {
   return {
     id: 'p',
@@ -158,6 +153,7 @@ beforeEach(() => {
   calls.videos.length = 0;
   calls.texts.length = 0;
   calls.images.length = 0;
+  calls.shapes.length = 0;
   calls.waits.length = 0;
   calls.project.length = 0;
   calls.compiled = 0;
@@ -168,7 +164,6 @@ beforeEach(() => {
   renderer.exportOptions.length = 0;
   renderer.exportImpl = null;
   decoded.calls.length = 0;
-  stylesheet.outcome = 'load';
 
   vi.stubGlobal(
     'fetch',
@@ -183,15 +178,13 @@ beforeEach(() => {
       }
     },
   );
-  // jsdom implements no FontFaceSet, and it never fires `load` on a stylesheet link it did not
-  // fetch — both are the browser's job, so the test plays the browser's part.
   Object.defineProperty(document, 'fonts', {
     configurable: true,
     value: { load: vi.fn(() => Promise.resolve([])) },
   });
   vi.spyOn(document.head, 'appendChild').mockImplementation(<T extends Node>(node: T): T => {
     Node.prototype.appendChild.call(document.head, node);
-    queueMicrotask(() => node.dispatchEvent(new Event(stylesheet.outcome)));
+    queueMicrotask(() => node.dispatchEvent(new Event('load')));
     return node;
   });
 });
@@ -279,6 +272,72 @@ describe('toVideoJSON', () => {
     });
   });
 
+  it('overlaps adjacent clips and applies one transition to both edges', async () => {
+    const base = project();
+    const first = base.video[0];
+    const second = base.video[1];
+    if (first === undefined || second === undefined) throw new Error('project fixture lost a clip');
+    const transitioned: VideoProject = {
+      ...base,
+      video: [
+        first,
+        {
+          ...second,
+          junctionFromClipId: 'clip-1',
+          junctionTransition: 'crossfade',
+          junctionDuration: 1,
+        },
+      ],
+    };
+    await toVideoJSON(transitioned, urls);
+
+    expect(calls.videos[0]?.settings).toMatchObject({
+      startTime: 0,
+      transitionOut: { transition: 'fade', duration: 1 },
+    });
+    expect(calls.videos[1]?.settings).toMatchObject({
+      startTime: 3,
+      transitionIn: { transition: 'fade', duration: 1 },
+    });
+    expect(calls.waits).toEqual([6]);
+  });
+
+  it('uses VideoFlow shape layers for fade-to-white without covering overlays', async () => {
+    const base = project();
+    const first = base.video[0];
+    const second = base.video[1];
+    if (first === undefined || second === undefined) throw new Error('project fixture lost a clip');
+    await toVideoJSON(
+      {
+        ...base,
+        video: [
+          first,
+          {
+            ...second,
+            junctionFromClipId: 'clip-1',
+            junctionTransition: 'fadeWhite',
+            junctionDuration: 1,
+          },
+        ],
+      },
+      urls,
+    );
+
+    expect(calls.shapes).toHaveLength(1);
+    expect(calls.shapes[0]).toMatchObject({
+      props: {
+        fill: '#ffffff',
+        opacity: [
+          { time: 0, value: 0 },
+          { time: 0.5, value: 1 },
+          { time: 1, value: 0 },
+        ],
+      },
+      settings: { startTime: 3, sourceDuration: 1, shapeType: 'rectangle' },
+    });
+    expect(calls.texts[0]?.settings).toMatchObject({ startTime: 3.5 });
+  });
+
   it('resolves an overlay against its clip, not against the timeline', async () => {
     await toVideoJSON(project(), urls);
 
@@ -350,67 +409,6 @@ describe('toVideoJSON', () => {
     };
 
     await expect(toVideoJSON(orphan, urls)).rejects.toThrow(/gone/);
-  });
-});
-
-describe('withLocalFonts', () => {
-  it('serves a known family from our own origin instead of Google Fonts', async () => {
-    const stockLoadFont = vi.fn(() => Promise.resolve());
-    const patched = withLocalFonts<FontLoadingRenderer>({
-      loadedFonts: {},
-      loadFont: stockLoadFont,
-    });
-    await patched.loadFont('Atkinson Hyperlegible Next');
-
-    expect(stockLoadFont).not.toHaveBeenCalled();
-    expect(patched.loadedFonts['Atkinson Hyperlegible Next']).toBe('/fonts/atkinson.css');
-    const link = document.head.querySelector<HTMLLinkElement>('link[data-local-font]');
-    expect(link?.getAttribute('href')).toBe('/fonts/atkinson.css');
-  });
-
-  it('links a family once, however many layers ask for it', async () => {
-    const patched = withLocalFonts<FontLoadingRenderer>({
-      loadedFonts: {},
-      loadFont: vi.fn(() => Promise.resolve()),
-    });
-    await patched.loadFont('Noto Sans');
-    await patched.loadFont('Noto Sans');
-
-    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(1);
-  });
-
-  it('lets a family be retried after its stylesheet failed', async () => {
-    const patched = withLocalFonts<FontLoadingRenderer>({
-      loadedFonts: {},
-      loadFont: vi.fn(() => Promise.resolve()),
-    });
-    stylesheet.outcome = 'error';
-    await patched.loadFont('Atkinson Hyperlegible Next');
-
-    // Nothing of the failure survives: no dead link, and no entry that would make the next
-    // attempt return at once and leave the text on the fallback stack for good.
-    expect(patched.loadedFonts).toEqual({});
-    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(0);
-
-    stylesheet.outcome = 'load';
-    await patched.loadFont('Atkinson Hyperlegible Next');
-
-    expect(patched.loadedFonts['Atkinson Hyperlegible Next']).toBe('/fonts/atkinson.css');
-    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(1);
-  });
-
-  it('leaves an unknown family to the fallback stack rather than fetching it', async () => {
-    const patched = withLocalFonts<FontLoadingRenderer>({
-      loadedFonts: {},
-      loadFont: vi.fn(() => Promise.resolve()),
-    });
-    await patched.loadFont('Comic Sans MS');
-    // A family whose name is a property of Object.prototype is still an unknown family, not a
-    // function to link as a stylesheet.
-    await patched.loadFont('toString');
-
-    expect(patched.loadedFonts).toEqual({});
-    expect(document.head.querySelectorAll('link[data-local-font]')).toHaveLength(0);
   });
 });
 

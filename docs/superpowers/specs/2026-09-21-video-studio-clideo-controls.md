@@ -13,6 +13,12 @@ multi-track workspace.
 - Animations: In/Out selector and 72 x 89 preset cards. Aura uses the transition presets shipped
   by the installed Apache-2.0 VideoFlow renderers: fade, blur resolve, zoom, slide up/down, glitch,
   wipe and light sweep.
+- Clip-boundary transitions are a separate Clideo interaction: the junction between adjacent
+  clips opens None, Crossfade, Fade to Black, Fade to White, Zoom and Blur cards plus duration.
+  Aura stores the junction on the incoming clip with the outgoing clip id, overlaps both clips in
+  project time, applies VideoFlow entry/exit presets to the two real media layers, and uses
+  VideoFlow's built-in Shape layer for the black/white wash. This is a real crossfade rather than
+  two unrelated fades with a black frame between them.
 - Adjust: opacity, brightness, contrast, saturation, hue and blur.
 - Audio: volume and mute. Speed: 0.25x to 4x with common presets. Time: source start/end and
   remove-range fields.

@@ -154,6 +154,7 @@ function mount({
 }: { playhead?: number; selectedId?: string; base?: VideoProject } = {}) {
   const onCommand = vi.fn();
   const onSelect = vi.fn();
+  const onSelectJunction = vi.fn();
   const onScrub = vi.fn();
   render(
     <Timeline
@@ -162,10 +163,11 @@ function mount({
       playhead={playhead}
       onCommand={onCommand}
       onSelect={onSelect}
+      onSelectJunction={onSelectJunction}
       onScrub={onScrub}
     />,
   );
-  return { base, onCommand, onSelect, onScrub };
+  return { base, onCommand, onSelect, onSelectJunction, onScrub };
 }
 
 /** The thunk the gesture emitted, applied to the project it was emitted against. */
@@ -287,6 +289,21 @@ describe('Timeline lanes', () => {
       screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' }),
     );
     expect(onSelect).toHaveBeenLastCalledWith('title');
+  });
+
+  it('exposes one transition junction for every adjacent clip pair', () => {
+    const { onSelectJunction } = mount();
+    const junctions = screen.getAllByRole('button', {
+      name: /videoStudio\.timeline\.transition/,
+    });
+    expect(junctions).toHaveLength(2);
+    const first = junctions[0];
+    if (first === undefined) throw new Error('timeline rendered no first junction');
+    fireEvent.click(first);
+    expect(onSelectJunction).toHaveBeenCalledWith({
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+    });
   });
 
   it('tells the shell what was clicked, and asks for no command', () => {

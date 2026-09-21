@@ -33,6 +33,13 @@ export type ClipTransition =
   | 'wipeReveal'
   | 'lightSweepReveal';
 
+export type JunctionTransition = 'none' | 'crossfade' | 'fadeBlack' | 'fadeWhite' | 'zoom' | 'blur';
+
+export interface ClipJunction {
+  readonly fromClipId: string;
+  readonly toClipId: string;
+}
+
 export interface VideoItem {
   readonly id: string;
   readonly sourceId: string;
@@ -58,6 +65,9 @@ export interface VideoItem {
   readonly transitionOut?: ClipTransition;
   readonly transitionInDuration?: number;
   readonly transitionOutDuration?: number;
+  readonly junctionFromClipId?: string;
+  readonly junctionTransition?: JunctionTransition;
+  readonly junctionDuration?: number;
 }
 
 export type ClipEditProperties = Omit<
@@ -97,6 +107,25 @@ export function clipTimelineDuration(clip: VideoItem): number {
   return clip.duration / Math.abs(clip.speed ?? 1);
 }
 
+export function junctionDurationAt(project: VideoProject, toIndex: number): number {
+  const incoming = project.video[toIndex];
+  const outgoing = project.video[toIndex - 1];
+  if (
+    incoming === undefined ||
+    outgoing === undefined ||
+    incoming.junctionFromClipId !== outgoing.id ||
+    incoming.junctionTransition === undefined ||
+    incoming.junctionTransition === 'none'
+  ) {
+    return 0;
+  }
+  return Math.min(
+    incoming.junctionDuration ?? 1,
+    clipTimelineDuration(outgoing) / 2,
+    clipTimelineDuration(incoming) / 2,
+  );
+}
+
 export function emptyProject(name: string, size: ProjectSize, fps: number): VideoProject {
   return { id: crypto.randomUUID(), name, size, fps, sources: [], video: [], overlays: [] };
 }
@@ -105,7 +134,8 @@ export function emptyProject(name: string, size: ProjectSize, fps: number): Vide
 export function clipStarts(project: VideoProject): number[] {
   const starts: number[] = [];
   let at = 0;
-  for (const clip of project.video) {
+  for (const [index, clip] of project.video.entries()) {
+    if (index > 0) at -= junctionDurationAt(project, index);
     starts.push(at);
     at += clipTimelineDuration(clip);
   }
@@ -113,16 +143,26 @@ export function clipStarts(project: VideoProject): number[] {
 }
 
 export function projectDuration(project: VideoProject): number {
-  return project.video.reduce((total, clip) => total + clipTimelineDuration(clip), 0);
+  const last = project.video.at(-1);
+  if (last === undefined) return 0;
+  return (clipStarts(project).at(-1) ?? 0) + clipTimelineDuration(last);
 }
 
 /** The clip covering `time`, start inclusive and end exclusive, or undefined past the end. */
 export function clipAt(project: VideoProject, time: number): VideoItem | undefined {
   if (time < 0) return undefined;
-  let end = 0;
-  for (const clip of project.video) {
-    end += clipTimelineDuration(clip);
-    if (time < end) return clip;
+  const starts = clipStarts(project);
+  for (let index = project.video.length - 1; index >= 0; index -= 1) {
+    const clip = project.video[index];
+    const start = starts[index];
+    if (
+      clip !== undefined &&
+      start !== undefined &&
+      time >= start &&
+      time < start + clipTimelineDuration(clip)
+    ) {
+      return clip;
+    }
   }
   return undefined;
 }

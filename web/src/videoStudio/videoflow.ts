@@ -13,10 +13,13 @@ import BrowserRenderer from '@videoflow/renderer-browser';
 import type { AssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import {
   clipStarts,
+  clipTimelineDuration,
+  junctionDurationAt,
   overlayWindow,
   projectDuration,
   sourceOf,
   type OverlayItem,
+  type ClipTransition,
   type VideoItem,
   type VideoProject,
 } from './project';
@@ -34,6 +37,24 @@ export const LOCAL_FONTS: Readonly<Record<string, string>> = {
   'Noto Sans': '/fonts/noto-sans-alias.css',
   'Atkinson Hyperlegible Next': '/fonts/atkinson.css',
 };
+
+interface EdgeTransition {
+  readonly transition: ClipTransition;
+  readonly duration: number;
+}
+
+function junctionEdge(project: VideoProject, toIndex: number): EdgeTransition | undefined {
+  const incoming = project.video[toIndex];
+  const duration = junctionDurationAt(project, toIndex);
+  if (incoming === undefined || duration <= 0) return undefined;
+  const transition =
+    incoming.junctionTransition === 'zoom'
+      ? 'zoom'
+      : incoming.junctionTransition === 'blur'
+        ? 'blurResolve'
+        : 'fade';
+  return { transition, duration };
+}
 
 /**
  * The tenth of a millisecond that stops the renderer sampling a frame exactly on its own source
@@ -148,6 +169,8 @@ function addClip(
   urls: MediaUrls,
   clip: VideoItem,
   startTime: number,
+  edgeIn: EdgeTransition | undefined,
+  edgeOut: EdgeTransition | undefined,
 ): void {
   const source = sourceOf(project, clip.sourceId);
   if (source === undefined) {
@@ -161,22 +184,26 @@ function addClip(
     startTime,
     sourceDuration: clip.duration,
     speed: clip.speed ?? 1,
-    ...(clip.transitionIn === undefined || clip.transitionIn === 'none'
-      ? {}
-      : {
-          transitionIn: {
-            transition: clip.transitionIn,
-            duration: Math.min(clip.transitionInDuration ?? 1, clip.duration / 2),
-          },
-        }),
-    ...(clip.transitionOut === undefined || clip.transitionOut === 'none'
-      ? {}
-      : {
-          transitionOut: {
-            transition: clip.transitionOut,
-            duration: Math.min(clip.transitionOutDuration ?? 1, clip.duration / 2),
-          },
-        }),
+    ...(edgeIn !== undefined
+      ? { transitionIn: edgeIn }
+      : clip.transitionIn === undefined || clip.transitionIn === 'none'
+        ? {}
+        : {
+            transitionIn: {
+              transition: clip.transitionIn,
+              duration: Math.min(clip.transitionInDuration ?? 1, clipTimelineDuration(clip) / 2),
+            },
+          }),
+    ...(edgeOut !== undefined
+      ? { transitionOut: edgeOut }
+      : clip.transitionOut === undefined || clip.transitionOut === 'none'
+        ? {}
+        : {
+            transitionOut: {
+              transition: clip.transitionOut,
+              duration: Math.min(clip.transitionOutDuration ?? 1, clipTimelineDuration(clip) / 2),
+            },
+          }),
   };
   // A still has one frame and no audio: no source window to sample, so no nudge and no mute.
   if (source.kind === 'image') {
@@ -203,6 +230,42 @@ function addClip(
       opacity: clipOpacity(clip) as number,
     },
     { ...settings, sourceStart: clip.sourceStart + CUT_NUDGE },
+  );
+}
+
+function addJunctionWash(
+  flow: VideoFlow,
+  project: VideoProject,
+  toIndex: number,
+  startTime: number,
+): void {
+  const incoming = project.video[toIndex];
+  const duration = junctionDurationAt(project, toIndex);
+  if (
+    incoming === undefined ||
+    duration <= 0 ||
+    (incoming.junctionTransition !== 'fadeBlack' && incoming.junctionTransition !== 'fadeWhite')
+  ) {
+    return;
+  }
+  const shortSide = Math.min(project.size.width, project.size.height);
+  flow.addShape(
+    {
+      width: `${String((project.size.width / shortSide) * 100)}em`,
+      height: `${String((project.size.height / shortSide) * 100)}em`,
+      fill: incoming.junctionTransition === 'fadeWhite' ? '#ffffff' : '#000000',
+      opacity: [
+        { time: 0, value: 0 },
+        { time: duration / 2, value: 1 },
+        { time: duration, value: 0 },
+      ] as unknown as number,
+    },
+    {
+      name: `junction-${incoming.id}`,
+      startTime,
+      sourceDuration: duration,
+      shapeType: 'rectangle',
+    },
   );
 }
 
@@ -244,8 +307,19 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   });
   const starts = clipStarts(project);
   project.video.forEach((clip, index) => {
-    addClip(flow, project, urls, clip, starts[index] ?? 0);
+    addClip(
+      flow,
+      project,
+      urls,
+      clip,
+      starts[index] ?? 0,
+      junctionEdge(project, index),
+      junctionEdge(project, index + 1),
+    );
   });
+  for (let index = 1; index < project.video.length; index += 1) {
+    addJunctionWash(flow, project, index, starts[index] ?? 0);
+  }
   for (const track of project.overlays) {
     for (const item of track.items) addOverlay(flow, project, urls, item);
   }

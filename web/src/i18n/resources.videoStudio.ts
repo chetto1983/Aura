@@ -67,6 +67,7 @@ export const videoStudioEn = {
       playhead: 'Playhead',
       zoomIn: 'Zoom in',
       zoomOut: 'Zoom out',
+      transition: 'Transition between clips {{index}} and {{next}}',
     },
     stage: {
       picture: 'Select the clip on screen',
@@ -141,6 +142,18 @@ export const videoStudioEn = {
         none: 'None',
         fadeIn: 'Fade in',
         fadeOut: 'Fade out',
+      },
+      transition: {
+        title: 'Transition',
+        duration: 'Duration',
+        presets: {
+          none: 'None',
+          crossfade: 'Crossfade',
+          fadeBlack: 'Fade to black',
+          fadeWhite: 'Fade to white',
+          zoom: 'Zoom in',
+          blur: 'Blur',
+        },
       },
     },
     refusal: {
@@ -240,6 +253,7 @@ export const videoStudioIt = {
       playhead: 'Indicatore di riproduzione',
       zoomIn: 'Ingrandisci',
       zoomOut: 'Riduci',
+      transition: 'Transizione tra le clip {{index}} e {{next}}',
     },
     stage: {
       picture: 'Seleziona la clip a schermo',
@@ -314,6 +328,18 @@ export const videoStudioIt = {
         none: 'Nessuna',
         fadeIn: 'Dissolvenza in apertura',
         fadeOut: 'Dissolvenza in chiusura',
+      },
+      transition: {
+        title: 'Transizione',
+        duration: 'Durata',
+        presets: {
+          none: 'Nessuna',
+          crossfade: 'Dissolvenza incrociata',
+          fadeBlack: 'Dissolvenza al nero',
+          fadeWhite: 'Dissolvenza al bianco',
+          zoom: 'Zoom avanti',
+          blur: 'Sfocatura',
+        },
       },
     },
     refusal: {

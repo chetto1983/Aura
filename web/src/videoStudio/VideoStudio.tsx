@@ -19,11 +19,13 @@ import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem, splitAt } fro
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
 import type { ClipTab } from './Inspector_clip';
+import { JunctionTransitionInspector } from './Inspector_transition';
 import {
   clipAt,
   clipStart,
   clipTimelineDuration,
   projectDuration,
+  type ClipJunction,
   type VideoProject,
 } from './project';
 import { projectFileName, rememberSavedProject, saveProject } from './projectStore';
@@ -44,10 +46,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
-// VideoStudio.tsx — the workspace: one history, one selection, one playhead, and the three
-// panels wired to them. It owns the two things none of the parts can own.
-//
-
 /** A string the operator will read, kept unresolved so the language can still change under it. */
 interface Sentence {
   readonly key: string;
@@ -58,13 +56,11 @@ function says(key: string, values: Record<string, unknown> = {}): Sentence {
   return { key, values };
 }
 
-/** What a new title lasts, unless the clip it hangs on has less left than that. */
 const TITLE_SECONDS = 3;
 
 interface VideoStudioProps {
   readonly open: StudioOpen;
   readonly onClose: () => void;
-  /** Where the saved project landed, so the surface that opened the editor can offer it back. */
   readonly onSaved?: ((assetId: string) => void) | undefined;
 }
 
@@ -72,16 +68,11 @@ function overlayCount(project: VideoProject): number {
   return project.overlays.reduce((total, lane) => total + lane.items.length, 0);
 }
 
-/** The overlay an edit added, found by difference: `addOverlay` mints an id it cannot return —
- *  a command is `(project, args) => project` and stays that shape, because in cycle 3 it is a
- *  tool with those same arguments. Diffing is what the workspace pays for that. */
 function addedOverlay(before: VideoProject, after: VideoProject): string | undefined {
   const had = new Set(before.overlays.flatMap((lane) => lane.items.map((item) => item.id)));
   return after.overlays.flatMap((lane) => lane.items).find((item) => !had.has(item.id))?.id;
 }
 
-/** Whether the project still holds this id. A removed clip, or one an undo took away, leaves the
- *  selection pointing at nothing — and a Remove button live over nothing. */
 function holds(project: VideoProject, id: string | undefined): boolean {
   if (id === undefined) return false;
   return (
@@ -90,10 +81,6 @@ function holds(project: VideoProject, id: string | undefined): boolean {
   );
 }
 
-/** The clips a project cannot play: those on a source the load reported gone. Derived rather
- *  than stored, so removing the last one clears the block — which is the only way cycle 1 offers
- *  to unblock, the replace door being the library's and cycle 2's. Counted in CLIPS because that
- *  is what the operator has to remove, not in sources, which are a thing they never see. */
 function unplayableClips(project: VideoProject, missing: readonly string[]): readonly string[] {
   return project.video.filter((clip) => missing.includes(clip.sourceId)).map((clip) => clip.id);
 }
@@ -119,6 +106,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const fileInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedJunction, setSelectedJunction] = useState<ClipJunction>();
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<ClipTab>('transform');
@@ -158,6 +146,11 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
    *  here — an edit, an undo, a redo — so no button is ever live over an item that is gone. */
   function reselect(next: VideoProject, added?: string) {
     setSelectedId((current) => added ?? (holds(next, current) ? current : undefined));
+    setSelectedJunction((current) => {
+      if (current === undefined) return undefined;
+      const toIndex = next.video.findIndex((clip) => clip.id === current.toClipId);
+      return next.video[toIndex - 1]?.id === current.fromClipId ? current : undefined;
+    });
   }
 
   function commit(edit: Edit) {
@@ -298,6 +291,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   }
 
   function showInspector(tab: ClipTab) {
+    setSelectedJunction(undefined);
     setInspectorTab(tab);
     setMobileInspectorOpen((open) => (open && inspectorTab === tab ? false : true));
   }
@@ -459,7 +453,10 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                       project={project}
                       time={playhead}
                       selectedId={selectedId}
-                      onSelect={setSelectedId}
+                      onSelect={(id) => {
+                        setSelectedJunction(undefined);
+                        setSelectedId(id);
+                      }}
                       onCommand={run}
                     />
                   )}
@@ -499,13 +496,21 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                 data-mobile-open={mobileInspectorOpen ? 'true' : 'false'}
                 className="video-studio-properties"
               >
-                <Inspector
-                  project={project}
-                  selectedId={selectedId}
-                  onCommand={run}
-                  activeClipTab={inspectorTab}
-                  onClipTabChange={setInspectorTab}
-                />
+                {selectedJunction === undefined ? (
+                  <Inspector
+                    project={project}
+                    selectedId={selectedId}
+                    onCommand={run}
+                    activeClipTab={inspectorTab}
+                    onClipTabChange={setInspectorTab}
+                  />
+                ) : (
+                  <JunctionTransitionInspector
+                    project={project}
+                    junction={selectedJunction}
+                    onCommand={run}
+                  />
+                )}
               </aside>
             </div>
 
@@ -525,8 +530,17 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                 <Timeline
                   project={project}
                   selectedId={selectedId}
+                  selectedJunction={selectedJunction}
                   playhead={playhead}
-                  onSelect={setSelectedId}
+                  onSelect={(id) => {
+                    setSelectedJunction(undefined);
+                    setSelectedId(id);
+                  }}
+                  onSelectJunction={(junction) => {
+                    setSelectedJunction(junction);
+                    setSelectedId(junction.toClipId);
+                    setMobileInspectorOpen(true);
+                  }}
                   onCommand={run}
                   onScrub={seek}
                 />
@@ -535,14 +549,16 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
             <MobileVideoTools
               selectedId={selectedId}
               inspectorTab={inspectorTab}
-              inspectorOpen={mobileInspectorOpen}
+              inspectorOpen={mobileInspectorOpen && selectedJunction === undefined}
               onBack={() => {
                 setMobileInspectorOpen(false);
               }}
               onSplit={() => {
+                setSelectedJunction(undefined);
                 run((current) => splitAt(current, { time: playhead }));
               }}
               onRemove={() => {
+                setSelectedJunction(undefined);
                 if (selectedId !== undefined)
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}

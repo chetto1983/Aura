@@ -125,7 +125,7 @@ test.describe('media editing', () => {
     expect(duration).toBeLessThan(2.2);
   });
 
-  test('applies the Clideo-style transform, adjust, audio and animation controls', async ({
+  test('applies Clideo-style clip controls and junction transitions', async ({
     page,
   }, testInfo) => {
     test.setTimeout(60_000);
@@ -226,6 +226,21 @@ test.describe('media editing', () => {
       await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
     }
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible();
+
+    await editor.locator('input[type="file"]').setInputFiles(resolve(FIXTURES, 'clip.mp4'));
+    await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 30_000 });
+    await editor.getByRole('button', { name: 'Transition between clips 1 and 2' }).click();
+    await expect(editor.getByRole('heading', { name: 'Transition' })).toBeVisible();
+    await editor.getByRole('button', { name: 'Crossfade', exact: true }).click();
+    await expect(editor.getByRole('button', { name: 'Crossfade', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(editor.getByRole('group', { name: 'Duration' })).toBeVisible();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+    }
   });
 
   test('saves an edited photo to the Studio library', async ({ page }, testInfo) => {

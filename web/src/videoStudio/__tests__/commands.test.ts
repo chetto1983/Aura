@@ -9,6 +9,7 @@ import {
   removeRange,
   setClipPresentation,
   setFrameSize,
+  setJunctionTransition,
   setMuted,
   setProperty,
   splitAt,
@@ -432,6 +433,59 @@ describe('removeItem', () => {
     const next = removeItem(project(), { itemId: 'title' });
     expect(next.overlays[0]?.items).toEqual([]);
     expect(next.video).toHaveLength(2);
+  });
+});
+
+describe('setJunctionTransition', () => {
+  it('stores a transition on the incoming clip and overlaps the pair', () => {
+    const next = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'crossfade',
+      duration: 1.5,
+    });
+    expect(next.video[1]).toMatchObject({
+      junctionFromClipId: 'clip-1',
+      junctionTransition: 'crossfade',
+      junctionDuration: 1.5,
+    });
+    expect(clipStarts(next)).toEqual([0, 2.5]);
+    expect(projectDuration(next)).toBe(6.5);
+  });
+
+  it('removes a junction and rejects clips that are not adjacent', () => {
+    const transitioned = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'zoom',
+    });
+    const cleared = setJunctionTransition(transitioned, {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'none',
+    });
+    expect(cleared.video[1]?.junctionTransition).toBeUndefined();
+    expect(() =>
+      setJunctionTransition(project(), {
+        fromClipId: 'clip-2',
+        toClipId: 'clip-1',
+        transition: 'crossfade',
+      }),
+    ).toThrow(/adjacent/);
+  });
+
+  it('clears stale junctions after moving or removing either side', () => {
+    const transitioned = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'blur',
+    });
+    expect(
+      moveClip(transitioned, { clipId: 'clip-1', toIndex: 1 }).video[0]?.junctionTransition,
+    ).toBeUndefined();
+    expect(
+      removeItem(transitioned, { itemId: 'clip-1' }).video[0]?.junctionTransition,
+    ).toBeUndefined();
   });
 });
 

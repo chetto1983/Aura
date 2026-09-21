@@ -73,7 +73,16 @@ function project(): VideoProject {
         transitionInDuration: 0.8,
         transitionOutDuration: 1.2,
       },
-      { id: 'clip-2', sourceId: 'src-b', duration: 3, sourceStart: 0, muted: false },
+      {
+        id: 'clip-2',
+        sourceId: 'src-b',
+        duration: 3,
+        sourceStart: 0,
+        muted: false,
+        junctionFromClipId: 'clip-1',
+        junctionTransition: 'crossfade',
+        junctionDuration: 0.7,
+      },
     ],
     overlays: [
       {

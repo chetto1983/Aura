@@ -116,6 +116,14 @@ const CLIP_TRANSITIONS = new Set([
   'wipeReveal',
   'lightSweepReveal',
 ]);
+const JUNCTION_TRANSITIONS = new Set([
+  'none',
+  'crossfade',
+  'fadeBlack',
+  'fadeWhite',
+  'zoom',
+  'blur',
+]);
 
 function bagOf(value: unknown): Bag | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -175,7 +183,12 @@ function isClip(value: unknown): value is VideoItem {
     (clip.transitionOut === undefined ||
       (typeof clip.transitionOut === 'string' && CLIP_TRANSITIONS.has(clip.transitionOut))) &&
     (clip.transitionInDuration === undefined || typeof clip.transitionInDuration === 'number') &&
-    (clip.transitionOutDuration === undefined || typeof clip.transitionOutDuration === 'number')
+    (clip.transitionOutDuration === undefined || typeof clip.transitionOutDuration === 'number') &&
+    (clip.junctionFromClipId === undefined || typeof clip.junctionFromClipId === 'string') &&
+    (clip.junctionTransition === undefined ||
+      (typeof clip.junctionTransition === 'string' &&
+        JUNCTION_TRANSITIONS.has(clip.junctionTransition))) &&
+    (clip.junctionDuration === undefined || typeof clip.junctionDuration === 'number')
   );
 }
 
@@ -219,6 +232,11 @@ function referencesHold(project: VideoProject): boolean {
   const clips = new Set(project.video.map((clip) => clip.id));
   return (
     project.video.every((clip) => sources.has(clip.sourceId)) &&
+    project.video.every(
+      (clip, index) =>
+        clip.junctionFromClipId === undefined ||
+        project.video[index - 1]?.id === clip.junctionFromClipId,
+    ) &&
     project.overlays.every((lane) => lane.items.every((item) => clips.has(item.anchor.clipId)))
   );
 }

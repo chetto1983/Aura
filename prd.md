@@ -459,6 +459,9 @@ Every video `Edit` entrance opens that workspace directly; the retired single-cl
 surface is not a second editor. A selected clip exposes the measured Clideo control
 families in one contextual panel: transform/crop/flip/rotate, VideoFlow transition
 presets, opacity and colour adjustments, audio, playback speed and source timing.
+Animations belong to a clip edge. A transition belongs to the junction between two
+adjacent clips: it overlaps their project-time windows, is selected from the junction
+node on the timeline and has its own duration panel.
 Those controls use the installed VideoFlow renderers, dnd-timeline and shared
 Radix/shadcn primitives. The photo editor and its save-to-library path remain unchanged.
 The source-available VideoFlow React editor and the React-Native-only 100ms virtual
