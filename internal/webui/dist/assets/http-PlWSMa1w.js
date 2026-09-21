@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CsOFd3vK.js";async function t(e){let t=`HTTP ${String(e.status)}`;if(e.body===null)return t;let n=(await e.text().catch(()=>``)).trim();return n.length>0?n:t}async function n(e){if(!e.ok)throw Error(await t(e));return await e.json()}function r(){return(r=e((()=>{})))()}export{r as n,n as r,t};

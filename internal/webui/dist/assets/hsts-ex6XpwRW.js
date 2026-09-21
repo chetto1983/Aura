@@ -1,1 +1,0 @@
-e.displayName=`hsts`,e.aliases=[];function e(e){e.languages.hsts={directive:{pattern:/\b(?:includeSubDomains|max-age|preload)(?=[\s;=]|$)/i,alias:`property`},operator:/=/,punctuation:/;/}}export{e as default};

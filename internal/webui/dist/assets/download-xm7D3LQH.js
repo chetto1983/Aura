@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CsOFd3vK.js";function t(e,t){let n=URL.createObjectURL(e),r=document.createElement(`a`);r.href=n,r.download=t,r.click(),setTimeout(()=>{URL.revokeObjectURL(n)},0)}function n(){return(n=e((()=>{})))()}export{n,t};

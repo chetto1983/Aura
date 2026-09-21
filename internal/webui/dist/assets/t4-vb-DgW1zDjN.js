@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CsOFd3vK.js";import{n as t,t as n}from"./t4-templating-BOh6K-JB.js";import{n as r,t as i}from"./vbnet-n1O1bEzT.js";function a(e){e.register(t),e.register(r),e.languages[`t4-vb`]=e.languages[`t4-templating`].createT4(`vbnet`)}function o(){return(o=e((()=>{n(),i(),a.displayName=`t4-vb`,a.aliases=[]})))()}o();export{a as default};
