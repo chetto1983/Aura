@@ -176,6 +176,23 @@ not leak into another provider's requests. Adaptive and manual reasoning use the
 selected provider's capabilities and effort classes. Keyless local endpoints must
 not require fabricated OpenRouter credentials. Unknown billing remains unknown.
 
+The Ollama route uses the signed-in local server for inference. Its model picker merges
+the models available from that server's `/api/tags` with the current cloud catalogue
+from the fixed, unauthenticated `https://ollama.com/api/tags` endpoint, deduplicating
+ids. Picker ids use the local-API cloud spelling:
+an untagged public name gains `:cloud`, while a tagged name gains `-cloud`. Measured
+2026-09-21 on the Ubuntu test appliance with Ollama 0.34.2: local `/api/tags` exposed
+only `gemma4:31b-cloud`, the public endpoint exposed 20 models, local `/api/show`
+rejected the direct-cloud name `gemma4:31b` with 404 and accepted
+`gemma4:31b-cloud` with a 262,144-token context. The public `/api/show` accepted
+`glm-5.3` and published a 1,048,576-token context without a credential. This proves
+the catalogue and metadata shapes observed on that date, not account entitlement or
+successful inference: a live request for `glm-5.3:cloud` returned 402 for the test
+account. The configured local route must remain reachable so a catalogue choice
+cannot hide a broken bridge. Linux Compose maps `host.docker.internal` to Docker's
+host gateway; a host-installed Ollama binds to that gateway rather than LAN or host
+loopback when the deployment selects this route.
+
 Native subscription OAuth/Responses/Messages integrations require separate measured
 transport and credential lifecycles. A configurable base URL does not establish such
 support. Credentials require protected identity/operator storage, refresh and
