@@ -399,7 +399,12 @@ func TestMCPServicesOwnTheirNetworkLifecycleAndLoopbackPublishes(t *testing.T) {
 		if strings.Contains(service, "network_mode:") {
 			t.Fatalf("%s must not share Aura's replaceable network namespace:\n%s", name, service)
 		}
-		for _, want := range []string{"healthcheck:"} {
+		// Every MCP sidecar verifies its bearer tokens against the daemon's JWKS, so each
+		// one needs the daemon to exist at all. Dropping this from arcadedb-mcp in 13baccf36
+		// made it answer 500 to `initialize` in any stack that did not start aura by other
+		// means -- cmd/arcadedb-mcp/auth.go keySet() recorded that exact failure on
+		// 2026-09-06, and CI reproduced it on f56549a90.
+		for _, want := range []string{"aura:\n        condition: service_started", "healthcheck:"} {
 			if !strings.Contains(service, want) {
 				t.Fatalf("%s missing %q:\n%s", name, want, service)
 			}
@@ -413,12 +418,6 @@ func TestMCPServicesOwnTheirNetworkLifecycleAndLoopbackPublishes(t *testing.T) {
 	} {
 		if !strings.Contains(memory, want) {
 			t.Fatalf("arcadedb-mcp missing Postgres settings bootstrap %q:\n%s", want, memory)
-		}
-	}
-	for _, name := range []string{"aura-pim-mcp", "whatsapp"} {
-		service := composeServiceBlock(t, compose, name)
-		if want := "aura:\n        condition: service_started"; !strings.Contains(service, want) {
-			t.Fatalf("%s missing %q:\n%s", name, want, service)
 		}
 	}
 	for _, want := range []string{

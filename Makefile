@@ -284,10 +284,10 @@ memory-up: memory-up-core
 
 # The graph substrate WITHOUT the MCP sidecar, and therefore without the daemon.
 #
-# arcadedb-mcp depends only on the migration job, Postgres and ArcadeDB; it does NOT start
-# the Aura daemon. Keeping the MCP out of this core target still avoids an extra service in
-# tiers that exercise the graph substrate directly, while `memory-up` opts into the MCP.
-# Starting the whole daemon here would add a second writer nobody asked for:
+# arcadedb-mcp declares `depends_on: aura` (it verifies MCP tokens against that daemon's
+# JWKS), so `compose up -d arcadedb-mcp` starts the WHOLE aura daemon — scheduler included
+# — against the same Postgres a tagged tier is writing to. That is a second writer nobody
+# asked for:
 # the notification sweep has no backoff (`status='failed' AND attempts < $$1`), so the
 # daemon and a test can race for the same row. Measured 2026-09-06 on CI #1809, where the
 # coverage job — whose own name promises only "Postgres + ArcadeDB + embed sidecar" —

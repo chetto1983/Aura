@@ -735,6 +735,14 @@ services:
         condition: service_healthy
       arcadedb:
         condition: service_healthy
+      # NOT ordering: this sidecar verifies every MCP token against the daemon's JWKS at
+      # MCP_OAUTH_JWKS_URL (http://aura:9080/oauth/jwks by default), so a stack where
+      # nothing starts `aura` cannot resolve that name and answers 500 to `initialize`.
+      # auth.go's keySet() records the same failure from 2026-09-06; dropping this line
+      # in 13baccf36 reproduced it in CI on f56549a90. service_started is enough: the
+      # JWKS fetch is lazy, so the daemon only has to exist by the first verified call.
+      aura:
+        condition: service_started
     environment:
       # Postgres settings bootstrap: the DSN locates the authority, and the Authula
       # secret opens its sealed embedding credential. Security/topology inputs stay below.
