@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
 import { ModelSettingsPanel } from '../ModelSettingsPanel';
@@ -84,12 +84,20 @@ describe('ModelSettingsPanel routes', () => {
     );
 
     expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Cloud' }).getAttribute('aria-pressed')).toBe('true');
+    // Scoped to its group: the embedding backend control publishes a 'Local' route of its
+    // own, so a panel-wide query by name is ambiguous. A screen reader is not — each control
+    // is a role="radiogroup" with its own aria-label.
+    const providerRoutes = within(
+      screen.getByRole('radiogroup', { name: 'Primary model provider' }),
+    );
+    expect(providerRoutes.getByRole('radio', { name: 'Cloud' }).getAttribute('aria-checked')).toBe(
+      'true',
+    );
     expect(screen.queryByDisplayValue('sk-should-never-render')).toBeNull();
     expect(screen.queryByText('sk-should-never-render')).toBeNull();
     expect(screen.getAllByText('Configured').length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
+    fireEvent.click(providerRoutes.getByRole('radio', { name: 'Local' }));
     // The model box is a picker over the endpoint's catalogue; an id the endpoint does not
     // publish is still committable, which is the path this asserts.
     fireEvent.click(screen.getByLabelText('Primary model'));

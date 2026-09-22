@@ -98,30 +98,162 @@ async function openStudioWith(page: Page, rec: StudioRecord, library: 'ok' | 'of
 }
 
 test.describe('media editing', () => {
-  test('trims a clip on the copy path and downloads the cut', async ({ page }, info) => {
+  test('trims a clip in the unified editor and downloads the cut', async ({ page }, info) => {
+    test.setTimeout(2 * 60_000);
     await gotoAuthenticated(page, '/');
     const assetId = await upload(page, 'clip.mp4', 'video/mp4');
     await openStudioWith(page, record('video', assetId), 'ok');
     await page.getByRole('button', { name: 'Edit', exact: true }).click();
-    const editor = page.getByRole('dialog', { name: 'Edit clip.mp4' });
-    await expect(editor.getByRole('slider', { name: 'Start of the selection' })).toBeVisible({
-      timeout: 30_000,
-    });
+    const editor = page.getByRole('dialog', { name: 'Video editor' });
+    await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 30_000 });
+    if (info.project.name.startsWith('mobile')) {
+      await editor
+        .getByRole('navigation', { name: 'Mobile editing tools' })
+        .getByRole('button', { name: 'Time', exact: true })
+        .click();
+      await expect(editor.locator('.video-studio-properties')).toHaveAttribute(
+        'data-mobile-open',
+        'true',
+      );
+    } else {
+      await editor.getByRole('tab', { name: 'Time' }).click();
+    }
     await editor.getByLabel('Start', { exact: true }).fill('1');
     await editor.getByLabel('Start', { exact: true }).blur();
     await editor.getByLabel('End', { exact: true }).fill('3');
     await editor.getByLabel('End', { exact: true }).blur();
     const downloading = page.waitForEvent('download');
-    await editor.getByRole('button', { name: 'Save' }).click();
+    await editor.getByRole('button', { name: 'Export', exact: true }).click();
     const download = await downloading;
-    expect(download.suggestedFilename()).toBe('clip-edited.mp4');
-    const path = info.outputPath('clip-edited.mp4');
+    expect(download.suggestedFilename()).toBe('clip.mp4');
+    const path = info.outputPath('clip.mp4');
     await download.saveAs(path);
     const input = new Input({ source: new FilePathSource(path), formats: ALL_FORMATS });
     const duration = await input.computeDuration();
     input.dispose();
     expect(duration).toBeGreaterThan(1.9);
     expect(duration).toBeLessThan(2.2);
+  });
+
+  test('applies Clideo-style clip controls and junction transitions', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(60_000);
+    await gotoAuthenticated(page, '/');
+    const assetId = await upload(page, 'clip.mp4', 'video/mp4');
+    await openStudioWith(page, record('video', assetId), 'ok');
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    const editor = page.getByRole('dialog', { name: 'Video editor' });
+    await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 30_000 });
+    const shell = editor.locator('.video-studio-shell');
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'light';
+    });
+    await expect(shell).toHaveCSS('background-color', 'rgb(248, 250, 251)');
+    await expect(shell).toHaveCSS('color', 'rgb(23, 32, 38)');
+    await page.evaluate(() => {
+      document.documentElement.dataset.theme = 'dark';
+    });
+    await expect(shell).toHaveCSS('background-color', 'rgb(16, 18, 20)');
+    await expect(shell).toHaveCSS('color', 'rgb(238, 242, 246)');
+
+    const mobile = testInfo.project.name.startsWith('mobile');
+    const mobileTools = editor.getByRole('navigation', { name: 'Mobile editing tools' });
+    const properties = editor.locator('.video-studio-properties');
+    const timeline = editor.locator('.video-studio-timeline-shell');
+    async function openTool(
+      name: 'Transform' | 'Adjust' | 'Audio' | 'Animations' | 'Speed' | 'Time',
+    ) {
+      if (mobile) {
+        await mobileTools.getByRole('button', { name, exact: true }).click();
+        await expect(properties).toHaveAttribute('data-mobile-open', 'true');
+        await expect(properties).toBeVisible();
+        await expect(timeline).toHaveAttribute('data-mobile-obscured', 'true');
+      } else {
+        await editor.getByRole('tab', { name, exact: true }).click();
+      }
+    }
+
+    if (mobile) {
+      await expect(mobileTools).toBeVisible();
+      await expect(editor.getByRole('toolbar', { name: 'Editing commands' })).toBeHidden();
+      const timelineBox = await editor.locator('.video-studio-timeline').boundingBox();
+      const editorBox = await editor.boundingBox();
+      if (timelineBox === null || editorBox === null) throw new Error('mobile timeline has no box');
+      expect(timelineBox.x + timelineBox.width).toBeLessThanOrEqual(editorBox.x + editorBox.width);
+    }
+
+    await openTool('Transform');
+    await editor.getByRole('radio', { name: 'Crop' }).click();
+    await editor.getByRole('button', { name: '1:1' }).click();
+    const stage = editor.getByTestId('video-stage');
+    await expect
+      .poll(async () => {
+        const box = await stage.boundingBox();
+        return box === null ? 0 : box.width / box.height;
+      })
+      .toBeCloseTo(1, 2);
+    await editor.getByRole('button', { name: 'Rotate 90° right' }).click();
+    await expect(editor.getByText('90°', { exact: true })).toBeVisible();
+
+    await openTool('Adjust');
+    const brightness = editor.getByLabel('Brightness').getByRole('slider');
+    await brightness.press('End');
+    await expect(brightness).toHaveAttribute('aria-valuenow', '100');
+
+    await openTool('Audio');
+    await editor.getByRole('switch', { name: 'Mute' }).click();
+    await expect(editor.getByRole('switch', { name: 'Mute' })).toBeChecked();
+
+    await openTool('Animations');
+    await editor.getByRole('button', { name: 'Fade' }).click();
+    await expect(editor.getByRole('button', { name: 'Fade' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    const transitionDuration = editor.getByRole('group', { name: 'Duration' }).getByRole('slider');
+    await expect(transitionDuration).toHaveAttribute('aria-valuenow', '1');
+    await transitionDuration.press('End');
+    await expect(transitionDuration).toHaveAttribute('aria-valuenow', '2');
+    await editor.getByRole('button', { name: 'Blur' }).click();
+    await expect(editor.getByRole('button', { name: 'Blur' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await openTool('Speed');
+    await editor.getByRole('button', { name: '2×' }).click();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(properties).toHaveAttribute('data-mobile-open', 'false');
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+    }
+    await expect(editor.getByRole('button', { name: 'Clip 1' })).toHaveText('00:02.0');
+    await openTool('Time');
+    await expect(editor.getByLabel('End', { exact: true })).toBeVisible();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(properties).toHaveAttribute('data-mobile-open', 'false');
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+    }
+    await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible();
+
+    await editor.locator('input[type="file"]').setInputFiles(resolve(FIXTURES, 'clip.mp4'));
+    await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 30_000 });
+    await editor.getByRole('button', { name: 'Transition between clips 1 and 2' }).click();
+    await expect(editor.getByRole('heading', { name: 'Transition' })).toBeVisible();
+    await editor.getByRole('button', { name: 'Crossfade', exact: true }).click();
+    await expect(editor.getByRole('button', { name: 'Crossfade', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(editor.getByRole('group', { name: 'Duration' })).toBeVisible();
+    if (mobile) {
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(timeline).toHaveAttribute('data-mobile-obscured', 'false');
+      await mobileTools.getByRole('button', { name: 'Close tool panel' }).click();
+      await expect(mobileTools.getByRole('button', { name: 'Add a clip' })).toBeVisible();
+      await expect(mobileTools.getByRole('button', { name: 'Add a title' })).toBeVisible();
+    }
   });
 
   test('saves an edited photo to the Studio library', async ({ page }, testInfo) => {
@@ -231,9 +363,7 @@ test.describe('media editing', () => {
     await expect(send).toBeEnabled({ timeout: 30_000 });
     await send.click();
     await page.getByRole('button', { name: 'Edit clip.mp4' }).click();
-    const editor = page.getByRole('dialog', { name: 'Edit clip.mp4' });
-    await expect(editor.getByRole('slider', { name: 'Start of the selection' })).toBeVisible({
-      timeout: 30_000,
-    });
+    const editor = page.getByRole('dialog', { name: 'Video editor' });
+    await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 30_000 });
   });
 });

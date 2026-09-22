@@ -1,1 +1,0 @@
-e.displayName=`csv`,e.aliases=[];function e(e){e.languages.csv={value:/[^\r\n,"]+|"(?:[^"]|"")*"(?!")/,punctuation:/,/}}export{e as default};

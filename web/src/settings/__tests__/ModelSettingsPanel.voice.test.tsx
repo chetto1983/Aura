@@ -132,9 +132,11 @@ function renderBackends() {
   );
 }
 
+// The field, found by the hook it carries rather than by the frame it happens to wear: a row
+// inside a route control has no card chrome to reach for.
 function fieldCard(label: string): HTMLElement {
-  const card = screen.getByText(label).closest('div.rounded-md');
-  if (!(card instanceof HTMLElement)) throw new Error(`no field card for ${label}`);
+  const card = screen.getByText(label).closest('[data-setting]');
+  if (!(card instanceof HTMLElement)) throw new Error(`no field for ${label}`);
   return card;
 }
 
@@ -290,8 +292,8 @@ describe('ModelSettingsPanel backend models', () => {
       ),
     );
     renderBackends();
-    await screen.findByRole('button', { name: 'Manual endpoint' });
-    fireEvent.click(screen.getByRole('button', { name: 'Manual endpoint' }));
+    await screen.findByRole('radio', { name: 'Manual endpoint' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Manual endpoint' }));
 
     const base = screen.getByLabelText('Embedding cloud base URL');
     expect(base.getAttribute('aria-invalid')).toBe('true');
@@ -325,8 +327,8 @@ describe('ModelSettingsPanel backend models', () => {
       ),
     );
     renderBackends();
-    await screen.findByRole('button', { name: 'Local' });
-    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
+    await screen.findByRole('radio', { name: 'Local' });
+    fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
     expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
 

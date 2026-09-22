@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Cloud, Cpu, Link2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SettingsFields, type PickerBinding } from './SettingField';
+import { RouteToggle, type RouteOption } from './RouteToggle';
 import { EMBEDDING_SETTINGS, type SettingDef, type SettingsKey } from './modelSettingsDefs';
 import {
   embeddingBackendChoice,
@@ -9,7 +11,6 @@ import {
   type EmbeddingBackendChoice,
 } from './embeddingBackendState';
 import type { LoadedState } from './modelSettingsState';
-import { Button } from '@/components/ui/button';
 
 interface EmbeddingBackendControlProps {
   readonly loaded: LoadedState;
@@ -81,40 +82,43 @@ export function EmbeddingBackendControl({
   };
   const picker: PickerBinding = { ...modelPicker, onValueChange: changeModel };
 
+  const options: readonly RouteOption<EmbeddingBackendChoice>[] = [
+    { id: 'local', label: t('settings.embedding.local'), icon: Cpu },
+    {
+      id: 'openrouter',
+      label: t('settings.embedding.openrouter'),
+      icon: Cloud,
+      disabled: !openRouterAvailable,
+    },
+    { id: 'manual', label: t('settings.embedding.manual'), icon: Link2 },
+  ];
+
   return (
-    <div className="flex flex-col gap-4 rounded-md border border-border bg-surface-2 p-4">
+    // Capped at the width the section's own prose uses: a full-bleed card around a single URL
+    // leaves half a row of nothing, and the tiles under it are not full width either.
+    <div className="flex max-w-3xl flex-col gap-5 rounded-[var(--radius-md)] border border-border bg-surface-2 p-5">
       <div className="flex flex-col gap-1">
         <h3 className="text-[15px] font-semibold text-text">{t('settings.embedding.heading')}</h3>
-        <p className="text-[13px] leading-relaxed text-text-muted">
+        <p className="max-w-2xl text-[13px] leading-relaxed text-text-muted">
           {t('settings.embedding.body')}
         </p>
       </div>
-      <div role="group" aria-label={t('settings.embedding.label')} className="flex flex-wrap gap-2">
-        {(['local', 'openrouter', 'manual'] as const).map((option) => {
-          const unavailable = option === 'openrouter' && !openRouterAvailable;
-          return (
-            <Button
-              key={option}
-              type="button"
-              variant={choice === option ? 'default' : 'outline'}
-              aria-pressed={choice === option}
-              disabled={unavailable}
-              onClick={() => {
-                choose(option);
-              }}
-            >
-              {t(`settings.embedding.${option}`)}
-            </Button>
-          );
-        })}
+      <div className="flex flex-col gap-2">
+        <RouteToggle
+          label={t('settings.embedding.label')}
+          value={choice}
+          options={options}
+          onChange={choose}
+        />
+        {!openRouterAvailable ? (
+          <p className="text-[12px] text-text-faint">
+            {t('settings.embedding.openrouterUnavailable')}
+          </p>
+        ) : null}
       </div>
-      {!openRouterAvailable ? (
-        <p className="text-[12px] text-text-muted">
-          {t('settings.embedding.openrouterUnavailable')}
-        </p>
-      ) : null}
       {choice === 'local' ? (
         <SettingsFields
+          variant="inline"
           defs={[localBaseURL]}
           loaded={loaded}
           resetting={resetting}
@@ -124,6 +128,7 @@ export function EmbeddingBackendControl({
       ) : null}
       {choice === 'manual' ? (
         <SettingsFields
+          variant="inline"
           defs={[cloudBaseURL, model]}
           loaded={loaded}
           resetting={resetting}
@@ -145,6 +150,7 @@ export function EmbeddingBackendControl({
       ) : null}
       {choice === 'openrouter' ? (
         <SettingsFields
+          variant="inline"
           defs={[model]}
           loaded={loaded}
           resetting={resetting}

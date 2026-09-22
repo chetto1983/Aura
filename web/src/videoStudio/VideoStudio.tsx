@@ -1,4 +1,16 @@
-import { X } from 'lucide-react';
+import {
+  ChevronLeft,
+  Clapperboard,
+  Maximize2,
+  Plus,
+  Redo2,
+  Save,
+  Scissors,
+  SlidersHorizontal,
+  Trash2,
+  Type,
+  Undo2,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
@@ -6,10 +18,21 @@ import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
 import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem, splitAt } from './commands';
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
-import { clipAt, clipStart, projectDuration, type VideoProject } from './project';
+import type { ClipTab } from './Inspector_clip';
+import { JunctionTransitionInspector } from './Inspector_transition';
+import {
+  clipAt,
+  clipStart,
+  clipTimelineDuration,
+  projectDuration,
+  type ClipJunction,
+  type VideoProject,
+} from './project';
 import { projectFileName, rememberSavedProject, saveProject } from './projectStore';
 import { Stage } from './Stage';
 import { Timeline } from './Timeline';
+import { VideoStudioTransport } from './VideoStudioTransport';
+import { MobileVideoTools } from './VideoStudio_mobile';
 import { ExportPanel } from './VideoStudio_export';
 import {
   openedProject,
@@ -23,26 +46,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
-// VideoStudio.tsx — the workspace: one history, one selection, one playhead, and the three
-// panels wired to them. It owns the two things none of the parts can own.
-//
-// The first is the SENTENCE. A command refuses by key and never by prose, so this is the only
-// file that turns `CommandRefusal.reasonKey` into something an operator reads — which is why a
-// sentence is held here as a key plus its values and translated at RENDER time: switching
-// language re-words the alert already on screen instead of leaving the old one behind.
-//
-// The second is the WARNING. Removing a clip takes the overlays anchored to it, and so does a
-// trim that leaves one no window — silently, in both cases, because the commands are pure and a
-// pure function has nobody to ask. Every edit is therefore run once against the current project
-// BEFORE it is committed: if it would leave fewer overlays than it found, the operator is told
-// how many and asked. The edit is pure, so running it twice costs arithmetic and changes nothing.
-//
-// The third is what a project may NOT do. A source the library no longer holds is not a warning
-// to read past: VideoFlow answers a URL that 404s by disabling the layer, so the preview lies and
-// the export writes black frames and calls it a success. While any clip still plays a missing
-// source, there is no preview and there is no export — and the lane stays editable, because
-// removing those clips is how the operator gets both back.
-
 /** A string the operator will read, kept unresolved so the language can still change under it. */
 interface Sentence {
   readonly key: string;
@@ -53,13 +56,11 @@ function says(key: string, values: Record<string, unknown> = {}): Sentence {
   return { key, values };
 }
 
-/** What a new title lasts, unless the clip it hangs on has less left than that. */
 const TITLE_SECONDS = 3;
 
 interface VideoStudioProps {
   readonly open: StudioOpen;
   readonly onClose: () => void;
-  /** Where the saved project landed, so the surface that opened the editor can offer it back. */
   readonly onSaved?: ((assetId: string) => void) | undefined;
 }
 
@@ -67,16 +68,11 @@ function overlayCount(project: VideoProject): number {
   return project.overlays.reduce((total, lane) => total + lane.items.length, 0);
 }
 
-/** The overlay an edit added, found by difference: `addOverlay` mints an id it cannot return —
- *  a command is `(project, args) => project` and stays that shape, because in cycle 3 it is a
- *  tool with those same arguments. Diffing is what the workspace pays for that. */
 function addedOverlay(before: VideoProject, after: VideoProject): string | undefined {
   const had = new Set(before.overlays.flatMap((lane) => lane.items.map((item) => item.id)));
   return after.overlays.flatMap((lane) => lane.items).find((item) => !had.has(item.id))?.id;
 }
 
-/** Whether the project still holds this id. A removed clip, or one an undo took away, leaves the
- *  selection pointing at nothing — and a Remove button live over nothing. */
 function holds(project: VideoProject, id: string | undefined): boolean {
   if (id === undefined) return false;
   return (
@@ -85,10 +81,6 @@ function holds(project: VideoProject, id: string | undefined): boolean {
   );
 }
 
-/** The clips a project cannot play: those on a source the load reported gone. Derived rather
- *  than stored, so removing the last one clears the block — which is the only way cycle 1 offers
- *  to unblock, the replace door being the library's and cycle 2's. Counted in CLIPS because that
- *  is what the operator has to remove, not in sources, which are a thing they never see. */
 function unplayableClips(project: VideoProject, missing: readonly string[]): readonly string[] {
   return project.video.filter((clip) => missing.includes(clip.sourceId)).map((clip) => clip.id);
 }
@@ -107,19 +99,20 @@ function failure(error: unknown, fallbackKey: string): Sentence {
 export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps) {
   const { t } = useTranslation();
   const assetSource = useAssetSource();
-  // The history is state rather than a ref although it is never replaced: `canUndo` and
-  // `canRedo` are read while rendering the two buttons, and a ref read during render is a value
-  // React has not promised is current.
   const [history, setHistory] = useState<History>();
   const fileInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
   const [selectedId, setSelectedId] = useState<string>();
+  const [selectedJunction, setSelectedJunction] = useState<ClipJunction>();
   const [playhead, setPlayhead] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [inspectorTab, setInspectorTab] = useState<ClipTab>('transform');
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [problem, setProblem] = useState<Sentence>();
   const [status, setStatus] = useState<Sentence>();
   const [pending, setPending] = useState<{ readonly edit: Edit; readonly lost: number }>();
-  /** The sources the load could not find. Kept, not just announced: they are what forbids the
-   *  preview and the export until the clips that use them are gone. */
+  const propertiesRef = useRef<HTMLElement>(null);
+  const canvasRef = useRef<HTMLElement>(null);
   const [missing, setMissing] = useState<readonly string[]>([]);
 
   useEffect(() => {
@@ -129,6 +122,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
         if (!live) return;
         setHistory(createHistory(loaded.project));
         setProject(loaded.project);
+        setSelectedId(loaded.project.video[0]?.id);
         setMissing(loaded.missing);
         if (loaded.missing.length > 0) setProblem(says(REFUSAL_MISSING_ASSET));
       },
@@ -142,11 +136,13 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     };
   }, [open, assetSource]);
 
-  /** What the selection is after a project changed under it: the overlay the edit just added, or
-   *  what was selected if it is still there, or nothing. Every committed transition goes through
-   *  here — an edit, an undo, a redo — so no button is ever live over an item that is gone. */
   function reselect(next: VideoProject, added?: string) {
     setSelectedId((current) => added ?? (holds(next, current) ? current : undefined));
+    setSelectedJunction((current) => {
+      if (current === undefined) return undefined;
+      const toIndex = next.video.findIndex((clip) => clip.id === current.toClipId);
+      return next.video[toIndex - 1]?.id === current.fromClipId ? current : undefined;
+    });
   }
 
   function commit(edit: Edit) {
@@ -220,8 +216,10 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     if (current === undefined) return;
     const clip = clipAt(current, playhead);
     if (clip === undefined) return;
-    const offset = playhead - (clipStart(current, clip.id) ?? 0);
-    const duration = Math.min(TITLE_SECONDS, clip.duration - offset);
+    const speed = Math.abs(clip.speed ?? 1);
+    const timelineOffset = playhead - (clipStart(current, clip.id) ?? 0);
+    const offset = timelineOffset * speed;
+    const duration = Math.min(TITLE_SECONDS, clipTimelineDuration(clip) - timelineOffset);
     const props = { text: t('videoStudio.newTitle') };
     const anchor = { clipId: clip.id, offset };
     // The lane is chosen, not opened: a title joins the first lane that is free over its window,
@@ -249,6 +247,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
 
   const name =
     project === undefined || project.name === '' ? t('videoStudio.untitled') : project.name;
+  const duration = project === undefined ? 0 : projectDuration(project);
   // A title hangs on a clip, so there has to be one under the playhead to hang it on.
   const underPlayhead = project === undefined ? undefined : clipAt(project, playhead);
   const unplayable = project === undefined ? [] : unplayableClips(project, missing);
@@ -260,202 +259,340 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     return projectDuration(shown) <= 0 ? t('videoStudio.export.empty') : undefined;
   }
 
+  useEffect(() => {
+    if (!playing || duration <= 0) return undefined;
+    let last = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const elapsed = (now - last) / 1000;
+      last = now;
+      setPlayhead((current) => {
+        const next = Math.min(duration, current + elapsed);
+        if (next >= duration) setPlaying(false);
+        return next;
+      });
+    }, 50);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [duration, playing]);
+
+  function seek(time: number) {
+    setPlaying(false);
+    setPlayhead(Math.min(Math.max(time, 0), duration));
+  }
+
+  function showInspector(tab: ClipTab) {
+    setSelectedJunction(undefined);
+    setInspectorTab(tab);
+    setMobileInspectorOpen(true);
+  }
+
   return (
     <MediaEditorLayer label={t('videoStudio.title')} onEscape={onClose}>
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        <h2 className="min-w-0 flex-1 truncate font-mono text-sm">{name}</h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={project === undefined}
-          onClick={() => void save()}
-        >
-          {t('videoStudio.save.action')}
-        </Button>
-        {project === undefined ? null : (
-          <ExportPanel
-            project={project}
-            fileName={projectFileName(project, 'mp4', name)}
-            urls={assetSource}
-            refusal={exportRefusal(project)}
-          />
-        )}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-label={t('videoStudio.close')}
-          onClick={onClose}
-        >
-          <X aria-hidden="true" className="size-4" />
-        </Button>
-      </header>
-
-      {project === undefined ? (
-        // Nothing to show yet — or nothing to show at all, once the alert below says why. A
-        // surface still claiming to be opening under a refusal is a surface telling two stories.
-        problem !== undefined ? null : (
-          <p role="status" className="flex-1 p-6 text-center text-sm text-text-muted">
-            {t('videoStudio.open.loading')}
-          </p>
-        )
-      ) : (
-        <>
-          <div
-            role="toolbar"
-            aria-label={t('videoStudio.commands')}
-            className="flex flex-wrap items-center gap-2 px-4 py-2"
-          >
-            <Button
+      <div className="video-studio-shell">
+        <header className="video-studio-topbar">
+          <span className="video-studio-mark" aria-hidden="true">
+            <Clapperboard />
+          </span>
+          <h2 className="video-studio-project-name">{name}</h2>
+          <div className="video-studio-top-actions">
+            <button
               type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => fileInput.current?.click()}
-            >
-              {t('videoStudio.command.addSource')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              onClick={() => {
-                run((current) => splitAt(current, { time: playhead }));
-              }}
-            >
-              {t('videoStudio.command.split')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={underPlayhead === undefined}
-              onClick={addTitle}
-            >
-              {t('videoStudio.command.addText')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={selectedId === undefined}
-              onClick={() => {
-                if (selectedId !== undefined)
-                  run((current) => removeItem(current, { itemId: selectedId }));
-              }}
-            >
-              {t('videoStudio.command.remove')}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
+              className="video-studio-icon-button"
               disabled={history?.canUndo !== true}
+              aria-label={t('videoStudio.command.undo')}
               onClick={() => {
                 step((stack) => stack.undo());
               }}
             >
-              {t('videoStudio.command.undo')}
-            </Button>
-            <Button
+              <Undo2 aria-hidden="true" />
+            </button>
+            <button
               type="button"
-              size="sm"
-              variant="ghost"
+              className="video-studio-icon-button"
               disabled={history?.canRedo !== true}
+              aria-label={t('videoStudio.command.redo')}
               onClick={() => {
                 step((stack) => stack.redo());
               }}
             >
-              {t('videoStudio.command.redo')}
+              <Redo2 aria-hidden="true" />
+            </button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="video-studio-save"
+              disabled={project === undefined}
+              onClick={() => void save()}
+            >
+              <Save aria-hidden="true" />
+              <span className="video-studio-save-label">{t('videoStudio.save.action')}</span>
             </Button>
-            <input
-              ref={fileInput}
-              type="file"
-              accept={SOURCE_ACCEPT}
-              className="sr-only"
-              aria-label={t('videoStudio.source.pick')}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                // The same file picked twice in a row fires no change event unless the input is
-                // cleared, and a retry after a refusal is exactly that case.
-                event.target.value = '';
-                if (file !== undefined) void addFile(file);
-              }}
-            />
-          </div>
-
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 lg:flex-row">
-            <div className="min-w-0 flex-1">
-              {unplayable.length > 0 ? (
-                // No renderer at all: handing VideoFlow a source that 404s gets a disabled layer
-                // and a black picture, which reads as a preview and is not one.
-                <p
-                  role="status"
-                  className="flex aspect-video w-full items-center justify-center rounded-[var(--radius-md)] bg-surface-1 p-4 text-center text-sm text-text-muted"
-                >
-                  {t('videoStudio.unplayable', { count: unplayable.length })}
-                </p>
-              ) : (
-                <Stage
-                  project={project}
-                  time={playhead}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  onCommand={run}
-                />
-              )}
-            </div>
-            <div className="w-full lg:w-72 lg:flex-none">
-              <Inspector project={project} selectedId={selectedId} onCommand={run} />
-            </div>
-          </div>
-
-          <div className="px-4 py-3">
-            {project.video.length === 0 ? (
-              <p role="status" className="text-sm text-text-muted">
-                {t('videoStudio.empty')}
-              </p>
-            ) : (
-              <Timeline
+            {project === undefined ? null : (
+              <ExportPanel
                 project={project}
-                selectedId={selectedId}
-                playhead={playhead}
-                onSelect={setSelectedId}
-                onCommand={run}
-                onScrub={setPlayhead}
+                fileName={projectFileName(project, 'mp4', name)}
+                urls={assetSource}
+                refusal={exportRefusal(project)}
               />
             )}
+            <button
+              type="button"
+              className="video-studio-close video-studio-icon-button"
+              aria-label={t('videoStudio.close')}
+              onClick={onClose}
+            >
+              <ChevronLeft aria-hidden="true" />
+            </button>
           </div>
-        </>
-      )}
+        </header>
 
-      <div className="px-4 pb-3">
-        {status === undefined ? null : (
-          <p role="status" className="text-xs text-text-muted">
-            {t(status.key, status.values)}
-          </p>
+        {project === undefined ? (
+          // Nothing to show yet — or nothing to show at all, once the alert below says why. A
+          // surface still claiming to be opening under a refusal is a surface telling two stories.
+          problem !== undefined ? null : (
+            <p role="status" className="flex-1 p-6 text-center text-sm text-text-muted">
+              {t('videoStudio.open.loading')}
+            </p>
+          )
+        ) : (
+          <>
+            <div
+              role="toolbar"
+              aria-label={t('videoStudio.commands')}
+              className="video-studio-rail"
+            >
+              <button
+                type="button"
+                className="video-studio-rail-button"
+                data-primary="true"
+                onClick={() => fileInput.current?.click()}
+              >
+                <Plus aria-hidden="true" />
+                <span>{t('videoStudio.command.addSource')}</span>
+              </button>
+              <button
+                type="button"
+                className="video-studio-rail-button"
+                disabled={underPlayhead === undefined}
+                onClick={addTitle}
+              >
+                <Type aria-hidden="true" />
+                <span>{t('videoStudio.command.addText')}</span>
+              </button>
+              <button
+                type="button"
+                className="video-studio-rail-button"
+                onClick={() => {
+                  run((current) => splitAt(current, { time: playhead }));
+                }}
+              >
+                <Scissors aria-hidden="true" />
+                <span>{t('videoStudio.command.split')}</span>
+              </button>
+              <button
+                type="button"
+                className="video-studio-rail-button"
+                onClick={() => propertiesRef.current?.focus()}
+              >
+                <SlidersHorizontal aria-hidden="true" />
+                <span>{t('videoStudio.inspector.label')}</span>
+              </button>
+              <button
+                type="button"
+                className="video-studio-rail-button"
+                disabled={selectedId === undefined}
+                onClick={() => {
+                  if (selectedId !== undefined)
+                    run((current) => removeItem(current, { itemId: selectedId }));
+                }}
+              >
+                <Trash2 aria-hidden="true" />
+                <span>{t('videoStudio.command.remove')}</span>
+              </button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept={SOURCE_ACCEPT}
+                className="sr-only"
+                aria-label={t('videoStudio.source.pick')}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  // The same file picked twice in a row fires no change event unless the input is
+                  // cleared, and a retry after a refusal is exactly that case.
+                  event.target.value = '';
+                  if (file !== undefined) void addFile(file);
+                }}
+              />
+            </div>
+
+            <div className="video-studio-workspace">
+              <section ref={canvasRef} className="video-studio-canvas">
+                <div className="video-studio-stage-frame">
+                  {unplayable.length > 0 ? (
+                    // No renderer at all: handing VideoFlow a source that 404s gets a disabled layer
+                    // and a black picture, which reads as a preview and is not one.
+                    <p
+                      role="status"
+                      className="flex aspect-video w-full items-center justify-center rounded-[var(--radius-md)] bg-surface-1 p-4 text-center text-sm text-text-muted"
+                    >
+                      {t('videoStudio.unplayable', { count: unplayable.length })}
+                    </p>
+                  ) : (
+                    <Stage
+                      project={project}
+                      time={playhead}
+                      selectedId={selectedId}
+                      onSelect={(id) => {
+                        setSelectedJunction(undefined);
+                        setSelectedId(id);
+                      }}
+                      onCommand={run}
+                    />
+                  )}
+                </div>
+                <VideoStudioTransport
+                  playing={playing}
+                  time={playhead}
+                  duration={duration}
+                  onPlayToggle={() => {
+                    if (playhead >= duration) setPlayhead(0);
+                    setPlaying((current) => !current);
+                  }}
+                  onSeek={seek}
+                />
+                <button
+                  type="button"
+                  className="video-studio-fullscreen"
+                  aria-label={t('videoStudio.stage.fullscreen')}
+                  onClick={() => {
+                    const canvas = canvasRef.current;
+                    if (canvas === null) return;
+                    const action =
+                      document.fullscreenElement === canvas
+                        ? document.exitFullscreen()
+                        : canvas.requestFullscreen();
+                    void action.catch(() => {
+                      setProblem(says('videoStudio.stage.fullscreenFailed'));
+                    });
+                  }}
+                >
+                  <Maximize2 aria-hidden="true" />
+                </button>
+              </section>
+              <aside
+                ref={propertiesRef}
+                tabIndex={-1}
+                data-mobile-open={mobileInspectorOpen ? 'true' : 'false'}
+                className="video-studio-properties"
+              >
+                {selectedJunction === undefined ? (
+                  <Inspector
+                    project={project}
+                    selectedId={selectedId}
+                    onCommand={run}
+                    activeClipTab={inspectorTab}
+                    onClipTabChange={setInspectorTab}
+                  />
+                ) : (
+                  <JunctionTransitionInspector
+                    project={project}
+                    junction={selectedJunction}
+                    onCommand={run}
+                  />
+                )}
+              </aside>
+            </div>
+
+            <section
+              className="video-studio-timeline-shell"
+              data-mobile-obscured={mobileInspectorOpen ? 'true' : 'false'}
+            >
+              <div className="video-studio-timeline-heading">
+                <span>{t('videoStudio.timeline.label')}</span>
+                <span>{t('videoStudio.timeline.duration', { time: duration.toFixed(1) })}</span>
+              </div>
+              {project.video.length === 0 ? (
+                <p role="status" className="p-4 text-sm text-text-muted">
+                  {t('videoStudio.empty')}
+                </p>
+              ) : (
+                <Timeline
+                  project={project}
+                  selectedId={selectedId}
+                  selectedJunction={selectedJunction}
+                  playhead={playhead}
+                  onSelect={(id) => {
+                    setSelectedJunction(undefined);
+                    setSelectedId(id);
+                  }}
+                  onSelectJunction={(junction) => {
+                    setSelectedJunction(junction);
+                    setSelectedId(junction.toClipId);
+                    setMobileInspectorOpen(true);
+                  }}
+                  onCommand={run}
+                  onScrub={seek}
+                />
+              )}
+            </section>
+            <MobileVideoTools
+              selectedId={selectedId}
+              inspectorTab={inspectorTab}
+              inspectorOpen={mobileInspectorOpen && selectedJunction === undefined}
+              onBack={() => {
+                if (mobileInspectorOpen) setMobileInspectorOpen(false);
+                else {
+                  setSelectedJunction(undefined);
+                  setSelectedId(undefined);
+                }
+              }}
+              onSplit={() => {
+                setSelectedJunction(undefined);
+                run((current) => splitAt(current, { time: playhead }));
+              }}
+              onRemove={() => {
+                setSelectedJunction(undefined);
+                if (selectedId !== undefined)
+                  run((current) => removeItem(current, { itemId: selectedId }));
+              }}
+              onAddClip={() => fileInput.current?.click()}
+              onAddTitle={addTitle}
+              onOpenInspector={showInspector}
+            />
+          </>
         )}
-        {problem === undefined ? null : (
-          <p role="alert" className="text-xs text-danger">
-            {t(problem.key, problem.values)}
-          </p>
-        )}
+
+        <div className="video-studio-status">
+          {status === undefined ? null : (
+            <p role="status" className="text-xs text-text-muted">
+              {t(status.key, status.values)}
+            </p>
+          )}
+          {problem === undefined ? null : (
+            <p role="alert" className="text-xs text-danger">
+              {t(problem.key, problem.values)}
+            </p>
+          )}
+        </div>
+
+        <ConfirmDialog
+          open={pending !== undefined}
+          onOpenChange={(next) => {
+            if (!next) setPending(undefined);
+          }}
+          title={t('videoStudio.confirm.title', { count: pending?.lost ?? 0 })}
+          description={t('videoStudio.confirm.body', { count: pending?.lost ?? 0 })}
+          cancelLabel={t('videoStudio.confirm.cancel')}
+          confirmLabel={t('videoStudio.confirm.proceed')}
+          onConfirm={() => {
+            if (pending !== undefined) commit(pending.edit);
+            setPending(undefined);
+          }}
+        />
       </div>
-
-      <ConfirmDialog
-        open={pending !== undefined}
-        onOpenChange={(next) => {
-          if (!next) setPending(undefined);
-        }}
-        title={t('videoStudio.confirm.title', { count: pending?.lost ?? 0 })}
-        description={t('videoStudio.confirm.body', { count: pending?.lost ?? 0 })}
-        cancelLabel={t('videoStudio.confirm.cancel')}
-        confirmLabel={t('videoStudio.confirm.proceed')}
-        onConfirm={() => {
-          if (pending !== undefined) commit(pending.edit);
-          setPending(undefined);
-        }}
-      />
     </MediaEditorLayer>
   );
 }

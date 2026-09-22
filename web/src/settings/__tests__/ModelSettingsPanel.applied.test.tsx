@@ -91,17 +91,15 @@ describe('ModelSettingsPanel — application state and turn budget', () => {
     renderPanel(<ModelSettingsPanel groups={['routing', 'tokens', 'backends']} />);
     await screen.findByRole('heading', { name: 'Token and turn budget' });
 
-    const stepsField = screen.getByLabelText('Max steps per turn').closest('div.flex.min-h-32');
+    const stepsField = screen.getByLabelText('Max steps per turn').closest('[data-setting]');
     expect(stepsField?.querySelector('[data-applied="live"]')?.textContent).toBe(
       'Applies immediately',
     );
-    const sttField = screen
-      .getByLabelText('Speech-to-text cloud model')
-      .closest('div.flex.min-h-32');
+    const sttField = screen.getByLabelText('Speech-to-text cloud model').closest('[data-setting]');
     expect(sttField?.querySelector('[data-applied="restart"]')?.textContent).toBe(
       'Saved — needs a restart',
     );
-    const embedField = screen.getByLabelText('Embedding model').closest('div.flex.min-h-32');
+    const embedField = screen.getByLabelText('Embedding model').closest('[data-setting]');
     expect(embedField?.querySelector('[data-applied="boot"]')?.textContent).toBe(
       'Applied at start-up',
     );

@@ -3,6 +3,7 @@ import {
   clipAt,
   clipStarts,
   emptyProject,
+  junctionDurationAt,
   overlayWindow,
   projectDuration,
   sourceOf,
@@ -65,11 +66,74 @@ describe('the video lane is a sequence', () => {
     expect(projectDuration(project())).toBe(5);
   });
 
+  it('uses playback speed for starts and project duration', () => {
+    const base = project();
+    const first = base.video[0];
+    if (first === undefined) throw new Error('project fixture lost clip 1');
+    const sped = { ...base, video: [{ ...first, speed: 2 }, ...base.video.slice(1)] };
+    expect(clipStarts(sped)).toEqual([0, 1.5]);
+    expect(projectDuration(sped)).toBe(3.5);
+    expect(clipAt(sped, 1.6)?.id).toBe('clip-2');
+  });
+
   it('answers which clip covers an instant, and which does not', () => {
     expect(clipAt(project(), 2.9)?.id).toBe('clip-1');
     expect(clipAt(project(), 3)?.id).toBe('clip-2');
     expect(clipAt(project(), 5)).toBeUndefined();
     expect(clipAt(project(), -1)).toBeUndefined();
+  });
+
+  it('overlaps a valid clip junction and prefers the incoming clip inside it', () => {
+    const base = project();
+    const outgoing = base.video[0];
+    const incoming = base.video[1];
+    if (outgoing === undefined || incoming === undefined)
+      throw new Error('project fixture lost a clip');
+    const transitioned: VideoProject = {
+      ...base,
+      video: [
+        outgoing,
+        {
+          ...incoming,
+          junctionFromClipId: 'clip-1',
+          junctionTransition: 'crossfade',
+          junctionDuration: 1,
+        },
+      ],
+    };
+    expect(junctionDurationAt(transitioned, 1)).toBe(1);
+    expect(clipStarts(transitioned)).toEqual([0, 2]);
+    expect(projectDuration(transitioned)).toBe(4);
+    expect(clipAt(transitioned, 2.5)?.id).toBe('clip-2');
+  });
+
+  it('ignores stale junction metadata and clamps overlap to half of either clip', () => {
+    const base = project();
+    const outgoing = base.video[0];
+    const incoming = base.video[1];
+    if (outgoing === undefined || incoming === undefined)
+      throw new Error('project fixture lost a clip');
+    const stale = {
+      ...base,
+      video: [
+        outgoing,
+        { ...incoming, junctionFromClipId: 'gone', junctionTransition: 'crossfade' as const },
+      ],
+    };
+    expect(junctionDurationAt(stale, 1)).toBe(0);
+    const clamped = {
+      ...base,
+      video: [
+        outgoing,
+        {
+          ...incoming,
+          junctionFromClipId: 'clip-1',
+          junctionTransition: 'zoom' as const,
+          junctionDuration: 99,
+        },
+      ],
+    };
+    expect(junctionDurationAt(clamped, 1)).toBe(1);
   });
 });
 

@@ -13,10 +13,13 @@ import BrowserRenderer from '@videoflow/renderer-browser';
 import type { AssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import {
   clipStarts,
+  clipTimelineDuration,
+  junctionDurationAt,
   overlayWindow,
   projectDuration,
   sourceOf,
   type OverlayItem,
+  type ClipTransition,
   type VideoItem,
   type VideoProject,
 } from './project';
@@ -35,6 +38,24 @@ export const LOCAL_FONTS: Readonly<Record<string, string>> = {
   'Atkinson Hyperlegible Next': '/fonts/atkinson.css',
 };
 
+interface EdgeTransition {
+  readonly transition: ClipTransition;
+  readonly duration: number;
+}
+
+function junctionEdge(project: VideoProject, toIndex: number): EdgeTransition | undefined {
+  const incoming = project.video[toIndex];
+  const duration = junctionDurationAt(project, toIndex);
+  if (incoming === undefined || duration <= 0) return undefined;
+  const transition =
+    incoming.junctionTransition === 'zoom'
+      ? 'zoom'
+      : incoming.junctionTransition === 'blur'
+        ? 'blurResolve'
+        : 'fade';
+  return { transition, duration };
+}
+
 /**
  * The tenth of a millisecond that stops the renderer sampling a frame exactly on its own source
  * boundary, where it serves the PREVIOUS frame instead. Spike 108 §7 rendered one composition in
@@ -50,6 +71,28 @@ const CUT_NUDGE = 1e-4;
 
 /** The rate BrowserRenderer mixes at (`renderAudio`, `sampleRate: 48000`) — primed buffers match. */
 const MIX_SAMPLE_RATE = 48000;
+
+function clipOpacity(clip: VideoItem): unknown {
+  const value = clip.opacity ?? 1;
+  const fadeIn = clip.fadeIn === true || clip.animation === 'fadeIn';
+  const fadeOut = clip.fadeOut === true || clip.animation === 'fadeOut';
+  if (!fadeIn && !fadeOut) return value;
+  const edge = Math.min(0.5, clip.duration / 2);
+  return [
+    ...(fadeIn
+      ? [
+          { time: 0, value: 0 },
+          { time: edge, value },
+        ]
+      : []),
+    ...(fadeOut
+      ? [
+          { time: clip.duration - edge, value },
+          { time: clip.duration, value: 0 },
+        ]
+      : []),
+  ];
+}
 
 /** The part of a renderer the font override touches. Both renderers expose it; neither declares it
  *  in a shared interface, so this is the seam rather than an import of either class. */
@@ -126,6 +169,8 @@ function addClip(
   urls: MediaUrls,
   clip: VideoItem,
   startTime: number,
+  edgeIn: EdgeTransition | undefined,
+  edgeOut: EdgeTransition | undefined,
 ): void {
   const source = sourceOf(project, clip.sourceId);
   if (source === undefined) {
@@ -138,6 +183,27 @@ function addClip(
     source: urls.assetUrl(source.assetId),
     startTime,
     sourceDuration: clip.duration,
+    speed: clip.speed ?? 1,
+    ...(edgeIn !== undefined
+      ? { transitionIn: edgeIn }
+      : clip.transitionIn === undefined || clip.transitionIn === 'none'
+        ? {}
+        : {
+            transitionIn: {
+              transition: clip.transitionIn,
+              duration: Math.min(clip.transitionInDuration ?? 1, clipTimelineDuration(clip) / 2),
+            },
+          }),
+    ...(edgeOut !== undefined
+      ? { transitionOut: edgeOut }
+      : clip.transitionOut === undefined || clip.transitionOut === 'none'
+        ? {}
+        : {
+            transitionOut: {
+              transition: clip.transitionOut,
+              duration: Math.min(clip.transitionOutDuration ?? 1, clipTimelineDuration(clip) / 2),
+            },
+          }),
   };
   // A still has one frame and no audio: no source window to sample, so no nudge and no mute.
   if (source.kind === 'image') {
@@ -148,8 +214,58 @@ function addClip(
     // `muted` in a layer's SETTINGS is a no-op — the mixer reads `mute` in its PROPERTIES
     // (spike 108 §6: a clip carrying `settings.muted` played at full volume). Muting does not
     // save the decode either, which is one more reason the cache below belongs to us.
-    { fit: 'cover', mute: clip.muted },
+    {
+      fit: clip.fit ?? 'cover',
+      mute: clip.muted,
+      volume: clip.volume ?? 1,
+      rotation: clip.rotation ?? 0,
+      scale: [clip.flipX === true ? -1 : 1, clip.flipY === true ? -1 : 1],
+      filterBrightness: clip.brightness ?? 1,
+      filterContrast: clip.contrast ?? 1,
+      filterSaturate: clip.saturation ?? 1,
+      filterHueRotate: clip.hue ?? 0,
+      filterBlur: clip.blur ?? 0,
+      // Runtime accepts property keyframes; the package's static property type names only the
+      // scalar form. Overlay properties cross the same VideoJSON seam.
+      opacity: clipOpacity(clip) as number,
+    },
     { ...settings, sourceStart: clip.sourceStart + CUT_NUDGE },
+  );
+}
+
+function addJunctionWash(
+  flow: VideoFlow,
+  project: VideoProject,
+  toIndex: number,
+  startTime: number,
+): void {
+  const incoming = project.video[toIndex];
+  const duration = junctionDurationAt(project, toIndex);
+  if (
+    incoming === undefined ||
+    duration <= 0 ||
+    (incoming.junctionTransition !== 'fadeBlack' && incoming.junctionTransition !== 'fadeWhite')
+  ) {
+    return;
+  }
+  const shortSide = Math.min(project.size.width, project.size.height);
+  flow.addShape(
+    {
+      width: `${String((project.size.width / shortSide) * 100)}em`,
+      height: `${String((project.size.height / shortSide) * 100)}em`,
+      fill: incoming.junctionTransition === 'fadeWhite' ? '#ffffff' : '#000000',
+      opacity: [
+        { time: 0, value: 0 },
+        { time: duration / 2, value: 1 },
+        { time: duration, value: 0 },
+      ] as unknown as number,
+    },
+    {
+      name: `junction-${incoming.id}`,
+      startTime,
+      sourceDuration: duration,
+      shapeType: 'rectangle',
+    },
   );
 }
 
@@ -191,8 +307,19 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   });
   const starts = clipStarts(project);
   project.video.forEach((clip, index) => {
-    addClip(flow, project, urls, clip, starts[index] ?? 0);
+    addClip(
+      flow,
+      project,
+      urls,
+      clip,
+      starts[index] ?? 0,
+      junctionEdge(project, index),
+      junctionEdge(project, index + 1),
+    );
   });
+  for (let index = 1; index < project.video.length; index += 1) {
+    addJunctionWash(flow, project, index, starts[index] ?? 0);
+  }
   for (const track of project.overlays) {
     for (const item of track.items) addOverlay(flow, project, urls, item);
   }

@@ -10,12 +10,15 @@
 
 import {
   clipAt,
+  clipTimelineDuration,
   overlayWindow,
   projectDuration,
   sourceOf,
   type OverlayAnchor,
   type OverlayItem,
   type OverlayTrack,
+  type ClipEditProperties,
+  type JunctionTransition,
   type ProjectSource,
   type VideoItem,
   type VideoProject,
@@ -96,6 +99,22 @@ function insertionIndex(asked: number | undefined, length: number): number {
   return asked === undefined ? length : Math.max(0, Math.min(asked, length));
 }
 
+function withoutJunction(clip: VideoItem): VideoItem {
+  const {
+    junctionFromClipId: _from,
+    junctionTransition: _transition,
+    junctionDuration: _duration,
+    ...plain
+  } = clip;
+  return plain;
+}
+
+function normalizeJunctions(video: readonly VideoItem[]): readonly VideoItem[] {
+  return video.map((clip, index) =>
+    index > 0 && clip.junctionFromClipId === video[index - 1]?.id ? clip : withoutJunction(clip),
+  );
+}
+
 function withTrackItems(
   project: VideoProject,
   trackId: string,
@@ -124,7 +143,7 @@ function resliceLane(
   let at = 0;
   for (const clip of project.video) {
     const slices = slicesOf(clip, at);
-    at += clip.duration;
+    at += clipTimelineDuration(clip);
     if (slices === null) {
       video.push(clip);
       continue;
@@ -136,15 +155,18 @@ function resliceLane(
     placements.set(clip.id, placed);
     for (const place of placed) {
       video.push({
+        ...clip,
         id: place.id,
-        sourceId: clip.sourceId,
         duration: place.to - place.from,
         sourceStart: clip.sourceStart + place.from,
-        muted: clip.muted,
       });
     }
   }
-  return { ...project, video, overlays: reanchor(project.overlays, placements) };
+  return {
+    ...project,
+    video: normalizeJunctions(video),
+    overlays: reanchor(project.overlays, placements),
+  };
 }
 
 /** An overlay rides its content: it moves to the slice holding its offset, or goes with the rest. */
@@ -196,7 +218,7 @@ export function addClip(project: VideoProject, args: AddClipArgs): VideoProject 
     sourceStart,
     muted: false,
   });
-  return { ...project, video };
+  return { ...project, video: normalizeJunctions(video) };
 }
 
 export interface TrimClipArgs {
@@ -241,7 +263,7 @@ export function splitAt(project: VideoProject, args: SplitAtArgs): VideoProject 
   // second time would mean handling an answer that cannot be missing.
   return resliceLane(project, (clip, start) => {
     if (clip.id !== target.id) return null;
-    const offset = args.time - start;
+    const offset = (args.time - start) * Math.abs(clip.speed ?? 1);
     if (offset <= EPSILON || offset >= clip.duration - EPSILON) {
       throw new CommandRefusal(REFUSAL.splitOnBoundary);
     }
@@ -266,13 +288,14 @@ export function removeRange(project: VideoProject, args: RemoveRangeArgs): Video
   const covered = Math.min(args.to, projectDuration(project)) - Math.max(args.from, 0);
   if (covered <= 0) throw new CommandRefusal(REFUSAL.emptyRange);
   return resliceLane(project, (clip, start) => {
-    const end = start + clip.duration;
+    const speed = Math.abs(clip.speed ?? 1);
+    const end = start + clipTimelineDuration(clip);
     const head = Math.max(args.from, start);
     const tail = Math.min(args.to, end);
     if (tail - head <= 0) return null;
     const slices: Slice[] = [];
-    if (head > start) slices.push({ from: 0, to: head - start });
-    if (tail < end) slices.push({ from: tail - start, to: clip.duration });
+    if (head > start) slices.push({ from: 0, to: (head - start) * speed });
+    if (tail < end) slices.push({ from: (tail - start) * speed, to: clip.duration });
     return slices;
   });
 }
@@ -291,7 +314,7 @@ export function moveClip(project: VideoProject, args: MoveClipArgs): VideoProjec
   const video = [...project.video];
   video.splice(index, 1);
   video.splice(insertionIndex(args.toIndex, video.length), 0, clip);
-  return { ...project, video };
+  return { ...project, video: normalizeJunctions(video) };
 }
 
 export interface SetMutedArgs {
@@ -307,6 +330,97 @@ export function setMuted(project: VideoProject, args: SetMutedArgs): VideoProjec
       item.id === clip.id ? { ...item, muted: args.muted } : item,
     ),
   };
+}
+
+export interface SetClipPresentationArgs extends ClipEditProperties {
+  readonly clipId: string;
+}
+
+export function setClipPresentation(
+  project: VideoProject,
+  args: SetClipPresentationArgs,
+): VideoProject {
+  locateClip(project, args.clipId);
+  if (args.volume !== undefined && (args.volume < 0 || args.volume > 2)) {
+    throw new Error('videoStudio: clip volume must be between 0 and 2');
+  }
+  if (args.opacity !== undefined && (args.opacity < 0 || args.opacity > 1)) {
+    throw new Error('videoStudio: clip opacity must be between 0 and 1');
+  }
+  if (args.speed !== undefined && (args.speed < 0.25 || args.speed > 4)) {
+    throw new Error('videoStudio: clip speed must be between 0.25 and 4');
+  }
+  for (const duration of [args.transitionInDuration, args.transitionOutDuration]) {
+    if (duration !== undefined && duration <= 0) {
+      throw new Error('videoStudio: transition duration must be positive');
+    }
+  }
+  for (const amount of [args.brightness, args.contrast, args.saturation, args.blur]) {
+    if (amount !== undefined && amount < 0) {
+      throw new Error('videoStudio: visual adjustments cannot be negative');
+    }
+  }
+  const { clipId, ...asked } = args;
+  const changes = asked as Partial<VideoItem>;
+  return {
+    ...project,
+    video: project.video.map((item) => (item.id === clipId ? { ...item, ...changes } : item)),
+  };
+}
+
+export interface SetJunctionTransitionArgs {
+  readonly fromClipId: string;
+  readonly toClipId: string;
+  readonly transition: JunctionTransition;
+  readonly duration?: number;
+}
+
+export function setJunctionTransition(
+  project: VideoProject,
+  args: SetJunctionTransitionArgs,
+): VideoProject {
+  const toIndex = project.video.findIndex((clip) => clip.id === args.toClipId);
+  const incoming = project.video[toIndex];
+  const outgoing = project.video[toIndex - 1];
+  if (incoming === undefined || outgoing?.id !== args.fromClipId) {
+    throw new Error('videoStudio: transition clips must be adjacent');
+  }
+  if (args.transition === 'none') {
+    return {
+      ...project,
+      video: project.video.map((clip) => (clip.id === incoming.id ? withoutJunction(clip) : clip)),
+    };
+  }
+  const asked = args.duration ?? incoming.junctionDuration ?? 1;
+  if (asked <= 0) throw new Error('videoStudio: junction duration must be positive');
+  const duration = Math.min(
+    asked,
+    clipTimelineDuration(outgoing) / 2,
+    clipTimelineDuration(incoming) / 2,
+  );
+  return {
+    ...project,
+    video: project.video.map((clip) =>
+      clip.id === incoming.id
+        ? {
+            ...clip,
+            junctionFromClipId: outgoing.id,
+            junctionTransition: args.transition,
+            junctionDuration: duration,
+          }
+        : clip,
+    ),
+  };
+}
+
+export function setFrameSize(
+  project: VideoProject,
+  size: { readonly width: number; readonly height: number },
+): VideoProject {
+  if (size.width <= 0 || size.height <= 0) {
+    throw new Error('videoStudio: frame sides must be positive');
+  }
+  return { ...project, size: { width: Math.round(size.width), height: Math.round(size.height) } };
 }
 
 export interface AddOverlayArgs {
@@ -410,7 +524,7 @@ export function removeItem(project: VideoProject, args: RemoveItemArgs): VideoPr
   if (clip !== undefined) {
     return {
       ...project,
-      video: project.video.filter((item) => item.id !== clip.id),
+      video: normalizeJunctions(project.video.filter((item) => item.id !== clip.id)),
       overlays: project.overlays.map((lane) => ({
         ...lane,
         items: lane.items.filter((item) => item.anchor.clipId !== clip.id),

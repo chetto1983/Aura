@@ -7,6 +7,7 @@ import {
   type ResizeEndEvent,
   type Span,
 } from 'dnd-timeline';
+import { Blend, Minus, Plus } from 'lucide-react';
 import { useState, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
@@ -14,20 +15,22 @@ import { moveClip, trimClip } from './commands';
 import {
   clipStart,
   clipStarts,
+  junctionDurationAt,
   overlayWindow,
   projectDuration,
   type VideoProject,
+  type ClipJunction,
 } from './project';
 import { ClipItem, OverlayItemView } from './Timeline_items';
 import {
   atMilli,
   clamp,
+  formatRulerTime,
   insertIndexFor,
   MIN_VISIBLE,
   offsetOf,
   rulerMarks,
   rulerStep,
-  SIDEBAR_WIDTH,
   sourceEndOf,
   stepOnArrow,
   TOUCH_FLOOR,
@@ -35,6 +38,7 @@ import {
   zoomedRange,
   type TrimSpan,
 } from './timelineView';
+import { Button } from '@/components/ui/button';
 
 // Timeline.tsx — the lanes, the ruler, the playhead, the zoom and the two gestures that edit:
 // drag a clip to another place in the sequence, drag a handle to change what it plays.
@@ -55,19 +59,22 @@ interface LaneProps {
 }
 
 function Lane({ id, label, droppable, children }: LaneProps) {
-  const { setNodeRef, rowWrapperStyle, rowSidebarStyle, rowStyle } = useRow({
+  const { setNodeRef, rowWrapperStyle, rowStyle } = useRow({
     id,
     disabled: !droppable,
   });
   return (
-    <div style={{ ...rowWrapperStyle, width: '100%' }}>
-      <div style={rowSidebarStyle} className="items-center px-2 text-xs text-fg-muted">
-        {label}
-      </div>
+    <div
+      role="group"
+      aria-label={label}
+      data-lane={id}
+      style={{ ...rowWrapperStyle, width: '100%' }}
+    >
+      <span className="sr-only">{label}</span>
       <div
         ref={setNodeRef}
         style={{ ...rowStyle, minHeight: TOUCH_FLOOR + 8 }}
-        className="relative border-t border-border py-1"
+        className="video-studio-lane relative border-t border-border py-1"
       >
         {children}
       </div>
@@ -77,22 +84,24 @@ function Lane({ id, label, droppable, children }: LaneProps) {
 
 interface ZoomButtonProps {
   readonly label: string;
-  readonly glyph: string;
+  readonly direction: 'in' | 'out';
   readonly onPress: () => void;
 }
 
-function ZoomButton({ label, glyph, onPress }: ZoomButtonProps) {
+function ZoomButton({ label, direction, onPress }: ZoomButtonProps) {
   return (
-    <button
+    <Button
       type="button"
       aria-label={label}
       data-required-touch-target
+      variant="outline"
+      size="icon"
       style={{ minHeight: TOUCH_FLOOR, minWidth: TOUCH_FLOOR }}
       onClick={onPress}
-      className="rounded-[var(--radius-md)] border border-border text-sm text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="video-studio-zoom-button rounded-[var(--radius-md)] border border-border text-sm text-fg-muted hover:text-fg focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
-      <span aria-hidden="true">{glyph}</span>
-    </button>
+      {direction === 'in' ? <Plus aria-hidden="true" /> : <Minus aria-hidden="true" />}
+    </Button>
   );
 }
 
@@ -136,7 +145,7 @@ function Scrubber({ range, playhead, total, frame, onScrub }: ScrubberProps) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) onScrub(timeAt(event));
       }}
       style={{ minHeight: TOUCH_FLOOR }}
-      className="relative flex-1 touch-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+      className="video-studio-ruler relative flex-1 touch-none select-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
     >
       {rulerMarks(range, rulerStep(range.end - range.start)).map((mark) => (
         <span
@@ -144,9 +153,9 @@ function Scrubber({ range, playhead, total, frame, onScrub }: ScrubberProps) {
           data-testid="timeline-mark"
           data-time={mark}
           style={{ left: offsetOf(mark, range) }}
-          className="absolute top-0 border-l border-border pt-1 pl-1 text-[10px] text-fg-muted tabular-nums"
+          className="video-studio-ruler-mark absolute top-0 border-l border-border pt-1 pl-1 text-[10px] text-fg-muted tabular-nums"
         >
-          {formatTimecode(mark)}
+          {formatRulerTime(mark)}
         </span>
       ))}
     </div>
@@ -160,6 +169,8 @@ interface TimelineProps {
   readonly onSelect: (id: string) => void;
   readonly onCommand: (edit: (current: VideoProject) => VideoProject) => void;
   readonly onScrub: (time: number) => void;
+  readonly selectedJunction?: ClipJunction | undefined;
+  readonly onSelectJunction?: ((junction: ClipJunction) => void) | undefined;
 }
 
 interface LanesProps extends Omit<TimelineProps, 'onCommand'> {
@@ -185,6 +196,8 @@ function Lanes({
   onZoom,
   onMove,
   onTrim,
+  selectedJunction,
+  onSelectJunction,
 }: LanesProps) {
   const { t } = useTranslation();
   const { style, setTimelineRef } = useTimelineContext();
@@ -210,44 +223,27 @@ function Lanes({
       role="group"
       aria-label={t('videoStudio.timeline.label')}
       style={style}
-      className="w-full rounded-[var(--radius-md)] bg-surface-1"
+      className="video-studio-timeline w-full rounded-[var(--radius-md)] bg-surface-1"
     >
-      <div style={{ display: 'flex', width: '100%' }}>
-        <div style={{ width: SIDEBAR_WIDTH }} className="flex items-center gap-1 px-2">
+      <div className="video-studio-ruler-row">
+        <Scrubber range={range} playhead={playhead} total={total} frame={frame} onScrub={onScrub} />
+        <div className="video-studio-timeline-zoom">
           <ZoomButton
             label={t('videoStudio.timeline.zoomOut')}
-            glyph="−"
+            direction="out"
             onPress={() => {
               onZoom(2);
             }}
           />
           <ZoomButton
             label={t('videoStudio.timeline.zoomIn')}
-            glyph="+"
+            direction="in"
             onPress={() => {
               onZoom(0.5);
             }}
           />
         </div>
-        <Scrubber range={range} playhead={playhead} total={total} frame={frame} onScrub={onScrub} />
       </div>
-      <Lane id="video" label={t('videoStudio.timeline.videoLane')} droppable>
-        {project.video.map((clip, index) => (
-          <ClipItem
-            key={clip.id}
-            clip={clip}
-            index={index}
-            count={project.video.length}
-            start={starts[index] ?? 0}
-            sourceEnd={sourceEndOf(project, clip)}
-            frame={frame}
-            selected={clip.id === selectedId}
-            onSelect={onSelect}
-            onMove={onMove}
-            onTrim={onTrim}
-          />
-        ))}
-      </Lane>
       {project.overlays.map((track, index) => (
         <Lane
           key={track.id}
@@ -267,15 +263,67 @@ function Lanes({
           ))}
         </Lane>
       ))}
+      <Lane id="video" label={t('videoStudio.timeline.videoLane')} droppable>
+        {project.video.map((clip, index) => (
+          <ClipItem
+            key={clip.id}
+            clip={clip}
+            source={project.sources.find((source) => source.id === clip.sourceId)}
+            index={index}
+            count={project.video.length}
+            start={starts[index] ?? 0}
+            sourceEnd={sourceEndOf(project, clip)}
+            frame={frame}
+            selected={clip.id === selectedId}
+            onSelect={onSelect}
+            onMove={onMove}
+            onTrim={onTrim}
+          />
+        ))}
+        {project.video.slice(1).map((incoming, offset) => {
+          const toIndex = offset + 1;
+          const outgoing = project.video[toIndex - 1];
+          if (outgoing === undefined) return null;
+          const duration = junctionDurationAt(project, toIndex);
+          const junction = { fromClipId: outgoing.id, toClipId: incoming.id };
+          const selected =
+            selectedJunction?.fromClipId === outgoing.id &&
+            selectedJunction.toClipId === incoming.id;
+          return (
+            <button
+              key={`${outgoing.id}-${incoming.id}`}
+              type="button"
+              data-required-touch-target
+              data-active={duration > 0 ? 'true' : 'false'}
+              aria-pressed={selected}
+              aria-label={t('videoStudio.timeline.transition', {
+                index: toIndex,
+                next: toIndex + 1,
+              })}
+              className="video-studio-junction"
+              style={{ left: offsetOf((starts[toIndex] ?? 0) + duration / 2, range) }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+              }}
+              onClick={(event) => {
+                event.stopPropagation();
+                onSelectJunction?.(junction);
+              }}
+            >
+              <Blend aria-hidden="true" />
+            </button>
+          );
+        })}
+      </Lane>
       <div
         aria-hidden="true"
-        style={{ position: 'absolute', top: 0, bottom: 0, left: SIDEBAR_WIDTH, right: 0 }}
+        style={{ position: 'absolute', inset: 0 }}
         className="pointer-events-none"
       >
         <div
           data-testid="timeline-playhead"
           style={{ left: offsetOf(playhead, range) }}
-          className="absolute top-0 bottom-0 w-px bg-accent"
+          className="video-studio-playhead absolute top-0 bottom-0 w-px bg-accent"
         />
       </div>
     </div>
@@ -289,6 +337,8 @@ export function Timeline({
   onSelect,
   onCommand,
   onScrub,
+  selectedJunction,
+  onSelectJunction,
 }: TimelineProps) {
   const total = Math.max(projectDuration(project), MIN_VISIBLE);
   // Null is "fit the project". A range held from before is re-clamped against the project as it is
@@ -304,16 +354,17 @@ export function Timeline({
   return (
     <TimelineContext
       range={range}
-      sidebarWidth={SIDEBAR_WIDTH}
+      sidebarWidth={0}
       onRangeChanged={(update) => {
         setView(update(range));
       }}
       onResizeEnd={(event: ResizeEndEvent) => {
         const clipId = String(event.active.id);
         const from = clipStart(project, clipId);
+        const clip = project.video.find((item) => item.id === clipId);
         const span = event.active.data.current.getSpanFromResizeEvent?.(event);
-        if (from === undefined || span === null || span === undefined) return;
-        onTrim(clipId, trimArgsFromSpan(from, span));
+        if (from === undefined || clip === undefined || span === null || span === undefined) return;
+        onTrim(clipId, trimArgsFromSpan(from, span, clip.speed));
       }}
     >
       <Lanes
@@ -329,6 +380,8 @@ export function Timeline({
         }}
         onMove={onMove}
         onTrim={onTrim}
+        selectedJunction={selectedJunction}
+        onSelectJunction={onSelectJunction}
       />
     </TimelineContext>
   );

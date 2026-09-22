@@ -106,13 +106,13 @@ describe('provider switching reads the route from the daemon', () => {
     const model = screen.getByLabelText('Primary model');
     expect(baseURL.value).toBe(STORED_LOCAL_URL);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Cloud' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
     await waitFor(() => {
       expect(baseURL.value).toBe('https://openrouter.ai/api/v1');
     });
     expect(model.textContent).toContain(STORED_CLOUD_MODEL);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Local' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
     await waitFor(() => {
       expect(baseURL.value).toBe(STORED_LOCAL_URL);
     });
@@ -125,7 +125,7 @@ describe('provider switching reads the route from the daemon', () => {
     renderPanel();
 
     const baseURL = await screen.findByLabelText<HTMLInputElement>('Primary base URL');
-    fireEvent.click(screen.getByRole('button', { name: 'Ollama' }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Ollama' }));
     await waitFor(() => {
       expect(baseURL.value).toBe(OLLAMA_BASE_URL);
     });

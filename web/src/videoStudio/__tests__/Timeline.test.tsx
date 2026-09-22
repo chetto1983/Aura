@@ -12,6 +12,7 @@ import type { VideoProject } from '../project';
 import { Timeline } from '../Timeline';
 import {
   insertIndexFor,
+  formatRulerTime,
   rulerMarks,
   rulerStep,
   sourceEndOf,
@@ -84,6 +85,13 @@ function project(): VideoProject {
             duration: 2,
             props: { text: 'hi' },
           },
+          {
+            id: 'badge',
+            kind: 'image',
+            anchor: { clipId: 'clip-1', offset: 0.5 },
+            duration: 1,
+            props: { assetId: 'photo' },
+          },
         ],
       },
     ],
@@ -146,6 +154,7 @@ function mount({
 }: { playhead?: number; selectedId?: string; base?: VideoProject } = {}) {
   const onCommand = vi.fn();
   const onSelect = vi.fn();
+  const onSelectJunction = vi.fn();
   const onScrub = vi.fn();
   render(
     <Timeline
@@ -154,10 +163,11 @@ function mount({
       playhead={playhead}
       onCommand={onCommand}
       onSelect={onSelect}
+      onSelectJunction={onSelectJunction}
       onScrub={onScrub}
     />,
   );
-  return { base, onCommand, onSelect, onScrub };
+  return { base, onCommand, onSelect, onSelectJunction, onScrub };
 }
 
 /** The thunk the gesture emitted, applied to the project it was emitted against. */
@@ -218,6 +228,13 @@ describe('trimArgsFromSpan — the clip is its own frame of reference', () => {
 });
 
 describe('zoom', () => {
+  it('keeps ruler labels compact at subsecond, minute and hour scales', () => {
+    expect(formatRulerTime(0)).toBe('0:00');
+    expect(formatRulerTime(0.5)).toBe('0:00.5');
+    expect(formatRulerTime(62)).toBe('1:02');
+    expect(formatRulerTime(3662.5)).toBe('1:01:02.5');
+  });
+
   it('halves and doubles around the middle of what is on screen', () => {
     expect(zoomedRange({ start: 0, end: 12 }, 0.5, 12)).toEqual({ start: 3, end: 9 });
     expect(zoomedRange({ start: 3, end: 9 }, 2, 12)).toEqual({ start: 0, end: 12 });
@@ -248,6 +265,14 @@ describe('Timeline lanes', () => {
     expect(screen.getByText('videoStudio.timeline.overlayLane 1')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: /videoStudio\.timeline\.clip/ })).toHaveLength(3);
     expect(screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' })).toBeTruthy();
+    const image = screen.getByRole('button', { name: 'videoStudio.timeline.overlayImage 2' });
+    expect(image.querySelector('img')?.getAttribute('src')).toContain('/api/assets/photo/download');
+
+    const overlayLane = screen.getByRole('group', { name: 'videoStudio.timeline.overlayLane 1' });
+    const videoLane = screen.getByRole('group', { name: 'videoStudio.timeline.videoLane' });
+    expect(
+      overlayLane.compareDocumentPosition(videoLane) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
   });
 
   it('selects on the PRESS, not only on the click', () => {
@@ -264,6 +289,21 @@ describe('Timeline lanes', () => {
       screen.getByRole('button', { name: 'videoStudio.timeline.overlayText 1' }),
     );
     expect(onSelect).toHaveBeenLastCalledWith('title');
+  });
+
+  it('exposes one transition junction for every adjacent clip pair', () => {
+    const { onSelectJunction } = mount();
+    const junctions = screen.getAllByRole('button', {
+      name: /videoStudio\.timeline\.transition/,
+    });
+    expect(junctions).toHaveLength(2);
+    const first = junctions[0];
+    if (first === undefined) throw new Error('timeline rendered no first junction');
+    fireEvent.click(first);
+    expect(onSelectJunction).toHaveBeenCalledWith({
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+    });
   });
 
   it('tells the shell what was clicked, and asks for no command', () => {

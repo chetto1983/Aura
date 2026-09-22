@@ -43,10 +43,6 @@ function evenFloor(value: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
-}
-
 /** The largest rectangle of the preset's ratio inside `frame`, centred, with even sides. */
 export function presetRect(frame: Size, preset: CropPreset): CropRect {
   if (preset === 'original') {
@@ -61,14 +57,5 @@ export function presetRect(frame: Size, preset: CropPreset): CropRect {
     top: Math.floor((frame.height - height) / 2),
     width,
     height,
-  };
-}
-
-/** `rect` moved by (dx, dy) frame pixels, kept whole and inside `frame`. */
-export function moveRect(rect: CropRect, dx: number, dy: number, frame: Size): CropRect {
-  return {
-    ...rect,
-    left: clamp(Math.round(rect.left + dx), 0, frame.width - rect.width),
-    top: clamp(Math.round(rect.top + dy), 0, frame.height - rect.height),
   };
 }

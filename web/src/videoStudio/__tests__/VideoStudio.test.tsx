@@ -498,6 +498,10 @@ describe('VideoStudio', () => {
     await screen.findByTestId('video-stage');
     fireEvent.click(item('videoStudio.timeline.clip', 2));
     // Muting clip 2 rebuilds the lane by value; the clip is still there and stays selected.
+    fireEvent.mouseDown(
+      screen.getByRole('tab', { name: i18n.t('videoStudio.inspector.tabs.audio') }),
+      { button: 0, ctrlKey: false },
+    );
     fireEvent.click(screen.getByLabelText(i18n.t('videoStudio.inspector.mute')));
 
     await waitFor(() => {
@@ -558,6 +562,17 @@ describe('VideoStudio', () => {
     await waitFor(() => {
       expect(lastSavedProject()).toBe('file-1');
     });
+  });
+
+  it('opens a mobile inspector tool without toggling it closed', async () => {
+    mount();
+    await screen.findByTestId('video-stage');
+    const tools = screen.getByRole('navigation', { name: i18n.t('videoStudio.mobileTools') });
+    fireEvent.click(within(tools).getByRole('button', { name: i18n.t('videoStudio.mobile.time') }));
+
+    const properties = document.querySelector('.video-studio-properties');
+    expect(properties?.getAttribute('data-mobile-open')).toBe('true');
+    expect(screen.getByLabelText(i18n.t('videoStudio.inspector.start'))).toBeTruthy();
   });
 
   it('stops the preview renderer when it closes', async () => {

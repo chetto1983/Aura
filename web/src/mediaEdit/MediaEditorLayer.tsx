@@ -46,7 +46,7 @@ export function MediaEditorLayer({ label, onEscape, children }: MediaEditorLayer
         event.stopPropagation();
         onEscape();
       }}
-      className="fixed inset-0 z-50 flex flex-col bg-bg text-text outline-none"
+      className="fixed inset-0 z-[80] flex flex-col bg-bg text-text outline-none"
     >
       {children}
     </div>,

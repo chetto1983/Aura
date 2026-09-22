@@ -7,6 +7,9 @@ import {
   moveClip,
   removeItem,
   removeRange,
+  setClipPresentation,
+  setFrameSize,
+  setJunctionTransition,
   setMuted,
   setProperty,
   splitAt,
@@ -130,6 +133,18 @@ describe('splitAt', () => {
     expect(next.video[1]?.duration).toBe(2.5);
     expect(next.video[1]?.sourceStart).toBe(1.5);
     expect(projectDuration(next)).toBe(8);
+  });
+
+  it('converts a fast clip timeline cut back to source seconds', () => {
+    const base = project();
+    const first = base.video[0];
+    if (first === undefined) throw new Error('project fixture lost clip 1');
+    const next = splitAt(
+      { ...base, video: [{ ...first, speed: 2 }, ...base.video.slice(1)] },
+      { time: 1 },
+    );
+    expect(next.video[0]).toMatchObject({ duration: 2, speed: 2 });
+    expect(next.video[1]).toMatchObject({ duration: 2, sourceStart: 2, speed: 2 });
   });
 
   it('refuses a split on a boundary, which would make an empty clip', () => {
@@ -421,6 +436,59 @@ describe('removeItem', () => {
   });
 });
 
+describe('setJunctionTransition', () => {
+  it('stores a transition on the incoming clip and overlaps the pair', () => {
+    const next = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'crossfade',
+      duration: 1.5,
+    });
+    expect(next.video[1]).toMatchObject({
+      junctionFromClipId: 'clip-1',
+      junctionTransition: 'crossfade',
+      junctionDuration: 1.5,
+    });
+    expect(clipStarts(next)).toEqual([0, 2.5]);
+    expect(projectDuration(next)).toBe(6.5);
+  });
+
+  it('removes a junction and rejects clips that are not adjacent', () => {
+    const transitioned = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'zoom',
+    });
+    const cleared = setJunctionTransition(transitioned, {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'none',
+    });
+    expect(cleared.video[1]?.junctionTransition).toBeUndefined();
+    expect(() =>
+      setJunctionTransition(project(), {
+        fromClipId: 'clip-2',
+        toClipId: 'clip-1',
+        transition: 'crossfade',
+      }),
+    ).toThrow(/adjacent/);
+  });
+
+  it('clears stale junctions after moving or removing either side', () => {
+    const transitioned = setJunctionTransition(project(), {
+      fromClipId: 'clip-1',
+      toClipId: 'clip-2',
+      transition: 'blur',
+    });
+    expect(
+      moveClip(transitioned, { clipId: 'clip-1', toIndex: 1 }).video[0]?.junctionTransition,
+    ).toBeUndefined();
+    expect(
+      removeItem(transitioned, { itemId: 'clip-1' }).video[0]?.junctionTransition,
+    ).toBeUndefined();
+  });
+});
+
 describe('every command is pure', () => {
   it('never edits the project it was given', () => {
     const before = project();
@@ -430,6 +498,8 @@ describe('every command is pure', () => {
     removeRange(before, { from: 1, to: 3 });
     moveClip(before, { clipId: 'clip-2', toIndex: 0 });
     setMuted(before, { clipId: 'clip-1', muted: true });
+    setClipPresentation(before, { clipId: 'clip-1', rotation: 90, volume: 0.5 });
+    setFrameSize(before, { width: 1080, height: 1080 });
     addClip(before, { sourceId: 'src-a', duration: 1 });
     addOverlay(before, {
       kind: 'text',
@@ -440,6 +510,27 @@ describe('every command is pure', () => {
     setProperty(before, { itemId: 'title', key: 'text', value: 'x' });
     removeItem(before, { itemId: 'title' });
     expect(before).toEqual(snapshot);
+  });
+});
+
+describe('clip presentation', () => {
+  it('keeps rotation, fit and volume on the clip', () => {
+    const next = setClipPresentation(project(), {
+      clipId: 'clip-1',
+      rotation: 90,
+      fit: 'contain',
+      volume: 0.5,
+      speed: 2,
+    });
+    expect(next.video[0]).toMatchObject({ rotation: 90, fit: 'contain', volume: 0.5, speed: 2 });
+    expect(next.video[1]).not.toHaveProperty('rotation');
+  });
+
+  it('changes the composition frame without mutating its input', () => {
+    const before = project();
+    const next = setFrameSize(before, { width: 720, height: 1280 });
+    expect(next.size).toEqual({ width: 720, height: 1280 });
+    expect(before.size).toEqual({ width: 1920, height: 1080 });
   });
 });
 

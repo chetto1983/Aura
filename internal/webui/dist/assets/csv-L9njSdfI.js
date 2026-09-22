@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CsOFd3vK.js";function t(e){e.languages.csv={value:/[^\r\n,"]+|"(?:[^"]|"")*"(?!")/,punctuation:/,/}}function n(){return(n=e((()=>{t.displayName=`csv`,t.aliases=[]})))()}n();export{t as default};
