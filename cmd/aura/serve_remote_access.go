@@ -296,6 +296,8 @@ func (c *remoteAccessController) run(ctx context.Context) {
 		delay := time.Second
 		if err == nil {
 			delay = remoteAccessDelay(state.Phase)
+		} else if ctx.Err() == nil {
+			slog.Warn("Remote access state unreadable; retrying", "error", err)
 		}
 		if reconcileErr != nil && state.Phase != remotetunnel.PhaseError {
 			delay = time.Second

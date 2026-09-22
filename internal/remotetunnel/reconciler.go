@@ -233,7 +233,9 @@ func (r *Reconciler) failed(ctx context.Context, s *State, err error) error {
 		r.retryGeneration = s.Generation
 		r.attempts++
 	}
-	r.log.WarnContext(ctx, "Remote access reconciliation failed", "phase", s.Phase)
+	// LastError is sanitised because it reaches a browser; the cause has to survive
+	// somewhere, and this log is the only place an operator can read it.
+	r.log.WarnContext(ctx, "Remote access reconciliation failed", "phase", s.Phase, "error", err)
 	return errors.Join(err, r.persist(ctx, s))
 }
 
