@@ -69,7 +69,9 @@ func (r *Reconciler) deletions(ctx context.Context, s *State) []deletion {
 			return ErrOwnershipConflict
 		}
 		return nil
-	}, func() error { return r.cloud.DeletePosture(ctx, account, s.Resources.GatewayPostureID, s.TunnelName) }})
+	}, func() error {
+		return r.cloud.DeletePosture(ctx, account, s.Resources.GatewayPostureID, resourceName(s, "gateway"))
+	}})
 	steps = append(steps, deletion{&s.Resources.TunnelID, func() error {
 		t, err := r.cloud.GetTunnel(ctx, account, s.Resources.TunnelID)
 		if err != nil {

@@ -71,7 +71,7 @@ func TestDeleteOwnershipGuardsEveryResource(t *testing.T) {
 				p.Name = "foreign"
 				h.cloud.policies[resource] = p
 			case "gateway":
-				h.cloud.posture.Description = "foreign"
+				h.cloud.posture.Name = "foreign"
 			case "public-dns", "warp-dns":
 				d := h.cloud.dns[resource]
 				d.Comment = "foreign"

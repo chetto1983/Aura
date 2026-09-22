@@ -82,8 +82,8 @@ func TestResourceWireContracts(t *testing.T) {
 		}},
 		{"policy-delete", "DELETE", "/accounts/account-one/access/apps/app-one/policies/policy-one", `{"success":true}`, nil, func(c *Client) error { return c.DeletePolicy(ctx, "account-one", "app-one", "policy-one") }},
 		{"posture-list", "GET", "/accounts/account-one/devices/posture", `{"success":true,"result":[]}`, nil, func(c *Client) error { _, e := c.ListPosture(ctx, "account-one"); return e }},
-		{"posture-create", "POST", "/accounts/account-one/devices/posture", string(fixture(t, "posture-warp")), map[string]any{"type": "gateway", "description": "aura-owner"}, func(c *Client) error {
-			_, e := c.EnsureGatewayPosture(ctx, "account-one", "", "Aura WARP-required", "aura-owner")
+		{"posture-create", "POST", "/accounts/account-one/devices/posture", string(fixture(t, "posture-warp")), map[string]any{"type": "gateway", "name": "Aura WARP-required"}, func(c *Client) error {
+			_, e := c.EnsureGatewayPosture(ctx, "account-one", "", "Aura WARP-required")
 			return e
 		}},
 	} {
@@ -233,11 +233,11 @@ func TestGatewayPostureOwnership(t *testing.T) {
 			_, _ = w.Write(body)
 		}))
 		c := New(s.URL, "fixture-token", s.Client())
-		_, err := c.EnsureGatewayPosture(t.Context(), "account-one", "posture-one", "Aura", "aura-owner")
+		_, err := c.EnsureGatewayPosture(t.Context(), "account-one", "posture-one", "Aura WARP-required")
 		if (err != nil) != foreign {
 			t.Fatalf("foreign=%v err=%v", foreign, err)
 		}
-		err = c.DeletePosture(t.Context(), "account-one", "posture-one", "aura-owner")
+		err = c.DeletePosture(t.Context(), "account-one", "posture-one", "Aura WARP-required")
 		if (err != nil) != foreign {
 			t.Fatalf("delete foreign=%v err=%v", foreign, err)
 		}

@@ -9,7 +9,7 @@ func TestOwnershipRequiresPersistedIDAndAuraMarkerAgreement(t *testing.T) {
 	const owner = "aura-9f12fb90-379e-4707-8b49-ab798cb4b4f5"
 	state := State{TunnelName: owner, Resources: Resources{TunnelID: "tunnel", GatewayPostureID: "gateway", PublicDNSID: "dns"}, Desired: Desired{PublicLabel: "aura", ZoneName: "example.com"}}
 	tunnel := cloudflareapi.Tunnel{ID: "tunnel", Name: owner, RemoteConfig: true}
-	posture := cloudflareapi.Posture{ID: "gateway", Name: owner + "-gateway", Description: owner, Type: "gateway"}
+	posture := cloudflareapi.Posture{ID: "gateway", Name: owner + "-gateway", Type: "gateway"}
 	dns := cloudflareapi.DNSRecord{ID: "dns", Name: "aura.example.com", Comment: owner, Type: "CNAME"}
 	if !ownedTunnel(state, tunnel) || !ownedPosture(&state, posture) || !ownedDNS(&state, routes(&state)[0], dns) {
 		t.Fatal("owned resource rejected")
@@ -21,7 +21,7 @@ func TestOwnershipRequiresPersistedIDAndAuraMarkerAgreement(t *testing.T) {
 			t.Fatal("foreign tunnel accepted")
 		}
 	}
-	for _, change := range []func(*cloudflareapi.Posture){func(v *cloudflareapi.Posture) { v.ID = "foreign" }, func(v *cloudflareapi.Posture) { v.Name = "foreign" }, func(v *cloudflareapi.Posture) { v.Description = "foreign" }, func(v *cloudflareapi.Posture) { v.Type = "warp" }} {
+	for _, change := range []func(*cloudflareapi.Posture){func(v *cloudflareapi.Posture) { v.ID = "foreign" }, func(v *cloudflareapi.Posture) { v.Name = "foreign" }, func(v *cloudflareapi.Posture) { v.Type = "warp" }} {
 		changed := posture
 		change(&changed)
 		if ownedPosture(&state, changed) {
@@ -38,7 +38,6 @@ func TestOwnershipRequiresPersistedIDAndAuraMarkerAgreement(t *testing.T) {
 	state.TunnelName = "foreign"
 	tunnel.Name = "foreign"
 	posture.Name = "foreign-gateway"
-	posture.Description = "foreign"
 	dns.Comment = "foreign"
 	if ownedTunnel(state, tunnel) || ownedPosture(&state, posture) || ownedDNS(&state, routes(&state)[0], dns) {
 		t.Fatal("matching foreign namespace accepted")
@@ -55,5 +54,17 @@ func TestOwnershipUsesAuthoritativeConfigSource(t *testing.T) {
 		if got := ownedTunnel(state, tunnel); got != tc.want {
 			t.Fatalf("source=%q legacy=%v got=%v", tc.source, tc.legacy, got)
 		}
+	}
+}
+
+// Cloudflare's device-posture API does not carry a description: the field is accepted on
+// create and is absent from every GET/LIST response (measured 2026-09-22 against a live
+// gateway rule, whose body was exactly {id, type, name}). Ownership therefore has to rest on
+// the name, which embeds the aura-<uuid> owner and which Cloudflare does return.
+func TestGatewayPostureOwnedWithoutDescription(t *testing.T) {
+	const owner = "aura-9f12fb90-379e-4707-8b49-ab798cb4b4f5"
+	state := State{TunnelName: owner, Resources: Resources{GatewayPostureID: "gateway"}}
+	if !ownedPosture(&state, cloudflareapi.Posture{ID: "gateway", Name: owner + "-gateway", Type: "gateway"}) {
+		t.Fatal("posture as Cloudflare returns it was rejected as foreign")
 	}
 }

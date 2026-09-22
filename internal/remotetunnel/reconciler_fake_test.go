@@ -359,12 +359,12 @@ func (f *fakeCloud) GetPosture(context.Context, string, string) (cf.Posture, err
 	}
 	return f.posture, nil
 }
-func (f *fakeCloud) EnsureGatewayPosture(_ context.Context, _, _, name, owner string) (cf.Posture, error) {
+func (f *fakeCloud) EnsureGatewayPosture(_ context.Context, _, _, name string) (cf.Posture, error) {
 	if err := f.call(); err != nil {
 		return cf.Posture{}, err
 	}
 	f.creates++
-	f.posture = cf.Posture{ID: "gateway", Name: name, Description: owner, Type: "gateway"}
+	f.posture = cf.Posture{ID: "gateway", Name: name, Type: "gateway"}
 	return f.posture, nil
 }
 func (f *fakeCloud) DeletePosture(context.Context, string, string, string) error {

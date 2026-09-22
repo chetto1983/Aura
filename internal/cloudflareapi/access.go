@@ -173,8 +173,12 @@ func (c *Client) GetPosture(ctx context.Context, accountID, id string) (Posture,
 
 // EnsureGatewayPosture requires organization enrollment; Require WARP also admits consumer
 // clients: https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-gateway/
-func (c *Client) EnsureGatewayPosture(ctx context.Context, accountID, id, name, owner string) (Posture, error) {
-	if name == "" || owner == "" {
+//
+// The name is the only owner-bearing field to check against: a description is accepted on
+// create but is absent from every posture read, so a rule identified by one can never be
+// recognised again (measured 2026-09-22 — a live gateway rule reads back as {id, type, name}).
+func (c *Client) EnsureGatewayPosture(ctx context.Context, accountID, id, name string) (Posture, error) {
+	if name == "" {
 		return Posture{}, failure("posture ownership required")
 	}
 	if id != "" {
@@ -182,24 +186,24 @@ func (c *Client) EnsureGatewayPosture(ctx context.Context, accountID, id, name, 
 		if err != nil {
 			return p, err
 		}
-		if p.ID != id || p.Description != owner || p.Type != "gateway" {
+		if p.ID != id || p.Name != name || p.Type != "gateway" {
 			return Posture{}, failure("posture ownership conflict")
 		}
 		return p, nil
 	}
-	return get[Posture](ctx, c, http.MethodPost, Posture{Name: name, Type: "gateway", Description: owner}, "accounts", accountID, "devices", "posture")
+	return get[Posture](ctx, c, http.MethodPost, Posture{Name: name, Type: "gateway"}, "accounts", accountID, "devices", "posture")
 }
 
 // DeletePosture refuses missing ownership and non-Gateway checks.
-func (c *Client) DeletePosture(ctx context.Context, accountID, id, owner string) error {
-	if owner == "" {
+func (c *Client) DeletePosture(ctx context.Context, accountID, id, name string) error {
+	if name == "" {
 		return failure("posture ownership required")
 	}
 	p, err := c.GetPosture(ctx, accountID, id)
 	if err != nil {
 		return err
 	}
-	if p.ID != id || p.Description != owner || p.Type != "gateway" {
+	if p.ID != id || p.Name != name || p.Type != "gateway" {
 		return failure("posture ownership conflict")
 	}
 	return c.remove(ctx, "accounts", accountID, "devices", "posture", id)

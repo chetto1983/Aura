@@ -133,8 +133,7 @@ type AccessPolicy struct {
 
 // Posture retains the ownership description used before removal.
 type Posture struct {
-	ID          string `json:"id,omitempty"`
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
+	Type string `json:"type"`
 }

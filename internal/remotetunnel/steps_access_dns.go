@@ -142,11 +142,11 @@ func (r *Reconciler) posture(ctx context.Context, s *State) error {
 		return err
 	}
 	for _, p := range checks {
-		if p.Name == name || p.Description == s.TunnelName {
+		if p.Name == name {
 			return ErrOwnershipConflict
 		}
 	}
-	p, err := r.cloud.EnsureGatewayPosture(ctx, s.Resources.AccountID, "", name, s.TunnelName)
+	p, err := r.cloud.EnsureGatewayPosture(ctx, s.Resources.AccountID, "", name)
 	if err != nil {
 		return err
 	}
@@ -164,7 +164,7 @@ func (r *Reconciler) posture(ctx context.Context, s *State) error {
 }
 
 func ownedPosture(s *State, p cloudflareapi.Posture) bool {
-	return validOwner(s.TunnelName) && p.ID == s.Resources.GatewayPostureID && p.Name == resourceName(s, "gateway") && p.Description == s.TunnelName && p.Type == "gateway"
+	return validOwner(s.TunnelName) && p.ID == s.Resources.GatewayPostureID && p.Name == resourceName(s, "gateway") && p.Type == "gateway"
 }
 
 func (r *Reconciler) publish(ctx context.Context, s *State) error {
