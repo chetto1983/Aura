@@ -1,10 +1,13 @@
 package embeddings
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -58,4 +61,25 @@ func spaceLabel(key spaceKey) string {
 		what = key.Base + " " + key.Model
 	}
 	return fmt.Sprintf("%s %s, %dd, recipe %d", key.Route, what, key.Dims, key.Recipe)
+}
+
+// ErrNoRoute means dense embedding is switched off: the local route with an empty base.
+var ErrNoRoute = errors.New("embeddings: no embedding route is configured")
+
+// RouteSpace resolves the space embed's route produces. Only the local route costs a call:
+// its model is read from the sidecar (AttestLocal). A cloud model id is its own name.
+func RouteSpace(ctx context.Context, client *http.Client, embed config.EmbedConfig, dims int) (Space, error) {
+	base, _, model := config.ResolveEmbedRoute(embed, "")
+	kind := config.EmbedRouteKind(embed)
+	if kind != config.EmbedLocal {
+		return SpaceFor(kind, model, base, dims, ""), nil
+	}
+	if strings.TrimSpace(base) == "" {
+		return Space{}, ErrNoRoute
+	}
+	artifact, err := AttestLocal(ctx, client, base)
+	if err != nil {
+		return Space{}, err
+	}
+	return SpaceFor(kind, "", "", dims, artifact), nil
 }
