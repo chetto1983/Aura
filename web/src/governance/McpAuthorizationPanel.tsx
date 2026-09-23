@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, Copy, ExternalLink, Link2, Unlink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -51,6 +51,19 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     retry: MCP_FLOW_MAX_POLL_FAILURES,
   });
 
+  // A change of authorization changes what the probe finds, and the board's tool count,
+  // verification outcome and last error are all that probe. Re-reading only the stored
+  // state left a just-authorized server showing the failure from before consent until a
+  // reload (measured 2026-09-23: Linear mounted with 68 tools, card said 0 and "dial failed").
+  const refreshAuthorizationViews = useCallback(
+    () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['mcp-authorization', serverName] }),
+        queryClient.invalidateQueries({ queryKey: ['governance', 'mcp', 'probe', serverName] }),
+      ]),
+    [queryClient, serverName],
+  );
+
   const start = useMutation({
     mutationFn: () => startMcpAuthorization(serverName),
     onSuccess: (started) => {
@@ -68,7 +81,7 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
     mutationFn: () => revokeMcpAuthorization(serverName),
     onSuccess: async () => {
       setFlowId(null);
-      await queryClient.invalidateQueries({ queryKey: ['mcp-authorization', serverName] });
+      await refreshAuthorizationViews();
     },
   });
 
@@ -81,8 +94,8 @@ export function McpAuthorizationPanel({ serverName }: McpAuthorizationPanelProps
   // queries.
   useEffect(() => {
     if (!approved) return;
-    void queryClient.invalidateQueries({ queryKey: ['mcp-authorization', serverName] });
-  }, [approved, queryClient, serverName]);
+    void refreshAuthorizationViews();
+  }, [approved, refreshAuthorizationViews]);
 
   const copyLink = async () => {
     if (!live?.authorizationUrl) return;
