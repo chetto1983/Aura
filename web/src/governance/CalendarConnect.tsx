@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { HttpError } from '../api/json';
 import { PimDeviceCodePanel } from './PimDeviceCodePanel';
+import { PimGoogleConnectPanel } from './PimGoogleConnectPanel';
 import {
   AdvancedSection,
   Field,
-  GoogleStartPanel,
   ProviderConfigFields,
   ProviderSelect,
   StartFailedPanel,
@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/button';
 // the sidecar exposes (operator directive 2026-06-27: "configure all variable on frontend not just
 // google") — not only Google's clientId/clientSecret. The provider picker swaps the visible config
 // fields; on create the wizard routes the connect step by the provider's authFlow: Google opens the
-// web-redirect consent (GoogleStartPanel), Microsoft/Outlook render the device-code grant
+// web-redirect consent (PimGoogleConnectPanel), Microsoft/Outlook render the device-code grant
 // (PimDeviceCodePanel), and credential/URL providers (IMAP/ICS/JSON) are ready immediately. All copy
 // via governance.mcp.calendar.* (en + it); a 503 (sidecar unconfigured) → a calm offline note.
 
@@ -155,7 +155,7 @@ function AccountList({
 // account's id + flow so the operator can retry sign-in WITHOUT re-creating the account (which
 // would hit the sidecar's 409-duplicate).
 type CreateResult =
-  | { readonly kind: 'google'; readonly start: PimGoogleStart }
+  | { readonly kind: 'google'; readonly id: string; readonly start: PimGoogleStart }
   | { readonly kind: 'device'; readonly id: string; readonly start: PimDeviceStart }
   | { readonly kind: 'none' }
   | { readonly kind: 'startFailed'; readonly id: string; readonly authFlow: PimAuthFlow };
@@ -180,7 +180,7 @@ function parsePriority(raw: string): number | undefined {
 async function startConnect(id: string, flow: PimAuthFlow): Promise<CreateResult> {
   if (flow === 'none') return { kind: 'none' };
   try {
-    if (flow === 'google') return { kind: 'google', start: await pimGoogleStart(id) };
+    if (flow === 'google') return { kind: 'google', id, start: await pimGoogleStart(id) };
     return { kind: 'device', id, start: await pimDeviceStart(id) };
   } catch {
     return { kind: 'startFailed', id, authFlow: flow };
@@ -331,7 +331,9 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         </p>
       ) : null}
 
-      {result?.kind === 'google' ? <GoogleStartPanel start={result.start} /> : null}
+      {result?.kind === 'google' ? (
+        <PimGoogleConnectPanel accountId={result.id} start={result.start} />
+      ) : null}
       {result?.kind === 'device' ? (
         <PimDeviceCodePanel accountId={result.id} start={result.start} />
       ) : null}

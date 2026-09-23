@@ -1,10 +1,10 @@
 import { useId } from 'react';
-import { ChevronRight, ExternalLink } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { ariaInvalid } from '../a11y/aria';
 import { PIM_PROVIDERS, type PimFieldDef, type PimProviderDef } from './pimProviders';
-import type { PimGoogleStart, PimProviderId } from './pimApi';
+import type { PimProviderId } from './pimApi';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -220,28 +220,6 @@ export function StartFailedPanel({
         {pending ? <Spinner /> : null}
         {t('governance.mcp.calendar.retryConnect')}
       </Button>
-    </div>
-  );
-}
-
-export function GoogleStartPanel({ start }: { readonly start: PimGoogleStart }) {
-  const { t } = useTranslation();
-  return (
-    <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-3">
-      <p className="text-[13px] font-semibold text-text">
-        {t('governance.mcp.calendar.redirectHeading')}
-      </p>
-      <p className="break-all font-mono text-[13px] text-text">{start.redirectUri}</p>
-      <p className="text-[13px] text-text-muted">{t('governance.mcp.calendar.redirectHint')}</p>
-      <Button asChild className="self-start text-[13px]">
-        <a href={start.authUrl} target="_blank" rel="noopener noreferrer">
-          <ExternalLink data-icon aria-hidden="true" />
-          {t('governance.mcp.calendar.connectGoogle')}
-        </a>
-      </Button>
-      <p role="note" className="text-[13px] text-text-muted">
-        {t('governance.mcp.calendar.consentNote')}
-      </p>
     </div>
   );
 }

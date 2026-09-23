@@ -18,6 +18,7 @@ const deletePimAccount = vi.fn();
 const pimGoogleStart = vi.fn();
 const pimDeviceStart = vi.fn();
 const pimAuthStatus = vi.fn();
+const pimAccountLinked = vi.fn();
 
 vi.mock('../pimApi', async () => {
   const actual = await vi.importActual<typeof import('../pimApi')>('../pimApi');
@@ -29,6 +30,7 @@ vi.mock('../pimApi', async () => {
     pimGoogleStart: (...a: unknown[]) => pimGoogleStart(...a) as Promise<unknown>,
     pimDeviceStart: (...a: unknown[]) => pimDeviceStart(...a) as Promise<unknown>,
     pimAuthStatus: (...a: unknown[]) => pimAuthStatus(...a) as Promise<unknown>,
+    pimAccountLinked: (...a: unknown[]) => pimAccountLinked(...a) as Promise<unknown>,
   };
 });
 
@@ -60,7 +62,7 @@ const ACCOUNT: PimAccount = {
 
 const GOOGLE_START: PimGoogleStart = {
   authUrl: 'https://accounts.google.com/o/oauth2/v2/auth?client_id=x',
-  redirectUri: 'http://localhost:8093/admin/auth/google/callback',
+  redirectUri: 'https://chetto1983.github.io/aura-connect/google/callback/',
 };
 
 const DEVICE_START: PimDeviceStart = {
@@ -97,6 +99,8 @@ describe('CalendarConnect', () => {
     pimGoogleStart.mockReset();
     pimDeviceStart.mockReset();
     pimAuthStatus.mockReset();
+    pimAccountLinked.mockReset();
+    pimAccountLinked.mockResolvedValue(false);
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -258,6 +262,49 @@ describe('CalendarConnect', () => {
     await waitFor(() => {
       expect(pimGoogleStart).toHaveBeenCalledWith('tenant__work');
     });
+  });
+
+  it('Google: polls the created account and confirms once it is linked', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockResolvedValue({ ...ACCOUNT, id: 'tenant__work' });
+    pimGoogleStart.mockResolvedValue(GOOGLE_START);
+    pimAccountLinked.mockResolvedValue(true);
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work calendar');
+    fillField(/^Client ID/i, 'client-id-123');
+    fillField(/^Client secret/i, 'client-secret-456');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    expect(
+      await screen.findByText('Google account linked. You can close the Google tab.'),
+    ).toBeTruthy();
+    expect(pimAccountLinked).toHaveBeenCalledWith('tenant__work');
+    expect(screen.queryByRole('link', { name: 'Connect Google' })).toBeNull();
+    expect(screen.queryByText(GOOGLE_START.redirectUri)).toBeNull();
+  });
+
+  it('Google: keeps the consent panel while the account is not linked yet', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockResolvedValue(ACCOUNT);
+    pimGoogleStart.mockResolvedValue(GOOGLE_START);
+    pimAccountLinked.mockResolvedValue(false);
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work calendar');
+    fillField(/^Client ID/i, 'client-id-123');
+    fillField(/^Client secret/i, 'client-secret-456');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => {
+      expect(pimAccountLinked).toHaveBeenCalledWith('work');
+    });
+    expect(screen.getByRole('link', { name: 'Connect Google' })).toBeTruthy();
+    expect(screen.queryByText('Google account linked. You can close the Google tab.')).toBeNull();
   });
 
   it('Microsoft: switching provider swaps fields and runs the device-code flow', async () => {

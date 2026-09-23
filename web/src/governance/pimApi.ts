@@ -116,10 +116,20 @@ export async function deletePimAccount(id: string): Promise<void> {
 }
 
 /** GET …/{id}/google/start — mint the Google consent URL + the redirect URI the operator registers
- * in their Google Cloud client. A missing account throws `Error("HTTP 404")`; an account without a
+ * once in their Google Cloud client (the shared aura-connect relay, the same for every install). A missing account throws `Error("HTTP 404")`; an account without a
  * clientId/secret throws `Error("HTTP 400")`. */
 export function pimGoogleStart(id: string): Promise<PimGoogleStart> {
   return getJSON<PimGoogleStart>(`${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/google/start`);
+}
+
+/** GET …/{id}/status — whether the account is linked: true/false for a Google account (its OAuth
+ * token is stored or not), null for providers whose state comes through the device-code flow or
+ * that have nothing to link. A file check on the sidecar, so polling it never calls Google. */
+export async function pimAccountLinked(id: string): Promise<boolean | null> {
+  const raw = await getJSON<Record<string, unknown>>(
+    `${GOV_PIM_ACCOUNTS_PATH}/${encodeURIComponent(id)}/status`,
+  );
+  return typeof raw.linked === 'boolean' ? raw.linked : null;
 }
 
 /** POST …/{id}/logout — drop the linked session without deleting the account. */

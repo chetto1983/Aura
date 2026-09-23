@@ -114,9 +114,10 @@ export const governanceEn = {
         retryConnect: 'Retry sign-in',
         redirectHeading: 'Register this redirect URI',
         redirectHint:
-          "Register this exact redirect URI in your Google Cloud 'Web application' OAuth client.",
+          "Register this exact redirect URI in your Google Cloud 'Web application' OAuth client. It is the same for every Aura install, so registering it once is enough.",
         connectGoogle: 'Connect Google',
-        consentNote: 'Complete consent in the opened tab — the account list updates automatically.',
+        consentNote: 'Complete consent in the opened tab — this panel updates by itself.',
+        googleLinked: 'Google account linked. You can close the Google tab.',
         device: {
           heading: 'Finish sign-in on Microsoft',
           codeLabel: 'Enter this code:',
@@ -345,10 +346,11 @@ export const governanceIt = {
         retryConnect: 'Riprova accesso',
         redirectHeading: 'Registra questo redirect URI',
         redirectHint:
-          "Registra esattamente questo redirect URI nel tuo client OAuth Google Cloud di tipo 'Applicazione web'.",
+          "Registra esattamente questo redirect URI nel tuo client OAuth Google Cloud di tipo 'Applicazione web'. È lo stesso per ogni installazione di Aura: basta registrarlo una volta.",
         connectGoogle: 'Connetti Google',
         consentNote:
-          'Completa il consenso nella scheda aperta — la lista account si aggiorna da sola.',
+          'Completa il consenso nella scheda aperta — questo riquadro si aggiorna da solo.',
+        googleLinked: 'Account Google collegato. Puoi chiudere la scheda di Google.',
         device: {
           heading: 'Completa l’accesso su Microsoft',
           codeLabel: 'Inserisci questo codice:',
