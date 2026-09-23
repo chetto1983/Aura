@@ -177,15 +177,14 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		t.Errorf("STTCloudModel = %q, want overlaid settings STT cloud model", got)
 	}
 
-	// This assertion used to want the OVERLAID EMBED BASE here, which was the defect
-	// rather than the contract: it sent the OpenRouter credential and a cloud model name
-	// to whatever AURA_EMBED_BASE_URL named. AURA_EMBED_BASE_URL is the LOCAL sidecar and
-	// nothing else -- the overlay of it is still proven above, on cfg.Embed.BaseURL. With a
-	// cloud model set the route is the shared LLM one, exactly as STT and TTS resolve
-	// theirs, with the /v1 stripped because this client appends /v1/embeddings.
+	// Neither overlaid base may carry a cloud embedding model. AURA_EMBED_BASE_URL is the
+	// LOCAL sidecar only (its overlay is proven above, on cfg.Embed.BaseURL), and the chat
+	// LLM's base is no candidate either: measured on the lab VM 2026-09-23, a chat route on
+	// Ollama took the embeddings with it. With no AURA_EMBED_CLOUD_BASE_URL the route is
+	// OpenRouter itself, /v1 stripped because this client appends /v1/embeddings.
 	embedBase, embedKey, embedModel := cfg.EmbedRoute()
-	if embedBase != "https://settings-llm.example" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
-		t.Errorf("EmbedRoute() = (%q, %q, %q), want the shared cloud route with the environment's key", embedBase, embedKey, embedModel)
+	if embedBase != "https://openrouter.ai/api" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
+		t.Errorf("EmbedRoute() = (%q, %q, %q), want OpenRouter with the environment's key, never the overlaid chat base", embedBase, embedKey, embedModel)
 	}
 }
 
