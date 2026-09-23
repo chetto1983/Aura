@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -112,6 +113,42 @@ func TestReloadReplaysTheSameFlow(t *testing.T) {
 	}
 	if second.ID != first.ID || second.AuthorizationURL != first.AuthorizationURL {
 		t.Fatalf("a reload started a second flow: %+v vs %+v", second, first)
+	}
+}
+
+// openerEchoingRedirect builds its consent URL from the redirect it was handed, as the SDK
+// does, so a test can see where a published URL would send the human back to.
+func openerEchoingRedirect() SessionOpener {
+	return func(ctx context.Context, _ string, _ ManagedServer, opts SessionOptions) (io.Closer, error) {
+		authURL := "https://mcp.canva.com/authorize?state=st4te&redirect_uri=" + url.QueryEscape(opts.OAuth.RedirectURL)
+		if _, err := opts.OAuth.Fetcher(ctx, &auth.AuthorizationArgs{URL: authURL}); err != nil {
+			return nil, err
+		}
+		return &fakeSession{}, nil
+	}
+}
+
+// A reload replays; a cockpit reached on a DIFFERENT address must not. The pending consent
+// URL carries the old redirect, which the provider may refuse outright — Canva accepts only
+// loopback redirects, measured 2026-09-23 — so replaying it served the same "Invalid
+// redirect URI" for the rest of the flow's TTL, however the operator reopened the cockpit.
+func TestAChangedRedirectStartsAFreshFlow(t *testing.T) {
+	t.Parallel()
+	flows := newTestFlows(t, openerEchoingRedirect())
+
+	first, err := flows.Start(context.Background(), "id-1", "canva", remoteServer(), "https://192.168.1.225/cb")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	second, err := flows.Start(context.Background(), "id-1", "canva", remoteServer(), "http://127.0.0.1:9080/cb")
+	if err != nil {
+		t.Fatalf("second Start: %v", err)
+	}
+	if second.ID == first.ID {
+		t.Fatalf("the consent URL for %s was replayed to a cockpit on %s", first.RedirectURI, "http://127.0.0.1:9080/cb")
+	}
+	if !strings.Contains(second.AuthorizationURL, url.QueryEscape("http://127.0.0.1:9080/cb")) {
+		t.Fatalf("authorization url = %q, want it to return to the new address", second.AuthorizationURL)
 	}
 }
 

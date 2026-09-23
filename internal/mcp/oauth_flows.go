@@ -164,6 +164,10 @@ func NewFlows(store GrantStore, open SessionOpener, logger *slog.Logger) (*Flows
 // behaviour, and it matters more than it looks: a cockpit reload that started a fresh
 // flow would leave the first one's state live, register a second dynamic client, and give
 // the human two consent URLs of which only one can work.
+//
+// Only a flow bound to the SAME redirect is replayed. One started from another address
+// carries a consent URL that returns somewhere else — or that the provider refuses, as
+// Canva refuses anything but loopback — so it is replaced instead.
 func (f *Flows) Start(ctx context.Context, owner, name string, server ManagedServer, redirectURI string) (Flow, error) {
 	settings, err := OAuthSettingsFromEnv(server.Env)
 	if err != nil {
@@ -172,7 +176,7 @@ func (f *Flows) Start(ctx context.Context, owner, name string, server ManagedSer
 	if !UsesOAuth(server, settings) {
 		return Flow{}, fmt.Errorf("mcp oauth: %q takes no authorization flow", name)
 	}
-	if existing, ok := f.replayable(owner, name); ok {
+	if existing, ok := f.replayable(owner, name, redirectURI); ok {
 		return existing, nil
 	}
 	flow := &liveFlow{
@@ -319,12 +323,12 @@ func (f *Flows) Status(owner, id string) (Flow, error) {
 	return flow.Flow, nil
 }
 
-func (f *Flows) replayable(owner, name string) (Flow, bool) {
+func (f *Flows) replayable(owner, name, redirectURI string) (Flow, bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.sweepLocked()
 	flow, ok := f.byOwner[ownerKey(owner, name)]
-	if !ok || flow.Status != FlowAuthorizationRequired {
+	if !ok || flow.Status != FlowAuthorizationRequired || flow.RedirectURI != redirectURI {
 		return Flow{}, false
 	}
 	return flow.Flow, true
