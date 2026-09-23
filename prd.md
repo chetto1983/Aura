@@ -653,11 +653,25 @@ Measured 2026-09-23 against ElevenLabs' hosted MCP:
   warned that the app is self-declared. Its API answered 200 with `metadata_document_host:
   chetto1983.github.io`, `has_localhost_only_redirects: false` and `requires_paid_plan: false`.
 
-Not measured yet: a complete sign-in through Aura (consent, relay return, code exchange,
-tool listing) and the refresh leg. Also unmeasured against ElevenLabs: the SDK leaves a
-document client on x/oauth2's auth-style auto-detection, which sends HTTP Basic first and
-the body on refusal. That retry is proven only in-process, against a server that refuses
-Basic the way ElevenLabs' advertised methods imply.
+Measured 2026-09-23 through Aura, on the LAN VM running image revision `b43b57ff4`, with the
+cockpit reached over HTTPS and the server configured at the `api.us` URL:
+- The mount before consent refused with "this identity has not authorized this server"
+  (10:33:32 UTC), instead of the SDK's "no configured client registration methods".
+- Connect → ElevenLabs consent → relay → cockpit callback → code exchange stored the grant
+  at 10:33:52 and mounted 120 tools at 10:33:56. The grant holds all 7 advertised scopes, a
+  refresh token, and an access token that expires one hour after issue.
+- Asked in the cockpit chat, the agent found `elevenlabs__agents_list` through `tool_search`
+  and called it. The stored tool turn is ElevenLabs' own answer, `{"agents": [], "has_more":
+  false}`, for a workspace with no agents. That proves the token against ElevenLabs' API,
+  not only against the MCP endpoint.
+- After the updater restarted the daemon on revision `835efa363` (10:44:10), the server
+  remounted from the stored grant with 120 tools and no consent. Linear remounted the same
+  way, through its dynamic registration (68 tools).
+
+Not measured yet: the refresh leg (the first access token expired at 11:33:52 UTC). Not
+observable from Aura's logs: which token-endpoint auth style ElevenLabs accepted. The SDK
+leaves a document client on x/oauth2's auto-detection, which tries HTTP Basic first and
+the body on refusal; the exchange succeeded, but the retry is proven only in-process.
 
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
