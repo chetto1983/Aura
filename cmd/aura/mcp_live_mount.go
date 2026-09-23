@@ -126,14 +126,19 @@ func deferredOAuthMountNames(policies map[string]mcp.ManagedServer) []string {
 	return names
 }
 
+// requestMountTimeout bounds MountNow's single handshake. Shotstack's hosted MCP needed more
+// than 10 s on the VM to reach "not authorized yet" (every request ~1 s behind its gateway, and
+// OAuth discovery takes several in a row), so 10 s reported a deadline instead (2026-09-23).
+const requestMountTimeout = 15 * time.Second
+
 // MountNow is Mount for a request that waits on it: an operator's install or enable. It tries
-// once, within the code's default handshake timeout. The mount budget the environment sets
-// (compose: 180 s, 40 attempts) is for sidecars still starting at boot; spent inside an install
-// request it held the response for three minutes after the row was saved (measured on the VM
-// 2026-09-23), and a cockpit that stopped waiting never learnt the server existed. A server
-// that is not up yet shows its failure on the board and mounts at the next boot or enable.
+// once, within requestMountTimeout. The mount budget the environment sets (compose: 180 s, 40
+// attempts) is for sidecars still starting at boot; spent inside an install request it held the
+// response for three minutes after the row was saved (measured on the VM 2026-09-23), and a
+// cockpit that stopped waiting never learnt the server existed. A server that is not up yet
+// shows its failure on the board and mounts at the next boot or enable.
 func (m *liveMCPMount) MountNow(ctx context.Context, name string, server mcp.ManagedServer) {
-	m.mount(ctx, name, server, mcptools.MountRetryPolicy{Attempts: 1}, defaultMCPMountTimeout*time.Second)
+	m.mount(ctx, name, server, mcptools.MountRetryPolicy{Attempts: 1}, requestMountTimeout)
 }
 
 // Mount brings a server's tools into the live registry, replacing any earlier mount of the
