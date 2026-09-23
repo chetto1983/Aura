@@ -558,6 +558,16 @@ type AuraPendingNotifications struct {
 	SteerQueueID pgtype.UUID `json:"steer_queue_id"`
 }
 
+type AuraPimProviderApp struct {
+	Provider string `json:"provider"`
+	ClientID string `json:"client_id"`
+	TenantID string `json:"tenant_id"`
+	// AES-256-GCM with the nonce prepended; key HKDF(AURA_AUTHULA_SECRET, "aura-pim-provider-app-key-v1"). Google only.
+	ClientSecretCiphertext []byte             `json:"client_secret_ciphertext"`
+	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
+	UpdatedBy              string             `json:"updated_by"`
+}
+
 // Resumable provisioning/de-provisioning saga journal (Phase 36, D-14/D-27). MUTABLE: step status transitions pending -> done/failed for forward recovery. identity_id has NO FK so a de-provision saga survives the identity deletion it is executing.
 type AuraProvisioningSaga struct {
 	SagaID     pgtype.UUID        `json:"saga_id"`

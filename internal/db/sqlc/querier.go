@@ -211,6 +211,7 @@ type Querier interface {
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
+	GetPIMProviderApp(ctx context.Context, provider string) (AuraPimProviderApp, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	// Owner-scoped single-pause read (Phase 36 MUSR-01 / D-06): the same projection as
@@ -429,6 +430,7 @@ type Querier interface {
 	// caller keeps paging until the exact durable watermark or the root is observed.
 	ListManagedTurnsPageBySeq(ctx context.Context, arg ListManagedTurnsPageBySeqParams) ([]ListManagedTurnsPageBySeqRow, error)
 	ListMcpAudit(ctx context.Context, arg ListMcpAuditParams) ([]AuraMcpAudit, error)
+	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
@@ -675,6 +677,9 @@ type Querier interface {
 	// A NULL cost keeps the recorded one; a zero cost is recorded.
 	UpdateMediaJobProgress(ctx context.Context, arg UpdateMediaJobProgressParams) (AuraMediaJob, error)
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
+	// Keeping the stored secret is its own UPDATE: an INSERT … ON CONFLICT checks the row CHECK
+	// against the proposed ('google', NULL) row before conflict handling (measured 2026-09-23).
+	UpdatePIMProviderAppKeepSecret(ctx context.Context, arg UpdatePIMProviderAppKeepSecretParams) (int64, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
 	// a cancelled/completed task is not silently revived. Returns rows affected.
@@ -701,6 +706,7 @@ type Querier interface {
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertLLMProviderRoute(ctx context.Context, arg UpsertLLMProviderRouteParams) (AuraLlmProviderRoutes, error)
 	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
+	UpsertPIMProviderApp(ctx context.Context, arg UpsertPIMProviderAppParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
 	// The per-identity skill catalog (migration 0118). Every statement carries owner_identity_id
 	// in its predicate AND runs under the two RLS policies: the predicate is what makes the
