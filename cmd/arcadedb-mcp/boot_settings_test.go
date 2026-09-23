@@ -27,7 +27,7 @@ func (f *fakeBootSettings) Secret(_ context.Context, key string) (string, error)
 	return f.secret, f.secretErr
 }
 
-func TestApplyBootSettingsMakesPostgresWinAndKeepsSecretOutOfEnv(t *testing.T) {
+func TestApplyBootSettingsResolvesTheRouteFromRowsAndKeepsSecretOutOfEnv(t *testing.T) {
 	t.Setenv("AURA_EMBED_BASE_URL", "http://stale-env:8081")
 	t.Setenv("AURA_EMBED_MODEL", "")
 	t.Setenv("OPENROUTER_API_KEY", "inherited-but-not-authoritative")
@@ -39,21 +39,32 @@ func TestApplyBootSettingsMakesPostgresWinAndKeepsSecretOutOfEnv(t *testing.T) {
 		secret: "stored-openrouter-key",
 	}
 
-	key, err := applyBootSettings(t.Context(), store)
+	route, err := applyBootSettings(t.Context(), store)
 	if err != nil {
 		t.Fatalf("applyBootSettings: %v", err)
 	}
-	if got := os.Getenv("AURA_EMBED_BASE_URL"); got != "http://settings-embed:8081" {
-		t.Fatalf("AURA_EMBED_BASE_URL = %q, want the Postgres value", got)
+	if route.baseURL != "https://openrouter.ai/api" || route.model != "vendor/embed-v2" || route.apiKey != "stored-openrouter-key" {
+		t.Fatalf("route = %+v, want the stored model on OpenRouter with the sealed key", route)
 	}
-	if got := os.Getenv("AURA_EMBED_MODEL"); got != "vendor/embed-v2" {
-		t.Fatalf("AURA_EMBED_MODEL = %q, want the Postgres value", got)
-	}
-	if key != "stored-openrouter-key" || store.secretKey != "OPENROUTER_API_KEY" {
-		t.Fatalf("secret = %q read as %q, want stored OPENROUTER_API_KEY", key, store.secretKey)
+	if store.secretKey != "OPENROUTER_API_KEY" {
+		t.Fatalf("secret read as %q, want OPENROUTER_API_KEY", store.secretKey)
 	}
 	if got := os.Getenv("OPENROUTER_API_KEY"); got != "inherited-but-not-authoritative" {
 		t.Fatalf("OPENROUTER_API_KEY = %q: the stored secret must never enter the environment", got)
+	}
+}
+
+func TestApplyBootSettingsKeepsTheLocalRouteWithoutAModel(t *testing.T) {
+	for _, key := range []string{"AURA_EMBED_BASE_URL", "AURA_EMBED_MODEL", "AURA_EMBED_CLOUD_BASE_URL"} {
+		t.Setenv(key, "")
+		_ = os.Unsetenv(key)
+	}
+	route, err := applyBootSettings(t.Context(), &fakeBootSettings{secret: "stored-key"})
+	if err != nil {
+		t.Fatalf("applyBootSettings: %v", err)
+	}
+	if route.baseURL != "http://aura-llama-embed:8081" || route.model != "" || route.apiKey != "" {
+		t.Fatalf("local route = %+v, want the product default with no model or credential", route)
 	}
 }
 
@@ -114,56 +125,13 @@ func TestLoadBootSettingsPropagatesOpenFailureWithoutFallback(t *testing.T) {
 func TestLoadBootSettingsClosesTheBootstrapStore(t *testing.T) {
 	closed := false
 	store := &fakeBootSettings{secret: "stored-key"}
-	key, err := loadBootSettingsWith(t.Context(), "postgres://db/aura", "authula-secret", func(context.Context, string, string) (bootSettingsStore, func(), error) {
+	_, err := loadBootSettingsWith(t.Context(), "postgres://db/aura", "authula-secret", func(context.Context, string, string) (bootSettingsStore, func(), error) {
 		return store, func() { closed = true }, nil
 	})
-	if err != nil || key != "stored-key" {
-		t.Fatalf("loadBootSettingsWith = (%q, %v)", key, err)
+	if err != nil {
+		t.Fatalf("loadBootSettingsWith: %v", err)
 	}
 	if !closed {
 		t.Fatal("bootstrap Postgres pool was not closed")
 	}
-}
-
-func TestEmbeddingRouteMatchesDaemonLocalAndCloudContract(t *testing.T) {
-	for _, key := range []string{
-		"AURA_EMBED_BASE_URL", "AURA_EMBED_MODEL", "AURA_EMBED_CLOUD_BASE_URL", "AURA_LLM_BASE_URL",
-	} {
-		t.Setenv(key, "")
-	}
-
-	t.Run("local default has no model or credential", func(t *testing.T) {
-		_ = os.Unsetenv("AURA_EMBED_BASE_URL")
-		route := embeddingRouteFromEnv("stored-key")
-		if route.baseURL != "http://aura-llama-embed:8081" || route.model != "" || route.apiKey != "" {
-			t.Fatalf("local route = %+v", route)
-		}
-	})
-
-	t.Run("cloud ignores the chat LLM base", func(t *testing.T) {
-		t.Setenv("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
-		t.Setenv("AURA_EMBED_MODEL", "vendor/embed-v2")
-		t.Setenv("AURA_LLM_BASE_URL", "http://host.docker.internal:11434/v1")
-		route := embeddingRouteFromEnv("stored-key")
-		if route.baseURL != "https://openrouter.ai/api" || route.model != "vendor/embed-v2" || route.apiKey != "stored-key" {
-			t.Fatalf("cloud route = %+v, want OpenRouter whatever the chat LLM's base is", route)
-		}
-	})
-
-	t.Run("explicit cloud endpoint wins", func(t *testing.T) {
-		t.Setenv("AURA_EMBED_MODEL", "vendor/embed-v2")
-		t.Setenv("AURA_EMBED_CLOUD_BASE_URL", "https://embed.example/v1")
-		route := embeddingRouteFromEnv("stored-key")
-		if route.baseURL != "https://embed.example" {
-			t.Fatalf("explicit cloud base = %q", route.baseURL)
-		}
-	})
-
-	t.Run("cloud defaults to the daemon OpenRouter route", func(t *testing.T) {
-		t.Setenv("AURA_EMBED_MODEL", "vendor/embed-v2")
-		route := embeddingRouteFromEnv("stored-key")
-		if route.baseURL != "https://openrouter.ai/api" {
-			t.Fatalf("default cloud base = %q", route.baseURL)
-		}
-	})
 }

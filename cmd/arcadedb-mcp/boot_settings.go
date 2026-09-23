@@ -11,18 +11,22 @@ import (
 	"github.com/chetto1983/aura/internal/settings"
 )
 
-// This is the product default when no row exists. OverlayEnv sets even an empty stored
-// value, so the operator can still disable dense retrieval explicitly.
+// This is the product default when neither a row nor the environment names a local base.
+// An explicitly empty row still wins, so the operator can disable dense retrieval.
 const defaultMemoryEmbedBaseURL = "http://aura-llama-embed:8081"
 
-type bootSettingsStore interface {
-	settings.Lister
-	Secret(context.Context, string) (string, error)
-}
+type bootSettingsStore = settings.SecretLister
 
 type bootSettingsOpener func(context.Context, string, string) (bootSettingsStore, func(), error)
 
-func loadBootSettings(ctx context.Context) (string, error) {
+type embeddingRoute struct {
+	embed   config.EmbedConfig
+	baseURL string
+	model   string
+	apiKey  string
+}
+
+func loadBootSettings(ctx context.Context) (embeddingRoute, error) {
 	return loadBootSettingsWith(
 		ctx,
 		os.Getenv("AURA_DB_URL"),
@@ -36,16 +40,16 @@ func loadBootSettingsWith(
 	dsn string,
 	authulaSecret string,
 	open bootSettingsOpener,
-) (string, error) {
+) (embeddingRoute, error) {
 	if strings.TrimSpace(dsn) == "" {
-		return "", fmt.Errorf("AURA_DB_URL is required for the settings authority")
+		return embeddingRoute{}, fmt.Errorf("AURA_DB_URL is required for the settings authority")
 	}
 	if strings.TrimSpace(authulaSecret) == "" {
-		return "", fmt.Errorf("AURA_AUTHULA_SECRET is required to read sealed settings")
+		return embeddingRoute{}, fmt.Errorf("AURA_AUTHULA_SECRET is required to read sealed settings")
 	}
 	store, closeStore, err := open(ctx, dsn, authulaSecret)
 	if err != nil {
-		return "", fmt.Errorf("settings database: %w", err)
+		return embeddingRoute{}, fmt.Errorf("settings database: %w", err)
 	}
 	defer closeStore()
 	return applyBootSettings(ctx, store)
@@ -64,36 +68,27 @@ func openBootSettings(ctx context.Context, dsn, authulaSecret string) (bootSetti
 	return store, pool.Close, nil
 }
 
-func applyBootSettings(ctx context.Context, store bootSettingsStore) (string, error) {
-	// Reusing OverlayEnv keeps the daemon and sidecar on the same allowlist and parsers;
-	// a second direct row-to-config mapping would become another configuration authority.
+// applyBootSettings overlays the non-embedding rows (memory bounds, timeouts) onto the
+// environment, as the daemon does, and resolves the embedding route from the rows
+// themselves: settings.EmbedRoute is the one mapping the ingest supervisor shares, and it
+// can see a deleted row where a re-read through the environment could not.
+func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingRoute, error) {
 	if err := settings.OverlayEnv(ctx, store); err != nil {
-		return "", fmt.Errorf("settings overlay: %w", err)
+		return embeddingRoute{}, fmt.Errorf("settings overlay: %w", err)
 	}
-	key, err := store.Secret(ctx, "OPENROUTER_API_KEY")
+	embed, key, err := settings.EmbedRoute(ctx, store, os.LookupEnv, defaultMemoryEmbedBaseURL)
 	if err != nil {
-		return "", fmt.Errorf("embedding credential: %w", err)
+		return embeddingRoute{}, err
 	}
-	return strings.TrimSpace(key), nil
+	baseURL, credential, model := config.ResolveEmbedRoute(embed, key)
+	return embeddingRoute{embed: embed, baseURL: baseURL, model: model, apiKey: credential}, nil
 }
 
-type embeddingRoute struct {
-	baseURL string
-	model   string
-	apiKey  string
-}
-
-func embeddingRouteFromEnv(apiKey string) embeddingRoute {
-	// LookupEnv preserves the distinction between no row (the product default) and an
-	// explicitly empty row (lexical-only retrieval).
-	localBase, present := os.LookupEnv("AURA_EMBED_BASE_URL")
-	if !present {
-		localBase = defaultMemoryEmbedBaseURL
+// errString keeps a failed attestation visible in the boot log without failing boot: the
+// local sidecar may still be loading, and the space is informational until plan 2 stamps it.
+func errString(err error) string {
+	if err == nil {
+		return ""
 	}
-	baseURL, key, model := config.ResolveEmbedRoute(config.EmbedConfig{
-		BaseURL:      strings.TrimSpace(localBase),
-		CloudModel:   strings.TrimSpace(os.Getenv("AURA_EMBED_MODEL")),
-		CloudBaseURL: strings.TrimSpace(os.Getenv("AURA_EMBED_CLOUD_BASE_URL")),
-	}, apiKey)
-	return embeddingRoute{baseURL: baseURL, model: model, apiKey: key}
+	return err.Error()
 }

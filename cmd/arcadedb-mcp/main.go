@@ -24,6 +24,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 const (
@@ -46,7 +48,7 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	embedAPIKey, err := loadBootSettings(context.Background())
+	embedRoute, err := loadBootSettings(context.Background())
 	if err != nil {
 		return err
 	}
@@ -64,12 +66,15 @@ func run(logger *slog.Logger) error {
 	// The stored cloud model is the route switch: it selects the shared cloud base
 	// and sealed credential, never the local sidecar. An explicitly empty local base
 	// disables dense retrieval; per-call embedder failures still fall back to lexical.
-	embedRoute := embeddingRouteFromEnv(embedAPIKey)
 	embedder := arcadedb.NewSidecarEmbedder(embedRoute.baseURL, embedRoute.model, embedRoute.apiKey, 0)
 	if embedder != nil {
 		// NOT attached to `client`: that one only ever runs DDL as the admin, and
 		// the per-tenant clients the resolver builds get the embedder themselves.
-		logger.Info("dense retrieval enabled", "embed_url", embedRoute.baseURL)
+		// Memory vectors are pinned at the default width (arcadedb vectorDimensions), so
+		// that is the width this process's space names.
+		space, spaceErr := embeddings.RouteSpace(context.Background(), nil, embedRoute.embed, config.DefaultEmbedDimensions)
+		logger.Info("dense retrieval enabled", "embed_url", embedRoute.baseURL,
+			"space", space.ID, "space_label", space.Label, "space_error", errString(spaceErr))
 	} else {
 		logger.Info("dense retrieval disabled: no AURA_EMBED_BASE_URL; retrieval is lexical only")
 	}
