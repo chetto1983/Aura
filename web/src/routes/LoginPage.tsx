@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ariaInvalid } from '../a11y/aria';
@@ -144,6 +145,7 @@ function authulaHeaders(config: AuthConfig): Record<string, string> {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const sessionExpired = searchParams.get('expired') === '1';
@@ -211,8 +213,15 @@ export function LoginPage() {
       setAuthulaStep('totp');
       return 'continue';
     }
-    void navigate(donePath, { replace: donePath !== '/' });
+    enterCockpit(donePath);
     return 'done';
+  }
+
+  // Sign-out stays inside this SPA, so the cache still holds the previous identity's `me`
+  // (fresh for 60 s) and lists; a new session must not render them.
+  function enterCockpit(path: string) {
+    queryClient.clear();
+    void navigate(path, { replace: path !== '/' });
   }
 
   async function submitAuthulaCode(form: HTMLFormElement): Promise<SubmitOutcome> {
@@ -230,7 +239,7 @@ export function LoginPage() {
       credentials: 'same-origin',
     });
     if (res.ok) {
-      void navigate('/');
+      enterCockpit('/');
       return 'done';
     }
     setError('login.errors.wrongCode');

@@ -1,14 +1,30 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import i18n from '../i18n/i18n';
 import { LoginPage } from '../routes/LoginPage';
 
 function renderLogin(initialEntries: string[] = ['/login']) {
   return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <LoginPage />
-    </MemoryRouter>,
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={initialEntries}>
+        <LoginPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+function renderCockpitRoutes() {
+  return render(
+    <QueryClientProvider client={new QueryClient()}>
+      <MemoryRouter initialEntries={['/login']}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/" element={<div>cockpit home</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -215,14 +231,7 @@ describe('LoginPage', () => {
         new Response(JSON.stringify({ session: { id: 's1' } }), { status: 200 }),
       );
     vi.stubGlobal('fetch', fetchMock);
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<div>cockpit home</div>} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderCockpitRoutes();
     fireEvent.change(await screen.findByLabelText('Operator email'), {
       target: { value: 'operator@example.com' },
     });
@@ -561,14 +570,7 @@ describe('LoginPage', () => {
       );
     vi.stubGlobal('fetch', fetchMock);
 
-    render(
-      <MemoryRouter initialEntries={['/login']}>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/" element={<div>cockpit home</div>} />
-        </Routes>
-      </MemoryRouter>,
-    );
+    renderCockpitRoutes();
     fireEvent.change(await screen.findByLabelText('Operator email'), {
       target: { value: 'operator@example.com' },
     });
