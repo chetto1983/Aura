@@ -619,6 +619,13 @@ Measured 2026-09-23 on the same VM after the edge updater delivered image revisi
 - `GET /api/connect/pim/accounts/{id}/status` answered `linked: true` through the proxy. The
   cockpit's Google panel polls this every 2 s to replace itself with a confirmation.
 
+Also measured, the same morning:
+- An Outlook.com account linked by device code, with no redirect at all: code issued at
+  09:10:56 UTC, success at 09:11:42, MSAL cache written with mode 600.
+- Asked in the cockpit chat, the agent read both accounts through one `list_calendars` call:
+  three Google calendars and four Outlook calendars. That proves the stored tokens against the
+  Google Calendar API and Microsoft Graph, not only the link.
+
 Not measured live: the panel's switch itself (unit tests only) and the return through a
 Cloudflare tunnel.
 

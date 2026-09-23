@@ -80,9 +80,11 @@ Other decisions:
   writes. The change does not appear in the admin audit feed.
 - **Down migration.** It drops the table.
 - **Queries.** Through sqlc, in `internal/db/queries/pim_provider_app.sql`. "Keep the stored
-  secret" is done in SQL with
-  `COALESCE(EXCLUDED.client_secret_ciphertext, pim_provider_app.client_secret_ciphertext)`,
-  not with a read-modify-write in Go.
+  secret" is a separate `UPDATE` that does not touch `client_secret_ciphertext`, not a
+  `COALESCE` inside `INSERT … ON CONFLICT`. Measured 2026-09-23 on the VM's Postgres 18.4 with
+  a temp table: Postgres checks the row-shape CHECK against the *proposed* row before conflict
+  handling, so an upsert of `('google', NULL)` fails with `violates check constraint` even when
+  a row with a secret already exists.
 
 ## Package
 
@@ -230,7 +232,7 @@ proxy must re-inject the same way.
 - store round-trip;
 - the ciphertext column never contains the plaintext;
 - another HKDF info cannot open it;
-- the `COALESCE` keep-secret upsert;
+- the keep-secret update;
 - the row-shape CHECKs reject a Google row without a secret and a Microsoft row with one;
 - the migration applies up and down.
 
