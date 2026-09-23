@@ -220,6 +220,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	skillLoaders := newIdentityLoaders(chat.cfg, newSharedSkillReader(chat.cfg, chat.pool))
 	aguiServer.SetGovernanceProviders(buildGovernanceProviders(chat.cfg, chat.pool, store, live, skillLoaders))
 	wireSettingsProviders(aguiServer, chat)
+	wirePIMProviderApps(aguiServer, chat)
 	wireRemoteAccess(ctx, aguiServer, chat)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
 	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only

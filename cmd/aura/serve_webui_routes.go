@@ -277,6 +277,8 @@ const (
 	connectPIMAuthStatusRoute     = "GET /api/connect/pim/accounts/{id}/auth/status"
 	connectPIMAuthCancelRoute     = "POST /api/connect/pim/accounts/{id}/auth/cancel"
 	connectPIMGoogleCallbackRoute = "GET " + agui.PIMGoogleCallbackPath
+	connectPIMProvidersListRoute  = "GET /api/connect/pim/providers"
+	connectPIMProviderPutRoute    = "PUT /api/connect/pim/providers/{provider}"
 )
 
 const (
