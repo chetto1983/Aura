@@ -160,6 +160,10 @@ export function patchJSON<T>(url: string, body?: unknown): Promise<T> {
   return sendJSON<T>('PATCH', url, body);
 }
 
+export function putJSON<T>(url: string, body?: unknown): Promise<T> {
+  return sendJSON<T>('PUT', url, body);
+}
+
 export function deleteJSON<T>(url: string): Promise<T> {
   return sendJSON<T>('DELETE', url);
 }

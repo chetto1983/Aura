@@ -8,8 +8,10 @@
 //     ProviderConfig.TryGetValue (GoogleProviderService → clientId/clientSecret; M365/OutlookCom →
 //     tenantId/clientId; IcsProviderService → icsUrl; ImapProviderService → imapHost/imapPort/
 //     smtpHost/smtpPort/username/password; JsonCalendarProviderService → source/filePath/oneDrivePath/
-//     authAccountId). The sidecar validator is case-insensitive but the provider READS are
-//     case-sensitive, so the casing here is load-bearing — a mismatch validates yet silently fails;
+//     authAccountId). The sidecar folds providerConfig keys case-insensitively, and Aura drops any
+//     case variant of clientId/clientSecret/tenantId before injecting the admin-set app;
+//   - `appFields` are the OAuth client of the three managed providers (google, microsoft365,
+//     outlook.com): an admin sets them once, the account wizard never shows them;
 //   - `authFlow` routes the post-create connect step: 'google' = web-redirect (pimGoogleStart),
 //     'device' = Microsoft/Outlook device-code (pimDeviceStart + poll), 'none' = credentials/URL ARE
 //     the connection (imap/ics/json-local), nothing more to do.
@@ -44,7 +46,10 @@ export interface PimProviderDef {
   /** i18n key under governance.mcp.calendar.providers.* */
   readonly labelKey: string;
   readonly authFlow: PimAuthFlow;
+  /** Per-account fields a member fills in. */
   readonly fields: readonly PimFieldDef[];
+  /** The OAuth client an admin sets once for the provider; Aura injects it on account create. */
+  readonly appFields: readonly PimFieldDef[];
 }
 
 const F = 'governance.mcp.calendar.fields';
@@ -56,7 +61,8 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'google',
     labelKey: `${P}.google`,
     authFlow: 'google',
-    fields: [
+    fields: [],
+    appFields: [
       { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
       { key: 'clientSecret', labelKey: `${F}.clientSecret`, type: 'password', required: true },
     ],
@@ -65,13 +71,14 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'microsoft365',
     labelKey: `${P}.microsoft365`,
     authFlow: 'device',
-    fields: [
+    fields: [],
+    appFields: [
       {
         key: 'tenantId',
         labelKey: `${F}.tenantId`,
         type: 'text',
         required: true,
-        hintKey: `${F}.tenantIdHint`,
+        hintKey: `${F}.tenantIdHintM365`,
       },
       { key: 'clientId', labelKey: `${F}.clientId`, type: 'text', required: true },
     ],
@@ -80,7 +87,8 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'outlook.com',
     labelKey: `${P}.outlookCom`,
     authFlow: 'device',
-    fields: [
+    fields: [],
+    appFields: [
       {
         key: 'tenantId',
         labelKey: `${F}.tenantId`,
@@ -95,6 +103,7 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'imap',
     labelKey: `${P}.imap`,
     authFlow: 'none',
+    appFields: [],
     fields: [
       { key: 'imapHost', labelKey: `${F}.imapHost`, type: 'text', required: true },
       {
@@ -120,6 +129,7 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'ics',
     labelKey: `${P}.ics`,
     authFlow: 'none',
+    appFields: [],
     fields: [
       {
         key: 'icsUrl',
@@ -134,6 +144,7 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     id: 'json',
     labelKey: `${P}.json`,
     authFlow: 'none',
+    appFields: [],
     fields: [
       {
         key: 'source',
@@ -170,6 +181,11 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
     ],
   },
 ];
+
+/** A managed provider's OAuth client is set by an admin, never typed into the account wizard. */
+export function pimIsManaged(def: PimProviderDef): boolean {
+  return def.appFields.length > 0;
+}
 
 /** Look up a provider definition by id; defaults to Google (the first/most-common provider). */
 export function pimProviderById(id: string): PimProviderDef {

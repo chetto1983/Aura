@@ -7,6 +7,7 @@ import {
   pimInitialValues,
   pimMissingRequired,
   pimProviderById,
+  pimIsManaged,
   pimSubmitConfig,
 } from '../pimProviders';
 
@@ -24,12 +25,15 @@ describe('pimProviderById', () => {
   });
 });
 
-describe('schema keys mirror the sidecar (lowercase, case-sensitive reads)', () => {
+describe('schema keys mirror the sidecar', () => {
   it('uses the exact provider-config keys each provider service reads', () => {
     const keys = (id: string) => pimProviderById(id).fields.map((f) => f.key);
-    expect(keys('google')).toEqual(['clientId', 'clientSecret']);
-    expect(keys('microsoft365')).toEqual(['tenantId', 'clientId']);
-    expect(keys('outlook.com')).toEqual(['tenantId', 'clientId']);
+    const appKeys = (id: string) => pimProviderById(id).appFields.map((f) => f.key);
+    expect(keys('google')).toEqual([]);
+    expect(appKeys('google')).toEqual(['clientId', 'clientSecret']);
+    expect(appKeys('microsoft365')).toEqual(['tenantId', 'clientId']);
+    expect(appKeys('outlook.com')).toEqual(['tenantId', 'clientId']);
+    expect(appKeys('imap')).toEqual([]);
     expect(keys('imap')).toEqual([
       'imapHost',
       'imapPort',
@@ -142,16 +146,44 @@ describe('pimAccountIdError', () => {
 
 describe('pimMissingRequired', () => {
   it('reports empty visible required fields only', () => {
-    const google = pimProviderById('google');
-    expect(pimMissingRequired(google, { clientId: '', clientSecret: '' })).toEqual([
-      'clientId',
-      'clientSecret',
+    const imap = pimProviderById('imap');
+    const empty = {
+      imapHost: '',
+      imapPort: '',
+      smtpHost: '',
+      smtpPort: '',
+      username: '',
+      password: '',
+    };
+    expect(pimMissingRequired(imap, empty)).toEqual([
+      'imapHost',
+      'smtpHost',
+      'username',
+      'password',
     ]);
-    expect(pimMissingRequired(google, { clientId: 'x', clientSecret: 'y' })).toEqual([]);
+    expect(
+      pimMissingRequired(imap, {
+        ...empty,
+        imapHost: 'h',
+        smtpHost: 's',
+        username: 'u',
+        password: 'p',
+      }),
+    ).toEqual([]);
   });
   it('does not require a hidden branch field', () => {
     const json = pimProviderById('json');
     // source=local → oneDrivePath is hidden, so it is NOT required even though required:true.
     expect(pimMissingRequired(json, { source: 'local', filePath: '/p' })).toEqual([]);
+  });
+});
+
+describe('managed providers', () => {
+  it('moves the OAuth client to app fields for exactly the three OAuth providers', () => {
+    expect(PIM_PROVIDERS.filter(pimIsManaged).map((p) => p.id)).toEqual([
+      'google',
+      'microsoft365',
+      'outlook.com',
+    ]);
   });
 });

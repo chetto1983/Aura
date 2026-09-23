@@ -4,15 +4,21 @@
 // SAME governance.write gate, injecting the admin Bearer token server-side (it never crosses the wire).
 // It reuses governanceApi's getJSON/postJSON/deleteJSON (same-origin, Accept: application/json, a
 // non-200 — incl. 401/503 sidecar-unconfigured — THROWS `Error("HTTP <n>")`) so an offline/error state
-// surfaces visibly in the connect section. The operator enters their OWN provider credentials in the
-// wizard form (Google/Microsoft OAuth client, IMAP creds, an ICS URL, …) — nothing is read from env.
+// surfaces visibly in the connect section. Members type only their own account data (IMAP creds, an
+// ICS URL, …); the Google/Microsoft OAuth client is set once by an admin through the provider-app
+// routes and injected by Aura on create — nothing is read from env.
 // The wizard supports every provider the sidecar exposes, with two connect flows: Google = web-redirect
 // (pimGoogleStart), Microsoft/Outlook = device-code (pimDeviceStart + pimAuthStatus poll).
 
 import { getJSON, isTrue } from '../api/json';
-import { deleteJSON, postJSON, stringValue } from './governanceApi';
+import { deleteJSON, postJSON, putJSON, stringValue } from './governanceApi';
 
 export const GOV_PIM_ACCOUNTS_PATH = '/api/connect/pim/accounts';
+export const GOV_PIM_PROVIDERS_PATH = '/api/connect/pim/providers';
+export const PIM_PROVIDERS_KEY = ['connect', 'pim', 'providers'] as const;
+/** The `error` token Aura's 409 carries when a managed provider has no admin-set app yet. The
+ * sidecar's own 409 means a duplicate account id, so the token is what tells the two apart. */
+export const PIM_PROVIDER_NOT_CONFIGURED = 'provider_not_configured';
 
 /** The provider ids the sidecar's AccountValidation.KnownProviders accepts. Sent verbatim as the
  * account `provider` field. (`outlook.com` carries a dot, so its i18n label key is decoupled to
@@ -103,8 +109,10 @@ export async function listPimAccounts(): Promise<PimAccountList> {
   return { accounts };
 }
 
-/** POST /api/connect/pim/accounts — create an account with the operator's own provider credentials.
- * A duplicate id throws `Error("HTTP 409")`; a validation error throws `Error("HTTP 400")`. */
+/** POST /api/connect/pim/accounts — create an account. For a managed provider Aura injects the
+ * admin-set OAuth client. A 409 is either a duplicate id or, with the reason
+ * PIM_PROVIDER_NOT_CONFIGURED, a managed provider no admin has set up yet; a 400 carries the
+ * validation reason. */
 export function createPimAccount(body: PimCreateAccountRequest): Promise<PimAccount> {
   return postJSON<PimAccount>(GOV_PIM_ACCOUNTS_PATH, body);
 }
@@ -186,4 +194,67 @@ export function isCalendarServer(server: {
     source.includes('pim') ||
     source.includes('aura-pim-mcp')
   );
+}
+
+export type PimManagedProviderId = 'google' | 'microsoft365' | 'outlook.com';
+
+export interface PimProviderApp {
+  readonly provider: PimManagedProviderId;
+  readonly configured: boolean;
+  readonly clientId: string;
+  readonly tenantId: string;
+  readonly secretSet: boolean;
+  readonly redirectUri: string;
+}
+
+export interface PimProviderAppInput {
+  readonly clientId: string;
+  readonly tenantId?: string;
+  readonly clientSecret?: string;
+}
+
+const MANAGED_PROVIDERS: readonly PimManagedProviderId[] = [
+  'google',
+  'microsoft365',
+  'outlook.com',
+];
+
+function pimProviderApp(value: unknown): PimProviderApp | null {
+  if (value === null || typeof value !== 'object') return null;
+  const raw = value as Record<string, unknown>;
+  const provider = MANAGED_PROVIDERS.find((p) => p === raw.provider);
+  if (provider === undefined) return null;
+  return {
+    provider,
+    configured: isTrue(raw.configured),
+    clientId: stringValue(raw.clientId),
+    tenantId: stringValue(raw.tenantId),
+    secretSet: isTrue(raw.secretSet),
+    redirectUri: stringValue(raw.redirectUri),
+  };
+}
+
+/** GET /api/connect/pim/providers — which managed providers have an admin-set OAuth client. A
+ * member's rows carry only `configured`; the admin fields then read as empty. */
+export async function listPimProviderApps(): Promise<readonly PimProviderApp[]> {
+  const raw = await getJSON<{ providers?: readonly unknown[] }>(GOV_PIM_PROVIDERS_PATH);
+  return (raw.providers ?? []).flatMap((entry): PimProviderApp[] => {
+    const app = pimProviderApp(entry);
+    return app === null ? [] : [app];
+  });
+}
+
+/** PUT /api/connect/pim/providers/{provider} — admin only. An empty clientSecret keeps the stored
+ * one while the client ID is unchanged; otherwise the server answers 400 with the reason. */
+export async function savePimProviderApp(
+  provider: PimManagedProviderId,
+  input: PimProviderAppInput,
+): Promise<PimProviderApp> {
+  const raw = await putJSON<unknown>(
+    `${GOV_PIM_PROVIDERS_PATH}/${encodeURIComponent(provider)}`,
+    input,
+  );
+  const app = pimProviderApp(raw);
+  if (app === null) throw new Error('malformed provider app response');
+  return app;
 }
