@@ -58,6 +58,7 @@
     "github.com/chetto1983/aura/internal/openrouterprovision": {"mode": "target"},
     "github.com/chetto1983/aura/internal/packs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/pgnumeric": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/pimprovider": {"mode": "target"},
     "github.com/chetto1983/aura/internal/procgroup": {"mode": "baseline", "covered_statements": 3, "total_statements": 4},
     "github.com/chetto1983/aura/internal/readiness": {"mode": "target"},
     "github.com/chetto1983/aura/internal/reasoningfifo": {"mode": "target"},
