@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -82,6 +84,18 @@ func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingR
 	}
 	baseURL, credential, model := config.ResolveEmbedRoute(embed, key)
 	return embeddingRoute{embed: embed, baseURL: baseURL, model: model, apiKey: credential}, nil
+}
+
+// bootAttestTimeout bounds the one boot call that is only logged. The listener starts after
+// it, and the embeddings client's own timeout is a minute.
+const bootAttestTimeout = 5 * time.Second
+
+// bootSpace names the space this process embeds in. Memory vectors are pinned at the default
+// width (arcadedb vectorDimensions), so that is the width the space names.
+func bootSpace(embed config.EmbedConfig, timeout time.Duration) (embeddings.Space, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return embeddings.RouteSpace(ctx, nil, embed, config.DefaultEmbedDimensions)
 }
 
 // errString keeps a failed attestation visible in the boot log without failing boot: the

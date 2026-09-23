@@ -19,8 +19,9 @@ type SecretLister interface {
 // dense retrieval off); an absent row falls back to lookupEnv, then to defaultLocalBase
 // for the local base only -- the same precedence OverlayEnv gives at boot, minus its one
 // flaw: OverlayEnv never unsets, so a process re-reading through it could not see a
-// deleted row. The credential is the sealed OPENROUTER_API_KEY, the one the daemon's
-// EmbedRoute also uses; there is no embedding-specific key.
+// deleted row. The credential is the daemon's (cmd/aura applySecretSettings): the sealed
+// OPENROUTER_API_KEY when it is set, else the environment's. There is no
+// embedding-specific key.
 func EmbedRoute(
 	ctx context.Context, store SecretLister, lookupEnv func(string) (string, bool), defaultLocalBase string,
 ) (config.EmbedConfig, string, error) {
@@ -44,6 +45,9 @@ func EmbedRoute(
 	key, err := store.Secret(ctx, "OPENROUTER_API_KEY")
 	if err != nil {
 		return config.EmbedConfig{}, "", fmt.Errorf("embedding credential: %w", err)
+	}
+	if key = strings.TrimSpace(key); key == "" {
+		key, _ = lookupEnv("OPENROUTER_API_KEY")
 	}
 	return config.EmbedConfig{
 		BaseURL:      value("AURA_EMBED_BASE_URL", defaultLocalBase),

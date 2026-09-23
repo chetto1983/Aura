@@ -24,8 +24,6 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
-	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 const (
@@ -70,9 +68,7 @@ func run(logger *slog.Logger) error {
 	if embedder != nil {
 		// NOT attached to `client`: that one only ever runs DDL as the admin, and
 		// the per-tenant clients the resolver builds get the embedder themselves.
-		// Memory vectors are pinned at the default width (arcadedb vectorDimensions), so
-		// that is the width this process's space names.
-		space, spaceErr := embeddings.RouteSpace(context.Background(), nil, embedRoute.embed, config.DefaultEmbedDimensions)
+		space, spaceErr := bootSpace(embedRoute.embed, bootAttestTimeout)
 		logger.Info("dense retrieval enabled", "embed_url", embedRoute.baseURL,
 			"space", space.ID, "space_label", space.Label, "space_error", errString(spaceErr))
 	} else {

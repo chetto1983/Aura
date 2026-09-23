@@ -41,10 +41,14 @@ type llamaProps struct {
 }
 
 func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, error) {
-	base, _, model := cfg.EmbedRoute()
+	base, key, model := cfg.EmbedRoute()
 	if model != "" {
 		// A hosted embedder's health belongs to its provider, and probing it would bill a
-		// call on every `aura doctor`. What this stack can be wrong about is the route.
+		// call on every `aura doctor`. What this stack can be wrong about is the route, and
+		// its key: a non-OpenRouter chat provider lets the daemon boot without one.
+		if key == "" {
+			return "", fmt.Errorf("cloud embedding model %s has no OPENROUTER_API_KEY: every embedding call would be refused", model)
+		}
 		space, err := embeddings.RouteSpace(ctx, nil, cfg.Embed, cfg.Embed.Dimensions)
 		if err != nil {
 			return "", err

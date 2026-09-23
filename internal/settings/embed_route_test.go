@@ -66,6 +66,29 @@ func TestEmbedRouteDistinguishesAnAbsentRowFromAnEmptyOne(t *testing.T) {
 	}
 }
 
+// The daemon's key is the sealed row when it is set, else the environment's
+// (cmd/aura applySecretSettings). A deployment whose key lives only in .env must give the
+// processes reading this helper the same credential the daemon embeds with.
+func TestEmbedRouteCredentialFallsBackToTheEnvironmentWithoutASealedKey(t *testing.T) {
+	processEnv := env(map[string]string{"OPENROUTER_API_KEY": " env-key "})
+
+	_, key, err := EmbedRoute(context.Background(), fakeRouteStore{}, processEnv, "http://default:8081")
+	if err != nil {
+		t.Fatalf("EmbedRoute: %v", err)
+	}
+	if key != "env-key" {
+		t.Fatalf("key = %q, want the environment's key when no sealed key is stored", key)
+	}
+
+	_, key, err = EmbedRoute(context.Background(), fakeRouteStore{secret: "stored-key"}, processEnv, "http://default:8081")
+	if err != nil {
+		t.Fatalf("EmbedRoute: %v", err)
+	}
+	if key != "stored-key" {
+		t.Fatalf("key = %q, want the sealed key over the environment's", key)
+	}
+}
+
 func TestEmbedRouteDefaultsTheLocalBaseOnlyWhenNothingNamesIt(t *testing.T) {
 	embed, _, err := EmbedRoute(context.Background(), fakeRouteStore{}, env(nil), "http://aura-llama-embed:8081")
 	if err != nil {

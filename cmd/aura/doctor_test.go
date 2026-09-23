@@ -259,6 +259,7 @@ func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
 		CloudBaseURL: srv.URL,
 		Dimensions:   768,
 	}}
+	cfg.LLM.APIKey = "sk-or-test"
 	detail, err := defaultDoctorProbeEmbed(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
@@ -268,6 +269,16 @@ func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
 	}
 	if !strings.Contains(detail, "space es1-") || !strings.Contains(detail, "endpoint ") {
 		t.Errorf("detail = %q, want the resolved space named", detail)
+	}
+}
+
+// With a non-OpenRouter chat provider the key is optional at boot, so a cloud embedding
+// model can be selected with none: every embedding call would then be refused.
+func TestDoctorEmbedProbeFailsACloudRouteWithoutAKey(t *testing.T) {
+	cfg := &config.Config{Embed: config.EmbedConfig{CloudModel: "perplexity/pplx-embed-v1-0.6b", Dimensions: 768}}
+	_, err := defaultDoctorProbeEmbed(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
+		t.Fatalf("err = %v, want the missing key named", err)
 	}
 }
 
