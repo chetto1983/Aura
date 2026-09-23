@@ -1,11 +1,11 @@
-//go:build calendar_integration || whatsapp_integration || calculator_integration
+//go:build calendar_integration || whatsapp_integration
 
-// Shared harness for the three build-tagged live-sidecar integration tiers
-// (D-110's "prove the real wire" tier). All three tags are given together by the
-// verification command (go vet -tags='calendar_integration whatsapp_integration
-// calculator_integration' ./internal/mcp/), so their files compile into the same
-// package build and cannot each define their own copy of this helper — hence one
-// shared, explicitly gated file rather than three near-duplicates.
+// Shared harness for the two build-tagged live-sidecar integration tiers
+// (D-110's "prove the real wire" tier). Both tags are given together by the
+// verification command (go vet -tags='calendar_integration whatsapp_integration'
+// ./internal/mcp/), so their files compile into the same package build and cannot
+// each define their own copy of this helper — hence one shared, explicitly gated
+// file rather than two near-duplicates.
 package mcp
 
 import (
