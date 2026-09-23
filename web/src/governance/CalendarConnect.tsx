@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
 import { HttpError } from '../api/json';
+import { useCapabilities } from '../admin/useAdmin';
 import { PimDeviceCodePanel } from './PimDeviceCodePanel';
 import { PimGoogleConnectPanel } from './PimGoogleConnectPanel';
+import { PimProviderAppsPanel } from './PimProviderAppsPanel';
 import {
   AdvancedSection,
   Field,
@@ -16,6 +18,7 @@ import {
   normalizePimAccountId,
   pimAccountIdError,
   pimInitialValues,
+  pimIsManaged,
   pimMissingRequired,
   pimProviderById,
   pimSubmitConfig,
@@ -25,6 +28,9 @@ import {
   createPimAccount,
   deletePimAccount,
   listPimAccounts,
+  listPimProviderApps,
+  PIM_PROVIDER_NOT_CONFIGURED,
+  PIM_PROVIDERS_KEY,
   pimDeviceStart,
   pimGoogleStart,
   type PimAccount,
@@ -51,6 +57,7 @@ export function CalendarConnect() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const headingId = useId();
+  const { isAdmin } = useCapabilities();
 
   const accounts = useQuery({
     queryKey: ['connect', 'pim', 'accounts'],
@@ -84,6 +91,7 @@ export function CalendarConnect() {
         <AccountList accounts={accounts.data?.accounts ?? []} onChanged={refresh} />
       )}
 
+      {isAdmin ? <PimProviderAppsPanel /> : null}
       <AddAccountForm onCreated={refresh} />
     </section>
   );
@@ -201,6 +209,15 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
   const [providerId, setProviderId] = useState<PimProviderId>('google');
   const def = pimProviderById(providerId);
+  const apps = useQuery({
+    queryKey: PIM_PROVIDERS_KEY,
+    queryFn: listPimProviderApps,
+    retry: false,
+  });
+  const managed = pimIsManaged(def);
+  const appConfigured =
+    !managed || apps.data?.some((a) => a.provider === providerId && a.configured) === true;
+  const providerLabel = t(def.labelKey);
 
   const [accountId, setAccountId] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -214,7 +231,15 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
   const accountIdError = pimAccountIdError(accountId);
   const displayNameEmpty = displayName.trim() === '';
   const missingConfig = new Set(pimMissingRequired(def, values));
-  const invalidForm = accountIdError !== null || displayNameEmpty || missingConfig.size > 0;
+  const invalidForm =
+    accountIdError !== null || displayNameEmpty || missingConfig.size > 0 || !appConfigured;
+
+  function createErrorText(error: unknown): string | null {
+    if (error instanceof HttpError && error.reason === PIM_PROVIDER_NOT_CONFIGURED) {
+      return t('governance.mcp.calendar.providerNotConfigured', { provider: providerLabel });
+    }
+    return serverReason(error);
+  }
 
   const create = useMutation({
     mutationFn: async (): Promise<CreateResult> => {
@@ -304,6 +329,12 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
         missing={missingConfig}
       />
 
+      {managed && apps.isSuccess && !appConfigured ? (
+        <p role="note" className="text-[13px] text-warning">
+          {t('governance.mcp.calendar.providerNotConfigured', { provider: providerLabel })}
+        </p>
+      ) : null}
+
       <AdvancedSection
         open={showAdvanced}
         onToggle={() => {
@@ -317,7 +348,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
       <Button
         type="submit"
-        disabled={create.isPending}
+        disabled={create.isPending || !appConfigured}
         aria-busy={create.isPending}
         className="self-start text-[13px] disabled:cursor-wait"
       >
@@ -327,7 +358,7 @@ function AddAccountForm({ onCreated }: { readonly onCreated: () => void }) {
 
       {create.isError ? (
         <p role="alert" className="text-[13px] text-danger">
-          {serverReason(create.error) ?? t('governance.error')}
+          {createErrorText(create.error) ?? t('governance.error')}
         </p>
       ) : null}
 

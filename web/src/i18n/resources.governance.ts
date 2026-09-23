@@ -88,7 +88,10 @@ export const governanceEn = {
           clientId: 'Client ID',
           clientSecret: 'Client secret',
           tenantId: 'Tenant ID',
-          tenantIdHint: 'Use "common" for most personal accounts, or your Azure AD tenant ID.',
+          tenantIdHint:
+            'Personal accounts: "consumers" when the app accepts only personal accounts, "common" when it also accepts work accounts.',
+          tenantIdHintM365:
+            'The directory (tenant) ID of your organization, or "organizations" for any work account.',
           icsUrl: 'ICS URL',
           icsUrlHint: 'A public http(s) link to an .ics calendar feed.',
           imapHost: 'IMAP host',
@@ -118,6 +121,18 @@ export const governanceEn = {
         connectGoogle: 'Connect Google',
         consentNote: 'Complete consent in the opened tab — this panel updates by itself.',
         googleLinked: 'Google account linked. You can close the Google tab.',
+        providerNotConfigured: 'An administrator has to configure {{provider}} first.',
+        apps: {
+          heading: 'Provider OAuth apps',
+          intro:
+            'Set once per provider. Members then connect their accounts without typing any credential.',
+          configured: 'configured',
+          notConfigured: 'not configured',
+          secretStored:
+            'A secret is stored. Leave empty to keep it; a new client ID needs its own secret.',
+          save: 'Save',
+          saved: 'Saved.',
+        },
         device: {
           heading: 'Finish sign-in on Microsoft',
           codeLabel: 'Enter this code:',
@@ -320,7 +335,9 @@ export const governanceIt = {
           clientSecret: 'Client secret',
           tenantId: 'Tenant ID',
           tenantIdHint:
-            'Usa "common" per la maggior parte degli account personali, o il tuo tenant ID Azure AD.',
+            'Account personali: "consumers" se l\'app accetta solo account personali, "common" se accetta anche quelli di lavoro.',
+          tenantIdHintM365:
+            'Il Directory (tenant) ID della tua organizzazione, oppure "organizations" per qualsiasi account di lavoro.',
           icsUrl: 'URL ICS',
           icsUrlHint: 'Un link http(s) pubblico a un feed calendario .ics.',
           imapHost: 'Host IMAP',
@@ -351,6 +368,18 @@ export const governanceIt = {
         consentNote:
           'Completa il consenso nella scheda aperta — questo riquadro si aggiorna da solo.',
         googleLinked: 'Account Google collegato. Puoi chiudere la scheda di Google.',
+        providerNotConfigured: 'Un amministratore deve prima configurare {{provider}}.',
+        apps: {
+          heading: 'App OAuth dei provider',
+          intro:
+            'Si impostano una volta per provider. Gli utenti poi collegano i propri account senza inserire credenziali.',
+          configured: 'configurato',
+          notConfigured: 'non configurato',
+          secretStored:
+            'Un secret è salvato. Lascia vuoto per mantenerlo; un nuovo client ID richiede il suo secret.',
+          save: 'Salva',
+          saved: 'Salvato.',
+        },
         device: {
           heading: 'Completa l’accesso su Microsoft',
           codeLabel: 'Inserisci questo codice:',

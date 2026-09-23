@@ -19,11 +19,19 @@ const pimGoogleStart = vi.fn();
 const pimDeviceStart = vi.fn();
 const pimAuthStatus = vi.fn();
 const pimAccountLinked = vi.fn();
+const listPimProviderApps = vi.fn();
+let caps = { isAdmin: false };
+
+vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => caps }));
 
 vi.mock('../pimApi', async () => {
   const actual = await vi.importActual<typeof import('../pimApi')>('../pimApi');
   return {
     isCalendarServer: actual.isCalendarServer,
+    PIM_PROVIDERS_KEY: actual.PIM_PROVIDERS_KEY,
+    PIM_PROVIDER_NOT_CONFIGURED: actual.PIM_PROVIDER_NOT_CONFIGURED,
+    listPimProviderApps: (...a: unknown[]) => listPimProviderApps(...a) as Promise<unknown>,
+    savePimProviderApp: vi.fn(),
     listPimAccounts: (...a: unknown[]) => listPimAccounts(...a) as Promise<unknown>,
     createPimAccount: (...a: unknown[]) => createPimAccount(...a) as Promise<unknown>,
     deletePimAccount: (...a: unknown[]) => deletePimAccount(...a) as Promise<void>,
@@ -101,6 +109,34 @@ describe('CalendarConnect', () => {
     pimAuthStatus.mockReset();
     pimAccountLinked.mockReset();
     pimAccountLinked.mockResolvedValue(false);
+    caps = { isAdmin: false };
+    listPimProviderApps.mockReset();
+    listPimProviderApps.mockResolvedValue([
+      {
+        provider: 'google',
+        configured: true,
+        clientId: '',
+        tenantId: '',
+        secretSet: false,
+        redirectUri: '',
+      },
+      {
+        provider: 'microsoft365',
+        configured: true,
+        clientId: '',
+        tenantId: '',
+        secretSet: false,
+        redirectUri: '',
+      },
+      {
+        provider: 'outlook.com',
+        configured: false,
+        clientId: '',
+        tenantId: '',
+        secretSet: false,
+        redirectUri: '',
+      },
+    ]);
   });
   afterEach(() => {
     vi.clearAllMocks();
@@ -145,9 +181,9 @@ describe('CalendarConnect', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
-    // accountId + displayName + clientId + clientSecret = 4 required errors, no create call.
+    // accountId + displayName = 2 required errors (the OAuth client is admin-set), no create call.
     await waitFor(() => {
-      expect(screen.getAllByText('Required.').length).toBeGreaterThanOrEqual(4);
+      expect(screen.getAllByText('Required.').length).toBeGreaterThanOrEqual(2);
     });
     expect(createPimAccount).not.toHaveBeenCalled();
   });
@@ -157,21 +193,15 @@ describe('CalendarConnect', () => {
     renderConnect();
     await screen.findByText(/No calendar accounts yet/i);
 
-    const clientSecret = screen.getByLabelText(/^Client secret/i);
-    expect(clientSecret.getAttribute('type')).toBe('password');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Show Client secret' }));
-    expect(clientSecret.getAttribute('type')).toBe('text');
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hide Client secret' }));
-    expect(clientSecret.getAttribute('type')).toBe('password');
-
     selectProvider('imap');
     const password = screen.getByLabelText(/^Password/i);
     expect(password.getAttribute('type')).toBe('password');
 
     fireEvent.click(screen.getByRole('button', { name: 'Show Password' }));
     expect(password.getAttribute('type')).toBe('text');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide Password' }));
+    expect(password.getAttribute('type')).toBe('password');
   });
 
   // Measured live 2026-08-22: the sidecar rejects any id outside `^[a-z0-9][a-z0-9\-_]*$` with a
@@ -193,8 +223,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'dvd@gmail.com');
     fillField(/Display name/i, 'Personale');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(await screen.findByText(/starting with a letter or a digit/i)).toBeTruthy();
@@ -211,14 +239,12 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(await screen.findByText(/missing required key 'ClientSecret'/i)).toBeTruthy();
   });
 
-  it('Google: create → google/start shows the redirect URI + the Connect Google link', async () => {
+  it('Google: create → google/start shows the Connect Google link, never the redirect URI', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [] });
     createPimAccount.mockResolvedValue(ACCOUNT);
     pimGoogleStart.mockResolvedValue(GOOGLE_START);
@@ -227,8 +253,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() => {
@@ -236,11 +260,11 @@ describe('CalendarConnect', () => {
         id: 'work',
         displayName: 'Work calendar',
         provider: 'google',
-        providerConfig: { clientId: 'client-id-123', clientSecret: 'client-secret-456' },
+        providerConfig: {},
       });
     });
-    expect(await screen.findByText(GOOGLE_START.redirectUri)).toBeTruthy();
-    const link = screen.getByRole('link', { name: 'Connect Google' });
+    const link = await screen.findByRole('link', { name: 'Connect Google' });
+    expect(screen.queryByText(GOOGLE_START.redirectUri)).toBeNull();
     expect(link.getAttribute('href')).toBe(GOOGLE_START.authUrl);
     expect(link.getAttribute('target')).toBe('_blank');
     expect(link.getAttribute('rel')).toContain('noopener');
@@ -255,8 +279,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() => {
@@ -274,8 +296,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(
@@ -296,8 +316,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'client-id-123');
-    fillField(/^Client secret/i, 'client-secret-456');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() => {
@@ -317,12 +335,11 @@ describe('CalendarConnect', () => {
     await screen.findByText(/No calendar accounts yet/i);
 
     selectProvider('microsoft365');
-    // Google's clientSecret field is gone; Tenant ID appears.
-    expect(screen.queryByLabelText(/^Client secret/i)).toBeNull();
+    // The tenant and client are admin-set: the member types neither.
+    expect(screen.queryByLabelText(/Tenant ID/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Client ID/i)).toBeNull();
     fillField(/Account ID/i, 'ms');
     fillField(/Display name/i, 'MS work');
-    fillField(/Tenant ID/i, 'common');
-    fillField(/^Client ID/i, 'ms-client');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     await waitFor(() => {
@@ -330,7 +347,7 @@ describe('CalendarConnect', () => {
         id: 'ms',
         displayName: 'MS work',
         provider: 'microsoft365',
-        providerConfig: { tenantId: 'common', clientId: 'ms-client' },
+        providerConfig: {},
       });
     });
     expect(pimDeviceStart).toHaveBeenCalledWith('ms');
@@ -398,8 +415,6 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'work');
     fillField(/Display name/i, 'Work calendar');
-    fillField(/^Client ID/i, 'cid');
-    fillField(/^Client secret/i, 'sec');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     // The account WAS created; the connect step failed → recoverable "Retry sign-in", NOT the
@@ -410,7 +425,7 @@ describe('CalendarConnect', () => {
 
     fireEvent.click(retry);
     // Retry re-runs ONLY the start (no second createPimAccount → no 409 dead-end).
-    expect(await screen.findByText(GOOGLE_START.redirectUri)).toBeTruthy();
+    expect(await screen.findByRole('link', { name: 'Connect Google' })).toBeTruthy();
     expect(createPimAccount).toHaveBeenCalledTimes(1);
   });
 
@@ -422,11 +437,53 @@ describe('CalendarConnect', () => {
 
     fillField(/Account ID/i, 'dup');
     fillField(/Display name/i, 'Dup');
-    fillField(/^Client ID/i, 'cid');
-    fillField(/^Client secret/i, 'sec');
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
 
     expect(await screen.findByRole('alert')).toBeTruthy();
     expect(pimGoogleStart).not.toHaveBeenCalled();
+  });
+
+  it('hides the provider-app panel from members', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+    expect(screen.queryByText(/provider oauth apps/i)).toBeNull();
+  });
+
+  it('shows the provider-app panel to an admin', async () => {
+    caps = { isAdmin: true };
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    expect(await screen.findByText(/provider oauth apps/i)).toBeTruthy();
+  });
+
+  it('shows no credential fields for a managed provider', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+    expect(screen.queryByLabelText(/^Client ID/i)).toBeNull();
+    expect(screen.queryByLabelText(/^Client secret/i)).toBeNull();
+  });
+
+  it('blocks an unconfigured managed provider with a note', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+    selectProvider('outlook.com');
+    expect(await screen.findByText(/administrator has to configure Outlook\.com/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Create account' })).toHaveProperty('disabled', true);
+  });
+
+  it('translates the provider_not_configured 409', async () => {
+    listPimAccounts.mockResolvedValue({ accounts: [] });
+    createPimAccount.mockRejectedValue(new HttpError(409, 'provider_not_configured'));
+    renderConnect();
+    await screen.findByText(/No calendar accounts yet/i);
+    fillField(/Account ID/i, 'work');
+    fillField(/Display name/i, 'Work');
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      /administrator has to configure Google/i,
+    );
   });
 });

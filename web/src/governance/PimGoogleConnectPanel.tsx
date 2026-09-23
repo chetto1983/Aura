@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { pimAccountLinked, type PimGoogleStart } from './pimApi';
 import { Button } from '@/components/ui/button';
 
-// PimGoogleConnectPanel renders the Google web-redirect step after the wizard creates a Google
-// account and calls pimGoogleStart: the one redirect URI to register (the shared aura-connect relay,
-// identical for every install) and the consent link. Consent happens in another tab, so the panel
+// PimGoogleConnectPanel renders the Google consent step after the wizard creates a Google account:
+// the consent link, then a confirmation once the sidecar stores the token. Registering the redirect
+// URI is the admin's job (PimProviderAppsPanel). Consent happens in another tab, so the panel
 // polls the account's `linked` state — in the background too, since this tab is not focused while
 // the operator is on Google — and turns into a confirmation once the sidecar stores the token.
 // Before `linked` existed the panel stayed open until a manual reload (operator, 2026-09-23).
@@ -40,11 +40,6 @@ export function PimGoogleConnectPanel({
 
   return (
     <div className="flex flex-col gap-2 rounded-md border border-border-strong bg-surface-2 px-3 py-3">
-      <p className="text-[13px] font-semibold text-text">
-        {t('governance.mcp.calendar.redirectHeading')}
-      </p>
-      <p className="break-all font-mono text-[13px] text-text">{start.redirectUri}</p>
-      <p className="text-[13px] text-text-muted">{t('governance.mcp.calendar.redirectHint')}</p>
       <Button asChild className="self-start text-[13px]">
         <a href={start.authUrl} target="_blank" rel="noopener noreferrer">
           <ExternalLink data-icon aria-hidden="true" />

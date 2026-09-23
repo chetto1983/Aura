@@ -211,10 +211,20 @@ holds no token and cannot select a different subject. The retired `/api/integrat
 proxy and `aura mcp console` do not exist: account management and agent tool calls share
 the same remote-MCP identity model.
 
+**Provider OAuth apps (admin, once per provider).** The Google, Microsoft 365 and Outlook.com
+OAuth client is not typed per account. An admin (`identity.create`) sets it once in the
+calendar section's **Provider OAuth apps** panel (`PUT /api/connect/pim/providers/{provider}`,
+stored sealed in `aura.pim_provider_app`). A member then adds an account with only an account
+ID and a display name, and Aura injects the admin-set client when it forwards the create.
+Accounts linked before a change keep the client they were linked with.
+
 **Microsoft / Outlook (device code)** — no redirect, works everywhere:
 
+- The Entra app registration needs the delegated Microsoft Graph permissions `Mail.Read`,
+  `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite` and `Contacts.ReadWrite`, and
+  **Allow public client flows: Yes**. The admin enters its tenant and client ID; there is no secret.
 - `POST /admin/auth/{accountId}/start` returns a user code + the `microsoft.com/devicelogin` URL.
-- The operator enters the code there; the cockpit polls `/admin/auth/{accountId}/status`.
+- The member enters the code there; the cockpit polls `/admin/auth/{accountId}/status`.
 
 **Google (web redirect through a shared relay)** — one redirect URI for every install:
 
@@ -222,8 +232,9 @@ the same remote-MCP identity model.
    this **Authorized redirect URI** (trailing slash included):
    `https://chetto1983.github.io/aura-connect/google/callback/`. It never changes and does not
    depend on the address Aura is reached by, so the same line works for a LAN IP, a tunnel
-   or a public hostname. Enter that client's ID and secret in the cockpit's calendar wizard.
-2. Connect: the cockpit calls `GET /api/connect/pim/accounts/{id}/google/start`; Aura adds
+   or a public hostname. The admin enters that client's ID and secret once in **Provider
+   OAuth apps**, which also shows this URI.
+2. Connect: a member adds a Google account; the cockpit calls `GET /api/connect/pim/accounts/{id}/google/start`; Aura adds
    `returnBase` = the cockpit origin (`AURA_WEB_PUBLIC_URL` when set, otherwise the origin the
    request arrived on) and forwards it to the sidecar, which answers `{authUrl, redirectUri}`
    with the relay URI as `redirectUri` and `state` = `<nonce>.<base64url(callback)>`.
