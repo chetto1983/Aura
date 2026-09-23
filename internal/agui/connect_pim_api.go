@@ -18,9 +18,10 @@ import (
 // nil-check-503) — split into a sibling file so connect_api.go stays under the 600-LOC cap and the
 // Bearer-injecting dial helper is colocated with the routes that need it.
 //
-// The routes are operator WRITE-class actions (creating an account stores the operator's own OAuth
-// client or IMAP credentials; a delete drops the linked account; starting a device-code flow links
-// a Microsoft/Outlook account), so the parent-mux mount (serve_webui.go) is behind
+// The routes are WRITE-class actions (creating an account stores IMAP credentials or, for the
+// managed OAuth providers, the admin-set client that connect_pim_inject.go puts in; a delete drops
+// the linked account; a device-code flow links a Microsoft/Outlook account), so the parent-mux
+// mount (serve_webui.go) is behind
 // RequireCapability(governance.write). They cover every provider the sidecar exposes — google
 // (web-redirect), microsoft365/outlook.com (device-code), imap, ics, json — not just Google. The
 // sidecar base URL + identity-scoped OAuth grant are wired by the daemon composition root via
@@ -95,6 +96,15 @@ func (s *Server) registerConnectPIMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+PIMGoogleCallbackPath, s.handlePIMGoogleCallback)
 }
 
+// pimWired answers 503 and reports false when the daemon has no sidecar URL.
+func (s *Server) pimWired(w http.ResponseWriter) bool {
+	if s.calendarMCPURL == "" {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar connect not configured"})
+		return false
+	}
+	return true
+}
+
 // handlePIMListAccounts serves GET /api/connect/pim/accounts: forward the sidecar
 // GET /admin/accounts (no secrets are ever echoed by the sidecar) and pass through the JSON body +
 // status code.
@@ -102,12 +112,22 @@ func (s *Server) handlePIMListAccounts(w http.ResponseWriter, r *http.Request) {
 	s.forwardPIMJSON(w, r, http.MethodGet, "/admin/accounts", nil)
 }
 
-// handlePIMCreateAccount serves POST /api/connect/pim/accounts: forward the operator-supplied body
-// (account slug + display name + provider:google + providerConfig{clientId,clientSecret}) to the
-// sidecar POST /admin/accounts. The body is size-capped; the sidecar response carries NO secrets.
+// handlePIMCreateAccount serves POST /api/connect/pim/accounts: forward the sidecar
+// POST /admin/accounts after injectPIMProviderApp has put the admin-set OAuth client into a
+// managed provider's providerConfig. The body is size-capped; the sidecar response carries NO
+// secrets.
 func (s *Server) handlePIMCreateAccount(w http.ResponseWriter, r *http.Request) {
 	body, ok := readCappedBody(w, r)
 	if !ok {
+		return
+	}
+	// A stack without the sidecar says so before judging the body, like every other PIM route.
+	if !s.pimWired(w) {
+		return
+	}
+	body, status, reason := s.injectPIMProviderApp(r.Context(), body)
+	if status != 0 {
+		writeJSONStatus(w, status, map[string]string{"error": reason})
 		return
 	}
 	s.forwardPIMJSON(w, r, http.MethodPost, "/admin/accounts", body)
@@ -271,8 +291,7 @@ func (s *Server) forwardPIM(w http.ResponseWriter, r *http.Request, method, path
 // sanitized 502 (the sidecar host/path/token never leaks). It returns the live response (the caller
 // closes the body) and whether the handler may proceed — mirroring dialBridge's (value, ok) shape.
 func (s *Server) dialPIM(w http.ResponseWriter, r *http.Request, method, path string, body []byte, client *http.Client) (*http.Response, bool) {
-	if s.calendarMCPURL == "" {
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "calendar connect not configured"})
+	if !s.pimWired(w) {
 		return nil, false
 	}
 	if _, ok := principalIdentityID(r); !ok {

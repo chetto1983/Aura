@@ -179,7 +179,7 @@ func TestPIMCreateAccountForwardsBody(t *testing.T) {
 	srv := connectPIMServer(sidecar.URL, fakePIMToken)
 	defer srv.Close()
 
-	in := `{"id":"work","displayName":"Work","provider":"google","providerConfig":{"clientId":"cid","clientSecret":"sec"}}`
+	in := `{"id":"work","displayName":"Work","provider":"ics","providerConfig":{"icsUrl":"https://example.com/w.ics"}}`
 	resp, err := http.Post(srv.URL+"/api/connect/pim/accounts", "application/json", strings.NewReader(in))
 	if err != nil {
 		t.Fatalf("POST accounts: %v", err)
@@ -194,7 +194,7 @@ func TestPIMCreateAccountForwardsBody(t *testing.T) {
 	if p.gotAuth != "Bearer "+fakePIMToken {
 		t.Fatalf("Authorization = %q, want Bearer %s", p.gotAuth, fakePIMToken)
 	}
-	if !strings.Contains(p.gotBody, `"clientSecret":"sec"`) {
+	if !strings.Contains(p.gotBody, `"icsUrl":"https://example.com/w.ics"`) {
 		t.Fatalf("create body not forwarded: %q", p.gotBody)
 	}
 }
@@ -442,7 +442,7 @@ func TestPIMNon2xxPassthrough(t *testing.T) {
 	srv := connectPIMServer(sidecar.URL, fakePIMToken)
 	defer srv.Close()
 
-	resp, err := http.Post(srv.URL+"/api/connect/pim/accounts", "application/json", strings.NewReader(`{"id":"dup"}`))
+	resp, err := http.Post(srv.URL+"/api/connect/pim/accounts", "application/json", strings.NewReader(`{"id":"dup","provider":"ics"}`))
 	if err != nil {
 		t.Fatalf("POST accounts: %v", err)
 	}
