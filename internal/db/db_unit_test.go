@@ -373,8 +373,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0129 adds media_job.surface and media_job.kind, so the cockpit Studio's
 	// conversationless image and video rows are told apart from chat jobs.
 	// 0130 persists non-secret Cloudflare remote-access intent and resumable resource IDs.
-	if head != 130 {
-		t.Fatalf("MigrationHead=%d, want embedded head 130", head)
+	// 0131 adds aura.pim_provider_app, the admin-set OAuth client per managed PIM provider.
+	if head != 131 {
+		t.Fatalf("MigrationHead=%d, want embedded head 131", head)
 	}
 }
 
