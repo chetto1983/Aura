@@ -43,10 +43,10 @@ type EmbedConfig struct {
 	// the models OpenRouter publishes, so it is a choice rather than a typed name.
 	CloudModel string
 	// AURA_EMBED_CLOUD_BASE_URL — optional, for an OpenAI-compatible embedder that is not
-	// OpenRouter. Empty means the shared cloud route the LLM already uses, which is what
-	// makes the common case a single setting. It must NOT carry a trailing /v1: this
-	// client appends /v1/embeddings, unlike the STT and TTS clients that append /audio/…
-	// to a base that already has it.
+	// OpenRouter. Empty means OpenRouter itself (never the chat LLM's base), which is what
+	// makes the common case a single setting. It must NOT carry a trailing /v1: this client
+	// appends /v1/embeddings, unlike the STT and TTS clients that append /audio/… to a base
+	// that already has it.
 	CloudBaseURL string
 }
 

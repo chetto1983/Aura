@@ -61,3 +61,23 @@ func TestEmbedRouteHonoursAnExplicitCloudEndpoint(t *testing.T) {
 		t.Errorf("explicit cloud base = %q, want it without the trailing /v1", base)
 	}
 }
+
+// Measured on the lab VM 2026-09-23: the chat route was Ollama
+// (AURA_LLM_BASE_URL=http://host.docker.internal:11434/v1), and the cockpit's OpenRouter
+// option -- which writes an EMPTY cloud base -- resolved embeddings to that Ollama server
+// under an OpenRouter model id. Changing the chat model would also have re-routed embeddings.
+func TestEmbedRouteOpenRouterOptionIgnoresTheChatBase(t *testing.T) {
+	cfg := &Config{}
+	cfg.Embed.BaseURL = "http://aura-llama-embed:8081"
+	cfg.Embed.CloudModel = "qwen/qwen3-embedding-8b"
+	cfg.LLM.BaseURL = "http://host.docker.internal:11434/v1"
+	cfg.LLM.APIKey = "sk-or-v1-test"
+
+	base, key, model := cfg.EmbedRoute()
+	if base != "https://openrouter.ai/api" {
+		t.Fatalf("OpenRouter option resolved to %q: embeddings followed the chat LLM's base", base)
+	}
+	if key != "sk-or-v1-test" || model != "qwen/qwen3-embedding-8b" {
+		t.Errorf("route = (%q, %q), want the OpenRouter credential and the chosen model", key, model)
+	}
+}

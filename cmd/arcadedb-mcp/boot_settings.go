@@ -8,7 +8,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
 )
 
@@ -95,6 +94,6 @@ func embeddingRouteFromEnv(apiKey string) embeddingRoute {
 		BaseURL:      strings.TrimSpace(localBase),
 		CloudModel:   strings.TrimSpace(os.Getenv("AURA_EMBED_MODEL")),
 		CloudBaseURL: strings.TrimSpace(os.Getenv("AURA_EMBED_CLOUD_BASE_URL")),
-	}, envOrDefault("AURA_LLM_BASE_URL", llm.DefaultBaseURL), apiKey)
+	}, apiKey)
 	return embeddingRoute{baseURL: baseURL, model: model, apiKey: key}
 }

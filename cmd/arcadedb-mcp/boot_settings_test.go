@@ -140,16 +140,13 @@ func TestEmbeddingRouteMatchesDaemonLocalAndCloudContract(t *testing.T) {
 		}
 	})
 
-	t.Run("cloud uses shared LLM route and stored credential", func(t *testing.T) {
+	t.Run("cloud ignores the chat LLM base", func(t *testing.T) {
 		t.Setenv("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
 		t.Setenv("AURA_EMBED_MODEL", "vendor/embed-v2")
-		t.Setenv("AURA_LLM_BASE_URL", "https://openrouter.example/api/v1")
+		t.Setenv("AURA_LLM_BASE_URL", "http://host.docker.internal:11434/v1")
 		route := embeddingRouteFromEnv("stored-key")
-		if route.baseURL != "https://openrouter.example/api" || route.model != "vendor/embed-v2" || route.apiKey != "stored-key" {
-			t.Fatalf("cloud route = %+v", route)
-		}
-		if route.baseURL == os.Getenv("AURA_EMBED_BASE_URL") {
-			t.Fatal("cloud model was routed to the local embedding sidecar")
+		if route.baseURL != "https://openrouter.ai/api" || route.model != "vendor/embed-v2" || route.apiKey != "stored-key" {
+			t.Fatalf("cloud route = %+v, want OpenRouter whatever the chat LLM's base is", route)
 		}
 	})
 

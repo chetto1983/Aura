@@ -1,6 +1,10 @@
 package config
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/chetto1983/aura/internal/llm"
+)
 
 // config_routes.go holds the model-backend route resolvers — the ONE-knob
 // local↔cloud swap (D-28). Split out of config.go to keep that file under the
@@ -10,36 +14,29 @@ import "strings"
 // the same shape STT and TTS already use: the cloud MODEL is the switch, and the local
 // base is never a candidate for the cloud route. Empty model means the local sidecar at
 // Embed.BaseURL with no auth; a model set means the cloud route — Embed.CloudBaseURL if
-// the operator named a non-OpenRouter embedder, otherwise the shared LLM route — always
+// the operator named a non-OpenRouter embedder, otherwise OpenRouter itself — always
 // with the single OPENROUTER_API_KEY.
 //
-// The previous version chose the base by asking whether Embed.BaseURL looked like
-// loopback. It does not on the shipped product (compose.yaml:119 hands the daemon a
-// Compose DNS name), so a cloud model was sent to the local sidecar, which answers it
-// with local vectors and no error. See EmbedConfig for the measurement.
+// "Otherwise OpenRouter itself" used to be "otherwise the chat LLM's base", and the
+// cockpit's OpenRouter option writes exactly that empty cloud base. Measured on the lab VM
+// 2026-09-23, whose chat route is Ollama: choosing OpenRouter sent embeddings to Ollama.
 func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
-	return ResolveEmbedRoute(c.Embed, c.LLM.BaseURL, c.LLM.APIKey)
+	return ResolveEmbedRoute(c.Embed, c.LLM.APIKey)
 }
 
 // ResolveEmbedRoute exposes the daemon's route contract to processes that read the same
 // aura.settings rows without loading the daemon's full configuration.
-func ResolveEmbedRoute(embed EmbedConfig, llmBaseURL, apiKey string) (baseURL, credential, model string) {
+func ResolveEmbedRoute(embed EmbedConfig, apiKey string) (baseURL, credential, model string) {
 	model = strings.TrimSpace(embed.CloudModel)
 	if model == "" {
 		return embed.BaseURL, "", "" // local sidecar, no auth
 	}
 	base := strings.TrimSpace(embed.CloudBaseURL)
 	if base == "" {
-		base = sharedCloudBase(llmBaseURL)
+		base = llm.DefaultBaseURL
 	}
+	// The embed client appends "/v1/<endpoint>" to its base, unlike the LLM and vision
+	// clients, which append "/chat/completions" to a base that already carries /v1.
+	// Without this strip the request would go to "/v1/v1/embeddings" and 404.
 	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1"), apiKey, model
-}
-
-// sharedCloudBase strips a trailing /v1 from the shared OpenRouter base. The
-// embed client appends "/v1/<endpoint>" to its base (unlike the LLM and vision
-// clients, which append the bare "/chat/completions" to a base that already
-// carries /v1). Without this strip a cloud swap would yield a double
-// "/v1/v1/<endpoint>" that 404s.
-func sharedCloudBase(llmBase string) string {
-	return strings.TrimSuffix(strings.TrimRight(llmBase, "/"), "/v1")
 }
