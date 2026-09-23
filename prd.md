@@ -604,6 +604,24 @@ admin API now reloads configuration before responding. Not measured: Google refu
 raw LAN IP as a Web redirect URI (its documented rule) and a run through a Cloudflare
 tunnel.
 
+The install's side of that return lives in the daemon, not in Caddy. `google/start` passes
+the sidecar `returnBase` = the origin of `AURA_WEB_PUBLIC_URL`, else the origin the cockpit
+request arrived on. The daemon serves `/admin/auth/google/callback` as a public route on every
+origin, because the cross-site return carries no session cookie. It forwards the route to the
+sidecar without a token; the sidecar authenticates it by the one-time `state`. The Caddy route
+and `AURA_PIM_EXTERNAL_BASE_URL` are gone.
+
+Measured 2026-09-23 on the same VM after the edge updater delivered image revision `7967294`:
+- the key was removed from `.env`;
+- Caddy was recreated without the route;
+- a connect from a Windows browser at `https://192.168.101.158` stored the Google token at
+  09:01:30 UTC through the daemon route;
+- `GET /api/connect/pim/accounts/{id}/status` answered `linked: true` through the proxy. The
+  cockpit's Google panel polls this every 2 s to replace itself with a confirmation.
+
+Not measured live: the panel's switch itself (unit tests only) and the return through a
+Cloudflare tunnel.
+
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
 Overflow stays discoverable. Four memory entry points remain loaded; the rest can be
