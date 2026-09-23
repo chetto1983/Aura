@@ -332,7 +332,7 @@ func TestBareRemoteServerProducesAHandlerTheSDKAccepts(t *testing.T) {
 	}
 	// No stored grant and no fetcher: the token source must be absent so the SDK runs
 	// its flow, which then fails with the actionable unattended error.
-	source, err := handler.(*auth.AuthorizationCodeHandler).TokenSource(context.Background())
+	source, err := handler.TokenSource(context.Background())
 	if err != nil {
 		t.Fatalf("TokenSource: %v", err)
 	}
@@ -358,7 +358,7 @@ func TestMountWithAStoredGrantArrivesAlreadyAuthorized(t *testing.T) {
 	if err != nil {
 		t.Fatalf("oauthHandlerFor: %v", err)
 	}
-	source, err := handler.(*auth.AuthorizationCodeHandler).TokenSource(context.Background())
+	source, err := handler.TokenSource(context.Background())
 	if err != nil {
 		t.Fatalf("TokenSource: %v", err)
 	}

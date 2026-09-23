@@ -24,10 +24,11 @@ import (
 // fleet is genuinely split on client registration -- Linear and Atlassian implement Dynamic
 // Client Registration, so a client self-registers and needs NO configuration at all; Slack
 // and GitHub reject DCR and require an app the operator registered by hand; Notion sits in
-// between. Branching on the provider would mean writing the wrong branch for half the fleet,
-// so nothing here names a provider: the SDK's AuthorizationCodeHandlerConfig tries Client ID
-// Metadata Document, then a pre-registered client, then DCR, and whichever the server
-// supports is the one that answers.
+// between; ElevenLabs (measured 2026-09-23) accepts only a Client ID Metadata Document.
+// Branching on the provider would mean writing the wrong branch for half the fleet, so
+// nothing here names a provider: a mount presents the operator's client if there is one,
+// else registers dynamically, else signs in with Aura's own metadata document
+// (oauth_cimd.go), and whichever the server supports is the one that answers.
 
 // Env keys, sharing the MCP_ prefix of the static-credential keys above them.
 const (

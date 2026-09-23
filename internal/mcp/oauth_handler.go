@@ -126,30 +126,71 @@ func oauthHandlerFor(ctx context.Context, name string, server ManagedServer, set
 	if !UsesOAuth(server, settings) {
 		return nil, nil
 	}
-	log := resolveLogger(logger)
 	redirect := firstNonEmptyString(o.RedirectURL, settings.RedirectURL, defaultOAuthRedirectURL)
-
-	cfg := &auth.AuthorizationCodeHandlerConfig{
-		RedirectURL:              redirect,
-		AuthorizationCodeFetcher: guardedFetcher(name, settings, o.Fetcher),
-		// Aura stores refresh tokens encrypted, per identity, which is exactly the
-		// capability SEP-2207 asks a client to assert before requesting offline_access.
-		RequestRefreshToken: true,
-		Client:              pinnedOAuthClient(httpClient, settings),
+	build := codeHandlerBuilder{
+		name:        name,
+		resourceURL: server.URL,
+		client:      pinnedOAuthClient(httpClient, settings),
+		store:       o.Store,
+		log:         resolveLogger(logger),
 	}
-	applyClientRegistration(cfg, settings, redirect)
-
 	if o.Store != nil {
-		initial, err := restoreTokenSource(ctx, name, o.Store, cfg.Client, log)
+		initial, err := restoreTokenSource(ctx, name, o.Store, build.client, build.log)
 		if err != nil {
 			return nil, err
 		}
-		cfg.InitialTokenSource = initial
-		cfg.NewTokenSource = persistOnAuthorization(ctx, name, server.URL, o.Store, log)
+		build.initial = initial
+	}
+
+	fetcher := guardedFetcher(name, settings, o.Fetcher)
+	primary, err := build.handler(ctx, redirect, fetcher, func(cfg *auth.AuthorizationCodeHandlerConfig) {
+		applyClientRegistration(cfg, settings, redirect)
+	})
+	if err != nil {
+		return nil, err
+	}
+	// A client the operator registered is an explicit statement of which client Aura is
+	// here, and the MCP spec ranks pre-registration first; nothing falls back from it.
+	if settings.Preregistered() {
+		return primary, nil
+	}
+	fallback, err := build.handler(ctx, auraOAuthRelayURL, relayedFetcher(redirect, fetcher), useAuraClientMetadata)
+	if err != nil {
+		return nil, err
+	}
+	return newRegistrationFallback(primary, fallback), nil
+}
+
+// codeHandlerBuilder holds what every authorization-code handler of one mount shares: the
+// hardened client, the grant restored for this identity, and where a new grant is saved.
+type codeHandlerBuilder struct {
+	name        string
+	resourceURL string
+	client      *http.Client
+	store       GrantStore
+	initial     oauth2.TokenSource
+	log         *slog.Logger
+}
+
+// handler builds one SDK handler. mountCtx carries the identity a new grant is scoped to;
+// see persistOnAuthorization for why it cannot come from the context the SDK passes later.
+func (b codeHandlerBuilder) handler(mountCtx context.Context, redirect string, fetcher auth.AuthorizationCodeFetcher, register func(*auth.AuthorizationCodeHandlerConfig)) (auth.OAuthHandler, error) {
+	cfg := &auth.AuthorizationCodeHandlerConfig{
+		RedirectURL:              redirect,
+		AuthorizationCodeFetcher: fetcher,
+		// Aura stores refresh tokens encrypted, per identity, which is exactly the
+		// capability SEP-2207 asks a client to assert before requesting offline_access.
+		RequestRefreshToken: true,
+		Client:              b.client,
+		InitialTokenSource:  b.initial,
+	}
+	register(cfg)
+	if b.store != nil {
+		cfg.NewTokenSource = persistOnAuthorization(mountCtx, b.name, b.resourceURL, b.store, b.log)
 	}
 	handler, err := auth.NewAuthorizationCodeHandler(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("mcp oauth %q: %w", name, err)
+		return nil, fmt.Errorf("mcp oauth %q: %w", b.name, err)
 	}
 	return handler, nil
 }
@@ -173,11 +214,16 @@ func (h *staticBearerHandler) Authorize(_ context.Context, _ *http.Request, resp
 	return fmt.Errorf("%w: %s", ErrStaticBearerRejected, h.name)
 }
 
-// applyClientRegistration picks the registration method. The SDK tries CIMD, then
-// pre-registration, then DCR, and requires at least one to be configured — so the
+// applyClientRegistration picks the primary registration method: the operator's client,
+// else dynamic registration. The SDK requires at least one to be configured — so the
 // Linear/Atlassian case is zero-config for the OPERATOR but not for Aura: the DCR
 // metadata still has to be built, and building it is what makes "paste nothing and it
 // works" true for the providers that self-register.
+//
+// Aura's metadata document is deliberately NOT added here. The SDK tries a configured
+// document before either of these (handleRegistration), so adding it would move every
+// server that advertises one off the registration it signs in with today; it lives on a
+// separate fallback handler instead (oauth_cimd.go).
 func applyClientRegistration(cfg *auth.AuthorizationCodeHandlerConfig, settings OAuthSettings, redirect string) {
 	if settings.Preregistered() {
 		creds := &oauthex.ClientCredentials{ClientID: settings.ClientID}

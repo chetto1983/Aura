@@ -43,13 +43,17 @@ func IsTransportError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrOAuthAuthorizationRequired) {
-		return false
-	}
-	if strings.Contains(err.Error(), sdkNoRegistrationMethod) {
+	if errors.Is(err, ErrOAuthAuthorizationRequired) || isNoRegistrationMethod(err) {
 		return false
 	}
 	return errors.Is(err, ErrTransport)
+}
+
+// isNoRegistrationMethod reports the SDK's "no way to be a client here" answer. It is what
+// sends a mount on to Aura's client metadata document (oauth_cimd.go), and it stays a
+// permanent answer when the authorization server accepts no metadata document either.
+func isNoRegistrationMethod(err error) bool {
+	return err != nil && strings.Contains(err.Error(), sdkNoRegistrationMethod)
 }
 
 // TransportErrorf is the single place an SDK dial/call failure acquires Aura's
