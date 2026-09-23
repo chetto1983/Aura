@@ -679,6 +679,8 @@ type Querier interface {
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 	// Keeping the stored secret is its own UPDATE: an INSERT … ON CONFLICT checks the row CHECK
 	// against the proposed ('google', NULL) row before conflict handling (measured 2026-09-23).
+	// It matches only the client the secret belongs to, so a save that raced another admin's new
+	// client updates nothing instead of pairing the old ID with the new secret.
 	UpdatePIMProviderAppKeepSecret(ctx context.Context, arg UpdatePIMProviderAppKeepSecretParams) (int64, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
 	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so

@@ -20,7 +20,9 @@ SET client_id = EXCLUDED.client_id,
 
 -- Keeping the stored secret is its own UPDATE: an INSERT … ON CONFLICT checks the row CHECK
 -- against the proposed ('google', NULL) row before conflict handling (measured 2026-09-23).
+-- It matches only the client the secret belongs to, so a save that raced another admin's new
+-- client updates nothing instead of pairing the old ID with the new secret.
 -- name: UpdatePIMProviderAppKeepSecret :execrows
 UPDATE aura.pim_provider_app
-SET client_id = $2, tenant_id = $3, updated_at = now(), updated_by = $4
-WHERE provider = $1;
+SET updated_at = now(), updated_by = $3
+WHERE provider = $1 AND client_id = $2 AND client_secret_ciphertext IS NOT NULL;

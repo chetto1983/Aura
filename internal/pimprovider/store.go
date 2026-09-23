@@ -82,17 +82,18 @@ func (s *Store) Get(ctx context.Context, provider string) (App, error) {
 
 // Upsert saves app. A Google app without a secret keeps the stored one through a plain UPDATE:
 // Postgres checks the row CHECK against the proposed row of an INSERT … ON CONFLICT before it
-// handles the conflict, so a ('google', NULL) upsert fails even when a secret is stored.
+// handles the conflict, so a ('google', NULL) upsert fails even when a secret is stored. That
+// UPDATE matches only the stored client ID, and ErrStale reports that it no longer is.
 func (s *Store) Upsert(ctx context.Context, app App, updatedBy string) error {
 	if app.Provider == Google && app.ClientSecret == "" {
 		n, err := s.q.UpdatePIMProviderAppKeepSecret(ctx, sqlc.UpdatePIMProviderAppKeepSecretParams{
-			Provider: app.Provider, ClientID: app.ClientID, TenantID: app.TenantID, UpdatedBy: updatedBy,
+			Provider: app.Provider, ClientID: app.ClientID, UpdatedBy: updatedBy,
 		})
 		if err != nil {
 			return fmt.Errorf("pimprovider: update %s: %w", app.Provider, err)
 		}
 		if n == 0 {
-			return ErrNotConfigured
+			return ErrStale
 		}
 		return nil
 	}

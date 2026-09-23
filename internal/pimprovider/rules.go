@@ -24,6 +24,9 @@ var (
 	ErrNotConfigured = errors.New("pimprovider: provider app not configured")
 	// ErrInvalid wraps every Validate refusal; its message names the field to fix.
 	ErrInvalid = errors.New("pimprovider: invalid provider app")
+	// ErrStale reports a keep-secret save whose client ID is no longer the stored one: another
+	// save landed between the read that validated it and the write.
+	ErrStale = errors.New("pimprovider: the provider app changed; reload and save again")
 )
 
 // canonical is every id the cockpit sends. The sidecar matches provider names without regard to

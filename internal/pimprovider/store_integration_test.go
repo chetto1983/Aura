@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/secret"
 )
 
@@ -28,11 +29,20 @@ func appsEnvOrSkip(t *testing.T, key string) string {
 	return value
 }
 
+// liveStore empties aura.pim_provider_app around each test. The table is install-wide, so its
+// rows ARE the target install's provider apps: the live-target guard refuses the deployment's
+// database off CI, and every env read happens before the first DELETE.
 func liveStore(t *testing.T) (*Store, *pgxpool.Pool) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	pool, err := db.Open(ctx, &db.Config{URL: appsEnvOrSkip(t, "AURA_DB_URL")})
+	migrateURL := dbtest.MigrateURL(t, appsEnvOrSkip(t, "AURA_DB_MIGRATE_URL"))
+	appURL := appsEnvOrSkip(t, "AURA_DB_URL")
+	secretHex := appsEnvOrSkip(t, "AURA_AUTHULA_SECRET")
+	if _, err := db.Migrate(ctx, migrateURL); err != nil {
+		t.Fatalf("db.Migrate: %v", err)
+	}
+	pool, err := db.Open(ctx, &db.Config{URL: appURL})
 	if err != nil {
 		t.Fatalf("db.Open: %v", err)
 	}
@@ -40,7 +50,7 @@ func liveStore(t *testing.T) (*Store, *pgxpool.Pool) {
 	clean := func() { _, _ = pool.Exec(context.Background(), `DELETE FROM aura.pim_provider_app`) }
 	clean()
 	t.Cleanup(clean)
-	store, err := NewStore(pool, appsEnvOrSkip(t, "AURA_AUTHULA_SECRET"))
+	store, err := NewStore(pool, secretHex)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -85,11 +95,32 @@ func TestStoreSealsTheGoogleSecretAndKeepsItOnAResave(t *testing.T) {
 	}
 }
 
-func TestStoreKeepSecretOnAMissingRowIsNotConfigured(t *testing.T) {
+func TestStoreKeepSecretOnAMissingRowIsStale(t *testing.T) {
 	store, _ := liveStore(t)
 	err := store.Upsert(context.Background(), App{Provider: Google, ClientID: "cid"}, "admin")
-	if !errors.Is(err, ErrNotConfigured) {
-		t.Fatalf("keep-secret on no row err = %v, want ErrNotConfigured", err)
+	if !errors.Is(err, ErrStale) {
+		t.Fatalf("keep-secret on no row err = %v, want ErrStale", err)
+	}
+}
+
+// Two admins save at once: one re-saves cid-a keeping its secret, validated against a read of
+// cid-a, while the other saves cid-b/secret-b first. The late keep-secret save must not pair
+// cid-a with secret-b, a client whose consent would then fail for every new account.
+func TestStoreKeepSecretNeverPairsAnotherClientsSecret(t *testing.T) {
+	store, _ := liveStore(t)
+	ctx := context.Background()
+	if err := store.Upsert(ctx, App{Provider: Google, ClientID: "cid-a", ClientSecret: "secret-a"}, "admin-1"); err != nil {
+		t.Fatalf("Upsert a: %v", err)
+	}
+	if err := store.Upsert(ctx, App{Provider: Google, ClientID: "cid-b", ClientSecret: "secret-b"}, "admin-2"); err != nil {
+		t.Fatalf("Upsert b: %v", err)
+	}
+	if err := store.Upsert(ctx, App{Provider: Google, ClientID: "cid-a"}, "admin-1"); !errors.Is(err, ErrStale) {
+		t.Fatalf("late keep-secret save err = %v, want ErrStale", err)
+	}
+	got, err := store.Get(ctx, Google)
+	if err != nil || got.ClientID != "cid-b" || got.ClientSecret != "secret-b" || got.UpdatedBy != "admin-2" {
+		t.Fatalf("after the late save = %+v (err %v), want cid-b/secret-b by admin-2 untouched", got, err)
 	}
 }
 

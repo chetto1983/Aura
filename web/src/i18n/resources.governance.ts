@@ -125,7 +125,7 @@ export const governanceEn = {
         apps: {
           heading: 'Provider OAuth apps',
           intro:
-            'Set once per provider. Members then connect their accounts without typing any credential.',
+            'Set once per provider. Members then connect Google and Microsoft accounts without typing a client ID or secret.',
           configured: 'configured',
           notConfigured: 'not configured',
           secretStored:
@@ -372,7 +372,7 @@ export const governanceIt = {
         apps: {
           heading: 'App OAuth dei provider',
           intro:
-            'Si impostano una volta per provider. Gli utenti poi collegano i propri account senza inserire credenziali.',
+            'Si impostano una volta per provider. Gli utenti poi collegano gli account Google e Microsoft senza inserire client ID o secret.',
           configured: 'configurato',
           notConfigured: 'non configurato',
           secretStored:

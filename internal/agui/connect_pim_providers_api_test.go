@@ -16,10 +16,11 @@ import (
 )
 
 type fakePIMApps struct {
-	apps     map[string]pimprovider.App
-	getErr   error
-	upserted []pimprovider.App
-	by       []string
+	apps      map[string]pimprovider.App
+	getErr    error
+	upsertErr error
+	upserted  []pimprovider.App
+	by        []string
 }
 
 func (f *fakePIMApps) List(context.Context) ([]pimprovider.App, error) {
@@ -44,6 +45,9 @@ func (f *fakePIMApps) Get(_ context.Context, provider string) (pimprovider.App, 
 }
 
 func (f *fakePIMApps) Upsert(_ context.Context, app pimprovider.App, updatedBy string) error {
+	if f.upsertErr != nil {
+		return f.upsertErr
+	}
 	f.upserted = append(f.upserted, app)
 	f.by = append(f.by, updatedBy)
 	if f.apps == nil {
@@ -182,6 +186,29 @@ func TestPIMProviderPutSecretRules(t *testing.T) {
 	}
 	if code, _ := putProvider(t, srv, "google", `{`); code != http.StatusBadRequest {
 		t.Fatalf("malformed JSON = %d, want 400", code)
+	}
+}
+
+func TestPIMProviderPutStaleKeepSecretIs409(t *testing.T) {
+	apps := &fakePIMApps{apps: googleApp(), upsertErr: pimprovider.ErrStale}
+	srv := connectPIMServerWithApps("", apps, adminOf(fakePIMIdentity))
+	defer srv.Close()
+	if code, raw := putProvider(t, srv, "google", `{"clientId":"g-cid"}`); code != http.StatusConflict {
+		t.Fatalf("stale keep-secret save = %d %s, want 409", code, raw)
+	}
+}
+
+// The admin and member views differ per caller, so no cache between them may keep one.
+func TestPIMProvidersListIsNotCached(t *testing.T) {
+	srv := connectPIMServerWithApps("", &fakePIMApps{apps: googleApp()}, adminOf(fakePIMIdentity))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL + "/api/connect/pim/providers")
+	if err != nil {
+		t.Fatalf("GET providers: %v", err)
+	}
+	_ = resp.Body.Close()
+	if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
 	}
 }
 

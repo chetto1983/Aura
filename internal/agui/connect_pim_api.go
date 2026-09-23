@@ -63,8 +63,9 @@ type MCPAccessTokenProvider interface {
 // SetCalendarMCP wires the calendar resource server's /admin REST base URL, the optional pinned
 // cockpit origin (AURA_WEB_PUBLIC_URL) and the same identity-scoped OAuth grant provider used by
 // its MCP transport. Set by the daemon
-// composition root after NewServer; until set (or when the URL is empty), the five
-// /api/connect/pim/* routes answer 503 so a stack without the sidecar degrades gracefully. Kept off
+// composition root after NewServer; until set (or when the URL is empty), the account routes and
+// the Google callback answer 503 so a stack without the sidecar degrades gracefully — the provider
+// routes read Postgres alone and keep working. Kept off
 // the constructor so existing NewServer callers/tests stay unchanged (the SetWhatsAppBridge
 // precedent).
 func (s *Server) SetCalendarMCP(baseURL, publicURL string, auth MCPAccessTokenProvider) {

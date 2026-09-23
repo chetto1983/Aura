@@ -45,7 +45,9 @@ var errPIMAppsUnavailable = map[string]string{"error": "provider apps unavailabl
 
 // handlePIMProvidersList serves GET /api/connect/pim/providers. A member learns only whether each
 // managed provider is ready to connect; the client ID and tenant are for the admin who edits them.
+// The body depends on the caller, so no cache may keep it.
 func (s *Server) handlePIMProvidersList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if s.pimApps == nil {
 		writeJSONStatus(w, http.StatusServiceUnavailable, errPIMAppsUnavailable)
 		return
@@ -115,7 +117,12 @@ func (s *Server) handlePIMProviderPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	updatedBy, _ := principalIdentityID(r)
-	if err := s.pimApps.Upsert(r.Context(), next, updatedBy); err != nil {
+	err = s.pimApps.Upsert(r.Context(), next, updatedBy)
+	if errors.Is(err, pimprovider.ErrStale) {
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
 		slog.Error("pim providers: save failed", "provider", provider, "err", err)
 		writeJSONStatus(w, http.StatusServiceUnavailable, errPIMAppsUnavailable)
 		return

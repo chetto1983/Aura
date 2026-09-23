@@ -259,13 +259,16 @@ const (
 	connectWhatsAppLogoutRoute = "POST /api/connect/whatsapp/logout"
 )
 
-// connectPIM* are the cockpit "Connect Google Calendar" routes (connect_pim_api.go). Each is a
-// SPECIFIC method+path sibling (with {id} path values) under the "/api/" carve-out — NEVER a bare
-// "/api/" (Pitfall 5). All five delegate to the AG-UI handler (routes on Server.Mux) and are
-// interposed with RequireCapability(governance.write): creating an account stores the operator's
-// own Google OAuth client and a delete drops the linked account, so these are operator write-class
-// actions — the SAME gate as the WhatsApp/MCP write routes. Go 1.22 longest-pattern precedence keeps
-// each method+path sibling authoritative over the bare "/api/" carve-out and the "/" embed catch-all.
+// connectPIM* are the cockpit calendar-connect routes (connect_pim_api.go,
+// connect_pim_providers_api.go). Each is a SPECIFIC method+path sibling (with {id} path values)
+// under the "/api/" carve-out — NEVER a bare "/api/" (Pitfall 5) — and all delegate to the AG-UI
+// handler (routes on Server.Mux). The account routes and the provider list are interposed with
+// RequireCapability(governance.write), which every identity holds: a member connects and drops
+// their own accounts on the admin-set OAuth client Aura injects. Setting that client (the provider
+// PUT) takes identity.create, the admin capability. The Google callback is public: the cross-site
+// redirect back withholds the SameSite session cookie, and the sidecar authenticates it by the
+// one-time state it issued. Go 1.22 longest-pattern precedence keeps each sibling authoritative
+// over the bare "/api/" carve-out and the "/" embed catch-all.
 const (
 	connectPIMAccountsListRoute   = "GET /api/connect/pim/accounts"
 	connectPIMAccountsCreateRoute = "POST /api/connect/pim/accounts"
