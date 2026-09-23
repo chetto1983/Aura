@@ -124,6 +124,7 @@ export const governanceEn = {
         providerNotConfigured: 'An administrator has to configure {{provider}} first.',
         apps: {
           heading: 'Provider OAuth apps',
+          summary: '{{configured}} of {{total}} configured',
           intro:
             'Set once per provider. Members then connect Google and Microsoft accounts without typing a client ID or secret.',
           configured: 'configured',
@@ -371,6 +372,7 @@ export const governanceIt = {
         providerNotConfigured: 'Un amministratore deve prima configurare {{provider}}.',
         apps: {
           heading: 'App OAuth dei provider',
+          summary: '{{configured}} su {{total}} configurati',
           intro:
             'Si impostano una volta per provider. Gli utenti poi collegano gli account Google e Microsoft senza inserire client ID o secret.',
           configured: 'configurato',

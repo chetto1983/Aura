@@ -68,7 +68,28 @@ beforeEach(() => {
   ]);
 });
 
+function configured(provider: string) {
+  return { provider, configured: true, clientId: 'cid', tenantId: 't', secretSet: false };
+}
+
 describe('PimProviderAppsPanel', () => {
+  it('stays collapsed once every managed provider is configured', async () => {
+    listPimProviderApps.mockResolvedValue([
+      { ...configured('google'), tenantId: '', secretSet: true, redirectUri: RELAY },
+      configured('microsoft365'),
+      configured('outlook.com'),
+    ]);
+    renderPanel();
+    const summary = await screen.findByText('3 of 3 configured');
+    expect(summary.closest('details')?.open).toBe(false);
+  });
+
+  it('opens by itself while a provider still needs its app', async () => {
+    renderPanel();
+    const summary = await screen.findByText('1 of 3 configured');
+    expect(summary.closest('details')?.open).toBe(true);
+  });
+
   it('pre-fills the client ID, never the secret, and shows the relay URI under Google', async () => {
     renderPanel();
     const clientIds = await screen.findAllByLabelText(/client id/i);
