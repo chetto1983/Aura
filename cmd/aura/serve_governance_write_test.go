@@ -9,6 +9,23 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// Enabling from the cockpit waits on the mount, so it must not spend the boot budget.
+func TestSetEnabledMountsWithoutTheBootBudget(t *testing.T) {
+	withBootMountBudget(t)
+	withMemoryMCPRegistry(t)
+	server, starts := dyingStdioServer(t)
+	off := false
+	server.Enabled = &off
+	seedMCPRegistry(t, mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{"slow": server}})
+
+	if _, err := (mcpWriteAdapter{live: newTestLiveMount()}).SetEnabled(context.Background(), "admin", "slow", true); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+	if got := starts(); got != 1 {
+		t.Fatalf("server starts = %d, want exactly 1 while the enable request waits", got)
+	}
+}
+
 // TestValidateTrustClassReason proves the hoisted single-source-of-truth validator
 // (D-13/Pitfall #5): a known trust class AND a non-empty reason are both required, with
 // surrounding whitespace trimmed on success.

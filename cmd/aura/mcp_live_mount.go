@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -125,13 +126,28 @@ func deferredOAuthMountNames(policies map[string]mcp.ManagedServer) []string {
 	return names
 }
 
+// MountNow is Mount for a request that waits on it: an operator's install or enable. It tries
+// once, within the code's default handshake timeout. The mount budget the environment sets
+// (compose: 180 s, 40 attempts) is for sidecars still starting at boot; spent inside an install
+// request it held the response for three minutes after the row was saved (measured on the VM
+// 2026-09-23), and a cockpit that stopped waiting never learnt the server existed. A server
+// that is not up yet shows its failure on the board and mounts at the next boot or enable.
+func (m *liveMCPMount) MountNow(ctx context.Context, name string, server mcp.ManagedServer) {
+	m.mount(ctx, name, server, mcptools.MountRetryPolicy{Attempts: 1}, defaultMCPMountTimeout*time.Second)
+}
+
 // Mount brings a server's tools into the live registry, replacing any earlier mount of the
-// same server.
+// same server, under the boot mount budget: it runs where nothing waits on it (boot, and the
+// mount that follows a completed authorization).
 //
 // ctx is the caller's, and it is used for the handshake only: the session itself must
 // outlive the request that triggered the mount, so the process context is what the
 // transport is given. That is the same split boot makes between handshakeCtx and ctx.
 func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.ManagedServer) {
+	m.mount(ctx, name, server, mcpMountRetryPolicy(), mcpMountTimeout())
+}
+
+func (m *liveMCPMount) mount(ctx context.Context, name string, server mcp.ManagedServer, policy mcptools.MountRetryPolicy, timeout time.Duration) {
 	if m == nil || m.reg == nil {
 		return
 	}
@@ -143,7 +159,7 @@ func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.Manage
 	}
 	m.unmountLocked(name)
 
-	handshakeCtx, cancel := context.WithTimeout(ctx, mcpMountTimeout())
+	handshakeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	var host *mcptools.MountedServer
@@ -165,8 +181,7 @@ func (m *liveMCPMount) Mount(ctx context.Context, name string, server mcp.Manage
 		}
 		return closer, mounted, err
 	}
-	closer, mounted, err := mcptools.MountWithRetry(
-		handshakeCtx, name, mcpMountRetryPolicy(), mountOnce)
+	closer, mounted, err := mcptools.MountWithRetry(handshakeCtx, name, policy, mountOnce)
 	if err != nil {
 		slog.Warn("mcp live mount failed", "server", redact.Line(name), "err", err)
 		return

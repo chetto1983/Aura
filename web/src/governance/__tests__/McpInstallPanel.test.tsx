@@ -24,8 +24,10 @@ function client() {
   });
 }
 
-function renderPanel(props: { existingNames?: readonly string[]; onClose?: () => void }) {
-  const qc = client();
+function renderPanel(
+  props: { existingNames?: readonly string[]; onClose?: () => void },
+  qc = client(),
+) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
@@ -108,6 +110,26 @@ describe('McpInstallPanel (MCPW-01)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
 
     expect(await screen.findByText(/A server named "slack" already exists/)).toBeTruthy();
+  });
+
+  // A failed install can still have saved its row: a proxy that stopped waiting on a slow
+  // mount, or a name another session took. The board refreshes either way, so the row shows.
+  it('refreshes the board when an install fails', async () => {
+    const { HttpError } = await import('../../api/json');
+    installMcpServer.mockRejectedValue(new HttpError(502, 'bad gateway'));
+    const qc = client();
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    renderPanel({}, qc);
+    fireEvent.click(screen.getByRole('button', { name: 'Remote (HTTP)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'slack' } });
+    fireEvent.change(screen.getByLabelText('Server URL'), {
+      target: { value: 'https://mcp.slack.com/mcp' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Install server' }));
+
+    await waitFor(() => {
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ['governance', 'mcp'] });
+    });
   });
 
   // The URL is where an identity's OAuth token will be sent. A plaintext one hands it to

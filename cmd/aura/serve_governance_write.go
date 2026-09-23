@@ -86,7 +86,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 		return agui.MCPWriteResult{}, err
 	}
 
-	a.live.Mount(ctx, name, server)
+	a.live.MountNow(ctx, name, server)
 	// Verification already dialled this server and counted its tools. Probing again would
 	// spawn it a second time to recompute a number we hold (audit A5); only a transport
 	// prepareAndVerify does not verify still needs its own probe.
@@ -191,7 +191,7 @@ func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, ena
 		return agui.MCPWriteResult{}, err
 	}
 	if enabled {
-		a.live.Mount(ctx, name, server)
+		a.live.MountNow(ctx, name, server)
 	} else {
 		a.live.Unmount(name)
 	}

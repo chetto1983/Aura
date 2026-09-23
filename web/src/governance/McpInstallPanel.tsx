@@ -78,12 +78,15 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
   const selectedRecipe = RECIPES.find((r) => r.name === recipe);
   const requiredEnv = mode === 'recipe' ? (selectedRecipe?.requiredEnv ?? []) : [];
 
+  // The board refreshes however the install ends: a failure can still have saved the row (the
+  // server stores it before mounting, and a proxy may stop waiting on the mount), and a board
+  // that never showed it answered the next install of that name with a 409.
   const mutation = useMutation({
     mutationFn: (req: McpInstallRequest) => installMcpServer(req),
-    onSuccess: () => {
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ['governance', 'mcp'] });
-      onClose();
     },
+    onSuccess: onClose,
   });
 
   const cliEquivalent =

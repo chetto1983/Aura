@@ -4,13 +4,71 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/mcptools"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/mcpoauth"
 )
+
+// An operator's install and enable wait on this mount. The compose budget for sidecars still
+// starting at boot (AURA_MCP_MOUNT_TIMEOUT=180, 40 attempts) held an install's response for three
+// minutes after its row was saved (measured on the VM 2026-09-23), and a cockpit that gave up
+// never learnt the server existed: the next install of that name answered 409.
+func TestMountNowTriesOnceWhateverTheBootBudget(t *testing.T) {
+	withBootMountBudget(t)
+	live := newTestLiveMount()
+	server, starts := dyingStdioServer(t)
+
+	live.MountNow(context.Background(), "slow", server)
+
+	if got := starts(); got != 1 {
+		t.Fatalf("server starts = %d, want exactly 1 on a request-path mount", got)
+	}
+	if live.Mounted("slow") {
+		t.Fatal("a server that never completed its handshake is mounted")
+	}
+}
+
+// withBootMountBudget sets the retry budget compose gives boot, shrunk to three attempts so a
+// test that wrongly spends it still finishes in seconds.
+func withBootMountBudget(t *testing.T) {
+	t.Helper()
+	t.Setenv("AURA_MCP_MOUNT_RETRY_ATTEMPTS", "3")
+	t.Setenv("AURA_MCP_MOUNT_TIMEOUT", "180")
+}
+
+func newTestLiveMount() *liveMCPMount {
+	return &liveMCPMount{
+		reg:        tools.NewRegistry(),
+		handles:    &runtimeToolHandles{},
+		processCtx: context.Background(),
+		closers:    map[string]func() error{},
+		hosts:      map[string]*mcptools.MountedServer{},
+		owners:     map[string]string{},
+	}
+}
+
+// dyingStdioServer exits before the MCP handshake, a transport failure the boot budget retries;
+// starts counts its launches.
+func dyingStdioServer(t *testing.T) (mcp.ManagedServer, func() int) {
+	t.Helper()
+	log := filepath.Join(t.TempDir(), "starts")
+	server := mcp.ManagedServer{Command: "sh", Args: []string{"-c", "echo start >> " + log + "; exit 1"}}
+	return server, func() int {
+		raw, err := os.ReadFile(log)
+		if err != nil {
+			t.Fatalf("the server never started: %v", err)
+		}
+		return strings.Count(string(raw), "start")
+	}
+}
 
 func TestOAuthMountDeferralIsLimitedToServeBootstrap(t *testing.T) {
 	oauthServer := mcp.ManagedServer{
