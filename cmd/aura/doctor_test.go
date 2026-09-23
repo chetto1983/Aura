@@ -190,6 +190,8 @@ func TestDoctorEmbedProbeReportsWhatTheSidecarActuallyLoaded(t *testing.T) {
 			_, _ = w.Write([]byte(`{"status":"ok"}`))
 		case "/props":
 			_, _ = w.Write([]byte(`{"model_path":"/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf","total_slots":1,"default_generation_settings":{"n_ctx":2048}}`))
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"/root/.cache/llama.cpp/embeddinggemma-300M-Q8_0.gguf","meta":{"n_embd":768,"n_params":307581696,"size":327060480,"ftype":"Q8_0"}}]}`))
 		default:
 			t.Errorf("unexpected request to %s", r.URL.Path)
 		}
@@ -205,7 +207,7 @@ func TestDoctorEmbedProbeReportsWhatTheSidecarActuallyLoaded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
 	}
-	for _, want := range []string{"embeddinggemma-300M-Q8_0.gguf", "n_ctx 2048", "1 slot"} {
+	for _, want := range []string{"embeddinggemma-300M-Q8_0.gguf", "n_ctx 2048", "1 slot", "space es1-", "local embeddinggemma-300M-Q8_0.gguf, 768d"} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("detail = %q, want it to contain %q", detail, want)
 		}
@@ -263,6 +265,9 @@ func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
 	}
 	if !strings.Contains(detail, "perplexity/pplx-embed-v1-0.6b") {
 		t.Fatalf("detail = %q, want it to name the cloud model", detail)
+	}
+	if !strings.Contains(detail, "space es1-") || !strings.Contains(detail, "endpoint ") {
+		t.Errorf("detail = %q, want the resolved space named", detail)
 	}
 }
 

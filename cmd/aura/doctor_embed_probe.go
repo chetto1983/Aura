@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 const doctorEmbedProbeTimeout = 10 * time.Second
@@ -44,7 +45,11 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 	if model != "" {
 		// A hosted embedder's health belongs to its provider, and probing it would bill a
 		// call on every `aura doctor`. What this stack can be wrong about is the route.
-		return fmt.Sprintf("cloud model %s (not probed)", model), nil
+		space, err := embeddings.RouteSpace(ctx, nil, cfg.Embed, cfg.Embed.Dimensions)
+		if err != nil {
+			return "", err
+		}
+		return fmt.Sprintf("cloud model %s (not probed), %s", model, describeSpace(space)), nil
 	}
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
@@ -73,7 +78,17 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 	if err != nil {
 		return "", err
 	}
-	return describeEmbedProps(props), nil
+	space, err := embeddings.RouteSpace(ctx, client, cfg.Embed, cfg.Embed.Dimensions)
+	if err != nil {
+		return "", err
+	}
+	return describeEmbedProps(props) + ", " + describeSpace(space), nil
+}
+
+// describeSpace prints the id stored beside every vector and the name an operator reads, so
+// a doctor run on two machines shows at a glance whether their corpora are comparable.
+func describeSpace(space embeddings.Space) string {
+	return fmt.Sprintf("space %s (%s)", space.ID, space.Label)
 }
 
 func probeEmbedHealth(ctx context.Context, client *http.Client, base string) (int, error) {
