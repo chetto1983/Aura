@@ -33,3 +33,11 @@ func RetrievalDocuments(title string, texts []string) []string {
 	}
 	return Prefix("title: "+title+" | text: ", texts)
 }
+
+// RecipeVersion covers everything that turns the same text into a different stored vector
+// without changing a model name: the prefixes above and their Python twin
+// (services/ingest/chunk.py EMBED_DOC_PREFIX), llama.cpp's --embd-normalize in compose.yaml,
+// and TruncateMRL. Bump it when any of them changes. It is part of every embedding space
+// (space.go), so vectors stored under the old recipe stop matching the current space and
+// are re-embedded.
+const RecipeVersion = 1

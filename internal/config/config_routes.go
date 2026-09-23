@@ -40,3 +40,26 @@ func ResolveEmbedRoute(embed EmbedConfig, apiKey string) (baseURL, credential, m
 	// Without this strip the request would go to "/v1/v1/embeddings" and 404.
 	return strings.TrimSuffix(strings.TrimRight(base, "/"), "/v1"), apiKey, model
 }
+
+// EmbedKind names which of the three routes ResolveEmbedRoute takes. It is part of the
+// embedding space a route produces (internal/embeddings/space.go).
+type EmbedKind string
+
+// The three routes: the local sidecar, OpenRouter, and an operator-named endpoint.
+const (
+	EmbedLocal      EmbedKind = "local"
+	EmbedOpenRouter EmbedKind = "openrouter"
+	EmbedEndpoint   EmbedKind = "endpoint"
+)
+
+// EmbedRouteKind reports the route ResolveEmbedRoute resolves embed to.
+func EmbedRouteKind(embed EmbedConfig) EmbedKind {
+	switch {
+	case strings.TrimSpace(embed.CloudModel) == "":
+		return EmbedLocal
+	case strings.TrimSpace(embed.CloudBaseURL) == "":
+		return EmbedOpenRouter
+	default:
+		return EmbedEndpoint
+	}
+}

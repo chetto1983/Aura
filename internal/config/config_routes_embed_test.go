@@ -81,3 +81,22 @@ func TestEmbedRouteOpenRouterOptionIgnoresTheChatBase(t *testing.T) {
 		t.Errorf("route = (%q, %q), want the OpenRouter credential and the chosen model", key, model)
 	}
 }
+
+func TestEmbedRouteKindFollowsTheResolver(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		embed EmbedConfig
+		want  EmbedKind
+	}{
+		{"no model is the local sidecar", EmbedConfig{BaseURL: "http://aura-llama-embed:8081"}, EmbedLocal},
+		{"a model with no cloud base is OpenRouter", EmbedConfig{CloudModel: "qwen/qwen3-embedding-8b"}, EmbedOpenRouter},
+		{"a model with a cloud base is an endpoint", EmbedConfig{CloudModel: "vendor/embed-1", CloudBaseURL: "https://embed.example/v1"}, EmbedEndpoint},
+		{"whitespace is not a model", EmbedConfig{CloudModel: "  ", CloudBaseURL: "https://embed.example"}, EmbedLocal},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := EmbedRouteKind(tc.embed); got != tc.want {
+				t.Fatalf("EmbedRouteKind = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
