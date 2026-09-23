@@ -20,12 +20,6 @@ const { PimProviderAppsPanel } = await import('../PimProviderAppsPanel');
 
 const RELAY = 'https://chetto1983.github.io/aura-connect/google/callback/';
 
-function nth<T>(items: readonly T[], index: number): T {
-  const item = items[index];
-  if (item === undefined) throw new Error(`no element at ${String(index)}`);
-  return item;
-}
-
 function renderPanel() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -35,6 +29,14 @@ function renderPanel() {
       <PimProviderAppsPanel />
     </QueryClientProvider>,
   );
+}
+
+async function choose(provider: string) {
+  fireEvent.change(await screen.findByLabelText('Provider'), { target: { value: provider } });
+}
+
+function configured(provider: string) {
+  return { provider, configured: true, clientId: 'cid', tenantId: 't', secretSet: false };
 }
 
 beforeEach(() => {
@@ -68,10 +70,6 @@ beforeEach(() => {
   ]);
 });
 
-function configured(provider: string) {
-  return { provider, configured: true, clientId: 'cid', tenantId: 't', secretSet: false };
-}
-
 describe('PimProviderAppsPanel', () => {
   it('stays collapsed once every managed provider is configured', async () => {
     listPimProviderApps.mockResolvedValue([
@@ -90,10 +88,42 @@ describe('PimProviderAppsPanel', () => {
     expect(summary.closest('details')?.open).toBe(true);
   });
 
+  it('shows one form at a time, starting on the first provider still missing its app', async () => {
+    renderPanel();
+    expect(await screen.findByLabelText('Provider')).toHaveProperty('value', 'microsoft365');
+    expect(screen.getAllByLabelText(/client id/i)).toHaveLength(1);
+    expect(screen.getByRole('option', { name: /Google · configured/ })).toBeTruthy();
+    expect(screen.getByRole('option', { name: /Outlook\.com · not configured/ })).toBeTruthy();
+    expect(screen.queryByText(RELAY)).toBeNull();
+  });
+
+  it('keeps the panel open on the saved provider when that save completes the set', async () => {
+    const saved = { ...configured('outlook.com'), tenantId: 'consumers' };
+    listPimProviderApps
+      .mockResolvedValueOnce([
+        { ...configured('google'), tenantId: '', secretSet: true, redirectUri: RELAY },
+        configured('microsoft365'),
+        { ...saved, configured: false, clientId: '', tenantId: '' },
+      ])
+      .mockResolvedValue([
+        { ...configured('google'), tenantId: '', secretSet: true, redirectUri: RELAY },
+        configured('microsoft365'),
+        saved,
+      ]);
+    savePimProviderApp.mockResolvedValueOnce(saved);
+    renderPanel();
+    expect(await screen.findByLabelText('Provider')).toHaveProperty('value', 'outlook.com');
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    const summary = await screen.findByText('3 of 3 configured');
+    expect(summary.closest('details')?.open).toBe(true);
+    expect(screen.getByLabelText('Provider')).toHaveProperty('value', 'outlook.com');
+    expect(screen.getByText('Saved.')).toBeTruthy();
+  });
+
   it('pre-fills the client ID, never the secret, and shows the relay URI under Google', async () => {
     renderPanel();
-    const clientIds = await screen.findAllByLabelText(/client id/i);
-    expect((clientIds[0] as HTMLInputElement).value).toBe('g-cid');
+    await choose('google');
+    expect(screen.getByLabelText(/client id/i)).toHaveProperty('value', 'g-cid');
     expect(screen.getByLabelText(/^Client secret/i)).toHaveProperty('value', '');
     expect(screen.getByText(RELAY)).toBeTruthy();
     expect(screen.getByText(/secret is stored/i)).toBeTruthy();
@@ -109,8 +139,8 @@ describe('PimProviderAppsPanel', () => {
       redirectUri: RELAY,
     });
     renderPanel();
-    await screen.findAllByLabelText(/client id/i);
-    fireEvent.click(nth(screen.getAllByRole('button', { name: /save/i }), 0));
+    await choose('google');
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => {
       expect(savePimProviderApp).toHaveBeenCalledWith('google', { clientId: 'g-cid' });
     });
@@ -122,9 +152,9 @@ describe('PimProviderAppsPanel', () => {
       new HttpError(400, 'tenantId is required for outlook.com'),
     );
     renderPanel();
-    const clientIds = await screen.findAllByLabelText(/client id/i);
-    fireEvent.change(nth(clientIds, 2), { target: { value: 'ms-cid' } });
-    fireEvent.click(nth(screen.getAllByRole('button', { name: /save/i }), 2));
+    await choose('outlook.com');
+    fireEvent.change(screen.getByLabelText(/client id/i), { target: { value: 'ms-cid' } });
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => {
       expect(savePimProviderApp).toHaveBeenCalledWith('outlook.com', {
         clientId: 'ms-cid',
@@ -144,12 +174,12 @@ describe('PimProviderAppsPanel', () => {
       redirectUri: RELAY,
     });
     renderPanel();
-    const clientIds = await screen.findAllByLabelText(/client id/i);
-    fireEvent.change(nth(clientIds, 0), { target: { value: 'new-cid' } });
+    await choose('google');
+    fireEvent.change(screen.getByLabelText(/client id/i), { target: { value: 'new-cid' } });
     fireEvent.change(screen.getByLabelText(/^Client secret/i), {
       target: { value: 'new-secret' },
     });
-    fireEvent.click(nth(screen.getAllByRole('button', { name: /save/i }), 0));
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => {
       expect(savePimProviderApp).toHaveBeenCalledWith('google', {
         clientId: 'new-cid',

@@ -20,10 +20,14 @@ export function ProviderSelect({
   id,
   value,
   onChange,
+  providers = PIM_PROVIDERS,
+  optionLabel,
 }: {
   readonly id: string;
   readonly value: PimProviderId;
   readonly onChange: (value: PimProviderId) => void;
+  readonly providers?: readonly PimProviderDef[];
+  readonly optionLabel?: (def: PimProviderDef) => string;
 }) {
   const { t } = useTranslation();
   return (
@@ -39,9 +43,9 @@ export function ProviderSelect({
         }}
         className="w-full bg-surface-3 text-[13px]"
       >
-        {PIM_PROVIDERS.map((p) => (
+        {providers.map((p) => (
           <NativeSelectOption key={p.id} value={p.id}>
-            {t(p.labelKey)}
+            {optionLabel?.(p) ?? t(p.labelKey)}
           </NativeSelectOption>
         ))}
       </NativeSelect>
