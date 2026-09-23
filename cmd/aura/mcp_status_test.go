@@ -144,7 +144,7 @@ func TestWriteRuntimeCheckZeroToolsHTTPEndpointOK(t *testing.T) {
 }
 
 // TestWriteRuntimeCheckBoundedByProbeTimeout proves a hung HTTP endpoint returns
-// within ~AURA_MCP_PROBE_TIMEOUT instead of blocking indefinitely. The handler
+// within the shrunk mcpProbeTimeout instead of blocking indefinitely. The handler
 // self-bounds its own block to a fixed 3s fallback (instead of ONLY waiting on
 // r.Context().Done()): a client-side context.WithTimeout cancellation does not
 // reliably close the underlying TCP connection promptly on every platform (this
@@ -153,7 +153,7 @@ func TestWriteRuntimeCheckZeroToolsHTTPEndpointOK(t *testing.T) {
 // own server.Close() — not the probe under test — hang for the diagnostic's
 // duration. The probe itself (asserted below) already returns in ~1s regardless.
 func TestWriteRuntimeCheckBoundedByProbeTimeout(t *testing.T) {
-	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
+	withMCPProbeTimeout(t, time.Second)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
@@ -170,18 +170,19 @@ func TestWriteRuntimeCheckBoundedByProbeTimeout(t *testing.T) {
 	}
 	elapsed := time.Since(start)
 	if elapsed > 5*time.Second {
-		t.Fatalf("writeRuntimeCheck(hung http) took %v, want bounded by ~1s AURA_MCP_PROBE_TIMEOUT", elapsed)
+		t.Fatalf("writeRuntimeCheck(hung http) took %v, want bounded by the 1s probe timeout", elapsed)
 	}
 	if got := out.String(); !strings.Contains(got, "hung: runtime missing") {
 		t.Fatalf("writeRuntimeCheck(hung http) = %q, want a runtime-missing line", got)
 	}
 }
 
-func TestMCPInspectionUsesConfiguredProbeTimeout(t *testing.T) {
-	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
-	if got := mcpInspectionTimeout(); got != time.Second {
-		t.Fatalf("mcp inspection timeout = %v, want configured 1s probe budget", got)
-	}
+// withMCPProbeTimeout shrinks the fixed probe deadline so a hung-server test resolves in d.
+func withMCPProbeTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+	prev := mcpProbeTimeout
+	mcpProbeTimeout = d
+	t.Cleanup(func() { mcpProbeTimeout = prev })
 }
 
 // TestMCPStatusReflectsLiveHTTPProbe proves `aura mcp status` (D-17) surfaces the

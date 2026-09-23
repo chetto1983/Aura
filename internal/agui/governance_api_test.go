@@ -198,6 +198,30 @@ func TestMCPProbeIsolation(t *testing.T) {
 	}
 }
 
+// A remote server behind a slow gateway (Shotstack: ~1 s a request, several requests to open
+// a session) failed the board's 3 s probe and showed "dial failed" while mounted and working
+// (VM, 2026-09-23). The production default gives a probe what a request-path mount gets.
+func TestMCPProbeDefaultDeadlineIsFifteenSeconds(t *testing.T) {
+	var remaining time.Duration
+	board := &scriptedMCPBoard{
+		doc: mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{"slow": {URL: "https://mcp.example.test/"}}},
+		probe: func(ctx context.Context, name string, _ mcp.ManagedServer) mcp.ProbeResult {
+			if deadline, ok := ctx.Deadline(); ok {
+				remaining = time.Until(deadline)
+			}
+			return mcp.ProbeResult{Name: name, OK: true}
+		},
+	}
+	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
+	s.SetGovernanceProviders(GovernanceProviders{MCP: board})
+
+	doGov(t, s, http.MethodGet, "/api/governance/mcp/slow/probe")
+
+	if remaining < 14*time.Second || remaining > 15*time.Second {
+		t.Fatalf("probe deadline = %v from now, want 15 s", remaining)
+	}
+}
+
 // TestMCPProbeConfiguredOnly: an unknown {name} is a 404 and NO probe is dialed
 // (Prohibition #5 — configured-servers-only).
 func TestMCPProbeConfiguredOnly(t *testing.T) {

@@ -280,7 +280,7 @@ func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	// server (D-17); "npx" (a real, possibly-present binary that would hang waiting
 	// on stdin with no real MCP handshake) is replaced with a deterministic-fail
 	// fixture so the probe's dial attempt resolves instantly instead of blocking for
-	// the full AURA_MCP_PROBE_TIMEOUT — this test only asserts the lifecycle
+	// the full probe timeout — this test only asserts the lifecycle
 	// columns/JSON fields, not the probe outcome.
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"mail": {

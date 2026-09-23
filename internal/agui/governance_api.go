@@ -32,13 +32,14 @@ import (
 // passes through sanitizeErr (no DSN/token/host leak); env VALUES are NEVER serialized —
 // only IsSecretEnvKey-flagged env KEY names appear as redacted chips (T-28-02-01).
 
-// defaultProbeTimeout bounds a single live MCP probe (28-RESEARCH Hard Problem 3:
-// 3s — long enough for a healthy stdio spawn + tools/list, short enough that a hung
-// server's row resolves to a timed-out result within the UX patience window). A hung or
+// defaultProbeTimeout bounds a single live MCP probe. It was 3 s (28-RESEARCH Hard Problem 3,
+// sized for a local stdio spawn); a remote server behind a slow gateway -- Shotstack, ~1 s a
+// request and several requests to open a session -- failed it and showed "dial failed" while
+// mounted and working (VM, 2026-09-23), so it is the 15 s a request-path mount gets. A hung or
 // dead server fails ONLY its own row because each probe is its own request under this
 // per-request deadline. Tests override s.probeTimeout to keep the deadline-honoring path
 // fast; a zero value falls back here.
-const defaultProbeTimeout = 3 * time.Second
+const defaultProbeTimeout = 15 * time.Second
 
 // defaultRunHistoryLimit / defaultRunHistoryOffset are the GOV-03 run-history pagination
 // defaults (28-RESEARCH §REST Endpoint Shapes: limit 25, offset 0) applied when the query
@@ -242,7 +243,7 @@ func envChips(env []string) []mcpEnvChip {
 // handleMCPProbe serves GET /api/governance/mcp/{name}/probe (GOV-01): a bounded, per-row
 // LIVE doctor + tool-count probe. The {name} is looked up in the LOADED config (404 if
 // absent — Prohibition #5: configured-servers-only, never a body-supplied URL/command); the
-// probe then runs under context.WithTimeout(r.Context(), 3s) so a hung/dead server resolves
+// probe then runs under context.WithTimeout(r.Context(), 15s) so a hung/dead server resolves
 // to a sanitized error result for ITS row only (200, isolated) and never stalls siblings.
 func (s *Server) handleMCPProbe(w http.ResponseWriter, r *http.Request) {
 	if s.governance.MCP == nil {

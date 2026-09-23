@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -67,7 +66,7 @@ func mcpStatus(ctx context.Context, args []string, out io.Writer) error {
 // trust-blocked servers are skipped without dialing (Rule 2: a "status" listing
 // must never spawn/dial a server the operator turned off or explicitly blocked as
 // a side effect of a read-only command — mirroring mcpDoctorAll's own disabled/
-// blocked skip). Every other server is probed bounded by AURA_MCP_PROBE_TIMEOUT,
+// blocked skip). Every other server is probed bounded by mcpProbeTimeout,
 // isolated per server (a dead/hung server fails only its own row).
 func probeStatusRow(ctx context.Context, doc mcp.ManagedConfig, status mcpmanager.StatusSnapshot) mcp.ProbeResult {
 	switch status.StartupState {
@@ -80,7 +79,7 @@ func probeStatusRow(ctx context.Context, doc mcp.ManagedConfig, status mcpmanage
 	if !ok {
 		return mcp.ProbeResult{Name: status.Name, Detail: "not configured", Err: "not configured"}
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
+	probeCtx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
 	return probeManagedMCPServer(probeCtx, status.Name, server)
 }
@@ -96,13 +95,12 @@ func probeColumn(res mcp.ProbeResult) string {
 	return res.Detail
 }
 
-// resolveMCPProbeTimeout resolves the AURA_MCP_PROBE_TIMEOUT knob (seconds, default 5) that
-// bounds every live mcp.ProbeServer dial issued by writeRuntimeCheck, mcpStatus, and
-// the new doctor "mcp" check (D-16/D-17) — mirroring the governance board's own
-// per-request context.WithTimeout(r.Context(), deadline) shape.
-func resolveMCPProbeTimeout() time.Duration {
-	return time.Duration(envutil.IntDefault("AURA_MCP_PROBE_TIMEOUT", 5)) * time.Second
-}
+// mcpProbeTimeout bounds every live probe this binary dials: writeRuntimeCheck, mcpStatus,
+// the doctor "mcp" check, single-server tool inspection and the post-install probe. It is the
+// 15 s the cockpit board and a request-path mount get, fixed rather than an env knob: a remote
+// server behind a slow gateway (Shotstack, ~1 s a request) measured past the old 3-5 s on
+// 2026-09-23. A var only so tests can shrink the hung-server path.
+var mcpProbeTimeout = 15 * time.Second
 
 func mcpDoctorAll(ctx context.Context, out io.Writer) error {
 	doc, err := loadManagedMCPConfig()
@@ -148,7 +146,7 @@ func mcpLogs(args []string, out io.Writer) error {
 // from the structured mcp.ProbeServer result (GOV-01: one probe, multiple renderers
 // — this CLI text line, the mcp status probe column, and the governance board
 // JSON). BOTH stdio and streamable-HTTP servers are dialed through mcp.ProbeServer
-// under a bounded context.WithTimeout(ctx, AURA_MCP_PROBE_TIMEOUT): a dead/typoed
+// under a bounded context.WithTimeout(ctx, mcpProbeTimeout): a dead/typoed
 // HTTP endpoint no longer short-circuits to a false "http endpoint configured"
 // (F-046) — it reports OK=false / "runtime missing" like a dead stdio command,
 // and never stalls past the deadline for ITS row. Transport is resolved via
@@ -165,7 +163,7 @@ func writeRuntimeCheck(ctx context.Context, out io.Writer, name string, server m
 	if serverType == mcp.ServerTypeStreamableHTTP {
 		target = server.URL
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, resolveMCPProbeTimeout())
+	probeCtx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
 	res := probeManagedMCPServer(probeCtx, name, server)
 	if !res.OK {

@@ -101,7 +101,7 @@ func defaultDoctorProbePostgres(ctx context.Context, cfg *config.Config) (string
 
 // defaultDoctorProbeMCPServers live-probes ONLY the enabled + runnable +
 // streamable-HTTP managed MCP servers (D-16/D-17/D-18, MCPH-09) via mcp.ProbeServer,
-// bounded per-server by AURA_MCP_PROBE_TIMEOUT. It does NOT dial disabled,
+// bounded per-server by mcpProbeTimeout. It does NOT dial disabled,
 // trust-blocked, or stdio servers: the resolved runtime policy already excludes
 // disabled/blocked entries, and the streamable_http filter below drops stdio. A
 // single unreachable server fails only its own name in the aggregated detail,
@@ -153,7 +153,7 @@ func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (stri
 
 	var unreachable []string
 	for _, name := range names {
-		attemptCtx, cancel := context.WithTimeout(probeCtx, resolveMCPProbeTimeout())
+		attemptCtx, cancel := context.WithTimeout(probeCtx, mcpProbeTimeout)
 		res := probeManagedMCPServer(attemptCtx, name, runnable[name])
 		cancel()
 		if !res.OK {

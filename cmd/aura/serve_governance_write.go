@@ -46,10 +46,6 @@ type mcpWriteAdapter struct {
 // inside the container; the registry is a table, and saying so is both shorter and true.
 const mcpRegistryDestination = "postgres: aura.mcp_server"
 
-// mcpProbeTimeout bounds the post-write live tool-count probe (parity with the read board's
-// 3s per-row deadline). A hung/dead server fails only its own probe, fail-soft.
-const mcpProbeTimeout = 3 * time.Second
-
 func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req agui.MCPInstallRequest) (agui.MCPWriteResult, error) {
 	doc, err := a.load()
 	if err != nil {
@@ -269,7 +265,7 @@ func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
 	return doc, nil
 }
 
-// probe runs the bounded post-write live tool-count probe (fail-soft, per-row, 3s). A
+// probe runs the bounded post-write live tool-count probe (fail-soft, per-row, 15 s). A
 // hung/dead server yields OK=false for its own result only, never blocking the response.
 func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.ManagedServer) *mcp.ProbeResult {
 	pctx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)

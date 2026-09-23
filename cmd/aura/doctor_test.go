@@ -391,7 +391,7 @@ func TestDoctorProbeMCPServersNoneConfigured(t *testing.T) {
 }
 
 // TestDoctorProbeMCPServersBoundedByProbeTimeout proves a hung HTTP endpoint fails
-// this check within ~AURA_MCP_PROBE_TIMEOUT instead of blocking the whole doctor
+// this check within the shrunk mcpProbeTimeout instead of blocking the whole doctor
 // run indefinitely (T-38-10b). The handler self-bounds its own block with a 3s
 // fallback in addition to watching r.Context().Done() — see
 // TestWriteRuntimeCheckBoundedByProbeTimeout in mcp_status_test.go for why relying
@@ -399,7 +399,7 @@ func TestDoctorProbeMCPServersNoneConfigured(t *testing.T) {
 // not deterministic across platforms; this keeps the test itself from hanging past
 // a bounded ceiling regardless.
 func TestDoctorProbeMCPServersBoundedByProbeTimeout(t *testing.T) {
-	t.Setenv("AURA_MCP_PROBE_TIMEOUT", "1")
+	withMCPProbeTimeout(t, time.Second)
 	withMemoryMCPRegistry(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		select {
@@ -421,6 +421,6 @@ func TestDoctorProbeMCPServersBoundedByProbeTimeout(t *testing.T) {
 		t.Fatalf("defaultDoctorProbeMCPServers(hung): err = %v, want it to name the hung server", err)
 	}
 	if elapsed > 5*time.Second {
-		t.Fatalf("defaultDoctorProbeMCPServers(hung) took %v, want bounded by ~1s AURA_MCP_PROBE_TIMEOUT", elapsed)
+		t.Fatalf("defaultDoctorProbeMCPServers(hung) took %v, want bounded by the 1s probe timeout", elapsed)
 	}
 }
