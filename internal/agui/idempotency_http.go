@@ -105,6 +105,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/connect/pim/accounts/{id}/auth/cancel":          httpMutationMeta("pim_auth_cancel"),
 	"POST /api/connect/pim/accounts/{id}/auth/start":           httpMutationMeta("pim_auth_start"),
 	"POST /api/connect/pim/accounts/{id}/logout":               httpMutationMeta("pim_logout"),
+	"PUT /api/connect/pim/providers/{provider}":                httpMutationMeta("pim_provider_app_put"),
 	"POST /api/connect/whatsapp/logout":                        httpMutationMeta("whatsapp_logout"),
 	"POST /api/conversations":                                  httpMutationMeta("conversation_create"),
 	"POST /api/conversations/{id}/archive":                     httpMutationMeta("conversation_archive"),

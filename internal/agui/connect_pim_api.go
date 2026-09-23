@@ -77,8 +77,9 @@ func (s *Server) SetCalendarMCP(baseURL, publicURL string, auth MCPAccessTokenPr
 // never a bare /api/. Called from Mux next to registerConnectRoutes. The parent-mux mount behind
 // RequireCapability(governance.write) lives in cmd/aura/serve_webui.go (each route MUST be gated
 // there — an unmounted route would be ungated), except the Google callback, which is public by
-// design. The auth/* trio drives the Microsoft/Outlook device-code flow; account/{id}/status
-// carries `linked`, which the wizard polls to close the Google panel once consent lands.
+// design, and the provider-app PUT, which only an admin (identity.create) may reach. The auth/*
+// trio drives the Microsoft/Outlook device-code flow; account/{id}/status carries `linked`, which
+// the wizard polls to close the Google panel once consent lands.
 func (s *Server) registerConnectPIMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/connect/pim/accounts", s.handlePIMListAccounts)
 	mux.HandleFunc("POST /api/connect/pim/accounts", s.handlePIMCreateAccount)
@@ -89,6 +90,8 @@ func (s *Server) registerConnectPIMRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/start", s.handlePIMDeviceStart)
 	mux.HandleFunc("GET /api/connect/pim/accounts/{id}/auth/status", s.handlePIMAuthStatus)
 	mux.HandleFunc("POST /api/connect/pim/accounts/{id}/auth/cancel", s.handlePIMAuthCancel)
+	mux.HandleFunc("GET /api/connect/pim/providers", s.handlePIMProvidersList)
+	mux.HandleFunc("PUT /api/connect/pim/providers/{provider}", s.handlePIMProviderPut)
 	mux.HandleFunc("GET "+PIMGoogleCallbackPath, s.handlePIMGoogleCallback)
 }
 

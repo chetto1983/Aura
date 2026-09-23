@@ -202,6 +202,8 @@ type Server struct {
 	calendarMCPURL    string
 	calendarPublicURL string
 	calendarMCPAuth   MCPAccessTokenProvider
+	// pimApps is the admin-set OAuth client per managed PIM provider (connect_pim_providers_api.go).
+	pimApps pimProviderApps
 	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
 	// off (AURA_AGUI_RUN_DETACH unset/false) = today's request-scoped run path and
 	// hidden resume/cancel routes; wired via SetRunRegistry only when the flag is on.
