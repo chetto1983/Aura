@@ -197,8 +197,11 @@ type Server struct {
 	whatsappBridgeToken string
 	// calendarMCPURL/calendarMCPAuth wire the sidecar's OAuth-protected /admin REST API.
 	// The access token is resolved from the authenticated identity's existing MCP grant.
-	calendarMCPURL  string
-	calendarMCPAuth MCPAccessTokenProvider
+	// calendarPublicURL is AURA_WEB_PUBLIC_URL: when set it pins where Google's answer
+	// brings the browser back, otherwise the origin the cockpit was reached on decides.
+	calendarMCPURL    string
+	calendarPublicURL string
+	calendarMCPAuth   MCPAccessTokenProvider
 	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
 	// off (AURA_AGUI_RUN_DETACH unset/false) = today's request-scoped run path and
 	// hidden resume/cancel routes; wired via SetRunRegistry only when the flag is on.

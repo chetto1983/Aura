@@ -32,7 +32,9 @@ APPLIED_MANIFEST=payload_manifest.applied
 # Keys an earlier installer wrote into .env that no compose file reads any more. The image
 # pins, the embedding model and the in-stack tracing endpoint moved into compose.yaml and its
 # overlays on 2026-09-14, where .env cannot outrank them and freeze a host on an old value.
-RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT)
+# AURA_PIM_EXTERNAL_BASE_URL went on 2026-09-23: Aura now tells the PIM sidecar the cockpit
+# origin on every Google connect and serves the callback itself.
+RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT AURA_PIM_EXTERNAL_BASE_URL)
 
 container_image_id() {
   local container_id

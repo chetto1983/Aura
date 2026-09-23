@@ -5,7 +5,12 @@
 // touch); the precedence/carve-out doctrine lives in serve_webui.go's header.
 package main
 
-import "github.com/chetto1983/aura/internal/identity"
+import (
+	"net/http"
+
+	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/identity"
+)
 
 // authBasePath is the route prefix the embedded Authula provider serves its
 // credential flows under (its BasePath, spec §4 / config.WithBasePath). Mounted as a
@@ -271,6 +276,7 @@ const (
 	connectPIMDeviceStartRoute    = "POST /api/connect/pim/accounts/{id}/auth/start"
 	connectPIMAuthStatusRoute     = "GET /api/connect/pim/accounts/{id}/auth/status"
 	connectPIMAuthCancelRoute     = "POST /api/connect/pim/accounts/{id}/auth/cancel"
+	connectPIMGoogleCallbackRoute = "GET " + agui.PIMGoogleCallbackPath
 )
 
 const (
@@ -347,3 +353,19 @@ const (
 	assetsRetryRoute    = "POST /api/assets/{id}/retry"
 	assetsDeleteRoute   = "DELETE /api/assets/{id}"
 )
+
+// isPublicOAuthCallbackRoute admits the two OAuth callbacks a browser reaches by a cross-site
+// top-level navigation from a consent screen, on which it withholds the `__Host-` SameSite
+// session cookie. Behind the gate the MCP one did what a missing session always does — bounced
+// the human to the login page and threw away a consent just given at Slack (measured
+// 2026-08-24); LibreChat mounts its equivalent with no auth middleware for the same reason.
+// Each is authenticated by `state` instead: the MCP callback against a flow this deployment
+// started (unknown gets a 409), the Google PIM callback by the sidecar against a value it
+// issued — single use, ten-minute TTL, redeemable only with the install's own client secret
+// and PKCE verifier. Exact paths and GET only.
+func isPublicOAuthCallbackRoute(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	return r.URL.Path == mcpOAuthCallbackAPIPath || r.URL.Path == agui.PIMGoogleCallbackPath
+}

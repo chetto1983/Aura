@@ -216,20 +216,30 @@ the same remote-MCP identity model.
 - `POST /admin/auth/{accountId}/start` returns a user code + the `microsoft.com/devicelogin` URL.
 - The operator enters the code there; the cockpit polls `/admin/auth/{accountId}/status`.
 
-**Google (web redirect)** — needs a deterministic, registered redirect URI:
+**Google (web redirect through a shared relay)** — one redirect URI for every install:
 
-1. Set `AURA_PIM_EXTERNAL_BASE_URL` to the Caddy-fronted host the operator's browser uses
-   (e.g. `https://aura.local`). The sidecar then builds the redirect URI
-   `<base>/admin/auth/google/callback` deterministically (regardless of the
-   cockpit→proxy→sidecar path). Same-host operators may instead use
-   `http://localhost:8093` (Google allows `localhost` over http).
-2. In the Google Cloud Console OAuth client (**Web application** type), add that exact URI as
-   an **Authorized redirect URI**: `https://<host>/admin/auth/google/callback`.
-3. Caddy already routes `/admin/auth/google/callback` to the sidecar **token-exempt** (Google's
-   redirect carries `?code&state`, not an Aura token).
-4. Connect: `GET /admin/auth/{accountId}/google/start` returns `{authUrl, redirectUri}`; the
-   cockpit opens `authUrl`; after consent Google redirects to the callback, the sidecar
-   exchanges the code and renders a result page; the cockpit polls account status.
+1. In Google Cloud Console create an OAuth client of type **Web application** and add exactly
+   this **Authorized redirect URI** (trailing slash included):
+   `https://chetto1983.github.io/aura-connect/google/callback/`. It never changes and does not
+   depend on the address Aura is reached by, so the same line works for a LAN IP, a tunnel
+   or a public hostname. Enter that client's ID and secret in the cockpit's calendar wizard.
+2. Connect: the cockpit calls `GET /api/connect/pim/accounts/{id}/google/start`; Aura adds
+   `returnBase` = the cockpit origin (`AURA_WEB_PUBLIC_URL` when set, otherwise the origin the
+   request arrived on) and forwards it to the sidecar, which answers `{authUrl, redirectUri}`
+   with the relay URI as `redirectUri` and `state` = `<nonce>.<base64url(callback)>`.
+3. After consent Google sends the browser to the relay page
+   ([chetto1983/aura-connect](https://github.com/chetto1983/aura-connect)), which forwards it to
+   `<cockpit origin>/admin/auth/google/callback`. Aura serves that path on every origin as a
+   public route and forwards it to the sidecar without a token; the sidecar accepts only a
+   `state` it issued, then exchanges the code with the client secret and a PKCE verifier.
+4. The cockpit polls `GET /api/connect/pim/accounts/{id}/status` and closes the Google panel
+   when `linked` turns true.
+
+Why a relay (measured 2026-09-23, see prd.md §13): a **Desktop app** client redirects to the
+loopback of the machine running the browser, which a server install cannot receive; a Web
+client needs a public, non-IP redirect URI of its own, which a LAN install does not have.
+Aura ships no shared Google client: each install brings its own, so a code forwarded by the
+public relay is worthless without that install's secret.
 
 ## Live Checks
 

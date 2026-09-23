@@ -72,6 +72,14 @@ func (p *fakePIM) handler() http.Handler {
 	mux.HandleFunc("POST /admin/auth/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
 		record(w, r, http.StatusOK, `{"message":"cancelled"}`)
 	})
+	mux.HandleFunc("GET /admin/auth/google/callback", func(w http.ResponseWriter, r *http.Request) {
+		p.gotAuth = r.Header.Get("Authorization")
+		p.gotPath = r.URL.Path
+		p.gotQuery = r.URL.RawQuery
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "<h1>Connected</h1>")
+	})
 	return mux
 }
 
@@ -89,48 +97,11 @@ func (p staticMCPAccessTokenProvider) AccessToken(context.Context, string) (stri
 func connectPIMServer(baseURL, token string) *httptest.Server {
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	if baseURL != "" {
-		s.SetCalendarMCP(baseURL, staticMCPAccessTokenProvider{token: token})
+		s.SetCalendarMCP(baseURL, "", staticMCPAccessTokenProvider{token: token})
 	}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.Mux().ServeHTTP(w, withPrincipal(r, fakePIMIdentity))
 	}))
-}
-
-// TestPIMGoogleStartRetriesTransient404 proves the google/start proxy retries the sidecar's
-// post-create config-reload 404 (the wizard fires start IMMEDIATELY after create, and the .NET
-// reloadOnChange makes the account briefly invisible) and returns the eventual 200 — the
-// create→start race fix.
-func TestPIMGoogleStartRetriesTransient404(t *testing.T) {
-	var calls atomic.Int32
-	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		if calls.Add(1) <= 2 {
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"error":"Account not found."}`)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, `{"authUrl":"https://accounts.google.com/o/oauth2/v2/auth?x=1","redirectUri":"http://localhost:8093/admin/auth/google/callback"}`)
-	}))
-	defer sidecar.Close()
-	srv := connectPIMServer(sidecar.URL, fakePIMToken)
-	defer srv.Close()
-
-	resp, err := http.Get(srv.URL + "/api/connect/pim/accounts/work/google/start")
-	if err != nil {
-		t.Fatalf("GET google/start: %v", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("google/start status = %d, want 200 (retried past transient 404)", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	if !strings.Contains(string(body), "accounts.google.com") {
-		t.Fatalf("google/start body not passed through after retry: %q", body)
-	}
-	if got := calls.Load(); got < 3 {
-		t.Fatalf("expected >=3 sidecar calls (2x404 + 200), got %d", got)
-	}
 }
 
 func TestPIMListAccountsForwardsWithBearer(t *testing.T) {
@@ -168,7 +139,7 @@ func TestPIMProxyRejectsMissingPrincipalBeforeDial(t *testing.T) {
 	defer sidecar.Close()
 
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
-	s.SetCalendarMCP(sidecar.URL, staticMCPAccessTokenProvider{token: fakePIMToken})
+	s.SetCalendarMCP(sidecar.URL, "", staticMCPAccessTokenProvider{token: fakePIMToken})
 	rec := httptest.NewRecorder()
 	s.Mux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/connect/pim/accounts", nil))
 
@@ -188,7 +159,7 @@ func TestPIMProxyRequiresAnIdentityScopedOAuthGrant(t *testing.T) {
 	defer sidecar.Close()
 
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
-	s.SetCalendarMCP(sidecar.URL, staticMCPAccessTokenProvider{err: errors.New("no grant")})
+	s.SetCalendarMCP(sidecar.URL, "", staticMCPAccessTokenProvider{err: errors.New("no grant")})
 	rec := httptest.NewRecorder()
 	req := withPrincipal(httptest.NewRequest(http.MethodGet, "/api/connect/pim/accounts", nil), fakePIMIdentity)
 	s.Mux().ServeHTTP(rec, req)

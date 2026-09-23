@@ -17,14 +17,6 @@
 # Authula login — only the AG-UI API + the 9081 setup wizard — so an end user could not
 # reach a login page at all.
 (aura_frontdoor) {
-	# Google OAuth redirect callback → PIM calendar sidecar. Unauthenticated by design
-	# (Google sends the browser here with ?code&state and no Aura session; the OAuth state
-	# binds the exchange). Register AURA_PIM_EXTERNAL_BASE_URL as https://<host> so the
-	# sidecar builds this exact /admin/auth/google/callback redirect URI. Ahead of the catch-all.
-	handle /admin/auth/google/callback {
-		reverse_proxy aura-pim-mcp:8080
-	}
-
 	# Presigned object-store requests → garage: every per-identity bucket aura-<identity>
 	# (browser PUT uploads and GET downloads) and the shared aura-assets bucket. The
 	# identity charset mirrors internal/idroot identityPattern; no cockpit route starts /aura-.

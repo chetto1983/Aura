@@ -196,7 +196,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		aguiServer.SetMCPAuthorizations(authService)
 		// The calendar admin surface consumes the very same identity-scoped OAuth grant
 		// as the remote MCP session. No deployment bearer or tenant header exists.
-		aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, authService)
+		aguiServer.SetCalendarMCP(chat.cfg.CalendarMCPURL, chat.cfg.WebPublicURL, authService)
 	}
 	// Wire the read-only graph explorer over ArcadeDB (buildArcadeGraphView). It is
 	// SCHEMA-ONLY: one identity's type catalogue, never a drawable canvas — see

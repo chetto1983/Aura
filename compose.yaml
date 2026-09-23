@@ -1288,15 +1288,6 @@ services:
       # ValidAudiences; an older image would take the whole comma string as one audience
       # and refuse everything.
       CALENDAR_MCP_OAuth__Resource: ${AURA_PIM_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8093,http://127.0.0.1:8093/,http://aura-pim-mcp:8080/,http://aura-pim-mcp:8080}
-      # The external base the sidecar uses to build the Google OAuth redirect URI
-      # (<base>/admin/auth/google/callback) — register that EXACT URI in the Google "Web
-      # application" client. Default targets the loopback host-publish (works for a user on
-      # the same machine as the Docker host; Google permits http://localhost:<port>). For a
-      # remote cockpit set AURA_PIM_EXTERNAL_BASE_URL to the Caddy-fronted public HTTPS host.
-      # (Empty derives from request headers and drops the port → wrong URI, so we default it.)
-      # NB: the server does Configuration.Sources.Clear() then AddEnvironmentVariables("CALENDAR_MCP_"),
-      # so the var MUST carry that prefix; after the strip it maps to CalendarMcp:ExternalBaseUrl.
-      CALENDAR_MCP_CalendarMcp__ExternalBaseUrl: ${AURA_PIM_EXTERNAL_BASE_URL:-http://localhost:8093}
     volumes:
       - aura-pim-data:/app/data
     ports:

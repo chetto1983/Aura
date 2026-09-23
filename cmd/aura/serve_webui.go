@@ -238,6 +238,9 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(connectPIMDeviceStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMAuthStatusRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(connectPIMAuthCancelRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// Google's consent comes back here through the aura-connect relay, on whatever origin the
+	// cockpit was reached on; public, see isPublicOAuthCallbackRoute.
+	mux.Handle(connectPIMGoogleCallbackRoute, aguiHandler)
 	// The Phase-28 ONBD-01/02 onboarding wizard. start + provision are the CREATE
 	// mutations: interposed with RequireCapability(identity.create) exactly like POST
 	// /agent/run, so the gate fires AFTER RequireAuth binds the principal (an operator
@@ -298,15 +301,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		if isPublicShareRoute(r) {
 			return true
 		}
-		// The MCP OAuth callback arrives as a cross-site top-level navigation from the
-		// provider's consent screen, so the browser withholds the `__Host-` SameSite
-		// session cookie on that one hop. Behind the gate it did what a missing session
-		// always does — bounced the human to the login page and threw away a consent
-		// they had just given at Slack (measured 2026-08-24). `state` authenticates it
-		// instead: single-use, TTL-bounded, and matched against a flow this deployment
-		// started; an unknown one gets a 409 and nothing else. LibreChat mounts its
-		// equivalent with no auth middleware for the same reason.
-		if r.Method == http.MethodGet && r.URL.Path == mcpOAuthCallbackAPIPath {
+		if isPublicOAuthCallbackRoute(r) {
 			return true
 		}
 		// The MCP Apps sandbox proxy is fetched from the SECOND origin and carries no

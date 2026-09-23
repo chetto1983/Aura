@@ -221,9 +221,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// full multi-user cockpit on 9080 with NO proxy-level token gate — the catch-all
 		// reverse-proxies everything else straight to 9080 so an end user reaches /login.
 		"reverse_proxy aura:9080",
-		// Google OAuth redirect callback routed to the PIM sidecar, ahead of the catch-all.
-		"handle /admin/auth/google/callback {",
-		"reverse_proxy aura-pim-mcp:8080",
 		// Presigned object-store requests → garage, for every aura-<identity> bucket
 		// (caddy_objectstore_route_test.go pins which paths the matcher takes).
 		"handle @objectstore {",
@@ -243,6 +240,14 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		if strings.Contains(caddyfile, retired) {
 			t.Fatalf("caddy/Caddyfile should not contain retired proxy-token primitive %q:\n%s", retired, caddyfile)
 		}
+	}
+	// The Google PIM callback reaches Aura, which forwards it to the sidecar from every origin
+	// the cockpit is served on; a Caddy shortcut straight to the sidecar would bypass that.
+	if strings.Contains(caddyfile, "aura-pim-mcp") {
+		t.Fatalf("caddy/Caddyfile routes to the PIM sidecar directly; the Google callback belongs to Aura:\n%s", caddyfile)
+	}
+	if strings.Contains(compose, "AURA_PIM_EXTERNAL_BASE_URL") {
+		t.Fatalf("compose.yaml still sets AURA_PIM_EXTERNAL_BASE_URL; Aura sends the cockpit origin as returnBase")
 	}
 	// gVisor is a knob now, not a file: compose.gvisor.yaml was three lines plus a systemd
 	// drop-in that rewrote ExecStart just to add a -f. The tier still exists and is still
