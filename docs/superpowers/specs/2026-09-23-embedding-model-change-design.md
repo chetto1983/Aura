@@ -206,6 +206,10 @@ never derives it.
   `AURA_EMBED_FINGERPRINT` stays the strict-profile install gate; it no longer names a space.
 - A new Go test asserts `services/ingest/chunk.py`'s `EMBED_DOC_PREFIX` equals
   `embeddings.UntitledDocumentPrefix`.
+- **Each family names its own width.** Memory vectors are pinned at 768
+  (`arcadedb vectorDimensions`); documents use `AURA_EMBED_DIMENSIONS`. Outside the pinned
+  Compose deployment the two can differ, so each family's stamp is computed with its own
+  width, never a shared one (review of plan 1).
 
 ### §2. Every vector is stamped
 
@@ -287,10 +291,17 @@ over the daemon's space `S`:
   continues until its 5-minute budget, and the sweep is also kicked once at daemon boot.
 - Tenant order rotates between runs, so no tenant starves.
 - **Failures.** A failing batch is halved down to single records:
-  - a single record rejected with a 4xx loses its vector but is stamped `S` (quarantined): it
-    is lexical-only, excluded from both selections and from the gate count, and counted and
-    shown. A later route change re-selects it, because its stamp is no longer the current space;
-  - a network error or 5xx ends the run, and the next run retries.
+  - a single record the provider rejects as input (400, 413, 422) loses its vector but is
+    stamped `S` (quarantined): it is lexical-only, excluded from both selections and from the
+    gate count, and counted and shown. A later route change re-selects it, because its stamp is
+    no longer the current space;
+  - a network error, a 5xx, or a 401, 403 or 429 ends the run, and the next run retries. Those
+    three say nothing about the record: quarantining on them would stamp a whole space refused
+    after one revoked key or one rate limit (review of plan 1).
+- **No credential, no pass.** A cloud route with no key embeds nothing: the pass does not run,
+  the family stays lexical, and `aura doctor` and the cockpit name the missing key.
+- **The key is read live.** The daemon's embedders take the credential from the running LLM
+  profile, not a boot copy, so a key rotated in the cockpit reaches them without a restart.
 - **Turns.** The conversation reconciler keeps filling turns that have no vector, now as one
   batched call per projection instead of one request per turn. The pass touches turns only
   through the stale selection, so no turn is embedded twice.
@@ -304,7 +315,13 @@ change in mid-pass (A→B→C) needs none either: B-stamped rows differ from C a
 **Supervisor.** On every reconcile tick it resolves the embedding route from `aura.settings`
 through a pure helper in `internal/settings`. The helper reads the rows, distinguishes an
 absent row from an empty one, and never touches the environment (audit F10). `arcadedb-mcp`
-uses the same helper.
+uses the same helper. Its credential is the daemon's: the sealed `OPENROUTER_API_KEY` when
+set, else the environment's.
+
+Every re-read after boot passes the helper a lookup over the environment **as it was before
+`OverlayEnv`**. Both processes overlay rows into their own environment at boot and never
+unset, so a live `os.LookupEnv` would bring a deleted row's boot value back as the fallback
+(review of plan 1).
 
 - `ProcessSpec`, `Environment()` and `fingerprint()` gain `AURA_EMBED_BASE_URL`,
   `AURA_EMBED_MODEL`, `AURA_EMBED_API_KEY` (the sealed `OPENROUTER_API_KEY`: no embed-specific
@@ -357,11 +374,11 @@ insufficient.
 ### §7. `arcadedb-mcp`
 
 Every 60 s MCP re-resolves the route from `aura.settings` through the §6 helper. When the
-resulting space differs from its boot space, MCP cancels its root context and exits through
-the existing graceful shutdown (`cmd/arcadedb-mcp/main.go:139-160`, 10 s budget: exit 0, or 1
-when the budget runs out). `restart: unless-stopped` (`compose.yaml:728`) boots it on the new
-route. It cannot loop: it exits only when the settings resolve to a space other than the one it
-is running.
+resulting space or credential differs from its boot one (the credential compared by hash,
+never logged), MCP cancels its root context and exits through the existing graceful shutdown
+(`cmd/arcadedb-mcp/main.go:139-160`, 10 s budget: exit 0, or 1 when the budget runs out).
+`restart: unless-stopped` (`compose.yaml:728`) boots it on the new route. It cannot loop: it
+exits only when the settings resolve to a space or credential other than the one it is running.
 
 Until it exits, its writes carry its old stamp and its reads find the gate closed, so the
 window is visible and bounded, never wrong.
