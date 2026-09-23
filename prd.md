@@ -588,6 +588,22 @@ revocation use protected storage and the existing native flow, also for Aura-own
 sidecars. A JWKS outage is infrastructure failure, not an invalid token. Log the cause
 without flooding each turn with the same error.
 
+Google account linking in the PIM sidecar uses a Web OAuth client that the operator
+creates, and one shared relay page (github.com/chetto1983/aura-connect) as its only
+redirect URI, identical for every install — Home Assistant's my.home-assistant.io shape.
+The install names its own callback in `state`, the relay forwards the browser there, and
+the install exchanges the code itself with PKCE; the relay holds no secret and forwards
+only to `/admin/auth/google/callback`. Aura ships no shared Google client: its secret
+would be public in the published images, and a shared client behind a public relay lets
+anyone redeem codes consented to "Aura". Measured 2026-09-23 on a LAN VM with the browser
+on another PC: a Desktop client's loopback redirect reached the sidecar only while an SSH
+forward bridged the browser's `localhost:8093` (two links through it, zero callbacks after
+it closed); through the relay a Web client linked with no forward. The same run measured
+account writes answered 250-500 ms before the sidecar's registry reloaded them, so the
+admin API now reloads configuration before responding. Not measured: Google refusing a
+raw LAN IP as a Web redirect URI (its documented rule) and a run through a Cloudflare
+tunnel.
+
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
 Overflow stays discoverable. Four memory entry points remain loaded; the rest can be
