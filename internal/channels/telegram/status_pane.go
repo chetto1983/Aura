@@ -8,12 +8,10 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
-	"github.com/chetto1983/aura/internal/reasoningfifo"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 	tele "gopkg.in/telebot.v4"
 )
@@ -37,10 +35,6 @@ const (
 // as a RoleTool error), and that must not flash a confusing "❌ ask_user" while the
 // model self-corrects on the next round. Mirrors tools.AskUser{}.Spec().Name.
 const hitlPauseToolName = "ask_user"
-
-// redactedReasoningSentinel mirrors the upstream agent/AG-UI privacy placeholder.
-// It is control text, not user-facing reasoning, so the live pane suppresses it.
-const redactedReasoningSentinel = "[reasoning redacted]"
 
 // toolState tracks one tool call's lifecycle in the pane.
 type toolState struct {
@@ -85,15 +79,6 @@ type statusPane struct {
 	failed     bool
 	done       bool
 
-	// showReasoning surfaces the live CoT in the 💭 block via fifo (a rolling rune-capped
-	// window); started stamps RUN_STARTED for the elapsed-time header. When showReasoning
-	// is false the activity list keeps the redacted lifecycle rows and fifo stays empty.
-	// fifo accumulates the whole turn's reasoning across all spans (spans separated by
-	// " · "); it is reset only on RunFinished so the user can read thoughts while tools run.
-	showReasoning bool
-	fifo          *reasoningfifo.FIFO
-	started       time.Time
-
 	lastEdit time.Time
 	dirty    bool
 
@@ -104,24 +89,17 @@ type statusPane struct {
 }
 
 // newStatusPane builds a status pane bound to a chat with the status throttle,
-// using the real wall clock. showReasoning + fifoRunes configure the live-CoT 💭
-// window: with showReasoning false the fifo is a zero-cap no-op and the pane keeps
-// the redacted lifecycle label (the default privacy posture).
-func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration, showReasoning bool, fifoRunes int) *statusPane {
-	if !showReasoning {
-		fifoRunes = 0
-	}
+// using the real wall clock.
+func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration) *statusPane {
 	return &statusPane{
-		bot:           bot,
-		to:            to,
-		throttle:      throttle,
-		now:           time.Now,
-		sleep:         time.Sleep,
-		byID:          make(map[string]*toolState),
-		hidden:        make(map[string]struct{}),
-		byAct:         make(map[string]*activityState),
-		showReasoning: showReasoning,
-		fifo:          reasoningfifo.New(fifoRunes),
+		bot:      bot,
+		to:       to,
+		throttle: throttle,
+		now:      time.Now,
+		sleep:    time.Sleep,
+		byID:     make(map[string]*toolState),
+		hidden:   make(map[string]struct{}),
+		byAct:    make(map[string]*activityState),
 	}
 }
 
@@ -150,9 +128,6 @@ func (p *statusPane) consume(ctx context.Context, ch <-chan events.Event) {
 func (p *statusPane) handle(ev events.Event) {
 	switch e := ev.(type) {
 	case *events.RunStartedEvent:
-		if p.started.IsZero() {
-			p.started = p.now() // stamp turn-start for the elapsed-time header
-		}
 		p.dirty = true // open the pane on first render
 	case *events.ToolCallStartEvent:
 		p.actions.Start(e.ToolCallID, e.ToolCallName)
@@ -176,24 +151,14 @@ func (p *statusPane) handle(ev events.Event) {
 		}
 	case *events.ReasoningStartEvent:
 		p.startActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "in corso")
-		// Accumulate across spans: don't reset. If a prior span already pushed content
-		// into the window, insert a visible separator so spans don't run together.
-		// " · " uses non-whitespace glyphs so collapseWhitespace doesn't eat it.
-		if p.showReasoning && strings.TrimSpace(p.fifo.String()) != "" {
-			p.fifo.Push(" · ")
-		}
 		p.thinking = "in corso"
 		p.dirty = true
 	case *events.ReasoningMessageContentEvent:
-		if p.showReasoning {
-			if delta := displayableReasoningDelta(e.Delta); delta != "" {
-				p.fifo.Push(delta)
-			}
-		}
+		// The row only: the text itself never reaches Telegram, whatever AURA_SHOW_REASONING
+		// says -- the operator found it noise (2026-09-23). The cockpit keeps it.
 		reasoningtrace.Record("telegram_status_reasoning_delta", map[string]any{
 			"message_id": e.MessageID,
 			"chars":      reasoningtrace.RuneLen(e.Delta),
-			"redacted":   !p.showReasoning,
 		})
 		p.startActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "in corso")
 		if p.thinking == "" {
@@ -201,8 +166,6 @@ func (p *statusPane) handle(ev events.Event) {
 		}
 		p.dirty = true
 	case *events.ReasoningEndEvent:
-		// Span ended — keep the FIFO content so the user can read the reasoning while
-		// the turn continues (e.g. tools run between spans). Clear happens on RunFinished.
 		p.thinking = "completato"
 		p.updateActivity("reason:"+e.MessageID, glyphThink, "Ragionamento", "completato")
 		p.dirty = true
@@ -221,12 +184,9 @@ func (p *statusPane) handle(ev events.Event) {
 		p.dirty = true
 	case *events.RunFinishedEvent:
 		p.actions.Stop()
-		// Turn done: clear the live reasoning window so the final pane always shows
-		// "completato" (the safe label) rather than frozen raw thoughts. msg #2 carries
-		// the actual answer; the status pane is just a lifecycle indicator from here.
+		// msg #2 carries the actual answer; the status pane is a lifecycle indicator.
 		p.finishAnswer()
 		p.done = true
-		p.fifo.Reset()
 		p.dirty = true
 	}
 }
@@ -446,54 +406,16 @@ func (p *statusPane) render(_ context.Context, final bool) {
 	p.dirty = false
 }
 
-// text renders the pane body: a status header, chronological activity rows, an
-// optional live-reasoning block, and an optional running-cost footer. Plain text
-// (no MarkdownV2) — the status pane uses glyphs, not entities, so it never risks a
-// parse-entity 400.
+// text renders the pane body: a status header, chronological activity rows and an
+// optional running-cost footer. Plain text (no MarkdownV2) — the status pane uses
+// glyphs, not entities, so it never risks a parse-entity 400.
 func (p *statusPane) text() string {
 	base := p.baseText()
 	footer := p.costText() + p.limitText()
 	if over := runeLen(base) + runeLen(footer) - telegramTextCap; over > 0 {
 		base = capRunes(base, max(0, runeLen(base)-over))
 	}
-	return base + p.reasoningSection(base, footer) + footer
-}
-
-// reasoningSection renders the optional live 💭 block within the Telegram budget
-// left after the base text and cost footer. The safe redacted lifecycle always lives
-// in the chronological activity rows, so this block is empty unless live CoT is
-// explicitly enabled and currently has displayable content.
-func (p *statusPane) reasoningSection(base, cost string) string {
-	display, header := p.reasoningContent()
-	if display == "" {
-		return ""
-	}
-	budget := telegramTextCap - runeLen(base) - runeLen(cost) - runeLen(header)
-	if budget <= 0 {
-		return ""
-	}
-	return header + capRunesTail(display, budget)
-}
-
-// reasoningContent picks the live 💭 block content + header. The window is
-// suppressed once the run is done so the final pane never freezes raw thoughts.
-func (p *statusPane) reasoningContent() (display, header string) {
-	if p.showReasoning && !p.done {
-		if window := collapseWhitespace(p.fifo.String()); window != "" {
-			return window, "\n" + glyphThink + " Ragionamento · " + p.elapsedText() + ":\n"
-		}
-	}
-	return "", ""
-}
-
-// elapsedText is the whole-second wall-clock since RUN_STARTED, the cheapest
-// perceived-latency cue during the reasoning wait. "0s" before the turn opens.
-func (p *statusPane) elapsedText() string {
-	if p.started.IsZero() {
-		return "0s"
-	}
-	secs := max(0, int(p.now().Sub(p.started).Seconds()))
-	return strconv.Itoa(secs) + "s"
+	return base + footer
 }
 
 func (p *statusPane) baseText() string {
@@ -546,35 +468,4 @@ func (p *statusPane) markup() *tele.ReplyMarkup {
 func looksLikeToolError(preview string) bool {
 	lp := strings.ToLower(strings.TrimSpace(preview))
 	return strings.HasPrefix(lp, "error") || strings.HasPrefix(lp, "❌") || strings.Contains(lp, "\"error\"")
-}
-
-// collapseWhitespace squeezes runs of whitespace to single spaces so a streamed
-// multi-line reasoning blob renders as one compact rolling 💭 line.
-func collapseWhitespace(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
-func displayableReasoningDelta(s string) string {
-	if !strings.Contains(s, redactedReasoningSentinel) {
-		return s
-	}
-	clean := strings.ReplaceAll(s, redactedReasoningSentinel, " ")
-	if strings.TrimSpace(clean) == "" {
-		return ""
-	}
-	return clean
-}
-
-// capRunesTail truncates s to at most n runes, preserving the NEWEST (trailing)
-// content — the rolling reasoning window keeps the most recent thought visible
-// (capRunes head-truncates; this is its tail-keep counterpart).
-func capRunesTail(s string, n int) string {
-	r := []rune(s)
-	if len(r) <= n {
-		return s
-	}
-	if n <= 0 {
-		return ""
-	}
-	return string(r[len(r)-n:])
 }

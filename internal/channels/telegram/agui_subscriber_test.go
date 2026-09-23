@@ -24,61 +24,45 @@ func artifactAgentEvent(desc map[string]any) *agent.Event {
 }
 
 // reasoningAgentEvent builds an *agent.Event carrying a reasoning delta — the shape
-// the live LlmAgent emits for chain-of-thought (LLMResponse.Reasoning). The
-// translator maps it to the AG-UI REASONING_* lifecycle, gated on the showReasoning
-// flag handleTurn threads from t.deps.ShowReasoning.
+// the live LlmAgent emits for chain-of-thought (LLMResponse.Reasoning).
 func reasoningAgentEvent(text string) *agent.Event {
 	return &agent.Event{LLMResponse: &agent.LLMResponse{Reasoning: text}}
 }
 
-// TestHandleTurnReasoningPostureFollowsConfig proves the D-01 cockpit flip leaves the
-// Telegram reasoning posture config-driven (NOT a forced true): the SAME showReasoning
-// flag handleTurn threads into BOTH agui.Translate and newStatusPane decides whether the
-// live CoT surfaces. With it on, the real chain-of-thought appears in the 💭 pane; with
-// it off, only the redacted lifecycle label, never the raw CoT.
+// TestTelegramShowsTheReasoningRowNeverTheChainOfThought: with AURA_SHOW_REASONING on (the
+// cockpit's posture, and the VM's), the agent streams real chain-of-thought and the translator
+// passes it through. Telegram still shows only the "💭 Ragionamento" row -- the operator found
+// the text noise (2026-09-23).
 //
-// It drives the real Translate→Fanout→statusPane path directly with throttle=0 — the
-// deterministic mechanism cot_live_e2e_test uses — rather than through handleTurn with a
-// 1ms throttle. Synthetic events fire sub-millisecond, so a 1ms throttle coalesces the
-// single live-CoT frame away (and RunFinished then resets the FIFO to "completato"),
-// which made the original handleTurn-driven assertion timing-dependent (it was committed
-// red — green only under incidental scheduler jitter). throttle=0 emits every frame, so
-// the live-CoT frame is observed deterministically while still exercising the real
-// translator gating + status-pane rendering the same showReasoning flag wires.
-func TestHandleTurnReasoningPostureFollowsConfig(t *testing.T) {
+// It drives the real Translate→Fanout→statusPane path with throttle=0, so every frame is
+// observed: a 1ms throttle coalesces synthetic sub-millisecond events away.
+func TestTelegramShowsTheReasoningRowNeverTheChainOfThought(t *testing.T) {
 	const cot = "valuto le brocche da dodici e sette"
 	stream := []*agent.Event{
 		reasoningAgentEvent(cot),
 		textEvent("Otto litri."),
 	}
+	ctx := context.Background()
+	seq := syntheticTurn(stream)(ctx, "thread-posture", nil)
+	translated := agui.Translate("thread-posture", "run-posture", agui.NewIDGenerator(), seq, true)
+	fo := agui.NewFanout(translated)
+	statusCh := fo.Subscribe()
+	fo.Run(ctx)
 
-	// render mirrors handleTurn's posture threading: the show flag feeds BOTH the
-	// translator (REASONING_* gating) and the status pane (the 💭 live window).
-	render := func(show bool) string {
-		ctx := context.Background()
-		seq := syntheticTurn(stream)(ctx, "thread-posture", nil)
-		translated := agui.Translate("thread-posture", "run-posture", agui.NewIDGenerator(), seq, show)
-		fo := agui.NewFanout(translated)
-		statusCh := fo.Subscribe()
-		fo.Run(ctx)
+	bot := newFakeBot()
+	newStatusPane(bot, tele.ChatID(808), 0).consume(ctx, statusCh)
 
-		bot := newFakeBot()
-		pane := newStatusPane(bot, tele.ChatID(808), 0, show, 4096) // throttle 0 → every live frame emits
-		pane.consume(ctx, statusCh)
-
-		var all strings.Builder
-		for _, c := range bot.recorded() {
-			all.WriteString(c.text)
-			all.WriteString("\n")
-		}
-		return collapseWhitespace(all.String())
+	var all strings.Builder
+	for _, c := range bot.recorded() {
+		all.WriteString(c.text)
+		all.WriteString("\n")
 	}
-
-	if withReasoning := render(true); !strings.Contains(withReasoning, "valuto le brocche") {
-		t.Errorf("ShowReasoning=true did not surface the real CoT in the status pane:\n%s", withReasoning)
+	frames := all.String()
+	if strings.Contains(frames, "valuto le brocche") {
+		t.Errorf("the chain-of-thought reached Telegram:\n%s", frames)
 	}
-	if withoutReasoning := render(false); strings.Contains(withoutReasoning, "valuto le brocche") {
-		t.Errorf("ShowReasoning=false leaked the real CoT (posture is NOT a forced true):\n%s", withoutReasoning)
+	if !strings.Contains(frames, "💭 Ragionamento") {
+		t.Errorf("the reasoning row is missing:\n%s", frames)
 	}
 }
 

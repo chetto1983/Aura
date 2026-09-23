@@ -68,7 +68,9 @@ func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, 
 	idgen := agui.NewIDGenerator()
 	runID := uuid.NewString()
 
-	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg), t.deps.ShowReasoning)
+	// false: Telegram shows the "💭 Ragionamento" row, never the text (operator, 2026-09-23),
+	// so the translator redacts it before any consumer sees it. The cockpit keeps its own.
+	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg), false)
 	fo := agui.NewFanout(translated)
 	statusCh := fo.Subscribe()   // → status pane
 	contentCh := fo.Subscribe()  // → renderer
@@ -160,7 +162,7 @@ func (t *Telegram) consumers(bot botSender, to tele.Recipient) (status, content,
 	if t.deps.consumerFactory != nil {
 		return t.deps.consumerFactory(bot, to)
 	}
-	pane := newStatusPane(bot, to, t.statusThrottle(), t.deps.ShowReasoning, t.reasoningFIFORunes())
+	pane := newStatusPane(bot, to, t.statusThrottle())
 	rend := newRenderer(bot, to, t.contentThrottle(), t.chatRateLimit())
 	art := newArtifact(bot, to)
 	// ONE chat-action controller for the turn: the pane owns its lifetime (it starts the

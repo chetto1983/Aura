@@ -22,7 +22,7 @@ var updateGolden = flag.Bool("update", false, "update golden fixtures")
 // LAST rendered pane text (the final coalesced state). Throttle is disabled (zero)
 // and the clock is fixed so every event renders.
 func drivePane(bot *fakeBot, evs []events.Event) {
-	p := newStatusPane(bot, tele.ChatID(7), 0, false, 0)
+	p := newStatusPane(bot, tele.ChatID(7), 0)
 	p.now = func() time.Time { return time.Unix(0, 0) }
 	p.sleep = func(time.Duration) {}
 	ch := make(chan events.Event, len(evs))
@@ -236,58 +236,36 @@ func TestStatusPaneKeepsFailedToolDetailOnFinish(t *testing.T) {
 	}
 }
 
-// TestStatusPaneReasoningSurvivesFinish proves the safe reasoning lifecycle stays
-// visible after the final answer lands, with the cost footer intact.
-func TestStatusPaneReasoningSurvivesFinish(t *testing.T) {
+// The operator (2026-09-23): the reasoning text on Telegram is only noise, the "💭 Ragionamento"
+// row is enough. No frame of the turn carries the text; the row, the tools and the cost stay.
+// The cockpit keeps its reasoning -- AURA_SHOW_REASONING is not Telegram's to decide.
+func TestStatusPaneShowsTheReasoningRowNeverItsText(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
-	oldMarker := "VERY-OLD-MARKER"
-	latest := "latest useful detail"
+	thought := "PRIVATE-THOUGHT"
 	drivePane(bot, []events.Event{
 		events.NewRunStartedEvent("t", "r"),
 		events.NewReasoningStartEvent("rsn1"),
-		events.NewReasoningMessageContentEvent("rsn1", oldMarker+" "+strings.Repeat("stale context ", 30)),
-		events.NewReasoningMessageContentEvent("rsn1", latest),
+		events.NewReasoningMessageContentEvent("rsn1", thought),
 		events.NewReasoningEndEvent("rsn1"),
+		events.NewToolCallStartEvent("c1", "web_fetch"),
+		events.NewToolCallResultEvent("m", "c1", "ok"),
 		events.NewStateDeltaEvent([]events.JSONPatchOperation{
 			{Op: "replace", Path: "/cost_usd", Value: "0.0012"},
 		}),
 		events.NewRunFinishedEvent("t", "r"),
 	})
+	for _, call := range bot.recorded() {
+		if strings.Contains(call.text, thought) {
+			t.Fatalf("a status frame carries the reasoning text: %q", call.text)
+		}
+	}
 	got := lastText(bot)
-	if !containsRune(got, '💭') {
-		t.Errorf("reasoning line must survive RUN_FINISHED, got: %q", got)
+	if !strings.Contains(got, "💭 Ragionamento - completato") {
+		t.Fatalf("the reasoning row is missing: %q", got)
 	}
-	if !strings.Contains(got, "completato") {
-		t.Errorf("reasoning line must show the safe lifecycle state, got: %q", got)
-	}
-	if strings.Contains(got, latest) || strings.Contains(got, oldMarker) {
-		t.Errorf("reasoning line must not expose raw provider reasoning, got: %q", got)
-	}
-	if !strings.Contains(got, "0.0012") {
-		t.Errorf("cost footer must survive RUN_FINISHED, got: %q", got)
-	}
-}
-
-func TestStatusPaneShowsOnlySafeReasoningLifecycle(t *testing.T) {
-	t.Parallel()
-	bot := newFakeBot()
-	opening := "OPENING-REASONING"
-	closing := "CLOSING-REASONING"
-	drivePane(bot, []events.Event{
-		events.NewRunStartedEvent("t", "r"),
-		events.NewReasoningStartEvent("rsn1"),
-		events.NewReasoningMessageContentEvent("rsn1", opening+" "+strings.Repeat("detail ", 30)),
-		events.NewReasoningMessageContentEvent("rsn1", closing),
-		events.NewReasoningEndEvent("rsn1"),
-		events.NewRunFinishedEvent("t", "r"),
-	})
-	got := lastText(bot)
-	if !strings.Contains(got, "completato") {
-		t.Fatalf("safe reasoning lifecycle missing, got: %q", got)
-	}
-	if strings.Contains(got, opening) || strings.Contains(got, closing) {
-		t.Fatalf("raw provider reasoning leaked into status pane: %q", got)
+	if !strings.Contains(got, "web_fetch") || !strings.Contains(got, "0.0012") {
+		t.Fatalf("the pane lost its tool row or cost footer: %q", got)
 	}
 }
 
@@ -332,7 +310,7 @@ func TestStatusPaneThrottleCoalesces(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bot := newFakeBot()
 		throttle := 1500 * time.Millisecond
-		p := newStatusPane(bot, tele.ChatID(7), throttle, false, 0)
+		p := newStatusPane(bot, tele.ChatID(7), throttle)
 
 		ch := make(chan events.Event)
 		done := make(chan struct{})

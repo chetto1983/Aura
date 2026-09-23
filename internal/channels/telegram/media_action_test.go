@@ -220,7 +220,7 @@ func TestMediaActionControllerWithoutNotifier(t *testing.T) {
 func TestStatusPaneOwnsTheTurnChatAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bot := newPaneActionBot()
-		p := newStatusPane(bot, tele.ChatID(7), 0, false, 0)
+		p := newStatusPane(bot, tele.ChatID(7), 0)
 		ch := make(chan events.Event)
 		done := make(chan struct{})
 		go func() {
@@ -255,7 +255,7 @@ func TestStatusPaneOwnsTheTurnChatAction(t *testing.T) {
 func TestStatusPaneToolCallEndReleasesTheAction(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bot := newPaneActionBot()
-		p := newStatusPane(bot, tele.ChatID(7), 0, false, 0)
+		p := newStatusPane(bot, tele.ChatID(7), 0)
 		ch := make(chan events.Event)
 		done := make(chan struct{})
 		go func() {
@@ -278,7 +278,7 @@ func TestStatusPaneToolCallEndReleasesTheAction(t *testing.T) {
 func TestStatusPaneStopsTheActionOnRunFinished(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bot := newPaneActionBot()
-		p := newStatusPane(bot, tele.ChatID(7), 0, false, 0)
+		p := newStatusPane(bot, tele.ChatID(7), 0)
 		ch := make(chan events.Event)
 		done := make(chan struct{})
 		go func() {
