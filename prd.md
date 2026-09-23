@@ -629,6 +629,36 @@ Also measured, the same morning:
 Not measured live: the panel's switch itself (unit tests only) and the return through a
 Cloudflare tunnel.
 
+A remote MCP server whose authorization server offers no registration endpoint is reached
+with Aura's Client ID Metadata Document, published beside the Google relay at
+`https://chetto1983.github.io/aura-connect/mcp/client-metadata.json`. The document's only
+redirect URI is a relay page next to it (`.../mcp/callback/`). The relay works like the
+Google one and forwards only to the cockpit's `/api/governance/mcp/authorization/callback` and
+to the loopback listener of `aura mcp login`. The document is a fallback: a mount presents the
+operator's pre-registered client, else registers dynamically, and signs in with the document
+only when the SDK reports no registration method. Linear and Notion advertise metadata
+documents too (measured 2026-09-23); they keep signing in through dynamic registration on the
+caller's own redirect.
+
+Measured 2026-09-23 against ElevenLabs' hosted MCP:
+- Its authorization metadata advertises `client_id_metadata_document_supported` and no
+  `registration_endpoint`. An `xi-api-key` is refused on the hosted MCP.
+- Its protected-resource metadata names `https://api.us.elevenlabs.io/v1/mcp`, not the
+  documented `https://api.elevenlabs.io/v1/mcp`. go-sdk v1.7.0 enforces that match (RFC 9728
+  §3.3) and fails discovery on the documented URL, so the server is configured with the
+  `api.us` one.
+- Given an unknown document URL, it fetched it and refused with `invalid_client: Client
+  metadata document returned HTTP 404`: no domain allowlist before the fetch.
+- Given Aura's published document and relay redirect, its consent screen named "Aura" and
+  warned that the app is self-declared. Its API answered 200 with `metadata_document_host:
+  chetto1983.github.io`, `has_localhost_only_redirects: false` and `requires_paid_plan: false`.
+
+Not measured yet: a complete sign-in through Aura (consent, relay return, code exchange,
+tool listing) and the refresh leg. Also unmeasured against ElevenLabs: the SDK leaves a
+document client on x/oauth2's auth-style auto-detection, which sends HTTP Basic first and
+the body on refusal. That retry is proven only in-process, against a server that refuses
+Basic the way ElevenLabs' advertised methods imply.
+
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
 Overflow stays discoverable. Four memory entry points remain loaded; the rest can be

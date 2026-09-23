@@ -241,6 +241,25 @@ client needs a public, non-IP redirect URI of its own, which a LAN install does 
 Aura ships no shared Google client: each install brings its own, so a code forwarded by the
 public relay is worthless without that install's secret.
 
+## Remote MCP servers with no client registration (ElevenLabs)
+
+A remote MCP server authorizes through the cockpit's **Connect** control. Aura presents the
+client in `MCP_OAUTH_CLIENT_ID` when one is configured, else registers itself dynamically
+(Linear, Atlassian, Notion). When the authorization server offers neither, Aura signs in
+with its own Client ID Metadata Document instead:
+`https://chetto1983.github.io/aura-connect/mcp/client-metadata.json`. No configuration is
+needed. The consent screen shows "Aura" as a self-declared app, and after consent the browser
+returns through the relay `https://chetto1983.github.io/aura-connect/mcp/callback/`, which
+forwards it to `<cockpit origin>/api/governance/mcp/authorization/callback`. Like the Google
+relay, it forwards only to an `https` origin or to loopback, so the cockpit must be reached
+over HTTPS or on `localhost`.
+
+For **ElevenLabs** add a custom HTTP server with the URL
+`https://api.us.elevenlabs.io/v1/mcp`, not the `https://api.elevenlabs.io/v1/mcp` in its
+documentation. The server declares itself as `api.us.elevenlabs.io`, and the MCP SDK refuses
+metadata that names a different resource than the URL it dialled (RFC 9728 §3.3). The hosted
+server accepts no API key.
+
 ## Live Checks
 
 Automated tests use fake stdio servers and `httptest`; they do not run Docker, npx,
