@@ -8,9 +8,12 @@ from ingest import extract
 
 
 _IMAGE_EXTENSIONS = frozenset({".gif", ".jpeg", ".jpg", ".png", ".webp"})
-_AUDIO_EXTENSIONS = frozenset({
-    ".aac", ".flac", ".m4a", ".mp3", ".mp4", ".oga", ".ogg", ".opus", ".wav", ".webm",
-})
+_AUDIO_EXTENSIONS = frozenset({".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav"})
+# The formats internal/assets calls video (limits.go videoExts), indexed by metadata only
+# (operator, 2026-09-24; PRD media paragraph): on the lab VM seven 3-minute videos failed
+# speech-to-text every cycle and kept aura-stt saturated, holding the documents family
+# out of the new embedding space.
+_VIDEO_EXTENSIONS = frozenset({".mp4", ".webm"})
 _PDF_EXTENSION = ".pdf"
 
 # The bridge's own exit code for "no configured route accepts images" (see
@@ -27,6 +30,8 @@ def kind(file_name: str) -> str | None:
         return "image"
     if suffix in _AUDIO_EXTENSIONS:
         return "audio"
+    if suffix in _VIDEO_EXTENSIONS:
+        return "video"
     return None
 
 
@@ -63,7 +68,7 @@ def fingerprint() -> str:
 
 def derive(path: str, file_name: str) -> str:
     media_kind = kind(file_name or path)
-    if media_kind is None:
+    if media_kind in (None, "video"):
         return ""
     request_timeout = max(1, int(os.environ.get("MULTIMODAL_TIMEOUT_SEC", "120")))
     return _run(

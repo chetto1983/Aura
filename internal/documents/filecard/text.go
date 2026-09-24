@@ -222,3 +222,12 @@ func buildAudio(_ Request, card Card) (Card, error) {
 			"Open the audio to verify its contents.")
 	return card, nil
 }
+
+// Video is indexed by metadata only (PRD, media paragraph, 2026-09-24): ingest does not
+// send it to speech-to-text, so no passage stands behind this card.
+func buildVideo(_ Request, card Card) (Card, error) {
+	card.Caveats = append(card.Caveats,
+		"Only the name, type and size of this video are indexed; its audio is not transcribed. "+
+			"Open the video to know what it contains.")
+	return card, nil
+}

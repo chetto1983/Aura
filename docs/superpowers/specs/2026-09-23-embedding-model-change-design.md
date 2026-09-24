@@ -416,7 +416,9 @@ unavoidable; the release note says so.
 **A document that keeps failing keeps its old rows.** That is CocoIndex's contract, measured
 above. Those rows carry the old stamp, so the documents family stays lexical and the cockpit
 names the file and its error. The operator fixes or removes the file. Nothing drops vectors
-silently to force the gate open.
+silently to force the gate open. (Amended 2026-09-24: seven videos failing speech-to-text
+every cycle on the lab VM held the gate shut this way, so video, `.mp4` and `.webm`, is now
+indexed by metadata only; see the PRD's media paragraph.)
 
 **Build vs reuse, recorded.** The installed cocoindex ships `cocoindex.ops.litellm.LiteLLMEmbedder`:
 429/5xx backoff, `RetryWithSmallerBatch`, `api_base`/`api_key`/`dimensions`. It needs the

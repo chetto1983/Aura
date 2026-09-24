@@ -453,6 +453,23 @@ capability. OCR/transcription/extraction use shared services and settings. Teleg
 an attachment wrapper, not a competing pipeline. Runs that need indexing wait for the
 relevant indexed state and show it to the user. Filename prose is not image transmission.
 
+Video is indexed by metadata only, for now (operator, 2026-09-24): an `.mp4` or `.webm`,
+the two formats the asset layer calls video (`internal/assets/limits.go`), gets its card,
+name and size in the library and no transcript. Measured the same day on the lab VM, after
+the embedding-space deploy re-extracted every document: all seven copies of one 3-minute
+`videoplayback.mp4` failed every cycle. Speech-to-text (faster-whisper on CPU, beam 5)
+outran its 120 s request deadline (`MULTIMODAL_TIMEOUT_SEC`), each failure was retried
+twice more with the whole audio while the server kept transcribing the abandoned request,
+and seven copies re-extracted at once left `aura-stt` at 232% CPU and unhealthy. The
+failing files kept their old rows, so the documents could never all reach the new
+embedding space. Audio files are still transcribed. Not measured: how long one
+transcription of that file takes on an idle sidecar, and whether the seven ran strictly in
+parallel. An audio-only `.webm` loses its transcript too: the ingest and the card read the
+extension, not the MIME type. A video whose transcription already succeeded somewhere keeps
+it until its bytes change: the extraction memo is fingerprinted on `_extract`'s own code,
+not on the `media.py` it calls (cocoindex `_compute_logic_fingerprint`), and invalidating it
+would re-run every document's extraction, vision calls included.
+
 ## 12. Workspace, shell and web
 
 Tools and artifact delivery resolve the persistent working root consistently. Sandbox

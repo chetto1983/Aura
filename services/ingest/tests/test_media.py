@@ -66,6 +66,8 @@ def vision_server():
         ("photo.webp", "image"),
         ("voice.ogg", "audio"),
         ("meeting.m4a", "audio"),
+        ("videoplayback.mp4", "video"),
+        ("screen.WEBM", "video"),
         ("report.pdf", None),
         ("archive.zip", None),
         ("noext", None),
@@ -104,6 +106,19 @@ def test_non_media_file_yields_no_derived_text(tmp_path):
     path = tmp_path / "archive.zip"
     path.write_bytes(b"PK")
     assert media.derive(str(path), path.name) == ""
+
+
+def test_video_is_indexed_by_metadata_only(monkeypatch, tmp_path):
+    """Operator decision, 2026-09-24 (PRD, media paragraph): seven 3-minute videos on the
+    lab VM failed speech-to-text every cycle and kept aura-stt saturated, so a video keeps
+    its card, name and row and never reaches the media indexer."""
+    monkeypatch.setattr(
+        media, "_run", lambda *_args, **_kwargs: pytest.fail("a video must not reach speech-to-text"),
+    )
+    for name in ("videoplayback.mp4", "screen.webm"):
+        clip = tmp_path / name
+        clip.write_bytes(b"video-fixture")
+        assert media.index_text(str(clip), clip.name) == ""
 
 
 def test_index_text_routes_image_through_packaged_bridge(

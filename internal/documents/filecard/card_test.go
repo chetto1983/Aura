@@ -326,6 +326,22 @@ func TestAudioCardPointsAtSeparatelyIndexedTranscript(t *testing.T) {
 	}
 }
 
+func TestVideoCardAdmitsOnlyItsMetadataIsIndexed(t *testing.T) {
+	for _, name := range []string{"videoplayback.mp4", "schermo.webm"} {
+		card := build(t, writeFile(t, name, "not really video"), name)
+		if card.Kind != KindVideo {
+			t.Errorf("%s: kind = %q, want video", name, card.Kind)
+		}
+		rendered := card.Render()
+		if strings.Contains(rendered, "transcript is indexed") {
+			t.Errorf("%s: video card claims a transcript ingest no longer makes:\n%s", name, rendered)
+		}
+		if !strings.Contains(rendered, "audio is not transcribed") {
+			t.Errorf("%s: video card does not say what is missing:\n%s", name, rendered)
+		}
+	}
+}
+
 func TestUnreadableFileStillProducesACardAndReportsWhy(t *testing.T) {
 	path := writeFile(t, "rotto.xlsx", "this is not a zip")
 	card, err := Build(Request{Path: path, FileName: "rotto.xlsx"})
