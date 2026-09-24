@@ -68,30 +68,30 @@ func TestConfiguredMCPCallTimeout(t *testing.T) {
 	})
 }
 
-// TestBridge_BadTimeoutEnvFailsBeforeListTools covers boot-time timeout
-// validation: an unparseable AURA_MCP_CALL_TIMEOUT_SEC fails before the mount
-// even lists tools.
-func TestBridge_BadTimeoutEnvFailsBeforeListTools(t *testing.T) {
+// TestBridge_BadTimeoutEnvIsRejected covers boot-time timeout validation: an
+// unparseable AURA_MCP_CALL_TIMEOUT_SEC fails the bridge instead of building tools
+// with a default the operator did not ask for.
+func TestBridge_BadTimeoutEnvIsRejected(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "garbage")
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 
-	got, err := Bridge(context.Background(), "sb", srv)
+	got, err := bridgeDefault(context.Background(), "sb", srv)
 	if err == nil {
-		t.Fatal("a bad timeout-config env must fail Bridge")
+		t.Fatal("a bad timeout-config env must fail the bridge")
 	}
 	if got != nil {
-		t.Fatalf("Bridge should not return tools on timeout config failure, got %v", got)
+		t.Fatalf("the bridge should not return tools on timeout config failure, got %v", got)
 	}
 }
 
-// TestBridge_TimeoutMinusOneFailsBeforeListTools covers the Amendment #100
-// finite-deadline contract: the former infinite timeout is rejected at mount.
-func TestBridge_TimeoutMinusOneFailsBeforeListTools(t *testing.T) {
+// TestBridge_TimeoutMinusOneIsRejected covers the Amendment #100 finite-deadline
+// contract: the former infinite timeout is rejected at mount.
+func TestBridge_TimeoutMinusOneIsRejected(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "-1")
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, err := Bridge(context.Background(), "sb", srv)
+	got, err := bridgeDefault(context.Background(), "sb", srv)
 	if err == nil || got != nil {
-		t.Fatalf("Bridge(-1) = (%v, %v), want nil tools and validation error", got, err)
+		t.Fatalf("bridgeDefault(-1) = (%v, %v), want nil tools and validation error", got, err)
 	}
 }
 
@@ -100,7 +100,7 @@ func TestBridge_TimeoutMinusOneFailsBeforeListTools(t *testing.T) {
 // attempts a JSON unmarshal.
 func TestBridgedTool_Execute_NilArgsSkipsUnmarshal(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, nil)
@@ -118,7 +118,7 @@ func TestBridgedTool_Execute_NilArgsSkipsUnmarshal(t *testing.T) {
 // surfaces it (not as inline content).
 func TestBridgedTool_Execute_MissingToolCallContextIsGoError(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 
 	_, err := got[0].Execute(context.Background(), json.RawMessage(`{"container_id":"abc"}`))
 	if err == nil {
@@ -272,7 +272,7 @@ func TestCapMCPErrorContent(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, _ := Bridge(ctx, "sb", srv)
+	got, _ := bridgeDefault(ctx, "sb", srv)
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), maxMCPErrorPreviewBytes*4)
 
 	_, execErr := got[0].Execute(callCtx, json.RawMessage(`{}`))

@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"slices"
 	"strings"
@@ -22,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/google/uuid"
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -227,23 +230,22 @@ func mountLiveMemoryUpsert(t *testing.T, registry *tools.Registry, client *arcad
 		}, nil
 	})
 
-	clientTransport, serverTransport := sdkmcp.NewInMemoryTransports()
-	serverSession, err := server.Connect(t.Context(), serverTransport, nil)
-	if err != nil {
-		t.Fatalf("connect live MCP server: %v", err)
+	httpServer := httptest.NewServer(sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server }, nil))
+	t.Cleanup(func() {
+		for session := range server.Sessions() {
+			_ = session.Close()
+		}
+		httpServer.Close()
+	})
+	managed := mcp.ManagedServer{
+		URL: httpServer.URL, Type: mcp.ServerTypeStreamableHTTP, Env: []string{"MCP_OAUTH_DISABLED=true"},
 	}
-	t.Cleanup(func() { _ = serverSession.Close() })
-	sdkClient := sdkmcp.NewClient(&sdkmcp.Implementation{Name: "capture-live-client", Version: "0.0.1"}, nil)
-	clientSession, err := sdkClient.Connect(t.Context(), clientTransport, nil)
+	closer, _, _, err := mcptools.MountManagedServerWithOptions(t.Context(), t.Context(), registry, "memory", managed,
+		mcptools.MountOptions{Egress: mcp.RuntimeEgressPolicy(false, managed)})
 	if err != nil {
-		t.Fatalf("connect live MCP client: %v", err)
-	}
-	mounted := mcptools.NewMountedServer("memory", nil)
-	mounted.Attach(clientSession)
-	t.Cleanup(func() { _ = mounted.Close() })
-	if _, err := mcptools.Mount(t.Context(), registry, "memory", mounted); err != nil {
 		t.Fatalf("mount live memory tool: %v", err)
 	}
+	t.Cleanup(func() { _ = closer() })
 	tool, ok := registry.Get(memoryUpsertFactModelName)
 	if !ok {
 		t.Fatal("production memory tool unavailable to the live agent")

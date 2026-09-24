@@ -41,9 +41,9 @@ func TestBridgeMountsEveryMemoryToolAndDefersAllButTheCore(t *testing.T) {
 	}
 
 	srv, _ := newInMemoryMounted(t, toolDefs...)
-	bridged, err := Bridge(context.Background(), "memory", srv)
+	bridged, err := bridgeDefault(context.Background(), "memory", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	got := make(map[string]struct{}, len(bridged))
 	manifest := make(map[string]bool, 4)
@@ -85,9 +85,9 @@ func TestBridgeHidingIsNamespaceScoped(t *testing.T) {
 		mustTool("memory_get_facts", "same name, different server", nil, nil),
 		mustTool("anything", "fixture", nil, nil),
 	)
-	bridged, err := Bridge(context.Background(), "pim", srv)
+	bridged, err := bridgeDefault(context.Background(), "pim", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	if len(bridged) != 2 {
 		t.Fatalf("bridged %d tools from a non-memory namespace, want 2", len(bridged))

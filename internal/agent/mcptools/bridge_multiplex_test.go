@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"log/slog"
-	"sort"
 	"strings"
 	"testing"
 
@@ -36,21 +35,31 @@ func TestMultiplexActionClassForCalendarActions(t *testing.T) {
 	}
 }
 
-func TestMultiplexMCPToolsListedSortedAndNamespaced(t *testing.T) {
+func TestMultiplexMCPToolsAreNamespaced(t *testing.T) {
 	t.Parallel()
-	got := MultiplexedMCPTools()
-	if len(got) == 0 {
-		t.Fatal("MultiplexedMCPTools() returned nothing")
+	if len(multiplexedMCPTools) == 0 {
+		t.Fatal("multiplexedMCPTools is empty")
 	}
-	if !sort.StringsAreSorted(got) {
-		t.Fatalf("MultiplexedMCPTools() not sorted: %v", got)
-	}
-	for _, name := range got {
+	for name := range multiplexedMCPTools {
 		if name == "" {
-			t.Fatal("MultiplexedMCPTools() contains an empty name")
+			t.Fatal("multiplexedMCPTools contains an empty name")
 		}
 		if !strings.Contains(name, "__") {
 			t.Errorf("%q does not contain the __ namespace delimiter", name)
+		}
+	}
+}
+
+// TestMultiplexMCPToolTableIsTheKnownCuratedSet is the mcptools half of the pairing
+// with internal/gateway's multiplexedClassifiers: extending the table alone fails
+// here, and gateway's TestEveryMultiplexedMCPToolHasAClassifier names the same set
+// from the other side, so the two lists change in one commit and the gateway keeps
+// a per-action classifier for every tool this package marks Multiplexed.
+func TestMultiplexMCPToolTableIsTheKnownCuratedSet(t *testing.T) {
+	t.Parallel()
+	for name := range multiplexedMCPTools {
+		if name != CalendarMultiplexedToolName {
+			t.Errorf("multiplexedMCPTools has %q: give internal/gateway a multiplexedClassifiers entry for it and add it to TestEveryMultiplexedMCPToolHasAClassifier, then to this test", name)
 		}
 	}
 }

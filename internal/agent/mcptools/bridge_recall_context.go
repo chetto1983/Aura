@@ -1,12 +1,10 @@
 package mcptools
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"unicode"
@@ -90,42 +88,6 @@ func recallContextHeaderFunc(ctx context.Context) map[string]string {
 	return map[string]string{recallContextHeader: encoded}
 }
 
-func decodeRecallContextHeader(encoded string) ([]recallSourceKey, error) {
-	if encoded == "" || encoded != strings.TrimSpace(encoded) {
-		return nil, fmt.Errorf("active recall source header is empty or non-canonical")
-	}
-	if len(encoded) > recallContextMaxEncodedSize {
-		return nil, fmt.Errorf("active recall source header exceeds %d bytes", recallContextMaxEncodedSize)
-	}
-	raw, err := base64.RawURLEncoding.Strict().DecodeString(encoded)
-	if err != nil {
-		return nil, fmt.Errorf("decode active recall source header: %w", err)
-	}
-	if len(raw) > recallContextMaxDecodedSize {
-		return nil, fmt.Errorf("active recall source payload exceeds %d bytes", recallContextMaxDecodedSize)
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	var envelope recallContextEnvelope
-	if err := decoder.Decode(&envelope); err != nil {
-		return nil, fmt.Errorf("decode active recall source payload: %w", err)
-	}
-	if err := ensureRecallContextEOF(decoder); err != nil {
-		return nil, err
-	}
-	if envelope.Version != recallContextVersion {
-		return nil, fmt.Errorf("active recall source version %d is unsupported", envelope.Version)
-	}
-	reencoded, err := encodeRecallContextHeader(envelope.Sources)
-	if err != nil {
-		return nil, err
-	}
-	if reencoded != encoded {
-		return nil, fmt.Errorf("active recall source header is not canonical")
-	}
-	return envelope.Sources, nil
-}
-
 func validateRecallSourceKey(source recallSourceKey) error {
 	for name, value := range map[string]string{
 		"conversation_id": source.ConversationID,
@@ -139,17 +101,6 @@ func validateRecallSourceKey(source recallSourceKey) error {
 				return fmt.Errorf("active recall %s contains a control character", name)
 			}
 		}
-	}
-	return nil
-}
-
-func ensureRecallContextEOF(decoder *json.Decoder) error {
-	var trailing any
-	if err := decoder.Decode(&trailing); err != io.EOF {
-		if err == nil {
-			return fmt.Errorf("active recall source payload has trailing JSON")
-		}
-		return fmt.Errorf("decode active recall source payload: %w", err)
 	}
 	return nil
 }

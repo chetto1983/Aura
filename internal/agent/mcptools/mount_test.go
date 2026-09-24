@@ -13,24 +13,23 @@ import (
 // PRD amendment #123): this fixture's 3 tools are exactly at
 // maxAlwaysLoadedMCPTools, so on a fresh global slot budget the mount now earns
 // an always-loaded slot and every one of its tools bridges Deferred:false,
-// instead of the pre-amendment unconditional Deferred:true. Mount still
+// instead of the pre-amendment unconditional Deferred:true. A mount still
 // registers all advertised tools unconditionally — that part of the name no
 // longer matches what the test proves, hence the rename.
 func TestMount_ThreeToolServerEarnsAlwaysLoadedSlot(t *testing.T) {
 	resetLoadedSlotBudgetForTest()
 	reg := tools.NewRegistry()
-	srv, _ := newInMemoryMounted(t,
+
+	names, err := mountHTTPFixture(t, reg, "mail",
 		mustTool("send_email", "Send an email.", nil, nil),
 		mustTool("fetch_emails", "Fetch recent emails.", nil, nil),
 		mustTool("delete_mailbox", "Permanently delete a mailbox.", nil, nil),
 	)
-
-	names, err := Mount(context.Background(), reg, "mail", srv)
 	if err != nil {
-		t.Fatalf("Mount: %v", err)
+		t.Fatalf("mount: %v", err)
 	}
 	if len(names) != 3 {
-		t.Fatalf("Mount must register all advertised tools, got %v", names)
+		t.Fatalf("a mount must register all advertised tools, got %v", names)
 	}
 	for _, want := range []string{"mail__send_email", "mail__fetch_emails", "mail__delete_mailbox"} {
 		tool, ok := reg.Get(want)

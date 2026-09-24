@@ -45,9 +45,9 @@ func TestBridgedOAuthToolUsesNoProprietaryTenantMetadata(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, err := Bridge(ctx, "memory", srv)
+	got, err := bridgeDefault(ctx, "memory", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	callCtx := identityctx.WithIdentityID(context.Background(), "identity-1")
 	callCtx = tools.WithToolCallContext(callCtx, "sess", "tc1", t.TempDir(), 2048)
@@ -93,9 +93,9 @@ func TestBridgedRemoteToolRejectsNoPrincipal(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, err := Bridge(ctx, "memory", srv)
+	got, err := bridgeDefault(ctx, "memory", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	// No identityctx.WithIdentityID — the no-principal path.
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
@@ -137,9 +137,9 @@ func TestBridgedUnscopedToolDoesNotInjectTenantData(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, err := Bridge(ctx, "sb", srv)
+	got, err := bridgeDefault(ctx, "sb", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	callCtx := identityctx.WithIdentityID(context.Background(), "identity-1")
 	callCtx = tools.WithToolCallContext(callCtx, "sess", "tc1", t.TempDir(), 2048)

@@ -34,7 +34,7 @@ func sanitizeName(s string) string {
 
 // hashSuffix returns a deterministic "_<12hex>" disambiguation suffix for rawIdentity.
 // SHA-256 here is a non-cryptographic collision disambiguator (Codex parity), NOT a
-// security control: a forced collision still hits Mount's all-or-nothing refusal.
+// security control: a forced collision still hits registerBridged's all-or-nothing refusal.
 func hashSuffix(rawIdentity string) string {
 	h := sha256.Sum256([]byte(rawIdentity))
 	return "_" + hex.EncodeToString(h[:])[:hashLen]
@@ -45,7 +45,7 @@ func hashSuffix(rawIdentity string) string {
 // maxToolNameLen. On overflow a deterministic hash suffix is appended; the tool part
 // is truncated to fit, and the prefix itself is truncated when it alone exceeds the
 // budget (WR-01) — so the OUTPUT length is bounded, not just the slice index. Cross-name
-// collision disambiguation across a Mount batch is layered on top of this by the caller.
+// collision disambiguation across one mount's batch is layered on top of this by registerBridged.
 func namespacedName(namespace, tool string) string {
 	prefix := sanitizeName(namespace) + nsDelimiter
 	base := prefix + sanitizeName(tool)

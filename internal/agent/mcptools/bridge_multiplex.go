@@ -3,7 +3,6 @@ package mcptools
 import (
 	"encoding/json"
 	"log/slog"
-	"sort"
 )
 
 // This file is the D-21/D-33/D-34 multiplex surface a curated MCP tool needs to
@@ -43,19 +42,6 @@ var CalendarMultiplexedToolName = namespacedName(calendarNamespace, calendarCura
 // entry here and nowhere else.
 var multiplexedMCPTools = map[string]string{
 	CalendarMultiplexedToolName: calendarRecipeSource,
-}
-
-// MultiplexedMCPTools returns the model-facing names of every curated
-// multiplexed MCP tool Aura knows, sorted. internal/gateway's cross-package
-// invariant test walks this to assert every name has exactly one
-// multiplexedClassifiers entry, failing if either side is extended alone.
-func MultiplexedMCPTools() []string {
-	out := make([]string, 0, len(multiplexedMCPTools))
-	for name := range multiplexedMCPTools {
-		out = append(out, name)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // MCPActionClassFor resolves tool's recipe source through multiplexedMCPTools and

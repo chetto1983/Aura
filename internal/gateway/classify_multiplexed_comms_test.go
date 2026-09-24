@@ -139,15 +139,18 @@ func TestClassifyCalendarActionConcurrent(t *testing.T) {
 }
 
 // TestEveryMultiplexedMCPToolHasAClassifier is the bidirectional invariant: every
-// name mcptools.MultiplexedMCPTools() knows about must have exactly one
+// curated multiplexed MCP tool name mcptools exports must have exactly one
 // multiplexedClassifiers entry, and no MCP-namespaced (contains "__") classifier
-// entry may exist that mcptools does not also know about — failing if EITHER
-// side is extended alone. skill_manage/task/swarm_spawn are excluded from the
-// reverse direction because they carry no "__" namespace delimiter.
+// entry may exist that mcptools does not also export a name for — failing if
+// EITHER side is extended alone. skill_manage/task/swarm_spawn are excluded from
+// the reverse direction because they carry no "__" namespace delimiter.
+//
+// A tool added to mcptools' multiplexedMCPTools joins this list in the same change;
+// mcptools' TestMultiplexMCPToolTableIsTheKnownCuratedSet fails until it does.
 func TestEveryMultiplexedMCPToolHasAClassifier(t *testing.T) {
 	t.Parallel()
 	want := make(map[string]bool)
-	for _, name := range mcptools.MultiplexedMCPTools() {
+	for _, name := range []string{mcptools.CalendarMultiplexedToolName} {
 		want[name] = true
 	}
 	got := make(map[string]bool)
@@ -163,7 +166,7 @@ func TestEveryMultiplexedMCPToolHasAClassifier(t *testing.T) {
 	}
 	for name := range got {
 		if !want[name] {
-			t.Errorf("multiplexedClassifiers has %q but mcptools.MultiplexedMCPTools() does not know it", name)
+			t.Errorf("multiplexedClassifiers has %q but mcptools exports no multiplexed tool name for it", name)
 		}
 	}
 }

@@ -182,7 +182,7 @@ func (s *MountedServer) isDead() bool {
 
 // currentSession returns, in priority order: the sticky tool-set-drift error, a
 // closed error, the watch()-recorded death, or the live session. Used by
-// ListTools and onToolListChanged, for which a dead session is simply a failure
+// onToolListChanged, for which a dead session is simply a failure
 // to propagate — CallToolText uses sessionOrDeath instead, because for IT a dead
 // session is not terminal: it is exactly the case that must attempt a redial.
 func (s *MountedServer) currentSession() (*sdkmcp.ClientSession, error) {
@@ -260,22 +260,6 @@ func drainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.T
 		}
 		return out, nil
 	}, nil)
-}
-
-// ListTools drains the current session's paginated tool list.
-func (s *MountedServer) ListTools(ctx context.Context) ([]*sdkmcp.Tool, error) {
-	if s.identityPool != nil {
-		child, err := s.identityPool.server(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return child.ListTools(ctx)
-	}
-	session, err := s.currentSession()
-	if err != nil {
-		return nil, err
-	}
-	return drainTools(ctx, session)
 }
 
 // decodeResult decodes every result an agent-side call gets back (RESEARCH Pitfall 1):
@@ -388,8 +372,8 @@ func (s *MountedServer) Close() error {
 	return session.Close()
 }
 
-// trackBridgedTools records the bridgedTool instances Bridge produced over this
-// server, so onToolListChanged's in-place refresh and CallToolText's
+// trackBridgedTools records the bridgedTool instances bridgeFromAdvertisedWithPolicy
+// produced over this server, so onToolListChanged's in-place refresh and CallToolText's
 // toolIsReadOnly gate can find them by their raw (wire) name.
 func (s *MountedServer) trackBridgedTools(bridged []tools.Tool) {
 	s.mu.Lock()
@@ -446,7 +430,7 @@ func (s *MountedServer) validateToolSetLocked(advertised []*sdkmcp.Tool) error {
 }
 
 // setRefreshHook registers the callback refreshSpecsLocked fires when an
-// in-place spec update actually changed something (Mount wires this to
+// in-place spec update actually changed something (finishMount wires this to
 // invalidateToolSearch).
 func (s *MountedServer) setRefreshHook(hook func()) {
 	s.mu.Lock()

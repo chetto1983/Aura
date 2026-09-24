@@ -45,6 +45,29 @@ func unprotectedHTTPFixtureServer(url string) mcp.ManagedServer {
 	return mcp.ManagedServer{URL: url, Env: []string{"MCP_OAUTH_DISABLED=true"}}
 }
 
+// mountFixtureURL mounts the streamable-HTTP endpoint at url under name through
+// MountManagedServerWithOptions, the entry point production mounts a managed server
+// through. A successful mount's closer runs at test cleanup.
+func mountFixtureURL(t *testing.T, reg *tools.Registry, name, url string) ([]string, error) {
+	t.Helper()
+	server := unprotectedHTTPFixtureServer(url)
+	server.Type = mcp.ServerTypeStreamableHTTP
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, name, server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
+	if err == nil {
+		t.Cleanup(func() { _ = closer() })
+	}
+	return names, err
+}
+
+// mountHTTPFixture serves toolDefs from a real streamable-HTTP endpoint and mounts
+// them under name (mountFixtureURL).
+func mountHTTPFixture(t *testing.T, reg *tools.Registry, name string, toolDefs ...*sdkmcp.Tool) ([]string, error) {
+	t.Helper()
+	httpSrv, _ := startSDKHTTPFixture(t, toolDefs...)
+	return mountFixtureURL(t, reg, name, httpSrv.URL)
+}
+
 func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
@@ -138,9 +161,8 @@ func TestMountManagedServer_OpenFailure(t *testing.T) {
 func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, mustTool("read_doc", "Read a document.", nil, nil))
 	reg := tools.NewRegistry()
-	seedSrv, _ := newInMemoryMounted(t, mustTool("read_doc", "Read a document.", nil, nil))
-	if _, err := Mount(context.Background(), reg, "docs", seedSrv); err != nil {
-		t.Fatalf("seed Mount: %v", err)
+	if _, err := mountHTTPFixture(t, reg, "docs", mustTool("read_doc", "Read a document.", nil, nil)); err != nil {
+		t.Fatalf("seed mount: %v", err)
 	}
 
 	server := unprotectedHTTPFixtureServer(httpSrv.URL)

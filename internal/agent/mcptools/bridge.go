@@ -4,7 +4,6 @@
 package mcptools
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -113,30 +112,21 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 	b.spec.Store(spec)
 }
 
-// Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the
-// model-facing name as <namespace>__<tool> so a mounted server can never silently
-// shadow a built-in. The wire name used by CallToolText stays raw.
+// bridgeFromAdvertisedWithPolicy adapts each PRE-LISTED advertised tool to a
+// tools.Tool, namespacing the model-facing name as <namespace>__<tool> so a mounted
+// server can never silently shadow a built-in. The wire name used by CallToolText
+// stays raw.
 //
-// Bridged tools are Deferred by default: a real multi-tool MCP server would
-// otherwise flood every per-turn manifest. tool_search indexes the deferred
-// tool's name, description, and argument-field names, so deferred MCP tools stay
-// discoverable. The memory MCP schemas are therefore reached through tool_search
-// instead of being carried on every turn.
-func Bridge(ctx context.Context, namespace string, srv *MountedServer) ([]tools.Tool, error) {
-	advertised, err := srv.ListTools(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return bridgeFromAdvertised(namespace, srv, advertised)
-}
-
-// bridgeFromAdvertised bridges PRE-LISTED advertised tools, skipping the
-// srv.ListTools round-trip Bridge itself makes. mountWithAdvertisedPolicy (the
-// initial-mount path) uses this so the FIRST discovery listing goes through the
-// raw session's own ctx bound instead of through MountedServer, which treats any
-// transport error (including a caller's ctx deadline expiring) as a cue to
-// transparently redial using ITS OWN redial-timeout budget
-// (context.WithoutCancel-severed from the caller's ctx) — layering that
+// Bridged tools are Deferred unless the mount earns an always-loaded slot: a real
+// multi-tool MCP server would otherwise flood every per-turn manifest. tool_search
+// indexes the deferred tool's name, description, and argument-field names, so
+// deferred MCP tools stay discoverable.
+//
+// The mount lists the tools itself, on the RAW session, so the FIRST discovery
+// listing goes through the raw session's own ctx bound instead of through
+// MountedServer, which treats any transport error (including a caller's ctx
+// deadline expiring) as a cue to transparently redial using ITS OWN redial-timeout
+// budget (context.WithoutCancel-severed from the caller's ctx) — layering that
 // independent, much longer budget on top of the initial mount's OWN bounded
 // handshake ctx would silently blow through AURA_MCP_MOUNT_TIMEOUT, defeating the
 // very bound mount.go installs. The raw session's own tools/list (no redial
@@ -144,10 +134,6 @@ func Bridge(ctx context.Context, namespace string, srv *MountedServer) ([]tools.
 // cannot occur for the initial mount; bridged tools still reference srv (the
 // mounted supervisor) for every CALL after mount, so runtime redial-on-transport-
 // error is unaffected.
-func bridgeFromAdvertised(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool) ([]tools.Tool, error) {
-	return bridgeFromAdvertisedWithPolicy(namespace, srv, advertised, defaultBridgePolicy(namespace))
-}
-
 func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, policy bridgePolicy) ([]tools.Tool, error) {
 	callTimeout, err := configuredMCPCallTimeout()
 	if err != nil {
@@ -160,7 +146,7 @@ func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advert
 
 // bridgeToolsWithPolicy is the ONLY place bridging scores the always-loaded
 // slot decision (D-27, bridge_deferral.go): it runs at MOUNT only (reached from
-// Mount/mountWithAdvertisedPolicy), never on reconnect, so policy.alwaysLoaded
+// mountWithAdvertisedPolicy), never on reconnect, so policy.alwaysLoaded
 // is computed once here and frozen into every bridgedTool this call builds.
 // policy is a value parameter, so this mutation is local to this call and each
 // bridgedTool below receives its own enriched copy — that copy IS the freeze
@@ -385,18 +371,10 @@ func truncateUTF8Bytes(s string, maxBytes int) string {
 	return out
 }
 
-// Mount bridges all of srv's advertised tools under namespace and registers them
-// into reg, all-or-nothing. Two distinct raw tool names that sanitize to the same
-// namespaced name are disambiguated with a deterministic hash suffix before
-// registration. It still refuses to clobber an existing tool name.
-func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv *MountedServer) ([]string, error) {
-	bridged, err := Bridge(ctx, namespace, srv)
-	if err != nil {
-		return nil, err
-	}
-	return finishMount(reg, srv, bridged)
-}
-
+// mountWithAdvertisedPolicy bridges all of srv's advertised tools under namespace and
+// registers them into reg, all-or-nothing. Two distinct raw tool names that sanitize
+// to the same namespaced name are disambiguated with a deterministic hash suffix
+// before registration. It still refuses to clobber an existing tool name.
 func mountWithAdvertisedPolicy(reg *tools.Registry, namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, policy bridgePolicy) ([]string, error) {
 	bridged, err := bridgeFromAdvertisedWithPolicy(namespace, srv, advertised, policy)
 	if err != nil {

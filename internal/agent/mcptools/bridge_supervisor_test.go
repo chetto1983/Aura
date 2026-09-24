@@ -303,9 +303,9 @@ func TestMountedServer_RedialBreakerOpensAfterThreeFailures(t *testing.T) {
 // later successful re-list does not clear it.
 func TestMountedServer_ToolSetDriftMarksDeadSticky(t *testing.T) {
 	srv, server := newInMemoryMounted(t, mustTool("send", "Send.", nil, nil))
-	advertised, err := srv.ListTools(context.Background())
+	advertised, err := advertisedTools(context.Background(), srv)
 	if err != nil {
-		t.Fatalf("ListTools: %v", err)
+		t.Fatalf("advertisedTools: %v", err)
 	}
 	srv.trackAcceptedTools(advertised)
 
@@ -331,9 +331,9 @@ func TestMountedServer_ToolSetDriftMarksDeadSticky(t *testing.T) {
 // touched (there is no registry in this test at all — proving the point).
 func TestMountedServer_RefreshInPlaceOnSameNameSet(t *testing.T) {
 	srv, server := newInMemoryMounted(t, mustTool("send", "Old description.", nil, nil))
-	advertised, err := srv.ListTools(context.Background())
+	advertised, err := advertisedTools(context.Background(), srv)
 	if err != nil {
-		t.Fatalf("ListTools: %v", err)
+		t.Fatalf("advertisedTools: %v", err)
 	}
 	srv.trackAcceptedTools(advertised)
 	bridged := bridgeTools("mail", srv, advertised, time.Second)

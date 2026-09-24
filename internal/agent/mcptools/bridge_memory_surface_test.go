@@ -67,15 +67,15 @@ func TestMemorySurfacePolicy_AliasKeepsIsolationAndHiddenSurface(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	advertised, err := srv.ListTools(ctx)
+	advertised, err := advertisedTools(ctx, srv)
 	if err != nil {
-		t.Fatalf("ListTools: %v", err)
+		t.Fatalf("advertisedTools: %v", err)
 	}
-	// Bridge(ctx, "mem", srv) would derive bridgePolicy from the namespace
-	// string alone (defaultBridgePolicy: memorySurface = namespace=="memory"), which
+	// defaultBridgePolicy("mem") would derive bridgePolicy from the namespace
+	// string alone (memorySurface = namespace=="memory"), which
 	// "mem" fails â€” the alias case this test exists for needs the memory surface
-	// EXPLICITLY, independent of the namespace label, so it goes through
-	// bridgeFromAdvertisedWithPolicy directly instead of Bridge.
+	// EXPLICITLY, independent of the namespace label, so it passes its own policy to
+	// bridgeFromAdvertisedWithPolicy instead of using bridgeDefault.
 	bridged, err := bridgeFromAdvertisedWithPolicy("mem", srv, advertised, bridgePolicy{identityScoped: true, memorySurface: true})
 	if err != nil {
 		t.Fatalf("bridgeFromAdvertisedWithPolicy: %v", err)

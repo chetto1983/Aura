@@ -9,9 +9,9 @@ import (
 
 func TestBridge_Namespaced(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, mustTool("create_issue", "Open an issue.", nil, nil))
-	got, err := Bridge(context.Background(), "github", srv)
+	got, err := bridgeDefault(context.Background(), "github", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	if got[0].Spec().Name != "github__create_issue" {
 		t.Fatalf("model-facing name = %q, want github__create_issue", got[0].Spec().Name)
@@ -23,9 +23,9 @@ func TestBridge_Namespaced(t *testing.T) {
 // re-marshals it byte-identically for the trivial {"type":"object"} case).
 func TestBridge_NullInputSchemaFallback(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, mustTool("ping", "Ping.", nil, nil))
-	got, err := Bridge(context.Background(), "srv", srv)
+	got, err := bridgeDefault(context.Background(), "srv", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	if params := string(got[0].Spec().Parameters); params != `{"type":"object"}` {
 		t.Fatalf("empty inputSchema fallback = %s", params)
@@ -42,9 +42,9 @@ func TestBridge_CapsArgSchemaDescriptions(t *testing.T) {
 		"properties": map[string]any{"q": map[string]any{"type": "string", "description": longDesc}},
 	}
 	srv, _ := newInMemoryMounted(t, mustTool("search", "Search.", schema, nil))
-	got, err := Bridge(context.Background(), "srv", srv)
+	got, err := bridgeDefault(context.Background(), "srv", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	var parsed struct {
 		Properties map[string]struct {

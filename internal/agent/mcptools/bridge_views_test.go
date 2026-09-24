@@ -194,8 +194,8 @@ func TestCallReadOnlyTool_RefusesAnythingNotReadOnly(t *testing.T) {
 	// No annotations at all is the fail-closed mutating+destructive default.
 	mutating := mustTool("send_message", "", nil, nil)
 	srv, _ := newInMemoryMounted(t, readOnly, mutating)
-	if _, err := Bridge(context.Background(), "fixture", srv); err != nil {
-		t.Fatalf("Bridge: %v", err)
+	if _, err := bridgeDefault(context.Background(), "fixture", srv); err != nil {
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 
 	if _, err := srv.CallReadOnlyTool(context.Background(), "list_messages", nil); err != nil {
@@ -214,8 +214,8 @@ func TestCallReadOnlyTool_RefusesAnythingNotReadOnly(t *testing.T) {
 func TestViewCallers_ResolvesOnlyMountedServers(t *testing.T) {
 	readOnly := mustTool("list_messages", "", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true})
 	srv, _ := newInMemoryMounted(t, readOnly)
-	if _, err := Bridge(context.Background(), "fixture", srv); err != nil {
-		t.Fatalf("Bridge: %v", err)
+	if _, err := bridgeDefault(context.Background(), "fixture", srv); err != nil {
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	callers := ViewCallers{"fixture": srv}
 

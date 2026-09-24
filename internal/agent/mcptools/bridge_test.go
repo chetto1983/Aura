@@ -38,9 +38,9 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	// package already spent.
 	resetLoadedSlotBudgetForTest()
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, err := Bridge(context.Background(), "sb", srv)
+	got, err := bridgeDefault(context.Background(), "sb", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	if len(got) != 2 {
 		t.Fatalf("want 2 bridged tools, got %d", len(got))
@@ -96,9 +96,9 @@ func TestBridge_MemoryNamespaceEarnsAlwaysLoadedSlot(t *testing.T) {
 		mustTool("memory_entities", "List known entities.", nil, &sdkmcp.ToolAnnotations{ReadOnlyHint: true}),
 		mustTool("memory_reembed", "Re-embed stored vectors.", nil, nil),
 	)
-	got, err := Bridge(context.Background(), "memory", srv)
+	got, err := bridgeDefault(context.Background(), "memory", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	if len(got) != 11 {
 		t.Fatalf("want all 11 memory tools bridged, got %d", len(got))
@@ -152,9 +152,9 @@ func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, err := Bridge(ctx, "sb", srv)
+	got, err := bridgeDefault(ctx, "sb", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
@@ -181,7 +181,7 @@ func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
 
 func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
@@ -198,7 +198,7 @@ func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 
 func TestBridgedTool_Execute_MarksResultTrusted(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
@@ -221,7 +221,7 @@ func TestBridgedTool_Execute_MarksResultTrusted(t *testing.T) {
 // by the RAW server-side tool name.
 func TestBridgedTool_RoutesRawName(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 	if got[0].Spec().Name != "sb__sandbox_exec" {
 		t.Fatalf("precondition: model name not namespaced, got %q", got[0].Spec().Name)
 	}
@@ -255,7 +255,7 @@ func TestBridgedTool_Execute_PropagatesError(t *testing.T) {
 	t.Cleanup(func() { _ = session.Close() })
 	srv.Attach(session)
 
-	got, _ := Bridge(ctx, "sb", srv)
+	got, _ := bridgeDefault(ctx, "sb", srv)
 	callCtx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 	_, execErr := got[0].Execute(callCtx, json.RawMessage(`{"container_id":"abc"}`))
 	if execErr == nil || !strings.Contains(execErr.Error(), "boom") {
@@ -269,7 +269,7 @@ func TestBridgedTool_Execute_PropagatesError(t *testing.T) {
 // and the underlying server is never called.
 func TestBridgedTool_Execute_BadArgsIsGoError(t *testing.T) {
 	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := bridgeDefault(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	_, err := got[0].Execute(ctx, json.RawMessage(`{not valid json`))
@@ -283,11 +283,10 @@ func TestBridgedTool_Execute_BadArgsIsGoError(t *testing.T) {
 
 func TestMount_Namespaced(t *testing.T) {
 	reg := tools.NewRegistry()
-	srv, _ := newInMemoryMounted(t, sandboxTools()...)
 
-	names, err := Mount(context.Background(), reg, "sb", srv)
+	names, err := mountHTTPFixture(t, reg, "sb", sandboxTools()...)
 	if err != nil {
-		t.Fatalf("Mount: %v", err)
+		t.Fatalf("mount: %v", err)
 	}
 	if len(names) != 2 {
 		t.Fatalf("want 2 registered, got %v", names)
@@ -308,11 +307,11 @@ func TestMount_RefusesDuplicateWithinServer(t *testing.T) {
 	// two entries named "dup" (the second AddTool call would just replace the
 	// first), so this drives the duplicate-raw-name refusal by asserting
 	// registerBridged directly against two bridgedTool values sharing a raw name —
-	// the exact invariant Mount's caller depends on.
+	// the exact invariant mountWithAdvertisedPolicy's caller depends on.
 	srv, _ := newInMemoryMounted(t, mustTool("dup", "a", nil, nil))
-	bridged, err := Bridge(context.Background(), "srv", srv)
+	bridged, err := bridgeDefault(context.Background(), "srv", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	dupBridged := append(bridged, bridged[0])
 	if _, err := registerBridged(reg, dupBridged); err == nil {
@@ -323,23 +322,25 @@ func TestMount_RefusesDuplicateWithinServer(t *testing.T) {
 	}
 }
 
-// errListTools is the scripted tools/list failure used to drive Mount error paths
-// for a server that boots but cannot enumerate tools — driven by closing the
-// server session before the client lists, a genuine transport failure over the
-// real wire rather than a scripted Go error.
+// TestMount_ListToolsErrorPropagates mounts a server that completes its handshake
+// but answers tools/list with an error: the failure must reach the caller and leave
+// the registry untouched. The error text is asserted so the test cannot pass on a
+// connect failure that never reached tools/list.
 func TestMount_ListToolsErrorPropagates(t *testing.T) {
 	reg := tools.NewRegistry()
-	srv, _ := newInMemoryMounted(t, sandboxTools()...)
-	// Kill the CLIENT half directly (mirrors bridge_supervisor_test.go's
-	// killLiveSession): closing the server half from inside the test body via
-	// Server.Sessions() deadlocks against the subscriptions/listen in-flight
-	// call ToolListChanged registration keeps open (ServerSession.Close waits
-	// for in-flight handlers to unwind).
-	killLiveSession(t, srv)
+	httpSrv, sdkServer := startSDKHTTPFixture(t, sandboxTools()...)
+	sdkServer.AddReceivingMiddleware(func(next sdkmcp.MethodHandler) sdkmcp.MethodHandler {
+		return func(ctx context.Context, method string, req sdkmcp.Request) (sdkmcp.Result, error) {
+			if method == "tools/list" {
+				return nil, errors.New("tools/list refused")
+			}
+			return next(ctx, method, req)
+		}
+	})
 
-	names, err := Mount(context.Background(), reg, "sb", srv)
-	if err == nil {
-		t.Fatal("Mount should propagate the tools/list failure after the peer closed")
+	names, err := mountFixtureURL(t, reg, "sb", httpSrv.URL)
+	if err == nil || !strings.Contains(err.Error(), "tools/list refused") {
+		t.Fatalf("mount should propagate the tools/list failure, got %v", err)
 	}
 	if names != nil {
 		t.Fatalf("names must be nil on list failure, got %v", names)
@@ -377,9 +378,9 @@ func TestBridge_MountsAllAdvertisedTools(t *testing.T) {
 		mustTool("read_doc", "Read a document.", nil, nil),
 		mustTool("delete_doc", "Delete a document.", nil, nil),
 	)
-	bridged, err := Bridge(context.Background(), "docs", srv)
+	bridged, err := bridgeDefault(context.Background(), "docs", srv)
 	if err != nil {
-		t.Fatalf("Bridge: %v", err)
+		t.Fatalf("bridgeDefault: %v", err)
 	}
 	names := map[string]struct{}{}
 	for _, b := range bridged {
@@ -398,13 +399,12 @@ func TestBridge_MountsAllAdvertisedTools(t *testing.T) {
 func TestMount_CollisionHash(t *testing.T) {
 	reg := tools.NewRegistry()
 	// "a.b" and "a/b" both sanitize to "a_b" -> namespaced "srv__a_b" collides.
-	srv, _ := newInMemoryMounted(t,
+	names, err := mountHTTPFixture(t, reg, "srv",
 		mustTool("a.b", "first", nil, nil),
 		mustTool("a/b", "second", nil, nil),
 	)
-	names, err := Mount(context.Background(), reg, "srv", srv)
 	if err != nil {
-		t.Fatalf("Mount with sanitize-collision must disambiguate, got %v", err)
+		t.Fatalf("mount with sanitize-collision must disambiguate, got %v", err)
 	}
 	if len(names) != 2 {
 		t.Fatalf("both tools must register after disambiguation, got %v", names)

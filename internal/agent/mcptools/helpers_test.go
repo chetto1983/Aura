@@ -6,6 +6,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -51,6 +52,28 @@ func connectClient(ctx context.Context, transport sdkmcp.Transport, o mcp.Sessio
 // server/client pair instead of going through newInMemoryMounted.
 func mcpSessionOptionsFor(srv *MountedServer) mcp.SessionOptions {
 	return mcp.SessionOptions{ToolListChanged: srv.onToolListChanged}
+}
+
+// advertisedTools lists srv's live session the way a mount does (drainTools on the
+// raw session), for a fixture that has no stdio or HTTP transport for MountServer or
+// MountManagedServerWithOptions to open.
+func advertisedTools(ctx context.Context, srv *MountedServer) ([]*sdkmcp.Tool, error) {
+	session, err := srv.currentSession()
+	if err != nil {
+		return nil, err
+	}
+	return drainTools(ctx, session)
+}
+
+// bridgeDefault bridges the tools srv advertises under namespace with the policy a
+// stdio mount derives from the namespace alone (defaultBridgePolicy), through the
+// same bridgeFromAdvertisedWithPolicy production calls once it has listed them.
+func bridgeDefault(ctx context.Context, namespace string, srv *MountedServer) ([]tools.Tool, error) {
+	advertised, err := advertisedTools(ctx, srv)
+	if err != nil {
+		return nil, err
+	}
+	return bridgeFromAdvertisedWithPolicy(namespace, srv, advertised, defaultBridgePolicy(namespace))
 }
 
 // newInMemoryMounted builds a real sdkmcp.NewServer, registers toolDefs with the

@@ -2,6 +2,8 @@ package mcptools
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -92,6 +94,32 @@ func TestActorHeaderFuncCarriesRoleAndRunID(t *testing.T) {
 	}
 }
 
+// decodeRecallSources reads a header value back as its consumer does: unpadded
+// base64url around a versioned JSON envelope. The production decoder is
+// cmd/arcadedb-mcp's, written independently on purpose (tool_memory_recall.go), so
+// this package only needs enough of one to check what recallContextHeaderFunc
+// emits. The canonical re-encode is what pins the wire form: it fails on unknown
+// fields, unsorted or duplicated sources and over-cap payloads.
+func decodeRecallSources(t *testing.T, header string) []recallSourceKey {
+	t.Helper()
+	raw, err := base64.RawURLEncoding.Strict().DecodeString(header)
+	if err != nil {
+		t.Fatalf("active-source header %q is not unpadded base64url: %v", header, err)
+	}
+	var envelope recallContextEnvelope
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		t.Fatalf("active-source header %q is not a JSON envelope: %v", header, err)
+	}
+	if envelope.Version != recallContextVersion {
+		t.Fatalf("active-source header version = %d, want %d", envelope.Version, recallContextVersion)
+	}
+	canonical, err := encodeRecallContextHeader(envelope.Sources)
+	if err != nil || canonical != header {
+		t.Fatalf("active-source header %q is not the canonical encoding of its own sources (%q, %v)", header, canonical, err)
+	}
+	return envelope.Sources
+}
+
 func TestRecallContextHeaders(t *testing.T) {
 	ctx := tools.WithRequestID(context.Background(), "turn-a")
 	ctx = tools.WithToolCallContext(ctx, "conversation-a", "call-a", t.TempDir(), 2048)
@@ -104,10 +132,7 @@ func TestRecallContextHeaders(t *testing.T) {
 	if valueA == "" {
 		t.Fatal("active-source header is absent")
 	}
-	sourcesA, err := decodeRecallContextHeader(valueA)
-	if err != nil {
-		t.Fatalf("decode first active-source header: %v", err)
-	}
+	sourcesA := decodeRecallSources(t, valueA)
 	if len(sourcesA) != 1 || sourcesA[0] != (recallSourceKey{ConversationID: "conversation-a", TurnID: "turn-a"}) {
 		t.Fatalf("first active sources = %+v", sourcesA)
 	}
@@ -119,10 +144,7 @@ func TestRecallContextHeaders(t *testing.T) {
 	if valueB == "" || valueB == valueA {
 		t.Fatalf("reused-session headers are stale: first=%q second=%q", valueA, valueB)
 	}
-	sourcesB, err := decodeRecallContextHeader(valueB)
-	if err != nil {
-		t.Fatalf("decode second active-source header: %v", err)
-	}
+	sourcesB := decodeRecallSources(t, valueB)
 	if len(sourcesB) != 1 || sourcesB[0] != (recallSourceKey{ConversationID: "conversation-b", TurnID: "turn-b"}) {
 		t.Fatalf("second active sources = %+v", sourcesB)
 	}
@@ -131,7 +153,7 @@ func TestRecallContextHeaders(t *testing.T) {
 		t.Fatalf("bare context headers = %v, want nil", got)
 	}
 
-	_, err = encodeRecallContextHeader([]recallSourceKey{{
+	_, err := encodeRecallContextHeader([]recallSourceKey{{
 		ConversationID: strings.Repeat("c", 4096), TurnID: "turn-over-cap",
 	}})
 	if err == nil {
