@@ -222,12 +222,14 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	// ReservationKey (conversation + request + tool_call) without a signature change on
 	// the dispatch chain (Open Q2 — the smaller signature touch).
 	turnCtx = tools.WithRequestID(turnCtx, requestID)
+	turnCtx, turnCleanup := tools.WithTurnCleanup(turnCtx)
 	ic = ic.WithContext(turnCtx)
 
 	return func(yield func(*Event, error) bool) {
 		turnReason := "incomplete"
 		var activeLLMEnd *obs.BoundaryEnd
 		defer func() {
+			runTurnCleanup(ic.Ctx, requestID, turnCleanup)
 			if err := a.hooks.OnTurnEnd(ic.Ctx, a.hookTurn(ic, turnReason)); err != nil {
 				reasoningtrace.Record("agent_hook_turn_end_error", map[string]any{
 					"request_id": requestID,
