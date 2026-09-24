@@ -7,6 +7,7 @@ export MSYS_NO_PATHCONV=1
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
+source "$repo_root/scripts/ingest_embed_env.sh"
 candidate_sha="$(git rev-parse HEAD)"
 
 # Which phases run. `full` is the operator's gate and stays the default: reconciliation
@@ -69,13 +70,7 @@ done
 
 arcade_pw="$(docker inspect aura-arcadedb --format '{{range .Config.Env}}{{println .}}{{end}}' \
   | grep -oP '(?<=rootPassword=)\S+')"
-settings_db_url=""
-while IFS= read -r entry; do
-  case "$entry" in
-    AURA_DB_URL=*) settings_db_url="${entry#AURA_DB_URL=}" ;;
-  esac
-done < <(docker inspect aura-ingest --format '{{range .Config.Env}}{{println .}}{{end}}')
-[ -n "$settings_db_url" ] || { echo "FAIL: aura-ingest has no AURA_DB_URL" >&2; exit 1; }
+settings_db_url="$(ingest_container_env AURA_DB_URL)"
 
 scratch="$(mktemp -d)"
 access_key=""
@@ -97,6 +92,7 @@ run_py() {  # run_py <heredoc-on-stdin>, with ARCADE_*/S3_* already exported bel
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
     -v "$repo_root/scripts/fixtures/document_pipeline_e2e:/fixtures:ro" \
     -v "$retrieval_fixture/corpus:/retrieval-corpus:ro" \
+    --env-file "$embed_env" \
     --entrypoint python "$img" -
 }
 
@@ -182,6 +178,8 @@ PY
   exit "$ec"
 }
 trap cleanup EXIT
+embed_env="$scratch/embed.env"
+ingest_embed_env "$img" "$net" "$embed_env"
 
 echo "== disposable fixtures: bucket=$bucket db=$arcade_db identity=$identity_id =="
 key_output="$(docker exec aura-garage /garage key create "$key_name" 2>&1)"
@@ -191,8 +189,8 @@ secret_key="$(printf '%s\n' "$key_output" | grep -oP '(?<=Secret key:)\s*\K\S+')
 docker exec aura-garage /garage bucket create "$bucket" >/dev/null
 docker exec aura-garage /garage bucket allow --read --write --owner "$bucket" --key "$access_key" >/dev/null
 
-# EXTRACT_COUNT is set by run_pass -- the number of "[extract] <key>" lines printed,
-# which app.py's process_file logs only when memo=True actually let its body execute.
+# EXTRACT_COUNT is set by run_pass -- the number of "[extract] <name>" lines printed,
+# which app.py's _extract logs only when memo=True actually let its body execute.
 # Zero on an unchanged rerun is wiring probe 1; the log line IS the observable.
 EXTRACT_COUNT=0
 run_pass() {
@@ -209,6 +207,7 @@ run_pass() {
     -e AURA_INGEST_IDENTITY_ID="$identity_id" \
     -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
+    --env-file "$embed_env" \
     -v "$volume:/state" \
     --entrypoint python "$img" -m ingest.app > "$log" 2>&1; then
     cat "$log" >&2
@@ -283,7 +282,7 @@ names = {f.name for f in dataclasses.fields(m.Passage)}
 expected = {
     "passage_key", "search_document_id", "source_kind", "source_key", "raw_sha256",
     "schema_version", "ordinal", "text", "normalized_text_sha256", "heading_path",
-    "char_start", "char_end", "embedding",
+    "char_start", "char_end", "embedding", "embed_space",
 }
 assert names == expected, f"Passage field set drifted from arcade.py's DDL: {names ^ expected}"
 print(f"ok: Passage declares exactly {len(expected)} populated fields")
@@ -301,11 +300,14 @@ row = rows[0]
 populated = {
     "passage_key", "search_document_id", "source_kind", "source_key", "raw_sha256",
     "schema_version", "ordinal", "text", "normalized_text_sha256", "heading_path",
-    "char_start", "char_end", "embedding",
+    "char_start", "char_end", "embedding", "embed_space",
 }
 missing = populated - row.keys()
 assert not missing, f"missing fields that should always be non-null: {sorted(missing)}"
 assert len(row["embedding"]) == 768, f"embedding width {len(row['embedding'])} != 768"
+# The child got its route from the supervisor binary (ingest_embed_env), so its stamp is
+# the space the daemon compares against, not one this script chose.
+assert row["embed_space"] == os.environ["AURA_EMBED_SPACE"], (row["embed_space"], os.environ["AURA_EMBED_SPACE"])
 assert row["schema_version"] and row["raw_sha256"]
 print(f"ok: all {len(populated)} declared fields are populated live")
 PY
@@ -412,6 +414,7 @@ container_id="$(docker run -d --network "$net" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
   -e AURA_INGEST_LIVE=1 -e AURA_INGEST_INTERVAL_SEC=5 \
+  --env-file "$embed_env" \
   -v "$volume:/state" --entrypoint python "$img" -m ingest.app)"
 sleep 3
 run_py <<'PY'
@@ -480,6 +483,7 @@ if ! docker run --rm --network "$net" \
   -e AURA_INGEST_IDENTITY_ID="$identity_id_b" \
   -e AURA_INGEST_S3_ENDPOINT="http://aura-garage:3900" -e AURA_INGEST_S3_BUCKET="$bucket_b" \
   -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key_b" -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key_b" \
+  --env-file "$embed_env" \
   -v "$volume_b:/state" --entrypoint python "$img" -m ingest.app >"$scratch/run-b.log" 2>&1; then
   cat "$scratch/run-b.log" >&2
   exit 1

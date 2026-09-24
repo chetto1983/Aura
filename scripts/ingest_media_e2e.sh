@@ -5,6 +5,7 @@ export MSYS_NO_PATHCONV=1
 
 repo_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$repo_root"
+source "$repo_root/scripts/ingest_embed_env.sh"
 
 image="${AURA_INGEST_IMAGE:-aura-ingest:local}"
 network="${AURA_NETWORK:-aura_default}"
@@ -18,7 +19,7 @@ scratch="$(mktemp -d)"
 access_key=""
 secret_key=""
 
-for container in aura-arcadedb aura-garage aura-llama-embed aura-stt aura-tts; do
+for container in aura-arcadedb aura-garage aura-llama-embed aura-ingest aura-stt aura-tts; do
   if [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)" != "true" ]; then
     echo "FAIL: $container is not running" >&2
     exit 1
@@ -87,6 +88,8 @@ PY
   exit "$exit_code"
 }
 trap cleanup EXIT
+embed_env="$scratch/embed.env"
+ingest_embed_env "$image" "$network" "$embed_env"
 
 key_output="$(docker exec aura-garage /garage key create "$key_name" 2>&1)"
 access_key="$(printf '%s\n' "$key_output" | grep -oP '(?<=Key ID:)\s*\K\S+')"
@@ -144,11 +147,11 @@ run_ingest() {
     -e STT_LANGUAGE=it -e AURA_STT_CLOUD_MODEL= -e MULTIMODAL_TIMEOUT_SEC=120 \
     -e ARCADEDB_PASSWORD="$arcade_password" -e ARCADE_HTTP=http://aura-arcadedb:2480 \
     -e ARCADE_BOLT=bolt://aura-arcadedb:7687 \
-    -e AURA_EMBED_BASE_URL=http://aura-llama-embed:8081 \
     -e AURA_INGEST_IDENTITY_ID="$identity_id" \
     -e AURA_INGEST_S3_ENDPOINT=http://aura-garage:3900 -e AURA_INGEST_S3_BUCKET="$bucket" \
     -e AURA_INGEST_S3_ACCESS_KEY_ID="$access_key" \
     -e AURA_INGEST_S3_SECRET_ACCESS_KEY="$secret_key" \
+    --env-file "$embed_env" \
     -v "$state_volume:/state" --entrypoint python "$image" -m ingest.app
 }
 
