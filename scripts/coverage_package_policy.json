@@ -36,6 +36,7 @@
     "github.com/chetto1983/aura/internal/embeddings": {"mode": "target"},
     "github.com/chetto1983/aura/internal/envutil": {"mode": "target"},
     "github.com/chetto1983/aura/internal/gateway": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/hostupdate": {"mode": "target"},
     "github.com/chetto1983/aura/internal/idempotency": {"mode": "target"},
     "github.com/chetto1983/aura/internal/identity": {"mode": "target"},
     "github.com/chetto1983/aura/internal/identityctx": {"mode": "target"},
