@@ -11,7 +11,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
-	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 // ProductionRetrievalProfile is stamped on every response so a citation stored today can
@@ -48,6 +47,11 @@ const (
 	// why it stopped sharing DegradationArcade's name (measured 2026-09-06: the two
 	// were indistinguishable on the wire and neither was logged).
 	DegradationUnconfigured = "passage_index_unconfigured"
+	// DegradationSpaceMismatch: the library holds vectors from another embedding space, or
+	// the space moved while the query was embedded; ranking across two spaces is meaningless
+	// (spec §3). DegradationSpaceCheck: the gate that decides it could not be read.
+	DegradationSpaceMismatch = "embedding_space_mismatch"
+	DegradationSpaceCheck    = "embedding_space_check_failed"
 
 	// AbstainedNoQualifiedPassage is the healthy cascade reporting that the corpus has
 	// nothing to say. It is NOT a degradation: every leg ran, and the dense floor let
@@ -79,6 +83,9 @@ type RetrievalResponse struct {
 	Profile           string          `json:"profile"`
 	Status            RetrievalStatus `json:"status"`
 	DegradationReason string          `json:"degradation_reason,omitempty"`
+	// FloorsReason is "uncalibrated_floors" when a dense answer was admitted by relevance
+	// floors never measured for its embedding space (spec §9). It is not a degradation.
+	FloorsReason string `json:"floors_reason,omitempty"`
 	// Abstained says the corpus could not answer, so the caller must not treat the empty
 	// document list as a retrieval failure -- and must not answer from its own knowledge
 	// as though the library had agreed. It mirrors memory_search's own contract.
@@ -198,9 +205,9 @@ type RetrievalCard struct {
 // RetrievalControlPlane bounds identity scope and routes IndexedDocument cards in ArcadeDB.
 type RetrievalControlPlane interface {
 	ResolveDocumentScope(context.Context, string, []string) ([]string, error)
-	RouteDocumentCards(
-		context.Context, string, string, []float64, []string, []SourceScope, int,
-	) ([]RetrievalCard, error)
+	// DocumentsDenseOpen: every document vector the identity holds is in the space.
+	DocumentsDenseOpen(ctx context.Context, identityID, space string) (bool, error)
+	RouteDocumentCards(context.Context, CardQuery) ([]RetrievalCard, error)
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
@@ -258,7 +265,7 @@ type RetrievalConfig struct {
 type HostRetriever struct {
 	ControlPlane RetrievalControlPlane
 	PassageIndex PassageIndex
-	Embedder     embeddings.Embedder
+	Embedder     QueryEmbedder
 	Config       RetrievalConfig
 	// degradations rate-limits the WARN that names why a leg was lost (see
 	// retrieval_degradation.go). The zero value logs every distinct cause once per
@@ -293,21 +300,21 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		Query: request.Query, Profile: ProductionRetrievalProfile,
 		Status: RetrievalComplete, Documents: []RetrievalDocument{},
 	}
-	// The embedding now comes before BOTH legs, because both are scored against it: the
-	// card leg ranks a description by the same reranked cosine the passage leg ranks text
-	// by, which is what lets one be weighed against the other at all. Without a vector
-	// there is no comparable score for either, so this degrades with no documents rather
-	// than answering from an unranked card list.
-	vectors, embedErr := r.embedQuery(ctx, request.Query)
-	if embedErr != nil {
-		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationEmbedding
-		r.degradations.warn(DegradationEmbedding, embedErr.Error(), request.IdentityID)
+	// The dense legs run only over a library wholly in the query's space (spec §3). Both are
+	// scored against the query vector, so without one neither can run.
+	dense, reason, cause := r.denseQuery(ctx, request.IdentityID, request.Query)
+	if reason != "" {
+		response.Status, response.DegradationReason = RetrievalCardOnly, reason
+		r.degradations.warn(reason, cause.Error(), request.IdentityID)
 		return response, nil
 	}
-	cards, err := r.ControlPlane.RouteDocumentCards(
-		ctx, request.IdentityID, request.Query, vectors, scope, request.SourceScopes,
-		cfg.CandidateLimit,
-	)
+	if !arcadedb.FloorsCalibrated(dense.space) {
+		response.FloorsReason = arcadedb.ReasonUncalibratedFloors
+	}
+	cards, err := r.ControlPlane.RouteDocumentCards(ctx, CardQuery{
+		IdentityID: request.IdentityID, Query: request.Query, Vector: dense.vector, Space: dense.space,
+		DocumentIDs: scope, SourceScopes: request.SourceScopes, Limit: cfg.CandidateLimit,
+	})
 	if err != nil {
 		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
 	}
@@ -322,7 +329,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 		IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
 		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
-		Query: request.Query, Embedding: vectors, Strategy: cfg.FusionStrategy,
+		Query: request.Query, Embedding: dense.vector, Space: dense.space, Strategy: cfg.FusionStrategy,
 	})
 	if err != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
@@ -336,7 +343,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	// and a passage by a cosine, so a card could not be weighed against anything and
 	// letting it answer by itself is how "ricetta della carbonara" came back with three
 	// worker reports. Both legs now score the same reranked cosine and BOTH are cut by the
-	// same RelevanceFloor, so a card that survived it is qualified evidence -- it says
+	// same relevance floor (arcadedb relevance_floors.go), so a card that survived it is qualified evidence -- it says
 	// which FILE knows the answer, and requires_open says how to read it.
 	//
 	// Keeping the old rule silently deleted the only kind of document that can never have
@@ -411,20 +418,6 @@ func (r *HostRetriever) passageLegNames(
 		return nil
 	}
 	return names
-}
-
-func (r *HostRetriever) embedQuery(ctx context.Context, query string) ([]float64, error) {
-	if r.Embedder == nil {
-		return nil, fmt.Errorf("documents: retrieval embedder is not configured")
-	}
-	vectors, err := r.Embedder.Embed(ctx, embeddings.RetrievalQueries([]string{query}))
-	if err != nil {
-		return nil, err
-	}
-	if len(vectors) != 1 {
-		return nil, fmt.Errorf("documents: embedder returned %d vectors, want 1", len(vectors))
-	}
-	return vectors[0], nil
 }
 
 func normalizeRetrievalRequest(request RetrievalRequest, cfg RetrievalConfig) (RetrievalRequest, RetrievalConfig, error) {

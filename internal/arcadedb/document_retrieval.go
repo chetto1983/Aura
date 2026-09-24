@@ -59,7 +59,10 @@ type FusedCandidateQuery struct {
 	CandidateFilter
 	Query     string
 	Embedding []float64
-	Strategy  FusionStrategy
+	// Space is the space Embedding is in. Both sub-pipelines read only rows stamped with it
+	// (spec §3), and the floors are the ones measured for it (spec §9).
+	Space    string
+	Strategy FusionStrategy
 }
 
 // PassageCandidate is an immutable passage plus its provenance and locator evidence.
@@ -77,7 +80,7 @@ type PassageCandidate struct {
 	CharacterSpan    *CharacterSpan
 	Leg              RetrievalLeg
 	// FusedScore is the reranked cosine of the passage against the query, higher-is-better,
-	// and it is bounded below by RelevanceFloor because a passage under the floor never
+	// and it is bounded below by the documents' relevance floor (relevance_floors.go) because a passage under the floor never
 	// leaves the engine. It used to be the fusion's reciprocal-rank sum, 1/(60+rank) per
 	// matching source; that number described WHICH legs agreed, never how relevant the
 	// passage was, so an operator reading it learned nothing about the answer's quality.
@@ -100,12 +103,9 @@ func (d *DocumentIndex) FusedCandidates(
 	if err != nil {
 		return nil, err
 	}
-	query := strings.TrimSpace(request.Query)
-	if query == "" {
-		return nil, fmt.Errorf("arcadedb: document fused query must be non-empty")
-	}
-	if utf8.RuneCountInString(query) > d.config.MaxQueryRunes {
-		return nil, fmt.Errorf("arcadedb: document query exceeds %d characters", d.config.MaxQueryRunes)
+	query, err := d.validQuery(request.Query)
+	if err != nil {
+		return nil, err
 	}
 	if err := validateDenseVector(request.Embedding, d.config.Dimensions); err != nil {
 		return nil, err
@@ -119,16 +119,17 @@ func (d *DocumentIndex) FusedCandidates(
 	default:
 		return nil, fmt.Errorf("arcadedb: unknown fusion strategy %q", strategy)
 	}
+	where, params := candidateWhere(filter)
+	if where, err = bindDense(where, params, request.Space); err != nil {
+		return nil, err
+	}
 	client, err := d.tenantClient(ctx, filter.IdentityID)
 	if err != nil {
 		return nil, err
 	}
-	where, params := candidateWhere(filter)
 	params["embedding"] = append([]float64(nil), request.Embedding...)
 	params["query"] = escapeLucene(query)
 	params["fetch"] = fusedDenseNeighbours
-	params["max_distance"] = d.config.DenseMaxDistance
-	params["min_relevance"] = d.config.RelevanceFloor
 	// Over-fetch the rerank: the relevance floor runs after it, so scoring only `limit`
 	// candidates would let a rejected one cost a slot a qualifying passage could have filled.
 	params["candidates"] = min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
@@ -142,6 +143,28 @@ func (d *DocumentIndex) FusedCandidates(
 	return d.decodeCandidates(rows, RetrievalLegFused, filter.Limit)
 }
 
+// validQuery trims a document query and bounds it.
+func (d *DocumentIndex) validQuery(query string) (string, error) {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return "", fmt.Errorf("arcadedb: document query must be non-empty")
+	}
+	if utf8.RuneCountInString(query) > d.config.MaxQueryRunes {
+		return "", fmt.Errorf("arcadedb: document query exceeds %d characters", d.config.MaxQueryRunes)
+	}
+	return query, nil
+}
+
+// bindDense extends a candidate scope to the query's space and binds that space's floors.
+func bindDense(where string, params map[string]any, space string) (string, error) {
+	if strings.TrimSpace(space) == "" {
+		return "", fmt.Errorf("arcadedb: a dense document read needs the query's embedding space")
+	}
+	floors := documentFloors(space)
+	params["space"], params["max_distance"], params["min_relevance"] = space, floors.maxDistance, floors.minRelevance
+	return where + denseSpaceFilter, nil
+}
+
 // fusedStatement is the measured query, parameter for parameter. No outer ORDER BY:
 // `vector.rerank` returns descending by its own score -- measured 2026-09-09 on the live
 // corpus, 0.7530/0.7314/0.7291/0.7216/0.7183/0.7063 in that order.
@@ -151,7 +174,7 @@ func (d *DocumentIndex) FusedCandidates(
 // same number whether it is right or wrong: measured the same day, all five out-of-corpus
 // questions scored exactly 0.016393442, while a correct filename lookup found by ONE leg
 // scored that identical 0.016393442 and reranked to 0.7651. Thresholding the fused rank
-// would therefore have rejected a perfect match and kept a nonsense one. See RelevanceFloor.
+// would therefore have rejected a perfect match and kept a nonsense one. See embeddingGemmaFloors.
 // The group key is the CONTENT hash, not the document id. One file uploaded and also
 // attached to a chat is two S3 objects and therefore two IndexedDocument rows -- correctly,
 // since CocoIndex reconciles a row and its passages together -- but it is one file to

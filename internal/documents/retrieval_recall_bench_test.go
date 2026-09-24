@@ -57,6 +57,10 @@ func TestProductionRetrievalRecall(t *testing.T) {
 		t.Fatalf("admin client: %v", err)
 	}
 	embedder := arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: benchEnv(t, "AURA_EMBED_BASE_URL")}, nil)
+	space, err := embedder.Space(ctx)
+	if err != nil {
+		t.Fatalf("embedding space: %v", err)
+	}
 	tenants := arcadedb.NewTenantClients(arcadedb.Config{BaseURL: benchEnv(t, "AURA_ARCADEDB_URL")}, admin, embedder, credentials)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{Dimensions: 768})
 	if err != nil {
@@ -77,22 +81,14 @@ func TestProductionRetrievalRecall(t *testing.T) {
 		filter := arcadedb.CandidateFilter{IdentityID: identity, Limit: cfg.CandidateLimit}
 		// The card leg is the same for both arms: only the passage ordering is under test,
 		// and a card-only document like a spreadsheet reaches the ranking through it.
-		found, err := index.DocumentCardsScoped(ctx, filter, question.Query, vectors[0])
+		found, err := index.DocumentCardsScoped(ctx, filter, question.Query, vectors[0], space.ID)
 		if err != nil {
 			t.Fatalf("cards %q: %v", question.QID, err)
 		}
-		cards := make([]RetrievalCard, 0, len(found))
-		for _, card := range found {
-			cards = append(cards, RetrievalCard{
-				DocumentID: card.SearchDocumentID, Title: card.FileName,
-				SourceKind: card.SourceKind, SourceKey: card.SourceKey, Card: card.Card,
-				Rank: card.Score, OriginalSHA256: card.RawSHA256,
-				NormalizedSHA256: card.NormalizedSHA256,
-			})
-		}
+		cards := retrievalCards(found)
 		fused, err := index.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 			CandidateFilter: filter, Query: question.Query,
-			Embedding: vectors[0], Strategy: cfg.FusionStrategy,
+			Embedding: vectors[0], Space: space.ID, Strategy: cfg.FusionStrategy,
 		})
 		if err != nil {
 			t.Fatalf("fuse %q: %v", question.QID, err)

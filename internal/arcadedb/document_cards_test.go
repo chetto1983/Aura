@@ -41,7 +41,7 @@ func TestDocumentCardsAnswerAnUnscopedQuery(t *testing.T) {
 		})}
 	})
 
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "Torino", documentCardVector(), 3)
+	cards, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "Torino", documentCardVector(), "es1-docs")
 	if err != nil {
 		t.Fatalf("DocumentCards: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestDocumentCardsApplyTheSameDocumentAndSourceScope(t *testing.T) {
 		IdentityID: documentTestIdentity, Limit: 3,
 		DocumentIDs: []string{"doc_" + strings.Repeat("a", 32)},
 		SourceKeys:  []string{"manual.pdf"}, SourcePrefixes: []string{"finance/"},
-	}, "Torino", documentCardVector())
+	}, "Torino", documentCardVector(), "es1-docs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestDocumentCardsAcceptADocumentWithoutACard(t *testing.T) {
 		row := documentCardFixture("doc_"+strings.Repeat("b", 32), "rotto.zip", "")
 		return testResponse{Body: resultBody([]any{row})}
 	})
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "rotto", documentCardVector(), 3)
+	cards, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "rotto", documentCardVector(), "es1-docs")
 	if err != nil || len(cards) != 1 || cards[0].Card != "" {
 		t.Fatalf("cards = %+v, err = %v", cards, err)
 	}
@@ -115,7 +115,7 @@ func TestDocumentCardsRejectMalformedRows(t *testing.T) {
 				mutate(row)
 				return testResponse{Body: resultBody([]any{row})}
 			})
-			if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "x", documentCardVector(), 3); err == nil {
+			if _, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "x", documentCardVector(), "es1-docs"); err == nil {
 				t.Fatal("malformed card accepted")
 			}
 		})
@@ -130,7 +130,7 @@ func TestDocumentCardsRejectDuplicates(t *testing.T) {
 		row := documentCardFixture("doc_"+strings.Repeat("d", 32), "due.xlsx", "spreadsheet")
 		return testResponse{Body: resultBody([]any{row, row})}
 	})
-	if _, err := index.DocumentCards(t.Context(), documentTestIdentity, "due", documentCardVector(), 3); err == nil {
+	if _, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "due", documentCardVector(), "es1-docs"); err == nil {
 		t.Fatal("duplicate card accepted")
 	}
 }
@@ -138,19 +138,19 @@ func TestDocumentCardsRejectDuplicates(t *testing.T) {
 func TestDocumentCardsValidateTheRequestBeforeIO(t *testing.T) {
 	for name, run := range map[string]func(*DocumentIndex) error{
 		"empty query": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "  ", documentCardVector(), 3)
+			_, err := i.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "  ", documentCardVector(), "es1-docs")
 			return err
 		},
 		"long query": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, strings.Repeat("x", 41), documentCardVector(), 3)
+			_, err := i.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, strings.Repeat("x", 41), documentCardVector(), "es1-docs")
 			return err
 		},
 		"limit above cap": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), documentTestIdentity, "x", documentCardVector(), 5000)
+			_, err := i.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 5000}, "x", documentCardVector(), "es1-docs")
 			return err
 		},
 		"empty identity": func(i *DocumentIndex) error {
-			_, err := i.DocumentCards(t.Context(), "", "x", documentCardVector(), 5)
+			_, err := i.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: "", Limit: 5}, "x", documentCardVector(), "es1-docs")
 			return err
 		},
 	} {
@@ -267,7 +267,7 @@ func TestDocumentCardsCarryIndexedAt(t *testing.T) {
 		return testResponse{Body: resultBody([]any{row})}
 	})
 
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "meteo", documentCardVector(), 3)
+	cards, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "meteo", documentCardVector(), "es1-docs")
 	if err != nil {
 		t.Fatalf("DocumentCards: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestDocumentCardsAcceptARecordWithoutIndexedAt(t *testing.T) {
 		return testResponse{Body: resultBody([]any{documentCardFixture(
 			"doc_"+strings.Repeat("f", 32), "vecchio.pdf", "PDF")})}
 	})
-	cards, err := index.DocumentCards(t.Context(), documentTestIdentity, "vecchio", documentCardVector(), 3)
+	cards, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, "vecchio", documentCardVector(), "es1-docs")
 	if err != nil {
 		t.Fatalf("a record predating indexed_at was refused: %v", err)
 	}

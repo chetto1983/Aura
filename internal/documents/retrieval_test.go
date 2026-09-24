@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 const (
@@ -22,12 +23,22 @@ type fakeRetrievalControl struct {
 	scope             []string
 	cardDocumentScope []string
 	cardEmbedding     []float64
+	cardSpace         string
 	cardSourceScope   []SourceScope
 	cards             []RetrievalCard
 	names             map[string]string
 	namesRequest      []string
 	namesErr          error
 	err               error
+	// closed answers the documents gate "a vector is in another space"; gateErr fails it.
+	closed    bool
+	gateErr   error
+	gateSpace string
+}
+
+func (f *fakeRetrievalControl) DocumentsDenseOpen(_ context.Context, _ string, space string) (bool, error) {
+	f.gateSpace = space
+	return !f.closed, f.gateErr
 }
 
 func (f *fakeRetrievalControl) DocumentNames(
@@ -50,13 +61,11 @@ func (f *fakeRetrievalControl) ResolveDocumentScope(
 	return append([]string(nil), f.scope...), nil
 }
 
-func (f *fakeRetrievalControl) RouteDocumentCards(
-	_ context.Context, _ string, _ string, embedding []float64,
-	documentIDs []string, sourceScopes []SourceScope, _ int,
-) ([]RetrievalCard, error) {
-	f.cardEmbedding = append([]float64(nil), embedding...)
-	f.cardDocumentScope = append([]string(nil), documentIDs...)
-	f.cardSourceScope = append([]SourceScope(nil), sourceScopes...)
+func (f *fakeRetrievalControl) RouteDocumentCards(_ context.Context, query CardQuery) ([]RetrievalCard, error) {
+	f.cardEmbedding = append([]float64(nil), query.Vector...)
+	f.cardSpace = query.Space
+	f.cardDocumentScope = append([]string(nil), query.DocumentIDs...)
+	f.cardSourceScope = append([]SourceScope(nil), query.SourceScopes...)
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -96,6 +105,22 @@ type fakeRetrievalEmbedder struct {
 	inputs []string
 	vector []float64
 	err    error
+	// spaces are answered in order, the last one repeated; "es1-docs" when empty.
+	spaces     []string
+	spaceErr   error
+	spaceCalls int
+}
+
+func (f *fakeRetrievalEmbedder) Space(context.Context) (embeddings.Space, error) {
+	if f.spaceErr != nil {
+		return embeddings.Space{}, f.spaceErr
+	}
+	space := "es1-docs"
+	if len(f.spaces) > 0 {
+		space = f.spaces[min(f.spaceCalls, len(f.spaces)-1)]
+	}
+	f.spaceCalls++
+	return embeddings.Space{ID: space}, nil
 }
 
 func (f *fakeRetrievalEmbedder) Embed(_ context.Context, inputs []string) ([][]float64, error) {
@@ -397,7 +422,7 @@ func retrievalCandidate(leg arcadedb.RetrievalLeg) arcadedb.PassageCandidate {
 //
 // NEITHER leg qualifies here, which is what abstention now means. The fixture used to hand
 // back a card while asserting abstention, and that is a state the engine cannot produce:
-// both legs are cut by the same RelevanceFloor, so a card that reaches this code has
+// both legs are cut by the same relevance floor, so a card that reaches this code has
 // already passed it. Asserting on the impossible state hid the case below.
 func TestHostRetrieverAbstainsWhenNeitherLegQualifies(t *testing.T) {
 	control := &fakeRetrievalControl{}

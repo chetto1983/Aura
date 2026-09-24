@@ -37,7 +37,7 @@ func TestDocumentReadsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
 	t.Run("cards", func(t *testing.T) {
 		cards, err := missingTypeIndex(t).DocumentCardsScoped(
 			t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 2}, "anything",
-			documentCardVector())
+			documentCardVector(), "es1-docs")
 		if err != nil {
 			t.Fatalf("DocumentCardsScoped returned an error for an empty library: %v", err)
 		}

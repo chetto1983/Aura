@@ -33,13 +33,69 @@ func TestFusedStatementReranksBeforeScoring(t *testing.T) {
 	}
 }
 
-func TestDocumentConfigDefaultsTheRelevanceFloor(t *testing.T) {
-	cfg, err := DocumentIndexConfig{Dimensions: 768}.normalized()
-	if err != nil {
+// A vector from another space is never ranked, even inside the 30 s a cached "open" gate
+// lives (Review Focus 3). Both sub-pipelines carry the predicate: the neighbours' filter, and
+// the lexical candidates vector.rerank re-scores against their stored vectors.
+func TestDenseDocumentLegsReadOnlyTheQuerysSpace(t *testing.T) {
+	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	if _, err := index.FusedCandidates(t.Context(), fusedFixtureQuery("clienti")); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.RelevanceFloor != defaultDocumentRelevanceFloor {
-		t.Fatalf("relevance floor = %v, want %v", cfg.RelevanceFloor, defaultDocumentRelevanceFloor)
+	if _, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 2},
+		"clienti", documentCardVector(), "es1-docs"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*requests) != 2 {
+		t.Fatalf("requests = %d, want the fused and the card statement", len(*requests))
+	}
+	for _, request := range *requests {
+		statement, _ := request.Payload["command"].(string)
+		params, _ := request.Payload["params"].(map[string]any)
+		if strings.Count(statement, denseSpaceFilter) != 2 || params["space"] != "es1-docs" {
+			t.Fatalf("a dense document leg can rank another space's vector:\n%s\nparams=%v", statement, params)
+		}
+	}
+}
+
+// The floors are EmbeddingGemma's measured ones in its space and, lacking a row, in any
+// other: the table changes nothing a healthy library returns today.
+func TestDocumentLegsTakeTheirFloorsFromTheQuerysSpace(t *testing.T) {
+	for _, space := range []string{embeddingGemmaSpace, "es1-never-measured"} {
+		index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+			return testResponse{Body: `{"result":[]}`}
+		})
+		query := fusedFixtureQuery("clienti")
+		query.Space = space
+		if _, err := index.FusedCandidates(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+		params := (*requests)[0].Payload["params"].(map[string]any)
+		if params["max_distance"] != 0.72 || params["min_relevance"] != 0.32 {
+			t.Fatalf("space %s: floors = %v / %v, want 0.72 / 0.32", space, params["max_distance"], params["min_relevance"])
+		}
+	}
+	if !FloorsCalibrated(embeddingGemmaSpace) || FloorsCalibrated("es1-never-measured") {
+		t.Fatal("FloorsCalibrated disagrees with the table")
+	}
+}
+
+func TestDenseDocumentLegsRefuseAQueryWithoutItsSpace(t *testing.T) {
+	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	query := fusedFixtureQuery("clienti")
+	query.Space = ""
+	if _, err := index.FusedCandidates(t.Context(), query); err == nil {
+		t.Fatal("a fused read without the query's space ran")
+	}
+	if _, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 2},
+		"clienti", documentCardVector(), " "); err == nil {
+		t.Fatal("a card read without the query's space ran")
+	}
+	if len(*requests) != 0 {
+		t.Fatalf("requests = %d, want none", len(*requests))
 	}
 }
 

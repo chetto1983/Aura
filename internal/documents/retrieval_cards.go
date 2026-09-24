@@ -42,28 +42,51 @@ func (c *ArcadeRetrievalControlPlane) DocumentNames(
 	return c.Index.DocumentNames(ctx, identityID, documentIDs)
 }
 
+// CardQuery is one card-leg request: the query and its scope, and for the dense leg the
+// query's vector and the space it is in.
+type CardQuery struct {
+	IdentityID   string
+	Query        string
+	Vector       []float64
+	Space        string
+	DocumentIDs  []string
+	SourceScopes []SourceScope
+	Limit        int
+}
+
+func (q CardQuery) filter() arcadedb.CandidateFilter {
+	sourceKeys, sourcePrefixes := ArcadeSourceFilters(q.SourceScopes)
+	return arcadedb.CandidateFilter{
+		IdentityID: q.IdentityID, Limit: q.Limit, DocumentIDs: q.DocumentIDs,
+		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
+	}
+}
+
+// DocumentsDenseOpen asks the identity's documents gate (arcadedb embedding_space.go).
+func (c *ArcadeRetrievalControlPlane) DocumentsDenseOpen(
+	ctx context.Context, identityID, space string,
+) (bool, error) {
+	if c == nil || c.Index == nil {
+		return false, errRetrievalControlPlaneUnset
+	}
+	return c.Index.DocumentsDenseOpen(ctx, identityID, space)
+}
+
 // RouteDocumentCards ranks documents by their own description inside the exact same scope
-// as the passage leg. This is load-bearing in card-only degradation: an ignored filter here
-// would turn a scoped search into an unscoped one precisely when embeddings are unavailable.
-func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
-	ctx context.Context,
-	identityID, query string,
-	embedding []float64,
-	documentIDs []string,
-	sourceScopes []SourceScope,
-	limit int,
-) ([]RetrievalCard, error) {
+// as the passage leg. An ignored filter here would turn a scoped search into an unscoped one.
+func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(ctx context.Context, q CardQuery) ([]RetrievalCard, error) {
 	if c == nil || c.Index == nil {
 		return nil, errRetrievalControlPlaneUnset
 	}
-	sourceKeys, sourcePrefixes := ArcadeSourceFilters(sourceScopes)
-	found, err := c.Index.DocumentCardsScoped(ctx, arcadedb.CandidateFilter{
-		IdentityID: identityID, Limit: limit, DocumentIDs: documentIDs,
-		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
-	}, query, embedding)
+	found, err := c.Index.DocumentCardsScoped(ctx, q.filter(), q.Query, q.Vector, q.Space)
 	if err != nil {
 		return nil, err
 	}
+	return retrievalCards(found), nil
+}
+
+// retrievalCards is ArcadeDB's card record as the ranking reads it.
+func retrievalCards(found []arcadedb.DocumentCard) []RetrievalCard {
 	cards := make([]RetrievalCard, 0, len(found))
 	for _, card := range found {
 		cards = append(cards, RetrievalCard{
@@ -82,5 +105,5 @@ func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(
 			IndexedAt:        card.IndexedAt,
 		})
 	}
-	return cards, nil
+	return cards
 }

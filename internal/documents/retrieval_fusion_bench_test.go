@@ -128,6 +128,10 @@ func TestFusionBenchmark(t *testing.T) {
 		t.Fatalf("admin client: %v", err)
 	}
 	embedder := arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil)
+	space, err := embedder.Space(ctx)
+	if err != nil {
+		t.Fatalf("embedding space: %v", err)
+	}
 	tenants := arcadedb.NewTenantClients(arcadedb.Config{BaseURL: baseURL}, admin, embedder, credentials)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{Dimensions: 768})
 	if err != nil {
@@ -155,7 +159,8 @@ func TestFusionBenchmark(t *testing.T) {
 		if err != nil || len(vectors) != 1 {
 			t.Fatalf("embed %q: %v", question.QID, err)
 		}
-		cards, err := index.DocumentCards(ctx, identity, question.Query, vectors[0], cfg.CandidateLimit)
+		cards, err := index.DocumentCardsScoped(ctx, arcadedb.CandidateFilter{IdentityID: identity, Limit: cfg.CandidateLimit},
+			question.Query, vectors[0], space.ID)
 		if err != nil {
 			t.Fatalf("cards %q: %v", question.QID, err)
 		}
@@ -170,7 +175,7 @@ func TestFusionBenchmark(t *testing.T) {
 		for armIndex, fusion := range strategies {
 			fused, err := index.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
 				CandidateFilter: filter, Query: question.Query,
-				Embedding: vectors[0], Strategy: fusion,
+				Embedding: vectors[0], Space: space.ID, Strategy: fusion,
 			})
 			if err != nil {
 				t.Fatalf("fuse %s %q: %v", fusion, question.QID, err)

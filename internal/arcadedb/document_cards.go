@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // IndexedDocumentType is the vertex type services/ingest writes one record per object to.
@@ -77,8 +76,6 @@ type DocumentCard struct {
 	IndexedAt time.Time
 }
 
-// documentCardFields is every property the reader consumes, in the order decodeCard reads
-// them. file_name_words is deliberately absent: it exists only to be indexed.
 // documentCardStatement scores a card the way a passage is scored, and that is the whole
 // point: the two legs used to speak different languages -- BM25 here, a reranked cosine
 // there -- so nothing could weigh one against the other and rankDocuments fell back to a
@@ -107,49 +104,31 @@ func documentCardStatement(where string, limit int) string {
 		" LIMIT " + strconv.Itoa(limit)
 }
 
+// documentCardFields is every property the reader consumes, in the order decodeCard reads
+// them. file_name_words is deliberately absent: it exists only to be indexed.
 const documentCardFields = "search_document_id, source_kind, source_key, file_name, " +
 	"raw_sha256, normalized_text_sha256, size_bytes, passage_count, card, indexed_at"
 
-// DocumentCards ranks documents by their own description, and is the leg that survives.
-//
-// It runs even when the vector index is reachable, because the cascade needs a candidate
-// set that outlives an embedding failure. Both legs of the OR matter: the card matches
-// what a document CONTAINS ("Fatturato", "Torino"), the split file name matches what it is
-// CALLED. The name needs its own property because Lucene's StandardAnalyzer keeps
-// "clienti_complesso.xlsx" as one token -- measured -- so a search for "clienti" finds
-// nothing against the raw name.
-func (d *DocumentIndex) DocumentCards(
-	ctx context.Context,
-	identityID string,
-	query string,
-	embedding []float64,
-	limit int,
-) ([]DocumentCard, error) {
-	return d.DocumentCardsScoped(ctx, CandidateFilter{
-		IdentityID: identityID, Limit: limit,
-	}, query, embedding)
-}
-
-// DocumentCardsScoped is the card leg, constrained by the same document ids and Garage
-// source coordinates as the fused passage leg and scored on the same reranked cosine.
+// DocumentCardsScoped ranks documents by their own description, constrained by the same
+// document ids and Garage source coordinates as the fused passage leg, and scored on the same
+// reranked cosine against the query's vector. It needs that vector: an embedding failure takes
+// it out together with the passage leg, and lexical mode (document_lexical.go) answers then.
+// Both legs of the OR matter: the card matches what a document CONTAINS ("Fatturato",
+// "Torino"), the split file name matches what it is CALLED. The name needs its own property
+// because Lucene's StandardAnalyzer keeps "clienti_complesso.xlsx" as one token -- measured --
+// so a search for "clienti" finds nothing against the raw name.
 func (d *DocumentIndex) DocumentCardsScoped(
 	ctx context.Context,
 	filter CandidateFilter,
 	query string,
 	embedding []float64,
+	space string,
 ) ([]DocumentCard, error) {
 	filter, err := d.normalizeCandidateFilter(filter)
 	if err != nil {
 		return nil, err
 	}
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return nil, fmt.Errorf("arcadedb: document card query must be non-empty")
-	}
-	if utf8.RuneCountInString(query) > d.config.MaxQueryRunes {
-		return nil, fmt.Errorf("arcadedb: document query exceeds %d characters", d.config.MaxQueryRunes)
-	}
-	client, err := d.tenantClient(ctx, filter.IdentityID)
+	query, err = d.validQuery(query)
 	if err != nil {
 		return nil, err
 	}
@@ -157,11 +136,16 @@ func (d *DocumentIndex) DocumentCardsScoped(
 		return nil, err
 	}
 	where, params := candidateWhere(filter)
+	if where, err = bindDense(where, params, space); err != nil {
+		return nil, err
+	}
+	client, err := d.tenantClient(ctx, filter.IdentityID)
+	if err != nil {
+		return nil, err
+	}
 	params["query"] = escapeLucene(query)
 	params["embedding"] = append([]float64(nil), embedding...)
 	params["fetch"] = fusedDenseNeighbours
-	params["max_distance"] = d.config.DenseMaxDistance
-	params["min_relevance"] = d.config.RelevanceFloor
 	params["candidates"] = min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
 	rows, err := client.Query(ctx, documentCardStatement(where, filter.Limit), params)
 	if err != nil {

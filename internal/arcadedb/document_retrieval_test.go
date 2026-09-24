@@ -35,7 +35,7 @@ func TestCandidateLocatorRoundTripsStrictly(t *testing.T) {
 	})
 	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		IdentityID: documentTestIdentity, Limit: 1,
-		Query: "revenue", Embedding: []float64{1, 0, 0},
+		Query: "revenue", Embedding: []float64{1, 0, 0}, Space: "es1-docs",
 	})
 	if err != nil {
 		t.Fatalf("FusedCandidates: %v", err)
@@ -120,7 +120,7 @@ func TestCandidateDecoderRejectsMalformedOrStaleRows(t *testing.T) {
 			})
 			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 				IdentityID: documentTestIdentity, Limit: 1,
-				Query: "x", Embedding: []float64{1, 0, 0},
+				Query: "x", Embedding: []float64{1, 0, 0}, Space: "es1-docs",
 			})
 			if err == nil {
 				t.Fatal("malformed candidate accepted")
@@ -139,7 +139,7 @@ func TestCandidateDecoderRejectsDuplicateAndOverLimitRows(t *testing.T) {
 			})
 			_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 				IdentityID: documentTestIdentity, Limit: limit,
-				Query: "x", Embedding: []float64{1, 0, 0},
+				Query: "x", Embedding: []float64{1, 0, 0}, Space: "es1-docs",
 			})
 			if err == nil {
 				t.Fatal("invalid candidate response accepted")
@@ -163,7 +163,7 @@ func TestFusedCandidatesSendTheMeasuredQueryAndKeepEngineOrder(t *testing.T) {
 	})
 	candidates, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		IdentityID: documentTestIdentity, Limit: 4,
-		Query: "codice cliente", Embedding: []float64{1, 0, 0},
+		Query: "codice cliente", Embedding: []float64{1, 0, 0}, Space: "es1-docs",
 	})
 	if err != nil {
 		t.Fatalf("FusedCandidates: %v", err)
@@ -202,7 +202,7 @@ func TestFusedCandidatesApplyLiteralSourceScopeToBothLegs(t *testing.T) {
 	_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		IdentityID: documentTestIdentity, Limit: 4,
 		SourceKeys: []string{"manual.pdf"}, SourcePrefixes: []string{"finance/%Q?/"},
-		Query: "revenue", Embedding: []float64{1, 0, 0},
+		Query: "revenue", Embedding: []float64{1, 0, 0}, Space: "es1-docs",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestFusedCandidatesRejectAnUnknownStrategy(t *testing.T) {
 	})
 	_, err := index.FusedCandidates(t.Context(), FusedCandidateQuery{
 		IdentityID: documentTestIdentity, Limit: 4,
-		Query: "q", Embedding: []float64{1, 0, 0}, Strategy: "COSINE",
+		Query: "q", Embedding: []float64{1, 0, 0}, Strategy: "COSINE", Space: "es1-docs",
 	})
 	if err == nil {
 		t.Fatal("a strategy the engine does not implement was accepted")
@@ -238,6 +238,7 @@ func fusedFixtureQuery(query string) FusedCandidateQuery {
 		IdentityID: documentTestIdentity,
 		Query:      query,
 		Embedding:  []float64{1, 0, 0},
+		Space:      "es1-docs",
 	}
 }
 
