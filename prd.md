@@ -104,6 +104,18 @@ explicitly discarded on every surface before another answer begins. A terminal-o
 answer must be visible, and an already-streamed answer must not be duplicated.
 Completion and persistence agree about the accepted answer.
 
+A tool call leaked as text is not an answer. A production export read on 2026-09-24
+ended a run on an assistant turn that opened with GLM's own call markup
+(`<tool_call>shell_exec<arg_key>command</arg_key><arg_value>…`): 7.5 KB of inlined
+base64 that degenerated into repetition, never closed and carried no max_tokens notice.
+The provider had not turned it into a structured call, so the command never ran, the
+markup was stored as the answer and the user had to ask again. A content-stop reply
+that opens with `<tool_call` or `<tool_exec` is discarded on every surface, never
+dispatched and never stored. The model gets one nudge (use the tool interface, never
+inline large data); a second leak in the same run finalizes as `tool_call_leaked`.
+The stored turn shows what the model emitted; it does not show which provider parser
+failed or the finish reason, which that appliance did not record.
+
 On 2026-09-08 the operator retired the paid completion critic in favor of the
 LibreChat execution model. The inspected `@librechat/agents` 3.7.17 standard graph
 routes pending calls through `toolsCondition` and otherwise terminates; it does not
