@@ -53,6 +53,14 @@ const mutationTests = [
   'src/chat/artifacts/renderers/GeneratedImagePreview.test.tsx',
   'src/chat/artifacts/renderers/VideoPreview.test.tsx',
   'src/chat/artifacts/PreviewModal.test.tsx',
+  // stryker.config.json mutates these modules, so their suites must run here too: missing
+  // from this list, all 313 of their mutants scored NoCoverage and pulled the whole run to
+  // 69.37% (CI 2026-09-24) although every one of them has a test.
+  'src/settings/__tests__/embeddingBackendState.test.ts',
+  'src/update/__tests__/systemUpdateApi.test.ts',
+  'src/update/__tests__/updateModel.test.ts',
+  'src/update/__tests__/updateTime.test.ts',
+  'src/update/__tests__/useSystemUpdate.test.tsx',
 ] as const;
 
 export default defineConfig({
