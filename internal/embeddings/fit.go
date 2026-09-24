@@ -57,7 +57,7 @@ func (c *Client) fetchInputLimit(ctx context.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	model := llm.BaseModelID(strings.TrimSpace(c.Model))
+	model := strings.TrimSpace(c.Model)
 	entry, ok := servedModel(entries, model)
 	if !ok {
 		return 0, fmt.Errorf("catalogue does not serve model %q", model)
@@ -72,12 +72,16 @@ func (c *Client) fetchInputLimit(ctx context.Context) (int, error) {
 	return limit, nil
 }
 
-// servedModel picks the named model, or the only one a server publishes: the local
-// sidecar is addressed without a model name and lists its GGUF path as the id.
+// servedModel picks the named model, then its base id, or the only one a server publishes.
+// OpenRouter lists a routing variant such as ":nitro" under the base id but its free models
+// only under ":free"; the local sidecar is addressed without a model name and lists its GGUF
+// path as the id.
 func servedModel(entries []llm.ModelCatalogEntry, model string) (llm.ModelCatalogEntry, bool) {
-	for _, entry := range entries {
-		if entry.ID == model {
-			return entry, true
+	for _, id := range []string{model, llm.BaseModelID(model)} {
+		for _, entry := range entries {
+			if entry.ID == id {
+				return entry, true
+			}
 		}
 	}
 	if len(entries) == 1 {

@@ -279,6 +279,22 @@ func TestClientHostedRouteCutsOnAUTF8BoundaryUnderTheProviderLimit(t *testing.T)
 	}
 }
 
+// OpenRouter's embeddings catalogue lists its free models under the suffixed id only
+// (measured 2026-09-24: liquid/lfm-2.5-embedding-350m:free and two others, no bare twin).
+func TestClientHostedRouteFindsAVariantListedOnlyUnderItsOwnID(t *testing.T) {
+	server, sent := hostedServer(t, `{"data":[
+		{"id":"vendor/other","context_length":8},
+		{"id":"vendor/embed:free","context_length":24}]}`)
+	client := &Client{BaseURL: server.URL + "/api", Model: "vendor/embed:free", APIKey: "key",
+		Client: server.Client(), Dimensions: 2}
+	if _, err := client.Embed(t.Context(), []string{strings.Repeat("a", 40)}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if got := sent(); len(got) != 1 || got[0] != strings.Repeat("a", 22) {
+		t.Fatalf("sent = %q, want the text cut under the free variant's own 24-token limit", got)
+	}
+}
+
 func TestClientRefusesACatalogueThatDoesNotServeTheModel(t *testing.T) {
 	server, sent := hostedServer(t, `{"data":[{"id":"a","context_length":512},{"id":"b","context_length":512}]}`)
 	client := &Client{BaseURL: server.URL + "/api", Model: "vendor/embed", APIKey: "key",
