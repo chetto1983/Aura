@@ -35,7 +35,11 @@ func (c *Client) InputLimit(ctx context.Context) (int, error) {
 	if c.limit > 0 {
 		return c.limit, nil
 	}
-	limit, err := c.fetchInputLimit(ctx)
+	entry, err := c.catalogEntry(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("input limit: %w", err)
+	}
+	limit, err := inputLimitOf(entry)
 	if err != nil {
 		return 0, fmt.Errorf("input limit: %w", err)
 	}
@@ -43,10 +47,10 @@ func (c *Client) InputLimit(ctx context.Context) (int, error) {
 	return limit, nil
 }
 
-// fetchInputLimit reads the same catalogues the LLM route reads its context window from:
+// catalogEntry reads the same catalogues the LLM route reads its context window from:
 // llama.cpp publishes meta.n_ctx under /v1/models, OpenRouter lists embedding models
 // under /v1/embeddings/models and not under /v1/models.
-func (c *Client) fetchInputLimit(ctx context.Context) (int, error) {
+func (c *Client) catalogEntry(ctx context.Context) (llm.ModelCatalogEntry, error) {
 	provider, catalogue := "llamacpp", serverRoot(c.BaseURL)+"/v1"
 	if c.hosted() {
 		provider, catalogue = "openrouter", endpoint(c.BaseURL)
@@ -55,13 +59,18 @@ func (c *Client) fetchInputLimit(ctx context.Context) (int, error) {
 	defer cancel()
 	entries, err := llm.FetchModelCatalog(reqCtx, c.httpClient(), provider, catalogue, c.key())
 	if err != nil {
-		return 0, err
+		return llm.ModelCatalogEntry{}, err
 	}
 	model := strings.TrimSpace(c.Model)
 	entry, ok := servedModel(entries, model)
 	if !ok {
-		return 0, fmt.Errorf("catalogue does not serve model %q", model)
+		return llm.ModelCatalogEntry{}, fmt.Errorf("catalogue does not serve model %q", model)
 	}
+	return entry, nil
+}
+
+// inputLimitOf is the smaller of the model's window and its top provider's.
+func inputLimitOf(entry llm.ModelCatalogEntry) (int, error) {
 	limit := entry.ContextWindow
 	if top := entry.TopProviderContextWindow; top > 0 && top < limit {
 		limit = top

@@ -41,3 +41,8 @@ func RetrievalDocuments(title string, texts []string) []string {
 // (space.go), so vectors stored under the old recipe stop matching the current space and
 // are re-embedded.
 const RecipeVersion = 1
+
+// CharsPerTokenFallback is the chunker's characters-per-token ratio when it cannot ask the
+// tokenizer (services/ingest/chunk.py CHARS_PER_TOKEN_FALLBACK). The route preview estimates
+// tokens with it: an overshoot by design, so a cost is never under-announced.
+const CharsPerTokenFallback = 3
