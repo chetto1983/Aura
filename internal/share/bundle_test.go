@@ -7,8 +7,10 @@ package share
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/assets"
@@ -16,9 +18,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// fakeArtifactOpener is a minimal ArtifactOpener test double keyed by asset id.
+// fakeArtifactOpener is a minimal ArtifactOpener test double keyed by asset id; closeErr is
+// what every opened body returns from Close.
 type fakeArtifactOpener struct {
-	bodies map[string][]byte
+	bodies   map[string][]byte
+	closeErr error
 }
 
 func (f *fakeArtifactOpener) OpenForIdentity(_ context.Context, assetID, _ string) (io.ReadCloser, assets.Asset, error) {
@@ -26,7 +30,34 @@ func (f *fakeArtifactOpener) OpenForIdentity(_ context.Context, assetID, _ strin
 	if !ok {
 		return nil, assets.Asset{}, fmt.Errorf("fakeArtifactOpener: unknown asset %s", assetID)
 	}
-	return io.NopCloser(bytes.NewReader(b)), assets.Asset{ID: assetID}, nil
+	return closeErrReader{Reader: bytes.NewReader(b), err: f.closeErr}, assets.Asset{ID: assetID}, nil
+}
+
+type closeErrReader struct {
+	io.Reader
+	err error
+}
+
+func (c closeErrReader) Close() error { return c.err }
+
+// faultyStore delegates to a real fake and fails only the operation a test names.
+type faultyStore struct {
+	objectstore.Store
+	putErr, deleteErr error
+}
+
+func (s faultyStore) Put(ctx context.Context, ref objectstore.ObjectRef, body io.Reader, opts objectstore.PutOptions) (objectstore.Attrs, error) {
+	if s.putErr != nil {
+		return objectstore.Attrs{}, s.putErr
+	}
+	return s.Store.Put(ctx, ref, body, opts)
+}
+
+func (s faultyStore) Delete(ctx context.Context, ref objectstore.ObjectRef) error {
+	if s.deleteErr != nil {
+		return s.deleteErr
+	}
+	return s.Store.Delete(ctx, ref)
 }
 
 // TestBundleFiltersAgentArtifacts covers every <behavior> row from the plan: only a live
@@ -164,6 +195,87 @@ func TestBundleArtifactsInvalidAssetID(t *testing.T) {
 	if _, err := bundleArtifacts(ctx, store, "share-test-bucket", uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()),
 		"owner-1", opener, []assets.Asset{candidate}); err == nil {
 		t.Fatal("bundleArtifacts with a non-UUID asset id succeeded, want an error")
+	}
+}
+
+// TestBundleArtifactsSurfacesCopyFailures: a failed Put or a failed Close of the source body
+// fails the whole bundle — a share must never publish a snapshot missing an artifact it lists.
+func TestBundleArtifactsSurfacesCopyFailures(t *testing.T) {
+	assetID := uuid.Must(uuid.NewV7()).String()
+	candidate := assets.Asset{ID: assetID, SourceKind: assets.SourceAgent, Status: assets.StatusComplete}
+	body := map[string][]byte{assetID: []byte("bytes")}
+	cases := []struct {
+		name   string
+		store  objectstore.Store
+		opener *fakeArtifactOpener
+		want   string
+	}{
+		{"put", faultyStore{Store: objectstore.NewFake(), putErr: errors.New("disk full")},
+			&fakeArtifactOpener{bodies: body}, "put: disk full"},
+		{"close", objectstore.NewFake(),
+			&fakeArtifactOpener{bodies: body, closeErr: errors.New("stream reset")}, "close: stream reset"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := bundleArtifacts(context.Background(), tc.store, "share-test-bucket",
+				uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), "owner-1", tc.opener, []assets.Asset{candidate})
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("bundleArtifacts error = %v, want it to name %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// TestDropSnapshotBlobsKeepsTheNewSnapshot pins why Update reclaims one snapshot and not the
+// share prefix: the replacement's blobs already sit under the same share when the old ones go.
+func TestDropSnapshotBlobsKeepsTheNewSnapshot(t *testing.T) {
+	ctx := context.Background()
+	store := objectstore.NewFake()
+	const bucket = "share-test-bucket"
+	shareID, oldSnap, newSnap := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	for _, snap := range []uuid.UUID{oldSnap, newSnap} {
+		for _, key := range []string{objectstore.ShareSnapshotKey(shareID, snap), objectstore.ShareArtifactKey(shareID, snap, uuid.Must(uuid.NewV7()))} {
+			if _, err := store.Put(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key}, bytes.NewReader([]byte("x")), objectstore.PutOptions{}); err != nil {
+				t.Fatalf("seed %s: %v", key, err)
+			}
+		}
+	}
+
+	if err := dropSnapshotBlobs(ctx, store, bucket, shareID, oldSnap); err != nil {
+		t.Fatalf("dropSnapshotBlobs: %v", err)
+	}
+	left, err := store.List(ctx, objectstore.ListRequest{Bucket: bucket, Prefix: objectstore.ShareKeyPrefix(shareID)})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(left) != 2 {
+		t.Fatalf("%d blobs left under the share, want the new snapshot's 2", len(left))
+	}
+	for _, o := range left {
+		if !strings.Contains(o.Ref.Key, newSnap.String()) {
+			t.Errorf("blob %s survived but does not belong to the new snapshot", o.Ref.Key)
+		}
+	}
+}
+
+// TestBlobReclaimSurfacesDeleteFailures: a Delete that fails must fail the reclaim, or Revoke
+// and Update would stamp a share clean while its bytes stay in the bucket.
+func TestBlobReclaimSurfacesDeleteFailures(t *testing.T) {
+	ctx := context.Background()
+	fake := objectstore.NewFake()
+	const bucket = "share-test-bucket"
+	shareID, snap := uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())
+	if _, err := fake.Put(ctx, objectstore.ObjectRef{Bucket: bucket, Key: objectstore.ShareSnapshotKey(shareID, snap)},
+		bytes.NewReader([]byte("x")), objectstore.PutOptions{}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	store := faultyStore{Store: fake, deleteErr: errors.New("access denied")}
+
+	if err := dropBlobs(ctx, store, bucket, shareID); err == nil || !strings.Contains(err.Error(), "access denied") {
+		t.Errorf("dropBlobs error = %v, want the Delete failure", err)
+	}
+	if err := dropSnapshotBlobs(ctx, store, bucket, shareID, snap); err == nil || !strings.Contains(err.Error(), "access denied") {
+		t.Errorf("dropSnapshotBlobs error = %v, want the Delete failure", err)
 	}
 }
 
