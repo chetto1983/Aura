@@ -25,7 +25,6 @@ type bootSettingsOpener func(context.Context, string, string) (bootSettingsStore
 type embeddingRoute struct {
 	embed   config.EmbedConfig
 	baseURL string
-	model   string
 	apiKey  string
 }
 
@@ -83,8 +82,8 @@ func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingR
 	if err != nil {
 		return embeddingRoute{}, err
 	}
-	baseURL, credential, model := config.ResolveEmbedRoute(embed, key)
-	return embeddingRoute{embed: embed, baseURL: baseURL, model: model, apiKey: credential}, nil
+	baseURL, credential, _ := config.ResolveEmbedRoute(embed, key)
+	return embeddingRoute{embed: embed, baseURL: baseURL, apiKey: credential}, nil
 }
 
 // bootAttestTimeout bounds the one boot call that is only logged.

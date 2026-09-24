@@ -94,6 +94,10 @@ func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, er
 				slog.Warn("memory re-embed: records refused by the embedding model",
 					"database", database, "refused", tally.refused)
 			}
+			if tally.failed > 0 {
+				slog.Warn("memory re-embed: rows the store would not take (tried again next run)",
+					"database", database, "failed", tally.failed, "first", tally.firstFailed, "error", tally.failCause)
+			}
 			return tally.embedded, err
 		})
 }

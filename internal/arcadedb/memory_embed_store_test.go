@@ -39,10 +39,7 @@ func TestStoreVectorsSendsOneBoundScriptForTheWholeBatch(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	rids, vectors := vectorsFor(3)
 
-	tally, err := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
-	if err != nil {
-		t.Fatalf("storeVectors: %v", err)
-	}
+	tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
 	if tally.embedded != 3 {
 		t.Errorf("embedded = %d, want 3", tally.embedded)
 	}
@@ -77,11 +74,8 @@ func TestStoreVectorsFallsBackToSingleStatementsWhenTheScriptFails(t *testing.T)
 	rec.failLanguage = "sqlscript"
 	rids, vectors := vectorsFor(5)
 
-	tally, err := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
-	if err != nil {
-		t.Fatalf("storeVectors after script failure: %v", err)
-	}
-	if tally.embedded != 5 {
+	tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
+	if tally.embedded != 5 || tally.failed != 0 {
 		t.Errorf("embedded = %d, want 5 — every row must still land via the fallback", tally.embedded)
 	}
 	if got := countLanguage(rec, "sqlscript"); got != 1 {
@@ -120,10 +114,7 @@ func TestStoreVectorsSkipsUnusableRowsAndWritesRefusals(t *testing.T) {
 			rids, vectors := vectorsFor(3)
 			tc.spoil(vectors)
 
-			tally, err := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
-			if err != nil {
-				t.Fatalf("storeVectors: %v", err)
-			}
+			tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
 			if tally != tc.wantTally {
 				t.Errorf("tally = %+v, want %+v", tally, tc.wantTally)
 			}

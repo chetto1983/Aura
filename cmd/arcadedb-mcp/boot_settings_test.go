@@ -48,7 +48,7 @@ func TestApplyBootSettingsResolvesTheRouteFromRowsAndKeepsSecretOutOfEnv(t *test
 	if err != nil {
 		t.Fatalf("applyBootSettings: %v", err)
 	}
-	if route.baseURL != "https://openrouter.ai/api" || route.model != "vendor/embed-v2" || route.apiKey != "stored-openrouter-key" {
+	if route.baseURL != "https://openrouter.ai/api" || route.embed.CloudModel != "vendor/embed-v2" || route.apiKey != "stored-openrouter-key" {
 		t.Fatalf("route = %+v, want the stored model on OpenRouter with the sealed key", route)
 	}
 	if store.secretKey != "OPENROUTER_API_KEY" {
@@ -68,7 +68,7 @@ func TestApplyBootSettingsKeepsTheLocalRouteWithoutAModel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("applyBootSettings: %v", err)
 	}
-	if route.baseURL != "http://aura-llama-embed:8081" || route.model != "" || route.apiKey != "" {
+	if route.baseURL != "http://aura-llama-embed:8081" || route.embed.CloudModel != "" || route.apiKey != "" {
 		t.Fatalf("local route = %+v, want the product default with no model or credential", route)
 	}
 }

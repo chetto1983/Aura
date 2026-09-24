@@ -242,7 +242,9 @@ Retrieval is split into two families: **memory** (`FACT`, `ConversationTurn`,
 
 - A process in space `S` serves a family densely for a tenant only when no row in that family
   has a vector with `embed_space` ≠ `S`. A missing stamp counts as different.
-- The check is one indexed count per type, cached per tenant and family for 30 s.
+- The check is one count per type, cached per tenant and family for 30 s. Whether ArcadeDB
+  answers it from the `embed_space` index is not measured (see "What this design does not
+  prove").
 - Otherwise the family is served lexically with the reason `embedding_space_mismatch`.
   - Memory: through the soft paths that already exist (`memory_vector.go:209-221,245-254`;
     `memory_recall.go:248-251`; `memory_reasoning.go:331-343`, which gains a reason).
@@ -576,6 +578,12 @@ fusion and index work; nothing here adds Go vector math.
   Memory indexes hold tens to thousands of vectors; the documents family is plan 3's to measure.
 - **The run budget stops a pass mid-tenant.** The next run resumes from what is still in
   another space, starting one tenant later.
+- **The gate's cost is not measured.** The §2 measurement (2026-09-23, local 26.9.1) proves an
+  unstamped row stays visible to `embed_space IS NULL`; it does not prove the planner uses the
+  index for `embed_space IS NULL OR embed_space <> :space` (a `<>` is not normally
+  index-assisted), and `embedding IS NOT NULL` may load each full record. At memory scale
+  (tens to thousands of rows per tenant, one check per 30 s) this is expected to be cheap; the
+  E2E measures the count on the largest tenant (final review of plan 2, #11, 2026-09-24).
 
 ## Out of scope
 

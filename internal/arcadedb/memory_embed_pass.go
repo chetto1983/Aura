@@ -33,15 +33,32 @@ func (t memorySpaceType) passSelection() string {
 		" AND @rid > :cursor ORDER BY @rid LIMIT :page"
 }
 
-// passTally counts what a pass changed: vectors written, and records the model refused.
+// passTally counts what a pass changed: vectors written, records the model refused, and
+// rows the store would not take, the first of them named with its cause.
 type passTally struct {
-	embedded int
-	refused  int
+	embedded    int
+	refused     int
+	failed      int
+	firstFailed string
+	failCause   error
 }
 
 func (p *passTally) add(other passTally) {
 	p.embedded += other.embedded
 	p.refused += other.refused
+	p.failed += other.failed
+	if p.firstFailed == "" {
+		p.firstFailed, p.failCause = other.firstFailed, other.failCause
+	}
+}
+
+// writeError names the rows the store would not take, for a caller that reports what it did
+// instead of logging it.
+func (p passTally) writeError() error {
+	if p.failed == 0 {
+		return nil
+	}
+	return fmt.Errorf("arcadedb: %d row(s) could not be stored (first %s: %w)", p.failed, p.firstFailed, p.failCause)
 }
 
 // reembedMemory runs the pass over the whole memory family until nothing is left or ctx
@@ -90,13 +107,13 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 			if err != nil {
 				return tally, err
 			}
-			written, err := c.storeVectors(ctx, t.name, rids, vectors)
-			tally.add(written)
-			if err != nil {
-				return tally, err
-			}
+			tally.add(c.storeVectors(ctx, t.name, rids, vectors))
 		}
-		if len(rows) < batch {
+		// A row the store will not take is behind the cursor and named in the tally, so one
+		// poisoned row cannot end every run at the same place. A page's worth of them is a
+		// store refusing writes, not a row: going on would embed, and on a cloud route pay
+		// for, the whole type on every run.
+		if len(rows) < batch || tally.failed >= batch {
 			return tally, nil
 		}
 	}
@@ -115,8 +132,10 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 //
 // A vector is written with its space. A refused text is set aside: its vector removed, its
 // row stamped with the space that refused it, so neither the pass nor the gate counts it
-// until the space changes. A row with neither is left as it was.
-func (c *Client) storeVectors(ctx context.Context, typeName string, rids []string, vectors []storedVector) (passTally, error) {
+// until the space changes. A row with neither is left as it was. A row the store still
+// refuses on its own is counted in the tally, not returned: it stays outside the space, and
+// the next run tries it again.
+func (c *Client) storeVectors(ctx context.Context, typeName string, rids []string, vectors []storedVector) passTally {
 	var tally passTally
 	statements := make([]string, 0, len(rids))
 	params := make(map[string]any, len(rids)*3)
@@ -127,8 +146,7 @@ func (c *Client) storeVectors(ctx context.Context, typeName string, rids []strin
 		}
 		usable = append(usable, i)
 		n := strconv.Itoa(len(usable) - 1)
-		statements = append(statements,
-			"UPDATE "+typeName+" SET embedding = :v"+n+", embed_space = :s"+n+" WHERE @rid = :r"+n)
+		statements = append(statements, setVectorStatement(typeName, n))
 		params["v"+n], params["s"+n], params["r"+n] = vectors[i].vector, vectors[i].space, rids[i]
 	}
 	count := func(i int) {
@@ -139,29 +157,32 @@ func (c *Client) storeVectors(ctx context.Context, typeName string, rids []strin
 		}
 	}
 	if len(statements) == 0 {
-		return tally, nil
+		return tally
 	}
 	if _, err := c.Script(ctx, strings.Join(statements, ";\n"), params); err == nil {
 		for _, i := range usable {
 			count(i)
 		}
-		return tally, nil
+		return tally
 	}
-	var failures []string
 	for _, i := range usable {
-		if _, err := c.Command(ctx,
-			"UPDATE "+typeName+" SET embedding = :vector, embed_space = :space WHERE @rid = :rid",
-			map[string]any{"vector": vectors[i].vector, "space": vectors[i].space, "rid": rids[i]}); err != nil {
-			failures = append(failures, rids[i])
+		if _, err := c.Command(ctx, setVectorStatement(typeName, "0"),
+			map[string]any{"v0": vectors[i].vector, "s0": vectors[i].space, "r0": rids[i]}); err != nil {
+			tally.failed++
+			if tally.firstFailed == "" {
+				tally.firstFailed, tally.failCause = rids[i], err
+			}
 			continue
 		}
 		count(i)
 	}
-	if len(failures) > 0 {
-		return tally, fmt.Errorf("arcadedb: write %s embedding failed for %d of %d rows (first %s)",
-			typeName, len(failures), len(usable), failures[0])
-	}
-	return tally, nil
+	return tally
+}
+
+// setVectorStatement writes one row's vector and stamp, bound to its own :vN, :sN and :rN;
+// statements sharing one binding in a script would all take the last row's vector.
+func setVectorStatement(typeName, n string) string {
+	return "UPDATE " + typeName + " SET embedding = :v" + n + ", embed_space = :s" + n + " WHERE @rid = :r" + n
 }
 
 // EmbedMissingFacts is one bounded round of the pass over facts: the memory_reembed tool's
@@ -171,6 +192,9 @@ func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) 
 		return 0, fmt.Errorf("arcadedb: no embedder configured")
 	}
 	tally, err := c.reembedType(ctx, factSpace, boundedLimit(batch, 100, c.memoryLimits().MaintenanceBatch), 1)
+	if err == nil {
+		err = tally.writeError()
+	}
 	return tally.embedded, err
 }
 
@@ -193,6 +217,9 @@ func (c *Client) ReEmbedAllFacts(ctx context.Context, batch int) (int, error) {
 	}
 	tally, err := c.reembedType(ctx, factSpace, boundedLimit(batch, 100, c.memoryLimits().MaintenanceBatch),
 		backfillRoundsPerTenant)
+	if err == nil {
+		err = tally.writeError()
+	}
 	return tally.embedded, err
 }
 

@@ -50,8 +50,7 @@
 // Because mounts are granted in alphabetical order against only 2 slots,
 // calendar and memory now hold them and WHATSAPP is the one that stays
 // deferred. That reordering is the deliberate outcome, not a side effect: read
-// the trade in memoryHiddenFromModel's comment before changing either
-// constant. N=1 was
+// the trade described above before changing either constant. N=1 was
 // rejected as brittle: a fork that split one verb into two tools would fall off
 // the cliff for no reason related to what the model actually carries. Both
 // numbers are Go constants, not env vars — no declaration ceremony is needed at

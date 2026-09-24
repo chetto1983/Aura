@@ -1952,12 +1952,12 @@
       "idempotentHint": false,
       "readOnlyHint": false
     },
-    "description": "Write embedding vectors for this identity's facts. Without `all` it only fills facts that have none — the gap left by an embedder that was down. With `all` it recomputes every vector, which is what an embedding-model change requires: vectors written by a different model are in a different geometry.",
+    "description": "Repair this identity's fact vectors in the embedding space this server uses. Without `all` it embeds one bounded page of facts outside that space. With `all` it clears and recomputes every fact vector in that same space. A model or route change needs no call: the daemon's scheduled pass re-embeds all memory into the new space, and calling this before this server has restarted on the new route would re-embed into the old one.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
         "all": {
-          "description": "recompute EVERY fact's vector, not only the facts that have none; use after the embedding model changes",
+          "description": "clear and recompute EVERY fact vector in this server's current space: a repair for a model file replaced under an unchanged name. A model or route change needs no call; the daemon's pass re-embeds on its own",
           "type": "boolean"
         },
         "batch": {

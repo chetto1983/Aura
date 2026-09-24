@@ -7,19 +7,22 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// memory_reembed is the operator's answer to "the embedder changed". A stored vector is
-// only meaningful against the model that produced it, so swapping the embedder leaves the
-// corpus in the wrong geometry — still answering, just worse, and never erroring. This is
-// the one maintenance verb on the memory surface, and it is HIDDEN FROM THE MODEL by
-// internal/agent/mcptools/bridge_memory.go: re-embedding is an operator decision about
-// infrastructure, not a move an agent should make mid-turn.
+// memory_reembed is the one maintenance verb on the memory surface: a repair of fact
+// vectors in the embedding space THIS server uses. It is not the answer to a model or route
+// change: the daemon's scheduled pass re-embeds all memory into the new space on its own
+// (memory_embed_pass.go), and this server keeps its boot route until it restarts, so an
+// `all` call in that window clears every vector and re-embeds it in the OLD space.
+//
+// The model reaches it too: since 2026-09-03 every memory tool is bridged, deferred behind
+// tool_search (internal/agent/mcptools/bridge_deferral.go). The text below is therefore what
+// keeps a caller from reading it as the thing to do after a model change.
 
 // MemoryReembedInput selects the scope of the pass. The calling identity comes
 // from the authenticated OAuth subject, never a model-visible field.
 type MemoryReembedInput struct {
 	// All is the difference between healing a gap and redoing the work. Default false so
 	// the cheap, safe pass is what an unqualified call gets.
-	All   bool `json:"all,omitempty" jsonschema:"recompute EVERY fact's vector, not only the facts that have none; use after the embedding model changes"`
+	All   bool `json:"all,omitempty" jsonschema:"clear and recompute EVERY fact vector in this server's current space: a repair for a model file replaced under an unchanged name. A model or route change needs no call; the daemon's pass re-embeds on its own"`
 	Batch int  `json:"batch,omitempty" jsonschema:"how many facts to process in one pass; defaults to 100"`
 }
 
@@ -33,10 +36,12 @@ func addMemoryReembedTool(server *mcp.Server, tenants *tenants) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:  "memory_reembed",
 		Title: "Recompute fact vectors",
-		Description: "Write embedding vectors for this identity's facts. Without `all` it " +
-			"only fills facts that have none — the gap left by an embedder that was down. " +
-			"With `all` it recomputes every vector, which is what an embedding-model change " +
-			"requires: vectors written by a different model are in a different geometry.",
+		Description: "Repair this identity's fact vectors in the embedding space this server " +
+			"uses. Without `all` it embeds one bounded page of facts outside that space. With " +
+			"`all` it clears and recomputes every fact vector in that same space. A model or " +
+			"route change needs no call: the daemon's scheduled pass re-embeds all memory into " +
+			"the new space, and calling this before this server has restarted on the new route " +
+			"would re-embed into the old one.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: false},
 	}, memoryReembedHandler(tenants))
 }

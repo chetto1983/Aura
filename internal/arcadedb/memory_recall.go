@@ -262,8 +262,13 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
 	}
-	if reason == "" {
+	// Every reason the read is less than whole is named: a lexical read that also lost one
+	// ranking says both, so half the memory never passes for a whole lexical answer.
+	switch {
+	case reason == "":
 		reason = degraded
+	case degraded != "":
+		reason += "+" + degraded
 	}
 	result, err := c.hydrateRecallRanking(ctx, request, mergeRecallRankings(facts, turns), limit, path, reason)
 	if err != nil {

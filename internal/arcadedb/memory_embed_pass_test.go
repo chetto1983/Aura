@@ -31,6 +31,9 @@ type passServer struct {
 	mu      sync.Mutex
 	rows    map[string][]*passRow // by type
 	selects int
+	// refuse holds the RIDs whose UPDATE the store rejects. A script naming one fails
+	// whole, as a sqlscript is one transaction; a single statement fails alone.
+	refuse map[string]bool
 }
 
 var passUpdate = regexp.MustCompile(`UPDATE (\w+) SET embedding = :(v\d+), embed_space = :(s\d+) WHERE @rid = :(r\d+)`)
@@ -57,7 +60,15 @@ func (s *passServer) serve(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"result": s.selectRows(payload.Command, payload.Params)})
 		return
 	}
-	for _, match := range passUpdate.FindAllStringSubmatch(payload.Command, -1) {
+	matches := passUpdate.FindAllStringSubmatch(payload.Command, -1)
+	for _, match := range matches {
+		if rid, _ := payload.Params[match[4]].(string); s.refuse[rid] {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"detail":"validation failed for `+rid+`"}`)
+			return
+		}
+	}
+	for _, match := range matches {
 		typeName, rid := match[1], payload.Params[match[4]]
 		for _, row := range s.rows[typeName] {
 			if s.rid(typeName, row) == rid {
@@ -235,6 +246,75 @@ func TestEmbedMissingFactsTakesOneBoundedRound(t *testing.T) {
 	if embedded != defaultMemoryLimits.MaintenanceBatch || server.selects != 1 {
 		t.Fatalf("embedded %d in %d selections, want one round capped at %d",
 			embedded, server.selects, defaultMemoryLimits.MaintenanceBatch)
+	}
+}
+
+// Final review #1: one row the store will not take must not end the pass. The cursor has
+// already passed it; ending the run there would stop at the same row on every run, and the
+// types after it would never be reached.
+func TestPassWritesPastARowItCannotStore(t *testing.T) {
+	rows := map[string][]*passRow{
+		factEdgeType:         stampedRows(40, "es1-a", true),
+		conversationTurnType: stampedRows(3, "es1-a", true),
+		reasoningTraceType:   stampedRows(2, "es1-a", true),
+	}
+	client, server := newPassClient(t, rows, &refusingEmbedder{space: "es1-b"})
+	server.refuse = map[string]bool{"#10:3": true}
+	tally, err := client.reembedMemory(context.Background())
+	if err != nil {
+		t.Fatalf("reembedMemory: %v", err)
+	}
+	if tally.embedded != 44 || tally.failed != 1 || tally.firstFailed != "#10:3" {
+		t.Fatalf("tally = %+v, want 44 embedded and #10:3 the one failure", tally)
+	}
+	for typeName, typed := range rows {
+		for _, row := range typed {
+			if moved := row.space == "es1-b"; moved == (typeName == factEdgeType && row.position == 3) {
+				t.Fatalf("%s %+v: moved = %v", typeName, *row, moved)
+			}
+		}
+	}
+}
+
+// A store that refuses every write is not a poisoned row: going on would embed, and on a
+// cloud route pay for, the whole type every run. The type stops after a page's worth of
+// failures, and the other types still run.
+func TestPassGivesUpOnATypeTheStoreWillNotWrite(t *testing.T) {
+	rows := map[string][]*passRow{
+		factEdgeType:         stampedRows(100, "es1-a", true),
+		conversationTurnType: stampedRows(3, "es1-a", true),
+		reasoningTraceType:   stampedRows(2, "es1-a", true),
+	}
+	client, server := newPassClient(t, rows, &refusingEmbedder{space: "es1-b"})
+	server.refuse = map[string]bool{}
+	for _, row := range rows[factEdgeType] {
+		server.refuse[server.rid(factEdgeType, row)] = true
+	}
+	tally, err := client.reembedMemory(context.Background())
+	if err != nil {
+		t.Fatalf("reembedMemory: %v", err)
+	}
+	if tally.failed != backfillBatch || server.selects != 3 {
+		t.Fatalf("tally = %+v after %d selections, want one page of fact failures and one page per type",
+			tally, server.selects)
+	}
+	for _, typeName := range []string{conversationTurnType, reasoningTraceType} {
+		for _, row := range rows[typeName] {
+			if row.space != "es1-b" {
+				t.Fatalf("%s %+v was starved by the facts the store refused", typeName, *row)
+			}
+		}
+	}
+}
+
+// The operator's repair names what it could not write instead of reporting a clean count.
+func TestEmbedMissingFactsReportsARowItCouldNotStore(t *testing.T) {
+	rows := map[string][]*passRow{factEdgeType: stampedRows(5, "", false)}
+	client, server := newPassClient(t, rows, &refusingEmbedder{space: "es1-b"})
+	server.refuse = map[string]bool{"#10:2": true}
+	embedded, err := client.EmbedMissingFacts(context.Background(), 100)
+	if embedded != 4 || err == nil || !strings.Contains(err.Error(), "#10:2") {
+		t.Fatalf("embedded %d, err %v; want 4 and an error naming #10:2", embedded, err)
 	}
 }
 

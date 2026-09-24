@@ -117,9 +117,8 @@ func memoryVerbToTool(verb string, args []string) (string, map[string]any, error
 	case "forget":
 		return memoryForgetArgs(args)
 	case "reembed":
-		// Hidden from the model on purpose (mcptools.memoryHiddenFromModel): rewriting
-		// every vector is an operator's answer to an embedder change, not a move an
-		// agent makes mid-turn. The CLI calls the raw wire tool, so it reaches it anyway.
+		// A same-space repair (tool_memory_maintenance.go), not the answer to a model or
+		// route change: the daemon's scheduled pass re-embeds all memory on its own.
 		return "memory_reembed", map[string]any{"all": takeBoolFlag(&args, "--all")}, nil
 	case "schema":
 		return "graph_schema", map[string]any{}, nil

@@ -502,3 +502,34 @@ func TestMemoryRecallNamesTheSideThatFailed(t *testing.T) {
 			result.Evidence, result.Reason, reasonTurnRankingFailed)
 	}
 }
+
+// The same half answer on the lexical path must not hide behind the reason the read is
+// lexical: both are named (final review #13).
+func TestMemoryRecallNamesTheSideThatFailedOnTheLexicalPath(t *testing.T) {
+	client, _ := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		switch {
+		case strings.HasPrefix(statement, "SELECT count(*) AS n FROM "):
+			return testResponse{Body: `{"result":[{"n":1}]}`} // a vector outside the space: lexical
+		case strings.Contains(statement, "SEARCH_INDEX('"+conversationTurnType):
+			return testResponse{Status: http.StatusInternalServerError, Body: `{"detail":"turn index down"}`}
+		case strings.Contains(statement, "SEARCH_INDEX('"+factEdgeType):
+			return testResponse{Body: `{"result":[{"rid":"#10:1","score":3.2}]}`}
+		case strings.Contains(statement, "FROM FACT") && strings.Contains(statement, "@rid IN"):
+			return testResponse{Body: recallFactRow}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
+	result, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeSemantic, Query: "where is the blue notebook", Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("RecallMemory: %v", err)
+	}
+	want := reasonEmbeddingSpaceMismatch + "+" + reasonTurnRankingFailed
+	if len(result.Evidence) != 1 || result.Retrieval.Path != retrievalPathLexical || result.Reason != want {
+		t.Fatalf("result = %+v (path %q, reason %q), want the fact answered lexically with %q",
+			result.Evidence, result.Retrieval.Path, result.Reason, want)
+	}
+}
