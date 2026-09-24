@@ -50,11 +50,13 @@ type MemoryLimits struct {
 	MaintenanceBatch     int
 	DigestScan           int
 	HybridCandidates     int
-	DenseMaxDistance     float64
-	LexicalMinScore      float64
-	MinRelevance         float64
-	MentionHubShare      float64
-	GraphMaxRecords      int
+	// DenseMaxDistance and MinRelevance are operator overrides of the dense floors. Zero, the
+	// default, means the floors measured for the reader's space (relevance_floors.go).
+	DenseMaxDistance float64
+	LexicalMinScore  float64
+	MinRelevance     float64
+	MentionHubShare  float64
+	GraphMaxRecords  int
 }
 
 var defaultMemoryLimits = MemoryLimits{
@@ -63,18 +65,7 @@ var defaultMemoryLimits = MemoryLimits{
 	SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
 	MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
 	GraphMaxRecords: 10000,
-	// 0.72 is the midpoint of a measured separation band, not a guess. On a live
-	// 102-fact memory (2026-09-02) the nearest neighbour for a question the memory
-	// COULD answer sat at 0.514 and 0.667; for one it could not ("ricetta della
-	// pizza napoletana", "chi ha vinto il mondiale 1982") at 0.777 and 0.890. The
-	// previous 0.55 fell INSIDE the true-match band, so it discarded correct facts
-	// while admitting nothing useful -- the dense leg came back empty and "hybrid"
-	// retrieval ran on its lexical leg alone. The bound stays because it is what
-	// lets retrieval ABSTAIN: vector.neighbors always returns k neighbours however
-	// far away, so without it nothing is ever "no qualified candidates".
-	// Not established by that measure: conversation turns, other identities'
-	// corpora, or a memory much larger than 102 facts.
-	DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,
+	LexicalMinScore: 2,
 	// 20% is the middle of a measured plateau, not a tuned value: on a live
 	// 107-fact memory every share between 10% and 50% produced the identical
 	// graph (31 linked facts, 6 bridges), 5% collapsed it to 4 and 100% turned
@@ -96,9 +87,7 @@ func (limits MemoryLimits) normalized() MemoryLimits {
 	limits.DigestScan = defaultLimit(limits.DigestScan, defaultMemoryLimits.DigestScan)
 	limits.HybridCandidates = defaultLimit(limits.HybridCandidates, defaultMemoryLimits.HybridCandidates)
 	limits.GraphMaxRecords = defaultLimit(limits.GraphMaxRecords, defaultMemoryLimits.GraphMaxRecords)
-	limits.DenseMaxDistance = defaultFloatLimit(limits.DenseMaxDistance, defaultMemoryLimits.DenseMaxDistance)
 	limits.LexicalMinScore = defaultFloatLimit(limits.LexicalMinScore, defaultMemoryLimits.LexicalMinScore)
-	limits.MinRelevance = defaultFloatLimit(limits.MinRelevance, defaultMemoryLimits.MinRelevance)
 	limits.MentionHubShare = defaultFloatLimit(limits.MentionHubShare, defaultMemoryLimits.MentionHubShare)
 	return limits
 }

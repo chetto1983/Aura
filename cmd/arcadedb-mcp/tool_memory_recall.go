@@ -138,6 +138,7 @@ type MemoryRecallRetrievalMetadata struct {
 	EntityCount       int    `json:"entity_count"`
 	Abstained         bool   `json:"abstained"`
 	Reason            string `json:"reason,omitempty"`
+	FloorsReason      string `json:"floors_reason,omitempty"`
 }
 
 // MemoryRecallOutput is additive: Facts preserves the shipped fact-only projection.
@@ -503,6 +504,7 @@ func memoryRecallOutput(result arcadedb.RecallResult) MemoryRecallOutput {
 			ReasoningCount: result.Retrieval.ReasoningCount,
 			EntityCount:    result.Retrieval.EntityCount,
 			Abstained:      result.Abstained, Reason: result.Reason,
+			FloorsReason: result.FloorsReason,
 		},
 	}
 	for _, node := range result.Entities {

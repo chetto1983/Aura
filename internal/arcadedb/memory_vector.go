@@ -139,6 +139,10 @@ type FactSearchResult struct {
 	RetrievalPath string
 	Abstained     bool
 	Reason        string
+	// FloorsReason is ReasonUncalibratedFloors when a hybrid answer was admitted by floors
+	// never measured for its space (spec §9). Reason names why a read left the dense path;
+	// this names how far to trust one that did not.
+	FloorsReason string
 }
 
 const (
@@ -190,13 +194,13 @@ func (c *Client) SearchFactsHybrid(
 	// to promote.
 	candidates := min(max(limit*4, 20), limits.HybridCandidates)
 	params := map[string]any{
-		"query":        escapeLucene(query),
-		"candidates":   candidates,
-		"as_of":        asOf.UTC().Format(time.RFC3339),
-		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
+		"query":             escapeLucene(query),
+		"candidates":        candidates,
+		"as_of":             asOf.UTC().Format(time.RFC3339),
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	}
 	dense.bind(params)
+	floorsReason := limits.bindDenseFloors(params, dense.space)
 	ranked, err := c.Query(ctx, fuseRIDsStatement, params)
 	if err != nil {
 		// A fusion that fails must not lose the answer the lexical leg already had.
@@ -207,6 +211,7 @@ func (c *Client) SearchFactsHybrid(
 			RetrievalPath: retrievalPathHybrid,
 			Abstained:     true,
 			Reason:        reasonNoQualifiedCandidates,
+			FloorsReason:  floorsReason,
 		}, nil
 	}
 	rids := make([]string, 0, len(ranked))
@@ -254,7 +259,7 @@ func (c *Client) SearchFactsHybrid(
 			hits = append(hits, item.hit)
 		}
 	}
-	result := FactSearchResult{Facts: hits, RetrievalPath: retrievalPathHybrid}
+	result := FactSearchResult{Facts: hits, RetrievalPath: retrievalPathHybrid, FloorsReason: floorsReason}
 	if len(hits) == 0 {
 		result.Abstained = true
 		result.Reason = reasonNoQualifiedCandidates

@@ -107,11 +107,14 @@ type RecallResult struct {
 	// Entities are the graph nodes the question reached through its evidence,
 	// each with its own facts (memory_recall_expand.go). Additive: never a
 	// substitute for Evidence, never counted against its budget.
-	Entities   []RecallEntityNode
-	Abstained  bool
-	Reason     string
-	NextCursor string
-	Retrieval  RecallRetrieval
+	Entities  []RecallEntityNode
+	Abstained bool
+	Reason    string
+	// FloorsReason is ReasonUncalibratedFloors on a hybrid recall admitted by floors never
+	// measured for its space (spec §9).
+	FloorsReason string
+	NextCursor   string
+	Retrieval    RecallRetrieval
 }
 
 const (
@@ -240,11 +243,10 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	params := map[string]any{
 		"identity_id": request.IdentityID,
 		"query":       escapeLucene(query), "candidates": candidates,
-		"as_of":        request.AsOf.UTC().Format(time.RFC3339),
-		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
+		"as_of":             request.AsOf.UTC().Format(time.RFC3339),
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
 	}
-	path, reason := retrievalPathHybrid, ""
+	path, reason, floorsReason := retrievalPathHybrid, "", ""
 	factStatement, turnStatement := recallFactFuseStatement, recallTurnFuseStatement
 	dense, embeddingReason := c.denseQueryVector(ctx, query)
 	if dense.vector == nil {
@@ -252,6 +254,7 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 		factStatement, turnStatement = recallFactLexicalStatement, recallTurnLexicalStatement
 	} else {
 		dense.bind(params)
+		floorsReason = limits.bindDenseFloors(params, dense.space)
 	}
 	facts, turns, degraded, err := c.rankRecallKinds(
 		ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs,
@@ -276,6 +279,9 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	result, err := c.hydrateRecallRanking(ctx, request, mergeRecallRankings(facts, turns), limit, path, reason)
 	if err != nil {
 		return RecallResult{}, err
+	}
+	if path == retrievalPathHybrid {
+		result.FloorsReason = floorsReason
 	}
 	result.Entities = c.expandRecallEntities(ctx, request, result.Evidence)
 	result.Retrieval.EntityCount = len(result.Entities)

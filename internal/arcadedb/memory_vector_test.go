@@ -15,14 +15,19 @@ type stubEmbedder struct {
 	vectors  [][][]float64
 	err      error
 	spaceErr error
+	space    string
 	calls    [][]string
 }
 
-// stubSpace is the space every stubEmbedder vector is in.
+// stubSpace is the space a stubEmbedder's vectors are in unless its space field names another.
 const stubSpace = "es1-stub"
 
 func (s *stubEmbedder) Space(context.Context) (embeddings.Space, error) {
-	return embeddings.Space{ID: stubSpace}, s.spaceErr
+	id := s.space
+	if id == "" {
+		id = stubSpace
+	}
+	return embeddings.Space{ID: id}, s.spaceErr
 }
 
 func (s *stubEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {

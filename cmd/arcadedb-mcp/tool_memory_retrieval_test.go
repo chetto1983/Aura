@@ -270,3 +270,25 @@ func TestMemoryRecallRejectsMissingIdentityBeforeSelector(t *testing.T) {
 		t.Fatalf("statements = %v, want no database access", rec.statements)
 	}
 }
+
+// Spec §9: a dense answer admitted by floors never measured for its space says so in a field
+// of its own, beside the reason that names why a read left the dense path.
+func TestMemoryOutputsCarryTheFloorsReason(t *testing.T) {
+	searched := memorySearchOutput(arcadedb.FactSearchResult{
+		RetrievalPath: "hybrid", FloorsReason: arcadedb.ReasonUncalibratedFloors,
+	})
+	if searched.Retrieval.FloorsReason != arcadedb.ReasonUncalibratedFloors || searched.Retrieval.Reason != "" {
+		t.Fatalf("memory_search retrieval = %+v", searched.Retrieval)
+	}
+	recalled := memoryRecallOutput(arcadedb.RecallResult{
+		Retrieval: arcadedb.RecallRetrieval{Path: "hybrid"}, FloorsReason: arcadedb.ReasonUncalibratedFloors,
+	})
+	encoded, _ := json.Marshal(recalled)
+	if !strings.Contains(string(encoded), `"floors_reason":"uncalibrated_floors"`) {
+		t.Fatalf("memory_recall output lost the floors reason: %s", encoded)
+	}
+	encoded, _ = json.Marshal(memoryRecallOutput(arcadedb.RecallResult{Retrieval: arcadedb.RecallRetrieval{Path: "lexical"}}))
+	if strings.Contains(string(encoded), "floors_reason") {
+		t.Fatalf("a read with no floors reason names one: %s", encoded)
+	}
+}

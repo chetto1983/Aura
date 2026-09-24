@@ -105,12 +105,14 @@ func TestNewDefaultsMemoryLimits(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	// The dense floors are not limits with a default any more: zero means the floors measured
+	// for the reader's space, read at query time (relevance_floors.go, spec §9).
 	want := MemoryLimits{
 		QueryRunes: 2048, EntityRunes: 512, StatementRunes: 4096,
 		PredicateRunes: 100, SourceRunIDRunes: 100, SourceMemoryIDRunes: 100,
 		SourceMemoryIDs: 64, Results: 100, DigestFactsPerEntity: 20,
 		MaintenanceBatch: 100, DigestScan: 2000, HybridCandidates: 400,
-		DenseMaxDistance: 0.72, LexicalMinScore: 2, MinRelevance: 0.28,
+		LexicalMinScore: 2,
 		MentionHubShare: 0.20,
 		GraphMaxRecords: 10000,
 	}

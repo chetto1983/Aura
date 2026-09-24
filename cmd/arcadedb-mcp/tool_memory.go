@@ -344,6 +344,9 @@ type MemoryRetrievalMetadata struct {
 	Path      string `json:"path" jsonschema:"effective retrieval path: hybrid, lexical, or graph"`
 	Abstained bool   `json:"abstained" jsonschema:"true when no fact met the retrieval contract"`
 	Reason    string `json:"reason,omitempty" jsonschema:"named fallback or abstention reason"`
+	// Spec §9: set on a hybrid answer admitted by relevance floors never measured for the
+	// embedding space it ran in.
+	FloorsReason string `json:"floors_reason,omitempty" jsonschema:"uncalibrated_floors when the relevance floors were never measured for this embedding model"`
 }
 
 func addMemorySearchTool(server *mcp.Server, tenants *tenants) {
@@ -378,14 +381,19 @@ func memorySearchHandler(
 		if err != nil {
 			return nil, MemorySearchOutput{}, fmt.Errorf("memory_search: %w", err)
 		}
-		return nil, MemorySearchOutput{
-			Facts: toHits(result.Facts),
-			Retrieval: MemoryRetrievalMetadata{
-				Path:      result.RetrievalPath,
-				Abstained: result.Abstained,
-				Reason:    result.Reason,
-			},
-		}, nil
+		return nil, memorySearchOutput(result), nil
+	}
+}
+
+func memorySearchOutput(result arcadedb.FactSearchResult) MemorySearchOutput {
+	return MemorySearchOutput{
+		Facts: toHits(result.Facts),
+		Retrieval: MemoryRetrievalMetadata{
+			Path:         result.RetrievalPath,
+			Abstained:    result.Abstained,
+			Reason:       result.Reason,
+			FloorsReason: result.FloorsReason,
+		},
 	}
 }
 
