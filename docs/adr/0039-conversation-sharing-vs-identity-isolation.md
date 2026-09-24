@@ -95,6 +95,10 @@ it).
 - Redaction happening server-side, once, in one canonical `Snapshot` constructor means the three
   surfaces that read it (Markdown export, JSON export, the rendered public page) cannot diverge —
   a fix to the redaction rule is a fix everywhere at once.
+  **Superseded in part (2026-09-24):** the owner's own export no longer reads the `Snapshot`. A
+  production export rendered 40 of 50 assistant sections as empty fences, so the owner download
+  became the raw conversation dump (`prd.md` §7). Every surface a share token reaches still
+  reads the redacted `Snapshot` only; the owner is not a share recipient.
 
 **Negative / costs (accepted)**
 - **What a token holder gets, stated exactly so it is never assumed to be more:** the redacted

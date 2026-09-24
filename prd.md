@@ -239,6 +239,20 @@ current Aura sidebar already owns its external-store conversation list. No new p
 system or bulk authorization endpoint is required. Verify only disposable fixture chats
 through the real MCP browser; the screenshot does not authorize deleting existing history.
 
+The owner's conversation export (`GET /api/conversations/{id}/export`, the sidebar Export
+action) is the raw Markdown dump of that conversation. A production export read on 2026-09-24
+had 64 sections; 40 of its 50 assistant sections were an empty fence under "Tools used",
+because the owner download reused the share snapshot, which drops tool arguments, tool
+results, system turns, reasoning and timestamps by design. The dump therefore renders every
+persisted turn of every branch in seq order without tool-pair repair (an orphaned result
+from an interrupted run stays visible): role, content with sidecars rehydrated, tool calls
+with their arguments and ids, reasoning and its duration, timestamps, token counts,
+non-linear branch/parent pointers, attachments and delivery keys, then the compaction
+summaries and every asset of the thread. Configured secret values are masked; nothing else
+is filtered. Share links keep the redacted snapshot (ADR 0039). That measurement shows the
+redacted projection cannot explain what a run did; it does not bound the dump's size for a
+very long conversation.
+
 ## 8. Long-term memory: facts and provenance
 
 The production memory is Aura's Go MCP service over ArcadeDB. Other projects are
