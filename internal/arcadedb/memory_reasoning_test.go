@@ -274,12 +274,12 @@ func TestReasoningRecallIdentity(t *testing.T) {
 
 	t.Run("foreign search rows are discarded", func(t *testing.T) {
 		client, rec := recordingClient(t, `{"result":[{"identity_id":"identity-b","trace_id":"trace-b","source_ref":"postgres://aura/conversations/c-b/turns/1","conversation_id":"c-b","turn_seq":1,"provider_summary":"foreign","status":"succeeded","created_at":"2026-09-01T00:00:00Z"}]}`)
-		traces, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 5)
+		result, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 5)
 		if err != nil {
 			t.Fatalf("SearchReasoningTraces: %v", err)
 		}
-		if len(traces) != 0 {
-			t.Fatalf("foreign traces returned: %+v", traces)
+		if len(result.Traces) != 0 {
+			t.Fatalf("foreign traces returned: %+v", result.Traces)
 		}
 		statement, params, ok := findRecordedStatement(rec, reasoningTraceType)
 		if !ok || !strings.Contains(statement, "identity_id = :identity_id") || params["identity_id"] != "identity-a" {
@@ -405,7 +405,8 @@ func TestReasoningTerminalExpiry(t *testing.T) {
 			`"status":"succeeded","created_at":"2026-09-01T00:00:00Z",` +
 			`"terminal_at":"` + terminal.Format(time.RFC3339) + `","expires_at":"` + expiresAt.Format(time.RFC3339) + `"}]}`
 		client, rec := recordingClient(t, traceRow)
-		got, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 1)
+		found, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 1)
+		got := found.Traces
 		if err != nil || len(got) != 1 {
 			t.Fatalf("SearchReasoningTraces: count=%d err=%v", len(got), err)
 		}
@@ -437,10 +438,11 @@ func TestSearchReasoningTracesCarriesStepsAndToolCalls(t *testing.T) {
 		`"source_ref":"postgres://aura/conversations/c1/turns/7"}]}`
 	// lexical search (no embedder), then the two set-shaped body reads.
 	client, rec := recordingClient(t, traceRow, stepRow, toolRow)
-	traces, err := client.SearchReasoningTraces(t.Context(), "identity-a", "operator", 5)
+	found, err := client.SearchReasoningTraces(t.Context(), "identity-a", "operator", 5)
 	if err != nil {
 		t.Fatalf("SearchReasoningTraces: %v", err)
 	}
+	traces := found.Traces
 	if len(traces) != 1 {
 		t.Fatalf("traces = %#v", traces)
 	}

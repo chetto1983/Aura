@@ -46,10 +46,11 @@ func TestSearchFactsIdentifierGateBeforeAdmission(t *testing.T) {
 	ranks := `{"result":[{"rid":"#1:0"},{"rid":"#1:1"}]}`
 	rows := `{"result":[{"@rid":"#1:0","statement":"ZQX-9470 uses a database"},` +
 		`{"@rid":"#1:1","statement":"The project uses ArcadeDB","subject":"ZQX-947"}]}`
-	client, _ := recordingClient(t, ranks, rows)
+	client, _ := recordingClient(t, openMemoryGate(ranks, rows)...)
 	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
 	result, err := client.SearchFactsHybrid(t.Context(), "ZQX-947", 1, time.Time{})
-	if err != nil || len(result.Facts) != 1 || result.Facts[0].Subject != "ZQX-947" {
+	if err != nil || len(result.Facts) != 1 || result.Facts[0].Subject != "ZQX-947" ||
+		result.RetrievalPath != retrievalPathHybrid {
 		t.Fatalf("result = %+v, err = %v", result, err)
 	}
 }

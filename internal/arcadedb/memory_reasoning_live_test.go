@@ -278,14 +278,16 @@ func TestReasoningGraphLive_ExplicitIsolation(t *testing.T) {
 		t.Fatalf("ordinary semantic/recent/open/scroll made %d reasoning reads", reads)
 	}
 
-	owner, err := client.SearchReasoningTraces(context.Background(), trace.IdentityID, "deployment", 1)
+	ownerResult, err := client.SearchReasoningTraces(context.Background(), trace.IdentityID, "deployment", 1)
+	owner := ownerResult.Traces
 	if err != nil || len(owner) != 1 || owner[0].TraceID != trace.TraceID {
 		t.Fatalf("explicit owner reasoning = %+v err=%v", owner, err)
 	}
 	if reads := counter.count(); reads == 0 {
 		t.Fatal("explicit reasoning action made zero reasoning reads")
 	}
-	foreign, err := client.SearchReasoningTraces(context.Background(), "identity-foreign", "deployment", 1)
+	foreignResult, err := client.SearchReasoningTraces(context.Background(), "identity-foreign", "deployment", 1)
+	foreign := foreignResult.Traces
 	if err != nil || len(foreign) != 0 {
 		t.Fatalf("foreign explicit reasoning = %+v err=%v", foreign, err)
 	}

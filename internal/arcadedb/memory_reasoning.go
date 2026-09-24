@@ -297,39 +297,44 @@ func (c *Client) resolveReasoningEntities(
 	return trace, nil
 }
 
+// ReasoningSearchResult names the path that answered, as FactSearchResult does, so a
+// degraded search is told apart from a memory with nothing to say.
+type ReasoningSearchResult struct {
+	Traces        []ReasoningTrace
+	RetrievalPath string
+	Reason        string
+}
+
 // SearchReasoningTraces searches bounded trace summaries for one identity.
 func (c *Client) SearchReasoningTraces(
 	ctx context.Context,
 	identityID, query string,
 	limit int,
-) ([]ReasoningTrace, error) {
+) (ReasoningSearchResult, error) {
 	identityID, query = strings.TrimSpace(identityID), strings.TrimSpace(query)
 	if identityID == "" {
-		return nil, fmt.Errorf("arcadedb: reasoning search identity must be non-empty")
+		return ReasoningSearchResult{}, fmt.Errorf("arcadedb: reasoning search identity must be non-empty")
 	}
 	if query == "" {
-		return nil, fmt.Errorf("arcadedb: reasoning search query must be non-empty")
+		return ReasoningSearchResult{}, fmt.Errorf("arcadedb: reasoning search query must be non-empty")
 	}
 	if err := validateRuneLimit("reasoning search query", query, c.memoryLimits().QueryRunes); err != nil {
-		return nil, err
+		return ReasoningSearchResult{}, err
 	}
 	limit = min(boundedLimit(limit, 5, c.memoryLimits().Results), reasoningMaxSearchResults)
 	params := map[string]any{
 		"identity_id": identityID, "query": escapeLucene(query), "limit": limit,
 		"now": time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	if c.embedder == nil {
-		return c.searchReasoningLexical(ctx, params)
+	vector, reason := c.denseQueryVector(ctx, query)
+	if vector == nil {
+		return c.searchReasoningLexical(ctx, params, reason)
 	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
-	if err != nil || len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return c.searchReasoningLexical(ctx, params)
-	}
-	params["vector"] = vectors[0]
+	params["vector"] = vector
 	params["candidates"] = min(max(limit*4, 20), c.memoryLimits().HybridCandidates)
 	ranked, err := c.Query(ctx, searchReasoningHybridStatement, params)
 	if err != nil {
-		return c.searchReasoningLexical(ctx, params)
+		return c.searchReasoningLexical(ctx, params, reasonFusionFailed)
 	}
 	rids := make([]string, 0, len(ranked))
 	for _, row := range ranked {
@@ -338,12 +343,12 @@ func (c *Client) SearchReasoningTraces(
 		}
 	}
 	if len(rids) == 0 {
-		return []ReasoningTrace{}, nil
+		return ReasoningSearchResult{Traces: []ReasoningTrace{}, RetrievalPath: retrievalPathHybrid}, nil
 	}
 	params["rids"] = rids
 	rows, err := c.Query(ctx, hydrateReasoningTracesStatement, params)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: hydrate reasoning traces: %w", err)
+		return ReasoningSearchResult{}, fmt.Errorf("arcadedb: hydrate reasoning traces: %w", err)
 	}
 	order := make(map[string]int, len(rids))
 	for index, rid := range rids {
@@ -354,9 +359,13 @@ func (c *Client) SearchReasoningTraces(
 	})
 	traces, err := reasoningTracesFromRows(rows, identityID, limit)
 	if err != nil {
-		return nil, err
+		return ReasoningSearchResult{}, err
 	}
-	return c.hydrateReasoningBodies(ctx, identityID, traces)
+	traces, err = c.hydrateReasoningBodies(ctx, identityID, traces)
+	if err != nil {
+		return ReasoningSearchResult{}, err
+	}
+	return ReasoningSearchResult{Traces: traces, RetrievalPath: retrievalPathHybrid}, nil
 }
 
 // GetReasoningTrace retrieves one bounded ordered graph for its owning identity.
@@ -403,17 +412,25 @@ func (c *Client) GetReasoningTrace(
 	return trace, true, nil
 }
 
-func (c *Client) searchReasoningLexical(ctx context.Context, params map[string]any) ([]ReasoningTrace, error) {
+func (c *Client) searchReasoningLexical(
+	ctx context.Context,
+	params map[string]any,
+	reason string,
+) (ReasoningSearchResult, error) {
 	rows, err := c.Query(ctx, searchReasoningLexicalStatement, params)
 	if err != nil {
-		return nil, fmt.Errorf("arcadedb: search reasoning traces: %w", err)
+		return ReasoningSearchResult{}, fmt.Errorf("arcadedb: search reasoning traces: %w", err)
 	}
 	identityID := params["identity_id"].(string)
 	traces, err := reasoningTracesFromRows(rows, identityID, params["limit"].(int))
 	if err != nil {
-		return nil, err
+		return ReasoningSearchResult{}, err
 	}
-	return c.hydrateReasoningBodies(ctx, identityID, traces)
+	traces, err = c.hydrateReasoningBodies(ctx, identityID, traces)
+	if err != nil {
+		return ReasoningSearchResult{}, err
+	}
+	return ReasoningSearchResult{Traces: traces, RetrievalPath: retrievalPathLexical, Reason: reason}, nil
 }
 
 func reasoningTracesFromRows(rows []map[string]any, identityID string, limit int) ([]ReasoningTrace, error) {

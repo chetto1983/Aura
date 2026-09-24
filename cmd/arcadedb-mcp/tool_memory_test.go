@@ -362,3 +362,10 @@ func TestRefusedSupersedeIssuesNoEntityUpsert(t *testing.T) {
 		t.Fatal("a refused correction closed a fact")
 	}
 }
+
+// openMemoryGate prepends the three "no vector in another space" answers a dense read asks
+// for first (arcadedb memoryDenseOpen).
+func openMemoryGate(responses ...string) []string {
+	zero := `{"result":[{"n":0}]}`
+	return append([]string{zero, zero, zero}, responses...)
+}

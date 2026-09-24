@@ -242,6 +242,7 @@ func memoryReasoningRecall(
 		return MemoryRecallOutput{}, fmt.Errorf("reasoning mode rejects ordinary recall selectors")
 	}
 	var traces []arcadedb.ReasoningTrace
+	path, reason := "graph", ""
 	if traceID != "" {
 		trace, found, err := client.GetReasoningTrace(ctx, identity, traceID)
 		if err != nil {
@@ -251,23 +252,25 @@ func memoryReasoningRecall(
 			traces = []arcadedb.ReasoningTrace{trace}
 		}
 	} else {
-		var err error
-		traces, err = client.SearchReasoningTraces(ctx, identity, query, in.Limit)
+		result, err := client.SearchReasoningTraces(ctx, identity, query, in.Limit)
 		if err != nil {
 			return MemoryRecallOutput{}, err
 		}
+		traces, path, reason = result.Traces, result.RetrievalPath, result.Reason
 	}
 	output := MemoryRecallOutput{
 		Evidence: make([]MemoryRecallEvidence, 0, len(traces)), Facts: make([]MemorySearchHit, 0),
 		Abstained: len(traces) == 0,
 		Retrieval: MemoryRecallRetrievalMetadata{
-			EffectivePath: "reasoning", Path: "graph", ReasoningCount: len(traces),
-			Abstained: len(traces) == 0,
+			EffectivePath: "reasoning", Path: path, ReasoningCount: len(traces),
+			Abstained: len(traces) == 0, Reason: reason,
 		},
 	}
 	if output.Abstained {
-		output.Reason = "no_reasoning_evidence"
-		output.Retrieval.Reason = output.Reason
+		if reason == "" {
+			reason = "no_reasoning_evidence"
+		}
+		output.Reason, output.Retrieval.Reason = reason, reason
 	}
 	for index, trace := range traces {
 		converted := memoryReasoningTrace(trace)
@@ -278,7 +281,7 @@ func memoryReasoningRecall(
 	recordMemoryRecallTelemetry(ctx, in.Mode, arcadedb.RecallResult{
 		Abstained: output.Abstained, Reason: output.Reason,
 		Retrieval: arcadedb.RecallRetrieval{
-			EffectivePath: "reasoning", Path: "graph", ReasoningCount: len(traces),
+			EffectivePath: "reasoning", Path: path, ReasoningCount: len(traces),
 		},
 	})
 	return output, nil

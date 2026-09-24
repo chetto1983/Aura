@@ -245,22 +245,25 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	}
 	path, reason := retrievalPathHybrid, ""
 	factStatement, turnStatement := recallFactFuseStatement, recallTurnFuseStatement
-	vector, embeddingReason := c.recallQueryVector(ctx, query)
+	vector, embeddingReason := c.denseQueryVector(ctx, query)
 	if vector == nil {
 		path, reason = retrievalPathLexical, embeddingReason
 		factStatement, turnStatement = recallFactLexicalStatement, recallTurnLexicalStatement
 	} else {
 		params["vector"] = vector
 	}
-	facts, turns, err := c.rankRecallKinds(ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs)
+	facts, turns, degraded, err := c.rankRecallKinds(ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs)
 	if err != nil && path == retrievalPathHybrid {
 		path, reason = retrievalPathLexical, reasonFusionFailed
-		facts, turns, err = c.rankRecallKinds(
+		facts, turns, degraded, err = c.rankRecallKinds(
 			ctx, recallFactLexicalStatement, recallTurnLexicalStatement, params, request.ExcludeConversationIDs,
 		)
 	}
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
+	}
+	if reason == "" {
+		reason = degraded
 	}
 	result, err := c.hydrateRecallRanking(ctx, request, mergeRecallRankings(facts, turns), limit, path, reason)
 	if err != nil {
@@ -271,23 +274,33 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	return result, nil
 }
 
+const (
+	reasonFactRankingFailed = "fact_ranking_failed"
+	reasonTurnRankingFailed = "turn_ranking_failed"
+)
+
 // rankRecallKinds runs the two per-kind rankings. Both are attempted even when the first
 // fails: a memory with no conversations yet, or a fact index still building, must still
 // answer from the half that works rather than reporting an empty memory. The error is
-// returned only when NEITHER side produced a ranking, which is the only case the caller
-// can do nothing about.
+// returned only when NEITHER side produced a ranking; one failing side is named in the
+// returned reason, so an answer from half the memory never passes for a whole one.
 func (c *Client) rankRecallKinds(
 	ctx context.Context,
 	factStatement, turnStatement string,
 	params map[string]any,
 	excluded []string,
-) ([]recallRankedRID, []recallRankedRID, error) {
+) ([]recallRankedRID, []recallRankedRID, string, error) {
 	factRows, factErr := c.Query(ctx, applyRecallExclusions(factStatement, params, excluded), params)
 	turnRows, turnErr := c.Query(ctx, applyRecallExclusions(turnStatement, params, excluded), params)
-	if factErr != nil && turnErr != nil {
-		return nil, nil, fmt.Errorf("rank facts: %v; rank turns: %w", factErr, turnErr)
+	switch {
+	case factErr != nil && turnErr != nil:
+		return nil, nil, "", fmt.Errorf("rank facts: %v; rank turns: %w", factErr, turnErr)
+	case factErr != nil:
+		return nil, decodeRecallRanking(turnRows), reasonFactRankingFailed, nil
+	case turnErr != nil:
+		return decodeRecallRanking(factRows), nil, reasonTurnRankingFailed, nil
 	}
-	return decodeRecallRanking(factRows), decodeRecallRanking(turnRows), nil
+	return decodeRecallRanking(factRows), decodeRecallRanking(turnRows), "", nil
 }
 
 func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (RecallResult, error) {
@@ -316,20 +329,6 @@ func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (Recal
 		result.Retrieval.EffectivePath = effectivePathFacts
 	}
 	return result, nil
-}
-
-func (c *Client) recallQueryVector(ctx context.Context, query string) ([]float64, string) {
-	if c == nil || c.embedder == nil {
-		return nil, reasonEmbedderNotConfigured
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
-	if err != nil {
-		return nil, reasonEmbeddingFailed
-	}
-	if len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return nil, reasonEmbeddingInvalid
-	}
-	return vectors[0], ""
 }
 
 type recallRankedRID struct {

@@ -78,3 +78,38 @@ func recordingClient(t *testing.T, bodies ...string) (*Client, *recorder) {
 }
 
 func (r *recorder) joined() string { return strings.Join(r.statements, "\n") }
+
+// openMemoryGate prepends the three answers a dense read asks for first -- one count per
+// memory type (memoryDenseOpen), each "no vector in another space" -- to a test whose fake
+// answers statements in order.
+func openMemoryGate(bodies ...string) []string {
+	zero := `{"result":[{"n":0}]}`
+	return append([]string{zero, zero, zero}, bodies...)
+}
+
+// isGateCount reports whether statement is one of memoryDenseOpen's counts.
+func isGateCount(statement string) bool {
+	return strings.HasPrefix(statement, "SELECT count(*) AS n FROM ")
+}
+
+// withOpenGate answers memoryDenseOpen's counts with "no vector in another space" and hands
+// every other request to respond, so a routed fake about the dense leg stays about it.
+func withOpenGate(respond func(recordedRequest) testResponse) func(recordedRequest) testResponse {
+	return func(request recordedRequest) testResponse {
+		if statement, _ := request.Payload["command"].(string); isGateCount(statement) {
+			return testResponse{Body: `{"result":[{"n":0}]}`}
+		}
+		return respond(request)
+	}
+}
+
+// denseRequests drops the gate's counts from a routed fake's log.
+func denseRequests(requests []recordedRequest) []recordedRequest {
+	out := make([]recordedRequest, 0, len(requests))
+	for _, request := range requests {
+		if statement, _ := request.Payload["command"].(string); !isGateCount(statement) {
+			out = append(out, request)
+		}
+	}
+	return out
+}

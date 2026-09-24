@@ -47,7 +47,7 @@ func vectorOf(value float64) []float64 {
 
 func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 	embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}
-	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+	client, requests := routedClient(t, withOpenGate(func(request recordedRequest) testResponse {
 		statement, _ := request.Payload["command"].(string)
 		if strings.Contains(statement, "vector.fuse") {
 			return testResponse{Body: `{"result":[{"rid":"#3:1"},{"rid":"#3:2"}]}`}
@@ -58,7 +58,7 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 				{"@rid":"#3:1","statement":"first","subject":"A","object":"B"}]}`}
 		}
 		return testResponse{Status: http.StatusBadRequest, Body: `{"detail":"unexpected query"}`}
-	})
+	}))
 	client.WithEmbedder(embedder)
 	result, err := client.SearchFactsHybrid(context.Background(), "cliente torino?", 1, time.Time{})
 	if err != nil {
@@ -71,16 +71,17 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 	if len(embedder.calls) != 1 || embedder.calls[0][0] != taskQueryPrefix+"cliente torino?" {
 		t.Fatalf("embedding input = %v", embedder.calls)
 	}
-	if len(*requests) != 2 {
-		t.Fatalf("requests = %d", len(*requests))
+	dense := denseRequests(*requests)
+	if len(dense) != 2 {
+		t.Fatalf("requests = %d", len(dense))
 	}
-	params := (*requests)[0].Payload["params"].(map[string]any)
+	params := dense[0].Payload["params"].(map[string]any)
 	if params["query"] != `cliente torino\?` || params["candidates"] != float64(20) ||
 		params["as_of"] == nil || params["max_distance"] != float64(0.72) ||
 		params["min_lexical_score"] != float64(2) {
 		t.Fatalf("fusion params = %v", params)
 	}
-	fusion := (*requests)[0].Payload["command"].(string)
+	fusion := dense[0].Payload["command"].(string)
 	vectorFilter := `{ filter: (SELECT @rid FROM FACT WHERE ` + asOfCondition +
 		`).@rid, maxDistance: :max_distance }`
 	if !strings.Contains(fusion, vectorFilter) {
@@ -117,7 +118,7 @@ func TestSearchFactsHybridFallsBackToLexical(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var lexicalQueries []any
-			client, _ := routedClient(t, func(request recordedRequest) testResponse {
+			client, _ := routedClient(t, withOpenGate(func(request recordedRequest) testResponse {
 				statement, _ := request.Payload["command"].(string)
 				switch {
 				case strings.Contains(statement, "vector.fuse"):
@@ -129,7 +130,7 @@ func TestSearchFactsHybridFallsBackToLexical(t *testing.T) {
 					lexicalQueries = append(lexicalQueries, params["query"])
 					return testResponse{Body: oneFactRow}
 				}
-			})
+			}))
 			client.WithEmbedder(tt.embedder)
 			result, err := client.SearchFactsHybrid(context.Background(), "where?", 2, now)
 			if err != nil || len(result.Facts) != 1 || result.Facts[0].Subject != "Davide" {
@@ -162,8 +163,8 @@ func TestSearchFactsHybridAbstainsWhenNoLegQualifies(t *testing.T) {
 		!result.Abstained || result.Reason != reasonNoQualifiedCandidates {
 		t.Fatalf("result = %+v", result)
 	}
-	if len(*requests) != 1 {
-		t.Fatalf("requests = %d, want no lexical retry after a valid abstention", len(*requests))
+	if dense := denseRequests(*requests); len(dense) != 1 {
+		t.Fatalf("requests = %d, want no lexical retry after a valid abstention", len(dense))
 	}
 }
 
@@ -197,7 +198,7 @@ func TestSearchFactsHybridCapsCandidatesAndQuery(t *testing.T) {
 	if _, err := client.SearchFactsHybrid(context.Background(), "bounded", 1000, now); err != nil {
 		t.Fatalf("SearchFactsHybrid: %v", err)
 	}
-	params := (*requests)[0].Payload["params"].(map[string]any)
+	params := denseRequests(*requests)[0].Payload["params"].(map[string]any)
 	if params["candidates"] != float64(400) {
 		t.Fatalf("candidates = %v, want 400", params["candidates"])
 	}

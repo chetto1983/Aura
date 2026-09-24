@@ -187,6 +187,9 @@ type Client struct {
 	// embedder is optional: with none, memory retrieval is the lexical leg alone,
 	// which is the behaviour that shipped and must not regress when it is absent.
 	embedder DenseEmbedder
+	// memoryGate is this tenant's answer to "is every memory vector in my space"
+	// (embedding_space.go), cached for spaceGateTTL.
+	memoryGate spaceGate
 	// facts serializes UpsertFact's attach-or-create sequence per fact_key
 	// (fact_lock.go) -- see that file's doc comment for why an in-process
 	// lock, not just the transactional write, is what actually closes the

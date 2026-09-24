@@ -86,7 +86,7 @@ func TestMemoryRecallBackendPath(t *testing.T) {
 	}{
 		{
 			name: "hybrid query", input: MemoryRecallInput{Query: "blue notebook"},
-			responses: []string{`{"result":[{"rid":"#10:1","score":0.03}]}`, recallFactHydration, `{"result":[]}`},
+			responses: openMemoryGate(`{"result":[{"rid":"#10:1","score":0.03}]}`, recallFactHydration, `{"result":[]}`),
 			embedder:  recallStubEmbedder{}, wantPath: "hybrid",
 		},
 		{
@@ -95,7 +95,7 @@ func TestMemoryRecallBackendPath(t *testing.T) {
 		},
 		{
 			name: "embedding fallback", input: MemoryRecallInput{Query: "blue notebook"},
-			responses: []string{`{"result":[{"rid":"#10:1","score":0.03}]}`, recallFactHydration, `{"result":[]}`},
+			responses: openMemoryGate(`{"result":[{"rid":"#10:1","score":0.03}]}`, recallFactHydration, `{"result":[]}`),
 			embedder:  recallStubEmbedder{err: errors.New("embedder unavailable")}, wantPath: "lexical",
 		},
 	}
@@ -297,9 +297,10 @@ func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
 		`{"@rid":"#20:1","identity_id":"` + testIdentity + `","conversation_id":"conversation-active","turn_seq":9,"role":"user","content":"active notebook","content_hash":"active","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://active/9"},` +
 		`{"@rid":"#20:2","identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
 	window := `{"result":[{"identity_id":"` + testIdentity + `","conversation_id":"conversation-history","turn_seq":7,"role":"user","content":"historical notebook","content_hash":"history","occurred_at":"2026-08-30T12:00:00Z","source_ref":"postgres://history/7"}]}`
-	// ownership, the empty fact ranking, the conversation ranking, the empty fact
-	// hydration, the conversation hydration, then the window.
-	client, rec := newRecordingDB(t, ownership, `{"result":[]}`, ranked, `{"result":[]}`, turns, window)
+	// ownership, the gate's three counts, the empty fact ranking, the conversation
+	// ranking, the empty fact hydration, the conversation hydration, then the window.
+	client, rec := newRecordingDB(t, append([]string{ownership},
+		openMemoryGate(`{"result":[]}`, ranked, `{"result":[]}`, turns, window)...)...)
 	client.WithEmbedder(recallStubEmbedder{})
 	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
 		ConversationID: "conversation-active", TurnID: "turn-current",
@@ -457,4 +458,20 @@ func TestMemoryRecallUnprojectedActiveSourceIsNotARefusal(t *testing.T) {
 	// The other branch — a row that exists and belongs to someone else — is covered by
 	// TestMemoryRecallActiveSourceHeader's foreign-conversation subtest, which also proves
 	// the refusal lands before the recall query runs.
+}
+
+func TestMemoryRecallReasoningCarriesTheRetrievalReason(t *testing.T) {
+	client, _ := newRecordingDB(t, `{"result":[{"n":1}]}`)
+	client.WithEmbedder(recallStubEmbedder{})
+	_, output, err := memoryRecallHandler(singleTenant(t, client))(
+		context.Background(), reqWithIdentity(testIdentity), MemoryRecallInput{
+			Mode: "reasoning", Query: "deployment", Limit: 5,
+		},
+	)
+	if err != nil {
+		t.Fatalf("memory_recall: %v", err)
+	}
+	if output.Retrieval.Reason != "embedding_space_mismatch" || output.Retrieval.Path != "lexical" {
+		t.Fatalf("retrieval = %+v, want lexical with embedding_space_mismatch", output.Retrieval)
+	}
 }

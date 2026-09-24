@@ -18,7 +18,7 @@ const recallAnchorRow = `{"result":[{"@rid":"#20:1","identity_id":"identity-a","
 const recallWindowRows = `{"result":[{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":6,"role":"assistant","content":"I found the earlier itinerary.","content_hash":"hash-6","occurred_at":"2026-08-31T11:59:00Z","source_ref":"postgres://conversation/conversation-1/turn/6"},{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":7,"role":"user","content":"We discussed the blue notebook in Turin.","content_hash":"hash-7","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://conversation/conversation-1/turn/7"}]}`
 
 func TestMemoryRecallVectorFuse(t *testing.T) {
-	client, requests := routedClient(t, func(request recordedRequest) testResponse {
+	client, requests := routedClient(t, withOpenGate(func(request recordedRequest) testResponse {
 		statement, _ := request.Payload["command"].(string)
 		switch {
 		case strings.Contains(statement, "vector.fuse"):
@@ -32,7 +32,7 @@ func TestMemoryRecallVectorFuse(t *testing.T) {
 		default:
 			return testResponse{Status: http.StatusBadRequest, Body: `{"detail":"unexpected query"}`}
 		}
-	})
+	}))
 	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
 
 	result, err := client.RecallMemory(context.Background(), RecallRequest{
@@ -134,8 +134,8 @@ func TestMemoryRecallAbstains(t *testing.T) {
 	// Two, not one: facts and conversations are ranked separately now, and an
 	// abstention must still cost exactly the two rankings and nothing after them --
 	// no hydration, no conversation window for a candidate set that is empty.
-	if len(*requests) != 2 {
-		t.Fatalf("abstention made %d queries, want one ranked retrieval per record type", len(*requests))
+	if dense := denseRequests(*requests); len(dense) != 2 {
+		t.Fatalf("abstention made %d queries, want one ranked retrieval per record type", len(dense))
 	}
 	if result.Retrieval.BackendLatency < 0 || result.Retrieval.BackendLatency > time.Minute {
 		t.Fatalf("backend latency = %s", result.Retrieval.BackendLatency)
@@ -471,4 +471,34 @@ func recallClientResult(t *testing.T, body string, request RecallRequest) (Recal
 	t.Helper()
 	client, _ := recordingClient(t, body)
 	return client.RecallMemory(context.Background(), request)
+}
+
+// Fix on touch (spec): an answer from half the memory used to pass for a whole one.
+func TestMemoryRecallNamesTheSideThatFailed(t *testing.T) {
+	client, _ := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		switch {
+		case strings.HasPrefix(statement, "SELECT count(*) AS n FROM "):
+			return testResponse{Body: `{"result":[{"n":0}]}`}
+		case strings.Contains(statement, "vector.fuse") && strings.Contains(statement, conversationTurnType):
+			return testResponse{Status: http.StatusInternalServerError, Body: `{"detail":"turn index down"}`}
+		case strings.Contains(statement, "vector.fuse"):
+			return testResponse{Body: `{"result":[{"rid":"#10:1","score":0.03}]}`}
+		case strings.Contains(statement, "FROM FACT") && strings.Contains(statement, "@rid IN"):
+			return testResponse{Body: recallFactRow}
+		}
+		return testResponse{Body: `{"result":[]}`}
+	})
+	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
+	result, err := client.RecallMemory(context.Background(), RecallRequest{
+		IdentityID: "identity-a", Mode: RecallModeSemantic, Query: "where is the blue notebook", Limit: 5,
+	})
+	if err != nil {
+		t.Fatalf("RecallMemory: %v", err)
+	}
+	if len(result.Evidence) != 1 || result.Retrieval.Path != retrievalPathHybrid ||
+		result.Reason != reasonTurnRankingFailed {
+		t.Fatalf("result = %+v (reason %q), want the fact answered with %q named",
+			result.Evidence, result.Reason, reasonTurnRankingFailed)
+	}
 }

@@ -153,12 +153,15 @@ const (
 	reasonHydrationFailed       = "hydration_failed"
 	reasonNoQualifiedCandidates = "no_qualified_candidates"
 	reasonQueryIgnoredByRecent  = "query_ignored_by_recent_mode"
+
+	reasonEmbeddingSpaceMismatch = "embedding_space_mismatch"
+	reasonSpaceCheckFailed       = "embedding_space_check_failed"
 )
 
 // SearchFactsHybrid runs both legs and fuses them with ArcadeDB's own reciprocal
-// rank fusion. With no embedder configured — or with the sidecar down — it is
-// exactly SearchFacts, which is the point: the dense leg is an improvement, not a
-// dependency. The result names the path it took, so a caller can tell a fused
+// rank fusion. With no embedder configured, with the sidecar down, or with a memory
+// not wholly in the reader's embedding space, it is exactly SearchFacts, which is the
+// point: the dense leg is an improvement, not a dependency. The result names the path it took, so a caller can tell a fused
 // answer from a lexical fallback instead of inferring it.
 func (c *Client) SearchFactsHybrid(
 	ctx context.Context,
@@ -177,15 +180,9 @@ func (c *Client) SearchFactsHybrid(
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
-	if c.embedder == nil {
-		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbedderNotConfigured)
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
-	if err != nil {
-		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbeddingFailed)
-	}
-	if len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return c.searchFactsFallback(ctx, query, limit, asOf, reasonEmbeddingInvalid)
+	vector, reason := c.denseQueryVector(ctx, query)
+	if vector == nil {
+		return c.searchFactsFallback(ctx, query, limit, asOf, reason)
 	}
 
 	// Over-fetch each leg: fusion can only reorder what it is given, and a fact
@@ -194,7 +191,7 @@ func (c *Client) SearchFactsHybrid(
 	candidates := min(max(limit*4, 20), limits.HybridCandidates)
 	ranked, err := c.Query(ctx, fuseRIDsStatement, map[string]any{
 		"query":        escapeLucene(query),
-		"vector":       vectors[0],
+		"vector":       vector,
 		"candidates":   candidates,
 		"as_of":        asOf.UTC().Format(time.RFC3339),
 		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
