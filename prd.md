@@ -971,8 +971,13 @@ run apart. Measured 2026-09-24 on the lab VM: the path unit started the updater 
 and lost, so the updater re-reads `request` before it exits. The activity query ran
 under 1 ms over 1M `tool_invocations` rows (Postgres 18 skip scan, no new index);
 `conversations` is fail-closed under row security, so the last chat is read per
-identity. Not shown by these measurements: behaviour under a slow or failing registry,
-several appliances at once, and whether 15 minutes suits real usage.
+identity. Live on the same VM: the first build carrying the channel (`d47aadd3a`) applied
+without consent, as it must, because the updater that pulled it predates consent; it
+installed the path unit on the way and finished in about 2 minutes. The next build
+(`e3ad18ab5`) applied on its own in 1 min 38 s with the reason "nobody is using Aura",
+the activity report putting the last use 17 hours back. Not shown by these measurements:
+behaviour under a slow or failing registry, several appliances at once, and whether
+15 minutes suits real usage.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
