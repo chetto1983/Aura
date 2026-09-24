@@ -98,7 +98,7 @@ import (
 
 func TestNameFromURI(t *testing.T) {
 	for uri, want := range map[string]string{
-		"attachment://abc123": "abc123",
+		"attachment://stash/abc123": "abc123",
 		"whatsapp-media://393331234567@s.whatsapp.net/3EB0C767": "3EB0C767",
 		"file:///tmp/report.pdf":                  "report.pdf",
 		"https://example.com/a/b.pdf?sig=x#frag": "b.pdf",
@@ -151,7 +151,7 @@ Append to `internal/mcp/result_test.go` (add `"reflect"` to its imports):
 ```go
 func TestDecodeToolPayload_KeepsEveryFileBlock(t *testing.T) {
 	size := int64(8)
-	link := &sdkmcp.ResourceLink{URI: "attachment://abc", Name: "invoice.pdf", MIMEType: "application/pdf", Size: &size}
+	link := &sdkmcp.ResourceLink{URI: "attachment://stash/abc", Name: "invoice.pdf", MIMEType: "application/pdf", Size: &size}
 	result := &sdkmcp.CallToolResult{Content: []sdkmcp.Content{
 		&sdkmcp.TextContent{Text: `{"attachmentId":"abc"}`},
 		&sdkmcp.ImageContent{Data: []byte("png-bytes"), MIMEType: "image/png"},
@@ -267,7 +267,7 @@ func FileFromContents(rc *sdkmcp.ResourceContents) (FilePart, bool) {
 }
 
 // NameFromURI is the last path segment of uri, the name a file gets when its server
-// gave none: attachment://abc123 names abc123.
+// gave none: attachment://stash/abc123 names abc123.
 func NameFromURI(uri string) string {
 	rest := uri
 	if _, after, ok := strings.Cut(rest, "://"); ok {
