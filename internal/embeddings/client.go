@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -32,12 +33,46 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
-// Client calls an OpenAI-compatible /v1/embeddings endpoint. An empty APIKey is the local
-// llama.cpp sidecar; a key selects a hosted route.
+// ErrNoCredential is a hosted route asked to embed while its credential is empty. It is the
+// route's failure, never the text's, and nothing is sent.
+var ErrNoCredential = errors.New("embeddings: the hosted route has no credential")
+
+// StatusError is an answer outside 2xx from the embedding endpoint.
+type StatusError struct {
+	Code   int
+	Status string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("endpoint returned HTTP %d (%s)", e.Code, e.Status)
+}
+
+// RejectsInput reports whether err is the endpoint refusing the input itself: 400, 413 or
+// 422. Only those say something about a text; 401, 403 and 429 are about the route or the
+// account, and a 5xx is about the server.
+func RejectsInput(err error) bool {
+	var status *StatusError
+	if !errors.As(err, &status) {
+		return false
+	}
+	switch status.Code {
+	case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
+		return true
+	}
+	return false
+}
+
+// Client calls an OpenAI-compatible /v1/embeddings endpoint. With neither APIKey nor
+// Credential it is the local llama.cpp sidecar; either one selects a hosted route.
 type Client struct {
-	BaseURL    string
-	Model      string
-	APIKey     string
+	BaseURL string
+	Model   string
+	APIKey  string
+	// Credential, when set, is read on every request in place of APIKey, so a key rotated
+	// in the cockpit reaches a running client. Setting it marks the route hosted even while
+	// it returns "": such a client refuses to embed (ErrNoCredential) rather than send an
+	// unauthenticated request to a provider.
+	Credential func() string
 	Client     *http.Client
 	Dimensions int
 	BatchSize  int
@@ -73,6 +108,9 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	}
 	if len(texts) == 0 {
 		return nil, nil
+	}
+	if c.hosted() && c.key() == "" {
+		return nil, ErrNoCredential
 	}
 	dimensions := c.Dimensions
 	if dimensions <= 0 {
@@ -165,7 +203,7 @@ func (c *Client) postJSON(ctx context.Context, url string, payload, out any) err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.hosted() {
-		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(c.APIKey))
+		req.Header.Set("Authorization", "Bearer "+c.key())
 	}
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
@@ -173,7 +211,7 @@ func (c *Client) postJSON(ctx context.Context, url string, payload, out any) err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("endpoint returned HTTP %d (%s)", resp.StatusCode, resp.Status)
+		return &StatusError{Code: resp.StatusCode, Status: resp.Status}
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
@@ -189,7 +227,15 @@ func (c *Client) postJSON(ctx context.Context, url string, payload, out any) err
 }
 
 func (c *Client) hosted() bool {
-	return strings.TrimSpace(c.APIKey) != ""
+	return c.Credential != nil || strings.TrimSpace(c.APIKey) != ""
+}
+
+// key is this request's credential: Credential's current answer, else APIKey.
+func (c *Client) key() string {
+	if c.Credential != nil {
+		return strings.TrimSpace(c.Credential())
+	}
+	return strings.TrimSpace(c.APIKey)
 }
 
 func (c *Client) httpClient() *http.Client {

@@ -3,10 +3,12 @@ package embeddings
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -203,4 +205,90 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (fn roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return fn(request)
+}
+
+// A key rotated in the cockpit must reach a running client: the daemon builds its memory
+// route once, and a boot copy of the key would keep embedding with a revoked one.
+func TestClientReadsTheCredentialOnEveryRequest(t *testing.T) {
+	var mu sync.Mutex
+	var seen []string
+	server := httptest.NewServer(withCatalogue(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen = append(seen, r.Header.Get("Authorization"))
+		mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+			{"index": 0, "embedding": []float64{1, 0}},
+		}})
+	}))
+	t.Cleanup(server.Close)
+	key := "first"
+	client := &Client{
+		BaseURL: server.URL, Model: "model", Credential: func() string { return key },
+		Client: server.Client(), Dimensions: 2,
+	}
+	if _, err := client.Embed(t.Context(), []string{"a"}); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	key = "rotated"
+	if _, err := client.Embed(t.Context(), []string{"b"}); err != nil {
+		t.Fatalf("Embed after rotation: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) != 2 || seen[0] != "Bearer first" || seen[1] != "Bearer rotated" {
+		t.Fatalf("authorization headers = %q, want the key current at each request", seen)
+	}
+}
+
+// A hosted route whose key is empty must not send anything: OpenRouter would answer 401,
+// and an unauthenticated request says nothing about the text it carried.
+func TestClientRefusesAHostedRouteWithoutACredential(t *testing.T) {
+	var mu sync.Mutex
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		mu.Lock()
+		requests++
+		mu.Unlock()
+	}))
+	t.Cleanup(server.Close)
+	client := &Client{
+		BaseURL: server.URL, Model: "model", Credential: func() string { return " " },
+		Client: server.Client(), Dimensions: 2,
+	}
+	if _, err := client.Embed(t.Context(), []string{"a"}); !errors.Is(err, ErrNoCredential) {
+		t.Fatalf("err = %v, want ErrNoCredential", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if requests != 0 {
+		t.Fatalf("%d request(s) reached the provider without a key", requests)
+	}
+}
+
+// Only a refusal of the input itself says something about a text. The memory pass sets a
+// record aside on RejectsInput alone; reading a 401 or a 429 as "bad text" would stamp a
+// whole memory refused after one revoked key or one rate limit.
+func TestRejectsInputOnlyForAnInputRefusal(t *testing.T) {
+	for code, want := range map[int]bool{
+		400: true, 413: true, 422: true,
+		401: false, 403: false, 404: false, 429: false, 500: false, 503: false,
+	} {
+		t.Run(strconv.Itoa(code), func(t *testing.T) {
+			server := httptest.NewServer(withCatalogue(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(code)
+			}))
+			t.Cleanup(server.Close)
+			client := &Client{BaseURL: server.URL, Model: "model", APIKey: "key", Client: server.Client(), Dimensions: 2}
+			_, err := client.Embed(t.Context(), []string{"a"})
+			if err == nil {
+				t.Fatalf("Embed succeeded against HTTP %d", code)
+			}
+			if got := RejectsInput(err); got != want {
+				t.Fatalf("RejectsInput(HTTP %d) = %v, want %v (err %v)", code, got, want, err)
+			}
+		})
+	}
+	if RejectsInput(errors.New("request: connection refused")) {
+		t.Fatal("a transport error was read as an input refusal")
+	}
 }

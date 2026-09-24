@@ -52,7 +52,7 @@ func (c *Client) fetchInputLimit(ctx context.Context) (int, error) {
 	}
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout())
 	defer cancel()
-	entries, err := llm.FetchModelCatalog(reqCtx, c.httpClient(), provider, catalogue, strings.TrimSpace(c.APIKey))
+	entries, err := llm.FetchModelCatalog(reqCtx, c.httpClient(), provider, catalogue, c.key())
 	if err != nil {
 		return 0, err
 	}
