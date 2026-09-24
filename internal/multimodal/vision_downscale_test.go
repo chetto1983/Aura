@@ -14,6 +14,7 @@ import (
 	"io"
 	"math/rand/v2"
 	"testing"
+	"time"
 )
 
 func pngOf(t *testing.T, w, h int) []byte {
@@ -57,6 +58,16 @@ func gifScreen(w, h uint16) []byte {
 	out := binary.LittleEndian.AppendUint16([]byte("GIF89a"), w)
 	out = binary.LittleEndian.AppendUint16(out, h)
 	return append(out, 0, 0, 0, ';')
+}
+
+// losslessWebP is Modernizr's 1x1 lossless WebP probe.
+func losslessWebP(t *testing.T) []byte {
+	t.Helper()
+	webp, err := base64.StdEncoding.DecodeString("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return webp
 }
 
 func decodedSize(t *testing.T, raw []byte) (format string, w, h int) {
@@ -284,10 +295,68 @@ func TestDownscaleForVisionFlattensTransparencyOnWhite(t *testing.T) {
 func TestDownscaleForVisionWaitsForTheDecodeSlot(t *testing.T) {
 	decodeSlot <- struct{}{}
 	defer func() { <-decodeSlot }()
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := DownscaleForVision(ctx, pngOf(t, 2, 2), 0); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want the caller's deadline to end the wait while the slot is held", err)
+	}
+}
+
+// A context that is already over never decodes, even when the slot is free: a select with the
+// slot and ctx.Done both ready picks either one at random, so one run could pass by luck.
+func TestDownscaleForVisionNeverDecodesForAnEndedContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := DownscaleForVision(ctx, pngOf(t, 2, 2), 0); !errors.Is(err, context.Canceled) {
-		t.Fatalf("err = %v, want the caller's cancellation while the slot is held", err)
+	raw := pngOf(t, 2, 2)
+	for range 64 {
+		if got, err := DownscaleForVision(ctx, raw, 0); !errors.Is(err, context.Canceled) || got.Bytes != nil {
+			t.Fatalf("got %d bytes, err %v; want context.Canceled and no decode", len(got.Bytes), err)
+		}
+	}
+}
+
+// The short edge of a very wide or tall image rounds to zero at 1024 px; a zero-height JPEG
+// would ride, and break, every later request of the turn.
+func TestDownscaleForVisionKeepsAtLeastOnePixel(t *testing.T) {
+	for name, tc := range map[string]struct{ w, h, wantW, wantH int }{
+		"wide": {2000, 1, 1024, 1},
+		"tall": {1, 2000, 1, 1024},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := DownscaleForVision(t.Context(), pngOf(t, tc.w, tc.h), 0)
+			if err != nil || got.MIMEType != "image/jpeg" {
+				t.Fatalf("got %q err %v, want a JPEG", got.MIMEType, err)
+			}
+			if format, w, h := decodedSize(t, got.Bytes); format != "jpeg" || w != tc.wantW || h != tc.wantH {
+				t.Fatalf("out = %s %dx%d, want jpeg %dx%d", format, w, h, tc.wantW, tc.wantH)
+			}
+		})
+	}
+}
+
+// Only JPEG and PNG pass through unchanged. A GIF may be animated and a WebP is not decoded by
+// every vision backend, so a small one is re-encoded as JPEG at its own size.
+func TestDownscaleForVisionReencodesSmallGIFAndWebP(t *testing.T) {
+	var small bytes.Buffer
+	if err := gif.Encode(&small, image.NewPaletted(image.Rect(0, 0, 16, 16), color.Palette{color.Black, color.White}), nil); err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct {
+		raw  []byte
+		w, h int
+	}{
+		"gif":           {small.Bytes(), 16, 16},
+		"lossless webp": {losslessWebP(t), 1, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := DownscaleForVision(t.Context(), tc.raw, 0)
+			if err != nil || got.MIMEType != "image/jpeg" {
+				t.Fatalf("got %q err %v, want image/jpeg", got.MIMEType, err)
+			}
+			if format, w, h := decodedSize(t, got.Bytes); format != "jpeg" || w != tc.w || h != tc.h {
+				t.Fatalf("out = %s %dx%d, want jpeg %dx%d at its own size", format, w, h, tc.w, tc.h)
+			}
+		})
 	}
 }
 
@@ -302,12 +371,7 @@ func TestDownscaleForVisionDecodesEveryTypeAVisionModelReads(t *testing.T) {
 	if got, err := DownscaleForVision(t.Context(), big.Bytes(), 0); err != nil || got.MIMEType != "image/jpeg" {
 		t.Fatalf("a 2000px GIF was not downscaled (mime %q, err %v): its decoder is not registered", got.MIMEType, err)
 	}
-	// Modernizr's 1x1 lossless WebP probe.
-	webp, err := base64.StdEncoding.DecodeString("UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, err := DownscaleForVision(t.Context(), webp, 0); err != nil || got.Width != 1 || got.Height != 1 {
+	if got, err := DownscaleForVision(t.Context(), losslessWebP(t), 0); err != nil || got.Width != 1 || got.Height != 1 {
 		t.Fatalf("webp = {%dx%d} err %v, want a decodable 1x1", got.Width, got.Height, err)
 	}
 }

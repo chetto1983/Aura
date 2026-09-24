@@ -38,7 +38,9 @@ func (c *Client) projectToolMedia(ctx context.Context, media map[string][]llm.Pr
 }
 
 // toolBlockMedia collects, in message order, the media of the contiguous run of tool
-// messages that ends at end.
+// messages that ends at end. A call id's media go only with the last tool message that carries
+// it: the media are this turn's, and a blank-id fallback id is built from a call's name,
+// arguments and position, so an earlier turn's call can carry the same one.
 func toolBlockMedia(messages []llm.Message, end int, media map[string][]llm.ProjectedRequestPart) []llm.ProjectedRequestPart {
 	if len(media) == 0 {
 		return nil
@@ -48,10 +50,23 @@ func toolBlockMedia(messages []llm.Message, end int, media map[string][]llm.Proj
 		start--
 	}
 	var parts []llm.ProjectedRequestPart
-	for _, message := range messages[start : end+1] {
-		parts = append(parts, media[message.ToolCallID]...)
+	for i := start; i <= end; i++ {
+		id := messages[i].ToolCallID
+		if len(media[id]) > 0 && !answeredLater(messages[i+1:], id) {
+			parts = append(parts, media[id]...)
+		}
 	}
 	return parts
+}
+
+// answeredLater reports whether a tool message in messages answers the call id.
+func answeredLater(messages []llm.Message, id string) bool {
+	for _, message := range messages {
+		if message.Role == llm.RoleTool && message.ToolCallID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // toolMediaDisclaimer opens the tool-media message. The user role would lend a third party's

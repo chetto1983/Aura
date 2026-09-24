@@ -128,6 +128,37 @@ func TestToolMediaFollowsTheLastToolMessageOfItsBlock(t *testing.T) {
 	}
 }
 
+// A call id can recur across turns: the blank-id fallback builds it from name, arguments and
+// position (llm_agent_call_dedup.go). The media belongs to the latest call, so it is attached
+// once, after the later block, and never re-attached to an older turn's result.
+func TestToolMediaAttachesOnlyAfterTheLatestCallWithItsID(t *testing.T) {
+	call := toolCall("c1", "read_file", `{"path":"/workspace/photo.png"}`)
+	raw := captureMessages(t, visionCaps, llm.Request{
+		Model: "vision",
+		Messages: []llm.Message{
+			{Role: llm.RoleSystem, Content: "sys"},
+			{Role: llm.RoleUser, Content: "guarda la foto"},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+			{Role: llm.RoleTool, ToolCallID: "c1", Content: "earlier turn"},
+			{Role: llm.RoleUser, Content: "guardala di nuovo"},
+			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+			{Role: llm.RoleTool, ToolCallID: "c1", Content: "this turn"},
+		},
+		ToolMedia: photoMedia(),
+	})
+	if n := strings.Count(string(raw), "data:image/png;base64,"); n != 1 {
+		t.Fatalf("the image was attached %d times, want once: %s", n, raw)
+	}
+	messages := decodeMessages(t, raw)
+	roles := make([]string, len(messages))
+	for i, m := range messages {
+		roles[i] = m.Role
+	}
+	if got, want := strings.Join(roles, " "), "system user assistant tool user assistant tool user"; got != want {
+		t.Fatalf("roles = %s\nwant    %s", got, want)
+	}
+}
+
 // Caps that cannot be detected are the text-only floor, as they are for chat uploads.
 func TestToolMediaBecomesATextNoteWhenTheModelCannotSeeImages(t *testing.T) {
 	for name, caps := range map[string]llm.ContentCapabilitySource{

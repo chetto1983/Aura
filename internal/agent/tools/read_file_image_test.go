@@ -206,6 +206,21 @@ func TestReadFileNeverAttachesAnOversizedBodyRaw(t *testing.T) {
 	}
 }
 
+// A read whose context ended is a timeout, not a broken image: the model must not be told to
+// shrink an image that was fine, and the error stays a context error the agent can classify.
+func TestReadFileReportsAnEndedContextAsItself(t *testing.T) {
+	ctx, _ := turnCtx(t)
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	_, err := readFile(t, ctx, boxServing(t, testPNG(t, 2, 2)), photoPath)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+	if strings.Contains(err.Error(), "convert or shrink") {
+		t.Fatalf("a cancelled read is reported as an image to shrink: %v", err)
+	}
+}
+
 // The refusal must point the model somewhere true: images open with read_file in a chat
 // turn, anything else goes through shell_exec or send_file.
 func TestReadFileBinaryRefusalNamesTheWaysOut(t *testing.T) {

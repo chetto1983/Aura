@@ -28,10 +28,7 @@ func (a *LlmAgent) prepareReasoningRequest(
 ) (PreparedReasoningRequest, error) {
 	request := a.buildRequest(budget, tier, tierSet)
 	request.SessionID = a.sessionID
-	if projection, ok := llm.ContentProjectionFromContext(ctx); ok {
-		request.ContentProjection = &projection
-	}
-	request.ToolMedia = llm.ToolMediaFromContext(ctx).Snapshot()
+	withTurnMedia(ctx, &request)
 	hookResult, err := a.transformModelRequest(ctx, &request, round.requestID)
 	if err != nil {
 		return PreparedReasoningRequest{}, err
@@ -39,6 +36,17 @@ func (a *LlmAgent) prepareReasoningRequest(
 	return PreparedReasoningRequest{
 		Request: request, HookResult: hookResult,
 	}, nil
+}
+
+// withTurnMedia gives request the media of the turn ctx belongs to: the user's own uploads
+// and the images this turn's tools produced. Every request the turn sends goes through it,
+// the finalize synthesis included, or that request would say an image is attached below and
+// carry none.
+func withTurnMedia(ctx context.Context, request *llm.Request) {
+	if projection, ok := llm.ContentProjectionFromContext(ctx); ok {
+		request.ContentProjection = &projection
+	}
+	request.ToolMedia = llm.ToolMediaFromContext(ctx).Snapshot()
 }
 
 func (a *LlmAgent) transformModelRequest(

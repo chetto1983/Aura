@@ -90,14 +90,16 @@ type VisionImage struct {
 
 // DownscaleForVision prepares an image for a vision model. One whose long edge exceeds
 // 1024 px is shrunk to that edge and re-encoded as JPEG at quality 85, so neither the
-// CPU/4 GB-GPU OCR sidecar nor a chat model is handed a full-resolution photo. One that
-// already fits comes back unchanged, unless it is larger than maxBytes (0: no cap); then it
-// is re-encoded the same way at its own size. Either JPEG is refused if it is still over
-// maxBytes.
+// CPU/4 GB-GPU OCR sidecar nor a chat model is handed a full-resolution photo. A JPEG or PNG
+// that already fits comes back unchanged, unless it is larger than maxBytes (0: no cap).
+// Anything else that fits — a GIF, a WebP, or an image over maxBytes — is re-encoded the same
+// way at its own size: a GIF may be animated, and not every vision backend decodes WebP
+// (llama.cpp's stb_image does not). Either JPEG is refused if it is still over maxBytes.
 //
 // Every image is decoded — a GIF to its first frame, all Go's decoder reads — so a body that
 // is truncated or that the decoder cannot read (an animated WebP) fails here rather than
-// reaching a model. On any error a caller that can fall back keeps its original bytes.
+// reaching a model. A context that has ended fails with its own error, wrapped, and never
+// decodes. On any error a caller that can fall back keeps its original bytes.
 func DownscaleForVision(ctx context.Context, raw []byte, maxBytes int) (VisionImage, error) {
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
@@ -108,20 +110,25 @@ func DownscaleForVision(ctx context.Context, raw []byte, maxBytes int) (VisionIm
 	if limit := maxVisionPixels(cfg.ColorModel); cfg.Width*cfg.Height > limit {
 		return VisionImage{}, fmt.Errorf("%w: %dx%d is over %d pixels", ErrImageTooManyPixels, cfg.Width, cfg.Height, limit)
 	}
+	// Checked before the select too: with the slot free and ctx done, select picks at random.
+	if err := ctx.Err(); err != nil {
+		return VisionImage{}, fmt.Errorf("wait for the decode slot: %w", err)
+	}
 	select {
 	case decodeSlot <- struct{}{}:
 	case <-ctx.Done():
-		return VisionImage{}, ctx.Err()
+		return VisionImage{}, fmt.Errorf("wait for the decode slot: %w", ctx.Err())
 	}
 	defer func() { <-decodeSlot }()
-	img, _, err := image.Decode(bytes.NewReader(raw))
+	img, format, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return VisionImage{}, fmt.Errorf("%w: %v", ErrImageUndecodable, err)
 	}
 	prepared := VisionImage{Bytes: raw, Width: cfg.Width, Height: cfg.Height}
 	w, h := img.Bounds().Dx(), img.Bounds().Dy()
 	fits := w <= visionMaxEdge && h <= visionMaxEdge
-	if fits && (maxBytes <= 0 || len(raw) <= maxBytes) {
+	passThrough := format == "jpeg" || format == "png"
+	if fits && passThrough && (maxBytes <= 0 || len(raw) <= maxBytes) {
 		return prepared, nil
 	}
 	nw, nh := w, h
@@ -139,12 +146,13 @@ func DownscaleForVision(ctx context.Context, raw []byte, maxBytes int) (VisionIm
 	return prepared, nil
 }
 
-// longEdgeTo scales w x h so its long edge is edge, keeping the aspect ratio.
+// longEdgeTo scales w x h so its long edge is edge, keeping the aspect ratio. The short edge
+// never rounds to zero: a 2000x1 divider would otherwise encode as a JPEG with no rows.
 func longEdgeTo(w, h, edge int) (int, int) {
 	if w >= h {
-		return edge, h * edge / w
+		return edge, max(1, h*edge/w)
 	}
-	return w * edge / h, edge
+	return max(1, w*edge/h), edge
 }
 
 // flattenOnWhite draws img onto an opaque white w x h canvas, scaling it when the size

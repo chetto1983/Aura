@@ -60,13 +60,49 @@ func photoAgent(t *testing.T, fc *agenttest.FakeClient, file []byte) *agent.LlmA
 // The WhatsApp photo the model could not see: an image read_file opens in round 1 must
 // reach round 2's request as media, while everything that outlives the turn — the history,
 // the events the runner persists — holds only read_file's text.
-func TestReadFileImageReachesTheNextRoundAndNothingElse(t *testing.T) {
-	const photo = "/workspace/mcp-files/r1/whatsapp/photo.png"
+func photoPNG(t *testing.T) []byte {
+	t.Helper()
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, image.NewRGBA(image.Rect(0, 0, 3, 2))); err != nil {
 		t.Fatal(err)
 	}
-	raw := buf.Bytes()
+	return buf.Bytes()
+}
+
+// A budget that trips right after the image was read ends the turn in finalize: the tool-free
+// synthesis request must still carry the photo, or the model answers about an image the
+// history says is "attached below" with nothing below it.
+func TestReadFileImageReachesTheFinalizeRequest(t *testing.T) {
+	const photo = "/workspace/mcp-files/r1/whatsapp/photo.png"
+	raw := photoPNG(t)
+	read := func(id string) agenttest.FakeTurn {
+		return agenttest.ToolCallTurn(agenttest.MakeToolCall(id, "read_file", `{"path":"`+photo+`"}`))
+	}
+	// Three identical reads trip the window-3 dedup ring (recover); the recovery turn repeats
+	// it and trips again (finalize), as in TestFinalize_DedupTrip.
+	fc := agenttest.NewFakeClient(read("c1"), read("c2"), read("c3"), read("c4"),
+		agenttest.TextChunks("stop", "Un'immagine vuota 3x2."))
+	if _, err := collect(photoAgent(t, fc, raw).Run(newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)}))); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	final := fc.LastRequest()
+	if final.ToolChoice != "none" {
+		t.Fatalf("last request ToolChoice = %q, want the finalize synthesis (none)", final.ToolChoice)
+	}
+	var carried bool
+	for _, parts := range final.ToolMedia {
+		for _, part := range parts {
+			carried = carried || bytes.Equal(part.Bytes, raw)
+		}
+	}
+	if !carried {
+		t.Fatalf("finalize request media = %+v, want the photo read this turn", final.ToolMedia)
+	}
+}
+
+func TestReadFileImageReachesTheNextRoundAndNothingElse(t *testing.T) {
+	const photo = "/workspace/mcp-files/r1/whatsapp/photo.png"
+	raw := photoPNG(t)
 	fc := agenttest.NewFakeClient(
 		agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "read_file", `{"path":"`+photo+`"}`)),
 		agenttest.TextChunks("stop", "Un'immagine vuota 3x2."),

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -66,6 +67,10 @@ func (t *ReadFile) attachImage(
 	// Anything short of a full decode is refused: a broken image would fail every later
 	// request of the turn, which all re-send it.
 	shown, err := multimodal.DownscaleForVision(ctx, data, maxAttachBytes)
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		// Ran out of time, most likely waiting for the decode slot: the image is fine.
+		return "", fmt.Errorf("read_file: %s: %w", boxPath, err)
+	}
 	if err != nil {
 		// %v: a decoder's EOF must not read as a transient failure the agent retries.
 		return "", fmt.Errorf("read_file: %s cannot be shown: %v; shell_exec can convert or shrink it, "+

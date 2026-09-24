@@ -237,6 +237,7 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	req := a.builder.Build(finalizeHistory, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{}, a.activated)
 	req.ToolChoice = "none"
 	req.SessionID = a.sessionID
+	withTurnMedia(ic.Ctx, &req)
 
 	// D-19 total-timeout on the ctx, mirroring the main loop (llm_agent.go:251).
 	// Production (internal/runner/runner.go) drives ic.Ctx from budget.WithDeadline —
