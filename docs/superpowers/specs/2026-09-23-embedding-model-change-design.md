@@ -354,25 +354,39 @@ uses the same helper. Its credential is the daemon's: the sealed `OPENROUTER_API
 set, else the environment's.
 
 Every re-read after boot passes the helper a lookup over the environment **as it was before
-`OverlayEnv`**. Both processes overlay rows into their own environment at boot and never
-unset, so a live `os.LookupEnv` would bring a deleted row's boot value back as the fallback
-(review of plan 1).
+`OverlayEnv`**. `arcadedb-mcp` overlays rows into its own environment at boot and never
+unsets, so its live `os.LookupEnv` would bring a deleted row's boot value back as the fallback
+(review of plan 1). The supervisor never overlays, so its `os.LookupEnv` is that environment.
 
 - `ProcessSpec`, `Environment()` and `fingerprint()` gain `AURA_EMBED_BASE_URL`,
   `AURA_EMBED_MODEL`, `AURA_EMBED_API_KEY` (the sealed `OPENROUTER_API_KEY`: no embed-specific
-  key exists, `bd31e157b`), `AURA_EMBED_SPACE`, `AURA_EMBED_INPUT_LIMIT`, and
+  key exists, `bd31e157b`), `AURA_EMBED_SPACE`, `AURA_EMBED_DIMENSIONS` (the width the space
+  was computed at, so the child cannot write another), `AURA_EMBED_INPUT_LIMIT`, and
   `AURA_EMBED_TOKENIZER_URL`, which is always the local sidecar.
 - A route change restarts every child within one poll.
-- The input limit and the local attestation are read once per route change, never per tick.
+- The local attestation is read on every tick, as the daemon's route reads it on every call
+  (§1, `embeddings.Route`): a GGUF swapped under unchanged settings changes the space, and a
+  supervisor that attested only on a route change would stamp the new model's vectors with
+  the old space. The hosted input limit is read once per route change, never per tick.
+  (Amended 2026-09-24 in plan 3; the first text read both once per route change.)
 - A failed settings read keeps the running children and their specs. At startup it starts
-  nothing, the fail-closed behaviour `arcadedb-mcp` already has.
+  nothing, the fail-closed behaviour `arcadedb-mcp` already has. A route that cannot embed --
+  a hosted model without a credential, a local route without a base, a sidecar that does not
+  answer its attestation -- is a failed read too, logged once per change. An identity that
+  starts meanwhile starts on the last route that resolved.
+- `aura-ingest-supervisor -print-embed-env` prints the environment a child would receive,
+  credential included, and exits. The E2E scripts that run `python -m ingest.app` directly
+  start their child with it, so no child ever stamps a space the resolver did not name.
 
 **Python child.** Embedding moves out of `app.py` (617 lines, over the cap) into
 `services/ingest/embed.py`, which:
 
 - decorates `_embed` with `deps=AURA_EMBED_SPACE`, required;
-- raises `coco.RetryWithSmallerBatch() from err` on a failed request, so one bad input fails
-  only its own caller (audit F1);
+- raises `coco.RetryWithSmallerBatch() from err` when the provider refuses the input (400,
+  413, 422: `embeddings.RejectsInput`'s statuses), so one bad input fails only its own caller
+  (audit F1). Any other failure fails the batch as before: a 401, 403, 429, 5xx or transport
+  error fails the same way at any size, and CocoIndex's own contract says transient errors
+  should not split (`cocoindex/_internal/batching.py`, 1.0.24). (Amended 2026-09-24, plan 3.)
 - on a hosted route sends the model, `Authorization: Bearer` and `dimensions`, truncates and
   renormalises a wider vector as `TruncateMRL` does (`internal/embeddings/client.go:230-256`),
   and cuts each input to the published limit in UTF-8 bytes, the Go client's rule
@@ -385,8 +399,12 @@ unset, so a live `os.LookupEnv` would bring a deleted row's boot value back as t
 with the embedding model and a model change never re-chunks (audit F9).
 
 **Extraction is memoized by content.** `process_file` splits:
-- `_extract(content, file_name, content_type)`, memoized, returns text, card and anchors;
-- the rest chunks and embeds.
+- `_extract(content, suffix, file_name, content_type)`, memoized, returns text, card and
+  anchors. `suffix` is the object key's extension, which names the temporary file the
+  extractors route on, as it does today. `_card` loses its own memo: it keyed on that
+  temporary path and never hit. The `[extract]` log line moves into `_extract`, so it still
+  counts real extractions (`scripts/ingest_reconcile_e2e.sh` asserts on the count);
+- the rest (`index_object`) chunks and embeds.
 
 `_extract` does not call `_embed`, so the `deps` change on `_embed` re-runs chunking and
 embedding only, not vision or speech-to-text (audit F7). `media.CONFIG_FINGERPRINT` still
@@ -504,7 +522,12 @@ Current line counts at `e8ef129e4`; the cap is 600.
 | `cmd/arcadedb-mcp/main.go` | 353 | wire the watcher |
 | `cmd/arcadedb-mcp/tool_memory_recall.go` | 557 | trace retrieval reason |
 | `internal/ingestsupervisor/supervisor.go`, `process.go` | 273, 79 | route in `ProcessSpec`, env, fingerprint |
-| `cmd/aura-ingest-supervisor/main.go` | 72 | settings store wiring |
+| `cmd/aura-ingest-supervisor/main.go` | 72 | settings store wiring; `-print-embed-env` |
+| `internal/ingestsupervisor/route.go` | new | `EmbedRoute`, `RouteResolver` (resolved every tick) |
+| `internal/settings/embed_route.go` | 57 | `DefaultEmbedBaseURL`, shared with `arcadedb-mcp` |
+| `scripts/ingest_embed_env.sh` | new | a script's child gets the supervisor's route |
+| `scripts/ingest_reconcile_e2e.sh`, `scripts/ingest_media_e2e.sh`, `Makefile` | — | children start with the resolved route; `ingest-test` env |
+| `services/ingest/tests/space_driver.py`, `fake_embedder.py` | new | the §6 re-run test's driver |
 | `internal/agui/settings_embedding_space.go` | new | the three endpoints |
 | `internal/agui/settings_api.go` | 534 | refuse embed keys; header |
 | `cmd/aura/doctor.go`, `doctor_embed_probe.go` | 184, 126 | family gate report |
