@@ -46,6 +46,7 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
+	preOverlay := environmentBefore()
 	embedRoute, err := loadBootSettings(context.Background())
 	if err != nil {
 		return err
@@ -139,6 +140,11 @@ func run(logger *slog.Logger) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	// A route changed from the cockpit ends the process through the shutdown below, as a
+	// SIGTERM would, and compose boots it on the new route (space_watch.go).
+	go watchEmbeddingRoute(ctx, stop, identityOf(embedRoute),
+		routeResolver(os.Getenv("AURA_DB_URL"), os.Getenv("AURA_AUTHULA_SECRET"), openBootSettings, preOverlay),
+		routeWatchInterval, logger)
 
 	errCh := make(chan error, 1)
 	go func() {
