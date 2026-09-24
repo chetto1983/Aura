@@ -13,9 +13,11 @@ module's own contract requires (.start/.end must slice the source text
 directly: `text[c.start:c.end] == c.text`, so they can't themselves be
 TextPosition objects) -- nothing from cocoindex's own offsets is discarded.
 
-count_tokens counts with the embedding server's OWN tokenizer (POST /tokenize,
-base URL from AURA_EMBED_BASE_URL) whenever reachable -- that is the tokenizer
-the 2048 ceiling actually belongs to. The char-based estimate below is a
+count_tokens counts with the local sidecar's OWN tokenizer (POST /tokenize, base
+URL from AURA_EMBED_TOKENIZER_URL, which the supervisor points at the local sidecar
+whichever route embeds) whenever reachable -- the tokenizer the 2048 ceiling belongs
+to, and the one chunk boundaries must keep following when the embedding model moves.
+The char-based estimate below is a
 documented FALLBACK only, for when the server isn't reachable (e.g. the unit
 tests, which run off the compose network and must stay green without one).
 """
@@ -39,7 +41,7 @@ from cocoindex.resources.chunk import TextPosition
 from ingest import outline
 
 logger = logging.getLogger(__name__)
-_EMBED_BASE_URL_ENV = "AURA_EMBED_BASE_URL"
+_TOKENIZER_URL_ENV = "AURA_EMBED_TOKENIZER_URL"
 _DEFAULT_EMBED_BASE_URL = "http://aura-llama-embed:8081"
 _TOKENIZE_TIMEOUT_S = 2.0
 
@@ -92,7 +94,7 @@ def _tokenize_remote(text: str, add_special: bool = False) -> list[int] | None:
     global _server_reachable
     if _server_reachable is False:
         return None
-    base = os.environ.get(_EMBED_BASE_URL_ENV, _DEFAULT_EMBED_BASE_URL)
+    base = os.environ.get(_TOKENIZER_URL_ENV, _DEFAULT_EMBED_BASE_URL)
     req = urllib.request.Request(
         f"{base.rstrip('/')}/tokenize",
         data=json.dumps({"content": text, "add_special": add_special}).encode("utf-8"),

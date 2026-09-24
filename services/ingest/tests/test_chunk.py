@@ -201,3 +201,26 @@ def test_dense_prose_keeps_overlap_when_words_fit_the_overlap_budget(monkeypatch
     text = "alpha beta gamma delta epsilon zeta eta theta iota kappa " * 100
     pieces = chunk(text, max_tokens=64)
     assert any(b.start < a.end for a, b in zip(pieces, pieces[1:]))
+
+
+def test_tokens_are_counted_by_the_local_sidecar_whatever_route_embeds(monkeypatch):
+    """Chunk boundaries follow the tokenizer, so they must not follow the embedding route: a
+    model change would otherwise re-chunk every document (audit F9)."""
+    import io
+    import json
+
+    from ingest import chunk as chunk_module
+
+    seen = []
+
+    def urlopen(req, *_args, **_kwargs):
+        seen.append(req.full_url)
+        return io.BytesIO(json.dumps({"tokens": [1, 2, 3]}).encode())
+
+    monkeypatch.setenv("AURA_EMBED_TOKENIZER_URL", "http://tokenizer.test:8081")
+    monkeypatch.setenv("AURA_EMBED_BASE_URL", "https://openrouter.ai/api")
+    monkeypatch.setattr(chunk_module, "_server_reachable", None)
+    monkeypatch.setattr(chunk_module.urllib.request, "urlopen", urlopen)
+
+    assert count_tokens("ciao") == 3
+    assert seen == ["http://tokenizer.test:8081/tokenize"]

@@ -15,33 +15,27 @@ import asyncio
 import dataclasses
 import datetime
 import hashlib
-import json
-import math
 import os
 import pathlib
 import re
 import subprocess
 import sys
 import tempfile
-import urllib.error
-import urllib.request
 
 import cocoindex as coco
 from cocoindex.connectors import amazon_s3, neo4j
 
-from ingest import arcade, chunk, extract, identity, media, outline, source
+from ingest import arcade, chunk, embed, extract, identity, media, outline, source
 
 ARCADE_HTTP = os.environ.get("ARCADE_HTTP", "http://aura-arcadedb:2480")
 ARCADE_BOLT = os.environ.get("ARCADE_BOLT", "bolt://aura-arcadedb:7687")
 ARCADE_PASSWORD = os.environ["ARCADEDB_PASSWORD"]
-EMBED_BASE_URL = os.environ.get("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
-EMBED_DIMENSIONS = int(os.environ.get("AURA_EMBED_DIMENSIONS", "768"))
 
 _S3_CONFIG = source.config_from_env()
 
 # Derived contracts shared with Aura's Go retriever; neither accepts an environment override.
 ARCADE_DB = identity.database_for(_S3_CONFIG.identity_id)
-SCHEMA_VERSION = arcade.schema_version(EMBED_DIMENSIONS)
+SCHEMA_VERSION = arcade.schema_version(embed.DIMENSIONS)
 _LIVE = os.environ.get("AURA_INGEST_LIVE", "").strip().lower() in {"1", "true", "yes", "on"}
 _INTERVAL_S = float(os.environ.get("AURA_INGEST_INTERVAL_SEC", "60"))
 
@@ -54,7 +48,7 @@ S3 = coco.ContextKey[object]("s3_client")
 async def coco_lifespan(builder: coco.EnvironmentBuilder):
     # Schema BEFORE any write: a Cypher MERGE against an untyped property makes
     # LSM_VECTOR refuse to index it (measured live in Task 5; arcade.py docstring).
-    arcade.ensure_schema(ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), EMBED_DIMENSIONS)
+    arcade.ensure_schema(ARCADE_HTTP, ARCADE_DB, ("root", ARCADE_PASSWORD), embed.DIMENSIONS)
     builder.provide(media.CONFIG_FINGERPRINT, media.fingerprint())
     builder.provide(KG_DB, neo4j.ConnectionFactory(
         uri=ARCADE_BOLT, auth=("root", ARCADE_PASSWORD), database=ARCADE_DB))
@@ -173,187 +167,6 @@ def _card(path: str, file_name: str) -> str:
     return done.stdout.decode("utf-8", "replace")
 
 
-# One request carries several chunks, bounded by BOTH a count and a token budget -- the two
-# bounds internal/embeddings/fit.go:22-25 already applies, for the reason measured there: a
-# 2048-token input took 5.7 s on the appliance sidecar, so 32 of them behind one deadline is
-# a timeout, not a speed-up. A single input over the budget still goes alone.
-EMBED_MAX_BATCH = 32
-EMBED_REQUEST_TOKEN_BUDGET = 4096
-# What the server prepends and appends to every input. chunk.count_tokens(add_special=True)
-# measures it properly; this is the same two tokens, added to an estimate that never asks.
-EMBED_SPECIAL_TOKENS = 2
-
-
-def _estimated_tokens(text: str) -> int:
-    """A free upper bound on what the server will count for this chunk.
-
-    chunk.CHARS_PER_TOKEN_FALLBACK is 3 where the tokenizer measured ~5.32, and chunk.py
-    picked that ratio precisely because it always OVERSHOOTS -- so a text this bound clears
-    is never actually longer. Using it here keeps the happy path free of round trips: asking
-    /tokenize per chunk would trade N embedding requests for N tokenizing ones, which is the
-    cost this batching exists to remove. The price is under-packed requests, and against a
-    25.9x saving that is not a price worth optimising.
-    """
-    chars = len(chunk.EMBED_DOC_PREFIX + text)
-    return math.ceil(chars / chunk.CHARS_PER_TOKEN_FALLBACK) + EMBED_SPECIAL_TOKENS
-
-
-def _fit_for_embedding(text: str) -> tuple[str, int]:
-    """The text as it will be sent, and what it is expected to cost.
-
-    Cutting happens BEFORE the request, not in reaction to its failure. In a batch one
-    oversized chunk would fail every other chunk travelling with it, so the reactive retry
-    this replaced is not merely slower here -- it is wrong. It is also what
-    _head_within_ceiling already says it believes: "The decision is the MEASUREMENT, never
-    the provider's error string."
-    """
-    cost = _estimated_tokens(text)
-    if cost <= chunk.MODEL_MAX_TOKENS:
-        return text, cost
-    head = _head_within_ceiling(text)
-    if head is None:  # the real tokenizer disagrees with the overshooting estimate
-        return text, cost
-    # Losing the vector loses the WHOLE FILE: CocoIndex catches the component failure,
-    # prints "component build failed" and carries on, so the document simply never reaches
-    # the index -- and in live mode audit_pass() never runs to notice. Against that,
-    # embedding the head of an over-long chunk is a small, honest degradation: the Passage
-    # keeps its full text, so document_open and the card are unaffected, and only the vector
-    # is computed from less than the whole.
-    print(
-        f"[embed] a chunk exceeds the {chunk.MODEL_MAX_TOKENS}-token ceiling; "
-        f"embedding the head that fits", flush=True,
-    )
-    return head, _estimated_tokens(head)
-
-
-def _request_end(costs: list[int], start: int) -> int:
-    """Where the request that begins at `start` stops. Mirrors requestEnd in fit.go."""
-    end, tokens = start + 1, costs[start]
-    while (
-        end < len(costs)
-        and end - start < EMBED_MAX_BATCH
-        and tokens + costs[end] <= EMBED_REQUEST_TOKEN_BUDGET
-    ):
-        tokens += costs[end]
-        end += 1
-    return end
-
-
-@coco.fn.as_async(memo=True, batching=True, max_batch_size=EMBED_MAX_BATCH)
-def _embed(texts: list[str]) -> list[list[float]]:
-    """Embed a batch of chunks, one HTTP request per group rather than per chunk.
-
-    CocoIndex groups concurrent calls itself (batching=True), so the call sites still pass
-    ONE text and await ONE vector. Measured 2026-09-21 from the appliance: against the local
-    sidecar this is 1.0x -- it is compute-bound at one slot -- but against a cloud embedder
-    it is 25.9x (9.95 s -> 0.38 s for 32 chunks), because there each chunk was a network
-    round trip. The token count, and therefore the bill, is identical either way.
-    """
-    fitted = [_fit_for_embedding(text) for text in texts]
-    costs = [cost for _, cost in fitted]
-    out: list[list[float]] = []
-    start = 0
-    while start < len(fitted):
-        end = _request_end(costs, start)
-        out.extend(_embed_batch([text for text, _ in fitted[start:end]]))
-        start = end
-    return out
-
-
-def _embed_batch(texts: list[str]) -> list[list[float]]:
-    """One request for several chunks, restored to the caller's order.
-
-    The response is placed by its own `index` rather than by arrival: the field exists
-    because the order is not promised, and trusting arrival order would attach each vector
-    to the wrong passage -- silently, since every vector is well-formed.
-    """
-    # Whether batching is actually happening is otherwise invisible: the vectors look the
-    # same either way, and the only symptom of it silently degrading to one chunk per
-    # request is a slow cloud ingest nobody can explain.
-    print(f"[embed] {len(texts)} chunk(s) in one request", flush=True)
-    payload = json.dumps({
-        "input": [chunk.EMBED_DOC_PREFIX + text for text in texts],
-        "model": "embeddinggemma",
-    }).encode()
-    req = urllib.request.Request(
-        f"{EMBED_BASE_URL.rstrip('/')}/v1/embeddings", data=payload,
-        headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            data = json.loads(resp.read())["data"]
-    except urllib.error.HTTPError as exc:
-        # The longest input is the one a size-related failure is about.
-        raise RuntimeError(_embed_failure_detail(exc, max(texts, key=len))) from exc
-    if len(data) != len(texts):
-        raise RuntimeError(
-            f"embedding endpoint returned {len(data)} vectors for {len(texts)} inputs"
-        )
-    out: list[list[float] | None] = [None] * len(texts)
-    for item in data:
-        index = item.get("index")
-        if not isinstance(index, int) or not 0 <= index < len(out):
-            raise RuntimeError(f"embedding response carries an unusable index {index!r}")
-        if out[index] is not None:
-            raise RuntimeError(f"embedding response repeats index {index}")
-        out[index] = item["embedding"]
-    missing = [i for i, vector in enumerate(out) if vector is None]
-    if missing:
-        raise RuntimeError(f"embedding response is missing indexes {missing}")
-    return out
-
-
-def _head_within_ceiling(text: str) -> str | None:
-    """The head of text the model can actually take, or None when text already fits.
-
-    The decision is the MEASUREMENT, never the provider's error string: a message like
-    "input is too large to process" is llama.cpp's wording and would be a different one
-    behind any other server, while the token count is ours and means the same thing
-    everywhere.
-
-    chunk.chunk does the cutting because it is the same verified splitter that sized every
-    other chunk in the pipeline -- it re-measures each window and shrinks by the overshoot
-    it observes. A second sizing rule here could disagree with it, and the disagreement
-    would only ever surface as this exact failure.
-
-    Returning None when nothing smaller comes back is deliberate: a failure that is not an
-    overflow (a server restarting, a model unloaded) is not made better by sending less, and
-    pretending otherwise would hide it behind a retry.
-    """
-    if chunk.count_tokens(chunk.EMBED_DOC_PREFIX + text, add_special=True) <= chunk.MODEL_MAX_TOKENS:
-        return None
-    # No anchors here on purpose: this re-cuts ONE oversized chunk that already carries its
-    # heading, so a second stamping pass would have nothing to add and no document to
-    # position it against.
-    pieces = chunk.chunk(text, max_tokens=chunk.document_budget())
-    if not pieces or pieces[0].text == text:
-        return None
-    return pieces[0].text
-
-
-def _embed_failure_detail(exc: urllib.error.HTTPError, text: str) -> str:
-    """What the bare HTTPError does not say, and what it cost to not say it.
-
-    An HTTPError raised out of urlopen renders as "HTTP Error 500: Internal Server Error"
-    and nothing else, while the BODY is where llama.cpp names the actual fault -- "input is
-    too large to process, increase the physical batch size" tells you the fix in one line.
-    Losing it cost two full reproductions on 2026-08-09.
-
-    The token count is measured, not assumed, and it is the second half of the diagnosis:
-    the overwhelmingly common cause is a chunk that overflowed the model ceiling, and the
-    count beside the ceiling settles that in the error itself rather than in a re-run.
-    Counted WITH the prefix and the specials because that is what the server actually sees
-    (the same arithmetic document_budget() does). count_tokens degrades to a character
-    estimate when the server is unreachable, so measuring here cannot fail the failure path.
-    """
-    body = exc.read().decode("utf-8", "replace").strip() if exc.fp is not None else ""
-    tokens = chunk.count_tokens(chunk.EMBED_DOC_PREFIX + text, add_special=True)
-    return (
-        f"embedding request failed: HTTP {exc.code} for a {tokens}-token input "
-        f"(model ceiling {chunk.MODEL_MAX_TOKENS})"
-        + (f": {body}" if body else " with an empty body")
-    )
-
-
 @coco.fn
 async def process_chunk(
     item: tuple[int, chunk.Chunk], search_document_id: str,
@@ -373,7 +186,7 @@ async def process_chunk(
         heading_path=list(piece.heading_path),
         char_start=piece.start,
         char_end=piece.end,
-        embedding=await _embed(piece.text),
+        embedding=await embed.embed_text(piece.text),
     ))
 
 
@@ -442,7 +255,7 @@ async def process_file(
             card = _card(ready, _card_name(file_name, ready))
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
-    # document_budget(), not the bare ceiling: _embed sends EMBED_DOC_PREFIX + text, so a
+    # document_budget(), not the bare ceiling: embed sends EMBED_DOC_PREFIX + text, so a
     # chunk sized to the full ceiling overflows by the prefix and the request 500s.
     pieces = chunk.chunk(text, max_tokens=chunk.document_budget(), anchors=anchors)
     raw_sha256 = hashlib.sha256(content).hexdigest()
@@ -467,7 +280,7 @@ async def process_file(
         card=card,
         # The card describes the file; embedding it is what makes "which file knows this?"
         # answerable for a document that has no passages at all.
-        embedding=await _embed(card) if card.strip() else [0.0] * EMBED_DIMENSIONS,
+        embedding=await embed.embed_text(card) if card.strip() else [0.0] * embed.DIMENSIONS,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
 
