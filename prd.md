@@ -444,6 +444,11 @@ $0.00038) the documents family was dense again in ~2 min against a 122 s estimat
 waited 5 min there because the scheduler's boot catch-up skipped the kicked pass (fixed
 `020dc7391`); back on local, with the fix, memory re-embedding began within 41 s of the boot
 and both families were dense 4 min 22 s after the apply, with no `AURA_EMBED_*` row left.
+First abstention datum for pplx-embed, on plan 4's 15 queries with EmbeddingGemma's floors:
+6 of 6 out-of-corpus questions abstained, and 3 of 9 in-corpus ones did too, against 2 of 9
+on the local model ("prompt engineering intelligenza artificiale" is the extra one). Taking
+it needed `aura docs search` to embed on the cockpit's route and key (fixed `816a1f6f3`):
+before, every CLI query read the re-embedded library as another space's.
 This does not prove: the preview's duration on a hosted route (one request measures latency;
 the same qwen probe gave 758 and 184 chars/s), a library larger than the VM's, several
 tenants, or relevance with a cloud model — its floors stay uncalibrated.
@@ -818,28 +823,32 @@ The added latency of the link read alone was not separated from each call's own 
 A file the model derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the
 turn by design, and this run deleted it by hand.
 
-**An image in the box reaches the model natively** (measured 2026-09-24 on VM .158, revisions
-`9c92e6855` and `a13c0bedc`, chat model `gemma4:31b-cloud` on Ollama). The first run of "what is in
-this photo" went unanswered. A native image part then came only from the user's own uploads, and
-`read_file` refused binaries. Now `read_file` on a JPEG, PNG, GIF or WebP in `/workspace` attaches
-the image to the next request of the turn, as a user message after the tool results. It is gated on
-the model's image capability, as uploads are (`openai_compat/request_tool_media.go`). Before that,
-the image is downscaled to a 1024 px long edge, capped at 2 MiB, and refused if it does not fully
-decode.
+**An image in the box reaches the model natively.** This was measured on VM .158 with the chat
+model `gemma4:31b-cloud` on Ollama. The first run of "what is in this photo" went unanswered: a
+native image part then came only from the user's own uploads, and `read_file` refused binaries.
 
-| Run | What the model answered | Checked against |
+Now `read_file` on an image in `/workspace` attaches it as a user message after the tool results.
+- It rides every later request of the turn, the forced final answer included, up to 8 images per
+  turn.
+- It is gated on the model's image capability, as uploads are
+  (`openai_compat/request_tool_media.go`).
+- Before sending, the image is downscaled to a 1024 px long edge and capped at 2 MiB. A JPEG or
+  PNG that already fits goes out as it is. Any other format goes out as a JPEG (a GIF as its first
+  frame). An image that does not fully decode is refused.
+
+| Run (revision, UTC) | What the model answered | Checked against |
 |---|---|---|
-| Latest WhatsApp photo (850×850 JPEG, 11,858 B, from a channel) | A white STRONG router with two external antennas | The image itself. The caption names only "Strong Router 4G WiFi". |
-| Follow-up on the same photo | "WPS" under the last light, and 6 lights | The image has 7 lights. "WPS" is printed only on the image. The count is the model's error, not a lost pixel: 850 px goes out unscaled. |
-| Two 12 MP mail photos (4032×3024, 9.5 and 10.5 MB), fetched and read in parallel | A gas hob, a moka, a coffee pack reading "Intenso", a yellow tape measure | Text on the pack, not in the mail |
-| A 6000×4000 JPEG planted in the box, a random 4-digit number drawn on it | `read_file` refused it as over the pixel bound. The model shrank it with Pillow through `shell_exec`, read the copy, and answered "5403, orange" | The number was written only to a file outside the VM; it matched |
+| Latest WhatsApp photo: 850×850 JPEG, 11,858 B, from a channel (`9c92e6855`, 2026-09-24 22:03) | A white STRONG router with two external antennas | The image itself. The caption names only "Strong Router 4G WiFi". |
+| Follow-up on the same photo (`9c92e6855`, 22:05) | "WPS" under the last light, and 6 lights | The image has 7 lights. "WPS" is printed only on the image. The count is the model's error, not a lost pixel: 850 px goes out unscaled. |
+| Two 12 MP mail photos: 4032×3024, 9.5 and 10.5 MB, fetched and read in parallel (`9c92e6855`, 22:06) | A gas hob, a moka, a coffee pack reading "Intenso", a yellow tape measure | Text on the pack, not in the mail |
+| A 6000×4000 JPEG planted in the box, a random 4-digit number drawn on it (`a13c0bedc`, 22:29) | `read_file` refused it as over the pixel bound. The model shrank it with Pillow through `shell_exec`, read the copy, and answered "5403, orange". | The number was written only to a file outside the VM; it matched. |
 
-- **Memory, two 12 MP reads.** `aura` went from 126 MiB to 273 after the two fetches, 398 after
+- **Memory, two 12 MP reads** (`9c92e6855`, before the per-color-model bound). `aura` went from 126 MiB to 273 after the two fetches, 398 after
   the two reads, and a 452 MiB peak (VmHWM 507) of 768.
   - The anon memory, 415 MiB just after, was back at 241 MiB five minutes later. The Go scavenger
     returns it, and no `GOMEMLIMIT` is set.
-  - The 24 MP refusal cost nothing, because it is decided from the header. The 2000×1333 copy the
-    model then read added ~66 MiB.
+  - On `a13c0bedc`, the 24 MP refusal cost nothing, because it is decided from the header. The
+    2000×1333 copy the model then read added ~66 MiB.
 - **The decode bound depends on the color model.** One `DownscaleForVision` call was measured in
   WSL, each image in a fresh process: VmHWM minus that of an empty process.
 
@@ -860,6 +869,8 @@ What this does NOT prove:
   (`AURA_REASONING_TRACE`), so delivery is proven by what only the image carries;
 - the WSL decode figures inside the aura container, whose own heap comes on top;
 - an animated GIF (only its first frame is decoded), lossy WebP, or a 16-bit gray PNG;
+- the forced final answer after an image read (a tripped step, wallclock or dedup budget): only a
+  fake-client test covers it (`b1b31cd02`);
 - chat models other than `gemma4:31b-cloud`.
 
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
