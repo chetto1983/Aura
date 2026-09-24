@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// gateClient answers each memory type's mismatch count from counts (by type name), or with
+// gateClient answers each type's gate count from counts (by type name), or with
 // status when it is set, and every other statement with an empty result.
 func gateClient(t *testing.T, counts map[string]int, status int) (*Client, *[]recordedRequest) {
 	t.Helper()
@@ -199,5 +199,87 @@ func TestSearchReasoningTracesNamesItsPath(t *testing.T) {
 	}
 	if result.RetrievalPath != retrievalPathLexical || result.Reason != reasonEmbeddingSpaceMismatch {
 		t.Fatalf("result = %+v, want lexical with %q", result, reasonEmbeddingSpaceMismatch)
+	}
+}
+
+func TestDocumentGateOpensOnlyWhenNoDocumentVectorIsInAnotherSpace(t *testing.T) {
+	open, _ := gateClient(t, map[string]int{}, 0)
+	if ok, err := open.documentsDenseOpen(context.Background(), "es1-a"); err != nil || !ok {
+		t.Fatalf("no document vector outside the space: open=%v err=%v, want open", ok, err)
+	}
+	closed, requests := gateClient(t, map[string]int{IndexedDocumentType: 1}, 0)
+	if ok, err := closed.documentsDenseOpen(context.Background(), "es1-a"); err != nil || ok {
+		t.Fatalf("one card in another space: open=%v err=%v, want closed", ok, err)
+	}
+	counted := map[string]bool{}
+	for _, request := range gateQueries(requests) {
+		statement, _ := request.Payload["command"].(string)
+		params, _ := request.Payload["params"].(map[string]any)
+		if !strings.Contains(statement, "embedding IS NOT NULL") || !strings.Contains(statement, otherSpace) ||
+			params["space"] != "es1-a" {
+			t.Fatalf("gate count does not ask for vectors outside the space:\n%s params=%v", statement, params)
+		}
+		counted[strings.Fields(strings.TrimPrefix(statement, "SELECT count(*) AS n FROM "))[0]] = true
+	}
+	if !counted[documentPassageType] || !counted[IndexedDocumentType] || counted[factEdgeType] {
+		t.Fatalf("documents gate counted %v, want Passage and IndexedDocument and no memory type", counted)
+	}
+}
+
+// services/ingest declares both document types on its first run (arcade.py), so a tenant that
+// never had a document has neither. That is an empty library, with no vector in any space.
+func TestDocumentGateTreatsAnUningestedLibraryAsOpen(t *testing.T) {
+	client, _ := routedClient(t, func(request recordedRequest) testResponse {
+		statement, _ := request.Payload["command"].(string)
+		if strings.Contains(statement, "FROM "+documentPassageType+" ") {
+			return testResponse{Status: 500, Body: missingPassageBody}
+		}
+		return testResponse{Status: 500, Body: missingTypeBody}
+	})
+	if ok, err := client.documentsDenseOpen(context.Background(), "es1-a"); err != nil || !ok {
+		t.Fatalf("empty library: open=%v err=%v, want open", ok, err)
+	}
+}
+
+func TestDocumentGateFailsOnARealFault(t *testing.T) {
+	client, _ := gateClient(t, nil, http.StatusInternalServerError)
+	if _, err := client.documentsDenseOpen(context.Background(), "es1-a"); err == nil {
+		t.Fatal("a refused count opened the gate")
+	}
+}
+
+// The two families are gated apart (spec §3): a document that will not re-index must not turn
+// dense memory off, and each family's answer is cached on its own.
+func TestDocumentGateIsCachedApartFromMemory(t *testing.T) {
+	client, requests := gateClient(t, map[string]int{documentPassageType: 3}, 0)
+	ctx := context.Background()
+	if ok, err := client.memoryDenseOpen(ctx, "es1-a"); err != nil || !ok {
+		t.Fatalf("memory: open=%v err=%v, want open", ok, err)
+	}
+	if ok, err := client.documentsDenseOpen(ctx, "es1-a"); err != nil || ok {
+		t.Fatalf("documents: open=%v err=%v, want closed", ok, err)
+	}
+	if _, err := client.documentsDenseOpen(ctx, "es1-a"); err != nil {
+		t.Fatalf("documentsDenseOpen: %v", err)
+	}
+	// Memory counts its three types. Documents stops at Passage, whose 3 vectors already
+	// close the gate, and the repeat is answered from the cache.
+	if n := len(gateQueries(requests)); n != len(memorySpaceTypes)+1 {
+		t.Fatalf("gate counts = %d, want %d", n, len(memorySpaceTypes)+1)
+	}
+}
+
+func TestDocumentsDenseOpenAsksTheIdentitysOwnDatabase(t *testing.T) {
+	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[{"n":0}]}`}
+	})
+	if ok, err := index.DocumentsDenseOpen(t.Context(), documentTestIdentity, "es1-a"); err != nil || !ok {
+		t.Fatalf("open=%v err=%v", ok, err)
+	}
+	if len(*requests) != 2 {
+		t.Fatalf("requests = %d, want one count per document type", len(*requests))
+	}
+	if _, err := index.DocumentsDenseOpen(t.Context(), documentTestIdentity, " "); err == nil {
+		t.Fatal("a gate without a space answered")
 	}
 }

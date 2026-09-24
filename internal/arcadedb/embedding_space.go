@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -93,17 +94,39 @@ var (
 // define it, and the explicit form does not depend on it.
 const otherSpace = "(embed_space IS NULL OR embed_space <> :space)"
 
-// mismatchCount counts t's vectors in another space. Rows without a vector are not counted:
-// they cannot be ranked, so they cannot be ranked wrongly.
-func (t memorySpaceType) mismatchCount() string {
-	return "SELECT count(*) AS n FROM " + t.name + " WHERE embedding IS NOT NULL AND " + otherSpace + t.live
+// spaceCount is one type's share of a family's gate.
+type spaceCount struct {
+	typeName  string
+	statement string
+	// ingested: services/ingest declares the type on its first run (arcade.py), so a tenant
+	// with no document yet has none -- an empty library, with no vector in any space.
+	ingested bool
 }
+
+// vectorsOutside counts typeName's vectors in another space. Rows without a vector are not
+// counted: they cannot be ranked, so they cannot be ranked wrongly.
+func vectorsOutside(typeName, live string) string {
+	return "SELECT count(*) AS n FROM " + typeName + " WHERE embedding IS NOT NULL AND " + otherSpace + live
+}
+
+func (t memorySpaceType) gateCount() spaceCount {
+	return spaceCount{typeName: t.name, statement: vectorsOutside(t.name, t.live)}
+}
+
+var (
+	memoryGateCounts = []spaceCount{factSpace.gateCount(), turnSpace.gateCount(), traceSpace.gateCount()}
+	// documentGateCounts is the documents family (spec §3), gated apart from memory.
+	documentGateCounts = []spaceCount{
+		{typeName: documentPassageType, statement: vectorsOutside(documentPassageType, ""), ingested: true},
+		{typeName: IndexedDocumentType, statement: vectorsOutside(IndexedDocumentType, ""), ingested: true},
+	}
+)
 
 // spaceGateTTL bounds how stale one tenant's gate answer can be: a pass that finishes
 // opens the gate, and a stale writer closes it, within this.
 const spaceGateTTL = 30 * time.Second
 
-// spaceGate caches one tenant's answer, keyed by the space it was asked for.
+// spaceGate caches one tenant's answer for one family, keyed by the space it was asked for.
 type spaceGate struct {
 	mu      sync.Mutex
 	space   string
@@ -111,18 +134,17 @@ type spaceGate struct {
 	checked time.Time
 }
 
-// memoryDenseOpen reports whether every memory vector this tenant holds is in space. Dense
-// retrieval ranks a query against the whole corpus, so one vector from another model makes
-// every distance suspect: until the pass has moved all of them, memory is served lexically
-// (spec §3, operator decision 2).
+// denseOpen reports whether no vector counted by counts is outside space. Dense retrieval
+// ranks a query against the whole corpus, so one vector from another model makes every
+// distance suspect: until all of them are re-embedded, the family is served lexically (spec
+// §3, operator decision 2).
 //
-// The lock is held across the three counts on purpose: readers of one tenant arriving
-// together share one check instead of sending three counts each. The cost is that a waiter
-// cannot give up before the holder's counts return, whatever its own deadline. Each count
-// scans its type (the `<>` half of otherSpace uses no index): 25-34 ms at 5,000 rows,
-// measured 2026-09-24 (spec, "What this design does not prove").
-func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error) {
-	gate := &c.memoryGate
+// The lock is held across the counts on purpose: readers of one tenant arriving together
+// share one check instead of sending the counts each. The cost is that a waiter cannot give
+// up before the holder's counts return, whatever its own deadline. Each count scans its type
+// (the `<>` half of otherSpace uses no index): 25-34 ms at 5,000 rows, measured 2026-09-24
+// (spec, "What this design does not prove").
+func (c *Client) denseOpen(ctx context.Context, gate *spaceGate, counts []spaceCount, space string) (bool, error) {
 	gate.mu.Lock()
 	defer gate.mu.Unlock()
 	if gate.space == space && time.Since(gate.checked) < spaceGateTTL {
@@ -130,10 +152,13 @@ func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error
 	}
 	open := true
 	params := map[string]any{"space": space, "now": time.Now().UTC().Format(time.RFC3339Nano)}
-	for _, t := range memorySpaceTypes {
-		rows, err := c.Query(ctx, t.mismatchCount(), params)
+	for _, count := range counts {
+		rows, err := c.Query(ctx, count.statement, params)
 		if err != nil {
-			return false, fmt.Errorf("arcadedb: count %s vectors outside the space: %w", t.name, err)
+			if count.ingested && missingIngestType(err, count.typeName) {
+				continue
+			}
+			return false, fmt.Errorf("arcadedb: count %s vectors outside the space: %w", count.typeName, err)
 		}
 		if len(rows) > 0 && rowInt(rows[0], "n") > 0 {
 			open = false
@@ -142,6 +167,30 @@ func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error
 	}
 	gate.space, gate.open, gate.checked = space, open, time.Now()
 	return open, nil
+}
+
+// memoryDenseOpen reports whether every memory vector this tenant holds is in space.
+func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error) {
+	return c.denseOpen(ctx, &c.memoryGate, memoryGateCounts, space)
+}
+
+// documentsDenseOpen reports whether every document vector this tenant holds is in space.
+func (c *Client) documentsDenseOpen(ctx context.Context, space string) (bool, error) {
+	return c.denseOpen(ctx, &c.documentGate, documentGateCounts, space)
+}
+
+// DocumentsDenseOpen reports whether every Passage and IndexedDocument vector identityID holds
+// is in space, so the dense legs may rank a query embedded there (spec §3). A tenant with
+// nothing ingested is open.
+func (d *DocumentIndex) DocumentsDenseOpen(ctx context.Context, identityID, space string) (bool, error) {
+	if strings.TrimSpace(space) == "" {
+		return false, fmt.Errorf("arcadedb: the document gate needs the reader's space")
+	}
+	client, err := d.tenantClient(ctx, identityID)
+	if err != nil {
+		return false, err
+	}
+	return client.documentsDenseOpen(ctx, space)
 }
 
 // denseSpaceFilter keeps a dense leg to the reader's space. The gate decides whether a read

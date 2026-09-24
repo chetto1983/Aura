@@ -179,6 +179,9 @@ type Client struct {
 	// memoryGate is this tenant's answer to "is every memory vector in my space"
 	// (embedding_space.go), cached for spaceGateTTL.
 	memoryGate spaceGate
+	// documentGate is the same answer for this tenant's documents, gated apart from memory
+	// (spec §3) so a document that will not re-index never turns dense memory off.
+	documentGate spaceGate
 	// facts serializes UpsertFact's attach-or-create sequence per fact_key
 	// (fact_lock.go) -- see that file's doc comment for why an in-process
 	// lock, not just the transactional write, is what actually closes the
