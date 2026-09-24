@@ -18,24 +18,12 @@ import (
 
 // batchEmbedder answers every batch with one correctly-sized vector per input, so a
 // test can drive as many rounds as it likes without queueing fixtures.
-type batchEmbedder struct {
-	err    error
-	widths int // when non-zero, the width returned instead of vectorDimensions
-	calls  int
-}
+type batchEmbedder struct{}
 
 func (b *batchEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
-	b.calls++
-	if b.err != nil {
-		return nil, b.err
-	}
-	width := vectorDimensions
-	if b.widths != 0 {
-		width = b.widths
-	}
 	out := make([][]float64, len(texts))
 	for i := range texts {
-		out[i] = make([]float64, width)
+		out[i] = make([]float64, vectorDimensions)
 	}
 	return out, nil
 }
@@ -47,12 +35,12 @@ func (b *batchEmbedder) Space(context.Context) (embeddings.Space, error) {
 // tenantServer is a multi-tenant fake ArcadeDB. It routes by the database in the path
 // and by the basic-auth user, which is what makes it able to answer the two questions
 // the sweep asks: "is this tenant provisioned" (a bind against /api/v1/ready) and
-// "which of its facts have no vector" (a query against its own database).
+// "which of its facts are outside the space" (a query against its own database).
 type tenantServer struct {
 	// provisioned holds the databases that exist. A credential for anything else is
 	// refused, exactly as the real server refuses a user it never created.
 	provisioned map[string]bool
-	// pending is how many vector-less facts each database still holds.
+	// pending is how many facts outside the space each database still holds.
 	pending map[string]int
 
 	mu         sync.Mutex
@@ -102,12 +90,16 @@ func (s *tenantServer) serve(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.WriteString(w, `{"result":[{"count":1}]}`)
 		return
 	}
+	if !strings.Contains(payload.Command, " FROM "+factEdgeType+" ") {
+		_, _ = io.WriteString(w, `{"result":[]}`) // this fake holds no turns and no traces
+		return
+	}
 	s.selects[database]++
 	take := min(s.pending[database], backfillBatch)
 	s.pending[database] -= take
 	rows := make([]string, 0, take)
 	for i := range take {
-		rows = append(rows, fmt.Sprintf(`{"rid":"#3:%d","statement":"fact %d"}`, i, i))
+		rows = append(rows, fmt.Sprintf(`{"rid":"#3:%d","text":"fact %d"}`, i, i))
 	}
 	_, _ = io.WriteString(w, `{"result":[`+strings.Join(rows, ",")+`]}`)
 }
@@ -196,9 +188,10 @@ func TestTenantBackfillReachesEveryTenant(t *testing.T) {
 	}
 }
 
-// The selection is the "has no vector" predicate and nothing else — no recency window, no
-// writer marker — which is what makes the sweep catch an upsert from any writer.
-func TestTenantBackfillSelectsOnlyFactsWithoutAVector(t *testing.T) {
+// The selection is "not in the daemon's space", paged by RID: it selects the facts a route
+// change left behind as well as the ones never embedded, and it moves past a row it could
+// not fix instead of selecting it again.
+func TestTenantBackfillSelectsRowsOutsideTheSpace(t *testing.T) {
 	server := newTenantServer(t, map[string]bool{databaseA: true}, map[string]int{databaseA: 1})
 	backfill := testBackfill(t, server, staticRoster{ids: []string{tenantA}}, &batchEmbedder{})
 
@@ -207,12 +200,17 @@ func TestTenantBackfillSelectsOnlyFactsWithoutAVector(t *testing.T) {
 	}
 	selected := ""
 	for _, statement := range server.statements {
-		if strings.Contains(statement, "SELECT @rid AS rid") {
+		if strings.Contains(statement, "SELECT @rid AS rid") && strings.Contains(statement, " FROM "+factEdgeType+" ") {
 			selected = statement
 		}
 	}
-	if !strings.Contains(selected, "embedding IS NULL") {
-		t.Fatalf("selection = %q, want the vector-absence predicate", selected)
+	for _, want := range []string{otherSpace, "@rid > :cursor", "ORDER BY @rid"} {
+		if !strings.Contains(selected, want) {
+			t.Fatalf("selection = %q, want %q", selected, want)
+		}
+	}
+	if strings.Contains(selected, "embedding IS NULL") {
+		t.Fatalf("selection = %q still keys on a missing vector", selected)
 	}
 }
 
@@ -238,42 +236,57 @@ func TestTenantBackfillBatchesUntilAShortRound(t *testing.T) {
 	}
 }
 
-// One tenant's share of one sweep is bounded, so a huge backlog cannot starve the tenants
-// queued behind it or overrun the handler's budget. The remainder is the next tick's.
-func TestTenantBackfillBoundsOneTenantsRounds(t *testing.T) {
-	server := newTenantServer(t,
-		map[string]bool{databaseA: true},
-		map[string]int{databaseA: (backfillRoundsPerTenant + 5) * backfillBatch})
+// A tenant is drained within the run's budget, not cut at a round count: a route change
+// leaves the whole memory behind, and a cap of 20 rounds would take a large tenant many
+// runs while its reads stay lexical.
+func TestTenantBackfillDrainsATenantUntilNothingIsLeft(t *testing.T) {
+	const backlog = (backfillRoundsPerTenant + 5) * backfillBatch
+	server := newTenantServer(t, map[string]bool{databaseA: true}, map[string]int{databaseA: backlog})
 	backfill := testBackfill(t, server, staticRoster{ids: []string{tenantA}}, &batchEmbedder{})
 
 	embedded, err := backfill.EmbedMissing(context.Background(), time.Time{})
 	if err != nil {
 		t.Fatalf("EmbedMissing: %v", err)
 	}
-	if embedded != backfillRoundsPerTenant*backfillBatch {
-		t.Fatalf("embedded = %d, want the per-tenant bound", embedded)
+	if embedded != backlog {
+		t.Fatalf("embedded = %d, want the whole backlog of %d", embedded, backlog)
 	}
 }
 
-// A vector of the wrong width is left unwritten by EmbedMissingFacts, so the same rows are
-// selected again forever. The sweep stops on a round that embedded nothing, which turns a
-// spin into a bounded no-op.
-func TestTenantBackfillStopsOnARoundThatEmbedsNothing(t *testing.T) {
-	server := newTenantServer(t,
-		map[string]bool{databaseA: true},
-		map[string]int{databaseA: 10 * backfillBatch})
-	backfill := testBackfill(t, server, staticRoster{ids: []string{tenantA}}, &batchEmbedder{widths: 3})
+// Review Focus 4: the tenant a run starts from moves on, so a backlog that outlasts one
+// run's budget cannot starve the tenants behind it.
+func TestTenantBackfillRotatesTheTenantItStartsFrom(t *testing.T) {
+	if got := rotated([]string{"a", "b", "c"}, 4); strings.Join(got, "") != "bca" {
+		t.Fatalf("rotated = %v, want b c a", got)
+	}
+	if got := rotated(nil, 3); len(got) != 0 {
+		t.Fatalf("rotated(nil) = %v", got)
+	}
+}
 
-	embedded, err := backfill.EmbedMissing(context.Background(), time.Time{})
-	if err != nil {
-		t.Fatalf("EmbedMissing: %v", err)
+// Review Focus 4: the run budget ending is not a failure; the next run resumes.
+func TestTenantBackfillStopsAtTheBudgetWithoutFailing(t *testing.T) {
+	server := newTenantServer(t, map[string]bool{databaseA: true, databaseB: true},
+		map[string]int{databaseA: 10, databaseB: 10})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := testBackfill(t, server, staticRoster{ids: []string{tenantA, tenantB}}, &batchEmbedder{}).
+		EmbedMissing(ctx, time.Time{}); err != nil {
+		t.Fatalf("a spent budget was reported as a failure: %v", err)
 	}
-	if embedded != 0 {
-		t.Fatalf("embedded = %d, want none written at the wrong width", embedded)
+}
+
+// No space, no pass: a hosted route without its key, or a sidecar that cannot name its
+// model, would fail every tenant the same way.
+func TestTenantBackfillDoesNotRunWithoutASpace(t *testing.T) {
+	server := newTenantServer(t, map[string]bool{databaseA: true}, map[string]int{databaseA: 3})
+	embedder := &stubEmbedder{spaceErr: embeddings.ErrNoCredential}
+	_, err := testBackfill(t, server, staticRoster{ids: []string{tenantA}}, embedder).EmbedMissing(context.Background(), time.Time{})
+	if !errors.Is(err, embeddings.ErrNoCredential) {
+		t.Fatalf("err = %v, want ErrNoCredential", err)
 	}
-	if server.selects[databaseA] != 1 {
-		t.Fatalf("select rounds = %d, want the sweep to stop after the first fruitless round",
-			server.selects[databaseA])
+	if server.sawDatabase(databaseA) {
+		t.Fatal("the pass visited a tenant with no space to embed in")
 	}
 }
 

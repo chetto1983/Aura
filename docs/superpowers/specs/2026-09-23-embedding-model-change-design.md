@@ -295,8 +295,11 @@ over the daemon's space `S`:
 - Batches go through `Embed` 32 texts at a time, within the client's token budget
   (`internal/embeddings/fit.go:20-25`).
 - Each write sets the vector and the stamp.
-- The 20-round cap applies only when no stamp mismatch remains. While mismatches remain, a run
-  continues until its 5-minute budget, and the sweep is also kicked once at daemon boot.
+- A run drains each tenant until nothing is left outside `S` or its 5-minute budget ends; the
+  sweep is also kicked once at daemon boot. There is no round cap: the cursor visits each row
+  once per run, so an unfixable row cannot spin a run, and the rotation below keeps a large
+  backlog from starving the tenants behind it (amended 2026-09-24, plan 2 Task 6; the 20-round
+  cap survives only in `ReEmbedAllFacts`, the operator's same-space repair).
 - Tenant order rotates between runs, so no tenant starves.
 - **Failures.** A failing batch is halved down to single records:
   - a single record the provider rejects as input (400, 413, 422) loses its vector but is
@@ -306,13 +309,18 @@ over the daemon's space `S`:
   - a network error, a 5xx, or a 401, 403 or 429 ends the run, and the next run retries. Those
     three say nothing about the record: quarantining on them would stamp a whole space refused
     after one revoked key or one rate limit (review of plan 1).
+  - A record is set aside only once a control input has embedded in the same call: an
+    unknown model id answers 400 to every input, and without the control one typo in a
+    route would stamp a whole memory refused.
 - **No credential, no pass.** A cloud route with no key embeds nothing: the pass does not run,
   the family stays lexical, and `aura doctor` and the cockpit name the missing key.
 - **The key is read live.** The daemon's embedders take the credential from the running LLM
   profile, not a boot copy, so a key rotated in the cockpit reaches them without a restart.
 - **Turns.** The conversation reconciler keeps filling turns that have no vector, now as one
   batched call per projection instead of one request per turn. The pass touches turns only
-  through the stale selection, so no turn is embedded twice.
+  through the stale selection, so no turn is embedded twice. A turn a space refused is
+  re-selected by the pass once the space changes; the reconciler never asks again for a turn
+  that has a vector or a refusal.
 
 Interruption needs no protocol: the next run selects what is still mismatched. A second route
 change in mid-pass (A→B→C) needs none either: B-stamped rows differ from C and are re-embedded
@@ -562,6 +570,12 @@ fusion and index work; nothing here adds Go vector math.
   relevant results for known queries and abstention for one unanswerable question.
 - **A document that never re-indexes keeps the documents family lexical indefinitely.** This is
   deliberate, and visible by file name.
+- **A full re-embed on ArcadeDB 26.9.1 costs one graph rebuild per vector index** on the first
+  query after the next ArcadeDB restart: before 26.10.1 an updated vector is a delete plus an
+  insert, and a delete forced that rebuild (arcadedb-docs `concepts/vector-search.adoc`).
+  Memory indexes hold tens to thousands of vectors; the documents family is plan 3's to measure.
+- **The run budget stops a pass mid-tenant.** The next run resumes from what is still in
+  another space, starting one tenant later.
 
 ## Out of scope
 

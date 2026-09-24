@@ -471,9 +471,9 @@ func seedSandboxReapSweep(ctx context.Context, store *cron.Store, idleTTLSec int
 // seedMemoryEmbedBackfillSweep idempotently seeds the memory embedding backfill. The INSERT
 // succeeds against the 0091-widened scheduler_tasks.kind CHECK.
 //
-// This is the sweep that closes the hole: writes store a fact without its vector whenever the
-// embedding sidecar is absent or slow, and until this existed nothing ever came back for them,
-// so the dense leg of retrieval answered on a corpus with holes in it.
+// This is the sweep that closes the hole: writes store a row without its vector whenever the
+// embedding route is absent or slow, and a route change leaves every vector in the old space;
+// until this existed nothing ever came back for them (kickMemoryEmbedBackfill runs it at boot).
 func seedMemoryEmbedBackfillSweep(ctx context.Context, store *cron.Store) error {
 	return seedEveryCronSweep(ctx, store, cron.KindMemoryEmbedBackfill,
 		memoryEmbedBackfillSweepMinutes, "memory embed backfill sweep")

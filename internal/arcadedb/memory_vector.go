@@ -286,162 +286,17 @@ type rankedFact struct {
 	rank int
 }
 
-// EmbedMissingFacts backfills vectors for facts written before an embedder was
-// configured, or while it was down. It returns how many it embedded.
-func (c *Client) EmbedMissingFacts(ctx context.Context, batch int) (int, error) {
-	return c.embedFacts(ctx, batch, "embedding IS NULL AND statement IS NOT NULL")
-}
-
-// ReEmbedAllFacts recomputes EVERY fact's vector, including the ones that already have
-// one. It exists because a vector is only meaningful against the model that produced it:
-// swap the embedder and the stored corpus is silently in the wrong geometry, still
-// answering, just answering worse. That is not hypothetical — on 2026-08-02 the appliance
-// was found running a GGUF missing EmbeddingGemma's two dense projections, so every vector
-// written until then came from the backbone alone.
-//
-// Deliberately NOT idempotent-by-skipping: re-running it is the point.
-//
-// It CLEARS every vector and then drains the gap, rather than selecting the facts to
-// re-embed directly. The direct selection is what shipped, and it could not finish:
-// `WHERE statement IS NOT NULL LIMIT batch` describes a set that re-embedding does not
-// shrink, so every call returned the same first `batch` rows and everything past them
-// kept the old model's vector forever -- on the one operation whose entire purpose is
-// that no vector is left in the old geometry. Measured 2026-09-03 through the MCP
-// surface: two consecutive `all` calls on a 55-fact memory both reported 30.
-//
-// "Has no vector" is the only predicate that shrinks as the work is done, which is why
-// the embed backfill was built on it, and reusing it here means the two paths cannot
-// drift. The cost is a window where the cleared tail answers lexically only -- which the
-// hybrid search already treats as normal, the dense leg being an improvement and never a
-// dependency -- and anything this call's rounds do not reach is picked up by the
-// scheduled memory_embed_backfill sweep, because it selects on exactly that predicate.
-func (c *Client) ReEmbedAllFacts(ctx context.Context, batch int) (int, error) {
-	if c == nil || c.embedder == nil {
-		return 0, fmt.Errorf("arcadedb: no embedder configured")
-	}
-	if _, err := c.Command(ctx, clearFactEmbeddingsStatement, nil); err != nil {
-		return 0, fmt.Errorf("arcadedb: clear fact vectors: %w", err)
-	}
-	return embedMissingInBatches(ctx, c, batch)
-}
-
-// clearFactEmbeddingsStatement drops the stored vectors. It is filtered on the property
-// being present so the write touches only the rows that have one.
-const clearFactEmbeddingsStatement = "UPDATE " + factEdgeType +
-	" SET embedding = NULL WHERE embedding IS NOT NULL"
-
-// embedFacts is the shared body. `where` decides which facts are in scope; everything
-// after it — batching, the document-side task prefix, the width check — is identical,
-// because a backfill and a re-embed differ only in what they select.
-func (c *Client) embedFacts(ctx context.Context, batch int, where string) (int, error) {
-	if c == nil || c.embedder == nil {
-		return 0, fmt.Errorf("arcadedb: no embedder configured")
-	}
-	batch = boundedLimit(batch, 100, c.memoryLimits().MaintenanceBatch)
-	rows, err := c.Query(ctx,
-		"SELECT @rid AS rid, statement FROM "+factEdgeType+
-			" WHERE "+where+" LIMIT "+strconv.Itoa(batch), nil)
-	if err != nil {
-		return 0, fmt.Errorf("arcadedb: select facts to embed: %w", err)
-	}
-	if len(rows) == 0 {
-		return 0, nil
-	}
-	statements := make([]string, 0, len(rows))
-	rids := make([]string, 0, len(rows))
-	for _, row := range rows {
-		statement, _ := row["statement"].(string)
-		rid := fmt.Sprintf("%v", row["rid"])
-		if strings.TrimSpace(statement) == "" || rid == "" {
-			continue
-		}
-		statements = append(statements, statement)
-		rids = append(rids, rid)
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, statements))
-	if err != nil {
-		return 0, fmt.Errorf("arcadedb: embed backfill: %w", err)
-	}
-	return c.writeVectors(ctx, rids, vectors)
-}
-
-// writeVectors stores a whole batch in ONE round trip, and falls back to one
-// statement per fact only when that fails.
-//
-// The round trip is the entire cost here. Measured on this host 2026-08-03: a
-// vector UPDATE addressed by @rid takes 55-78ms while a `SELECT 1` on the same
-// connection takes 53-63ms, so the write itself is ~10ms and the rest is HTTP.
-// A batch of 32 written one at a time therefore spent ~1.8s in handshakes to do
-// ~0.3s of work — more than half the sweep's wall clock.
-//
-// sqlscript is the server's own answer: "A sqlscript can consist of one or
-// multiple SQL statements, which is collectively treated as a transaction ...
-// begin and commit implicitly enclose any sqlscript command"
-// (arcadedb-docs, reference/http-api/http.adoc).
-//
-// The per-fact fallback is not belt-and-braces, it is the poison-row cure. A
-// script is atomic, so ONE malformed row would roll back its 31 healthy
-// companions and do so again on every later sweep — the batch would never land
-// and the tenant would stall behind it. Falling back isolates the bad row and
-// lets the rest through, which is also why this path reports how many landed
-// instead of abandoning the batch at the first error the way it used to.
-func (c *Client) writeVectors(ctx context.Context, rids []string, vectors [][]float64) (int, error) {
-	statements := make([]string, 0, len(rids))
-	params := make(map[string]any, len(rids)*2)
-	usable := make([]int, 0, len(rids))
-	for i, rid := range rids {
-		// A SHORT answer is skipped, not indexed into. The embedder is a sidecar over
-		// HTTP and nothing makes it return one vector per text: it used to be indexed
-		// positionally, so an answer with fewer vectors than statements panicked the
-		// process with an index out of range rather than embedding what it could. A
-		// missing vector is the same case as the wrong-width vector below -- unusable
-		// for this fact, harmless to the rest of the batch -- and the drain loop stops
-		// on a short round rather than spinning on it.
-		if i >= len(vectors) || len(vectors[i]) != vectorDimensions {
-			continue
-		}
-		usable = append(usable, i)
-		n := strconv.Itoa(len(usable) - 1)
-		statements = append(statements,
-			"UPDATE "+factEdgeType+" SET embedding = :v"+n+" WHERE @rid = :r"+n)
-		params["v"+n] = vectors[i]
-		params["r"+n] = rid
-	}
-	if len(statements) == 0 {
-		return 0, nil
-	}
-	if _, err := c.Script(ctx, strings.Join(statements, ";\n"), params); err == nil {
-		return len(statements), nil
-	}
-	written := 0
-	var failures []string
-	for _, i := range usable {
-		if _, err := c.Command(ctx,
-			"UPDATE "+factEdgeType+" SET embedding = :vector WHERE @rid = :rid",
-			map[string]any{"vector": vectors[i], "rid": rids[i]}); err != nil {
-			failures = append(failures, rids[i])
-			continue
-		}
-		written++
-	}
-	if len(failures) > 0 {
-		return written, fmt.Errorf("arcadedb: write embedding failed for %d of %d facts (first %s)",
-			len(failures), len(usable), failures[0])
-	}
-	return written, nil
-}
-
-// escapeLucene neutralises the query-syntax characters in user text before it
-// reaches SEARCH_INDEX. Lucene's parser treats `?`, `*`, `"`, `~`, `:` and the
-// rest as operators, so a question ending in `…impossible"?` was not a poor
-// query, it was a PARSE ERROR — and the benchmark that hit it counted the
-// resulting zero rows as a recall miss for weeks.
 // luceneBooleanKeywords are read as operators by Lucene's classic parser, and ONLY in
 // upper case. A backslash cannot disarm them the way it disarms punctuation, so the
 // standalone token is lower-cased instead: the analyzer folds case before matching, so
 // this changes what the parser does without changing what the query finds.
 var luceneBooleanKeywords = map[string]string{"AND": "and", "OR": "or", "NOT": "not"}
 
+// escapeLucene neutralises the query-syntax characters in user text before it
+// reaches SEARCH_INDEX. Lucene's parser treats `?`, `*`, `"`, `~`, `:` and the
+// rest as operators, so a question ending in `…impossible"?` was not a poor
+// query, it was a PARSE ERROR — and the benchmark that hit it counted the
+// resulting zero rows as a recall miss for weeks.
 func escapeLucene(query string) string {
 	fields := strings.Fields(query)
 	for i, field := range fields {

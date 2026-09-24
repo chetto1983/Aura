@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -249,127 +248,6 @@ func TestUpsertFactWithoutAVectorOmitsTheClause(t *testing.T) {
 	}
 	if _, bound := params["embedding"]; bound {
 		t.Fatal("an embedding parameter was bound with no vector to put in it")
-	}
-}
-
-func TestEmbedMissingAndReembedFactsWriteOnlyValidVectors(t *testing.T) {
-	embedder := &stubEmbedder{vectors: [][][]float64{
-		{vectorOf(1), {1}},
-		{vectorOf(2), vectorOf(3)},
-	}}
-	client, requests := routedClient(t, func(request recordedRequest) testResponse {
-		statement, _ := request.Payload["command"].(string)
-		if strings.HasPrefix(statement, "SELECT @rid AS rid") {
-			return testResponse{Body: `{"result":[
-				{"rid":"#3:1","statement":"one"},
-				{"rid":"#3:2","statement":"two"},
-				{"rid":"","statement":"ignored"}]}`}
-		}
-		if strings.HasPrefix(statement, "UPDATE FACT SET embedding") {
-			return testResponse{Body: `{"result":[{"count":1}]}`}
-		}
-		return testResponse{Status: 400, Body: `{}`}
-	})
-	client.WithEmbedder(embedder)
-	written, err := client.EmbedMissingFacts(context.Background(), 0)
-	if err != nil || written != 1 {
-		t.Fatalf("EmbedMissingFacts written=%d err=%v", written, err)
-	}
-	written, err = client.ReEmbedAllFacts(context.Background(), 2)
-	if err != nil || written != 2 {
-		t.Fatalf("ReEmbedAllFacts written=%d err=%v", written, err)
-	}
-	// Both calls select on the SAME predicate, and that is the point: a re-embed clears
-	// the vectors and then drains the gap, because "has no vector" is the only condition
-	// that shrinks as the work is done. Selecting the facts to re-embed directly could
-	// never finish -- it returned the same first batch on every call.
-	commands := make([]string, 0, len(*requests))
-	for _, request := range *requests {
-		commands = append(commands, request.Payload["command"].(string))
-	}
-	if !strings.Contains(commands[0], "embedding IS NULL") {
-		t.Fatalf("backfill selection = %q", commands[0])
-	}
-	cleared := slices.IndexFunc(commands, func(command string) bool {
-		return strings.Contains(command, "SET embedding = NULL")
-	})
-	if cleared < 0 {
-		t.Fatalf("re-embed never cleared the old vectors: %v", commands)
-	}
-	if !strings.Contains(commands[cleared+1], "embedding IS NULL") {
-		t.Fatalf("re-embed selected %q after clearing, want the missing-vector gap", commands[cleared+1])
-	}
-	for _, command := range commands {
-		if strings.Contains(command, "SELECT @rid AS rid") && strings.Contains(command, "statement IS NOT NULL") &&
-			!strings.Contains(command, "embedding IS NULL") {
-			t.Fatalf("re-embed still selects a set it does not shrink: %q", command)
-		}
-	}
-	// The last round asks the exhausted stub for more and gets nothing back. A short
-	// answer must be skipped, not indexed into: positional indexing panicked here.
-	if written, err := client.EmbedMissingFacts(context.Background(), 2); err != nil || written != 0 {
-		t.Fatalf("short embedder answer: written=%d err=%v", written, err)
-	}
-}
-
-func TestEmbedFactsHandlesNoWorkAndFailures(t *testing.T) {
-	client := &Client{}
-	if _, err := client.EmbedMissingFacts(context.Background(), 1); err == nil {
-		t.Fatal("missing embedder accepted")
-	}
-	empty, _ := routedClient(t, func(recordedRequest) testResponse {
-		return testResponse{Body: `{"result":[]}`}
-	})
-	empty.WithEmbedder(&stubEmbedder{})
-	if got, err := empty.EmbedMissingFacts(context.Background(), 1); err != nil || got != 0 {
-		t.Fatalf("empty result=%d err=%v", got, err)
-	}
-	failed, _ := routedClient(t, func(recordedRequest) testResponse {
-		return testResponse{Status: 500, Body: `{"detail":"select failed"}`}
-	})
-	failed.WithEmbedder(&stubEmbedder{})
-	if _, err := failed.EmbedMissingFacts(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "select facts") {
-		t.Fatalf("select error = %v", err)
-	}
-	embedFailed, _ := routedClient(t, func(recordedRequest) testResponse {
-		return testResponse{Body: `{"result":[{"rid":"#3:1","statement":"one"}]}`}
-	})
-	embedFailed.WithEmbedder(&stubEmbedder{err: errors.New("down")})
-	if _, err := embedFailed.EmbedMissingFacts(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "embed backfill") {
-		t.Fatalf("embed error = %v", err)
-	}
-	writeFailed, _ := routedClient(t, func(request recordedRequest) testResponse {
-		statement, _ := request.Payload["command"].(string)
-		if strings.HasPrefix(statement, "SELECT") {
-			return testResponse{Body: `{"result":[{"rid":"#3:1","statement":"one"}]}`}
-		}
-		return testResponse{Status: 500, Body: `{"detail":"write failed"}`}
-	})
-	writeFailed.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}})
-	if _, err := writeFailed.EmbedMissingFacts(context.Background(), 1); err == nil || !strings.Contains(err.Error(), "write embedding") {
-		t.Fatalf("write error = %v", err)
-	}
-}
-
-func TestEmbedFactsCapsMaintenanceBatch(t *testing.T) {
-	client, requests := routedClient(t, func(recordedRequest) testResponse {
-		return testResponse{Body: `{"result":[]}`}
-	})
-	client.WithEmbedder(&stubEmbedder{})
-	if _, err := client.ReEmbedAllFacts(context.Background(), 1000); err != nil {
-		t.Fatalf("ReEmbedAllFacts: %v", err)
-	}
-	// Find the selection rather than naming a request index: a re-embed now clears the
-	// vectors before it selects, and the cap being asserted is the SELECT's.
-	var statement string
-	for _, request := range *requests {
-		if command := request.Payload["command"].(string); strings.HasPrefix(command, "SELECT @rid AS rid") {
-			statement = command
-			break
-		}
-	}
-	if !strings.Contains(statement, "LIMIT 100") {
-		t.Fatalf("maintenance cap missing: %s", statement)
 	}
 }
 

@@ -1,13 +1,15 @@
-// serve_memory_backfill.go wires the memory_embed_backfill sweep: the scheduled caller
-// that gives every fact its vector, in every identity's memory database.
+// serve_memory_backfill.go wires the memory_embed_backfill sweep: the scheduled pass that
+// keeps every memory row in the daemon's embedding space, in every identity's database.
 package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/identity"
 )
@@ -74,6 +76,28 @@ func buildMemoryEmbedBackfill(chat *chatEnv) handlers.MemoryEmbedder {
 	// another's memory.
 	return arcadedb.NewTenantBackfill(
 		identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, embedder)
+}
+
+// memorySweepTasks is the slice of *cron.Store the boot kick needs.
+type memorySweepTasks interface {
+	ListActiveTasks(ctx context.Context) ([]cron.Task, error)
+	RunTaskNow(ctx context.Context, id string) error
+}
+
+// kickMemoryEmbedBackfill runs the memory pass on the scheduler's first tick. A route change
+// restarts the daemon, and every memory read is lexical until the pass has run, so waiting
+// out the five-minute schedule would keep memory degraded for nothing (spec §5).
+func kickMemoryEmbedBackfill(ctx context.Context, tasks memorySweepTasks) error {
+	active, err := tasks.ListActiveTasks(ctx)
+	if err != nil {
+		return fmt.Errorf("list active tasks: %w", err)
+	}
+	for _, task := range active {
+		if task.Kind == cron.KindMemoryEmbedBackfill {
+			return tasks.RunTaskNow(ctx, task.ID)
+		}
+	}
+	return nil
 }
 
 // buildMemoryMentionLink wires the per-tenant MENTIONS-edge rebuild, or returns nil when

@@ -70,12 +70,17 @@ func (v storedVector) replaceClause(params map[string]any) string {
 type memorySpaceType struct {
 	name string
 	live string
+	// source is the text the type's vector embeds.
+	source string
+	// fillsUnanswered: rows with neither vector nor stamp are the pass's to embed. Turns are
+	// not: the conversation reconciler fills them on its next replay (memory_conversation.go).
+	fillsUnanswered bool
 }
 
 var (
-	factSpace  = memorySpaceType{name: factEdgeType}
-	turnSpace  = memorySpaceType{name: conversationTurnType, live: " AND deleted_at IS NULL"}
-	traceSpace = memorySpaceType{name: reasoningTraceType}
+	factSpace  = memorySpaceType{name: factEdgeType, source: "statement", fillsUnanswered: true}
+	turnSpace  = memorySpaceType{name: conversationTurnType, source: "content", live: " AND deleted_at IS NULL"}
+	traceSpace = memorySpaceType{name: reasoningTraceType, source: "provider_summary", fillsUnanswered: true}
 
 	// memorySpaceTypes is the memory family (spec §3); the documents family is gated apart,
 	// so a document that will not re-index never turns dense memory off.

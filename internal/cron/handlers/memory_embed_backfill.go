@@ -11,26 +11,26 @@ import (
 // 0091 migration widened the scheduler_tasks.kind CHECK to admit the row.
 const KindMemoryEmbedBackfill TaskKind = "memory_embed_backfill"
 
-// memoryEmbedBackfillMaxDuration bounds ONE sweep across all tenants. Embedding costs
-// ~45ms per fact in a batch, and the sweep is bounded per tenant
-// (arcadedb.backfillRoundsPerTenant), so 5 minutes covers a large backlog while still
-// failing a sweep that has hung on an unresponsive sidecar.
+// memoryEmbedBackfillMaxDuration is ONE run's budget across all tenants. A backlog it
+// does not finish continues on the next run, and the tenant a run starts from rotates, so
+// no tenant waits behind another's backlog for ever.
 const memoryEmbedBackfillMaxDuration = 5 * time.Minute
 
 // MemoryEmbedder is the consumer-declared seam the backfill drives (the SnippetSweeper
 // pattern): the live *arcadedb.TenantBackfill satisfies it via EmbedMissing, so this
 // package does not import internal/arcadedb. EmbedMissing visits every identity's memory
-// database and embeds the facts that have no vector, returning the count embedded.
+// database and re-embeds every memory row not in the daemon's embedding space, returning
+// the count embedded.
 type MemoryEmbedder interface {
 	EmbedMissing(ctx context.Context, now time.Time) (embedded int, err error)
 }
 
 // NewMemoryEmbedBackfillHandler builds the sweep that gives the memory embedder its
-// scheduled caller: without it a fact written while the embedding sidecar was absent
-// or slow stays vector-less forever, and the dense leg of retrieval answers on a
-// corpus with holes in it. A nil embedder yields the disabled no-op sweep (harmlessly
+// scheduled caller: without it a row written while the embedding route was absent or
+// slow stays vector-less forever, a route change leaves every vector in the old space,
+// and memory stays lexical. A nil embedder yields the disabled no-op sweep (harmlessly
 // off, not an error). It never reschedules a missed run: the next tick re-evaluates
-// the same "has no vector" set, which is the whole due set.
+// the same "outside the space" set, which is the whole due set.
 func NewMemoryEmbedBackfillHandler(embedder MemoryEmbedder) Handler {
 	var seam sweepFn
 	if embedder != nil {
@@ -38,5 +38,5 @@ func NewMemoryEmbedBackfillHandler(embedder MemoryEmbedder) Handler {
 	}
 	return newCountingSweep(KindMemoryEmbedBackfill, memoryEmbedBackfillMaxDuration, seam,
 		"memory embed backfill: disabled (no embedder)", "memory embed backfill",
-		"memory embed backfill ok: embedded %d fact(s)")
+		"memory embed backfill ok: embedded %d record(s)")
 }

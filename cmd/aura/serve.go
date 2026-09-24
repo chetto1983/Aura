@@ -333,11 +333,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	if err := seedRetentionSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed retention sweep", "err", err)
 	}
-	// Seed the memory embedding backfill (0091's kind CHECK admits it). Until this sweep
-	// existed a fact written while the embedding sidecar was absent or slow kept no vector
-	// for good, and semantic recall answered on a partially-embedded corpus.
+	// Seed the memory embedding backfill (0091's kind CHECK admits it), and run it now: a
+	// route change is a restart, and memory reads stay lexical until the pass has run.
 	if err := seedMemoryEmbedBackfillSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed memory embed backfill sweep", "err", err)
+	}
+	if err := kickMemoryEmbedBackfill(ctx, store); err != nil {
+		slog.Warn("aura serve: kick memory embed backfill", "err", err)
 	}
 	// Seed the MENTIONS-edge rebuild (0114's kind CHECK admits it). A MENTIONS edge is only
 	// decidable against the whole corpus (the hub cap), so no single fact-write can evaluate

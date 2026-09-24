@@ -4,24 +4,24 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 )
 
-// The scheduled caller EmbedMissingFacts never had.
+// The scheduled pass that keeps every tenant's memory in the daemon's embedding space.
 //
-// A fact is written without a vector whenever the embedder is absent or merely
-// slow, and that is by design: a write must not fail because a sidecar is down.
-// What was missing is the other half — something that comes back later and fills
-// the gap in. Without it "fail soft" meant "fail forever", and the dense leg of
-// retrieval answered on whatever subset of the corpus happened to be embedded at
-// write time.
+// A row is written without a vector whenever the embedder is absent or merely slow, and
+// that is by design: a write must not fail because a sidecar is down. And after a route
+// change every stored vector is in the old space. Both leave work behind, and without
+// something that comes back later "fail soft" meant "fail forever", while the dense leg
+// answered on whatever subset happened to be embedded right.
 //
-// The sweep keys on the ABSENCE OF A VECTOR and nothing else. Not on a session,
-// not on a recency window, not on an onboarding marker: those all describe one
-// writer's habits, and the corpus has several (the MCP tool, the CLI, onboarding,
-// Aura mid-conversation). Absence of a vector is the only condition that is always
-// true of the work, which is why it catches every writer without knowing any of
-// them.
+// The sweep keys on the row NOT BEING IN THE DAEMON'S SPACE and nothing else (spec §5).
+// That covers the facts the old key, the absence of a vector, selected, and the rows a
+// route change left behind. Not a session, not a recency window, not an onboarding marker:
+// those describe one writer's habits, and the corpus has several (the MCP tool, the CLI,
+// onboarding, Aura mid-conversation). A stamp outside the space is always true of the
+// work, which is why it catches every writer without knowing any of them.
 
 const (
 	// backfillBatch is how many facts one round embeds. The sidecar amortises well —
@@ -30,11 +30,10 @@ const (
 	// scales and one that does not.
 	backfillBatch = 32
 
-	// backfillRoundsPerTenant bounds ONE tenant's share of ONE sweep, so a large
-	// backlog cannot starve the tenants queued behind it or overrun the handler's
-	// budget. Whatever is left is picked up by the next tick — the sweep is
-	// idempotent by construction, since a fact that got its vector is no longer
-	// selected.
+	// backfillRoundsPerTenant bounds ReEmbedAllFacts, the operator's same-space repair.
+	// The sweep is bounded by its run budget and the rotation of the tenant it starts
+	// from, not by rounds: a route change leaves a whole memory behind, and a round cap
+	// would keep a large tenant lexical for many runs.
 	backfillRoundsPerTenant = 20
 )
 
@@ -61,6 +60,7 @@ type TenantBackfill struct {
 	base        Config
 	credentials *TenantCredentials
 	embedder    DenseEmbedder
+	rotation    atomic.Uint64
 }
 
 // NewTenantBackfill wires the sweep. base carries the server address only: the
@@ -75,21 +75,26 @@ func NewTenantBackfill(
 	return &TenantBackfill{identities: identities, base: base, credentials: credentials, embedder: embedder}
 }
 
-// EmbedMissing sweeps every identity and returns how many facts it embedded. The
-// sweep clock is unused — "has no vector" is not a question about time, which is
-// exactly why this sweep catches stragglers a recency window would miss. The
-// argument stays for the cron sweep seam every other sweep shares.
-//
-// Embedding needs the sidecar, so this sweep additionally requires an embedder —
-// unlike LinkMentions below, which does not. See sweepTenants for the rest of the
-// tenant-walk contract (skip vs. fail, counts, logging).
+// EmbedMissing runs the pass (memory_embed_pass.go) over every identity's memory and
+// returns how many vectors it wrote. Its name is the cron seam's (handlers.MemoryEmbedder),
+// and so is the unused clock: "outside the space" is not a question about time.
 func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, error) {
 	if b == nil || b.embedder == nil {
 		return 0, fmt.Errorf("arcadedb: memory embed backfill is not configured")
 	}
+	// No space, no pass: a hosted route without its key, or a sidecar that cannot name its
+	// model, would fail every tenant the same way (spec §5).
+	if _, err := b.embedder.Space(ctx); err != nil {
+		return 0, fmt.Errorf("arcadedb: memory re-embed cannot run: %w", err)
+	}
 	return b.sweepTenants(ctx, "embed backfill",
-		func(ctx context.Context, client *Client, _ string) (int, error) {
-			return embedMissingInBatches(ctx, client.WithEmbedder(b.embedder), backfillBatch)
+		func(ctx context.Context, client *Client, database string) (int, error) {
+			tally, err := client.WithEmbedder(b.embedder).reembedMemory(ctx)
+			if tally.refused > 0 {
+				slog.Warn("memory re-embed: records refused by the embedding model",
+					"database", database, "refused", tally.refused)
+			}
+			return tally.embedded, err
 		})
 }
 
@@ -129,6 +134,9 @@ func (b *TenantBackfill) LinkMentions(ctx context.Context, _ time.Time) (int, er
 // at least one failed hard, that error is returned, so a misconfiguration (wrong
 // tenant secret, unreachable server) is reported by the scheduler instead of
 // looking like an empty, healthy sweep.
+//
+// The walk starts one identity later on each run, and a run whose budget ends mid-walk
+// reports what it did rather than failing.
 func (b *TenantBackfill) sweepTenants(
 	ctx context.Context,
 	sweep string,
@@ -143,11 +151,19 @@ func (b *TenantBackfill) sweepTenants(
 	}
 	total, swept, skipped := 0, 0, 0
 	var firstErr error
-	for _, identityID := range identities {
+	for _, identityID := range rotated(identities, b.rotation.Add(1)-1) {
+		if ctx.Err() != nil {
+			slog.Info("memory "+sweep+": run budget reached; the rest resumes next run",
+				"count", total, "tenants", swept)
+			return total, nil
+		}
 		count, provisioned, err := b.sweepTenant(ctx, identityID, work)
 		total += count
 		switch {
 		case err != nil:
+			if ctx.Err() != nil {
+				continue
+			}
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -206,27 +222,12 @@ func (b *TenantBackfill) sweepTenant(
 	return count, true, nil
 }
 
-// embedMissingInBatches drains one database a batch at a time. A short round means
-// there was nothing more to take, so it stops; a full one means there may be, so it
-// goes again up to the per-tenant bound.
-//
-// A round that embeds NOTHING also stops, and that case is not hypothetical: a fact
-// whose vector comes back the wrong width is left alone by EmbedMissingFacts, so it
-// is selected again on the next round forever. Stopping on zero turns that into a
-// bounded no-op instead of a spin.
-// batch is the caller's round size: the sweep passes backfillBatch, while ReEmbedAllFacts
-// passes whatever the operator asked for, because the drain is the same either way.
-func embedMissingInBatches(ctx context.Context, client *Client, batch int) (int, error) {
-	total := 0
-	for range backfillRoundsPerTenant {
-		written, err := client.EmbedMissingFacts(ctx, batch)
-		total += written
-		if err != nil {
-			return total, err
-		}
-		if written < batch {
-			return total, nil
-		}
+// rotated starts the walk one identity later on each run, so a tenant whose backlog outlasts
+// one run's budget cannot starve the ones behind it.
+func rotated(ids []string, turn uint64) []string {
+	if len(ids) == 0 {
+		return ids
 	}
-	return total, nil
+	start := int(turn % uint64(len(ids)))
+	return append(append(make([]string, 0, len(ids)), ids[start:]...), ids[:start]...)
 }
