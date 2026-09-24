@@ -19,11 +19,25 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 // constantEmbedder answers every text with the same vector, so "which model wrote this"
 // is readable straight off the stored value.
-type constantEmbedder struct{ value float64 }
+type constantEmbedder struct {
+	value float64
+	space string
+}
+
+// Space is the embedder's own when set, else one derived from its value, so two constant
+// embedders are two routes.
+func (e constantEmbedder) Space(context.Context) (embeddings.Space, error) {
+	if e.space != "" {
+		return embeddings.Space{ID: e.space}, nil
+	}
+	return embeddings.Space{ID: fmt.Sprintf("es1-constant-%g", e.value)}, nil
+}
 
 func (e constantEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
 	vectors := make([][]float64, len(texts))

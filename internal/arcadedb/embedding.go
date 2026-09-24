@@ -1,16 +1,20 @@
 package arcadedb
 
 import (
-	"net/http"
-	"strings"
-	"time"
+	"context"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
 )
 
-// Embedder remains optional so memory retrieval can degrade to its lexical leg
-// when no embedding route is configured.
-type Embedder = embeddings.Embedder
+// DenseEmbedder is the memory dense leg: it embeds, and it names the space its vectors are
+// in, so every stored vector carries that space (spec §2) and every dense read can check
+// the corpus is in it (spec §3). Optional: with none, memory retrieval is the lexical leg
+// alone, which is the behaviour that shipped.
+type DenseEmbedder interface {
+	Embed(ctx context.Context, texts []string) ([][]float64, error)
+	Space(ctx context.Context) (embeddings.Space, error)
+}
 
 // EmbeddingGemma's query and stored-text prefixes are asymmetric. Memory facts
 // are stored retrieval documents; natural-language searches are queries.
@@ -23,27 +27,14 @@ func withTask(prefix string, texts []string) []string {
 	return embeddings.Prefix(prefix, texts)
 }
 
-// SidecarEmbedder is retained as the memory package's public name while the
-// transport itself has one implementation shared with documents.
-type SidecarEmbedder = embeddings.Client
-
-// NewSidecarEmbedder builds the optional memory embedder. The fixed dimension
-// matches the existing memory vector index; changing it requires rebuilding the
-// index rather than accepting mixed vector widths.
-func NewSidecarEmbedder(baseURL, model, apiKey string, timeout time.Duration) *SidecarEmbedder {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
+// NewMemoryEmbedder resolves the memory family's route at the index width, or returns nil
+// when dense embedding is switched off. The result is an interface on purpose: a nil
+// *embeddings.Route stored in one is non-nil, and every "no embedder" branch would call
+// through it. credential is read on every request of a cloud route.
+func NewMemoryEmbedder(embed config.EmbedConfig, credential func() string) DenseEmbedder {
+	route := embeddings.NewRoute(embed, credential, vectorDimensions, DefaultTimeout)
+	if route == nil {
 		return nil
 	}
-	if timeout <= 0 {
-		timeout = DefaultTimeout
-	}
-	return &embeddings.Client{
-		BaseURL:    baseURL,
-		Model:      strings.TrimSpace(model),
-		APIKey:     strings.TrimSpace(apiKey),
-		Client:     &http.Client{Timeout: timeout},
-		Dimensions: vectorDimensions,
-		Timeout:    timeout,
-	}
+	return route
 }

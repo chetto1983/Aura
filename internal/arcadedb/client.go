@@ -186,7 +186,7 @@ type Client struct {
 	limits      MemoryLimits
 	// embedder is optional: with none, memory retrieval is the lexical leg alone,
 	// which is the behaviour that shipped and must not regress when it is absent.
-	embedder Embedder
+	embedder DenseEmbedder
 	// facts serializes UpsertFact's attach-or-create sequence per fact_key
 	// (fact_lock.go) -- see that file's doc comment for why an in-process
 	// lock, not just the transactional write, is what actually closes the
@@ -412,7 +412,7 @@ func decodeServerError(resp *http.Response) error {
 // WithEmbedder attaches the dense leg. A nil embedder is legal and leaves
 // retrieval lexical, so a caller can pass whatever configuration produced
 // without branching.
-func (c *Client) WithEmbedder(e Embedder) *Client {
+func (c *Client) WithEmbedder(e DenseEmbedder) *Client {
 	if c != nil {
 		c.embedder = e
 	}

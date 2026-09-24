@@ -132,7 +132,7 @@ func TestMediaDocumentProductionAgentE2E(t *testing.T) {
 	t.Cleanup(pool.Close)
 	registerDocumentE2EIdentity(t, ctx, pool, identityID, "media")
 
-	if _, err := newRuntimeDocumentIndex(cfg, nil, true); err != nil {
+	if _, err := newRuntimeDocumentIndex(cfg, true); err != nil {
 		t.Fatalf("configure media document index: %v", err)
 	}
 	library := newDocumentLibrary(pool, cfg)

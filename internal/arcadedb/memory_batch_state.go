@@ -23,7 +23,7 @@ func applyCompiledMemoryBatch(
 	compiled CompiledMemoryBatch,
 	now time.Time,
 	limits MemoryLimits,
-	embeddings map[string][]float64,
+	embeddings map[string]storedVector,
 ) ([]MemoryBatchOperationResult, error) {
 	results := make([]MemoryBatchOperationResult, 0, len(compiled.Operations))
 	for index, operation := range compiled.Operations {
@@ -45,7 +45,7 @@ func applyMemoryBatchOperation(
 	operation MemoryBatchOperation,
 	index int,
 	now time.Time,
-	embeddings map[string][]float64,
+	embeddings map[string]storedVector,
 ) (MemoryBatchOperationResult, error) {
 	switch operation.Type {
 	case MemoryBatchUpsertFact, MemoryBatchSupersedeFact:
@@ -65,7 +65,7 @@ func applyMemoryBatchFact(
 	operation MemoryBatchOperation,
 	index int,
 	now time.Time,
-	embeddings map[string][]float64,
+	embeddings map[string]storedVector,
 ) (MemoryBatchOperationResult, error) {
 	fact := *operation.Fact
 	validFrom := fact.ValidFrom
@@ -115,7 +115,7 @@ func applyMemoryBatchFact(
 	// user just asked Aura to remember. A missing key is the fail-soft case and leaves
 	// Embedding nil, exactly as before, for the sweep to pick up.
 	if vector, ok := embeddings[fact.Statement]; ok {
-		stored.Embedding = vector
+		stored.Embedding, stored.EmbedSpace = vector.vector, vector.space
 	}
 	key := fmt.Sprintf("new:%06d:%s", index, identity)
 	for suffix := 1; ; suffix++ {
@@ -209,7 +209,7 @@ func applyMemoryBatchMerge(
 			fact.Fact.ObjectKind = preferEntityKind(fact.Fact.ObjectKind, state.Entities[target].Kind)
 		}
 		fact.Fact.Statement = strings.ReplaceAll(fact.Fact.Statement, source, target)
-		fact.Embedding = nil
+		fact.Embedding, fact.EmbedSpace = nil, ""
 		if memoryBatchFactActive(fact, now) {
 			fact.FactKey = factIdentity(fact.Fact)
 		}

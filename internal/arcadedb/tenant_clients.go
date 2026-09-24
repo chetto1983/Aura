@@ -12,7 +12,7 @@ import (
 // authenticate with the credential scoped to their single database.
 type TenantClients struct {
 	base        Config
-	embedder    Embedder
+	embedder    DenseEmbedder
 	admin       *Client
 	credentials *TenantCredentials
 
@@ -26,7 +26,7 @@ type TenantClients struct {
 func NewTenantClients(
 	base Config,
 	admin *Client,
-	embedder Embedder,
+	embedder DenseEmbedder,
 	credentials *TenantCredentials,
 ) *TenantClients {
 	return &TenantClients{

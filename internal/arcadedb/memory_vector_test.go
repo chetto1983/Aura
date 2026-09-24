@@ -8,12 +8,22 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 type stubEmbedder struct {
-	vectors [][][]float64
-	err     error
-	calls   [][]string
+	vectors  [][][]float64
+	err      error
+	spaceErr error
+	calls    [][]string
+}
+
+// stubSpace is the space every stubEmbedder vector is in.
+const stubSpace = "es1-stub"
+
+func (s *stubEmbedder) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{ID: stubSpace}, s.spaceErr
 }
 
 func (s *stubEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
@@ -92,7 +102,7 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 func TestSearchFactsHybridFallsBackToLexical(t *testing.T) {
 	tests := []struct {
 		name      string
-		embedder  Embedder
+		embedder  DenseEmbedder
 		fusion    testResponse
 		hydration testResponse
 		reason    string
@@ -246,6 +256,9 @@ func TestUpsertFactStoresTheVectorItComputed(t *testing.T) {
 	if !ok || len(vector) != vectorDimensions {
 		t.Fatalf("embedding param = %T with %d values, want %d floats",
 			params["embedding"], len(vector), vectorDimensions)
+	}
+	if !strings.Contains(edge, "embed_space = :embed_space") || params["embed_space"] != stubSpace {
+		t.Fatalf("the vector is stored without the space that produced it:\n%s\nparams=%v", edge, params)
 	}
 }
 

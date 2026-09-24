@@ -60,7 +60,7 @@ type TenantBackfill struct {
 	identities  MemoryIdentities
 	base        Config
 	credentials *TenantCredentials
-	embedder    Embedder
+	embedder    DenseEmbedder
 }
 
 // NewTenantBackfill wires the sweep. base carries the server address only: the
@@ -70,7 +70,7 @@ func NewTenantBackfill(
 	identities MemoryIdentities,
 	base Config,
 	credentials *TenantCredentials,
-	embedder Embedder,
+	embedder DenseEmbedder,
 ) *TenantBackfill {
 	return &TenantBackfill{identities: identities, base: base, credentials: credentials, embedder: embedder}
 }

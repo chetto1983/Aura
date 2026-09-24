@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
 )
 
@@ -126,7 +127,7 @@ func TestFusionBenchmark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin client: %v", err)
 	}
-	embedder := arcadedb.NewSidecarEmbedder(embedURL, "embeddinggemma", "", 2*time.Minute)
+	embedder := arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil)
 	tenants := arcadedb.NewTenantClients(arcadedb.Config{BaseURL: baseURL}, admin, embedder, credentials)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{Dimensions: 768})
 	if err != nil {

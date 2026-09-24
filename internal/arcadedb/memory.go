@@ -285,21 +285,6 @@ const createFactStatement = "CREATE EDGE " + factEdgeType +
 	" created_at = :created_at, expired_at = :expired_at," +
 	" fact_key = :fact_key, sources = :sources"
 
-// createFactEmbeddingClause is appended only when there IS a vector.
-//
-// It is a separate clause rather than a permanent column of createFactStatement
-// because the two cases are genuinely different writes: with no embedder, or with
-// the sidecar down, there is nothing to store, and asking the engine to SET an
-// LSM_VECTOR-indexed property to null is a question worth not asking. The fact is
-// still written, still found lexically, and the memory_embed_backfill sweep fills
-// the vector in later.
-//
-// Its absence was the whole defect: the vector was computed on every write, passed
-// as a bind parameter, and dropped on the floor because no SET named it. ArcadeDB
-// accepts unused params silently, so every fact in every database was stored
-// without its vector and nothing anywhere said so.
-const createFactEmbeddingClause = ", embedding = :embedding"
-
 // UpsertFact writes one fact, closing any fact it supersedes.
 func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (FactWrite, error) {
 	if err := fact.validate(c.memoryLimits()); err != nil {
@@ -404,14 +389,9 @@ func (c *Client) UpsertFact(ctx context.Context, fact Fact, now time.Time) (Fact
 		"fact_key":     activeFactKey(factKey, fact.ValidTo, now),
 		"sources":      sourcesParam([]FactSource{fact.Source}),
 	}
-	statement := createFactStatement
-	// nil when no embedder is configured or the sidecar is down, which stores the
-	// fact without a vector rather than refusing the write. It stays reachable
-	// lexically, and the memory_embed_backfill sweep embeds it within minutes.
-	if vector := c.embedStatement(ctx, fact.Statement); vector != nil {
-		params["embedding"] = vector
-		statement += createFactEmbeddingClause
-	}
+	// Stored with the space that produced its vector, or with the space that refused it;
+	// with neither when no route answered, for the memory_embed_backfill pass to fill.
+	statement := createFactStatement + c.embedOne(ctx, fact.Statement).createClause(params)
 	if err := c.createFactWithRetry(ctx, statement, params, selector, fact.Source, now); err != nil {
 		return FactWrite{}, err
 	}

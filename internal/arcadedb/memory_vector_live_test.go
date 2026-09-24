@@ -16,15 +16,17 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/config"
 )
 
-func liveEmbedder(t *testing.T) Embedder {
+func liveEmbedder(t *testing.T) DenseEmbedder {
 	t.Helper()
 	embedURL := strings.TrimSpace(os.Getenv("AURA_EMBED_BASE_URL"))
 	if embedURL == "" {
 		embedURL = "http://127.0.0.1:8081"
 	}
-	embedder := NewSidecarEmbedder(embedURL, os.Getenv("AURA_EMBED_MODEL"), "", 60*time.Second)
+	embedder := NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil)
 	if embedder == nil {
 		liveGap(t, "no embedder configured")
 	}

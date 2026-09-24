@@ -271,14 +271,14 @@ func TestNullableMemoryBatchString(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := nullableMemoryBatchString(tt.value)
+			got := nullableString(tt.value)
 			if tt.want == nil {
 				if got != nil {
-					t.Errorf("nullableMemoryBatchString() = %v, want nil", got)
+					t.Errorf("nullableString() = %v, want nil", got)
 				}
 			} else {
 				if got != tt.want {
-					t.Errorf("nullableMemoryBatchString() = %v, want %v", got, tt.want)
+					t.Errorf("nullableString() = %v, want %v", got, tt.want)
 				}
 			}
 		})

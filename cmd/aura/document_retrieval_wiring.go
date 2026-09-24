@@ -30,7 +30,7 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 		slog.Info("documents: no ArcadeDB base URL — retrieval will answer from document cards only")
 		return retriever, nil
 	}
-	index, err := newRuntimeDocumentIndex(cfg, nil, true)
+	index, err := newRuntimeDocumentIndex(cfg, true)
 	if err != nil {
 		slog.Warn("documents: passage index unavailable — retrieval will answer from document cards only",
 			"err", err)

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 func conversationProjectionLiveClient(t *testing.T) *Client {
@@ -56,6 +58,10 @@ type countingEmbedder struct{ texts int }
 func (e *countingEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {
 	e.texts += len(texts)
 	return constantEmbedder{value: 1}.Embed(ctx, texts)
+}
+
+func (e *countingEmbedder) Space(ctx context.Context) (embeddings.Space, error) {
+	return constantEmbedder{value: 1}.Space(ctx)
 }
 
 // The unit test proves the decision; this proves the query it rests on. `embedding IS NOT

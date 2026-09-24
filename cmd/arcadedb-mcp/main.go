@@ -64,7 +64,7 @@ func run(logger *slog.Logger) error {
 	// The stored cloud model is the route switch: it selects the shared cloud base
 	// and sealed credential, never the local sidecar. An explicitly empty local base
 	// disables dense retrieval; per-call embedder failures still fall back to lexical.
-	embedder := arcadedb.NewSidecarEmbedder(embedRoute.baseURL, embedRoute.model, embedRoute.apiKey, 0)
+	embedder := arcadedb.NewMemoryEmbedder(embedRoute.embed, func() string { return embedRoute.apiKey })
 	if embedder != nil {
 		// NOT attached to `client`: that one only ever runs DDL as the admin, and
 		// the per-tenant clients the resolver builds get the embedder themselves.

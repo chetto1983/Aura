@@ -25,6 +25,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -94,8 +95,9 @@ func newAgentMemoryLiveMCPWithOptions(
 		t.Fatalf("tenant credentials: %v", err)
 	}
 	embedURL := agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081")
-	embedder := arcadedb.NewSidecarEmbedder(
-		embedURL, os.Getenv("AURA_EMBED_MODEL"), os.Getenv("OPENROUTER_API_KEY"), 60*time.Second)
+	embedder := arcadedb.NewMemoryEmbedder(
+		config.EmbedConfig{BaseURL: embedURL, CloudModel: os.Getenv("AURA_EMBED_MODEL")},
+		func() string { return os.Getenv("OPENROUTER_API_KEY") })
 	if embedder == nil {
 		agentMemoryLiveDependencyGap(t, options.strictDependencies, "EmbeddingGemma endpoint is not configured")
 	}

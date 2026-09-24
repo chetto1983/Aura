@@ -8,11 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 )
 
-func newRuntimeDocumentIndex(
-	cfg *config.Config,
-	embedder arcadedb.Embedder,
-	allowProvisioning bool,
-) (*arcadedb.DocumentIndex, error) {
+func newRuntimeDocumentIndex(cfg *config.Config, allowProvisioning bool) (*arcadedb.DocumentIndex, error) {
 	if cfg == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
 		return nil, fmt.Errorf("document index requires ArcadeDB configuration")
 	}
@@ -31,7 +27,7 @@ func newRuntimeDocumentIndex(
 		}
 	}
 	tenants := arcadedb.NewTenantClients(
-		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin, embedder, credentials,
+		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin, nil, credentials,
 	)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{
 		Dimensions:             cfg.Embed.Dimensions,

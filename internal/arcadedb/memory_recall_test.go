@@ -83,7 +83,7 @@ func TestMemoryRecallBackendPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		request  RecallRequest
-		embedder Embedder
+		embedder DenseEmbedder
 		wantPath string
 	}{
 		{name: "query", request: RecallRequest{IdentityID: "identity-a", Query: "blue notebook"}, embedder: &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}, wantPath: retrievalPathHybrid},

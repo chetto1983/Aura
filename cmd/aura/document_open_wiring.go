@@ -39,7 +39,7 @@ func (o *runtimeDocumentOpener) OpenDocument(
 	if err != nil {
 		return nil, documents.OpenedDocument{}, fmt.Errorf("object store: %w", err)
 	}
-	index, err := newRuntimeDocumentIndex(o.cfg, nil, false)
+	index, err := newRuntimeDocumentIndex(o.cfg, false)
 	if err != nil {
 		return nil, documents.OpenedDocument{}, fmt.Errorf("document index: %w", err)
 	}

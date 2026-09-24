@@ -69,7 +69,7 @@ func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objec
 	// file. Absent ArcadeDB the field stays nil and the catalog advertises nothing, which is
 	// the honest answer when there is no index to ask.
 	if strings.TrimSpace(cfg.ArcadeDB.BaseURL) != "" {
-		if index, err := newRuntimeDocumentIndex(cfg, nil, false); err == nil {
+		if index, err := newRuntimeDocumentIndex(cfg, false); err == nil {
 			svc.DocumentScope = &documents.ArcadeRetrievalControlPlane{Index: index}
 		} else {
 			slog.Warn("aura assets: knowledge catalog disabled — no document index", "err", err)

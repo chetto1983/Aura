@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
 )
 
 func TestAgentMemoryMCPLiveMixedTierRecall(t *testing.T) {
@@ -85,9 +86,12 @@ func agentMemoryLiveTenantClient(t *testing.T, ctx context.Context, identityID s
 	if err != nil {
 		t.Fatalf("tenant credentials: %v", err)
 	}
-	embedder := arcadedb.NewSidecarEmbedder(
-		agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		os.Getenv("AURA_EMBED_MODEL"), os.Getenv("OPENROUTER_API_KEY"), time.Minute,
+	embedder := arcadedb.NewMemoryEmbedder(
+		config.EmbedConfig{
+			BaseURL:    agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
+			CloudModel: os.Getenv("AURA_EMBED_MODEL"),
+		},
+		func() string { return os.Getenv("OPENROUTER_API_KEY") },
 	)
 	client, err := newTenants(base, admin, embedder, credentials).For(ctx, identityID)
 	if err != nil {

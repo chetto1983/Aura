@@ -226,15 +226,16 @@ func compileMemoryBatchOperation(
 }
 
 type memoryBatchFact struct {
-	RID       string
-	Fact      Fact
-	Sources   []FactSource
-	ValidFrom time.Time
-	ValidTo   time.Time
-	CreatedAt time.Time
-	ExpiredAt time.Time
-	FactKey   string
-	Embedding any
+	RID        string
+	Fact       Fact
+	Sources    []FactSource
+	ValidFrom  time.Time
+	ValidTo    time.Time
+	CreatedAt  time.Time
+	ExpiredAt  time.Time
+	FactKey    string
+	Embedding  any
+	EmbedSpace string
 }
 
 // memoryBatchEntity is everything the batch knows about one entity before it is
@@ -292,7 +293,7 @@ type memoryBatchBackend interface {
 	// EmbedStatements vectorizes the statements the batch is about to create, in
 	// one call, before the transaction opens. Fail-soft: a missing key means that
 	// statement has no vector, never that the batch should fail.
-	EmbedStatements(context.Context, []string) map[string][]float64
+	EmbedStatements(context.Context, []string) map[string]storedVector
 }
 
 // ApplyMemoryBatch applies a complete request through one identity-scoped
@@ -368,7 +369,7 @@ func applyMemoryBatchAttempt(
 	limits MemoryLimits,
 	receiptKey string,
 	backend memoryBatchBackend,
-	embeddings map[string][]float64,
+	embeddings map[string]storedVector,
 ) (MemoryBatchResult, bool, error) {
 	tx, err := backend.Begin(ctx, actor.IdentityID)
 	if err != nil {

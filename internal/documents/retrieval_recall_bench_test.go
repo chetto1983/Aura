@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
 )
 
@@ -55,7 +56,7 @@ func TestProductionRetrievalRecall(t *testing.T) {
 	if err != nil {
 		t.Fatalf("admin client: %v", err)
 	}
-	embedder := arcadedb.NewSidecarEmbedder(benchEnv(t, "AURA_EMBED_BASE_URL"), "embeddinggemma", "", 2*time.Minute)
+	embedder := arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: benchEnv(t, "AURA_EMBED_BASE_URL")}, nil)
 	tenants := arcadedb.NewTenantClients(arcadedb.Config{BaseURL: benchEnv(t, "AURA_ARCADEDB_URL")}, admin, embedder, credentials)
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{Dimensions: 768})
 	if err != nil {

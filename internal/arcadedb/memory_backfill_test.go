@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 // batchEmbedder answers every batch with one correctly-sized vector per input, so a
@@ -36,6 +38,10 @@ func (b *batchEmbedder) Embed(_ context.Context, texts []string) ([][]float64, e
 		out[i] = make([]float64, width)
 	}
 	return out, nil
+}
+
+func (b *batchEmbedder) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{ID: "es1-batch"}, nil
 }
 
 // tenantServer is a multi-tenant fake ArcadeDB. It routes by the database in the path
@@ -134,7 +140,7 @@ func testCredentials(t *testing.T) *TenantCredentials {
 	return credentials
 }
 
-func testBackfill(t *testing.T, s *tenantServer, roster MemoryIdentities, embedder Embedder) *TenantBackfill {
+func testBackfill(t *testing.T, s *tenantServer, roster MemoryIdentities, embedder DenseEmbedder) *TenantBackfill {
 	t.Helper()
 	return NewTenantBackfill(roster, Config{BaseURL: s.url}, testCredentials(t), embedder)
 }

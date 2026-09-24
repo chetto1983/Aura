@@ -21,7 +21,7 @@ type tenants struct {
 func newTenants(
 	base arcadedb.Config,
 	admin *arcadedb.Client,
-	embedder arcadedb.Embedder,
+	embedder arcadedb.DenseEmbedder,
 	credentials *arcadedb.TenantCredentials,
 ) *tenants {
 	return &tenants{resolver: arcadedb.NewTenantClients(base, admin, embedder, credentials)}

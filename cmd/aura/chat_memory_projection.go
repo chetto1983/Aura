@@ -116,10 +116,9 @@ func newChatTenantClients(cfg *config.Config) *arcadedb.TenantClients {
 			return nil
 		}
 	}
-	embedURL, apiKey, model := cfg.EmbedRoute()
 	clients := arcadedb.NewTenantClients(
 		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin,
-		arcadedb.NewSidecarEmbedder(embedURL, model, apiKey, 0), credentials,
+		arcadedb.NewMemoryEmbedder(cfg.Embed, func() string { return cfg.LLM.APIKey }), credentials,
 	)
 	return clients
 }

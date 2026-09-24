@@ -15,6 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/chetto1983/aura/internal/embeddings"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -474,6 +475,10 @@ type agentMemoryLiveUnavailableEmbedder struct{}
 
 func (agentMemoryLiveUnavailableEmbedder) Embed(context.Context, []string) ([][]float64, error) {
 	return nil, errors.New("forced live embedding fallback")
+}
+
+func (agentMemoryLiveUnavailableEmbedder) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{}, errors.New("forced live embedding fallback")
 }
 
 func newAgentMemoryLiveSpanRecorder(

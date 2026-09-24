@@ -17,6 +17,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 // Facts and conversations are ranked by SEPARATE statements now (arcadedb
@@ -43,6 +44,10 @@ func (s recallStubEmbedder) Embed(context.Context, []string) ([][]float64, error
 		return nil, s.err
 	}
 	return [][]float64{make([]float64, 768)}, nil
+}
+
+func (s recallStubEmbedder) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{ID: "es1-recall-stub"}, nil
 }
 
 func TestMemoryRecallMixedTierTracer(t *testing.T) {
@@ -76,7 +81,7 @@ func TestMemoryRecallBackendPath(t *testing.T) {
 		name      string
 		input     MemoryRecallInput
 		responses []string
-		embedder  arcadedb.Embedder
+		embedder  arcadedb.DenseEmbedder
 		wantPath  string
 	}{
 		{

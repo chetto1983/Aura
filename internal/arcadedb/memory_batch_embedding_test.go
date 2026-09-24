@@ -18,16 +18,16 @@ import (
 
 // EmbedStatements stands in for the sidecar embedder. embedderDown reproduces the
 // fail-soft contract (nil, never an error) rather than a second failure mode.
-func (b *memoryBatchFakeBackend) EmbedStatements(_ context.Context, statements []string) map[string][]float64 {
+func (b *memoryBatchFakeBackend) EmbedStatements(_ context.Context, statements []string) map[string]storedVector {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.embedCalls++
 	if b.embedderDown || len(statements) == 0 {
 		return nil
 	}
-	vectors := make(map[string][]float64, len(statements))
+	vectors := make(map[string]storedVector, len(statements))
 	for _, statement := range statements {
-		vectors[statement] = make([]float64, vectorDimensions)
+		vectors[statement] = storedVector{vector: make([]float64, vectorDimensions), space: "es1-fake"}
 	}
 	return vectors
 }
@@ -74,6 +74,9 @@ func TestMemoryBatch_EmbedsCreatedFacts(t *testing.T) {
 		if len(vector) != vectorDimensions {
 			t.Fatalf("embedding width = %d, want %d", len(vector), vectorDimensions)
 		}
+		if fact.EmbedSpace != "es1-fake" {
+			t.Fatalf("created fact EmbedSpace = %q, want the space that produced its vector", fact.EmbedSpace)
+		}
 	}
 	if got := backend.embedCalls; got != 1 {
 		t.Fatalf("embed calls = %d, want exactly one batched call outside the transaction", got)
@@ -88,11 +91,11 @@ func TestMemoryBatch_EmbedsCreatedFacts(t *testing.T) {
 // never needs the sidecar again.
 func TestMemoryBatchEmbedReusesStoredStatementVectors(t *testing.T) {
 	const known, fresh = "Davide lives in Torino.", "Davide works at Pmsync."
-	storedVector, err := json.Marshal(vectorOf(7))
+	storedJSON, err := json.Marshal(vectorOf(7))
 	if err != nil {
 		t.Fatalf("marshal stored vector: %v", err)
 	}
-	storedKnown := `{"result":[{"statement":"` + known + `","embedding":` + string(storedVector) + `}]}`
+	storedKnown := `{"result":[{"statement":"` + known + `","embedding":` + string(storedJSON) + `}]}`
 	tests := []struct {
 		name       string
 		statements []string
@@ -115,9 +118,11 @@ func TestMemoryBatchEmbedReusesStoredStatementVectors(t *testing.T) {
 				answer[i] = vectorOf(1)
 			}
 			embedder := &stubEmbedder{vectors: [][][]float64{answer}}
+			var lookupParams map[string]any
 			client, _ := routedClient(t, func(request recordedRequest) testResponse {
 				statement, _ := request.Payload["command"].(string)
 				if strings.Contains(statement, "embedding IS NOT NULL") {
+					lookupParams, _ = request.Payload["params"].(map[string]any)
 					return tt.lookup
 				}
 				return testResponse{Body: `{"result":[]}`}
@@ -125,6 +130,17 @@ func TestMemoryBatchEmbedReusesStoredStatementVectors(t *testing.T) {
 			client.WithEmbedder(embedder)
 
 			vectors := clientMemoryBatchBackend{client: client}.EmbedStatements(context.Background(), tt.statements)
+
+			// A stored vector from another space would carry an old model's geometry under
+			// the new stamp: the lookup only reuses vectors in the batch's own space.
+			if lookupParams["space"] != stubSpace {
+				t.Fatalf("lookup space = %v, want %q", lookupParams["space"], stubSpace)
+			}
+			for statement, vector := range vectors {
+				if vector.space != stubSpace {
+					t.Fatalf("vector for %q stamped %q, want %q", statement, vector.space, stubSpace)
+				}
+			}
 
 			var sent []string
 			for _, call := range embedder.calls {
@@ -139,7 +155,7 @@ func TestMemoryBatchEmbedReusesStoredStatementVectors(t *testing.T) {
 				t.Fatalf("vectors for %d statements, want %d", len(vectors), len(tt.wantFirst))
 			}
 			for statement, first := range tt.wantFirst {
-				if vector := vectors[statement]; len(vector) != vectorDimensions || vector[0] != first {
+				if vector, _ := vectors[statement].vector.([]float64); len(vector) != vectorDimensions || vector[0] != first {
 					t.Fatalf("vector for %q starts %v (width %d), want %v", statement, vector[:min(1, len(vector))], len(vector), first)
 				}
 			}

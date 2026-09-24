@@ -214,6 +214,14 @@ never derives it.
 ### §2. Every vector is stamped
 
 - The five types gain `embed_space STRING` with a NOTUNIQUE index.
+  The index is `NOTUNIQUE NULL_STRATEGY INDEX`: with ArcadeDB's default, `SKIP`, "queries
+  against null values that use an index return no entries" (arcadedb-docs
+  `reference/sql/sql-indexes.adoc`), so every unstamped row would be invisible to the gate.
+  Measured 2026-09-24 on a local 26.9.1 (`TestMemorySpaceStampsFactsAndFindsTheUnstampedThroughTheIndex`):
+  with the index declared this way, `embed_space IS NULL` counts the unstamped fact.
+- A writer reads its space **before** the request that produces the vector. A model swapped
+  during the request can then only make a vector claim the older space, which the pass
+  re-embeds, never the newer one.
 - Every write that sets `embedding` sets `embed_space` in the same statement, to the writer's
   own space; every path that removes `embedding` removes `embed_space` too, except the §5
   quarantine, which leaves the stamp to mean "this space refused this record".

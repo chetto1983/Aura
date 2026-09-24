@@ -47,7 +47,7 @@ const (
 // both, and an index on an edge type is legal (verified against 26.7.3, which
 // indexed the existing 24 facts on creation).
 func vectorSchemaStatements() []string {
-	return []string{
+	return append([]string{
 		// ARRAY_OF_FLOATS, not LIST OF FLOAT. The manual shows both, but they are not
 		// interchangeable at the binding: a JSON array sent through the SQL endpoint
 		// arrives as ARRAY_OF_FLOATS, and a property declared LIST OF FLOAT rejects it
@@ -57,7 +57,7 @@ func vectorSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS ON " + factEdgeType + " (embedding) LSM_VECTOR METADATA " +
 			"{ \"dimensions\": " + strconv.Itoa(vectorDimensions) +
 			", \"similarity\": \"COSINE\", \"quantization\": \"" + vectorQuantization + "\" }",
-	}
+	}, spaceStampStatements(factEdgeType)...)
 }
 
 // embedStatement returns the vector for one fact statement, or nil when no
@@ -76,53 +76,6 @@ func (c *Client) embedStatement(ctx context.Context, statement string) []float64
 		return nil
 	}
 	return vectors[0]
-}
-
-// embedStatements is embedStatement for a whole batch: ONE round trip for every
-// statement a memory batch is about to create, keyed by statement so the caller can
-// attach each vector to the fact it belongs to.
-//
-// It is called BEFORE the ArcadeDB transaction opens, deliberately. The embedder is
-// an HTTP sidecar, and holding a write transaction open across a network call to a
-// second service would put that service's latency inside the lock the batch holds on
-// the identity. Statements are de-duplicated because a batch may restate the same
-// fact more than once and the vector is a pure function of the text.
-//
-// Fail-soft matches embedStatement exactly: a down embedder yields no vectors, the
-// facts are still written, and EmbedMissingFacts fills them in later. The caller
-// distinguishes "no vector for this statement" by a missing map key, so a partial
-// result embeds what it can rather than discarding the batch.
-func (c *Client) embedStatements(ctx context.Context, statements []string) map[string][]float64 {
-	if c == nil || c.embedder == nil || len(statements) == 0 {
-		return nil
-	}
-	unique := make([]string, 0, len(statements))
-	seen := make(map[string]struct{}, len(statements))
-	for _, statement := range statements {
-		if strings.TrimSpace(statement) == "" {
-			continue
-		}
-		if _, done := seen[statement]; done {
-			continue
-		}
-		seen[statement] = struct{}{}
-		unique = append(unique, statement)
-	}
-	if len(unique) == 0 {
-		return nil
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, unique))
-	if err != nil || len(vectors) != len(unique) {
-		return nil
-	}
-	embedded := make(map[string][]float64, len(unique))
-	for i, statement := range unique {
-		if len(vectors[i]) != vectorDimensions {
-			continue
-		}
-		embedded[statement] = vectors[i]
-	}
-	return embedded
 }
 
 // rerankOpen/rerankClose wrap a fused ranking in ArcadeDB's native

@@ -32,42 +32,49 @@ type clientMemoryBatchTx struct {
 	closed    bool
 }
 
+// storedStatementVectorsStatement reuses a stored vector only when it is in the space the
+// batch embeds in: copying one from another space would stamp an old model's vector with
+// the new space and open the gate over it (spec §2).
 const storedStatementVectorsStatement = "SELECT statement, embedding FROM " + factEdgeType +
-	" WHERE statement IN :statements AND embedding IS NOT NULL"
+	" WHERE statement IN :statements AND embedding IS NOT NULL AND embed_space = :space"
 
-// EmbedStatements reuses the vector of every statement the store already holds and sends
-// only the rest to the sidecar. A capture restates the fact its tool call has just written,
-// so without the lookup every explicit fact was embedded twice.
+// EmbedStatements reuses the vector of every statement the store already holds in the
+// batch's space and sends only the rest to the embedder. A capture restates the fact its
+// tool call has just written, so without the lookup every explicit fact was embedded twice.
 func (backend clientMemoryBatchBackend) EmbedStatements(
 	ctx context.Context,
 	statements []string,
-) map[string][]float64 {
+) map[string]storedVector {
 	client := backend.client
 	if client == nil || client.embedder == nil || len(statements) == 0 {
 		return nil
 	}
-	vectors := client.storedStatementVectors(ctx, statements)
+	space, err := client.embedder.Space(ctx)
+	if err != nil {
+		return nil
+	}
+	vectors := client.storedStatementVectors(ctx, statements, space.ID)
 	missing := make([]string, 0, len(statements))
 	for _, statement := range statements {
 		if _, stored := vectors[statement]; !stored {
 			missing = append(missing, statement)
 		}
 	}
-	maps.Copy(vectors, client.embedStatements(ctx, missing))
+	maps.Copy(vectors, client.embedDistinct(ctx, missing))
 	return vectors
 }
 
 // storedStatementVectors is fail-soft like the embedder it saves a call to: a lookup that
 // cannot be served only means every statement is embedded, never that the batch fails.
-func (c *Client) storedStatementVectors(ctx context.Context, statements []string) map[string][]float64 {
-	vectors := make(map[string][]float64, len(statements))
-	rows, err := c.Query(ctx, storedStatementVectorsStatement, map[string]any{"statements": statements})
+func (c *Client) storedStatementVectors(ctx context.Context, statements []string, space string) map[string]storedVector {
+	vectors := make(map[string]storedVector, len(statements))
+	rows, err := c.Query(ctx, storedStatementVectorsStatement, map[string]any{"statements": statements, "space": space})
 	if err != nil {
 		return vectors
 	}
 	for _, row := range rows {
 		if vector := rowVector(row, "embedding"); vector != nil {
-			vectors[rowString(row, "statement")] = vector
+			vectors[rowString(row, "statement")] = storedVector{vector: vector, space: space}
 		}
 	}
 	return vectors
@@ -152,7 +159,7 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 	}
 	factRows, err := tx.client.queryInTx(ctx, tx.sessionID,
 		"SELECT @rid AS rid, statement, predicate, valid_from, valid_to, created_at, "+
-			"expired_at, fact_key, sources, embedding, outV().name AS subject, "+
+			"expired_at, fact_key, sources, embedding, embed_space, outV().name AS subject, "+
 			"outV().kind AS subject_kind, inV().name AS object, inV().kind AS object_kind "+
 			"FROM "+factEdgeType, nil)
 	if err != nil {
@@ -192,7 +199,7 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 		state.Facts[rid] = memoryBatchFact{
 			RID: rid, Fact: fact, Sources: sources, ValidFrom: validFrom, ValidTo: validTo,
 			CreatedAt: createdAt, ExpiredAt: expiredAt, FactKey: rowString(row, "fact_key"),
-			Embedding: row["embedding"],
+			Embedding: row["embedding"], EmbedSpace: rowString(row, "embed_space"),
 		}
 	}
 	return state, nil
@@ -308,11 +315,8 @@ func (tx *clientMemoryBatchTx) createFact(ctx context.Context, fact memoryBatchF
 	params := memoryBatchFactParams(fact)
 	params["subject_name"] = fact.Fact.Subject
 	params["object_name"] = fact.Fact.Object
-	statement := createFactStatement
-	if fact.Embedding != nil {
-		params["embedding"] = fact.Embedding
-		statement += createFactEmbeddingClause
-	}
+	statement := createFactStatement +
+		storedVector{vector: fact.Embedding, space: fact.EmbedSpace}.createClause(params)
 	if _, err := tx.client.commandInTx(ctx, tx.sessionID, statement, params); err != nil {
 		return fmt.Errorf("create fact %q: %w", fact.Fact.Statement, err)
 	}
@@ -370,7 +374,7 @@ func memoryBatchFactParams(fact memoryBatchFact) map[string]any {
 		"valid_to":   nullableMemoryBatchTime(fact.ValidTo),
 		"created_at": nullableMemoryBatchTime(fact.CreatedAt),
 		"expired_at": nullableMemoryBatchTime(fact.ExpiredAt),
-		"fact_key":   nullableMemoryBatchString(fact.FactKey),
+		"fact_key":   nullableString(fact.FactKey),
 		"sources":    sourcesParam(fact.Sources),
 	}
 }
@@ -408,7 +412,7 @@ func nullableMemoryBatchTime(value time.Time) any {
 	return value.UTC().Format(time.RFC3339)
 }
 
-func nullableMemoryBatchString(value string) any {
+func nullableString(value string) any {
 	if value == "" {
 		return nil
 	}
