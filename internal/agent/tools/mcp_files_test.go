@@ -216,6 +216,26 @@ func TestMCPFileSinkRefusesAFileOverTheCapAndKeepsTheRest(t *testing.T) {
 	}
 }
 
+// A file the sink refuses on its own for being over the file cap is not in the total the
+// call cap is checked against, however large it is: the call's other files still go in.
+// The bridge stops reading links by this same arithmetic (mcp.FilePart.CallBytes).
+func TestMCPFileSinkDoesNotCountAFileItRefusedAloneTowardTheCallCap(t *testing.T) {
+	be := &fakeBox{}
+	ctx, _ := mcpTurnCtx(t)
+
+	out := (&MCPFileSink{Router: routerWith(be)}).Materialize(ctx, "s", []mcp.FilePart{
+		{Name: "huge.bin", Data: make([]byte, mcp.MaxCallFileBytes+1)},
+		{Name: "small.txt", MIMEType: "text/plain", Data: []byte("ok")},
+	})
+
+	if out[0].NotMaterialized != mcp.FileCapExceeded(mcp.MaxCallFileBytes+1) || out[0].Path != "" {
+		t.Fatalf("oversized outcome = %+v", out[0])
+	}
+	if out[1].Path != "/workspace/mcp-files/req-1/s/small.txt" {
+		t.Fatalf("the small file must still be written, not refused for the call cap: %+v", out[1])
+	}
+}
+
 func TestMCPFileSinkRefusesACallOverTheCapWithoutTouchingTheBox(t *testing.T) {
 	be := &fakeBox{}
 	ctx, cleanup := mcpTurnCtx(t)

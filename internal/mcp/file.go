@@ -59,6 +59,18 @@ func (p FilePart) NotMaterialized(reason string) FileOutcome {
 	return FileOutcome{Name: p.Name, MIMEType: p.MIMEType, SizeBytes: size, NotMaterialized: reason}
 }
 
+// CallBytes is what p adds to the total its tool call is held to, MaxCallFileBytes:
+// its Data, unless it has none to write (Unavailable) or is refused on its own for
+// being over MaxFileBytes. The sink sums it to decide whether to write a call's files
+// at all, and the bridge sums it to stop reading links the sink would refuse, so
+// neither can refuse a call for a reason the other would not give.
+func (p FilePart) CallBytes() int {
+	if p.Unavailable != "" || len(p.Data) > MaxFileBytes {
+		return 0
+	}
+	return len(p.Data)
+}
+
 // FileCapExceeded is the reason a file over MaxFileBytes is refused.
 func FileCapExceeded(size int64) string {
 	return fmt.Sprintf("%d bytes exceeds the %d-byte file cap", size, MaxFileBytes)

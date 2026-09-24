@@ -16,15 +16,15 @@ import (
 // cannot make it reach anything on the network.
 
 // resolveLinks turns every link in payload into a FilePart and clears Links. It keeps
-// a running total of the bytes the call's files hold, the inline ones and each link it
-// reads, and stops reading once that passes mcp.MaxCallFileBytes: the sink refuses a
-// call over the cap whole, so a byte read past it is read for nothing, and the server
-// chooses how many links there are. It stops as well when ctx is done, without asking
-// the session.
+// a running total of what the sink will count toward the call's cap (FilePart.CallBytes),
+// the inline files and each link it reads, and stops reading once that passes
+// mcp.MaxCallFileBytes: the sink refuses a call over the cap whole, so a byte read past
+// it is read for nothing, and the server chooses how many links there are. It stops as
+// well when ctx is done, without asking the session.
 func resolveLinks(ctx context.Context, session *sdkmcp.ClientSession, payload mcp.ToolPayload) mcp.ToolPayload {
 	total := 0
 	for _, file := range payload.Files {
-		total += len(file.Data)
+		total += file.CallBytes()
 	}
 	for _, link := range payload.Links {
 		var part mcp.FilePart
@@ -36,7 +36,7 @@ func resolveLinks(ctx context.Context, session *sdkmcp.ClientSession, payload mc
 		default:
 			part = readLink(ctx, session, link)
 		}
-		total += len(part.Data)
+		total += part.CallBytes()
 		payload.Files = append(payload.Files, part)
 	}
 	payload.Links = nil

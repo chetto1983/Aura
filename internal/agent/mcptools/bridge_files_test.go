@@ -129,53 +129,64 @@ func TestCallToolNeverReadsALinkOverTheCap(t *testing.T) {
 }
 
 // The sink refuses a call whose files add up to more than the call cap, all or nothing,
-// so a byte read past it is a byte read for nothing: the third 25 MiB link takes the
-// total to 75 MiB, and the fourth is never asked for.
-func TestCallToolStopsReadingLinksPastTheCallCap(t *testing.T) {
-	links := make([]sdkmcp.Content, 4)
-	for i := range links {
-		links[i] = &sdkmcp.ResourceLink{URI: fmt.Sprintf("fixture://files/part%d", i+1), Name: fmt.Sprintf("part%d.bin", i+1)}
-	}
-	srv, server := mountReturning(t, links...)
+// so a byte read past it is a byte read for nothing. Two inline parts of exactly the
+// file cap fill the call cap to the byte, which is not over it: the first link is still
+// read, it takes the total past the cap, and the links after it are never asked for.
+func TestResolveLinksStopsReadingOnceTheCallCapIsPassed(t *testing.T) {
+	srv, server := mountReturning(t)
 	var reads atomic.Int32
-	serveFiles(server, mcp.OctetStream, make([]byte, mcp.MaxFileBytes), &reads)
-
-	payload, err := srv.CallTool(t.Context(), "fetch", map[string]any{})
+	serveFiles(server, mcp.OctetStream, []byte("x"), &reads)
+	session, err := srv.currentSession()
 	if err != nil {
-		t.Fatalf("CallTool: %v", err)
+		t.Fatalf("currentSession: %v", err)
 	}
+	full := make([]byte, mcp.MaxFileBytes)
 
-	if reads.Load() != 3 || len(payload.Files) != 4 {
-		t.Fatalf("reads %d, files %d; want 3 reads and 4 parts", reads.Load(), len(payload.Files))
+	got := resolveLinks(t.Context(), session, mcp.ToolPayload{
+		Files: []mcp.FilePart{{Name: "one.bin", Data: full}, {Name: "two.bin", Data: full}},
+		Links: []*sdkmcp.ResourceLink{
+			{URI: "fixture://files/a", Name: "a.bin"}, {URI: "fixture://files/b", Name: "b.bin"}, {URI: "fixture://files/c", Name: "c.bin"},
+		},
+	})
+
+	if reads.Load() != 1 || len(got.Files) != 5 || got.Files[2].Name != "a.bin" || string(got.Files[2].Data) != "x" {
+		t.Fatalf("reads %d, files %s; want 1 read, of a.bin", reads.Load(), describeParts(got.Files...))
 	}
-	for _, read := range payload.Files[:3] {
-		if len(read.Data) != mcp.MaxFileBytes {
-			t.Fatalf("%s carries %d bytes, want %d", read.Name, len(read.Data), mcp.MaxFileBytes)
+	for i, name := range []string{"b.bin", "c.bin"} {
+		if refused := got.Files[3+i]; refused.Name != name || refused.Data != nil || refused.Unavailable != mcp.CallCapExceeded() {
+			t.Fatalf("%s = %s, want it refused unread for the call cap", name, describeParts(refused))
 		}
-	}
-	if refused := payload.Files[3]; refused.Name != "part4.bin" || refused.Data != nil || refused.Unavailable != mcp.CallCapExceeded() {
-		t.Fatalf("the fourth link = %s, want part4.bin refused unread for the call cap", describeParts(refused))
 	}
 }
 
-// Only bytes count against the call cap: the inline files' Data does, and a part that
-// has none does not, whatever size it advertises.
-func TestResolveLinksCountsOnlyBytesAgainstTheCallCap(t *testing.T) {
+// The bridge's running total is the sink's: what the sink counts toward the call cap,
+// and nothing else. A part over the file cap is refused by the sink on its own and
+// never added to the total, and a part with no bytes adds none, whatever size it
+// advertises. A total that ran ahead of the sink's would refuse a link for a reason
+// the sink would not give.
+func TestResolveLinksCountsWhatTheSinkCountsAgainstTheCallCap(t *testing.T) {
+	twenty := make([]byte, 20<<20)
 	cases := []struct {
 		name      string
-		inline    mcp.FilePart
+		inline    []mcp.FilePart
 		wantReads int32
 		want      mcp.FilePart
 	}{
 		{
-			name:      "inline bytes over the cap leave no budget",
-			inline:    mcp.FilePart{Name: "big.bin", Data: make([]byte, mcp.MaxCallFileBytes+1)},
+			name:      "parts within the file cap that pass the call cap together leave no budget",
+			inline:    []mcp.FilePart{{Name: "a.bin", Data: twenty}, {Name: "b.bin", Data: twenty}, {Name: "c.bin", Data: twenty}},
 			wantReads: 0,
 			want:      mcp.FilePart{Name: "a.bin", MIMEType: "image/png", Size: 7, Unavailable: mcp.CallCapExceeded()},
 		},
 		{
+			name:      "a part over the file cap leaves the budget whole, for the sink refuses it alone",
+			inline:    []mcp.FilePart{{Name: "big.bin", Data: make([]byte, mcp.MaxCallFileBytes+1)}},
+			wantReads: 1,
+			want:      mcp.FilePart{Name: "a.bin", MIMEType: "image/png", Data: []byte("x")},
+		},
+		{
 			name:      "an unavailable part carries no bytes, whatever size it advertises",
-			inline:    mcp.FilePart{Name: "gone.bin", Unavailable: "read failed: expired", Size: mcp.MaxCallFileBytes + 1},
+			inline:    []mcp.FilePart{{Name: "gone.bin", Unavailable: "read failed: expired", Size: mcp.MaxCallFileBytes + 1}},
 			wantReads: 1,
 			want:      mcp.FilePart{Name: "a.bin", MIMEType: "image/png", Data: []byte("x")},
 		},
@@ -191,34 +202,30 @@ func TestResolveLinksCountsOnlyBytesAgainstTheCallCap(t *testing.T) {
 			}
 
 			got := resolveLinks(t.Context(), session, mcp.ToolPayload{
-				Files: []mcp.FilePart{c.inline},
+				Files: c.inline,
 				Links: []*sdkmcp.ResourceLink{{URI: "fixture://files/a", Name: "a.bin", MIMEType: "image/png", Size: new(int64(7))}},
 			})
 
-			if reads.Load() != c.wantReads || len(got.Files) != 2 || !reflect.DeepEqual(got.Files[1], c.want) {
+			last := len(c.inline)
+			if reads.Load() != c.wantReads || len(got.Files) != last+1 || !reflect.DeepEqual(got.Files[last], c.want) {
 				t.Fatalf("reads %d, files %s; want %d reads and the link as %s", reads.Load(), describeParts(got.Files...), c.wantReads, describeParts(c.want))
 			}
 		})
 	}
 }
 
+// The session is nil: a done context must be answered before the session is asked
+// anything, and a read would dereference it.
 func TestResolveLinksStopsReadingWhenTheContextIsDone(t *testing.T) {
-	srv, server := mountReturning(t)
-	var reads atomic.Int32
-	serveFiles(server, mcp.OctetStream, []byte("x"), &reads)
-	session, err := srv.currentSession()
-	if err != nil {
-		t.Fatalf("currentSession: %v", err)
-	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	got := resolveLinks(ctx, session, mcp.ToolPayload{Links: []*sdkmcp.ResourceLink{
+	got := resolveLinks(ctx, nil, mcp.ToolPayload{Links: []*sdkmcp.ResourceLink{
 		{URI: "fixture://files/a", Name: "a.bin"}, {URI: "fixture://files/b", Name: "b.bin"},
 	}})
 
-	if reads.Load() != 0 || len(got.Files) != 2 {
-		t.Fatalf("reads %d, files %s; want no read and both links reported", reads.Load(), describeParts(got.Files...))
+	if len(got.Files) != 2 {
+		t.Fatalf("files %s; want both links reported", describeParts(got.Files...))
 	}
 	for _, part := range got.Files {
 		if part.Data != nil || part.Unavailable != "read failed: "+context.Canceled.Error() {

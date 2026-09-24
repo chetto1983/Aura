@@ -75,6 +75,26 @@ func TestFileCapExceeded(t *testing.T) {
 	}
 }
 
+func TestFilePartCallBytes(t *testing.T) {
+	cases := []struct {
+		name string
+		part FilePart
+		want int
+	}{
+		{"a file within the cap counts its bytes", FilePart{Data: make([]byte, 10)}, 10},
+		{"a file of exactly the file cap counts", FilePart{Data: make([]byte, MaxFileBytes)}, MaxFileBytes},
+		{"a file over the file cap is refused alone and counts none", FilePart{Data: make([]byte, MaxFileBytes+1)}, 0},
+		{"an unavailable part counts none, whatever size it advertises", FilePart{Unavailable: "read failed", Size: MaxFileBytes}, 0},
+		{"an unavailable part counts none even if it holds bytes", FilePart{Unavailable: "read failed", Data: []byte("abc")}, 0},
+		{"an empty part counts none", FilePart{}, 0},
+	}
+	for _, c := range cases {
+		if got := c.part.CallBytes(); got != c.want {
+			t.Errorf("%s: CallBytes = %d, want %d", c.name, got, c.want)
+		}
+	}
+}
+
 func TestCallCapExceeded(t *testing.T) {
 	if got := CallCapExceeded(); got != "the call's files exceed the 52428800-byte cap" {
 		t.Fatalf("CallCapExceeded = %q", got)

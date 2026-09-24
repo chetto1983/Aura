@@ -70,8 +70,8 @@ func (s *MCPFileSink) Materialize(ctx context.Context, server string, parts []mc
 			out[i] = part.NotMaterialized(mcp.FileCapExceeded(int64(len(part.Data))))
 		default:
 			pending = append(pending, i)
-			total += len(part.Data)
 		}
+		total += part.CallBytes()
 	}
 	if len(pending) == 0 {
 		return out
