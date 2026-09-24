@@ -29,14 +29,21 @@ type MemoryEmbedder interface {
 // scheduled caller: without it a row written while the embedding route was absent or
 // slow stays vector-less forever, a route change leaves every vector in the old space,
 // and memory stays lexical. A nil embedder yields the disabled no-op sweep (harmlessly
-// off, not an error). It never reschedules a missed run: the next tick re-evaluates
-// the same "outside the space" set, which is the whole due set.
+// off, not an error).
+//
+// It fires at the boot catch-up: the daemon kicks it at boot (next_run_at = now), since a
+// route change is a restart and memory reads stay lexical until the pass has run, and a
+// catch-up that skipped the kicked task left memory lexical for a whole schedule (measured
+// on the lab VM, 2026-09-24). Firing it twice is harmless: it re-embeds only rows outside
+// the space.
 func NewMemoryEmbedBackfillHandler(embedder MemoryEmbedder) Handler {
 	var seam sweepFn
 	if embedder != nil {
 		seam = embedder.EmbedMissing
 	}
-	return newCountingSweep(KindMemoryEmbedBackfill, memoryEmbedBackfillMaxDuration, seam,
+	sweep := newCountingSweep(KindMemoryEmbedBackfill, memoryEmbedBackfillMaxDuration, seam,
 		"memory embed backfill: disabled (no embedder)", "memory embed backfill",
 		"memory embed backfill ok: embedded %d record(s)")
+	sweep.firesOnRecovery = true
+	return sweep
 }

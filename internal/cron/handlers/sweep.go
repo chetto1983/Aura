@@ -29,6 +29,9 @@ type countingSweepHandler struct {
 	errPrefix   string
 	okFmt       string // MUST carry exactly one %d for the count.
 	now         func() time.Time
+	// firesOnRecovery lets the boot catch-up fire an overdue sweep once instead of skipping
+	// to its next window; only a sweep someone kicks at boot needs it.
+	firesOnRecovery bool
 }
 
 // newCountingSweep builds the shared sweep shell. It derives the disabled no-op when seam is nil,
@@ -44,11 +47,11 @@ func newCountingSweep(kind TaskKind, maxDuration time.Duration, seam sweepFn, di
 	}
 }
 
-// Meta is the shared static contract of the counting sweeps: a per-sweep Kind + MaxDuration,
-// never rescheduled on recovery (each sweep is idempotent — the next tick re-evaluates the same
-// due set, so a missed run needs no catch-up).
+// Meta is the shared static contract of the counting sweeps: a per-sweep Kind + MaxDuration.
+// By default a missed run is not fired at recovery (each sweep is idempotent — the next tick
+// re-evaluates the same due set); firesOnRecovery opts a sweep into that one fire.
 func (h countingSweepHandler) Meta() HandlerMeta {
-	return HandlerMeta{Kind: h.kind, MaxDuration: h.maxDuration, ReschedulesOnRecovery: false}
+	return HandlerMeta{Kind: h.kind, MaxDuration: h.maxDuration, ReschedulesOnRecovery: h.firesOnRecovery}
 }
 
 // Run is the shared Run body of the counting sweeps. A nil seam is a harmless no-op success

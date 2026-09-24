@@ -21,8 +21,11 @@ func (f *fakeMemoryEmbedder) EmbedMissing(_ context.Context, _ time.Time) (int, 
 }
 
 // TestMemoryEmbedBackfillMeta asserts the static contract: the kind the 0091 CHECK admits
-// and the cron store writes, a 5-minute budget, and no reschedule-on-recovery — a missed
-// sweep needs no catch-up because the next tick re-evaluates the same "has no vector" set.
+// and the cron store writes, a 5-minute budget, and a fire at the boot catch-up. The daemon
+// kicks this pass at boot (next_run_at = now) because a route change restarts it and memory
+// stays lexical until the pass runs; without the fire the catch-up advanced the kicked task
+// and skipped it. Measured on the lab VM 2026-09-24: the kick at 20:49:17 was skipped and
+// memory stayed lexical until the scheduled run at 20:54:27.
 func TestMemoryEmbedBackfillMeta(t *testing.T) {
 	m := NewMemoryEmbedBackfillHandler(nil).Meta()
 	if m.Kind != KindMemoryEmbedBackfill {
@@ -34,8 +37,8 @@ func TestMemoryEmbedBackfillMeta(t *testing.T) {
 	if m.MaxDuration != memoryEmbedBackfillMaxDuration {
 		t.Fatalf("max duration = %s, want %s", m.MaxDuration, memoryEmbedBackfillMaxDuration)
 	}
-	if m.ReschedulesOnRecovery {
-		t.Fatal("the backfill must NOT reschedule on recovery (the next tick sweeps the same set)")
+	if !m.ReschedulesOnRecovery {
+		t.Fatal("the backfill must fire at the boot catch-up, or the boot kick is skipped and memory stays lexical for a whole schedule")
 	}
 }
 
