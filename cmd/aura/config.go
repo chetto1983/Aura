@@ -14,11 +14,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/settings"
 )
@@ -190,6 +192,20 @@ func applySettingsOverlay(ctx context.Context) string {
 		return "aura.settings could not be applied: " + err.Error()
 	}
 	return ""
+}
+
+// cliConfig is the configuration `aura serve` runs, for a CLI command that acts as the daemon
+// would: the aura.settings overlay, then the stored key. Without them `aura docs search`
+// embedded its query on the .env route and read every stamped passage as another space's.
+func cliConfig(ctx context.Context, notes io.Writer) *config.Config {
+	if note := applySettingsOverlay(ctx); note != "" {
+		_, _ = fmt.Fprintln(notes, "note:", note)
+	}
+	cfg := config.LoadDB()
+	if key := effectiveLLMKeyForCLI(ctx); key != "" {
+		cfg.LLM.APIKey = key
+	}
+	return cfg
 }
 
 // loadLLMConfigTolerant resolves the effective llm.Config across every tier the daemon

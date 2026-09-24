@@ -256,7 +256,8 @@ func (c docsCLI) OpenDocument(
 func (c docsCLI) WorkspaceRoot() string { return c.root }
 
 func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
-	cfg := config.LoadDB()
+	// Notes go to stderr: `aura docs mcp` speaks its protocol on stdout.
+	cfg := cliConfig(ctx, os.Stderr)
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
 		return nil, nil, err

@@ -213,6 +213,33 @@ func TestConfigShowResolvesTheDatabaseTier(t *testing.T) {
 	}
 }
 
+// TestCLIConfigEmbedsOnTheRouteAndKeyTheDaemonRuns: `aura docs search` embedded its query on
+// the .env route while the daemon ran the cockpit's. Measured on the lab VM 2026-09-24 with
+// pplx-embed applied: 43/43 passages stamped in its space, yet every CLI search answered
+// lexical_only / embedding_space_mismatch, because the CLI named the local space.
+func TestCLIConfigEmbedsOnTheRouteAndKeyTheDaemonRuns(t *testing.T) {
+	t.Setenv("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
+	t.Setenv("AURA_EMBED_MODEL", "")
+	t.Setenv("OPENROUTER_API_KEY", "")
+	restore := settingsListerForCLI
+	t.Cleanup(func() { settingsListerForCLI = restore })
+	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
+		return &fakeSettingsLister{rows: []sqlc.AuraSettings{
+			{Key: "AURA_EMBED_MODEL", Value: "perplexity/pplx-embed-v1-0.6b"},
+			{Key: "OPENROUTER_API_KEY", Value: "sk-sealed"},
+		}}, func() {}, ""
+	}
+	var notes strings.Builder
+	cfg := cliConfig(context.Background(), &notes)
+	if cfg.Embed.CloudModel != "perplexity/pplx-embed-v1-0.6b" || cfg.LLM.APIKey != "sk-sealed" {
+		t.Fatalf("embed model %q, key set %v: want the aura.settings route and its stored key",
+			cfg.Embed.CloudModel, cfg.LLM.APIKey != "")
+	}
+	if notes.Len() != 0 {
+		t.Fatalf("notes = %q, want none when the overlay applied", notes.String())
+	}
+}
+
 // TestConfigShowSaysWhenItCouldNotReachTheDatabase proves the degraded path is stated
 // rather than silent: reading the lower tiers is still useful, and `config show` must
 // keep working before the database exists -- but it must not pass them off as effective.

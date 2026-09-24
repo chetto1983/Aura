@@ -46,10 +46,7 @@ func runDoctor(args []string) {
 	}
 	// The configuration `aura serve` runs, aura.settings included: without the overlay the
 	// embed checks read the environment's route while the daemon ran the cockpit's.
-	if note := applySettingsOverlay(context.Background()); note != "" {
-		fmt.Println("note:", note)
-	}
-	os.Exit(runDoctorWithConfig(context.Background(), os.Stdout, config.LoadDB()))
+	os.Exit(runDoctorWithConfig(context.Background(), os.Stdout, cliConfig(context.Background(), os.Stdout)))
 }
 
 func runDoctorWithConfig(ctx context.Context, out io.Writer, cfg *config.Config) int {
