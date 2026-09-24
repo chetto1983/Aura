@@ -975,9 +975,14 @@ identity. Live on the same VM: the first build carrying the channel (`d47aadd3a`
 without consent, as it must, because the updater that pulled it predates consent; it
 installed the path unit on the way and finished in about 2 minutes. The next build
 (`e3ad18ab5`) applied on its own in 1 min 38 s with the reason "nobody is using Aura",
-the activity report putting the last use 17 hours back. Not shown by these measurements:
-behaviour under a slow or failing registry, several appliances at once, and whether
-15 minutes suits real usage.
+the activity report putting the last use 17 hours back. With a chat message sent first,
+`18203eb74` waited instead; the admin's "defer one hour" reached the updater in the same
+second through the path unit and was recorded 11 s later, after the tick's pulls, and
+"update now" started the updater within 2 s of the click, restarted aura (down about
+8 s) and finished the sidecars 1 min 52 s after the click, the page reloading itself onto
+the new build. Not shown by these measurements: what a member sees (the VM has one
+account), behaviour under a slow or failing registry, several appliances at once, and
+whether 15 minutes suits real usage.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
