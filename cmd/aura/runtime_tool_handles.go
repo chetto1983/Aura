@@ -28,12 +28,15 @@ type runtimeToolHandles struct {
 	// MCPViews is the process-wide MCP Apps document catalog the mounts fill, and
 	// ViewCallers maps ONLY the servers that actually catalogued a document to their
 	// mounted supervisor — so a view's callback can never name a server that never
-	// served it one. Both are nil on the pool-free manifest paths, which render
-	// nothing; every *ViewCatalog method tolerates that.
+	// served it one. Both are nil on the registry paths that skip buildRegistryWithMCP,
+	// which mount no MCP server and render nothing; every *ViewCatalog method tolerates
+	// that.
 	MCPViews    *mcp.ViewCatalog
 	ViewCallers mcptools.ViewCallers
 	// MCPFiles materializes the files an MCP tool result carries into the calling
-	// turn's box. Nil on the pool-free manifest paths, which mount no MCP server.
+	// turn's box. Nil on the registry paths that skip buildRegistryWithMCP, which mount
+	// no MCP server. `aura tools` does go through it, so it carries a router-less sink
+	// it never reaches: it executes no tool.
 	MCPFiles mcptools.FileSink
 	// Documents is retained so chat boot can route its query embedder through the live LLM key
 	// once the runtime exists (wireDocumentQueryEmbedder).
