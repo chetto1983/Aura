@@ -407,8 +407,9 @@ with the embedding model and a model change never re-chunks (audit F9).
 - the rest (`index_object`) chunks and embeds.
 
 `_extract` does not call `_embed`, so the `deps` change on `_embed` re-runs chunking and
-embedding only, not vision or speech-to-text (audit F7). `media.CONFIG_FINGERPRINT` still
-re-extracts when the vision or STT route changes. The deploy that ships this re-extracts and
+embedding only, not vision or speech-to-text (audit F7). Whether a vision or STT route change
+re-extracts is not proven (see "What this design does not prove"; amended 2026-09-24 after
+plan 3's review, the first text said it did). The deploy that ships this re-extracts and
 re-embeds every document once. `deps` and the new functions are new fingerprints, so this is
 unavoidable; the release note says so.
 
@@ -619,8 +620,25 @@ fusion and index work; nothing here adds Go vector math.
   thread): at 5,000 vectors the first query after a restart took 3,514 ms after a full re-embed
   against 1,157 ms with nothing re-embedded (later queries 27-42 ms); at 20,000, 13,272 ms
   against 1,639 ms (30-34 ms). Until that restart the re-embedded index answers without a
-  rebuild (207 ms first query at 20,000). Memory indexes hold tens to thousands of vectors.
-  Not measured: concurrent queries during the rebuild, and INT8 quantization.
+  rebuild (207 ms first query at 20,000). The first query after the initial load, with no
+  restart, costs the same order (3,297 ms and 10,097 ms). Memory indexes hold tens to
+  thousands of vectors. Perimeter: each size ran once, with random unit vectors written by SQL
+  `UPDATE`, not by CocoIndex's Bolt writer; the script is plan 3's Task 8
+  (`docs/superpowers/plans/2026-09-24-embedding-ingest.md`). Not measured: real document
+  vectors (the VM's first restart after the post-upgrade re-embed is where to read that),
+  concurrent queries during the rebuild, and INT8 quantization.
+- **A GGUF swapped under a running child is stamped with the old space for up to one tick.**
+  The supervisor attests on each tick (15 s by default), so meanwhile a child embeds with the
+  new model and stamps the space it started with; the restart that follows re-embeds those
+  rows under the new space. A sidecar that still embeds but fails attestation (a build whose
+  `/v1/models` omits `ftype`, or lists two models) holds that window open until attestation
+  succeeds. No test pins either window. The documents gate (plan 4) compares the stamp with
+  the daemon's own attested space, which differs from the old stamp in the first case and is
+  absent in the second, so no dense query should read those rows; that is the gate's to prove.
+- **Whether a vision or STT route change re-extracts a document.** Only a scanned PDF's
+  extraction (`media.extract_scanned_pdf`) reads `media.CONFIG_FINGERPRINT`, from inside the
+  `_extract` memo; images and audio (`media.derive`) do not read it. `process_file` had the
+  same enclosure before plan 3.
 - **The run budget stops a pass mid-tenant.** The next run resumes from what is still in
   another space, starting one tenant later.
 - **The gate scans each memory type, and is measured only up to 5,000 rows** (2026-09-24).

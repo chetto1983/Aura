@@ -89,7 +89,8 @@ batches of sixteen 1.633 s. The existing embedding transport was retained.
   native overlap does not promise to repeat a whole line larger than its budget.
 - The benchmark is `scripts/long_document_benchmark.py`, run inside the image with
   a dedicated identity, S3 bucket and ArcadeDB credentials (provisioning pattern in
-  `scripts/ingest_reconcile_e2e.sh`). Arguments: PDF path, output directory,
+  `scripts/ingest_reconcile_e2e.sh`) and the supervisor's embedding route as an env
+  file (`ingest_embed_env` in `scripts/ingest_embed_env.sh`). Arguments: PDF path, output directory,
   `--reference` complete extracted text. Default minimum coverage is 100%; use
   `--minimum-coverage 0` only when measuring a knowingly incomplete baseline.
 - Use a fresh CocoIndex state and fresh disposable database per initial-run variant;
