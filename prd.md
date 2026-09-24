@@ -800,8 +800,11 @@ What this does NOT prove:
   covers it.
 
 The added latency of the link read alone was not separated from each call's own work.
-"What is in this photo" stays unanswered: Aura has no vision tool (`read_file`). A file the model
-derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the turn by design, and
+"What is in this photo" stayed unanswered, although the VM's chat model (`gemma4:31b-cloud` on
+Ollama) reads images. A native image part reaches the model only from the user's own uploads: the
+`ReferenceIDs` projected onto the last user message (`openai_compat/request.go`). A file an MCP tool
+lands in `/workspace` never becomes one, and `read_file` refuses binaries. So the model held the
+photo in its box and could not see it. A file the model derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the turn by design, and
 this run deleted it by hand.
 
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
