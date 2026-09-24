@@ -57,9 +57,6 @@ func photoAgent(t *testing.T, fc *agenttest.FakeClient, file []byte) *agent.LlmA
 	})
 }
 
-// The WhatsApp photo the model could not see: an image read_file opens in round 1 must
-// reach round 2's request as media, while everything that outlives the turn — the history,
-// the events the runner persists — holds only read_file's text.
 func photoPNG(t *testing.T) []byte {
 	t.Helper()
 	var buf bytes.Buffer
@@ -71,7 +68,8 @@ func photoPNG(t *testing.T) []byte {
 
 // A budget that trips right after the image was read ends the turn in finalize: the tool-free
 // synthesis request must still carry the photo, or the model answers about an image the
-// history says is "attached below" with nothing below it.
+// history says is "attached below" with nothing below it. The user's own upload rides along
+// the same way.
 func TestReadFileImageReachesTheFinalizeRequest(t *testing.T) {
 	const photo = "/workspace/mcp-files/r1/whatsapp/photo.png"
 	raw := photoPNG(t)
@@ -82,12 +80,21 @@ func TestReadFileImageReachesTheFinalizeRequest(t *testing.T) {
 	// it and trips again (finalize), as in TestFinalize_DedupTrip.
 	fc := agenttest.NewFakeClient(read("c1"), read("c2"), read("c3"), read("c4"),
 		agenttest.TextChunks("stop", "Un'immagine vuota 3x2."))
-	if _, err := collect(photoAgent(t, fc, raw).Run(newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)}))); err != nil {
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: new(50), DedupWindow: new(3)})
+	ic.Ctx = llm.WithContentProjection(ic.Ctx, llm.ContentProjection{
+		Loader:       hookProjectionLoader{},
+		Principal:    llm.ProjectionPrincipal{OwnerID: "owner"},
+		ReferenceIDs: []string{"upload-1"},
+	})
+	if _, err := collect(photoAgent(t, fc, raw).Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	final := fc.LastRequest()
 	if final.ToolChoice != "none" {
 		t.Fatalf("last request ToolChoice = %q, want the finalize synthesis (none)", final.ToolChoice)
+	}
+	if p := final.ContentProjection; p == nil || len(p.ReferenceIDs) != 1 || p.ReferenceIDs[0] != "upload-1" {
+		t.Fatalf("finalize request projection = %+v, want the user's upload", p)
 	}
 	var carried bool
 	for _, parts := range final.ToolMedia {
@@ -100,6 +107,9 @@ func TestReadFileImageReachesTheFinalizeRequest(t *testing.T) {
 	}
 }
 
+// The WhatsApp photo the model could not see: an image read_file opens in round 1 must
+// reach round 2's request as media, while everything that outlives the turn — the history,
+// the events the runner persists — holds only read_file's text.
 func TestReadFileImageReachesTheNextRoundAndNothingElse(t *testing.T) {
 	const photo = "/workspace/mcp-files/r1/whatsapp/photo.png"
 	raw := photoPNG(t)

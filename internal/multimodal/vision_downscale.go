@@ -112,7 +112,7 @@ func DownscaleForVision(ctx context.Context, raw []byte, maxBytes int) (VisionIm
 	}
 	// Checked before the select too: with the slot free and ctx done, select picks at random.
 	if err := ctx.Err(); err != nil {
-		return VisionImage{}, fmt.Errorf("wait for the decode slot: %w", err)
+		return VisionImage{}, fmt.Errorf("before decoding: %w", err)
 	}
 	select {
 	case decodeSlot <- struct{}{}:
