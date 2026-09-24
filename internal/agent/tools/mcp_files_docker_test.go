@@ -17,8 +17,13 @@ import (
 
 func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 	skipUnlessDockerdTools(t)
-	router := newDockerRouter(t, nil)
+	// newDockerRouter selects gVisor, which the CI daemon lacks; it only passed by reusing
+	// the runc box another test created first.
+	router := newRuncBoxRouter(t)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-mcp", "call-dk-mcp"), "req-dk-mcp"))
+	// A failure midway must not leave the file in the volume: the next run would name its
+	// file "Fattura è-2.pdf". Run forgets its steps, so this does nothing after the asserted Run.
+	t.Cleanup(func() { _ = cleanup.Run(context.Background()) })
 
 	out := (&MCPFileSink{Router: router}).Materialize(ctx, "aura-pim", []mcp.FilePart{
 		{Name: "Fattura è.pdf", MIMEType: "application/pdf", Data: []byte("%PDF-1.7 docker")},
