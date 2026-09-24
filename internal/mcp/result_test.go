@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -105,5 +106,40 @@ func TestDecodeToolCallError_MatchesToolCallErrorType(t *testing.T) {
 	err := error(DecodeToolCallError("memory", "memory_upsert_fact", "boom"))
 	if _, ok := errors.AsType[*ToolCallError](err); !ok {
 		t.Fatal("errors.As(err, &toolCallErr) must match *mcp.ToolCallError")
+	}
+}
+
+func TestDecodeToolPayload_KeepsEveryFileBlock(t *testing.T) {
+	size := int64(8)
+	link := &sdkmcp.ResourceLink{URI: "attachment://stash/abc", Name: "invoice.pdf", MIMEType: "application/pdf", Size: &size}
+	result := &sdkmcp.CallToolResult{Content: []sdkmcp.Content{
+		&sdkmcp.TextContent{Text: `{"attachmentId":"abc"}`},
+		&sdkmcp.ImageContent{Data: []byte("png-bytes"), MIMEType: "image/png"},
+		&sdkmcp.AudioContent{Data: []byte("ogg-bytes"), MIMEType: "audio/ogg"},
+		&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{URI: "file:///tmp/report.pdf", MIMEType: "application/pdf", Blob: []byte("%PDF")}},
+		&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{URI: "notes://today/notes.md", MIMEType: "text/markdown", Text: "# hi"}},
+		&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{URI: "empty://x"}},
+		link,
+	}}
+
+	payload, isError := DecodeToolPayload(result)
+
+	if isError {
+		t.Fatal("a result carrying files is not an error")
+	}
+	if payload.Text != `{"attachmentId":"abc"}` {
+		t.Fatalf("Text = %q, want the text block alone", payload.Text)
+	}
+	want := []FilePart{
+		{MIMEType: "image/png", Data: []byte("png-bytes")},
+		{MIMEType: "audio/ogg", Data: []byte("ogg-bytes")},
+		{Name: "report.pdf", MIMEType: "application/pdf", Data: []byte("%PDF")},
+		{Name: "notes.md", MIMEType: "text/markdown", Data: []byte("# hi")},
+	}
+	if !reflect.DeepEqual(payload.Files, want) {
+		t.Fatalf("Files = %#v, want %#v", payload.Files, want)
+	}
+	if len(payload.Links) != 1 || payload.Links[0] != link {
+		t.Fatalf("Links = %#v, want the one link", payload.Links)
 	}
 }

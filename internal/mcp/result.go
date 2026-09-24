@@ -26,11 +26,18 @@ type ToolPayload struct {
 	// none. Raw rather than `any` because every consumer downstream of here
 	// either forwards it verbatim or re-marshals it.
 	Structured json.RawMessage
+	// Files are the binary blocks the result carried inline: image, audio and
+	// embedded resources. Links are its resource_links; the bridge reads each one
+	// back on the calling session and appends it to Files (mcptools.resolveLinks)
+	// before anything downstream sees the payload.
+	Files []FilePart
+	Links []*sdkmcp.ResourceLink
 }
 
 // DecodeToolResult extracts the concatenated text content and error flag from an
 // SDK tools/call result. Non-text content parts (images, resource links, ...) are
-// skipped rather than stringified — mirrors decodeToolResult's old
+// skipped rather than stringified; DecodeToolPayload keeps them as Files and Links
+// — mirrors decodeToolResult's old
 // content[].type=="text" filter, just against typed fields instead of a raw JSON
 // envelope. isError escalates from false to true when the result's structured
 // content (or, failing that, its text re-parsed as JSON) carries an explicit
@@ -50,14 +57,23 @@ func DecodeToolPayload(result *sdkmcp.CallToolResult) (payload ToolPayload, isEr
 	}
 	var b strings.Builder
 	for _, part := range result.Content {
-		if tc, ok := part.(*sdkmcp.TextContent); ok {
-			b.WriteString(tc.Text)
+		switch c := part.(type) {
+		case *sdkmcp.TextContent:
+			b.WriteString(c.Text)
+		case *sdkmcp.ImageContent:
+			payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+		case *sdkmcp.AudioContent:
+			payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+		case *sdkmcp.EmbeddedResource:
+			if file, ok := FileFromContents(c.Resource); ok {
+				payload.Files = append(payload.Files, file)
+			}
+		case *sdkmcp.ResourceLink:
+			payload.Links = append(payload.Links, c)
 		}
 	}
-	payload = ToolPayload{
-		Text:       strings.TrimRight(b.String(), "\n"),
-		Structured: structuredJSON(result),
-	}
+	payload.Text = strings.TrimRight(b.String(), "\n")
+	payload.Structured = structuredJSON(result)
 	isError = result.IsError
 	if !isError && explicitDomainFailure(payload.Structured, payload.Text) {
 		isError = true
