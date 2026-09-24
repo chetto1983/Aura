@@ -418,6 +418,32 @@ about 37k tokens with HTTP 400, batched or alone. The byte bound is proven only 
 EmbeddingGemma's tokenizer; a cloud cut drops text a truncating provider would have kept;
 timing covers the appliance GPU, not a sidecar queue shared with ingestion.
 
+Changing the embedding model (design `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md`,
+five plans closed 2026-09-24). Every stored vector carries the space that produced it
+(`es1-<hash>` of route, model or attested local artifact, width and recipe). A family,
+memory or documents, is served densely only while none of its vectors is in another space;
+otherwise it answers lexically with `embedding_space_mismatch` (documents: `lexical_only`),
+and a scheduled pass and the ingest re-embed the rows until the gate opens. The route
+changes only through the cockpit: `PUT`/`DELETE` of `AURA_EMBED_MODEL`, `AURA_EMBED_BASE_URL`
+and `AURA_EMBED_CLOUD_BASE_URL` answer 409; the embedding card previews the target space,
+width, speed, corpus to re-embed, cost and input limit through one synthetic batch, and its
+confirmed apply writes the three rows and restarts the daemon. `arcadedb-mcp` re-reads its
+route every minute and restarts itself when it moved; the ingest supervisor restarts its
+children within one poll. `aura doctor` warns with every tenant and family whose gate is
+closed, and the cockpit's Embedding space panel shows the per-family counts and the files
+still in another space.
+
+**Upgrade note.** The release that ships the stamps finds every existing vector unstamped,
+so memory and documents answer lexically until they are re-embedded on the running route:
+the memory pass runs at boot and every five minutes, and every document is re-extracted and
+re-embedded once (measured on the lab VM, 2026-09-24: 43 of 43 passages and 12 of 12 cards
+stamped within the deploy's first cycles). A document that keeps failing keeps its old rows
+and holds the documents family lexical; the panel names it. This does not prove: the
+re-embed time of a library larger than the VM's, the relevance floors of any model but
+EmbeddingGemma (every dense answer on another model says `uncalibrated_floors`), or why a
+file failed — CocoIndex reports ingest failures as counts, so the panel shows the tenant's
+error count beside the file names, and the reason is in the ingest log.
+
 Long-document extraction must retain the configured Tika builder result and reject
 reported write-limit truncation. The 2026-09-09 ArcadeDB manual baseline indexed only
 23.203% of its non-whitespace text despite a successful reconciliation. Oversized

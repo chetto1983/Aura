@@ -290,6 +290,18 @@ Two guards back the gate (final review of plan 2, 2026-09-24):
   existing restart trigger (`cmd/aura/serve_restart.go:17`). Nothing else: the pass starts
   because rows now carry another space.
 
+Amended 2026-09-24 in plan 5:
+- **The last ingest error is a count, not a message.** CocoIndex reports failures only as
+  counts (`update_stats.py`), and a per-file error store would be bespoke. A stuck document
+  is named by file from its card's stamp (card and passages of one file are written
+  together); the tenant's `IngestStatus` error count stands beside the names.
+- **A failed probe is a refusal, not an error.** `no_route`, `key_missing`, `probe_failed`
+  (with its detail), `width_too_narrow` against `max(768, AURA_EMBED_DIMENSIONS)` and
+  `input_limit_too_small` come back with 200; the apply answers 422 for any of them. A route
+  that answered is measured against the corpus even when refused.
+- The apply is in the HTTP idempotency inventory; the preview writes nothing and is listed
+  as read-only.
+
 ### §5. The pass for the three Go types
 
 The `memory_embed_backfill` sweep generalises from "facts without a vector" to two selections
@@ -439,6 +451,13 @@ exits only when the settings resolve to a space or credential other than the one
 Until it exits, its writes carry its old stamp and its reads find the gate closed, so the
 window is visible and bounded, never wrong.
 
+Amended 2026-09-24 in plan 5: the watcher compares the resolved route (base, model, cloud
+base) and the credential's hash, not an attested space. MCP's embedder already attests the
+local sidecar on every call (`embeddings.Route`), so a GGUF swapped under unchanged settings
+needs no restart, and a boot attestation that failed must not restart a healthy process. Each
+re-read opens and closes its own settings store, and falls back to the environment as it was
+before `OverlayEnv`.
+
 ### §8. Documents in lexical mode
 
 `HostRetriever.Retrieve` serves documents lexically when the documents gate is closed, when
@@ -543,7 +562,10 @@ uses.
   - records rejected by the model.
   - The route control opens the preview; saving is disabled until the operator confirms.
     Strings in en and it.
-- **`aura doctor`** names every tenant and family whose gate is closed.
+- **`aura doctor`** names every tenant and family whose gate is closed. (Amended 2026-09-24,
+  plan 5: as `WARN embedding_space`, exit 0 — after a route change every gate is closed on
+  purpose. Doctor now applies the `aura.settings` overlay first, so its embed checks read the
+  route the daemon runs.)
 - **Memory tools** carry their retrieval reason. `SearchReasoningTraces` and its tool
   (`cmd/arcadedb-mcp/tool_memory_recall.go:255`) gain one.
 
