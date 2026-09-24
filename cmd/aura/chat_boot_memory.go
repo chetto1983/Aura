@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
@@ -33,8 +32,7 @@ func (s tenantMemoryCaptureSink) ApplyAcceptedCapture(
 	return client.ApplyAcceptedCapture(ctx, capture)
 }
 
-func buildMemoryCaptureQueue(cfg *config.Config) *runner.MemoryCaptureQueue {
-	clients := newChatTenantClients(cfg)
+func buildMemoryCaptureQueue(clients *arcadedb.TenantClients) *runner.MemoryCaptureQueue {
 	if clients == nil {
 		return nil
 	}
@@ -90,12 +88,8 @@ func (s *tenantReasoningMemory) DeleteReasoningBySource(
 	return client.DeleteReasoningBySource(ctx, selector)
 }
 
-func newChatReasoningMemory(cfg *config.Config) *chatReasoningMemory {
-	if cfg == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
-		return nil
-	}
-	clients := newChatTenantClients(cfg)
-	if clients == nil {
+func newChatReasoningMemory(cfg *config.Config, clients *arcadedb.TenantClients) *chatReasoningMemory {
+	if cfg == nil || clients == nil {
 		return nil
 	}
 	store := &tenantReasoningMemory{

@@ -83,20 +83,19 @@ func (s tenantConversationProjectionSink) PruneConversationProjections(
 }
 
 func newChatConversationProjector(
-	cfg *config.Config,
+	clients *arcadedb.TenantClients,
 	source runner.ConversationProjectionSource,
 ) *runner.ConversationProjector {
-	if source == nil {
-		return nil
-	}
-	clients := newChatTenantClients(cfg)
-	if clients == nil {
+	if source == nil || clients == nil {
 		return nil
 	}
 	return runner.NewConversationProjector(source, tenantConversationProjectionSink{clients: clients}, 0)
 }
 
-func newChatTenantClients(cfg *config.Config) *arcadedb.TenantClients {
+// newChatTenantClients is the daemon's one memory resolver: the conversation projector,
+// the reasoning writer and the capture queue share it, and with it one cached client and
+// one schema check per tenant.
+func newChatTenantClients(cfg *config.Config, embedder arcadedb.DenseEmbedder) *arcadedb.TenantClients {
 	if cfg == nil || strings.TrimSpace(cfg.ArcadeDB.BaseURL) == "" {
 		return nil
 	}
@@ -116,11 +115,9 @@ func newChatTenantClients(cfg *config.Config) *arcadedb.TenantClients {
 			return nil
 		}
 	}
-	clients := arcadedb.NewTenantClients(
-		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin,
-		arcadedb.NewMemoryEmbedder(cfg.Embed, func() string { return cfg.LLM.APIKey }), credentials,
+	return arcadedb.NewTenantClients(
+		arcadedb.Config{BaseURL: cfg.ArcadeDB.BaseURL}, admin, embedder, credentials,
 	)
-	return clients
 }
 
 func wireChatConversationReconciliation(

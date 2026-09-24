@@ -46,7 +46,7 @@ const (
 )
 
 // musrMemoryPlaneFixture bundles the production resolver (the daemon's own
-// newChatTenantClients(cfg)), a raw admin client + tenant credentials for the
+// newChatTenantClients(cfg, nil)), a raw admin client + tenant credentials for the
 // derived-credential surface (D-11 item 2), and the base URL the raw probe dials.
 type musrMemoryPlaneFixture struct {
 	tenants     *arcadedb.TenantClients
@@ -72,7 +72,7 @@ func musrArcadeDBAdminPassword(t *testing.T) string {
 // the production path (arcadedb.TenantClients.For auto-provisions its database + server
 // user on first successful call, the SAME lazy-provision the daemon relies on) and
 // registers a t.Cleanup that drops both tenant databases and their server users. It
-// builds the resolver through newChatTenantClients(cfg) -- the daemon's OWN composition
+// builds the resolver through newChatTenantClients(cfg, nil) -- the daemon's OWN composition
 // root, cmd/aura/chat_memory_projection.go -- not a parallel one.
 func musrNewMemoryPlaneFixture(t *testing.T, idA, idB string) musrMemoryPlaneFixture {
 	t.Helper()
@@ -92,7 +92,7 @@ func musrNewMemoryPlaneFixture(t *testing.T, idA, idB string) musrMemoryPlaneFix
 		},
 		Embed: config.EmbedConfig{BaseURL: embedBaseURL},
 	}
-	tenants := newChatTenantClients(cfg)
+	tenants := newChatTenantClients(cfg, nil)
 	if tenants == nil {
 		t.Fatalf("newChatTenantClients returned nil with ArcadeDB.BaseURL=%q -- expected a configured resolver", baseURL)
 	}

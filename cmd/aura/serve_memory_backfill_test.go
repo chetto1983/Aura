@@ -11,15 +11,14 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-// backfillEnv is the smallest chatEnv the builder reads: a config and an identity store.
-// The store is never called here — every case under test decides before any I/O.
+// backfillEnv is the smallest chatEnv the builder reads: a config, an identity store and
+// the daemon's memory route. The store is never called here — every case under test decides
+// before any I/O.
 func backfillEnv(arcadeURL, embedURL string) *chatEnv {
 	return &chatEnv{
-		cfg: &config.Config{
-			ArcadeDB: config.ArcadeDBConfig{BaseURL: arcadeURL},
-			Embed:    config.EmbedConfig{BaseURL: embedURL},
-		},
-		identity: identity.New(nil),
+		cfg:            &config.Config{ArcadeDB: config.ArcadeDBConfig{BaseURL: arcadeURL}},
+		identity:       identity.New(nil),
+		memoryEmbedder: arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil),
 	}
 }
 

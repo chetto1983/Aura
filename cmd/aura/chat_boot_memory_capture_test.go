@@ -30,7 +30,7 @@ func TestMemoryCaptureBoot_ComposesExactlyOneQueueAndSink(t *testing.T) {
 			t.Errorf("chat_boot_memory.go lacks production capture contract %q", contract)
 		}
 	}
-	if got := strings.Count(boot, "buildMemoryCaptureQueue(cfg)"); got != 1 {
+	if got := strings.Count(boot, "buildMemoryCaptureQueue(memoryClients)"); got != 1 {
 		t.Errorf("capture queue construction count = %d, want exactly 1", got)
 	}
 	for _, contract := range []string{
@@ -47,14 +47,14 @@ func TestMemoryCaptureBoot_ComposesExactlyOneQueueAndSink(t *testing.T) {
 
 func TestMemoryCaptureBoot_ConfiguredAndAbsentMemory(t *testing.T) {
 	withoutMemory := &config.Config{}
-	if queue := buildMemoryCaptureQueue(withoutMemory); queue != nil {
+	if queue := buildMemoryCaptureQueue(newChatTenantClients(withoutMemory, nil)); queue != nil {
 		t.Fatal("absent memory configuration created a capture fallback")
 	}
 
 	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", strings.Repeat("s", 32))
 	configured := &config.Config{}
 	configured.ArcadeDB.BaseURL = "http://127.0.0.1:2480"
-	queue := buildMemoryCaptureQueue(configured)
+	queue := buildMemoryCaptureQueue(newChatTenantClients(configured, nil))
 	if queue == nil {
 		t.Fatal("configured identity-scoped memory did not create the capture queue")
 	}

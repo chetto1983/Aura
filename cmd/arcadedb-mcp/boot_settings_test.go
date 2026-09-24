@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
@@ -94,7 +95,7 @@ func TestBootSpaceGivesUpOnAStalledSidecar(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := bootSpace(config.EmbedConfig{BaseURL: srv.URL}, 50*time.Millisecond)
+		_, err := bootSpace(arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: srv.URL}, nil), 50*time.Millisecond)
 		done <- err
 	}()
 	select {

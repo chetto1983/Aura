@@ -482,7 +482,7 @@ func TestChatBootMemoryProjection(t *testing.T) {
 	t.Setenv("AURA_ARCADEDB_TENANT_SECRET", strings.Repeat("s", 32))
 	cfg := validBootConfig()
 	cfg.ArcadeDB.BaseURL = "http://127.0.0.1:2480"
-	projector := newChatConversationProjector(cfg, emptyProjectionSource{})
+	projector := newChatConversationProjector(newChatTenantClients(cfg, nil), emptyProjectionSource{})
 	if projector == nil {
 		t.Fatal("configured chat boot did not construct the conversation projector")
 	}
@@ -523,7 +523,7 @@ func TestReasoningRetentionBoot(t *testing.T) {
 	cfg.ArcadeDB.BaseURL = "http://127.0.0.1:2480"
 	cfg.Retention.ReasoningSuccessTTL = 21 * 24 * time.Hour
 	cfg.Retention.ReasoningFailedTTL = 5 * 24 * time.Hour
-	runtime := newChatReasoningMemory(cfg)
+	runtime := newChatReasoningMemory(cfg, newChatTenantClients(cfg, nil))
 	if runtime == nil || runtime.writer == nil || runtime.retention == nil {
 		t.Fatal("configured chat boot did not construct the reasoning writer and retention store")
 	}

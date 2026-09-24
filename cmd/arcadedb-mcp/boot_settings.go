@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/embeddings"
@@ -86,20 +87,20 @@ func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingR
 	return embeddingRoute{embed: embed, baseURL: baseURL, model: model, apiKey: credential}, nil
 }
 
-// bootAttestTimeout bounds the one boot call that is only logged. The listener starts after
-// it, and the embeddings client's own timeout is a minute.
+// bootAttestTimeout bounds the one boot call that is only logged.
 const bootAttestTimeout = 5 * time.Second
 
-// bootSpace names the space this process embeds in. Memory vectors are pinned at the default
-// width (arcadedb vectorDimensions), so that is the width the space names.
-func bootSpace(embed config.EmbedConfig, timeout time.Duration) (embeddings.Space, error) {
+// bootSpace names the space this process embeds memory in, for the boot log. The listener
+// starts after it, and the embeddings client's own timeout is a minute.
+func bootSpace(embedder arcadedb.DenseEmbedder, timeout time.Duration) (embeddings.Space, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return embeddings.RouteSpace(ctx, nil, embed, config.DefaultEmbedDimensions)
+	return embedder.Space(ctx)
 }
 
 // errString keeps a failed attestation visible in the boot log without failing boot: the
-// local sidecar may still be loading, and the space is informational until plan 2 stamps it.
+// local sidecar may still be loading, and every write reads the space again, so a failed
+// boot read costs only this log line.
 func errString(err error) string {
 	if err == nil {
 		return ""

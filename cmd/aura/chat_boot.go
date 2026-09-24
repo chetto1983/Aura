@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/approvalgrants"
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -55,6 +56,7 @@ type chatEnv struct {
 	run                   *runner.Runner
 	client                llm.Client
 	llmRuntime            *llm.Runtime
+	memoryEmbedder        arcadedb.DenseEmbedder // the daemon's one memory route (memory_embedder.go)
 	llmFallback           llm.Config
 	reg                   *tools.Registry
 	gateway               *gateway.Gateway
@@ -428,9 +430,11 @@ func assembleChatEnv(
 		memoryContext = newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond)
 	}
 	toolHandles.MemoryContext = memoryContext
-	conversationProjector := newChatConversationProjector(cfg, convStore)
-	reasoningMemory := newChatReasoningMemory(cfg)
-	memoryCaptureQueue := buildMemoryCaptureQueue(cfg)
+	memoryDense := memoryEmbedder(cfg, llmRuntime)
+	memoryClients := newChatTenantClients(cfg, memoryDense)
+	conversationProjector := newChatConversationProjector(memoryClients, convStore)
+	reasoningMemory := newChatReasoningMemory(cfg, memoryClients)
+	memoryCaptureQueue := buildMemoryCaptureQueue(memoryClients)
 	deps := runner.Deps{
 		Conv:                  convStore,
 		Pause:                 pauseStore,
@@ -506,7 +510,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

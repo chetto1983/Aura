@@ -59,9 +59,9 @@ func buildMemoryEmbedBackfill(chat *chatEnv) handlers.MemoryEmbedder {
 		slog.Warn("aura serve: no ArcadeDB server configured — memory embedding backfill disabled")
 		return nil
 	}
-	// The same one-knob local↔cloud swap every other embedding caller takes, so the
-	// sweep cannot end up writing vectors from a different model than the writes do.
-	embedder := arcadedb.NewMemoryEmbedder(chat.cfg.Embed, func() string { return chat.cfg.LLM.APIKey })
+	// The daemon's memory route, the same one every memory write uses, so the pass cannot
+	// write vectors from another model than the writes do.
+	embedder := chat.memoryEmbedder
 	if embedder == nil {
 		slog.Warn("aura serve: no embedding sidecar — memory embedding backfill disabled, retrieval stays lexical")
 		return nil
