@@ -17,7 +17,7 @@ import (
 // be read back tomorrow against the cascade that actually produced it. Bump it whenever the
 // leg set, the admission thresholds or the ranking change — old citations then stay legible
 // as products of the older profile instead of silently claiming the new one.
-const ProductionRetrievalProfile = "arcadedb-fused-card-v2"
+const ProductionRetrievalProfile = "arcadedb-fused-card-v3"
 
 // The three sentinels separate blame. An empty query is the caller's input, an invalid scope
 // means a named document is not visible to this identity, and an invalid request means the
@@ -34,14 +34,18 @@ var (
 // the only signal that the answer is narrower than the profile name promises.
 type RetrievalStatus string
 
-// The status names the surviving legs; the degradation reason names the dependency that took
-// the others out. They travel together because a thin result set caused by an offline embedder
-// and one caused by an offline ArcadeDB need different operator responses.
+// The status names how the legs answered; the degradation reason names the dependency that
+// kept them off the full path. They travel together because an answer read lexically for want
+// of an embedding and one narrowed to cards by an offline ArcadeDB need different operator
+// responses.
 const (
-	RetrievalComplete    RetrievalStatus = "complete"
-	RetrievalCardOnly    RetrievalStatus = "degraded_card_only"
-	DegradationEmbedding                 = "query_embedding_unavailable"
-	DegradationArcade                    = "arcadedb_unavailable"
+	RetrievalComplete RetrievalStatus = "complete"
+	RetrievalCardOnly RetrievalStatus = "degraded_card_only"
+	// RetrievalLexicalOnly: both legs read the full-text indexes alone (spec §8), for the reason in DegradationReason.
+	RetrievalLexicalOnly RetrievalStatus = "lexical_only"
+
+	DegradationEmbedding = "query_embedding_unavailable"
+	DegradationArcade    = "arcadedb_unavailable"
 	// DegradationUnconfigured is the deployment that never wired a passage index — a
 	// different operator response from an index that is wired and refusing, which is
 	// why it stopped sharing DegradationArcade's name (measured 2026-09-06: the two
@@ -208,6 +212,7 @@ type RetrievalControlPlane interface {
 	// DocumentsDenseOpen: every document vector the identity holds is in the space.
 	DocumentsDenseOpen(ctx context.Context, identityID, space string) (bool, error)
 	RouteDocumentCards(context.Context, CardQuery) ([]RetrievalCard, error)
+	LexicalDocumentCards(context.Context, CardQuery) ([]RetrievalCard, error)
 	DocumentNames(context.Context, string, []string) (map[string]string, error)
 }
 
@@ -233,6 +238,8 @@ func (r *HostRetriever) ingestState(ctx context.Context, identityID string) *arc
 // and the unranked passages a caller names by position.
 type PassageIndex interface {
 	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
+	// LexicalCandidates ranks passages by the full-text index alone, for lexical mode.
+	LexicalCandidates(context.Context, arcadedb.CandidateFilter, string) ([]arcadedb.PassageCandidate, error)
 	PassagesAt(context.Context, string, []arcadedb.PassageRef) ([]arcadedb.PassageCandidate, error)
 	// IngestState answers "has the reconciler caught up", from the row the sidecar
 	// upserts beside the passages. nil means it has never written one.
@@ -300,21 +307,20 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		Query: request.Query, Profile: ProductionRetrievalProfile,
 		Status: RetrievalComplete, Documents: []RetrievalDocument{},
 	}
-	// The dense legs run only over a library wholly in the query's space (spec §3). Both are
-	// scored against the query vector, so without one neither can run.
+	// The dense legs run only over a library wholly in the query's space (spec §3); otherwise,
+	// and when the query cannot be embedded, both legs are lexical (spec §8).
 	dense, reason, cause := r.denseQuery(ctx, request.IdentityID, request.Query)
-	if reason != "" {
-		response.Status, response.DegradationReason = RetrievalCardOnly, reason
+	switch {
+	case reason != "":
+		response.Status, response.DegradationReason = RetrievalLexicalOnly, reason
 		r.degradations.warn(reason, cause.Error(), request.IdentityID)
-		return response, nil
-	}
-	if !arcadedb.FloorsCalibrated(dense.space) {
+	case !arcadedb.FloorsCalibrated(dense.space):
 		response.FloorsReason = arcadedb.ReasonUncalibratedFloors
 	}
-	cards, err := r.ControlPlane.RouteDocumentCards(ctx, CardQuery{
-		IdentityID: request.IdentityID, Query: request.Query, Vector: dense.vector, Space: dense.space,
-		DocumentIDs: scope, SourceScopes: request.SourceScopes, Limit: cfg.CandidateLimit,
-	})
+	cards, err := r.routeCards(ctx, CardQuery{
+		IdentityID: request.IdentityID, Query: request.Query, DocumentIDs: scope,
+		SourceScopes: request.SourceScopes, Limit: cfg.CandidateLimit,
+	}, dense)
 	if err != nil {
 		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
 	}
@@ -326,11 +332,10 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	}
 	response.Indexing = r.ingestState(ctx, request.IdentityID)
 	sourceKeys, sourcePrefixes := ArcadeSourceFilters(request.SourceScopes)
-	fused, err := r.PassageIndex.FusedCandidates(ctx, arcadedb.FusedCandidateQuery{
+	fused, err := r.passages(ctx, arcadedb.CandidateFilter{
 		IdentityID: request.IdentityID, Limit: cfg.CandidateLimit, DocumentIDs: scope,
 		SourceKeys: sourceKeys, SourcePrefixes: sourcePrefixes,
-		Query: request.Query, Embedding: dense.vector, Space: dense.space, Strategy: cfg.FusionStrategy,
-	})
+	}, request.Query, dense, cfg.FusionStrategy)
 	if err != nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationArcade
 		r.degradations.warn(DegradationArcade, err.Error(), request.IdentityID)
@@ -342,9 +347,10 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	// The rule used to be "no passage, no answer", written when a card was ranked by BM25
 	// and a passage by a cosine, so a card could not be weighed against anything and
 	// letting it answer by itself is how "ricetta della carbonara" came back with three
-	// worker reports. Both legs now score the same reranked cosine and BOTH are cut by the
-	// same relevance floor (arcadedb relevance_floors.go), so a card that survived it is qualified evidence -- it says
-	// which FILE knows the answer, and requires_open says how to read it.
+	// worker reports. In dense mode both legs score the same reranked cosine and both are cut
+	// by the same relevance floor; in lexical mode both are cut by the same BM25 floor. So a
+	// card that survived it is qualified evidence -- it says which FILE knows the answer, and
+	// requires_open says how to read it.
 	//
 	// Keeping the old rule silently deleted the only kind of document that can never have
 	// a passage: a spreadsheet is routed to document_open on purpose and carries none.

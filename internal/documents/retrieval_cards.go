@@ -85,6 +85,19 @@ func (c *ArcadeRetrievalControlPlane) RouteDocumentCards(ctx context.Context, q 
 	return retrievalCards(found), nil
 }
 
+// LexicalDocumentCards ranks documents by their card and file name alone, inside the same
+// scope, for lexical mode (spec §8).
+func (c *ArcadeRetrievalControlPlane) LexicalDocumentCards(ctx context.Context, q CardQuery) ([]RetrievalCard, error) {
+	if c == nil || c.Index == nil {
+		return nil, errRetrievalControlPlaneUnset
+	}
+	found, err := c.Index.LexicalDocumentCards(ctx, q.filter(), q.Query)
+	if err != nil {
+		return nil, err
+	}
+	return retrievalCards(found), nil
+}
+
 // retrievalCards is ArcadeDB's card record as the ranking reads it.
 func retrievalCards(found []arcadedb.DocumentCard) []RetrievalCard {
 	cards := make([]RetrievalCard, 0, len(found))

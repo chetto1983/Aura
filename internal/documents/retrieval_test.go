@@ -34,6 +34,18 @@ type fakeRetrievalControl struct {
 	closed    bool
 	gateErr   error
 	gateSpace string
+	// lexicalQuery is the query the lexical card leg was asked.
+	lexicalQuery string
+}
+
+func (f *fakeRetrievalControl) LexicalDocumentCards(_ context.Context, query CardQuery) ([]RetrievalCard, error) {
+	f.lexicalQuery = query.Query
+	f.cardDocumentScope = append([]string(nil), query.DocumentIDs...)
+	f.cardSourceScope = append([]SourceScope(nil), query.SourceScopes...)
+	if f.err != nil {
+		return nil, f.err
+	}
+	return append([]RetrievalCard(nil), f.cards...), nil
 }
 
 func (f *fakeRetrievalControl) DocumentsDenseOpen(_ context.Context, _ string, space string) (bool, error) {
@@ -81,6 +93,18 @@ type fakePassageIndex struct {
 	atRefs     []arcadedb.PassageRef
 	state      *arcadedb.IngestState
 	stateErr   error
+
+	lexical       []arcadedb.PassageCandidate
+	lexicalErr    error
+	lexicalQuery  string
+	lexicalFilter arcadedb.CandidateFilter
+}
+
+func (f *fakePassageIndex) LexicalCandidates(
+	_ context.Context, filter arcadedb.CandidateFilter, query string,
+) ([]arcadedb.PassageCandidate, error) {
+	f.lexicalFilter, f.lexicalQuery = filter, query
+	return append([]arcadedb.PassageCandidate(nil), f.lexical...), f.lexicalErr
 }
 
 func (f *fakePassageIndex) IngestState(_ context.Context, _ string) (*arcadedb.IngestState, error) {
@@ -340,46 +364,18 @@ func TestHostRetrieverKeepsTheAnswerWhenTheNameLookupFails(t *testing.T) {
 }
 
 func TestHostRetrieverDegradationIsExplicit(t *testing.T) {
-	// With one fused read there are two ways to lose it -- no embedding to fuse with, or
-	// the engine refusing -- and both leave only the cards.
-	tests := []struct {
-		name         string
-		passageIndex *fakePassageIndex
-		embedder     *fakeRetrievalEmbedder
-		reason       string
-	}{
-		{"embedding", &fakePassageIndex{}, &fakeRetrievalEmbedder{err: errors.New("offline")}, DegradationEmbedding},
-		{"arcade", &fakePassageIndex{fusedErr: errors.New("server unavailable")},
-			&fakeRetrievalEmbedder{vector: []float64{1}}, DegradationArcade},
+	// A passage index that refuses leaves only the cards. An embedding that cannot be had is
+	// lexical mode, pinned by TestLexicalModeAnswersEveryDenseFailure.
+	response := retrieveCodice(t, &HostRetriever{
+		ControlPlane: &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
+		PassageIndex: &fakePassageIndex{fusedErr: errors.New("server unavailable")},
+		Embedder:     &fakeRetrievalEmbedder{vector: []float64{1}},
+	})
+	if response.Status != RetrievalCardOnly || response.DegradationReason != DegradationArcade {
+		t.Fatalf("response = %#v", response)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			control := &fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}}
-			response, err := (&HostRetriever{
-				ControlPlane: control, PassageIndex: test.passageIndex, Embedder: test.embedder,
-			}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "codice cliente"})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if response.Status != RetrievalCardOnly || response.DegradationReason != test.reason {
-				t.Fatalf("response = %#v", response)
-			}
-			// An embedder outage now costs BOTH legs, not one. The card leg is ranked
-			// against the query vector like the passage leg is -- that is what lets the two
-			// be compared at all -- so with no vector there is no honest card ranking to
-			// serve either, and answering from an unranked list would be a guess wearing a
-			// degradation label. Every other degradation still serves its cards.
-			if test.reason == DegradationEmbedding {
-				if len(response.Documents) != 0 {
-					t.Fatalf("documents = %d, want none: an unscored card is not an answer",
-						len(response.Documents))
-				}
-				return
-			}
-			if len(response.Documents) != 1 || !response.Documents[0].RequiresOpen {
-				t.Fatalf("response = %#v", response)
-			}
-		})
+	if len(response.Documents) != 1 || !response.Documents[0].RequiresOpen {
+		t.Fatalf("response = %#v", response)
 	}
 }
 

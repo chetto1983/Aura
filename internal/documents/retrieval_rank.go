@@ -56,8 +56,8 @@ func rankDocuments(
 		doc := ensureRankedDocumentFromCandidate(byContent, sameText, passage, names)
 		doc.order = min(doc.order, rank)
 		doc.ordinal = min(doc.ordinal, passage.Ordinal)
-		if passage.FusedScore != nil && *passage.FusedScore > doc.document.Score {
-			doc.document.Score = *passage.FusedScore
+		if score := passage.Score(); score != nil && *score > doc.document.Score {
+			doc.document.Score = *score
 		}
 		mergePassage(doc, passage, rank+1)
 	}
@@ -296,8 +296,8 @@ func mergePassage(doc *rankedDocument, candidate arcadedb.PassageCandidate, rank
 		doc.passages[candidate.PassageID] = passage
 	}
 	evidence := RetrievalEvidence{Leg: string(candidate.Leg), Rank: rank}
-	if candidate.FusedScore != nil {
-		evidence.Score = new(*candidate.FusedScore)
+	if score := candidate.Score(); score != nil {
+		evidence.Score = new(*score)
 	}
 	passage.Evidence = appendEvidence(passage.Evidence, evidence)
 	doc.document.Evidence = appendEvidence(doc.document.Evidence, evidence)
