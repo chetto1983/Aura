@@ -768,7 +768,7 @@ installed by the updater:
   | document (sender's name `…pranzo.md` kept) | 17,214 B | 893 ms |
 
   Every file was gone within seconds of its turn ending. `turn cleanup failed` was logged 0 times
-  across 7 turns.
+  across the run's 9 file-writing turns.
 - **Two fork defects the run found**, fixed and measured again the same day:
   - Channel (newsletter) media failed with "incomplete media information". Channel media is
     unencrypted: the rows had no `media_key` or `file_enc_sha256`, and the bridge demanded both.
@@ -778,10 +778,24 @@ installed by the updater:
 - **Orphan sweep** (request `01a0d4c1-b472-7074-9bcc-63329a598d1d`). A 2-day-old
   `req-e2e-orphan` planted in the box's volume was removed by the next file-writing call, and a
   fresh sibling survived.
+- **Largest attachments in the mailbox** (requests `01a0d4d3-34d6-…` and `01a0d4d3-e4f1-…`).
+  There were four photos of 9.5 to 10.5 MB, two per turn, fetched by parallel calls within one
+  minute, and each byte count matched in the box.
+
+  | | Before | Peak | Delta | Container limit |
+  |---|---|---|---|---|
+  | `aura` memory | 99 MiB | 204 MiB | +105 MiB for two ~10 MB files | 768 MiB |
+  | `aura-pim-mcp` memory | 473 MiB | 662 MiB | +189 MiB | — |
+
+  - `aura` settled at 189 MiB after the turn.
+  - The pair of calls took 8.1 s and 9.9 s, then 5.9 s and 9.8 s. The sink's lock serializes
+    the two box writes.
 
 What this does NOT prove:
 - servers other than these two forks;
-- a file near the 25 MiB cap on the appliance's memory (the largest was 0.8 MB);
+- a file near the 25 MiB cap. The largest in the mailbox was 10.5 MB. By linear extrapolation,
+  about 5× the bytes in `aura`'s memory, a call at the 50 MiB cap would add ~260 MiB, and two
+  such calls in parallel would approach the 768 MiB limit. That is unmeasured;
 - a PNG the bridge saved as `.jpg`: no such media was in the chats, and only the fork's unit test
   covers it.
 
