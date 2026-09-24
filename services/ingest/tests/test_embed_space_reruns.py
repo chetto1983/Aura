@@ -5,11 +5,13 @@ ArcadeDB: four catch-up passes over one CocoIndex state.
 
 1. Space A: both files are extracted, embedded and stamped A.
 2. Space A again: nothing runs, because the memo holds.
-3. Space B, which refuses one file's text:
+3. Space B, which refuses the refused file's last chunk:
    - nothing is re-extracted, because _extract is memoized by content, apart from embedding;
    - the healthy file is re-embedded and stamped B;
-   - the refused file keeps its A rows (CocoIndex's contract for a failing component), where
-     the documents gate sees them and stays closed.
+   - the refused file keeps all its A rows, its healthy first chunk included (CocoIndex's
+     contract for a failing component), where the documents gate sees them and stays closed.
+   Whether the refused chunk shared a request with a healthy one here depends on timing
+   across components; test_embed_route.py pins the batch split itself.
 4. Space A again: the healthy file returns to A. Memo entries are keyed by the fingerprint
    they were recorded under, so a change back is a change.
 
@@ -33,9 +35,12 @@ AUTH = ("root", os.environ["ARCADEDB_PASSWORD"])
 DATABASE = "aura_t_space_reruns"
 SPACE_A, SPACE_B = "es1-aaaaaaaaaaaaaaaa", "es1-bbbbbbbbbbbbbbbb"
 HEALTHY, REFUSED = "fornitori.txt", "rifiutato.txt"
+# Past one chunk under either tokenizer (the sidecar's, or chunk.py's 3 chars/token fallback),
+# so the marker lands in a second chunk and the file also has a chunk the route accepts.
+_FILLER = "La nota elenca i controlli di qualità eseguiti su ogni lotto prima della spedizione. " * 150
 OBJECTS = [
     f"{HEALTHY}=Il fornitore consegna i ricambi ogni martedì mattina.",
-    f"{REFUSED}=Questa nota contiene {fake_embedder.REFUSED} a metà del testo.",
+    f"{REFUSED}={_FILLER}In fondo la nota contiene {fake_embedder.REFUSED}.",
 ]
 
 

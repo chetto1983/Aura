@@ -186,9 +186,12 @@ def test_a_route_failure_fails_the_batch_without_splitting_it(monkeypatch, code)
 
 
 def test_one_refused_input_fails_only_its_own_caller(monkeypatch):
+    refused: list[int] = []
+
     def answer(req):
         inputs = json.loads(req.data)["input"]
         if any("RIFIUTATO" in text for text in inputs):
+            refused.append(len(inputs))
             raise _http_error(400)
         return _answer([[0.0] * embed.DIMENSIONS for _ in inputs])
 
@@ -200,5 +203,8 @@ def test_one_refused_input_fails_only_its_own_caller(monkeypatch):
 
     results = asyncio.run(embed_all())
 
+    # A refused text sent alone fails alone whether or not a batch is split, so the
+    # outcome below proves the split only if the refused text shared a request.
+    assert max(refused) > 1, f"the refused text never shared a request: {refused}"
     assert isinstance(results[1], embed.EmbedRequestError)
     assert all(isinstance(result, list) for index, result in enumerate(results) if index != 1)

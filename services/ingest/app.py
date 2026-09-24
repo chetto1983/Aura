@@ -226,9 +226,9 @@ def _extract(content: bytes, suffix: str, file_name: str, content_type: str | No
     process_file for every document. Before this split that re-ran every vision and
     speech-to-text call with it, the billed ones included (audit F7). This memo is keyed by
     the bytes, the key's suffix -- which names the temporary file the extractors route on --
-    the name and the content type, and none of them moves with the route. A scanned PDF is
-    still read again when the vision route changes, through media.extract_scanned_pdf's
-    dependency on media.CONFIG_FINGERPRINT.
+    the name and the content type, and none of them moves with the route. Whether a vision or
+    speech-to-text route change re-runs it is not measured: only a scanned PDF's extraction
+    reads media.CONFIG_FINGERPRINT, from inside this memo.
 
     The print runs only when this body does: "[extract]" in the log counts real extractions
     (scripts/ingest_reconcile_e2e.sh asserts on the count).

@@ -1,7 +1,9 @@
 """Run inside the ingestion image with disposable S3/ArcadeDB credentials.
 
 Uses the production CocoIndex app, including S3 discovery and target reconciliation.
-The caller owns provisioning/cleanup and must provide a dedicated identity/bucket.
+The caller owns provisioning/cleanup and must provide a dedicated identity/bucket, and
+the embedding route a supervised child gets (`ingest_embed_env` in
+scripts/ingest_embed_env.sh writes it as an env file).
 """
 
 import argparse
@@ -13,7 +15,7 @@ import pathlib
 import pstats
 import time
 
-from ingest import app, source
+from ingest import app, embed, source
 
 
 def query(command):
@@ -75,7 +77,8 @@ def main():
     assert documents[0]["passage_count"] == len(rows)
     raw_hash = hashlib.sha256(content).hexdigest()
     assert all(r["raw_sha256"] == raw_hash for r in rows)
-    assert all(len(r["embedding"]) == app.EMBED_DIMENSIONS for r in rows)
+    assert all(len(r["embedding"]) == embed.DIMENSIONS for r in rows)
+    assert all(r["embed_space"] == embed.SPACE for r in rows)
     assert all(reference[r["char_start"]:r["char_end"]] == r["text"] for r in rows)
     assert all(hashlib.sha256(r["text"].encode()).hexdigest() == r["normalized_text_sha256"] for r in rows)
     covered = bytearray(len(reference))
