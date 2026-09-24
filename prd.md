@@ -419,7 +419,7 @@ EmbeddingGemma's tokenizer; a cloud cut drops text a truncating provider would h
 timing covers the appliance GPU, not a sidecar queue shared with ingestion.
 
 Changing the embedding model (design `docs/superpowers/specs/2026-09-23-embedding-model-change-design.md`,
-five plans closed 2026-09-24). Every stored vector carries the space that produced it
+five plans; E2E on the lab VM 2026-09-24, below). Every stored vector carries the space that produced it
 (`es1-<hash>` of route, model or attested local artifact, width and recipe). A family,
 memory or documents, is served densely only while none of its vectors is in another space;
 otherwise it answers lexically with `embedding_space_mismatch` (documents: `lexical_only`),
@@ -427,11 +427,26 @@ and a scheduled pass and the ingest re-embed the rows until the gate opens. The 
 changes only through the cockpit: `PUT`/`DELETE` of `AURA_EMBED_MODEL`, `AURA_EMBED_BASE_URL`
 and `AURA_EMBED_CLOUD_BASE_URL` answer 409; the embedding card previews the target space,
 width, speed, corpus to re-embed, cost and input limit through one synthetic batch, and its
-confirmed apply writes the three rows and restarts the daemon. `arcadedb-mcp` re-reads its
+confirmed apply restarts the daemon. Preview and apply are an admin's (`identity.create`);
+the apply writes only the rows the environment does not already name and deletes the
+others, so a route set back to local follows compose again. `arcadedb-mcp` re-reads its
 route every minute and restarts itself when it moved; the ingest supervisor restarts its
-children within one poll. `aura doctor` warns with every tenant and family whose gate is
-closed, and the cockpit's Embedding space panel shows the per-family counts and the files
-still in another space.
+children within one poll; the memory pass fires at the daemon's boot. `aura doctor` warns
+with every tenant and family whose gate is closed, and the cockpit's Embedding space panel
+shows the per-family counts and the files still in another space (a member sees only their
+own tenant).
+
+Measured on the lab VM (2026-09-24, one tenant: 100 memory rows, 43 passages, 13 cards):
+local → `qwen/qwen3-embedding-8b` → `perplexity/pplx-embed-v1-0.6b` → local, each through
+the cockpit API. `arcadedb-mcp` restarted itself on every change, 30-65 s after the apply,
+on the new space. On pplx-embed (0.6B, native 1024 truncated to 768, $0.004/M; preview
+$0.00038) the documents family was dense again in ~2 min against a 122 s estimate. Memory
+waited 5 min there because the scheduler's boot catch-up skipped the kicked pass (fixed
+`020dc7391`); back on local, with the fix, memory re-embedding began within 41 s of the boot
+and both families were dense 4 min 22 s after the apply, with no `AURA_EMBED_*` row left.
+This does not prove: the preview's duration on a hosted route (one request measures latency;
+the same qwen probe gave 758 and 184 chars/s), a library larger than the VM's, several
+tenants, or relevance with a cloud model — its floors stay uncalibrated.
 
 **Upgrade note.** The release that ships the stamps finds every existing vector unstamped,
 so memory and documents answer lexically until they are re-embedded on the running route:
