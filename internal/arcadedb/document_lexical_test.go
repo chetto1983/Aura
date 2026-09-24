@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -75,9 +76,10 @@ func TestLexicalReadsSendNothingForAStopwordOnlyQuery(t *testing.T) {
 func TestLexicalCandidatesRankByTheFullTextScoreAlone(t *testing.T) {
 	var index *DocumentIndex
 	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		other := candidateFixture(index, "doc_b:3", "doc_b", 3, "lexical_score", 2.2)
+		other["raw_sha256"] = strings.Repeat("c", 64) // another file, not a copy of doc_a
 		return testResponse{Body: resultBody([]any{
-			candidateFixture(index, "doc_a:0", "doc_a", 0, "lexical_score", 7.5),
-			candidateFixture(index, "doc_b:3", "doc_b", 3, "lexical_score", 2.2),
+			candidateFixture(index, "doc_a:0", "doc_a", 0, "lexical_score", 7.5), other,
 		})}
 	})
 	passages, err := index.LexicalCandidates(t.Context(), CandidateFilter{
@@ -158,5 +160,36 @@ func TestLexicalReadsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
 	cards, err := missingTypeIndex(t).LexicalDocumentCards(t.Context(), filter, "fatturato clienti")
 	if err != nil || len(cards) != 0 {
 		t.Fatalf("cards = %v err = %v", cards, err)
+	}
+}
+
+// Spec §8 groups by raw_sha256, as the fused statement's groupSize 1 does inside the engine:
+// rankDocuments reads one passage per file, and a passage two files share verbatim would
+// otherwise merge them under one title. The leg over-fetches so grouping does not starve the
+// pool (final review #1, #6).
+func TestLexicalCandidatesKeepEachFilesBestPassage(t *testing.T) {
+	var index *DocumentIndex
+	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		row := func(passage, doc string, raw string, score float64) map[string]any {
+			fixture := candidateFixture(index, passage, doc, 0, "lexical_score", score)
+			fixture["raw_sha256"] = strings.Repeat(raw, 64)
+			return fixture
+		}
+		return testResponse{Body: resultBody([]any{
+			row("a:0", "a", "a", 7.5), row("a:3", "a", "a", 5.1), row("b:1", "b", "b", 4.2),
+		})}
+	})
+	passages, err := index.LexicalCandidates(t.Context(),
+		CandidateFilter{IdentityID: documentTestIdentity, Limit: 2}, "safety warning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(passages) != 2 || passages[0].PassageID != "a:0" || passages[1].PassageID != "b:1" {
+		t.Fatalf("passages = %+v, want each file's best passage once", passages)
+	}
+	// The fused leg's over-fetch, min(max(limit*4, 20), cap), with this index's cap.
+	fetch := "LIMIT " + strconv.Itoa(min(20, index.config.MaxRetrievalCandidates))
+	if statement, _ := (*requests)[0].Payload["command"].(string); !strings.HasSuffix(statement, fetch) {
+		t.Fatalf("the lexical leg does not over-fetch before grouping:\n%s", statement)
 	}
 }

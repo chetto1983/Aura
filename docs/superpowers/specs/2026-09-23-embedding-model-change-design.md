@@ -688,6 +688,11 @@ fusion and index work; nothing here adds Go vector math.
   counts matched terms, until `REBUILD INDEX` (arcadedb-docs full-text-index): there the floor
   of 2 means "two terms", which was not measured. The library it was measured on still held the
   video transcripts that `150c7c669` removed.
+- **Dropping both languages' stopwords from every query drops acronyms that spell one.**
+  "IT budget" searches "budget", "CI pipeline" "pipeline", "HA cluster" "cluster"; "C++" and
+  "C#" trim to the Italian stopword "c", so the query sends nothing and abstains. Lexical mode
+  only (final review, 2026-09-24). The one-word floor exemption counts whitespace-separated
+  words, so "Europe/Rome" alone is one word to it and two terms to Lucene.
 - **A document that never re-indexes keeps the documents family lexical indefinitely.** This is
   deliberate, and visible by file name.
 - **A full re-embed on ArcadeDB 26.9.1 costs one graph rebuild per vector index** on the first

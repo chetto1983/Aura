@@ -109,12 +109,18 @@ func vectorsOutside(typeName, live string) string {
 	return "SELECT count(*) AS n FROM " + typeName + " WHERE embedding IS NOT NULL AND " + otherSpace + live
 }
 
-func (t memorySpaceType) gateCount() spaceCount {
-	return spaceCount{typeName: t.name, statement: vectorsOutside(t.name, t.live)}
+func gateCountsOf(types []memorySpaceType) []spaceCount {
+	counts := make([]spaceCount, 0, len(types))
+	for _, t := range types {
+		counts = append(counts, spaceCount{typeName: t.name, statement: vectorsOutside(t.name, t.live)})
+	}
+	return counts
 }
 
 var (
-	memoryGateCounts = []spaceCount{factSpace.gateCount(), turnSpace.gateCount(), traceSpace.gateCount()}
+	// memoryGateCounts is built from memorySpaceTypes, the list the pass re-embeds, so a type
+	// the pass moves always closes the gate too.
+	memoryGateCounts = gateCountsOf(memorySpaceTypes)
 	// documentGateCounts is the documents family (spec §3), gated apart from memory.
 	documentGateCounts = []spaceCount{
 		{typeName: documentPassageType, statement: vectorsOutside(documentPassageType, ""), ingested: true},

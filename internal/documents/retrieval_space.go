@@ -5,15 +5,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 // QueryEmbedder embeds a query and names the space its vector is in (embeddings.Route), so
-// the dense legs run only over a library wholly in that space (spec §3).
-type QueryEmbedder interface {
-	Embed(ctx context.Context, texts []string) ([][]float64, error)
-	Space(ctx context.Context) (embeddings.Space, error)
-}
+// the dense legs run only over a library wholly in that space (spec §3). It is memory's
+// DenseEmbedder: one seam, not two.
+type QueryEmbedder = arcadedb.DenseEmbedder
 
 // queryVector is the query embedded for the dense legs, and the space its vector is in.
 type queryVector struct {

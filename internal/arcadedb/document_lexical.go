@@ -98,8 +98,8 @@ func (d *DocumentIndex) lexicalRequest(filter CandidateFilter, query string) (Ca
 	return filter, where, params, nil
 }
 
-// LexicalCandidates ranks passages by the full-text index alone, best first. A query that is
-// only stopwords returns nothing without asking ArcadeDB.
+// LexicalCandidates ranks each file's best passage by the full-text index alone, best first. A
+// query that is only stopwords returns nothing without asking ArcadeDB.
 func (d *DocumentIndex) LexicalCandidates(ctx context.Context, filter CandidateFilter, query string) ([]PassageCandidate, error) {
 	filter, where, params, err := d.lexicalRequest(filter, query)
 	if err != nil || params == nil {
@@ -109,14 +109,38 @@ func (d *DocumentIndex) LexicalCandidates(ctx context.Context, filter CandidateF
 	if err != nil {
 		return nil, err
 	}
-	rows, err := client.Query(ctx, lexicalPassageStatement(where, filter.Limit), params)
+	// Over-fetch, as the fused leg does: the grouping below runs after the LIMIT, and a file
+	// with many matching passages would otherwise fill the pool on its own.
+	fetch := min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
+	rows, err := client.Query(ctx, lexicalPassageStatement(where, fetch), params)
 	if err != nil {
 		if missingIngestType(err, documentPassageType) {
 			return nil, nil // nothing ingested yet — an empty library, not a failure
 		}
 		return nil, fmt.Errorf("arcadedb: lexical document candidates: %w", err)
 	}
-	return d.decodeCandidates(rows, RetrievalLegLexical, filter.Limit)
+	candidates, err := d.decodeCandidates(rows, RetrievalLegLexical, fetch)
+	if err != nil {
+		return nil, err
+	}
+	best := bestPassagePerFile(candidates)
+	return best[:min(len(best), filter.Limit)], nil
+}
+
+// bestPassagePerFile keeps each file's first, so best, passage: what the fused statement's
+// groupBy 'raw_sha256', groupSize 1 does inside the engine. rankDocuments reads one passage per
+// file, and a passage two files share verbatim would otherwise merge them under one title.
+func bestPassagePerFile(ranked []PassageCandidate) []PassageCandidate {
+	kept := make([]PassageCandidate, 0, len(ranked))
+	seen := make(map[string]struct{}, len(ranked))
+	for _, candidate := range ranked {
+		if _, duplicate := seen[candidate.RawSHA256]; duplicate {
+			continue
+		}
+		seen[candidate.RawSHA256] = struct{}{}
+		kept = append(kept, candidate)
+	}
+	return kept
 }
 
 // LexicalDocumentCards ranks documents by their card and by their split file name, one query

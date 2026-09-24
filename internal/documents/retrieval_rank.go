@@ -44,7 +44,8 @@ func rankDocuments(
 	// normalized_text_sha256 and came back at the same score, 0.59846956, spending three
 	// result slots on one text.
 	//
-	// The engine returns each file's BEST passage (groupSize 1), so two files whose best
+	// Both legs return each file's BEST passage (the engine's groupSize 1 on the fused leg,
+	// arcadedb bestPassagePerFile on the lexical one), so two files whose best
 	// passage is textually identical offer identical evidence for this query and one of
 	// them can represent both. What that trades: a file whose only overlap with another is
 	// the passage that happened to match is hidden behind it, and is then reachable by a
@@ -68,8 +69,8 @@ func rankDocuments(
 		// meant no card could outrank any passage however well it matched, and measured
 		// 2026-09-09 that made gi_comuni_cap.xlsx — whose card names all seventeen of its
 		// columns — absent from a search for its own filename, because a spreadsheet has no
-		// passages. Both legs now score the same reranked cosine, so the score decides and
-		// this is only the tie-break.
+		// passages. Both legs now score on one scale -- the reranked cosine in dense mode,
+		// BM25 in lexical mode -- so the score decides and this is only the tie-break.
 		doc.order = min(doc.order, rank)
 		if card.Rank > doc.document.Score {
 			doc.document.Score = card.Rank

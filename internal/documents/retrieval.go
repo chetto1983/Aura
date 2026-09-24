@@ -267,8 +267,9 @@ type RetrievalConfig struct {
 	FusionStrategy arcadedb.FusionStrategy
 }
 
-// HostRetriever runs the cascade in-process. PassageIndex and Embedder may degrade to cards;
-// ControlPlane is required because it owns identity scope and document metadata.
+// HostRetriever runs the cascade in-process. Without an Embedder, or with one that cannot
+// serve the library's space, both legs are lexical; without a PassageIndex, only the cards
+// answer. ControlPlane is required because it owns identity scope and document metadata.
 type HostRetriever struct {
 	ControlPlane RetrievalControlPlane
 	PassageIndex PassageIndex
