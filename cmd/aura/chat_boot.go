@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identity"
@@ -56,7 +57,8 @@ type chatEnv struct {
 	run                   *runner.Runner
 	client                llm.Client
 	llmRuntime            *llm.Runtime
-	memoryEmbedder        arcadedb.DenseEmbedder // the daemon's one memory route (memory_embedder.go)
+	memoryEmbedder        arcadedb.DenseEmbedder  // the daemon's one memory route (memory_embedder.go)
+	documentEmbedder      documents.QueryEmbedder // the document query route, key read live
 	llmFallback           llm.Config
 	reg                   *tools.Registry
 	gateway               *gateway.Gateway
@@ -431,6 +433,9 @@ func assembleChatEnv(
 	}
 	toolHandles.MemoryContext = memoryContext
 	memoryDense := memoryEmbedder(cfg, llmRuntime)
+	// The document query route and the reasoning classifier embed with the live key too.
+	documentQuery := newQueryEmbedder(cfg, liveKey(llmRuntime))
+	wireDocumentQueryEmbedder(&toolHandles, documentQuery)
 	memoryClients := newChatTenantClients(cfg, memoryDense)
 	conversationProjector := newChatConversationProjector(memoryClients, convStore)
 	reasoningMemory := newChatReasoningMemory(cfg, memoryClients)
@@ -487,7 +492,7 @@ func assembleChatEnv(
 		// Local embedding-based reasoning-tier classifier (embedding sidecar):
 		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
 		// falls back to the LLM router.
-		Embedder: embeddingClient(cfg, documentHTTPClient(cfg)),
+		Embedder: documentQuery,
 		// SteerInboxOrNil is the ONE place a concrete, possibly-nil *steer.PostgresStore
 		// is boxed into the agent.SteerInbox interface Deps.Steer now carries (Phase 51
 		// plan 02) — avoids the classic Go nil-interface trap (D-06).
@@ -510,7 +515,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

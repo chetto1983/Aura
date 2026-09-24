@@ -186,6 +186,9 @@ type runtimeToolHandles struct {
 	// nothing; every *ViewCatalog method tolerates that.
 	MCPViews    *mcp.ViewCatalog
 	ViewCallers mcptools.ViewCallers
+	// Documents is retained so chat boot can route its query embedder through the live LLM key
+	// once the runtime exists (wireDocumentQueryEmbedder).
+	Documents *documentLibrary
 	mediaToolHandles
 }
 
@@ -243,8 +246,8 @@ func buildBaseRegistryWithHandles(
 	// manifest always lists it (Spec reads no dependency); with no pool it fails
 	// loudly at call time rather than being silently absent, which is how the
 	// upload->chat regression happened once already.
-	library := newDocumentLibrary(taskStorePool(ts), cfg)
-	reg.Register(&tools.DocumentSearch{Library: library})
+	handles.Documents = newDocumentLibrary(taskStorePool(ts), cfg)
+	reg.Register(&tools.DocumentSearch{Library: handles.Documents})
 	// shell_exec is the full terminal — THE execution surface — and it runs inside the caller's
 	// per-identity box, never on the host. Deferred so simple chat/web turns do not carry a giant
 	// shell schema in the hot manifest. No tool below is given the HOST workspace root: every one

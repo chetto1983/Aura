@@ -119,9 +119,8 @@ type Deps struct {
 	ResumeHook  ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
-	// falls back to the LLM router. The composition root passes a
-	// documents.EmbeddingClient built over the resolved config.EmbedRoute
-	// (local sidecar or the cloud endpoint, the one-knob swap).
+	// falls back to the LLM router. The composition root passes
+	// the daemon's document query route (embeddings.Route over config.EmbedRoute, key read live).
 	Embedder prompt.Embedder
 	// HookManager is the optional agent extension surface. nil keeps the agent's
 	// hook calls as no-ops; production may inject command hooks here.

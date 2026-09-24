@@ -11,7 +11,7 @@ import (
 
 // Embedder is the narrow embedding seam the reasoning classifier needs. It is a
 // type alias of semindex.Embedder (the shared embedding-index core owns the
-// canonical seam) so documents.EmbeddingClient satisfies both with no adapter
+// canonical seam) so embeddings.Client satisfies both with no adapter
 // and the classifier and the tool ranker depend on one interface (D-01).
 type Embedder = semindex.Embedder
 

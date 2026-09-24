@@ -47,9 +47,19 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 // interface on purpose: a nil *embeddings.Route stored in one is non-nil. The timeout is the
 // one the query embedder always had.
 func newQueryEmbedder(cfg *config.Config, credential func() string) documents.QueryEmbedder {
-	route := embeddings.NewRoute(cfg.Embed, credential, cfg.Embed.Dimensions, documentHTTPClient(cfg).Timeout)
+	route := embeddings.NewRoute(cfg.Embed, credential, cfg.Embed.Dimensions, documentQueryTimeout(cfg))
 	if route == nil {
 		return nil
 	}
 	return route
+}
+
+// wireDocumentQueryEmbedder puts embedder behind document_search. The retriever is built with
+// the registry, before the LLM runtime exists, so it starts on the boot key; chat boot calls
+// this before any turn, once the runtime can give the key live (spec §5).
+func wireDocumentQueryEmbedder(handles *runtimeToolHandles, embedder documents.QueryEmbedder) {
+	if handles == nil || handles.Documents == nil || handles.Documents.retriever == nil {
+		return
+	}
+	handles.Documents.retriever.Embedder = embedder
 }

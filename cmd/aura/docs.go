@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -364,12 +363,12 @@ func documentPathWithinRoot(root, rawPath string) (resolved, relative string, er
 	return resolved, filepath.ToSlash(relative), nil
 }
 
-func documentHTTPClient(cfg *config.Config) *http.Client {
-	timeout := 120 * time.Second
+// documentQueryTimeout bounds one query embedding, as the document embedder always has.
+func documentQueryTimeout(cfg *config.Config) time.Duration {
 	if cfg != nil && cfg.MultimodalTimeoutSec > 0 {
-		timeout = time.Duration(cfg.MultimodalTimeoutSec) * time.Second
+		return time.Duration(cfg.MultimodalTimeoutSec) * time.Second
 	}
-	return &http.Client{Timeout: timeout}
+	return 120 * time.Second
 }
 
 func writeJSON(out io.Writer, value any) error {

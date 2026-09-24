@@ -3,7 +3,7 @@ package main
 // The embed probe asks the sidecar what it IS, instead of reporting what we configured.
 //
 // It used to POST a real embedding and return len(vector). That number could never be
-// anything but cfg.Embed.Dimensions: EmbeddingClient truncates every vector to that width
+// anything but cfg.Embed.Dimensions: embeddings.Client truncates every vector to that width
 // (internal/embeddings/client.go -- TruncateMRL passes an exact match, errors on a narrower
 // one and cuts a wider one), so the probe paid for a /v1/models round-trip plus an inference
 // in order to print a configuration value back at the operator. The one case where the

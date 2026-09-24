@@ -22,7 +22,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/embeddings"
 )
 
 func embedURL() string {
@@ -170,7 +170,7 @@ var liveCorpus = []tierCase{
 
 func TestReasoningClassifierLive(t *testing.T) {
 	requireEmbedder(t)
-	embedder := &documents.EmbeddingClient{
+	embedder := &embeddings.Client{
 		BaseURL:    embedURL(),
 		Client:     &http.Client{Timeout: 30 * time.Second},
 		Dimensions: config.DefaultEmbedDimensions,

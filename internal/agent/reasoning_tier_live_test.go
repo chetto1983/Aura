@@ -18,7 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/documents"
+	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -36,7 +36,7 @@ func TestAdaptiveReasoningTierLive(t *testing.T) {
 		_ = resp.Body.Close()
 	}
 
-	embedder := &documents.EmbeddingClient{
+	embedder := &embeddings.Client{
 		BaseURL:    graniteBase(),
 		Client:     &http.Client{Timeout: 30 * time.Second},
 		Dimensions: config.DefaultEmbedDimensions,

@@ -60,7 +60,7 @@ func TestMemoryEmbedderReadsTheRotatedKey(t *testing.T) {
 // operator can see only one side (final review recommendation).
 func TestLogMemorySpaceNamesTheDaemonsSpace(t *testing.T) {
 	var out bytes.Buffer
-	logMemorySpace(slog.New(slog.NewTextHandler(&out, nil)), namedSpace("es1-daemon"), time.Second)
+	logEmbeddingSpace(slog.New(slog.NewTextHandler(&out, nil)), "memory", namedSpace("es1-daemon"), time.Second)
 	if !strings.Contains(out.String(), "space=es1-daemon") {
 		t.Fatalf("boot log = %q, want the daemon's memory space", out.String())
 	}
@@ -77,5 +77,13 @@ func (s namedSpace) Space(context.Context) (embeddings.Space, error) {
 func TestMemoryEmbedderIsNilWithoutARoute(t *testing.T) {
 	if embedder := memoryEmbedder(&config.Config{}, llm.NewRuntime(nil, llm.Config{})); embedder != nil {
 		t.Fatalf("got %#v, want nil with no embedding base", embedder)
+	}
+}
+
+func TestLogEmbeddingSpaceNamesTheFamily(t *testing.T) {
+	var out bytes.Buffer
+	logEmbeddingSpace(slog.New(slog.NewTextHandler(&out, nil)), "documents", namedSpace("es1-docs"), time.Second)
+	if !strings.Contains(out.String(), "family=documents") || !strings.Contains(out.String(), "space=es1-docs") {
+		t.Fatalf("boot log = %q", out.String())
 	}
 }
