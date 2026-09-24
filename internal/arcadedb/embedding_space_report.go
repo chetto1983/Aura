@@ -71,6 +71,10 @@ type CorpusWork struct {
 // stuckDocumentsShown bounds the list: it names files for an operator, not a corpus export.
 const stuckDocumentsShown = 50
 
+// MemoryDimensions is the memory family's pinned width (spec §1): a route whose model answers
+// narrower cannot fill a memory vector.
+const MemoryDimensions = vectorDimensions
+
 var (
 	// documentSpaceTypes are the documents family (spec §3) with the text each vector embeds.
 	documentSpaceTypes = []memorySpaceType{

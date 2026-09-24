@@ -57,9 +57,11 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 		"POST /api/settings/remote-access/rotate-token": true,
 		"POST /api/graph/query":                         true,
 		"POST /api/settings/telegram/check":             true,
-		"POST /api/stt":                                 true,
-		"POST /api/tts":                                 true,
-		"POST /api/governance/skills/validate":          true,
+		// The route preview embeds a fixed synthetic batch and counts rows; it writes nothing.
+		"POST /api/settings/embedding-route/preview": true,
+		"POST /api/stt":                        true,
+		"POST /api/tts":                        true,
+		"POST /api/governance/skills/validate": true,
 	}
 	matcher := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:POST|PUT|PATCH|DELETE) [^"]+)"`)
 	entries, err := os.ReadDir(".")

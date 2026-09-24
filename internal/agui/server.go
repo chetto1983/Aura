@@ -147,6 +147,7 @@ type Server struct {
 	governanceWrite  GovernanceWriteProviders
 	mcpAuth          MCPAuthorizationProvider
 	settings         settingsStore
+	embeddingRoutes  EmbeddingRoutes // nil until SetEmbeddingRoutes (settings_embedding_route.go)
 	llmRoutes        llmRouteStore
 	llmRouteReloader llmRouteReloader
 	// modelCatalog overrides the outbound GET /models probe (settings_llm_models.go).

@@ -324,12 +324,12 @@ func TestHandlePutSetting(t *testing.T) {
 	t.Run("valid upsert 200", func(t *testing.T) {
 		store := &fakeSettingsStore{}
 		s := &Server{settings: store}
-		rr, r := putReq(t, "AURA_EMBED_MODEL", "qwen/qwen3-embedding-8b", "op-1")
+		rr, r := putReq(t, "AURA_STT_CLOUD_MODEL", "openai/whisper-1", "op-1")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rr.Code)
 		}
-		if store.upserted["AURA_EMBED_MODEL"] != "qwen/qwen3-embedding-8b" {
+		if store.upserted["AURA_STT_CLOUD_MODEL"] != "openai/whisper-1" {
 			t.Errorf("upserted = %v, want the new value", store.upserted)
 		}
 	})

@@ -1,8 +1,10 @@
 package agui
 
 // settings_api.go is the cockpit "Settings" page backend (SETTINGS-01): the model-
-// backend knobs the operator swaps local↔cloud (embed/STT/TTS/vision), the OpenRouter
-// management key, and the embed dimension. Rows live in aura.settings and the non-secret
+// backend knobs the operator swaps local↔cloud (STT/TTS/vision) and the OpenRouter
+// management key. The embedding route changes only through its preview and confirmed apply
+// (settings_embedding_route.go), so PUT/DELETE refuse its three keys. Rows live in
+// aura.settings and the non-secret
 // ones are overlaid onto the environment at boot (internal/settings.OverlayEnv). The primary
 // LLM profile is additionally hot-published and the Telegram token hot-swaps the
 // running channel; restart_required covers only a persisted difference whose runtime
@@ -102,6 +104,7 @@ func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/settings/telegram/check", s.handleCheckTelegramAvailability)
 	mux.HandleFunc("POST /api/settings/telegram/link", s.handleCreateSettingsTelegramLink)
 	mux.HandleFunc("GET /api/settings/telegram/{sessionToken}/status", s.handleSettingsTelegramStatus)
+	s.registerEmbeddingRouteRoutes(mux)
 	mux.HandleFunc("PUT /api/settings/{key}", s.handlePutSetting)
 	mux.HandleFunc("DELETE /api/settings/{key}", s.handleDeleteSetting)
 	// The restart is how a saved boot-bound row takes effect (restart_api.go).
@@ -360,6 +363,9 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "unknown setting key"})
 		return
 	}
+	if refuseEmbeddingRouteKey(w, key) {
+		return
+	}
 	actor, ok := principalIdentityID(r)
 	if !ok {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -441,6 +447,9 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 	key := r.PathValue("key")
 	if _, ok := settings.Allowed(key); !ok {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "unknown setting key"})
+		return
+	}
+	if refuseEmbeddingRouteKey(w, key) {
 		return
 	}
 	actor, ok := principalIdentityID(r)
