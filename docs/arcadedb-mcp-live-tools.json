@@ -1185,6 +1185,10 @@
               "description": "true when no fact met the retrieval contract",
               "type": "boolean"
             },
+            "floors_reason": {
+              "description": "uncalibrated_floors when the relevance floors were never measured for this embedding model",
+              "type": "string"
+            },
             "path": {
               "description": "effective retrieval path: hybrid, lexical, or graph",
               "type": "string"
@@ -1915,6 +1919,10 @@
             "fact_count": {
               "type": "integer"
             },
+            "floors_reason": {
+              "description": "uncalibrated_floors when the relevance floors were never measured for this embedding model",
+              "type": "string"
+            },
             "path": {
               "type": "string"
             },
@@ -2106,6 +2114,10 @@
             "abstained": {
               "description": "true when no fact met the retrieval contract",
               "type": "boolean"
+            },
+            "floors_reason": {
+              "description": "uncalibrated_floors when the relevance floors were never measured for this embedding model",
+              "type": "string"
             },
             "path": {
               "description": "effective retrieval path: hybrid, lexical, or graph",

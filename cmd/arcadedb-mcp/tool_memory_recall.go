@@ -138,7 +138,7 @@ type MemoryRecallRetrievalMetadata struct {
 	EntityCount       int    `json:"entity_count"`
 	Abstained         bool   `json:"abstained"`
 	Reason            string `json:"reason,omitempty"`
-	FloorsReason      string `json:"floors_reason,omitempty"`
+	FloorsReason      string `json:"floors_reason,omitempty" jsonschema:"uncalibrated_floors when the relevance floors were never measured for this embedding model"`
 }
 
 // MemoryRecallOutput is additive: Facts preserves the shipped fact-only projection.
