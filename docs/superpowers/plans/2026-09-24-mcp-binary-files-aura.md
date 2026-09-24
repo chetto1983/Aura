@@ -19,10 +19,10 @@
 ## Global Constraints
 
 **Repository and commits**
-- Repository: `D:\Aura`, branch `main`. Commit on `main` directly; no feature branch.
+- Repository: `D:\Aura`, branch `master`. Commit on `master` directly; no feature branch.
 - Another session may be working in the same tree. Commit with explicit paths only (`git add <new files>` then `git commit -- <paths>`), and unstage anything you did not write. Re-read `internal/agent/llm_agent.go` immediately before editing it.
 - End every commit message with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`. Never use `--no-verify`.
-- No push without the operator's go. Pushing `main` publishes the edge image, which the appliances install.
+- No push without the operator's go. Pushing `master` publishes the edge image, which the appliances install.
 
 **Build and test**
 - Go runs in WSL. Create `<scratchpad>/aura_go.sh`:
@@ -2122,17 +2122,17 @@ Expected:
 
 If a package falls under its floor, add daemon-free tests for the uncovered lines. Never lower a floor.
 
-- [ ] **Step 3: Push. ASK THE OPERATOR FIRST.** A push of `main` publishes the edge image, and the appliances install it. The two fork plans must have shipped before Task 8, but the Aura push itself does not depend on them: without links or files a result behaves exactly as today. With the go, push from WSL so the lefthook gates run on the pushed commit:
+- [ ] **Step 3: Push. ASK THE OPERATOR FIRST.** A push of `master` publishes the edge image, and the appliances install it. The two fork plans must have shipped before Task 8, but the Aura push itself does not depend on them: without links or files a result behaves exactly as today. With the go, push from WSL so the lefthook gates run on the pushed commit:
 
 ```bash
 cd /mnt/d/Aura
 export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
-LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks push origin main
+LEFTHOOK_BIN=$HOME/go/bin/lefthook git -c core.hooksPath=.git/hooks push origin master
 ```
 
 Expected: the lefthook banner, with every pre-push command green. No banner means no gate ran.
 
-Then run `gh run list --branch main --limit 10`. Every job must end green, including `Sandbox docker_integration tier`, the coverage job, and `Publish Aura edge image`. A red job is fixed, whether or not it looks related to this change.
+Then run `gh run list --branch master --limit 10`. Every job must end green, including `Sandbox docker_integration tier`, the coverage job, and `Publish Aura edge image`. A red job is fixed, whether or not it looks related to this change.
 
 ---
 
