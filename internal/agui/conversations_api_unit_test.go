@@ -45,6 +45,10 @@ func (e *errConvStore) ListTurnAttachments(context.Context, string) ([]conversat
 	return nil, e.err
 }
 
+func (e *errConvStore) LoadDump(context.Context, string) (conversations.Dump, error) {
+	return conversations.Dump{}, e.err
+}
+
 func (e *errConvStore) ListTurnReasoning(context.Context, string) ([]conversations.TurnReasoning, error) {
 	return nil, e.err
 }

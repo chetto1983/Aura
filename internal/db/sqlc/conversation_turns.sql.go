@@ -265,6 +265,52 @@ func (q *Queries) ListBranchLeaves(ctx context.Context, conversationID pgtype.UU
 	return items, nil
 }
 
+const listConversationCompactions = `-- name: ListConversationCompactions :many
+SELECT branch_id, covers_through_seq, summary, model, source_turns, created_at, updated_at
+FROM aura.conversation_compactions
+WHERE conversation_id = $1
+ORDER BY branch_id ASC
+`
+
+type ListConversationCompactionsRow struct {
+	BranchID         pgtype.UUID        `json:"branch_id"`
+	CoversThroughSeq int32              `json:"covers_through_seq"`
+	Summary          string             `json:"summary"`
+	Model            string             `json:"model"`
+	SourceTurns      int32              `json:"source_turns"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
+// Every branch's durable summary, for the raw export alongside ListTurnDump.
+func (q *Queries) ListConversationCompactions(ctx context.Context, conversationID pgtype.UUID) ([]ListConversationCompactionsRow, error) {
+	rows, err := q.db.Query(ctx, listConversationCompactions, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConversationCompactionsRow{}
+	for rows.Next() {
+		var i ListConversationCompactionsRow
+		if err := rows.Scan(
+			&i.BranchID,
+			&i.CoversThroughSeq,
+			&i.Summary,
+			&i.Model,
+			&i.SourceTurns,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listManagedBranchPathPage = `-- name: ListManagedBranchPathPage :many
 WITH RECURSIVE path AS (
     SELECT ct.conversation_id, ct.seq, ct.role, ct.content, ct.content_sidecar_path,
@@ -495,6 +541,77 @@ func (q *Queries) ListSpilledSeqsForConversation(ctx context.Context, conversati
 			return nil, err
 		}
 		items = append(items, seq)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTurnDump = `-- name: ListTurnDump :many
+SELECT seq, role, content, content_sidecar_path, tool_call_id, tool_calls,
+       reasoning, reasoning_duration_ms, branch_id, parent_seq, attachment_ids,
+       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+ORDER BY seq ASC
+`
+
+type ListTurnDumpRow struct {
+	Seq                 int32              `json:"seq"`
+	Role                string             `json:"role"`
+	Content             pgtype.Text        `json:"content"`
+	ContentSidecarPath  pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID          pgtype.Text        `json:"tool_call_id"`
+	ToolCalls           []byte             `json:"tool_calls"`
+	Reasoning           pgtype.Text        `json:"reasoning"`
+	ReasoningDurationMs pgtype.Int8        `json:"reasoning_duration_ms"`
+	BranchID            pgtype.UUID        `json:"branch_id"`
+	ParentSeq           pgtype.Int4        `json:"parent_seq"`
+	AttachmentIds       []pgtype.UUID      `json:"attachment_ids"`
+	DeliveryKey         pgtype.Text        `json:"delivery_key"`
+	InputTokens         int32              `json:"input_tokens"`
+	OutputTokens        int32              `json:"output_tokens"`
+	CachedTokens        int32              `json:"cached_tokens"`
+	ContextTokens       int32              `json:"context_tokens"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+}
+
+// The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
+// in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
+// rebuild, which must never select reasoning; and never pair-repaired, because the orphaned
+// tool result of an interrupted run is exactly what a debugging owner needs to see.
+func (q *Queries) ListTurnDump(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnDumpRow, error) {
+	rows, err := q.db.Query(ctx, listTurnDump, conversationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTurnDumpRow{}
+	for rows.Next() {
+		var i ListTurnDumpRow
+		if err := rows.Scan(
+			&i.Seq,
+			&i.Role,
+			&i.Content,
+			&i.ContentSidecarPath,
+			&i.ToolCallID,
+			&i.ToolCalls,
+			&i.Reasoning,
+			&i.ReasoningDurationMs,
+			&i.BranchID,
+			&i.ParentSeq,
+			&i.AttachmentIds,
+			&i.DeliveryKey,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CachedTokens,
+			&i.ContextTokens,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

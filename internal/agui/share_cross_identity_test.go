@@ -62,7 +62,7 @@ const (
 // TestShareCrossIdentityDeny is the WEBSHARE-04 SC4 acceptance vehicle: ten rows proving no
 // other identity's data reaches a recipient across every share trust boundary. Two fresh,
 // provisioned, NON-WILDCARD identities (R-13) are seeded per run via seedShareExportIdentity
-// (share_export_test.go, same package/tag — name = "share-export-"+t.Name()+"-"+uuid, unique
+// (conversation_export_test.go, same package/tag — name = "share-export-"+t.Name()+"-"+uuid, unique
 // across parallel runs). Neither identity is ever granted the wildcard capability, and
 // neither is the seeded operator identity — every capability assertion below is real, not
 // vacuous.

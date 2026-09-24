@@ -12,9 +12,9 @@ import (
 
 // JSON marshals the Snapshot with its wire tags (the OQ4 contract plan
 // 37F-05 mirrors in TypeScript). It takes no parameter beyond the receiver —
-// that signature IS the D-07 guarantee: MD, JSON, and the public page model
-// all derive from the SAME redacted Snapshot, so a future redaction fix
-// cannot miss this surface by construction. encoding/json.Marshal is
+// that signature IS the D-07 guarantee: the stored share JSON and the public
+// page model derive from the SAME redacted Snapshot, so a future redaction
+// fix cannot miss this surface by construction. encoding/json.Marshal is
 // deterministic for a Snapshot value (struct fields marshal in declaration
 // order; no map-typed field exists anywhere in the Snapshot family), so two
 // calls on an unchanged Snapshot always yield identical bytes.

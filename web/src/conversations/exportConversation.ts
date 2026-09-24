@@ -1,9 +1,9 @@
-// Conversation export (fix-plan 2.10 "wire export UI"): the server already owns
+// Conversation export (fix-plan 2.10 "wire export UI"): the server owns
 // GET /api/conversations/{id}/export — owner-scoped (foreign/absent -> 404),
-// read-only, absent/unrecognized `format` degrades to Markdown. This module is
-// the client leg: fetch the body and hand it to the browser as a download named
-// by the server's Content-Disposition (RFC-6266: quoted ASCII fallback +
-// filename*=UTF-8'' extended param — internal/agui/content_disposition.go).
+// read-only, the raw Markdown dump of every persisted turn (prd.md §7). This
+// module is the client leg: fetch the body and hand it to the browser as a
+// download named by the server's Content-Disposition (RFC-6266: quoted ASCII
+// fallback + filename*=UTF-8'' extended param — internal/agui/content_disposition.go).
 
 /**
  * Extract the download filename from an RFC-6266 Content-Disposition value.

@@ -375,6 +375,8 @@ type Querier interface {
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
+	// Every branch's durable summary, for the raw export alongside ListTurnDump.
+	ListConversationCompactions(ctx context.Context, conversationID pgtype.UUID) ([]ListConversationCompactionsRow, error)
 	ListConversationIDsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) ([]pgtype.UUID, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	// Owner-scoped conversation list (Phase 36 MUSR-01): ListConversations restricted to one
@@ -479,6 +481,11 @@ type Querier interface {
 	ListStudioMediaJobs(ctx context.Context, arg ListStudioMediaJobsParams) ([]AuraMediaJob, error)
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
+	// The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
+	// in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
+	// rebuild, which must never select reasoning; and never pair-repaired, because the orphaned
+	// tool result of an interrupted run is exactly what a debugging owner needs to see.
+	ListTurnDump(ctx context.Context, conversationID pgtype.UUID) ([]ListTurnDumpRow, error)
 	// D-09 (CHAT-05): the deterministic leaf->root path walk. Given a selected leaf seq,
 	// follow parent_seq up to the root, then return the turns in root->leaf (seq ASC) order
 	// so the head (system seq=1 + the always-block) is byte-identical to the linear case —

@@ -18,7 +18,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/google/uuid"
 )
 
 // TurnAttachments is one turn's attachment id list. Only turns that carry attachments are
@@ -59,15 +58,7 @@ func (s *Store) ListTurnAttachments(ctx context.Context, conversationID string) 
 	}
 	out := make([]TurnAttachments, 0, len(rows))
 	for _, r := range rows {
-		ids := make([]string, 0, len(r.AttachmentIds))
-		for _, raw := range r.AttachmentIds {
-			// A row that failed to scan as a UUID is dropped rather than emitted as the
-			// zero uuid, which would send the reader looking for an asset that cannot exist.
-			if !raw.Valid {
-				continue
-			}
-			ids = append(ids, uuid.UUID(raw.Bytes).String())
-		}
+		ids := uuidStrings(r.AttachmentIds)
 		if len(ids) == 0 {
 			continue
 		}

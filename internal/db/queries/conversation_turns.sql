@@ -102,6 +102,25 @@ WHERE attachment_ids IS NOT NULL
   AND cardinality(attachment_ids) > 0
 ORDER BY seq ASC;
 
+-- name: ListTurnDump :many
+-- The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
+-- in seq order. Separate from ListTurnsBySeq because that one feeds the llm.Message
+-- rebuild, which must never select reasoning; and never pair-repaired, because the orphaned
+-- tool result of an interrupted run is exactly what a debugging owner needs to see.
+SELECT seq, role, content, content_sidecar_path, tool_call_id, tool_calls,
+       reasoning, reasoning_duration_ms, branch_id, parent_seq, attachment_ids,
+       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+ORDER BY seq ASC;
+
+-- name: ListConversationCompactions :many
+-- Every branch's durable summary, for the raw export alongside ListTurnDump.
+SELECT branch_id, covers_through_seq, summary, model, source_turns, created_at, updated_at
+FROM aura.conversation_compactions
+WHERE conversation_id = $1
+ORDER BY branch_id ASC;
+
 -- name: ListSpilledSeqsForConversation :many
 -- D-09 (LOOP-09): every seq whose content spilled to a <seq>.content sidecar
 -- (content_sidecar_path IS NOT NULL) in one conversation. The crash-orphan GC

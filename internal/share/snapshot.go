@@ -1,9 +1,9 @@
 // Package share implements the phase 37F conversation/artifact sharing
 // redaction core. BuildSnapshot is the ONLY function in the repo that
-// accepts an llm.Message and returns share-bound data: the Markdown
-// formatter, the JSON formatter, and the public share page model are all
-// pure functions of the Snapshot type below, so redaction cannot diverge
-// across those surfaces (D-07). Snapshot has no field capable of holding a
+// accepts an llm.Message and returns share-bound data: the JSON formatter and
+// the public share page model are pure functions of the Snapshot type below,
+// so redaction cannot diverge across those surfaces (D-07). The owner's own
+// export is not share-bound and reads conversations.Dump instead (prd.md §7). Snapshot has no field capable of holding a
 // tool argument, a tool result, a filesystem path, or the owner's identity
 // id — there is no field shaped to hold any of them, so a leak there is a
 // compile error at the call site that tries to populate it, not something a
@@ -18,7 +18,7 @@ import (
 
 // Snapshot is the complete, recipient-safe projection of one conversation:
 // the ONLY output BuildSnapshot produces, and the ONLY input every
-// downstream format (Markdown/JSON/the public page model) consumes. It
+// downstream format (JSON/the public page model) consumes. It
 // structurally cannot carry a tool argument, a tool result, a filesystem
 // path, or the owner's identity id (the Conversation.identity_id column) —
 // there is no field shaped to hold any of them. The same structural exclusion

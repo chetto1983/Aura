@@ -166,6 +166,10 @@ func (f *steerE2EConvStore) ListTurnAttachments(context.Context, string) ([]conv
 	return nil, nil
 }
 
+func (f *steerE2EConvStore) LoadDump(context.Context, string) (conversations.Dump, error) {
+	return conversations.Dump{}, nil
+}
+
 func (f *steerE2EConvStore) ListTurnReasoning(context.Context, string) ([]conversations.TurnReasoning, error) {
 	return nil, nil
 }

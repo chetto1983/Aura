@@ -37,6 +37,9 @@ type ConversationStore interface {
 	// was sent with. Like the reasoning read it stays off the history rebuild, so an
 	// attachment can never re-enter the model context as a list of ids.
 	ListTurnAttachments(ctx context.Context, conversationID string) ([]conversations.TurnAttachments, error)
+	// LoadDump is the owner's raw export read (prd.md §7): every persisted turn,
+	// reasoning included, never pair-repaired. Only the export handler calls it.
+	LoadDump(ctx context.Context, conversationID string) (conversations.Dump, error)
 	List(ctx context.Context, includeArchived bool) ([]conversations.Conversation, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
 	UpdateStatus(ctx context.Context, conversationID, status string) error

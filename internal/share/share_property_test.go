@@ -140,8 +140,8 @@ func genArtifacts(rt *rapid.T) []ArtifactMeta {
 // phase: the SC3 universal, stated machine-checkably. For every generated
 // history and every secret planted into it (send_file/shell_exec-shaped
 // arguments and results, a sidecar path template, a permission-denied error
-// carrying a path), the secret must be absent from BOTH Markdown() and
-// JSON() of BuildSnapshot(history).
+// carrying a path), the secret must be absent from JSON() of
+// BuildSnapshot(history) — the only serialization a share token reaches.
 //
 // The anti-vacuity guard below (>=1 secret planted, >=1 turn in the
 // resulting Snapshot) is load-bearing: an empty Snapshot or a
@@ -168,7 +168,6 @@ func TestPropertyRedactionTotality(t *testing.T) {
 			rt.Fatalf("anti-vacuity guard failed: snapshot has zero turns (totality would pass vacuously)")
 		}
 
-		md := string(snap.Markdown())
 		data, err := snap.JSON()
 		if err != nil {
 			rt.Fatalf("JSON: %v", err)
@@ -176,9 +175,6 @@ func TestPropertyRedactionTotality(t *testing.T) {
 		js := string(data)
 
 		for _, secret := range secrets {
-			if strings.Contains(md, secret) {
-				rt.Fatalf("Markdown() leaked planted secret %q", secret)
-			}
 			if strings.Contains(js, secret) {
 				rt.Fatalf("JSON() leaked planted secret %q", secret)
 			}
