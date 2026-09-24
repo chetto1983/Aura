@@ -484,3 +484,23 @@ func TestProcessSpecFingerprintMovesWithTheRouteAndOnlyWithIt(t *testing.T) {
 		}
 	}
 }
+
+func environmentValue(env []string, key string) string {
+	for _, entry := range env {
+		if environmentKey(entry) == key {
+			_, value, _ := strings.Cut(entry, "=")
+			return value
+		}
+	}
+	return ""
+}
+
+func environmentCount(env []string, key string) int {
+	count := 0
+	for _, entry := range env {
+		if environmentKey(entry) == key {
+			count++
+		}
+	}
+	return count
+}
