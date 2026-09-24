@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sync"
 )
@@ -15,7 +16,14 @@ import (
 type TurnCleanup struct {
 	mu    sync.Mutex
 	keys  map[string]struct{}
-	steps []func(context.Context) error
+	steps []cleanupStep
+}
+
+// cleanupStep pairs a registered step with the key it was added under, so a panic
+// caught in Run can name which step it came from.
+type cleanupStep struct {
+	key  string
+	step func(context.Context) error
 }
 
 // Add registers step under key. A key already registered is not registered twice,
@@ -34,11 +42,12 @@ func (c *TurnCleanup) Add(key string, step func(context.Context) error) {
 		c.keys = map[string]struct{}{}
 	}
 	c.keys[key] = struct{}{}
-	c.steps = append(c.steps, step)
+	c.steps = append(c.steps, cleanupStep{key: key, step: step})
 }
 
 // Run runs every registered step once, newest first, and forgets them. A failing
-// step does not stop the rest; the failures come back joined.
+// step — including one that panics — does not stop the rest; the failures come back
+// joined.
 func (c *TurnCleanup) Run(ctx context.Context) error {
 	if c == nil {
 		return nil
@@ -48,12 +57,25 @@ func (c *TurnCleanup) Run(ctx context.Context) error {
 	c.steps, c.keys = nil, nil
 	c.mu.Unlock()
 	var errs []error
-	for _, step := range slices.Backward(steps) {
-		if err := step(ctx); err != nil {
+	for _, s := range slices.Backward(steps) {
+		if err := runStep(ctx, s.key, s.step); err != nil {
 			errs = append(errs, err)
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// runStep runs one step and converts a panic into an error naming key, mirroring
+// the recoverHook (hooks.go) / runToolRecovering (llm_agent_parallel.go) idiom: one
+// bad step (say, a nil sandbox handle) must not sink the rest of the drain, and must
+// not escape Run into the caller's outermost defer unlogged.
+func runStep(ctx context.Context, key string, step func(context.Context) error) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("turn cleanup %q panicked: %v", key, r)
+		}
+	}()
+	return step(ctx)
 }
 
 type turnCleanupCtxKey struct{}

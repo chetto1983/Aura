@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -42,6 +43,24 @@ func TestTurnCleanupRunsEveryStepAndJoinsTheFailures(t *testing.T) {
 
 	if ran != 2 || !errors.Is(err, first) || !errors.Is(err, second) {
 		t.Fatalf("ran %d steps, err = %v; want both run and both reported", ran, err)
+	}
+}
+
+func TestTurnCleanupRunsEveryStepWhenOneStepPanics(t *testing.T) {
+	_, cleanup := WithTurnCleanup(context.Background())
+	ran := 0
+	cleanup.Add("1", func(context.Context) error { ran++; return nil })
+	// Registered after "1", so it runs FIRST (newest first) and its panic must not
+	// stop "1" from running behind it.
+	cleanup.Add("2", func(context.Context) error { panic("boom") })
+
+	err := cleanup.Run(context.Background())
+
+	if ran != 1 {
+		t.Fatalf("step \"1\" ran %d times, want 1: a panicking step must not stop the rest", ran)
+	}
+	if err == nil || !strings.Contains(err.Error(), "panic") {
+		t.Fatalf("Run error = %v, want it to mention the panic", err)
 	}
 }
 
