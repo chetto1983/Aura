@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Spinner } from '../components/Spinner';
-import type { EmbeddingRoutePreview } from './embeddingSpaceApi';
+import { refusalText, type EmbeddingRoutePreview } from './embeddingSpaceApi';
 import { Button } from '@/components/ui/button';
 
 interface EmbeddingRoutePreviewCardProps {
@@ -60,12 +60,7 @@ export function EmbeddingRoutePreviewCard({
       {refused ? (
         <ul role="alert" className="flex flex-col gap-1 text-[13px] text-danger">
           {preview.refusals.map((refusal) => (
-            <li key={refusal.code}>
-              {t(`embeddingRoute.refusals.${refusal.code}`, {
-                detail: refusal.detail ?? '',
-                defaultValue: refusal.detail ?? refusal.code,
-              })}
-            </li>
+            <li key={refusal.code}>{refusalText(t, refusal)}</li>
           ))}
         </ul>
       ) : null}

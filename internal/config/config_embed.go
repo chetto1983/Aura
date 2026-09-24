@@ -50,10 +50,10 @@ type EmbedConfig struct {
 	CloudBaseURL string
 }
 
-// loadEmbed reads the embedding wiring from the environment. It lives beside EmbedConfig
+// LoadEmbed reads the embedding wiring from the environment. It lives beside EmbedConfig
 // rather than in loadBase so the four fields and the rules that keep them apart are read in
 // one place.
-func loadEmbed() EmbedConfig {
+func LoadEmbed() EmbedConfig {
 	return EmbedConfig{
 		BaseURL:      envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 		Dimensions:   envutil.IntDefault("AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),

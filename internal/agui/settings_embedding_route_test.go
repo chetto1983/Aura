@@ -5,15 +5,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 type fakeEmbeddingRoutes struct {
@@ -27,6 +30,7 @@ type fakeEmbeddingRoutes struct {
 	work              arcadedb.CorpusWork
 	workAsked         []int
 	dims              int
+	environment       config.EmbedConfig
 }
 
 func (f *fakeEmbeddingRoutes) Current(context.Context) (embeddings.Space, embeddings.Space, error) {
@@ -48,6 +52,20 @@ func (f *fakeEmbeddingRoutes) Work(_ context.Context, _, _ string, limitChars in
 }
 
 func (f *fakeEmbeddingRoutes) Dimensions() int { return f.dims }
+
+func (f *fakeEmbeddingRoutes) Environment() config.EmbedConfig { return f.environment }
+
+// asAdmin grants op-1 identity.create: the route decides every identity's embeddings and spend.
+func asAdmin(s *Server) *Server {
+	s.idAdmin = &fakeIdentityAdmin{caps: map[string][]string{"op-1": {identity.CapIdentityCreate}}}
+	return s
+}
+
+// asMember gives op-1 governance.write alone, which every identity holds (D-01).
+func asMember(s *Server) *Server {
+	s.idAdmin = &fakeIdentityAdmin{caps: map[string][]string{"op-1": {"governance.write"}}}
+	return s
+}
 
 // cloudProbe is a hosted model that answers 1024 wide, reads 3,000 characters a second, takes
 // 8,192 tokens and costs $0.02 per million.
@@ -103,7 +121,7 @@ func TestEmbeddingSpaceReportsTheCurrentSpacesAndEveryTenant(t *testing.T) {
 		memory: embeddings.Space{ID: "es1-e0aa6accf0b79c6b", Label: "local embeddinggemma"}, documents: embeddings.Space{ID: "es1-e0aa6accf0b79c6b"},
 		reports: []arcadedb.TenantSpaceReport{{IdentityID: "id-1", StuckDocuments: []arcadedb.StuckDocument{{FileName: "scan.png"}}}},
 	}
-	s := &Server{embeddingRoutes: routes}
+	s := asAdmin(&Server{embeddingRoutes: routes})
 	rr := httptest.NewRecorder()
 	s.handleEmbeddingSpace(rr, routeRequest(t, http.MethodGet, "/api/settings/embedding-space", nil))
 	if rr.Code != http.StatusOK {
@@ -137,7 +155,7 @@ func TestEmbeddingRoutePreviewPricesTheWork(t *testing.T) {
 		Types:             []arcadedb.TypeWork{{Type: "FACT", Rows: 10, Chars: 5000}, {Type: "Passage", Rows: 20, Chars: 25000}},
 		PassagesOverLimit: 3,
 	}}
-	s := &Server{embeddingRoutes: routes}
+	s := asAdmin(&Server{embeddingRoutes: routes})
 	rr := httptest.NewRecorder()
 	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", cloudRoute))
 	if rr.Code != http.StatusOK {
@@ -164,7 +182,7 @@ func TestEmbeddingRoutePreviewPricesTheWork(t *testing.T) {
 func TestEmbeddingRoutePreviewOfTheLocalRouteCostsNothingAndCutsNothing(t *testing.T) {
 	probe := embeddings.RouteProbe{Space: embeddings.Space{ID: "es1-local"}, NativeWidth: 768, CharsPerSecond: 1000, InputLimit: 2048}
 	routes := &fakeEmbeddingRoutes{probe: probe, dims: 768, work: arcadedb.CorpusWork{Types: []arcadedb.TypeWork{{Chars: 7}}}}
-	s := &Server{embeddingRoutes: routes}
+	s := asAdmin(&Server{embeddingRoutes: routes})
 	rr := httptest.NewRecorder()
 	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview",
 		EmbeddingRouteValues{BaseURL: "http://aura-llama-embed:8081"}))
@@ -177,7 +195,7 @@ func TestEmbeddingRoutePreviewOfTheLocalRouteCostsNothingAndCutsNothing(t *testi
 func TestEmbeddingRoutePreviewSaysUnknownWithoutAPrice(t *testing.T) {
 	probe := cloudProbe()
 	probe.HasPrice = false
-	s := &Server{embeddingRoutes: &fakeEmbeddingRoutes{probe: probe, dims: 768}}
+	s := asAdmin(&Server{embeddingRoutes: &fakeEmbeddingRoutes{probe: probe, dims: 768}})
 	rr := httptest.NewRecorder()
 	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", cloudRoute))
 	if got := decodeInto[embeddingRoutePreview](t, rr); got.CostUSD != nil {
@@ -204,7 +222,7 @@ func TestEmbeddingRoutePreviewRefusals(t *testing.T) {
 		{"probe failed", embeddings.RouteProbe{}, errors.New("HTTP 503"), 768, refusalProbeFailed},
 	} {
 		routes := &fakeEmbeddingRoutes{probe: test.probe, probeErr: test.err, dims: test.dims}
-		s := &Server{embeddingRoutes: routes}
+		s := asAdmin(&Server{embeddingRoutes: routes})
 		rr := httptest.NewRecorder()
 		s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", cloudRoute))
 		got := decodeInto[embeddingRoutePreview](t, rr)
@@ -225,11 +243,13 @@ func applyRequest(t *testing.T, route EmbeddingRouteValues, confirm string) *htt
 	})
 }
 
-func TestEmbeddingRouteApplyWritesTheThreeRowsAndRestarts(t *testing.T) {
+func TestEmbeddingRouteApplyWritesTheRouteAndRestarts(t *testing.T) {
 	store := &fakeSettingsStore{}
 	restarts := 0
-	s := &Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768},
-		restartTrigger: func() { restarts++ }}
+	routes := &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768, environment: config.EmbedConfig{
+		BaseURL: "http://127.0.0.1:8081", CloudBaseURL: "https://gateway.example/api/v1",
+	}}
+	s := asAdmin(&Server{settings: store, embeddingRoutes: routes, restartTrigger: func() { restarts++ }})
 	rr := httptest.NewRecorder()
 	s.handleApplyEmbeddingRoute(rr, applyRequest(t, cloudRoute, "es1-target"))
 	if rr.Code != http.StatusOK || restarts != 1 {
@@ -238,19 +258,75 @@ func TestEmbeddingRouteApplyWritesTheThreeRowsAndRestarts(t *testing.T) {
 	want := map[string]string{
 		"AURA_EMBED_BASE_URL": cloudRoute.BaseURL, "AURA_EMBED_MODEL": "vendor/embed", "AURA_EMBED_CLOUD_BASE_URL": "",
 	}
-	if len(store.upserted) != 3 {
-		t.Fatalf("upserted = %v, want exactly the three route rows", store.upserted)
+	if !maps.Equal(store.upserted, want) || len(store.deleted) != 0 {
+		t.Fatalf("upserted %v deleted %v, want every row the environment does not name written: %v",
+			store.upserted, store.deleted, want)
 	}
-	for key, value := range want {
-		if got, ok := store.upserted[key]; !ok || got != value {
-			t.Fatalf("upserted = %v, want %v", store.upserted, want)
+}
+
+// Finding 12: a route set back to what the environment names deletes its rows, so the
+// compose the updater delivers reaches that key again instead of a value pinned for good.
+func TestEmbeddingRouteApplyBackToTheEnvironmentDeletesItsRows(t *testing.T) {
+	local := EmbeddingRouteValues{BaseURL: "http://aura-llama-embed:8081"}
+	store := &fakeSettingsStore{}
+	routes := &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768, environment: local.embedConfig()}
+	s := asAdmin(&Server{settings: store, embeddingRoutes: routes})
+	rr := httptest.NewRecorder()
+	s.handleApplyEmbeddingRoute(rr, applyRequest(t, local, "es1-target"))
+	slices.Sort(store.deleted)
+	if rr.Code != http.StatusOK || len(store.upserted) != 0 ||
+		!slices.Equal(store.deleted, []string{"AURA_EMBED_BASE_URL", "AURA_EMBED_CLOUD_BASE_URL", "AURA_EMBED_MODEL"}) {
+		t.Fatalf("status %d upserted %v deleted %v, want the three rows deleted", rr.Code, store.upserted, store.deleted)
+	}
+	store = &fakeSettingsStore{}
+	s = asAdmin(&Server{settings: store, embeddingRoutes: routes})
+	s.handleApplyEmbeddingRoute(httptest.NewRecorder(), applyRequest(t, cloudRoute, "es1-target"))
+	slices.Sort(store.deleted)
+	if !maps.Equal(store.upserted, map[string]string{"AURA_EMBED_MODEL": "vendor/embed"}) ||
+		!slices.Equal(store.deleted, []string{"AURA_EMBED_BASE_URL", "AURA_EMBED_CLOUD_BASE_URL"}) {
+		t.Fatalf("upserted %v deleted %v, want only the model written over the environment's base", store.upserted, store.deleted)
+	}
+}
+
+// Finding 1: every identity holds governance.write, and the route re-embeds, restarts and
+// bills the whole deployment, so preview and apply take identity.create like AURA_LLM_*.
+func TestEmbeddingRouteEndpointsAreAnAdminsOnly(t *testing.T) {
+	routes := &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768}
+	store := &fakeSettingsStore{}
+	s := asMember(&Server{settings: store, embeddingRoutes: routes, restartTrigger: func() { t.Fatal("a member restarted the daemon") }})
+	rr := httptest.NewRecorder()
+	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", cloudRoute))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("member preview = %d, want 403", rr.Code)
+	}
+	rr = httptest.NewRecorder()
+	s.handleApplyEmbeddingRoute(rr, applyRequest(t, cloudRoute, "es1-target"))
+	if rr.Code != http.StatusForbidden || len(store.upserted) != 0 || len(routes.probed) != 0 {
+		t.Fatalf("member apply = %d, upserted %v, probed %v; want 403 before any call", rr.Code, store.upserted, routes.probed)
+	}
+}
+
+// Finding 2: the report walks every tenant's database; a member sees their own row only.
+func TestEmbeddingSpaceShowsAMemberOnlyTheirOwnTenant(t *testing.T) {
+	routes := &fakeEmbeddingRoutes{reports: []arcadedb.TenantSpaceReport{
+		{IdentityID: "op-1"}, {IdentityID: "someone-else", StuckDocuments: []arcadedb.StuckDocument{{FileName: "private.pdf"}}},
+	}}
+	for _, test := range []struct {
+		server *Server
+		want   int
+	}{{asMember(&Server{embeddingRoutes: routes}), 1}, {asAdmin(&Server{embeddingRoutes: routes}), 2}, {&Server{embeddingRoutes: routes}, 1}} {
+		rr := httptest.NewRecorder()
+		test.server.handleEmbeddingSpace(rr, routeRequest(t, http.MethodGet, "/api/settings/embedding-space", nil))
+		got := decodeInto[embeddingSpaceDTO](t, rr)
+		if len(got.Tenants) != test.want || got.Tenants[0].IdentityID != "op-1" {
+			t.Fatalf("tenants = %+v, want %d starting with the caller's", got.Tenants, test.want)
 		}
 	}
 }
 
 func TestEmbeddingRouteApplyWithoutARestarterSaysARestartIsNeeded(t *testing.T) {
 	store := &fakeSettingsStore{}
-	s := &Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768}}
+	s := asAdmin(&Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768}})
 	rr := httptest.NewRecorder()
 	s.handleApplyEmbeddingRoute(rr, applyRequest(t, cloudRoute, "es1-target"))
 	if got := decodeInto[embeddingRouteApplied](t, rr); rr.Code != http.StatusOK || !got.RestartRequired || got.Restarting {
@@ -261,8 +337,8 @@ func TestEmbeddingRouteApplyWithoutARestarterSaysARestartIsNeeded(t *testing.T) 
 // Review Focus 3: a preview made before the route's space moved does not confirm the new one.
 func TestEmbeddingRouteApplyRefusesAStaleConfirmation(t *testing.T) {
 	store := &fakeSettingsStore{}
-	s := &Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768},
-		restartTrigger: func() { t.Fatal("restarted on a stale confirmation") }}
+	s := asAdmin(&Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probe: cloudProbe(), dims: 768},
+		restartTrigger: func() { t.Fatal("restarted on a stale confirmation") }})
 	rr := httptest.NewRecorder()
 	s.handleApplyEmbeddingRoute(rr, applyRequest(t, cloudRoute, "es1-what-the-operator-saw"))
 	if rr.Code != http.StatusConflict || !strings.Contains(rr.Body.String(), "es1-target") || len(store.upserted) != 0 {
@@ -272,7 +348,7 @@ func TestEmbeddingRouteApplyRefusesAStaleConfirmation(t *testing.T) {
 
 func TestEmbeddingRouteApplyRefusesARefusedRoute(t *testing.T) {
 	store := &fakeSettingsStore{}
-	s := &Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probeErr: embeddings.ErrNoCredential, dims: 768}}
+	s := asAdmin(&Server{settings: store, embeddingRoutes: &fakeEmbeddingRoutes{probeErr: embeddings.ErrNoCredential, dims: 768}})
 	rr := httptest.NewRecorder()
 	s.handleApplyEmbeddingRoute(rr, applyRequest(t, cloudRoute, ""))
 	if rr.Code != http.StatusUnprocessableEntity || len(store.upserted) != 0 {
@@ -290,10 +366,10 @@ func TestEmbeddingRouteEndpointsGuardTheirPreconditions(t *testing.T) {
 	}{
 		{"space without seam", &Server{}, routeRequest(t, http.MethodGet, "/x", nil), http.StatusServiceUnavailable},
 		{"preview without seam", &Server{}, routeRequest(t, http.MethodPost, "/x", cloudRoute), http.StatusServiceUnavailable},
-		{"apply without store", &Server{embeddingRoutes: routes}, applyRequest(t, cloudRoute, "es1-target"), http.StatusServiceUnavailable},
+		{"apply without store", asAdmin(&Server{embeddingRoutes: routes}), applyRequest(t, cloudRoute, "es1-target"), http.StatusServiceUnavailable},
 		{"preview unauthenticated", &Server{embeddingRoutes: routes},
 			httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("{}")), http.StatusUnauthorized},
-		{"preview bad JSON", &Server{embeddingRoutes: routes},
+		{"preview bad JSON", asAdmin(&Server{embeddingRoutes: routes}),
 			withPrincipal(httptest.NewRequest(http.MethodPost, "/x", strings.NewReader("{")), "op-1"), http.StatusBadRequest},
 	} {
 		rr := httptest.NewRecorder()

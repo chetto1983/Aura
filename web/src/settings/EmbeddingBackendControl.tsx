@@ -19,8 +19,10 @@ import {
 } from './embeddingBackendState';
 import {
   EMBEDDING_SPACE_QUERY_KEY,
+  EmbeddingRouteRejected,
   applyEmbeddingRoute,
   previewEmbeddingRoute,
+  refusalText,
   type EmbeddingRoutePreview,
 } from './embeddingSpaceApi';
 import type { LoadedState } from './modelSettingsState';
@@ -117,6 +119,8 @@ export function EmbeddingBackendControl({
   async function runPreview() {
     setStatus('previewing');
     setError(undefined);
+    // The old card goes with its tick: a confirmation holds for the numbers it was given on.
+    setPreview(undefined);
     try {
       setPreview({ key: routeKey, value: await previewEmbeddingRoute(route) });
     } catch (err) {
@@ -135,9 +139,21 @@ export function EmbeddingBackendControl({
       await queryClient.invalidateQueries({ queryKey: EMBEDDING_SPACE_QUERY_KEY });
       setStatus(applied.restarting ? 'restarting' : 'restartRequired');
     } catch (err) {
-      setError(t('embeddingRoute.applyFailed', { message: messageOf(err) }));
+      setError(applyError(err));
       setStatus('idle');
     }
+  }
+
+  // A rejected apply leaves a preview that no longer holds: dropping it keeps its tick from
+  // being re-sent, and a refusal is said in the words the preview uses.
+  function applyError(err: unknown): string {
+    if (!(err instanceof EmbeddingRouteRejected)) {
+      return t('embeddingRoute.applyFailed', { message: messageOf(err) });
+    }
+    setPreview(undefined);
+    if (err.message === 'space_changed') return t('embeddingRoute.spaceChanged');
+    const reasons = err.refusals.map((refusal) => refusalText(t, refusal));
+    return t('embeddingRoute.applyFailed', { message: reasons.join(' ') || err.message });
   }
 
   const options: readonly RouteOption<EmbeddingBackendChoice>[] = [

@@ -64,12 +64,24 @@ func (v EmbeddingRouteValues) embedConfig() config.EmbedConfig {
 	}
 }
 
-func (v EmbeddingRouteValues) rows() map[string]string {
+// rows splits the route into rows to write and rows to delete. A value the environment already
+// names is deleted rather than written: a route set back to it follows the environment, and the
+// compose the updater delivers, again instead of pinning today's value for good.
+func (v EmbeddingRouteValues) rows(environment config.EmbedConfig) (map[string]string, []string) {
 	embed := v.embedConfig()
-	return map[string]string{
-		"AURA_EMBED_BASE_URL": embed.BaseURL, "AURA_EMBED_MODEL": embed.CloudModel,
-		"AURA_EMBED_CLOUD_BASE_URL": embed.CloudBaseURL,
+	upserts, deletes := map[string]string{}, []string{}
+	for _, row := range []struct{ key, value, environment string }{
+		{"AURA_EMBED_BASE_URL", embed.BaseURL, environment.BaseURL},
+		{"AURA_EMBED_MODEL", embed.CloudModel, environment.CloudModel},
+		{"AURA_EMBED_CLOUD_BASE_URL", embed.CloudBaseURL, environment.CloudBaseURL},
+	} {
+		if row.value == strings.TrimSpace(row.environment) {
+			deletes = append(deletes, row.key)
+		} else {
+			upserts[row.key] = row.value
+		}
 	}
+	return upserts, deletes
 }
 
 // EmbeddingRoutes is what the three endpoints read; the composition root implements it over
@@ -83,6 +95,8 @@ type EmbeddingRoutes interface {
 	Work(ctx context.Context, memorySpace, documentSpace string, limitChars int) (arcadedb.CorpusWork, error)
 	// Dimensions is AURA_EMBED_DIMENSIONS, the documents family's width.
 	Dimensions() int
+	// Environment is the route the process environment names before aura.settings overlays it.
+	Environment() config.EmbedConfig
 }
 
 // SetEmbeddingRoutes wires the embedding route endpoints; until then they answer 503.
@@ -170,6 +184,12 @@ func (s *Server) handleEmbeddingSpace(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "embedding space report unavailable"})
 		return
 	}
+	// Each tenant's database is isolated by the server; a report naming its files is not
+	// every identity's to read.
+	if !s.callerIsAdmin(r) {
+		caller, _ := principalIdentityID(r)
+		reports = slices.DeleteFunc(reports, func(report arcadedb.TenantSpaceReport) bool { return report.IdentityID != caller })
+	}
 	writeJSON(w, embeddingSpaceDTO{
 		Space: memory.ID, SpaceLabel: memory.Label, DocumentsSpace: documents.ID, DocumentsSpaceLabel: documents.Label,
 		FloorsCalibrated: arcadedb.FloorsCalibrated(documents.ID), Tenants: reports,
@@ -225,7 +245,8 @@ func (s *Server) handleApplyEmbeddingRoute(w http.ResponseWriter, r *http.Reques
 	}
 	s.settingsMu.Lock()
 	defer s.settingsMu.Unlock()
-	if _, err := s.settings.ReplaceMany(r.Context(), body.rows(), nil, actor); err != nil {
+	upserts, deletes := body.rows(s.embeddingRoutes.Environment())
+	if _, err := s.settings.ReplaceMany(r.Context(), upserts, deletes, actor); err != nil {
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "settings store unavailable"})
 		return
 	}
@@ -239,7 +260,8 @@ func (s *Server) handleApplyEmbeddingRoute(w http.ResponseWriter, r *http.Reques
 }
 
 // embeddingRouteRequest answers for everything a route request must pass before it is read:
-// the seam, the caller, the capability the route keys require, and a body that decodes.
+// the seam, the caller, the capability the route keys require (identity.create: they are
+// admin-only), and a body that decodes.
 func (s *Server) embeddingRouteRequest(w http.ResponseWriter, r *http.Request, body any) (string, bool) {
 	if s.embeddingRoutes == nil {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "embedding routes not configured"})

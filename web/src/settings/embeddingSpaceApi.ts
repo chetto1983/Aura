@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import { readJSON } from './settingsApi';
 
 // The embedding route changes only through a measured preview and a confirmed apply (spec
@@ -56,6 +57,14 @@ export interface RouteRefusal {
   readonly detail?: string;
 }
 
+/** A refusal in the cockpit's words; a code the cockpit predates shows the daemon's detail. */
+export function refusalText(t: TFunction, refusal: RouteRefusal): string {
+  return t(`embeddingRoute.refusals.${refusal.code}`, {
+    detail: refusal.detail ?? '',
+    defaultValue: refusal.detail ?? refusal.code,
+  });
+}
+
 export interface EmbeddingRoutePreview {
   readonly space: string;
   readonly space_label: string;
@@ -98,26 +107,51 @@ export async function fetchEmbeddingSpace(): Promise<EmbeddingSpaceState> {
   return readJSON<EmbeddingSpaceState>(res);
 }
 
-function postRoute<T>(path: string, body: unknown): Promise<T> {
+function postRoute(path: string, body: unknown): Promise<Response> {
   return fetch(path, {
     method: 'POST',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify(body),
-  }).then((res) => readJSON<T>(res));
+  });
 }
 
-export function previewEmbeddingRoute(route: EmbeddingRoute): Promise<EmbeddingRoutePreview> {
-  return postRoute<EmbeddingRoutePreview>('/api/settings/embedding-route/preview', route);
+export async function previewEmbeddingRoute(route: EmbeddingRoute): Promise<EmbeddingRoutePreview> {
+  return readJSON<EmbeddingRoutePreview>(
+    await postRoute('/api/settings/embedding-route/preview', route),
+  );
+}
+
+/** The daemon refused the apply: the route's space moved since the preview (space_changed), or
+ * its own re-probe refused the route (route_refused). The preview on screen no longer holds. */
+export class EmbeddingRouteRejected extends Error {
+  readonly refusals: readonly RouteRefusal[];
+
+  constructor(reason: 'space_changed' | 'route_refused', refusals: readonly RouteRefusal[]) {
+    super(reason);
+    this.name = 'EmbeddingRouteRejected';
+    this.refusals = refusals;
+  }
 }
 
 /** confirmSpace is the preview's target: the daemon recomputes it and refuses a mismatch. */
-export function applyEmbeddingRoute(
+export async function applyEmbeddingRoute(
   route: EmbeddingRoute,
   confirmSpace: string,
 ): Promise<EmbeddingRouteApplied> {
-  return postRoute<EmbeddingRouteApplied>('/api/settings/embedding-route', {
+  const res = await postRoute('/api/settings/embedding-route', {
     ...route,
     confirm_space: confirmSpace,
   });
+  if (res.status === 409 || res.status === 422) {
+    const body = (await res
+      .clone()
+      .json()
+      .catch(() => undefined)) as
+      { readonly error?: unknown; readonly refusals?: readonly RouteRefusal[] } | undefined;
+    if (body?.error === 'space_changed' || body?.error === 'route_refused') {
+      throw new EmbeddingRouteRejected(body.error, body.refusals ?? []);
+    }
+  }
+  return readJSON<EmbeddingRouteApplied>(res);
 }

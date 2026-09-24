@@ -149,17 +149,46 @@ describe('EmbeddingBackendControl route change', () => {
     ).toBeTruthy();
   });
 
-  it('shows why an apply was refused and lets the operator try again', async () => {
+  // A 409 means the preview on screen names a space the daemon no longer computes: the card
+  // goes, so its tick cannot be re-sent, and the operator is told to preview again.
+  it('drops a preview whose space moved before the apply, and says to preview again', async () => {
     stubRoute({ status: 409, body: { error: 'space_changed', space: 'es1-other' } });
     renderControl();
-    const card = await previewANewLocalBase();
-    confirmAndApply(card);
+    confirmAndApply(await previewANewLocalBase());
     expect((await screen.findByRole('alert')).textContent).toBe(
-      'The change was not applied: space_changed',
+      'The route’s space changed since the preview. Preview it again.',
     );
+    expect(screen.queryByRole('region', { name: 'What this change does' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Preview change' }).hasAttribute('disabled')).toBe(
       false,
     );
+  });
+
+  it('says why the apply’s own probe refused the route', async () => {
+    stubRoute({
+      status: 422,
+      body: { error: 'route_refused', refusals: [{ code: 'key_missing' }] },
+    });
+    renderControl();
+    confirmAndApply(await previewANewLocalBase());
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'The change was not applied: This cloud route needs an OpenRouter key, and none is configured.',
+    );
+    expect(screen.queryByRole('region', { name: 'What this change does' })).toBeNull();
+  });
+
+  it('asks for the confirmation again on every new preview', async () => {
+    stubRoute({ status: 200, body: {} });
+    renderControl();
+    fireEvent.click(within(await previewANewLocalBase()).getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Preview change' }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Preview change' }).hasAttribute('disabled')).toBe(
+        false,
+      );
+    });
+    const card = await screen.findByRole('region', { name: 'What this change does' });
+    expect(within(card).getByRole('checkbox')).toHaveProperty('checked', false);
   });
 
   it('shows a failed preview', async () => {

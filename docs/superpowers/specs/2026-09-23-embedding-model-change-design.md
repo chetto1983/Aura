@@ -301,6 +301,16 @@ Amended 2026-09-24 in plan 5:
   that answered is measured against the corpus even when refused.
 - The apply is in the HTTP idempotency inventory; the preview writes nothing and is listed
   as read-only.
+- **The route is an admin's.** Every identity holds `governance.write` (D-01), and a route
+  change re-embeds every tenant, restarts the daemon and bills the whole corpus, so the three
+  keys join `adminOnlySettingKeys`: preview and apply take `identity.create`, like
+  `AURA_LLM_*`. The space report walks every tenant's database; a member sees only their own
+  row (final review, findings 1 and 2).
+- **The apply writes only what the environment does not name.** A value equal to the one the
+  process environment gave at boot deletes its row instead, so a route set back to local
+  follows the environment, and the compose the updater delivers, again rather than pinning
+  today's value. An empty local base stays a `no_route` refusal: switching dense retrieval
+  off is an environment choice, not a cockpit one (final review, finding 12).
 
 ### §5. The pass for the three Go types
 

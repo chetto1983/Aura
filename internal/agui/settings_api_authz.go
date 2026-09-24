@@ -1,6 +1,7 @@
 package agui
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/identity"
@@ -22,6 +23,11 @@ var adminOnlySettingKeys = map[string]struct{}{
 	"AURA_VIDEO_MODEL":           {},
 	"AURA_VIDEO_INLINE_WAIT_SEC": {},
 	"AURA_ASSET_MAX_VIDEO_BYTES": {},
+	// The embedding route re-embeds every tenant, restarts the daemon and bills the whole
+	// corpus to the deployment's key (settings_embedding_route.go).
+	"AURA_EMBED_BASE_URL":       {},
+	"AURA_EMBED_MODEL":          {},
+	"AURA_EMBED_CLOUD_BASE_URL": {},
 }
 
 // mintedSettingKeys are written only by the reconciler: nobody types the services key.
@@ -44,6 +50,20 @@ var callTimeSettingKeys = map[string]struct{}{
 func isCallTimeSetting(key string) bool {
 	_, ok := callTimeSettingKeys[key]
 	return ok
+}
+
+// callerIsAdmin fails closed: no identity seam, no principal or a failed read all mean "member".
+func (s *Server) callerIsAdmin(r *http.Request) bool {
+	id, ok := principalIdentityID(r)
+	if !ok || s.idAdmin == nil {
+		return false
+	}
+	admin, err := s.idAdmin.HasCapability(r.Context(), id, identity.CapIdentityCreate)
+	if err != nil {
+		slog.Warn("admin check failed", "path", r.URL.Path, "err", err)
+		return false
+	}
+	return admin
 }
 
 // authorizeSettingWrite refuses, and answers for, a write the caller may not make: a minted key

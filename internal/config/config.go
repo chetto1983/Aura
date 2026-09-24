@@ -417,7 +417,7 @@ func loadBase() *Config {
 			Password:     pgPassword,
 		},
 		DocumentRetrieval: loadDocumentRetrievalConfig(),
-		Embed:             loadEmbed(),
+		Embed:             LoadEmbed(),
 		ArcadeDB:          loadArcadeDB(),
 		RunDir:            runDir,
 		RunDirErr:         runDirErr,

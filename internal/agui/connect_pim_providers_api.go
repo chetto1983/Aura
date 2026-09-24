@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/pimprovider"
 )
 
@@ -147,18 +146,4 @@ func pimProviderView(provider string, app pimprovider.App, configured, admin boo
 		view.RedirectURI = PIMGoogleRelayRedirectURI
 	}
 	return view
-}
-
-// callerIsAdmin fails closed: no identity seam, no principal or a failed read all mean "member".
-func (s *Server) callerIsAdmin(r *http.Request) bool {
-	id, ok := principalIdentityID(r)
-	if !ok || s.idAdmin == nil {
-		return false
-	}
-	admin, err := s.idAdmin.HasCapability(r.Context(), id, identity.CapIdentityCreate)
-	if err != nil {
-		slog.Warn("pim providers: admin check failed", "err", err)
-		return false
-	}
-	return admin
 }

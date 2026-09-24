@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  EmbeddingRouteRejected,
   applyEmbeddingRoute,
   fetchEmbeddingSpace,
   previewEmbeddingRoute,
@@ -58,5 +59,21 @@ describe('embeddingSpaceApi', () => {
   it('surfaces the reason the daemon gives for a refused apply', async () => {
     stub(409, { error: 'space_changed', space: 'es1-other' });
     await expect(applyEmbeddingRoute(route, 'es1-target')).rejects.toThrow('space_changed');
+  });
+
+  it('carries the refusals of an apply the daemon re-probed and refused', async () => {
+    stub(422, { error: 'route_refused', refusals: [{ code: 'probe_failed', detail: 'HTTP 429' }] });
+    const rejected = await applyEmbeddingRoute(route, 'es1-target').catch((err: unknown) => err);
+    expect(rejected).toBeInstanceOf(EmbeddingRouteRejected);
+    expect((rejected as EmbeddingRouteRejected).refusals).toEqual([
+      { code: 'probe_failed', detail: 'HTTP 429' },
+    ]);
+  });
+
+  it('keeps any other failure a plain error with the daemon’s message', async () => {
+    stub(409, { error: 'idempotency key reused' });
+    const rejected = await applyEmbeddingRoute(route, 'es1-target').catch((err: unknown) => err);
+    expect(rejected).not.toBeInstanceOf(EmbeddingRouteRejected);
+    expect((rejected as Error).message).toBe('idempotency key reused');
   });
 });

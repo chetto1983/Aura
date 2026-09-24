@@ -16,6 +16,10 @@ import (
 // read and one synthetic batch.
 const embeddingProbeTimeout = 30 * time.Second
 
+// bootEmbedEnvironment is the embedding route the environment named when the process started.
+// Package variables initialise before main, so before the aura.settings overlay rewrites it.
+var bootEmbedEnvironment = config.LoadEmbed()
+
 // embeddingRoutes answers the cockpit's embedding endpoints (agui.EmbeddingRoutes) from the
 // daemon's own two embedders, the tenant walk the memory pass uses, and the route probe.
 type embeddingRoutes struct {
@@ -24,6 +28,7 @@ type embeddingRoutes struct {
 	key               func() string
 	dims              int
 	http              *http.Client
+	environment       config.EmbedConfig
 }
 
 func (e *embeddingRoutes) Current(ctx context.Context) (embeddings.Space, embeddings.Space, error) {
@@ -62,6 +67,8 @@ func (e *embeddingRoutes) Probe(ctx context.Context, embed config.EmbedConfig) (
 
 func (e *embeddingRoutes) Dimensions() int { return e.dims }
 
+func (e *embeddingRoutes) Environment() config.EmbedConfig { return e.environment }
+
 // wireEmbeddingRoutes wires the three embedding route endpoints; without a memory server they
 // stay unwired and answer 503.
 func wireEmbeddingRoutes(server *agui.Server, chat *chatEnv) {
@@ -72,6 +79,6 @@ func wireEmbeddingRoutes(server *agui.Server, chat *chatEnv) {
 	server.SetEmbeddingRoutes(&embeddingRoutes{
 		memory: chat.memoryEmbedder, documents: chat.documentEmbedder, corpus: corpus,
 		key: liveKey(chat.llmRuntime), dims: chat.cfg.Embed.Dimensions,
-		http: &http.Client{Timeout: embeddingProbeTimeout},
+		http: &http.Client{Timeout: embeddingProbeTimeout}, environment: bootEmbedEnvironment,
 	})
 }
