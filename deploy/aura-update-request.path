@@ -1,0 +1,16 @@
+# Starts the Aura updater the moment the cockpit writes a decision, instead of on the next
+# timer tick. Installed and enabled by deploy/aura-image-update.sh itself; the file it watches
+# is written by Aura through the /opt/aura/update bind mount (internal/hostupdate).
+#
+# A write while a tick is already running is folded into that tick by systemd; the updater
+# re-reads the request before it exits for exactly that case.
+
+[Unit]
+Description=Apply an Aura update decision from the cockpit
+
+[Path]
+PathChanged=/opt/aura/update/request
+Unit=aura-image-update.service
+
+[Install]
+WantedBy=paths.target

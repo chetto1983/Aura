@@ -15,9 +15,13 @@ printf 'old compose' >"$INSTALL_DIR/compose.yaml"
 printf '#!/usr/bin/env bash\nexit 33\n' >"$AURA_IMAGE_UPDATE_BIN"
 chmod +x "$AURA_IMAGE_UPDATE_BIN"
 cp "$repo_root/deploy/aura-image-update.sh" "$fixture/payload/deploy/aura-image-update.sh"
+cp "$repo_root/deploy/aura-update-consent.sh" "$fixture/payload/deploy/aura-update-consent.sh"
 cp "$repo_root/scripts/appliance_posture.sh" "$fixture/payload/scripts/appliance_posture.sh"
 cp "$repo_root/compose.yaml" "$fixture/payload/compose.yaml"
-(cd "$fixture/payload" && sha256sum compose.yaml deploy/aura-image-update.sh scripts/appliance_posture.sh >payload_manifest.txt)
+(cd "$fixture/payload" && sha256sum compose.yaml deploy/aura-image-update.sh deploy/aura-update-consent.sh \
+  scripts/appliance_posture.sh >payload_manifest.txt)
+# The updater sources its consent functions from the payload an earlier tick installed.
+install -D -m 0755 "$repo_root/deploy/aura-update-consent.sh" "$INSTALL_DIR/deploy/aura-update-consent.sh"
 printf 'persisted PostgreSQL settings' >"$fixture/postgres-volume"
 printf 'derived runtime projection' >"$fixture/aura-cloudflared-state"
 cat >"$fixture/bin/docker" <<'STUB'
@@ -40,8 +44,16 @@ case "$*" in
   inspect\ --format\ * )
     case "$3" in
       '{{.Image}}') echo image-id ;;
+      '{{.Config.Image}}') echo ghcr.io/chetto1983/aura-cloudflared:edge ;;
       '{{.State.Status}}') echo running ;;
       '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}') echo healthy ;;
+      *) exit 1 ;;
+    esac ;;
+  image\ inspect\ --format\ * )
+    case "$4" in
+      '{{.Id}}') echo image-id ;;
+      '{{.Created}}') echo 2026-09-24T06:47:13Z ;;
+      *Labels*) echo 7886200e539046d3b7dc47176facddb74f98ce6b ;;
       *) exit 1 ;;
     esac ;;
   'compose config --images'|'images --no-trunc --format {{.Repository}}:{{.Tag}} {{.ID}}'|'image prune --force') ;;

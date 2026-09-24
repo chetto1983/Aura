@@ -491,6 +491,7 @@ provision_gvisor
 step "Installing the Compose payload"
 
 as_root mkdir -p "$INSTALL_DIR" "$INSTALL_DIR/caddy" "$INSTALL_DIR/deploy" "$INSTALL_DIR/backups" "$INSTALL_DIR/scripts" "$INSTALL_DIR/searxng" \
+  "$INSTALL_DIR/update" \
   "$INSTALL_DIR/observability/grafana/dashboards" \
   "$INSTALL_DIR/observability/grafana/provisioning/dashboards" \
   "$INSTALL_DIR/observability/grafana/provisioning/datasources" \
@@ -533,6 +534,8 @@ download_file deploy/aura.service deploy/aura.service
 download_file deploy/aura-image-update.sh deploy/aura-image-update.sh
 download_file deploy/aura-image-update.service deploy/aura-image-update.service
 download_file deploy/aura-image-update.timer deploy/aura-image-update.timer
+download_file deploy/aura-update-consent.sh deploy/aura-update-consent.sh
+download_file deploy/aura-update-request.path deploy/aura-update-request.path
 download_file searxng/settings.yml searxng/settings.yml
 download_file searxng/limiter.toml searxng/limiter.toml
 download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh

@@ -54,7 +54,24 @@ echo "ok: the updater sources without running"
   touch "$INSTALL_DIR/compose.yaml"
   printf 'database state' >"$INSTALL_DIR/postgres-sentinel"
   printf 'projection state' >"$INSTALL_DIR/projection-sentinel"
+  # main sources the consent functions from the installed payload; this one decides to apply
+  # and records nothing, so the dispatch below is all that runs (aura_update_consent_test.sh
+  # drives the real ones).
+  mkdir -p "$INSTALL_DIR/deploy"
+  cat >"$INSTALL_DIR/deploy/aura-update-consent.sh" <<'LIB'
+update_dir() { printf '%s/update' "${INSTALL_DIR}"; }
+ensure_update_channel() { mkdir -p "$(update_dir)"; }
+decide_update() { return 0; }
+load_status() { :; }
+record_status() { :; }
+on_apply_exit() { :; }
+image_revision() { :; }
+rerun_if_asked_meanwhile() { :; }
+LIB
   container_image_id() { echo image-id; }
+  image_id() { echo image-id; }
+  pull_sidecar() { :; }
+  pull_sandbox_images() { :; }
   sync_payload() { UPDATER_CHANGED=0; }
   retire_env_keys() { :; }
   wait_healthy() { :; }
@@ -70,6 +87,7 @@ echo "ok: the updater sources without running"
   }
   main
   grep -qx aura-cloudflared "$fixture/updated-services" || fail 'cloudflared excluded from update'
+  [[ "$(cat "$INSTALL_DIR/update/applied-image")" == image-id ]] || fail 'a finished apply did not record the image it applied'
   [[ "$(cat "$INSTALL_DIR/postgres-sentinel")" == 'database state' ]] || fail 'database state changed'
   [[ "$(cat "$INSTALL_DIR/projection-sentinel")" == 'projection state' ]] || fail 'projection state changed'
 )

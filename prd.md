@@ -954,6 +954,26 @@ Edge and tagged releases have distinct publication contracts. Systemd appliance 
 may apply edge images automatically; pinned deployments have an explicit update process.
 Acceptance records source revisions and image digests. Hot settings are not rollouts.
 
+An edge appliance downloads every build on each tick but restarts into it only when an
+admin (`identity.create`) asks from the cockpit, when Aura has been idle for 15 minutes
+with no tool call or job running, or once the first pending build has waited 24 hours;
+an admin may defer up to that deadline, and members see only the restart. The channel is
+`/opt/aura/update`, bind-mounted at `AURA_UPDATE_STATE_DIR` (`/run/aura-update`): the
+updater writes `status`, Aura writes `request` and a per-minute `activity` report, each
+one writer per file by atomic rename, and a stale report reads as idle so a down Aura
+never blocks the update that may fix it. A systemd `.path` unit on `request` starts the
+updater at once; the updater enables it itself, so hosts installed earlier gain it on
+their next tick. The policy lives in `/etc/default/aura` (`AURA_UPDATE_IDLE_SECONDS`,
+`AURA_UPDATE_MAX_DEFER_SECONDS`, `AURA_UPDATE_ACTIVITY_STALE_SECONDS`). A host rebooted
+onto the new image applies the rest without asking, because image and payload must not
+run apart. Measured 2026-09-24 on the lab VM: the path unit started the updater about
+300 ms after the write, and a trigger arriving while the oneshot ran was folded into it
+and lost, so the updater re-reads `request` before it exits. The activity query ran
+under 1 ms over 1M `tool_invocations` rows (Postgres 18 skip scan, no new index);
+`conversations` is fail-closed under row security, so the last chat is read per
+identity. Not shown by these measurements: behaviour under a slow or failing registry,
+several appliances at once, and whether 15 minutes suits real usage.
+
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
 new identities, and backs up every 60 minutes to a separate volume. Retention is

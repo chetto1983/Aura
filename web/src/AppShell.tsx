@@ -35,6 +35,8 @@ import { useSharePanel } from './shell/useSharePanel';
 import { ShareModal } from './chat/share/ShareModal';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
 import { MediaEditorProvider } from './mediaEdit/MediaEditorProvider';
+import { SystemUpdateLayer } from './update/SystemUpdateLayer';
+import { SystemUpdateProvider } from './update/SystemUpdateProvider';
 import { Button } from '@/components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable';
 
@@ -390,187 +392,193 @@ export function AppShell() {
   );
 
   return (
-    <MediaEditorProvider>
-      <WorkerWatchProvider
-        conversationId={activeThreadId}
-        onWatchWorker={workerPane.openWorker}
-        onViewReport={openArtifacts}
-      >
-        {/* `relative` is load-bearing, not cosmetic: it makes the shell the containing
+    <SystemUpdateProvider>
+      <MediaEditorProvider>
+        <WorkerWatchProvider
+          conversationId={activeThreadId}
+          onWatchWorker={workerPane.openWorker}
+          onViewReport={openArtifacts}
+        >
+          {/* `relative` is load-bearing, not cosmetic: it makes the shell the containing
           block for stray position:absolute descendants (sr-only status spans in the
           chat/tool cards) that would otherwise resolve to the ICB at their deep static
           Y in a long chat, escape every overflow-y-auto clip, and extend the document
           height — the "empty band below the footer" over-scroll. With the shell as
           their containing block, its overflow-hidden clips them at 100dvh. */}
-        <div
-          className="aura-shell relative grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
-          data-surface={surface}
-          {...edgeSwipe}
-        >
-          <ShellHeader
-            activeMode={surface}
-            approvalsOpen={approvalsOpen}
-            modes={desktopModes}
-            onModeSelect={(next) => {
-              setSurface(next);
-              if (next !== 'chat') surfaces.closeNav();
-            }}
-            onNavigationOpen={surfaces.openNav}
-            navigationAvailable
-            onApprovalsToggle={() => {
-              setApprovalsOpen((v) => !v);
-            }}
-            onApprovalOpen={(id) => {
-              selectThread(id);
-              setApprovalsOpen(false);
-            }}
-            logoutPending={logoutPending}
-            onLogout={() => {
-              void logout();
-            }}
-          />
-
-          {/* Chat keeps the resizable conversation rail while the workspace gets the
-          remaining row width; runtime readiness is summarized in the header. */}
-          {showConversationNavigation ? (
-            <main className="shell-main grid min-h-0 grid-cols-1">
-              <ResizablePanelGroup
-                {...chatShellLayout}
-                id={CHAT_SHELL_LAYOUT_ID}
-                orientation="horizontal"
-                resizeTargetMinimumSize={{ coarse: 32, fine: 12 }}
-                className="shell-main-resizable min-w-0"
-              >
-                <ResizablePanel
-                  id="chat-navigation"
-                  defaultSize="15rem"
-                  minSize="13rem"
-                  maxSize="28rem"
-                  groupResizeBehavior="preserve-pixel-size"
-                  className="h-full min-h-0"
-                >
-                  <aside
-                    aria-label={t('shell.navigation')}
-                    className="shell-side-nav flex h-full min-h-0 flex-col border-r border-border bg-surface"
-                  >
-                    {navigation}
-                  </aside>
-                </ResizablePanel>
-                <ResizableHandle
-                  id="chat-navigation-resizer"
-                  aria-label={t('shell.resizeNavigation')}
-                  className="shell-nav-resize-handle"
-                  withHandle
-                />
-                <ResizablePanel
-                  id="chat-workspace"
-                  minSize={CHAT_WORKSPACE_MIN_WIDTH}
-                  className="h-full min-h-0"
-                  style={{ overflow: 'hidden' }}
-                >
-                  <VoiceModeProvider>
-                    <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
-                      <ChatWorkspaceControls
-                        artifactsActive={artifactsActive}
-                        onArtifactsToggle={toggleArtifacts}
-                        onShareOpen={openShare}
-                      />
-                      {workspace}
-                    </div>
-                  </VoiceModeProvider>
-                </ResizablePanel>
-                {workerPane.workerPanelMounted ? (
-                  <WorkerResizablePanel
-                    conversationId={activeThreadId}
-                    childId={workerPane.watchedChildId}
-                    onClose={workerPane.closeWorker}
-                  />
-                ) : artifactsPanelMounted ? (
-                  <ArtifactsResizablePanel threadId={activeThreadId} onClose={closeDesktopPanel} />
-                ) : null}
-              </ResizablePanelGroup>
-            </main>
-          ) : (
-            <main className="shell-main grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)]">
-              {workspace}
-            </main>
-          )}
-
-          <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
-            <RuntimeFooter
-              usageState={usageState}
-              conversationId={activeThreadId}
-              {...(contextWindow !== undefined ? { windowTokens: contextWindow } : {})}
-              {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
+          <div
+            className="aura-shell relative grid h-[100dvh] min-h-0 overflow-hidden bg-bg text-text [grid-template-rows:auto_minmax(0,1fr)_auto]"
+            data-surface={surface}
+            {...edgeSwipe}
+          >
+            <ShellHeader
+              activeMode={surface}
+              approvalsOpen={approvalsOpen}
+              modes={desktopModes}
+              onModeSelect={(next) => {
+                setSurface(next);
+                if (next !== 'chat') surfaces.closeNav();
+              }}
+              onNavigationOpen={surfaces.openNav}
+              navigationAvailable
+              onApprovalsToggle={() => {
+                setApprovalsOpen((v) => !v);
+              }}
+              onApprovalOpen={(id) => {
+                selectThread(id);
+                setApprovalsOpen(false);
+              }}
+              logoutPending={logoutPending}
+              onLogout={() => {
+                void logout();
+              }}
             />
-          </BottomDock>
 
-          <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>
-            {mobileNavigation}
-          </Drawer>
+            {/* Chat keeps the resizable conversation rail while the workspace gets the
+          remaining row width; runtime readiness is summarized in the header. */}
+            {showConversationNavigation ? (
+              <main className="shell-main grid min-h-0 grid-cols-1">
+                <ResizablePanelGroup
+                  {...chatShellLayout}
+                  id={CHAT_SHELL_LAYOUT_ID}
+                  orientation="horizontal"
+                  resizeTargetMinimumSize={{ coarse: 32, fine: 12 }}
+                  className="shell-main-resizable min-w-0"
+                >
+                  <ResizablePanel
+                    id="chat-navigation"
+                    defaultSize="15rem"
+                    minSize="13rem"
+                    maxSize="28rem"
+                    groupResizeBehavior="preserve-pixel-size"
+                    className="h-full min-h-0"
+                  >
+                    <aside
+                      aria-label={t('shell.navigation')}
+                      className="shell-side-nav flex h-full min-h-0 flex-col border-r border-border bg-surface"
+                    >
+                      {navigation}
+                    </aside>
+                  </ResizablePanel>
+                  <ResizableHandle
+                    id="chat-navigation-resizer"
+                    aria-label={t('shell.resizeNavigation')}
+                    className="shell-nav-resize-handle"
+                    withHandle
+                  />
+                  <ResizablePanel
+                    id="chat-workspace"
+                    minSize={CHAT_WORKSPACE_MIN_WIDTH}
+                    className="h-full min-h-0"
+                    style={{ overflow: 'hidden' }}
+                  >
+                    <VoiceModeProvider>
+                      <div className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+                        <ChatWorkspaceControls
+                          artifactsActive={artifactsActive}
+                          onArtifactsToggle={toggleArtifacts}
+                          onShareOpen={openShare}
+                        />
+                        {workspace}
+                      </div>
+                    </VoiceModeProvider>
+                  </ResizablePanel>
+                  {workerPane.workerPanelMounted ? (
+                    <WorkerResizablePanel
+                      conversationId={activeThreadId}
+                      childId={workerPane.watchedChildId}
+                      onClose={workerPane.closeWorker}
+                    />
+                  ) : artifactsPanelMounted ? (
+                    <ArtifactsResizablePanel
+                      threadId={activeThreadId}
+                      onClose={closeDesktopPanel}
+                    />
+                  ) : null}
+                </ResizablePanelGroup>
+              </main>
+            ) : (
+              <main className="shell-main grid min-h-0 grid-cols-1 lg:grid-cols-[minmax(0,1fr)]">
+                {workspace}
+              </main>
+            )}
 
-          {/* D-04: below `lg` the Artefatti panel collapses into the shared right Drawer, routed
+            <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
+              <RuntimeFooter
+                usageState={usageState}
+                conversationId={activeThreadId}
+                {...(contextWindow !== undefined ? { windowTokens: contextWindow } : {})}
+                {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
+              />
+            </BottomDock>
+
+            <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>
+              {mobileNavigation}
+            </Drawer>
+
+            {/* D-04: below `lg` the Artefatti panel collapses into the shared right Drawer, routed
           through useSurfaceRestore's overlay slot so it obeys "one heavy overlay at a time"
           against the nav drawer. Opened by the same toggle; identical portal/trap/Esc UX. */}
-          <ArtifactsDrawer
-            open={!artifactsDesktop && artifactsActive}
-            threadId={activeThreadId}
-            onClose={closeArtifacts}
-          />
-          <WorkerDrawer
-            open={!workerPane.isDesktop && workerPane.workerActive}
-            conversationId={activeThreadId}
-            childId={workerPane.watchedChildId}
-            onClose={workerPane.closeWorker}
-          />
+            <ArtifactsDrawer
+              open={!artifactsDesktop && artifactsActive}
+              threadId={activeThreadId}
+              onClose={closeArtifacts}
+            />
+            <WorkerDrawer
+              open={!workerPane.isDesktop && workerPane.workerActive}
+              conversationId={activeThreadId}
+              childId={workerPane.watchedChildId}
+              onClose={workerPane.closeWorker}
+            />
 
-          {/* Full-screen onboarding wizard overlay (D-04) — a lazy chunk covering the shell when
+            {/* Full-screen onboarding wizard overlay (D-04) — a lazy chunk covering the shell when
           active. It is NOT a surface/mode; an explicit trigger opens it and its own close button
           (or completion) dismisses it. */}
-          {onboardingOpen ? (
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
-                >
-                  {t('onboarding.starting')}
-                </div>
-              }
-            >
-              <OnboardingWizard
-                onClose={() => {
-                  setOnboardingOpen(false);
-                }}
-              />
-            </Suspense>
-          ) : null}
-          {firstRun.open ? (
-            <Suspense
-              fallback={
-                <div
-                  role="status"
-                  className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
-                >
-                  {t('onboarding.starting')}
-                </div>
-              }
-            >
-              <FirstRunSetup
-                onClose={firstRun.close}
-                profileRequired={firstRun.status?.required ?? true}
-                routeRequired={firstRun.status?.routeRequired ?? false}
-              />
-            </Suspense>
-          ) : null}
-          {/* 37F plan 15: the conditional-mount idiom above (onboarding/profile wizards) — mounted
+            {onboardingOpen ? (
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
+                  >
+                    {t('onboarding.starting')}
+                  </div>
+                }
+              >
+                <OnboardingWizard
+                  onClose={() => {
+                    setOnboardingOpen(false);
+                  }}
+                />
+              </Suspense>
+            ) : null}
+            {firstRun.open ? (
+              <Suspense
+                fallback={
+                  <div
+                    role="status"
+                    className="fixed inset-0 z-50 grid place-items-center bg-bg text-sm text-text-muted"
+                  >
+                    {t('onboarding.starting')}
+                  </div>
+                }
+              >
+                <FirstRunSetup
+                  onClose={firstRun.close}
+                  profileRequired={firstRun.status?.required ?? true}
+                  routeRequired={firstRun.status?.routeRequired ?? false}
+                />
+              </Suspense>
+            ) : null}
+            {/* 37F plan 15: the conditional-mount idiom above (onboarding/profile wizards) — mounted
           only while open, so ShareModal's internal state resets to 'idle' fresh every time
           (D-01: never resumes a stale tier selection or a previous mint's state). */}
-          {shareModalState === 'open' ? (
-            <ShareModal threadId={activeThreadId} onClose={closeShare} />
-          ) : null}
-        </div>
-      </WorkerWatchProvider>
-    </MediaEditorProvider>
+            {shareModalState === 'open' ? (
+              <ShareModal threadId={activeThreadId} onClose={closeShare} />
+            ) : null}
+            <SystemUpdateLayer suppressed={onboardingOpen || firstRun.open} />
+          </div>
+        </WorkerWatchProvider>
+      </MediaEditorProvider>
+    </SystemUpdateProvider>
   );
 }

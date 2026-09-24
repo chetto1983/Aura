@@ -27,6 +27,7 @@ import { shareEn, shareIt } from './resources.share';
 import { studioEn, studioIt } from './resources.studio';
 import { videoStudioEn, videoStudioIt } from './resources.videoStudio';
 import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
+import { updateEn, updateIt } from './resources.update';
 
 export const resources = {
   en: {
@@ -190,6 +191,7 @@ export const resources = {
       ...graphEn,
       ...settingsEn,
       ...remoteAccessEn,
+      ...updateEn,
       ...profileEn,
       ...adminEn,
       ...onboardingEn,
@@ -460,6 +462,7 @@ export const resources = {
       ...graphIt,
       ...settingsIt,
       ...remoteAccessIt,
+      ...updateIt,
       ...profileIt,
       ...adminIt,
       ...onboardingIt,

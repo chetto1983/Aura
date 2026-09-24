@@ -144,6 +144,7 @@ func runServe(args []string) {
 		slog.Warn("aura serve: could not self-issue the first-party MCP grants", "err", err)
 	}
 	env.firstPartyGrants.Start(ctx)
+	env.hostUpdates.Start(ctx)
 	if env.liveMCP != nil {
 		env.liveMCP.StartReconnect(ctx, env.cfg, env.pool)
 	}
@@ -429,6 +430,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer.SetOnboardingService(buildOnboardingService(ctx, chat, onboardingAuthulaProvider, memoryProvisioner))
 	aguiServer.SetOnboardingStatusSource(newOnboardingStatusAdapter(chat))
 	aguiServer.SetProfileEditor(onboarding.NewProfileStore(chat.pool))
+	aguiServer.SetHostUpdate(chat.cfg.UpdateStateDir)
 	// Aura's own MCP sidecars are OAuth resource servers isolated by token subject
 	// (Amendment #147), and nothing but a browser could mint them a token — so they never
 	// mounted. The keeper self-issues that grant for the identities that own one, and
@@ -557,6 +559,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		authulaProvider:           authulaProvider,
 		onboardingAuthulaProvider: onboardingAuthulaProvider,
 		firstPartyGrants:          firstPartyGrants,
+		hostUpdates:               buildHostUpdateWriter(chat.cfg.UpdateStateDir, chat.pool, chat.identity),
 		runRegistry:               runRegistry,
 	}, nil
 }

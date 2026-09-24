@@ -202,6 +202,10 @@ type Server struct {
 	calendarMCPURL    string
 	calendarPublicURL string
 	calendarMCPAuth   MCPAccessTokenProvider
+	// hostUpdateDir is the directory shared with the appliance's host updater
+	// (system_update_api.go); hostUpdateNow is its clock.
+	hostUpdateDir string
+	hostUpdateNow func() time.Time
 	// pimApps is the admin-set OAuth client per managed PIM provider (connect_pim_providers_api.go).
 	pimApps pimProviderApps
 	// runs is the detached-run session registry (fix-plan 1.3 Tier B). Nil = flag
@@ -432,6 +436,9 @@ func (s *Server) Mux() http.Handler {
 	// governance.write on PUT/DELETE) lives in cmd/aura/serve_webui.go.
 	s.registerRemoteAccessRoutes(mux)
 	s.registerSettingsRoutes(mux)
+	// The appliance update prompt (system_update_api.go); the POSTs are mounted behind
+	// identity.create in cmd/aura/serve_webui_musr.go.
+	s.registerSystemUpdateRoutes(mux)
 	// MUSR-01 admin/user distinction (Phase 36 plan 10, D-03/D-26/D-28): GET /api/me
 	// (self-scoped capabilities the SPA reads to hide admin surfaces) + the
 	// /api/admin/{identities,audit} + capability grant/revoke surface. Colocated with

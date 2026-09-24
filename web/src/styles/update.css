@@ -1,0 +1,353 @@
+/* System update: the admin decision dialog, the "restart imminent" banner and the full-screen
+   overlay held while the daemon restarts. Unlayered on purpose: the overlay reuses the shared
+   Dialog and must win over its centred-card utilities. */
+
+.update-dialog__hero {
+  background:
+    radial-gradient(
+      30rem 12rem at 0% 0%,
+      color-mix(in oklab, var(--color-accent) 80%, transparent),
+      transparent 72%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--color-surface-2) 70%, transparent),
+      transparent
+    );
+  border-bottom: 1px solid var(--color-border);
+}
+
+.update-dialog__mark {
+  display: inline-grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border-radius: var(--radius-md);
+  background: var(--color-accent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-info) 34%, transparent);
+  color: var(--color-accent-text);
+}
+
+.update-dialog__mark svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.update-dialog__footer {
+  background: color-mix(in oklab, var(--color-surface-2) 55%, transparent);
+}
+
+.update-rev {
+  padding: 0.12rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-accent-text);
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  letter-spacing: 0.03em;
+}
+
+.update-impact__dot {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-success) 18%, transparent);
+}
+
+.update-impact[data-kind='recent'] .update-impact__dot {
+  background: var(--color-info);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-info) 18%, transparent);
+}
+
+.update-impact[data-kind='running'] .update-impact__dot {
+  background: var(--color-warning);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-warning) 20%, transparent);
+}
+
+.update-indicator__dot {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--color-info);
+  box-shadow: 0 0 0 2px var(--color-surface);
+}
+
+.update-indicator[data-state='failed'] .update-indicator__dot {
+  background: var(--color-danger);
+}
+
+.update-banner {
+  display: inline-flex;
+  max-width: 42rem;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1.1rem 0.6rem 0.85rem;
+  border: 1px solid color-mix(in oklab, var(--color-info) 45%, var(--color-border));
+  border-radius: var(--radius-pill);
+  background: linear-gradient(
+    100deg,
+    color-mix(in oklab, var(--color-accent) 85%, var(--color-surface)),
+    var(--color-surface) 75%
+  );
+  box-shadow: var(--shadow-popover);
+  color: var(--color-text);
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  pointer-events: auto;
+}
+
+.update-banner__beacon {
+  flex: none;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: var(--color-info);
+}
+
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.25rem;
+  padding: 1.5rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(
+      56rem 34rem at 50% 40%,
+      color-mix(in oklab, var(--color-accent) 46%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      38rem 26rem at 10% 100%,
+      color-mix(in oklab, var(--color-info) 14%, transparent),
+      transparent 70%
+    ),
+    color-mix(in oklab, var(--color-bg) 95%, transparent);
+  box-shadow: none;
+  translate: none;
+  transform: none;
+  animation: none;
+  backdrop-filter: blur(14px);
+}
+
+.update-overlay::before {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--color-border) 50%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-border) 50%, transparent) 1px,
+      transparent 1px
+    );
+  background-position: center;
+  background-size: 4.5rem 4.5rem;
+  content: '';
+  mask-image: radial-gradient(circle at 50% 42%, black, transparent 62%);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.update-overlay > * {
+  position: relative;
+}
+
+.update-orbit {
+  position: relative;
+  width: 8.5rem;
+  height: 8.5rem;
+}
+
+.update-orbit > span {
+  position: absolute;
+  border-radius: 50%;
+}
+
+.update-orbit__halo {
+  inset: -1.75rem;
+  background: radial-gradient(
+    circle,
+    color-mix(in oklab, var(--color-info) 30%, transparent),
+    transparent 68%
+  );
+  filter: blur(6px);
+}
+
+.update-orbit__track {
+  inset: 0;
+  border: 1px solid color-mix(in oklab, var(--color-info) 26%, transparent);
+}
+
+.update-orbit__arc {
+  inset: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 58%,
+    color-mix(in oklab, var(--color-info) 40%, transparent) 78%,
+    var(--color-info) 100%
+  );
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), black calc(100% - 2px));
+}
+
+.update-orbit__core {
+  inset: 1.35rem;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  box-shadow: 0 18px 48px -18px color-mix(in oklab, var(--color-info) 60%, transparent);
+}
+
+.update-orbit__core img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.update-progress {
+  position: relative;
+  width: min(15rem, 70vw);
+  height: 2px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: color-mix(in oklab, var(--color-border) 80%, transparent);
+}
+
+.update-progress::after {
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--color-info), transparent);
+  content: '';
+  transform: translateX(75%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .update-dialog > * {
+    animation: update-rise var(--motion-slow) var(--motion-ease-out) both;
+  }
+
+  .update-dialog > :nth-child(2) {
+    animation-delay: 70ms;
+  }
+
+  .update-dialog > :nth-child(3) {
+    animation-delay: 140ms;
+  }
+
+  .update-banner {
+    animation: update-drop var(--motion-slow) var(--motion-ease-out) both;
+  }
+
+  .update-banner__beacon {
+    animation: update-beacon 1.8s var(--motion-ease-out) infinite;
+  }
+
+  .update-overlay {
+    animation: update-fade 480ms var(--motion-ease-out) both;
+  }
+
+  .update-orbit__arc {
+    animation: update-spin 1.6s linear infinite;
+  }
+
+  .update-orbit__halo {
+    animation: update-breathe 3.2s var(--motion-ease-in-out) infinite;
+  }
+
+  .update-progress::after {
+    animation: update-sweep 1.9s var(--motion-ease-in-out) infinite;
+  }
+}
+
+@keyframes update-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes update-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes update-fade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes update-beacon {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-info) 55%, transparent);
+  }
+
+  70%,
+  100% {
+    box-shadow: 0 0 0 0.55rem transparent;
+  }
+}
+
+@keyframes update-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes update-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes update-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+
+  to {
+    transform: translateX(250%);
+  }
+}

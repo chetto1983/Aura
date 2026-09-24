@@ -24,6 +24,15 @@ type Querier interface {
 	AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoThreadParams) (AuraAssets, error)
 	AdvanceCloudflareRemoteAccess(ctx context.Context, arg AdvanceCloudflareRemoteAccessParams) (AuraCloudflareRemoteAccess, error)
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
+	// What the host updater waits on before it restarts Aura on its own, system-wide half: the
+	// newest tool event and job heartbeat, and the work in flight right now. Neither table
+	// carries row security (the gateway reconciler reads tool_invocations the same way).
+	// Measured on 1M synthetic tool rows (2026-09-24): both tool legs stay under 1 ms through the
+	// (tool_name, ts DESC) index by Postgres 18 skip scan, so they need no index of their own.
+	// The start-without-end shape is ListInFlightToolInvocationsBefore's; the reconciler closes
+	// orphaned starts, and the hour bound keeps one it missed from pinning live_runs above zero
+	// forever. A job run counts only while its heartbeat is fresh.
+	ApplianceWorkInFlight(ctx context.Context) (ApplianceWorkInFlightRow, error)
 	// Flip a pending_approval task to active (the cockpit approval, parity with the CLI
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
@@ -309,6 +318,11 @@ type Querier interface {
 	//   an edit SETS it;
 	//   so "was this workspace edited after its last passing verification" is one column.
 	InsertVerificationEvent(ctx context.Context, arg InsertVerificationEventParams) (InsertVerificationEventRow, error)
+	// The per-identity half, run inside WithIdentityTx: conversations are owner-only (migration
+	// 0089), so a table-wide max from the daemon pool reads NULL. last_active_at moves with every
+	// turn (equal to the newest conversation_turns.created_at on the lab VM, 2026-09-24), so a
+	// chat that calls no tool still counts and the turns table is never scanned.
+	LatestConversationActivity(ctx context.Context) (pgtype.Timestamptz, error)
 	// The grantee's half of the two-query read LibreChat runs (findAccessibleResources → the
 	// domain query filtered on those ids): which resources of this type may this identity see
 	// with AT LEAST these permission bits. The bitmask test is `& want = want`, so a view query

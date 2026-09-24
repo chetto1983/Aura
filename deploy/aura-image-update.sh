@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Converge an edge appliance on what master published — ported from wpt-iot's
-# wpt-image-update.sh. One tick, with no operator:
+# wpt-image-update.sh. Every tick downloads what is new and tells the cockpit about it through
+# INSTALL_DIR/update (deploy/aura-update-consent.sh); the restart that applies it waits for an
+# admin's "update now", for Aura to be idle, or for the deadline. Applying is, in order:
 #   1. pulls aura and installs the payload that image carries (compose files, this script, its
 #      units, sidecar config) wherever it differs from the host, so a pin or config change made
 #      in the repo reaches every machine; a new updater re-executes itself before going on;
@@ -22,6 +24,11 @@
 #   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
 #   AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
 #   AURA_SANDBOX_EGRESS_IMAGE=ghcr.io/chetto1983/aura-egress:edge
+#
+# /etc/default/aura may override how long the cockpit can hold an update back:
+#   AURA_UPDATE_IDLE_SECONDS=900            quiet spell before applying on its own
+#   AURA_UPDATE_MAX_DEFER_SECONDS=86400     deadline, counted from the first pending build
+#   AURA_UPDATE_ACTIVITY_STALE_SECONDS=180  an activity report older than this means Aura is down
 
 set -Eeuo pipefail
 
@@ -35,6 +42,10 @@ APPLIED_MANIFEST=payload_manifest.applied
 # AURA_PIM_EXTERNAL_BASE_URL went on 2026-09-23: Aura now tells the PIM sidecar the cockpit
 # origin on every Google connect and serves the callback itself.
 RETIRED_ENV_KEYS=(POSTGRES_IMAGE AURA_EMBED_IMAGE AURA_EMBED_MODEL_PATH AURA_EMBED_MODEL_URL AURA_EMBED_DIMENSIONS AURA_OTEL_ENDPOINT AURA_PIM_EXTERNAL_BASE_URL)
+# Repo-built services on the edge channel's moving tags, refreshed after aura.
+SIDECARS=(arcadedb-mcp aura-pim-mcp whatsapp caddy aura-ingest aura-cloudflared)
+# Sourced by main from INSTALL_DIR; replacing it counts as a new updater (see sync_payload).
+CONSENT_LIB=deploy/aura-update-consent.sh
 
 container_image_id() {
   local container_id
@@ -128,6 +139,8 @@ sync_payload() {
   while read -r sum rel; do
     [[ "$(file_sha256 "${INSTALL_DIR}/${rel}")" == "${sum}" ]] || changed+=("${rel}")
   done <"${work}/payload_manifest.txt"
+  # This tick already sourced the old consent functions; only a fresh process reads the new.
+  [[ " ${changed[*]} " != *" ${CONSENT_LIB} "* ]] || UPDATER_CHANGED=1
 
   if ((${#changed[@]} > 0)); then
     stamp="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -251,6 +264,24 @@ update_sidecar() {
   echo "${svc}: ${svc_before} -> ${svc_after}"
 }
 
+# Download only: a pulled tag leaves the running container on its old image until the apply.
+pull_sidecar() {
+  [[ -n "$(docker compose ps -q "$1")" ]] || return 0
+  docker compose pull "$1" >/dev/null 2>&1 || echo "$1: pull failed (local-only pin or registry unreachable); skipped."
+}
+
+image_id() {
+  docker image inspect --format '{{.Id}}' "$1" 2>/dev/null
+}
+
+# A running service whose tag now names another image than the one its container runs.
+service_behind() {
+  local cid
+  cid="$(docker compose ps -q "$1")"
+  [[ -n "${cid}" ]] || return 1
+  [[ "$(docker inspect --format '{{.Image}}' "${cid}")" != "$(image_id "$(docker inspect --format '{{.Config.Image}}' "${cid}")")" ]]
+}
+
 # Per-user boxes are aura's own containers, not compose services, and aura pulls a box image
 # only when it is missing locally (DockerBackend.ensureImage): a tag already present is never
 # refreshed, and an existing box restarts on its old image forever. So both tags are pulled
@@ -258,69 +289,58 @@ update_sidecar() {
 # the volumes stay -- for aura to recreate on that identity's next tool call. The pair goes
 # together because egress joins the box's network by container ID, and aura is restarted
 # afterwards because its idle reaper still holds the removed containers' IDs.
-refresh_sandbox_images() {
-  local box_image egress_image box_id egress_id name egress egress_now removed=0
+pull_sandbox_images() {
+  local box_image egress_image
   box_image="$(env_value AURA_SANDBOX_IMAGE)"
   egress_image="$(env_value AURA_SANDBOX_EGRESS_IMAGE)"
-  if [[ -z "${box_image}" || -z "${egress_image}" ]]; then
+  [[ -n "${box_image}" && -n "${egress_image}" ]] || return 0
+  if ! docker pull -q "${box_image}" >/dev/null || ! docker pull -q "${egress_image}" >/dev/null; then
+    echo "sandbox: pull failed (local-only pin or registry unreachable); skipped."
+  fi
+}
+
+# Prints every box whose container, or whose egress sidecar, runs an image its tag no longer
+# names: known while checking, so the cockpit can say so before anything is removed.
+stale_boxes() {
+  local box_image egress_image box_id egress_id name egress_now
+  box_image="$(env_value AURA_SANDBOX_IMAGE)"
+  egress_image="$(env_value AURA_SANDBOX_EGRESS_IMAGE)"
+  [[ -n "${box_image}" && -n "${egress_image}" ]] || return 0
+  box_id="$(image_id "${box_image}")" && egress_id="$(image_id "${egress_image}")" || return 0
+  while read -r name; do
+    [[ "${name}" == aura-box-* ]] || continue
+    egress_now="$(docker inspect --format '{{.Image}}' "aura-egress-${name#aura-box-}" 2>/dev/null || true)"
+    if [[ "$(docker inspect --format '{{.Image}}' "${name}")" != "${box_id}" ||
+      ("${egress_now}" != '' && "${egress_now}" != "${egress_id}") ]]; then
+      echo "${name}"
+    fi
+  done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
+}
+
+refresh_sandbox_images() {
+  local name removed=0
+  if [[ -z "$(env_value AURA_SANDBOX_IMAGE)" || -z "$(env_value AURA_SANDBOX_EGRESS_IMAGE)" ]]; then
     echo "sandbox: no images pinned in .env; skipped."
     return 0
   fi
-  if ! docker pull -q "${box_image}" >/dev/null || ! docker pull -q "${egress_image}" >/dev/null; then
-    echo "sandbox: pull failed (local-only pin or registry unreachable); skipped."
-    return 0
-  fi
-  box_id="$(docker image inspect --format '{{.Id}}' "${box_image}")"
-  egress_id="$(docker image inspect --format '{{.Id}}' "${egress_image}")"
   while read -r name; do
-    [[ "${name}" == aura-box-* ]] || continue
-    egress="aura-egress-${name#aura-box-}"
-    egress_now="$(docker inspect --format '{{.Image}}' "${egress}" 2>/dev/null || true)"
-    if [[ "$(docker inspect --format '{{.Image}}' "${name}")" == "${box_id}" &&
-      ("${egress_now}" == '' || "${egress_now}" == "${egress_id}") ]]; then
-      continue
-    fi
-    [[ -z "${egress_now}" ]] || docker rm -f "${egress}" >/dev/null
+    [[ -n "${name}" ]] || continue
+    docker rm -f "aura-egress-${name#aura-box-}" >/dev/null 2>&1 || true
     docker rm -f "${name}" >/dev/null
     echo "sandbox: ${name} ran a superseded image; removed for aura to recreate."
     removed=$((removed + 1))
-  done < <(docker ps -a --filter name=aura-box- --format '{{.Names}}')
+  done < <(stale_boxes)
   if ((removed > 0)); then
     docker compose restart aura
     wait_healthy aura
   fi
 }
 
-main() {
-  # shellcheck source=/dev/null
-  [[ ! -f /etc/default/aura ]] || source /etc/default/aura
-  INSTALL_DIR="${INSTALL_DIR:-/opt/aura}"
-  LOCK_FILE="${AURA_IMAGE_UPDATE_LOCK:-/run/lock/aura-image-update.lock}"
-  HEALTH_TIMEOUT_SECONDS="${AURA_IMAGE_UPDATE_HEALTH_TIMEOUT:-600}"
-  UPDATER_BIN="${AURA_IMAGE_UPDATE_BIN:-/usr/local/sbin/aura-image-update.sh}"
-  SYSTEMD_DIR="${AURA_SYSTEMD_DIR:-/etc/systemd/system}"
-
-  exec 9>"${LOCK_FILE}"
-  if ! flock -n 9; then
-    echo "Another Aura image update is already running; skipping."
-    exit 0
-  fi
-
-  cd "${INSTALL_DIR}"
-  [[ -f compose.yaml ]] || {
-    echo "Missing ${INSTALL_DIR}/compose.yaml" >&2
-    exit 1
-  }
-
-  local before after
+apply_update() {
+  local before after svc
+  record_status applying
+  trap 'on_apply_exit $?' EXIT
   before="$(container_image_id aura)"
-
-  # aura, aura-migrate and garage-bootstrap share ${AURA_IMAGE}: the migrator must
-  # run the binary it migrates for. `up -d aura` WITHOUT --no-deps is deliberate —
-  # compose recreates the one-shot deps whose image changed and waits for their
-  # service_completed_successfully before replacing aura, so new migrations land
-  # first; already-healthy infra deps (postgres, garage, embed) are left alone.
-  docker compose pull aura aura-migrate garage-bootstrap
 
   # The payload is installed BEFORE aura is replaced, so the new binary starts under the
   # compose file of its own commit. Re-executing hands the rest of this tick to the updater
@@ -355,14 +375,10 @@ main() {
     echo "payload: the stack was brought up on the installed payload."
   fi
 
-  update_sidecar arcadedb-mcp
-  update_sidecar aura-pim-mcp
-  update_sidecar whatsapp
-  # Repo-built core services on the edge channel (published by the same workflow
-  # as aura itself); on a machine pinned to :local these skip via pull tolerance.
-  update_sidecar caddy
-  update_sidecar aura-ingest
-  update_sidecar aura-cloudflared
+  # On a machine pinned to :local these skip via pull tolerance.
+  for svc in "${SIDECARS[@]}"; do
+    update_sidecar "${svc}"
+  done
 
   refresh_sandbox_images
 
@@ -370,7 +386,57 @@ main() {
   # the untagged ones a moving tag left behind.
   remove_superseded_images
   docker image prune --force >/dev/null
+  image_id "$(env_value AURA_IMAGE)" >"$(update_dir)/applied-image" || true
+  RUNNING_REV="$(image_revision "$(container_image_id aura)")"
+  AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''
+  record_status current
+  trap - EXIT
   echo "Aura image update completed; the appliance is healthy."
+}
+
+main() {
+  # shellcheck source=/dev/null
+  [[ ! -f /etc/default/aura ]] || source /etc/default/aura
+  INSTALL_DIR="${INSTALL_DIR:-/opt/aura}"
+  LOCK_FILE="${AURA_IMAGE_UPDATE_LOCK:-/run/lock/aura-image-update.lock}"
+  HEALTH_TIMEOUT_SECONDS="${AURA_IMAGE_UPDATE_HEALTH_TIMEOUT:-600}"
+  UPDATER_BIN="${AURA_IMAGE_UPDATE_BIN:-/usr/local/sbin/aura-image-update.sh}"
+  SYSTEMD_DIR="${AURA_SYSTEMD_DIR:-/etc/systemd/system}"
+
+  exec 9>"${LOCK_FILE}"
+  if ! flock -n 9; then
+    echo "Another Aura image update is already running; skipping."
+    exit 0
+  fi
+
+  cd "${INSTALL_DIR}"
+  [[ -f compose.yaml ]] || {
+    echo "Missing ${INSTALL_DIR}/compose.yaml" >&2
+    exit 1
+  }
+  # shellcheck source=deploy/aura-update-consent.sh
+  source "${CONSENT_LIB}"
+  ensure_update_channel
+
+  # Downloading changes nothing that runs, so it happens on every tick and "update now" only
+  # waits for the restart. aura, aura-migrate and garage-bootstrap share ${AURA_IMAGE}: the
+  # migrator must run the binary it migrates for.
+  local svc
+  docker compose pull aura aura-migrate garage-bootstrap
+  for svc in "${SIDECARS[@]}"; do
+    pull_sidecar "${svc}"
+  done
+  pull_sandbox_images
+
+  # An updater that re-executed itself mid-apply carries on: the decision was already made.
+  if [[ -n "${AURA_IMAGE_UPDATE_REEXEC:-}" ]]; then
+    load_status
+  elif ! decide_update; then
+    rerun_if_asked_meanwhile
+    return 0
+  fi
+  apply_update
+  rerun_if_asked_meanwhile
 }
 
 # Sourcing defines the functions and stops, so scripts/aura_image_update_test.sh can drive

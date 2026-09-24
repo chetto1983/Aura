@@ -14,6 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/hostupdate"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -86,6 +87,11 @@ type serveEnv struct {
 	// deployment with no Authula authorization server. runServe EnsureNow/Starts it
 	// before the deferred OAuth mounts reconnect; drainShutdown Stops it.
 	firstPartyGrants *firstPartyGrantKeeper
+
+	// hostUpdates tells the appliance's host updater whether anyone is using Aura, so it
+	// restarts Aura on its own only during a quiet spell. Nil on a stack the updater does not
+	// manage; runServe Starts it and drainShutdown Stops it.
+	hostUpdates *hostupdate.ActivityWriter
 
 	// runRegistry is the detached-run session registry (fix-plan 1.3 Tier B); nil
 	// unless AURA_AGUI_RUN_DETACH=true. drainShutdown Closes it (cancel-walk every

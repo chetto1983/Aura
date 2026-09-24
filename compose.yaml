@@ -334,6 +334,10 @@ services:
       - aura-home:/var/lib/aura
       - aura-cloudflared-state:/var/lib/aura/cloudflared
       - ${AURA_BACKUP_DIR:-./backups}:/backups
+      # The appliance updater's channel (deploy/aura-update-consent.sh): it writes status here,
+      # Aura writes an admin's decision and whether anyone is using it (AURA_UPDATE_STATE_DIR).
+      # A directory, not files: the renames both sides write by stay visible across the mount.
+      - ./update:/run/aura-update
       # Amendment #88: the fixed /workspace working root (AURA_WORKSPACE_DIR), durable
       # across recreates — the entrypoint bootstrap above lays out its subdirs on boot.
       - aura-workspace:/workspace

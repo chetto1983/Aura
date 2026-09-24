@@ -112,6 +112,9 @@ node_modules/
 # and a stray `git add -A` would otherwise commit a full copy of the deployment.
 backups/
 
+# The appliance updater's channel, bind-mounted into aura; on a dev stack it stays empty.
+/update/
+
 # LibreOffice lock files, created during fixture conversion.
 .~lock.*#
 

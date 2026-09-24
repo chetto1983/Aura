@@ -27,6 +27,9 @@ import (
 // upload may carry is not.
 const DefaultAssetMaxDocumentBytes = 100 << 20
 
+// DefaultUpdateStateDir is where compose.yaml mounts the appliance updater's directory.
+const DefaultUpdateStateDir = "/run/aura-update"
+
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB                db.Config
@@ -269,6 +272,9 @@ type Config struct {
 	// Cockpit "Connect Google Calendar" endpoint. Authentication comes from the
 	// identity-scoped OAuth grant used by the generic remote MCP transport.
 	CalendarMCPURL string // AURA_PIM_MCP_URL — aura-pim-mcp /admin REST base, default http://aura-pim-mcp:8080
+
+	// Directory shared with the appliance's host updater (internal/hostupdate).
+	UpdateStateDir string // AURA_UPDATE_STATE_DIR — default DefaultUpdateStateDir
 
 	// Phase 36 (plan 06) Garage Admin API v2 (D-08). The provisioning saga (plan 08)
 	// calls the INTERNAL-only admin API to create a per-identity bucket + scoped key.
@@ -542,6 +548,7 @@ func loadBase() *Config {
 		MCPSandboxOrigin: os.Getenv("AURA_MCP_SANDBOX_ORIGIN"),
 
 		CalendarMCPURL: envDefault("AURA_PIM_MCP_URL", "http://aura-pim-mcp:8080"),
+		UpdateStateDir: envDefault("AURA_UPDATE_STATE_DIR", DefaultUpdateStateDir),
 
 		// Default OFF: the onboarding saga refuses a 2nd identity until an operator
 		// declares the deployment fit for one (see the field doc for what is shared).

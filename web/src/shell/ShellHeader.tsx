@@ -4,6 +4,7 @@ import { ApprovalBadge } from '../approvals/ApprovalBadge';
 import { ApprovalList } from '../approvals/ApprovalList';
 import { LanguageSwitcher } from '../i18n/LanguageSwitcher';
 import { ThemeSwitcher } from '../theme/ThemeSwitcher';
+import { UpdateIndicator } from '../update/UpdateIndicator';
 import { ModeSwitcher } from './ModeSwitcher';
 import { RuntimeStatusChip } from './RuntimeStatusChip';
 import type { SurfaceIntent } from './modes';
@@ -67,6 +68,7 @@ export function ShellHeader({
       </div>
       <ModeSwitcher active={activeMode} onSelect={onModeSelect} modes={modes} />
       <div className="flex min-w-0 items-center justify-end gap-2">
+        <UpdateIndicator />
         <RuntimeStatusChip />
         <div className="relative">
           <ApprovalBadge expanded={approvalsOpen} onToggle={onApprovalsToggle} />

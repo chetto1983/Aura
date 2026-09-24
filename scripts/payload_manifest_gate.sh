@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# The artifact ships a copy of 27 repo files. Nothing else notices when one of them changes
+# The artifact ships a copy of every repo file install.sh downloads (payload_files.sh derives
+# the list; a count written here went stale). Nothing else notices when one of them changes
 # and the artifact is not rebuilt, so an appliance would install last month's compose.yaml
 # against this month's images. This gate makes that impossible to do quietly.
 #
@@ -87,8 +88,8 @@ check_bind_mount_completeness() {
     esac
     # install.sh creates every directory mount with mkdir -p; only a FILE mount needs a
     # payload entry, so a real directory on disk (not the mount's container-side target) is
-    # not a miss.
-    if [ -d "$repo_root/$rel" ]; then continue; fi
+    # not a miss, and neither is a runtime-only directory (./update) that install.sh creates.
+    if [ -d "$repo_root/$rel" ] || grep -qF "\"\$INSTALL_DIR/$rel\"" "$repo_root/scripts/install.sh"; then continue; fi
     if ! grep -qxF "$rel" <<< "$payload_rels"; then
       missing_mounts="$missing_mounts
   $rel"

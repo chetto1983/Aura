@@ -60,6 +60,13 @@ package main
 //   - POST /api/admin/openrouter/reconcile — mints the keys the deployment is missing and
 //     aligns each key's limit with its owner's role (openrouter_reconcile.go). Gated on
 //     identity.create: minting spends the deployment's money.
+//
+// And the appliance update prompt (system_update_api.go):
+//
+//   - GET /api/system/update — every identity reads it, because a member must be warned
+//     before the host updater restarts Aura under them.
+//   - POST /api/system/update/apply and /defer — restart everyone's Aura now, or hold every
+//     machine back: an administrative decision, so identity.create.
 
 import (
 	"net/http"
@@ -80,6 +87,9 @@ const (
 	adminSpendOverviewRoute       = "GET /api/admin/spend/overview"
 	adminRestartRoute             = "POST /api/admin/restart"
 	adminOpenRouterReconcileRoute = "POST /api/admin/openrouter/reconcile"
+	systemUpdateRoute             = "GET /api/system/update"
+	systemUpdateApplyRoute        = "POST /api/system/update/apply"
+	systemUpdateDeferRoute        = "POST /api/system/update/defer"
 )
 
 // registerMUSRRoutes mounts the admin/user-distinction routes on the parent mux. Each
@@ -102,4 +112,7 @@ func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.
 	mux.Handle(adminOpenRouterReconcileRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	mux.Handle(adminSpendOverviewRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(adminRestartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle(systemUpdateRoute, aguiHandler)
+	mux.Handle(systemUpdateApplyRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
+	mux.Handle(systemUpdateDeferRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 }
