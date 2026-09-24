@@ -60,24 +60,6 @@ func vectorSchemaStatements() []string {
 	}, spaceStampStatements(factEdgeType)...)
 }
 
-// embedStatement returns the vector for one fact statement, or nil when no
-// embedder is configured. A nil vector is not an error: the fact is still
-// written and still reachable through the lexical leg.
-func (c *Client) embedStatement(ctx context.Context, statement string) []float64 {
-	if c == nil || c.embedder == nil || strings.TrimSpace(statement) == "" {
-		return nil
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, []string{statement}))
-	if err != nil || len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		// Fail SOFT and deliberately: an embedder that is down must degrade
-		// retrieval, never refuse a write. A fact that was not stored is lost;
-		// a fact stored without its vector is found lexically today and can be
-		// embedded later by EmbedMissingFacts.
-		return nil
-	}
-	return vectors[0]
-}
-
 // rerankOpen/rerankClose wrap a fused ranking in ArcadeDB's native
 // `vector.rerank`, which re-scores the fused candidates against their
 // full-precision vectors and emits a real cosine `score` (the RRF pseudo-score

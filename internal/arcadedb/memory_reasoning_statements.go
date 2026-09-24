@@ -16,9 +16,6 @@ const upsertReasoningTraceStatement = "UPDATE " + reasoningTraceType +
 
 const reasoningTraceWhere = " UPSERT RETURN AFTER WHERE identity_id = :identity_id AND trace_id = :trace_id"
 
-const clearReasoningEmbeddingStatement = "UPDATE " + reasoningTraceType +
-	" REMOVE embedding WHERE identity_id = :identity_id AND trace_id = :trace_id"
-
 const createReasoningInitiatorStatement = "CREATE EDGE INITIATED_BY" +
 	" FROM (SELECT FROM " + reasoningTraceType + " WHERE identity_id = :identity_id AND trace_id = :trace_id)" +
 	" TO (SELECT FROM " + conversationTurnType + " WHERE identity_id = :identity_id" +

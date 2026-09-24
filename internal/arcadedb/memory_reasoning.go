@@ -20,7 +20,7 @@ const (
 // unrepresentable; only provider-visible summaries and bounded tool evidence
 // have storage columns.
 func reasoningSchemaStatements() []string {
-	return []string{
+	return append([]string{
 		"CREATE VERTEX TYPE " + reasoningTraceType + " IF NOT EXISTS",
 		"CREATE PROPERTY " + reasoningTraceType + ".identity_id IF NOT EXISTS STRING (MANDATORY TRUE)",
 		"CREATE PROPERTY " + reasoningTraceType + ".trace_id IF NOT EXISTS STRING (MANDATORY TRUE)",
@@ -75,7 +75,7 @@ func reasoningSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS ON INVOKED (`@out`, `@in`) UNIQUE",
 		"CREATE EDGE TYPE TOUCHED IF NOT EXISTS",
 		"CREATE INDEX IF NOT EXISTS ON TOUCHED (`@out`, `@in`) UNIQUE",
-	}
+	}, spaceStampStatements(reasoningTraceType)...)
 }
 
 const (
@@ -193,7 +193,7 @@ func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace)
 	if err != nil {
 		return err
 	}
-	vector := c.embedStatement(ctx, trace.ProviderSummary)
+	stored := c.embedOne(ctx, trace.ProviderSummary)
 	session, err := c.beginTx(ctx)
 	if err != nil {
 		return err
@@ -205,19 +205,9 @@ func (c *Client) UpsertReasoningTrace(ctx context.Context, trace ReasoningTrace)
 	}
 
 	params := reasoningTraceParams(trace)
-	statement := upsertReasoningTraceStatement
-	if vector != nil {
-		statement += ", embedding = :embedding"
-		params["embedding"] = vector
-	}
-	statement += reasoningTraceWhere
+	statement := upsertReasoningTraceStatement + stored.replaceClause(params) + reasoningTraceWhere
 	if _, err := c.commandInTx(ctx, session, statement, params); err != nil {
 		return fmt.Errorf("arcadedb: upsert reasoning trace: %w", err)
-	}
-	if vector == nil {
-		if _, err := c.commandInTx(ctx, session, clearReasoningEmbeddingStatement, params); err != nil {
-			return fmt.Errorf("arcadedb: clear reasoning embedding: %w", err)
-		}
 	}
 	if _, err := c.commandInTx(ctx, session, createReasoningInitiatorStatement, params); err != nil {
 		return fmt.Errorf("arcadedb: link reasoning initiator: %w", err)

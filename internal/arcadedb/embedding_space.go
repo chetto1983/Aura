@@ -48,3 +48,11 @@ func (v storedVector) createClause(params map[string]any) string {
 	}
 	return ""
 }
+
+// replaceClause sets both columns on an upsert or an update, to NULL where v has nothing:
+// the row may still hold a vector computed for older content, or in another space, and
+// leaving it would keep a vector that no longer describes the row.
+func (v storedVector) replaceClause(params map[string]any) string {
+	params["embedding"], params["embed_space"] = v.vector, nullableString(v.space)
+	return ", embedding = :embedding, embed_space = :embed_space"
+}

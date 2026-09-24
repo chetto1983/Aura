@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -24,7 +25,7 @@ func TestConversationSchemaStatements(t *testing.T) {
 		"Conversation", "ConversationTurn", "HAS_TURN", "NEXT_TURN",
 		"identity_id", "conversation_id", "turn_seq", "role", "content",
 		"content_hash", "occurred_at", "source_ref", "deleted_at", "embedding",
-		"FULL_TEXT", "LSM_VECTOR",
+		"FULL_TEXT", "LSM_VECTOR", "embed_space", "NULL_STRATEGY INDEX",
 	} {
 		if !strings.Contains(joined, required) {
 			t.Errorf("conversation schema missing %q", required)
@@ -161,23 +162,41 @@ func TestConversationProjectionReplayEmbedsOnlyWhatChanged(t *testing.T) {
 		name         string
 		stored       string
 		embedderDown bool
+		refuse       bool
 		wantEmbeds   int
 		wantWritten  bool
-		wantRemoved  bool
+		wantCleared  bool
+		wantStamp    any
 	}{
-		{"unchanged turn keeps its stored vector", storedWithVector(conversationContentHash(content)), false, 0, false, false},
-		{"edited turn is embedded again", older, false, 1, true, false},
-		{"turn stored without a vector is embedded", `{"result":[]}`, false, 1, true, false},
+		{"unchanged turn keeps its stored vector", storedWithVector(conversationContentHash(content)), false, false, 0, false, false, nil},
+		{"edited turn is embedded again", older, false, false, 1, true, false, stubSpace},
+		{"turn stored without a vector is embedded", `{"result":[]}`, false, false, 1, true, false, stubSpace},
 		// Before this check a sidecar outage of one minute removed the vector of every turn
 		// in the history, because the replay treated "could not embed now" as "stale".
-		{"embedder down keeps a vector that still matches", storedWithVector(conversationContentHash(content)), true, 0, false, false},
-		{"embedder down still clears a vector of older content", older, true, 1, false, true},
+		{"embedder down keeps a vector that still matches", storedWithVector(conversationContentHash(content)), true, false, 0, false, false, nil},
+		{"embedder down still clears a vector of older content", older, true, false, 1, false, true, nil},
+		{"a refused turn keeps the space that refused it", `{"result":[]}`, false, true, 1, false, true, stubSpace},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}
+			stub := &stubEmbedder{vectors: [][][]float64{{vectorOf(1)}}}
 			if tt.embedderDown {
-				embedder.err = errors.New("sidecar down")
+				stub.err = errors.New("sidecar down")
+			}
+			refusing := &refusingEmbedder{refuse: []string{content}, status: http.StatusBadRequest, space: stubSpace}
+			var embedder DenseEmbedder = stub
+			embeds := func() int { return len(stub.calls) }
+			if tt.refuse {
+				embedder = refusing
+				embeds = func() int {
+					n := 0
+					for _, call := range refusing.calls {
+						if !strings.HasSuffix(call[0], controlInput) {
+							n++
+						}
+					}
+					return n
+				}
 			}
 			client, requests := routedClient(t, func(request recordedRequest) testResponse {
 				statement, _ := request.Payload["command"].(string)
@@ -199,22 +218,34 @@ func TestConversationProjectionReplayEmbedsOnlyWhatChanged(t *testing.T) {
 			if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
 				t.Fatalf("ApplyConversationProjection: %v", err)
 			}
-			if len(embedder.calls) != tt.wantEmbeds {
-				t.Fatalf("embedder called %d times, want %d", len(embedder.calls), tt.wantEmbeds)
+			if embeds() != tt.wantEmbeds {
+				t.Fatalf("embedder called %d times, want %d", embeds(), tt.wantEmbeds)
 			}
-			var wroteTurn, wroteVector, removedVector bool
+			var wroteTurn, wroteVector, clearedVector bool
+			var stamp any
 			for _, request := range *requests {
 				statement, _ := request.Payload["command"].(string)
-				wroteTurn = wroteTurn || strings.Contains(statement, "content_hash = :content_hash")
-				wroteVector = wroteVector || strings.Contains(statement, "embedding = :embedding")
-				removedVector = removedVector || strings.Contains(statement, "REMOVE embedding")
+				if !strings.Contains(statement, "content_hash = :content_hash") {
+					continue
+				}
+				wroteTurn = true
+				if !strings.Contains(statement, "embedding = :embedding") {
+					continue
+				}
+				params, _ := request.Payload["params"].(map[string]any)
+				stamp = params["embed_space"]
+				if params["embedding"] != nil {
+					wroteVector = true
+				} else {
+					clearedVector = true
+				}
 			}
 			if !wroteTurn {
 				t.Fatal("replay no longer writes the turn it exists to repair")
 			}
-			if wroteVector != tt.wantWritten || removedVector != tt.wantRemoved {
-				t.Fatalf("vector written=%v removed=%v, want written=%v removed=%v",
-					wroteVector, removedVector, tt.wantWritten, tt.wantRemoved)
+			if wroteVector != tt.wantWritten || clearedVector != tt.wantCleared || stamp != tt.wantStamp {
+				t.Fatalf("vector written=%v cleared=%v stamp=%v, want written=%v cleared=%v stamp=%v",
+					wroteVector, clearedVector, stamp, tt.wantWritten, tt.wantCleared, tt.wantStamp)
 			}
 		})
 	}
@@ -267,5 +298,29 @@ func TestConversationProjectionSurvivesAnAbsentReasoningSchema(t *testing.T) {
 	}
 	if !wroteTurn {
 		t.Fatal("projection returned success without writing its turn")
+	}
+}
+
+// The reconciler replays every conversation once a minute; a projection of several changed
+// turns must reach the embedder as ONE request, not one per turn (spec §5, Turns).
+func TestConversationProjectionEmbedsItsChangedTurnsInOneRequest(t *testing.T) {
+	embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(1), vectorOf(2), vectorOf(3)}}}
+	client, _ := routedClient(t, func(recordedRequest) testResponse { return testResponse{Body: `{"result":[]}`} })
+	client.WithEmbedder(embedder)
+	projection := ConversationProjection{IdentityID: "identity-a", ConversationID: "conversation-1"}
+	for seq := 1; seq <= 3; seq++ {
+		content := fmt.Sprintf("turn number %d", seq)
+		projection.Turns = append(projection.Turns, ConversationTurnProjection{
+			IdentityID: "identity-a", ConversationID: "conversation-1", Seq: seq,
+			Role: "user", Content: content, ContentHash: conversationContentHash(content),
+			OccurredAt: time.Date(2026, 9, 23, 6, 0, seq, 0, time.UTC),
+			SourceRef:  fmt.Sprintf("postgres://conversation/conversation-1/turn/%d", seq),
+		})
+	}
+	if err := client.ApplyConversationProjection(context.Background(), projection); err != nil {
+		t.Fatalf("ApplyConversationProjection: %v", err)
+	}
+	if len(embedder.calls) != 1 || len(embedder.calls[0]) != 3 {
+		t.Fatalf("embedder calls = %v, want one request carrying the three turns", embedder.calls)
 	}
 }

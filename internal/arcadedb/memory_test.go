@@ -119,6 +119,8 @@ func TestEnsureMemorySchemaRegistersConversationSchema(t *testing.T) {
 		"CREATE INDEX IF NOT EXISTS ON HAS_TURN (`@out`, `@in`) UNIQUE",
 		"CREATE EDGE TYPE NEXT_TURN IF NOT EXISTS",
 		"CREATE INDEX IF NOT EXISTS ON NEXT_TURN (`@out`, `@in`) UNIQUE",
+		"CREATE PROPERTY ConversationTurn.embed_space IF NOT EXISTS STRING",
+		"CREATE INDEX IF NOT EXISTS ON ConversationTurn (embed_space) NOTUNIQUE NULL_STRATEGY INDEX",
 	}
 	if got := conversationSchemaStatements(); len(got) != len(want) {
 		t.Fatalf("conversation schema fragment has %d statements, want %d", len(got), len(want))

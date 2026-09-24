@@ -64,9 +64,10 @@ func (e *countingEmbedder) Space(ctx context.Context) (embeddings.Space, error) 
 	return constantEmbedder{value: 1}.Space(ctx)
 }
 
-// The unit test proves the decision; this proves the query it rests on. `embedding IS NOT
-// NULL` must hold for a stored vector and stop holding once REMOVE has cleared it, or a turn
-// whose vector was lost would never be embedded again.
+// The unit test proves the decision; this proves the query it rests on. A stored vector or
+// stamp must count as an answer, and a turn whose vector AND stamp were lost must stop
+// counting, or it would never be embedded again. A stamp without a vector is a refusal,
+// and that one is kept.
 func TestConversationProjectionLive_ReplayEmbedsOnlyWhatChanged(t *testing.T) {
 	client := conversationProjectionLiveClient(t)
 	embedder := &countingEmbedder{}
@@ -92,7 +93,7 @@ func TestConversationProjectionLive_ReplayEmbedsOnlyWhatChanged(t *testing.T) {
 	apply("replayamber", 1)
 	apply("replayamber", 1)
 	apply("replaycobalt", 2)
-	if _, err := client.Command(ctx, "UPDATE ConversationTurn REMOVE embedding"+
+	if _, err := client.Command(ctx, "UPDATE ConversationTurn SET embedding = NULL, embed_space = NULL"+
 		" WHERE identity_id = :identity_id AND conversation_id = :conversation_id", scope); err != nil {
 		t.Fatalf("clear stored vector: %v", err)
 	}

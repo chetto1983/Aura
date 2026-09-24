@@ -208,35 +208,6 @@ func TestSearchFactsHybridCapsCandidatesAndQuery(t *testing.T) {
 	}
 }
 
-func TestEmbedStatementIsFailSoft(t *testing.T) {
-	var none *Client
-	if none.embedStatement(context.Background(), "fact") != nil {
-		t.Fatal("nil client embedded")
-	}
-	client := &Client{}
-	if client.embedStatement(context.Background(), "fact") != nil {
-		t.Fatal("client without embedder embedded")
-	}
-	for _, embedder := range []*stubEmbedder{
-		{err: errors.New("down")},
-		{vectors: [][][]float64{{}}},
-		{vectors: [][][]float64{{{1}}}},
-	} {
-		client.embedder = embedder
-		if got := client.embedStatement(context.Background(), "fact"); got != nil {
-			t.Fatalf("invalid embedding accepted: %v", got)
-		}
-	}
-	embedder := &stubEmbedder{vectors: [][][]float64{{vectorOf(2)}}}
-	client.embedder = embedder
-	if got := client.embedStatement(context.Background(), "fact"); len(got) != vectorDimensions {
-		t.Fatalf("embedding length = %d", len(got))
-	}
-	if embedder.calls[0][0] != taskDocumentPrefix+"fact" {
-		t.Fatalf("input = %v", embedder.calls)
-	}
-}
-
 // The vector a write computes must reach the database. It did not: the edge statement
 // carried no `embedding` in its SET while the parameter was bound anyway, ArcadeDB
 // accepted the unused param without a word, and EVERY fact in every identity's memory

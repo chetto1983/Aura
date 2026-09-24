@@ -76,6 +76,8 @@ func expectedReasoningSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS ON ReasoningTrace (expires_at) NOTUNIQUE",
 		"CREATE INDEX IF NOT EXISTS ON ReasoningTrace (provider_summary) FULL_TEXT METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
 		"CREATE INDEX IF NOT EXISTS ON ReasoningTrace (embedding) LSM_VECTOR METADATA { \"dimensions\": 768, \"similarity\": \"COSINE\", \"quantization\": \"NONE\" }",
+		"CREATE PROPERTY ReasoningTrace.embed_space IF NOT EXISTS STRING",
+		"CREATE INDEX IF NOT EXISTS ON ReasoningTrace (embed_space) NOTUNIQUE NULL_STRATEGY INDEX",
 
 		"CREATE VERTEX TYPE ReasoningStep IF NOT EXISTS",
 		"CREATE PROPERTY ReasoningStep.identity_id IF NOT EXISTS STRING (MANDATORY TRUE)",
@@ -455,5 +457,24 @@ func TestSearchReasoningTracesCarriesStepsAndToolCalls(t *testing.T) {
 	// One read per body, not one per trace: the set statements exist for that.
 	if got := strings.Count(rec.joined(), "trace_ids"); got != 2 {
 		t.Fatalf("body reads = %d, want one for steps and one for tools:\n%s", got, rec.joined())
+	}
+}
+
+func TestUpsertReasoningTraceStoresItsVectorWithTheSpace(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+	client.WithEmbedder(&stubEmbedder{vectors: [][][]float64{{vectorOf(3)}}})
+	if err := client.UpsertReasoningTrace(context.Background(), validReasoningTrace()); err != nil {
+		t.Fatalf("UpsertReasoningTrace: %v", err)
+	}
+	statement, params, ok := findRecordedStatement(rec, "provider_summary = :provider_summary")
+	if !ok {
+		t.Fatal("no trace upsert recorded")
+	}
+	if !strings.Contains(statement, "embedding = :embedding, embed_space = :embed_space") ||
+		params["embed_space"] != stubSpace {
+		t.Fatalf("trace stored without its space:\n%s\nparams=%v", statement, params)
+	}
+	if _, _, cleared := findRecordedStatement(rec, "REMOVE embedding"); cleared {
+		t.Fatal("a second statement clears the vector; the upsert sets both columns itself")
 	}
 }

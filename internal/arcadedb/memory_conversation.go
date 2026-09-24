@@ -64,7 +64,7 @@ type ConversationSearchResult struct {
 // Plan 49-07 is the single aggregation owner that adds this fragment to
 // EnsureMemorySchema after the Wave-2 memory.go owner has landed.
 func conversationSchemaStatements() []string {
-	return []string{
+	return append([]string{
 		"CREATE VERTEX TYPE " + conversationVertexType + " IF NOT EXISTS",
 		"CREATE PROPERTY " + conversationVertexType + ".identity_id IF NOT EXISTS STRING",
 		"CREATE PROPERTY " + conversationVertexType + ".conversation_id IF NOT EXISTS STRING",
@@ -95,7 +95,7 @@ func conversationSchemaStatements() []string {
 		"CREATE INDEX IF NOT EXISTS ON " + hasTurnEdgeType + " (`@out`, `@in`) UNIQUE",
 		"CREATE EDGE TYPE " + nextTurnEdgeType + " IF NOT EXISTS",
 		"CREATE INDEX IF NOT EXISTS ON " + nextTurnEdgeType + " (`@out`, `@in`) UNIQUE",
-	}
+	}, spaceStampStatements(conversationTurnType)...)
 }
 
 const upsertConversationProjectionStatement = "UPDATE " + conversationVertexType +
@@ -113,8 +113,13 @@ const upsertConversationTurnStatement = "UPDATE " + conversationTurnType +
 const upsertConversationTurnWhere = " UPSERT RETURN AFTER WHERE identity_id = :identity_id" +
 	" AND conversation_id = :conversation_id AND turn_seq = :turn_seq"
 
+// storedTurnVectorsStatement names the turns this projection must not embed again: those
+// with a vector, and those a space refused. Turns with neither are the reconciler's to
+// fill; turns answered in another space are the pass's (spec §5), so no turn is embedded
+// twice.
 const storedTurnVectorsStatement = "SELECT turn_seq, content_hash FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND embedding IS NOT NULL"
+	" WHERE identity_id = :identity_id AND conversation_id = :conversation_id" +
+	" AND (embedding IS NOT NULL OR embed_space IS NOT NULL)"
 
 const createHasTurnStatement = "CREATE EDGE " + hasTurnEdgeType +
 	" FROM (SELECT FROM " + conversationVertexType +
@@ -150,11 +155,14 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 	if _, err := c.Command(ctx, upsertConversationProjectionStatement, params); err != nil {
 		return fmt.Errorf("arcadedb: upsert conversation projection: %w", err)
 	}
-	embedded, err := c.storedTurnVectorHashes(ctx, projection)
+	answered, err := c.storedTurnVectorHashes(ctx, projection)
 	if err != nil {
 		return err
 	}
-	for _, turn := range projection.Turns {
+	// The reconciler replays every turn once a minute: a turn whose content is already
+	// answered keeps its answer, so the embedder sees only what changed, all in one request.
+	vectors := c.embedChangedTurns(ctx, projection.Turns, answered)
+	for index, turn := range projection.Turns {
 		turnParams := map[string]any{
 			"identity_id": turn.IdentityID, "conversation_id": turn.ConversationID,
 			"turn_seq": turn.Seq, "role": turn.Role, "content": turn.Content,
@@ -162,27 +170,13 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 			"occurred_at":  turn.OccurredAt.UTC().Format(time.RFC3339Nano),
 			"source_ref":   turn.SourceRef,
 		}
-		// The reconciler replays every turn once a minute: a vector already stored for
-		// this exact content is kept, so the sidecar only ever embeds what changed.
-		keepVector := embedded[turn.Seq] == turn.ContentHash
 		statement := upsertConversationTurnStatement
-		if !keepVector {
-			if vector := c.embedStatement(ctx, turn.Content); vector != nil {
-				statement += ", embedding = :embedding"
-				turnParams["embedding"] = vector
-			}
+		if vector, changed := vectors[index]; changed {
+			statement += vector.replaceClause(turnParams)
 		}
 		statement += upsertConversationTurnWhere
 		if _, err := c.Command(ctx, statement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: upsert conversation turn %d: %w", turn.Seq, err)
-		}
-		if _, hasVector := turnParams["embedding"]; !hasVector && !keepVector {
-			if _, err := c.Command(ctx,
-				"UPDATE "+conversationTurnType+" REMOVE embedding"+
-					" WHERE identity_id = :identity_id AND conversation_id = :conversation_id AND turn_seq = :turn_seq",
-				turnParams); err != nil {
-				return fmt.Errorf("arcadedb: clear stale conversation embedding %d: %w", turn.Seq, err)
-			}
 		}
 		if _, err := c.Command(ctx, createHasTurnStatement, turnParams); err != nil {
 			return fmt.Errorf("arcadedb: link conversation turn %d: %w", turn.Seq, err)
@@ -217,8 +211,41 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 	return nil
 }
 
-// storedTurnVectorHashes maps each turn of the conversation that already carries a vector
-// to the content_hash that vector was computed from.
+// embedChangedTurns answers every turn whose content has no stored answer, in one request.
+// Each changed turn gets an entry -- its vector, its refusal, or nothing when no route
+// answered -- and "nothing" clears a vector computed for older content. A route outage
+// never clears a turn whose content still matches: that turn is not changed.
+func (c *Client) embedChangedTurns(
+	ctx context.Context,
+	turns []ConversationTurnProjection,
+	answered map[int]string,
+) map[int]storedVector {
+	changed := make(map[int]storedVector)
+	texts := make([]string, 0, len(turns))
+	indexes := make([]int, 0, len(turns))
+	for index, turn := range turns {
+		if answered[turn.Seq] == turn.ContentHash {
+			continue
+		}
+		changed[index] = storedVector{}
+		texts = append(texts, turn.Content)
+		indexes = append(indexes, index)
+	}
+	if len(texts) == 0 || c.embedder == nil {
+		return changed
+	}
+	vectors, err := c.embedStored(ctx, texts)
+	if err != nil {
+		return changed
+	}
+	for position, index := range indexes {
+		changed[index] = vectors[position]
+	}
+	return changed
+}
+
+// storedTurnVectorHashes maps each turn of the conversation that already carries an answer
+// -- a vector, or a space's refusal -- to the content_hash that answer was computed from.
 func (c *Client) storedTurnVectorHashes(ctx context.Context, projection ConversationProjection) (map[int]string, error) {
 	rows, err := c.Query(ctx, storedTurnVectorsStatement, map[string]any{
 		"identity_id": projection.IdentityID, "conversation_id": projection.ConversationID,

@@ -84,9 +84,9 @@ func TestConversationProjectionTracer(t *testing.T) {
 	if cursor.ConversationID != "conversation-1" || cursor.Seq != 1 {
 		t.Fatalf("cursor = %+v", cursor)
 	}
-	if commandCount != 6 {
-		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert, stale-vector clear,"+
-			" HAS_TURN, NEXT_TURN, INITIATED_BY", commandCount)
+	if commandCount != 5 {
+		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert (vector cleared in the same"+
+			" statement), HAS_TURN, NEXT_TURN, INITIATED_BY", commandCount)
 	}
 	result, err := sink.SearchConversationTurnsHybrid(context.Background(), "identity-a", "blue notebook", 5)
 	if err != nil {
