@@ -1,7 +1,5 @@
 package embeddings
 
-import "strings"
-
 // EmbeddingGemma's retrieval prefixes are asymmetric and part of the model input:
 // https://ai.google.dev/gemma/docs/embeddinggemma/model_card.
 const (
@@ -23,15 +21,6 @@ func Prefix(prefix string, texts []string) []string {
 // RetrievalQueries formats query-side EmbeddingGemma retrieval inputs.
 func RetrievalQueries(queries []string) []string {
 	return Prefix(QueryPrefix, queries)
-}
-
-// RetrievalDocuments formats stored retrieval inputs with a caller-bounded title.
-func RetrievalDocuments(title string, texts []string) []string {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		title = "none"
-	}
-	return Prefix("title: "+title+" | text: ", texts)
 }
 
 // RecipeVersion covers everything that turns the same text into a different stored vector

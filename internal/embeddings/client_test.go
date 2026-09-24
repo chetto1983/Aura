@@ -190,12 +190,6 @@ func TestRetrievalTaskPrefixes(t *testing.T) {
 	if got := RetrievalQueries(input); got[0] != QueryPrefix+"value" {
 		t.Fatalf("query = %v", got)
 	}
-	if got := RetrievalDocuments("  Report  ", input); got[0] != "title: Report | text: value" {
-		t.Fatalf("document = %v", got)
-	}
-	if got := RetrievalDocuments(" ", input); got[0] != UntitledDocumentPrefix+"value" {
-		t.Fatalf("untitled document = %v", got)
-	}
 	if input[0] != "value" {
 		t.Fatalf("input mutated: %v", input)
 	}
