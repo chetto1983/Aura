@@ -17,11 +17,13 @@ type RetrievalLeg string
 // and in which direction that field orders: a lexical score is a relevance score where
 // higher wins, a dense score is a cosine distance where lower wins.
 const (
-	// RetrievalLegFused is the only leg: ArcadeDB fuses the full-text and the vector
-	// index itself and returns one ranking. There is no lexical-only or dense-only path,
-	// because reconciling two rankings in Go is exactly what measured 0.300 recall@1
-	// against the engine's 0.850.
+	// RetrievalLegFused: ArcadeDB fuses the full-text and the vector index itself and
+	// returns one ranking, because reconciling two rankings in Go is what measured 0.300
+	// recall@1 against the engine's 0.850.
 	RetrievalLegFused RetrievalLeg = "fused"
+	// RetrievalLegLexical is the full-text index alone, for when the dense legs cannot run
+	// (spec §8). It does not fuse with the fused leg: a response is one or the other.
+	RetrievalLegLexical RetrievalLeg = "lexical"
 )
 
 // FusionStrategy is `vector.fuse`'s combination rule -- the engine's three, no fourth.
@@ -85,6 +87,17 @@ type PassageCandidate struct {
 	// matching source; that number described WHICH legs agreed, never how relevant the
 	// passage was, so an operator reading it learned nothing about the answer's quality.
 	FusedScore *float64
+	// LexicalScore is the passage's BM25 score on the lexical leg. It is not on the cosine's
+	// scale; a response carries one leg or the other, never both.
+	LexicalScore *float64
+}
+
+// Score is the score the candidate's own leg ranked it by.
+func (c PassageCandidate) Score() *float64 {
+	if c.Leg == RetrievalLegLexical {
+		return c.LexicalScore
+	}
+	return c.FusedScore
 }
 
 const passageCandidateFields = "passage_key, search_document_id, source_kind, source_key, " +
@@ -372,15 +385,20 @@ func (d *DocumentIndex) decodeCandidate(
 	if err != nil {
 		return PassageCandidate{}, "", err
 	}
-	if leg != RetrievalLegFused {
+	field, target := "fused_score", &candidate.FusedScore
+	switch leg {
+	case RetrievalLegFused:
+	case RetrievalLegLexical:
+		field, target = "lexical_score", &candidate.LexicalScore
+	default:
 		return PassageCandidate{}, "", fmt.Errorf("unknown retrieval leg %q", leg)
 	}
 	candidate.Leg = leg
-	score, err := requiredNonNegativeFloat(row, "fused_score")
+	score, err := requiredNonNegativeFloat(row, field)
 	if err != nil {
 		return PassageCandidate{}, "", err
 	}
-	candidate.FusedScore = &score
+	*target = &score
 	return candidate, passageKey, nil
 }
 
