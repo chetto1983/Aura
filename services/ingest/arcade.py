@@ -83,6 +83,21 @@ def schema_version(dimensions: int) -> str:
     return f"document-v1:standard-analyzer:cosine:none:{dimensions}"
 
 
+def _space_stamp_ddl(type_name: str) -> list[str]:
+    """The space a row's vector was produced in (spec §2), declared beside that vector.
+
+    NULL_STRATEGY INDEX is load-bearing, exactly as in internal/arcadedb/embedding_space.go:
+    with ArcadeDB's default, SKIP, "queries against null values that use an index return no
+    entries" (arcadedb-docs reference/sql/sql-indexes.adoc), so every row written before this
+    column existed -- after the upgrade, all of them -- would be invisible to the gate that
+    has to count it.
+    """
+    return [
+        f"CREATE PROPERTY {type_name}.embed_space IF NOT EXISTS STRING",
+        f"CREATE INDEX IF NOT EXISTS ON {type_name} (embed_space) NOTUNIQUE NULL_STRATEGY INDEX",
+    ]
+
+
 class ArcadeSchemaError(RuntimeError):
     """Raised when ArcadeDB rejects database creation or a DDL statement."""
 
@@ -280,6 +295,7 @@ def _document_ddl(dimensions: int) -> list[str]:
         # above 10K vectors, which does not apply at this corpus size.
         f"CREATE INDEX IF NOT EXISTS ON {t} (embedding) LSM_VECTOR METADATA "
         f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
+        *_space_stamp_ddl(t),
         # One record per object, carrying the card. It lives HERE and not in PostgreSQL
         # because the card leg is a full-text ranking, and ArcadeDB already indexes
         # Passage.text FULL_TEXT with this same analyzer: putting the card in Postgres
@@ -326,6 +342,7 @@ def _document_ddl(dimensions: int) -> list[str]:
         # scores mean the same thing when they meet.
         f"CREATE INDEX IF NOT EXISTS ON {DOCUMENT_TYPE} (embedding) LSM_VECTOR METADATA "
         f'{{ "dimensions": {dimensions}, "similarity": "COSINE", "quantization": "NONE" }}',
+        *_space_stamp_ddl(DOCUMENT_TYPE),
     ]
 
 

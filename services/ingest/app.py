@@ -90,6 +90,9 @@ class IndexedDocument:
     # The card's own vector, so a document found by its description competes with one found
     # by its text on the same scale instead of by a precedence rule.
     embedding: list[float]
+    # The space `embedding` was produced in (spec §2). The documents gate compares it with the
+    # reader's, so a vector from another model is never ranked.
+    embed_space: str
     indexed_at: datetime.datetime
 
 
@@ -110,6 +113,7 @@ class Passage:
     char_start: int
     char_end: int
     embedding: list[float]
+    embed_space: str
 
 
 def _name_words(file_name: str) -> str:
@@ -187,6 +191,7 @@ async def process_chunk(
         char_start=piece.start,
         char_end=piece.end,
         embedding=await embed.embed_text(piece.text),
+        embed_space=embed.SPACE,
     ))
 
 
@@ -281,6 +286,7 @@ async def process_file(
         # The card describes the file; embedding it is what makes "which file knows this?"
         # answerable for a document that has no passages at all.
         embedding=await embed.embed_text(card) if card.strip() else [0.0] * embed.DIMENSIONS,
+        embed_space=embed.SPACE,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
 

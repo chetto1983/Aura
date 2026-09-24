@@ -164,3 +164,23 @@ def test_bolt_written_vector_is_typed_and_ann_retrievable(disposable_database):
     assert any(row.get("passage_key") == "p1" for row in ann), (
         "nearest neighbour of v1 did not include the passage written with v1"
     )
+
+
+def test_rows_written_before_the_stamp_are_counted_through_its_index(disposable_database):
+    """The upgrade adds the stamp to a database whose rows have none, and the documents gate
+    must count every one of them. With the index's default null strategy it would count none
+    (arcadedb-docs reference/sql/sql-indexes.adoc), so this builds the index over rows that
+    already exist, the way the upgrade does."""
+    ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
+    _command(disposable_database, "DROP PROPERTY Passage.embed_space FORCE")
+    _command(disposable_database, "INSERT INTO Passage SET passage_key = 'before', text = 'x'")
+
+    ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
+    _command(disposable_database,
+             "INSERT INTO Passage SET passage_key = 'after', text = 'y', embed_space = 'es1-aaaaaaaaaaaaaaaa'")
+
+    unstamped = _query(disposable_database, "SELECT count(*) AS n FROM Passage WHERE embed_space IS NULL", {})
+    stamped = _query(disposable_database, "SELECT count(*) AS n FROM Passage WHERE embed_space = :s",
+                     {"s": "es1-aaaaaaaaaaaaaaaa"})
+    assert unstamped[0]["n"] == 1, "the stamp index hides the rows written before it"
+    assert stamped[0]["n"] == 1
