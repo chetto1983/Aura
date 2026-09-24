@@ -49,7 +49,7 @@ Measured on 2026-09-24:
 ## Shape
 
 ```
-fork tool call ──► CallToolResult { text JSON, resource_link attachment://<id> }
+fork tool call ──► CallToolResult { text JSON, resource_link attachment://stash/<id> }
                          │
 Aura MountedServer.CallTool (same session, same identity child)
    ├─ decode: text + binary blocks + links
@@ -163,14 +163,17 @@ its request ID, so the model can tell, and a fresh call fetches the file again.
 - **Result of `get_email_attachment`.** The curated action forwards to upstream with
   `mode: "stash"` and returns a `CallToolResult` with two blocks:
   - the upstream JSON, carrying `attachmentId`, `name`, `contentType` and `size`;
-  - a `ResourceLinkBlock` with `attachment://<attachmentId>`, the name, the MIME type and the
+  - a `ResourceLinkBlock` with `attachment://stash/<attachmentId>`, the name, the MIME type and the
     size.
 
   The `mode` parameter leaves the curated schema, and `inline` goes with it. The
   `attachmentId` stays usable by `send_email`.
 - **Return type of `Calendar`.** It becomes `Task<CallToolResult>`. Every other action returns
   its JSON as a single text block, which is what the client receives today.
-- **The `attachment://{attachmentId}` resource template.** It is registered on both servers:
+- **The `attachment://stash/{attachmentId}` resource template.** The ID sits in the path, not the
+  host: attachment IDs are case-sensitive, a URI host is not, and .NET's `System.Uri` lowercases
+  it (measured on .NET 10.0.400, 2026-09-24: `attachment://Qx9aZ3…` became `attachment://qx9az3…/`,
+  while `attachment://stash/Qx9aZ3…` kept its case). It is registered on both servers:
   - It binds the tenant from `RequestContext.User`. On stdio that is the local principal the
     incoming message filter sets for every message.
   - It reads with `TryRead`, which does not consume, so Aura's read does not spend the handle

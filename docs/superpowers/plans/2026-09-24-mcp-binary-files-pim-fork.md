@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** `get_email_attachment` returns a `resource_link` to `attachment://<id>`. Any MCP client, Aura included, reads the attachment's bytes back through `resources/read` on its own session.
+**Goal:** `get_email_attachment` returns a `resource_link` to `attachment://stash/<id>`. Any MCP client, Aura included, reads the attachment's bytes back through `resources/read` on its own session.
 
 **Architecture:**
 
-- **Resource.** A new `EmailAttachmentResource` serves `attachment://{attachmentId}` from the existing tenant-scoped `InMemoryAttachmentStore`. The factory binds the tenant from the request principal, which is the same principal the `calendar` tool binds from.
+- **Resource.** A new `EmailAttachmentResource` serves `attachment://stash/{attachmentId}` from the existing tenant-scoped `InMemoryAttachmentStore`. The factory binds the tenant from the request principal, which is the same principal the `calendar` tool binds from.
 - **Tool.** The curated `calendar` tool returns a `CallToolResult`. `get_email_attachment` always stashes, and adds a `ResourceLinkBlock` next to the stash JSON. Every other action returns its JSON as one text block, which is what clients get today.
 - **Validation.** The code in Tasks 2 and 3 was spiked on 2026-09-24 in a WSL copy of this branch: 588/588 tests passed, including the in-process MCP round trips below.
 
@@ -28,7 +28,7 @@
 
 **Values from the spec**
 - The per-attachment store cap is **25 MiB** (`25 * 1024 * 1024`). The 100 MiB total and the 15-minute TTL are unchanged.
-- The resource URI template is `attachment://{attachmentId}`, and the resource MIME type is `application/octet-stream`.
+- The resource URI template is `attachment://stash/{attachmentId}`, and the resource MIME type is `application/octet-stream`.
 - MIME rule: use the stored content type unless it is empty or `application/octet-stream`; otherwise use `MimeKit.MimeTypes.GetMimeType(name)`.
 - Unknown or expired ID error, verbatim: `attachment expired or unknown; call get_email_attachment again`.
 
@@ -134,7 +134,7 @@ EOF
 
 ---
 
-### Task 2: The `attachment://{attachmentId}` resource
+### Task 2: The `attachment://stash/{attachmentId}` resource
 
 **Files:**
 - Create: `src/CalendarMcp.Core/Tools/EmailAttachmentResource.cs`
@@ -145,7 +145,7 @@ EOF
 
 **Interfaces:**
 - Produces:
-  - `EmailAttachmentResource.UriTemplate` (const `"attachment://{attachmentId}"`)
+  - `EmailAttachmentResource.UriTemplate` (const `"attachment://stash/{attachmentId}"`)
   - `EmailAttachmentResource.UriFor(string attachmentId) : string`
   - `EmailAttachmentResource.MimeTypeFor(string name, string? contentType) : string` (internal static)
   - `IMcpServerBuilder.WithEmailAttachmentResource()`
@@ -357,7 +357,7 @@ using ModelContextProtocol.Server;
 namespace CalendarMcp.Core.Tools;
 
 /// <summary>
-/// <c>attachment://{attachmentId}</c>: the bytes get_email_attachment stashed, read back by the
+/// <c>attachment://stash/{attachmentId}</c>: the bytes get_email_attachment stashed, read back by the
 /// client its result linked them to. The tenant comes from the request principal -- the bearer's
 /// <c>sub</c> over HTTP, the local tenant the stdio filter sets -- so an id minted for one tenant
 /// reads as unknown to every other, exactly as it already does for send_email.
@@ -368,9 +368,9 @@ namespace CalendarMcp.Core.Tools;
 /// </remarks>
 public sealed class EmailAttachmentResource(IAttachmentStore store, ITenantContext tenantContext, ClaimsPrincipal? user)
 {
-    public const string UriTemplate = "attachment://{attachmentId}";
+    public const string UriTemplate = "attachment://stash/{attachmentId}";
 
-    public static string UriFor(string attachmentId) => "attachment://" + attachmentId;
+    public static string UriFor(string attachmentId) => "attachment://stash/" + attachmentId;
 
     public BlobResourceContents Read(string attachmentId)
     {
@@ -447,7 +447,7 @@ with:
 
 ```csharp
             .WithCalendarView()
-            // attachment://{id}: the file behind get_email_attachment's resource_link.
+            // attachment://stash/{id}: the file behind get_email_attachment's resource_link.
             .WithEmailAttachmentResource()
 ```
 
@@ -461,7 +461,7 @@ In `src/CalendarMcp.StdioServer/Program.cs`, make the same replacement on its `.
 cd /d/tmp/aura-pim-mcp
 git add src/CalendarMcp.Core/Tools/EmailAttachmentResource.cs src/CalendarMcp.Tests/Helpers/InProcessMcpSession.cs src/CalendarMcp.Tests/Tools/EmailAttachmentResourceTests.cs
 git commit -F - -- src/CalendarMcp.Core/Tools/EmailAttachmentResource.cs src/CalendarMcp.Tests/Helpers/InProcessMcpSession.cs src/CalendarMcp.Tests/Tools/EmailAttachmentResourceTests.cs src/CalendarMcp.HttpServer/Program.cs src/CalendarMcp.StdioServer/Program.cs <<'EOF'
-feat(attachments): serve a stashed attachment as attachment://{id}
+feat(attachments): serve a stashed attachment as attachment://stash/{id}
 
 The stash could reach a client only as an id for send_email or through
 /attachments, which a sandboxed agent cannot reach and holds no bearer for.
@@ -570,7 +570,7 @@ public sealed class CalendarActionToolAttachmentTests
 
         Assert.AreEqual(stash, ((TextContentBlock)result.Content[0]).Text);
         var link = (ResourceLinkBlock)result.Content[1];
-        Assert.AreEqual("attachment://abc", link.Uri);
+        Assert.AreEqual("attachment://stash/abc", link.Uri);
         Assert.AreEqual("image/png", link.MimeType);
     }
 
@@ -732,7 +732,7 @@ returns two things:
 }
 ```
 
-plus a resource link, `attachment://xyz...`. A client that needs the
+plus a resource link, `attachment://stash/xyz...`. A client that needs the
 file's content reads that link with `resources/read`; the bytes never
 pass through the model. Hand the `attachmentId` to `send_email` to
 forward the file. Reading the link does not use up the ID.
@@ -763,7 +763,7 @@ The action returned an id that only send_email and the /attachments endpoint
 could use, so a client that needed to open the file had no way to get it, and
 the inline mode put base64 into the model's context. The curated tool now
 returns a CallToolResult: get_email_attachment always stashes and adds a
-resource_link to attachment://<id> beside the stash JSON; every other action
+resource_link to attachment://stash/<id> beside the stash JSON; every other action
 returns its JSON as the one text block clients already receive. The link
 fails loudly if upstream renames a field it is built from. The inline mode is
 gone from the curated schema; upstream's tool class is unchanged.
@@ -783,7 +783,7 @@ EOF
 
 ```markdown
    - **Attachments come back as a resource link.** `get_email_attachment` always stashes and
-     returns the stash JSON plus a `resource_link` to `attachment://<attachmentId>`, served by
+     returns the stash JSON plus a `resource_link` to `attachment://stash/<attachmentId>`, served by
      `EmailAttachmentResource` (tenant from the request principal, non-consuming `TryRead`,
      MIME from the file name when the provider says `application/octet-stream`). The curated
      schema has no `mode`; upstream's tool class keeps its inline mode, unreachable here. The
@@ -800,14 +800,14 @@ Expected: `0 Warning(s)`, `0 Error(s)`, then `Passed!` with 0 failed.
 
 ```
   echo '{"jsonrpc":"2.0","id":5,"method":"resources/templates/list"}'
-  echo '{"jsonrpc":"2.0","id":6,"method":"resources/read","params":{"uri":"attachment://unknown"}}'
+  echo '{"jsonrpc":"2.0","id":6,"method":"resources/read","params":{"uri":"attachment://stash/unknown"}}'
 ```
 
 Then run it.
 
 Expected:
-- `resources/templates/list` names `attachment://{attachmentId}`;
-- the read of `attachment://unknown` returns the `attachment expired or unknown` error;
+- `resources/templates/list` names `attachment://stash/{attachmentId}`;
+- the read of `attachment://stash/unknown` returns the `attachment expired or unknown` error;
 - `tools/list` still lists `calendar` only.
 
 - [ ] **Step 4: Commit the notes.**
