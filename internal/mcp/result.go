@@ -49,9 +49,11 @@ func DecodeToolResult(result *sdkmcp.CallToolResult) (text string, isError bool)
 	return payload.Text, isError
 }
 
-// DecodeToolPayload is DecodeToolResult plus the structured payload, files and links,
-// all decoded in the same pass. DecodeToolResult is the text-only projection of it,
-// kept because most callers want exactly that and should not carry fields they ignore.
+// DecodeToolPayload is DecodeToolResult plus the structured payload, files and links.
+// The text, files and links come from one walk over the content blocks; Structured comes
+// from the result's StructuredContent, which is not a content block. DecodeToolResult is
+// the text-only projection of it, kept because most callers want exactly that and should
+// not carry fields they ignore.
 func DecodeToolPayload(result *sdkmcp.CallToolResult) (payload ToolPayload, isError bool) {
 	if result == nil {
 		return ToolPayload{}, false
