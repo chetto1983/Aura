@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io"
 	pathpkg "path"
 	"slices"
 	"strings"
@@ -331,4 +332,17 @@ func parseBoxFileFrames(stdout []byte, sep, root string, nodeCap int) (files []b
 	}
 	// An even frame count means the stream ended mid-name or mid-content.
 	return files, len(frames)%2 == 0
+}
+
+// writeBoxFile streams size bytes of body into boxPath inside the box h names,
+// buffering nothing on the way. A failed copy takes its partial file with it: the
+// daemon extracts the tar as it reads it, so a source that dies mid-stream leaves a
+// SHORT file behind, and a truncated file that looks like a whole one is worse than
+// no file at all -- the agent would compute a confident wrong answer from it.
+func writeBoxFile(ctx context.Context, router *usersandbox.SandboxRouter, h usersandbox.BoxHandle, boxPath string, size int64, body io.Reader) error {
+	if err := router.WriteFileStream(ctx, h, boxPath, size, body); err != nil {
+		_, _ = router.Exec(ctx, h, usersandbox.ExecRequest{Command: "rm -f -- " + ShellQuoteArg(boxPath)})
+		return fmt.Errorf("write %s: %w", boxPath, err)
+	}
+	return nil
 }

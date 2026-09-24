@@ -136,8 +136,10 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	// A write failure is a plain error, NOT the sandbox_unavailable deny the route uses: it is
 	// just as likely to be the object store dying mid-download, and telling the model its
 	// container is down and an operator must restore it is advice it can only act on by
-	// retrying forever. The route above is where the containment answer belongs.
-	if err := t.write(ctx, handle, boxPath, meta.SizeBytes, body); err != nil {
+	// retrying forever. The route above is where the containment answer belongs. Nothing is
+	// buffered: an indexed document may be up to the 100 MiB ingest ceiling, and the aura
+	// container has 768 MiB in total.
+	if err := writeBoxFile(ctx, t.Router, handle, boxPath, meta.SizeBytes, body); err != nil {
 		return ToolResult{}, fmt.Errorf("document_open: %w", err)
 	}
 
@@ -161,28 +163,6 @@ func (t *DocumentOpen) Execute(ctx context.Context, raw json.RawMessage) (ToolRe
 	}
 	result.Provenance = &ToolResultProvenance{Source: "document_open", Trust: TrustTrusted}
 	return result, nil
-}
-
-// write streams size bytes of body into boxPath inside the caller's box. Nothing is
-// buffered on the way: an indexed document is an operator-chosen file, up to the
-// 100 MiB ingest ceiling, and the aura container has 768 MiB in total.
-//
-// A failed copy takes its partial file with it. The daemon extracts the tar as it
-// reads it, so a source that dies mid-stream leaves a SHORT file behind, and a
-// truncated spreadsheet that looks like a whole one is worse than no file at all:
-// the agent would compute a confident wrong answer from it.
-func (t *DocumentOpen) write(
-	ctx context.Context,
-	h usersandbox.BoxHandle,
-	boxPath string,
-	size int64,
-	body io.Reader,
-) error {
-	if err := t.Router.WriteFileStream(ctx, h, boxPath, size, body); err != nil {
-		_, _ = t.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: "rm -f -- " + ShellQuoteArg(boxPath)})
-		return fmt.Errorf("write %s: %w", boxPath, err)
-	}
-	return nil
 }
 
 // StagedDocumentDirectory derives the single sandbox directory for a logical
