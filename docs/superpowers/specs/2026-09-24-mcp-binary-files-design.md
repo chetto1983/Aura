@@ -225,7 +225,7 @@ its request ID, so the model can tell, and a fresh call fetches the file again.
 |---|---|---|
 | `whatsmeow` | `v0.0.0-20260622185415` | latest (`20260921121126` at audit), bridge tests + a live pairing check |
 | `x/crypto`, `x/net`, `go-sqlite3`, `protobuf`, `go.mau.fi/util` | 0.53 / 0.56 / 1.14.45 / 1.36.11 / 0.9.10 | latest |
-| Go toolchain | image `golang:bookworm` (floating); `govulncheck` finds 9 reachable stdlib CVEs at go1.26.3, incl. GO-2026-4970 (`os.Root` symlink escape in the media read/write paths) | pin a patched `golang:1.26.x-bookworm` and a `toolchain` line; `govulncheck` must report 0 reachable |
+| Go toolchain | `go 1.25.0` in `go.mod`, image `golang:bookworm` (floating). The audit's 9 reachable stdlib CVEs (incl. GO-2026-4970, `os.Root` symlink escape in the media paths) are go1.26.3's: WSL's `~/.local/bin/go` is a go1.26.3 symlink, which Aura's `go 1.27.1` directive auto-upgrades and the bridge's does not | align with Aura: `go 1.27.1` and `golang:1.27.1-bookworm`; re-run `govulncheck` on 1.27.1, target 0 reachable |
 | `anyio` | 4.13, capped `<4.14` | drop the cap: it came from dependabot #49 ("permit the latest version"), not a compatibility need; ≥ 4.14.2 (CVE-2026-63374/64847) |
 | `cryptography` | 48.0.1 | ≥ 50, the release that fixes all of PYSEC-2026-3552/3553/3554 |
 | `httpx2` | 2.10.0 | ≥ 2.12 (PYSEC-2026-3846/3848/3849) |
