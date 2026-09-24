@@ -67,7 +67,8 @@ export function SettingsFields({
   readonly resetting: string | undefined;
   readonly variant?: SettingFieldVariant;
   readonly onValueChange: (key: SettingsKey, value: string) => void;
-  readonly onReset: (key: SettingsKey) => void;
+  /** Omitted for rows the daemon writes only as a set (the embedding route): no Reset. */
+  readonly onReset?: ((key: SettingsKey) => void) | undefined;
   /** The catalogue each model field picks from; a field without one stays free text. */
   readonly pickers?: PickerBindings | undefined;
   /** Invalid fields expose aria-invalid; valid fields deliberately omit it. */
@@ -89,9 +90,13 @@ export function SettingsFields({
           onChange={(value) => {
             onValueChange(def.key, value);
           }}
-          onReset={() => {
-            onReset(def.key);
-          }}
+          onReset={
+            onReset === undefined
+              ? undefined
+              : () => {
+                  onReset(def.key);
+                }
+          }
           resetting={resetting === def.key}
         />
       ))}
@@ -116,7 +121,7 @@ function SettingField({
   readonly item: SettingItem;
   readonly value: string;
   readonly onChange: (value: string) => void;
-  readonly onReset: () => void;
+  readonly onReset: (() => void) | undefined;
   readonly resetting: boolean;
   readonly picker?: PickerBinding | undefined;
   readonly invalid: boolean;
@@ -232,7 +237,7 @@ function SettingField({
             {t(`settings.applied.${item.applied}`)}
           </span>
         </div>
-        {item.overridden ? (
+        {item.overridden && onReset !== undefined ? (
           <Button type="button" variant="ghost" size="sm" disabled={resetting} onClick={onReset}>
             {resetting ? <Spinner /> : <RotateCcw aria-hidden="true" />}
             {t('settings.actions.reset')}

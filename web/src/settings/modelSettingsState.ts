@@ -12,6 +12,7 @@ import {
   type SettingItem,
 } from './settingsApi';
 import { ALL_SETTINGS, type SettingDef, type SettingsKey } from './modelSettingsDefs';
+import { EMBEDDING_ROUTE_KEYS } from './embeddingBackendState';
 
 export interface LoadedState {
   readonly rows: Record<string, SettingItem>;
@@ -187,6 +188,9 @@ export function useModelSettings(scope: readonly SettingDef[]): ModelSettingsSta
     if (loaded === undefined) return [];
     return scope
       .filter((def) => {
+        // The route keys are not this save's: the daemon refuses them on PUT, and the
+        // embedding card applies them together after its preview.
+        if (EMBEDDING_ROUTE_KEYS.has(def.key)) return false;
         const value = loaded.values[def.key] ?? '';
         // A secret never round-trips its stored value, so "unchanged" is indistinguishable
         // from "empty": only a non-empty box counts as an edit.

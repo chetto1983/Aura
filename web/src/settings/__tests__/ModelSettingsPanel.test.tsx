@@ -411,8 +411,10 @@ describe('ModelSettingsPanel', () => {
     await expectResetClears('AURA_LLM_MAX_TOKENS');
   });
 
+  // The embedding route rows have no Reset: the daemon writes them only as a set, after the
+  // route's preview. Another backend row stands for "a backend resets".
   it('resets an overridden backend setting', async () => {
-    await expectResetClears('AURA_EMBED_BASE_URL');
+    await expectResetClears('AURA_STT_CLOUD_MODEL');
   });
 
   it('shows the saving spinner and ignores clicks while a save is in flight', async () => {

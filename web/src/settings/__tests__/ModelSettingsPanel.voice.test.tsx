@@ -87,12 +87,37 @@ interface SettingWrite {
   readonly value: string;
 }
 
+interface RoutePost {
+  readonly url: string;
+  readonly body: Record<string, string>;
+}
+
+const PREVIEW_BODY = {
+  space: 'es1-target',
+  space_label: 'openrouter qwen/qwen3-embedding-8b, 768d, recipe 1',
+  memory_space: 'es1-target',
+  native_width: 4096,
+  dimensions: 768,
+  width_warning: true,
+  chars_per_second: 5000,
+  input_limit: 32000,
+  work: { types: [{ type: 'Passage', rows: 40, chars: 90000 }], passages_over_limit: 0 },
+  tokens: 30000,
+  cost_usd: 0.0006,
+  local: false,
+  duration_seconds: 18,
+  floors_calibrated: false,
+  refusals: [],
+};
+
 function stubFetch(settings: unknown): {
   readonly gets: string[];
   readonly writes: SettingWrite[];
+  readonly posts: RoutePost[];
 } {
   const gets: string[] = [];
   const writes: SettingWrite[] = [];
+  const posts: RoutePost[] = [];
   vi.stubGlobal(
     'fetch',
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,6 +127,17 @@ function stubFetch(settings: unknown): {
         const body = JSON.parse(init.body) as { readonly value: string };
         writes.push({ key: decodeURIComponent(url.split('/').at(-1) ?? ''), value: body.value });
         return Promise.resolve(json({}));
+      }
+      if (init?.method === 'POST' && url.startsWith('/api/settings/embedding-route')) {
+        if (typeof init.body !== 'string') throw new Error('expected a JSON string body');
+        posts.push({ url, body: JSON.parse(init.body) as Record<string, string> });
+        return Promise.resolve(
+          json(
+            url.endsWith('/preview')
+              ? PREVIEW_BODY
+              : { space: 'es1-target', restarting: false, restart_required: true },
+          ),
+        );
       }
       if (url.startsWith('/api/settings/transcription-models')) {
         gets.push(url);
@@ -120,8 +156,10 @@ function stubFetch(settings: unknown): {
       return Promise.resolve(json(settings));
     }),
   );
-  return { gets, writes };
+  return { gets, writes, posts };
 }
+
+const previewButton = () => screen.getByRole('button', { name: 'Preview change' });
 
 function renderBackends() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -248,7 +286,7 @@ describe('ModelSettingsPanel backend models', () => {
   // typo never surfaced. Picking from the published list removes the typo, and the empty
   // choice is the local sidecar rather than a blank the operator has to interpret.
   it('picks the embedding model from the OpenRouter list and clears it to the local sidecar', async () => {
-    const { writes } = stubFetch(
+    const { writes, posts } = stubFetch(
       settingsBody(
         'openrouter',
         'https://openrouter.ai/api/v1',
@@ -274,14 +312,72 @@ describe('ModelSettingsPanel backend models', () => {
     fireEvent.click(screen.getByRole('option', { name: /Use local sidecar/ }));
     expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
 
+    // Review Focus 5: the pane's Save never writes a route key; the route goes through its
+    // preview.
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    fireEvent.click(previewButton());
+    await waitFor(() => {
+      expect(posts.map((post) => post.body.AURA_EMBED_MODEL)).toEqual(['']);
+    });
+    expect(writes).toEqual([]);
+  });
+
+  it('saves the other backends while an embedding route change waits for its preview', async () => {
+    const { writes } = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+    renderBackends();
+    const stt = await screen.findByLabelText('Speech-to-text cloud model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Speech-to-text cloud model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    fireEvent.click(stt);
+    fireEvent.click(screen.getByRole('option', { name: /qwen\/qwen3-asr-1\.7b/ }));
+    fireEvent.click(screen.getByRole('radio', { name: 'Manual endpoint' }));
+
     fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
     await waitFor(() => {
-      expect(writes).toEqual([{ key: 'AURA_EMBED_MODEL', value: '' }]);
+      expect(writes).toEqual([{ key: 'AURA_STT_CLOUD_MODEL', value: 'qwen/qwen3-asr-1.7b' }]);
+    });
+  });
+
+  it('previews, confirms and applies a new route with the space it was shown', async () => {
+    const { posts } = stubFetch(settingsBody('openrouter', 'https://openrouter.ai/api/v1'));
+    renderBackends();
+    fireEvent.click(await screen.findByRole('radio', { name: 'OpenRouter' }));
+    const embed = await screen.findByLabelText('Embedding model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Embedding model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    fireEvent.click(embed);
+    fireEvent.click(screen.getByRole('option', { name: /qwen\/qwen3-embedding-8b/ }));
+    fireEvent.click(previewButton());
+
+    const card = await screen.findByRole('region', { name: 'What this change does' });
+    expect(within(card).getByText(/es1-target/)).toBeTruthy();
+    expect(within(card).getByText(/Matryoshka/)).toBeTruthy();
+    expect(within(card).getByText(/uncalibrated/)).toBeTruthy();
+    const apply = within(card).getByRole('button', { name: 'Apply and restart' });
+    expect(apply.hasAttribute('disabled')).toBe(true);
+    fireEvent.click(within(card).getByRole('checkbox'));
+    fireEvent.click(apply);
+
+    expect(await screen.findByText('Saved. Restart Aura to switch to the new route.')).toBeTruthy();
+    expect(posts.at(-1)).toEqual({
+      url: '/api/settings/embedding-route',
+      body: {
+        AURA_EMBED_BASE_URL: '',
+        AURA_EMBED_MODEL: 'qwen/qwen3-embedding-8b',
+        AURA_EMBED_CLOUD_BASE_URL: '',
+        confirm_space: 'es1-target',
+      },
     });
   });
 
   it('uses a manual cloud endpoint without leaving its /v1 suffix to double up', async () => {
-    const { writes } = stubFetch(
+    const { posts } = stubFetch(
       settingsBody(
         'openrouter',
         'https://openrouter.ai/api/v1',
@@ -298,24 +394,23 @@ describe('ModelSettingsPanel backend models', () => {
     const base = screen.getByLabelText('Embedding cloud base URL');
     expect(base.getAttribute('aria-invalid')).toBe('true');
     expect(base.getAttribute('aria-describedby')).toBe('embedding-manual-url-error');
-    expect(
-      screen.getByRole('button', { name: 'Save runtime settings' }).hasAttribute('disabled'),
-    ).toBe(true);
+    // With no URL yet the rows still name the saved route: there is nothing to preview.
+    expect(screen.queryByRole('button', { name: 'Preview change' })).toBeNull();
 
     fireEvent.change(base, { target: { value: 'https://embed.example/v1/' } });
     expect(base.hasAttribute('aria-invalid')).toBe(false);
     expect(base.hasAttribute('aria-describedby')).toBe(false);
-    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    fireEvent.click(previewButton());
 
     await waitFor(() => {
-      expect(writes).toEqual([
-        { key: 'AURA_EMBED_CLOUD_BASE_URL', value: 'https://embed.example' },
+      expect(posts.map((post) => post.body.AURA_EMBED_CLOUD_BASE_URL)).toEqual([
+        'https://embed.example',
       ]);
     });
   });
 
   it('clears the cloud route values when returning to the local sidecar', async () => {
-    const { writes } = stubFetch(
+    const { posts } = stubFetch(
       settingsBody(
         'openrouter',
         'https://openrouter.ai/api/v1',
@@ -330,12 +425,11 @@ describe('ModelSettingsPanel backend models', () => {
     await screen.findByRole('radio', { name: 'Local' });
     fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
     expect(await screen.findByLabelText('Embedding base URL')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+    fireEvent.click(previewButton());
 
     await waitFor(() => {
-      expect(writes).toEqual([
-        { key: 'AURA_EMBED_CLOUD_BASE_URL', value: '' },
-        { key: 'AURA_EMBED_MODEL', value: '' },
+      expect(posts.map((post) => post.body)).toEqual([
+        { AURA_EMBED_BASE_URL: '', AURA_EMBED_MODEL: '', AURA_EMBED_CLOUD_BASE_URL: '' },
       ]);
     });
   });
