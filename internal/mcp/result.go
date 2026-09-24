@@ -9,18 +9,18 @@ import (
 
 // result.go re-expresses the pre-SDK decodeToolResult chain (client.go:392-421,
 // deleted in plan 45.1-03) against the SDK's typed CallToolResult. tool_methods.go
-// (also deleted in 45.1-03) was the only caller of that chain;
-// bridge_supervisor.go's CallToolText is now the single call site anywhere in the
-// tree (RESEARCH Pitfall 1).
+// (also deleted in 45.1-03) was the only caller of that chain. Two production sites
+// decode a call's result now, both through here so the domain-outcome chain cannot be
+// bypassed (RESEARCH Pitfall 1): bridge_supervisor.go's decodeResult, for every call an
+// agent makes, and cmd/aura's callSessionText, for the CLI's own sessions.
 
 // ToolPayload is one tools/call result decoded into what Aura actually consumes: the
 // concatenated text the MODEL reads, the structured payload a VIEW reads (MCP Apps
 // hands `structuredContent` to the rendered document in ui/notifications/tool-result),
 // and the files and links the result carried.
 //
-// They are one result, so they are decoded together in a single pass over its content
-// blocks — a caller that needed only one of these would otherwise re-walk the rest,
-// and they would drift.
+// They are one result, so they are decoded together: a caller that needed only one of
+// these would otherwise decode the result again, and the decodes would drift.
 type ToolPayload struct {
 	Text string
 	// Structured is the server's structuredContent as raw JSON, nil when it sent

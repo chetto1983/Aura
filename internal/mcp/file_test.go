@@ -75,6 +75,26 @@ func TestFileCapExceeded(t *testing.T) {
 	}
 }
 
+func TestFilePartRefusal(t *testing.T) {
+	cases := []struct {
+		name string
+		part FilePart
+		want string
+	}{
+		{"a file within the cap is not refused", FilePart{Data: make([]byte, 10)}, ""},
+		{"a file of exactly the file cap is not refused", FilePart{Data: make([]byte, MaxFileBytes)}, ""},
+		{"a file over the file cap is refused for its size", FilePart{Data: make([]byte, MaxFileBytes+1)}, FileCapExceeded(MaxFileBytes + 1)},
+		{"an unavailable part is refused for the reason it gives", FilePart{Unavailable: "read failed: expired"}, "read failed: expired"},
+		{"the reason bytes are missing wins over the size of the bytes it holds", FilePart{Unavailable: "read failed: expired", Data: make([]byte, MaxFileBytes+1)}, "read failed: expired"},
+		{"an empty part is not refused", FilePart{}, ""},
+	}
+	for _, c := range cases {
+		if got := c.part.Refusal(); got != c.want {
+			t.Errorf("%s: Refusal = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestFilePartCallBytes(t *testing.T) {
 	cases := []struct {
 		name string

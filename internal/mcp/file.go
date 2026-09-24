@@ -59,13 +59,27 @@ func (p FilePart) NotMaterialized(reason string) FileOutcome {
 	return FileOutcome{Name: p.Name, MIMEType: p.MIMEType, SizeBytes: size, NotMaterialized: reason}
 }
 
+// Refusal is why p is not written on its own account: its bytes could not be obtained
+// (Unavailable), or it is over MaxFileBytes. It is "" for a file fit to write. The call's
+// cap is not part of it: that one belongs to the files of a call together
+// (CallCapExceeded).
+func (p FilePart) Refusal() string {
+	switch {
+	case p.Unavailable != "":
+		return p.Unavailable
+	case len(p.Data) > MaxFileBytes:
+		return FileCapExceeded(int64(len(p.Data)))
+	}
+	return ""
+}
+
 // CallBytes is what p adds to the total its tool call is held to, MaxCallFileBytes:
-// its Data, unless it has none to write (Unavailable) or is refused on its own for
-// being over MaxFileBytes. The sink sums it to decide whether to write a call's files
-// at all, and the bridge sums it to stop reading links the sink would refuse, so
-// neither can refuse a call for a reason the other would not give.
+// its Data, unless p is refused on its own (Refusal), when it is never written and adds
+// nothing. The sink sums it to decide whether to write a call's files at all, and the
+// bridge sums it to stop reading links the sink would refuse, so neither can refuse a
+// call for a reason the other would not give.
 func (p FilePart) CallBytes() int {
-	if p.Unavailable != "" || len(p.Data) > MaxFileBytes {
+	if p.Refusal() != "" {
 		return 0
 	}
 	return len(p.Data)

@@ -59,8 +59,8 @@ func TestTurnCleanupRunsEveryStepWhenOneStepPanics(t *testing.T) {
 	if ran != 1 {
 		t.Fatalf("step \"1\" ran %d times, want 1: a panicking step must not stop the rest", ran)
 	}
-	if err == nil || !strings.Contains(err.Error(), "panic") {
-		t.Fatalf("Run error = %v, want it to mention the panic", err)
+	if err == nil || !strings.Contains(err.Error(), `turn cleanup "2" panicked: boom`) {
+		t.Fatalf("Run error = %v, want it to name the step \"2\" that panicked and why", err)
 	}
 }
 
