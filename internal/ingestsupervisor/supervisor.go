@@ -44,6 +44,11 @@ type Launcher interface {
 	Start(context.Context, ProcessSpec) (Process, error)
 }
 
+// RouteSource resolves the embedding route every child embeds with (RouteResolver).
+type RouteSource interface {
+	Resolve(context.Context) (EmbedRoute, error)
+}
+
 // Options configure discovery cadence and the non-secret shared S3 route.
 type Options struct {
 	PollInterval time.Duration
@@ -62,12 +67,15 @@ type ProcessSpec struct {
 	S3Endpoint string
 	S3Region   string
 	StateDB    string
+	// Embed is the embedding route. It is part of the fingerprint, so a route change
+	// restarts the child and CocoIndex re-embeds under the new space.
+	Embed EmbedRoute
 }
 
 // Environment overlays a child binding onto inherited deployment configuration.
 // Existing values for the owned keys are replaced rather than duplicated.
 func (s ProcessSpec) Environment(base []string) []string {
-	overrides := []string{
+	overrides := append([]string{
 		"AURA_INGEST_IDENTITY_ID=" + s.IdentityID,
 		"AURA_INGEST_S3_ENDPOINT=" + s.S3Endpoint,
 		"AURA_INGEST_S3_BUCKET=" + s.Bucket,
@@ -75,7 +83,7 @@ func (s ProcessSpec) Environment(base []string) []string {
 		"AURA_INGEST_S3_SECRET_ACCESS_KEY=" + s.SecretKey,
 		"AURA_INGEST_S3_REGION=" + s.S3Region,
 		"COCOINDEX_DB=" + s.StateDB,
-	}
+	}, s.Embed.Environment()...)
 	owned := make(map[string]struct{}, len(overrides))
 	for _, entry := range overrides {
 		owned[environmentKey(entry)] = struct{}{}
@@ -90,10 +98,8 @@ func (s ProcessSpec) Environment(base []string) []string {
 }
 
 func (s ProcessSpec) fingerprint() [sha256.Size]byte {
-	return sha256.Sum256([]byte(strings.Join([]string{
-		s.IdentityID, s.Bucket, s.AccessKey, s.SecretKey,
-		s.S3Endpoint, s.S3Region, s.StateDB,
-	}, "\x00")))
+	fields := []string{s.IdentityID, s.Bucket, s.AccessKey, s.SecretKey, s.S3Endpoint, s.S3Region, s.StateDB}
+	return sha256.Sum256([]byte(strings.Join(append(fields, s.Embed.Environment()...), "\x00")))
 }
 
 type managedProcess struct {
@@ -105,14 +111,23 @@ type managedProcess struct {
 type Supervisor struct {
 	lister   IdentityLister
 	resolver CredentialResolver
+	routes   RouteSource
 	launcher Launcher
 	options  Options
 	active   map[string]managedProcess
 	unbound  map[string]string
+	// route is the last embedding route that resolved, routed whether one ever has, and
+	// routeErr the failure last logged, so a failure that persists is logged once.
+	route    EmbedRoute
+	routed   bool
+	routeErr string
 }
 
-// New constructs a supervisor over Aura's existing identity and object-store seams.
-func New(lister IdentityLister, resolver CredentialResolver, launcher Launcher, options Options) *Supervisor {
+// New constructs a supervisor over Aura's existing identity and object-store seams and the
+// embedding route every child embeds with.
+func New(
+	lister IdentityLister, resolver CredentialResolver, routes RouteSource, launcher Launcher, options Options,
+) *Supervisor {
 	if options.PollInterval <= 0 {
 		options.PollInterval = defaultPollInterval
 	}
@@ -126,15 +141,15 @@ func New(lister IdentityLister, resolver CredentialResolver, launcher Launcher, 
 		options.Logger = slog.Default()
 	}
 	return &Supervisor{
-		lister: lister, resolver: resolver, launcher: launcher,
+		lister: lister, resolver: resolver, routes: routes, launcher: launcher,
 		options: options, active: make(map[string]managedProcess), unbound: make(map[string]string),
 	}
 }
 
 // Run reconciles immediately and then on the configured bounded interval until shutdown.
 func (s *Supervisor) Run(ctx context.Context) error {
-	if s.lister == nil || s.resolver == nil || s.launcher == nil {
-		return errors.New("ingest supervisor requires identity, credential, and process dependencies")
+	if s.lister == nil || s.resolver == nil || s.routes == nil || s.launcher == nil {
+		return errors.New("ingest supervisor requires identity, credential, embedding route, and process dependencies")
 	}
 	if err := s.Reconcile(ctx); err != nil {
 		s.options.Logger.Error("initial ingest reconciliation failed", "error", err)
@@ -158,6 +173,10 @@ func (s *Supervisor) Run(ctx context.Context) error {
 // Reconcile converges the running children on provisioned, active user identities.
 func (s *Supervisor) Reconcile(ctx context.Context) error {
 	s.reapExited()
+	route, routed := s.embedRoute(ctx)
+	if !routed {
+		return nil
+	}
 	identities, err := s.lister.ListIdentities(ctx)
 	if err != nil {
 		return fmt.Errorf("list identities: %w", err)
@@ -184,6 +203,7 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 			Bucket:     credentials.Bucket, AccessKey: credentials.AccessKey, SecretKey: credentials.SecretKey,
 			S3Endpoint: s.options.S3Endpoint, S3Region: s.options.S3Region,
 			StateDB: filepath.Join(s.options.StateRoot, item.ID, "coco.db"),
+			Embed:   route,
 		}
 	}
 	for identityID := range s.unbound {
@@ -223,6 +243,26 @@ func (s *Supervisor) Reconcile(ctx context.Context) error {
 		s.options.Logger.Info("identity ingest started", "identity", identityID, "bucket", spec.Bucket)
 	}
 	return reconcileErr
+}
+
+// embedRoute is the route this tick's children embed with. A route that does not resolve
+// keeps the last one that did: running children keep their specs, and an identity that
+// starts meanwhile joins them. Before any route has resolved there is nothing to start.
+// Each change of failure is logged once, as an unbound identity is.
+func (s *Supervisor) embedRoute(ctx context.Context) (EmbedRoute, bool) {
+	route, err := s.routes.Resolve(ctx)
+	if err != nil {
+		if s.routeErr != err.Error() {
+			s.options.Logger.Warn("embedding route unresolved; running children keep theirs", "error", err)
+			s.routeErr = err.Error()
+		}
+		return s.route, s.routed
+	}
+	if !s.routed || s.routeErr != "" || route.Space != s.route.Space {
+		s.options.Logger.Info("embedding route resolved", "space", route.Space, "model", route.Model)
+	}
+	s.route, s.routed, s.routeErr = route, true, ""
+	return route, true
 }
 
 func (s *Supervisor) reapExited() {

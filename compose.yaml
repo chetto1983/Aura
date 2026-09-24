@@ -974,6 +974,9 @@ services:
       STT_LANGUAGE: ${STT_LANGUAGE:-it}
       AURA_STT_CLOUD_MODEL: ${AURA_STT_CLOUD_MODEL:-}
       MULTIMODAL_TIMEOUT_SEC: ${MULTIMODAL_TIMEOUT_SEC:-120}
+      # Fallbacks only: the supervisor resolves the embedding route from aura.settings on
+      # every tick and overrides these in each child's environment
+      # (internal/ingestsupervisor/route.go).
       AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
       AURA_EMBED_DIMENSIONS: "768"
       # Catch-up mode does NOT fail closed, whatever this comment used to
