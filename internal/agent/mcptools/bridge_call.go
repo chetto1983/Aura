@@ -62,7 +62,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 // into history — so a server cannot use the view channel to say something extra
 // to the model; it reaches only the surfaces that render (bridge_views.go).
 func (b *bridgedTool) newResult(ctx context.Context, args map[string]any, payload mcp.ToolPayload) (tools.ToolResult, error) {
-	res, err := tools.NewResult(ctx, payload.Text)
+	res, err := b.resultText(ctx, payload)
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
@@ -83,4 +83,18 @@ func (b *bridgedTool) newResult(ctx context.Context, args map[string]any, payloa
 		(*res.Meta)[tools.MetaAcceptedFact] = evidence
 	}
 	return res, nil
+}
+
+// resultText is what the model reads: the server's text, then what became of any
+// files the result carried. The footer is reserved from the preview cap, because a
+// long email body must not truncate away the path to its attachment.
+func (b *bridgedTool) resultText(ctx context.Context, payload mcp.ToolPayload) (tools.ToolResult, error) {
+	if len(payload.Files) == 0 {
+		return tools.NewResult(ctx, payload.Text)
+	}
+	footer := b.srv.filesFooter(ctx, payload.Files)
+	if payload.Text != "" {
+		footer = "\n\n" + footer
+	}
+	return tools.NewResultReservingTail(ctx, payload.Text, footer)
 }

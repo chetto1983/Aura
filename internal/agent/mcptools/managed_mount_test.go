@@ -200,3 +200,21 @@ func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 		t.Fatalf("on stdio open failure names must be nil, got %v", names)
 	}
 }
+
+func TestMountManagedServerCarriesTheFileSink(t *testing.T) {
+	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
+	server := unprotectedHTTPFixtureServer(httpSrv.URL)
+	server.Type = mcp.ServerTypeStreamableHTTP
+	sink := &recordingSink{}
+
+	closer, _, host, err := MountManagedServerWithOptions(context.Background(), context.Background(), tools.NewRegistry(), "docs", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server), Files: sink})
+	if err != nil {
+		t.Fatalf("MountManagedServerWithOptions: %v", err)
+	}
+	t.Cleanup(func() { _ = closer() })
+
+	if host.files != sink {
+		t.Fatalf("mounted host files = %v, want the sink the mount was given", host.files)
+	}
+}

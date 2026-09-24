@@ -22,9 +22,11 @@ import (
 // context — must NOT be a short-lived, deferred-cancel context, see Pitfall #2);
 // handshakeCtx bounds ONLY this mount attempt (the connect handshake AND the
 // mount-time tools/list): a hung handshake is dropped within handshakeCtx's
-// deadline without affecting processCtx or any other server sharing it.
-func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
-	return mountStdio(processCtx, handshakeCtx, reg, name, cfg)
+// deadline without affecting processCtx or any other server sharing it. opts
+// carries what the boot path gives every mount; today that is the file sink.
+func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, opts MountOptions) (closer func() error, names []string, err error) {
+	closer, names, _, err = mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name), opts)
+	return closer, names, err
 }
 
 // MountManagedServer opens a managed MCP server (stdio or streamable HTTP,
@@ -70,6 +72,10 @@ type MountOptions struct {
 	// A zero value keeps the old behaviour, which is right for a server that needs no
 	// authorization at all.
 	OAuth mcp.OAuthOptions
+	// Files materializes the binary content a tool result carries into the calling
+	// turn's workspace (bridge_files.go). Nil means this host has none, and every
+	// file is reported as not materialized.
+	Files FileSink
 }
 
 // MountManagedServerWithOptions is the one mount entry point that carries the
@@ -119,9 +125,9 @@ func configureIdentityScopedHeaders(options *mcp.SessionOptions, policy bridgePo
 	}
 }
 
-// mountManagedHTTPHost is the streamable-HTTP mirror of mountStdio: it opens the
-// raw session and lists tools via handshakeCtx (bounded exactly like mountStdio's
-// raw discovery call — same rationale, see bridgeFromAdvertised's doc comment),
+// mountManagedHTTPHost is the streamable-HTTP mirror of mountStdioWithPolicyHost: it
+// opens the raw session and lists tools via handshakeCtx (bounded exactly like the
+// stdio raw discovery call — same rationale, see bridgeFromAdvertised's doc comment),
 // then wraps the session in a MountedServer so every CALL after a successful
 // mount gets the redial-on-transport-error behavior the stdio branch already had.
 func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
@@ -137,7 +143,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {
-		return openIdentityScopedHTTPMount(processCtx, handshakeCtx, reg, name, policy, opts.Views, connect)
+		return openIdentityScopedHTTPMount(processCtx, handshakeCtx, reg, name, policy, opts, connect)
 	}
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
@@ -145,14 +151,15 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return connect(pctx, hctx, o)
 	}
 	srv = NewMountedServer(name, open)
-	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts.Views)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts)
 }
 
-func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, views *mcp.ViewCatalog, connect openSessionFunc) (closer func() error, names []string, host *MountedServer, err error) {
+func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc) (closer func() error, names []string, host *MountedServer, err error) {
 	procCtx, cancel := context.WithCancel(processCtx)
 	parent := NewMountedServer(name, nil)
 	pool := newIdentitySessionPool(parent, connect, procCtx)
 	parent.identityPool = pool
+	parent.files = opts.Files
 
 	session, advertised, err := pool.openInitial(handshakeCtx)
 	if err != nil {
@@ -166,38 +173,21 @@ func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *
 		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	parent.trackAcceptedTools(advertised)
-	hydrateViews(handshakeCtx, session, name, views, advertised, policy)
+	hydrateViews(handshakeCtx, session, name, opts.Views, advertised, policy)
 	return func() error {
 		defer cancel()
 		return parent.Close()
 	}, names, parent, nil
 }
 
-// mountStdio is the shared stdio mount body for MountServer and MountManagedServer's
-// stdio branch. It lists tools via the RAW session (session.Tools), NOT through
-// MountedServer's ListTools, so the mount-time discovery call is bounded purely
-// by handshakeCtx (see bridgeFromAdvertised's doc comment for why routing it
-// through the mounted supervisor here would silently blow the mount deadline).
-// The supervisor is still constructed and returned as the mounted tools' owner,
-// so every CALL after a successful mount gets the normal redial-on-transport-
-// error behavior.
-func mountStdio(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
-	return mountStdioWithPolicy(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name))
-}
-
-func mountStdioWithPolicy(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy) (closer func() error, names []string, err error) {
-	closer, names, _, err = mountStdioWithPolicyHost(
-		processCtx,
-		handshakeCtx,
-		reg,
-		name,
-		cfg,
-		policy,
-		MountOptions{},
-	)
-	return closer, names, err
-}
-
+// mountStdioWithPolicyHost is the shared stdio mount body for MountServer and
+// MountManagedServer's stdio branch. It lists tools via the RAW session
+// (session.Tools), NOT through MountedServer's ListTools, so the mount-time
+// discovery call is bounded purely by handshakeCtx (see bridgeFromAdvertised's doc
+// comment for why routing it through the mounted supervisor here would silently
+// blow the mount deadline). The supervisor is still constructed and returned as the
+// mounted tools' owner, so every CALL after a successful mount gets the normal
+// redial-on-transport-error behavior.
 func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
 	elicit := elicitationHandlerFor(name, opts.Elicitation)
@@ -208,7 +198,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
 	srv = NewMountedServer(name, open)
-	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts.Views)
+	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts)
 }
 
 // openAttachAndMount is the shared body both mount branches reduce to once
@@ -216,7 +206,8 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 // tools bounded purely by handshakeCtx (bridgeFromAdvertised's doc comment
 // explains why that must NOT route through the supervisor), Attach, then mount
 // with the given policy — reaping the session on any failure along the way.
-func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy, views *mcp.ViewCatalog) (closer func() error, names []string, host *MountedServer, err error) {
+func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
+	srv.files = opts.Files
 	// Each mount attempt gets its own cancellable slice of the daemon-lifetime process
 	// context, so a mount that gives up reaps the child it spawned. Without this a stdio
 	// server that hangs during discovery outlives the mount that dropped it: the process
@@ -257,7 +248,7 @@ func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Con
 	// After the mount succeeded, on the SAME raw session and the same bounded
 	// handshake budget: a view read that hangs must cost this mount its deadline
 	// and nothing more, and it must never undo a mount that already worked.
-	hydrateViews(handshakeCtx, session, name, views, advertised, policy)
+	hydrateViews(handshakeCtx, session, name, opts.Views, advertised, policy)
 	mounted = true
 	return srv.Close, names, srv, nil
 }

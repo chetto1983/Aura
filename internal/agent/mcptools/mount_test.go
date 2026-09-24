@@ -49,7 +49,7 @@ func TestMount_ThreeToolServerEarnsAlwaysLoadedSlot(t *testing.T) {
 func TestMountServer_SpawnFailureLeavesRegistryClean(t *testing.T) {
 	reg := tools.NewRegistry()
 	closer, names, err := MountServer(context.Background(), context.Background(), reg, "bad",
-		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"})
+		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"}, MountOptions{})
 	if err == nil {
 		t.Fatal("want spawn error for a missing binary")
 	}

@@ -75,6 +75,9 @@ type MountedServer struct {
 	// identityPool is non-nil only for OAuth-protected HTTP servers. The parent
 	// remains the single registry target while calls route to subject-bound children.
 	identityPool *identitySessionPool
+	// files materializes the files a tool result carries (bridge_files.go). Set once
+	// at mount, before any call; nil on a host with no workspace.
+	files FileSink
 
 	mu                sync.Mutex
 	session           *sdkmcp.ClientSession
@@ -278,13 +281,14 @@ func (s *MountedServer) ListTools(ctx context.Context) ([]*sdkmcp.Tool, error) {
 // decodeResult is the ONE result-decode call site in the tree (RESEARCH Pitfall
 // 1): bridgedTool.Execute, the two cmd/aura host-memory callers and the
 // readiness check all route through CallTool, so the domain-outcome chain
-// cannot be bypassed by adding a caller.
-func (s *MountedServer) decodeResult(name string, res *sdkmcp.CallToolResult) (mcp.ToolPayload, error) {
+// cannot be bypassed by adding a caller. A successful result's links are read back
+// on session, the one that made the call (bridge_links.go).
+func (s *MountedServer) decodeResult(ctx context.Context, session *sdkmcp.ClientSession, name string, res *sdkmcp.CallToolResult) (mcp.ToolPayload, error) {
 	payload, isErr := mcp.DecodeToolPayload(res)
 	if isErr {
 		return mcp.ToolPayload{}, mcp.DecodeToolCallError(s.name, name, payload.Text)
 	}
-	return payload, nil
+	return resolveLinks(ctx, session, payload), nil
 }
 
 // CallToolText is the text-only projection of CallTool, which is what every
@@ -317,7 +321,7 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 		var res *sdkmcp.CallToolResult
 		res, callErr = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 		if callErr == nil {
-			return s.decodeResult(name, res)
+			return s.decodeResult(ctx, session, name, res)
 		}
 		if !s.isDead() && !isSessionTransportFailure(callErr) {
 			return mcp.ToolPayload{}, callErr
@@ -349,7 +353,7 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 	if callErr != nil {
 		return mcp.ToolPayload{}, callErr
 	}
-	return s.decodeResult(name, res)
+	return s.decodeResult(ctx, retry, name, res)
 }
 
 // toolIsReadOnly fails closed for unknown/untracked tools. Only an advertised,

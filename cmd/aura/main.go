@@ -446,7 +446,7 @@ func buildRegistryWithMCP(
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			server, managed := mcpPolicies[name]
 			if !managed {
-				return mcptools.MountServer(mountCtx, c, reg, name, mcpServers[name])
+				return mcptools.MountServer(mountCtx, c, reg, name, mcpServers[name], mcptools.MountOptions{})
 			}
 			closer, names, host, mountErr := mcptools.MountManagedServerWithOptions(
 				mountCtx,
