@@ -157,6 +157,62 @@ func TestMemoryPassLivePagesByRIDAcrossPositionTen(t *testing.T) {
 	}
 }
 
+// The production path end to end, against a real model (final review recommendation): the
+// route attests the local sidecar on every read of its space and embeds in batches with the
+// document prefix, and the pass moves a whole memory into that space. Every other pass test
+// uses fake embedders. The logged time per record is the pass's load on the sidecar.
+func TestMemoryPassLiveWithTheRealEmbedder(t *testing.T) {
+	real := liveEmbedder(t)
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	before := constantEmbedder{value: 1, space: "es1-before"}
+	const facts = 64
+	for i := range facts {
+		fact := mergeFact(fmt.Sprintf("Archive%d", i), "keeps", "ArchiveObject",
+			fmt.Sprintf("Archive%d keeps notebook number %d in the Turin archive.", i, i))
+		if _, err := client.WithEmbedder(before).UpsertFact(ctx, fact, now); err != nil {
+			t.Fatalf("UpsertFact(%d): %v", i, err)
+		}
+	}
+	projection := liveConversationProjection("identity-a", "conversation-real", 1,
+		"We talked about the Turin archive and where its notebooks are kept.")
+	if err := client.WithEmbedder(before).ApplyConversationProjection(ctx, projection); err != nil {
+		t.Fatalf("ApplyConversationProjection: %v", err)
+	}
+	if err := client.WithEmbedder(before).UpsertReasoningTrace(ctx, validReasoningTrace()); err != nil {
+		t.Fatalf("UpsertReasoningTrace: %v", err)
+	}
+
+	space, err := real.Space(ctx)
+	if err != nil {
+		t.Fatalf("Space: %v", err)
+	}
+	onReal := client.WithEmbedder(real)
+	start := time.Now()
+	tally, err := onReal.reembedMemory(ctx)
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("reembedMemory: %v", err)
+	}
+	if tally.embedded != facts+2 || tally.refused != 0 || tally.failed != 0 {
+		t.Fatalf("tally = %+v, want %d facts, the turn and the trace embedded", tally, facts)
+	}
+	t.Logf("space %s (%s): %d records in %s, %.0f ms each",
+		space.ID, space.Label, tally.embedded, elapsed.Round(time.Millisecond),
+		float64(elapsed.Milliseconds())/float64(tally.embedded))
+	if open, err := onReal.memoryDenseOpen(ctx, space.ID); err != nil || !open {
+		t.Fatalf("after the pass: open=%v err=%v, want open", open, err)
+	}
+	hybrid, err := onReal.SearchFactsHybrid(ctx, "dove sono i quaderni dell'archivio di Torino", 5, time.Time{})
+	if err != nil {
+		t.Fatalf("SearchFactsHybrid: %v", err)
+	}
+	if hybrid.RetrievalPath != retrievalPathHybrid || len(hybrid.Facts) == 0 {
+		t.Fatalf("an Italian question over the re-embedded memory = %+v, want dense hits", hybrid)
+	}
+}
+
 func maxRIDPosition(t *testing.T, c *Client) int {
 	t.Helper()
 	rows, err := c.Query(context.Background(), "SELECT @rid AS rid FROM FACT", nil)

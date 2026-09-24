@@ -118,8 +118,9 @@ type spaceGate struct {
 //
 // The lock is held across the three counts on purpose: readers of one tenant arriving
 // together share one check instead of sending three counts each. The cost is that a waiter
-// cannot give up before the holder's counts return, whatever its own deadline; how long
-// they take is not yet measured (spec, "What this design does not prove").
+// cannot give up before the holder's counts return, whatever its own deadline. Each count
+// scans its type (the `<>` half of otherSpace uses no index): 25-34 ms at 5,000 rows,
+// measured 2026-09-24 (spec, "What this design does not prove").
 func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error) {
 	gate := &c.memoryGate
 	gate.mu.Lock()

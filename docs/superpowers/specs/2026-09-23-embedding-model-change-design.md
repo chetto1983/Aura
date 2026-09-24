@@ -595,12 +595,20 @@ fusion and index work; nothing here adds Go vector math.
   Memory indexes hold tens to thousands of vectors; the documents family is plan 3's to measure.
 - **The run budget stops a pass mid-tenant.** The next run resumes from what is still in
   another space, starting one tenant later.
-- **The gate's cost is not measured.** The §2 measurement (2026-09-23, local 26.9.1) proves an
-  unstamped row stays visible to `embed_space IS NULL`; it does not prove the planner uses the
-  index for `embed_space IS NULL OR embed_space <> :space` (a `<>` is not normally
-  index-assisted), and `embedding IS NOT NULL` may load each full record. At memory scale
-  (tens to thousands of rows per tenant, one check per 30 s) this is expected to be cheap; the
-  E2E measures the count on the largest tenant (final review of plan 2, #11, 2026-09-24).
+- **The gate scans each memory type, and is measured only up to 5,000 rows** (2026-09-24).
+  `EXPLAIN` on ArcadeDB 26.9.1 shows the planner splitting the `OR`: `embed_space IS NULL`
+  comes from the index, `embed_space <> :space` from a scan of the whole type. Measured:
+  - the lab VM's only tenant (0 facts, 27 turns, 10 traces; the stamp does not exist there yet,
+    so every vector counts as outside the space): 1.5–12 ms per count;
+  - a synthetic 5,000-turn memory with the stamp index (local): 25–34 ms per count, with 500
+    or with 5,000 mismatches alike.
+  So the gate costs one type scan per type per tenant every 30 s. Not measured: tens of
+  thousands of rows (a linear guess puts 50,000 near 0.3 s per count) or concurrent load.
+- **The pass's load is measured on one sidecar** (2026-09-24). The lab VM's CPU sidecar
+  (EmbeddingGemma-300M Q8_0, `-t 4 -np 1`), reached over the LAN through an SSH tunnel,
+  re-embedded 66 records (facts, a turn, a trace) in 4.2–4.8 s: 63–72 ms per record, the
+  ArcadeDB writes included. A 5,000-record memory would take about one 5-minute run budget.
+  Not measured: what the pass does to document queries sharing that `-np 1` sidecar.
 
 ## Out of scope
 
