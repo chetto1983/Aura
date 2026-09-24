@@ -25,6 +25,7 @@ func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
 		// different meaning (the memory of each provider's route, not the active one).
 		server.SetLLMRouteStore(store)
 	}
+	wireEmbeddingRoutes(server, chat)
 	server.SetTelegramBotProbe(telegramGetMeProbe)
 	server.SetLLMRuntime(chat.llmRuntime)
 	server.SetLLMRouteReloader(&primaryLLMRouteReloader{

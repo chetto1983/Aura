@@ -215,6 +215,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	for _, pattern := range agui.SettingsCatalogRoutes() {
 		mux.Handle(pattern, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	}
+	// The embedding route (spec §4): the report is a read; the preview calls the route it
+	// names, and the apply writes the three route rows, so both carry the route keys' gate.
+	mux.Handle("GET /api/settings/embedding-space", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
+	mux.Handle("POST /api/settings/embedding-route/preview", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	mux.Handle("POST /api/settings/embedding-route", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("PUT /api/settings/llm-profile", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("PUT /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle("DELETE /api/settings/{key}", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))

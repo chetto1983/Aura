@@ -62,3 +62,34 @@ func TestServeWebuiMountsEveryCatalogueRoute(t *testing.T) {
 		t.Error("the embedding catalogue is missing from SettingsCatalogRoutes; it is the one that shipped unmounted")
 	}
 }
+
+// The embedding route endpoints (spec §4) reach the AG-UI handler through the cockpit mux, or
+// the card and its preview would 404 on a daemon that serves them.
+func TestServeWebuiMountsTheEmbeddingRouteEndpoints(t *testing.T) {
+	const localID = "00000000-0000-0000-0000-000000000001"
+	auth := authulaTestDeps(localID, wiringIdentities{id: localID})
+	var hits []string
+	aguiHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.Method+" "+r.URL.Path)
+		_, _ = io.WriteString(w, `{}`)
+	})
+	handler, err := newServeHandler(aguiHandler, auth, &fakeAuthulaProvider{})
+	if err != nil {
+		t.Fatalf("newServeHandler: %v", err)
+	}
+	for _, pattern := range []string{
+		"GET /api/settings/embedding-space",
+		"POST /api/settings/embedding-route/preview",
+		"POST /api/settings/embedding-route",
+	} {
+		method, path, _ := strings.Cut(pattern, " ")
+		hits = nil
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(method, path, strings.NewReader("{}"))
+		addAuthulaSession(req)
+		handler.ServeHTTP(rec, req)
+		if len(hits) != 1 || hits[0] != pattern {
+			t.Errorf("%s did not reach the AG-UI handler: hits=%v code=%d", pattern, hits, rec.Code)
+		}
+	}
+}

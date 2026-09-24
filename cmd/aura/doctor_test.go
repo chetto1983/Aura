@@ -20,11 +20,13 @@ func installDoctorFakeProbes(t *testing.T) {
 	oldEmbed := doctorProbeEmbed
 	oldMCPServers := doctorProbeMCPServers
 	oldLLMKey := doctorLookupLLMKey
+	oldEmbeddingSpace := doctorProbeEmbeddingSpace
 	t.Cleanup(func() {
 		doctorProbePostgres = oldPostgres
 		doctorProbeEmbed = oldEmbed
 		doctorProbeMCPServers = oldMCPServers
 		doctorLookupLLMKey = oldLLMKey
+		doctorProbeEmbeddingSpace = oldEmbeddingSpace
 	})
 
 	doctorProbePostgres = func(context.Context, *config.Config) (string, error) { return "reachable", nil }
@@ -36,6 +38,7 @@ func installDoctorFakeProbes(t *testing.T) {
 	// real server during an unrelated unit test).
 	doctorProbeMCPServers = func(context.Context, *config.Config) (string, error) { return "0/0 HTTP MCP servers reachable", nil }
 	doctorLookupLLMKey = func() string { return "sk-test-doctor" }
+	doctorProbeEmbeddingSpace = func(context.Context, *config.Config) (string, error) { return "1 tenant(s) dense", nil }
 }
 
 type fakeDoctorPostgresPool struct {
@@ -287,8 +290,8 @@ func TestDoctorEmbedProbeFailsACloudRouteWithoutAKey(t *testing.T) {
 // by name rather than asserting index.
 func TestDoctorChecksIncludesMCPServers(t *testing.T) {
 	checks := doctorChecks()
-	if len(checks) != 4 {
-		t.Fatalf("doctorChecks() len = %d, want 4 (postgres, embed, llm_key, mcp)", len(checks))
+	if len(checks) != 5 {
+		t.Fatalf("doctorChecks() len = %d, want 5 (postgres, embed, llm_key, mcp, embedding_space)", len(checks))
 	}
 	for _, c := range checks {
 		if c.name != "mcp" {

@@ -51,31 +51,19 @@ func (r identityRoster) IdentityIDs(ctx context.Context) ([]string, error) {
 // nil pointer, and the "disabled" branch — which tests for a nil seam — would never
 // fire.
 func buildMemoryEmbedBackfill(chat *chatEnv) handlers.MemoryEmbedder {
-	if chat == nil || chat.cfg == nil || chat.identity == nil {
-		return nil
-	}
-	base := strings.TrimSpace(chat.cfg.ArcadeDB.BaseURL)
-	if base == "" {
-		slog.Warn("aura serve: no ArcadeDB server configured — memory embedding backfill disabled")
+	if chat == nil {
 		return nil
 	}
 	// The daemon's memory route, the same one every memory write uses, so the pass cannot
 	// write vectors from another model than the writes do.
-	embedder := chat.memoryEmbedder
-	if embedder == nil {
+	if chat.memoryEmbedder == nil {
 		slog.Warn("aura serve: no embedding sidecar — memory embedding backfill disabled, retrieval stays lexical")
 		return nil
 	}
-	credentials, err := arcadedb.NewTenantCredentials()
-	if err != nil {
-		slog.Warn("aura serve: no ArcadeDB tenant secret — memory embedding backfill disabled", "error", err)
-		return nil
+	if walk := memoryTenantWalk(chat, "memory embedding backfill", chat.memoryEmbedder); walk != nil {
+		return walk
 	}
-	// Database is deliberately unset: the sweep selects it per identity, and a
-	// default here would be a fallback that writes one tenant's vectors into
-	// another's memory.
-	return arcadedb.NewTenantBackfill(
-		identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, embedder)
+	return nil
 }
 
 // memorySweepTasks is the slice of *cron.Store the boot kick needs.
@@ -111,23 +99,33 @@ func kickMemoryEmbedBackfill(ctx context.Context, tasks memorySweepTasks) error 
 // reason buildMemoryEmbedBackfill does: a nil *arcadedb.TenantBackfill boxed in a non-nil
 // interface would never hit the handler's "disabled" branch.
 func buildMemoryMentionLink(chat *chatEnv) handlers.MemoryMentionLinker {
+	// embedder is nil deliberately: LinkMentions never reads it (unlike EmbedMissing, which
+	// requires one). *arcadedb.TenantBackfill satisfies both the MemoryEmbedder and the
+	// MemoryMentionLinker seam, so this builder wires only the half of its capability that
+	// mention linking needs — a database and tenant credentials, no embedding sidecar.
+	if walk := memoryTenantWalk(chat, "memory mention link", nil); walk != nil {
+		return walk
+	}
+	return nil
+}
+
+// memoryTenantWalk builds the walk over every identity's memory database, or nil, logged under
+// purpose, when the memory server or the tenant derivation secret is not configured.
+func memoryTenantWalk(chat *chatEnv, purpose string, embedder arcadedb.DenseEmbedder) *arcadedb.TenantBackfill {
 	if chat == nil || chat.cfg == nil || chat.identity == nil {
 		return nil
 	}
 	base := strings.TrimSpace(chat.cfg.ArcadeDB.BaseURL)
 	if base == "" {
-		slog.Warn("aura serve: no ArcadeDB server configured — memory mention link disabled")
+		slog.Warn("aura serve: no ArcadeDB server configured — " + purpose + " disabled")
 		return nil
 	}
 	credentials, err := arcadedb.NewTenantCredentials()
 	if err != nil {
-		slog.Warn("aura serve: no ArcadeDB tenant secret — memory mention link disabled", "error", err)
+		slog.Warn("aura serve: no ArcadeDB tenant secret — "+purpose+" disabled", "error", err)
 		return nil
 	}
-	// embedder is nil deliberately: LinkMentions never reads it (unlike EmbedMissing, which
-	// requires one). *arcadedb.TenantBackfill satisfies both the MemoryEmbedder and the
-	// MemoryMentionLinker seam, so this builder wires only the half of its capability that
-	// mention linking needs — a database and tenant credentials, no embedding sidecar.
-	return arcadedb.NewTenantBackfill(
-		identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, nil)
+	// Database is deliberately unset: the walk selects it per identity, and a default here
+	// would be a fallback that writes one tenant's vectors into another's memory.
+	return arcadedb.NewTenantBackfill(identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, embedder)
 }

@@ -44,6 +44,11 @@ func runDoctor(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: aura doctor")
 		os.Exit(exitUsage)
 	}
+	// The configuration `aura serve` runs, aura.settings included: without the overlay the
+	// embed checks read the environment's route while the daemon ran the cockpit's.
+	if note := applySettingsOverlay(context.Background()); note != "" {
+		fmt.Println("note:", note)
+	}
 	os.Exit(runDoctorWithConfig(context.Background(), os.Stdout, config.LoadDB()))
 }
 
@@ -52,7 +57,12 @@ func runDoctorWithConfig(ctx context.Context, out io.Writer, cfg *config.Config)
 	for _, check := range doctorChecks() {
 		detail, err := check.probe(ctx, cfg)
 		if err != nil {
-			if _, writeErr := fmt.Fprintf(out, "FAIL %s: %v\n", check.name, err); writeErr != nil {
+			// A check with no failure code reports a state, not an outage.
+			verdict := "FAIL"
+			if check.failureCode == 0 {
+				verdict = "WARN"
+			}
+			if _, writeErr := fmt.Fprintf(out, "%s %s: %v\n", verdict, check.name, err); writeErr != nil {
 				return exitInfra
 			}
 			if exitCode == 0 {
@@ -82,6 +92,7 @@ func doctorChecks() []doctorCheck {
 		{name: "embed", probe: doctorProbeEmbed, failureCode: exitUnreachable},
 		{name: "llm_key", probe: doctorProbeLLMKey, failureCode: 0},
 		{name: "mcp", probe: doctorProbeMCPServers, failureCode: exitUnreachable},
+		{name: "embedding_space", probe: doctorProbeEmbeddingSpace, failureCode: 0},
 	}
 }
 
