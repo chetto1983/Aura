@@ -38,8 +38,9 @@ var CalendarMultiplexedToolName = namespacedName(calendarNamespace, calendarCura
 // multiplexedMCPTools maps each curated MCP tool's model-facing name to the
 // trustedRecipeActions source its action table lives under. This is the ONLY
 // place a curated MCP tool becomes "known multiplexed" to
-// isKnownMultiplexedMCPTool/MCPActionClassFor — plan 46-08 adds the WhatsApp
-// entry here and nowhere else.
+// isKnownMultiplexedMCPTool/MCPActionClassFor. Each entry also needs a per-action
+// classifier in internal/gateway; bridge_multiplex_classifier_test.go fails until
+// it has one.
 var multiplexedMCPTools = map[string]string{
 	CalendarMultiplexedToolName: calendarRecipeSource,
 }

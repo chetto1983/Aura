@@ -22,8 +22,8 @@ func (curatedTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, 
 // TestEveryCuratedMultiplexedToolHasAGatewayClassifier walks the multiplexedMCPTools
 // table itself, so a curated tool added there without a per-action classifier in
 // internal/gateway fails here, in CI, with no list in a test to edit. classify
-// (gateway/classify.go) would otherwise grade every action of such a tool at the
-// generic Normal tier, destructive ones included.
+// (gateway/classify.go) would otherwise grade every action of such a tool at one
+// flat tier taken from its spec bits, losing the per-action grading.
 //
 // The spec is built Mutating and Multiplexed, the way the curated calendar tool
 // bridges: ValidateClassifiable skips a non-mutating tool, and a curated tool whose
