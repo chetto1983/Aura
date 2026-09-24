@@ -48,6 +48,11 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      # aura serve provisions every identity's memory tenant before it listens and exits if
+      # ArcadeDB refuses; the JVM took 33 s at boot, and an aura that lost that race made
+      # `up -d` abort and leave caddy Created (2026-09-24, compose_boot_order_test.go).
+      arcadedb:
+        condition: service_healthy
       aura-llama-embed:
         condition: service_healthy
       garage-bootstrap:
