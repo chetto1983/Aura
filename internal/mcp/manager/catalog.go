@@ -106,7 +106,7 @@ func BuiltInCatalog() []CatalogEntry {
 			// Aura PIM sidecar (forked calendar-mcp → chetto1983/aura-pim-mcp):
 			// unified mail + calendar + contacts over MCP-over-HTTP. The agent mounts
 			// the surface Deferred + calendar__*-namespaced through the existing
-			// MountManagedServer; Aura's trusted-recipe policy distinguishes reads,
+			// MountManagedServerWithOptions; Aura's trusted-recipe policy distinguishes reads,
 			// reversible writes, and externally irreversible sends independently of
 			// server-provided hints. The fork also drops bulk destructive tools.
 			// Trusted recipe, install-on-demand (NOT default-on like memory):
@@ -139,7 +139,7 @@ func BuiltInCatalog() []CatalogEntry {
 		},
 		{
 			// Aura's own ArcadeDB MCP (cmd/arcadedb-mcp). Mounts the memory__* surface
-			// Deferred + namespaced through the existing MountManagedServer
+			// Deferred + namespaced through the existing MountManagedServerWithOptions
 			// (D-06/D-07). Trusted (NOT remote_http) so it can mount default-on
 			// (D-08); the URL has no launch Command (HTTP recipe).
 			//

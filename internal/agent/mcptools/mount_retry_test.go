@@ -141,9 +141,9 @@ func TestMountRetryDelay_CappedExponential(t *testing.T) {
 	}
 }
 
-// TestMountWithRetry_RealManagedTransportExhausts wires the REAL MountManagedServer against a dead
-// loopback URL: the connection-refused is classified as a transport error and retried to exhaustion,
-// proving the end-to-end classification (not just the stub path).
+// TestMountWithRetry_RealManagedTransportExhausts wires the REAL MountManagedServerWithOptions against
+// a dead loopback URL: the connection-refused is classified as a transport error and retried to
+// exhaustion, proving the end-to-end classification (not just the stub path).
 func TestMountWithRetry_RealManagedTransportExhausts(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	reg := tools.NewRegistry()
@@ -151,7 +151,9 @@ func TestMountWithRetry_RealManagedTransportExhausts(t *testing.T) {
 	server.Type = mcp.ServerTypeStreamableHTTP
 	closer, names, err := MountWithRetry(context.Background(), "memory", fastPolicy(2),
 		func(c context.Context) (func() error, []string, error) {
-			return MountManagedServer(c, c, reg, "memory", server)
+			closer, names, _, err := MountManagedServerWithOptions(c, c, reg, "memory", server,
+				MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
+			return closer, names, err
 		})
 	if err == nil {
 		t.Fatal("a dead URL must fail to mount")

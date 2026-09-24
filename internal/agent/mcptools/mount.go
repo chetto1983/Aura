@@ -34,22 +34,6 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 	return closer, names, err
 }
 
-// MountManagedServer opens a managed MCP server (stdio or streamable HTTP,
-// resolved from its config), mounts all advertised tools into reg, and returns a
-// closer for the underlying transport. processCtx/handshakeCtx follow MountServer's
-// two-context contract (Pitfall #2).
-func MountManagedServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
-	closer, names, _, err = MountManagedServerWithOptions(
-		processCtx,
-		handshakeCtx,
-		reg,
-		name,
-		server,
-		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)},
-	)
-	return closer, names, err
-}
-
 // MountOptions carries the per-mount choices the composition root owns: the
 // network policy resolved from the server's runtime profile, and the operator
 // consent surface a server-initiated elicitation reaches (plan 45.1-06).
@@ -83,11 +67,12 @@ type MountOptions struct {
 	Files FileSink
 }
 
-// MountManagedServerWithOptions is the one mount entry point that carries the
-// full per-mount option set. MountManagedServer is the no-options convenience
-// over it; the two egress-only wrappers that used to sit between them were
-// deleted when the composition root started needing the mounted host for every
-// managed server, not just the memory one.
+// MountManagedServerWithOptions opens a managed MCP server (stdio or streamable
+// HTTP, resolved from its config), mounts all advertised tools into reg, and
+// returns a closer for the underlying transport and the mounted host, which the
+// composition root needs for every managed server, not just the memory one.
+// processCtx/handshakeCtx follow MountServer's two-context contract (Pitfall #2);
+// opts carries the full per-mount option set.
 func MountManagedServerWithOptions(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	policy := managedBridgePolicy(server)
 	if isStreamableHTTPManagedServer(server) {
@@ -186,7 +171,7 @@ func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *
 }
 
 // mountStdioWithPolicyHost is the shared stdio mount body for MountServer and
-// MountManagedServer's stdio branch. It lists tools via the RAW session
+// MountManagedServerWithOptions's stdio branch. It lists tools via the RAW session
 // (session.Tools), NOT through MountedServer's ListTools, so the mount-time
 // discovery call is bounded purely by handshakeCtx (see bridgeFromAdvertised's doc
 // comment for why routing it through the mounted supervisor here would silently

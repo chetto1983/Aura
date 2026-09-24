@@ -75,8 +75,8 @@ func TestMountManagedServerReturnsProcessOwnedHostClient(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_HTTPSuccess drives MountManagedServer through the real
-// streamable-HTTP transport. Every advertised tool mounts and the closer shuts
+// TestMountManagedServer_HTTPSuccess drives MountManagedServerWithOptions through the
+// real streamable-HTTP transport. Every advertised tool mounts and the closer shuts
 // the session down cleanly.
 func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
@@ -84,9 +84,10 @@ func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	server := unprotectedHTTPFixtureServer(httpSrv.URL)
 	server.Type = mcp.ServerTypeStreamableHTTP
 
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, "docs", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
 	if err != nil {
-		t.Fatalf("MountManagedServer: %v", err)
+		t.Fatalf("MountManagedServerWithOptions: %v", err)
 	}
 	if closer == nil {
 		t.Fatal("success must return a non-nil closer")
@@ -107,14 +108,15 @@ func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_OpenFailure covers MountManagedServer's error return
-// for the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail
+// TestMountManagedServer_OpenFailure covers MountManagedServerWithOptions's error
+// return for the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail
 // before any process spawns.
 func TestMountManagedServer_OpenFailure(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{Command: "anything"}
 
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "blocked", server)
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, "blocked", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
 	if err == nil {
 		t.Fatal("a blocked-trust server must fail to open")
 	}
@@ -143,7 +145,8 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 
 	server := unprotectedHTTPFixtureServer(httpSrv.URL)
 	server.Type = mcp.ServerTypeStreamableHTTP
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, "docs", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("want a wrapped registration collision error, got %v", err)
 	}
@@ -156,16 +159,17 @@ func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 }
 
 // TestMountManagedServer_HTTPBranchInfersFromBareURL covers the HTTP branch via
-// a bare URL (no explicit Type): MountManagedServer must infer streamable-HTTP
-// and mount every advertised tool.
+// a bare URL (no explicit Type): MountManagedServerWithOptions must infer
+// streamable-HTTP and mount every advertised tool.
 func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	httpSrv, _ := startSDKHTTPFixture(t, managedTools()...)
 	reg := tools.NewRegistry()
 	server := unprotectedHTTPFixtureServer(httpSrv.URL) // bare URL, no Type -> inferred HTTP
 
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "docs", server)
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, "docs", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
 	if err != nil {
-		t.Fatalf("MountManagedServer (bare url): %v", err)
+		t.Fatalf("MountManagedServerWithOptions (bare url): %v", err)
 	}
 	if closer == nil {
 		t.Fatal("success must return a non-nil closer")
@@ -180,8 +184,8 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 	}
 }
 
-// TestMountManagedServer_StdioBranchFailure covers MountManagedServer's stdio
-// branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then the
+// TestMountManagedServer_StdioBranchFailure covers MountManagedServerWithOptions's
+// stdio branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then the
 // SDK's CommandTransport.Connect fails on the missing binary.
 func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 	reg := tools.NewRegistry()
@@ -189,7 +193,8 @@ func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 		Command: "aura-nonexistent-mcp-binary-xyz",
 		Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedLocal},
 	}
-	closer, names, err := MountManagedServer(context.Background(), context.Background(), reg, "stdio", server)
+	closer, names, _, err := MountManagedServerWithOptions(context.Background(), context.Background(), reg, "stdio", server,
+		MountOptions{Egress: mcp.RuntimeEgressPolicy(false, server)})
 	if err == nil {
 		t.Fatal("want spawn error on a missing binary")
 	}

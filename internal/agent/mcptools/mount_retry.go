@@ -41,7 +41,7 @@ type MountRetryPolicy struct {
 
 // MountWithRetry runs mount under policy, retrying ONLY transport failures with capped exponential
 // backoff until it succeeds, exhausts the attempt budget, hits a non-transport error, or ctx is
-// cancelled. The mount closure is the unit retried (MountManagedServer or MountServer), so a
+// cancelled. The mount closure is the unit retried (MountManagedServerWithOptions or MountServer), so a
 // successful attempt returns its closer + mounted tool names to the caller unchanged. A failed
 // transport attempt leaves the registry untouched — the transport dies during initialize, before
 // any tool is registered — so a retry can never double-register a tool.
