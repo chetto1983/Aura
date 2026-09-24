@@ -815,12 +815,52 @@ What this does NOT prove:
   covers it.
 
 The added latency of the link read alone was not separated from each call's own work.
-"What is in this photo" stayed unanswered, although the VM's chat model (`gemma4:31b-cloud` on
-Ollama) reads images. A native image part reaches the model only from the user's own uploads: the
-`ReferenceIDs` projected onto the last user message (`openai_compat/request.go`). A file an MCP tool
-lands in `/workspace` never becomes one, and `read_file` refuses binaries. So the model held the
-photo in its box and could not see it. A file the model derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the turn by design, and
-this run deleted it by hand.
+A file the model derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the
+turn by design, and this run deleted it by hand.
+
+**An image in the box reaches the model natively** (measured 2026-09-24 on VM .158, revisions
+`9c92e6855` and `a13c0bedc`, chat model `gemma4:31b-cloud` on Ollama). The first run of "what is in
+this photo" went unanswered. A native image part then came only from the user's own uploads, and
+`read_file` refused binaries. Now `read_file` on a JPEG, PNG, GIF or WebP in `/workspace` attaches
+the image to the next request of the turn, as a user message after the tool results. It is gated on
+the model's image capability, as uploads are (`openai_compat/request_tool_media.go`). Before that,
+the image is downscaled to a 1024 px long edge, capped at 2 MiB, and refused if it does not fully
+decode.
+
+| Run | What the model answered | Checked against |
+|---|---|---|
+| Latest WhatsApp photo (850×850 JPEG, 11,858 B, from a channel) | A white STRONG router with two external antennas | The image itself. The caption names only "Strong Router 4G WiFi". |
+| Follow-up on the same photo | "WPS" under the last light, and 6 lights | The image has 7 lights. "WPS" is printed only on the image. The count is the model's error, not a lost pixel: 850 px goes out unscaled. |
+| Two 12 MP mail photos (4032×3024, 9.5 and 10.5 MB), fetched and read in parallel | A gas hob, a moka, a coffee pack reading "Intenso", a yellow tape measure | Text on the pack, not in the mail |
+| A 6000×4000 JPEG planted in the box, a random 4-digit number drawn on it | `read_file` refused it as over the pixel bound. The model shrank it with Pillow through `shell_exec`, read the copy, and answered "5403, orange" | The number was written only to a file outside the VM; it matched |
+
+- **Memory, two 12 MP reads.** `aura` went from 126 MiB to 273 after the two fetches, 398 after
+  the two reads, and a 452 MiB peak (VmHWM 507) of 768.
+  - The anon memory, 415 MiB just after, was back at 241 MiB five minutes later. The Go scavenger
+    returns it, and no `GOMEMLIMIT` is set.
+  - The 24 MP refusal cost nothing, because it is decided from the header. The 2000×1333 copy the
+    model then read added ~66 MiB.
+- **The decode bound depends on the color model.** One `DownscaleForVision` call was measured in
+  WSL, each image in a fresh process: VmHWM minus that of an empty process.
+
+  | Image | 12 MP | 40 MP |
+  |---|---|---|
+  | baseline 4:2:0 JPEG | 120 MiB | 235 MiB |
+  | progressive 4:4:4 JPEG | 280 MiB | 756 MiB |
+  | progressive CMYK JPEG | 390 MiB | 1,116 MiB |
+
+  - With a 300 MiB budget per decode, the bounds are YCbCr 12.36 MP, CMYK 8.47 MP, gray 22.77 MP
+    and anything else 10.11 MP (`a13c0bedc`). Go keeps every coefficient of a progressive JPEG
+    until its last scan.
+  - Over the bound, `read_file` refuses, and says `shell_exec` can shrink the image. An upload goes
+    to the OCR sidecar unshrunk.
+
+What this does NOT prove:
+- the `tool_media_count` trace field on the VM. The reasoning trace is off there
+  (`AURA_REASONING_TRACE`), so delivery is proven by what only the image carries;
+- the WSL decode figures inside the aura container, whose own heap comes on top;
+- an animated GIF (only its first frame is decoded), lossy WebP, or a 16-bit gray PNG;
+- chat models other than `gemma4:31b-cloud`.
 
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
