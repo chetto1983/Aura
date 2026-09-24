@@ -50,6 +50,7 @@
 
 internal/runner/conversations
 web/node_modules
+web/.stryker-tmp
 web/coverage
 web/test-results
 web/playwright-report
