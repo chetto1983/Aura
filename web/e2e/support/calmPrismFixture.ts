@@ -209,6 +209,9 @@ async function installShellRoutes(page: Page) {
     json(route, { identity_id: 'operator', capabilities: [] }),
   );
   await page.route('**/api/voice/capabilities', (route) => json(route, { tts: true, stt: true }));
+  // The shell polls the appliance updater on mount; unmocked, the real daemon answers this
+  // unauthenticated page 401 whenever the poll lands before the health check.
+  await page.route('**/api/system/update', (route) => json(route, { managed: false }));
   await page.route('**/api/composer/skills', (route) => json(route, { skills: [] }));
   await page.route('**/api/composer/reasoning-capabilities', (route) =>
     json(route, { levels: ['auto', 'off'], default: 'auto', detected: false }),

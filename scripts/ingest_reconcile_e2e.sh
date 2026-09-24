@@ -189,7 +189,7 @@ secret_key="$(printf '%s\n' "$key_output" | grep -oP '(?<=Secret key:)\s*\K\S+')
 docker exec aura-garage /garage bucket create "$bucket" >/dev/null
 docker exec aura-garage /garage bucket allow --read --write --owner "$bucket" --key "$access_key" >/dev/null
 
-# EXTRACT_COUNT is set by run_pass -- the number of "[extract] <name>" lines printed,
+# EXTRACT_COUNT is set by run_pass -- the number of "[extract] <name>" records printed,
 # which app.py's _extract logs only when memo=True actually let its body execute.
 # Zero on an unchanged rerun is wiring probe 1; the log line IS the observable.
 EXTRACT_COUNT=0
@@ -214,7 +214,9 @@ run_pass() {
     return 1
   fi
   cat "$log"
-  EXTRACT_COUNT="$(grep -c '^\[extract\]' "$log" || true)"
+  # Occurrences, not lines: print() writes the text and its newline apart, so two worker
+  # threads can tear a line ("[embed] 1 chunk(s) in one request[extract] beta.txt").
+  EXTRACT_COUNT="$({ grep -o '\[extract\] ' "$log" || true; } | wc -l | tr -d ' ')"
 }
 
 echo "== Step 1: three objects, one catch-up pass =="

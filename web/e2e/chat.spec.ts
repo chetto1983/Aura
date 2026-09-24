@@ -222,6 +222,11 @@ async function installAppShellRoutes(page: Page) {
       body: JSON.stringify({ tts: false, stt: false }),
     }),
   );
+  // The shell polls the appliance updater on mount; unmocked, the real daemon answers this
+  // unauthenticated page 401 whenever the poll lands before the health check.
+  await page.route('**/api/system/update', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"managed":false}' }),
+  );
   await page.route('**/api/composer/skills', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '{"skills":[]}' }),
   );
