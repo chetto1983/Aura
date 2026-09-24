@@ -615,7 +615,12 @@ fusion and index work; nothing here adds Go vector math.
 - **A full re-embed on ArcadeDB 26.9.1 costs one graph rebuild per vector index** on the first
   query after the next ArcadeDB restart: before 26.10.1 an updated vector is a delete plus an
   insert, and a delete forced that rebuild (arcadedb-docs `concepts/vector-search.adoc`).
-  Memory indexes hold tens to thousands of vectors; the documents family is plan 3's to measure.
+  Measured 2026-09-24 on a disposable 26.9.1 (768-d, COSINE, no quantization, one query
+  thread): at 5,000 vectors the first query after a restart took 3,514 ms after a full re-embed
+  against 1,157 ms with nothing re-embedded (later queries 27-42 ms); at 20,000, 13,272 ms
+  against 1,639 ms (30-34 ms). Until that restart the re-embedded index answers without a
+  rebuild (207 ms first query at 20,000). Memory indexes hold tens to thousands of vectors.
+  Not measured: concurrent queries during the rebuild, and INT8 quantization.
 - **The run budget stops a pass mid-tenant.** The next run resumes from what is still in
   another space, starting one tenant later.
 - **The gate scans each memory type, and is measured only up to 5,000 rows** (2026-09-24).
