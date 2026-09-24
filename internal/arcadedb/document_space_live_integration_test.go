@@ -17,6 +17,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/documents"
@@ -300,6 +301,56 @@ func TestDocumentSpaceLiveFusedLegNeverRanksAnotherSpace(t *testing.T) {
 	}
 	if len(candidates) == 0 || !strings.HasPrefix(candidates[0].SearchDocumentID, "doc_video") {
 		t.Fatalf("candidates = %+v, want the in-space transcript first", candidates)
+	}
+}
+
+// The cockpit's report runs on 26.9.1 as written: the four counts per type, a memory whose
+// types do not exist yet counted as empty, the stuck file named, and sum(`text`.length()).
+func TestDocumentSpaceLiveReportAndWorkParse(t *testing.T) {
+	client, _ := liveDocumentDatabase(t)
+	seedLiveLibrary(t, client, liveSchema)
+	ctx := context.Background()
+	// CocoIndex writes a file's card and passages together, so the prd's card shares the
+	// other-space stamp its passage carries.
+	if _, err := client.Command(ctx, "UPDATE IndexedDocument SET embed_space = :space WHERE search_document_id = 'doc_prd'",
+		map[string]any{"space": liveOtherSpace}); err != nil {
+		t.Fatalf("restamp card: %v", err)
+	}
+	report, err := client.SpaceReport(ctx, liveIdentity, "es1-mem-live", liveSpace)
+	if err != nil {
+		t.Fatalf("SpaceReport: %v", err)
+	}
+	memory, docs := report.Families[0], report.Families[1]
+	if !memory.Open || memory.Types[0] != (arcadedb.TypeTally{Type: "FACT"}) {
+		t.Fatalf("memory = %+v, want an empty open family", memory)
+	}
+	wantPassages := arcadedb.TypeTally{Type: "Passage", InSpace: 7, OtherSpace: 1}
+	if docs.Open || docs.Types[0] != wantPassages || docs.Types[1] != (arcadedb.TypeTally{Type: "IndexedDocument", InSpace: 5, OtherSpace: 1}) {
+		t.Fatalf("documents = %+v, want 7+1 passages and 5+1 cards, closed", docs)
+	}
+	if len(report.StuckDocuments) != 1 || report.StuckDocuments[0].FileName != "prd.md" ||
+		report.StuckDocuments[0].Space != liveOtherSpace {
+		t.Fatalf("stuck = %+v, want prd.md in %s", report.StuckDocuments, liveOtherSpace)
+	}
+	work, err := client.CorpusWork(ctx, "es1-mem-live", liveOtherSpace, 100)
+	if err != nil {
+		t.Fatalf("CorpusWork: %v", err)
+	}
+	rows, chars, over := 0, 0, 0
+	for _, doc := range liveLibrary() {
+		for _, passage := range doc.passages {
+			length := utf8.RuneCountInString(passage.text)
+			if passage.space != liveOtherSpace {
+				rows, chars = rows+1, chars+length
+			}
+			if length > 100 {
+				over++
+			}
+		}
+	}
+	if work.Types[3] != (arcadedb.TypeWork{Type: "Passage", Rows: rows, Chars: chars}) || work.Types[4].Rows != 5 ||
+		work.PassagesOverLimit != over {
+		t.Fatalf("work = %+v, want Passage %d rows %d chars, 5 cards, %d over the limit", work, rows, chars, over)
 	}
 }
 

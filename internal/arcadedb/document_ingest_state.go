@@ -49,7 +49,11 @@ func (d *DocumentIndex) IngestState(ctx context.Context, identityID string) (*In
 	if err != nil {
 		return nil, err
 	}
-	rows, err := client.Query(ctx,
+	return client.ingestState(ctx, identityID)
+}
+
+func (c *Client) ingestState(ctx context.Context, identityID string) (*IngestState, error) {
+	rows, err := c.Query(ctx,
 		"SELECT status, observed_at, in_progress, finished, errors FROM "+
 			documentIngestStateType+" WHERE identity_id = :identity_id",
 		map[string]any{"identity_id": strings.TrimSpace(identityID)},
