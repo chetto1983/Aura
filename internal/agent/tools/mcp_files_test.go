@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode"
@@ -31,10 +32,11 @@ func hexSum(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// listWritten answers the sink's `ls -1A -- '<dir>'` from what the box holds, one name a
-// line, the way the real box would. Any other command gets an empty answer.
+// listWritten answers the `ls -1A -- '<dir>'` a sink's listing command ends with, from what
+// the box holds, one name a line, the way the real box would. Any other command gets an
+// empty answer.
 func (f *fakeBox) listWritten(cmd string) usersandbox.ExecResult {
-	dir, ok := strings.CutPrefix(cmd, "ls -1A -- '")
+	_, dir, ok := strings.Cut(cmd, "ls -1A -- '")
 	if !ok {
 		return usersandbox.ExecResult{}
 	}
@@ -78,9 +80,25 @@ func TestMCPFileSinkWritesEachFileWhereTheTurnRemovesIt(t *testing.T) {
 	}
 }
 
+// An unclean exit (an updater restart, an OOM kill) skips the turn's own removal, and nothing
+// else removes a turn directory, so the exec that lists a call's directory first sweeps the
+// stale ones. The turn's own directory is never swept, however long the turn has run.
+func TestMCPFileSinkSweepsTheTurnDirectoriesAnUncleanExitLeftBehind(t *testing.T) {
+	be := &fakeBox{}
+	ctx, _ := mcpTurnCtx(t)
+
+	(&MCPFileSink{Router: routerWith(be)}).Materialize(ctx, "aura-pim", []mcp.FilePart{{Name: "a.txt", Data: []byte("x")}})
+
+	want := "find '/workspace/mcp-files' -mindepth 1 -maxdepth 1 -type d -mmin +1440 ! -path '/workspace/mcp-files/req-1' -exec rm -rf -- {} + 2>/dev/null; " +
+		"ls -1A -- '/workspace/mcp-files/req-1/aura-pim' 2>/dev/null"
+	if len(be.execs) == 0 || be.execs[0].Command != want {
+		t.Fatalf("the listing exec = %v\nwant [%q]", be.execs, want)
+	}
+}
+
 func TestMCPFileSinkNeverOverwritesAFileOfTheSameName(t *testing.T) {
 	be := &fakeBox{respond: func(cmd string) usersandbox.ExecResult {
-		if strings.HasPrefix(cmd, "ls ") {
+		if strings.Contains(cmd, "ls -1A ") {
 			return usersandbox.ExecResult{Stdout: []byte("report.pdf\nreport-2.pdf\n")}
 		}
 		return usersandbox.ExecResult{}
@@ -154,6 +172,10 @@ var mcpFileNameCases = []struct{ name, mime, want string }{
 	{"notes.txt  ", "", "notes.txt"},
 	// An extension longer than maxMCPExtensionBytes is part of the name, so a cut takes it too.
 	{strings.Repeat("a", 250) + "." + strings.Repeat("b", 20), "", strings.Repeat("a", 200)},
+	// A cut that lands after a space must not leave it at the end of the stem, before the
+	// extension or as the last character of a name without one.
+	{strings.Repeat("a", 195) + " " + strings.Repeat("b", 20) + ".pdf", "", strings.Repeat("a", 195) + ".pdf"},
+	{strings.Repeat("a", 199) + " " + strings.Repeat("b", 10), "", strings.Repeat("a", 199)},
 }
 
 func TestMCPFileNameIsOneSafeComponent(t *testing.T) {
@@ -266,6 +288,42 @@ func TestMCPFileSinkWithoutATurnWritesNothing(t *testing.T) {
 	}
 	if len(be.execs) != 0 || len(be.written) != 0 {
 		t.Fatalf("no turn, yet the box was touched: %v %v", be.execs, be.written)
+	}
+}
+
+// routeCountingBox counts the Route calls (Backend.Resolve) made through it.
+type routeCountingBox struct {
+	*fakeBox
+	resolves atomic.Int32
+}
+
+func (b *routeCountingBox) Resolve(ctx context.Context, spec usersandbox.SandboxSpec) (usersandbox.BoxHandle, error) {
+	b.resolves.Add(1)
+	return b.fakeBox.Resolve(ctx, spec)
+}
+
+// A turn that wrote nothing makes no box call (spec §Turn-end cleanup): a call with no
+// part, or whose parts are all refused on their own, neither routes to the box nor
+// registers a removal for the turn's drain.
+func TestMCPFileSinkMakesNoBoxCallWhenNoPartIsToBeWritten(t *testing.T) {
+	be := &routeCountingBox{fakeBox: &fakeBox{}}
+	ctx, cleanup := mcpTurnCtx(t)
+	sink := &MCPFileSink{Router: routerWith(be)}
+
+	sink.Materialize(ctx, "s", nil)
+	sink.Materialize(ctx, "s", []mcp.FilePart{
+		{Name: "huge.bin", Data: make([]byte, mcp.MaxFileBytes+1)},
+		{Name: "old.pdf", Unavailable: "read failed: attachment expired"},
+	})
+
+	if err := cleanup.Run(context.Background()); err != nil || be.resolves.Load() != 0 || len(be.execs) != 0 || len(be.written) != 0 {
+		t.Fatalf("nothing was to be written, yet the box was called: routes=%d execs=%v written=%v err=%v", be.resolves.Load(), be.execs, be.written, err)
+	}
+
+	// The counters do see a call that writes.
+	sink.Materialize(ctx, "s", []mcp.FilePart{{Name: "a.txt", Data: []byte("x")}})
+	if be.resolves.Load() != 1 || len(be.written) != 1 {
+		t.Fatalf("a writing call made %d routes and %d writes, want 1 and 1", be.resolves.Load(), len(be.written))
 	}
 }
 

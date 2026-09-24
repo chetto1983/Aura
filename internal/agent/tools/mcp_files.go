@@ -9,6 +9,7 @@ import (
 	pathpkg "path"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -38,6 +39,9 @@ const (
 	// maxMCPExtensionBytes is the longest suffix still kept as an extension when a
 	// long name is cut; anything longer is part of the name.
 	maxMCPExtensionBytes = 16
+	// staleMCPTurnDirAge is far above the length of any turn; a turn directory's mtime is
+	// set when its server subdirectory is created, and its age counts from there.
+	staleMCPTurnDirAge = 24 * time.Hour
 )
 
 // mcpFileExtensions gives a nameless or extensionless file an extension from its
@@ -63,12 +67,9 @@ func (s *MCPFileSink) Materialize(ctx context.Context, server string, parts []mc
 	pending := make([]int, 0, len(parts))
 	total := 0
 	for i, part := range parts {
-		switch {
-		case part.Unavailable != "":
-			out[i] = part.NotMaterialized("")
-		case len(part.Data) > mcp.MaxFileBytes:
-			out[i] = part.NotMaterialized(mcp.FileCapExceeded(int64(len(part.Data))))
-		default:
+		if refusal := part.Refusal(); refusal != "" {
+			out[i] = part.NotMaterialized(refusal)
+		} else {
 			pending = append(pending, i)
 		}
 		total += part.CallBytes()
@@ -120,7 +121,17 @@ func (s *MCPFileSink) open(ctx context.Context, server string, total int) (*mcpF
 		return removeBoxDir(ctx, s.Router, handle, turnDir)
 	})
 	dir := pathpkg.Join(turnDir, mcpPathSegment(server))
-	return &mcpFileWriter{router: s.Router, handle: handle, dir: dir}, ""
+	return &mcpFileWriter{router: s.Router, handle: handle, turnDir: turnDir, dir: dir}, ""
+}
+
+// staleTurnDirSweep is the shell command that removes the turn directories under
+// mcpFilesBoxDir older than staleMCPTurnDirAge, except keep, the one this turn writes
+// into. A turn whose process died (an updater restart, an OOM kill) never ran its own
+// removal, and nothing else would. It writes nothing to stdout, and the caller chains it
+// with `;`, so neither its output nor its exit status reaches what follows.
+func staleTurnDirSweep(keep string) string {
+	return fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -type d -mmin +%d ! -path %s -exec rm -rf -- {} + 2>/dev/null",
+		ShellQuoteArg(mcpFilesBoxDir), int(staleMCPTurnDirAge/time.Minute), ShellQuoteArg(keep))
 }
 
 func removeBoxDir(ctx context.Context, router *usersandbox.SandboxRouter, h usersandbox.BoxHandle, dir string) error {
@@ -134,19 +145,23 @@ func removeBoxDir(ctx context.Context, router *usersandbox.SandboxRouter, h user
 	return nil
 }
 
-// mcpFileWriter writes one call's files into one directory of one box.
+// mcpFileWriter writes one call's files into one directory (dir, under its turn's turnDir)
+// of one box.
 type mcpFileWriter struct {
-	router *usersandbox.SandboxRouter
-	handle usersandbox.BoxHandle
-	dir    string
-	taken  map[string]bool
+	router  *usersandbox.SandboxRouter
+	handle  usersandbox.BoxHandle
+	turnDir string
+	dir     string
+	taken   map[string]bool
 }
 
 // listTaken reads what the directory already holds, so a second file of the same name
 // in the same turn gets a -2 instead of overwriting the first. A dir that does not
-// exist yet is empty.
+// exist yet is empty. The same exec first sweeps the turn directories an unclean exit
+// left behind, and its failure cannot fail the listing.
 func (w *mcpFileWriter) listTaken(ctx context.Context) error {
-	res, err := w.router.Exec(ctx, w.handle, usersandbox.ExecRequest{Command: "ls -1A -- " + ShellQuoteArg(w.dir) + " 2>/dev/null"})
+	command := staleTurnDirSweep(w.turnDir) + "; ls -1A -- " + ShellQuoteArg(w.dir) + " 2>/dev/null"
+	res, err := w.router.Exec(ctx, w.handle, usersandbox.ExecRequest{Command: command})
 	if err != nil {
 		return err
 	}
@@ -205,7 +220,8 @@ func mcpFileName(name, mimeType string) string {
 		if len(ext) > maxMCPExtensionBytes {
 			ext = ""
 		}
-		name = truncatePreview(strings.TrimSuffix(name, ext), maxMCPFileNameBytes-len(ext)) + ext
+		stem := truncatePreview(strings.TrimSuffix(name, ext), maxMCPFileNameBytes-len(ext))
+		name = strings.TrimSpace(stem) + ext
 	}
 	return name
 }
