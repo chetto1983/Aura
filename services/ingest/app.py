@@ -142,7 +142,6 @@ def _card_name(file_name: str, converted_path: str) -> str:
     return pathlib.PurePosixPath(file_name).stem + pathlib.PurePosixPath(converted_path).suffix
 
 
-@coco.fn(memo=True)
 def _card(path: str, file_name: str) -> str:
     """Describe the file, by calling Aura's own filecard rather than reimplementing it.
 
@@ -210,34 +209,32 @@ def _text_fingerprint(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+@dataclasses.dataclass(frozen=True, slots=True)
+class Extracted:
+    """What one file says: its text, its card and where its sections start."""
+
+    text: str
+    card: str
+    anchors: list[outline.Anchor]
+
+
 @coco.fn(memo=True)
-async def process_file(
-    file: amazon_s3.S3File, identity_id: str, table: neo4j.TableTarget[Passage],
-    documents: neo4j.TableTarget[IndexedDocument],
-) -> None:
-    # The walker's iteration key is the PREFIX-RELATIVE path (F0: the spike used exactly
-    # that as the passage identity, breaking find->open). resolve() is the raw S3 object
-    # key, stable regardless of any prefix scoping -- that is the source_key identity.py
-    # hashes into search_document_id.
-    key = file.file_path.resolve()
-    # A distinctive, greppable line: only prints when this component actually RUNS its
-    # body, so it is the observable proxy for "was this file re-extracted" -- memo=True
-    # skips the whole function, print included, on an unchanged rerun.
-    print(f"[extract] {key}", flush=True)
-    content = await file.read()
-    # The object's own name when it carries one, the key's tail when it does not.
-    #
-    # A chat attachment's key is `chat/<assetID>.pdf` on purpose -- a key travels into
-    # presigned URLs and access logs, so the filename is deliberately kept out of it -- and
-    # with nothing else carrying the name, every attachment reached this index as
-    # "019f8a2b-....pdf". That name is not just displayed: it goes into file_name_words
-    # below, so searching for a document by the name the operator gave it found nothing.
-    #
-    # The fallback is not a stopgap: a file the operator dropped into the bucket directly
-    # has no metadata and its key IS its name.
-    facts = await source.object_facts(coco.use_context(S3), _S3_CONFIG, key)
-    file_name = facts.file_name or pathlib.PurePosixPath(key).name
-    with tempfile.NamedTemporaryFile(suffix=pathlib.Path(key).suffix) as tmp:
+def _extract(content: bytes, suffix: str, file_name: str, content_type: str | None) -> Extracted:
+    """Read a file once per content, apart from embedding it.
+
+    embed.embed_text carries the embedding space as its dependency, so a route change re-runs
+    process_file for every document. Before this split that re-ran every vision and
+    speech-to-text call with it, the billed ones included (audit F7). This memo is keyed by
+    the bytes, the key's suffix -- which names the temporary file the extractors route on --
+    the name and the content type, and none of them moves with the route. A scanned PDF is
+    still read again when the vision route changes, through media.extract_scanned_pdf's
+    dependency on media.CONFIG_FINGERPRINT.
+
+    The print runs only when this body does: "[extract]" in the log counts real extractions
+    (scripts/ingest_reconcile_e2e.sh asserts on the count).
+    """
+    print(f"[extract] {file_name}", flush=True)
+    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
         tmp.write(content)
         tmp.flush()
         # ONE conversion, both consumers. extract.prepared yields the OOXML form for the
@@ -252,17 +249,52 @@ async def process_file(
             # examples do the same thing one level up, choosing the processor from the
             # path; this is that choice made where the extension is already known.
             #
-            text = media.index_text(ready, file_name, facts.content_type)
+            text = media.index_text(ready, file_name, content_type)
             # Read inside the block because `ready` is the converted file and stops
             # existing after it. A document with no usable outline yields no anchors and
             # every chunk keeps the empty heading_path it has today.
             anchors = outline.anchors_in(text, outline.titles_of(ready))
             card = _card(ready, _card_name(file_name, ready))
+    return Extracted(text=text, card=card, anchors=list(anchors))
+
+
+@coco.fn(memo=True)
+async def process_file(
+    file: amazon_s3.S3File, identity_id: str, table: neo4j.TableTarget[Passage],
+    documents: neo4j.TableTarget[IndexedDocument],
+) -> None:
+    # The walker's iteration key is the PREFIX-RELATIVE path (F0: the spike used exactly
+    # that as the passage identity, breaking find->open). resolve() is the raw S3 object
+    # key, stable regardless of any prefix scoping -- that is the source_key identity.py
+    # hashes into search_document_id.
+    key = file.file_path.resolve()
+    content = await file.read()
+    # The object's own name when it carries one, the key's tail when it does not.
+    #
+    # A chat attachment's key is `chat/<assetID>.pdf` on purpose -- a key travels into
+    # presigned URLs and access logs, so the filename is deliberately kept out of it -- and
+    # with nothing else carrying the name, every attachment reached this index as
+    # "019f8a2b-....pdf". That name is not just displayed: it goes into file_name_words
+    # below, so searching for a document by the name the operator gave it found nothing.
+    #
+    # The fallback is not a stopgap: a file the operator dropped into the bucket directly
+    # has no metadata and its key IS its name.
+    facts = await source.object_facts(coco.use_context(S3), _S3_CONFIG, key)
+    file_name = facts.file_name or pathlib.PurePosixPath(key).name
+    extracted = _extract(content, pathlib.PurePosixPath(key).suffix, file_name, facts.content_type)
+    await index_object(identity_id, key, file_name, content, extracted, table, documents)
+
+
+async def index_object(
+    identity_id: str, key: str, file_name: str, content: bytes, extracted: Extracted,
+    table: neo4j.TableTarget[Passage], documents: neo4j.TableTarget[IndexedDocument],
+) -> None:
+    """Chunk, embed and declare one object's rows, every vector stamped with embed.SPACE."""
     source_kind = "s3"
     search_document_id = identity.search_document_id(identity_id, source_kind, key)
     # document_budget(), not the bare ceiling: embed sends EMBED_DOC_PREFIX + text, so a
     # chunk sized to the full ceiling overflows by the prefix and the request 500s.
-    pieces = chunk.chunk(text, max_tokens=chunk.document_budget(), anchors=anchors)
+    pieces = chunk.chunk(extracted.text, max_tokens=chunk.document_budget(), anchors=extracted.anchors)
     raw_sha256 = hashlib.sha256(content).hexdigest()
     await coco.map(
         process_chunk, list(enumerate(pieces)),
@@ -279,13 +311,14 @@ async def process_file(
         file_name=file_name,
         file_name_words=_name_words(file_name),
         raw_sha256=raw_sha256,
-        normalized_text_sha256=_text_fingerprint(text),
+        normalized_text_sha256=_text_fingerprint(extracted.text),
         size_bytes=len(content),
         passage_count=len(pieces),
-        card=card,
+        card=extracted.card,
         # The card describes the file; embedding it is what makes "which file knows this?"
         # answerable for a document that has no passages at all.
-        embedding=await embed.embed_text(card) if card.strip() else [0.0] * embed.DIMENSIONS,
+        embedding=(await embed.embed_text(extracted.card) if extracted.card.strip()
+                   else [0.0] * embed.DIMENSIONS),
         embed_space=embed.SPACE,
         indexed_at=datetime.datetime.now(datetime.timezone.utc),
     ))
@@ -308,22 +341,29 @@ async def reconcile(
         audit_cycle()
 
 
-@coco.fn
-async def app_main(identity_id: str, interval_s: float) -> None:
+async def mount_targets() -> tuple[neo4j.TableTarget[Passage], neo4j.TableTarget[IndexedDocument]]:
+    """The two record targets; arcade.ensure_schema owns their DDL and they only reconcile rows.
+
+    The SAME target connector writes the passages and, pointed at a second type, the
+    documents. One writer, one store, one query language -- and a record and its passages
+    can never end up in different databases.
+    """
     table = await neo4j.mount_table_target(
         KG_DB, arcade.PASSAGE_TYPE,
         await neo4j.TableSchema.from_class(Passage, primary_key="passage_key"),
         primary_key="passage_key",
     )
-    # arcade.ensure_schema owns DDL; the mounted targets only reconcile rows.
-    # The SAME target connector that writes the passages, pointed at a second type. One
-    # writer, one store, one query language -- and the record and its passages can never
-    # end up in different databases.
     documents = await neo4j.mount_table_target(
         KG_DB, arcade.DOCUMENT_TYPE,
         await neo4j.TableSchema.from_class(IndexedDocument, primary_key="search_document_id"),
         primary_key="search_document_id",
     )
+    return table, documents
+
+
+@coco.fn
+async def app_main(identity_id: str, interval_s: float) -> None:
+    table, documents = await mount_targets()
     await coco.mount(
         coco.auto_refresh(reconcile, interval=datetime.timedelta(seconds=interval_s)),
         identity_id, table, documents,
