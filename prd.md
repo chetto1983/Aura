@@ -742,6 +742,54 @@ observable from Aura's logs: which token-endpoint auth style ElevenLabs accepted
 leaves a document client on x/oauth2's auto-detection, which tries HTTP Basic first and
 the body on refusal; the exchange succeeded, but the retry is proven only in-process.
 
+A file an MCP result carries (an embedded blob, or a `resource_link` Aura reads back on the
+calling session) lands in the caller's box at `/workspace/mcp-files/<request-id>/<server>/<name>`
+for one turn. The model sees only a footer with path, type, size and sha256, and the turn's end
+removes the directory. A directory an unclean exit left behind is swept, once it is 24 h old, by
+the next call that writes a file into that box. Caps: 25 MiB per file, 50 MiB per call.
+Measured 2026-09-24 on the LAN VM, driven through the cockpit API with the operator's own
+account and real mailbox and chat (read-only). The images were `aura` `7098a07e4`, then
+`1b7af89ce`, `aura-pim-mcp` `6734385` and `whatsapp-mcp` `7a0e479`, then `1ec0233`, all
+installed by the updater:
+- **Mail** (request `01a0d47b-f658-7058-a063-e707cdbc05da`). `get_email_attachment` returned a
+  link to an 814,316-byte PDF. The stash declared `application/octet-stream`; the footer said
+  `application/pdf`, taken from the name. `pdfinfo` on the path gave 7 pages.
+  - The call took 4,975 ms, including the upstream mail fetch, the link read and the box write.
+  - The ledger kept 623 bytes of result and none of the file.
+  - The file existed at 17:35:36 UTC. The turn ended at 17:35:42.3, and the file was gone at
+    17:35:43.
+- **WhatsApp.**
+
+  | File | Size | `download_media` |
+  |---|---|---|
+  | chat image (`image/jpeg`, 1152×2048) | 226,802 B | 1,605 ms |
+  | status image | 93,018 B | 1,455 ms |
+  | channel image | 137,329 B | 1,117 ms |
+  | document (sender's name `…pranzo.md` kept) | 17,214 B | 893 ms |
+
+  Every file was gone within seconds of its turn ending. `turn cleanup failed` was logged 0 times
+  across 7 turns.
+- **Two fork defects the run found**, fixed and measured again the same day:
+  - Channel (newsletter) media failed with "incomplete media information". Channel media is
+    unencrypted: the rows had no `media_key` or `file_enc_sha256`, and the bridge demanded both.
+    Fixed in `98b8d64`.
+  - A `.md` document was declared `application/octet-stream`, because Python 3.11's table has no
+    `.md`. Fixed in `1ec0233`.
+- **Orphan sweep** (request `01a0d4c1-b472-7074-9bcc-63329a598d1d`). A 2-day-old
+  `req-e2e-orphan` planted in the box's volume was removed by the next file-writing call, and a
+  fresh sibling survived.
+
+What this does NOT prove:
+- servers other than these two forks;
+- a file near the 25 MiB cap on the appliance's memory (the largest was 0.8 MB);
+- a PNG the bridge saved as `.jpg`: no such media was in the chats, and only the fork's unit test
+  covers it.
+
+The added latency of the link read alone was not separated from each call's own work.
+"What is in this photo" stays unanswered: Aura has no vision tool (`read_file`). A file the model
+derives outside `mcp-files` (a `pdftotext` dump in `/workspace`) outlives the turn by design, and
+this run deleted it by hand.
+
 Deferral follows usage and bounded slots. The current bridge qualifies servers with
 at most four model-facing tools for two always-loaded slots in deterministic order.
 Overflow stays discoverable. Four memory entry points remain loaded; the rest can be
