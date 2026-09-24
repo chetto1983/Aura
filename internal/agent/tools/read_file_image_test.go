@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"regexp"
 	"strconv"
 	"strings"
@@ -129,8 +130,23 @@ func TestReadFileReadsAnImagePastTheTextCap(t *testing.T) {
 	}
 }
 
+// animatedWebP has the shape of a WhatsApp animated sticker: a VP8X canvas header with the
+// animation bit, then ANIM/ANMF chunks x/image/webp skips, so the header decodes and the
+// body never does.
+func animatedWebP() []byte {
+	chunk := func(id string, data []byte) []byte {
+		return append(binary.LittleEndian.AppendUint32([]byte(id), uint32(len(data))), data...)
+	}
+	body := append([]byte("WEBP"), chunk("VP8X", []byte{0x02, 0, 0, 0, 99, 0, 0, 99, 0, 0})...) // 100x100 canvas
+	body = append(body, chunk("ANIM", make([]byte, 6))...)
+	body = append(body, chunk("ANMF", make([]byte, 16))...)
+	return append(binary.LittleEndian.AppendUint32([]byte("RIFF"), uint32(len(body))), body...)
+}
+
 func TestReadFileRefusesWhatItCannotShow(t *testing.T) {
 	oversized := append(testPNG(t, 2, 2), make([]byte, mcp.MaxFileBytes)...)
+	truncated := testPNG(t, 40, 40)
+	truncated = truncated[:len(truncated)-20]
 	for name, tc := range map[string]struct {
 		data    []byte
 		carrier bool
@@ -141,7 +157,10 @@ func TestReadFileRefusesWhatItCannotShow(t *testing.T) {
 		"an image with no turn":        {testPNG(t, 2, 2), false, "cannot read binary file"},
 		"an image over the cap":        {oversized, true, strconv.Itoa(mcp.MaxFileBytes) + "-byte image cap"},
 		"a corrupt image":              {[]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDRtruncated"), true, "does not decode"},
-		"an image too large to decode": {pngHeader(10_000, 5_000), true, strconv.Itoa(maxImagePixels) + "-pixel image cap"},
+		"an image too large to decode": {pngHeader(10_000, 5_000), true, "pixel cap"},
+		// Both pass DecodeConfig: only the full decode finds that the body is not there.
+		"a truncated image body": {truncated, true, "does not decode"},
+		"an animated WebP":       {animatedWebP(), true, "does not decode"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := ctxWith(t, "sess-img", "call-img")
@@ -156,10 +175,34 @@ func TestReadFileRefusesWhatItCannotShow(t *testing.T) {
 			if strings.Contains(err.Error(), "no vision tool") {
 				t.Fatalf("refusal still claims there is no vision tool: %v", err)
 			}
+			// The agent retries a tool error that wraps an EOF as transient (isTransientToolErr),
+			// and a bad image is not going to decode on the second or third read.
+			if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+				t.Fatalf("refusal wraps an EOF, so the agent would retry it: %v", err)
+			}
 			if media.Snapshot() != nil {
 				t.Fatalf("a refused read registered media: %+v", media.Snapshot())
 			}
 		})
+	}
+}
+
+// A PNG that decodes stops at IEND, so a tiny image can carry megabytes behind it; every later
+// request of the turn would re-send them. What rides the turn is a small re-encoding instead.
+func TestReadFileNeverAttachesAnOversizedBodyRaw(t *testing.T) {
+	padded := append(testPNG(t, 2, 2), make([]byte, 3<<20)...)
+	ctx, media := turnCtx(t)
+	res, err := readFile(t, ctx, boxServing(t, padded), photoPath)
+	if err != nil {
+		t.Fatalf("read_file on a padded PNG: %v", err)
+	}
+	if !strings.Contains(res.Preview, "(image/png, 2x2)") {
+		t.Fatalf("result = %q, want the file's own type and size", res.Preview)
+	}
+	part := media.Snapshot()["call-img"][0]
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(part.Bytes))
+	if err != nil || part.MIMEType != "image/jpeg" || format != "jpeg" || cfg.Width != 2 || len(part.Bytes) > 64<<10 {
+		t.Fatalf("attached %s, %d bytes (%s %dx%d, err %v), want a small 2x2 JPEG", part.MIMEType, len(part.Bytes), format, cfg.Width, cfg.Height, err)
 	}
 }
 

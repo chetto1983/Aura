@@ -68,7 +68,7 @@ func New(cfg llm.Config) *Client {
 // Stream opens the provider stream synchronously, then translates SDK chunks on
 // one goroutine. openai-go retries are explicitly disabled in New.
 func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
-	params, requestOpts, nativeCount, err := c.buildSDKRequest(ctx, req)
+	params, requestOpts, media, err := c.buildSDKRequest(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,8 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 		"tool_choice":        effectiveToolChoice(req.ToolChoice),
 		"tools_count":        len(params.Tools),
 		"max_tokens":         req.MaxTokens,
-		"native_media_count": nativeCount,
+		"native_media_count": media.native,
+		"tool_media_count":   media.tool,
 		"trace_file":         reasoningtrace.Path(),
 	})
 

@@ -15,16 +15,20 @@ import (
 	"github.com/openai/openai-go/v3/shared"
 )
 
-func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.ChatCompletionNewParams, []option.RequestOption, int, error) {
+// mediaCounts is how many media parts a request carries as bytes, for the provider trace:
+// chat uploads (native) and tool images (tool).
+type mediaCounts struct{ native, tool int }
+
+func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.ChatCompletionNewParams, []option.RequestOption, mediaCounts, error) {
 	native := c.projectNativeMedia(ctx, req.ContentProjection)
 	toolMedia := c.projectToolMedia(ctx, req.ToolMedia)
 	messages, err := toSDKMessages(req.Messages, native, toolMedia, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
 	if err != nil {
-		return openai.ChatCompletionNewParams{}, nil, 0, err
+		return openai.ChatCompletionNewParams{}, nil, mediaCounts{}, err
 	}
 	tools, err := toSDKTools(req.Tools)
 	if err != nil {
-		return openai.ChatCompletionNewParams{}, nil, 0, err
+		return openai.ChatCompletionNewParams{}, nil, mediaCounts{}, err
 	}
 	choice := effectiveToolChoice(req.ToolChoice)
 	if choice == "none" {
@@ -61,7 +65,7 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetOpenRouter && c.cfg.OpenRouterMiddleOut {
 		requestOpts = append(requestOpts, option.WithJSONSet("transforms", []string{"middle-out"}))
 	}
-	return params, requestOpts, len(native), nil
+	return params, requestOpts, mediaCounts{native: len(native), tool: countNativeToolMedia(toolMedia)}, nil
 }
 
 func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.ContentProjection) []llm.ProjectedRequestPart {

@@ -118,13 +118,10 @@ func TestToolMediaFollowsTheLastToolMessageOfItsBlock(t *testing.T) {
 		t.Fatalf("message 4 = %+v, want c2's result right before the image", messages[4])
 	}
 	parts := contentParts(t, messages[5])
-	if len(parts) != 2 || parts[0]["type"] != "text" || !strings.Contains(parts[0]["text"].(string), "/workspace/photo.png") {
-		t.Fatalf("image message parts = %#v, want a text part naming the path, then the image", parts)
+	if len(parts) != 2 || parts[0]["type"] != "text" {
+		t.Fatalf("image message parts = %#v, want a text part, then the image", parts)
 	}
-	// The image rides in a user message, so its caption must disown the user's authority.
-	if !strings.Contains(parts[0]["text"].(string), "not a message from the user") {
-		t.Fatalf("caption = %q, want it framed as tool output", parts[0]["text"])
-	}
+	assertDisownedThenQuoted(t, parts[0]["text"].(string))
 	wantURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(photoBytes)
 	if parts[1]["type"] != "image_url" || parts[1]["image_url"].(map[string]any)["url"] != wantURL {
 		t.Fatalf("image part = %#v", parts[1])
@@ -150,8 +147,41 @@ func TestToolMediaBecomesATextNoteWhenTheModelCannotSeeImages(t *testing.T) {
 			if err := json.Unmarshal(messages[5].Content, &note); err != nil {
 				t.Fatalf("note is not plain text: %s", messages[5].Content)
 			}
-			if !strings.Contains(note, "/workspace/photo.png") || !strings.Contains(note, "does not accept images") {
-				t.Fatalf("note = %q, want the path and why it is not shown", note)
+			if !strings.Contains(note, "does not accept images") {
+				t.Fatalf("note = %q, want why the image is not shown", note)
+			}
+			assertDisownedThenQuoted(t, note)
+		})
+	}
+}
+
+// The tool-media message rides in the user role, so it must disown the user's authority
+// BEFORE any third-party text — the file name included — and quote that name.
+func assertDisownedThenQuoted(t *testing.T, text string) {
+	t.Helper()
+	disclaimer := strings.Index(text, "not from the user")
+	path := strings.Index(text, `"/workspace/photo.png"`)
+	if disclaimer < 0 || path < 0 || disclaimer > path {
+		t.Fatalf("text = %q, want the tool-output disclaimer first, then the quoted path", text)
+	}
+}
+
+// The live E2E reads the provider trace to see tool images leave; it counts only what is sent
+// as bytes.
+func TestToolMediaCountForTheTrace(t *testing.T) {
+	for name, tc := range map[string]struct {
+		caps llm.ContentCapabilitySource
+		want int
+	}{
+		"vision model":    {visionCaps, 1},
+		"text-only model": {textOnlyCaps, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := New(testConfig("http://127.0.0.1:1"))
+			c.contentCaps = tc.caps
+			_, _, counts, err := c.buildSDKRequest(t.Context(), llm.Request{Model: "m", Messages: toolRound(), ToolMedia: photoMedia()})
+			if err != nil || counts.tool != tc.want || counts.native != 0 {
+				t.Fatalf("counts = %+v err %v, want tool %d", counts, err, tc.want)
 			}
 		})
 	}

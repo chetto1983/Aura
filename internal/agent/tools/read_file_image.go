@@ -1,10 +1,8 @@
 package tools
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"image"
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -17,15 +15,9 @@ import (
 // lands in the box, so every image a tool delivered can be looked at.
 const maxImageReadBytes = mcp.MaxFileBytes
 
-// maxImagePixels bounds one decode, which the byte cap cannot: a flat PNG declaring millions of
-// pixels compresses to almost nothing. At 40 MP the decoded source (up to 4 bytes a pixel) plus
-// x/image/draw's dw*sh*32-byte kernel buffer (scale.go) stay near a third of the aura
-// container's 768 MiB.
-const maxImagePixels = 40_000_000
-
-// visionDecodeSlot lets one full-resolution decode run at a time. Tool batches run in parallel,
-// and a single 12 MP photo already holds ~116 MB while it is downscaled.
-var visionDecodeSlot = make(chan struct{}, 1)
+// maxAttachBytes caps an image as it rides the turn: every later request of the turn re-sends
+// it, a third larger again as base64.
+const maxAttachBytes = 2 << 20
 
 // visionImageTypes are the image formats chat vision models read; multimodal registers a
 // decoder for each.
@@ -71,39 +63,22 @@ func (t *ReadFile) attachImage(
 		return "", fmt.Errorf("read_file: %s is over the %d-byte image cap; send_file can still hand it to the user",
 			boxPath, maxImageReadBytes)
 	}
-	// A corrupt image would fail every later request of the turn, which all re-send it.
-	cfg, _, err := image.DecodeConfig(bytes.NewReader(data))
+	// Anything short of a full decode is refused: a broken image would fail every later
+	// request of the turn, which all re-send it.
+	shown, err := multimodal.DownscaleForVision(ctx, data, maxAttachBytes)
 	if err != nil {
-		return "", fmt.Errorf("read_file: %s looks like %s but does not decode as an image: %w", boxPath, mimeType, err)
+		// %v: a decoder's EOF must not read as a transient failure the agent retries.
+		return "", fmt.Errorf("read_file: %s cannot be shown: %v; shell_exec can convert or shrink it, "+
+			"send_file can hand it to the user", boxPath, err)
 	}
-	if cfg.Width*cfg.Height > maxImagePixels {
-		return "", fmt.Errorf("read_file: %s is %dx%d, over the %d-pixel image cap; shrink it with shell_exec first",
-			boxPath, cfg.Width, cfg.Height, maxImagePixels)
-	}
-	shown, shownType, err := downscaleOneAtATime(ctx, data)
-	if err != nil {
-		return "", err
-	}
+	shownType := shown.MIMEType
 	if shownType == "" {
 		shownType = mimeType
 	}
-	part := llm.ProjectedRequestPart{Type: "media", MIMEType: shownType, Text: boxPath, Bytes: shown}
+	part := llm.ProjectedRequestPart{Type: "media", MIMEType: shownType, Text: boxPath, Bytes: shown.Bytes}
 	if err := media.Add(ToolCallIDFromContext(ctx), part); err != nil {
 		return "", fmt.Errorf("read_file: %s is not attached: %w", boxPath, err)
 	}
 	return fmt.Sprintf("%s is an image (%s, %dx%d) and is attached below for you to look at.",
-		boxPath, mimeType, cfg.Width, cfg.Height), nil
-}
-
-// downscaleOneAtATime runs multimodal.DownscaleForVision in visionDecodeSlot, released even if
-// a malformed image panics the decoder.
-func downscaleOneAtATime(ctx context.Context, data []byte) ([]byte, string, error) {
-	select {
-	case visionDecodeSlot <- struct{}{}:
-	case <-ctx.Done():
-		return nil, "", ctx.Err()
-	}
-	defer func() { <-visionDecodeSlot }()
-	shown, mimeType := multimodal.DownscaleForVision(data)
-	return shown, mimeType, nil
+		boxPath, mimeType, shown.Width, shown.Height), nil
 }

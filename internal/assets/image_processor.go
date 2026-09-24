@@ -81,8 +81,9 @@ func DescribeImageForRetrieval(
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if ds, dsMime := multimodal.DownscaleForVision(imageBytes); dsMime != "" {
-		imageBytes, mimeType = ds, dsMime
+	// An image that cannot be prepared goes to the sidecar as uploaded, as it always has.
+	if prepared, err := multimodal.DownscaleForVision(ctx, imageBytes, 0); err == nil && prepared.MIMEType != "" {
+		imageBytes, mimeType = prepared.Bytes, prepared.MIMEType
 	}
 	summary, err := vision.Describe(ctx, imageBytes, mimeType, assetVisionPrompt)
 	if err != nil {
