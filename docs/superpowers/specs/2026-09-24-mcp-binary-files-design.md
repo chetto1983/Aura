@@ -141,7 +141,7 @@ The bytes never reach the model, the idempotency ledger or the transcript. A res
 the ledger carries paths from the turn that produced it, and those paths are gone. The `path` names
 its request ID, so the model can tell, and a fresh call fetches the file again.
 
-### Turn-end cleanup (`internal/agent/llm_agent_files.go`, new)
+### Turn-end cleanup (`internal/agent/llm_agent_turn_cleanup.go`, new)
 
 - **Where it runs.** `LlmAgent.Run` installs a file collector on `turnCtx`, beside
   `tools.WithRequestID`. `llm_agent.go` is 591 lines, so `Run` gains only the two calls and the
@@ -246,11 +246,11 @@ CI changes:
 
 | Situation | What the model sees |
 |---|---|
-| Box unreachable | the text, plus `file not materialized: sandbox unavailable` |
-| File over 25 MiB, or the call over 50 MiB | the text, plus `not materialized: <size> exceeds <cap>` |
-| Link read fails or has expired | the text, plus `not materialized: <reason>`; the model calls again |
-| Caller has no turn (no collector) | the text, plus `not materialized: no agent turn owns the file` |
-| Box write fails mid-stream | the partial file is removed; a plain tool error, not `sandbox_unavailable` |
+| Box unreachable | the text, plus `not_materialized: sandbox unavailable: <cause>` for each file |
+| File over 25 MiB, or the call over 50 MiB | the text, plus `not_materialized: <size> bytes exceeds the <cap>-byte file cap` (or `the call's files exceed the <cap>-byte cap`) |
+| Link read fails or has expired | the text, plus `not_materialized: read failed: <cause>`; the model calls again |
+| Caller has no turn (no collector) | the text, plus `not_materialized: no agent turn owns the file` |
+| Box write fails mid-stream | the partial file is removed; the text, plus `not_materialized: write failed: <cause>` for that file only. The other files and the text still reach the model, so one failed write does not throw away a result whose other parts are good |
 | Turn-end `rm` fails | logged with request ID and directory; the next turn is unaffected |
 
 ## Testing
