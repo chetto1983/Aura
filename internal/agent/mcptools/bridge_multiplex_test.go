@@ -50,20 +50,6 @@ func TestMultiplexMCPToolsAreNamespaced(t *testing.T) {
 	}
 }
 
-// TestMultiplexMCPToolTableIsTheKnownCuratedSet is the mcptools half of the pairing
-// with internal/gateway's multiplexedClassifiers: extending the table alone fails
-// here, and gateway's TestEveryMultiplexedMCPToolHasAClassifier names the same set
-// from the other side, so the two lists change in one commit and the gateway keeps
-// a per-action classifier for every tool this package marks Multiplexed.
-func TestMultiplexMCPToolTableIsTheKnownCuratedSet(t *testing.T) {
-	t.Parallel()
-	for name := range multiplexedMCPTools {
-		if name != CalendarMultiplexedToolName {
-			t.Errorf("multiplexedMCPTools has %q: give internal/gateway a multiplexedClassifiers entry for it and add it to TestEveryMultiplexedMCPToolHasAClassifier, then to this test", name)
-		}
-	}
-}
-
 func TestMultiplexIsKnownMultiplexedMCPTool(t *testing.T) {
 	t.Parallel()
 	if !isKnownMultiplexedMCPTool(CalendarMultiplexedToolName) {

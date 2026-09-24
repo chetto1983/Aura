@@ -117,9 +117,9 @@ func configureIdentityScopedHeaders(options *mcp.SessionOptions, policy bridgePo
 
 // mountManagedHTTPHost is the streamable-HTTP mirror of mountStdioWithPolicyHost: it
 // opens the raw session and lists tools via handshakeCtx (bounded exactly like the
-// stdio raw discovery call — same rationale, see bridgeFromAdvertisedWithPolicy's doc comment),
-// then wraps the session in a MountedServer so every CALL after a successful
-// mount gets the redial-on-transport-error behavior the stdio branch already had.
+// stdio raw discovery call), then wraps the session in a MountedServer so every
+// CALL after a successful mount gets the redial-on-transport-error behavior the
+// stdio branch already had.
 func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	elicit := elicitationHandlerFor(name, opts.Elicitation)
 	connect := func(_ context.Context, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
@@ -171,13 +171,11 @@ func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *
 }
 
 // mountStdioWithPolicyHost is the shared stdio mount body for MountServer and
-// MountManagedServerWithOptions's stdio branch. It lists tools via the RAW session
-// (session.Tools), NOT through MountedServer's ListTools, so the mount-time
-// discovery call is bounded purely by handshakeCtx (see bridgeFromAdvertisedWithPolicy's doc
-// comment for why routing it through the mounted supervisor here would silently
-// blow the mount deadline). The supervisor is still constructed and returned as the
-// mounted tools' owner, so every CALL after a successful mount gets the normal
-// redial-on-transport-error behavior.
+// MountManagedServerWithOptions's stdio branch. It lists tools on the RAW session
+// (drainTools), so the mount-time discovery call is bounded purely by handshakeCtx.
+// The supervisor is still constructed and returned as the mounted tools' owner, so
+// every CALL after a successful mount gets the normal redial-on-transport-error
+// behavior.
 func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
 	elicit := elicitationHandlerFor(name, opts.Elicitation)
@@ -193,8 +191,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 
 // openAttachAndMount is the shared body both mount branches reduce to once
 // their own openSessionFunc closure is built: open the first session, list its
-// tools bounded purely by handshakeCtx (bridgeFromAdvertisedWithPolicy's doc comment
-// explains why that must NOT route through the supervisor), Attach, then mount
+// tools on the raw session bounded purely by handshakeCtx, Attach, then mount
 // with the given policy — reaping the session on any failure along the way.
 func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	srv.files = opts.Files

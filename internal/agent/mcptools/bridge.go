@@ -122,18 +122,10 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 // indexes the deferred tool's name, description, and argument-field names, so
 // deferred MCP tools stay discoverable.
 //
-// The mount lists the tools itself, on the RAW session, so the FIRST discovery
-// listing goes through the raw session's own ctx bound instead of through
-// MountedServer, which treats any transport error (including a caller's ctx
-// deadline expiring) as a cue to transparently redial using ITS OWN redial-timeout
-// budget (context.WithoutCancel-severed from the caller's ctx) — layering that
-// independent, much longer budget on top of the initial mount's OWN bounded
-// handshake ctx would silently blow through AURA_MCP_MOUNT_TIMEOUT, defeating the
-// very bound mount.go installs. The raw session's own tools/list (no redial
-// layer) is called BEFORE MountedServer even wraps it, so this failure mode
-// cannot occur for the initial mount; bridged tools still reference srv (the
-// mounted supervisor) for every CALL after mount, so runtime redial-on-transport-
-// error is unaffected.
+// The mount lists the tools before it gets here, on the RAW session (drainTools),
+// bounded by its handshakeCtx alone (AURA_MCP_MOUNT_TIMEOUT at boot). Bridged tools
+// still reference srv, the supervisor that owns every CALL after the mount and
+// redials on a transport error.
 func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, policy bridgePolicy) ([]tools.Tool, error) {
 	callTimeout, err := configuredMCPCallTimeout()
 	if err != nil {

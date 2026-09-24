@@ -138,15 +138,20 @@ func TestClassifyCalendarActionConcurrent(t *testing.T) {
 	}
 }
 
-// TestEveryMultiplexedMCPToolHasAClassifier is the bidirectional invariant: every
-// curated multiplexed MCP tool name mcptools exports must have exactly one
-// multiplexedClassifiers entry, and no MCP-namespaced (contains "__") classifier
-// entry may exist that mcptools does not also export a name for — failing if
-// EITHER side is extended alone. skill_manage/task/swarm_spawn are excluded from
-// the reverse direction because they carry no "__" namespace delimiter.
+// TestEveryMultiplexedMCPToolHasAClassifier checks the gateway side of the pairing
+// with mcptools' curated multiplexed tools against a literal list of the names
+// mcptools exports: no MCP-namespaced (contains "__") classifier entry may exist for
+// a name outside it. skill_manage/task/swarm_spawn are excluded because they carry
+// no "__" namespace delimiter.
 //
-// A tool added to mcptools' multiplexedMCPTools joins this list in the same change;
-// mcptools' TestMultiplexMCPToolTableIsTheKnownCuratedSet fails until it does.
+// The direction that matters, a curated tool in mcptools' table with no classifier
+// here, is NOT decided by this list: mcptools' external test
+// TestEveryCuratedMultiplexedToolHasAGatewayClassifier walks the table itself and
+// runs ValidateClassifiable on each entry, so editing this literal cannot silence
+// it. This list can be edited to fit a stray classifier, which is tolerable: a
+// classifier for a tool that is never bridged as Multiplexed is dead configuration,
+// and gateway exports nothing that would let a test outside this package enumerate
+// multiplexedClassifiers without a new production symbol.
 func TestEveryMultiplexedMCPToolHasAClassifier(t *testing.T) {
 	t.Parallel()
 	want := make(map[string]bool)

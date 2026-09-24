@@ -237,18 +237,21 @@ func mountLiveMemoryUpsert(t *testing.T, registry *tools.Registry, client *arcad
 		}
 		httpServer.Close()
 	})
+	// A bare URL carries no recipe:memory source, so the gateway sees this tool
+	// classified from its annotations (mutating, destructive), not as the
+	// non-destructive MCPActionMutate the production memory server gets.
 	managed := mcp.ManagedServer{
 		URL: httpServer.URL, Type: mcp.ServerTypeStreamableHTTP, Env: []string{"MCP_OAUTH_DISABLED=true"},
 	}
 	closer, _, _, err := mcptools.MountManagedServerWithOptions(t.Context(), t.Context(), registry, "memory", managed,
-		mcptools.MountOptions{Egress: mcp.RuntimeEgressPolicy(false, managed)})
+		mcptools.MountOptions{Egress: mcp.EgressPolicyForManagedServer(false, managed)})
 	if err != nil {
 		t.Fatalf("mount live memory tool: %v", err)
 	}
 	t.Cleanup(func() { _ = closer() })
 	tool, ok := registry.Get(memoryUpsertFactModelName)
 	if !ok {
-		t.Fatal("production memory tool unavailable to the live agent")
+		t.Fatalf("%s is not registered after mounting the live memory fixture", memoryUpsertFactModelName)
 	}
 	if tool.Spec().Deferred {
 		registry.Adopt([]tools.Tool{liveAlwaysLoadedTool{Tool: tool}})
