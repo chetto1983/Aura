@@ -223,6 +223,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	// the dispatch chain (Open Q2 — the smaller signature touch).
 	turnCtx = tools.WithRequestID(turnCtx, requestID)
 	turnCtx, turnCleanup := tools.WithTurnCleanup(turnCtx)
+	turnCtx, _ = llm.WithToolMedia(turnCtx)
 	ic = ic.WithContext(turnCtx)
 
 	return func(yield func(*Event, error) bool) {

@@ -31,6 +31,7 @@ func (a *LlmAgent) prepareReasoningRequest(
 	if projection, ok := llm.ContentProjectionFromContext(ctx); ok {
 		request.ContentProjection = &projection
 	}
+	request.ToolMedia = llm.ToolMediaFromContext(ctx).Snapshot()
 	hookResult, err := a.transformModelRequest(ctx, &request, round.requestID)
 	if err != nil {
 		return PreparedReasoningRequest{}, err

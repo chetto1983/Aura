@@ -14,7 +14,7 @@ import (
 // ReadFile is a Go port of hermes-agent's tools/file_tools.py read_file (schema at
 // file_tools.py:2159, handler at file_tools.py:2262, implementation at
 // file_operations.py:1143). It reads a file from INSIDE the caller's per-identity box through
-// boxReadFileCapped/boxReadFileRaw. There is no host arm: a box that cannot be reached fails
+// boxReadHead/boxReadFileRaw. There is no host arm: a box that cannot be reached fails
 // CLOSED (D-09/GATE-01), same invariant the collapsed fs_read carried.
 type ReadFile struct {
 	Router *usersandbox.SandboxRouter
@@ -64,7 +64,8 @@ func (t *ReadFile) Spec() Spec {
 			"into context; a read is additionally capped at a ~100K-character budget and, if hit, is truncated on a line " +
 			"boundary with a next_offset hint to continue from. If the path does not exist, similar filenames in the same " +
 			"directory are suggested. Jupyter notebooks (.ipynb), Word documents (.docx), and Excel workbooks (.xlsx) are " +
-			"auto-extracted to readable text; other binary files (images included) are refused with a pointer to shell_exec " +
+			"auto-extracted to readable text. Images (JPEG, PNG, GIF, WebP) are shown to you: the image is attached " +
+			"right after the result so you can look at it. Other binary files are refused with a pointer to shell_exec " +
 			"or send_file instead. Read a file with this tool BEFORE patching it — `patch` matches against the exact bytes " +
 			"returned here. Example: {\"path\":\"cmd/aura/main.go\"} for a whole file, or " +
 			"{\"path\":\"app.log\",\"offset\":2000,\"limit\":200} to read just a window.",
@@ -99,7 +100,7 @@ func (t *ReadFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 		return sandboxUnavailableResult("read_file", routeErr), nil
 	}
 
-	content, isExtracted, err := t.readContent(ctx, boxHandle, boxPath)
+	content, err := t.readContent(ctx, boxHandle, boxPath)
 	if err != nil {
 		if deny, ok := err.(*sandboxDenyError); ok {
 			return deny.result, nil
@@ -109,8 +110,10 @@ func (t *ReadFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 		}
 		return ToolResult{}, err
 	}
-
-	return NewResult(ctx, renderReadFile(content, offset, limit, isExtracted))
+	if content.reply != "" {
+		return NewResult(ctx, content.reply)
+	}
+	return NewResult(ctx, renderReadFile(content.text, offset, limit, content.extracted))
 }
 
 // sandboxDenyError carries a fail-closed deny ToolResult through readContent's plain error return,
@@ -119,39 +122,60 @@ type sandboxDenyError struct{ result ToolResult }
 
 func (e *sandboxDenyError) Error() string { return "sandbox unavailable" }
 
+// fileContent is what readContent found: text to render with line numbers (extracted when it was
+// decoded from a document format), or a finished reply — an image attached for the model.
+type fileContent struct {
+	text      string
+	extracted bool
+	reply     string
+}
+
 // readContent returns the file's full text content (bounded by fsMaxReadBytes), transparently
-// extracting a supported document format first. isExtracted flags the latter so the caller can
-// note it in the rendered output.
-func (t *ReadFile) readContent(ctx context.Context, h usersandbox.BoxHandle, boxPath string) (string, bool, error) {
+// extracting a supported document format first, or attaches an image for the model to look at.
+func (t *ReadFile) readContent(ctx context.Context, h usersandbox.BoxHandle, boxPath string) (fileContent, error) {
 	if isExtractableDocument(boxPath) {
 		raw, deny, err := boxReadFileRaw(ctx, t.Router, h, "read_file", boxPath)
 		if deny != nil {
-			return "", false, &sandboxDenyError{result: *deny}
+			return fileContent{}, &sandboxDenyError{result: *deny}
 		}
 		if err == nil {
 			text, extractErr := extractDocumentText(boxPath, raw)
 			if extractErr == nil {
-				return text, true, nil
+				return fileContent{text: text, extracted: true}, nil
 			}
 			// Malformed document: fall through to the normal binary/text path below,
 			// mirroring read_extract's "extraction failure falls back" contract.
 		} else if !isNotFoundErr(err) {
-			return "", false, err
+			return fileContent{}, err
 		}
 	}
 
-	b, deny, err := boxReadFileCapped(ctx, t.Router, h, "read_file", boxPath)
+	readCap := fsMaxReadBytes()
+	b, deny, err := boxReadHead(ctx, t.Router, h, "read_file", boxPath, readCap)
 	if deny != nil {
-		return "", false, &sandboxDenyError{result: *deny}
+		return fileContent{}, &sandboxDenyError{result: *deny}
 	}
 	if err != nil {
-		if strings.Contains(err.Error(), "binary file contains NUL bytes") {
-			return "", false, fmt.Errorf("read_file: cannot read binary file %q; use shell_exec to inspect it "+
-				"or send_file to hand it to the user (images included — there is no vision tool)", boxPath)
-		}
-		return "", false, err
+		return fileContent{}, err
 	}
-	return string(b), false, nil
+	// Sniffed before the text cap: an image is judged against its own, larger cap.
+	if mimeType := visionImageType(b); mimeType != "" {
+		reply, err := t.attachImage(ctx, h, boxPath, mimeType, b, readCap)
+		return fileContent{reply: reply}, err
+	}
+	if err := overReadCap("read_file", boxPath, b, readCap); err != nil {
+		return fileContent{}, err
+	}
+	if looksBinary(b) {
+		return fileContent{}, binaryFileRefusal(boxPath)
+	}
+	return fileContent{text: string(b)}, nil
+}
+
+// binaryFileRefusal is read_file's answer for bytes it cannot show: every way out it names is real.
+func binaryFileRefusal(boxPath string) error {
+	return fmt.Errorf("read_file: cannot read binary file %q. An image (JPEG, PNG, GIF, WebP) opens with "+
+		"read_file inside a chat turn; otherwise use shell_exec to inspect it or send_file to hand it to the user", boxPath)
 }
 
 // isNotFoundErr recognizes the shell's "no such file" phrasing from a failed head -c exec — the

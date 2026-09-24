@@ -148,6 +148,12 @@ type Request struct {
 	// never contains durable bytes; provider clients resolve and verify each ref just
 	// before the HTTP request and discard those bytes with the request.
 	ContentProjection *ContentProjection
+
+	// ToolMedia is the media this turn's tool calls produced, by tool call id
+	// (ToolMedia.Snapshot); the wire client shows each call's media right after that
+	// call's result. The bytes live only as long as the turn, and json:"-" keeps them
+	// out of every serialized copy of the request, a command hook's stdin included.
+	ToolMedia map[string][]ProjectedRequestPart `json:"-"`
 }
 
 // ReasoningEffort is the provider-neutral effort vocabulary used by reasoning

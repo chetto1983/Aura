@@ -2,18 +2,13 @@
 package assets
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"image"
-	"image/jpeg"
-	_ "image/png"
 	"io"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
-	xdraw "golang.org/x/image/draw"
 )
 
 // assetVisionPrompt is the instruction sent with an uploaded image. Kept here (not
@@ -25,8 +20,8 @@ const assetVisionMaxRunes = 4096
 
 // ImageProcessor turns an uploaded image asset into a text summary. The OpenAI-
 // compatible vision call (local sidecar or OpenRouter cloud, with the one
-// config-only swap) lives in internal/multimodal; this processor owns only the
-// objectstore read, the VRAM-friendly downscale, and the Result mapping.
+// config-only swap) and the VRAM-friendly downscale live in internal/multimodal;
+// this processor owns only the objectstore read and the Result mapping.
 type ImageProcessor struct {
 	Objects objectstore.Store
 	Vision  *multimodal.VisionClient
@@ -86,7 +81,7 @@ func DescribeImageForRetrieval(
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}
-	if ds, dsMime := downscaleAssetForVision(imageBytes); dsMime != "" {
+	if ds, dsMime := multimodal.DownscaleForVision(imageBytes); dsMime != "" {
 		imageBytes, mimeType = ds, dsMime
 	}
 	summary, err := vision.Describe(ctx, imageBytes, mimeType, assetVisionPrompt)
@@ -105,38 +100,4 @@ func capVisionRetrievalText(text string) string {
 		return text
 	}
 	return strings.TrimSpace(string(runes[:assetVisionMaxRunes]))
-}
-
-const (
-	assetVisionMaxEdge     = 1024
-	assetVisionJPEGQuality = 85
-)
-
-// downscaleAssetForVision shrinks an oversized image to assetVisionMaxEdge on its
-// long edge (JPEG) so the CPU/4 GB-GPU OCR sidecar isn't handed a full-res photo.
-// A decode failure or an already-small image returns ("", "") — the caller keeps
-// the original bytes/mime.
-func downscaleAssetForVision(raw []byte) (out []byte, mime string) {
-	img, _, err := image.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return raw, ""
-	}
-	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	if w <= assetVisionMaxEdge && h <= assetVisionMaxEdge {
-		return raw, ""
-	}
-	nw, nh := assetVisionMaxEdge, assetVisionMaxEdge
-	if w >= h {
-		nh = h * assetVisionMaxEdge / w
-	} else {
-		nw = w * assetVisionMaxEdge / h
-	}
-	dst := image.NewRGBA(image.Rect(0, 0, nw, nh))
-	xdraw.CatmullRom.Scale(dst, dst.Bounds(), img, b, xdraw.Over, nil)
-	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, dst, &jpeg.Options{Quality: assetVisionJPEGQuality}); err != nil {
-		return raw, ""
-	}
-	return buf.Bytes(), "image/jpeg"
 }

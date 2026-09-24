@@ -20,7 +20,7 @@ func TestToSDKMessagesGuaranteesContentForNonAssistant(t *testing.T) {
 		{Role: llm.RoleTool, ToolCallID: "call_1", Content: ""},                                // empty tool result — the trigger
 		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{ID: "call_1", Type: "function"}}}, // assistant w/ tool_calls, empty content
 	}
-	wire, err := toSDKMessages(msgs, nil, llm.ReasoningTargetNone)
+	wire, err := toSDKMessages(msgs, nil, nil, llm.ReasoningTargetNone)
 	if err != nil {
 		t.Fatalf("toSDKMessages: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestToSDKMessagesGuaranteesContentForNonAssistant(t *testing.T) {
 
 // A non-empty assistant message still serializes its content.
 func TestToSDKMessagesKeepsAssistantContent(t *testing.T) {
-	wire, err := toSDKMessages([]llm.Message{{Role: llm.RoleAssistant, Content: "hi there"}}, nil, llm.ReasoningTargetNone)
+	wire, err := toSDKMessages([]llm.Message{{Role: llm.RoleAssistant, Content: "hi there"}}, nil, nil, llm.ReasoningTargetNone)
 	if err != nil {
 		t.Fatalf("toSDKMessages: %v", err)
 	}

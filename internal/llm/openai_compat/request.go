@@ -17,7 +17,8 @@ import (
 
 func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.ChatCompletionNewParams, []option.RequestOption, int, error) {
 	native := c.projectNativeMedia(ctx, req.ContentProjection)
-	messages, err := toSDKMessages(req.Messages, native, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
+	toolMedia := c.projectToolMedia(ctx, req.ToolMedia)
+	messages, err := toSDKMessages(req.Messages, native, toolMedia, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
 	if err != nil {
 		return openai.ChatCompletionNewParams{}, nil, 0, err
 	}
@@ -82,7 +83,12 @@ func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.Content
 	return out
 }
 
-func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart, target llm.ReasoningTargetKind) ([]openai.ChatCompletionMessageParamUnion, error) {
+func toSDKMessages(
+	messages []llm.Message,
+	native []llm.ProjectedRequestPart,
+	toolMedia map[string][]llm.ProjectedRequestPart,
+	target llm.ReasoningTargetKind,
+) ([]openai.ChatCompletionMessageParamUnion, error) {
 	lastUser := -1
 	if len(native) > 0 {
 		for i, message := range slices.Backward(messages) {
@@ -142,6 +148,12 @@ func toSDKMessages(messages []llm.Message, native []llm.ProjectedRequestPart, ta
 			out = append(out, wire)
 		case llm.RoleTool:
 			out = append(out, openai.ToolMessage(message.Content, message.ToolCallID))
+			if i+1 < len(messages) && messages[i+1].Role == llm.RoleTool {
+				continue
+			}
+			if wire, ok := toolMediaMessage(toolBlockMedia(messages, i, toolMedia), target); ok {
+				out = append(out, wire)
+			}
 		default:
 			return nil, fmt.Errorf("openai_compat: unsupported message role %q", message.Role)
 		}

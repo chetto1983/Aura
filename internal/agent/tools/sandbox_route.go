@@ -128,9 +128,7 @@ func boxRelPath(root, abs string) (string, bool) {
 	return rel, true
 }
 
-// boxReadFileCapped is the ONE bounded read read_file and patch share: a `head -c <cap+1>` exec, so
-// the size cap lands on the BYTES that come back rather than on a host stat, and an over-cap file
-// is refused without ever materializing the whole thing.
+// boxReadFileCapped is patch's bounded text read: boxReadFileRaw plus the binary refusal.
 //
 // Three outcomes, kept distinct on purpose. A non-nil deny means the box could not be reached and
 // the caller must fail CLOSED. A non-nil err is the model's own problem (missing file, over cap,
@@ -162,7 +160,37 @@ func boxReadFileRaw(
 	tool, boxPath string,
 ) (content []byte, deny *ToolResult, err error) {
 	readCap := fsMaxReadBytes()
-	cmd := fmt.Sprintf("head -c %d -- %s", readCap+1, ShellQuoteArg(boxPath))
+	b, deny, err := boxReadHead(ctx, router, h, tool, boxPath, readCap)
+	if deny != nil || err != nil {
+		return nil, deny, err
+	}
+	if err := overReadCap(tool, boxPath, b, readCap); err != nil {
+		return nil, nil, err
+	}
+	return b, nil, nil
+}
+
+// overReadCap refuses a bounded read that came back longer than readCap, i.e. a file over the
+// AURA_FS_MAX_READ_BYTES cap, pointing the model at paging instead.
+func overReadCap(tool, boxPath string, b []byte, readCap int64) error {
+	if int64(len(b)) <= readCap {
+		return nil
+	}
+	return fmt.Errorf("%s: %s is over the %d-byte cap (%s); read a window with read_file offset+limit instead of the whole file",
+		tool, boxPath, readCap, envFSMaxReadBytes)
+}
+
+// boxReadHead is the ONE bounded box read: a `head -c <limit+1>` exec, so the cap lands on the
+// BYTES that come back rather than on a host stat, and a file over it is recognised — by a result
+// longer than limit — without ever materializing the whole thing.
+func boxReadHead(
+	ctx context.Context,
+	router *usersandbox.SandboxRouter,
+	h usersandbox.BoxHandle,
+	tool, boxPath string,
+	limit int64,
+) (content []byte, deny *ToolResult, err error) {
+	cmd := fmt.Sprintf("head -c %d -- %s", limit+1, ShellQuoteArg(boxPath))
 	res, execErr := router.Exec(ctx, h, usersandbox.ExecRequest{Command: cmd})
 	if execErr != nil {
 		d := sandboxUnavailableResult(tool, execErr)
@@ -174,10 +202,6 @@ func boxReadFileRaw(
 			msg = fmt.Sprintf("cannot read %q inside the sandbox (exit %d)", boxPath, res.ExitCode)
 		}
 		return nil, nil, fmt.Errorf("%s: %s", tool, msg)
-	}
-	if int64(len(res.Stdout)) > readCap {
-		return nil, nil, fmt.Errorf("%s: %s is over the %d-byte cap (%s); read a window with read_file offset+limit instead of the whole file",
-			tool, boxPath, readCap, envFSMaxReadBytes)
 	}
 	return res.Stdout, nil, nil
 }
