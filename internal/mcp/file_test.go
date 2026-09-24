@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"encoding/json"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,6 +15,8 @@ func TestNameFromURI(t *testing.T) {
 		"https://example.com/a/b.pdf?sig=x#frag":                "b.pdf",
 		"notes://dir/":                                          "dir",
 		"":                                                      "",
+		"file:///tmp/my%20report.pdf":                           "my report.pdf",
+		"x://a/b%zz":                                            "b%zz",
 	} {
 		if got := NameFromURI(uri); got != want {
 			t.Errorf("NameFromURI(%q) = %q, want %q", uri, got, want)
@@ -22,7 +25,7 @@ func TestNameFromURI(t *testing.T) {
 }
 
 func TestFileFromContents(t *testing.T) {
-	blob, ok := FileFromContents(&sdkmcp.ResourceContents{URI: "attachment://a/invoice.pdf", MIMEType: "application/pdf", Blob: []byte("%PDF")})
+	blob, ok := FileFromContents(&sdkmcp.ResourceContents{URI: "file:///srv/invoice.pdf", MIMEType: "application/pdf", Blob: []byte("%PDF")})
 	if !ok || blob.Name != "invoice.pdf" || blob.MIMEType != "application/pdf" || string(blob.Data) != "%PDF" {
 		t.Fatalf("blob contents = %+v, %v", blob, ok)
 	}
@@ -37,15 +40,32 @@ func TestFileFromContents(t *testing.T) {
 	}
 }
 
+// TestFileFromContentsEmptyBlobOnTheWireIsNotAFile pins encoding/json's decode of a
+// present-but-empty "blob" field: it yields a non-nil, zero-length []byte, which the
+// old `rc.Blob != nil` check would have accepted as a file.
+func TestFileFromContentsEmptyBlobOnTheWireIsNotAFile(t *testing.T) {
+	var rc sdkmcp.ResourceContents
+	if err := json.Unmarshal([]byte(`{"uri":"x","blob":""}`), &rc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if _, ok := FileFromContents(&rc); ok {
+		t.Fatalf("an empty blob on the wire must not become a file: %+v", rc)
+	}
+}
+
 func TestFilePartNotMaterializedKeepsTheFirstReason(t *testing.T) {
 	part := FilePart{Name: "a.pdf", MIMEType: "application/pdf", Data: []byte("abc")}
 	want := FileOutcome{Name: "a.pdf", MIMEType: "application/pdf", SizeBytes: 3, NotMaterialized: "sandbox unavailable: down"}
 	if got := part.NotMaterialized("sandbox unavailable: down"); got != want {
 		t.Fatalf("outcome = %+v, want %+v", got, want)
 	}
-	unread := FilePart{Name: "old.pdf", Unavailable: "read failed: expired"}
-	if got := unread.NotMaterialized("sandbox unavailable: down"); got.NotMaterialized != "read failed: expired" {
+	unread := FilePart{Name: "old.pdf", Size: 8, Unavailable: "read failed: expired"}
+	got := unread.NotMaterialized("sandbox unavailable: down")
+	if got.NotMaterialized != "read failed: expired" {
 		t.Fatalf("the reason the bytes were missing must win: %+v", got)
+	}
+	if got.SizeBytes != 8 {
+		t.Fatalf("SizeBytes = %d, want the part's known Size standing in for the missing bytes: %+v", got.SizeBytes, got)
 	}
 }
 

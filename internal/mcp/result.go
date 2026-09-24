@@ -13,13 +13,14 @@ import (
 // bridge_supervisor.go's CallToolText is now the single call site anywhere in the
 // tree (RESEARCH Pitfall 1).
 
-// ToolPayload is one tools/call result decoded into the two projections Aura
-// actually consumes: the concatenated text the MODEL reads, and the structured
-// payload a VIEW reads (MCP Apps hands `structuredContent` to the rendered
-// document in ui/notifications/tool-result).
+// ToolPayload is one tools/call result decoded into what Aura actually consumes: the
+// concatenated text the MODEL reads, the structured payload a VIEW reads (MCP Apps
+// hands `structuredContent` to the rendered document in ui/notifications/tool-result),
+// and the files and links the result carried.
 //
-// They are one result, so they are decoded together. A caller that needed only
-// the second would otherwise re-walk the first, and the two would drift.
+// They are one result, so they are decoded together in a single pass over its content
+// blocks — a caller that needed only one of these would otherwise re-walk the rest,
+// and they would drift.
 type ToolPayload struct {
 	Text string
 	// Structured is the server's structuredContent as raw JSON, nil when it sent
@@ -36,21 +37,21 @@ type ToolPayload struct {
 
 // DecodeToolResult extracts the concatenated text content and error flag from an
 // SDK tools/call result. Non-text content parts (images, resource links, ...) are
-// skipped rather than stringified; DecodeToolPayload keeps them as Files and Links
-// — mirrors decodeToolResult's old
-// content[].type=="text" filter, just against typed fields instead of a raw JSON
-// envelope. isError escalates from false to true when the result's structured
-// content (or, failing that, its text re-parsed as JSON) carries an explicit
-// domain failure (explicitDomainFailure, UNCHANGED) even though the server
-// reported IsError:false — the false-negative case the pre-SDK chain also caught.
+// skipped from this text projection rather than stringified — mirrors
+// decodeToolResult's old content[].type=="text" filter, just against typed fields
+// instead of a raw JSON envelope; DecodeToolPayload keeps them as Files and Links.
+// isError escalates from false to true when the result's structured content (or,
+// failing that, its text re-parsed as JSON) carries an explicit domain failure
+// (explicitDomainFailure, UNCHANGED) even though the server reported IsError:false —
+// the false-negative case the pre-SDK chain also caught.
 func DecodeToolResult(result *sdkmcp.CallToolResult) (text string, isError bool) {
 	payload, isError := DecodeToolPayload(result)
 	return payload.Text, isError
 }
 
-// DecodeToolPayload is DecodeToolResult plus the structured payload, decoded in
-// the same pass. DecodeToolResult is the text-only projection of it, kept because
-// most callers want exactly that and should not carry a field they ignore.
+// DecodeToolPayload is DecodeToolResult plus the structured payload, files and links,
+// all decoded in the same pass. DecodeToolResult is the text-only projection of it,
+// kept because most callers want exactly that and should not carry fields they ignore.
 func DecodeToolPayload(result *sdkmcp.CallToolResult) (payload ToolPayload, isError bool) {
 	if result == nil {
 		return ToolPayload{}, false
@@ -61,9 +62,13 @@ func DecodeToolPayload(result *sdkmcp.CallToolResult) (payload ToolPayload, isEr
 		case *sdkmcp.TextContent:
 			b.WriteString(c.Text)
 		case *sdkmcp.ImageContent:
-			payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+			if len(c.Data) > 0 {
+				payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+			}
 		case *sdkmcp.AudioContent:
-			payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+			if len(c.Data) > 0 {
+				payload.Files = append(payload.Files, FilePart{MIMEType: c.MIMEType, Data: c.Data})
+			}
 		case *sdkmcp.EmbeddedResource:
 			if file, ok := FileFromContents(c.Resource); ok {
 				payload.Files = append(payload.Files, file)

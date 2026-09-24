@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -24,11 +25,13 @@ const (
 )
 
 // FilePart is one file a tool result carried. Unavailable says why its bytes could
-// not be obtained; Data is then empty.
+// not be obtained; Data is then empty, and Size — a link's advertised size, or a
+// measured length over the cap — is what stands in for it.
 type FilePart struct {
 	Name        string
 	MIMEType    string
 	Data        []byte
+	Size        int64
 	Unavailable string
 }
 
@@ -49,7 +52,11 @@ func (p FilePart) NotMaterialized(reason string) FileOutcome {
 	if p.Unavailable != "" {
 		reason = p.Unavailable
 	}
-	return FileOutcome{Name: p.Name, MIMEType: p.MIMEType, SizeBytes: int64(len(p.Data)), NotMaterialized: reason}
+	size := int64(len(p.Data))
+	if size == 0 {
+		size = p.Size
+	}
+	return FileOutcome{Name: p.Name, MIMEType: p.MIMEType, SizeBytes: size, NotMaterialized: reason}
 }
 
 // FileCapExceeded is the reason a file over MaxFileBytes is refused.
@@ -57,13 +64,14 @@ func FileCapExceeded(size int64) string {
 	return fmt.Sprintf("%d bytes exceeds the %d-byte file cap", size, MaxFileBytes)
 }
 
-// FileFromContents is one resource's contents as a FilePart: a blob as its bytes,
-// text as UTF-8. False when the contents carry neither.
+// FileFromContents is one resource's contents as a FilePart: a non-empty blob as its
+// bytes, else non-empty text as UTF-8 — a blob wins when both are present. False when
+// the contents carry neither (including a present-but-empty blob or text).
 func FileFromContents(rc *sdkmcp.ResourceContents) (FilePart, bool) {
 	switch {
 	case rc == nil:
 		return FilePart{}, false
-	case rc.Blob != nil:
+	case len(rc.Blob) > 0:
 		return FilePart{Name: NameFromURI(rc.URI), MIMEType: rc.MIMEType, Data: rc.Blob}, true
 	case rc.Text != "":
 		return FilePart{Name: NameFromURI(rc.URI), MIMEType: rc.MIMEType, Data: []byte(rc.Text)}, true
@@ -72,8 +80,9 @@ func FileFromContents(rc *sdkmcp.ResourceContents) (FilePart, bool) {
 	}
 }
 
-// NameFromURI is the last path segment of uri, the name a file gets when its server
-// gave none: attachment://stash/abc123 names abc123.
+// NameFromURI is the last path segment of uri, percent-decoded, the name a file gets
+// when its server gave none: attachment://stash/abc123 names abc123. A segment that
+// fails to decode (a malformed escape) is returned raw rather than dropped.
 func NameFromURI(uri string) string {
 	rest := uri
 	if _, after, ok := strings.Cut(rest, "://"); ok {
@@ -83,5 +92,9 @@ func NameFromURI(uri string) string {
 		rest = rest[:i]
 	}
 	rest = strings.TrimRight(rest, "/")
-	return rest[strings.LastIndex(rest, "/")+1:]
+	seg := rest[strings.LastIndex(rest, "/")+1:]
+	if decoded, err := url.PathUnescape(seg); err == nil {
+		return decoded
+	}
+	return seg
 }

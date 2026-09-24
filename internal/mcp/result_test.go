@@ -115,6 +115,7 @@ func TestDecodeToolPayload_KeepsEveryFileBlock(t *testing.T) {
 	result := &sdkmcp.CallToolResult{Content: []sdkmcp.Content{
 		&sdkmcp.TextContent{Text: `{"attachmentId":"abc"}`},
 		&sdkmcp.ImageContent{Data: []byte("png-bytes"), MIMEType: "image/png"},
+		&sdkmcp.ImageContent{MIMEType: "image/png"},
 		&sdkmcp.AudioContent{Data: []byte("ogg-bytes"), MIMEType: "audio/ogg"},
 		&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{URI: "file:///tmp/report.pdf", MIMEType: "application/pdf", Blob: []byte("%PDF")}},
 		&sdkmcp.EmbeddedResource{Resource: &sdkmcp.ResourceContents{URI: "notes://today/notes.md", MIMEType: "text/markdown", Text: "# hi"}},
