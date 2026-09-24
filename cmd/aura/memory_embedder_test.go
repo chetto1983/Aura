@@ -1,15 +1,20 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -48,6 +53,25 @@ func TestMemoryEmbedderReadsTheRotatedKey(t *testing.T) {
 	if len(seen) != 2 || seen[0] != "Bearer boot-key" || seen[1] != "Bearer rotated-key" {
 		t.Fatalf("authorization = %q, want the key live at each request", seen)
 	}
+}
+
+// The daemon and arcadedb-mcp must name the same memory space, or each re-stamps the other's
+// writes and memory stays lexical; MCP logs its space at boot, and so must the daemon, or the
+// operator can see only one side (final review recommendation).
+func TestLogMemorySpaceNamesTheDaemonsSpace(t *testing.T) {
+	var out bytes.Buffer
+	logMemorySpace(slog.New(slog.NewTextHandler(&out, nil)), namedSpace("es1-daemon"), time.Second)
+	if !strings.Contains(out.String(), "space=es1-daemon") {
+		t.Fatalf("boot log = %q, want the daemon's memory space", out.String())
+	}
+}
+
+type namedSpace string
+
+func (s namedSpace) Embed(context.Context, []string) ([][]float64, error) { return nil, nil }
+
+func (s namedSpace) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{ID: string(s)}, nil
 }
 
 func TestMemoryEmbedderIsNilWithoutARoute(t *testing.T) {

@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync/atomic"
@@ -91,7 +92,7 @@ func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, er
 		func(ctx context.Context, client *Client, database string) (int, error) {
 			tally, err := client.WithEmbedder(b.embedder).reembedMemory(ctx)
 			if tally.refused > 0 {
-				slog.Warn("memory re-embed: records refused by the embedding model",
+				slog.Warn("memory re-embed: records set aside, refused by the embedding model or with no text",
 					"database", database, "refused", tally.refused)
 			}
 			if tally.failed > 0 {
@@ -140,7 +141,8 @@ func (b *TenantBackfill) LinkMentions(ctx context.Context, _ time.Time) (int, er
 // looking like an empty, healthy sweep.
 //
 // The walk starts one identity later on each run, and a run whose budget ends mid-walk
-// reports what it did rather than failing.
+// reports what it did rather than failing. A failure of the embedding route itself ends the
+// walk: it is not the tenant's, and every tenant after it would fail the same way (spec §5).
 func (b *TenantBackfill) sweepTenants(
 	ctx context.Context,
 	sweep string,
@@ -167,6 +169,11 @@ func (b *TenantBackfill) sweepTenants(
 		case err != nil:
 			if ctx.Err() != nil {
 				continue
+			}
+			if errors.Is(err, errEmbeddingRoute) {
+				slog.Warn("memory "+sweep+": the embedding route failed; the run ends here",
+					"count", total, "tenants", swept, "error", err)
+				return total, err
 			}
 			if firstErr == nil {
 				firstErr = err

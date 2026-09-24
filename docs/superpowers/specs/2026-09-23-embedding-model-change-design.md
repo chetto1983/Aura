@@ -251,9 +251,16 @@ Retrieval is split into two families: **memory** (`FACT`, `ConversationTurn`,
   - Documents: through §8.
 
 The two families are gated separately, so a document that will not re-index never turns off
-dense memory. Rows without a vector are not counted. A stale writer's vectors carry its old
-stamp, so they turn the gate off until the pass has re-embedded them: the result is visible,
-never silent.
+dense memory. Rows without a vector are not counted, nor are rows no read can reach
+(soft-deleted turns, expired traces). A stale writer's vectors carry its old stamp, so they
+turn the gate off until the pass has re-embedded them: the result is visible, never silent.
+
+Two guards back the gate (final review of plan 2, 2026-09-24):
+- every dense leg also filters its candidates by `embed_space = S`, so even inside the 30 s
+  a cached answer lives, a vector from another model is never ranked;
+- the reader reads its space again after embedding the query and goes lexical if it changed:
+  a model swapped in between would put a new model's query against a corpus checked in the old
+  space.
 
 ### §4. Changing the route from the cockpit
 
@@ -293,10 +300,19 @@ over the daemon's space `S`:
 - **missing:** `FACT` and `ReasoningTrace` rows with source text, no vector, and a stamp other
   than `S`. A stamp of `S` without a vector means `S` already refused the record.
 
-- Each type is selected by `@rid` cursor, not by re-selecting the same `LIMIT` set.
+- Each type is selected by `@rid` cursor, not by re-selecting the same `LIMIT` set. Rows no
+  read can reach are not selected (soft-deleted turns, expired traces).
 - Batches go through `Embed` 32 texts at a time, within the client's token budget
   (`internal/embeddings/fit.go:20-25`).
-- Each write sets the vector and the stamp.
+- Each write sets the vector and the stamp, and holds only while the row still has the text
+  that was embedded: a writer that rewrote the row meanwhile keeps its own vector, which the
+  next run re-embeds if it is in another space.
+- A row with a vector and no text (NULL or blank) can never be re-embedded: it is set aside
+  like a refused record (no vector, stamped `S`), so it cannot keep the gate closed for good.
+- A row the store will not take is named in the log and passed by the cursor; the next run
+  tries it again. A page's worth of such rows in one type stops that type for the run, since
+  a store refusing every write would otherwise have every row re-embedded, and paid for, on
+  every run.
 - A run drains each tenant until nothing is left outside `S` or its 5-minute budget ends; the
   sweep is also kicked once at daemon boot. There is no round cap: the cursor visits each row
   once per run, so an unfixable row cannot spin a run, and the rotation below keeps a large
@@ -308,7 +324,8 @@ over the daemon's space `S`:
     stamped `S` (quarantined): it is lexical-only, excluded from both selections and from the
     gate count, and counted and shown. A later route change re-selects it, because its stamp is
     no longer the current space;
-  - a network error, a 5xx, or a 401, 403 or 429 ends the run, and the next run retries. Those
+  - a network error, a 5xx, or a 401, 403 or 429 ends the run -- the whole walk, not one
+    tenant, since the next tenant would fail the same way -- and the next run retries. Those
     three say nothing about the record: quarantining on them would stamp a whole space refused
     after one revoked key or one rate limit (review of plan 1).
   - A record is set aside only once a control input has embedded in the same call: an

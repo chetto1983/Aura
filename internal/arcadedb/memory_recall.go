@@ -130,7 +130,7 @@ const (
 // measurement that produced this shape.
 const recallFactFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
-	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
+	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition + denseSpaceFilter +
 	").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + factEdgeType +
 	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
@@ -141,7 +141,8 @@ const recallFactFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand("
 const recallTurnFuseStatement = "SELECT @rid AS rid, score FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + conversationTurnType + "[embedding]', :vector, :candidates, " +
 	"{ filter: (SELECT @rid FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + ").@rid, maxDistance: :max_distance }), " +
+	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + denseSpaceFilter + recallExclusionMarker +
+	").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + conversationTurnType +
 	" WHERE identity_id = :identity_id AND deleted_at IS NULL" + recallExclusionMarker + " AND SEARCH_INDEX('" +
 	conversationTurnType + "[content]', :query) = true AND $score >= :min_lexical_score " +
@@ -245,14 +246,16 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	}
 	path, reason := retrievalPathHybrid, ""
 	factStatement, turnStatement := recallFactFuseStatement, recallTurnFuseStatement
-	vector, embeddingReason := c.denseQueryVector(ctx, query)
-	if vector == nil {
+	dense, embeddingReason := c.denseQueryVector(ctx, query)
+	if dense.vector == nil {
 		path, reason = retrievalPathLexical, embeddingReason
 		factStatement, turnStatement = recallFactLexicalStatement, recallTurnLexicalStatement
 	} else {
-		params["vector"] = vector
+		dense.bind(params)
 	}
-	facts, turns, degraded, err := c.rankRecallKinds(ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs)
+	facts, turns, degraded, err := c.rankRecallKinds(
+		ctx, factStatement, turnStatement, params, request.ExcludeConversationIDs,
+	)
 	if err != nil && path == retrievalPathHybrid {
 		path, reason = retrievalPathLexical, reasonFusionFailed
 		facts, turns, degraded, err = c.rankRecallKinds(

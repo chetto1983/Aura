@@ -81,10 +81,10 @@ func TestSearchFactsHybridRestoresFusionOrder(t *testing.T) {
 		t.Fatalf("fusion params = %v", params)
 	}
 	fusion := dense[0].Payload["command"].(string)
-	vectorFilter := `{ filter: (SELECT @rid FROM FACT WHERE ` + asOfCondition +
+	vectorFilter := `{ filter: (SELECT @rid FROM FACT WHERE ` + asOfCondition + denseSpaceFilter +
 		`).@rid, maxDistance: :max_distance }`
 	if !strings.Contains(fusion, vectorFilter) {
-		t.Fatalf("dense leg does not filter valid RIDs inline before ranking: %s", fusion)
+		t.Fatalf("dense leg does not filter valid RIDs of the reader's space inline before ranking: %s", fusion)
 	}
 	if !strings.Contains(fusion, "maxDistance: :max_distance") {
 		t.Fatalf("dense relevance gate missing: %s", fusion)

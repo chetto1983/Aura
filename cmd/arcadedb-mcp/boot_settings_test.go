@@ -3,15 +3,10 @@ package main
 import (
 	"context"
 	"errors"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/chetto1983/aura/internal/arcadedb"
-	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -83,28 +78,6 @@ func TestApplyBootSettingsFailsClosed(t *testing.T) {
 				t.Fatal("applyBootSettings succeeded; boot must not fall back to stale env")
 			}
 		})
-	}
-}
-
-// The space is only logged, and the listener starts after it: a sidecar that accepts the
-// connection and never answers must not hold boot for the embeddings client's full minute.
-func TestBootSpaceGivesUpOnAStalledSidecar(t *testing.T) {
-	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { <-release }))
-	t.Cleanup(func() { close(release); srv.Close() })
-
-	done := make(chan error, 1)
-	go func() {
-		_, err := bootSpace(arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: srv.URL}, nil), 50*time.Millisecond)
-		done <- err
-	}()
-	select {
-	case err := <-done:
-		if err == nil {
-			t.Fatal("bootSpace succeeded against a sidecar that never answered")
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("bootSpace still waiting after 5s: the boot deadline was not applied")
 	}
 }
 

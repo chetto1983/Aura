@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // The pass that keeps a tenant's memory in one embedding space (spec §5).
@@ -29,8 +30,38 @@ func (t memorySpaceType) passSelection() string {
 		answered = " AND (embedding IS NOT NULL OR embed_space IS NOT NULL)"
 	}
 	return "SELECT @rid AS rid, " + t.source + " AS text FROM " + t.name +
-		" WHERE " + t.source + " IS NOT NULL AND " + otherSpace + answered + t.live +
+		" WHERE " + otherSpace + answered + t.live +
 		" AND @rid > :cursor ORDER BY @rid LIMIT :page"
+}
+
+// selectedRow is a row as the pass selected it: its RID, and the source text it held then,
+// nil for NULL.
+type selectedRow struct {
+	rid  string
+	text any
+}
+
+// setVectorStatement writes one row's vector and stamp, bound to its own :vN, :sN, :rN and
+// :tN; statements sharing one binding in a script would all take the last row's vector.
+//
+// The write holds only while the row still has the text the pass embedded. A writer can
+// rewrite a turn or a trace between the pass's select and its write; its own vector then
+// describes the new text, and the pass's would describe text the row no longer holds --
+// stamped in the space, so nothing would ever look at it again.
+func (t memorySpaceType) setVectorStatement(n string, nullText bool) string {
+	unchanged := " AND " + t.source + " = :t" + n
+	if nullText {
+		unchanged = " AND " + t.source + " IS NULL"
+	}
+	return "UPDATE " + t.name + " SET embedding = :v" + n + ", embed_space = :s" + n +
+		" WHERE @rid = :r" + n + unchanged
+}
+
+func bindStoredRow(params map[string]any, n string, row selectedRow, vector storedVector) {
+	params["v"+n], params["s"+n], params["r"+n] = vector.vector, vector.space, row.rid
+	if row.text != nil {
+		params["t"+n] = row.text
+	}
 }
 
 // passTally counts what a pass changed: vectors written, records the model refused, and
@@ -83,23 +114,27 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 	for round := 0; rounds == 0 || round < rounds; round++ {
 		space, err := c.embedder.Space(ctx)
 		if err != nil {
-			return tally, err
+			return tally, routeFailure(err)
 		}
 		rows, err := c.Query(ctx, t.passSelection(), map[string]any{
-			"space": space.ID, "cursor": cursor, "page": batch,
+			"space": space.ID, "cursor": cursor, "page": batch, "now": time.Now().UTC().Format(time.RFC3339Nano),
 		})
 		if err != nil {
 			return tally, fmt.Errorf("arcadedb: select %s to re-embed: %w", t.name, err)
 		}
-		rids, texts := make([]string, 0, len(rows)), make([]string, 0, len(rows))
+		var embeddable, empty []selectedRow
+		var texts []string
 		for _, row := range rows {
 			rid := rowString(row, "rid")
 			if rid == "" {
 				continue
 			}
 			cursor = rid
+			selected := selectedRow{rid: rid, text: row["text"]}
 			if text := rowString(row, "text"); strings.TrimSpace(text) != "" {
-				rids, texts = append(rids, rid), append(texts, text)
+				embeddable, texts = append(embeddable, selected), append(texts, text)
+			} else {
+				empty = append(empty, selected)
 			}
 		}
 		if len(texts) > 0 {
@@ -107,7 +142,17 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 			if err != nil {
 				return tally, err
 			}
-			tally.add(c.storeVectors(ctx, t.name, rids, vectors))
+			tally.add(c.storeVectors(ctx, t, embeddable, vectors))
+		}
+		// A row with no text can never be embedded; left holding an old vector it would keep
+		// the gate closed for good, and nothing would say why. It is set aside like a record
+		// the model refused.
+		if len(empty) > 0 {
+			aside := make([]storedVector, len(empty))
+			for i := range aside {
+				aside[i] = storedVector{space: space.ID}
+			}
+			tally.add(c.storeVectors(ctx, t, empty, aside))
 		}
 		// A row the store will not take is behind the cursor and named in the tally, so one
 		// poisoned row cannot end every run at the same place. A page's worth of them is a
@@ -134,20 +179,24 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 // row stamped with the space that refused it, so neither the pass nor the gate counts it
 // until the space changes. A row with neither is left as it was. A row the store still
 // refuses on its own is counted in the tally, not returned: it stays outside the space, and
-// the next run tries it again.
-func (c *Client) storeVectors(ctx context.Context, typeName string, rids []string, vectors []storedVector) passTally {
+// the next run tries it again. A row whose text changed meanwhile is left to its writer (see
+// setVectorStatement) and still counted as written: a sqlscript reports its last statement
+// only.
+func (c *Client) storeVectors(
+	ctx context.Context, t memorySpaceType, rows []selectedRow, vectors []storedVector,
+) passTally {
 	var tally passTally
-	statements := make([]string, 0, len(rids))
-	params := make(map[string]any, len(rids)*3)
-	usable := make([]int, 0, len(rids))
-	for i := range rids {
+	statements := make([]string, 0, len(rows))
+	params := make(map[string]any, len(rows)*4)
+	usable := make([]int, 0, len(rows))
+	for i, row := range rows {
 		if i >= len(vectors) || vectors[i].space == "" {
 			continue
 		}
 		usable = append(usable, i)
 		n := strconv.Itoa(len(usable) - 1)
-		statements = append(statements, setVectorStatement(typeName, n))
-		params["v"+n], params["s"+n], params["r"+n] = vectors[i].vector, vectors[i].space, rids[i]
+		statements = append(statements, t.setVectorStatement(n, row.text == nil))
+		bindStoredRow(params, n, row, vectors[i])
 	}
 	count := func(i int) {
 		if vectors[i].vector != nil {
@@ -166,23 +215,18 @@ func (c *Client) storeVectors(ctx context.Context, typeName string, rids []strin
 		return tally
 	}
 	for _, i := range usable {
-		if _, err := c.Command(ctx, setVectorStatement(typeName, "0"),
-			map[string]any{"v0": vectors[i].vector, "s0": vectors[i].space, "r0": rids[i]}); err != nil {
+		single := make(map[string]any, 4)
+		bindStoredRow(single, "0", rows[i], vectors[i])
+		if _, err := c.Command(ctx, t.setVectorStatement("0", rows[i].text == nil), single); err != nil {
 			tally.failed++
 			if tally.firstFailed == "" {
-				tally.firstFailed, tally.failCause = rids[i], err
+				tally.firstFailed, tally.failCause = rows[i].rid, err
 			}
 			continue
 		}
 		count(i)
 	}
 	return tally
-}
-
-// setVectorStatement writes one row's vector and stamp, bound to its own :vN, :sN and :rN;
-// statements sharing one binding in a script would all take the last row's vector.
-func setVectorStatement(typeName, n string) string {
-	return "UPDATE " + typeName + " SET embedding = :v" + n + ", embed_space = :s" + n + " WHERE @rid = :r" + n
 }
 
 // EmbedMissingFacts is one bounded round of the pass over facts: the memory_reembed tool's

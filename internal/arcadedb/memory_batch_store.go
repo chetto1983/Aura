@@ -66,7 +66,9 @@ func (backend clientMemoryBatchBackend) EmbedStatements(
 
 // storedStatementVectors is fail-soft like the embedder it saves a call to: a lookup that
 // cannot be served only means every statement is embedded, never that the batch fails.
-func (c *Client) storedStatementVectors(ctx context.Context, statements []string, space string) map[string]storedVector {
+func (c *Client) storedStatementVectors(
+	ctx context.Context, statements []string, space string,
+) map[string]storedVector {
 	vectors := make(map[string]storedVector, len(statements))
 	rows, err := c.Query(ctx, storedStatementVectorsStatement, map[string]any{"statements": statements, "space": space})
 	if err != nil {

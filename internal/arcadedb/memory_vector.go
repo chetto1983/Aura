@@ -109,7 +109,7 @@ const (
 // second statement, which is one round trip for a set already bounded by the limit.
 const fuseRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
 	"`vector.neighbors`('" + factEdgeType + "[embedding]', :vector, :candidates, " +
-	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition +
+	"{ filter: (SELECT @rid FROM " + factEdgeType + " WHERE " + asOfCondition + denseSpaceFilter +
 	").@rid, maxDistance: :max_distance }), " +
 	"(SELECT @rid, $score FROM " + factEdgeType +
 	" WHERE SEARCH_INDEX('" + factEdgeType + "[statement]', :query) = true AND " +
@@ -161,8 +161,8 @@ const (
 // SearchFactsHybrid runs both legs and fuses them with ArcadeDB's own reciprocal
 // rank fusion. With no embedder configured, with the sidecar down, or with a memory
 // not wholly in the reader's embedding space, it is exactly SearchFacts, which is the
-// point: the dense leg is an improvement, not a dependency. The result names the path it took, so a caller can tell a fused
-// answer from a lexical fallback instead of inferring it.
+// point: the dense leg is an improvement, not a dependency. The result names the path it
+// took, so a caller can tell a fused answer from a lexical fallback instead of inferring it.
 func (c *Client) SearchFactsHybrid(
 	ctx context.Context,
 	query string,
@@ -180,8 +180,8 @@ func (c *Client) SearchFactsHybrid(
 	if asOf.IsZero() {
 		asOf = time.Now()
 	}
-	vector, reason := c.denseQueryVector(ctx, query)
-	if vector == nil {
+	dense, reason := c.denseQueryVector(ctx, query)
+	if dense.vector == nil {
 		return c.searchFactsFallback(ctx, query, limit, asOf, reason)
 	}
 
@@ -189,14 +189,15 @@ func (c *Client) SearchFactsHybrid(
 	// ranked 8th lexically and 2nd densely is exactly the one the fusion exists
 	// to promote.
 	candidates := min(max(limit*4, 20), limits.HybridCandidates)
-	ranked, err := c.Query(ctx, fuseRIDsStatement, map[string]any{
+	params := map[string]any{
 		"query":        escapeLucene(query),
-		"vector":       vector,
 		"candidates":   candidates,
 		"as_of":        asOf.UTC().Format(time.RFC3339),
 		"max_distance": limits.DenseMaxDistance, "min_relevance": limits.MinRelevance,
 		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
-	})
+	}
+	dense.bind(params)
+	ranked, err := c.Query(ctx, fuseRIDsStatement, params)
 	if err != nil {
 		// A fusion that fails must not lose the answer the lexical leg already had.
 		return c.searchFactsFallback(ctx, query, limit, asOf, reasonFusionFailed)

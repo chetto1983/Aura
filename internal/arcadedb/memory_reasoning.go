@@ -326,11 +326,11 @@ func (c *Client) SearchReasoningTraces(
 		"identity_id": identityID, "query": escapeLucene(query), "limit": limit,
 		"now": time.Now().UTC().Format(time.RFC3339Nano),
 	}
-	vector, reason := c.denseQueryVector(ctx, query)
-	if vector == nil {
+	dense, reason := c.denseQueryVector(ctx, query)
+	if dense.vector == nil {
 		return c.searchReasoningLexical(ctx, params, reason)
 	}
-	params["vector"] = vector
+	dense.bind(params)
 	params["candidates"] = min(max(limit*4, 20), c.memoryLimits().HybridCandidates)
 	ranked, err := c.Query(ctx, searchReasoningHybridStatement, params)
 	if err != nil {

@@ -6,14 +6,14 @@ import (
 	"testing"
 )
 
-func vectorsFor(n int) ([]string, []storedVector) {
-	rids := make([]string, n)
+func vectorsFor(n int) ([]selectedRow, []storedVector) {
+	rows := make([]selectedRow, n)
 	vectors := make([]storedVector, n)
-	for i := range rids {
-		rids[i] = "#5:" + string(rune('0'+i))
+	for i := range rows {
+		rows[i] = selectedRow{rid: "#5:" + string(rune('0'+i)), text: "fact " + string(rune('0'+i))}
 		vectors[i] = storedVector{vector: make([]float64, vectorDimensions), space: "es1-a"}
 	}
-	return rids, vectors
+	return rows, vectors
 }
 
 func countLanguage(rec *recorder, language string) int {
@@ -26,7 +26,7 @@ func countLanguage(rec *recorder, language string) int {
 	return n
 }
 
-// One round trip for the whole batch, and each statement bound to its OWN triple.
+// One round trip for the whole batch, and each statement bound to its OWN parameters.
 //
 // Both halves are load-bearing and neither shows in the return value. Measured live
 // 2026-08-03: a vector UPDATE by @rid costs 55-78ms against a 53-63ms bare round
@@ -37,9 +37,9 @@ func countLanguage(rec *recorder, language string) int {
 // :vector/:rid pair, every row would silently take the last vector.
 func TestStoreVectorsSendsOneBoundScriptForTheWholeBatch(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
-	rids, vectors := vectorsFor(3)
+	rows, vectors := vectorsFor(3)
 
-	tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
+	tally := client.storeVectors(context.Background(), factSpace, rows, vectors)
 	if tally.embedded != 3 {
 		t.Errorf("embedded = %d, want 3", tally.embedded)
 	}
@@ -52,7 +52,7 @@ func TestStoreVectorsSendsOneBoundScriptForTheWholeBatch(t *testing.T) {
 	if got := strings.Count(rec.statements[0], "UPDATE"); got != 3 {
 		t.Errorf("UPDATE statements in the script = %d, want 3", got)
 	}
-	for _, key := range []string{"v0", "s0", "r0", "v1", "s1", "r1", "v2", "s2", "r2"} {
+	for _, key := range []string{"v0", "s0", "r0", "t0", "v1", "s1", "r1", "t1", "v2", "s2", "r2", "t2"} {
 		if _, ok := rec.params[0][key]; !ok {
 			t.Errorf("param %q missing — the statements would share a binding", key)
 		}
@@ -72,9 +72,9 @@ func TestStoreVectorsSendsOneBoundScriptForTheWholeBatch(t *testing.T) {
 func TestStoreVectorsFallsBackToSingleStatementsWhenTheScriptFails(t *testing.T) {
 	client, rec := recordingClient(t, `{"result":[]}`)
 	rec.failLanguage = "sqlscript"
-	rids, vectors := vectorsFor(5)
+	rows, vectors := vectorsFor(5)
 
-	tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
+	tally := client.storeVectors(context.Background(), factSpace, rows, vectors)
 	if tally.embedded != 5 || tally.failed != 0 {
 		t.Errorf("embedded = %d, want 5 — every row must still land via the fallback", tally.embedded)
 	}
@@ -111,10 +111,10 @@ func TestStoreVectorsSkipsUnusableRowsAndWritesRefusals(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			client, rec := recordingClient(t, `{"result":[]}`)
-			rids, vectors := vectorsFor(3)
+			rows, vectors := vectorsFor(3)
 			tc.spoil(vectors)
 
-			tally := client.storeVectors(context.Background(), factEdgeType, rids, vectors)
+			tally := client.storeVectors(context.Background(), factSpace, rows, vectors)
 			if tally != tc.wantTally {
 				t.Errorf("tally = %+v, want %+v", tally, tc.wantTally)
 			}

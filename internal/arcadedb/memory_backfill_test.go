@@ -276,6 +276,69 @@ func TestTenantBackfillStopsAtTheBudgetWithoutFailing(t *testing.T) {
 	}
 }
 
+// Spec §5: a route failure ends the run, not one tenant. A revoked key or a rate limit says
+// nothing about the next tenant, and asking again for each would multiply the failure by the
+// number of identities (final review #3).
+func TestTenantBackfillEndsTheRunOnARouteFailure(t *testing.T) {
+	server := newTenantServer(t, map[string]bool{databaseA: true, databaseB: true},
+		map[string]int{databaseA: 3, databaseB: 3})
+	embedder := &failingEmbedder{err: &embeddings.StatusError{Code: http.StatusUnauthorized}, space: "es1-b"}
+	_, err := testBackfill(t, server, staticRoster{ids: []string{tenantA, tenantB}}, embedder).
+		EmbedMissing(context.Background(), time.Time{})
+	var status *embeddings.StatusError
+	if !errors.As(err, &status) || status.Code != http.StatusUnauthorized {
+		t.Fatalf("err = %v, want the 401", err)
+	}
+	if server.sawDatabase(databaseA) == server.sawDatabase(databaseB) {
+		t.Fatal("the run went on to the next tenant after the route failed")
+	}
+}
+
+// Review Focus 4 on a one-identity appliance: the budget ending INSIDE the tenant's pass is
+// still the budget, not a failure (final review #9).
+func TestTenantBackfillStopsAtTheBudgetInsideATenant(t *testing.T) {
+	server := newTenantServer(t, map[string]bool{databaseA: true}, map[string]int{databaseA: 3})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	embedder := &budgetEmbedder{spend: cancel}
+	if _, err := testBackfill(t, server, staticRoster{ids: []string{tenantA}}, embedder).
+		EmbedMissing(ctx, time.Time{}); err != nil {
+		t.Fatalf("a budget spent inside the tenant was reported as a failure: %v", err)
+	}
+}
+
+// Review Focus 4: the rotation is observable across runs, not only in rotated().
+func TestTenantBackfillStartsOneTenantLaterEachRun(t *testing.T) {
+	server := newTenantServer(t, map[string]bool{databaseA: true, databaseB: true}, map[string]int{})
+	backfill := testBackfill(t, server, staticRoster{ids: []string{tenantA, tenantB}}, &batchEmbedder{})
+	firstVisited := func() string {
+		if _, err := backfill.EmbedMissing(context.Background(), time.Time{}); err != nil {
+			t.Fatalf("EmbedMissing: %v", err)
+		}
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		first, _, _ := strings.Cut(server.statements[0], ": ")
+		server.statements = nil
+		return first
+	}
+	if a, b := firstVisited(), firstVisited(); a == b {
+		t.Fatalf("both runs started from %s", a)
+	}
+}
+
+// budgetEmbedder spends the run's budget during the first request, as the cron handler's
+// deadline would.
+type budgetEmbedder struct{ spend context.CancelFunc }
+
+func (e *budgetEmbedder) Embed(ctx context.Context, _ []string) ([][]float64, error) {
+	e.spend()
+	return nil, ctx.Err()
+}
+
+func (e *budgetEmbedder) Space(context.Context) (embeddings.Space, error) {
+	return embeddings.Space{ID: "es1-b"}, nil
+}
+
 // No space, no pass: a hosted route without its key, or a sidecar that cannot name its
 // model, would fail every tenant the same way.
 func TestTenantBackfillDoesNotRunWithoutASpace(t *testing.T) {

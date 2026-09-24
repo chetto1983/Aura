@@ -68,7 +68,7 @@ func run(logger *slog.Logger) error {
 	if embedder != nil {
 		// NOT attached to `client`: that one only ever runs DDL as the admin, and
 		// the per-tenant clients the resolver builds get the embedder themselves.
-		space, spaceErr := bootSpace(embedder, bootAttestTimeout)
+		space, spaceErr := arcadedb.SpaceWithin(embedder, bootAttestTimeout)
 		logger.Info("dense retrieval enabled", "embed_url", embedRoute.baseURL,
 			"space", space.ID, "space_label", space.Label, "space_error", errString(spaceErr))
 	} else {

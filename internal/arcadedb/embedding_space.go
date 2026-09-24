@@ -80,7 +80,8 @@ type memorySpaceType struct {
 var (
 	factSpace  = memorySpaceType{name: factEdgeType, source: "statement", fillsUnanswered: true}
 	turnSpace  = memorySpaceType{name: conversationTurnType, source: "content", live: " AND deleted_at IS NULL"}
-	traceSpace = memorySpaceType{name: reasoningTraceType, source: "provider_summary", fillsUnanswered: true}
+	traceSpace = memorySpaceType{name: reasoningTraceType, source: "provider_summary", live: activeReasoningTraceFilter,
+		fillsUnanswered: true}
 
 	// memorySpaceTypes is the memory family (spec §3); the documents family is gated apart,
 	// so a document that will not re-index never turns dense memory off.
@@ -114,6 +115,11 @@ type spaceGate struct {
 // retrieval ranks a query against the whole corpus, so one vector from another model makes
 // every distance suspect: until the pass has moved all of them, memory is served lexically
 // (spec §3, operator decision 2).
+//
+// The lock is held across the three counts on purpose: readers of one tenant arriving
+// together share one check instead of sending three counts each. The cost is that a waiter
+// cannot give up before the holder's counts return, whatever its own deadline; how long
+// they take is not yet measured (spec, "What this design does not prove").
 func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error) {
 	gate := &c.memoryGate
 	gate.mu.Lock()
@@ -122,8 +128,9 @@ func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error
 		return gate.open, nil
 	}
 	open := true
+	params := map[string]any{"space": space, "now": time.Now().UTC().Format(time.RFC3339Nano)}
 	for _, t := range memorySpaceTypes {
-		rows, err := c.Query(ctx, t.mismatchCount(), map[string]any{"space": space})
+		rows, err := c.Query(ctx, t.mismatchCount(), params)
 		if err != nil {
 			return false, fmt.Errorf("arcadedb: count %s vectors outside the space: %w", t.name, err)
 		}
@@ -136,30 +143,56 @@ func (c *Client) memoryDenseOpen(ctx context.Context, space string) (bool, error
 	return open, nil
 }
 
-// denseQueryVector is the dense leg's entry for every memory read: the query's vector, or
-// nil and the reason the read must be lexical. The gate is asked before the query is
+// denseSpaceFilter keeps a dense leg to the reader's space. The gate decides whether a read
+// is dense at all; this makes a ranking over two models' vectors impossible even while the
+// gate's cached answer is older than a stale write.
+const denseSpaceFilter = " AND embed_space = :space"
+
+// denseQuery is a query embedded for the dense leg, and the space its vector is in.
+type denseQuery struct {
+	vector []float64
+	space  string
+}
+
+func (q denseQuery) bind(params map[string]any) {
+	params["vector"], params["space"] = q.vector, q.space
+}
+
+// denseQueryVector is the dense leg's entry for every memory read: the embedded query, or
+// none and the reason the read must be lexical. The gate is asked before the query is
 // embedded, so a closed gate costs no embedding request.
-func (c *Client) denseQueryVector(ctx context.Context, query string) ([]float64, string) {
+//
+// The space is read again once the query is embedded. For a write, reading it first is the
+// safe order (embedStored); for a read it is not: a model swapped in between would rank a
+// new model's vector against a corpus checked in the old space.
+func (c *Client) denseQueryVector(ctx context.Context, query string) (denseQuery, string) {
 	if c == nil || c.embedder == nil {
-		return nil, reasonEmbedderNotConfigured
+		return denseQuery{}, reasonEmbedderNotConfigured
 	}
 	space, err := c.embedder.Space(ctx)
 	if err != nil {
-		return nil, reasonEmbeddingFailed
+		return denseQuery{}, reasonEmbeddingFailed
 	}
 	open, err := c.memoryDenseOpen(ctx, space.ID)
 	if err != nil {
-		return nil, reasonSpaceCheckFailed
+		return denseQuery{}, reasonSpaceCheckFailed
 	}
 	if !open {
-		return nil, reasonEmbeddingSpaceMismatch
+		return denseQuery{}, reasonEmbeddingSpaceMismatch
 	}
 	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
 	if err != nil {
-		return nil, reasonEmbeddingFailed
+		return denseQuery{}, reasonEmbeddingFailed
 	}
 	if len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return nil, reasonEmbeddingInvalid
+		return denseQuery{}, reasonEmbeddingInvalid
 	}
-	return vectors[0], ""
+	after, err := c.embedder.Space(ctx)
+	if err != nil {
+		return denseQuery{}, reasonEmbeddingFailed
+	}
+	if after.ID != space.ID {
+		return denseQuery{}, reasonEmbeddingSpaceMismatch
+	}
+	return denseQuery{vector: vectors[0], space: space.ID}, ""
 }

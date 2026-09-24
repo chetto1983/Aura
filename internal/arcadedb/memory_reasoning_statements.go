@@ -88,7 +88,7 @@ const searchReasoningLexicalStatement = "SELECT " + reasoningTraceFields + " FRO
 const searchReasoningHybridStatement = "SELECT @rid AS rid FROM (SELECT expand(`vector.fuse`(" +
 	"`vector.neighbors`('" + reasoningTraceType + "[embedding]', :vector, :candidates," +
 	" { filter: (SELECT @rid FROM " + reasoningTraceType + " WHERE identity_id = :identity_id" +
-	activeReasoningTraceFilter + ").@rid })," +
+	activeReasoningTraceFilter + denseSpaceFilter + ").@rid })," +
 	" (SELECT @rid, $score FROM " + reasoningTraceType + " WHERE identity_id = :identity_id" +
 	activeReasoningTraceFilter + " AND SEARCH_INDEX('" + reasoningTraceType +
 	"[provider_summary]', :query) = true LIMIT :candidates), { fusion: 'RRF' }))) LIMIT :candidates"

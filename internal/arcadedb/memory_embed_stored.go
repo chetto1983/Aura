@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -13,6 +14,15 @@ import (
 // would stamp a whole memory refused. A route that embeds this and refuses a text has
 // refused the text.
 const controlInput = "Aura memory embedding route check."
+
+// errEmbeddingRoute marks a failure of the embedding route itself -- no space, a refused
+// key, a rate limit, a server or transport error -- as opposed to one text or one tenant.
+// It says nothing about the next tenant, so the pass ends the run on it (spec §5).
+var errEmbeddingRoute = errors.New("arcadedb: the embedding route failed")
+
+func routeFailure(err error) error {
+	return fmt.Errorf("%w: %w", errEmbeddingRoute, err)
+}
 
 // embedStored embeds texts as stored documents: one storedVector per text, in order.
 //
@@ -29,10 +39,10 @@ const controlInput = "Aura memory embedding route check."
 func (c *Client) embedStored(ctx context.Context, texts []string) ([]storedVector, error) {
 	space, err := c.embedder.Space(ctx)
 	if err != nil {
-		return nil, err
+		return nil, routeFailure(err)
 	}
 	if space.ID == "" {
-		return nil, fmt.Errorf("arcadedb: the embedding route named no space")
+		return nil, routeFailure(errors.New("the route named no space"))
 	}
 	out := make([]storedVector, len(texts))
 	routeWorks := false
@@ -48,7 +58,7 @@ func (c *Client) embedStored(ctx context.Context, texts []string) ([]storedVecto
 			}
 			return nil
 		case !embeddings.RejectsInput(err):
-			return err
+			return routeFailure(err)
 		case hi-lo > 1:
 			mid := lo + (hi-lo)/2
 			if err := embed(lo, mid); err != nil {
@@ -58,7 +68,7 @@ func (c *Client) embedStored(ctx context.Context, texts []string) ([]storedVecto
 		}
 		if !routeWorks {
 			if _, controlErr := c.embedder.Embed(ctx, withTask(taskDocumentPrefix, []string{controlInput})); controlErr != nil {
-				return fmt.Errorf("arcadedb: the embedding route refuses a control input too (%v): %w", controlErr, err)
+				return routeFailure(fmt.Errorf("it refuses a control input too (%v): %w", controlErr, err))
 			}
 			routeWorks = true
 		}

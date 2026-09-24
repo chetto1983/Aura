@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
@@ -37,4 +38,14 @@ func NewMemoryEmbedder(embed config.EmbedConfig, credential func() string) Dense
 		return nil
 	}
 	return route
+}
+
+// SpaceWithin names the space e embeds memory in, for a boot log, giving up after timeout:
+// the listener starts after it, and the embeddings client's own timeout is a minute. The
+// daemon and arcadedb-mcp both log it, since the two must name the same space or each
+// re-stamps the other's writes.
+func SpaceWithin(e DenseEmbedder, timeout time.Duration) (embeddings.Space, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return e.Space(ctx)
 }

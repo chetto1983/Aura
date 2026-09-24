@@ -20,10 +20,11 @@ import (
 
 type passRow struct {
 	position int
-	text     string
+	text     string // "" stands for NULL
 	vector   bool
 	space    string
 	deleted  bool
+	expired  bool
 }
 
 // passServer holds rows per type and answers exactly the statements the pass sends.
@@ -36,7 +37,19 @@ type passServer struct {
 	refuse map[string]bool
 }
 
-var passUpdate = regexp.MustCompile(`UPDATE (\w+) SET embedding = :(v\d+), embed_space = :(s\d+) WHERE @rid = :(r\d+)`)
+var passUpdate = regexp.MustCompile(
+	`UPDATE (\w+) SET embedding = :(v\d+), embed_space = :(s\d+) WHERE @rid = :(r\d+)(?: AND \w+ (= :(t\d+)|IS NULL))?`)
+
+// textStillIs is the write's compare-and-set on the source text, as the engine evaluates it.
+func textStillIs(row *passRow, condition string, text any) bool {
+	switch {
+	case condition == "IS NULL":
+		return row.text == ""
+	case condition != "":
+		return text == row.text
+	}
+	return true
+}
 
 func (s *passServer) rid(typeName string, row *passRow) string {
 	return fmt.Sprintf("#%d:%d", map[string]int{factEdgeType: 10, conversationTurnType: 20, reasoningTraceType: 30}[typeName], row.position)
@@ -71,7 +84,7 @@ func (s *passServer) serve(w http.ResponseWriter, r *http.Request) {
 	for _, match := range matches {
 		typeName, rid := match[1], payload.Params[match[4]]
 		for _, row := range s.rows[typeName] {
-			if s.rid(typeName, row) == rid {
+			if s.rid(typeName, row) == rid && textStillIs(row, match[5], payload.Params[match[6]]) {
 				row.vector = payload.Params[match[2]] != nil
 				row.space, _ = payload.Params[match[3]].(string)
 			}
@@ -94,8 +107,13 @@ func (s *passServer) selectRows(statement string, params map[string]any) []map[s
 		}
 		if ridAfter(s.rid(typeName, row), cursor) && row.space != space &&
 			(!strings.Contains(statement, "deleted_at IS NULL") || !row.deleted) &&
-			(!strings.Contains(statement, "(embedding IS NOT NULL OR embed_space IS NOT NULL)") || row.vector || row.space != "") {
-			out = append(out, map[string]any{"rid": s.rid(typeName, row), "text": row.text})
+			(!strings.Contains(statement, "(embedding IS NOT NULL OR embed_space IS NOT NULL)") || row.vector || row.space != "") &&
+			(!strings.Contains(statement, activeReasoningTraceFilter) || !row.expired) {
+			var text any
+			if row.text != "" {
+				text = row.text
+			}
+			out = append(out, map[string]any{"rid": s.rid(typeName, row), "text": text})
 		}
 	}
 	return out
@@ -316,6 +334,85 @@ func TestEmbedMissingFactsReportsARowItCouldNotStore(t *testing.T) {
 	if embedded != 4 || err == nil || !strings.Contains(err.Error(), "#10:2") {
 		t.Fatalf("embedded %d, err %v; want 4 and an error naming #10:2", embedded, err)
 	}
+}
+
+// Final review #4: a row another writer rewrote between the pass's select and its write keeps
+// the writer's vector; the pass's describes text the row no longer holds.
+func TestPassDoesNotOverwriteARowRewrittenMeanwhile(t *testing.T) {
+	rows := map[string][]*passRow{conversationTurnType: stampedRows(3, "es1-a", true)}
+	client, server := newPassClient(t, rows, nil)
+	rewritten := rows[conversationTurnType][1]
+	client.WithEmbedder(&hookEmbedder{inner: &refusingEmbedder{space: "es1-b"}, hook: func([]string) {
+		server.mu.Lock()
+		defer server.mu.Unlock()
+		rewritten.text = "rewritten by a writer still on route A"
+	}})
+	if _, err := client.reembedType(context.Background(), turnSpace, backfillBatch, 0); err != nil {
+		t.Fatalf("reembedType: %v", err)
+	}
+	if rewritten.space != "es1-a" {
+		t.Fatalf("the pass stamped %+v with the vector of its old text", *rewritten)
+	}
+	if rows[conversationTurnType][0].space != "es1-b" || rows[conversationTurnType][2].space != "es1-b" {
+		t.Fatal("the rows nobody touched were not moved")
+	}
+}
+
+// Final review #8: a row with a vector but no text can never be re-embedded; left alone it
+// would keep the gate closed for good, and nothing would say so. It is set aside like a
+// record the model refused: its vector removed, stamped with the space.
+func TestPassSetsAsideARowWithNoTextToEmbed(t *testing.T) {
+	rows := map[string][]*passRow{factEdgeType: {
+		{position: 0, vector: true, space: "es1-a"},
+		{position: 1, text: "   ", vector: true, space: "es1-a"},
+		{position: 2, text: "embeddable", vector: true, space: "es1-a"},
+	}}
+	client, _ := newPassClient(t, rows, &refusingEmbedder{space: "es1-b"})
+	tally, err := client.reembedType(context.Background(), factSpace, backfillBatch, 0)
+	if err != nil {
+		t.Fatalf("reembedType: %v", err)
+	}
+	if tally != (passTally{embedded: 1, refused: 2}) {
+		t.Fatalf("tally = %+v, want 1 embedded and the 2 empty rows set aside", tally)
+	}
+	for _, row := range rows[factEdgeType][:2] {
+		if row.vector || row.space != "es1-b" {
+			t.Fatalf("empty row %+v still holds a vector outside the space", *row)
+		}
+	}
+}
+
+// Final review #8: an expired trace no read can reach costs the pass no request.
+func TestPassSkipsExpiredTraces(t *testing.T) {
+	rows := map[string][]*passRow{reasoningTraceType: {
+		{position: 0, text: "live", vector: true, space: "es1-a"},
+		{position: 1, text: "expired", vector: true, space: "es1-a", expired: true},
+	}}
+	client, _ := newPassClient(t, rows, &refusingEmbedder{space: "es1-b"})
+	tally, err := client.reembedType(context.Background(), traceSpace, backfillBatch, 0)
+	if err != nil {
+		t.Fatalf("reembedType: %v", err)
+	}
+	if tally.embedded != 1 || rows[reasoningTraceType][1].space != "es1-a" {
+		t.Fatalf("tally = %+v, expired trace %+v: want only the live trace re-embedded",
+			tally, *rows[reasoningTraceType][1])
+	}
+}
+
+// hookEmbedder runs hook before each request of inner: a writer acting while the pass waits
+// on the embedding route.
+type hookEmbedder struct {
+	inner DenseEmbedder
+	hook  func(texts []string)
+}
+
+func (e *hookEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {
+	e.hook(texts)
+	return e.inner.Embed(ctx, texts)
+}
+
+func (e *hookEmbedder) Space(ctx context.Context) (embeddings.Space, error) {
+	return e.inner.Space(ctx)
 }
 
 type widthEmbedder struct {
