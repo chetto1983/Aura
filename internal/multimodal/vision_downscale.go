@@ -41,6 +41,11 @@ const (
 // 4 bytes a sample, until the last scan. A square is the worst shape, because x/image/draw's
 // buffer is dw*sh*32 bytes (draw/scale.go) and grows with the short edge. Each bound is 300 MiB
 // over the family's worst measured bytes per pixel, taken down to a square measured within it.
+//
+// Not measured, only worked out to sit under its family's worst: 16-bit gray PNG (in "other"),
+// lossy and VP8X WebP, interlaced PNG. The figures are what one decode adds to an empty ~19 MiB
+// process; aura adds them to its own heap (VM .158, 2026-09-24: two 12 MP photos read in one
+// turn took it from 126 MiB to a 452 MiB peak).
 const (
 	maxPixelsYCbCr = 3515 * 3515
 	maxPixelsCMYK  = 2910 * 2910

@@ -180,6 +180,30 @@ func TestDownscaleForVisionBoundsDependOnTheColorModel(t *testing.T) {
 	}
 }
 
+// Every model DecodeConfig can report lands in a family; the ones no header above produces
+// (lossy WebP with alpha, 16-bit gray, a palette) are pinned here.
+func TestMaxVisionPixelsFamilies(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		model color.Model
+		want  int
+	}{
+		{"YCbCr", color.YCbCrModel, maxPixelsYCbCr},
+		{"NYCbCrA (lossy WebP with alpha)", color.NYCbCrAModel, maxPixelsYCbCr},
+		{"CMYK", color.CMYKModel, maxPixelsCMYK},
+		{"gray", color.GrayModel, maxPixelsGray},
+		{"gray16", color.Gray16Model, maxPixelsOther},
+		{"RGBA", color.RGBAModel, maxPixelsOther},
+		{"NRGBA", color.NRGBAModel, maxPixelsOther},
+		{"NRGBA64", color.NRGBA64Model, maxPixelsOther},
+		{"palette (GIF, paletted PNG)", color.Palette{color.Black, color.White}, maxPixelsOther},
+	} {
+		if got := maxVisionPixels(tc.model); got != tc.want {
+			t.Errorf("%s: bound %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestDownscaleForVisionReencodesPastTheByteCap(t *testing.T) {
 	padded := append(pngOf(t, 2, 2), make([]byte, 1<<20)...)
 	got, err := DownscaleForVision(t.Context(), padded, 64<<10)
