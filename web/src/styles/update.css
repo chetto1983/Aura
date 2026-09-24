@@ -1,6 +1,6 @@
 /* System update: the admin decision dialog, the "restart imminent" banner and the full-screen
-   overlay held while the daemon restarts. Unlayered on purpose: the overlay reuses the shared
-   Dialog and must win over its centred-card utilities. */
+   overlay held while the daemon restarts. The overlay's placement is utilities on the element
+   (SystemUpdateLayer.tsx); this file only paints it. */
 
 .update-dialog__hero {
   background:
@@ -112,21 +112,9 @@
 }
 
 .update-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  display: flex;
-  width: 100vw;
-  max-width: none;
-  height: 100dvh;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2.25rem;
-  padding: 1.5rem;
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
   background:
     radial-gradient(
       56rem 34rem at 50% 40%,
@@ -140,8 +128,6 @@
     ),
     color-mix(in oklab, var(--color-bg) 95%, transparent);
   box-shadow: none;
-  translate: none;
-  transform: none;
   animation: none;
   backdrop-filter: blur(14px);
 }

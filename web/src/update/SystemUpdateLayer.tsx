@@ -36,7 +36,9 @@ function UpdateBanner() {
 }
 
 // Held open with no onOpenChange, so neither Escape nor a click can dismiss it: the page has
-// nothing to talk to until the new build answers and useSystemUpdate reloads it.
+// nothing to talk to until the new build answers and useSystemUpdate reloads it. The shared
+// Dialog is a centred card; its placement is undone here with utilities, which tailwind-merge
+// swaps for the card's own, because the CSS minifier drops a `translate: none` override.
 function UpdateOverlay() {
   const { t } = useTranslation();
   return (
@@ -45,7 +47,7 @@ function UpdateOverlay() {
         role="alertdialog"
         aria-modal="true"
         showCloseButton={false}
-        className="update-overlay"
+        className="update-overlay left-0 top-0 z-[120] h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-9 rounded-none border-0 p-6"
       >
         <div className="update-orbit" aria-hidden="true">
           <span className="update-orbit__halo" />

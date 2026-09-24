@@ -64,6 +64,35 @@ describe('SystemUpdateLayer — what everyone sees', () => {
     expect(screen.getByRole('alertdialog', { name: 'Aura is updating…' })).toBeTruthy();
   });
 
+  // Seen live on the lab VM (2026-09-24): with the card's -50% translate left on a full-screen
+  // element, its centre sat in the viewport's top-left corner and the title was cut off.
+  it('lays the overlay over the whole viewport, not where the shared Dialog centres a card', async () => {
+    stubDaemon(member('applying'));
+    renderCenter();
+
+    const classes = (await screen.findByRole('alertdialog')).className.split(' ');
+
+    expect(classes).toEqual(
+      expect.arrayContaining([
+        'left-0',
+        'top-0',
+        'translate-x-0',
+        'translate-y-0',
+        'w-screen',
+        'h-dvh',
+      ]),
+    );
+    for (const centring of [
+      'left-[50%]',
+      'top-[50%]',
+      'translate-x-[-50%]',
+      'translate-y-[-50%]',
+      'max-w-lg',
+    ]) {
+      expect(classes).not.toContain(centring);
+    }
+  });
+
   it('shows a member nothing while a build merely waits', async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(new Response(JSON.stringify(member('pending')), { status: 200 })),
