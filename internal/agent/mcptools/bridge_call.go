@@ -21,8 +21,9 @@ var mcpBridgeBoundary = obs.NewGlobalBoundary("github.com/chetto1983/aura/intern
 })
 
 // Execute unmarshals the model's args, calls the MCP tool through the mounted
-// MountedServer, and threads successful text through tools.NewResult. Execute
-// does not decode results itself — b.srv.CallToolText does, through the ONE
+// MountedServer, and threads the result through resultText: tools.NewResult when it
+// is text alone, tools.NewResultReservingTail when files travelled with it. Execute
+// does not decode results itself — b.srv.CallTool does, through the ONE
 // result-decode call site in the tree — so an MCP isError=true (or a transport
 // failure) remains a Go error the agent loop can render as an error observation
 // without completing idempotency as success.
@@ -54,8 +55,9 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 
 // newResult wraps an MCP tool's output. A mounted MCP server is
 // operator-configured infrastructure, so its output is marked TrustTrusted:
-// trusted content like a built-in, never wrapped in the untrusted envelope. Size
-// caps in tools.NewResult still bound it; only the distrust framing is dropped.
+// trusted content like a built-in, never wrapped in the untrusted envelope. The
+// preview cap and sidecar spillover (resultText) still bound it; only the distrust
+// framing is dropped.
 //
 // A view-bound tool additionally carries the MCP Apps descriptor on the result's
 // Meta. The MODEL never sees it — Meta is not part of the preview threaded back

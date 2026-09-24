@@ -23,7 +23,9 @@ import (
 // handshakeCtx bounds ONLY this mount attempt (the connect handshake AND the
 // mount-time tools/list): a hung handshake is dropped within handshakeCtx's
 // deadline without affecting processCtx or any other server sharing it. opts
-// carries what the boot path gives every mount; today that is the file sink.
+// carries what the boot path gives every mount: the file sink (Files), the view
+// catalog (Views) and the elicitation consent surface (Elicitation). A stdio mount
+// has no use for Egress or OAuth, which shape an HTTP connection.
 func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, opts MountOptions) (closer func() error, names []string, err error) {
 	closer, names, _, err = mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name), opts)
 	return closer, names, err

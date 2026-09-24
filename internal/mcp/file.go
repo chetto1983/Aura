@@ -64,6 +64,13 @@ func FileCapExceeded(size int64) string {
 	return fmt.Sprintf("%d bytes exceeds the %d-byte file cap", size, MaxFileBytes)
 }
 
+// CallCapExceeded is the reason the files of one tool call are refused for adding up
+// to more than MaxCallFileBytes. The bridge stops reading links with it, and the sink
+// refuses the whole call with it.
+func CallCapExceeded() string {
+	return fmt.Sprintf("the call's files exceed the %d-byte cap", MaxCallFileBytes)
+}
+
 // FileFromContents is one resource's contents as a FilePart: a non-empty blob as its
 // bytes, else non-empty text as UTF-8 — a blob wins when both are present. False when
 // the contents carry neither (including a present-but-empty blob or text).

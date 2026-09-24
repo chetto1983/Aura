@@ -282,7 +282,8 @@ func (s *MountedServer) ListTools(ctx context.Context) ([]*sdkmcp.Tool, error) {
 // 1): bridgedTool.Execute, the two cmd/aura host-memory callers and the
 // readiness check all route through CallTool, so the domain-outcome chain
 // cannot be bypassed by adding a caller. A successful result's links are read back
-// on session, the one that made the call (bridge_links.go).
+// on session, the one that made the call (bridge_links.go), so CallToolText callers
+// pay for those reads too; no server they call returns links today.
 func (s *MountedServer) decodeResult(ctx context.Context, session *sdkmcp.ClientSession, name string, res *sdkmcp.CallToolResult) (mcp.ToolPayload, error) {
 	payload, isErr := mcp.DecodeToolPayload(res)
 	if isErr {

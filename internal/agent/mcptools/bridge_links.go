@@ -15,10 +15,29 @@ import (
 // as the tenant that asked. Aura never fetches the URI itself, so a hostile link
 // cannot make it reach anything on the network.
 
-// resolveLinks turns every link in payload into a FilePart and clears Links.
+// resolveLinks turns every link in payload into a FilePart and clears Links. It keeps
+// a running total of the bytes the call's files hold, the inline ones and each link it
+// reads, and stops reading once that passes mcp.MaxCallFileBytes: the sink refuses a
+// call over the cap whole, so a byte read past it is read for nothing, and the server
+// chooses how many links there are. It stops as well when ctx is done, without asking
+// the session.
 func resolveLinks(ctx context.Context, session *sdkmcp.ClientSession, payload mcp.ToolPayload) mcp.ToolPayload {
+	total := 0
+	for _, file := range payload.Files {
+		total += len(file.Data)
+	}
 	for _, link := range payload.Links {
-		payload.Files = append(payload.Files, readLink(ctx, session, link))
+		var part mcp.FilePart
+		switch {
+		case ctx.Err() != nil:
+			part = linkPart(link, "read failed: "+ctx.Err().Error())
+		case total > mcp.MaxCallFileBytes:
+			part = linkPart(link, mcp.CallCapExceeded())
+		default:
+			part = readLink(ctx, session, link)
+		}
+		total += len(part.Data)
+		payload.Files = append(payload.Files, part)
 	}
 	payload.Links = nil
 	return payload

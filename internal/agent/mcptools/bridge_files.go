@@ -1,9 +1,11 @@
 package mcptools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
@@ -37,11 +39,15 @@ func (s *MountedServer) filesFooter(ctx context.Context, parts []mcp.FilePart) s
 			break
 		}
 	}
-	raw, err := json.Marshal(footer)
-	if err != nil {
+	// json.Marshal turns & < > into unicode escapes, and a model that copies such a
+	// path into rm or document_open misses the file.
+	var raw bytes.Buffer
+	encoder := json.NewEncoder(&raw)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(footer); err != nil {
 		return fmt.Sprintf("the files this result carried could not be reported: %v", err)
 	}
-	return string(raw)
+	return strings.TrimSuffix(raw.String(), "\n")
 }
 
 func (s *MountedServer) materialize(ctx context.Context, parts []mcp.FilePart) []mcp.FileOutcome {

@@ -109,7 +109,7 @@ func (s *MCPFileSink) open(ctx context.Context, server string, total int) (*mcpF
 		return nil, "no agent turn owns the file"
 	}
 	if total > mcp.MaxCallFileBytes {
-		return nil, fmt.Sprintf("the call's files exceed the %d-byte cap", mcp.MaxCallFileBytes)
+		return nil, mcp.CallCapExceeded()
 	}
 	handle, err := s.Router.Route(ctx)
 	if err != nil {

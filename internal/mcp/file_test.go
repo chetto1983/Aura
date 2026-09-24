@@ -74,3 +74,9 @@ func TestFileCapExceeded(t *testing.T) {
 		t.Fatalf("FileCapExceeded = %q", got)
 	}
 }
+
+func TestCallCapExceeded(t *testing.T) {
+	if got := CallCapExceeded(); got != "the call's files exceed the 52428800-byte cap" {
+		t.Fatalf("CallCapExceeded = %q", got)
+	}
+}
