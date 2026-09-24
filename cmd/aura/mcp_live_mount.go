@@ -175,11 +175,7 @@ func (m *liveMCPMount) mount(ctx context.Context, name string, server mcp.Manage
 			m.reg,
 			name,
 			server,
-			mcptools.MountOptions{
-				Egress: mcp.RuntimeEgressPolicy(m.strict, server),
-				Views:  m.handles.MCPViews,
-				OAuth:  runtimeMCPOAuth(ctx),
-			},
+			mcpMountOptions(ctx, m.strict, server, m.handles),
 		)
 		if err == nil {
 			host = opened

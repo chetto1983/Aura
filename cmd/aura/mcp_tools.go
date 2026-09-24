@@ -13,6 +13,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -260,4 +261,16 @@ func runtimeMCPOAuth(ctx context.Context) mcp.OAuthOptions {
 	// follows a consent already completed). A server with no stored grant must refuse with
 	// the instruction to authorize it, not wait on a browser nobody is at.
 	return mcp.OAuthOptions{Store: grants}
+}
+
+// mcpMountOptions is the option set every runtime mount of a managed server uses --
+// at boot and live after an authorization -- so neither can forget one the other
+// carries. That already happened once with the grant store (runtimeMCPOAuth).
+func mcpMountOptions(ctx context.Context, strict bool, server mcp.ManagedServer, handles *runtimeToolHandles) mcptools.MountOptions {
+	return mcptools.MountOptions{
+		Egress: mcp.RuntimeEgressPolicy(strict, server),
+		Views:  handles.MCPViews,
+		OAuth:  runtimeMCPOAuth(ctx),
+		Files:  handles.MCPFiles,
+	}
 }
