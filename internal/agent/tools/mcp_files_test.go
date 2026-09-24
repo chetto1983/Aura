@@ -5,9 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	pathpkg "path"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
+	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/documents"
@@ -24,6 +29,25 @@ func mcpTurnCtx(t *testing.T) (context.Context, *TurnCleanup) {
 func hexSum(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// listWritten answers the sink's `ls -1A -- '<dir>'` from what the box holds, one name a
+// line, the way the real box would. Any other command gets an empty answer.
+func (f *fakeBox) listWritten(cmd string) usersandbox.ExecResult {
+	dir, ok := strings.CutPrefix(cmd, "ls -1A -- '")
+	if !ok {
+		return usersandbox.ExecResult{}
+	}
+	dir = strings.TrimSuffix(dir, "' 2>/dev/null")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var names []string
+	for p := range f.written {
+		if pathpkg.Dir(p) == dir {
+			names = append(names, pathpkg.Base(p))
+		}
+	}
+	return usersandbox.ExecResult{Stdout: []byte(strings.Join(names, "\n"))}
 }
 
 func TestMCPFileSinkWritesEachFileWhereTheTurnRemovesIt(t *testing.T) {
@@ -43,8 +67,8 @@ func TestMCPFileSinkWritesEachFileWhereTheTurnRemovesIt(t *testing.T) {
 	if !reflect.DeepEqual(out, want) {
 		t.Fatalf("outcomes = %+v\nwant %+v", out, want)
 	}
-	if be.written[want[1].Path] != string(png) {
-		t.Fatalf("written = %v", be.written)
+	if wantWritten := map[string]string{want[0].Path: string(pdf), want[1].Path: string(png)}; !reflect.DeepEqual(be.written, wantWritten) {
+		t.Fatalf("written = %v, want %v", be.written, wantWritten)
 	}
 	if err := cleanup.Run(context.Background()); err != nil {
 		t.Fatalf("cleanup: %v", err)
@@ -73,21 +97,67 @@ func TestMCPFileSinkNeverOverwritesAFileOfTheSameName(t *testing.T) {
 	if want := []string{"report-3.pdf", "image001.png", "image001-2.png"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("names = %v, want %v", got, want)
 	}
+	dir := "/workspace/mcp-files/req-1/aura-pim/"
+	wantWritten := map[string]string{dir + "report-3.pdf": "a", dir + "image001.png": "b", dir + "image001-2.png": "c"}
+	if !reflect.DeepEqual(be.written, wantWritten) {
+		t.Fatalf("written = %v, want %v", be.written, wantWritten)
+	}
+}
+
+func TestMCPFileSinkConcurrentCallsOfATurnNeverShareAName(t *testing.T) {
+	const calls = 8
+	be := &fakeBox{}
+	be.respond = func(cmd string) usersandbox.ExecResult {
+		res := be.listWritten(cmd)
+		// The listing-to-write window a second call of the turn can land in: without the
+		// sink's lock all eight calls are inside it at once.
+		time.Sleep(5 * time.Millisecond)
+		return res
+	}
+	ctx, _ := mcpTurnCtx(t)
+	sink := &MCPFileSink{Router: routerWith(be)}
+
+	outcomes := make([]mcp.FileOutcome, calls)
+	var wg sync.WaitGroup
+	for i := range calls {
+		wg.Go(func() {
+			part := mcp.FilePart{Name: "image001.png", MIMEType: "image/png", Data: fmt.Appendf(nil, "attachment %d", i)}
+			outcomes[i] = sink.Materialize(ctx, "aura-pim", []mcp.FilePart{part})[0]
+		})
+	}
+	wg.Wait()
+
+	paths := map[string]bool{}
+	for i, o := range outcomes {
+		if got, want := be.written[o.Path], fmt.Sprintf("attachment %d", i); o.Path == "" || got != want {
+			t.Errorf("call %d: %q holds %q, want %q (outcome %+v)", i, o.Path, got, want, o)
+		}
+		paths[o.Path] = true
+	}
+	if len(paths) != calls || len(be.written) != calls {
+		t.Fatalf("%d calls got %d distinct paths and left %d files in the box: %v", calls, len(paths), len(be.written), be.written)
+	}
+}
+
+var mcpFileNameCases = []struct{ name, mime, want string }{
+	{"Relazione finale è.docx", "", "Relazione finale è.docx"},
+	{"../../.bashrc", "", "bashrc"},
+	{`C:\fakepath\Contratto.xlsx`, "", "Contratto.xlsx"},
+	{"a\x00b\nc.txt", "", "abc.txt"},
+	{"..", "image/jpeg", "file.jpg"},
+	{"", "image/png", "file.png"},
+	{"scan", "application/pdf", "scan.pdf"},
+	{"note", "text/plain; charset=utf-8", "note.txt"},
+	{"blob", "application/x-unknown", "blob"},
+	{". .pdf", "", "pdf"},
+	{" .env", "", "env"},
+	{"notes.txt  ", "", "notes.txt"},
+	// An extension longer than maxMCPExtensionBytes is part of the name, so a cut takes it too.
+	{strings.Repeat("a", 250) + "." + strings.Repeat("b", 20), "", strings.Repeat("a", 200)},
 }
 
 func TestMCPFileNameIsOneSafeComponent(t *testing.T) {
-	cases := []struct{ name, mime, want string }{
-		{"Relazione finale è.docx", "", "Relazione finale è.docx"},
-		{"../../.bashrc", "", "bashrc"},
-		{`C:\fakepath\Contratto.xlsx`, "", "Contratto.xlsx"},
-		{"a\x00b\nc.txt", "", "abc.txt"},
-		{"..", "image/jpeg", "file.jpg"},
-		{"", "image/png", "file.png"},
-		{"scan", "application/pdf", "scan.pdf"},
-		{"note", "text/plain; charset=utf-8", "note.txt"},
-		{"blob", "application/x-unknown", "blob"},
-	}
-	for _, c := range cases {
+	for _, c := range mcpFileNameCases {
 		got := mcpFileName(c.name, c.mime)
 		if got != c.want {
 			t.Errorf("mcpFileName(%q, %q) = %q, want %q", c.name, c.mime, got, c.want)
@@ -100,6 +170,25 @@ func TestMCPFileNameIsOneSafeComponent(t *testing.T) {
 	if len(long) > maxMCPFileNameBytes || !strings.HasSuffix(long, ".pdf") || !utf8.ValidString(long) {
 		t.Fatalf("a 304-byte name became %d bytes %q", len(long), long)
 	}
+}
+
+// FuzzMCPFileNameIsAStagedFileName holds mcpFileName to the rule it claims to follow:
+// whatever a server names a file, the result is one name document_open would accept.
+func FuzzMCPFileNameIsAStagedFileName(f *testing.F) {
+	for _, c := range mcpFileNameCases {
+		f.Add(c.name, c.mime)
+	}
+	f.Add(strings.Repeat("à", 150)+".pdf", "application/pdf")
+	f.Fuzz(func(t *testing.T, name, mimeType string) {
+		got := mcpFileName(name, mimeType)
+		if err := documents.ValidateStagedFileName(got); err != nil {
+			t.Fatalf("mcpFileName(%q, %q) = %q, which the document_open rule refuses: %v", name, mimeType, got, err)
+		}
+		if got == "" || strings.ContainsAny(got, `/\`) || strings.ContainsFunc(got, unicode.IsControl) ||
+			len(got) > maxMCPFileNameBytes || !utf8.ValidString(got) {
+			t.Fatalf("mcpFileName(%q, %q) = %q is not one short printable component", name, mimeType, got)
+		}
+	})
 }
 
 func TestMCPPathSegment(t *testing.T) {
@@ -171,6 +260,21 @@ func TestMCPFileSinkDeniesWhenTheBoxIsUnreachable(t *testing.T) {
 	}
 	if err := cleanup.Run(context.Background()); err != nil || len(be.execs) != 0 {
 		t.Fatalf("nothing was written, so nothing is removed: %v %v", be.execs, err)
+	}
+}
+
+func TestMCPFileSinkKeepsTheTurnDirectoryRegisteredWhenTheListingFails(t *testing.T) {
+	be := &fakeBox{execE: errors.New("exec down")}
+	ctx, cleanup := mcpTurnCtx(t)
+
+	out := (&MCPFileSink{Router: routerWith(be)}).Materialize(ctx, "s", []mcp.FilePart{{Name: "a.txt", Data: []byte("x")}})
+
+	if out[0].NotMaterialized != "sandbox unavailable: exec down" {
+		t.Fatalf("outcome = %+v", out[0])
+	}
+	err := cleanup.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "remove /workspace/mcp-files/req-1: exec down") {
+		t.Fatalf("cleanup error = %v, want the removal to be attempted and to say why it failed", err)
 	}
 }
 

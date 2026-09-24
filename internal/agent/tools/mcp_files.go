@@ -8,6 +8,7 @@ import (
 	"fmt"
 	pathpkg "path"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -24,6 +25,9 @@ import (
 // bridge sees it as mcptools.FileSink.
 type MCPFileSink struct {
 	Router *usersandbox.SandboxRouter
+
+	// mu holds a call's directory listing and its writes together; see Materialize.
+	mu sync.Mutex
 }
 
 const (
@@ -73,6 +77,17 @@ func (s *MCPFileSink) Materialize(ctx context.Context, server string, parts []mc
 		return out
 	}
 	w, reason := s.open(ctx, server, total)
+	if reason == "" {
+		// The listing decides each file's name and the write claims it, so two calls must
+		// not interleave them: executeBatch runs the calls of one assistant message on
+		// parallel workers, and both would find the same name free. Taken after Route, so
+		// a cold box start does not hold it.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err := w.listTaken(ctx); err != nil {
+			reason = "sandbox unavailable: " + err.Error()
+		}
+	}
 	for _, i := range pending {
 		if reason != "" {
 			out[i] = parts[i].NotMaterialized(reason)
@@ -105,28 +120,7 @@ func (s *MCPFileSink) open(ctx context.Context, server string, total int) (*mcpF
 		return removeBoxDir(ctx, s.Router, handle, turnDir)
 	})
 	dir := pathpkg.Join(turnDir, mcpPathSegment(server))
-	taken, err := s.names(ctx, handle, dir)
-	if err != nil {
-		return nil, "sandbox unavailable: " + err.Error()
-	}
-	return &mcpFileWriter{router: s.Router, handle: handle, dir: dir, taken: taken}, ""
-}
-
-// names lists what dir already holds, so a second file of the same name in the same
-// turn gets a -2 instead of overwriting the first. A dir that does not exist yet is
-// empty.
-func (s *MCPFileSink) names(ctx context.Context, h usersandbox.BoxHandle, dir string) (map[string]bool, error) {
-	res, err := s.Router.Exec(ctx, h, usersandbox.ExecRequest{Command: "ls -1A -- " + ShellQuoteArg(dir) + " 2>/dev/null"})
-	if err != nil {
-		return nil, err
-	}
-	taken := map[string]bool{}
-	for name := range strings.SplitSeq(string(res.Stdout), "\n") {
-		if name != "" {
-			taken[name] = true
-		}
-	}
-	return taken, nil
+	return &mcpFileWriter{router: s.Router, handle: handle, dir: dir}, ""
 }
 
 func removeBoxDir(ctx context.Context, router *usersandbox.SandboxRouter, h usersandbox.BoxHandle, dir string) error {
@@ -148,6 +142,23 @@ type mcpFileWriter struct {
 	taken  map[string]bool
 }
 
+// listTaken reads what the directory already holds, so a second file of the same name
+// in the same turn gets a -2 instead of overwriting the first. A dir that does not
+// exist yet is empty.
+func (w *mcpFileWriter) listTaken(ctx context.Context) error {
+	res, err := w.router.Exec(ctx, w.handle, usersandbox.ExecRequest{Command: "ls -1A -- " + ShellQuoteArg(w.dir) + " 2>/dev/null"})
+	if err != nil {
+		return err
+	}
+	w.taken = map[string]bool{}
+	for name := range strings.SplitSeq(string(res.Stdout), "\n") {
+		if name != "" {
+			w.taken[name] = true
+		}
+	}
+	return nil
+}
+
 func (w *mcpFileWriter) write(ctx context.Context, part mcp.FilePart) mcp.FileOutcome {
 	name := uniqueMCPFileName(mcpFileName(part.Name, part.MIMEType), w.taken)
 	boxPath := pathpkg.Join(w.dir, name)
@@ -167,10 +178,10 @@ func (w *mcpFileWriter) write(ctx context.Context, part mcp.FilePart) mcp.FileOu
 
 // mcpFileName makes a server's file name one path component the box can hold, the
 // rule document_open applies to its file names (documents.ValidateStagedFileName):
-// the last segment of whatever path it names, without leading dots or control
-// characters, at most maxMCPFileNameBytes, and with an extension from its MIME type
-// when it has none. Spaces and accents stay: they are part of the name the human
-// knows the file by.
+// the last segment of whatever path it names, without leading dots or spaces or
+// control characters, at most maxMCPFileNameBytes, and with an extension from its
+// MIME type when it has none. Inner spaces and accents stay: they are part of the name
+// the human knows the file by.
 func mcpFileName(name, mimeType string) string {
 	name = name[strings.LastIndexAny(name, `/\`)+1:]
 	name = strings.Map(func(r rune) rune {
@@ -179,7 +190,9 @@ func mcpFileName(name, mimeType string) string {
 		}
 		return r
 	}, name)
-	name = strings.TrimLeft(strings.TrimSpace(name), ".")
+	// Dots and spaces go together: the document_open rule trims spaces and then refuses a
+	// leading dot, so trimming them one after the other would leave ". .pdf" as " .pdf".
+	name = strings.TrimSpace(strings.TrimLeftFunc(name, func(r rune) bool { return r == '.' || unicode.IsSpace(r) }))
 	if name == "" {
 		name = "file"
 	}

@@ -12,7 +12,9 @@ import (
 // ends: today, the directory MCP files are materialized into (MCPFileSink).
 // LlmAgent.Run installs one per run and drains it from its outermost defer, so a
 // normal end, an ask_user pause, an error and a panic all reach it. Every swarm
-// worker is its own Run, so each gets its own.
+// worker is its own Run, so each gets its own. Agents that share a request ID, as
+// workflow.ParallelAgent children do, share one turn directory, and the first drain
+// removes it; nothing in production builds a ParallelAgent today.
 type TurnCleanup struct {
 	mu    sync.Mutex
 	keys  map[string]struct{}

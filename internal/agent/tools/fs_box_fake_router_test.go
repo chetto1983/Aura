@@ -9,6 +9,7 @@ import (
 	"io"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -29,6 +30,7 @@ import (
 // fakeBox is a usersandbox.Backend plus the structural fileWriter capability the router's
 // WriteFile needs. It records every exec and answers from a scripted responder.
 type fakeBox struct {
+	mu       sync.Mutex // guards execs and written, for tests that drive one box from many goroutines
 	execs    []usersandbox.ExecRequest
 	respond  func(cmd string) usersandbox.ExecResult
 	written  map[string]string
@@ -45,7 +47,9 @@ func (f *fakeBox) Resolve(context.Context, usersandbox.SandboxSpec) (usersandbox
 }
 
 func (f *fakeBox) Exec(_ context.Context, _ usersandbox.BoxHandle, req usersandbox.ExecRequest) (usersandbox.ExecResult, error) {
+	f.mu.Lock()
 	f.execs = append(f.execs, req)
+	f.mu.Unlock()
 	if f.execE != nil {
 		return usersandbox.ExecResult{}, f.execE
 	}
@@ -91,6 +95,8 @@ func (f *fakeBox) CopyFileInStream(
 }
 
 func (f *fakeBox) record(boxPath string, content []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.written == nil {
 		f.written = map[string]string{}
 	}
