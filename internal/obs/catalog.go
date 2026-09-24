@@ -272,7 +272,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 	AttributeTransport: finiteSet("grpc", "http", "stdio", "sse", "streamable_http", "in_process", ValueOther),
 	AttributeOutcome: finiteSet(
 		"success", "error", "canceled", "timeout", "paused", "content_stop", "text_response", "max_steps", "budget_exhausted",
-		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_terminal", "denied",
+		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_call_leaked", "tool_terminal", "denied",
 		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open",
 		"succeeded", "dead_letter", "retry_scheduled", ValueOther,
 	),

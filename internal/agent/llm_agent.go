@@ -122,6 +122,9 @@ type LlmAgent struct {
 	// resets it); maxTruncatedToolTurns bounds the nudge-then-finalize sequence so a
 	// truncated tool call can never thrash (the 203-turn disaster, 2026-06-14).
 	truncatedToolTurns int
+	// leakedToolCallTurns counts answers that were really tool calls in the model's own
+	// markup (llm_agent_leaked_call.go); maxLeakedToolCallTurns bounds it per run.
+	leakedToolCallTurns int
 
 	breaker *llm.Breaker
 
@@ -483,6 +486,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", &turnU, yield)
 					return
 				}
+				if directive := a.classifyLeakedToolCall(requestID, text); directive != directiveProceed {
+					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+						turnReason = "consumer_stopped"
+						return
+					}
+					if directive == directiveRetry {
+						continue
+					}
+					turnReason = "tool_call_leaked"
+					a.finalize(ic, spanID, parentSpanID, requestID, turnReason, &turnU, yield)
+					return
+				}
 				answer := normalizeContentStopAnswer(text)
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
@@ -511,11 +526,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// extended to tool calls): nudge once, finalize on a repeat — never dispatch
 			// a truncated batch. Rationale + counter in llm_agent_truncation.go.
 			switch a.classifyToolTruncation(finish) {
-			case truncationFinalize:
+			case directiveFinalize:
 				turnReason = "tool_args_truncated"
 				a.finalize(ic, spanID, parentSpanID, requestID, "tool_args_truncated", &turnU, yield)
 				return
-			case truncationContinue:
+			case directiveRetry:
 				continue
 			}
 

@@ -18,29 +18,29 @@ const maxTruncatedToolTurns = 2
 // arguments were cut mid-JSON by the output budget.
 const truncatedToolNudge = "Your previous tool call was cut off mid-argument because it exceeded the output budget. Do NOT retry the same oversized call. Either write large content to a file in small successive pieces (short fs_write/fs_edit chunks, appending), or, if you already have enough to answer, give the user your final answer now."
 
-// truncationAction is the loop directive after classifying a turn's finish_reason for
-// output-budget truncation.
-type truncationAction int
+// loopDirective is what the loop does with a turn a classifier found malformed: a
+// truncated tool call here, a tool call leaked as text in llm_agent_leaked_call.go.
+type loopDirective int
 
 const (
-	truncationProceed  truncationAction = iota // not truncated → dispatch normally
-	truncationContinue                         // first truncation → nudged, run another turn
-	truncationFinalize                         // repeated truncation → force-finalize
+	directiveProceed  loopDirective = iota // well-formed → handle the turn normally
+	directiveRetry                         // first occurrence → nudged, run another turn
+	directiveFinalize                      // repeated → force-finalize
 )
 
 // classifyToolTruncation records a tool-call turn's truncation state and returns the
 // loop directive. A clean (non-"length") turn resets the per-run counter and proceeds;
-// the first truncation appends a single nudge and asks the loop to continue; a second
+// the first truncation appends a single nudge and asks the loop to retry; a second
 // consecutive truncation asks it to finalize.
-func (a *LlmAgent) classifyToolTruncation(finish string) truncationAction {
+func (a *LlmAgent) classifyToolTruncation(finish string) loopDirective {
 	if finish != "length" {
 		a.truncatedToolTurns = 0
-		return truncationProceed
+		return directiveProceed
 	}
 	a.truncatedToolTurns++
 	if a.truncatedToolTurns >= maxTruncatedToolTurns {
-		return truncationFinalize
+		return directiveFinalize
 	}
 	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: truncatedToolNudge})
-	return truncationContinue
+	return directiveRetry
 }
