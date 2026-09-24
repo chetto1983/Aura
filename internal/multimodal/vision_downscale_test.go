@@ -140,6 +140,46 @@ func TestDownscaleForVisionBoundsPixelsBeforeDecoding(t *testing.T) {
 	}
 }
 
+// jpegHeader is a progressive JPEG header of w x h with ncomp components and no scan data: 1 is
+// gray, 3 (ids 1-3, no JFIF or Adobe marker) YCbCr, 4 CMYK. The SOS marker ends DecodeConfig.
+func jpegHeader(w, h uint16, ncomp byte) []byte {
+	sof := []byte{0xFF, 0xC2, 0, 8 + 3*ncomp, 8, byte(h >> 8), byte(h), byte(w >> 8), byte(w), ncomp}
+	for id := range ncomp {
+		sof = append(sof, id+1, 0x11, 0)
+	}
+	return append(append([]byte{0xFF, 0xD8}, sof...), 0xFF, 0xDA, 0, 12)
+}
+
+// The bound depends on the color model the header declares: a header past its family's bound
+// is refused as too many pixels, and one within it reaches the decode, which finds no body.
+func TestDownscaleForVisionBoundsDependOnTheColorModel(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw     []byte
+		bounded bool
+	}{
+		"YCbCr at its bound":         {jpegHeader(3515, 3515, 3), false},
+		"YCbCr one row past":         {jpegHeader(3515, 3516, 3), true},
+		"CMYK at the YCbCr bound":    {jpegHeader(3515, 3515, 4), true},
+		"CMYK at its bound":          {jpegHeader(2910, 2910, 4), false},
+		"gray past the YCbCr bound":  {jpegHeader(4000, 4000, 1), false},
+		"gray one row past its own":  {jpegHeader(4772, 4773, 1), true},
+		"RGBA PNG at its bound":      {pngHeader(3180, 3180), false},
+		"RGBA PNG one row past":      {pngHeader(3180, 3181), true},
+		"YCbCr at the RGBA PNG size": {jpegHeader(3180, 3181, 3), false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := DownscaleForVision(t.Context(), tc.raw, 0)
+			want := ErrImageUndecodable
+			if tc.bounded {
+				want = ErrImageTooManyPixels
+			}
+			if !errors.Is(err, want) {
+				t.Fatalf("err = %v, want %v", err, want)
+			}
+		})
+	}
+}
+
 func TestDownscaleForVisionReencodesPastTheByteCap(t *testing.T) {
 	padded := append(pngOf(t, 2, 2), make([]byte, 1<<20)...)
 	got, err := DownscaleForVision(t.Context(), padded, 64<<10)
@@ -164,6 +204,54 @@ func TestDownscaleForVisionReencodesPastTheByteCap(t *testing.T) {
 	}
 	if _, err := DownscaleForVision(t.Context(), buf.Bytes(), 100); !errors.Is(err, ErrImageOverByteCap) {
 		t.Fatalf("err = %v, want ErrImageOverByteCap for noise that no JPEG fits in 100 bytes", err)
+	}
+}
+
+// transparentWithDarkCenter is a fully transparent PNG with an opaque near-black square in its
+// middle: the shape of a logo or a sticker.
+func transparentWithDarkCenter(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewNRGBA(image.Rect(0, 0, w, h))
+	for y := h / 4; y < 3*h/4; y++ {
+		for x := w / 4; x < 3*w/4; x++ {
+			img.SetNRGBA(x, y, color.NRGBA{R: 20, G: 20, B: 20, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+// JPEG has no alpha, so transparency must become white: black would hide dark content drawn
+// on it. Both JPEG paths are checked — the downscale and the re-encode at the byte cap.
+func TestDownscaleForVisionFlattensTransparencyOnWhite(t *testing.T) {
+	for name, tc := range map[string]struct {
+		raw      []byte
+		maxBytes int
+	}{
+		"downscaled":             {transparentWithDarkCenter(t, 2048, 1024), 0},
+		"re-encoded at its size": {append(transparentWithDarkCenter(t, 64, 64), make([]byte, 64<<10)...), 32 << 10},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := DownscaleForVision(t.Context(), tc.raw, tc.maxBytes)
+			if err != nil || got.MIMEType != "image/jpeg" {
+				t.Fatalf("got %q err %v, want a JPEG", got.MIMEType, err)
+			}
+			img, _, err := image.Decode(bytes.NewReader(got.Bytes))
+			if err != nil {
+				t.Fatal(err)
+			}
+			b := img.Bounds()
+			luma := func(x, y int) uint8 { return color.GrayModel.Convert(img.At(x, y)).(color.Gray).Y }
+			if corner := luma(b.Min.X+1, b.Min.Y+1); corner < 240 {
+				t.Fatalf("transparent corner came out at luma %d, want white", corner)
+			}
+			if center := luma(b.Min.X+b.Dx()/2, b.Min.Y+b.Dy()/2); center > 60 {
+				t.Fatalf("dark center came out at luma %d, want it still dark", center)
+			}
+		})
 	}
 }
 

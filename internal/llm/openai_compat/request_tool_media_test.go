@@ -166,20 +166,23 @@ func assertDisownedThenQuoted(t *testing.T, text string) {
 	}
 }
 
-// The live E2E reads the provider trace to see tool images leave; it counts only what is sent
-// as bytes.
+// The live E2E reads the provider trace to see tool images leave, so it counts the image parts
+// actually emitted: a carrier keyed to a call id the history does not hold sends nothing, and
+// must not read as sent — that is the mis-wiring the counter exists to catch.
 func TestToolMediaCountForTheTrace(t *testing.T) {
 	for name, tc := range map[string]struct {
-		caps llm.ContentCapabilitySource
-		want int
+		caps  llm.ContentCapabilitySource
+		media map[string][]llm.ProjectedRequestPart
+		want  int
 	}{
-		"vision model":    {visionCaps, 1},
-		"text-only model": {textOnlyCaps, 0},
+		"vision model":          {visionCaps, photoMedia(), 1},
+		"text-only model":       {textOnlyCaps, photoMedia(), 0},
+		"a call not in history": {visionCaps, map[string][]llm.ProjectedRequestPart{"gone": photoMedia()["c1"]}, 0},
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := New(testConfig("http://127.0.0.1:1"))
 			c.contentCaps = tc.caps
-			_, _, counts, err := c.buildSDKRequest(t.Context(), llm.Request{Model: "m", Messages: toolRound(), ToolMedia: photoMedia()})
+			_, _, counts, err := c.buildSDKRequest(t.Context(), llm.Request{Model: "m", Messages: toolRound(), ToolMedia: tc.media})
 			if err != nil || counts.tool != tc.want || counts.native != 0 {
 				t.Fatalf("counts = %+v err %v, want tool %d", counts, err, tc.want)
 			}

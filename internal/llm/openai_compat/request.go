@@ -16,13 +16,13 @@ import (
 )
 
 // mediaCounts is how many media parts a request carries as bytes, for the provider trace:
-// chat uploads (native) and tool images (tool).
+// chat uploads (native) and the tool images actually placed in the messages (tool).
 type mediaCounts struct{ native, tool int }
 
 func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.ChatCompletionNewParams, []option.RequestOption, mediaCounts, error) {
 	native := c.projectNativeMedia(ctx, req.ContentProjection)
 	toolMedia := c.projectToolMedia(ctx, req.ToolMedia)
-	messages, err := toSDKMessages(req.Messages, native, toolMedia, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
+	messages, toolImages, err := toSDKMessages(req.Messages, native, toolMedia, llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL))
 	if err != nil {
 		return openai.ChatCompletionNewParams{}, nil, mediaCounts{}, err
 	}
@@ -65,7 +65,7 @@ func (c *Client) buildSDKRequest(ctx context.Context, req llm.Request) (openai.C
 	if llm.ReasoningTarget(c.cfg.Provider, c.cfg.BaseURL) == llm.ReasoningTargetOpenRouter && c.cfg.OpenRouterMiddleOut {
 		requestOpts = append(requestOpts, option.WithJSONSet("transforms", []string{"middle-out"}))
 	}
-	return params, requestOpts, mediaCounts{native: len(native), tool: countNativeToolMedia(toolMedia)}, nil
+	return params, requestOpts, mediaCounts{native: len(native), tool: toolImages}, nil
 }
 
 func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.ContentProjection) []llm.ProjectedRequestPart {
@@ -87,12 +87,13 @@ func (c *Client) projectNativeMedia(ctx context.Context, projection *llm.Content
 	return out
 }
 
+// toSDKMessages converts the history to the wire, and reports how many tool images it placed.
 func toSDKMessages(
 	messages []llm.Message,
 	native []llm.ProjectedRequestPart,
 	toolMedia map[string][]llm.ProjectedRequestPart,
 	target llm.ReasoningTargetKind,
-) ([]openai.ChatCompletionMessageParamUnion, error) {
+) (out []openai.ChatCompletionMessageParamUnion, toolImages int, err error) {
 	lastUser := -1
 	if len(native) > 0 {
 		for i, message := range slices.Backward(messages) {
@@ -102,7 +103,7 @@ func toSDKMessages(
 			}
 		}
 	}
-	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	out = make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
 	for i, message := range messages {
 		switch message.Role {
 		case llm.RoleSystem:
@@ -155,14 +156,15 @@ func toSDKMessages(
 			if i+1 < len(messages) && messages[i+1].Role == llm.RoleTool {
 				continue
 			}
-			if wire, ok := toolMediaMessage(toolBlockMedia(messages, i, toolMedia), target); ok {
+			if wire, images, ok := toolMediaMessage(toolBlockMedia(messages, i, toolMedia), target); ok {
 				out = append(out, wire)
+				toolImages += images
 			}
 		default:
-			return nil, fmt.Errorf("openai_compat: unsupported message role %q", message.Role)
+			return nil, 0, fmt.Errorf("openai_compat: unsupported message role %q", message.Role)
 		}
 	}
-	return out, nil
+	return out, toolImages, nil
 }
 
 func nativeContentPart(media llm.ProjectedRequestPart, target llm.ReasoningTargetKind) (openai.ChatCompletionContentPartUnionParam, bool) {
