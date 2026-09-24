@@ -80,7 +80,7 @@
 **Interfaces:**
 - Produces:
   - constants `mcp.MaxFileBytes`, `mcp.MaxCallFileBytes`, `mcp.OctetStream`;
-  - `mcp.FilePart{Name, MIMEType string; Data []byte; Unavailable string}`, with method `NotMaterialized(reason string) FileOutcome`;
+  - `mcp.FilePart{Name, MIMEType string; Data []byte; Size int64; Unavailable string}`, with method `NotMaterialized(reason string) FileOutcome`. `Size` is the size known without the bytes (a link's advertised size, or a measured over-cap length); `NotMaterialized` reports `len(Data)` when there are bytes, else `Size`;
   - `mcp.FileOutcome{Path, Name, MIMEType string; SizeBytes int64; SHA256, NotMaterialized string}`, with JSON tags `path,omitempty`, `name`, `mime_type,omitempty`, `size_bytes`, `sha256,omitempty`, `not_materialized,omitempty`;
   - functions `mcp.FileFromContents(*sdkmcp.ResourceContents) (FilePart, bool)`, `mcp.NameFromURI(string) string` and `mcp.FileCapExceeded(size int64) string`;
   - `ToolPayload.Files []FilePart` and `ToolPayload.Links []*sdkmcp.ResourceLink`.
@@ -1478,7 +1478,7 @@ func TestPreferredMIMETakesTheMoreSpecificType(t *testing.T) {
 func TestLinkFileRefusesOversizedAndEmptyReads(t *testing.T) {
 	link := &sdkmcp.ResourceLink{URI: "fixture://files/abc", MIMEType: "image/jpeg"}
 	big := &sdkmcp.ReadResourceResult{Contents: []*sdkmcp.ResourceContents{{URI: link.URI, Blob: make([]byte, mcp.MaxFileBytes+1)}}}
-	if got := linkFile(link, big); got.Unavailable != mcp.FileCapExceeded(mcp.MaxFileBytes+1) || got.Data != nil {
+	if got := linkFile(link, big); got.Unavailable != mcp.FileCapExceeded(mcp.MaxFileBytes+1) || got.Data != nil || got.Size != mcp.MaxFileBytes+1 {
 		t.Fatalf("oversized read = %+v", got)
 	}
 	for _, empty := range []*sdkmcp.ReadResourceResult{nil, {}} {
@@ -1653,7 +1653,9 @@ func linkFile(link *sdkmcp.ResourceLink, result *sdkmcp.ReadResourceResult) mcp.
 				continue
 			}
 			if len(file.Data) > mcp.MaxFileBytes {
-				return linkPart(link, mcp.FileCapExceeded(int64(len(file.Data))))
+				part := linkPart(link, mcp.FileCapExceeded(int64(len(file.Data))))
+				part.Size = int64(len(file.Data))
+				return part
 			}
 			part := linkPart(link, "")
 			part.MIMEType = preferredMIME(file.MIMEType, link.MIMEType)
@@ -1671,7 +1673,11 @@ func linkPart(link *sdkmcp.ResourceLink, unavailable string) mcp.FilePart {
 	if name == "" {
 		name = mcp.NameFromURI(link.URI)
 	}
-	return mcp.FilePart{Name: name, MIMEType: link.MIMEType, Unavailable: unavailable}
+	part := mcp.FilePart{Name: name, MIMEType: link.MIMEType, Unavailable: unavailable}
+	if link.Size != nil {
+		part.Size = *link.Size
+	}
+	return part
 }
 
 // preferredMIME picks the more specific of what the contents and the link say. The
