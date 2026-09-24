@@ -441,8 +441,9 @@ window is visible and bounded, never wrong.
 
 ### §8. Documents in lexical mode
 
-`HostRetriever.Retrieve` serves documents lexically when the documents gate is closed, and
-when the query embedding fails; today the latter returns zero documents (`retrieval.go:301-305`).
+`HostRetriever.Retrieve` serves documents lexically when the documents gate is closed, when
+the gate cannot be read, and when the query cannot be embedded; until plan 4 the last one
+returned zero documents (`retrieval.go:301-305`).
 
 - Passages come from `SEARCH_INDEX('Passage[text]', :q)`, ranked by its score.
 - Cards come from two separate queries, `IndexedDocument[card]` and
@@ -451,24 +452,88 @@ when the query embedding fails; today the latter returns zero documents (`retrie
   audit F8).
 - Results are grouped by `raw_sha256`, so identical files count once. Measured: five identical
   transcripts took the top five places for an unrelated question.
-- A document ranks by the best score among its card and its passages, and a floor drops weak
-  matches: the documents twin of memory's `LexicalMinScore` (`client.go:77`), calibrated in
-  acceptance.
-- The status is `RetrievalLexicalOnly`, with the reason `embedding_space_mismatch` or
-  `query_embedding_unavailable`.
+- A document ranks by the best score among its card and its passages.
+- The status is `lexical_only`, with the reason `embedding_space_mismatch`,
+  `embedding_space_check_failed` or `query_embedding_unavailable`.
+
+**The floor, measured (amended 2026-09-24, plan 4).** On the lab VM's tenant (12
+`IndexedDocument`, 50 `Passage`; ArcadeDB 26.9.1, whose new full-text indexes score BM25 with
+k1 1.2 and b 0.75), raw BM25 does not separate: "orari dei traghetti per la Sardegna", which the
+library cannot answer, scored 7.107 on the stopwords "dei", "la" and "per" alone, above the
+correct top passage for "PidTemp MultiZone" (5.361). "chi ha vinto il mondiale 1982" scored
+3.901. English out-of-corpus questions scored about 0.5 on "the", "for" and "to", which 39 of 50
+passages contain.
+
+ArcadeDB offers no query-side remedy. `SEARCH_INDEX` takes exactly the index and the query
+(arcadedb-docs `how-to/data-modeling/full-text-index.adoc`; engine `SQLFunctionSearchIndex`,
+"requires 2 parameters"): no per-query stopwords, no minimum-should-match. The analyzer that
+could drop stopwords (`query_analyzer`) is fixed when the index is created, and no stock class
+combines `StandardAnalyzer`'s tokenization with Italian and English stopwords and no stemming.
+Changing it would move the ingest DDL, force a `REBUILD INDEX` of all three indexes and change
+what the dense mode's own lexical sub-legs match. Rejected.
+
+**Decision (operator, 2026-09-24).** Go removes Lucene's own Snowball Italian (279 words) and
+English (174) stop lists from the query before sending it. The lists are copied byte for byte
+from the `lucene-analysis-common-10.5.1.jar` ArcadeDB 26.9.1 runs
+(`org/apache/lucene/analysis/snowball/{italian,english}_stop.txt`, sha256 `23e3d7c9…ac5f` and
+`c8d811c2…24f8`). Memory's rule then applies: a floor of 2 on `$score`, and none for a query of
+one remaining word. A query with no word left is not sent and abstains.
+
+Measured with the stopwords removed, same tenant: all six out-of-corpus questions (three
+Italian, three English) matched nothing at all, on any leg; every known query kept its correct
+top document. Over the three legs of the queries of two or more words, the lowest correct
+result at the head of a leg was a card at 2.68 ("heating cooling actuator"), and the highest
+wrong result anywhere was a card at 1.02 (the PidTemp manual for "approvals durable grants").
+
+Card and passage scores come from different indexes with different corpus statistics, so they
+are not on one scale; the floor of 2 is one number measured against both, not a shared unit.
 
 This deliberately amends `document_retrieval.go:20-24`. That measurement compared two fusions.
 It says nothing about a single-leg lexical answer while the dense leg is unavailable. Lexical
-results are candidates, and the response says so.
+results are candidates, and the status says so.
+
+**Baseline, 2026-09-24** (`aura docs search --limit 3` on the VM, image
+`ghcr.io/chetto1983/aura:edge`, before plan 3+4 ship; 14 of 50 `Passage` and 3 of 12
+`IndexedDocument` stamped `es1-e0aa6accf0b79c6b`, the rest unstamped). After the deploy, plan
+5's E2E runs the same queries: once both gates are open, each must return the same top
+document, except the rows marked †.
+
+| query | status | top documents (score) |
+|---|---|---|
+| prompt engineering intelligenza artificiale † | complete | videoplayback.mp4 (0.6123) |
+| fuso orario Europe/Rome | complete | Screenshot 2026-08-28 152119.png (0.5474) |
+| come si scrive bene la domanda da porre al modello | complete | abstained |
+| PID_Temp multi-zone temperature control | complete | 109740463_PidTemp_MultiZone_DOC_V11_en.pdf (0.6787) |
+| approvals and durable grants | complete | abstained |
+| safety light curtain | complete | Screenshot 2026-08-25 082130.png (0.541) |
+| heating and cooling actuator | complete | 109740463_PidTemp_MultiZone_DOC_V11_en.pdf (0.4583) |
+| PidTemp MultiZone | complete | 109740463_PidTemp_MultiZone_DOC_V11_en.pdf (0.5741) |
+| videoplayback | complete | videoplayback.mp4 (0.4946) |
+| ricetta della carbonara | complete | abstained |
+| chi ha vinto il mondiale 1982 | complete | abstained |
+| orari dei traghetti per la Sardegna | complete | abstained |
+| recipe for chocolate cake | complete | abstained |
+| who won the 1982 world cup | complete | abstained |
+| train timetable to Milan | complete | abstained |
+
+† Answered by the video's transcript, which `150c7c669` (video indexed by metadata only, PRD
+media paragraph) takes out of the index. Its answer after the deploy is new, not a regression;
+"videoplayback" still names the file and must keep finding it.
 
 ### §9. Relevance floors
 
 The dense floors are measured values for EmbeddingGemma alone. They become a table keyed by
-the attested model, holding one entry today. A space with no entry keeps the current values,
-and every dense response carries the reason `uncalibrated_floors`. The cockpit and the preview
-state the same. Calibrating a new model is the existing measurement procedure (the
-2026-09-02 calibration behind `client.go:66-77`) adding a row. The E2E below records the first
-datum for the cloud model it uses.
+the **space** (amended 2026-09-24, plan 4: the space also names the width and the recipe, and
+either changes the vectors a floor was measured on), holding one row today: `es1-e0aa6accf0b79c6b`,
+the lab VM's local EmbeddingGemma-300M Q8_0 at 768 dimensions, recipe 1 (memory 0.72 / 0.28,
+documents 0.72 / 0.32). A space with no row keeps those values, and every dense response carries
+`uncalibrated_floors` in a field of its own, `floors_reason`. `Reason` and `degradation_reason`
+name why a read left the dense path; an uncalibrated dense answer did not leave it. The memory
+overrides `AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO` and `AURA_MEMORY_MIN_RELEVANCE` still win over
+the table when set. The cockpit and the preview state the same. Calibrating a new model is the
+existing measurement procedure (the 2026-09-02 and 2026-09-09 calibrations behind
+`relevance_floors.go`) adding a row. The E2E below records the first datum for the cloud model it
+uses.
 
 ### §10. Visibility
 
@@ -518,7 +583,10 @@ Current line counts at `e8ef129e4`; the cap is 600.
 | `internal/documents/retrieval.go` | 513 | lexical mode wiring only |
 | `internal/documents/retrieval_lexical.go` | new | grouping, merge, floor, status |
 | `internal/documents/retrieval_rank.go` | 342 | lexical ranking entry |
-| `internal/arcadedb/client.go` | 420 | floors keyed by model |
+| `internal/arcadedb/relevance_floors.go` | new | floors keyed by space (§9) |
+| `internal/arcadedb/client.go` | 423 | floors lose their defaults |
+| `internal/arcadedb/stopwords/*.txt` | new | Lucene's Snowball IT/EN lists (§8) |
+| `cmd/aura/document_retrieval_wiring.go` | 42 | the document route; live key |
 | `internal/settings/embed_route.go` | new | route + credential + space from rows, no env |
 | `cmd/arcadedb-mcp/boot_settings.go` | 100 | uses the helper |
 | `cmd/arcadedb-mcp/space_watch.go` | new | 60 s re-resolve, drain-exit |
@@ -613,6 +681,13 @@ fusion and index work; nothing here adds Go vector math.
   quantization. Two different GGUFs identical in all five would share a space.
 - **Lexical-mode quality is not measured as recall.** Acceptance asserts grouped, floored,
   relevant results for known queries and abstention for one unanswerable question.
+- **The lexical floor is measured on one small library.** One tenant, 12 documents, 15
+  queries, top-1 only, one day. BM25's idf moves with corpus size, so a library of thousands can
+  push correct matches below 2 or wrong ones above it. No stemming: "orari" does not match
+  "orario". Indexes created before ArcadeDB's BM25 support keep CLASSIC scoring, where `$score`
+  counts matched terms, until `REBUILD INDEX` (arcadedb-docs full-text-index): there the floor
+  of 2 means "two terms", which was not measured. The library it was measured on still held the
+  video transcripts that `150c7c669` removed.
 - **A document that never re-indexes keeps the documents family lexical indefinitely.** This is
   deliberate, and visible by file name.
 - **A full re-embed on ArcadeDB 26.9.1 costs one graph rebuild per vector index** on the first
