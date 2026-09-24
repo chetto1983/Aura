@@ -14,6 +14,11 @@ type SecretLister interface {
 	Secret(ctx context.Context, key string) (string, error)
 }
 
+// DefaultEmbedBaseURL is the product's local sidecar, the base a route falls back to when
+// neither a row nor the environment names one. An explicitly empty row still wins: that is
+// how the operator switches dense retrieval off.
+const DefaultEmbedBaseURL = "http://aura-llama-embed:8081"
+
 // EmbedRoute reads the embedding route from aura.settings without touching the process
 // environment. A present row wins even when empty (an empty AURA_EMBED_BASE_URL switches
 // dense retrieval off); an absent row falls back to lookupEnv, then to defaultLocalBase

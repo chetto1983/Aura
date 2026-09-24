@@ -25,10 +25,11 @@ const (
 	requestTokenBudget = 4096
 )
 
-// inputLimit returns the model's input limit in tokens. It is read from the route's
+// InputLimit returns the model's input limit in tokens. It is read from the route's
 // catalogue on first use and kept only once read, so a sidecar that was not up yet is
-// asked again rather than guessed at.
-func (c *Client) inputLimit(ctx context.Context) (int, error) {
+// asked again rather than guessed at. The ingest supervisor reads it to hand a hosted
+// model's limit to its Python children, which cut inputs to it in bytes.
+func (c *Client) InputLimit(ctx context.Context) (int, error) {
 	c.limitMu.Lock()
 	defer c.limitMu.Unlock()
 	if c.limit > 0 {

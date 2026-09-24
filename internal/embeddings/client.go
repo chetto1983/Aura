@@ -120,7 +120,7 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
-	limit, err := c.inputLimit(ctx)
+	limit, err := c.InputLimit(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("embeddings: %w", err)
 	}

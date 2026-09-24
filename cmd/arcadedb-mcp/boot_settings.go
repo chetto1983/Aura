@@ -12,10 +12,6 @@ import (
 	"github.com/chetto1983/aura/internal/settings"
 )
 
-// This is the product default when neither a row nor the environment names a local base.
-// An explicitly empty row still wins, so the operator can disable dense retrieval.
-const defaultMemoryEmbedBaseURL = "http://aura-llama-embed:8081"
-
 type bootSettingsStore = settings.SecretLister
 
 type bootSettingsOpener func(context.Context, string, string) (bootSettingsStore, func(), error)
@@ -76,7 +72,7 @@ func applyBootSettings(ctx context.Context, store bootSettingsStore) (embeddingR
 	if err := settings.OverlayEnv(ctx, store); err != nil {
 		return embeddingRoute{}, fmt.Errorf("settings overlay: %w", err)
 	}
-	embed, key, err := settings.EmbedRoute(ctx, store, os.LookupEnv, defaultMemoryEmbedBaseURL)
+	embed, key, err := settings.EmbedRoute(ctx, store, os.LookupEnv, settings.DefaultEmbedBaseURL)
 	if err != nil {
 		return embeddingRoute{}, err
 	}
