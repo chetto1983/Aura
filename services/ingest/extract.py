@@ -101,6 +101,11 @@ def prepared(path: str):
 
 def extract_text(path: str) -> str:
     """Extract plain text from any office document, converting legacy formats first."""
+    # An empty file has no text, and the extractor refuses it ("InputStream must have > 0
+    # bytes"): raising failed the file on every cycle and left it without a row (lab VM,
+    # 2026-09-24, an empty prompt.txt, 59 failures an hour).
+    if pathlib.Path(path).stat().st_size == 0:
+        return ""
     with prepared(path) as ready:
         text, metadata = _extractor.extract_file_to_string(ready)
         if "true" in metadata.get("X-TIKA:EXCEPTION:write_limit_reached", []):

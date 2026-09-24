@@ -113,7 +113,7 @@ def test_long_document_keeps_the_tail_beyond_tika_default_limit(tmp_path):
     assert marker in extracted
 
 
-def test_tika_reported_truncation_is_a_failure(monkeypatch):
+def test_tika_reported_truncation_is_a_failure(monkeypatch, tmp_path):
     from types import SimpleNamespace
     from ingest import extract
 
@@ -122,5 +122,16 @@ def test_tika_reported_truncation_is_a_failure(monkeypatch):
             "incomplete text", {"X-TIKA:EXCEPTION:write_limit_reached": ["true"]},
         ),
     ))
+    manual = tmp_path / "long-manual.pdf"
+    manual.write_bytes(b"%PDF-long")
     with pytest.raises(RuntimeError, match="truncat"):
-        extract_text("long-manual.pdf")
+        extract_text(str(manual))
+
+
+def test_an_empty_file_has_no_text_and_does_not_fail(tmp_path):
+    """Measured 2026-09-24 on the lab VM: an empty Programma/prompt.txt made the extractor raise
+    ParseError("InputStream must have > 0 bytes") on every cycle, 59 times an hour, and the file
+    never got a row. An empty file has no text; it is indexed by its card and its name."""
+    empty = tmp_path / "prompt.txt"
+    empty.write_bytes(b"")
+    assert extract_text(str(empty)) == ""
