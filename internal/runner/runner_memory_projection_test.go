@@ -49,20 +49,21 @@ func TestConversationProjectionTracer(t *testing.T) {
 		SourceRef:  "postgres://conversation/conversation-1/turn/1",
 	}}}
 	var commandCount int
+	var turnParams map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, _ := io.ReadAll(r.Body)
 		var payload struct {
-			Command string `json:"command"`
+			Command string         `json:"command"`
+			Params  map[string]any `json:"params"`
 		}
 		_ = json.Unmarshal(raw, &payload)
 		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Path == "/api/v1/query/aura" && strings.Contains(payload.Command, "embedding IS NOT NULL") {
+		if r.URL.Path == "/api/v1/query/aura" {
 			_, _ = io.WriteString(w, `{"result":[]}`) // a first projection finds no stored vector
 			return
 		}
-		if r.URL.Path == "/api/v1/query/aura" {
-			_, _ = io.WriteString(w, `{"result":[{"identity_id":"identity-a","conversation_id":"conversation-1","turn_seq":1,"role":"user","content":"Remember the blue notebook","content_hash":"`+contentHash+`","occurred_at":"2026-08-31T12:00:00Z","source_ref":"postgres://conversation/conversation-1/turn/1"}]}`)
-			return
+		if strings.Contains(payload.Command, "content_hash = :content_hash") {
+			turnParams = payload.Params
 		}
 		if payload.Command != "" {
 			commandCount++
@@ -88,12 +89,8 @@ func TestConversationProjectionTracer(t *testing.T) {
 		t.Fatalf("ArcadeDB commands = %d, want conversation upsert, turn upsert (vector cleared in the same"+
 			" statement), HAS_TURN, NEXT_TURN, INITIATED_BY", commandCount)
 	}
-	result, err := sink.SearchConversationTurnsHybrid(context.Background(), "identity-a", "blue notebook", 5)
-	if err != nil {
-		t.Fatalf("SearchConversationTurnsHybrid: %v", err)
-	}
-	if len(result.Turns) != 1 || result.Turns[0].Content != content || result.Turns[0].SourceRef == "" {
-		t.Fatalf("search result lost content/provenance: %+v", result)
+	if turnParams["content"] != content || turnParams["source_ref"] != "postgres://conversation/conversation-1/turn/1" {
+		t.Fatalf("turn upsert lost content/provenance: %v", turnParams)
 	}
 }
 

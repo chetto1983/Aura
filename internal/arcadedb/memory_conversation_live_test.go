@@ -137,19 +137,21 @@ func TestConversationProjectionLive_DeleteConvergesAndIsIdentityScoped(t *testin
 			t.Fatalf("DeleteConversationProjection: %v", err)
 		}
 	}
-	deleted, err := client.SearchConversationTurnsHybrid(context.Background(), "identity-a", "deleteviolet", 5)
-	if err != nil {
-		t.Fatalf("search deleted identity: %v", err)
+	recall := func(identityID, query string) RecallResult {
+		t.Helper()
+		result, err := client.RecallMemory(context.Background(), RecallRequest{
+			IdentityID: identityID, Mode: RecallModeSemantic, Query: query,
+		})
+		if err != nil {
+			t.Fatalf("recall %s %q: %v", identityID, query, err)
+		}
+		return result
 	}
-	if len(deleted.Turns) != 0 {
-		t.Fatalf("deleted identity still sees projection: %+v", deleted.Turns)
+	if deleted := recall("identity-a", "deleteviolet"); len(deleted.Evidence) != 0 {
+		t.Fatalf("deleted identity still sees projection: %+v", deleted.Evidence)
 	}
-	foreign, err := client.SearchConversationTurnsHybrid(context.Background(), "identity-b", "foreignsilver", 5)
-	if err != nil {
-		t.Fatalf("search foreign identity: %v", err)
-	}
-	if len(foreign.Turns) != 1 {
-		t.Fatalf("foreign identity was altered by another delete: %+v", foreign.Turns)
+	if foreign := recall("identity-b", "foreignsilver"); len(foreign.Evidence) != 1 {
+		t.Fatalf("foreign identity was altered by another delete: %+v", foreign.Evidence)
 	}
 	if err := client.DeleteIdentityConversationProjections(context.Background(), "identity-b"); err != nil {
 		t.Fatalf("DeleteIdentityConversationProjections: %v", err)

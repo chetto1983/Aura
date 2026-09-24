@@ -15,6 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/embeddings"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
 )
@@ -328,17 +329,21 @@ func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
 	seedAgentMemoryLiveConversation(t, ctx, foreignIdentityID, "conversation-foreign", "foreign",
 		"A foreign identity discussed the aurora notebook route through Turin.")
 	seedClient := agentMemoryLiveTenantClient(t, ctx, identityID)
-	seeded, err := seedClient.SearchConversationTurnsHybrid(ctx, identityID, "aurora notebook Turin", 10)
+	seeded, err := seedClient.RecallMemory(ctx, arcadedb.RecallRequest{
+		IdentityID: identityID, Mode: arcadedb.RecallModeSemantic, Query: "aurora notebook Turin", Limit: 10,
+	})
 	if err != nil {
 		t.Fatalf("verify projected recall fixtures: %v", err)
 	}
-	seededConversations := make(map[string]bool, len(seeded.Turns))
-	for _, turn := range seeded.Turns {
-		seededConversations[turn.ConversationID] = true
+	seededConversations := make(map[string]bool)
+	for _, evidence := range seeded.Evidence {
+		if evidence.Conversation != nil {
+			seededConversations[evidence.Conversation.ConversationID] = true
+		}
 	}
 	if !seededConversations["conversation-active"] || !seededConversations["conversation-historical"] ||
 		seededConversations["conversation-foreign"] {
-		t.Fatalf("projected recall fixtures = %+v, want active and historical owner candidates only", seeded.Turns)
+		t.Fatalf("projected recall fixtures = %+v, want active and historical owner candidates only", seeded.Evidence)
 	}
 
 	activeHeader, err := encodeMemoryRecallActiveSources([]memoryRecallActiveSource{

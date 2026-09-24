@@ -394,7 +394,6 @@ func TestEscapeLuceneEscapesOperators(t *testing.T) {
 func TestEveryHybridStatementReranksItsFusion(t *testing.T) {
 	for name, statement := range map[string]string{
 		"facts":                fuseRIDsStatement,
-		"conversations":        fuseConversationTurnRIDsStatement,
 		"recall facts":         recallFactFuseStatement,
 		"recall conversations": recallTurnFuseStatement,
 	} {

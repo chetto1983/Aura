@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +39,7 @@ type ConversationProjection struct {
 	Turns          []ConversationTurnProjection
 }
 
-// ConversationTurnHit is one identity-scoped hybrid-search result.
+// ConversationTurnHit is one identity-scoped turn read back by recall.
 type ConversationTurnHit struct {
 	IdentityID     string
 	ConversationID string
@@ -50,14 +49,6 @@ type ConversationTurnHit struct {
 	ContentHash    string
 	OccurredAt     string
 	SourceRef      string
-}
-
-// ConversationSearchResult reports the retrieval path and explicit abstention.
-type ConversationSearchResult struct {
-	Turns         []ConversationTurnHit
-	RetrievalPath string
-	Abstained     bool
-	Reason        string
 }
 
 // conversationSchemaStatements owns the replay-safe short-term memory schema.
@@ -290,138 +281,6 @@ func validateConversationProjection(projection ConversationProjection) error {
 	return nil
 }
 
-const searchConversationTurnsStatement = "SELECT identity_id, conversation_id, turn_seq, role," +
-	" content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL" +
-	" AND SEARCH_INDEX('" + conversationTurnType + "[content]', :query) = true" +
-	" AND $score >= :min_lexical_score"
-
-const fuseConversationTurnRIDsStatement = "SELECT @rid AS rid FROM (SELECT expand(" + rerankOpen + "`vector.fuse`(" +
-	"`vector.neighbors`('" + conversationTurnType + "[embedding]', :vector, :candidates," +
-	" { filter: (SELECT @rid FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL).@rid, maxDistance: :max_distance })," +
-	" (SELECT @rid, $score FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL" +
-	" AND SEARCH_INDEX('" + conversationTurnType + "[content]', :query) = true" +
-	" AND $score >= :min_lexical_score LIMIT :candidates), { \"fusion\": \"RRF\" }" +
-	")" + rerankClose + "))" + relevanceFloor + " LIMIT :candidates"
-
-const hydrateConversationTurnsStatement = "SELECT @rid, identity_id, conversation_id, turn_seq, role," +
-	" content, content_hash, occurred_at, source_ref FROM " + conversationTurnType +
-	" WHERE identity_id = :identity_id AND deleted_at IS NULL AND @rid IN :rids"
-
-// SearchConversationTurnsHybrid searches only turns owned by identityID.
-func (c *Client) SearchConversationTurnsHybrid(
-	ctx context.Context,
-	identityID, query string,
-	limit int,
-) (ConversationSearchResult, error) {
-	if strings.TrimSpace(identityID) == "" {
-		return ConversationSearchResult{}, fmt.Errorf("arcadedb: conversation search identity must be non-empty")
-	}
-	if strings.TrimSpace(query) == "" {
-		return ConversationSearchResult{}, fmt.Errorf("arcadedb: conversation search query must be non-empty")
-	}
-	limits := c.memoryLimits()
-	if err := validateRuneLimit("conversation search query", query, limits.QueryRunes); err != nil {
-		return ConversationSearchResult{}, err
-	}
-	limit = boundedLimit(limit, 5, limits.Results)
-	if c.embedder == nil {
-		return c.searchConversationTurnsLexical(ctx, identityID, query, limit, reasonEmbedderNotConfigured)
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
-	if err != nil {
-		return c.searchConversationTurnsLexical(ctx, identityID, query, limit, reasonEmbeddingFailed)
-	}
-	if len(vectors) != 1 || len(vectors[0]) != vectorDimensions {
-		return c.searchConversationTurnsLexical(ctx, identityID, query, limit, reasonEmbeddingInvalid)
-	}
-	candidates := min(max(limit*4, 20), limits.HybridCandidates)
-	params := map[string]any{
-		"identity_id": identityID, "query": escapeLucene(query), "vector": vectors[0],
-		"candidates": candidates, "max_distance": limits.DenseMaxDistance,
-		"min_relevance":     limits.MinRelevance,
-		"min_lexical_score": lexicalScoreFloor(query, limits.LexicalMinScore),
-	}
-	ranked, err := c.Query(ctx, fuseConversationTurnRIDsStatement, params)
-	if err != nil {
-		return c.searchConversationTurnsLexical(ctx, identityID, query, limit, reasonFusionFailed)
-	}
-	rids := make([]string, 0, len(ranked))
-	for _, row := range ranked {
-		if rid := strings.TrimSpace(fmt.Sprintf("%v", row["rid"])); rid != "" && rid != "<nil>" {
-			rids = append(rids, rid)
-		}
-	}
-	if len(rids) == 0 {
-		return ConversationSearchResult{RetrievalPath: retrievalPathHybrid, Abstained: true, Reason: reasonNoQualifiedCandidates}, nil
-	}
-	rows, err := c.Query(ctx, hydrateConversationTurnsStatement, map[string]any{
-		"identity_id": identityID, "rids": rids,
-	})
-	if err != nil {
-		return c.searchConversationTurnsLexical(ctx, identityID, query, limit, reasonHydrationFailed)
-	}
-	order := make(map[string]int, len(rids))
-	for i, rid := range rids {
-		order[rid] = i
-	}
-	type rankedTurn struct {
-		hit  ConversationTurnHit
-		rank int
-	}
-	ordered := make([]rankedTurn, 0, len(rows))
-	for _, row := range rows {
-		hit, ok := conversationTurnHitFromRow(row, identityID)
-		if !ok {
-			continue
-		}
-		rank, found := order[fmt.Sprintf("%v", row["@rid"])]
-		if !found {
-			rank = len(order)
-		}
-		ordered = append(ordered, rankedTurn{hit: hit, rank: rank})
-	}
-	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].rank < ordered[j].rank })
-	hits := make([]ConversationTurnHit, 0, min(len(ordered), limit))
-	for _, item := range ordered {
-		if len(hits) == limit {
-			break
-		}
-		hits = append(hits, item.hit)
-	}
-	return ConversationSearchResult{
-		Turns: hits, RetrievalPath: retrievalPathHybrid,
-		Abstained: len(hits) == 0, Reason: reasonIfEmpty(hits, reasonNoQualifiedCandidates),
-	}, nil
-}
-
-func (c *Client) searchConversationTurnsLexical(
-	ctx context.Context,
-	identityID, query string,
-	limit int,
-	reason string,
-) (ConversationSearchResult, error) {
-	rows, err := c.Query(ctx, searchConversationTurnsStatement+" LIMIT "+strconv.Itoa(limit), map[string]any{
-		"identity_id": identityID, "query": escapeLucene(query),
-		"min_lexical_score": lexicalScoreFloor(query, c.memoryLimits().LexicalMinScore),
-	})
-	if err != nil {
-		return ConversationSearchResult{}, fmt.Errorf("arcadedb: search conversation turns: %w", err)
-	}
-	hits := make([]ConversationTurnHit, 0, len(rows))
-	for _, row := range rows {
-		if hit, ok := conversationTurnHitFromRow(row, identityID); ok {
-			hits = append(hits, hit)
-		}
-	}
-	return ConversationSearchResult{
-		Turns: hits, RetrievalPath: retrievalPathLexical,
-		Abstained: len(hits) == 0, Reason: reasonIfEmpty(hits, reason),
-	}, nil
-}
-
 func conversationTurnHitFromRow(row map[string]any, identityID string) (ConversationTurnHit, bool) {
 	if rowString(row, "identity_id") != identityID {
 		return ConversationTurnHit{}, false
@@ -432,13 +291,6 @@ func conversationTurnHitFromRow(row map[string]any, identityID string) (Conversa
 		Content: rowString(row, "content"), ContentHash: rowString(row, "content_hash"),
 		OccurredAt: rowString(row, "occurred_at"), SourceRef: rowString(row, "source_ref"),
 	}, true
-}
-
-func reasonIfEmpty[T any](items []T, reason string) string {
-	if len(items) == 0 {
-		return reason
-	}
-	return ""
 }
 
 func conversationContentHash(content string) string {
