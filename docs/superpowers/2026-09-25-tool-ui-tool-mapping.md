@@ -110,6 +110,43 @@ The server ships its own MCP Apps view for the whole tool, and the cockpit alrea
 | `send_audio_message` | `audio` | Widen | |
 | `send_reaction` | — | Row only | |
 
+## Media in depth: `image`, `image-gallery`, `video`, `audio`
+
+Read from each component's `schema.ts` and `.tsx` on `main`, and from `shared/media/aspect-ratio.ts` and `shared/media/sanitize-href.ts`. It was compared with Aura's own renderers in `web/src/chat/artifacts/renderers/`.
+
+**How Aura shows media today**
+
+- **Images:** a blob object URL from `useBlobPreview`, relabelled to the asset's mimetype. SVG is gated to download.
+- **Video:** `VideoPreview.tsx` streams the tier's Range route (`assetSource.streamUrl`, served by `internal/agui/assets_stream_api.go`), so a clip seeks without a full download.
+  - It **never autoplays, including when a thread is reopened**.
+  - It keeps the clip's own proportions. Letterboxing was fixed there on 2026-09-17.
+- **Errors:** every renderer falls back to `PreviewError`.
+- **Audio:** `previewDispatch.tsx` has NO audio kind. An audio file falls through to `download`.
+- **Public share page:** the `AssetSourceContext` seam swaps in token-scoped URLs, so the same renderers work there.
+
+**What each Tool UI media component brings, and what it breaks**
+
+| Component | Brings | Breaks or lacks, against Aura's rules | Aura sources it would serve |
+|---|---|---|---|
+| `audio` | A real player: play/pause, a seek slider, time readout, optional artwork, and `full` / `compact` variants. `preload="metadata"`. | Needs the Range `/stream` URL, made absolute, for seeking. No `onError`, so a failed load needs our fallback wrapper. | **A new capability.** WhatsApp voice notes (`download_media`, `get_media_data`, `send_audio_message`), uploaded audio, and `send_file` of audio. Today all of them are a download button. |
+| `image` | Title and source attribution on a hover overlay, `sanitizeHref` on links, and `onNavigate` to intercept clicks (we would open Aura's artifact panel). | 1. `ratio: "auto"` does NOT size to the image. `RATIO_CLASS_MAP.auto` is `""`, so the box is `min-h-[160px]` with the `<img>` `absolute inset-0` and `object-cover`: a whole generated image would be cropped. Confirm in a render before relying on this reading. 2. `AspectRatioSchema` has only `auto`, `1:1`, `4:3`, `16:9`, `9:16`, while `image_generate` offers `3:4`, `3:2`, `2:3` too, so our copy's enum must grow. 3. No `onError`. 4. `min-w-80` (320 px), which is tight at phone width. | `image_generate` results, image uploads, WhatsApp and calendar images, and `read_file` box images. |
+| `image-gallery` | A masonry grid plus a native `<dialog>` lightbox, and a per-tile `onError` fallback (`ImageOff`). | Every image REQUIRES `width` and `height` (positive). Aura stores no image dimensions: no asset column, no migration. They must be read client-side (`naturalWidth` after the blob loads) or recorded at ingest. | Several images in one turn: multiple generations, or a WhatsApp chat's media. |
+| `video` | Poster, native controls, a title/source overlay, and `onMediaEvent`. | 1. **`autoPlay` defaults to `true`** (with `defaultMuted` `true`), which contradicts Aura's never-autoplay rule, so every mount must pass `autoPlay={false}`. 2. `ratio: "auto"` becomes `aspect-video` on a black background: portrait or square clips letterbox again, the exact defect `VideoPreview` fixed on 2026-09-17. 3. A hover `scale-[1.01]`. 4. No `onError`. | `video_generate` results, `send_file` video, WhatsApp video. |
+
+**The shared constraint: URLs.** Every media schema declares `src: z.url()`. Zod 4 (`node_modules/zod/v4/core/schemas.js` `validateURL`) accepts any string the WHATWG parser takes WITHOUT a base.
+- So a `blob:` URL passes.
+- A relative `/api/assets/…` path fails `safeParse` and drops to the fallback.
+- The adapter must pass `new URL(streamUrl(id), location.origin).href`, or a blob URL.
+- The `AssetSourceContext` seam stays the one place that decides which route, so the public share page keeps working.
+
+**Dependency.** Aura's `web/package.json` has no direct `zod`: 4.6.5 is only transitive today. Tool UI pins 4.3.6 in its own app. `shadcn add` would add `zod` as a direct dependency.
+
+**Recommendation for Spec 2's media slice**
+
+1. **Adopt `audio` first.** It fills a real gap: there is no audio rendering at all today.
+2. **Adopt `image-gallery` only with dimensions solved.** Deciding client-side `naturalWidth` versus ingest-time metadata is a Spec 2 question.
+3. **For `image` and `video`, keep Aura's loading layer and take Tool UI's frame.** Aura's layer is the blob and stream URLs, `PreviewError`, never-autoplay and natural proportions. Tool UI's frame is the overlay, attribution and metadata. The installed copies are ours to edit, so the fixes above (the ratio enum, `auto` sizing, `autoPlay={false}`, `onError`) go into our copy.
+
 ## Tool UI components with no Aura tool today
 
 - `weather-widget`, `geo-map`, `order-summary`: no producing tool.
@@ -130,6 +167,9 @@ Biggest visible gain for the least backend work first:
 1. `todo_write` → `plan` (Direct).
 2. `shell_exec` / `shell_poll` → `terminal` (widen `display.Code` with `exit_code`, `cwd` and `duration_ms`).
 3. `patch` → `code-diff`, and `write_file` / `read_file` → `code-block`.
-4. `send_file`, plus WhatsApp and calendar media → `image`, `video`, `audio` by mimetype.
+4. Media, per "Media in depth":
+   - `audio` first, because there is no audio rendering today;
+   - then `image` / `video` frames over Aura's loading layer;
+   - `image-gallery` once image dimensions are solved.
 5. Resolve the dark `table` / `chart` kinds with `data-table` for `search_files`, `task list` and the memory facts.
 6. Separately, as a behaviour decision: `message-draft` before `send_email` / `send_message`.
