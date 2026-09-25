@@ -226,7 +226,7 @@ One line per finding of the four reports (`docs/superpowers/plans/validation/202
 - crosssource/M5 → applied: one Telegram turn in Task 10 Step 7. The Archestra connection split is recorded as considered and not taken (Open point 9).
 - crosssource/L1 → applied: `min_items`, `max_items` and `pattern` (Validate-only, `json:"-"`) on `Field`.
 - crosssource/L2 → applied: `everythingForm()` is the reference server's schema.
-- crosssource/L3 → rejected for now, needs the operator: the spec's handler contract returns `(*ElicitResult, nil)` in every case. Only a non-compliant server reaches the branch (`mcp/server.go:1753-1756`). Open point 10.
+- crosssource/L3 → rejected, settled 2026-09-25 with the spec kept: the spec's handler contract returns `(*ElicitResult, nil)` in every case. Only a non-compliant server reaches the branch (`mcp/server.go:1753-1756`). Open point 10.
 - crosssource/L4 → applied in the spec's Revisions. The plan tests only the two live paths.
 - crosssource/L5 → applied: `NousResearch/hermes-agent@7b761da2d tools/mcp_tool_sampling.py:292-295`.
 - crosssource/L6 → changed: the countdown reads "Aura cancels in …", and the PRD records the 60 s default. The distinct receipt is not taken: the spec's error table says a server cancel shows "cancelled" (Open point 11).
@@ -10229,14 +10229,14 @@ v1's Open points 1 (Tool UI), 3 (field order) and 4 (an expiry declines) are set
    - Aura's own three servers (arcadedb-mcp, aura-pim-mcp, whatsapp-mcp) contain no elicitation code. Task 10 re-checks their tool counts and drives one turn outside the cockpit.
    - A third-party server that respects the capability may now ask where it used to fall back, and a Telegram, cron or `aura chat` run then declines. The PRD records the risk.
    - Considered and not taken: Archestra keeps capability-bearing connections apart, one per (agent, conversation) with an `:elicitation` suffix (`platform/backend/src/clients/mcp-client.ts:912-920`). It doubles every mount's sessions, and the operator did not ask for it.
-10. **Needs the operator: a URL-mode request gets a decline, where MCP asks for `-32602`** (cross-source L3).
+10. **Settled 2026-09-25, spec kept: a URL-mode request gets a decline, where MCP asks for `-32602`** (cross-source L3). The operator was shown this and kept the spec's contract. Execution does not stop here.
     - MCP 2025-11-25 says a request in a mode the client did not declare gets `-32602` (`client/elicitation.mdx:698`).
     - Only a non-compliant server can send one. Aura never advertises URL mode, and go-sdk's own server refuses to send it to such a client (`mcp/server.go:1753-1756`).
     - The spec's handler contract returns `(*ElicitResult, nil)` in every case (spec §`internal/agent/mcptools`, "Handler contract"), so the plan declines, as Hermes does.
     - Returning `&jsonrpc.Error{Code: jsonrpc.CodeInvalidParams}` on the classic path only needs the spec amended first. On the multi-round-trip path an error would fail the whole `CallTool` (`mrtr.go:289-291`), so the decline stays there either way.
 11. **A cancel the server sends reads "Cancelled.", like any other end of the call** (cross-source L6). The spec's error table says so: "The call ends (server cancel, run cancel, tool timeout) → Cancel; the card shows 'cancelled'".
     - The countdown says "Aura cancels in …", Aura's own bound.
-    - A distinct "The server stopped waiting" receipt would need the spec changed first, if the operator wants one.
+    - A distinct "The server stopped waiting" receipt would need the spec changed first. Settled 2026-09-25: the spec is kept, with no separate receipt.
 12. **`ExternalStoreChat.tsx` reaches 594 of 600 lines** (adversarial L14). Spec 2 must split it before adding anything to it.
 13. **The Calm Prism harvest stays on.** Task 9 commits the redrawn baselines from the push's run, but reverting the TEMP `--update-snapshots` (`ci.yml:1828-1834`) belongs to its own playbook. Until then, CI cannot fail on a visual diff.
 14. **Two conventions are Aura's, not Tool UI's** (cross-source I3). Spec 2 inherits them:
