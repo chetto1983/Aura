@@ -69,8 +69,12 @@ func newHardenedHTTPClient(res resolver, policy EgressPolicy) *http.Client {
 	}
 }
 
+// oauthHTTPClient is the client a mount's session and its OAuth handler share. Its transport
+// is always explicit: go-sdk's OAuth discovery (v1.8.0, oauthex/oauth2.go newDiscoveryClient)
+// swaps a client with no transport onto the SDK's own, which refuses private addresses
+// whatever this policy decided. http.DefaultTransport dials for itself, so the SDK keeps it.
 func oauthHTTPClient(policy EgressPolicy) *http.Client {
-	client := http.DefaultClient
+	client := &http.Client{Transport: http.DefaultTransport}
 	if policy.Enforced() {
 		client = newHardenedHTTPClient(net.DefaultResolver, policy)
 	}

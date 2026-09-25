@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/http"
 	"net/netip"
 	"strings"
 	"syscall"
@@ -11,6 +12,25 @@ import (
 )
 
 var errRecordingDial = errors.New("recording dial reached")
+
+// go-sdk v1.8.0's OAuth discovery keeps a client's transport only when it dials for itself
+// (oauthex/oauth2.go, newDiscoveryClient); otherwise it swaps in its own, which refuses
+// private addresses whatever the EgressPolicy says and pools connections nothing here can
+// close. Both postures must hand it a transport it keeps.
+func TestOAuthHTTPClientKeepsDiscoveryOnAurasTransport(t *testing.T) {
+	for name, policy := range map[string]EgressPolicy{
+		"open":     {},
+		"enforced": {enforcePrivate: true},
+	} {
+		transport, ok := oauthHTTPClient(policy).Transport.(*http.Transport)
+		if !ok || transport.DialContext == nil {
+			t.Errorf("%s: transport %T has no dialer of its own, so the SDK replaces it for discovery", name, oauthHTTPClient(policy).Transport)
+		}
+	}
+	if oauthHTTPClient(EgressPolicy{}).Transport != http.DefaultTransport {
+		t.Error("open policy: discovery must ride http.DefaultTransport, whose idle connections http.DefaultClient closes")
+	}
+}
 
 // recordingDial captures the addr the hardened transport dials so a test can assert
 // the transport connected to the PINNED IP literal, never the hostname.

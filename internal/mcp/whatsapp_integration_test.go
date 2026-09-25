@@ -42,21 +42,13 @@ func whatsAppEndpointOrGate(t *testing.T) string {
 	return ""
 }
 
-func reapWhatsAppIdleHTTPConns(t *testing.T) {
-	t.Helper()
-	t.Cleanup(func() {
-		http.DefaultClient.CloseIdleConnections()
-		time.Sleep(200 * time.Millisecond)
-	})
-}
-
 func TestWhatsAppServerLiveTenantIsolation(t *testing.T) {
 	endpoint := whatsAppEndpointOrGate(t)
 	storeRoot := whatsAppStoreRootOrGate(t)
 	issuer := newOAuthResourceIssuer(t)
 	tokenA := issuer.token(t, endpoint, whatsAppTenantA)
 	tokenB := issuer.token(t, endpoint, whatsAppTenantB)
-	reapWhatsAppIdleHTTPConns(t)
+	reapIdleHTTPConns(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

@@ -26,19 +26,6 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// reapIdleHTTPConns drains http.DefaultClient's idle keep-alive connections at test
-// end. The SDK's streamable-HTTP transport falls back to http.DefaultClient when no
-// EgressPolicy is enforced, whose parked readLoop/writeLoop goroutines otherwise trip
-// the package goleak TestMain even after Close() ended the MCP session. Test-only;
-// never touches production Close() semantics.
-func reapIdleHTTPConns(t *testing.T) {
-	t.Helper()
-	t.Cleanup(func() {
-		http.DefaultClient.CloseIdleConnections()
-		time.Sleep(200 * time.Millisecond)
-	})
-}
-
 // calendarEndpointOrGate resolves the live sidecar URL from AURA_PIM_MCP_URL (or
 // AURA_PIM_MCP_PORT). Empty under $CI is a HARD failure (no-skip-as-green); empty
 // locally is a skip.

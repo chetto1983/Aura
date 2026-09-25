@@ -161,6 +161,19 @@ func assertOAuthResourceAuthenticates(t *testing.T, ctx context.Context, issuer 
 	}
 }
 
+// reapIdleHTTPConns closes http.DefaultTransport's idle keep-alive connections at test end.
+// With no enforced EgressPolicy a session, and its OAuth discovery, ride that transport
+// (oauthHTTPClient), and its parked readLoop/writeLoop goroutines would otherwise trip the
+// package goleak TestMain after Close() has ended the MCP session. Test-only; production
+// Close() semantics are untouched.
+func reapIdleHTTPConns(t *testing.T) {
+	t.Helper()
+	t.Cleanup(func() {
+		http.DefaultClient.CloseIdleConnections()
+		time.Sleep(200 * time.Millisecond)
+	})
+}
+
 func openOAuthResourceSession(t *testing.T, ctx context.Context, issuer *oauthResourceIssuer, name, endpoint, token string) *sdkmcp.ClientSession {
 	t.Helper()
 	server := ManagedServer{
