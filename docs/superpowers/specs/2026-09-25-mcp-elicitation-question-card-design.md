@@ -51,8 +51,14 @@ Measured on 2026-09-25, from go-sdk v1.8.0 and Aura's code:
     which is how `ask_user` survives a restart.
   - Durability would buy nothing: the server's request dies with the process anyway.
 - **The SDK hands the handler two different contexts.**
-  - With **multi-round-trip** (`mrtr.go`, `fulfillInputRequests`) and **URL elicitation
-    required** (`client.go:790-860`), the handler runs on the **tool call's** context.
+  - With **multi-round-trip** (`mrtr.go`, `fulfillInputRequests`), the handler runs on the
+    **tool call's** context.
+  - The third path, **URL elicitation required**, is not active in v1.8.0 (corrected
+    2026-09-25).
+    - `urlElicitationMiddleware` (`client.go:764-775`) is unexported, and `NewClient` installs
+      only the multi-round-trip middleware (`client.go:79-81`).
+    - So a server's `-32042` reaches Aura as a plain tool error, and the handler never runs for
+      it.
   - With a **classic** `elicitation/create`, it runs on the **connection's** context. That context
     carries no run, thread or tool call.
   - In every path, `ElicitRequest.Session` is the `*ClientSession` the request came in on.
@@ -69,14 +75,16 @@ Measured on 2026-09-25, from go-sdk v1.8.0 and Aura's code:
 - **The cockpit already renders shadcn components in Aura's palette.**
   - `web/src/styles/shadcn.css` maps every shadcn variable (`card`, `primary`, `muted-foreground`,
     `border`, `radius`) onto the blue tokens.
-  - Tool UI components are shadcn registry entries (MIT, `assistant-ui/tool-ui`). They land
-    already themed.
+  - Tool UI components are shadcn registry entries (MIT, `assistant-ui/tool-ui`), written against
+    the same variables.
+  - Their markup and classes therefore carry over already themed (see Cockpit → Components for
+    why they are ported rather than installed).
 
 ## Shape
 
 ```
 MCP server ──elicitation/create──▶ go-sdk ──▶ mcptools handler
-                                              │ which run?  call ctx (MRTR, URL-required)
+                                              │ which run?  call ctx (MRTR)
                                               │             or in-flight registry by *ClientSession
                                               ▼
                                    elicit.Asker from the run's ctx ──none──▶ decline-and-surface (today)
@@ -126,8 +134,7 @@ to import the other.
   - Identity-scoped mounts recurse into their child server's `CallTool`, so they register on the
     child's session.
 - **Routing (`elicitation.go`).** The handler finds its asker in this order:
-  1. `elicit.AskerFrom(ctx)`. It is set on the MRTR and URL-required paths, whose context is the
-     call's.
+  1. `elicit.AskerFrom(ctx)`. It is set on the MRTR path, whose context is the call's.
   2. The in-flight entries for `req.Session`:
      - if they all belong to one run, the handler uses that run's asker and pauses that call's
        clock;
@@ -137,7 +144,7 @@ to import the other.
   3. No asker: today's `ElicitationConsent` (decline-and-surface), unchanged.
 - **The wait is bounded** by the first of these:
   - `AURA_MCP_ELICITATION_TIMEOUT_SEC` (default 300 s; `<= 0` keeps meaning "disabled"), which
-    declines;
+    cancels, because nobody made an explicit choice;
   - the end of the call's context, which cancels;
   - the end of the run, which cancels.
 - **Mode.** `url` is still refused before any asker is consulted.
@@ -200,10 +207,16 @@ to import the other.
 
 - **Components.**
   - `web/components.json` gains the `@tool-ui` registry.
-  - `npx shadcn@latest add @tool-ui/question-flow @tool-ui/option-list @tool-ui/approval-card` is
-    run from WSL (node_modules is single-platform) and lands the components in
-    `web/src/components/tool-ui/`. They are versioned code, adapted only where Aura's tokens or
-    lint require it.
+  - Question Flow, Option List and Approval Card are **ported, not installed** (operator
+    decision, 2026-09-25, after the plan read the registry sources).
+    - The installed sources cannot draw these cards unmodified:
+      - they hard-code English ("Next", "Complete");
+      - Question Flow's steps are option lists only, with a footer of Back and Next alone;
+      - Approval Card cancels on Escape;
+      - `question-flow.tsx` is 793 lines and `option-list.tsx` 625, both over the 600-line cap.
+    - Their markup and classes are copied into Aura's own files under 600 lines, translated and
+      tested, each carrying the MIT notice.
+    - Spec 2 installs what it will actually use. Nothing lands unused.
 - **`QuestionCard` (`web/src/questions/`, new).** One card, fed by two adapters:
 
   | Source | Shape |
@@ -211,7 +224,7 @@ to import the other.
   | ask_user `choice` | one step: radio rows, a pill **Answer** that stays grey until a choice is made |
   | ask_user `clarification` | one step: a text field in the same frame, pill **Answer** |
   | ask_user `approval` | `ApprovalCard`: icon, title, what will happen. The destructive variant when the gateway grades the action Destructive. The gateway's scope options (`approval.scope.*`) become a single choice. |
-  | MCP form | Question Flow, **one step per field**: "STEP 2 OF 3", a segmented bar, **Back** / **Next**, **Submit** on the last step |
+  | MCP form | Question Flow, **one step per field**: "STEP 2 OF 4", a segmented bar, **Back** / **Next**. A form with more than one field ends on a **Review** step that lists every answer, each row leading back to its step. **Submit** sits only there, as the MCP spec requires clients to let users review and modify answers before sending. |
 
 - **Field inputs.**
   - A single-choice enum is radio rows.
@@ -219,13 +232,21 @@ to import the other.
   - A boolean is two rows, Yes and No.
   - A string is a text input, typed for `email`, `uri` and `date`.
   - A number is a numeric input with its min and max.
-  - Defaults are prefilled. An optional field has **Skip**.
+  - Defaults are prefilled.
+  - An optional field has **Skip**. On a field with a default the button reads **Use default**,
+    because go-sdk puts the default back on every accept (`client.go:901`).
+    - The receipt lists what the server actually receives.
+    - Clearing a defaulted field cannot be expressed over MCP.
+  - **Order.** The server's key order is lost before Aura sees it: `RequestedSchema` decodes to a
+    map. So the required fields come first, in the order of the schema's `required` array, and
+    then the rest by name.
 - **The MCP form header.**
   - A chip names the server. The name comes from Aura's mount configuration, not from anything
     the server says. The tool name sits next to it.
   - The server's message is the description, rendered as plain text: no markdown or HTML from the
     server is ever interpreted.
-  - A quiet countdown to the deadline shows, because at zero the form declines itself.
+  - A quiet countdown to Aura's deadline shows, because at zero the form cancels itself. It is
+    Aura's bound; a server's own request timeout can end the form sooner.
 - **Always there.** **Decline** and **Cancel** sit as secondary actions in the footer. Cancel asks
   for confirmation while the run is streaming, as today.
 - **After answering.** The card becomes a Tool UI read-only receipt: a check with the answer
@@ -252,10 +273,11 @@ to import the other.
 | Classic request while calls from different runs are in flight on the session | Decline, and the operator is told which server asked and why |
 | URL mode | Refused, as today |
 | Schema outside the restricted set, or over a cap | Decline, and the operator is told |
-| No answer within `AURA_MCP_ELICITATION_TIMEOUT_SEC` | Decline; the card shows "expired" |
+| No answer within `AURA_MCP_ELICITATION_TIMEOUT_SEC` | Cancel (MCP: "dismissed without an explicit choice"); the card shows "expired" |
 | The call ends (server cancel, run cancel, tool timeout) | Cancel; the card shows "cancelled" |
 | Answer to a closed question, or on a terminal run | 409 or 410; the card refreshes to its real state |
-| Answer that fails the schema | 422 with field errors; the question stays open |
+| Answer that fails the schema | 422 with a per-field error code, never the validator's text: jsonschema-go quotes the submitted value, and the idempotency layer stores response bodies. The question stays open. |
+| Schema whose `pattern` Go's regexp (RE2) cannot compile | Refused before anyone is asked; the operator is told |
 | Several questions at once (parallel tool calls) | One card each, in arrival order |
 
 The handler never returns an error to the SDK: an error would fail the whole `CallTool` with an
@@ -277,10 +299,10 @@ opaque message (`elicitation.go`).
 - **Go unit tests (`-race`, goleak):**
   - `elicit.FromSchema`: every restricted type, the caps, the rejects. `elicit.Validate`: the
     per-field errors.
-  - Routing on all three SDK paths:
+  - Routing on both live SDK paths:
     - MRTR (call ctx);
-    - URL-required (refused);
-    - classic with one run, classic with two runs (declined), and no asker (fallback).
+    - classic with one run, classic with two runs (declined), and no asker (fallback);
+    - URL mode refused.
   - The wait: timeout, call cancel, run end, and a late answer.
   - `pausable`: hold and release, nested holds, a deadline that is never shortened, the
     `ConsumeStep` wallclock under a hold, and a derived sub-agent budget.
@@ -309,12 +331,18 @@ opaque message (`elicitation.go`).
      - that the turn outlived 60 s of human time;
      - that a reload in the middle of the form brings it back.
   4. Decline one form and let one expire.
-  5. `trigger-url-elicitation` must be refused.
+  5. `trigger-url-elicitation` is absent from the mount's tool list.
+     - server-everything registers it only for clients that advertise URL mode, and Aura
+       advertises form mode only.
+     - The refusal branch is proven by its unit test, and the PRD records that the E2E does not
+       exercise it.
   6. Trigger an ask_user of each kind (choice, clarification, approval) and take screenshots of
      the new cards and their receipts.
-  7. Every mount now advertises elicitation. Check that the servers already in use (memory,
-     calendar, WhatsApp) still mount with the same tool counts as before, and that one call to
-     each still works.
+  7. Every mount now advertises elicitation.
+     - Check that the servers already in use (memory, calendar, WhatsApp) still mount with the
+       same tool counts as before, and that one call to each still works. None of the three
+       contains elicitation code (read 2026-09-25).
+     - Drive one turn outside the cockpit and check it behaves as before.
   8. Unmount the test server afterwards.
 
 ## Out of scope
@@ -341,3 +369,21 @@ The E2E's measurements are recorded next to it, together with what the E2E does 
 
 No new environment variables and no migration. The caps are constants in `internal/elicit`, with
 their reason stated next to them.
+
+## Revisions
+
+**2026-09-25, after the plan's validation** (four validators: `docs/superpowers/plans/validation/2026-09-25-elicitation-*.md`).
+
+**Operator decisions**
+- Tool UI's question components are ported into Aura's files, not installed.
+- An expired wait answers cancel, not decline.
+
+**Corrections forced by the sources**
+- **URL elicitation required:** the path is not active in go-sdk v1.8.0.
+- **E2E step 5:** now checks that the tool is absent, because server-everything hides it from form-only clients.
+- **Review step:** added before Submit, as the MCP spec requires of clients.
+- **Use default:** replaces Skip on a defaulted field, because go-sdk re-applies defaults.
+- **Field order:** required fields first, because the server's key order is lost.
+- **422 errors:** carry codes, not values.
+- **RE2 patterns:** a pattern Go's regexp cannot compile is refused before anyone is asked.
+- **E2E step 7:** also drives one turn outside the cockpit.
