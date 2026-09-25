@@ -105,7 +105,7 @@ func (t *Telegram) requireLinkedCallback(ctx context.Context, c tele.Context, cb
 // onDocument/onReply/onCallback) calls this before spawning a turn, so an unknown or
 // unprovisioned user never falls through to another identity's context or the local
 // admin. A linked user's turn is then scoped to THEIR identity in startTurn
-// (scopeTurnToIdentity, D-23).
+// (scopeTurnToIdentity, D-23), and so is a pause answer (hitlScope).
 func (t *Telegram) telegramUserIsLinked(ctx context.Context, telegramUserID int64) bool {
 	accounts := t.accountsForDispatch()
 	if accounts == nil {

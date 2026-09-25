@@ -225,17 +225,22 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
+		ctx, scoped := t.hitlScope(daemonCtx, chatID)
+		if !scoped {
+			_ = c.Respond(callbackToast("", false))
+			return nil
+		}
 		token, action, _, valid := parseCallback(cb.Data)
 		// Dettagli reveals the full question and leaves the pause open — it must not reach
 		// handleCallbackResult's resolve path at all.
 		if valid && action == actionDetails {
-			t.revealApprovalDetails(daemonCtx, c, chatID, token)
+			t.revealApprovalDetails(ctx, c, chatID, token)
 			return nil
 		}
 		// Acknowledge immediately so Telegram clears the button spinner and shows a
 		// small toast before any continuation turn starts rendering.
 		_ = c.Respond(callbackToast(action, valid))
-		out := t.hitlFor(c, chatID).handleCallbackResult(daemonCtx, cb.Data, convID(chatID), func(callbackOutcome) {
+		out := t.hitlFor(c, chatID).handleCallbackResult(ctx, cb.Data, convID(chatID), func(callbackOutcome) {
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
 			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
@@ -251,7 +256,7 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			// "nothing happened" (fix-plan 1.7 defect E).
 			t.editApprovalOutcome(c.Bot(), cb.Message, out.outcome)
 		case runner.OutcomePending:
-			t.promptPendingPause(daemonCtx, t.sender(c), chatID) // more FIFO pauses: render the next
+			t.promptPendingPause(ctx, t.sender(c), chatID) // more FIFO pauses: render the next
 		case runner.OutcomeContinue, runner.OutcomeTerminated:
 			// Continue drove a continuation turn whose handleTurn renders any further pause
 			// (double-rendering it here would duplicate the prompt); Terminated was auto-resolved

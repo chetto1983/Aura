@@ -18,14 +18,15 @@ import (
 // the caller does NOT also drive an ordinary turn. With no pending pause it returns
 // false (handleTextReply is a no-op), so an ordinary message is never stolen.
 func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, chatID int64, text string) bool {
-	if t.deps.Resume == nil {
+	ctx, ok := t.hitlScope(daemonCtx, chatID)
+	if !ok {
 		return false
 	}
-	pending, err := t.deps.Resume.PendingFor(daemonCtx, convID(chatID))
+	pending, err := t.deps.Resume.PendingFor(ctx, convID(chatID))
 	if err != nil || len(pending) == 0 {
 		return false
 	}
-	resumed, serr := t.hitlFor(c, chatID).handleTextReply(daemonCtx, convID(chatID), text)
+	resumed, serr := t.hitlFor(c, chatID).handleTextReply(ctx, convID(chatID), text)
 	if serr != nil {
 		// The Runner submit failed: tell the user to retry instead of silently
 		// swallowing the answer while the pause stays open.
@@ -35,9 +36,21 @@ func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, ch
 	if !resumed {
 		// The answer left a further FIFO pause unresolved (remaining>0) — render it so
 		// the user is prompted for the next one rather than left silently waiting.
-		t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+		t.promptPendingPause(ctx, t.sender(c), chatID)
 	}
 	return true
+}
+
+// hitlScope binds the chat's linked identity for a pause read or resolve, as startTurn does
+// for a turn. aura.paused_states is fail-closed under RLS (migration 0089), so on the bare
+// daemon context no pause is visible: a tap resolves nothing and a typed answer falls through
+// to a fresh turn that re-renders the still-open question (measured live 2026-09-25). ok is
+// false with no Resume seam or no linked identity, and the caller then leaves pauses alone.
+func (t *Telegram) hitlScope(daemonCtx context.Context, chatID int64) (context.Context, bool) {
+	if t.deps.Resume == nil {
+		return daemonCtx, false
+	}
+	return t.scopeTurnToIdentity(daemonCtx, chatID)
 }
 
 // pauseCancelledMsg confirms a /cancel resolved a pending ask_user pause (Italian —
@@ -55,14 +68,15 @@ const pauseCancelledMsg = "Richiesta annullata."
 // writer of paused_states — the channel only reads (PendingFor) and resolves
 // (SubmitAnswer).
 func (t *Telegram) cancelPendingPause(daemonCtx context.Context, c tele.Context, chatID int64) bool {
-	if t.deps.Resume == nil {
+	ctx, ok := t.hitlScope(daemonCtx, chatID)
+	if !ok {
 		return false
 	}
-	pending, err := t.deps.Resume.PendingFor(daemonCtx, convID(chatID))
+	pending, err := t.deps.Resume.PendingFor(ctx, convID(chatID))
 	if err != nil || len(pending) == 0 {
 		return false
 	}
-	if _, serr := t.hitlFor(c, chatID).cancel(daemonCtx, convID(chatID), pending[0].Token); serr != nil {
+	if _, serr := t.hitlFor(c, chatID).cancel(ctx, convID(chatID), pending[0].Token); serr != nil {
 		t.notifyHitlSubmitError(c, chatID)
 		return true
 	}
@@ -77,21 +91,22 @@ func (t *Telegram) cancelPendingPause(daemonCtx context.Context, c tele.Context,
 // the same way as hitlHandlesText, additionally marking the reply message id handled
 // so OnText does not double-dispatch it.
 func (t *Telegram) hitlHandlesReply(daemonCtx context.Context, c tele.Context, chatID int64, msgID int, text string) bool {
-	if t.deps.Resume == nil {
+	ctx, ok := t.hitlScope(daemonCtx, chatID)
+	if !ok {
 		return false
 	}
-	pending, err := t.deps.Resume.PendingFor(daemonCtx, convID(chatID))
+	pending, err := t.deps.Resume.PendingFor(ctx, convID(chatID))
 	if err != nil || len(pending) == 0 {
 		return false
 	}
 	t.markHitlReplyHandled(chatID, msgID)
-	resumed, serr := t.hitlFor(c, chatID).handleTextReply(daemonCtx, convID(chatID), text)
+	resumed, serr := t.hitlFor(c, chatID).handleTextReply(ctx, convID(chatID), text)
 	if serr != nil {
 		t.notifyHitlSubmitError(c, chatID)
 		return true
 	}
 	if !resumed {
-		t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+		t.promptPendingPause(ctx, t.sender(c), chatID)
 	}
 	return true
 }
