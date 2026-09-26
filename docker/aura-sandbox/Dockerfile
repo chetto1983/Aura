@@ -177,7 +177,11 @@ RUN set -eu; \
     install -D -m 0755 "/tmp/package/bin/${bin}" /usr/local/lib/agent-browser/agent-browser; \
     install -D -m 0644 /tmp/package/LICENSE /usr/local/share/licenses/agent-browser/LICENSE; \
     rm -rf /tmp/agent-browser.tgz /tmp/package
+# The workspace-volume HOME both the entry point and the live-view relay read (state under /root
+# died with a box recreate).
+ENV AURA_AGENT_BROWSER_HOME=/workspace/.agent-browser-home
 COPY --chmod=0755 docker/aura-sandbox/agent-browser.sh /usr/local/bin/agent-browser
+COPY --chmod=0644 docker/aura-sandbox/browser-relay.mjs /usr/local/lib/aura/browser-relay.mjs
 
 WORKDIR /workspace
 

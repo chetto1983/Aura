@@ -62,6 +62,9 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 		"POST /api/stt":                        true,
 		"POST /api/tts":                        true,
 		"POST /api/governance/skills/validate": true,
+		// One live-view keystroke or click: nothing durable is written, and an idempotency
+		// replay would type the same key twice into the user's browser.
+		"POST /api/browser/sessions/{session}/input": true,
 	}
 	matcher := regexp.MustCompile(`mux\.Handle(?:Func)?\("((?:POST|PUT|PATCH|DELETE) [^"]+)"`)
 	entries, err := os.ReadDir(".")

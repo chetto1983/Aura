@@ -92,3 +92,7 @@ func (s *Server) SetLLMRuntime(runtime *llm.Runtime) { s.llmRuntime = runtime }
 // composition root only when every one of them is configured (cmd/aura/serve_studio.go);
 // until set, every Studio route answers 503 rather than half-serving a page that pays.
 func (s *Server) SetStudio(backend StudioBackend) { s.studio = backend }
+
+// SetBrowserRelay wires the in-box live-view relay the /api/browser/sessions routes open
+// (cmd/aura over the sandbox router). Until set, the stream route answers 503.
+func (s *Server) SetBrowserRelay(r BrowserRelay) { s.browserRelay = r }

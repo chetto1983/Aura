@@ -102,6 +102,7 @@ type ExecStreamHandle struct {
 	container string
 	pidFile   string
 	attach    client.ExecAttachResult
+	in        io.ReadCloser
 
 	killOnce sync.Once
 	killReq  chan struct{}
@@ -113,7 +114,13 @@ type ExecStreamHandle struct {
 // whole job process group from a SEPARATE box exec — the Docker exec API has no kill-exec verb, and
 // detaching the stream alone leaves the process running (37-RESEARCH A5). Output is demuxed into
 // out as the box produces it; the env is secret-scrubbed exactly as Exec.
-func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, out io.Writer) (*ExecStreamHandle, error) {
+//
+// in, when non-nil, becomes the job's stdin: its bytes reach the box process as they are read,
+// and its EOF closes that stdin. The handle closes in when the job ends, so a reader parked on a
+// pipe nobody writes to cannot outlive it. The browser live view relays input events this way,
+// because the viewport stream is loopback inside the box netns and exec is Aura's only channel
+// in (prd.md §12).
+func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, in io.ReadCloser, out io.Writer) (*ExecStreamHandle, error) {
 	token, err := randHexToken()
 	if err != nil {
 		return nil, err
@@ -123,6 +130,7 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 		Cmd:          []string{"/bin/sh", "-c", wrapCommandWithPIDFile(pidFile, req.Command)},
 		WorkingDir:   req.Dir,
 		Env:          scrubEnv(req.Env),
+		AttachStdin:  in != nil,
 		AttachStdout: true,
 		AttachStderr: true,
 	})
@@ -139,6 +147,7 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 		container: h.ContainerID,
 		pidFile:   pidFile,
 		attach:    att,
+		in:        in,
 		killReq:   make(chan struct{}),
 		done:      make(chan struct{}),
 	}
@@ -151,6 +160,7 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 // the copy, and joins the copy goroutine. It closes done on return (Wait's completion signal).
 func (s *ExecStreamHandle) pump(out io.Writer) {
 	defer close(s.done)
+	feedDone := s.feedStdin()
 	copyDone := make(chan struct{})
 	go func() {
 		_, _ = stdcopy.StdCopy(out, out, s.attach.Reader)
@@ -164,6 +174,26 @@ func (s *ExecStreamHandle) pump(out io.Writer) {
 		s.attach.Close() // unblock the StdCopy read so the copy goroutine exits
 		<-copyDone
 	}
+	if s.in != nil {
+		_ = s.in.Close() // unblock a feeder parked on a read nobody will satisfy
+	}
+	<-feedDone
+}
+
+// feedStdin copies in to the job's stdin and half-closes it on EOF, so a box process reading
+// until EOF sees the end of input. Without in it returns an already-closed channel.
+func (s *ExecStreamHandle) feedStdin() <-chan struct{} {
+	done := make(chan struct{})
+	if s.in == nil {
+		close(done)
+		return done
+	}
+	go func() {
+		defer close(done)
+		_, _ = io.Copy(s.attach.Conn, s.in)
+		_ = s.attach.CloseWrite()
+	}()
+	return done
 }
 
 // sigterm signals the job's process group from a separate short-lived box exec. Runs in the

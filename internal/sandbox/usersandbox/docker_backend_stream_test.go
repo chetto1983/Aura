@@ -16,7 +16,7 @@ import (
 
 // execStreamerIface is the EXACT concrete signature the router surfaces (docker_backend_exec.go).
 type execStreamerIface interface {
-	ExecStream(context.Context, BoxHandle, ExecRequest, io.Writer) (*ExecStreamHandle, error)
+	ExecStream(context.Context, BoxHandle, ExecRequest, io.ReadCloser, io.Writer) (*ExecStreamHandle, error)
 }
 
 // TestBackend_StreamVerbNotOnInterface asserts the streamed exec stays OFF the Backend seam (D-02).
@@ -39,7 +39,7 @@ func TestBackend_StreamVerbNotOnInterface(t *testing.T) {
 // or a host fallback.
 func TestRouterExecStream_UnsupportedBackendErrors(t *testing.T) {
 	r := NewSandboxRouter(&fakeBackend{t: t}, config.ProfileSingleUserHardened, unitSandboxConfig())
-	if _, err := r.ExecStream(context.Background(), BoxHandle{ContainerID: "c"}, ExecRequest{Command: "true"}, io.Discard); err == nil {
+	if _, err := r.ExecStream(context.Background(), BoxHandle{ContainerID: "c"}, ExecRequest{Command: "true"}, nil, io.Discard); err == nil {
 		t.Fatal("router.ExecStream must error when the backend lacks background streaming (fail-CLOSED)")
 	}
 }

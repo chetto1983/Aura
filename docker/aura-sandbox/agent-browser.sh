@@ -12,7 +12,7 @@ if [ ! -r "$key_file" ]; then
     exit 78
 fi
 AGENT_BROWSER_ENCRYPTION_KEY="$(cat "$key_file")"
-HOME=/workspace/.agent-browser-home
+HOME="${AURA_AGENT_BROWSER_HOME:?set by the image}"
 AGENT_BROWSER_AUTOSAVE_INTERVAL_MS="${AGENT_BROWSER_AUTOSAVE_INTERVAL_MS:-2000}"
 export AGENT_BROWSER_ENCRYPTION_KEY HOME AGENT_BROWSER_AUTOSAVE_INTERVAL_MS
 mkdir -p "$HOME"

@@ -275,6 +275,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// RequireCapability(agentRunCapability) (cost-bearing), GET /api/voice/capabilities
 	// RequireAuth-only (a SELF-scoped presence probe, like meRoute).
 	registerVoiceRoutes(mux, aguiHandler, auth)
+	registerBrowserLiveRoutes(mux, aguiHandler, auth)
 	// The cockpit Studio's six routes live in serve_webui_studio.go for the same reason: the
 	// three reads bare, the two generations and the reference finalize capability-gated.
 	registerStudioWebRoutes(mux, aguiHandler, auth)
