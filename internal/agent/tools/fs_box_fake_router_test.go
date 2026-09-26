@@ -436,6 +436,34 @@ func TestPatchRoutedRefusesTheSkillsMount(t *testing.T) {
 	}
 }
 
+// A write onto the tmpfs scratch mount would be reported as written and then vanish (Docker's copy
+// API cannot reach a tmpfs), so both writing tools refuse it as the model's own error, pre-route.
+func TestFileWritesRefuseTheScratchMount(t *testing.T) {
+	for name, run := range map[string]func(*usersandbox.SandboxRouter) error{
+		"write_file": func(r *usersandbox.SandboxRouter) error {
+			_, err := (&WriteFile{Router: r}).Execute(boxCtx(t), json.RawMessage(
+				`{"path":"/workspace/.scratch/notes.txt","content":"x"}`))
+			return err
+		},
+		"patch": func(r *usersandbox.SandboxRouter) error {
+			_, err := (&Patch{Router: r}).Execute(boxCtx(t), json.RawMessage(
+				`{"path":".scratch/notes.txt","old_string":"a","new_string":"b"}`))
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			be := &fakeBox{}
+			err := run(routerWith(be))
+			if err == nil || !strings.Contains(err.Error(), "scratch mount") || !strings.Contains(err.Error(), "shell_exec") {
+				t.Fatalf("err = %v, want a refusal naming the scratch mount and the shell_exec way out", err)
+			}
+			if len(be.execs) != 0 || len(be.written) != 0 {
+				t.Errorf("the fence must refuse BEFORE touching the box, got execs=%+v written=%v", be.execs, be.written)
+			}
+		})
+	}
+}
+
 // A box failure must DENY, never silently fall back to the host (D-09/GATE-01). Each routed
 // tool is checked at both seams that can fail: resolving the box, and the exec/write itself.
 func TestRoutedFileToolsFailClosedOnBoxFailure(t *testing.T) {

@@ -117,9 +117,8 @@ func (t *Patch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, e
 	if err != nil {
 		return ToolResult{}, err
 	}
-	if deniedBoxSkillsWrite(boxPath) {
-		return ToolResult{}, fmt.Errorf("patch: %s is inside the sandbox skills mount; author skills through "+
-			"the gated `skill` tool (action=create/update/delete), not direct file edits", boxPath)
+	if err := boxWriteRefusal("patch", boxPath); err != nil {
+		return ToolResult{}, err
 	}
 
 	// Every guard above is argument-based and runs BEFORE the route on purpose: a malformed

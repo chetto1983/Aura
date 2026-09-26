@@ -81,11 +81,21 @@ func withinBoxWorkspace(p string) bool {
 	return c == boxWorkspaceRoot || strings.HasPrefix(c, boxWorkspaceRoot+"/")
 }
 
-// deniedBoxSkillsWrite reports whether a box write target is inside the materialized /skills mount
-// — the box-relative equivalent of deniedSkillsWrite's host skills-library fence.
-func deniedBoxSkillsWrite(p string) bool {
+// boxWriteRefusal returns the refusal for a file-tool write target the box cannot take, or nil.
+// The materialized /skills mount is the box-relative equivalent of deniedSkillsWrite's host
+// skills-library fence; the tmpfs scratch mount is refused because the copy would vanish
+// (usersandbox.OnScratchMount). Both are the model's own error, so they must not read as an outage.
+func boxWriteRefusal(tool, p string) error {
 	c := pathpkg.Clean("/" + strings.TrimPrefix(strings.TrimSpace(p), "/"))
-	return c == boxSkillsRoot || strings.HasPrefix(c, boxSkillsRoot+"/")
+	switch {
+	case c == boxSkillsRoot || strings.HasPrefix(c, boxSkillsRoot+"/"):
+		return fmt.Errorf("%s: %s is inside the sandbox skills mount; author skills through the gated "+
+			"`skill` tool (action=create/update/delete), not direct file writes", tool, p)
+	case usersandbox.OnScratchMount(c):
+		return fmt.Errorf("%s: %s is on the tmpfs scratch mount, which file tools cannot write (the write "+
+			"would be lost); write it with shell_exec, or keep the file under /workspace outside .scratch", tool, p)
+	}
+	return nil
 }
 
 // boxPathArg resolves a caller-supplied path to a POSIX box path — the ONE resolution rule all
