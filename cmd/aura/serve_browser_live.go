@@ -37,8 +37,25 @@ func (r sandboxBrowserRelay) Open(ctx context.Context, session string, in io.Rea
 	if err != nil {
 		return nil, err
 	}
+	touched := touchOnInput{ReadCloser: in, touch: func() { r.router.Touch(h.IdentityID) }}
 	return r.router.ExecStream(ctx, h, usersandbox.ExecRequest{
 		Command: "node " + browserRelayScript + " " + session,
 		Dir:     "/workspace",
-	}, in, out)
+	}, touched, out)
+}
+
+// touchOnInput keeps the box awake while the operator is using the live view. The relay is
+// one long-lived exec, and the idle reaper counts only new ones: without this a login that
+// took longer than the idle TTL would have its browser suspended mid-way.
+type touchOnInput struct {
+	io.ReadCloser
+	touch func()
+}
+
+func (t touchOnInput) Read(p []byte) (int, error) {
+	n, err := t.ReadCloser.Read(p)
+	if n > 0 {
+		t.touch()
+	}
+	return n, err
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 )
@@ -95,4 +96,30 @@ func TestEnsureBoxPropagatesBackendFailure(t *testing.T) {
 	if h != (BoxHandle{}) {
 		t.Fatalf("handle = %+v, want zero on backend failure", h)
 	}
+}
+
+// TestTouchKeepsATrackedBoxAwakeAndLeavesTheRestAlone proves Touch refreshes the idle clock of
+// a box the router tracks, so a long-lived exec does not get it suspended, and never starts
+// tracking a box it has not resolved (a suspended one, or one that never existed).
+func TestTouchKeepsATrackedBoxAwakeAndLeavesTheRestAlone(t *testing.T) {
+	be := &fakeBackend{t: t}
+	r := NewSandboxRouter(be, config.ProfileSingleUserHardened, unitSandboxConfig())
+	start := time.Date(2026, 9, 26, 10, 0, 0, 0, time.UTC)
+	now := start
+	r.now = func() time.Time { return now }
+	if _, err := r.EnsureBox(context.Background(), "alice"); err != nil {
+		t.Fatal(err)
+	}
+
+	now = start.Add(time.Hour)
+	r.Touch("alice")
+	r.Touch("bob")
+	if got := r.lastUsed["alice"]; !got.Equal(now) {
+		t.Fatalf("alice last used %v, want the touch at %v", got, now)
+	}
+	if _, tracked := r.lastUsed["bob"]; tracked {
+		t.Fatal("Touch started tracking a box the router never resolved")
+	}
+	var nilRouter *SandboxRouter
+	nilRouter.Touch("alice")
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,5 +51,19 @@ func TestBrowserLiveRoutesAreMountedBehindAgentRun(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestLiveViewInputTouchesTheBox(t *testing.T) {
+	touches := 0
+	r := touchOnInput{ReadCloser: io.NopCloser(strings.NewReader("ab")), touch: func() { touches++ }}
+	buf := make([]byte, 1)
+	for {
+		if _, err := r.Read(buf); err != nil {
+			break
+		}
+	}
+	if touches != 2 {
+		t.Fatalf("touches = %d, want one per read that carried input and none at EOF", touches)
 	}
 }
