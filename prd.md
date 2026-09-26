@@ -613,6 +613,37 @@ weather artifact's seven forecast cards and changing its selected day. Browser
 validation is an agent instruction and available capability, not an automatic
 server-side rejection gate for every file delivery.
 
+**Authenticated browsing reuses agent-browser, not a bespoke connector.** The box carries
+`agent-browser` 0.38.1 (Vercel, Apache-2.0; npm tarball and native binary sha256-pinned), the
+engine under Hermes Agent's ~14.7k-LOC browser stack. Measured 2026-09-26 against a disposable
+login fixture (password → TOTP → HttpOnly cookie → protected PDF), first natively and then in an
+`aura-sandbox` box that Aura's own `DockerBackend` resolved, suspended, resumed and recreated
+behind the egress floor (runc): the accessibility snapshot, the credential vault (`auth save
+--password-stdin` / `auth login`), TOTP entry, protected download, encrypted session restore and
+a human login driven only through its viewport stream all worked without a new component
+(`spikes/agent-browser-auth/FINDINGS.md`). Four constraints came out of the box, not the README:
+
+- the state key is read by agent-browser's daemon at spawn, and `Exec` scrubs secret-named
+  variables, so a key passed as env never arrives and the vault mints `.encryption-key` beside its
+  ciphertext. Aura therefore delivers a per-identity key as a 0600 file outside the workspace
+  volume on every `Resolve`, and the in-box entry point refuses to run without it;
+- `Suspend` stops a `sleep infinity` PID 1 with a 2 s grace, so the browser is SIGKILLed: a login
+  younger than the default 30 s autosave was lost, a 2 s autosave kept it;
+- state under `HOME=/root` died with a box recreate, state under `/workspace` survived it;
+- the viewport stream binds loopback inside the box netns, and Aura's only channel into a box is
+  `exec`. A relay over `docker exec -i` logged in from the host with no published port (14 fps,
+  first frame 56 ms after the click, capture-to-host median 10 ms), so the cockpit live view rides
+  a stdin-capable `ExecStream` rather than a published port.
+
+**Threat model.** Nothing inside the box is secret from the model's shell: a second `exec` read
+the key from the daemon's `/proc/<pid>/environ`, and with it the vault and session state decrypt.
+The vault keeps passwords out of tool output and encrypted at rest outside the box; it does not
+stop a prompt-injected model running `shell_exec`. Sensitive accounts are therefore logged into by
+the user through the live view, so the box holds a session, never a reusable password; a stored
+password is offered only as "readable by the agent's sandbox". The measurement does not cover
+gVisor (not used), real sites (anti-bot, CAPTCHA, SSO, iframes, passkeys), the cockpit viewer and
+its latency across LAN or Cloudflare, or redaction through Aura's tool pipeline.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
