@@ -10,6 +10,8 @@ import base64
 import hashlib
 import hmac
 import http.server
+import json
+import os
 import secrets
 import struct
 import sys
@@ -19,7 +21,10 @@ import urllib.parse
 USERNAME = "alice@example.test"
 PASSWORD = "Sp1ke-Passw0rd!x7"
 TOTP_SECRET = "JBSWY3DPEHPK3PXP"
-SESSIONS: dict[str, str] = {}
+# FIXTURE_STATE persists sessions so a box suspend/resume does not log the user out
+# on the SERVER side: only the browser's own persistence is then under test.
+STATE_FILE = os.environ.get("FIXTURE_STATE")
+SESSIONS: dict[str, str] = json.load(open(STATE_FILE)) if STATE_FILE and os.path.exists(STATE_FILE) else {}
 PENDING: set[str] = set()
 PDF = (
     b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
@@ -117,6 +122,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             PENDING.discard(pre)
             sid = secrets.token_hex(16)
             SESSIONS[sid] = USERNAME
+            if STATE_FILE:
+                with open(STATE_FILE, "w") as f:
+                    json.dump(SESSIONS, f)
             self.redirect("/docs", [("Set-Cookie", f"sid={sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400")])
         else:
             self.send(404, b"")
