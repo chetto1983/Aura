@@ -23,6 +23,9 @@ const NotFoundView = lazy(() =>
 const SharePage = lazy(() =>
   import('./routes/SharePage').then((mod) => ({ default: mod.SharePage })),
 );
+const BrowserLivePage = lazy(() =>
+  import('./routes/BrowserLivePage').then((mod) => ({ default: mod.BrowserLivePage })),
+);
 
 // D-08: theme + density are already on <html> from the index.html pre-paint script.
 // Re-assert them from localStorage BEFORE React mounts so there is no theme flash.
@@ -58,6 +61,9 @@ createRoot(container).render(
                   header comment above. */}
               <Route path="/s/:token" element={<SharePage tier="public" />} />
               <Route path="/shared/:id" element={<SharePage tier="internal" />} />
+              {/* Live view of an agent-browser session in the caller's own box; the
+                  server keys it on the session's identity, so the route hides nothing. */}
+              <Route path="/browser/:session" element={<BrowserLivePage />} />
               <Route path="*" element={<NotFoundView />} />
             </Routes>
           </Suspense>

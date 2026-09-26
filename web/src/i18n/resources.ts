@@ -12,6 +12,7 @@ import {
   composerSkillPickerIt,
 } from './resources.composer';
 import { displayEn, displayIt } from './resources.display';
+import { browserLiveEn, browserLiveIt } from './resources.browserLive';
 import { footerEn, footerIt } from './resources.footer';
 import { filesEn, filesIt } from './resources.files';
 import { chatEmptyEn, chatEmptyIt } from './resources.empty';
@@ -182,6 +183,7 @@ export const resources = {
         },
       },
       ...displayEn,
+      ...browserLiveEn,
       ...mediaEn,
       ...studioEn,
       ...mediaEditEn,
@@ -454,6 +456,7 @@ export const resources = {
         },
       },
       ...displayIt,
+      ...browserLiveIt,
       ...mediaIt,
       ...studioIt,
       ...mediaEditIt,

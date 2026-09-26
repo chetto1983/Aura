@@ -67,6 +67,24 @@ subsystem.
 | B14 | **What the model's shell can read** | a second `exec` (= `shell_exec`) reads the key from the daemon's `/proc/<pid>/environ` and from the key file; with it the vault and the session state decrypt. `auth show` does not print the password — an output convention, not a boundary |
 | B15 | Side finding (Aura bug, fixed in the same change) | `CopyFileIn` to `/workspace/.scratch/…` returned nil and the file never appeared (Docker's archive API cannot write a tmpfs), so `write_file` reported `wrote N bytes … verified:false`. Now refused with an explicit error |
 
+## (C) The shipped live view, end to end on a running Aura
+
+`aura serve` on Postgres 18.4 (106 migrations), Authula operator seeded, the real box image with
+agent-browser and the relay, the egress floor. `live_view.e2e.ts` drives the cockpit with
+Playwright: open `/browser/<session>` (the stream route resolves the box), start the site and open
+its login page in the box the way the agent would, then log in by clicking and typing in the
+cockpit only.
+
+| # | Result |
+|---|---|
+| C1 | 3/3 runs pass: box browser at `/otp` then `/docs`, the cockpit URL bar follows, the site grants exactly one new session |
+| C2 | **Bug found:** `deviceHeight` is the screen (720), the frame is the viewport (1280x577): y mapped by height landed 25% low. Fixed: one width scale for both axes |
+| C3 | **Bug found:** Enter without `text: "\r"` submits nothing through CDP. Fixed in `keyEvent` |
+| C4 | **Bug found:** a mousedown with `preventDefault` never focused the stage, so keys typed after a click went nowhere. Fixed: the stage focuses itself |
+| C5 | Each open session: ~142 tasks, ~180 MB (measured by closing four one at a time: 504 → 361 → 219 → 77 pids). A 512-pid box holds three |
+| C6 | **Bug found (pre-existing):** PID 1 `tail -f /dev/null` never reaps: 177 zombies after four sessions, all counted against the pid cap. Fixed with `HostConfig.Init`; after three more runs: 3 tasks, 0 zombies |
+| C7 | **Gap (pre-existing, not fixed):** an existing box keeps its old image and host config; nothing recreates it on upgrade. The first E2E hit a box built before the relay existed |
+
 ## Gotchas that bite an integration
 
 - **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
@@ -108,11 +126,11 @@ read `vault.key`). Consequences for the design:
 
 ## What this spike does NOT prove
 
-- **gVisor (`runsc`) was not available** — only runc. Chromium under gVisor is unmeasured.
+- **Only runc was measured.** The operator confirmed gVisor (`runsc`) is not used by Aura.
 - **No real site.** Anti-bot checks, CAPTCHAs, SSO redirects, iframes, passkeys and WebAuthn were
   not exercised; the fixture is plain HTML over loopback HTTP.
-- **No cockpit viewer and no gateway.** The relay was driven by a Python client on the Docker host;
-  cockpit auth, SSE/WebSocket to a browser, and latency over LAN/Cloudflare are unmeasured.
+- **The live view was proven on loopback only** (C): not on a phone, not over Cloudflare, not
+  with two viewers in two real browsers (the takeover is unit-tested only).
 - **No redaction check through Aura's tool pipeline** (`tool_invocations`, traces, `internal/redact`).
 - The box ran with the spike image's proxy-CA environment (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`),
   which the production image does not carry; the fixture was loopback, so no request used it.
@@ -128,7 +146,8 @@ capability worked without writing a component. The Aura-owned work is now measur
 2. stdin on `ExecStream`, so a cockpit viewer can relay the loopback stream without publishing a port;
 3. the cockpit viewer and its authenticated gateway route.
 
-(2) and (3) are bespoke and need the user's go-ahead before a line is written.
+(2) and (3) are bespoke and need the user's go-ahead before a line is written. Update: the user
+approved them; they shipped and were proven end to end in (C).
 
 ## Reproduce
 
@@ -155,4 +174,12 @@ R fixture; R login s1; /tmp/boxrun suspend; /tmp/boxrun resume; R fixture; R che
 /tmp/boxrun exec 'bash spike/stream_box.sh'                     # human login via the stream
 python3 spikes/agent-browser-auth/relay_login.py aura-box-spike-agent-browser <port> '<box>' '<box>'
 /tmp/boxrun destroy
+```
+
+The live view on a running Aura (C), from `web/` with `aura serve` up and the operator seeded:
+
+```bash
+NODE_PATH=$PWD/node_modules AURA_E2E_ORIGIN=http://127.0.0.1:9080 \
+AURA_E2E_AUTHULA_EMAIL=... AURA_E2E_AUTHULA_PASSWORD=... AURA_E2E_CHROMIUM=<chromium> \
+npx playwright test -c ../spikes/agent-browser-auth/live_view.config.ts
 ```
