@@ -158,6 +158,27 @@ RUN ln -s /opt/aura-artifacts/template/node_modules/typescript/bin/tsc /usr/loca
     && ln -s /opt/aura-artifacts/template/node_modules/vite/bin/vite.js /usr/local/bin/vite
 COPY internal/skills/embed/web-artifacts-builder /opt/aura-skills/web-artifacts-builder
 
+# agent-browser — the measured authenticated browser (prd.md §12). The native daemon needs no
+# Node; it drives the Playwright Chromium above. Both the npm tarball and the extracted binary are
+# sha256-pinned (0.38.1, resolved 2026-09-26 against registry dist.integrity sha512-k58FCz0y…).
+# /usr/local/bin/agent-browser is Aura's entry point, which supplies the per-identity state key,
+# the workspace-volume HOME and the short autosave the box lifecycle needs.
+ARG TARGETARCH
+RUN set -eu; \
+    case "${TARGETARCH:-amd64}" in \
+        amd64) bin=agent-browser-linux-x64;   bin_sha=5100149a1903211c889de4e545bf36d90803740cea4f99aa22651649f9205ea1 ;; \
+        arm64) bin=agent-browser-linux-arm64; bin_sha=937b315ee0761e8a62f7950ddcfef9b3d3d8e8d5eb9c9d2bf9e23e5725664511 ;; \
+        *) echo "agent-browser: unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /tmp/agent-browser.tgz https://registry.npmjs.org/agent-browser/-/agent-browser-0.38.1.tgz; \
+    echo "89a7df4761ff335e4dd5367e4cf04cecb9ba4e2cc130a0220f798d188414dc6c  /tmp/agent-browser.tgz" | sha256sum -c -; \
+    tar -xzf /tmp/agent-browser.tgz -C /tmp "package/bin/${bin}" package/LICENSE; \
+    echo "${bin_sha}  /tmp/package/bin/${bin}" | sha256sum -c -; \
+    install -D -m 0755 "/tmp/package/bin/${bin}" /usr/local/lib/agent-browser/agent-browser; \
+    install -D -m 0644 /tmp/package/LICENSE /usr/local/share/licenses/agent-browser/LICENSE; \
+    rm -rf /tmp/agent-browser.tgz /tmp/package
+COPY --chmod=0755 docker/aura-sandbox/agent-browser.sh /usr/local/bin/agent-browser
+
 WORKDIR /workspace
 
 # NO `USER` directive (root inside — D-12 parity). NO aura binary and NO privilege-dropping
