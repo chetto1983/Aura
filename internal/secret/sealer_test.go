@@ -120,3 +120,29 @@ func TestOpenRejectsTruncatedCiphertext(t *testing.T) {
 		t.Fatal("a ciphertext shorter than the nonce was accepted")
 	}
 }
+
+// TestIdentityKeyIsStableAndSeparated pins what the box relies on: the same identity rebuilds the
+// same key on every Resolve, while another identity or another domain gets an unrelated one.
+func TestIdentityKeyIsStableAndSeparated(t *testing.T) {
+	a1, err := IdentityKey(testSecretHex, "aura-browser-state-v1", "id-a")
+	if err != nil {
+		t.Fatalf("IdentityKey: %v", err)
+	}
+	a2, _ := IdentityKey(testSecretHex, "aura-browser-state-v1", "id-a")
+	b, _ := IdentityKey(testSecretHex, "aura-browser-state-v1", "id-b")
+	otherDomain, _ := IdentityKey(testSecretHex, "aura-other-v1", "id-a")
+	if len(a1) != 32 || !bytes.Equal(a1, a2) {
+		t.Fatalf("key = %x (len %d), want a stable 32-byte key", a1, len(a1))
+	}
+	if bytes.Equal(a1, b) || bytes.Equal(a1, otherDomain) {
+		t.Fatal("identities or domains that differ must not share a key")
+	}
+	for _, bad := range [][2]string{{"", "id-a"}, {"aura-browser-state-v1", " "}} {
+		if _, err := IdentityKey(testSecretHex, bad[0], bad[1]); err == nil {
+			t.Errorf("IdentityKey(%q, %q): want error", bad[0], bad[1])
+		}
+	}
+	if _, err := IdentityKey("short", "aura-browser-state-v1", "id-a"); err == nil {
+		t.Error("an unusable master secret must be refused")
+	}
+}

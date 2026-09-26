@@ -78,4 +78,20 @@ with sync_playwright() as p:
 print("ok: sandbox Playwright launches Chromium, executes JavaScript and captures screenshots offline")
 PY
 
+# agent-browser behind Aura's entry point (prd.md §12), offline. Without the key Aura writes on
+# Resolve it must refuse with 78 instead of letting the vault mint a key beside its ciphertext;
+# with one it must drive Chromium, keep its state on the workspace volume and write no key file.
+docker run --rm --network none --entrypoint bash "$img" -c '
+set -e
+rc=0; agent-browser --version >/dev/null 2>&1 || rc=$?
+[ "$rc" = 78 ] || { echo "FAIL: agent-browser without a key exited $rc, want 78" >&2; exit 1; }
+mkdir -p /run/aura && head -c 32 /dev/urandom | xxd -p -c 64 > /run/aura/agent-browser.key
+agent-browser open "data:text/html,<button>Run</button>" >/dev/null
+agent-browser snapshot | grep -q "button \"Run\"" || { echo "FAIL: agent-browser snapshot misses the page" >&2; exit 1; }
+[ -d /workspace/.agent-browser-home/.agent-browser ] || { echo "FAIL: agent-browser state is not on /workspace" >&2; exit 1; }
+! find / -name .encryption-key -path "*agent-browser*" 2>/dev/null | grep -q . || { echo "FAIL: the vault minted its own key" >&2; exit 1; }
+agent-browser close >/dev/null
+'
+echo "ok: agent-browser refuses without the Aura key and runs Chromium offline with it"
+
 bash "$(dirname "$0")/artifact_toolchain_smoke.sh"

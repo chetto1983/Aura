@@ -93,6 +93,18 @@ func (s *Sealer) OpenOptional(ciphertext []byte) ([]byte, error) {
 	return s.Open(ciphertext)
 }
 
+// IdentityKey derives a 32-byte key bound to one identity within one domain, for state that
+// lives inside that identity's box rather than in Postgres (the browser's credential vault and
+// session state). The identity is part of the HKDF info, so a key read out of one box opens
+// nothing in another, and nothing is stored: the same inputs rebuild the same key on every
+// Resolve.
+func IdentityKey(secretHex, domain, identityID string) ([]byte, error) {
+	if strings.TrimSpace(domain) == "" || strings.TrimSpace(identityID) == "" {
+		return nil, errors.New("secret: an identity key needs both a domain label and an identity id")
+	}
+	return deriveKey(secretHex, domain+"\x00"+identityID)
+}
+
 func deriveKey(secretHex, info string) ([]byte, error) {
 	trimmed := strings.TrimSpace(secretHex)
 	if len(trimmed) != 64 {
