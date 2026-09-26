@@ -739,6 +739,20 @@ since 10.95 s exceeds both the 10 s first-call redial budget and the 10 s defaul
 What it does not: runtime downloads beyond the package, unpinned packages, a registry outage, or
 concurrent identities.
 
+**Self-installing box servers replace the install line, 2026-09-26.** Following that
+measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
+declares a pinned command that fetches itself, as LibreChat's do, and gets
+`runtime.initTimeoutSec` (default 30 s, at most 600) for its first start at the mount, at each
+identity's first session and at the install verification. A docker test mounts a server whose
+every start takes 12 s under a 10 s mount budget and serves a second identity's first call; with
+no init timeout it fails at the mount. The first real run then found that a self-installing server
+may print to stdout: `mcp-server-fetch`'s first `fetch` ran `npm install` and wrote seven lines
+there, and the go-sdk ends a session on the first line that is not JSON, while the TypeScript SDK
+LibreChat uses reports the line and keeps reading. Box sessions now drop and log such lines. On the
+production registry with empty caches the server was added in 3.3 s and its first call answered in
+4.1 s, then 1.0-1.2 s. The paragraph above on per-identity install is superseded. Not covered: local
+host stdio servers have the same stdout intolerance and are unchanged.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

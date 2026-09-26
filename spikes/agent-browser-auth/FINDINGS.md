@@ -134,7 +134,7 @@ approved it. `mcp_calculator_e2e.sh` then drives it like (E).
 | F5 | The server states no tool annotations, so in a model turn every call is graded destructive by the fail-closed default and asks for approval. That is the existing policy for any unannotated server, not a property of the box runtime |
 | F6 | Installed on one identity's volume, the server is missing from every other identity's box: their calls fail until it is installed there too, or baked into the image |
 
-## (G) Per-identity install
+## (G) Per-identity install (superseded by H and I: the install line was removed)
 
 The operator chose one copy per identity (no shared package state, per the 2026-09-14 cache
 poisoning measurement) over a shared read-only volume or the image. `runtime.install` is a shell
@@ -175,6 +175,20 @@ answers.
 Not covered: a server that downloads more at runtime than its package (e.g. a browser), an
 unpinned `npx -y <pkg>` (which asks the registry on every spawn), a registry outage, and more than
 one identity at a time on one host.
+
+## (I) Self-installing box servers, implemented
+
+`runtime.install` and its record, lock and `--install` are gone; a box server declares a command
+that fetches itself (`npx -y <pkg>@<v>`, `uvx <pkg>==<v>`) and gets `runtime.initTimeoutSec`
+(default 30 s, at most 600) for its first start: at the mount, at each identity's first session
+(which otherwise has 10 s) and at the install verification.
+
+| # | Result |
+|---|---|
+| I1 | Docker test: a server whose every start takes 12 s mounts under a 10 s mount budget and answers a second identity's first call from that identity's box. With the default set to zero the same test fails at the mount with `context deadline exceeded` |
+| I2 | **Bug found:** `uvx mcp-server-fetch==2026.8.18`'s first `fetch` ran `npm install` for its readability helper and printed seven lines to stdout. The go-sdk ends a session on the first non-JSON line (transport.go decode loop), so the first call after a cold start failed "transport failed after send". The TypeScript SDK LibreChat uses (1.30.1, client/stdio.js) reports such a line and keeps reading. Box sessions now drop and log non-JSON-RPC stdout lines; without that the unit test reproduces `invalid character 'a' looking for beginning of value` |
+| I3 | Production registry, empty caches: `aura mcp add fetch --box -- uvx mcp-server-fetch==2026.8.18` in 3.3 s, box creation included; first `fetch` 4.1 s with npm's lines dropped and logged, then 1.0-1.2 s |
+| I4 | Not covered: local (host) stdio servers still use the go-sdk CommandTransport, which has the same intolerance to stdout noise; unmeasured whether any mounted local server hits it |
 
 ## Gotchas that bite an integration
 
