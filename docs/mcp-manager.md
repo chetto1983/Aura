@@ -66,18 +66,20 @@ Aura falls back to enabled managed servers.
 
 ## Trust
 
-A server that states no trust class gets one from where it runs: a local command is
-`trusted_local`, a box-runtime command `sandboxed_local`, a URL `remote_http`, a catalog
-recipe `trusted_recipe`. `blocked` is only ever set on purpose.
+`aura mcp add` stores a command as `blocked` until it is approved (or added with
+`--trust local`), so nothing an operator has not reviewed is ever launched by a mount:
 
 ```bash
 aura mcp add local-demo -- node server.js
 aura mcp status
 aura mcp doctor local-demo
+aura mcp trust local-demo --reason "reviewed server.js"
 ```
 
-`aura mcp trust <name> --reason <text> [--class <class>]` records an explicit class with who
-approved it and why.
+`aura mcp trust <name> --reason <text> [--class <class>]` records the class with who approved
+it and why. A server written without any class, such as one in an imported config, gets one
+from where it runs: a local command is `trusted_local`, a box-runtime command
+`sandboxed_local`, a URL `remote_http`, a catalog recipe `trusted_recipe`.
 
 Trust classes:
 
@@ -106,14 +108,23 @@ A stdio server runs in one of two places, named by `runtime.kind`:
 }
 ```
 
+From the CLI, `--box` declares it, and the add completes the handshake in the operator's box:
+
+```bash
+aura mcp add calculator --box -- /workspace/.mcp/calculator/bin/calculator-mcp-server
+aura mcp trust calculator --class sandboxed_local --reason "installed in the box from its repo"
+```
+
 A box server:
 
 - is started in an identity's box the first time that identity calls one of its tools, and a
   call from any other identity is refused. The tool list is read once, at mount, in the
   operator's box;
-- takes the box image as its environment: the command must exist in the image, and an
-  install prepares nothing on the Aura host. The cockpit install still requires a handshake,
-  run in the installing identity's box;
+- takes the box as its environment: the command must exist in the image or on the identity's
+  `/workspace` volume, and an install prepares nothing on the Aura host. A server installed on
+  one identity's volume is missing from every other identity's box, and their calls fail.
+  An install still requires a handshake, run in the installing identity's (or, from the CLI,
+  the operator's) box;
 - takes no secrets: everything in a box is readable by the agent's own shell, so a
   secret-shaped `env` entry is refused at write time;
 - writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;

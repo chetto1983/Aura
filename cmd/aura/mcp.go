@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -211,13 +212,15 @@ func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err 
 	return recipe, name, env, nil
 }
 
+const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box] -- <command> [args...]"
+
 func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	// Only guard against an empty arg vector (so args[0] below is safe). The real
 	// invariant — a non-empty name AND a non-empty command after "--" — is enforced
 	// precisely by the empty-name and len(commandParts)==0 checks below; a brittle
 	// `len(args) < 3` pre-check implied a different, contradictory contract (WR-06).
 	if len(args) == 0 {
-		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
+		return errors.New(mcpAddUsage)
 	}
 	name := strings.TrimSpace(args[0])
 	if name == "" {
@@ -225,6 +228,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	}
 	env := []string{}
 	enabled := true
+	box := false
 	trustClass := mcp.TrustBlocked
 	pendingEnv := false
 	pendingTrust := false
@@ -260,6 +264,8 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 			pendingTrust = true
 		case "--disabled":
 			enabled = false
+		case "--box":
+			box = true
 		default:
 			return fmt.Errorf("unknown mcp add option %q", arg)
 		}
@@ -271,7 +277,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		return fmt.Errorf("--trust requires local")
 	}
 	if len(commandParts) == 0 {
-		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
+		return errors.New(mcpAddUsage)
 	}
 	command, commandArgs := splitCommandParts(commandParts)
 	doc, err := loadManagedMCPConfig()
@@ -292,11 +298,18 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		Source:  "manual",
 		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
+	cfg := config.LoadDB()
+	var launcher mcp.BoxLauncher
+	if box {
+		server.Runtime.Kind = mcp.RuntimeKindBox
+		ctx, launcher = operatorBoxLauncher(ctx, cfg, pool)
+	}
 
 	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
 	// it, and refuse to store a server that cannot complete a handshake — the declaration
-	// this used to write was only ever a promise that something would resolve at mount.
-	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server, nil)
+	// this used to write was only ever a promise that something would resolve at mount. A box
+	// server completes that handshake in the operator's own box.
+	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(cfg), name, server, launcher)
 	if err != nil {
 		return err
 	}
@@ -310,6 +323,13 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		return err
 	}
 	return writef(out, "ok: added %s\n", name)
+}
+
+// operatorBoxLauncher is the CLI's way into a box: the operator's own, the one the mount reads
+// a box server's tools in (boxDiscoveryIdentity).
+func operatorBoxLauncher(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (context.Context, mcp.BoxLauncher) {
+	ctx = identityctx.WithIdentityID(ctx, boxDiscoveryIdentity(ctx, pool))
+	return ctx, newSandboxMCPBox(buildSandboxRouter(cfg, pool))
 }
 
 func mcpList(out io.Writer) error {
