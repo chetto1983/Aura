@@ -100,6 +100,22 @@ official go-sdk client (v1.8.0) connects over `IOTransport` on two `io.Pipe`s. N
 | D4 | `Suspend` under a live session: the client's `Wait` returns cleanly after 2.3 s. A new exec reconnects in 99 ms; restored state brings back the cookies, not the open page (`get_title` reads nothing until the next `open`) |
 | D5 | stdout and stderr share one stream in `ExecStream`, so the server's stderr must go to a file or it corrupts the JSON-RPC framing |
 
+## (E) The box runtime, mounted, through Aura's production registry
+
+`runtime.kind: "box"` runs any stdio MCP server in the calling identity's box; the catalog's
+`browser` recipe is agent-browser's. `mcp_toolpipe_e2e.sh` drives `aura toolpipe`, which builds
+the registry `aura serve` builds (boot mount, per-identity session pool, the real router), so
+only the model choosing the calls is missing.
+
+| # | Result |
+|---|---|
+| E1 | Boot mounts `browser` with 29 tools, all deferred, its session opened in the operator's box (`transport=box`). `tool_search` loads their schemas |
+| E2 | 3/3 runs: fixture login page opened and snapshotted in the box through `browser__agent_browser_*`; after `docker stop` of the box, the next call brought box and server back (open 0.9-1.1 s) |
+| E3 | **Bug found (pre-existing, `MountedServer.CallTool`):** a session watch() had already seen die was treated as "failed after send", so a mutating call was redialed and then refused ("reconnected but not replayed") although it was never sent: the first action after every box suspend failed. Fixed: a never-sent call is sent once on the redialed session; the no-replay rule stays for calls that reached a transport |
+| E4 | **Gap found:** the idle reaper counts only new execs, so a long-lived MCP session or live view would have its box suspended under it after the idle TTL. Fixed: `SandboxRouter.Touch` on every tool call and every live-view input |
+| E5 | **Test bug found:** the live-view E2E failed once in sixteen runs: the fixture accepts only the current TOTP window and a code minted in its last ~1.5 s expired before Enter. Fixed in the test: 15 of 16 runs passed before, 3/3 after |
+| E6 | After the runs: no agent-browser MCP process and 0 zombies left in the box, 2 tasks |
+
 ## Gotchas that bite an integration
 
 - **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
@@ -147,8 +163,9 @@ read `vault.key`). Consequences for the design:
 - **The live view was proven on loopback only** (C): a 390 px viewport was rendered, but no real
   phone, no touch input, no Cloudflare, no two viewers in two real browsers (the takeover is
   unit-tested only).
-- **(D) is the transport and the server, not a mount:** no agent turn, no deferral through
-  `tool_search`, no redial under the bridge's supervisor, no tool-result redaction.
+- **No model turn drove the browser tools** (E): no LLM credential was available, so the
+  calls came from `aura toolpipe` over the production registry; the model's choice of tools
+  and its reading of the skill are unmeasured. Tool-result redaction was not checked.
 - **No redaction check through Aura's tool pipeline** (`tool_invocations`, traces, `internal/redact`).
 - The box ran with the spike image's proxy-CA environment (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`),
   which the production image does not carry; the fixture was loopback, so no request used it.
@@ -185,6 +202,7 @@ Inside the box (needs the spike image and `aura-egress:spike`, see B):
 
 ```bash
 go run ./spikes/agent-browser-auth/mcpbox          # (D), needs aura-sandbox:latest + aura-egress:latest
+AURA_BIN=aura bash spikes/agent-browser-auth/mcp_toolpipe_e2e.sh   # (E), after `aura mcp install browser`
 go build -o /tmp/boxrun ./spikes/agent-browser-auth/boxrun
 /tmp/boxrun resolve && docker cp spikes/agent-browser-auth/. aura-box-spike-agent-browser:/workspace/spike/
 /tmp/boxrun put /run/aura-abkey key.hex

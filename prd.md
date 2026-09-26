@@ -679,6 +679,25 @@ reconnects in under 100 ms, with the cookies restored but not the open page. The
 must be redirected, because `ExecStream` merges it into stdout. This does not measure a mount:
 no agent turn, no `tool_search` deferral, no bridge redial, no redaction of tool results.
 
+**Box runtime for stdio MCP servers, measured 2026-09-26.** A registry entry with
+`runtime.kind: "box"` runs in the calling identity's box, one process per identity, over the
+go-sdk `IOTransport` on an `ExecStream`; `ServerConfig.Box` makes `OpenSDKSessionForConfig` the
+single place that either starts it in a box or refuses it (`ErrNoBox`), so no path runs a box
+server on the host. Box servers default to `sandboxed_local`, take no secret-shaped env, and are
+identity-scoped like OAuth servers: the tool list is read at mount in the operator's box, each
+identity's first call opens its own process. The catalog adds `browser` (agent-browser, default-on
+in the appliance) with its 29 tools graded by a recipe table, reads and reversible writes, since
+the server states no destructive hint and the fail-closed default would gate every click.
+Through `aura toolpipe` on the production registry: boot mounts 29 deferred tools, `tool_search`
+loads them, a fixture page is driven in the box, and after the box is stopped the next call
+brings it back, three runs out of three. The run found that the bridge refused a mutating call
+on a session it already knew was dead, "reconnected but not replayed", though nothing had been
+sent, which failed the first action after every idle suspend; such a call is now sent once, and
+the no-replay rule is kept for calls that reached a transport. It also found that the idle reaper
+counts only new execs, so a working MCP session or live view would be suspended under it; tool
+calls and live-view input now mark the box as used. Not measured: a model choosing these tools,
+two identities' boxes on one host at once (unit-tested only), and redaction of browser output.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

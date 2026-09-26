@@ -64,8 +64,13 @@ test('the operator logs into a site through the live view, never through the cha
   await expect(page.locator('[data-slot="computer-use"]')).toContainText('/otp', { timeout: 5_000 });
 
   // Second factor, typed by the human in the live view like the password.
-  const code = inBox('python3 fixture_site.py totp').trim();
   await clickField('Code');
+  // A code is valid for its own 30 s window only (the fixture allows no drift), and reaching the
+  // Enter below takes about a second and a half: a code minted in a window's last seconds was
+  // rejected, once in sixteen runs. Never mint one with less than 5 s left.
+  const left = 30 - ((Date.now() / 1000) % 30);
+  if (left < 5) await page.waitForTimeout(left * 1000 + 100);
+  const code = inBox('python3 fixture_site.py totp').trim();
   await page.keyboard.type(code, { delay: 20 });
   await page.keyboard.press('Enter');
   await expect.poll(boxUrl, { timeout: 15_000 }).toContain('/docs');
