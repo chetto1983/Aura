@@ -83,7 +83,22 @@ cockpit only.
 | C4 | **Bug found:** a mousedown with `preventDefault` never focused the stage, so keys typed after a click went nowhere. Fixed: the stage focuses itself |
 | C5 | Each open session: ~142 tasks, ~180 MB (measured by closing four one at a time: 504 → 361 → 219 → 77 pids). A 512-pid box holds three |
 | C6 | **Bug found (pre-existing):** PID 1 `tail -f /dev/null` never reaps: 177 zombies after four sessions, all counted against the pid cap. Fixed with `HostConfig.Init`; after three more runs: 3 tasks, 0 zombies |
-| C7 | **Gap (pre-existing, not fixed):** an existing box keeps its old image and host config; nothing recreates it on upgrade. The first E2E hit a box built before the relay existed |
+| C7 | **Gap (pre-existing), since fixed:** an existing box kept its old image and host config; the first E2E hit a box built before the relay existed. `Resolve` now recreates a box whose image, init or cache mounts are stale |
+| C8 | The viewer rebuilt on an owned copy of `@assistant-ui/elements-computer-use` (address chrome, click trail, action line): 3/3 runs pass again. Screenshots at 1440x900 and 390x844 show the element fitting the frame, and the cursor landing on the click (frame at x=80, click at page x=373, cursor tip at x≈453) |
+
+## (D) agent-browser's MCP server inside the box, over exec
+
+`mcpbox/main.go`: the production `DockerBackend` resolves a box (egress floor, key file), runs
+`agent-browser mcp 2>>/tmp/agent-browser-mcp.log` through `ExecStream` with stdin, and the
+official go-sdk client (v1.8.0) connects over `IOTransport` on two `io.Pipe`s. No other channel.
+
+| # | Result |
+|---|---|
+| D1 | Handshake 61-133 ms, `tools/list` 10-20 ms: 29 tools (`core` profile), 64 KB of schemas, one page (no cursor). Every tool carries `session` and `restore` as arguments, plus about ten shared launch fields (`allowedDomains`, `caCert`, `extraArgs`, `idleTimeout`...) |
+| D2 | open 0.9 s; snapshot 33 ms; click 55 ms; get_title 28 ms (reads the title the click set). Click returns a JSON envelope with launch metadata, not a one-liner |
+| D3 | The first screenshot of a browser takes 9.6-9.7 s, the next 50 ms (twice). It returns the PNG as image content and its path in the box |
+| D4 | `Suspend` under a live session: the client's `Wait` returns cleanly after 2.3 s. A new exec reconnects in 99 ms; restored state brings back the cookies, not the open page (`get_title` reads nothing until the next `open`) |
+| D5 | stdout and stderr share one stream in `ExecStream`, so the server's stderr must go to a file or it corrupts the JSON-RPC framing |
 
 ## Gotchas that bite an integration
 
@@ -129,8 +144,11 @@ read `vault.key`). Consequences for the design:
 - **Only runc was measured.** The operator confirmed gVisor (`runsc`) is not used by Aura.
 - **No real site.** Anti-bot checks, CAPTCHAs, SSO redirects, iframes, passkeys and WebAuthn were
   not exercised; the fixture is plain HTML over loopback HTTP.
-- **The live view was proven on loopback only** (C): not on a phone, not over Cloudflare, not
-  with two viewers in two real browsers (the takeover is unit-tested only).
+- **The live view was proven on loopback only** (C): a 390 px viewport was rendered, but no real
+  phone, no touch input, no Cloudflare, no two viewers in two real browsers (the takeover is
+  unit-tested only).
+- **(D) is the transport and the server, not a mount:** no agent turn, no deferral through
+  `tool_search`, no redial under the bridge's supervisor, no tool-result redaction.
 - **No redaction check through Aura's tool pipeline** (`tool_invocations`, traces, `internal/redact`).
 - The box ran with the spike image's proxy-CA environment (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`),
   which the production image does not carry; the fixture was loopback, so no request used it.
@@ -166,6 +184,7 @@ node stream_login.mjs <port> '<email box json>' '<password box json>' alice@exam
 Inside the box (needs the spike image and `aura-egress:spike`, see B):
 
 ```bash
+go run ./spikes/agent-browser-auth/mcpbox          # (D), needs aura-sandbox:latest + aura-egress:latest
 go build -o /tmp/boxrun ./spikes/agent-browser-auth/boxrun
 /tmp/boxrun resolve && docker cp spikes/agent-browser-auth/. aura-box-spike-agent-browser:/workspace/spike/
 /tmp/boxrun put /run/aura-abkey key.hex

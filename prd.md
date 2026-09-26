@@ -667,6 +667,18 @@ logging why; an image that is not present locally is never a reason, because `Re
 pull. The measurement does not cover the viewer on a phone, over Cloudflare, or with a second
 concurrent viewer in another browser.
 
+**Viewer on the assistant-ui element, and the MCP server in the box, measured 2026-09-26.** The
+live view now renders inside an owned copy of `@assistant-ui/elements-computer-use` (address
+chrome, the operator's last clicks as a cursor trail); the same E2E passed three runs out of three,
+and screenshots at 1440x900 and 390x844 put the cursor on the click. Separately,
+`agent-browser mcp` ran inside a production box behind `ExecStream` with stdin, reached by the
+go-sdk client over `IOTransport` and nothing else (`spikes/agent-browser-auth/mcpbox`): handshake
+61-133 ms, 29 tools and 64 KB of schemas in one page, snapshot 33 ms, click 55 ms, first
+screenshot 9.6 s then 50 ms. A `Suspend` ends the session cleanly within 2.3 s and a new exec
+reconnects in under 100 ms, with the cookies restored but not the open page. The server's stderr
+must be redirected, because `ExecStream` merges it into stdout. This does not measure a mount:
+no agent turn, no `tool_search` deferral, no bridge redial, no redaction of tool results.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
