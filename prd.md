@@ -753,6 +753,18 @@ production registry with empty caches the server was added in 3.3 s and its firs
 4.1 s, then 1.0-1.2 s. The paragraph above on per-identity install is superseded. Not covered: local
 host stdio servers have the same stdout intolerance and are unchanged.
 
+**Host stdio servers get the same stdout filter, and their children are reaped, 2026-09-26.**
+Measured against the go-sdk's `CommandTransport` (v1.8.0): a host server that printed one line of
+npm output before answering lost its session at `initialize` ("invalid character 'a' looking for
+beginning of value"), and a child it had forked (`sleep 300 &`) was still running after the session
+closed, although `procgroup.SetProcessGroup` makes every server lead its own group for exactly that
+(D-10): nothing ever signalled the group. `CommandTransport` pipes stdout itself and hides its
+connection, so `internal/mcp/stdio_command.go` replaces it: the same pipes read through the box
+path's `protocolLines`, and the spec's shutdown ladder (close stdin, 5 s, SIGTERM, 5 s, kill) with
+the kill, and a context cancel, taken by the whole group, which is also killed after a clean exit.
+Both tests fail against the previous code (negative controls). Not shown: that any server mounted
+today prints to stdout; the process-group kill on Windows (`taskkill /T`) is not exercised.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
