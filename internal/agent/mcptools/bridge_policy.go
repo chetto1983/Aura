@@ -1,8 +1,9 @@
 package mcptools
 
 type bridgePolicy struct {
-	// identityScoped means the HTTP session carries one identity's OAuth bearer
-	// and therefore must be selected from the per-identity session pool.
+	// identityScoped means a session belongs to one identity — an HTTP session carrying
+	// its OAuth bearer, or a box-runtime server running in its box — and therefore must
+	// be selected from the per-identity session pool.
 	identityScoped bool
 	memorySurface  bool
 	recipeSource   string

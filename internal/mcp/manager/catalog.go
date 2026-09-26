@@ -138,6 +138,24 @@ func BuiltInCatalog() []CatalogEntry {
 			},
 		},
 		{
+			// agent-browser's own MCP server, shipped in docker/aura-sandbox. It runs in
+			// each identity's box, one process per identity, so a login made there stays in
+			// that identity's box and its tools reach nobody else's (prd.md §12). The box
+			// image's entry point supplies the per-identity state key.
+			Name:       browserRecipeName,
+			Summary:    "agent-browser in the sandbox box: a real Chromium per identity, logins kept in its box",
+			Source:     BrowserRecipeSource,
+			TrustClass: mcp.TrustTrustedRecipe,
+			Runtime:    mcp.RuntimeKindBox,
+			Server: mcp.ManagedServer{
+				Command: "agent-browser",
+				Args:    []string{"mcp"},
+				Source:  BrowserRecipeSource,
+				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+				Runtime: mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox},
+			},
+		},
+		{
 			// Aura's own ArcadeDB MCP (cmd/arcadedb-mcp). Mounts the memory__* surface
 			// Deferred + namespaced through the existing MountManagedServerWithOptions
 			// (D-06/D-07). Trusted (NOT remote_http) so it can mount default-on

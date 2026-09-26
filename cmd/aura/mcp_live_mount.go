@@ -208,6 +208,15 @@ func (m *liveMCPMount) mount(ctx context.Context, name string, server mcp.Manage
 	}
 }
 
+// box is the launcher box-runtime servers start through, for a probe that must run where
+// the mount does. Nil without a running registry or a sandbox.
+func (m *liveMCPMount) box() mcp.BoxLauncher {
+	if m == nil || m.handles == nil {
+		return nil
+	}
+	return m.handles.MCPBox
+}
+
 func (m *liveMCPMount) Host(name string) *mcptools.MountedServer {
 	host, _ := m.OwnedHost(name)
 	return host
@@ -296,11 +305,15 @@ func (m *liveMCPMount) Close() error {
 }
 
 // mcpOwnerContext binds an identity that authorized this server so the post-listener
-// reconnect can discover its tool schema with a stored grant.
+// reconnect can discover its tool schema with a stored grant. A box-runtime server has no
+// grant but needs a box to read its tools in, so it gets boxDiscoveryIdentity.
 //
 // It is a no-op for everything else: a server with no OAuth, a deployment with no pool or
 // no secret, and a server nobody has authorized all return ctx unchanged.
 func mcpOwnerContext(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool, name string, server mcp.ManagedServer) context.Context {
+	if mcp.IsBoxRuntime(server) {
+		return identityctx.WithIdentityID(ctx, boxDiscoveryIdentity(ctx, pool))
+	}
 	if pool == nil || strings.TrimSpace(cfg.AuthulaSecret) == "" {
 		return ctx
 	}
@@ -372,4 +385,27 @@ func mcpGrantOwner(ctx context.Context, store mcpGrantOwnerStore, name string, s
 		return "", err
 	}
 	return owners[0], nil
+}
+
+// boxDiscoveryIdentity picks the box a box-runtime server's tools are listed in at mount. The
+// tool list comes from the box image and is the same in every box; the operator's box is used
+// so no box is created for nobody in particular. Each identity's calls still start their own
+// process in their own box. A multi-user deployment has no single operator and uses the first
+// active identity; without a database, the router's own no-principal identity.
+func boxDiscoveryIdentity(ctx context.Context, pool *pgxpool.Pool) string {
+	if pool == nil {
+		return identityctx.LocalOperatorIdentity
+	}
+	if id, err := identityctx.OperatorIdentity(ctx, pool); err == nil {
+		return id
+	}
+	identities, err := identity.New(pool).ListIdentities(ctx)
+	if err == nil {
+		for _, id := range identities {
+			if !id.Deactivated {
+				return id.ID
+			}
+		}
+	}
+	return identityctx.LocalOperatorIdentity
 }

@@ -37,6 +37,7 @@ const (
 const (
 	transportLabelStdio = "stdio"
 	transportLabelHTTP  = "http"
+	transportLabelBox   = "box"
 )
 
 // SessionOptions is the seam later plans fill: sending middleware, the
@@ -81,6 +82,9 @@ type SessionOptions struct {
 	// value is meaningful: no store and no fetcher still attaches a handler, so a
 	// server that needs authorization says so instead of returning a bare 401.
 	OAuth OAuthOptions
+	// Box starts a box-runtime server in the calling identity's sandbox (box_session.go).
+	// Nil means this caller has none, and such a server is refused rather than run here.
+	Box BoxLauncher
 }
 
 func resolveLogger(logger *slog.Logger) *slog.Logger {
@@ -136,7 +140,7 @@ func OpenSDKSession(ctx context.Context, name string, server ManagedServer, egre
 	if serverType == ServerTypeStreamableHTTP {
 		return openSDKHTTP(ctx, name, server, egress, o)
 	}
-	return OpenSDKSessionForConfig(ctx, ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env}, o)
+	return OpenSDKSessionForConfig(ctx, ctx, name, ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env, Box: IsBoxRuntime(server)}, o)
 }
 
 // openSDKHTTP builds the streamable-HTTP transport with the full policy stack on its
@@ -198,7 +202,10 @@ func openSDKHTTP(ctx context.Context, name string, server ManagedServer, egress 
 	return session, nil
 }
 
-// OpenSDKSessionForConfig opens a stdio session for a declared launch config.
+// OpenSDKSessionForConfig opens a stdio session for a declared launch config: a child
+// process of Aura, or, for a box-runtime config, a process in the caller's sandbox box
+// (box_session.go). It is the one place a stdio server is started, so it is also the one
+// place a box server is kept off the host.
 //
 // The two contexts are not redundant (Pitfall #2): processCtx bounds the subprocess's
 // ENTIRE lifetime and must be long-lived, while handshakeCtx bounds only the connect
@@ -234,6 +241,9 @@ func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name stri
 	// failure for MountWithRetry to sit through.
 	if err := checkStdioShape(name, command, cfg.Args, cfg.Env); err != nil {
 		return nil, err
+	}
+	if cfg.Box {
+		return openSDKBox(processCtx, handshakeCtx, name, cfg, o)
 	}
 	// G204: Command/Args/Env come from the operator-controlled mcpServers config,
 	// not from untrusted model output.

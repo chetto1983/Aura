@@ -162,7 +162,7 @@ func defaultDoctorProbeMCPServers(ctx context.Context, cfg *config.Config) (stri
 	var unreachable []string
 	for _, name := range names {
 		attemptCtx, cancel := context.WithTimeout(probeCtx, mcpProbeTimeout)
-		res := probeManagedMCPServer(attemptCtx, name, runnable[name])
+		res := probeManagedMCPServer(attemptCtx, name, runnable[name], nil)
 		cancel()
 		if !res.OK {
 			unreachable = append(unreachable, name)

@@ -350,6 +350,7 @@ func buildRegistryWithMCP(
 	handles.MCPViews = mcp.NewViewCatalog()
 	handles.ViewCallers = mcptools.ViewCallers{}
 	handles.MCPFiles = &tools.MCPFileSink{Router: sandboxRouter}
+	handles.MCPBox = newSandboxMCPBox(sandboxRouter)
 	if len(mcpServers) == 0 && len(mcpPolicies) == 0 {
 		return reg, handles, nil, nil
 	}

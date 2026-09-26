@@ -35,16 +35,17 @@ aura mcp recipes --json
 Install a recipe:
 
 ```bash
-aura mcp install calculator
 aura mcp install calendar
 aura mcp install whatsapp
+aura mcp install browser
 ```
 
 Built-in recipes are marked as `trusted_recipe` and include policy metadata.
 
 | Recipe | Purpose | Notes |
 |---|---|---|
-| calculator | Local arithmetic MCP over stdio | Good smoke test. |
+| memory | Aura's ArcadeDB memory (`cmd/arcadedb-mcp`) over streamable-HTTP | On by default everywhere. |
+| browser | agent-browser's MCP server, run in each identity's sandbox box | On by default in the appliance. Logins stay in that identity's box; see Runtime. |
 | Calendar | PIM sidecar (forked calendar-mcp) — mail + calendar + contacts over streamable-HTTP | OAuth accounts connected via the sidecar's token-gated admin API (cockpit-driven); subsumes the retired standalone mail recipe. |
 | WhatsApp | WhatsApp bridge | Requires a paired account and bridge process. |
 
@@ -65,7 +66,9 @@ Aura falls back to enabled managed servers.
 
 ## Trust
 
-Manual local commands are blocked by default.
+A server that states no trust class gets one from where it runs: a local command is
+`trusted_local`, a box-runtime command `sandboxed_local`, a URL `remote_http`, a catalog
+recipe `trusted_recipe`. `blocked` is only ever set on purpose.
 
 ```bash
 aura mcp add local-demo -- node server.js
@@ -73,11 +76,8 @@ aura mcp status
 aura mcp doctor local-demo
 ```
 
-To approve a local command after reviewing its source, command, runtime, and profile:
-
-```bash
-aura mcp trust local-demo
-```
+`aura mcp trust <name> --reason <text> [--class <class>]` records an explicit class with who
+approved it and why.
 
 Trust classes:
 
@@ -91,48 +91,37 @@ Trust classes:
 
 ## Runtime
 
-Local stdio servers can run directly or through Docker metadata.
+A stdio server runs in one of two places, named by `runtime.kind`:
 
-Docker runtime example:
-
-```json
-{
-  "runtime": {
-    "kind": "docker",
-    "image": "example/mcp:1",
-    "command": ["server", "--stdio"],
-    "mounts": ["type=bind,src=/safe,dst=/data,readonly"],
-    "network": ["api.example.com"],
-    "cpus": "0.5",
-    "memory": "256m"
-  },
-  "trust": { "class": "sandboxed_local" }
-}
-```
-
-Aura generates `docker run -i --rm`, adds `--network none` by default, and never
-adds host mounts unless they are explicit.
-
-Docker MCP Gateway example:
+| Kind | Where it runs |
+|---|---|
+| `local` (default) | A child process of Aura, launched as declared. |
+| `box` | Inside the calling identity's sandbox box, one process per identity, reached over an exec's stdin and stdout. |
 
 ```json
 {
-  "runtime": {
-    "kind": "docker_gateway",
-    "profile": "team"
-  },
-  "trust": { "class": "trusted_local" }
+  "command": "agent-browser",
+  "args": ["mcp"],
+  "runtime": { "kind": "box" }
 }
 ```
 
-This launches:
+A box server:
 
-```bash
-docker mcp gateway run --profile team
-```
+- is started in an identity's box the first time that identity calls one of its tools, and a
+  call from any other identity is refused. The tool list is read once, at mount, in the
+  operator's box;
+- takes the box image as its environment: the command must exist in the image, and an
+  install prepares nothing on the Aura host. The cockpit install still requires a handshake,
+  run in the installing identity's box;
+- takes no secrets: everything in a box is readable by the agent's own shell, so a
+  secret-shaped `env` entry is refused at write time;
+- writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;
+- is never started on the Aura host. `aura mcp doctor` has no box to run it in and reports it
+  as not probed.
 
-Docker and Docker MCP Gateway live checks are operator-only because they depend on
-the local Docker installation and MCP Toolkit version.
+When the box is suspended for idleness the session ends and the next call starts the server
+again. The `docker` and `docker_gateway` kinds were retired by amendment #209.
 
 ## Status, Doctor, Logs
 
@@ -152,13 +141,13 @@ aura mcp doctor --all
 Run a single-server startup and tool-list check:
 
 ```bash
-aura mcp doctor calculator
+aura mcp doctor calendar
 ```
 
 Blocked servers report trust-needed without launching the command.
 
 ```bash
-aura mcp logs calculator
+aura mcp logs calendar
 ```
 
 `logs` currently exposes the CLI surface and points operators at doctor output; Aura

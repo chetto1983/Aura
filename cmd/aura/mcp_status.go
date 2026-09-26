@@ -81,7 +81,7 @@ func probeStatusRow(ctx context.Context, doc mcp.ManagedConfig, status mcpmanage
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
-	return probeManagedMCPServer(probeCtx, status.Name, server)
+	return probeManagedMCPServer(probeCtx, status.Name, server, nil)
 }
 
 // probeColumn renders a mcp.ProbeResult as one tab-safe text column.
@@ -165,7 +165,7 @@ func writeRuntimeCheck(ctx context.Context, out io.Writer, name string, server m
 	}
 	probeCtx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
-	res := probeManagedMCPServer(probeCtx, name, server)
+	res := probeManagedMCPServer(probeCtx, name, server, nil)
 	if !res.OK {
 		return writef(out, "%s: runtime missing %s\n", name, target)
 	}

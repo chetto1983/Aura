@@ -62,7 +62,7 @@ func (a mcpBoardAdapter) Servers() mcp.ManagedConfig {
 }
 
 func (a mcpBoardAdapter) Probe(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
-	return probeManagedMCPServer(ctx, name, server)
+	return probeManagedMCPServer(ctx, name, server, a.live.box())
 }
 
 // governanceMCPBoardConfig is the board's read, and it answers from exactly what the mount

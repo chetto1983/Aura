@@ -69,7 +69,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	// The preparation report is not projected: the panel closes on success, so the only thing
 	// an operator needs from here is the REFUSAL, which travels as the 502's reason. The CLI,
 	// which stays open, prints it.
-	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server)
+	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server, a.live.box())
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -270,7 +270,7 @@ func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
 func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.ManagedServer) *mcp.ProbeResult {
 	pctx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
-	res := probeManagedMCPServer(pctx, name, server)
+	res := probeManagedMCPServer(pctx, name, server, a.live.box())
 	return &res
 }
 

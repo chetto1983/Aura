@@ -296,7 +296,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
 	// it, and refuse to store a server that cannot complete a handshake — the declaration
 	// this used to write was only ever a promise that something would resolve at mount.
-	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server)
+	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server, nil)
 	if err != nil {
 		return err
 	}

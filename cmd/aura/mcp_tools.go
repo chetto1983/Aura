@@ -108,10 +108,12 @@ func openManagedMCPSession(ctx context.Context, name string, server mcp.ManagedS
 
 // probeManagedMCPServer is the board's per-row liveness check. It carries the same
 // credentials a mount would, or an authorized server reports "dial failed" on screen while
-// its tools work perfectly well in the agent.
-func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedServer) mcp.ProbeResult {
+// its tools work perfectly well in the agent. box runs a box-runtime server's probe in the
+// caller's own box; the CLI has none and passes nil.
+func probeManagedMCPServer(ctx context.Context, name string, server mcp.ManagedServer, box mcp.BoxLauncher) mcp.ProbeResult {
 	return mcp.ProbeServerWithOptions(ctx, name, server, runtimeMCPEgressPolicy(server), mcp.SessionOptions{
 		OAuth: runtimeMCPOAuth(ctx),
+		Box:   box,
 	})
 }
 
@@ -272,5 +274,6 @@ func mcpMountOptions(ctx context.Context, strict bool, server mcp.ManagedServer,
 		Views:  handles.MCPViews,
 		OAuth:  runtimeMCPOAuth(ctx),
 		Files:  handles.MCPFiles,
+		Box:    handles.MCPBox,
 	}
 }

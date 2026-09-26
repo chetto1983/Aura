@@ -21,9 +21,10 @@ type identitySessionEntry struct {
 	err    error
 }
 
-// identitySessionPool keeps one SDK session per OAuth subject behind one global
-// tool manifest. Each child restores its token through the existing grant store;
-// the parent never owns a bearer and cannot accidentally share one across users.
+// identitySessionPool keeps one SDK session per identity behind one global tool
+// manifest. For an OAuth server each child restores its token through the existing
+// grant store, so the parent never owns a bearer and cannot share one across users;
+// for a box-runtime server each child is a process in that identity's own box.
 //
 // D-10 (Phase 51): the map key is identity+actor, not bare identity, but only a
 // WORKER dispatch diverges it (actorSessionKey) -- the operator's own turns
