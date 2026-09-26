@@ -13,8 +13,8 @@ import (
 // box_session.go opens a stdio MCP server that runs INSIDE the calling identity's sandbox
 // box instead of as Aura's child. An exec is Aura's only channel into a box, so the server's
 // stdin and stdout are the exec's, and the SDK's IOTransport speaks MCP over them — the same
-// transport CommandTransport uses underneath, minus the *exec.Cmd a box process does not
-// have. Measured before this was written (prd.md §12, spikes/agent-browser-auth/mcpbox):
+// transport a host server's commandTransport uses underneath, minus the *exec.Cmd a box
+// process does not have. Measured before this was written (prd.md §12, spikes/agent-browser-auth/mcpbox):
 // handshake under 150 ms, and a suspended box ends the session cleanly within 2.3 s, which
 // the bridge's redial then answers with a fresh exec in the resumed box.
 

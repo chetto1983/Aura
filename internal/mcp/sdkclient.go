@@ -257,7 +257,7 @@ func OpenSDKSessionForConfig(processCtx, handshakeCtx context.Context, name stri
 	// that accepts the connection and then never answers the handshake must cost this
 	// caller handshakeCtx and no more. On stdio that peer is a child process Aura just
 	// spawned, so an unbounded wait here is a mount that never returns.
-	transport := &sdkmcp.CommandTransport{Command: cmd}
+	transport := &commandTransport{cmd: cmd, name: name, logger: resolveLogger(o.Logger)}
 	client := newSDKClient(o)
 	session, err := BoundedCall(handshakeCtx,
 		func(ctx context.Context) (*sdkmcp.ClientSession, error) { return client.Connect(ctx, transport, nil) },

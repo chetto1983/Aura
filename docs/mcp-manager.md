@@ -108,6 +108,11 @@ A stdio server runs in one of two places, named by `runtime.kind`:
 }
 ```
 
+Of either kind, a line on the server's stdout that is not JSON-RPC (npm's own install output,
+for one) is dropped and logged rather than ending the session, as LibreChat's TypeScript client
+does. Closing a `local` server's session ends its whole process group, so a child it forked does
+not outlive it.
+
 A box server installs itself, the way LibreChat's stdio servers do: declare it as a command
 that fetches its own package, pinned, and its first start in an identity's box fetches it into
 that identity's npm or uv cache. There is no install step and nothing is shared between
@@ -139,9 +144,7 @@ A box server:
   are read, and `aura serve` waits for that start;
 - takes no secrets: everything in a box is readable by the agent's own shell, so a
   secret-shaped `env` entry is refused at write time;
-- writes its stderr to `/tmp/aura-mcp-<name>.log` in the box; a line on its stdout that is not
-  JSON-RPC (npm's own install output, for one) is dropped and logged rather than ending the
-  session, as LibreChat's TypeScript client does;
+- writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;
 - is never started on the Aura host. `aura mcp doctor` has no box to run it in and reports it
   as not probed.
 

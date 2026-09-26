@@ -10,7 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/redact"
 )
 
-// protocolLines passes a box server's stdout to the client one line at a time, and only the
+// protocolLines passes a stdio server's stdout to the client one line at a time, and only the
 // lines that can be JSON-RPC: a line whose first non-blank byte opens an object or an array.
 //
 // A self-installing server can print to stdout on its first run. Measured 2026-09-26:
@@ -61,7 +61,7 @@ func (w *protocolLines) pass(line []byte) error {
 		if len(trimmed) > shown {
 			trimmed = trimmed[:shown]
 		}
-		w.logger.Warn("mcp box server wrote a non-protocol line to stdout; dropped",
+		w.logger.Warn("mcp stdio server wrote a non-protocol line to stdout; dropped",
 			"server", redact.Line(w.name), "line", RedactSecrets(string(trimmed)))
 	}
 	return nil

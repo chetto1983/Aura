@@ -145,7 +145,7 @@ func (s *MountedServer) processContext() context.Context {
 // session identity check, so a redial completing concurrently can never have its
 // fresh session marked dead by the outgoing session's own watcher.
 //
-// Wait() fires promptly for CommandTransport (the stdio child's pipes close) and
+// Wait() fires promptly for a stdio session (the child's pipes close) and
 // may never fire for a streamable-HTTP peer negotiating protocol >= 2026-07-28,
 // because that protocol holds no persistent connection to lose (go-sdk@v1.7.0
 // mcp/streamable.go:2095-2098): for HTTP, recovery is per-call — every call is a

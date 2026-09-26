@@ -8,9 +8,9 @@ import (
 )
 
 // process_env.go builds the environment a stdio MCP subprocess is launched with.
-// It is relocated off client.go (deleted in plan 45.1-03) because the SDK's
-// CommandTransport takes an *exec.Cmd Aura still has to populate: the SDK owns the
-// wire, never the child's environment.
+// It is relocated off client.go (deleted in plan 45.1-03) because the stdio
+// transport (stdio_command.go) takes an *exec.Cmd Aura has to populate: the SDK owns
+// the wire, never the child's environment.
 //
 // The child does NOT inherit Aura's environment wholesale. Only the keys below cross
 // over, and a key that IsSecretEnvKey recognises is dropped even when it is on that

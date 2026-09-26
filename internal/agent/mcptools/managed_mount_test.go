@@ -208,7 +208,7 @@ func TestMountManagedServer_HTTPBranchInfersFromBareURL(t *testing.T) {
 
 // TestMountManagedServer_StdioBranchFailure covers MountManagedServerWithOptions's
 // stdio branch: a non-blocked trust class makes RuntimeLaunchConfig succeed, then the
-// SDK's CommandTransport.Connect fails on the missing binary.
+// stdio transport's Connect fails on the missing binary.
 func TestMountManagedServer_StdioBranchFailure(t *testing.T) {
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{
