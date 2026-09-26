@@ -16,6 +16,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 const testSecret = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
@@ -73,14 +74,14 @@ func TestStoreSaveLoadRoundTrip(t *testing.T) {
 	s := storeForCrypto(t)
 	key := "sk-or-v1-super-secret-openrouter-key"
 
-	sealed, err := s.seal([]byte(key))
+	sealed, err := s.sealer.Seal([]byte(key))
 	if err != nil {
 		t.Fatalf("seal: %v", err)
 	}
 	if strings.Contains(string(sealed), key) {
 		t.Fatal("the ciphertext contains the plaintext key")
 	}
-	got, err := s.open(sealed)
+	got, err := s.sealer.Open(sealed)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -88,7 +89,7 @@ func TestStoreSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("round trip = %q, want %q", got, key)
 	}
 
-	again, err := s.seal([]byte(key))
+	again, err := s.sealer.Seal([]byte(key))
 	if err != nil {
 		t.Fatalf("second seal: %v", err)
 	}
@@ -123,18 +124,19 @@ func TestKeyDerivationInfoIsDomainSeparated(t *testing.T) {
 	if keyDerivationInfo == "aura-mcp-oauth-identity-key-v1" {
 		t.Fatal("identitykey's HKDF info string equals internal/mcpoauth's — one leaked key would unwrap both stores")
 	}
-	mine, err := deriveKey(testSecret)
+	s := storeForCrypto(t)
+	sealed, err := s.sealer.Seal([]byte("sk-or-v1-key"))
 	if err != nil {
-		t.Fatalf("deriveKey: %v", err)
+		t.Fatalf("seal: %v", err)
 	}
 	// mcpoauth's own constant, spelled out rather than imported, so this test fails if
 	// either side changes its info string.
-	other, err := deriveKeyWithInfo(testSecret, "aura-mcp-oauth-identity-key-v1")
+	other, err := secret.NewSealer(testSecret, "aura-mcp-oauth-identity-key-v1")
 	if err != nil {
-		t.Fatalf("deriveKeyWithInfo: %v", err)
+		t.Fatalf("NewSealer: %v", err)
 	}
-	if string(mine) == string(other) {
-		t.Fatal("identitykey's derived key equals mcpoauth's — the HKDF info is not separating them")
+	if _, err := other.Open(sealed); err == nil {
+		t.Fatal("mcpoauth's key opened an identitykey ciphertext — the HKDF info is not separating them")
 	}
 }
 
