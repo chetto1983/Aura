@@ -644,6 +644,29 @@ password is offered only as "readable by the agent's sandbox". The measurement d
 gVisor (not used), real sites (anti-bot, CAPTCHA, SSO, iframes, passkeys), the cockpit viewer and
 its latency across LAN or Cloudflare, or redaction through Aura's tool pipeline.
 
+**Live view, measured end to end on 2026-09-26.** A signed-in Authula operator opened
+`/browser/<session>` on a running `aura serve` (Postgres, the real box image, the egress floor)
+and logged into the fixture — email, password, TOTP — by clicking and typing in the cockpit only;
+the fixture granted one new session and the box's browser reached `/docs`, three runs out of
+three (`spikes/agent-browser-auth/live_view.e2e.ts`). The run corrected three assumptions:
+
+- a frame is the viewport, not the screen: `deviceHeight` reported 720 for 1280x577 JPEGs, so the
+  viewer maps both axes by one width scale;
+- Enter must carry `text: "\r"`, or CDP submits no form;
+- each open agent-browser session is its own Chromium, about 142 tasks and 180 MB, so the default
+  512-pid box holds three at most, and the box skill tells the agent to keep one per site and
+  close it.
+
+It also found that the box's keep-alive PID 1 never reaped orphans: four sessions opened and
+closed left 177 zombies counting against the pid cap, which starves `shell_exec` as well as the
+browser. Boxes now run with Docker's init (`HostConfig.Init`), and the same runs ended at 3 tasks
+and 0 zombies. Existing boxes keep their old image and host config until recreated: nothing in
+the box lifecycle recreates a container when the image or its pinned host config changes, so a
+deployment carrying this change must recreate its boxes (removing the `aura-box-*` containers
+keeps their volumes, and the next `Resolve` rebuilds them; deprovisioning would delete the
+volumes too). The measurement does not cover the
+viewer on a phone, over Cloudflare, or with a second concurrent viewer in another browser.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
