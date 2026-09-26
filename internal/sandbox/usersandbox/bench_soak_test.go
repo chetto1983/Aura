@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,13 +60,7 @@ type soakConfig struct {
 // pushed outside the documented 10–20 range.
 func loadSoakConfig(t *testing.T) soakConfig {
 	t.Helper()
-	n := soakEnvInt(t, "AURA_SANDBOX_SOAK_N", soakDefaultN)
-	if n < 2 {
-		n = 2
-	}
-	if n > 64 {
-		n = 64
-	}
+	n := min(max(soakEnvInt(t, "AURA_SANDBOX_SOAK_N", soakDefaultN), 2), 64)
 	if n < 10 || n > 20 {
 		t.Logf("WARNING: N=%d is outside the documented D-14 envelope (10–20); the pass criterion is the 32GB fit, not a scale SLA", n)
 	}
@@ -112,15 +106,9 @@ func percentile(ds []time.Duration, p float64) time.Duration {
 	if len(ds) == 0 {
 		return 0
 	}
-	sorted := append([]time.Duration(nil), ds...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
-	rank := int(math.Ceil(p*float64(len(sorted)))) - 1
-	if rank < 0 {
-		rank = 0
-	}
-	if rank >= len(sorted) {
-		rank = len(sorted) - 1
-	}
+	sorted := slices.Clone(ds)
+	slices.Sort(sorted)
+	rank := min(max(int(math.Ceil(p*float64(len(sorted))))-1, 0), len(sorted)-1)
 	return sorted[rank]
 }
 
@@ -132,7 +120,7 @@ func readMemInfoKiB() (memTotal, memAvailable int64, ok bool) {
 		return 0, 0, false
 	}
 	var gotTotal, gotAvail bool
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
@@ -258,7 +246,7 @@ func TestSoak_ConcurrentIdentities(t *testing.T) {
 	}
 	coTenant := handles[1]
 	coDur := make([]time.Duration, 0, soakCoTenantSamples)
-	for s := 0; s < soakCoTenantSamples; s++ {
+	for s := range soakCoTenantSamples {
 		start := time.Now()
 		if _, code := rawExec(t, cli, coTenant.ContainerID, []string{"/bin/sh", "-c", "echo ok"}); code != 0 {
 			t.Fatalf("co-tenant exec sample %d exited %d", s, code)
@@ -304,5 +292,36 @@ func TestSoak_ConcurrentIdentities(t *testing.T) {
 	if !noStarvation {
 		t.Errorf("starvation FAIL: co-tenant p95 %v > %dms under a CPU-hog co-tenant — cgroup caps did not prevent starvation",
 			coP95, soakCoTenantBoundMs)
+	}
+}
+
+// TestPercentile pins the soak's p95 arithmetic, rank clamped to the sample range at both ends.
+func TestPercentile(t *testing.T) {
+	ms := func(v ...int) []time.Duration {
+		out := make([]time.Duration, len(v))
+		for i, x := range v {
+			out[i] = time.Duration(x) * time.Millisecond
+		}
+		return out
+	}
+	for name, tc := range map[string]struct {
+		in   []time.Duration
+		p    float64
+		want time.Duration
+	}{
+		"empty":           {nil, 0.95, 0},
+		"unsorted input":  {ms(30, 10, 20), 0.5, 20 * time.Millisecond},
+		"p95 of twenty":   {ms(20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1), 0.95, 19 * time.Millisecond},
+		"p0 clamps low":   {ms(5, 1, 3), 0, 1 * time.Millisecond},
+		"p over 1 clamps": {ms(5, 1, 3), 1.5, 5 * time.Millisecond},
+	} {
+		if got := percentile(tc.in, tc.p); got != tc.want {
+			t.Errorf("%s: percentile = %v, want %v", name, got, tc.want)
+		}
+	}
+	in := ms(3, 1, 2)
+	_ = percentile(in, 0.5)
+	if in[0] != 3*time.Millisecond {
+		t.Error("percentile sorted its caller's slice in place")
 	}
 }
