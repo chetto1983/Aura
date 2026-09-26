@@ -725,6 +725,20 @@ registry an empty box was served after a 44 s install (2.4 s warm). Not solved: 
 install on its first call; deleting an installed tree but not its record breaks it until the
 record is removed.
 
+**LibreChat's model measured in the box, 2026-09-26.** LibreChat (7b2362d) declares stdio servers
+only in operator YAML, runs them on its host, shares one process across users unless the config
+carries user context, installs nothing (`npx -y <pkg>` fetches at spawn into a host-wide npm
+cache) and gives a first spawn a per-server `initTimeout`, 30 s by default. In an Aura box the same
+declaration installs per identity, because npm, uv and pip caches are already per identity: in a
+production box with empty caches, `npx -y @modelcontextprotocol/server-filesystem@2026.8.31`
+answered `tools/list` in 5.4 s cold and 0.66 s warm, `uvx mcp-server-fetch` in 3.5 s and 0.56 s,
+and a numpy/scipy/sympy server from git through `uvx --from git+...` in 10.95 s and 1.76 s (39 s
+through venv + pip). The caches survived a box recreate, and nothing but JSON-RPC reached stdout.
+What it shows: the install line is not needed for npx/uvx servers, while a cold-start budget is,
+since 10.95 s exceeds both the 10 s first-call redial budget and the 10 s default mount timeout.
+What it does not: runtime downloads beyond the package, unpinned packages, a registry outage, or
+concurrent identities.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

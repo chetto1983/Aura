@@ -149,6 +149,33 @@ completed line, `flock` serialises concurrent starts, failures record nothing.
 | G4 | Production registry: `aura mcp add calculator --box --install ...` on an empty box, 44 s; `mcp_calculator_e2e.sh` 3/3, 7/7. With the venv and its record deleted, the next `toolpipe` reinstalled at mount and answered 6*7 = 42: 44 s cold, 2.4 s warm |
 | G5 | Not solved: a new install line blocks `aura serve`'s boot mount while it installs in the operator's box, and other identities pay the install on their first call. Deleting the venv but keeping the record breaks that identity's server until the record goes too |
 
+## (H) LibreChat's model, measured in the box: the command installs itself
+
+LibreChat (7b2362d, 2026-09-25) has no install step for stdio servers: the command is
+`npx -y <pkg>` and fetches at spawn, on its host, into one npm cache shared by every user; the
+first spawn is covered by a per-server `initTimeout` (default 30 s). An Aura box already has npm,
+uv and pip caches per identity, so the same declaration there installs per identity with no
+install line. `mcp_cold_start.py` spawns the command in a production box (egress sidecar,
+per-identity cache volumes, empty at the start) and times it to the `initialize` and `tools/list`
+answers.
+
+| Server | Cold | Warm | After box recreate |
+|---|---|---|---|
+| `npx -y @modelcontextprotocol/server-filesystem@2026.8.31` (14 tools) | 5.4 s | 0.66 s | 0.78 s |
+| `uvx mcp-server-fetch` (1 tool) | 3.5 s | 0.56 s | 0.67 s |
+| `uvx --from git+…calculator-mcp-server@25f8388` (23 tools, numpy/scipy/sympy/matplotlib) | 10.95 s | 1.76 s | - |
+
+- No non-JSON-RPC line reached stdout in any run; npx and uvx write their progress to stderr.
+- The caches survived the box being recreated (92 MB npm, 71 MB uv for the two light servers).
+- uvx installed the heavy server in 11 s where `python3 -m venv` + `pip install` took 39 s (G1).
+- 10.95 s is past the 10 s an identity's first call gets to redial, and past the 10 s default
+  mount timeout (`AURA_MCP_MOUNT_TIMEOUT`, 180 s in compose): a cold start needs a budget of its
+  own, which is what LibreChat's `initTimeout` is.
+
+Not covered: a server that downloads more at runtime than its package (e.g. a browser), an
+unpinned `npx -y <pkg>` (which asks the registry on every spawn), a registry outage, and more than
+one identity at a time on one host.
+
 ## Gotchas that bite an integration
 
 - **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
@@ -237,6 +264,7 @@ Inside the box (needs the spike image and `aura-egress:spike`, see B):
 go run ./spikes/agent-browser-auth/mcpbox          # (D), needs aura-sandbox:latest + aura-egress:latest
 AURA_BIN=aura bash spikes/agent-browser-auth/mcp_toolpipe_e2e.sh   # (E), after `aura mcp install browser`
 AURA_BIN=aura bash spikes/agent-browser-auth/mcp_calculator_e2e.sh # (F), after installing it as in (F)
+# (H): copy mcp_cold_start.py into a box, then e.g. `python3 mcp_cold_start.py uvx mcp-server-fetch`
 go build -o /tmp/boxrun ./spikes/agent-browser-auth/boxrun
 /tmp/boxrun resolve && docker cp spikes/agent-browser-auth/. aura-box-spike-agent-browser:/workspace/spike/
 /tmp/boxrun put /run/aura-abkey key.hex
