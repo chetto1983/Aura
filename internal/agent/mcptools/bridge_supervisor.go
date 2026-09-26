@@ -72,8 +72,9 @@ const (
 type MountedServer struct {
 	name string
 	open openSessionFunc
-	// identityPool is non-nil only for OAuth-protected HTTP servers. The parent
-	// remains the single registry target while calls route to subject-bound children.
+	// identityPool is non-nil only for identity-scoped servers (OAuth-protected HTTP, or
+	// a server running in each identity's box). The parent remains the single registry
+	// target while calls route to subject-bound children.
 	identityPool *identitySessionPool
 	// files materializes the files a tool result carries (bridge_files.go). Set once
 	// at mount, before any call; nil on a host with no workspace.
@@ -233,16 +234,6 @@ func (s *MountedServer) sessionOrDeath() (session *sdkmcp.ClientSession, termina
 	return s.session, nil, false
 }
 
-// deathCause returns the death watch() recorded, or nil if the session is not
-// (yet) known dead — used only to render a no-replay error's cause text when
-// CallToolText never attempted the call at all because sessionOrDeath already
-// reported it dead.
-func (s *MountedServer) deathCause() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.deadErr
-}
-
 // drainTools drains session.Tools' paginated iterator into a slice.
 // drainTools is bounded for the same reason the connect is (internal/mcp/bounded_call.go):
 // a server that completes its handshake and then stops answering would otherwise hold the
@@ -303,8 +294,14 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 		return mcp.ToolPayload{}, terminalErr
 	}
 
+	// A session watch() already saw die was never sent this call, so the redialed session
+	// carries it for the first time: that is a send, not a replay, whatever the tool does.
+	// The no-replay policy below guards only a call that reached a transport which then
+	// failed — measured 2026-09-26, where it made the first action after every sandbox box
+	// suspend fail with "reconnected but not replayed" although nothing had been sent.
+	sent := !dead
 	var callErr error
-	if !dead {
+	if sent {
 		var res *sdkmcp.CallToolResult
 		res, callErr = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
 		if callErr == nil {
@@ -313,27 +310,20 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 		if !s.isDead() && !isSessionTransportFailure(callErr) {
 			return mcp.ToolPayload{}, callErr
 		}
-	}
-	if callErr == nil {
-		// dead was already true: no call was ever attempted, so the no-replay
-		// error below needs the recorded death as its cause text.
-		callErr = s.deathCause()
-	}
-
-	// A mutating call whose transport failed after send must never be silently
-	// replayed. An idempotency operation scoped ScopeMCPTool is the strongest
-	// signal of that and is checked first, independent of the tool's own
-	// mutating/read-only classification.
-	if operation, ok := idempotency.OperationFromContext(ctx); ok && operation.Key.Scope == idempotency.ScopeMCPTool {
-		return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q mutating call %q transport failed after send; not replayed or reconnected: %v", mcp.ErrTransport, s.name, name, callErr)
+		// A mutating call whose transport failed after send must never be silently
+		// replayed. An idempotency operation scoped ScopeMCPTool is the strongest
+		// signal of that and is checked first, independent of the tool's own
+		// mutating/read-only classification.
+		if operation, ok := idempotency.OperationFromContext(ctx); ok && operation.Key.Scope == idempotency.ScopeMCPTool {
+			return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q mutating call %q transport failed after send; not replayed or reconnected: %v", mcp.ErrTransport, s.name, name, callErr)
+		}
 	}
 
-	readOnly := s.toolIsReadOnly(name)
 	retry, redialErr := s.redialAfterTransport(ctx, session)
 	if redialErr != nil {
 		return mcp.ToolPayload{}, redialErr
 	}
-	if !readOnly {
+	if sent && !s.toolIsReadOnly(name) {
 		return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, callErr)
 	}
 	res, callErr := retry.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})

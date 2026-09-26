@@ -8,6 +8,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -209,20 +210,28 @@ func killLiveSession(t *testing.T, srv *MountedServer) {
 	}
 }
 
+// dropsConnectionOnSend serves a mutating "send" whose handler drops the connection before it
+// answers: the call provably reached the peer and its transport then failed, which is the one
+// case the no-replay policy exists for. Killing the session before the call cannot stand in
+// for it, because watch() may or may not have seen that death by the time the call starts.
+func dropsConnectionOnSend() *sdkmcp.Server {
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
+	server.AddTool(mustTool("send", "Send.", nil, nil), func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+		// Closed from outside the handler: Close waits for in-flight handlers, this one included.
+		go func() { _ = req.Session.Close() }()
+		<-ctx.Done()
+		return nil, ctx.Err()
+	})
+	return server
+}
+
 // TestMountedServer_MutatingNotReplayedAfterDeath covers the no-replay
 // guarantee: a mutating tool whose transport failed after send redials but does
 // NOT reissue.
 func TestMountedServer_MutatingNotReplayedAfterDeath(t *testing.T) {
-	buildMutating := func() *sdkmcp.Server {
-		server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
-		server.AddTool(mustTool("send", "Send.", nil, nil), trivialToolHandler)
-		return server
-	}
-	srv, fixture := attachedMountedServer(t, buildMutating)
+	srv, fixture := attachedMountedServer(t, dropsConnectionOnSend)
 	bridged := bridgeTools("mail", srv, []*sdkmcp.Tool{mustTool("send", "Send.", nil, nil)}, time.Second)
 	srv.trackBridgedTools(bridged)
-
-	killLiveSession(t, srv)
 
 	_, err := srv.CallToolText(context.Background(), "send", map[string]any{"x": "y"})
 	if err == nil || !mcp.IsTransportError(err) || !strings.Contains(err.Error(), "reconnected but not replayed") {
@@ -233,18 +242,53 @@ func TestMountedServer_MutatingNotReplayedAfterDeath(t *testing.T) {
 	}
 }
 
+// TestMountedServer_MutatingCallOnAKnownDeadSessionIsSentOnce covers the other side: a session
+// watch() already saw die never carried the call, so the redialed session sends it, once. This
+// is the first action after a sandbox box was suspended for idleness.
+func TestMountedServer_MutatingCallOnAKnownDeadSessionIsSentOnce(t *testing.T) {
+	var sends atomic.Int32
+	build := func() *sdkmcp.Server {
+		server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
+		server.AddTool(mustTool("send", "Send.", nil, nil), func(ctx context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			sends.Add(1)
+			return trivialToolHandler(ctx, req)
+		})
+		return server
+	}
+	srv, fixture := attachedMountedServer(t, build)
+	bridged := bridgeTools("mail", srv, []*sdkmcp.Tool{mustTool("send", "Send.", nil, nil)}, time.Second)
+	srv.trackBridgedTools(bridged)
+
+	killLiveSession(t, srv)
+	waitUntilDead(t, srv)
+
+	text, err := srv.CallToolText(context.Background(), "send", map[string]any{"x": "y"})
+	if err != nil || !strings.HasPrefix(text, "send:") {
+		t.Fatalf("call on a known-dead session = %q, %v; want it sent on the redialed one", text, err)
+	}
+	if fixture.dialCount() != 1 || sends.Load() != 1 {
+		t.Fatalf("dials = %d, sends = %d; want one redial and exactly one send", fixture.dialCount(), sends.Load())
+	}
+}
+
+func waitUntilDead(t *testing.T, srv *MountedServer) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !srv.isDead() {
+		if time.Now().After(deadline) {
+			t.Fatal("watch() never recorded the session's death")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // TestMountedServer_IdempotencyScopedOperationNeverRedials covers the strongest
 // no-replay signal: an idempotency operation scoped ScopeMCPTool must not
 // redial-and-retry at all — byte-identical semantics to bridge_reconnect.go's
 // equivalent guard.
 func TestMountedServer_IdempotencyScopedOperationNeverRedials(t *testing.T) {
-	buildMutating := func() *sdkmcp.Server {
-		server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "fixture", Version: "0.0.1"}, nil)
-		server.AddTool(mustTool("send", "Send.", nil, nil), trivialToolHandler)
-		return server
-	}
-	srv, fixture := attachedMountedServer(t, buildMutating)
-	killLiveSession(t, srv)
+	srv, fixture := attachedMountedServer(t, dropsConnectionOnSend)
+	t.Cleanup(func() { _ = srv.Close() }) // no redial replaces the dead session, so close it here
 
 	op := idempotency.Operation{
 		Key:         idempotency.OperationKey{IdentityID: identityctx.LocalOperatorIdentity, Scope: idempotency.ScopeMCPTool, Key: "mcp-mutation"},
