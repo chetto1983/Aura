@@ -1,9 +1,10 @@
-import { useRef, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type MouseEvent, type WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { Keyboard, ShieldAlert } from 'lucide-react';
 import { keyEvent, mouseEvent, textEvents, toViewport, wheelEvent } from '../browserLive/liveInput';
 import { useBrowserLive } from '../browserLive/useBrowserLive';
+import { ComputerUse, type ComputerStep } from '@/components/computer-use';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -23,25 +24,34 @@ function BrowserLiveView({ session }: { session: string }) {
   const { state, send } = useBrowserLive(session);
   const frameRef = useRef<HTMLImageElement>(null);
   const softKeys = useRef<HTMLInputElement>(null);
+  const [clicks, setClicks] = useState<readonly ComputerStep[]>([]);
+  const clickSeq = useRef(0);
   const live = state.phase === 'live';
 
-  const point = (e: MouseEvent | WheelEvent) => {
+  const locate = (e: MouseEvent | WheelEvent): Hit | null => {
     const img = frameRef.current;
     if (!img || !state.meta) return null;
-    return toViewport(e.clientX, e.clientY, img.getBoundingClientRect(), state.meta);
+    const box = img.getBoundingClientRect();
+    const p = toViewport(e.clientX, e.clientY, box, state.meta);
+    return p && { p, box };
   };
   const onMouse = (eventType: 'mousePressed' | 'mouseReleased') => (e: MouseEvent<HTMLElement>) => {
-    const p = point(e);
-    if (!p || !live) return;
+    const hit = locate(e);
+    if (!hit || !live) return;
     // preventDefault stops the image drag, and with it the focus a click would give the stage,
     // so the stage takes focus itself: otherwise the keys typed after a click go nowhere.
     e.preventDefault();
     e.currentTarget.focus();
-    send(mouseEvent(eventType, p, e.button, e));
+    send(mouseEvent(eventType, hit.p, e.button, e));
+    if (eventType === 'mousePressed') {
+      clickSeq.current += 1;
+      const step = clickStep(e, hit, String(clickSeq.current), t('browserLive.click'));
+      setClicks((prev) => [...prev.slice(-2), step]);
+    }
   };
   const onWheel = (e: WheelEvent) => {
-    const p = point(e);
-    if (p && live) send(wheelEvent(p, e.deltaX, e.deltaY));
+    const hit = locate(e);
+    if (hit && live) send(wheelEvent(hit.p, e.deltaX, e.deltaY));
   };
   const onKey = (eventType: 'keyDown' | 'keyUp') => (e: KeyboardEvent) => {
     if (!live || e.nativeEvent.isComposing) return;
@@ -60,9 +70,7 @@ function BrowserLiveView({ session }: { session: string }) {
           )}
         />
         <h1 className="text-sm font-medium">{t('browserLive.title')}</h1>
-        <code className="min-w-0 flex-1 truncate rounded-md border border-border px-2 py-1 font-mono text-xs text-text-muted">
-          {state.url || session}
-        </code>
+        <span className="flex-1" />
         <Button
           variant="outline"
           size="sm"
@@ -89,79 +97,105 @@ function BrowserLiveView({ session }: { session: string }) {
         {t('browserLive.notice')}
       </p>
 
-      {/* A remote browser is an application surface: every key and click belongs to the page it
-          shows, so the stage takes focus and input the way a canvas-based remote desktop does. */}
-      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
-      <div
-        role="application"
-        // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the stage must take keyboard focus
-        tabIndex={0}
-        aria-label={t('browserLive.stageLabel')}
-        onMouseDown={onMouse('mousePressed')}
-        onMouseUp={onMouse('mouseReleased')}
-        onContextMenu={(e) => {
-          e.preventDefault();
-        }}
-        onWheel={onWheel}
-        onKeyDown={onKey('keyDown')}
-        onKeyUp={onKey('keyUp')}
-        onPaste={(e) => {
-          e.preventDefault();
-          if (!live) return;
-          for (const ev of textEvents(e.clipboardData.getData('text/plain'))) send(ev);
-        }}
-        className="relative grid min-h-0 flex-1 place-items-center overflow-hidden p-3 outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {state.frame ? (
-          // The frame carries no border or padding: its box IS the page, so a click maps 1:1.
-          <img
-            ref={frameRef}
-            src={state.frame}
-            alt={t('browserLive.frameAlt')}
-            draggable={false}
-            className={cn(
-              'max-h-full max-w-full select-none rounded-md shadow-[0_0_0_1px_var(--color-border),0_10px_30px_rgb(0_0_0/0.35)]',
-              !live && 'opacity-50',
-            )}
-          />
-        ) : null}
-        {state.phase !== 'live' ? (
-          <p
-            role="status"
-            className="absolute inset-x-0 bottom-6 mx-auto w-fit rounded-md bg-surface px-3 py-2 text-sm"
+      <div className="grid min-h-0 flex-1 place-items-center p-3 [container-type:size]">
+        <ComputerUse
+          url={state.url || session}
+          steps={clicks}
+          className={cn('shadow-[0_10px_30px_rgb(0_0_0/0.35)]', !live && 'opacity-60')}
+        >
+          {/* A remote browser is an application surface: every key and click belongs to the page
+              it shows, so the stage takes focus and input the way a canvas-based remote desktop does. */}
+          {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
+          <div
+            role="application"
+            // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- the stage must take keyboard focus
+            tabIndex={0}
+            aria-label={t('browserLive.stageLabel')}
+            onMouseDown={onMouse('mousePressed')}
+            onMouseUp={onMouse('mouseReleased')}
+            onContextMenu={(e) => {
+              e.preventDefault();
+            }}
+            onWheel={onWheel}
+            onKeyDown={onKey('keyDown')}
+            onKeyUp={onKey('keyUp')}
+            onPaste={(e) => {
+              e.preventDefault();
+              if (!live) return;
+              for (const ev of textEvents(e.clipboardData.getData('text/plain'))) send(ev);
+            }}
+            className="relative outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
-            {state.phase === 'connecting'
-              ? t('browserLive.connecting')
-              : t(`browserLive.ended.${endedKey(state.reason)}`)}
-          </p>
-        ) : null}
-        <input
-          ref={softKeys}
-          aria-label={t('browserLive.keyboard')}
-          autoCapitalize="off"
-          autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
-          className="absolute size-px opacity-0"
-          // Printable keys arrive through onInput (a phone's keyboard sends no usable key codes);
-          // only editing keys go as key events. Neither may bubble to the stage and be sent twice.
-          onKeyDown={(e) => {
-            e.stopPropagation();
-            if (e.key.length !== 1) onKey('keyDown')(e);
-          }}
-          onKeyUp={(e) => {
-            e.stopPropagation();
-            if (e.key.length !== 1) onKey('keyUp')(e);
-          }}
-          onInput={(e) => {
-            const input = e.currentTarget;
-            if (live) for (const ev of textEvents(input.value)) send(ev);
-            input.value = '';
-          }}
-        />
+            {state.frame ? (
+              // The frame is the whole screen box, with no border or padding: a click maps 1:1 and
+              // the element's cursor percentages land where the click did. The height cap leaves
+              // room for the address bar and the action line.
+              <img
+                ref={frameRef}
+                src={state.frame}
+                alt={t('browserLive.frameAlt')}
+                draggable={false}
+                className="block max-h-[calc(100cqh-5.5rem)] max-w-[calc(100cqw-2px)] select-none"
+              />
+            ) : (
+              <div className="aspect-video w-[min(40rem,calc(100cqw-2px))]" />
+            )}
+            {state.phase !== 'live' ? (
+              <p
+                role="status"
+                className="absolute inset-x-0 bottom-6 mx-auto w-fit rounded-md bg-surface-2 px-3 py-2 text-sm"
+              >
+                {state.phase === 'connecting'
+                  ? t('browserLive.connecting')
+                  : t(`browserLive.ended.${endedKey(state.reason)}`)}
+              </p>
+            ) : null}
+            <input
+              ref={softKeys}
+              aria-label={t('browserLive.keyboard')}
+              autoCapitalize="off"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="absolute size-px opacity-0"
+              // Printable keys arrive through onInput (a phone's keyboard sends no usable key
+              // codes); only editing keys go as key events. Neither may bubble to the stage and be
+              // sent twice.
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key.length !== 1) onKey('keyDown')(e);
+              }}
+              onKeyUp={(e) => {
+                e.stopPropagation();
+                if (e.key.length !== 1) onKey('keyUp')(e);
+              }}
+              onInput={(e) => {
+                const input = e.currentTarget;
+                if (live) for (const ev of textEvents(input.value)) send(ev);
+                input.value = '';
+              }}
+            />
+          </div>
+        </ComputerUse>
       </div>
     </main>
   );
+}
+
+interface Hit {
+  readonly p: { x: number; y: number };
+  readonly box: DOMRect;
+}
+
+/** A click as the element draws it: percent of the frame, labelled with its page coordinates. */
+function clickStep(e: MouseEvent, { p, box }: Hit, id: string, action: string): ComputerStep {
+  return {
+    id,
+    action,
+    target: `${String(p.x)} × ${String(p.y)}`,
+    x: ((e.clientX - box.left) / box.width) * 100,
+    y: ((e.clientY - box.top) / box.height) * 100,
+  };
 }
 
 const ENDED_REASONS = new Set([

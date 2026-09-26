@@ -133,6 +133,30 @@ describe('BrowserLivePage', () => {
     ]);
   });
 
+  it('marks each click on the frame and keeps the last three', () => {
+    const source = renderPage();
+    source.emit(frame);
+    const img = screen.getByRole('img');
+    img.getBoundingClientRect = () => DOMRect.fromRect({ x: 100, y: 50, width: 640, height: 360 });
+    for (const [x, y] of [
+      [100, 50],
+      [260, 140],
+      [420, 230],
+      [740, 410],
+    ] as const) {
+      fireEvent.mouseDown(img, { clientX: x, clientY: y, button: 0 });
+    }
+    expect(screen.getByText('1280 × 720')).toBeTruthy();
+    const trail = [
+      ...document.querySelectorAll<HTMLElement>('[data-slot="computer-use"] span[style]'),
+    ].map((d) => [d.style.left, d.style.top]);
+    expect(trail).toEqual([
+      ['25%', '25%'],
+      ['50%', '50%'],
+      ['100%', '100%'],
+    ]);
+  });
+
   it('types soft-keyboard text once, never also as a bubbled key event', async () => {
     const source = renderPage();
     source.emit(frame);

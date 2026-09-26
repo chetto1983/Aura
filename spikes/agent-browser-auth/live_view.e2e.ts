@@ -61,7 +61,7 @@ test('the operator logs into a site through the live view, never through the cha
   // The box browser is the source of truth; the cockpit's URL bar must then follow it.
   const boxUrl = () => inBox(`agent-browser --session ${session} --restore get url`).trim();
   await expect.poll(boxUrl, { timeout: 15_000 }).toContain('/otp');
-  await expect(page.locator('code')).toContainText('/otp', { timeout: 5_000 });
+  await expect(page.locator('[data-slot="computer-use"]')).toContainText('/otp', { timeout: 5_000 });
 
   // Second factor, typed by the human in the live view like the password.
   const code = inBox('python3 fixture_site.py totp').trim();
@@ -69,7 +69,7 @@ test('the operator logs into a site through the live view, never through the cha
   await page.keyboard.type(code, { delay: 20 });
   await page.keyboard.press('Enter');
   await expect.poll(boxUrl, { timeout: 15_000 }).toContain('/docs');
-  await expect(page.locator('code')).toContainText('/docs', { timeout: 5_000 });
+  await expect(page.locator('[data-slot="computer-use"]')).toContainText('/docs', { timeout: 5_000 });
 
   // The site granted exactly one new session, and the agent's own browser now holds it.
   expect(grantedSessions()).toBe(before + 1);

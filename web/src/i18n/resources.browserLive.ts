@@ -5,6 +5,7 @@ export const browserLiveEn = {
     title: 'Live browser',
     done: 'Done',
     keyboard: 'Show keyboard',
+    click: 'click',
     stageLabel: 'Live browser page. Click to interact, type to enter text.',
     frameAlt: 'The page open in your sandbox browser',
     notice:
@@ -25,6 +26,7 @@ export const browserLiveIt = {
     title: 'Browser dal vivo',
     done: 'Fatto',
     keyboard: 'Mostra tastiera',
+    click: 'clic',
     stageLabel: 'Pagina del browser dal vivo. Fai clic per interagire, digita per inserire testo.',
     frameAlt: 'La pagina aperta nel browser della tua sandbox',
     notice:

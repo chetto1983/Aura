@@ -42,6 +42,7 @@
     "src/audit/auditPairing.ts",
     "src/components/image.tsx",
     "src/components/image-generation.tsx",
+    "src/components/computer-use.tsx",
     "src/chat/generation/generationState.ts",
     "src/browserLive/liveInput.ts",
     "src/chat/generation/GenerationFrame.tsx",
