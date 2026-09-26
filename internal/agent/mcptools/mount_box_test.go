@@ -23,13 +23,11 @@ import (
 // exec's pipes, in the "box" of the identity the context carries, and its one tool answers
 // with that identity — so a call that reached the wrong box would say so.
 type identityBoxes struct {
-	installFor time.Duration
-	installErr error
+	startFor time.Duration // a cold start: the server answers only after this long
 
-	mu       sync.Mutex
-	starts   []string
-	installs []string
-	procs    []*boxProc
+	mu     sync.Mutex
+	starts []string
+	procs  []*boxProc
 }
 
 type boxProc struct {
@@ -44,15 +42,6 @@ func (p *boxProc) Touch()             {}
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
-
-func (b *identityBoxes) Install(ctx context.Context, _, _ string, _ []string) error {
-	b.mu.Lock()
-	b.installs = append(b.installs, identityctx.IdentityID(ctx))
-	err := b.installErr
-	b.mu.Unlock()
-	time.Sleep(b.installFor)
-	return err
-}
 
 func (b *identityBoxes) StartStdio(ctx context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	owner := identityctx.IdentityID(ctx)
@@ -70,6 +59,7 @@ func (b *identityBoxes) StartStdio(ctx context.Context, _ string, _, _ []string,
 		})
 	go func() {
 		defer close(p.done)
+		time.Sleep(b.startFor)
 		ss, err := server.Connect(context.Background(), &sdkmcp.IOTransport{Reader: stdin, Writer: nopWriteCloser{stdout}}, nil)
 		if err == nil {
 			_ = ss.Wait()
@@ -141,51 +131,54 @@ func TestBrowserRecipePolicyIsIdentityScopedAndGradedByItsTable(t *testing.T) {
 	}
 }
 
-// Each identity's new session installs the server in that identity's box first, and the
-// install does not eat the handshake budget: here the mount's whole budget is shorter than
-// the install. A failed install opens no session, and the next call tries again.
-func TestBoxServerInstallsPerIdentityBeforeTheHandshake(t *testing.T) {
-	boxes := &identityBoxes{installFor: 300 * time.Millisecond}
-	server := boxServer
-	server.Runtime.Install = "python3 -m venv /workspace/.mcp/x && /workspace/.mcp/x/bin/pip install x"
-	reg := tools.NewRegistry()
-	handshakeCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(t.Context(), "identity-a"), 200*time.Millisecond)
-	defer cancel()
-	closer, names, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, reg, "calc", server, MountOptions{Box: boxes})
-	if err != nil {
-		t.Fatalf("mount with an install longer than its handshake budget: %v", err)
-	}
-	t.Cleanup(func() {
-		_ = closer()
-		for _, p := range boxes.procs {
+// A box server's cold start fetches it into the identity's caches, and gets its init timeout
+// even when the mount's own budget is shorter; a start slower than the init timeout still fails.
+func TestBoxServerFirstStartGetsItsInitTimeout(t *testing.T) {
+	mount := func(startFor time.Duration) error {
+		boxes := &identityBoxes{startFor: startFor}
+		server := boxServer
+		server.Runtime.InitTimeoutSec = 1
+		handshakeCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(t.Context(), "identity-a"), 200*time.Millisecond)
+		defer cancel()
+		closer, _, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, tools.NewRegistry(), "fetch", server, MountOptions{Box: boxes})
+		if err == nil {
+			_ = closer()
+		}
+		boxes.mu.Lock()
+		procs := slices.Clone(boxes.procs)
+		boxes.mu.Unlock()
+		for _, p := range procs {
 			<-p.done
 		}
-	})
-	tool, _ := reg.Get(names[0])
-	call := func(identity string) error {
-		ctx := tools.WithToolCallContext(identityctx.WithIdentityID(t.Context(), identity), "sess", "tc", t.TempDir(), 2048)
-		_, err := tool.Execute(ctx, json.RawMessage(`{}`))
+		mcp.WaitForAbandonedCalls()
 		return err
 	}
+	if err := mount(400 * time.Millisecond); err != nil {
+		t.Fatalf("a 0.4 s cold start under a 0.2 s mount budget and a 1 s init timeout: %v", err)
+	}
+	if err := mount(1500 * time.Millisecond); err == nil {
+		t.Fatal("a 1.5 s start past its 1 s init timeout mounted anyway")
+	}
+}
 
-	boxes.mu.Lock()
-	boxes.installErr = errors.New("exit 1: no network")
-	boxes.mu.Unlock()
-	if err := call("identity-b"); err == nil || !strings.Contains(err.Error(), "no network") {
-		t.Fatalf("call over a failed install = %v, want its reason", err)
+func TestWithFirstStartOnlyEverWidensABoundedBudget(t *testing.T) {
+	p := &identitySessionPool{firstStart: time.Second}
+	short, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	defer cancel()
+	got, release := p.withFirstStart(short)
+	defer release()
+	if d, _ := got.Deadline(); time.Until(d) < 900*time.Millisecond {
+		t.Fatalf("a 10 ms budget was not widened to the 1 s first start: %v left", time.Until(d))
 	}
-	boxes.mu.Lock()
-	boxes.installErr = nil
-	boxes.mu.Unlock()
-	for _, identity := range []string{"identity-b", "identity-a", "identity-b"} {
-		if err := call(identity); err != nil {
-			t.Fatalf("call as %s: %v", identity, err)
-		}
+	long, cancelLong := context.WithTimeout(t.Context(), time.Minute)
+	defer cancelLong()
+	if got, _ := p.withFirstStart(long); got != long {
+		t.Fatal("a budget already longer than the first start was replaced")
 	}
-	if want := []string{"identity-a", "identity-b", "identity-b"}; !slices.Equal(boxes.installs, want) {
-		t.Fatalf("installs = %q, want %q: once per new session, retried after the failure", boxes.installs, want)
+	if got, _ := p.withFirstStart(t.Context()); got != t.Context() {
+		t.Fatal("an unbounded context was given a deadline")
 	}
-	if want := []string{"identity-a", "identity-b"}; !slices.Equal(boxes.starts, want) {
-		t.Fatalf("starts = %q, want %q: no server after a failed install", boxes.starts, want)
+	if got, _ := (&identitySessionPool{}).withFirstStart(short); got != short {
+		t.Fatal("an OAuth pool, with no first start, changed the budget")
 	}
 }

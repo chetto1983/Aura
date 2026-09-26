@@ -41,9 +41,10 @@ type identitySessionPool struct {
 	parent     *MountedServer
 	connect    openSessionFunc
 	processCtx context.Context
-	// prepare runs once per new session, in the owner's identity and before the handshake
-	// clock starts: a box server's install (mcp.InstallBoxServer). Nil for an OAuth server.
-	prepare func(ctx context.Context) error
+	// firstStart is the least budget a new session's handshake gets: a box server fetches
+	// itself into the identity's caches on its first start (mcp.BoxInitTimeout). Zero for an
+	// OAuth server, whose sessions use the redial and mount budgets as they are.
+	firstStart time.Duration
 
 	mu      sync.Mutex
 	closed  bool
@@ -72,7 +73,9 @@ func (p *identitySessionPool) openInitial(ctx context.Context) (*sdkmcp.ClientSe
 	p.entries[key] = entry
 	p.mu.Unlock()
 
-	child, session, advertised, err := p.openPrepared(ctx, owner)
+	ctx, cancel := p.withFirstStart(ctx)
+	defer cancel()
+	child, session, advertised, err := p.open(ctx, owner)
 	entry.server, entry.err = child, err
 	close(entry.ready)
 	if err != nil {
@@ -105,13 +108,9 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	if !ok {
 		// open still authenticates as owner (the real identity): the key split
 		// is a client-side session bucket, never a second tenant selection.
-		var child *MountedServer
-		err := p.runPrepare(owner)
-		if err == nil {
-			handshakeCtx, cancel := context.WithTimeout(ctx, defaultMCPRedialTimeout)
-			child, _, _, err = p.open(handshakeCtx, owner)
-			cancel()
-		}
+		handshakeCtx, cancel := context.WithTimeout(ctx, max(defaultMCPRedialTimeout, p.firstStart))
+		child, _, _, err := p.open(handshakeCtx, owner)
+		cancel()
 		entry.server, entry.err = child, err
 		close(entry.ready)
 		if err != nil {
@@ -128,27 +127,15 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	}
 }
 
-func (p *identitySessionPool) runPrepare(owner string) error {
-	if p.prepare == nil {
-		return nil
-	}
-	return p.prepare(identityctx.WithIdentityID(p.processCtx, owner))
-}
-
-// openPrepared is open for a caller whose handshake clock is already running (the mount): the
-// preparation runs first and the handshake then gets the whole budget it came with.
-func (p *identitySessionPool) openPrepared(ctx context.Context, owner string) (*MountedServer, *sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
+// withFirstStart gives a caller whose handshake clock is already running (the mount, bounded by
+// AURA_MCP_MOUNT_TIMEOUT, 10 s by default) at least the first-start budget. A box server's cold
+// start measured 10.95 s, which that default alone would cut short.
+func (p *identitySessionPool) withFirstStart(ctx context.Context) (context.Context, context.CancelFunc) {
 	deadline, bounded := ctx.Deadline()
-	budget := time.Until(deadline)
-	if err := p.runPrepare(owner); err != nil {
-		return nil, nil, nil, err
+	if p.firstStart == 0 || !bounded || time.Until(deadline) >= p.firstStart {
+		return ctx, func() {}
 	}
-	if bounded {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), budget)
-		defer cancel()
-	}
-	return p.open(ctx, owner)
+	return context.WithTimeout(context.WithoutCancel(ctx), p.firstStart)
 }
 
 func (p *identitySessionPool) open(ctx context.Context, owner string) (*MountedServer, *sdkmcp.ClientSession, []*sdkmcp.Tool, error) {

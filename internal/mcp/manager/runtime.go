@@ -105,7 +105,7 @@ func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfi
 	}
 	return mcp.ServerConfig{
 		Command: server.Command, Args: server.Args, Env: server.Env,
-		Box: mcp.IsBoxRuntime(server), Install: server.Runtime.Install,
+		Box: mcp.IsBoxRuntime(server), InitTimeout: mcp.BoxInitTimeout(server),
 	}, nil
 }
 

@@ -158,19 +158,7 @@ func checkManagedServerShape(name string, s ManagedServer) error {
 	args = append(args, s.Args...)
 	args = append(args, s.Runtime.Command...)
 	args = append(args, s.Runtime.Mounts...)
-	if err := checkStdioShape(name, s.Command, args, s.Env); err != nil {
-		return err
-	}
-	return checkInstallShape(name, s.Runtime.Install, s.Env)
-}
-
-// checkInstallShape scans a box server's install line as the inline script it is. It runs in
-// every identity's box, so a planted one would persist in all of them, not only on one host.
-func checkInstallShape(name, install string, env []string) error {
-	if strings.TrimSpace(install) == "" {
-		return nil
-	}
-	return checkStdioShape(name, "sh", []string{"-c", install}, env)
+	return checkStdioShape(name, s.Command, args, s.Env)
 }
 
 // checkManagedServersShape runs the save-time checkpoint over a whole registry.

@@ -2,9 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"fmt"
 	"io"
 	"regexp"
 	"strings"
@@ -28,43 +25,6 @@ func newSandboxMCPBox(router *usersandbox.SandboxRouter) mcp.BoxLauncher {
 		return nil
 	}
 	return sandboxMCPBox{router: router}
-}
-
-// boxInstallDir keeps, per identity, the record of each box server's completed install. It is
-// on the workspace volume beside what the install put there, so the two survive a box
-// recreate together and leave together when the identity is deprovisioned.
-const boxInstallDir = "/workspace/.aura-mcp"
-
-func (b sandboxMCPBox) Install(ctx context.Context, name, script string, env []string) error {
-	h, err := b.router.Route(ctx)
-	if err != nil {
-		return err
-	}
-	res, err := b.router.Exec(ctx, h, usersandbox.ExecRequest{Command: boxInstallCommand(name, script), Dir: "/workspace", Env: env})
-	if err != nil {
-		return err
-	}
-	if res.ExitCode != 0 {
-		return fmt.Errorf("exit %d: %s", res.ExitCode, strings.TrimSpace(string(res.Stderr)))
-	}
-	return nil
-}
-
-// boxInstallCommand runs script once per distinct script: the record holds the hash of the
-// script that last completed, a lock serialises concurrent starts of the same server in one
-// box, and a failure writes no record and reports the tail of the install log. The script
-// stays on its own lines inside the subshell, so a trailing comment cannot swallow the
-// closing parenthesis.
-func boxInstallCommand(name, script string) string {
-	sum := sha256.Sum256([]byte(script))
-	hash := hex.EncodeToString(sum[:])
-	record := boxInstallDir + "/" + boxFileName(name) + ".installed"
-	log := tools.ShellQuoteArg(boxLogPath(name + "-install"))
-	inner := "[ \"$(cat " + tools.ShellQuoteArg(record) + " 2>/dev/null)\" = " + hash + " ] && exit 0\n" +
-		"(\n" + script + "\n) >>" + log + " 2>&1 || { rc=$?; tail -n 20 " + log + " >&2; exit $rc; }\n" +
-		"printf %s " + hash + " > " + tools.ShellQuoteArg(record)
-	return "mkdir -p " + tools.ShellQuoteArg(boxInstallDir) +
-		" && flock " + tools.ShellQuoteArg(record+".lock") + " sh -c " + tools.ShellQuoteArg(inner)
 }
 
 func (b sandboxMCPBox) StartStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/secret"
 )
@@ -100,10 +101,10 @@ type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
-	// Install is a shell line that puts a box server's command in place in an identity's
-	// box, run there before the server's first start and again whenever the line changes
-	// (box_session.go). Box servers only: a local server is prepared once, on the host (#211).
-	Install string `json:"install,omitempty"`
+	// InitTimeoutSec is the budget, in seconds, for a box server's first start in an
+	// identity's box, when `npx -y` or `uvx` fetch the server into that identity's caches
+	// (BoxInitTimeout). Box servers only; unset means DefaultBoxInitTimeout.
+	InitTimeoutSec int `json:"initTimeoutSec,omitempty"`
 }
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
@@ -250,13 +251,37 @@ func validateStdioRuntime(name string, cfg ManagedServer) error {
 	if strings.TrimSpace(cfg.Command) == "" {
 		return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
 	}
-	if kind != RuntimeKindBox {
-		if strings.TrimSpace(cfg.Runtime.Install) != "" {
-			return fmt.Errorf("MCP managed config: server %q declares runtime.install, which only a box server runs; a local server is prepared on install", name)
-		}
+	switch {
+	case kind != RuntimeKindBox && cfg.Runtime.InitTimeoutSec != 0:
+		return fmt.Errorf("MCP managed config: server %q declares runtime.initTimeoutSec, which only a box server's first start uses", name)
+	case cfg.Runtime.InitTimeoutSec < 0 || cfg.Runtime.InitTimeoutSec > maxBoxInitTimeoutSec:
+		return fmt.Errorf("MCP managed config: server %q runtime.initTimeoutSec must be between 1 and %d", name, maxBoxInitTimeoutSec)
+	case kind != RuntimeKindBox:
 		return nil
 	}
 	return refuseBoxSecrets(name, cfg.Env)
+}
+
+// DefaultBoxInitTimeout is a box server's first-start budget when it declares none. A first
+// start fetches the server into the identity's own npm or uv cache; measured 2026-09-26 in a
+// box with empty caches, 3.5-5.4 s for light servers and 10.95 s for a numpy/scipy/sympy one,
+// against 0.6-1.8 s warm. LibreChat's per-server initTimeout defaults to the same 30 s.
+const DefaultBoxInitTimeout = 30 * time.Second
+
+// maxBoxInitTimeoutSec bounds what a registry row may ask for: a start that needs longer is
+// not a cold cache, and every caller waiting on it is a turn or a mount.
+const maxBoxInitTimeoutSec = 600
+
+// BoxInitTimeout is the budget s gets for its first start in a box: what it declares, or
+// DefaultBoxInitTimeout. Zero for a server that does not run in a box.
+func BoxInitTimeout(s ManagedServer) time.Duration {
+	if !IsBoxRuntime(s) {
+		return 0
+	}
+	if s.Runtime.InitTimeoutSec > 0 {
+		return time.Duration(s.Runtime.InitTimeoutSec) * time.Second
+	}
+	return DefaultBoxInitTimeout
 }
 
 // refuseBoxSecrets rejects a credential declared for a box server. The box exec drops

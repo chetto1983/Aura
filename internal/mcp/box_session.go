@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"strings"
-	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -25,22 +23,17 @@ import (
 // not wrap ErrTransport, and a box server is never run on the host instead.
 var ErrNoBox = errors.New("mcp: this server runs in the sandbox box, and this caller has no sandbox")
 
-// BoxLauncher reaches the box of the identity ctx carries.
+// BoxLauncher starts a stdio server in the box of the identity ctx carries. stdin feeds the
+// server's stdin and its EOF closes it; the server's stdout is copied to stdout as it comes.
+// The launcher keeps the server's stderr off stdout, where it would corrupt the framing.
+//
+// There is no install step. A box server is declared as a command that fetches itself, such
+// as `npx -y <pkg>@<version>` or `uvx <pkg>==<version>`, into the identity's own npm or uv
+// cache on its first start, the model LibreChat uses on its host; in a box every identity gets
+// its own copy (prd.md §12). The first start's longer budget is BoxInitTimeout.
 type BoxLauncher interface {
-	// Install makes sure script has run to completion in the box, at most once for as long
-	// as script stays the same: the box keeps a record of the script it last completed and
-	// runs it again only when that record differs. Concurrent calls for one box and one
-	// server wait for each other. A failure leaves no record, so the next call tries again.
-	Install(ctx context.Context, name, script string, env []string) error
-	// StartStdio starts a stdio server. stdin feeds the server's stdin and its EOF closes
-	// it; the server's stdout is copied to stdout as it comes. The launcher keeps the
-	// server's stderr off stdout, where it would corrupt the framing.
 	StartStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error)
 }
-
-// boxInstallTimeout bounds one box server install. Measured 2026-09-26: calculator-mcp-server
-// (numpy, scipy, sympy, matplotlib) installs in 39 s into a fresh box with empty caches.
-const boxInstallTimeout = 5 * time.Minute
 
 // BoxProcess is one server process running in a box.
 type BoxProcess interface {
@@ -62,7 +55,8 @@ func openSDKBox(processCtx, handshakeCtx context.Context, name string, cfg Serve
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	argv := append([]string{cfg.Command}, cfg.Args...)
-	proc, err := o.Box.StartStdio(processCtx, name, argv, cfg.Env, inR, outW)
+	stdout := &protocolLines{dst: outW, name: name, logger: resolveLogger(o.Logger)}
+	proc, err := o.Box.StartStdio(processCtx, name, argv, cfg.Env, inR, stdout)
 	if err != nil {
 		_ = inW.Close()
 		_ = outR.Close()
@@ -95,35 +89,6 @@ func openSDKBox(processCtx, handshakeCtx context.Context, name string, cfg Serve
 	}
 	logNegotiatedProtocol(resolveLogger(o.Logger), name, transportLabelBox, session)
 	return session, nil
-}
-
-// InstallBoxServer runs a box server's install line in the box of the identity ctx carries.
-// Every caller runs it BEFORE starting any handshake clock: an install is not part of a
-// handshake, and measured 2026-09-26 it can take 39 s where an identity's first call gets a
-// 10 s redial budget and an install verification 30 s. Run inside those budgets it failed,
-// was killed half-way, and started from nothing on every later call.
-//
-// It is bounded by boxInstallTimeout, and ctx should be the process context carrying the
-// identity, so a caller that stops waiting does not cut the install short. A server with no
-// install line, or not in a box, needs nothing and returns at once.
-func InstallBoxServer(ctx context.Context, name, install string, env []string, box BoxLauncher) error {
-	if strings.TrimSpace(install) == "" {
-		return nil
-	}
-	if box == nil {
-		return fmt.Errorf("mcp %q: %w", name, ErrNoBox)
-	}
-	// Spawn-time half of the shape check: a line planted out of band never passed the
-	// save-time one, and this one runs in every identity's box.
-	if err := checkInstallShape(name, install, env); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, boxInstallTimeout)
-	defer cancel()
-	if err := box.Install(ctx, name, install, env); err != nil {
-		return fmt.Errorf("mcp %q: install in the sandbox box: %w", name, err)
-	}
-	return nil
 }
 
 // boxStdin closes the server's stdin and then ends the process: EOF alone is a request a

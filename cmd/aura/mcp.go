@@ -212,7 +212,7 @@ func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err 
 	return recipe, name, env, nil
 }
 
-const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box [--install <shell line>]] -- <command> [args...]"
+const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box] -- <command> [args...]"
 
 func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	// Only guard against an empty arg vector (so args[0] below is safe). The real
@@ -229,11 +229,9 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	env := []string{}
 	enabled := true
 	box := false
-	install := ""
 	trustClass := mcp.TrustBlocked
 	pendingEnv := false
 	pendingTrust := false
-	pendingInstall := false
 	inCommand := false
 	commandParts := []string{}
 	for _, arg := range args[1:] {
@@ -247,11 +245,6 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 			}
 			env = append(env, arg)
 			pendingEnv = false
-			continue
-		}
-		if pendingInstall {
-			install = arg
-			pendingInstall = false
 			continue
 		}
 		if pendingTrust {
@@ -273,8 +266,6 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 			enabled = false
 		case "--box":
 			box = true
-		case "--install":
-			pendingInstall = true
 		default:
 			return fmt.Errorf("unknown mcp add option %q", arg)
 		}
@@ -284,9 +275,6 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	}
 	if pendingTrust {
 		return fmt.Errorf("--trust requires local")
-	}
-	if pendingInstall || (install != "" && !box) {
-		return fmt.Errorf("--install takes a shell line and needs --box\n%s", mcpAddUsage)
 	}
 	if len(commandParts) == 0 {
 		return errors.New(mcpAddUsage)
@@ -314,7 +302,6 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	var launcher mcp.BoxLauncher
 	if box {
 		server.Runtime.Kind = mcp.RuntimeKindBox
-		server.Runtime.Install = install
 		ctx, launcher = operatorBoxLauncher(ctx, cfg, pool)
 	}
 

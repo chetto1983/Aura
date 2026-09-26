@@ -108,37 +108,40 @@ A stdio server runs in one of two places, named by `runtime.kind`:
 }
 ```
 
-From the CLI, `--box` declares it and `--install` gives the shell line that puts its command
-in place; the add runs that line and completes the handshake in the operator's box:
+A box server installs itself, the way LibreChat's stdio servers do: declare it as a command
+that fetches its own package, pinned, and its first start in an identity's box fetches it into
+that identity's npm or uv cache. There is no install step and nothing is shared between
+identities. From the CLI, `--box` declares it and the add completes the handshake in the
+operator's box:
 
 ```bash
-aura mcp add calculator --box \
-  --install 'python3 -m venv /workspace/.mcp/calculator && /workspace/.mcp/calculator/bin/pip install git+https://github.com/chetto1983/calculator-mcp-server@25f8388' \
-  -- /workspace/.mcp/calculator/bin/calculator-mcp-server
-aura mcp trust calculator --class sandboxed_local --reason "installed per identity from its repo"
+aura mcp add fetch --box -- uvx mcp-server-fetch==2026.8.18
+aura mcp add files --box -- npx -y @modelcontextprotocol/server-filesystem@2026.8.31 /workspace
+aura mcp trust fetch --class sandboxed_local --reason "reviewed mcp-server-fetch"
 ```
 
-The install line (`runtime.install`) runs in each identity's own box before that identity's
-first session, and again whenever the line changes: the box records the hash of the line it
-last completed in `/workspace/.aura-mcp/<name>.installed`, a lock makes concurrent starts
-install once, and a failure records nothing and reports the tail of
-`/tmp/aura-mcp-<name>-install.log`. No handshake clock runs during an install (5 min bound);
-calculator-mcp-server takes 39 s into an empty box. Deleting the record forces a reinstall.
+Measured in a box with empty caches (prd.md §12): 3.5-5.4 s for a light server's first start,
+10.95 s for a numpy/scipy/sympy one, 0.6-1.8 s once cached; the caches survive a box recreate.
+A first start gets `runtime.initTimeoutSec` (default 30, at most 600), however short the mount
+or first-call budget around it: set it higher for a server that fetches more.
 
 A box server:
 
 - is started in an identity's box the first time that identity calls one of its tools, and a
   call from any other identity is refused. The tool list is read once, at mount, in the
   operator's box;
-- takes the box as its environment: the command comes with the image or with its install
-  line, one copy per identity (no package state is shared between identities; see prd.md on
-  cache poisoning), and nothing is prepared on the Aura host. Adding one requires a handshake,
-  run in the installing identity's (or, from the CLI, the operator's) box;
-- installs in the operator's box when it is mounted, since that is where its tools are read:
-  a first `aura serve` after a new install line waits for it (44 s for calculator);
+- takes the box as its environment: the command comes with the image or fetches itself into
+  the identity's own caches, one copy per identity (no package state is shared between
+  identities; see prd.md on cache poisoning), and nothing is prepared on the Aura host. Adding
+  one requires a handshake, run in the installing identity's (or, from the CLI, the
+  operator's) box;
+- starts cold in the operator's box when it is first mounted, since that is where its tools
+  are read, and `aura serve` waits for that start;
 - takes no secrets: everything in a box is readable by the agent's own shell, so a
   secret-shaped `env` entry is refused at write time;
-- writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;
+- writes its stderr to `/tmp/aura-mcp-<name>.log` in the box; a line on its stdout that is not
+  JSON-RPC (npm's own install output, for one) is dropped and logged rather than ending the
+  session, as LibreChat's TypeScript client does;
 - is never started on the Aura host. `aura mcp doctor` has no box to run it in and reports it
   as not probed.
 

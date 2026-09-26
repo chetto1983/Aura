@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -165,22 +164,10 @@ func TestPrepareAndVerifyRunsABoxServerInTheBoxAndPreparesNothingHere(t *testing
 	if _, _, _, err := prepareAndVerify(context.Background(), prep, "browser", in, nil); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Fatalf("install without a box = %v, want refused", err)
 	}
-
-	withLine := in
-	withLine.Runtime.Install = "python3 -m venv /workspace/.mcp/c && /workspace/.mcp/c/bin/pip install c"
-	if _, _, verified, err := prepareAndVerify(context.Background(), prep, "calc", withLine, sdkBox{}); err != nil || !verified.OK {
-		t.Fatalf("install line then handshake = %+v, %v", verified, err)
-	}
-	failing := sdkBox{installErr: errors.New("exit 1: no matching distribution")}
-	if _, _, _, err := prepareAndVerify(context.Background(), prep, "calc", withLine, failing); err == nil ||
-		!strings.Contains(err.Error(), "no matching distribution") || !strings.Contains(err.Error(), "not installed") {
-		t.Fatalf("failed install line = %v, want refused with its reason", err)
-	}
 }
 
-// sdkBox answers a box start with a real one-tool SDK server over the exec's pipes, and an
-// install with installErr.
-type sdkBox struct{ installErr error }
+// sdkBox answers a box start with a real one-tool SDK server over the exec's pipes.
+type sdkBox struct{}
 
 type sdkBoxProc struct {
 	stdin io.ReadCloser
@@ -194,8 +181,6 @@ func (p sdkBoxProc) Touch()             {}
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
-
-func (b sdkBox) Install(context.Context, string, string, []string) error { return b.installErr }
 
 func (sdkBox) StartStdio(_ context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	p := sdkBoxProc{stdin: stdin, done: make(chan struct{})}

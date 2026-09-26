@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -139,7 +140,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {
-		return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, nil)
+		return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, 0)
 	}
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
@@ -162,20 +163,17 @@ func mountBoxHost(processCtx, handshakeCtx context.Context, reg *tools.Registry,
 		o.Box = opts.Box
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
-	install := func(ctx context.Context) error {
-		return mcp.InstallBoxServer(ctx, name, cfg.Install, cfg.Env, opts.Box)
-	}
-	return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, install)
+	return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, cfg.InitTimeout)
 }
 
-// openIdentityScopedMount mounts a server whose sessions each belong to one identity. prepare,
-// when set, runs for every identity's new session before its handshake starts (a box server's
-// install); nil for an OAuth server.
-func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc, prepare func(context.Context) error) (closer func() error, names []string, host *MountedServer, err error) {
+// openIdentityScopedMount mounts a server whose sessions each belong to one identity. firstStart
+// is the least budget each identity's first session gets (a box server's cold start); zero for
+// an OAuth server.
+func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc, firstStart time.Duration) (closer func() error, names []string, host *MountedServer, err error) {
 	procCtx, cancel := context.WithCancel(processCtx)
 	parent := NewMountedServer(name, nil)
 	pool := newIdentitySessionPool(parent, connect, procCtx)
-	pool.prepare = prepare
+	pool.firstStart = firstStart
 	parent.identityPool = pool
 	parent.files = opts.Files
 

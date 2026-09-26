@@ -83,15 +83,11 @@ func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, serv
 	if serverType, _, err := mcp.Classify(server); err != nil || serverType != mcp.ServerTypeStdio {
 		return server, mcpenv.Report{}, nil, nil
 	}
-	// A box server's environment is the box: nothing is installed on this host. Its own install
-	// line runs in the installing identity's box, before the verification clock starts, and it
-	// still has to complete a handshake there.
+	// A box server's environment is the box: it fetches itself into the installing identity's
+	// caches on its first start there, so nothing is prepared on this host, and the handshake
+	// that verifies it gets that first start's budget.
 	report := mcpenv.Report{}
-	if mcp.IsBoxRuntime(server) {
-		if err := mcp.InstallBoxServer(ctx, name, server.Runtime.Install, server.Env, box); err != nil {
-			return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf("install %q: %w, so it was not installed", name, err)
-		}
-	} else {
+	if !mcp.IsBoxRuntime(server) {
 		prepareCtx, cancelPrepare := context.WithTimeout(ctx, installPrepareTimeout)
 		defer cancelPrepare()
 		prepared, rep, err := p.Prepare(prepareCtx, name, mcpenv.Launch{Command: server.Command, Args: server.Args})
@@ -103,7 +99,7 @@ func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, serv
 		report = rep
 	}
 
-	verifyCtx, cancel := context.WithTimeout(ctx, installVerifyTimeout)
+	verifyCtx, cancel := context.WithTimeout(ctx, max(installVerifyTimeout, mcp.BoxInitTimeout(server)))
 	defer cancel()
 	probe := mcp.ProbeServerWithOptions(verifyCtx, name, server, mcp.RuntimeEgressPolicy(false, server), mcp.SessionOptions{Box: box})
 	if !probe.OK {
