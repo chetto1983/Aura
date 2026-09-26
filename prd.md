@@ -660,12 +660,12 @@ three (`spikes/agent-browser-auth/live_view.e2e.ts`). The run corrected three as
 It also found that the box's keep-alive PID 1 never reaped orphans: four sessions opened and
 closed left 177 zombies counting against the pid cap, which starves `shell_exec` as well as the
 browser. Boxes now run with Docker's init (`HostConfig.Init`), and the same runs ended at 3 tasks
-and 0 zombies. Existing boxes keep their old image and host config until recreated: nothing in
-the box lifecycle recreates a container when the image or its pinned host config changes, so a
-deployment carrying this change must recreate its boxes (removing the `aura-box-*` containers
-keeps their volumes, and the next `Resolve` rebuilds them; deprovisioning would delete the
-volumes too). The measurement does not cover the
-viewer on a phone, over Cloudflare, or with a second concurrent viewer in another browser.
+and 0 zombies. Existing boxes built before a change used to keep their old image and host config
+forever, since Docker cannot change them in place; the first E2E ran into exactly that. `Resolve`
+now recreates a box whose image, init or cache mounts are not current, keeping its volumes and
+logging why; an image that is not present locally is never a reason, because `Resolve` must not
+pull. The measurement does not cover the viewer on a phone, over Cloudflare, or with a second
+concurrent viewer in another browser.
 
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native

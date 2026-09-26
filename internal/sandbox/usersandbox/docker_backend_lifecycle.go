@@ -45,7 +45,7 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 		return BoxHandle{}, fmt.Errorf("resolve: find box %q: %w", name, err)
 	}
 	if existing != "" {
-		existing, err = b.reconcileCacheMounts(ctx, existing, spec.IdentityID)
+		existing, err = b.reconcileBox(ctx, existing, spec)
 		if err != nil {
 			return BoxHandle{}, fmt.Errorf("resolve: reconcile box %q: %w", name, err)
 		}
