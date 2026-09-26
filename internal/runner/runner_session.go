@@ -23,7 +23,7 @@ import (
 // no-principal path (D-25): a bare ctx with no authenticated principal keys its in-memory
 // session state under the seeded `local` identity id (migration 0004), never under the empty
 // string — so two no-principal callers still resolve to one deterministic key.
-const localSessionIdentity = "00000000-0000-0000-0000-000000000001"
+const localSessionIdentity = identityctx.LocalOperatorIdentity
 
 // sessionKey is the composite (identity, session) key every shared per-conversation
 // in-memory Runner map is keyed by (D-23). It is a comparable struct so it is a direct map

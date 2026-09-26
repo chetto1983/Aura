@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/moby/moby/client"
 )
@@ -81,9 +82,16 @@ func newDockerRouter(t *testing.T, sources usersandbox.SourceResolver) *usersand
 		opts = append(opts, usersandbox.WithMaterializeSources(sources))
 	}
 	backend := usersandbox.NewDockerBackend(cli, dockerTestImage(), limits, opts...)
-	return usersandbox.NewSandboxRouter(backend, config.ProfileServerProduction, config.SandboxConfig{
+	// single_user_hardened is a strict profile on runc. server_production would ask for gVisor,
+	// which Aura does not run and CI does not install: these tests passed only while they reused
+	// a `local` box another test had left behind with runc (measured 2026-09-26).
+	router := usersandbox.NewSandboxRouter(backend, config.ProfileSingleUserHardened, config.SandboxConfig{
 		Image: dockerTestImage(), CPULimit: 1, MemoryLimit: 1 << 30, PidsLimit: 256, IdleTTLSec: 1800,
 	})
+	// Every test here routes with no principal, into `local`'s box: destroy it, or the next test
+	// inherits its files and its runtime.
+	t.Cleanup(func() { _ = router.Destroy(context.Background(), identityctx.LocalOperatorIdentity) })
+	return router
 }
 
 // TestRoute_StrictExecInBox proves a strict-profile shell_exec runs inside the box: a file written

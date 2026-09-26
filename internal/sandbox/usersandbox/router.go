@@ -26,10 +26,10 @@ import (
 )
 
 // localIdentityID is the migration-0004 seeded `local` identity — the CLI / no-principal
-// fallback owner (the same UUID as tools.localOwnerID and agui's localIdentityID). A tool call
+// fallback owner (identityctx.LocalOperatorIdentity, like every other no-principal path). A tool call
 // made without an authenticated principal resolves to, and is contained in, `local`'s box —
 // never the host.
-const localIdentityID = "00000000-0000-0000-0000-000000000001"
+const localIdentityID = identityctx.LocalOperatorIdentity
 
 // nanoCPUsPerCPU converts a whole-CPU count (cfg.CPULimit) to moby's NanoCPUs unit (1 CPU =
 // 1e9 nano-CPUs), the container.Resources.NanoCPUs cgroup cap (D-14).

@@ -21,7 +21,7 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	// newDockerRouter selects gVisor, which the CI daemon lacks; it would only pass by reusing
 	// the runc box another test created first.
-	router := newRuncBoxRouter(t)
+	router := newDockerRouter(t, nil)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-mcp", "call-dk-mcp"), "req-dk-mcp"))
 	// A failure midway must not leave the file in the volume: the next run would name its
 	// file "Fattura è-2.pdf". Run forgets its steps, so this does nothing after the asserted Run.
@@ -58,7 +58,7 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 // the sweep's exclusion of it keeps what the turn already holds.
 func TestMCPFileSink_SweepsATurnDirectoryAnUncleanExitLeftBehind(t *testing.T) {
 	skipUnlessDockerdTools(t)
-	router := newRuncBoxRouter(t)
+	router := newDockerRouter(t, nil)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-sweep", "call-dk-sweep"), "req-dk-sweep"))
 	// Run forgets its steps, so this removes the new turn's directory once and only once.
 	t.Cleanup(func() { _ = cleanup.Run(context.Background()) })

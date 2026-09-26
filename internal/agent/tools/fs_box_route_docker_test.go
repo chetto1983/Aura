@@ -17,32 +17,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
-	"github.com/moby/moby/client"
 )
 
 const hostLeakCanary = "HOST-LEAK-CANARY-2-5"
-
-// newRuncBoxRouter builds a STRICT router on single_user_hardened rather than reusing
-// newDockerRouter's server_production. Both route identically — Strict() is true for both, so the
-// code under test is the same branch — but specFor selects gVisor (runsc) only for
-// server_production, and a daemon without gVisor answers "unknown or invalid runtime name: runsc"
-// before a box ever exists. single_user_hardened is also the profile the appliance actually runs.
-func newRuncBoxRouter(t *testing.T) *usersandbox.SandboxRouter {
-	t.Helper()
-	cli, err := client.New(client.FromEnv)
-	if err != nil {
-		t.Fatalf("docker client: %v", err)
-	}
-	t.Cleanup(func() { _ = cli.Close() })
-	limits := usersandbox.Resources{NanoCPUs: 1_000_000_000, MemoryBytes: 1 << 30, PidsLimit: 256}
-	backend := usersandbox.NewDockerBackend(cli, dockerTestImage(), limits)
-	return usersandbox.NewSandboxRouter(backend, config.ProfileSingleUserHardened, config.SandboxConfig{
-		Image: dockerTestImage(), CPULimit: 1, MemoryLimit: 1 << 30, PidsLimit: 256, IdleTTLSec: 1800,
-	})
-}
 
 // hostTreeWithCanary builds a host directory the routed tool is pointed at. Nothing under it may
 // appear in a routed result: if it does, the containment fs_read/fs_write establish is still open
@@ -60,7 +37,7 @@ func hostTreeWithCanary(t *testing.T) string {
 // host file is left byte-for-byte alone.
 func TestPatchRoutedEditsInBoxNotHost(t *testing.T) {
 	skipUnlessDockerdTools(t)
-	router := newRuncBoxRouter(t)
+	router := newDockerRouter(t, nil)
 	hostDir := hostTreeWithCanary(t)
 	hostTwin := filepath.Join(hostDir, "app.go")
 	original := []byte("port := 8080\n")
@@ -109,7 +86,7 @@ func TestPatchRoutedEditsInBoxNotHost(t *testing.T) {
 // tree the tool is configured with never appears in the results.
 func TestSearchFilesNamesRoutedListsBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
-	router := newRuncBoxRouter(t)
+	router := newDockerRouter(t, nil)
 	hostTreeWithCanary(t) // seeds hostonly.go on the HOST; the assertions below prove it never lists
 
 	ctx := ctxWith(t, "sess-dk-fsglob", "call-dk-fsglob")
@@ -141,7 +118,7 @@ func TestSearchFilesNamesRoutedListsBoxTreeOnly(t *testing.T) {
 // the host tree — the canary is present on the host and must never be reported.
 func TestSearchFilesContentRoutedSearchesBoxTreeOnly(t *testing.T) {
 	skipUnlessDockerdTools(t)
-	router := newRuncBoxRouter(t)
+	router := newDockerRouter(t, nil)
 	hostTreeWithCanary(t) // seeds the canary on the HOST; the box sweep must never find it
 
 	ctx := ctxWith(t, "sess-dk-fsgrep", "call-dk-fsgrep")
