@@ -709,6 +709,22 @@ it was not written for. What it does not: a server installed on one identity's v
 from the others' boxes; an unannotated server's calls are graded destructive in a model turn;
 the cockpit install form cannot yet declare the runtime.
 
+**Per-identity install for box servers, measured 2026-09-26.** Chosen over a shared read-only
+volume and over the image: every identity gets its own copy, so no package state crosses
+identities (the 2026-09-14 cache-poisoning finding). `runtime.install` (CLI `--install`, box only,
+shape-checked at save and before it runs) is a shell line run in an identity's box before its first
+session and again when the line changes; the box records the hash of the last completed line, a
+lock makes concurrent starts install once, and a failure records nothing and returns the tail of
+its log. The install runs before any handshake clock (mount, first session, install
+verification) under its own 5-minute bound: the docker test first failed because only the connect
+deadline had been extended and `tools/list` still ran on the expired one. Measured: calculator
+installs in 39 s and 479 MB per identity; two identities each installed a 12 s line once, on first
+use; a changed line reinstalled; three concurrent starts installed once; on the production
+registry an empty box was served after a 44 s install (2.4 s warm). Not solved: a new line delays
+`aura serve`'s boot mount while it installs in the operator's box; each other identity pays the
+install on its first call; deleting an installed tree but not its record breaks it until the
+record is removed.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

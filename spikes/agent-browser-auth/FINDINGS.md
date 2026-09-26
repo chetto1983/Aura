@@ -134,6 +134,21 @@ approved it. `mcp_calculator_e2e.sh` then drives it like (E).
 | F5 | The server states no tool annotations, so in a model turn every call is graded destructive by the fail-closed default and asks for approval. That is the existing policy for any unannotated server, not a property of the box runtime |
 | F6 | Installed on one identity's volume, the server is missing from every other identity's box: their calls fail until it is installed there too, or baked into the image |
 
+## (G) Per-identity install
+
+The operator chose one copy per identity (no shared package state, per the 2026-09-14 cache
+poisoning measurement) over a shared read-only volume or the image. `runtime.install` is a shell
+line run in an identity's box before its first session; the box records the hash of the last
+completed line, `flock` serialises concurrent starts, failures record nothing.
+
+| # | Result |
+|---|---|
+| G1 | calculator into an empty box: 39 s, 479 MB (`--no-cache-dir`, plain container) |
+| G2 | **Design bug found by the docker test:** extending only the connect deadline after an install left `tools/list` on the expired mount deadline. The install now runs before any handshake clock starts, at every entry: the mount (keeping its budget), each identity's first session (before the 10 s redial budget), and the install verification (before its 30 s) |
+| G3 | Docker test, two identities, real router and mount: a 12 s install (longer than both budgets) runs once in each box on that identity's first use; later calls reuse it; a changed line reinstalls; three concurrent starts install once; a failure reports `exit 3` and the log tail and records nothing |
+| G4 | Production registry: `aura mcp add calculator --box --install ...` on an empty box, 44 s; `mcp_calculator_e2e.sh` 3/3, 7/7. With the venv and its record deleted, the next `toolpipe` reinstalled at mount and answered 6*7 = 42: 44 s cold, 2.4 s warm |
+| G5 | Not solved: a new install line blocks `aura serve`'s boot mount while it installs in the operator's box, and other identities pay the install on their first call. Deleting the venv but keeping the record breaks that identity's server until the record goes too |
+
 ## Gotchas that bite an integration
 
 - **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
