@@ -139,7 +139,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {
-		return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect)
+		return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, nil)
 	}
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
@@ -162,13 +162,20 @@ func mountBoxHost(processCtx, handshakeCtx context.Context, reg *tools.Registry,
 		o.Box = opts.Box
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
-	return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect)
+	install := func(ctx context.Context) error {
+		return mcp.InstallBoxServer(ctx, name, cfg.Install, cfg.Env, opts.Box)
+	}
+	return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, install)
 }
 
-func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc) (closer func() error, names []string, host *MountedServer, err error) {
+// openIdentityScopedMount mounts a server whose sessions each belong to one identity. prepare,
+// when set, runs for every identity's new session before its handshake starts (a box server's
+// install); nil for an OAuth server.
+func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc, prepare func(context.Context) error) (closer func() error, names []string, host *MountedServer, err error) {
 	procCtx, cancel := context.WithCancel(processCtx)
 	parent := NewMountedServer(name, nil)
 	pool := newIdentitySessionPool(parent, connect, procCtx)
+	pool.prepare = prepare
 	parent.identityPool = pool
 	parent.files = opts.Files
 

@@ -108,23 +108,34 @@ A stdio server runs in one of two places, named by `runtime.kind`:
 }
 ```
 
-From the CLI, `--box` declares it, and the add completes the handshake in the operator's box:
+From the CLI, `--box` declares it and `--install` gives the shell line that puts its command
+in place; the add runs that line and completes the handshake in the operator's box:
 
 ```bash
-aura mcp add calculator --box -- /workspace/.mcp/calculator/bin/calculator-mcp-server
-aura mcp trust calculator --class sandboxed_local --reason "installed in the box from its repo"
+aura mcp add calculator --box \
+  --install 'python3 -m venv /workspace/.mcp/calculator && /workspace/.mcp/calculator/bin/pip install git+https://github.com/chetto1983/calculator-mcp-server@25f8388' \
+  -- /workspace/.mcp/calculator/bin/calculator-mcp-server
+aura mcp trust calculator --class sandboxed_local --reason "installed per identity from its repo"
 ```
+
+The install line (`runtime.install`) runs in each identity's own box before that identity's
+first session, and again whenever the line changes: the box records the hash of the line it
+last completed in `/workspace/.aura-mcp/<name>.installed`, a lock makes concurrent starts
+install once, and a failure records nothing and reports the tail of
+`/tmp/aura-mcp-<name>-install.log`. No handshake clock runs during an install (5 min bound);
+calculator-mcp-server takes 39 s into an empty box. Deleting the record forces a reinstall.
 
 A box server:
 
 - is started in an identity's box the first time that identity calls one of its tools, and a
   call from any other identity is refused. The tool list is read once, at mount, in the
   operator's box;
-- takes the box as its environment: the command must exist in the image or on the identity's
-  `/workspace` volume, and an install prepares nothing on the Aura host. A server installed on
-  one identity's volume is missing from every other identity's box, and their calls fail.
-  An install still requires a handshake, run in the installing identity's (or, from the CLI,
-  the operator's) box;
+- takes the box as its environment: the command comes with the image or with its install
+  line, one copy per identity (no package state is shared between identities; see prd.md on
+  cache poisoning), and nothing is prepared on the Aura host. Adding one requires a handshake,
+  run in the installing identity's (or, from the CLI, the operator's) box;
+- installs in the operator's box when it is mounted, since that is where its tools are read:
+  a first `aura serve` after a new install line waits for it (44 s for calculator);
 - takes no secrets: everything in a box is readable by the agent's own shell, so a
   secret-shaped `env` entry is refused at write time;
 - writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;

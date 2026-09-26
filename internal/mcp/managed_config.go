@@ -100,6 +100,10 @@ type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
+	// Install is a shell line that puts a box server's command in place in an identity's
+	// box, run there before the server's first start and again whenever the line changes
+	// (box_session.go). Box servers only: a local server is prepared once, on the host (#211).
+	Install string `json:"install,omitempty"`
 }
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
@@ -246,10 +250,13 @@ func validateStdioRuntime(name string, cfg ManagedServer) error {
 	if strings.TrimSpace(cfg.Command) == "" {
 		return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
 	}
-	if kind == RuntimeKindBox {
-		return refuseBoxSecrets(name, cfg.Env)
+	if kind != RuntimeKindBox {
+		if strings.TrimSpace(cfg.Runtime.Install) != "" {
+			return fmt.Errorf("MCP managed config: server %q declares runtime.install, which only a box server runs; a local server is prepared on install", name)
+		}
+		return nil
 	}
-	return nil
+	return refuseBoxSecrets(name, cfg.Env)
 }
 
 // refuseBoxSecrets rejects a credential declared for a box server. The box exec drops

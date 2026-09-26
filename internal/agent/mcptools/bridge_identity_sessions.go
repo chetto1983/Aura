@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -40,6 +41,9 @@ type identitySessionPool struct {
 	parent     *MountedServer
 	connect    openSessionFunc
 	processCtx context.Context
+	// prepare runs once per new session, in the owner's identity and before the handshake
+	// clock starts: a box server's install (mcp.InstallBoxServer). Nil for an OAuth server.
+	prepare func(ctx context.Context) error
 
 	mu      sync.Mutex
 	closed  bool
@@ -68,7 +72,7 @@ func (p *identitySessionPool) openInitial(ctx context.Context) (*sdkmcp.ClientSe
 	p.entries[key] = entry
 	p.mu.Unlock()
 
-	child, session, advertised, err := p.open(ctx, owner)
+	child, session, advertised, err := p.openPrepared(ctx, owner)
 	entry.server, entry.err = child, err
 	close(entry.ready)
 	if err != nil {
@@ -99,11 +103,15 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	p.mu.Unlock()
 
 	if !ok {
-		handshakeCtx, cancel := context.WithTimeout(ctx, defaultMCPRedialTimeout)
 		// open still authenticates as owner (the real identity): the key split
 		// is a client-side session bucket, never a second tenant selection.
-		child, _, _, err := p.open(handshakeCtx, owner)
-		cancel()
+		var child *MountedServer
+		err := p.runPrepare(owner)
+		if err == nil {
+			handshakeCtx, cancel := context.WithTimeout(ctx, defaultMCPRedialTimeout)
+			child, _, _, err = p.open(handshakeCtx, owner)
+			cancel()
+		}
 		entry.server, entry.err = child, err
 		close(entry.ready)
 		if err != nil {
@@ -118,6 +126,29 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	case <-entry.ready:
 		return entry.server, entry.err
 	}
+}
+
+func (p *identitySessionPool) runPrepare(owner string) error {
+	if p.prepare == nil {
+		return nil
+	}
+	return p.prepare(identityctx.WithIdentityID(p.processCtx, owner))
+}
+
+// openPrepared is open for a caller whose handshake clock is already running (the mount): the
+// preparation runs first and the handshake then gets the whole budget it came with.
+func (p *identitySessionPool) openPrepared(ctx context.Context, owner string) (*MountedServer, *sdkmcp.ClientSession, []*sdkmcp.Tool, error) {
+	deadline, bounded := ctx.Deadline()
+	budget := time.Until(deadline)
+	if err := p.runPrepare(owner); err != nil {
+		return nil, nil, nil, err
+	}
+	if bounded {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithoutCancel(ctx), budget)
+		defer cancel()
+	}
+	return p.open(ctx, owner)
 }
 
 func (p *identitySessionPool) open(ctx context.Context, owner string) (*MountedServer, *sdkmcp.ClientSession, []*sdkmcp.Tool, error) {

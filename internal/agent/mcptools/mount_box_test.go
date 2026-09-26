@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -22,9 +23,13 @@ import (
 // exec's pipes, in the "box" of the identity the context carries, and its one tool answers
 // with that identity — so a call that reached the wrong box would say so.
 type identityBoxes struct {
-	mu     sync.Mutex
-	starts []string
-	procs  []*boxProc
+	installFor time.Duration
+	installErr error
+
+	mu       sync.Mutex
+	starts   []string
+	installs []string
+	procs    []*boxProc
 }
 
 type boxProc struct {
@@ -39,6 +44,15 @@ func (p *boxProc) Touch()             {}
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+
+func (b *identityBoxes) Install(ctx context.Context, _, _ string, _ []string) error {
+	b.mu.Lock()
+	b.installs = append(b.installs, identityctx.IdentityID(ctx))
+	err := b.installErr
+	b.mu.Unlock()
+	time.Sleep(b.installFor)
+	return err
+}
 
 func (b *identityBoxes) StartStdio(ctx context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	owner := identityctx.IdentityID(ctx)
@@ -124,5 +138,54 @@ func TestBrowserRecipePolicyIsIdentityScopedAndGradedByItsTable(t *testing.T) {
 	click := &sdkmcp.Tool{Name: "agent_browser_click", Annotations: &sdkmcp.ToolAnnotations{}}
 	if mutating, destructive := classifyToolRisk(policy, click); !mutating || destructive {
 		t.Fatalf("click graded mutating=%v destructive=%v, want a reversible write", mutating, destructive)
+	}
+}
+
+// Each identity's new session installs the server in that identity's box first, and the
+// install does not eat the handshake budget: here the mount's whole budget is shorter than
+// the install. A failed install opens no session, and the next call tries again.
+func TestBoxServerInstallsPerIdentityBeforeTheHandshake(t *testing.T) {
+	boxes := &identityBoxes{installFor: 300 * time.Millisecond}
+	server := boxServer
+	server.Runtime.Install = "python3 -m venv /workspace/.mcp/x && /workspace/.mcp/x/bin/pip install x"
+	reg := tools.NewRegistry()
+	handshakeCtx, cancel := context.WithTimeout(identityctx.WithIdentityID(t.Context(), "identity-a"), 200*time.Millisecond)
+	defer cancel()
+	closer, names, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, reg, "calc", server, MountOptions{Box: boxes})
+	if err != nil {
+		t.Fatalf("mount with an install longer than its handshake budget: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = closer()
+		for _, p := range boxes.procs {
+			<-p.done
+		}
+	})
+	tool, _ := reg.Get(names[0])
+	call := func(identity string) error {
+		ctx := tools.WithToolCallContext(identityctx.WithIdentityID(t.Context(), identity), "sess", "tc", t.TempDir(), 2048)
+		_, err := tool.Execute(ctx, json.RawMessage(`{}`))
+		return err
+	}
+
+	boxes.mu.Lock()
+	boxes.installErr = errors.New("exit 1: no network")
+	boxes.mu.Unlock()
+	if err := call("identity-b"); err == nil || !strings.Contains(err.Error(), "no network") {
+		t.Fatalf("call over a failed install = %v, want its reason", err)
+	}
+	boxes.mu.Lock()
+	boxes.installErr = nil
+	boxes.mu.Unlock()
+	for _, identity := range []string{"identity-b", "identity-a", "identity-b"} {
+		if err := call(identity); err != nil {
+			t.Fatalf("call as %s: %v", identity, err)
+		}
+	}
+	if want := []string{"identity-a", "identity-b", "identity-b"}; !slices.Equal(boxes.installs, want) {
+		t.Fatalf("installs = %q, want %q: once per new session, retried after the failure", boxes.installs, want)
+	}
+	if want := []string{"identity-a", "identity-b"}; !slices.Equal(boxes.starts, want) {
+		t.Fatalf("starts = %q, want %q: no server after a failed install", boxes.starts, want)
 	}
 }

@@ -17,4 +17,6 @@ type ServerConfig struct {
 	// Box runs the server in the calling identity's sandbox box instead of on the host
 	// (RuntimeKindBox). It comes from the registry's runtime kind, never from this JSON.
 	Box bool `json:"-"`
+	// Install is the box server's install line (ManagedRuntime.Install).
+	Install string `json:"-"`
 }

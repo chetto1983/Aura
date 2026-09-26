@@ -83,10 +83,15 @@ func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, serv
 	if serverType, _, err := mcp.Classify(server); err != nil || serverType != mcp.ServerTypeStdio {
 		return server, mcpenv.Report{}, nil, nil
 	}
-	// A box server's environment is the box image: nothing is installed on this host. It still
-	// has to complete a handshake, in the installing identity's own box.
+	// A box server's environment is the box: nothing is installed on this host. Its own install
+	// line runs in the installing identity's box, before the verification clock starts, and it
+	// still has to complete a handshake there.
 	report := mcpenv.Report{}
-	if !mcp.IsBoxRuntime(server) {
+	if mcp.IsBoxRuntime(server) {
+		if err := mcp.InstallBoxServer(ctx, name, server.Runtime.Install, server.Env, box); err != nil {
+			return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf("install %q: %w, so it was not installed", name, err)
+		}
+	} else {
 		prepareCtx, cancelPrepare := context.WithTimeout(ctx, installPrepareTimeout)
 		defer cancelPrepare()
 		prepared, rep, err := p.Prepare(prepareCtx, name, mcpenv.Launch{Command: server.Command, Args: server.Args})

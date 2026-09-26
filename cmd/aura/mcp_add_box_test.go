@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -24,14 +25,29 @@ func TestMCPAddBoxDeclaresTheRuntimeAndVerifiesInTheOperatorsBox(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), nil, []string{"add", "calc", "--box", "--", "/workspace/venv/bin/calc"}, &out); err != nil {
+	install := "python3 -m venv /workspace/venv && /workspace/venv/bin/pip install calc"
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "calc", "--box", "--install", install, "--", "/workspace/venv/bin/calc"}, &out); err != nil {
 		t.Fatalf("mcp add --box: %v", err)
 	}
 	server := readMCPRegistry(t).MCPServers["calc"]
-	if !mcp.IsBoxRuntime(server) || server.Trust.Class != mcp.TrustBlocked {
+	if !mcp.IsBoxRuntime(server) || server.Runtime.Install != install || server.Trust.Class != mcp.TrustBlocked {
 		t.Fatalf("stored %+v, want a box server that still waits for approval", server)
 	}
 	if gotBox == nil || gotOwner != identityctx.LocalOperatorIdentity {
 		t.Fatalf("guard got box=%v owner=%q, want the operator's box", gotBox, gotOwner)
+	}
+}
+
+func TestMCPAddRefusesAnInstallWithoutTheBox(t *testing.T) {
+	withMemoryMCPRegistry(t)
+	withoutMCPInstallGuard(t)
+	var out bytes.Buffer
+	for _, args := range [][]string{
+		{"add", "calc", "--install", "pip install calc", "--", "calc"},
+		{"add", "calc", "--box", "--install"},
+	} {
+		if err := runMCPCommand(context.Background(), nil, args, &out); err == nil || !strings.Contains(err.Error(), "--install") {
+			t.Errorf("mcp %q = %v, want the --install refusal", args, err)
+		}
 	}
 }

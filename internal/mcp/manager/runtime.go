@@ -103,7 +103,10 @@ func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfi
 	if strings.TrimSpace(server.Command) == "" {
 		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q command cannot be empty", name)
 	}
-	return mcp.ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env, Box: mcp.IsBoxRuntime(server)}, nil
+	return mcp.ServerConfig{
+		Command: server.Command, Args: server.Args, Env: server.Env,
+		Box: mcp.IsBoxRuntime(server), Install: server.Runtime.Install,
+	}, nil
 }
 
 func runtimeKind(server mcp.ManagedServer) string {
