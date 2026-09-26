@@ -1951,13 +1951,11 @@ jobs:
         # Building it here puts the Dockerfile under a gate BEFORE the publish runs.
         run: docker build -f docker/aura-sandbox/Dockerfile -t aura-sandbox:latest .
 
-      - name: Box image pip contract (PEP 668)
-        # shell_exec's description tells the model to run `python3 -m pip install ...`. On
-        # Debian bookworm that exits 1 with externally-managed-environment, so the prompt was
-        # teaching a command the image could not run and the model could only find out by
-        # spending a call on the failure. The image now carries PIP_BREAK_SYSTEM_PACKAGES=1
-        # and this proves it end to end, offline -- a network install would test the runner's
-        # egress instead of the image.
+      - name: Box image runtime contract (pip, agent-browser)
+        # Proves, offline, what the prompts promise the model about the shipped image:
+        # `python3 -m pip install ...` works despite PEP 668 (PIP_BREAK_SYSTEM_PACKAGES=1),
+        # and agent-browser refuses to run without Aura's per-identity state key and keeps its
+        # state on /workspace. A network install would test the runner's egress, not the image.
         run: bash scripts/sandbox_image_contract_test.sh
 
       - name: Pre-pull the box images

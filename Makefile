@@ -31,7 +31,7 @@ help:
 	@echo "make tagged-tier-compile — compile every discovered Aura integration/live/eval tier"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
 	@echo "make capability-declaration — RBAC-02: capability names declared only in internal/identity/capabilities.go"
-	@echo "make web-lint      — frontend static gate: eslint --max-warnings=0 + tsc + prettier --check"
+	@echo "make web-lint      — frontend static gate: oxlint --max-warnings=0 + tsc + prettier --check"
 	@echo "make web-test      — vitest run --coverage (>=85% thresholds enforced in vitest.config.ts)"
 	@echo "make web-mutation  — Stryker mutation run (break=70: fails below 70% killed)"
 	@echo "make web-quality   — full frontend gate: web-lint + web-test + web-mutation"
@@ -52,7 +52,7 @@ help:
 	@echo "make memory-up     — docker compose up -d arcadedb arcadedb-mcp aura-llama-embed (waits healthy)"
 	@echo "make musr-e2e      — ISO-02a: one command for the two-identity acceptance gate — disposable Postgres + Garage + ArcadeDB + embed sidecar, seed, tagged run, teardown"
 	@echo "make arcadedb-integration — run the arcadedb_integration tier live, as CI does"
-	@echo "make sandbox-image-contract — the box image honours python3 -m pip install (PEP 668)"
+	@echo "make sandbox-image-contract — the box image honours pip (PEP 668) and agent-browser, offline"
 	@echo "make extractor-matrix — every fixture format opens and the canary survives verbatim"
 	@echo "make ingest-reconcile — add/modify/delete reconciliation + two-identity isolation"
 	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
@@ -320,9 +320,8 @@ sandbox-images:
 	docker build -f docker/aura-egress/Dockerfile -t $${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest} .
 	@echo "ok"
 
-# The box image's runtime contract for pip. shell_exec's description tells the agent to run
-# `python3 -m pip install ...`; on Debian bookworm that is PEP 668 territory and the image
-# must carry PIP_BREAK_SYSTEM_PACKAGES for it to be true. Every assertion is offline.
+# The box image's runtime contract: pip despite PEP 668, and agent-browser behind Aura's
+# per-identity key. Every assertion is offline.
 sandbox-image-contract: sandbox-images
 	bash scripts/sandbox_image_contract_test.sh
 

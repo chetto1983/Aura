@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The per-identity box image's runtime contract for `pip`.
+# The per-identity box image's runtime contract: `pip` below, agent-browser at the end.
 #
 # shell_exec's description tells the agent, in the schema it reads at the moment it decides,
 # to "Pick ONE interpreter per task and install into it: `python3 -m pip install ...`". On
