@@ -765,6 +765,16 @@ the kill, and a context cancel, taken by the whole group, which is also killed a
 Both tests fail against the previous code (negative controls). Not shown: that any server mounted
 today prints to stdout; the process-group kill on Windows (`taskkill /T`) is not exercised.
 
+**An install validates its declaration before the handshake, 2026-09-26.** A box server declared
+with a secret-shaped env (`GITHUB_TOKEN=ghp_...`) was started in the installing identity's box by
+the install's verification, with the secret in its environment, and only then refused by the
+save's validator: a unit test with a recording launcher saw the box started with that env.
+`prepareAndVerify` now runs the save's validation (`mcp.ValidateManagedServer`) first, for the CLI
+and the cockpit alike. The cockpit install then gained what `aura mcp add --box` had: a custom
+stdio server's `runtime` (`local` or `box`) and `initTimeoutSec`, with `--init-timeout` added to
+the CLI so the previewed command is one it runs. Not shown: an install from the cockpit against a
+live box; the handler, builder, form and CLI are unit-tested.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
