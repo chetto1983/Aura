@@ -698,6 +698,17 @@ counts only new execs, so a working MCP session or live view would be suspended 
 calls and live-view input now mark the box as used. Not measured: a model choosing these tools,
 two identities' boxes on one host at once (unit-tested only), and redaction of browser output.
 
+**Counter-proof with an unrelated server, 2026-09-26.** `chetto1983/calculator-mcp-server`
+(Python, FastMCP) was installed by `shell_exec` into a venv on the operator's `/workspace`
+volume and declared with the new `aura mcp add --box`, which completes the handshake in the
+operator's box: until then only a catalog recipe could declare the runtime. Boot mounted its 23
+tools deferred; three runs out of three computed correct results in the box, came back after the
+box was stopped, rendered a plot, and ran beside the browser recipe with separate stderr logs and
+no process left 0.45 s after the caller exited. What it shows: the runtime carries a stdio server
+it was not written for. What it does not: a server installed on one identity's volume is absent
+from the others' boxes; an unannotated server's calls are graded destructive in a model turn;
+the cockpit install form cannot yet declare the runtime.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

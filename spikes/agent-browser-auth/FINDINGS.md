@@ -116,6 +116,24 @@ only the model choosing the calls is missing.
 | E5 | **Test bug found:** the live-view E2E failed once in sixteen runs: the fixture accepts only the current TOTP window and a code minted in its last ~1.5 s expired before Enter. Fixed in the test: 15 of 16 runs passed before, 3/3 after |
 | E6 | After the runs: no agent-browser MCP process and 0 zombies left in the box, 2 tasks |
 
+## (F) Counter-proof: a different stdio server in the same runtime
+
+`chetto1983/calculator-mcp-server@25f8388` (Python 3.11, FastMCP, numpy/sympy/matplotlib) shares
+nothing with agent-browser. `shell_exec`, through `aura toolpipe`, installed it in a venv on the
+operator's `/workspace` volume (the box reached GitHub and PyPI; 30 s cap, finished in the
+background); `aura mcp add calculator --box -- /workspace/.mcp/calculator/bin/calculator-mcp-server`
+completed its handshake in that box in 3 s, and `aura mcp trust ... --class sandboxed_local`
+approved it. `mcp_calculator_e2e.sh` then drives it like (E).
+
+| # | Result |
+|---|---|
+| F1 | Boot mounts 23 deferred `calculator__*` tools from the box; `tool_search` loads them |
+| F2 | 3/3 runs, 7/7 checks: 2**10 = 1024; x**2 - 4 = 0 gives [-2, 2]; det [[1,2],[3,4]] = -2; after `docker stop` of the box, mean [1,2,3,4] = 2.5 (2.3 s, box and server restarted); a 200-point plot renders in the box |
+| F3 | With `browser` mounted beside it: both E2Es pass in the same box; each server logs to its own `/tmp/aura-mcp-<name>.log`; both server processes are gone 0.45 s after `toolpipe` exits, 0 zombies |
+| F4 | **Gap found and closed:** the runtime was generic but only a catalog recipe could declare it; `aura mcp add --box` now does, verifying in the operator's box. The cockpit's install form still cannot |
+| F5 | The server states no tool annotations, so in a model turn every call is graded destructive by the fail-closed default and asks for approval. That is the existing policy for any unannotated server, not a property of the box runtime |
+| F6 | Installed on one identity's volume, the server is missing from every other identity's box: their calls fail until it is installed there too, or baked into the image |
+
 ## Gotchas that bite an integration
 
 - **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
@@ -203,6 +221,7 @@ Inside the box (needs the spike image and `aura-egress:spike`, see B):
 ```bash
 go run ./spikes/agent-browser-auth/mcpbox          # (D), needs aura-sandbox:latest + aura-egress:latest
 AURA_BIN=aura bash spikes/agent-browser-auth/mcp_toolpipe_e2e.sh   # (E), after `aura mcp install browser`
+AURA_BIN=aura bash spikes/agent-browser-auth/mcp_calculator_e2e.sh # (F), after installing it as in (F)
 go build -o /tmp/boxrun ./spikes/agent-browser-auth/boxrun
 /tmp/boxrun resolve && docker cp spikes/agent-browser-auth/. aura-box-spike-agent-browser:/workspace/spike/
 /tmp/boxrun put /run/aura-abkey key.hex
