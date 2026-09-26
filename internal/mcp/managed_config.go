@@ -206,6 +206,12 @@ func normalizeManagedConfig(doc *ManagedConfig) {
 	}
 }
 
+// ValidateManagedServer checks one declaration as a save would, so an install can refuse it
+// before starting it.
+func ValidateManagedServer(name string, server ManagedServer) error {
+	return validateManagedServers(map[string]ManagedServer{name: server})
+}
+
 // validateManagedServers dispatches every server through Classify (D-01): an
 // ambiguous or internally-inconsistent entry (mixed url+command, an unknown
 // type, or an explicit type<->trust mismatch) fails validation with Classify's

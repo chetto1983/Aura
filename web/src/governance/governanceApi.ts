@@ -334,6 +334,10 @@ export interface McpInstallRequest {
   readonly url?: string;
   readonly type?: string;
   readonly env?: readonly string[];
+  /** Where a custom stdio server runs: the Aura host (default) or each identity's box. */
+  readonly runtime?: 'local' | 'box';
+  /** A box server's first-start budget, 1-600 s; unset means 30. */
+  readonly initTimeoutSec?: number;
 }
 
 /** The common MCP write response (install/env/trust/lifecycle). EnvKeys are key-only

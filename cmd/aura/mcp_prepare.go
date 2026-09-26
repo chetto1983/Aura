@@ -80,7 +80,12 @@ var mcpInstallGuard = prepareAndVerify
 // second time to recompute a number this one had (audit A5). It is nil for the transports this
 // does not verify, which is the caller's signal to probe for itself.
 func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, server mcp.ManagedServer, box mcp.BoxLauncher) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
-	if serverType, _, err := mcp.Classify(server); err != nil || serverType != mcp.ServerTypeStdio {
+	// Refused before the handshake, not at the save: a box server's handshake runs in a box
+	// the agent's shell can read, so the secret the save refuses would already be in it.
+	if err := mcp.ValidateManagedServer(name, server); err != nil {
+		return mcp.ManagedServer{}, mcpenv.Report{}, nil, err
+	}
+	if serverType, _, _ := mcp.Classify(server); serverType != mcp.ServerTypeStdio {
 		return server, mcpenv.Report{}, nil, nil
 	}
 	// A box server's environment is the box: it fetches itself into the installing identity's

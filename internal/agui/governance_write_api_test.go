@@ -39,7 +39,8 @@ func (f *fakeMCPWrite) InstallServer(_ context.Context, _ string, req MCPInstall
 	if _, exists := f.doc.MCPServers[req.Name]; exists {
 		return MCPWriteResult{}, ErrMCPServerExists
 	}
-	srv := mcp.ManagedServer{Command: req.Command, Args: req.Args, URL: req.URL, Type: req.Type, Env: req.Env}
+	srv := mcp.ManagedServer{Command: req.Command, Args: req.Args, URL: req.URL, Type: req.Type, Env: req.Env,
+		Runtime: mcp.ManagedRuntime{Kind: req.Runtime, InitTimeoutSec: req.InitTimeoutSec}}
 	f.doc.MCPServers[req.Name] = srv
 	f.audit = append(f.audit, "install:"+req.Name)
 	return MCPWriteResult{
@@ -209,6 +210,19 @@ func TestGovernanceWriteInstallDuplicate409(t *testing.T) {
 	}
 	if got := countAction(fake.audit, "install:calc"); got != 1 {
 		t.Errorf("duplicate install must write no second entry, install audit count = %d, want 1", got)
+	}
+}
+
+// The strict decoder accepts the box runtime fields and hands them to the provider.
+func TestGovernanceWriteInstallCarriesTheRuntime(t *testing.T) {
+	s, fake := govWriteServer(newFakeMCPWrite())
+	rec := doGovWrite(t, s, http.MethodPost, "/api/governance/mcp",
+		`{"name":"fetch","command":"uvx","args":["mcp-server-fetch==2026.8.18"],"runtime":"box","initTimeoutSec":120}`, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := fake.doc.MCPServers["fetch"].Runtime; got.Kind != mcp.RuntimeKindBox || got.InitTimeoutSec != 120 {
+		t.Fatalf("provider got runtime %+v", got)
 	}
 }
 

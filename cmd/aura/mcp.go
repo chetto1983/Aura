@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -212,7 +213,7 @@ func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err 
 	return recipe, name, env, nil
 }
 
-const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box] -- <command> [args...]"
+const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box [--init-timeout SECONDS]] -- <command> [args...]"
 
 func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
 	// Only guard against an empty arg vector (so args[0] below is safe). The real
@@ -229,6 +230,8 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	env := []string{}
 	enabled := true
 	box := false
+	initTimeoutSec := 0
+	pendingInitTimeout := false
 	trustClass := mcp.TrustBlocked
 	pendingEnv := false
 	pendingTrust := false
@@ -245,6 +248,15 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 			}
 			env = append(env, arg)
 			pendingEnv = false
+			continue
+		}
+		if pendingInitTimeout {
+			sec, err := strconv.Atoi(arg)
+			if err != nil {
+				return fmt.Errorf("--init-timeout value %q must be a number of seconds", arg)
+			}
+			initTimeoutSec = sec
+			pendingInitTimeout = false
 			continue
 		}
 		if pendingTrust {
@@ -266,6 +278,8 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 			enabled = false
 		case "--box":
 			box = true
+		case "--init-timeout":
+			pendingInitTimeout = true
 		default:
 			return fmt.Errorf("unknown mcp add option %q", arg)
 		}
@@ -275,6 +289,9 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	}
 	if pendingTrust {
 		return fmt.Errorf("--trust requires local")
+	}
+	if pendingInitTimeout {
+		return fmt.Errorf("--init-timeout requires a number of seconds")
 	}
 	if len(commandParts) == 0 {
 		return errors.New(mcpAddUsage)
@@ -297,6 +314,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 		Enabled: new(enabled),
 		Source:  "manual",
 		Trust:   mcp.ManagedTrust{Class: trustClass},
+		Runtime: mcp.ManagedRuntime{InitTimeoutSec: initTimeoutSec},
 	}
 	cfg := config.LoadDB()
 	var launcher mcp.BoxLauncher

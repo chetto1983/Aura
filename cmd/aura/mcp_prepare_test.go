@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -120,6 +122,32 @@ func TestBuildInstallServerPreviewsTheWholeCommand(t *testing.T) {
 	}
 }
 
+// The cockpit declares a box server as `aura mcp add --box` does, and its preview says so.
+func TestBuildInstallServerDeclaresABoxRuntime(t *testing.T) {
+	server, cli, err := buildInstallServer(agui.MCPInstallRequest{
+		Name: "fetch", Command: "uvx", Args: []string{"mcp-server-fetch==2026.8.18"},
+		Runtime: mcp.RuntimeKindBox, InitTimeoutSec: 120,
+	})
+	if err != nil {
+		t.Fatalf("buildInstallServer: %v", err)
+	}
+	if !mcp.IsBoxRuntime(server) || mcp.BoxInitTimeout(server) != 120*time.Second {
+		t.Fatalf("server = %#v", server)
+	}
+	const want = "aura mcp add fetch --box --init-timeout 120 -- uvx mcp-server-fetch==2026.8.18"
+	if cli != want {
+		t.Fatalf("cli = %q, want %q", cli, want)
+	}
+	for _, req := range []agui.MCPInstallRequest{
+		{Name: "memory", Recipe: "memory", Runtime: mcp.RuntimeKindBox},
+		{Name: "gh", URL: "https://mcp.example.test", InitTimeoutSec: 60},
+	} {
+		if _, _, err := buildInstallServer(req); err == nil {
+			t.Fatalf("%+v: a runtime outside a custom stdio server was accepted", req)
+		}
+	}
+}
+
 func TestBuildInstallServerReadsTheOtherTwoShapes(t *testing.T) {
 	remote, cli, err := buildInstallServer(agui.MCPInstallRequest{Name: "gh", URL: "https://mcp.example.test", Type: mcp.ServerTypeStreamableHTTP})
 	if err != nil {
@@ -196,4 +224,28 @@ func (sdkBox) StartStdio(_ context.Context, _ string, _, _ []string, stdin io.Re
 		}
 	}()
 	return p, nil
+}
+
+// envBox records the env a box start was given, and starts nothing.
+type envBox struct{ env *[]string }
+
+func (b envBox) StartStdio(_ context.Context, _ string, _, env []string, _ io.ReadCloser, _ io.Writer) (mcp.BoxProcess, error) {
+	*b.env = env
+	return nil, errors.New("not started")
+}
+
+// A declaration the registry would refuse is refused before its handshake: a box server's
+// verification runs in a box the agent's shell can read, so a secret refused only at the save
+// had already been handed to that box.
+func TestInstallRefusesAnInvalidDeclarationBeforeStartingIt(t *testing.T) {
+	var seen []string
+	in := mcp.ManagedServer{Command: "uvx", Args: []string{"mcp-server-fetch==2026.8.18"},
+		Env: []string{"GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123"}, Runtime: mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox}}
+	_, _, _, err := prepareAndVerify(context.Background(), nil, "fetch", in, envBox{env: &seen})
+	if err == nil || !strings.Contains(err.Error(), "box servers take no secrets") {
+		t.Fatalf("err = %v, want the secret refusal", err)
+	}
+	if seen != nil {
+		t.Fatalf("the box was started with %q before the refusal", seen)
+	}
 }

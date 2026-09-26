@@ -117,18 +117,21 @@ A box server installs itself, the way LibreChat's stdio servers do: declare it a
 that fetches its own package, pinned, and its first start in an identity's box fetches it into
 that identity's npm or uv cache. There is no install step and nothing is shared between
 identities. From the CLI, `--box` declares it and the add completes the handshake in the
-operator's box:
+operator's box; in the cockpit, a custom stdio install set to run in each identity's box does
+the same in the installing operator's box:
 
 ```bash
-aura mcp add fetch --box -- uvx mcp-server-fetch==2026.8.18
+aura mcp add fetch --box --init-timeout 60 -- uvx mcp-server-fetch==2026.8.18
 aura mcp add files --box -- npx -y @modelcontextprotocol/server-filesystem@2026.8.31 /workspace
 aura mcp trust fetch --class sandboxed_local --reason "reviewed mcp-server-fetch"
 ```
 
 Measured in a box with empty caches (prd.md §12): 3.5-5.4 s for a light server's first start,
 10.95 s for a numpy/scipy/sympy one, 0.6-1.8 s once cached; the caches survive a box recreate.
-A first start gets `runtime.initTimeoutSec` (default 30, at most 600), however short the mount
-or first-call budget around it: set it higher for a server that fetches more.
+A first start gets `runtime.initTimeoutSec` (default 30, at most 600; `--init-timeout` from the
+CLI), however short the mount or first-call budget around it: set it higher for a server that
+fetches more. An install checks the declaration before its handshake, so a box server declared
+with a secret is refused before any box sees it.
 
 A box server:
 

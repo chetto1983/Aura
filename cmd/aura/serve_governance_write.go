@@ -280,6 +280,12 @@ func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.Mana
 // merged onto the recipe/custom base.
 func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, error) {
 	recipe := strings.TrimSpace(req.Recipe)
+	url := strings.TrimSpace(req.URL)
+	command := strings.TrimSpace(req.Command)
+	runtime := mcp.ManagedRuntime{Kind: strings.TrimSpace(req.Runtime), InitTimeoutSec: req.InitTimeoutSec}
+	if (recipe != "" || command == "") && (runtime.Kind != "" || runtime.InitTimeoutSec != 0) {
+		return mcp.ManagedServer{}, "", fmt.Errorf("mcp install: a runtime is declared only for a custom stdio server")
+	}
 	if recipe != "" {
 		entry, ok := mcpmanager.LookupCatalog(recipe)
 		if !ok {
@@ -292,8 +298,6 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		return server, "aura mcp install " + recipe, nil
 	}
 
-	url := strings.TrimSpace(req.URL)
-	command := strings.TrimSpace(req.Command)
 	if url == "" && command == "" {
 		return mcp.ManagedServer{}, "", fmt.Errorf("mcp install: a custom server needs a command (stdio) or url (http)")
 	}
@@ -304,12 +308,19 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		URL:     url,
 		Type:    strings.TrimSpace(req.Type),
 		Source:  "custom",
+		Runtime: runtime,
 		// No trust class: Classify resolves one from the transport. Installing IS the
 		// authorization — this route is operator-authenticated and capability-gated
 		// (governance.write), so the human who reached it already made the decision a
 		// trust-approve would have asked for a second time.
 	}
 	cli := "aura mcp add " + req.Name
+	if runtime.Kind == mcp.RuntimeKindBox {
+		cli += " --box"
+	}
+	if runtime.InitTimeoutSec != 0 {
+		cli += fmt.Sprintf(" --init-timeout %d", runtime.InitTimeoutSec)
+	}
 	if command != "" {
 		// The arguments belong in the preview: without them it names a command the CLI would
 		// not run, and for a resolver launch they carry the package itself.

@@ -35,6 +35,7 @@ const RECIPES: readonly RecipeDescriptor[] = [
   { name: 'calendar', requiredEnv: [] },
   { name: 'memory', requiredEnv: [] },
   { name: 'whatsapp', requiredEnv: [] },
+  { name: 'browser', requiredEnv: [] },
 ];
 
 /** Where an installed server lands, shown in the preview before save. It was a filesystem
@@ -47,6 +48,17 @@ const DEFAULT_DESTINATION = 'postgres: aura.mcp_server';
 // write layer landed; only this panel could not express it, which made a hosted connector
 // unaddable from the cockpit however well the rest of the flow worked.
 type Mode = 'recipe' | 'custom' | 'remote';
+
+type Runtime = 'local' | 'box';
+
+// parseInitTimeout mirrors mcp.ManagedRuntime.InitTimeoutSec's bounds: empty is the 30 s
+// default, otherwise a whole number of seconds from 1 to 600. NaN marks an invalid entry.
+function parseInitTimeout(raw: string): number | undefined {
+  const trimmed = raw.trim();
+  if (trimmed === '') return undefined;
+  const value = Number(trimmed);
+  return Number.isInteger(value) && value >= 1 && value <= 600 ? value : Number.NaN;
+}
 
 export interface McpInstallPanelProps {
   /** The existing server names — a name collision blocks Install with an inline error. */
@@ -67,6 +79,13 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
   const [args, setArgs] = useState<string[]>(['']);
   const [url, setUrl] = useState('');
   const [recipeEnv, setRecipeEnv] = useState<Record<string, string>>({});
+  const [runtime, setRuntime] = useState<Runtime>('local');
+  const [initTimeout, setInitTimeout] = useState('');
+  const initTimeoutSec = runtime === 'box' ? parseInitTimeout(initTimeout) : undefined;
+  const runtimeFlags =
+    runtime === 'box'
+      ? ` --box${initTimeoutSec !== undefined && !Number.isNaN(initTimeoutSec) ? ` --init-timeout ${String(initTimeoutSec)}` : ''}`
+      : '';
 
   const existing = useMemo(() => new Set(existingNames), [existingNames]);
 
@@ -94,7 +113,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       ? `aura mcp install ${recipe}`
       : mode === 'remote'
         ? `aura mcp add ${effectiveName || '<name>'} --url ${url.trim() || '<url>'}`
-        : `aura mcp add ${effectiveName || '<name>'}${
+        : `aura mcp add ${effectiveName || '<name>'}${runtimeFlags}${
             command.trim() !== ''
               ? ` -- ${[command.trim(), ...args.map((a) => a.trim()).filter((a) => a !== '')].join(' ')}`
               : ''
@@ -118,6 +137,8 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       name: effectiveName,
       command: command.trim(),
       args: args.map((a) => a.trim()).filter((a) => a !== ''),
+      ...(runtime === 'box' ? { runtime } : {}),
+      ...(initTimeoutSec !== undefined ? { initTimeoutSec } : {}),
     };
   }
 
@@ -129,7 +150,7 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
       ? recipe !== ''
       : mode === 'remote'
         ? isHTTPSURL(url)
-        : command.trim() !== '');
+        : command.trim() !== '' && !Number.isNaN(initTimeoutSec));
 
   function submit() {
     if (!canInstall) return;
@@ -234,6 +255,10 @@ export function McpInstallPanel({ existingNames, onClose }: McpInstallPanelProps
           onCommandChange={setCommand}
           args={args}
           onArgsChange={setArgs}
+          runtime={runtime}
+          onRuntimeChange={setRuntime}
+          initTimeout={initTimeout}
+          onInitTimeoutChange={setInitTimeout}
         />
       )}
 
@@ -403,12 +428,13 @@ function CustomFields({
   onCommandChange,
   args,
   onArgsChange,
+  ...runtimeProps
 }: {
   readonly command: string;
   readonly onCommandChange: (next: string) => void;
   readonly args: readonly string[];
   readonly onArgsChange: (next: string[]) => void;
-}) {
+} & RuntimeFieldsProps) {
   const { t } = useTranslation();
   const commandId = useId();
   return (
@@ -461,6 +487,87 @@ function CustomFields({
           {t('governance.mcp.install.addArg')}
         </Button>
       </div>
+      <RuntimeFields {...runtimeProps} />
+    </div>
+  );
+}
+
+interface RuntimeFieldsProps {
+  readonly runtime: Runtime;
+  readonly onRuntimeChange: (next: Runtime) => void;
+  readonly initTimeout: string;
+  readonly onInitTimeoutChange: (next: string) => void;
+}
+
+function RuntimeFields({
+  runtime,
+  onRuntimeChange,
+  initTimeout,
+  onInitTimeoutChange,
+}: RuntimeFieldsProps) {
+  const { t } = useTranslation();
+  const labelId = useId();
+  const timeoutId = useId();
+  const invalid = Number.isNaN(parseInitTimeout(initTimeout));
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1">
+        <span id={labelId} className="text-[13px] font-semibold text-text">
+          {t('governance.mcp.install.runtimeLabel')}
+        </span>
+        <div
+          role="group"
+          aria-labelledby={labelId}
+          className="flex gap-1 rounded-md bg-surface-2 p-1"
+        >
+          {(['local', 'box'] as const).map((r) => (
+            <Button
+              key={r}
+              type="button"
+              variant={runtime === r ? 'default' : 'ghost'}
+              aria-pressed={runtime === r}
+              onClick={() => {
+                onRuntimeChange(r);
+              }}
+              className="flex-1"
+            >
+              {t(`governance.mcp.install.runtime.${r}`)}
+            </Button>
+          ))}
+        </div>
+        <p className="text-[13px] text-text-muted">
+          {t(`governance.mcp.install.runtimeHint.${runtime}`)}
+        </p>
+      </div>
+      {runtime === 'box' ? (
+        <div className="flex flex-col gap-1">
+          <Label htmlFor={timeoutId} className="text-[13px] font-semibold text-text">
+            {t('governance.mcp.install.initTimeoutLabel')}
+          </Label>
+          <Input
+            id={timeoutId}
+            type="text"
+            inputMode="numeric"
+            value={initTimeout}
+            onChange={(event) => {
+              onInitTimeoutChange(event.target.value);
+            }}
+            placeholder="30"
+            aria-invalid={ariaInvalid(invalid)}
+            aria-describedby={`${timeoutId}-${invalid ? 'err' : 'hint'}`}
+            className="font-mono text-[13px]"
+          />
+          {invalid ? (
+            <p id={`${timeoutId}-err`} role="alert" className="text-[13px] text-danger">
+              {t('governance.mcp.install.initTimeoutInvalid')}
+            </p>
+          ) : (
+            <p id={`${timeoutId}-hint`} className="text-[13px] text-text-muted">
+              {t('governance.mcp.install.initTimeoutHint')}
+            </p>
+          )}
+        </div>
+      ) : null}
     </div>
   );
 }

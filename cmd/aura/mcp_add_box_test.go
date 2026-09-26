@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -24,14 +25,25 @@ func TestMCPAddBoxDeclaresTheRuntimeAndVerifiesInTheOperatorsBox(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	if err := runMCPCommand(context.Background(), nil, []string{"add", "fetch", "--box", "--", "uvx", "mcp-server-fetch==2026.8.18"}, &out); err != nil {
+	if err := runMCPCommand(context.Background(), nil, []string{"add", "fetch", "--box", "--init-timeout", "120", "--", "uvx", "mcp-server-fetch==2026.8.18"}, &out); err != nil {
 		t.Fatalf("mcp add --box: %v", err)
 	}
 	server := readMCPRegistry(t).MCPServers["fetch"]
-	if !mcp.IsBoxRuntime(server) || server.Trust.Class != mcp.TrustBlocked {
+	if !mcp.IsBoxRuntime(server) || server.Runtime.InitTimeoutSec != 120 || server.Trust.Class != mcp.TrustBlocked {
 		t.Fatalf("stored %+v, want a box server that still waits for approval", server)
 	}
 	if gotBox == nil || gotOwner != identityctx.LocalOperatorIdentity {
 		t.Fatalf("guard got box=%v owner=%q, want the operator's box", gotBox, gotOwner)
+	}
+}
+
+func TestMCPAddInitTimeoutNeedsSeconds(t *testing.T) {
+	for _, args := range [][]string{
+		{"add", "fetch", "--box", "--init-timeout", "soon", "--", "uvx", "mcp-server-fetch==2026.8.18"},
+		{"add", "fetch", "--box", "--init-timeout"},
+	} {
+		if err := runMCPCommand(context.Background(), nil, args, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "--init-timeout") {
+			t.Fatalf("%q: err = %v, want an --init-timeout refusal", args, err)
+		}
 	}
 }

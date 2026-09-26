@@ -204,6 +204,16 @@ export const governanceEn = {
         argsLabel: 'Arguments',
         addArg: 'Add argument',
         argAria: 'Argument {{index}}',
+        runtimeLabel: 'Runs in',
+        runtime: { local: 'Aura host', box: "Each identity's box" },
+        runtimeHint: {
+          local: 'A child process of Aura, prepared once on the host.',
+          box: "Started in the calling identity's sandbox box, one process per identity, and verified in yours. Declare a pinned command that fetches itself (npx -y <pkg>@<version>, uvx <pkg>==<version>): each identity gets its own copy. It takes no secrets.",
+        },
+        initTimeoutLabel: 'First-start timeout (seconds)',
+        initTimeoutHint:
+          "The first start in an identity's box fetches the package. Empty means 30; at most 600.",
+        initTimeoutInvalid: 'A whole number of seconds from 1 to 600.',
         cliLabel: 'CLI equivalent',
         willWriteTo: 'Will write to:',
         duplicateName: 'A server named "{{name}}" already exists. Choose a different name.',
@@ -454,6 +464,16 @@ export const governanceIt = {
         argsLabel: 'Argomenti',
         addArg: 'Aggiungi argomento',
         argAria: 'Argomento {{index}}',
+        runtimeLabel: 'Gira su',
+        runtime: { local: 'Host di Aura', box: 'Box di ogni identità' },
+        runtimeHint: {
+          local: "Un processo figlio di Aura, preparato una volta sull'host.",
+          box: "Avviato nel box sandbox dell'identità che lo chiama, un processo per identità, e verificato nel tuo. Dichiara un comando fissato a una versione che si scarica da sé (npx -y <pkg>@<versione>, uvx <pkg>==<versione>): ogni identità ne ha la propria copia. Non accetta segreti.",
+        },
+        initTimeoutLabel: 'Timeout del primo avvio (secondi)',
+        initTimeoutHint:
+          "Il primo avvio nel box di un'identità scarica il pacchetto. Vuoto vale 30; al massimo 600.",
+        initTimeoutInvalid: 'Un numero intero di secondi da 1 a 600.',
         cliLabel: 'Equivalente CLI',
         willWriteTo: 'Verrà scritto su:',
         duplicateName: 'Esiste già un server chiamato "{{name}}". Scegli un nome diverso.',
