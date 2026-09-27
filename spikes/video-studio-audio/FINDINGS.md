@@ -91,3 +91,79 @@ are −21.2 dBFS for 0–0.4 s and −33.3 dBFS from 0.5 s: a drop at **0.5 s**.
 - Only one layer at a time, and no audio layer with transitions.
 - Keyframes created through the API (`layer.set` / `animate`) were not measured. `serializeLayer`
   folds a single keyframe back into the static `properties`, which the mixer ignores.
+
+## S2 — wavesurfer's envelope inside a dnd-timeline item
+
+`node s2.mjs`: dnd-timeline 3.1.1, wavesurfer 8.0.1 with its Envelope plugin, 4,000 cached peaks,
+a 300 s item on a 0–400 range, Chromium at desktop 1280×800 and Pixel 5. Each row drags the
+second envelope point down 16 px, then drags the item body 90 px sideways, then zooms to 0–200 and
+100–120. Zoom cells read `width px, redraw ms, handle boxes`:
+
+| layout | stroke | guard | mobile | render ms | point drag → point | point drag → item | body drag → item | zoom 0–200 | zoom 100–120 |
+|---|---|---|---|---|---|---|---|---|---|
+| span | fixed | none | no | 11.3 | ✗ | ✓ | ✓ | 1650 · 113 · 16×16 | 16500 · 120 · 16×16 |
+| span | fixed | svg | no | 10.6 | ✓ | ✗ | ✗ | 1650 · 105 · 16×16 | 16500 · 119 · 16×16 |
+| span | fixed | **point** | no | 12.5 | ✓ | ✗ | ✓ | 1650 · 116 · 16×16 | 16500 · 110 · 16×16 |
+| span | fixed | none | yes | 11.7 | ✗ | ✓ | ✓ | 1650 · 106 · 16×16 | 16500 · 120 · 16×16 |
+| span | fixed | svg | yes | 15.1 | ✓ | ✗ | ✗ | 1650 · 107 · 16×16 | 16500 · 133 · 16×16 |
+| span | fixed | **point** | yes | 12.3 | ✓ | ✗ | ✓ | 1650 · 109 · 16×16 | 16500 · 131 · 16×16 |
+| span | raw | point | no | 9.9 | ✓ | ✗ | ✓ | 1650 · 117 · 18×16 | 16500 · 123 · 54×16 |
+| content | raw | point | no | 10.5 | ✓ | ✗ | ✓ | **810** · 112 · 16×16 | **1100** · 104 · 17×16 |
+
+**Verdict: pass, in the configuration the bold rows name.** A guard is needed: without one, every
+point drag moves the item instead. The brief's guard (any press on the envelope's SVG) blocks every
+body drag too, because the SVG covers the whole waveform (`width/height 100%`, absolute,
+`z-index 4`). The guard that passes stops a press only when its composed path contains an
+`<ellipse>`, the only draggable element while `dragLine` is off (its default). Renders from peaks
+take 10–15 ms; a zoom's re-render, measured from the range change, takes 104–136 ms. Both are under
+the 200 ms bar.
+
+The brief's code did not work as written, for five reasons, each read in the installed package:
+- The envelope draws its points as `<ellipse>`, not `<circle>`.
+- wavesurfer renders into an **open shadow root**. Outside it, `event.target` is retargeted to the
+  host, so `target.closest('svg')` never matches; the guard reads `event.nativeEvent.composedPath()`.
+- The envelope **freezes its viewBox at creation** (`0 0 ${wrapper.clientWidth} ${clientHeight}`),
+  and a dnd-timeline item has no width until the timeline has measured itself. Created on mount,
+  the viewBox is `0 0 1 48` for good. The first `redrawcomplete` fires at that 1 px width, with the
+  handles 13,200 px wide and covering the lane, which is why the unguarded body drag first looked
+  like a point drag. The waveform must be created only once its host has a width (a
+  `ResizeObserver`); `renderMs` above is the first draw at full width.
+- `itemContentStyle` pads the content box down to the part of the span inside the range
+  (`paddingLeft/Right = max(0, −deltaX)`, dnd-timeline `index.mjs:745-754`). A waveform in it
+  squeezes the whole item into the visible part (the `content` row: 810 px and then 1,100 px
+  instead of 1,650 and 16,500), so it no longer lines up with time. The waveform goes in its own
+  layer, `position:absolute; inset:0`, inside the item box (`itemStyle` is absolute with the full
+  span width), and the timeline's `overflow:hidden` clips it.
+- With `preserveAspectRatio="none"` and a frozen viewBox, a zoom stretches the strokes sideways:
+  handles grow to 18 px, then 54 px (`raw`). The plugin exposes `part="polyline"` and
+  `part="envelope-circle"`, so
+  `::part(polyline), ::part(envelope-circle) { vector-effect: non-scaling-stroke }` on the shadow
+  host keeps them at 16×16 at every zoom (`fixed`). `rx` itself is recomputed on every `redraw`.
+
+**Consequences for Plan B's waveform component**
+- Create it only after its host has width.
+- Mount it in an absolute layer over the item box, not in `itemContentStyle`.
+- Guard point presses by composed path, `<ellipse>` only.
+- Style strokes through `::part`.
+- The envelope's polyline starts and ends at `y = height`, volume 0 (`points: 0,${h} ${w},${h}`).
+  The component always passes the two edge points (time 0 and the item's duration) at the item's
+  edge gain, or an untouched envelope draws as a fade-in and a fade-out that the mix does not do.
+
+**Package check — `react-audio-visualize` 1.2.0** (MIT, last push 2024-09-27, operator's
+suggestion)
+- `AudioVisualizer` decodes a whole `Blob` to draw bars. It takes no cached peaks, has no envelope,
+  and knows nothing of zoom.
+- `LiveAudioVisualizer` only draws a live FFT from a `MediaRecorder` that the caller still manages.
+
+wavesurfer, already a dependency, covers both. The waveform side is measured above. For the voice
+recording side, its Record plugin (`wavesurfer.js/plugins/record`) wraps `MediaRecorder` with
+pause/resume and device-loss handling, delivers the Blob on `record-end`, and draws the live
+waveform (`scrollingWaveform` / `continuousWaveform`). Not adopted: a second package for a subset
+of what the first already does.
+
+**What S2 does not show**
+- A pointer only, never a two-finger touch: the mobile rows are Pixel 5 emulation driven by mouse
+  events.
+- Not the Studio's own item markup (`ItemButton`, `setActivatorNodeRef`), and not keyboard drags.
+- Not peaks computed from a real file: the peaks are synthetic.
+- Not an envelope with more than three points.
