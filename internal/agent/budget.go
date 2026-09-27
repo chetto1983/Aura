@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/pausable"
 )
 
 // AURA_LOOP_* env var names (AURA_<DOMAIN>_<UNIT> convention). The hard 3-cap
@@ -47,20 +48,27 @@ const (
 )
 
 // Budget bounds one agent run. The steps counter is shared by pointer across the
-// whole tree (D-10); deadlineWallclock and now are shared by value; the dedup
-// ring is per-branch (forked by Child, D-09).
+// whole tree (D-10), and so is clock; deadlineWallclock and now are shared by
+// value; the dedup ring is per-branch (forked by Child, D-09).
 type Budget struct {
-	steps             *atomic.Int32       // shared step counter (D-10), decrement-then-check-then-restore (D-11)
-	deadlineWallclock time.Time           // hard wallclock cap; ConsumeStep refuses new steps past it (D-13)
-	now               func() time.Time    // injectable clock (W8): tests drive the deadline deterministically; default time.Now
-	dedupWindow       int                 // consecutive-repeat threshold (default 3, D-20)
-	dedupRing         *dedupRing          // per-branch two-phase dedup state (budget_dedup.go); distinct per Child (D-09)
-	branchSoftCap     int                 // passive per-branch fair-share advisory (D-12); 0 = unset (root)
-	branchConsumed    atomic.Int32        // steps this branch has consumed, for the passive soft-cap check (D-12)
-	exemptTools       map[string]struct{} // AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist (D-19)
-	resultCap         int                 // dedup result-preview byte cap (A7)
-	nodeTimeout       time.Duration       // optional per-node soft timeout (D-13); 0 = disabled
-	softFrac          float64             // AURA_LOOP_BRANCH_SOFT_FRACTION, feeds Child's softCap (D-12)
+	steps             *atomic.Int32 // shared step counter (D-10), decrement-then-check-then-restore (D-11)
+	deadlineWallclock time.Time     // hard wallclock cap; ConsumeStep refuses new steps past it (D-13)
+	// clock banks the time an operator spends answering an MCP elicitation. The
+	// wallclock gate and the context WithDeadline builds both push the deadline
+	// back by it, so a held run is refused by neither. Child shares it, so a hold
+	// stops the wallclock of the whole run tree: parallel branches that keep
+	// working while one branch waits on a form run uncounted meanwhile. The
+	// detached run's fixed one-hour cap (agui detachedRunContext) bounds that.
+	clock          *pausable.Clock
+	now            func() time.Time    // injectable clock (W8): tests drive the deadline deterministically; default time.Now
+	dedupWindow    int                 // consecutive-repeat threshold (default 3, D-20)
+	dedupRing      *dedupRing          // per-branch two-phase dedup state (budget_dedup.go); distinct per Child (D-09)
+	branchSoftCap  int                 // passive per-branch fair-share advisory (D-12); 0 = unset (root)
+	branchConsumed atomic.Int32        // steps this branch has consumed, for the passive soft-cap check (D-12)
+	exemptTools    map[string]struct{} // AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist (D-19)
+	resultCap      int                 // dedup result-preview byte cap (A7)
+	nodeTimeout    time.Duration       // optional per-node soft timeout (D-13); 0 = disabled
+	softFrac       float64             // AURA_LOOP_BRANCH_SOFT_FRACTION, feeds Child's softCap (D-12)
 }
 
 // now defaults to time.Now via the W8 injectable-clock field. W8 RATIONALE:
@@ -186,6 +194,7 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 		steps:             &steps,
 		deadlineWallclock: now().Add(time.Duration(wallclockSec) * time.Second),
 		now:               now,
+		clock:             pausable.NewClock(now),
 		dedupWindow:       dedupWindow,
 		dedupRing:         newDedupRing(dedupWindow),
 		exemptTools:       exempt,
@@ -247,7 +256,7 @@ func envFloatFailFast(key string, fallback float64) (float64, error) {
 // back. Only HARD terminal reasons are returned ("max_steps" | "wallclock") —
 // the per-branch soft cap is NON-terminal and surfaced via SoftCapExceeded (D-12).
 func (b *Budget) ConsumeStep() (ok bool, reason string) {
-	if b.now().After(b.deadlineWallclock) {
+	if b.now().After(b.deadlineWallclock.Add(b.clock.Held())) {
 		return false, "wallclock"
 	}
 	if n := b.steps.Add(-1); n < 0 {
@@ -344,6 +353,7 @@ func (b *Budget) Child(fanout int) *Budget {
 		steps:             b.steps, // SHARED pointer (D-10) — total bound preserved
 		deadlineWallclock: b.deadlineWallclock,
 		now:               b.now,
+		clock:             b.clock, // SHARED pointer: a hold anywhere in the tree stops every branch's wallclock
 		dedupWindow:       b.dedupWindow,
 		dedupRing:         newDedupRing(b.dedupWindow), // DISTINCT ring (D-09)
 		branchSoftCap:     softCap(b.Remaining(), fanout, b.softFrac),
@@ -368,9 +378,11 @@ func softCap(remaining, fanout int, frac float64) int {
 
 // WithDeadline derives a context bounded by the budget's wallclock deadline so
 // in-flight LLM/tool calls are cancelled end-to-end, not just blocked from new
-// steps (D-13). The caller owns the returned CancelFunc.
+// steps (D-13). The deadline is pausable and shares the budget's clock: while an
+// MCP elicitation waits on the operator it stops, and ConsumeStep reads the same
+// held total. The caller owns the returned CancelFunc.
 func (b *Budget) WithDeadline(parent context.Context) (context.Context, context.CancelFunc) {
-	return context.WithDeadline(parent, b.deadlineWallclock)
+	return pausable.WithDeadline(parent, b.deadlineWallclock, b.clock)
 }
 
 // NodeTimeout is the optional per-node soft timeout (AURA_LOOP_NODE_TIMEOUT_SEC,

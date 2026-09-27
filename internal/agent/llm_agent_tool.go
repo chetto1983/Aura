@@ -10,6 +10,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/pausable"
 )
 
 // llm_agent_tool.go holds the single-tool execution + terminal-call helpers split out
@@ -193,8 +194,10 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		a.gateway,
 	)
 	if d := budget.NodeTimeout(); d > 0 {
+		// Pausable like the run's own deadline: an MCP call waiting on the operator
+		// holds every clock above it, and a fixed per-node timer would still cut it.
 		var cancel context.CancelFunc
-		toolCtx, cancel = context.WithTimeout(toolCtx, d)
+		toolCtx, cancel = pausable.WithTimeout(toolCtx, d)
 		defer cancel()
 	}
 	res, err := a.execTool(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments))
