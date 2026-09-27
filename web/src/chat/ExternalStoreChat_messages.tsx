@@ -10,10 +10,12 @@ import {
   type ToolCallMessagePartComponent,
 } from '@assistant-ui/react';
 import { useCapabilities } from '../admin/useAdmin';
+import { BrowserLiveView } from '../browserLive/BrowserLiveView';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
 import { BranchPicker } from './BranchPicker';
+import { turnBrowserSession } from './browser/liveBrowserSession';
 import { messageBudgetLimit } from './budgetLimit';
 import { BudgetLimitNotice } from './BudgetLimitNotice';
 import { DisplayRouter } from './displays/DisplayRouter';
@@ -146,6 +148,11 @@ function isCreditExhausted(message: ThreadMessageLike): boolean {
 export function AssistantMessage() {
   const { t } = useTranslation();
   const message = useAuiState((s) => s.message) as ThreadMessageLike;
+  // Only the latest turn shows its browser, under its last message: the server keeps one viewer
+  // per session, and an older turn's view would take the page from the current one.
+  const browserSession = useAuiState((s) =>
+    s.message.isLast ? turnBrowserSession(s.thread.messages) : null,
+  );
   const { identityName } = useCapabilities();
   return (
     <MessagePrimitive.Root data-message-role="assistant" className="w-full min-w-0 space-y-2">
@@ -171,6 +178,13 @@ export function AssistantMessage() {
           }}
         />
       </div>
+      {browserSession !== null ? (
+        <BrowserLiveView
+          key={browserSession}
+          session={browserSession}
+          className="h-[min(70dvh,40rem)] overflow-hidden rounded-lg border border-border"
+        />
+      ) : null}
       {/* Amendment #188: a turn the loop budget cut says so under its answer. */}
       <BudgetLimitNotice limit={messageBudgetLimit(message)} />
       <MessagePrimitive.Error>

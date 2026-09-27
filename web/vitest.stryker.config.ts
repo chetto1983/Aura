@@ -50,6 +50,7 @@ const mutationTests = [
   'src/chat/generation/GenerationToolDisplay.test.tsx',
   'src/chat/generation/generationState.test.ts',
   'src/browserLive/liveInput.test.ts',
+  'src/chat/browser/liveBrowserSession.test.ts',
   'src/components/__tests__/computer-use.test.tsx',
   'src/routes/BrowserLivePage.test.tsx',
   'src/chat/generation/generationThread.test.tsx',

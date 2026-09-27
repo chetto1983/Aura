@@ -42,8 +42,9 @@ If the `browser__` tools are not mounted, the same commands work through `shell_
 ## Logins: the operator types, you never see the password
 
 1. Open the login page in a named session.
-2. Give the operator the live view link and stop: `[Log in here](/browser/portal)` in the
-   cockpit. On another channel, tell them to open `/browser/portal` in the cockpit.
+2. Tell the operator to sign in and stop. In the cockpit chat the live view of the session
+   opens under your answer by itself. On another channel, give them the page to open in the
+   cockpit: `/browser/portal`, with your session's name.
 3. They sign in themselves — password, two-factor code, CAPTCHA — and tell you when they
    are done. Do not poll the page while they type.
 4. Take a snapshot to confirm you are past the login, then carry on.

@@ -792,6 +792,25 @@ stdio server's `runtime` (`local` or `box`) and `initTimeoutSec`, with `--init-t
 the CLI so the previewed command is one it runs. Not shown: an install from the cockpit against a
 live box; the handler, builder, form and CLI are unit-tested.
 
+**The chat shows the live view itself, after a model skipped the skill, 2026-09-27.** On the lab
+VM an operator asked Aura (`gemma4:31b-cloud`) to open YouTube so they could sign in. The model saw
+`browser-aura` in its installed skills, reasoned that listed meant loaded, and never called the
+`skill` tool. It opened the page with no `session` and no `restore`, so agent-browser used its
+`default` session and saved nothing, and it told the operator to sign in without a link. Asked for
+the link "as per /browser-aura", it answered with the page's own URL. The handoff therefore no
+longer waits on the model. Under the latest turn's last message, the cockpit shows the live view of
+the session that turn left open: the session of its last settled `browser__agent_browser_*` call,
+`default` when that call names none, and nothing after a `close`. A replayed turn arrives as one
+assistant message per model call, so the turn is every message after the user's last. Only the
+latest turn shows a view, because the server keeps one viewer per session. `/browser/<session>`
+stays for other channels. The same run found Google's sign-in refusing the box browser: through
+the live view the operator reached `accounts.google.com/v3/signin/rejected` ("Couldn't sign you
+in"), and the box's Chromium reports `HeadlessChrome/151` with `navigator.webdriver = true`. Not
+shown: the chat view on the VM or on a phone (it is tested in jsdom through the real runtime and
+snapshot replay); whether any launch configuration gets past Google's refusal (Wirasm/helm#374
+reports that a plain Chrome with no debugging port and no user-agent override signs in, and the
+live view rides CDP); and a login made without `restore` surviving a box suspend.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

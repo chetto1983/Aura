@@ -45,6 +45,7 @@
     "src/components/computer-use.tsx",
     "src/chat/generation/generationState.ts",
     "src/browserLive/liveInput.ts",
+    "src/chat/browser/liveBrowserSession.ts",
     "src/chat/generation/GenerationFrame.tsx",
     "src/chat/generation/GenerationToolDisplay.tsx",
     "src/chat/artifacts/renderers/GeneratedImagePreview.tsx",
