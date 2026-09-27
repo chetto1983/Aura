@@ -237,7 +237,10 @@ test.describe('media editing', () => {
     }
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible();
 
-    await editor.locator('input[type="file"]').setInputFiles(resolve(FIXTURES, 'clip.mp4'));
+    // The clip door by its name: the editor also has a sound picker.
+    await editor
+      .getByLabel('Choose a clip or a still', { exact: true })
+      .setInputFiles(resolve(FIXTURES, 'clip.mp4'));
     await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 30_000 });
     await editor.getByRole('button', { name: 'Transition between clips 1 and 2' }).click();
     await expect(editor.getByRole('heading', { name: 'Transition' })).toBeVisible();
