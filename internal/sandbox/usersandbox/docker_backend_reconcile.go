@@ -55,7 +55,9 @@ func (b *DockerBackend) reconcileBox(ctx context.Context, containerID string, sp
 	if reason == "" {
 		return containerID, nil
 	}
-	slog.Info("sandbox: recreating a stale box, volumes kept", "identity_id", spec.IdentityID, "reason", reason)
+	// Named by the container Docker reports (aura-box-<identity>), not by spec.IdentityID, which
+	// CodeQL traces from a credential-bearing value into this log (code-scanning alert 188).
+	slog.Info("sandbox: recreating a stale box, volumes kept", "container", ins.Container.Name, "reason", reason)
 	if err := b.teardownEgress(ctx, spec.IdentityID); err != nil {
 		return "", fmt.Errorf("remove old egress sidecar: %w", err)
 	}

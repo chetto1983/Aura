@@ -62,7 +62,7 @@ func (w *protocolLines) pass(line []byte) error {
 			trimmed = trimmed[:shown]
 		}
 		w.logger.Warn("mcp stdio server wrote a non-protocol line to stdout; dropped",
-			"server", redact.Line(w.name), "line", RedactSecrets(string(trimmed)))
+			"server", redact.Line(w.name), "line", redact.Line(RedactSecrets(string(trimmed))))
 	}
 	return nil
 }
