@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -99,6 +100,40 @@ func TestAReleasedClockPastItsDeadlineExpires(t *testing.T) {
 	Hold(ctx)()
 	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
 		t.Fatalf("err = %v one second past the pushed-back deadline, want DeadlineExceeded", ctx.Err())
+	}
+}
+
+func TestHoldStartingDuringExpiryCheckPreventsExpiry(t *testing.T) {
+	manual := newFakeNow()
+	var pauseNext atomic.Bool
+	entered := make(chan struct{})
+	resume := make(chan struct{})
+	c := NewClock(func() time.Time {
+		if pauseNext.CompareAndSwap(true, false) {
+			close(entered)
+			<-resume
+		}
+		return manual.now()
+	})
+	ctx, cancel := WithDeadline(context.Background(), manual.now().Add(time.Second), c)
+	defer cancel()
+	manual.advance(2 * time.Second)
+	pauseNext.Store(true)
+	armed := make(chan struct{})
+	go func() {
+		ctx.(*deadlineCtx).arm()
+		close(armed)
+	}()
+	<-entered
+	release := Hold(ctx)
+	close(resume)
+	<-armed
+	if err := ctx.Err(); err != nil {
+		t.Fatalf("context expired while a hold had started: %v", err)
+	}
+	release()
+	if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		t.Fatalf("err after release = %v, want DeadlineExceeded", ctx.Err())
 	}
 }
 

@@ -88,9 +88,10 @@ func (c *deadlineCtx) arm() {
 	if c.clock.isHeld() {
 		return
 	}
-	remaining := c.ownDeadline().Sub(c.clock.now())
+	now := c.clock.now()
+	remaining := c.ownDeadline().Sub(now)
 	if remaining <= 0 {
-		c.cancel(context.DeadlineExceeded)
+		c.clock.expireAt(c, now)
 		return
 	}
 	c.mu.Lock()
@@ -105,24 +106,39 @@ func (c *deadlineCtx) arm() {
 }
 
 func (c *deadlineCtx) cancel(err error) {
+	ended, ok := c.markEnded(err)
+	if ok {
+		c.finishEnd(ended)
+	}
+}
+
+type endState struct {
+	detach func() bool
+	afters map[*afterFunc]struct{}
+}
+
+func (c *deadlineCtx) markEnded(err error) (endState, bool) {
 	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.err != nil {
-		c.mu.Unlock()
-		return
+		return endState{}, false
 	}
 	c.err = err
 	close(c.done)
 	if c.timer != nil {
 		c.timer.Stop()
 	}
-	detach, afters := c.detach, c.afters
+	ended := endState{detach: c.detach, afters: c.afters}
 	c.afters = nil
-	c.mu.Unlock()
-	if detach != nil {
-		detach()
+	return ended, true
+}
+
+func (c *deadlineCtx) finishEnd(ended endState) {
+	if ended.detach != nil {
+		ended.detach()
 	}
 	c.clock.forget(c)
-	for a := range afters {
+	for a := range ended.afters {
 		go a.f()
 	}
 }

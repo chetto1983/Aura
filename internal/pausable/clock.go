@@ -6,6 +6,7 @@
 package pausable
 
 import (
+	"context"
 	"sync"
 	"time"
 )
@@ -91,4 +92,20 @@ func (c *Clock) forget(ctx *deadlineCtx) {
 	c.mu.Lock()
 	delete(c.waiting, ctx)
 	c.mu.Unlock()
+}
+
+// expireAt makes the hold check and expiry transition atomic with a new hold.
+// The sampled time is only used after the clock lock confirms that no hold has
+// started or extended the deadline since arm sampled it.
+func (c *Clock) expireAt(ctx *deadlineCtx, at time.Time) {
+	c.mu.Lock()
+	if c.holds > 0 || at.Before(ctx.deadline.Add(c.held)) {
+		c.mu.Unlock()
+		return
+	}
+	ended, ok := ctx.markEnded(context.DeadlineExceeded)
+	c.mu.Unlock()
+	if ok {
+		ctx.finishEnd(ended)
+	}
 }
