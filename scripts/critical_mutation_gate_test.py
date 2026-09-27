@@ -275,6 +275,28 @@ class FrontendMutationParserTest(unittest.TestCase):
             "reports/mutation/mutation.json",
         )
 
+    def test_ci_reuses_stryker_incremental_results_across_commits(self) -> None:
+        config = json.loads(
+            (REPO / "web/stryker.config.json").read_text(encoding="utf-8")
+        )
+        self.assertIs(config["incremental"], True)
+        self.assertEqual(
+            config["incrementalFile"], "reports/stryker-incremental.json"
+        )
+
+        workflow = (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        mutation_job = workflow.split("  web-mutation:\n", 1)[1].split(
+            "\n  web-e2e:", 1
+        )[0]
+        self.assertIn("actions/cache/restore@", mutation_job)
+        self.assertIn("actions/cache/save@", mutation_job)
+        self.assertEqual(
+            mutation_job.count("path: web/reports/stryker-incremental.json"), 2
+        )
+        self.assertIn("hashFiles('web/package-lock.json'", mutation_job)
+        self.assertIn("github.sha", mutation_job)
+        self.assertIn("restore-keys:", mutation_job)
+
     def test_scores_detected_and_undetected_mutants(self) -> None:
         report = {
             "schemaVersion": "1.0",

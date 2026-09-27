@@ -1599,6 +1599,18 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # Stryker diffs mutated source and Vitest test locations against this report. A cache
+      # miss does one full run; later commits reuse unchanged mutants while still emitting
+      # a full current-candidate JSON report for both frontend score gates.
+      - name: Restore Stryker incremental report
+        id: stryker_incremental_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: web/reports/stryker-incremental.json
+          key: stryker-incremental-v1-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-${{ github.sha }}
+          restore-keys: |
+            stryker-incremental-v1-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-
+
       - name: Install pinned Go mutation runner
         run: |
           go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
@@ -1606,6 +1618,14 @@ jobs:
 
       - name: Stryker mutation run with fresh JSON evidence
         run: cd web && npm ci && npm run mutation
+
+      # Save before the Go gate, so a weak or slow Go scope cannot waste the Stryker run.
+      - name: Save Stryker incremental report
+        if: always() && steps.stryker_incremental_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: web/reports/stryker-incremental.json
+          key: ${{ steps.stryker_incremental_cache.outputs.cache-primary-key }}
 
       - name: Per-boundary Go + frontend mutation gate
         run: |
@@ -1621,6 +1641,7 @@ jobs:
             artifacts/production-readiness/mutation-report.json
             artifacts/production-readiness/mutation-logs/
             web/reports/mutation/mutation.json
+            web/reports/stryker-incremental.json
           if-no-files-found: error
 
   web-e2e:

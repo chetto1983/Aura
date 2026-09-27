@@ -4,6 +4,8 @@
   "testRunner": "vitest",
   "tsconfigFile": "",
   "coverageAnalysis": "perTest",
+  "incremental": true,
+  "incrementalFile": "reports/stryker-incremental.json",
   "mutate": [
     "src/settings/embeddingBackendState.ts",
     "src/api/json.ts",
