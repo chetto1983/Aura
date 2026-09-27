@@ -196,6 +196,14 @@ RUN set -eu; \
 # died with a box recreate).
 ENV AURA_AGENT_BROWSER_HOME=/workspace/.agent-browser-home
 COPY --chmod=0755 docker/aura-sandbox/agent-browser.sh /usr/local/bin/agent-browser
+# Chrome must not sign itself in to the Google account a user logs into on the web. Measured
+# 2026-09-27 on the lab VM: after an operator signed in to YouTube through the live view, Chrome's
+# account consistency (DICE) opened chrome://signin-error and a new tab, and the session's daemon
+# answered no command again until it was SIGKILLed. BrowserSignin 0 turns DICE off
+# (chrome://signin-internals: "Account Consistency: None" instead of "DICE") and leaves Google's
+# web sign-in working. Chrome for Testing reads this directory, not /etc/opt/chrome/policies
+# (components/policy/core/common/policy_paths.cc).
+COPY --chmod=0644 docker/aura-sandbox/chrome-policy.json /etc/opt/chrome_for_testing/policies/managed/aura.json
 COPY --chmod=0644 docker/aura-sandbox/browser-relay.mjs /usr/local/lib/aura/browser-relay.mjs
 
 WORKDIR /workspace

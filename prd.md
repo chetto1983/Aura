@@ -851,6 +851,23 @@ every 5 s, so an operator signing in is not cut off. Not shown: why Chromium is 
 lab VM's network, an appliance's page loads, and four heavy browsers together under the new
 cap.
 
+**Chrome no longer signs itself in, measured 2026-09-27.** After the operator signed in to
+YouTube through the live view, Chrome's account consistency (DICE) opened `chrome://signin-error`
+and a new tab beside the page. From 13:11 the session's daemon answered no command: a snapshot
+was cancelled mid-way, then three opens and a `get_title` timed out at 60 s. The daemon kept
+autosaving the state all along. Closing the two tabs over CDP did not free it, and neither did
+SIGTERM; SIGKILL did. The box image now carries the policy `BrowserSignin: 0`, in the directory
+Chrome for Testing reads, `/etc/opt/chrome_for_testing/policies` and not Chrome's
+`/etc/opt/chrome/policies` (`components/policy/core/common/policy_paths.cc`). Driven through
+agent-browser, `chrome://policy` lists it, and `chrome://signin-internals` reports "Account
+Consistency: None" instead of "DICE". The image contract checks that row: it failed on the edge
+image and passed on that image plus the policy layer. The same run showed why a Google login
+does not outlive its browser. Every launch uses a fresh profile under `/tmp`, and after a
+restart with `restore` only `__Secure-1PSIDTS` and `__Secure-3PSIDTS` came back, with `SID`,
+`SAPISID` and `LOGIN_INFO` gone and the page signed out. Not shown: that those two tabs are what
+hung the daemon (it takes a real account to reproduce), and a Google login kept by a persistent
+profile.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
