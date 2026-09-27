@@ -1,0 +1,21 @@
+{
+  "name": "video-studio-audio-spikes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@echogarden/fvad-wasm": "0.2.0",
+    "@ricky0123/vad-web": "0.0.31",
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
+    "@videoflow/core": "1.3.4",
+    "@videoflow/renderer-browser": "1.3.4",
+    "dnd-timeline": "3.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "wavesurfer.js": "8.0.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.1",
+    "playwright": "1.62.1",
+    "vite": "8.3.0"
+  }
+}
