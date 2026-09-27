@@ -868,6 +868,46 @@ restart with `restore` only `__Secure-1PSIDTS` and `__Secure-3PSIDTS` came back,
 hung the daemon (it takes a real account to reproduce), and a Google login kept by a persistent
 profile.
 
+**A persistent profile per browser session keeps the login, measured 2026-09-27.** The operator
+signed in to Google through the live view on a session whose Chrome ran on agent-browser's own
+persistent profile (`--profile`, a directory on the workspace volume) instead of a fresh one under
+`/tmp`. On the lab VM box the account stayed signed in, with all 24 Google cookies (`SID`,
+`SAPISID`, `LSID` and `__Secure-*PSID` among them), in three cases: with the browser alive; after
+Chrome was closed and relaunched on that profile; and after the box container was restarted,
+killing Chrome rather than closing it. In the last case the page showed a sign-out link and no
+"Sign in". `restore`, which replays saved cookies into a fresh profile, had brought back only the
+two `*PSIDTS` cookies. Hermes Agent also keeps logins in a profile directory that outlives the
+browser: a copy of the user's own Chrome profile, or Camofox's per-user one. LibreChat has no
+browser of its own. After the login the profile took 33 MB, 25 MB of it caches. Three constraints
+came from agent-browser, not its README:
+
+- launch options are hashed per command (`launch_hash`, `cli/src/native/actions.rs`). A call of the
+  same session without `--profile` therefore relaunches Chrome on a temporary profile without a
+  word, and the page goes back to `about:blank`. This happens through the CLI and through
+  `agent-browser mcp` alike, so the profile has to ride on every call, not only on `open`;
+- two sessions on one profile directory cannot run together: Chrome's `SingletonLock` aborts the
+  second. With one directory per session, they ran side by side;
+- `agent-browser mcp` runs each tool call as a child of its own binary, so the box's entry point
+  never sees a call's session. The MCP schema has no `profile`, but all 29 tools take `extraArgs`.
+  `--profile` appended there left free text untouched: `fill` and `type` with `--profile` inside
+  the text typed it as given.
+
+The bridge therefore gives every `browser__agent_browser_*` call `extraArgs: ["--profile",
+"~/profiles/<session>"]`. It sets `session` to `default` when the call names none. It refuses the
+call when the name is not 1-48 letters, digits, `-` or `_`, and when the model passes its own
+`--profile`. agent-browser expands `~` against the `HOME` the entry point sets, so the directory
+layout stays in the image. The entry point gives CLI calls the same directory, and the skill no
+longer asks for `restore`; the `restore` advice in the paragraphs above is superseded.
+
+A box killed with its browser leaves the profile's `SingletonLock` behind, naming the container's
+hostname and Chrome's pid. With the same hostname, Chrome takes the lock over, even when that pid
+now belongs to another process. With another hostname, it refuses the profile as "in use by another
+Chromium process on another computer". A recreated box would hit exactly that, since its hostname
+was the new container's id. Boxes are now created with their name as hostname, and `Resolve`
+recreates a box whose hostname is not its name. Not shown: that the login lasts for days, since
+Google may end it for other reasons; a stale lock whose pid now belongs to another Chrome; and how
+far a profile's caches grow.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
