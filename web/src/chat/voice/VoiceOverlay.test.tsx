@@ -205,11 +205,15 @@ describe('VoiceOverlay', () => {
       expect(audio?.last()?.play).toHaveBeenCalledTimes(1);
     });
 
-    // The mic never stopped metering, and it is loud: the reply is cut off.
+    // The mic never stopped metering, and it is loud: the reply is cut off. The barge-in is
+    // dispatched from the meter's interval, so React commits "Listening…" first and runs the
+    // speaking effect's cleanup — the pause — in a later task: both are awaited together, or
+    // the assertion races the cleanup (CI, 2026-09-27) and the listening effect lands after
+    // teardown has unstubbed MediaRecorder.
     await waitFor(() => {
       expect(screen.getByTestId('voice-status').textContent).toBe('Listening…');
+      expect(audio?.last()?.pause).toHaveBeenCalled();
     });
-    expect(audio?.last()?.pause).toHaveBeenCalled();
   });
 
   it('an empty transcript reopens the mic and sends nothing', async () => {
