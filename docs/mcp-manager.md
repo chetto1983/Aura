@@ -76,6 +76,14 @@ aura mcp doctor local-demo
 aura mcp trust local-demo --reason "reviewed server.js"
 ```
 
+A streamable-HTTP server is added with `--url` instead of a command, and is stored `blocked`
+the same way:
+
+```bash
+aura mcp add gh --url https://mcp.example.com/mcp
+aura mcp trust gh --class remote_http --reason "reviewed the hosted server"
+```
+
 `aura mcp trust <name> --reason <text> [--class <class>]` records the class with who approved
 it and why. A server written without any class, such as one in an imported config, gets one
 from where it runs: a local command is `trusted_local`, a box-runtime command

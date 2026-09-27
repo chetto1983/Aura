@@ -153,7 +153,7 @@ func TestBuildInstallServerReadsTheOtherTwoShapes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("remote: %v", err)
 	}
-	if remote.URL != "https://mcp.example.test" || cli != "aura mcp add gh" {
+	if remote.URL != "https://mcp.example.test" || cli != "aura mcp add gh --url https://mcp.example.test" {
 		t.Fatalf("remote = %#v cli = %q", remote, cli)
 	}
 

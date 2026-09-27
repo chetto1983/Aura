@@ -321,6 +321,9 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 	if runtime.InitTimeoutSec != 0 {
 		cli += fmt.Sprintf(" --init-timeout %d", runtime.InitTimeoutSec)
 	}
+	if url != "" {
+		cli += " --url " + url
+	}
 	if command != "" {
 		// The arguments belong in the preview: without them it names a command the CLI would
 		// not run, and for a resolver launch they carry the package itself.

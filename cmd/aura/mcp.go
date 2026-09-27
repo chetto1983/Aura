@@ -8,7 +8,6 @@ import (
 	"io"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -213,136 +212,6 @@ func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err 
 	return recipe, name, env, nil
 }
 
-const mcpAddUsage = "usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] [--box [--init-timeout SECONDS]] -- <command> [args...]"
-
-func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
-	// Only guard against an empty arg vector (so args[0] below is safe). The real
-	// invariant — a non-empty name AND a non-empty command after "--" — is enforced
-	// precisely by the empty-name and len(commandParts)==0 checks below; a brittle
-	// `len(args) < 3` pre-check implied a different, contradictory contract (WR-06).
-	if len(args) == 0 {
-		return errors.New(mcpAddUsage)
-	}
-	name := strings.TrimSpace(args[0])
-	if name == "" {
-		return fmt.Errorf("MCP server name cannot be empty")
-	}
-	env := []string{}
-	enabled := true
-	box := false
-	initTimeoutSec := 0
-	pendingInitTimeout := false
-	trustClass := mcp.TrustBlocked
-	pendingEnv := false
-	pendingTrust := false
-	inCommand := false
-	commandParts := []string{}
-	for _, arg := range args[1:] {
-		if inCommand {
-			commandParts = append(commandParts, arg)
-			continue
-		}
-		if pendingEnv {
-			if !strings.Contains(arg, "=") {
-				return fmt.Errorf("--env value %q must be KEY=VALUE", arg)
-			}
-			env = append(env, arg)
-			pendingEnv = false
-			continue
-		}
-		if pendingInitTimeout {
-			sec, err := strconv.Atoi(arg)
-			if err != nil {
-				return fmt.Errorf("--init-timeout value %q must be a number of seconds", arg)
-			}
-			initTimeoutSec = sec
-			pendingInitTimeout = false
-			continue
-		}
-		if pendingTrust {
-			if arg != "local" {
-				return fmt.Errorf("--trust value %q must be local", arg)
-			}
-			trustClass = mcp.TrustTrustedLocal
-			pendingTrust = false
-			continue
-		}
-		switch arg {
-		case "--":
-			inCommand = true
-		case "--env":
-			pendingEnv = true
-		case "--trust":
-			pendingTrust = true
-		case "--disabled":
-			enabled = false
-		case "--box":
-			box = true
-		case "--init-timeout":
-			pendingInitTimeout = true
-		default:
-			return fmt.Errorf("unknown mcp add option %q", arg)
-		}
-	}
-	if pendingEnv {
-		return fmt.Errorf("--env requires KEY=VALUE")
-	}
-	if pendingTrust {
-		return fmt.Errorf("--trust requires local")
-	}
-	if pendingInitTimeout {
-		return fmt.Errorf("--init-timeout requires a number of seconds")
-	}
-	if len(commandParts) == 0 {
-		return errors.New(mcpAddUsage)
-	}
-	command, commandArgs := splitCommandParts(commandParts)
-	doc, err := loadManagedMCPConfig()
-	if err != nil {
-		return err
-	}
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]mcp.ManagedServer{}
-	}
-	if _, exists := doc.MCPServers[name]; exists {
-		return fmt.Errorf("MCP server %q already exists", name)
-	}
-	server := mcp.ManagedServer{
-		Command: command,
-		Args:    commandArgs,
-		Env:     env,
-		Enabled: new(enabled),
-		Source:  "manual",
-		Trust:   mcp.ManagedTrust{Class: trustClass},
-		Runtime: mcp.ManagedRuntime{InitTimeoutSec: initTimeoutSec},
-	}
-	cfg := config.LoadDB()
-	var launcher mcp.BoxLauncher
-	if box {
-		server.Runtime.Kind = mcp.RuntimeKindBox
-		ctx, launcher = operatorBoxLauncher(ctx, cfg, pool)
-	}
-
-	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
-	// it, and refuse to store a server that cannot complete a handshake — the declaration
-	// this used to write was only ever a promise that something would resolve at mount. A box
-	// server completes that handshake in the operator's own box.
-	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(cfg), name, server, launcher)
-	if err != nil {
-		return err
-	}
-
-	doc.MCPServers[name] = prepared
-	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcpWriteManagedConfig(ctx, pool, doc, "add", name, ""); err != nil {
-		return err
-	}
-	if err := writef(out, "%s\n", describePreparation(report)); err != nil {
-		return err
-	}
-	return writef(out, "ok: added %s\n", name)
-}
-
 // operatorBoxLauncher is the CLI's way into a box: the operator's own, the one the mount reads
 // a box server's tools in (boxDiscoveryIdentity).
 func operatorBoxLauncher(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (context.Context, mcp.BoxLauncher) {
@@ -495,19 +364,6 @@ func sortedManagedNames(doc mcp.ManagedConfig) []string {
 func renderMCPCommand(cfg mcp.ServerConfig) string {
 	parts := append([]string{cfg.Command}, cfg.Args...)
 	return strings.Join(parts, " ")
-}
-
-func splitCommandParts(parts []string) (string, []string) {
-	command := ""
-	args := []string{}
-	for i, part := range parts {
-		if i == 0 {
-			command = part
-			continue
-		}
-		args = append(args, part)
-	}
-	return command, args
 }
 
 func writef(w io.Writer, format string, args ...any) error {
