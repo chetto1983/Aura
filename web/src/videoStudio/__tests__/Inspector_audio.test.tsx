@@ -166,6 +166,17 @@ describe('Inspector, on a clip Audio tab', () => {
     expect(applied(1).video[0]?.muted).toBe(true);
   });
 
+  it('extracts the clip sound from its Audio tab', () => {
+    const applied = mount('clip-1');
+    openTab('videoStudio.inspector.tabs.audio');
+    fireEvent.click(screen.getByRole('button', { name: 'videoStudio.audio.extract' }));
+    const next = applied();
+    expect(next.video[0]?.muted).toBe(true);
+    expect(
+      next.audio?.flatMap((lane) => lane.items).some((item) => item.extractedFrom === 'clip-1'),
+    ).toBe(true);
+  });
+
   it('still sets the clip speed from the shared control', () => {
     const applied = mount('clip-1');
     openTab('videoStudio.inspector.tabs.speed');

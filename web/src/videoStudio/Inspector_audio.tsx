@@ -1,3 +1,4 @@
+import { AudioLines } from 'lucide-react';
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
@@ -5,6 +6,7 @@ import { TimeField } from '../mediaEdit/TimeField';
 import { audioLength, audioWindow } from './audioLane';
 import { setClipPresentation, setMuted } from './commands';
 import {
+  extractAudio,
   moveAudio,
   setAudioProperties,
   trimAudio,
@@ -127,6 +129,7 @@ export function ClipAudioControls({
   readonly clip: VideoItem;
   readonly onCommand: Commit;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="video-studio-tab-panel">
       <VolumeSlider
@@ -141,6 +144,17 @@ export function ClipAudioControls({
           onCommand((current) => setMuted(current, { clipId: clip.id, muted }));
         }}
       />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => {
+          onCommand((current) => extractAudio(current, { clipId: clip.id }));
+        }}
+      >
+        <AudioLines aria-hidden="true" />
+        {t('videoStudio.audio.extract')}
+      </Button>
     </div>
   );
 }

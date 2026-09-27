@@ -4,6 +4,7 @@ import { CommandRefusal } from '../commands';
 import {
   addAudio,
   AUDIO_REFUSAL,
+  extractAudio,
   moveAudio,
   recordAnalysis,
   setAudioProperties,
@@ -353,5 +354,54 @@ describe('recordAnalysis', () => {
     expect(
       refusalKey(() => recordAnalysis(project(), { sourceId: 'nope', denoisedAssetId: 'x' })),
     ).toBe(AUDIO_REFUSAL.sourceMissing);
+  });
+});
+
+describe('extractAudio', () => {
+  it('mutes the clip and lays its sound over the same source, window, speed and volume', () => {
+    const base = {
+      ...project(),
+      video: project().video.map((clip) =>
+        clip.id === 'clip-2' ? { ...clip, speed: 2, volume: 0.5 } : clip,
+      ),
+    };
+    const next = extractAudio(base, { clipId: 'clip-2' });
+    const sound = first(next);
+    expect(next.video[1]?.muted).toBe(true);
+    expect(sound).toMatchObject({
+      sourceId: 'src-a',
+      anchor: { clipId: 'clip-2', offset: 0 },
+      sourceStart: 4,
+      duration: 4,
+      speed: 2,
+      volume: 0.5,
+      muted: false,
+      extractedFrom: 'clip-2',
+    });
+    expect(audioWindow(next, sound)).toEqual({ start: 4, end: 6 });
+  });
+
+  it('opens a lane when the first one is taken over the clip window', () => {
+    const next = extractAudio(project([item()]), { clipId: 'clip-1' });
+    expect(next.audio).toHaveLength(2);
+  });
+
+  it('refuses a clip whose source has no sound, and a still', () => {
+    const silent = {
+      ...project(),
+      video: [{ id: 'quiet', sourceId: 'src-mute', duration: 5, sourceStart: 0, muted: false }],
+    };
+    expect(refusalKey(() => extractAudio(silent, { clipId: 'quiet' }))).toBe(
+      AUDIO_REFUSAL.notSound,
+    );
+    const still = {
+      ...project(),
+      video: [{ id: 'pic', sourceId: 'src-img', duration: 5, sourceStart: 0, muted: false }],
+    };
+    expect(refusalKey(() => extractAudio(still, { clipId: 'pic' }))).toBe(AUDIO_REFUSAL.notSound);
+  });
+
+  it('is loud about a clip the project does not have', () => {
+    expect(() => extractAudio(project(), { clipId: 'nope' })).toThrow(/no clip/);
   });
 });

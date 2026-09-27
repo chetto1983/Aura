@@ -168,6 +168,41 @@ export function addAudio(project: VideoProject, args: AddAudioArgs): VideoProjec
   });
 }
 
+export interface ExtractAudioArgs {
+  readonly clipId: string;
+}
+
+/**
+ * Extract audio (spec §Model): the clip goes quiet and its sound becomes an item over the same
+ * source, window, speed and volume, hung on the clip at offset 0 and marked as extracted from it —
+ * so removing the clip removes it. From then on the two are independent; undo restores both.
+ */
+export function extractAudio(project: VideoProject, args: ExtractAudioArgs): VideoProject {
+  const clip = project.video.find((candidate) => candidate.id === args.clipId);
+  if (clip === undefined) throw new Error(`videoStudio: no clip named ${args.clipId}`);
+  const source = sourceOf(project, clip.sourceId);
+  if (source?.kind !== 'video' || source.hasAudio === false) {
+    throw new CommandRefusal(AUDIO_REFUSAL.notSound);
+  }
+  const quiet: VideoProject = {
+    ...project,
+    video: project.video.map((candidate) =>
+      candidate.id === clip.id ? { ...candidate, muted: true } : candidate,
+    ),
+  };
+  return placeOnFreeLane(quiet, {
+    id: crypto.randomUUID(),
+    sourceId: source.id,
+    anchor: { clipId: clip.id, offset: 0 },
+    sourceStart: clip.sourceStart,
+    duration: clip.duration,
+    volume: clip.volume ?? 1,
+    muted: false,
+    extractedFrom: clip.id,
+    ...(clip.speed === undefined ? {} : { speed: clip.speed }),
+  });
+}
+
 export interface MoveAudioArgs {
   readonly itemId: string;
   /** Project seconds where the sound should now start. */
