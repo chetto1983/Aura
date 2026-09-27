@@ -1,7 +1,8 @@
 // videoflow.ts — the only file that composes VideoFlow. It turns the editor's project into a
 // VideoJSON, exports it in the browser, and owns the four behaviours the spikes measured:
-// fonts from our own origin, the cut nudge, mute where the mixer reads it, and one decode per
-// source instead of one per layer.
+// fonts from our own origin, the cut nudge, mute and volume where the mixer reads them, and one
+// decode per source instead of one per layer. The audio half — sounds and every volume curve —
+// is videoflow_audio.ts.
 //
 // Everything here is the renderer's vocabulary; nothing of it leaks into the model. `project.ts`
 // knows about lanes and clips, this file knows about layers and settings, and the translation
@@ -23,6 +24,7 @@ import {
   type VideoItem,
   type VideoProject,
 } from './project';
+import { addAudioItems, withVolumes } from './videoflow_audio';
 
 /** Where a clip's bytes come from: the cockpit's own asset route, never a foreign URL. */
 export type MediaUrls = Pick<AssetSource, 'assetUrl'>;
@@ -213,11 +215,12 @@ function addClip(
   flow.addVideo(
     // `muted` in a layer's SETTINGS is a no-op — the mixer reads `mute` in its PROPERTIES
     // (spike 108 §6: a clip carrying `settings.muted` played at full volume). Muting does not
-    // save the decode either, which is one more reason the cache below belongs to us.
+    // save the decode either, which is one more reason the cache below belongs to us. A static
+    // `volume` here would be ignored as well: the mixer reads it only from the compiled
+    // `animations` (S1), which `withVolumes` writes.
     {
       fit: clip.fit ?? 'cover',
       mute: clip.muted,
-      volume: clip.volume ?? 1,
       rotation: clip.rotation ?? 0,
       scale: [clip.flipX === true ? -1 : 1, clip.flipY === true ? -1 : 1],
       filterBrightness: clip.brightness ?? 1,
@@ -323,10 +326,12 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   for (const track of project.overlays) {
     for (const item of track.items) addOverlay(flow, project, urls, item);
   }
+  addAudioItems(flow, project, urls);
   // No layer was added with `waitFor`, so the flow pointer is still at zero: this one wait is what
-  // gives the compiled JSON the lane's own length rather than a float sum of layer ends.
+  // gives the compiled JSON the lane's own length rather than a float sum of layer ends — and what
+  // keeps a sound running past the last frame from lengthening the film.
   flow.wait(projectDuration(project));
-  return flow.compile();
+  return withVolumes(project, await flow.compile());
 }
 
 /** What the decode cache touches on a live renderer. `initLayers` and the layers' `decodedBuffer`

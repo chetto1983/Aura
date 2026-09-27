@@ -72,7 +72,9 @@
     "src/update/updateTime.ts",
     "src/update/useSystemUpdate.ts",
     "src/videoStudio/audioLane.ts",
-    "src/videoStudio/commands_audio.ts"
+    "src/videoStudio/commands_audio.ts",
+    "src/videoStudio/volumeCurve.ts",
+    "src/videoStudio/videoflow_audio.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

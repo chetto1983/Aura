@@ -1,18 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import type { Page } from '@playwright/test';
+import { resolve } from 'node:path';
 import { gotoAuthenticated } from './auth';
 import { expect, readAsset, test } from './support/assetCleanup';
-import { finalizeStored, storeBytes, uploadAsset, uploadBytes } from './support/assetUpload';
-import { FIXTURES, openStudioWith } from './support/videoStudio';
+import { finalizeStored, storeBytes, uploadAsset } from './support/assetUpload';
+import { AUDIO_FIXTURES, reopen, uploadClip } from './support/videoStudio';
 
 // video-studio-audio.spec.ts — the audio half of the editor against a running Aura: here, that a
 // sound the editor stores is filed with the media and never sent to speech-to-text. The claim is
 // only worth something against a control, so the same file also goes through the plain finalize,
 // and the test waits until that one has visibly been processed.
-
-const AUDIO = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/video-studio/audio');
 
 test.describe('audio sources in the library', () => {
   test('an editor sound is filed under media and never transcribed', async ({ page }) => {
@@ -21,10 +17,21 @@ test.describe('audio sources in the library', () => {
     // The media upload goes FIRST. Jobs are claimed oldest first, so a job the media finalize
     // wrongly queued would run before the control's: by the time the control is processed, the
     // media row could no longer read `accepted`.
-    const media = await uploadAsset(page, resolve(AUDIO, 'music.wav'), 'music.wav', 'audio/wav', {
-      use: 'media',
-    });
-    const control = await uploadAsset(page, resolve(AUDIO, 'music.wav'), 'music.wav', 'audio/wav');
+    const media = await uploadAsset(
+      page,
+      resolve(AUDIO_FIXTURES, 'music.wav'),
+      'music.wav',
+      'audio/wav',
+      {
+        use: 'media',
+      },
+    );
+    const control = await uploadAsset(
+      page,
+      resolve(AUDIO_FIXTURES, 'music.wav'),
+      'music.wav',
+      'audio/wav',
+    );
 
     // The worker demonstrably runs: the plain upload leaves `accepted` for processing and beyond.
     await expect
@@ -82,29 +89,6 @@ function legacyProject(clipAsset: string, name: string) {
     video: [{ id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 0, muted: false }],
     overlays: [],
   };
-}
-
-/** Puts a project file in the library and opens the Studio on it, the way a reload does. */
-async function reopen(page: Page, project: object, clipAsset: string) {
-  const fileId = await uploadBytes(
-    page,
-    Buffer.from(JSON.stringify(project)),
-    'project.json',
-    'application/json',
-  );
-  await page.addInitScript((id) => {
-    window.localStorage.setItem('aura.videoStudio.lastSavedProject', id);
-  }, fileId);
-  await openStudioWith(page, clipAsset, 'audio lane check');
-  await page.getByRole('button', { name: 'Reopen the last project you saved here' }).click();
-  return page.getByRole('dialog', { name: 'Video editor' });
-}
-
-async function uploadClip(page: Page): Promise<string> {
-  await gotoAuthenticated(page, '/');
-  return uploadAsset(page, resolve(FIXTURES, 'clip-a.mp4'), 'clip-a.mp4', 'video/mp4', {
-    use: 'media',
-  });
 }
 
 test.describe('the project file with audio lanes', () => {

@@ -1,10 +1,10 @@
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { ALL_FORMATS, FilePathSource, Input } from 'mediabunny';
 import type { StudioRecord } from '../../src/studio/studioApi';
 import { gotoAuthenticated } from '../auth';
-import { uploadAsset } from './assetUpload';
+import { uploadAsset, uploadBytes } from './assetUpload';
 
 // videoStudio.ts — driving the multi-track editor the way an operator does, shared by the Studio
 // specs: the editor opened on a seeded clip, the add actions at both widths, inspector fields,
@@ -15,6 +15,8 @@ export const FIXTURES = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../fixtures/video-studio',
 );
+
+export const AUDIO_FIXTURES = resolve(FIXTURES, 'audio');
 
 export function videoRecord(assetId: string, prompt: string): StudioRecord {
   return {
@@ -124,6 +126,44 @@ export async function openStudioWith(page: Page, assetId: string, prompt: string
     window.localStorage.setItem('aura.shell.surface', 'studio');
   });
   await gotoAuthenticated(page, '/');
+}
+
+/** Puts a project file in the library and opens the Studio on it, the way a reload does. */
+export async function reopen(page: Page, project: object, clipAsset: string): Promise<Locator> {
+  const fileId = await uploadBytes(
+    page,
+    Buffer.from(JSON.stringify(project)),
+    'project.json',
+    'application/json',
+  );
+  await page.addInitScript((id) => {
+    window.localStorage.setItem('aura.videoStudio.lastSavedProject', id);
+  }, fileId);
+  await openStudioWith(page, clipAsset, 'audio lane check');
+  await page.getByRole('button', { name: 'Reopen the last project you saved here' }).click();
+  return page.getByRole('dialog', { name: 'Video editor' });
+}
+
+/** Signs in and puts `clip-a.mp4` (4 s, 320×180, a tone) in the library through the media door. */
+export async function uploadClip(page: Page): Promise<string> {
+  await gotoAuthenticated(page, '/');
+  return uploadAsset(page, resolve(FIXTURES, 'clip-a.mp4'), 'clip-a.mp4', 'video/mp4', {
+    use: 'media',
+  });
+}
+
+/** Presses Export and keeps the file with the run's other output. */
+export async function exportTo(
+  page: Page,
+  editor: Locator,
+  info: TestInfo,
+  fileName: string,
+): Promise<string> {
+  const downloading = page.waitForEvent('download', { timeout: 10 * 60_000 });
+  await editor.getByRole('button', { name: 'Export', exact: true }).click();
+  const path = info.outputPath(fileName);
+  await (await downloading).saveAs(path);
+  return path;
 }
 
 /** Signs in, puts `clip-a.mp4` in the library, and opens the editor on it as the Studio would. */

@@ -1,0 +1,186 @@
+import type VideoFlow from '@videoflow/core';
+import type { VideoJSON } from '@videoflow/core';
+import { describe, expect, it, vi } from 'vitest';
+import type { AudioItem, VideoItem, VideoProject } from '../project';
+import { addAudioItems, withVolumes } from '../videoflow_audio';
+
+// The audio half of the compile: what reaches VideoFlow for each sound, and what is written into
+// the compiled JSON for each audible layer — the only place its mixer reads a volume (S1).
+
+const urls = { assetUrl: (id: string) => `/api/assets/${id}/content` };
+
+function project(items: AudioItem[] = [], clip: Partial<VideoItem> = {}): VideoProject {
+  return {
+    id: 'p',
+    name: 'demo',
+    size: { width: 320, height: 180 },
+    fps: 30,
+    sources: [
+      {
+        id: 'src-a',
+        assetId: 'a',
+        kind: 'video',
+        duration: 10,
+        size: { width: 320, height: 180 },
+        hasAudio: true,
+      },
+      { id: 'src-m', assetId: 'm', kind: 'audio', duration: 8, size: { width: 0, height: 0 } },
+      { id: 'src-i', assetId: 'i', kind: 'image', duration: 0, size: { width: 8, height: 6 } },
+    ],
+    video: [
+      { id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 0, muted: false, ...clip },
+      { id: 'still', sourceId: 'src-i', duration: 2, sourceStart: 0, muted: false, volume: 0.5 },
+    ],
+    overlays: [],
+    audio: [{ id: 'lane', items }],
+  };
+}
+
+function sound(over: Partial<AudioItem> = {}): AudioItem {
+  return {
+    id: 'bed',
+    sourceId: 'src-m',
+    anchor: { clipId: 'clip-1', offset: 1 },
+    sourceStart: 2,
+    duration: 4,
+    volume: 1,
+    muted: false,
+    ...over,
+  };
+}
+
+type Layer = VideoJSON['layers'][number];
+
+function layer(name: string, settings: Record<string, unknown> = {}): Layer {
+  return {
+    id: name,
+    type: 'audio',
+    settings: { name, enabled: true, startTime: 0, sourceDuration: 4, sourceStart: 0, ...settings },
+    properties: {},
+    animations: [],
+  };
+}
+
+function json(...layers: Layer[]): VideoJSON {
+  return {
+    name: 'demo',
+    duration: 6,
+    width: 320,
+    height: 180,
+    fps: 30,
+    backgroundColor: '#000',
+    layers,
+  };
+}
+
+function flowSpy() {
+  const addAudio = vi.fn();
+  return { addAudio, flow: { addAudio } as unknown as VideoFlow };
+}
+
+describe('addAudioItems', () => {
+  it('adds one audio layer per sound at its window, in source seconds, cut at the film end', () => {
+    const { addAudio, flow } = flowSpy();
+    // The film is 6 s; the sound starts at 1 s and plays 2 s at double speed.
+    addAudioItems(flow, project([sound({ speed: 2 })]), urls);
+    expect(addAudio).toHaveBeenCalledWith(
+      { mute: false },
+      {
+        name: 'bed',
+        source: '/api/assets/m/content',
+        startTime: 1,
+        sourceStart: 2,
+        sourceDuration: 4,
+        speed: 2,
+      },
+    );
+    addAudio.mockClear();
+    addAudioItems(flow, project([sound({ duration: 8, sourceStart: 0 })]), urls);
+    // Eight source seconds from 1 s run past the film's 6 s: only five of them play.
+    expect(addAudio.mock.calls[0]?.[1]).toMatchObject({
+      startTime: 1,
+      sourceDuration: 5,
+      speed: 1,
+    });
+  });
+
+  it('carries mute where the mixer reads it', () => {
+    const { addAudio, flow } = flowSpy();
+    addAudioItems(flow, project([sound({ muted: true })]), urls);
+    expect(addAudio.mock.calls[0]?.[0]).toEqual({ mute: true });
+  });
+
+  it('adds nothing for a sound with no window, and nothing for a project with no lanes', () => {
+    const { addAudio, flow } = flowSpy();
+    const { audio: _audio, ...legacy } = project();
+    addAudioItems(flow, legacy, urls);
+    addAudioItems(flow, project([sound({ anchor: { clipId: 'gone', offset: 0 } })]), urls);
+    expect(addAudio).not.toHaveBeenCalled();
+  });
+
+  it('is loud about a sound whose source the project lost', () => {
+    const { flow } = flowSpy();
+    expect(() => {
+      addAudioItems(flow, project([sound({ sourceId: 'lost' })]), urls);
+    }).toThrow(/lost/);
+  });
+});
+
+describe('withVolumes', () => {
+  it('writes a clip volume as a keyframe at the layer own sourceStart, nudge included', () => {
+    const out = withVolumes(
+      project([], { volume: 0.5 }),
+      json(layer('clip-1', { sourceStart: 4.0001 })),
+    );
+    expect(out.layers[0]?.animations).toEqual([
+      { property: 'volume', keyframes: [{ time: 4.0001, value: 0.5 }] },
+    ]);
+  });
+
+  it('leaves a clip at full volume, a muted clip and a still exactly as compiled', () => {
+    const untouched = json(layer('clip-1'), layer('still'));
+    expect(withVolumes(project(), untouched)).toEqual(untouched);
+    expect(withVolumes(project([], { volume: 0.5, muted: true }), untouched)).toEqual(untouched);
+  });
+
+  it('leaves a muted sound alone, and a clip whose source has no sound', () => {
+    const silent: VideoProject = {
+      ...project([sound({ muted: true, volume: 0.5 })], { volume: 0.5 }),
+      sources: project().sources.map((source) =>
+        source.id === 'src-a' ? { ...source, hasAudio: false } : source,
+      ),
+    };
+    const compiled = json(layer('clip-1'), layer('bed'));
+    expect(withVolumes(silent, compiled)).toEqual(compiled);
+  });
+
+  it('writes a sound fade in source seconds read off the layer settings', () => {
+    const out = withVolumes(
+      project([sound({ fadeIn: 1 })]),
+      json(layer('bed', { sourceStart: 2, speed: 2, sourceDuration: 4 })),
+    );
+    const frames = out.layers[0]?.animations[0]?.keyframes ?? [];
+    expect(frames[0]).toEqual({ time: 2, value: 0 });
+    // The fade lasts one timeline second: two source seconds at double speed.
+    expect(frames.at(-1)?.time).toBeCloseTo(4, 6);
+  });
+
+  it('replaces a volume animation instead of adding a second, and leaves nameless layers alone', () => {
+    const compiled = json(
+      {
+        ...layer('clip-1'),
+        animations: [
+          { property: 'volume', keyframes: [{ time: 0, value: 1 }] },
+          { property: 'pan', keyframes: [] },
+        ],
+      },
+      { ...layer('wash'), settings: { enabled: true, startTime: 0, sourceDuration: 1 } },
+    );
+    const out = withVolumes(project([], { volume: 0.25 }), compiled);
+    expect(out.layers[0]?.animations.map((animation) => animation.property)).toEqual([
+      'pan',
+      'volume',
+    ]);
+    expect(out.layers[1]).toEqual(compiled.layers[1]);
+  });
+});

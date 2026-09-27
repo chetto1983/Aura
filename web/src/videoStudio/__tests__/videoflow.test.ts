@@ -221,7 +221,7 @@ describe('toVideoJSON', () => {
     expect(calls.videos[1]?.settings).not.toHaveProperty('muted');
   });
 
-  it('carries the selected clip rotation, fit and volume into VideoFlow', async () => {
+  it('carries the selected clip rotation and fit into VideoFlow, and no static volume', async () => {
     const base = project();
     const first = base.video[0];
     const second = base.video[1];
@@ -249,10 +249,12 @@ describe('toVideoJSON', () => {
       ],
     };
     await toVideoJSON(styled, urls);
+    // A static `volume` never reaches the mixer (S1: 0.5 and 1 both measured −24.08 dBFS); the
+    // clip's volume is a keyframe in the compiled JSON now (videoflow_audio.test.ts).
+    expect(calls.videos[0]?.props).not.toHaveProperty('volume');
     expect(calls.videos[0]?.props).toMatchObject({
       rotation: 90,
       fit: 'contain',
-      volume: 0.4,
       scale: [-1, 1],
       filterBrightness: 1.2,
       filterContrast: 0.8,
