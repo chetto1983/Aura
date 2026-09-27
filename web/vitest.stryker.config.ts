@@ -74,6 +74,11 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
+    // Stryker runs Vitest on one thread per runner, and isolation rebuilt jsdom and the module
+    // graph for every test file of every mutant. Measured 2026-09-27 in WSL with Stryker's pool
+    // settings (threads, one worker): the 52 files took 44.3 s isolated, half of it creating
+    // jsdom, and 9.3 s without, with 649/649 tests passing both ways.
+    isolate: false,
     include: [...mutationTests],
     exclude: ['e2e/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['./src/test/setup.ts'],
