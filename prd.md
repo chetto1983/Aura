@@ -188,6 +188,18 @@ not leak into another provider's requests. Adaptive and manual reasoning use the
 selected provider's capabilities and effort classes. Keyless local endpoints must
 not require fabricated OpenRouter credentials. Unknown billing remains unknown.
 
+Image and video generation, and their model catalogue, run on OpenRouter whatever the
+chat route is, on the identity's own OpenRouter key; the services key is never used.
+Each person's key is minted once the management key is set, on any chat route, and its
+cap is administered on any route. The chat route decides only the chat turn's own credit
+(a keyless local route is exempt) and whether first-run setup requires the management
+key. Recorded 2026-09-27 from an operator report: with the chat on Ollama every
+generation refused `no_key`, because credential, catalogue, key minting and the Credit
+panel all followed the chat route. What this does not prove: the split is covered by
+unit and handler tests, not yet by a live generation with the chat on Ollama; and the
+Credit panel's spend reads `aura.cache_metrics`, so generation spend is enforced by the
+key's OpenRouter limit but not shown there.
+
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
 from the fixed, unauthenticated `https://ollama.com/api/tags` endpoint, deduplicating

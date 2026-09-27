@@ -110,8 +110,9 @@ admin writes them and a saved value is live at once, with no restart.
 
 **Catalogs.** `GET /api/settings/image-models` and `GET /api/settings/video-models`, behind the
 same capability as `llm-models` (`cmd/aura/serve_webui.go:209-211`). The daemon fetches
-OpenRouter's `/images/models` and `/videos/models` and returns rows shaped for the picker. The same
-fetch, cached for 5 minutes in the daemon, feeds the tools' clamp (§2).
+OpenRouter's `/images/models` and `/videos/models` — whatever the chat route is — and returns
+rows shaped for the picker. The same fetch, cached for 5 minutes in the daemon, feeds the tools'
+clamp (§2).
 
 **Picker.** `ModelPicker` stays one component and takes the row formatter as a prop instead of
 calling `modelMeta` directly. Image rows show the price per image and the maximum number of
@@ -121,13 +122,26 @@ one), the duration range, the resolutions and whether image-to-video is supporte
 search, free text, count and Refresh behave exactly as for the LLM.
 
 **Key.** A port `MediaCredentials.For(ctx, identityID) (baseURL, apiKey string, err error)`,
-implemented in `cmd/aura` over `IdentityLLMResolver.SnapshotFor`, is injected into both tools and
-the watcher at serve boot, the way `SendFile.Router` and `SendFile.Assets` are. No key and no
-credit map to the tool errors `no_key` and `no_credit`; the services key is never used. The
-resolver's local-backend exemption carries no OpenRouter credential, so on a llama.cpp or Ollama
-route the port answers `no_key` too: generation needs the OpenRouter route. The client is
+implemented in `cmd/aura/media_credentials.go`, is injected into both tools and the watcher at
+serve boot, the way `SendFile.Router` and `SendFile.Assets` are. It reads the identity's own
+OpenRouter key from `identitykey.Store` on every call and runs `identitykey.Decide` with
+`BackendBills: true`; no key and no credit map to the tool errors `no_key` and `no_credit`; the
+services key is never used. The base URL is always OpenRouter's (`llm.DefaultBaseURL`), whatever
+the chat route is. The client is
 `openai.NewClient(option.WithBaseURL(baseURL), option.WithAPIKey(apiKey))`, configured like
 `openai_compat`.
+
+*Amended 2026-09-27 — generation is split from the chat route.* The first version resolved the
+credential through `IdentityLLMResolver.SnapshotFor` and required an OpenRouter chat route, so
+the operator reported that choosing Ollama stopped image and video generation. Four places
+followed the chat route: the credential port, the picker/Studio catalog
+(`ErrCatalogLocalRoute`), the key minter (no per-identity key on a local route) and the Credit
+panel (`exempt` on a local route). All four are now independent of it: keys are minted as soon
+as the management key is set, the Credit panel shows a real cap on every route, and the image
+and video catalog is always OpenRouter's. The chat route still decides only the chat turn's own
+credit (D-13) and whether the first-run setup requires the management key. What this does not
+prove: the change is covered by unit and handler tests; a live generation with the chat on
+Ollama has not yet been run on the stack.
 
 **Spend.** `usage.cost` is returned in the tool result and stored on the video job. The key's
 OpenRouter limit is the governor.
