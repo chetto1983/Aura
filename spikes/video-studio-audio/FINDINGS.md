@@ -167,3 +167,68 @@ of what the first already does.
 - Not the Studio's own item markup (`ItemButton`, `setActivatorNodeRef`), and not keyboard drags.
 - Not peaks computed from a real file: the peaks are synthetic.
 - Not an envelope with more than three points.
+
+## S3 — which noise suppressor, and how much it cleans
+
+`node s3.mjs`: `@sapphi-red/web-noise-suppressor` 0.4.1, run offline (`OfflineAudioContext`,
+48 kHz, mono) over `speech-noisy.wav` (10 dB SNR) and `speech.wav`. Speech and gaps are scored
+against the fixture's ground-truth windows.
+
+**First run: silence from all three.** Every suppressor gave a 171.7 dB "floor drop" and a
+182.3 dB "speech loss", at over 1,200× real time. Nothing had been processed. Each processor
+instantiates its WASM in an async block inside its constructor. Until that finishes, `process()`
+skips (`!this.processor`) and leaves the output buffer at zero, and the processor posts no ready
+message (`dist/rnnoise/workletProcessor.js`, class `m`). An offline render of 12.9 s outruns that
+init. The package has no offline example (issue #7, "Example with OfflineAudioContext source",
+closed unanswered). `s3-wait.mjs` measured two ways to let the init finish:
+
+```
+prestart wait=0ms: floor drop 171.7 dB, speech loss 182.3 dB
+prestart wait=50ms: floor drop 37.7 dB, speech loss 0.5 dB
+prestart wait=500ms: floor drop 37.7 dB, speech loss 0.5 dB
+suspend wait=0ms: floor drop 171.7 dB, speech loss 182.3 dB
+suspend wait=50ms: floor drop 37.0 dB, speech loss 0.5 dB
+suspend wait=500ms: floor drop 37.0 dB, speech loss 0.5 dB
+```
+
+`prestart` waits after creating the node and before `startRendering()`. `suspend` suspends at the
+first render quantum and resumes after the wait. The probe now uses `prestart` with 500 ms:
+
+| suppressor | noise floor drop (dB) | speech loss, noisy (dB) | speech loss, clean (dB) | × real time | latency (ms) |
+|---|---|---|---|---|---|
+| none | 0.0 | 0.0 | 0.0 | 25.6 | 0 |
+| **rnnoise** | **37.7** | 0.5 | −0.1 | 18.9 | 20.67 |
+| speex | 4.5 | 0.4 | 0.1 | 22.9 | 2.67 |
+| gtcrn | 14.9 | 0.5 | −0.1 | 11.8 | 31.88 |
+
+Raw levels on the noisy file: gaps go from −28.27 dBFS to −65.96 (RNNoise), −43.22 (GTCRN) and
+−32.81 (Speex), while speech stays within 0.5 dB of −17.70. The `× real time` column includes the
+500 ms wait, so it is a lower bound: every suppressor is well above 1.
+
+Assets fetched, and the bytes the committed dist would gain for the chosen suppressor:
+- `rnnoise_simd.wasm` 157,234 B, fetched on a SIMD browser;
+- `rnnoise.wasm` 152,656 B, the non-SIMD fallback (`loadRnnoise` picks one at runtime; both ship);
+- the worklet 64,483 B.
+
+For reference, `speex.wasm` is 56,268 B and `gtcrn.wasm` 196,884 B.
+
+**Verdict: RNNoise.** It has the largest floor drop by 22.8 dB, costs no more than 0.5 dB of
+speech on either file, and runs faster than real time.
+
+**T6's E2E threshold:** a noise-floor drop of at least **34.7 dB** (37.7 − 3) on `speech-noisy.wav`.
+
+**Consequences for Plan B**
+- The denoise step waits for the worklet before rendering (50 ms was enough here, 0 ms never).
+  Because nothing signals readiness, it must also check its own output: an all-silent render of
+  non-silent input is an error, never a saved asset.
+- RNNoise delays its output by 20.67 ms (992 samples at 48 kHz). The denoised asset drops those
+  samples from its head, so that swapping it under a video clip does not shift the voice against
+  the lips.
+
+**What S3 does not show**
+- Only this fixture's noise was tested: synthetic noise mixed at 10 dB SNR. Babble, music and
+  reverberation were not, and GTCRN may rank differently on them.
+- Only headless Chromium on the WSL host: not Safari, and not a phone CPU.
+- The latency was measured once, on a single half-second window of the clean file; that it stays
+  constant across a file is assumed, not measured.
+- The ×RT figure includes a fixed wait and so does not isolate the render cost.
