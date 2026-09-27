@@ -438,6 +438,62 @@ describe('loadProject with audio lanes', () => {
     await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/not a project/);
   });
 
+  // `__INF__` becomes a bare `1e999` in the JSON text, which parses as Infinity — the number
+  // `typeof` calls a number and `clipStarts` turns into NaN.
+  const INF = '__INF__';
+  type Fields = Record<string, unknown>;
+  interface SavedFile extends Fields {
+    readonly size: Fields;
+    readonly sources: Fields[];
+    readonly video: Fields[];
+    readonly overlays: { readonly items: { readonly anchor: Fields }[] }[];
+    readonly audio: { readonly items: Fields[] }[];
+  }
+  function first<T>(list: readonly T[]): T {
+    const item = list[0];
+    if (item === undefined) throw new Error('the fixture has no first item');
+    return item;
+  }
+  const clip = (saved: SavedFile) => first(saved.video);
+  const bed = (saved: SavedFile) => first(first(saved.audio).items);
+  const music = (saved: SavedFile) =>
+    first(saved.sources.filter((source) => source.id === 'src-music'));
+  it.each<[string, (saved: SavedFile) => unknown]>([
+    ['a clip lasting forever', (saved) => (clip(saved).duration = INF)],
+    ['a clip lasting nothing', (saved) => (clip(saved).duration = 0)],
+    ['a clip at speed zero', (saved) => (clip(saved).speed = 0)],
+    ['a clip starting before its source', (saved) => (clip(saved).sourceStart = -1)],
+    ['a clip louder than the slider allows', (saved) => (clip(saved).volume = 3)],
+    ['a clip opacity above one', (saved) => (clip(saved).opacity = 1.5)],
+    ['a clip transition of no length', (saved) => (clip(saved).transitionInDuration = 0)],
+    ['a source lasting forever', (saved) => (first(saved.sources).duration = INF)],
+    ['a frame rate of forever', (saved) => (saved.fps = INF)],
+    ['a frame of no width', (saved) => (saved.size.width = 0)],
+    [
+      'an overlay anchored at forever',
+      (saved) => (first(first(saved.overlays).items).anchor.offset = INF),
+    ],
+    ['an audio item at speed zero', (saved) => (bed(saved).speed = 0)],
+    ['an audio item lasting nothing', (saved) => (bed(saved).duration = 0)],
+    [
+      'an audio item anchored before its clip',
+      (saved) => (bed(saved).anchor = { clipId: 'clip-1', offset: -1 }),
+    ],
+    ['an audio volume above 200 %', (saved) => (bed(saved).volume = 3)],
+    ['a fade longer than five seconds', (saved) => (bed(saved).fadeIn = 9)],
+    ['an envelope gain above one', (saved) => (bed(saved).envelope = [{ time: 0, gain: 2 }])],
+    ['an envelope point at forever', (saved) => (bed(saved).envelope = [{ time: INF, gain: 1 }])],
+    ['ducking with no ramp', (saved) => (bed(saved).ducking = { amountDb: -12, ramp: 0 })],
+    ['ducking that lowers nothing', (saved) => (bed(saved).ducking = { amountDb: 0, ramp: 0.4 })],
+    ['a speech window ending at forever', (saved) => (music(saved).speech = [[1, INF]])],
+    ['a speech window before the source starts', (saved) => (music(saved).speech = [[-1, 2]])],
+  ])('refuses a saved file carrying %s', async (_case, spoil) => {
+    const saved = structuredClone(withAudio(audioItem())) as unknown as SavedFile;
+    spoil(saved);
+    serve(JSON.stringify(saved).replaceAll(`"${INF}"`, '1e999'));
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/not a project/);
+  });
+
   it('refuses a clip on the video lane that plays an audio source', async () => {
     const base = withAudio(audioItem());
     const broken = { ...base, video: [{ ...base.video[0], sourceId: 'src-music' }] };

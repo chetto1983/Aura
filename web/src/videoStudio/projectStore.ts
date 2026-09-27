@@ -140,14 +140,35 @@ function bagOf(value: unknown): Bag | undefined {
     : undefined;
 }
 
-/** `typeof Infinity === 'number'`, and JSON reads `1e999` as exactly that. */
-function finite(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
+/**
+ * A number inside the range the editor itself can produce. `typeof Infinity === 'number'`, JSON
+ * reads `1e999` as exactly that, and a speed of 0 is finite but divided by: either reaches
+ * `clipStarts` as NaN. The bounds are the commands' own (`setClipPresentation`,
+ * `setAudioProperties`), so a file the editor wrote always loads.
+ */
+function between(value: unknown, min: number, max: number): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
 }
 
-function optionalFinite(value: unknown): boolean {
-  return value === undefined || finite(value);
+function optionalBetween(value: unknown, min: number, max: number): boolean {
+  return value === undefined || between(value, min, max);
 }
+
+/** Past zero: a length, a rate or a ramp that is 0 is a division waiting to happen. */
+function positive(value: unknown): value is number {
+  return between(value, Number.MIN_VALUE, Number.MAX_VALUE);
+}
+
+function nonNegative(value: unknown): value is number {
+  return between(value, 0, Number.MAX_VALUE);
+}
+
+function optionalPositive(value: unknown): boolean {
+  return value === undefined || positive(value);
+}
+
+const ANY = Number.MAX_VALUE;
+const SPEED = [0.25, 4] as const;
 
 function isSpeech(value: unknown): boolean {
   return (
@@ -156,16 +177,23 @@ function isSpeech(value: unknown): boolean {
       (window) =>
         Array.isArray(window) &&
         window.length === 2 &&
-        finite(window[0]) &&
-        finite(window[1]) &&
+        nonNegative(window[0]) &&
+        nonNegative(window[1]) &&
         window[0] <= window[1],
     )
   );
 }
 
+/** A source's pixel size: 0 × 0 is a sound's. */
 function isSize(value: unknown): boolean {
   const size = bagOf(value);
-  return size !== undefined && typeof size.width === 'number' && typeof size.height === 'number';
+  return size !== undefined && nonNegative(size.width) && nonNegative(size.height);
+}
+
+/** The project's own frame, which a render divides by. */
+function isFrame(value: unknown): boolean {
+  const size = bagOf(value);
+  return size !== undefined && positive(size.width) && positive(size.height);
 }
 
 function isSource(value: unknown): value is ProjectSource {
@@ -175,7 +203,7 @@ function isSource(value: unknown): value is ProjectSource {
     typeof source.id === 'string' &&
     typeof source.assetId === 'string' &&
     (source.kind === 'video' || source.kind === 'image' || source.kind === 'audio') &&
-    typeof source.duration === 'number' &&
+    nonNegative(source.duration) &&
     (source.hasAudio === undefined || typeof source.hasAudio === 'boolean') &&
     (source.speech === undefined || isSpeech(source.speech)) &&
     (source.denoisedAssetId === undefined || typeof source.denoisedAssetId === 'string') &&
@@ -191,39 +219,39 @@ function isClip(value: unknown): value is VideoItem {
     clip !== undefined &&
     typeof clip.id === 'string' &&
     typeof clip.sourceId === 'string' &&
-    typeof clip.duration === 'number' &&
-    typeof clip.sourceStart === 'number' &&
+    positive(clip.duration) &&
+    nonNegative(clip.sourceStart) &&
     typeof clip.muted === 'boolean' &&
-    (clip.volume === undefined || typeof clip.volume === 'number') &&
+    optionalBetween(clip.volume, 0, 2) &&
     (clip.denoise === undefined || typeof clip.denoise === 'boolean') &&
     (clip.rotation === undefined || [0, 90, 180, 270].includes(clip.rotation as number)) &&
     (clip.fit === undefined || clip.fit === 'contain' || clip.fit === 'cover') &&
     (clip.flipX === undefined || typeof clip.flipX === 'boolean') &&
     (clip.flipY === undefined || typeof clip.flipY === 'boolean') &&
-    (clip.brightness === undefined || typeof clip.brightness === 'number') &&
-    (clip.contrast === undefined || typeof clip.contrast === 'number') &&
-    (clip.saturation === undefined || typeof clip.saturation === 'number') &&
-    (clip.hue === undefined || typeof clip.hue === 'number') &&
-    (clip.blur === undefined || typeof clip.blur === 'number') &&
-    (clip.opacity === undefined || typeof clip.opacity === 'number') &&
+    optionalBetween(clip.brightness, 0, ANY) &&
+    optionalBetween(clip.contrast, 0, ANY) &&
+    optionalBetween(clip.saturation, 0, ANY) &&
+    optionalBetween(clip.hue, -ANY, ANY) &&
+    optionalBetween(clip.blur, 0, ANY) &&
+    optionalBetween(clip.opacity, 0, 1) &&
     (clip.animation === undefined ||
       clip.animation === 'none' ||
       clip.animation === 'fadeIn' ||
       clip.animation === 'fadeOut') &&
     (clip.fadeIn === undefined || typeof clip.fadeIn === 'boolean') &&
     (clip.fadeOut === undefined || typeof clip.fadeOut === 'boolean') &&
-    (clip.speed === undefined || typeof clip.speed === 'number') &&
+    optionalBetween(clip.speed, ...SPEED) &&
     (clip.transitionIn === undefined ||
       (typeof clip.transitionIn === 'string' && CLIP_TRANSITIONS.has(clip.transitionIn))) &&
     (clip.transitionOut === undefined ||
       (typeof clip.transitionOut === 'string' && CLIP_TRANSITIONS.has(clip.transitionOut))) &&
-    (clip.transitionInDuration === undefined || typeof clip.transitionInDuration === 'number') &&
-    (clip.transitionOutDuration === undefined || typeof clip.transitionOutDuration === 'number') &&
+    optionalPositive(clip.transitionInDuration) &&
+    optionalPositive(clip.transitionOutDuration) &&
     (clip.junctionFromClipId === undefined || typeof clip.junctionFromClipId === 'string') &&
     (clip.junctionTransition === undefined ||
       (typeof clip.junctionTransition === 'string' &&
         JUNCTION_TRANSITIONS.has(clip.junctionTransition))) &&
-    (clip.junctionDuration === undefined || typeof clip.junctionDuration === 'number')
+    optionalPositive(clip.junctionDuration)
   );
 }
 
@@ -234,10 +262,10 @@ function isOverlayItem(value: unknown): value is OverlayItem {
   return (
     typeof item.id === 'string' &&
     (item.kind === 'text' || item.kind === 'image') &&
-    typeof item.duration === 'number' &&
+    nonNegative(item.duration) &&
     anchor !== undefined &&
     typeof anchor.clipId === 'string' &&
-    typeof anchor.offset === 'number' &&
+    nonNegative(anchor.offset) &&
     // `props` is VideoFlow's own untyped bag by design — what is IN it is checked where it is
     // read (Stage clamps a position, Inspector refuses a size it cannot parse). That it is a bag
     // and not an array or a string is the part this guard can answer.
@@ -257,12 +285,14 @@ function isOverlayTrack(value: unknown): value is OverlayTrack {
 
 function isEnvelopePoint(value: unknown): boolean {
   const point = bagOf(value);
-  return point !== undefined && finite(point.time) && finite(point.gain);
+  return point !== undefined && nonNegative(point.time) && between(point.gain, 0, 1);
 }
 
 function isDucking(value: unknown): boolean {
   const ducking = bagOf(value);
-  return ducking !== undefined && finite(ducking.amountDb) && finite(ducking.ramp);
+  return (
+    ducking !== undefined && between(ducking.amountDb, -24, -3) && between(ducking.ramp, 0.1, 2)
+  );
 }
 
 function isAudioItem(value: unknown): value is AudioItem {
@@ -274,14 +304,14 @@ function isAudioItem(value: unknown): value is AudioItem {
     typeof item.sourceId === 'string' &&
     anchor !== undefined &&
     typeof anchor.clipId === 'string' &&
-    finite(anchor.offset) &&
-    finite(item.sourceStart) &&
-    finite(item.duration) &&
-    finite(item.volume) &&
+    nonNegative(anchor.offset) &&
+    nonNegative(item.sourceStart) &&
+    positive(item.duration) &&
+    between(item.volume, 0, 2) &&
     typeof item.muted === 'boolean' &&
-    optionalFinite(item.fadeIn) &&
-    optionalFinite(item.fadeOut) &&
-    optionalFinite(item.speed) &&
+    optionalBetween(item.fadeIn, 0, 5) &&
+    optionalBetween(item.fadeOut, 0, 5) &&
+    optionalBetween(item.speed, ...SPEED) &&
     (item.envelope === undefined ||
       (Array.isArray(item.envelope) && item.envelope.every(isEnvelopePoint))) &&
     (item.ducking === undefined || isDucking(item.ducking)) &&
@@ -342,8 +372,8 @@ function hasProjectShape(value: unknown): value is VideoProject {
     project !== undefined &&
     typeof project.id === 'string' &&
     typeof project.name === 'string' &&
-    typeof project.fps === 'number' &&
-    isSize(project.size) &&
+    positive(project.fps) &&
+    isFrame(project.size) &&
     Array.isArray(project.sources) &&
     project.sources.every(isSource) &&
     Array.isArray(project.video) &&
