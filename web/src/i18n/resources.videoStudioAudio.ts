@@ -22,6 +22,7 @@ export const videoStudioAudioEn = {
     overlap: 'Two sounds cannot cover the same instant of one audio lane.',
     notSound: 'That source has no sound to play.',
     fadesTooLong: 'The fades together are longer than the sound.',
+    alreadyExtracted: 'This clip’s sound is already on an audio lane.',
     undecodable: 'This browser cannot decode that sound.',
   },
 };
@@ -46,6 +47,7 @@ export const videoStudioAudioIt: typeof videoStudioAudioEn = {
     overlap: 'Due suoni non possono coprire lo stesso istante di una traccia audio.',
     notSound: 'Quella sorgente non ha un suono da riprodurre.',
     fadesTooLong: 'Le dissolvenze insieme durano più del suono.',
+    alreadyExtracted: 'L’audio di questa clip è già su una traccia audio.',
     undecodable: 'Questo browser non riesce a decodificare quel suono.',
   },
 };

@@ -3,7 +3,7 @@
 // step with the model is loud. Sub-project 2 exposes each one to Aura as a tool with these
 // arguments, so none of them touches the DOM or carries a sentence.
 
-import { anchorAt, audioLaneIsBusy, audioLength, audioWindow, freeAudioTrack } from './audioLane';
+import { anchorAt, audioLaneIsBusy, audioLength, audioWindow, placeOnFreeLane } from './audioLane';
 import { CommandRefusal, EPSILON } from './commands';
 import {
   audioTracks,
@@ -24,6 +24,7 @@ export const AUDIO_REFUSAL = {
   overlap: 'videoStudio.audio.refusal.overlap',
   notSound: 'videoStudio.audio.refusal.notSound',
   fadesTooLong: 'videoStudio.audio.refusal.fadesTooLong',
+  alreadyExtracted: 'videoStudio.audio.refusal.alreadyExtracted',
   sourceMissing: 'videoStudio.refusal.sourceMissing',
   trimPastSource: 'videoStudio.refusal.trimPastSource',
   splitOnBoundary: 'videoStudio.refusal.splitOnBoundary',
@@ -81,22 +82,6 @@ function placeItems(
       if (index === -1) return track;
       return { ...track, items: [...kept.slice(0, index), ...items, ...kept.slice(index)] };
     }),
-  };
-}
-
-/** A new sound joins the first lane free over its window; only one with nowhere to go opens a
- *  lane of its own. Shared by every command that creates a sound. */
-function placeOnFreeLane(project: VideoProject, item: AudioItem): VideoProject {
-  const trackId = freeAudioTrack(project, audioWindow(project, item));
-  const tracks = audioTracks(project);
-  return {
-    ...project,
-    audio:
-      trackId === undefined
-        ? [...tracks, { id: crypto.randomUUID(), items: [item] }]
-        : tracks.map((track) =>
-            track.id === trackId ? { ...track, items: [...track.items, item] } : track,
-          ),
   };
 }
 
@@ -176,6 +161,8 @@ export interface ExtractAudioArgs {
  * Extract audio (spec §Model): the clip goes quiet and its sound becomes an item over the same
  * source, window, speed and volume, hung on the clip at offset 0 and marked as extracted from it —
  * so removing the clip removes it. From then on the two are independent; undo restores both.
+ * Extracting never changes what the film sounds like: a muted clip gives a muted sound, and a
+ * clip whose sound is already on a lane is refused rather than heard twice.
  */
 export function extractAudio(project: VideoProject, args: ExtractAudioArgs): VideoProject {
   const clip = project.video.find((candidate) => candidate.id === args.clipId);
@@ -183,6 +170,11 @@ export function extractAudio(project: VideoProject, args: ExtractAudioArgs): Vid
   const source = sourceOf(project, clip.sourceId);
   if (source?.kind !== 'video' || source.hasAudio === false) {
     throw new CommandRefusal(AUDIO_REFUSAL.notSound);
+  }
+  if (
+    audioTracks(project).some((track) => track.items.some((item) => item.extractedFrom === clip.id))
+  ) {
+    throw new CommandRefusal(AUDIO_REFUSAL.alreadyExtracted);
   }
   const quiet: VideoProject = {
     ...project,
@@ -197,7 +189,7 @@ export function extractAudio(project: VideoProject, args: ExtractAudioArgs): Vid
     sourceStart: clip.sourceStart,
     duration: clip.duration,
     volume: clip.volume ?? 1,
-    muted: false,
+    muted: clip.muted,
     extractedFrom: clip.id,
     ...(clip.speed === undefined ? {} : { speed: clip.speed }),
   });
@@ -367,7 +359,8 @@ export function setAudioProperties(
   if ((next.fadeIn ?? 0) + (next.fadeOut ?? 0) > audioLength(next) + EPSILON) {
     throw new CommandRefusal(AUDIO_REFUSAL.fadesTooLong);
   }
-  refuseOverlap(project, track, next);
+  // Only a speed moves the window; a volume or a mute cannot collide with anything.
+  if (args.speed !== undefined) refuseOverlap(project, track, next);
   return placeItems(project, item.id, [next]);
 }
 

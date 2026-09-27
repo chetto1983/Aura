@@ -7,10 +7,11 @@
 // clip with the slices of it that survive, and every later clip moves because its start is what the
 // clips before it leave. An overlay rides the content it sits on — it follows its slice, and it
 // goes when that content goes, the way removing a clip removes the overlays anchored to it. A sound
-// never goes with its content: it re-anchors (audioLane.ts), and its own commands are in
+// never goes with its content: it re-anchors, and every edit that moves clips settles the audio
+// lanes so a crowded sound moves to a free one (audioLane.ts). Its own commands are in
 // commands_audio.ts.
 
-import { reanchorAudio, withoutAudioItem, type Placement } from './audioLane';
+import { reanchorAudio, settleAudio, withoutAudioItem, type Placement } from './audioLane';
 import {
   clipAt,
   clipTimelineDuration,
@@ -169,9 +170,10 @@ function resliceLane(
   return withAudio(next, reanchorAudio(project, next, placements));
 }
 
-/** The lanes a re-anchor produced; a project saved before audio existed stays without the key. */
+/** The lanes a re-anchor produced, settled so no two sounds share an instant; a project saved
+ *  before audio existed stays without the key. */
 function withAudio(project: VideoProject, audio: readonly AudioTrack[] | undefined): VideoProject {
-  return audio === undefined ? project : { ...project, audio };
+  return audio === undefined ? project : settleAudio({ ...project, audio });
 }
 
 /** An overlay rides its content: it moves to the slice holding its offset, or goes with the rest. */
@@ -319,7 +321,7 @@ export function moveClip(project: VideoProject, args: MoveClipArgs): VideoProjec
   const video = [...project.video];
   video.splice(index, 1);
   video.splice(insertionIndex(args.toIndex, video.length), 0, clip);
-  return { ...project, video: normalizeJunctions(video) };
+  return settleAudio({ ...project, video: normalizeJunctions(video) });
 }
 
 export interface SetMutedArgs {
@@ -367,10 +369,10 @@ export function setClipPresentation(
   }
   const { clipId, ...asked } = args;
   const changes = asked as Partial<VideoItem>;
-  return {
+  return settleAudio({
     ...project,
     video: project.video.map((item) => (item.id === clipId ? { ...item, ...changes } : item)),
-  };
+  });
 }
 
 export interface SetJunctionTransitionArgs {
@@ -403,7 +405,7 @@ export function setJunctionTransition(
     clipTimelineDuration(outgoing) / 2,
     clipTimelineDuration(incoming) / 2,
   );
-  return {
+  return settleAudio({
     ...project,
     video: project.video.map((clip) =>
       clip.id === incoming.id
@@ -415,7 +417,7 @@ export function setJunctionTransition(
           }
         : clip,
     ),
-  };
+  });
 }
 
 export function setFrameSize(

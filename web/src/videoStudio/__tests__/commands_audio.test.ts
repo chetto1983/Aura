@@ -300,6 +300,18 @@ describe('setAudioProperties', () => {
     );
   });
 
+  it('still sets the volume and mute of a sound its lane already overlaps', () => {
+    // Only a speed moves a window; volume and mute cannot put a sound anywhere it was not.
+    const overlapping = project([
+      item({ duration: 4 }),
+      item({ id: 'voice', anchor: { clipId: 'clip-1', offset: 2 }, duration: 2 }),
+    ]);
+    expect(setAudioProperties(overlapping, { itemId: 'bed', volume: 0.5 })).toSatisfy(
+      (next: VideoProject) => first(next).volume === 0.5,
+    );
+    expect(first(setAudioProperties(overlapping, { itemId: 'bed', muted: true })).muted).toBe(true);
+  });
+
   it('is loud about values no control can produce', () => {
     const base = project([item()]);
     expect(() => setAudioProperties(base, { itemId: 'bed', volume: 3 })).toThrow(/volume/);
@@ -403,5 +415,22 @@ describe('extractAudio', () => {
 
   it('is loud about a clip the project does not have', () => {
     expect(() => extractAudio(project(), { clipId: 'nope' })).toThrow(/no clip/);
+  });
+
+  it('refuses a clip whose sound is already on a lane, which would play it twice', () => {
+    const once = extractAudio(project(), { clipId: 'clip-1' });
+    expect(refusalKey(() => extractAudio(once, { clipId: 'clip-1' }))).toBe(
+      AUDIO_REFUSAL.alreadyExtracted,
+    );
+  });
+
+  it('keeps a muted clip quiet: its sound comes out muted too', () => {
+    const muted = {
+      ...project(),
+      video: project().video.map((clip) =>
+        clip.id === 'clip-1' ? { ...clip, muted: true } : clip,
+      ),
+    };
+    expect(first(extractAudio(muted, { clipId: 'clip-1' })).muted).toBe(true);
   });
 });

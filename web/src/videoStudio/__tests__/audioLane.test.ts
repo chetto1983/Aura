@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { anchorAt, audioLength, audioWindow, freeAudioTrack, reanchorAudio } from '../audioLane';
-import { removeItem, removeRange, splitAt, trimClip } from '../commands';
+import {
+  moveClip,
+  removeItem,
+  removeRange,
+  setClipPresentation,
+  setJunctionTransition,
+  splitAt,
+  trimClip,
+} from '../commands';
 import type { AudioItem, VideoProject } from '../project';
 
 // The lane rules, asked directly: where a sound sits, and where it goes when the video lane under
@@ -139,6 +147,15 @@ describe('a sound follows the video lane', () => {
     expect(bed(next).extractedFrom).toBe('clip-2');
   });
 
+  it('outlives either half of the clip it was extracted from once a split cut that clip in two', () => {
+    const extracted = project({ extractedFrom: 'clip-2', anchor: { clipId: 'clip-2', offset: 0 } });
+    const split = splitAt(extracted, { time: 6 });
+    // The split keeps clip-2's id on the left half; removing it must not take the whole sound.
+    const next = removeItem(split, { itemId: 'clip-2' });
+    expect(bed(next).extractedFrom).toBeUndefined();
+    expect(audioWindow(next, bed(next)).start).toBe(4);
+  });
+
   it('empties the lanes when no clip is left to hang on', () => {
     const next = removeRange(project(), { from: 0, to: 8 });
     expect(next.audio?.[0]?.items).toEqual([]);
@@ -155,5 +172,83 @@ describe('a sound follows the video lane', () => {
     const next = removeItem(project(), { itemId: 'bed' });
     expect(next.audio?.[0]?.items).toEqual([]);
     expect(next.video).toHaveLength(2);
+  });
+});
+
+describe('no two sounds cover the same instant of one lane', () => {
+  // `early` covers 0–3 on clip-1 and the bed 4–6 on clip-2: neighbours on one lane until the video
+  // under them moves — a video edit carries sounds with their clips but never shortens one.
+  function crowded(): VideoProject {
+    const base = project({ anchor: { clipId: 'clip-2', offset: 0 } });
+    const early: AudioItem = {
+      ...bed(base),
+      id: 'early',
+      anchor: { clipId: 'clip-1', offset: 0 },
+      duration: 3,
+    };
+    return { ...base, audio: [{ id: 'lane-a', items: [early, bed(base)] }] };
+  }
+
+  function lanes(next: VideoProject): string[][] {
+    return (next.audio ?? []).map((lane) => lane.items.map((item) => item.id));
+  }
+
+  it.each([
+    ['a trim', (p: VideoProject) => trimClip(p, { clipId: 'clip-1', start: 0, end: 2 })],
+    ['a clip speed', (p: VideoProject) => setClipPresentation(p, { clipId: 'clip-1', speed: 2 })],
+    [
+      'a junction',
+      (p: VideoProject) =>
+        setJunctionTransition(p, {
+          fromClipId: 'clip-1',
+          toClipId: 'clip-2',
+          transition: 'crossfade',
+          duration: 1.5,
+        }),
+    ],
+    ['a removal', (p: VideoProject) => removeItem(p, { itemId: 'clip-2' })],
+  ])('moves the sound %s pushed onto its neighbour to a lane of its own', (_edit, edit) => {
+    const next = edit(crowded());
+    expect(lanes(next)).toEqual([['early'], ['bed']]);
+    expect(next.audio?.[0]?.id).toBe('lane-a');
+  });
+
+  it('moves it to the first lane already free over its window rather than opening one', () => {
+    const quiet: AudioItem = {
+      ...bed(crowded()),
+      id: 'quiet',
+      anchor: { clipId: 'clip-1', offset: 0 },
+      duration: 1,
+    };
+    const withSecondLane = {
+      ...crowded(),
+      audio: [...(crowded().audio ?? []), { id: 'lane-b', items: [quiet] }],
+    };
+    const next = trimClip(withSecondLane, { clipId: 'clip-1', start: 0, end: 2 });
+    expect(lanes(next)).toEqual([['early'], ['quiet', 'bed']]);
+  });
+
+  it('moves the sound that collides after a reorder, and keeps the one that was there', () => {
+    // The long sound on clip-2 runs past it; once clip-2 leads, it covers where clip-1's sound is.
+    const base = crowded();
+    const long: AudioItem = { ...bed(base), duration: 6 };
+    const reordered = moveClip(
+      {
+        ...base,
+        audio: [
+          {
+            id: 'lane-a',
+            items: [long, { ...bed(base), id: 'short', anchor: { clipId: 'clip-1', offset: 0 } }],
+          },
+        ],
+      },
+      { clipId: 'clip-2', toIndex: 0 },
+    );
+    expect(lanes(reordered)).toEqual([['bed'], ['short']]);
+  });
+
+  it('leaves the project as it was when nothing collides', () => {
+    const next = trimClip(crowded(), { clipId: 'clip-1', start: 0, end: 4 });
+    expect(lanes(next)).toEqual([['early', 'bed']]);
   });
 });

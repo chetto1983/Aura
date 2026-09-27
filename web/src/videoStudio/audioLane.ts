@@ -4,7 +4,8 @@
 // clip — a music bed covers many — and it is cut at the project's end, never lengthening the film.
 // The rule that differs from an overlay's is the one that matters: a video edit never makes a
 // sound disappear. When the content under its anchor goes, it keeps its project time on whatever
-// clip covers that time now, or on the last clip (spec §Model).
+// clip covers that time now, or on the last clip (spec §Model). And a lane never plays two sounds
+// at one instant: one a video edit crowds out moves to a free lane.
 
 import {
   audioTracks,
@@ -92,13 +93,52 @@ export function freeAudioTrack(
   return audioTracks(project).find((track) => !audioLaneIsBusy(project, track, span, exceptId))?.id;
 }
 
+/** A sound joins the first lane free over its window; only one with nowhere to go opens a lane
+ *  of its own. Every new sound and every sound a video edit crowded out lands this way. */
+export function placeOnFreeLane(project: VideoProject, item: AudioItem): VideoProject {
+  const trackId = freeAudioTrack(project, audioWindow(project, item));
+  const tracks = audioTracks(project);
+  return {
+    ...project,
+    audio:
+      trackId === undefined
+        ? [...tracks, { id: crypto.randomUUID(), items: [item] }]
+        : tracks.map((track) =>
+            track.id === trackId ? { ...track, items: [...track.items, item] } : track,
+          ),
+  };
+}
+
+/**
+ * Lanes where no two sounds cover the same instant, again. A video edit carries sounds with their
+ * clips but never shortens one, so a trim, a faster clip, a junction, a reorder or a removal can
+ * push a sound onto its neighbour. The sound that was on the lane first keeps its place; the one
+ * that now collides moves to the first lane free over its window, or opens one.
+ */
+export function settleAudio(project: VideoProject): VideoProject {
+  if (project.audio === undefined) return project;
+  const crowded: AudioItem[] = [];
+  const kept = project.audio.map((track) => {
+    const items: AudioItem[] = [];
+    for (const item of track.items) {
+      const collides = audioLaneIsBusy(project, { ...track, items }, audioWindow(project, item));
+      (collides ? crowded : items).push(item);
+    }
+    return { ...track, items };
+  });
+  if (crowded.length === 0) return project;
+  return crowded.reduce(placeOnFreeLane, { ...project, audio: kept });
+}
+
 /**
  * Re-hang every sound after the video lane was resliced. A sound whose clip was not touched is
  * left alone and rides the ripple. One whose clip survives follows the slice holding its offset.
  * One whose anchor content went keeps its project time on whatever clip covers it now — except a
- * sound extracted from a clip that went whole, which goes with it. With no clip left there is
- * nothing to hang on, and a sound anchored to nothing would make the saved file unloadable, so
- * the lanes empty. A project saved before audio existed stays without the key.
+ * sound extracted from a clip that went whole, which goes with it. A split cuts that link: once
+ * the clip is two, neither half is the clip the sound came from, and deleting the half that kept
+ * the id must not take the sound from under the other. With no clip left there is nothing to hang
+ * on, and a sound anchored to nothing would make the saved file unloadable, so the lanes empty. A
+ * project saved before audio existed stays without the key.
  */
 export function reanchorAudio(
   before: VideoProject,
@@ -107,22 +147,24 @@ export function reanchorAudio(
 ): readonly AudioTrack[] | undefined {
   if (before.audio === undefined) return undefined;
   const last = after.video.at(-1);
-  const removedWhole = (clipId: string | undefined) =>
-    clipId !== undefined && placements.get(clipId)?.length === 0;
+  const pieces = (clipId: string | undefined) =>
+    clipId === undefined ? undefined : placements.get(clipId)?.length;
   return before.audio.map((track) => ({
     ...track,
     items: track.items.flatMap((item): AudioItem[] => {
-      if (last === undefined || removedWhole(item.extractedFrom)) return [];
-      const placed = placements.get(item.anchor.clipId);
-      if (placed === undefined) return [item];
+      if (last === undefined || pieces(item.extractedFrom) === 0) return [];
+      const { extractedFrom: _cut, ...free } = item;
+      const own = (pieces(item.extractedFrom) ?? 1) > 1 ? free : item;
+      const placed = placements.get(own.anchor.clipId);
+      if (placed === undefined) return [own];
       const place = placed.find(
-        ({ from, to }) => item.anchor.offset >= from && item.anchor.offset < to,
+        ({ from, to }) => own.anchor.offset >= from && own.anchor.offset < to,
       );
       const anchor =
         place === undefined
-          ? anchorOn(after, audioWindow(before, item).start, last)
-          : { clipId: place.id, offset: item.anchor.offset - place.from };
-      return [{ ...item, anchor }];
+          ? anchorOn(after, audioWindow(before, own).start, last)
+          : { clipId: place.id, offset: own.anchor.offset - place.from };
+      return [{ ...own, anchor }];
     }),
   }));
 }
