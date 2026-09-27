@@ -47,3 +47,10 @@ go.sum                  linguist-generated=true
 *.avif  binary
 *.wasm  binary
 *.mp4   binary
+*.webm  binary
+*.wav   binary
+*.mp3   binary
+*.ogg   binary
+*.opus  binary
+*.m4a   binary
+*.onnx  binary
