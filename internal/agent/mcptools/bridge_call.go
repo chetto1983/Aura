@@ -8,6 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/pausable"
 )
 
 // bridge_call.go holds bridgedTool's call path: Execute is the natural seam
@@ -41,7 +42,8 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	callCtx := ctx
 	cancel := func() {}
 	if b.callTimeout > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, b.callTimeout)
+		// The operator's time is excluded while the server's form waits.
+		callCtx, cancel = pausable.WithTimeout(ctx, b.callTimeout)
 	}
 	defer cancel()
 

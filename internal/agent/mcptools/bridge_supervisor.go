@@ -259,14 +259,14 @@ func drainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.T
 // a caller. cmd/aura's callSessionText runs the CLI's own sessions through
 // mcp.DecodeToolResult, the text projection of the mcp.DecodeToolPayload this calls.
 // A successful result's links are read back on session, the one that made the call
-// (bridge_links.go), so CallToolText callers pay for those reads too; no server they
-// call returns links today.
+// (bridge_links.go), as part of that call (bridge_inflight.go), so CallToolText
+// callers pay for those reads too; no server they call returns links today.
 func (s *MountedServer) decodeResult(ctx context.Context, session *sdkmcp.ClientSession, name string, res *sdkmcp.CallToolResult) (mcp.ToolPayload, error) {
 	payload, isErr := mcp.DecodeToolPayload(res)
 	if isErr {
 		return mcp.ToolPayload{}, mcp.DecodeToolCallError(s.name, name, payload.Text)
 	}
-	return resolveLinks(ctx, session, payload), nil
+	return readLinksOnSession(ctx, session, name, payload), nil
 }
 
 // CallToolText is the text-only projection of CallTool, which is what every
@@ -303,7 +303,7 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 	var callErr error
 	if sent {
 		var res *sdkmcp.CallToolResult
-		res, callErr = session.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
+		res, callErr = callOnSession(ctx, session, name, args)
 		if callErr == nil {
 			return s.decodeResult(ctx, session, name, res)
 		}
@@ -326,7 +326,7 @@ func (s *MountedServer) CallTool(ctx context.Context, name string, args map[stri
 	if sent && !s.toolIsReadOnly(name) {
 		return mcp.ToolPayload{}, fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, callErr)
 	}
-	res, callErr := retry.CallTool(ctx, &sdkmcp.CallToolParams{Name: name, Arguments: args})
+	res, callErr := callOnSession(ctx, retry, name, args)
 	if callErr != nil {
 		return mcp.ToolPayload{}, callErr
 	}

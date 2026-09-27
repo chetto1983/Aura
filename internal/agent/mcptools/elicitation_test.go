@@ -9,6 +9,7 @@ import (
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -21,10 +22,10 @@ type fakeConsent struct {
 	err     error
 	panics  bool
 	block   <-chan struct{}
-	seen    chan ElicitationRequest
+	seen    chan elicit.Question
 }
 
-func (f *fakeConsent) AskOperator(ctx context.Context, req ElicitationRequest) (string, map[string]any, error) {
+func (f *fakeConsent) AskOperator(ctx context.Context, req elicit.Question) (string, map[string]any, error) {
 	if f.seen != nil {
 		select {
 		case f.seen <- req:
@@ -77,75 +78,75 @@ func TestElicitationNeverAcceptsWithoutAnOperator(t *testing.T) {
 			name:    "no consent surface wired",
 			consent: nil,
 			params:  &sdkmcp.ElicitParams{Message: "who are you"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "url mode is opt-out and never consults the surface",
-			consent: &fakeConsent{action: elicitActionAccept, content: map[string]any{"leaked": true}},
+			consent: &fakeConsent{action: elicit.ActionAccept, content: map[string]any{"leaked": true}},
 			params:  &sdkmcp.ElicitParams{Mode: "url", URL: "https://evil.example/phish", Message: "click here"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "url mode is matched case-insensitively",
-			consent: &fakeConsent{action: elicitActionAccept},
+			consent: &fakeConsent{action: elicit.ActionAccept},
 			params:  &sdkmcp.ElicitParams{Mode: "URL", URL: "https://evil.example/phish"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface returns an error",
 			consent: &fakeConsent{err: errors.New("channel down")},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface panics",
 			consent: &fakeConsent{panics: true},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface returns an unrecognised action",
 			consent: &fakeConsent{action: "sure-why-not"},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface returns empty action",
 			consent: &fakeConsent{action: ""},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "nil params",
-			consent: &fakeConsent{action: elicitActionAccept},
+			consent: &fakeConsent{action: elicit.ActionAccept},
 			params:  nil,
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "timeout <= 0 disables elicitation rather than waiting forever",
-			consent: &fakeConsent{action: elicitActionAccept, block: blocked},
+			consent: &fakeConsent{action: elicit.ActionAccept, block: blocked},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
 			env:     "0",
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "negative timeout also disables",
-			consent: &fakeConsent{action: elicitActionAccept, block: blocked},
+			consent: &fakeConsent{action: elicit.ActionAccept, block: blocked},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
 			env:     "-5",
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface declines",
-			consent: &fakeConsent{action: elicitActionDecline},
+			consent: &fakeConsent{action: elicit.ActionDecline},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionDecline,
+			want:    elicit.ActionDecline,
 		},
 		{
 			name:    "surface cancels",
-			consent: &fakeConsent{action: elicitActionCancel},
+			consent: &fakeConsent{action: elicit.ActionCancel},
 			params:  &sdkmcp.ElicitParams{Message: "hi"},
-			want:    elicitActionCancel,
+			want:    elicit.ActionCancel,
 		},
 	}
 	for _, tt := range tests {
@@ -157,7 +158,7 @@ func TestElicitationNeverAcceptsWithoutAnOperator(t *testing.T) {
 			if res.Action != tt.want {
 				t.Fatalf("action = %q, want %q", res.Action, tt.want)
 			}
-			if res.Action != elicitActionAccept && res.Content != nil {
+			if res.Action != elicit.ActionAccept && res.Content != nil {
 				t.Fatalf("non-accept action %q carried content %v; content must only ride an accept", res.Action, res.Content)
 			}
 		})
@@ -169,8 +170,8 @@ func TestElicitationNeverAcceptsWithoutAnOperator(t *testing.T) {
 func TestElicitationAcceptPassesContentThrough(t *testing.T) {
 	t.Parallel()
 	want := map[string]any{"token": "abc"}
-	res := callHandler(t, "fixture", &fakeConsent{action: elicitActionAccept, content: want}, &sdkmcp.ElicitParams{Message: "token?"})
-	if res.Action != elicitActionAccept {
+	res := callHandler(t, "fixture", &fakeConsent{action: elicit.ActionAccept, content: want}, &sdkmcp.ElicitParams{Message: "token?"})
+	if res.Action != elicit.ActionAccept {
 		t.Fatalf("action = %q, want accept", res.Action)
 	}
 	if res.Content["token"] != "abc" {
@@ -178,23 +179,22 @@ func TestElicitationAcceptPassesContentThrough(t *testing.T) {
 	}
 }
 
-// TestElicitationTimesOutToCancel pins T-45.1-30: a surface that ignores ctx
-// cannot hold the in-flight agent turn open. 50ms bound, asserted to return well
-// inside 200ms.
+// TestElicitationTimesOutToCancel pins T-45.1-30: a blocked surface cannot hold
+// the call open beyond the one-second question bound (with scheduling slack).
 func TestElicitationTimesOutToCancel(t *testing.T) {
 	blocked := make(chan struct{})
 	t.Cleanup(func() { close(blocked) })
 	t.Setenv(envMCPElicitationTimeoutSec, "1")
 
-	// A surface that ignores ctx entirely — the worst case the bound exists for.
-	consent := &fakeConsent{action: elicitActionAccept, block: blocked}
+	// No operator answer arrives before the timeout.
+	consent := &fakeConsent{action: elicit.ActionAccept, block: blocked}
 	start := time.Now()
 	res, err := NewElicitationHandler("fixture", consent)(context.Background(), &sdkmcp.ElicitRequest{Params: &sdkmcp.ElicitParams{Message: "hi"}})
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("handler returned a non-nil error: %v", err)
 	}
-	if res.Action != elicitActionCancel {
+	if res.Action != elicit.ActionCancel {
 		t.Fatalf("action = %q, want cancel on timeout", res.Action)
 	}
 	if elapsed > 3*time.Second {
@@ -211,11 +211,11 @@ func TestElicitationCancelledParentCancels(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	res, err := NewElicitationHandler("fixture", &fakeConsent{action: elicitActionAccept, block: blocked})(ctx, &sdkmcp.ElicitRequest{Params: &sdkmcp.ElicitParams{Message: "hi"}})
+	res, err := NewElicitationHandler("fixture", &fakeConsent{action: elicit.ActionAccept, block: blocked})(ctx, &sdkmcp.ElicitRequest{Params: &sdkmcp.ElicitParams{Message: "hi"}})
 	if err != nil {
 		t.Fatalf("handler returned a non-nil error: %v", err)
 	}
-	if res.Action != elicitActionCancel {
+	if res.Action != elicit.ActionCancel {
 		t.Fatalf("action = %q, want cancel when the parent ctx is already cancelled", res.Action)
 	}
 }
@@ -243,75 +243,19 @@ func TestConfiguredElicitationTimeout(t *testing.T) {
 	}
 }
 
-// TestSummariseElicitationSchemaIsSortedAndCapped pins the two properties an
-// operator-facing rendering needs: a stable order (map iteration is random, and
-// a prompt that reorders every ask is unreadable) and a bound on server-authored
-// description text (T-45.1-29).
-func TestSummariseElicitationSchemaIsSortedAndCapped(t *testing.T) {
+// TestAnOverCapFormReachesTheFallbackAsARefusal pins T-45.1-29 on the new path:
+// an over-cap message is not cut down and shown, it is refused, and the fallback
+// learns why without any of the server's text.
+func TestAnOverCapFormReachesTheFallbackAsARefusal(t *testing.T) {
 	t.Parallel()
-	long := strings.Repeat("x", maxMCPArgDescBytes*3)
-	fields := summariseElicitationSchema(map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"zebra":  map[string]any{"type": "string", "description": long},
-			"alpha":  map[string]any{"type": "number", "description": "first"},
-			"middle": map[string]any{"type": "boolean"},
-		},
-		"required": []any{"alpha", "zebra"},
-	})
-	if len(fields) != 3 {
-		t.Fatalf("got %d fields, want 3: %+v", len(fields), fields)
+	seen := make(chan elicit.Question, 1)
+	res := callHandler(t, "fixture", &fakeConsent{action: elicit.ActionAccept, seen: seen},
+		&sdkmcp.ElicitParams{Message: strings.Repeat("z", elicit.MaxMessageBytes+1)})
+	if res.Action != elicit.ActionDecline {
+		t.Fatalf("action = %q, want decline even though the fallback would accept", res.Action)
 	}
-	if fields[0].Name != "alpha" || fields[1].Name != "middle" || fields[2].Name != "zebra" {
-		t.Fatalf("fields are not sorted by name: %+v", fields)
-	}
-	if !fields[0].Required || fields[1].Required || !fields[2].Required {
-		t.Fatalf("required flags wrong: %+v", fields)
-	}
-	if fields[1].Type != "boolean" {
-		t.Fatalf("type = %q, want boolean", fields[1].Type)
-	}
-	if len(fields[2].Description) > maxMCPArgDescBytes {
-		t.Fatalf("description is %d bytes, want <= %d", len(fields[2].Description), maxMCPArgDescBytes)
-	}
-}
-
-func TestSummariseElicitationSchemaDegradesToNoFields(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		raw  any
-	}{
-		{"nil schema", nil},
-		{"not an object", "just a string"},
-		{"no properties", map[string]any{"type": "object"}},
-		{"empty properties", map[string]any{"type": "object", "properties": map[string]any{}}},
-		{"over the byte cap", map[string]any{"type": "object", "properties": map[string]any{
-			"padded": map[string]any{"type": "string", "description": strings.Repeat("y", maxMCPSchemaBytes+1)},
-		}}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := summariseElicitationSchema(tt.raw); got != nil {
-				t.Fatalf("got %d fields, want none: %+v", len(got), got)
-			}
-		})
-	}
-}
-
-// TestElicitationMessageIsByteCapped pins the other half of T-45.1-29: the
-// server's free-text message is bounded before it can reach a human.
-func TestElicitationMessageIsByteCapped(t *testing.T) {
-	t.Parallel()
-	seen := make(chan ElicitationRequest, 1)
-	consent := &fakeConsent{action: elicitActionDecline, seen: seen}
-	callHandler(t, "fixture", consent, &sdkmcp.ElicitParams{Message: strings.Repeat("z", maxMCPSummaryBytes*4)})
-	req := <-seen
-	if len(req.Message) > maxMCPSummaryBytes {
-		t.Fatalf("message is %d bytes, want <= %d", len(req.Message), maxMCPSummaryBytes)
-	}
-	if req.Server != "fixture" {
-		t.Fatalf("server = %q, want fixture — every operator-facing projection must name the asking server", req.Server)
+	if q := <-seen; q.Refusal != elicit.RefusalUnrenderable || q.Message != "" || q.Server != "fixture" {
+		t.Fatalf("fallback saw %+v", q)
 	}
 }
 
@@ -368,8 +312,8 @@ func elicitingServer(t *testing.T, opts mcp.SessionOptions) *sdkmcp.ClientSessio
 // tool call through an in-memory pair, so the capability advertisement and the
 // SDK's MRTR path are exercised rather than assumed.
 func TestElicitationReachesHandlerOverARealSession(t *testing.T) {
-	seen := make(chan ElicitationRequest, 1)
-	consent := &fakeConsent{action: elicitActionDecline, seen: seen}
+	seen := make(chan elicit.Question, 1)
+	consent := &fakeConsent{action: elicit.ActionDecline, seen: seen}
 	session := elicitingServer(t, mcp.SessionOptions{
 		Elicitation: NewElicitationHandler("fixture", consent),
 	})
@@ -383,8 +327,8 @@ func TestElicitationReachesHandlerOverARealSession(t *testing.T) {
 		if req.Server != "fixture" {
 			t.Fatalf("server = %q, want fixture — every operator-facing projection names the asking server", req.Server)
 		}
-		if len(req.Fields) != 1 || req.Fields[0].Name != "name" || !req.Fields[0].Required {
-			t.Fatalf("fields = %+v, want one required field named 'name'", req.Fields)
+		if len(req.Fields) != 1 || req.Fields[0].Name != "name" || !req.Fields[0].Required || req.Fields[0].Kind != elicit.KindString {
+			t.Fatalf("fields = %+v, want one required string field named 'name'", req.Fields)
 		}
 		if req.Message != "what is your name" {
 			t.Fatalf("message = %q, want the server's own text", req.Message)
@@ -419,7 +363,7 @@ func TestElicitationHandlerForNilConsentReturnsNil(t *testing.T) {
 	if got := elicitationHandlerFor("fixture", nil); got != nil {
 		t.Fatal("elicitationHandlerFor(nil) returned a non-nil handler; the capability would be advertised with nothing behind it")
 	}
-	if got := elicitationHandlerFor("fixture", &fakeConsent{action: elicitActionDecline}); got == nil {
+	if got := elicitationHandlerFor("fixture", &fakeConsent{action: elicit.ActionDecline}); got == nil {
 		t.Fatal("elicitationHandlerFor with a real surface returned nil")
 	}
 }

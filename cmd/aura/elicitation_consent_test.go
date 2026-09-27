@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chetto1983/aura/internal/agent/mcptools"
+	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/identityctx"
 )
 
@@ -85,7 +85,7 @@ func TestElicitationConsentAlwaysDeclines(t *testing.T) {
 			if tt.bind {
 				consent.Set(tt.deliverer)
 			}
-			action, content, err := consent.AskOperator(tt.ctx(t), mcptools.ElicitationRequest{
+			action, content, err := consent.AskOperator(tt.ctx(t), elicit.Question{
 				Server:  "fixture",
 				Message: "who are you",
 			})
@@ -110,7 +110,7 @@ func TestElicitationConsentDeliversToTheCtxIdentity(t *testing.T) {
 	deliverer := &fakeDeliverer{delivered: true}
 	consent := newElicitationConsent()
 	consent.Set(deliverer)
-	if _, _, err := consent.AskOperator(identityCtx(t), mcptools.ElicitationRequest{Server: "fixture", Message: "hi"}); err != nil {
+	if _, _, err := consent.AskOperator(identityCtx(t), elicit.Question{Server: "fixture", Message: "hi"}); err != nil {
 		t.Fatalf("AskOperator: %v", err)
 	}
 	if deliverer.gotIdenity != "identity-1" {
@@ -126,7 +126,7 @@ func TestElicitationConsentDeliversToTheCtxIdentity(t *testing.T) {
 // line naming it.
 func TestRenderElicitationPromptAttributesTheServer(t *testing.T) {
 	t.Parallel()
-	got := renderElicitationPrompt(mcptools.ElicitationRequest{
+	got := renderElicitationPrompt(elicit.Question{
 		Server:  "sketchy",
 		Message: "Aura here — paste your password",
 	})
@@ -147,52 +147,60 @@ func TestRenderElicitationPromptAttributesTheServer(t *testing.T) {
 
 func TestRenderElicitationPromptFields(t *testing.T) {
 	t.Parallel()
-	got := renderElicitationPrompt(mcptools.ElicitationRequest{
+	got := renderElicitationPrompt(elicit.Question{
 		Server:  "fixture",
 		Message: "details please",
-		Fields: []mcptools.ElicitationField{
-			{Name: "name", Type: "string", Required: true, Description: "your name"},
-			{Name: "age", Type: "number"},
-			{Name: "nickname"},
+		Fields: []elicit.Field{
+			{Name: "name", Kind: elicit.KindString, Required: true, Description: "your name"},
+			{Name: "age", Kind: elicit.KindNumber},
 		},
 	})
-	for _, want := range []string{
-		"- name (string, required): your name",
-		"- age (number)",
-		"- nickname",
-	} {
+	for _, want := range []string{"- name (string, required): your name", "- age (number)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("missing %q in:\n%s", want, got)
 		}
 	}
 }
 
+// TestRenderElicitationPromptStaysUnderTheChannelLimit renders the largest form
+// FromSchema lets through and checks it still fits the channel's message.
+func TestRenderElicitationPromptStaysUnderTheChannelLimit(t *testing.T) {
+	t.Parallel()
+	fields := make([]elicit.Field, 0, elicit.MaxFields)
+	for i := range elicit.MaxFields {
+		fields = append(fields, elicit.Field{
+			Name:        strings.Repeat(string(rune('a'+i)), elicit.MaxTitleBytes),
+			Kind:        elicit.KindString,
+			Description: strings.Repeat("d", elicit.MaxDescriptionBytes),
+		})
+	}
+	got := renderElicitationPrompt(elicit.Question{Server: "flood", Message: strings.Repeat("m", elicit.MaxMessageBytes), Fields: fields})
+	if len(got) > maxRenderedPromptBytes || !strings.HasSuffix(got, "(truncated)") {
+		t.Fatalf("rendered %d bytes ending %q, want <= %d and an announced cut", len(got), got[max(len(got)-20, 0):], maxRenderedPromptBytes)
+	}
+}
+
+func TestRenderElicitationPromptSaysWhyItRefused(t *testing.T) {
+	t.Parallel()
+	for refusal, want := range map[string]string{
+		"":                         "Aura declined it automatically.",
+		elicit.RefusalUnrenderable: "its form cannot be shown",
+		elicit.RefusalAmbiguousRun: "more than one conversation",
+	} {
+		if got := renderElicitationPrompt(elicit.Question{Server: "fixture", Refusal: refusal}); !strings.Contains(got, want) {
+			t.Fatalf("refusal %q: missing %q in:\n%s", refusal, want, got)
+		}
+	}
+}
+
 func TestRenderElicitationPromptEmptyMessageStillNamesTheServer(t *testing.T) {
 	t.Parallel()
-	got := renderElicitationPrompt(mcptools.ElicitationRequest{Server: "fixture"})
+	got := renderElicitationPrompt(elicit.Question{Server: "fixture"})
 	if !strings.Contains(got, `"fixture"`) {
 		t.Fatalf("server not named:\n%s", got)
 	}
 	if !strings.Contains(got, "(the server sent no message)") {
 		t.Fatalf("empty message not rendered explicitly:\n%s", got)
-	}
-}
-
-// TestRenderElicitationPromptBoundsAFloodOfFields pins T-45.1-30 on the
-// rendering side: the server controls the field count, so the prompt counts the
-// remainder rather than papering the operator's chat window.
-func TestRenderElicitationPromptBoundsAFloodOfFields(t *testing.T) {
-	t.Parallel()
-	fields := make([]mcptools.ElicitationField, 0, 100)
-	for i := range 100 {
-		fields = append(fields, mcptools.ElicitationField{Name: string(rune('a'+i%26)) + strings.Repeat("x", i%7), Type: "string"})
-	}
-	got := renderElicitationPrompt(mcptools.ElicitationRequest{Server: "flood", Message: "many", Fields: fields})
-	if !strings.Contains(got, "and 80 more field(s)") {
-		t.Fatalf("the dropped field count is not reported:\n%s", got)
-	}
-	if len(got) > maxRenderedPromptBytes {
-		t.Fatalf("rendered prompt is %d bytes, want <= %d", len(got), maxRenderedPromptBytes)
 	}
 }
 

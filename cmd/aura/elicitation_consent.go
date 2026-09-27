@@ -8,37 +8,21 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/chetto1983/aura/internal/agent/mcptools"
+	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/redact"
 )
 
 // elicitation_consent.go is the composition-root half of SEP-2322 elicitation:
-// the surface plan 45.1-06 recorded, decline-and-surface.
-//
-// The handler in internal/agent/mcptools always declines. What this adds is
-// sight: the operator is told, on their own channel, which server asked and for
-// what, so a multi-round-trip tool that would otherwise fail in silence becomes
-// something they can act on deliberately — out of band, by re-driving the tool.
-//
-// Deliberately NOT wired: Runner.MintApprovalPause and channels.ApprovalDeliverer.
-// Those would hold the in-flight agent turn open for up to the timeout and write
-// a pause row plus a synthetic assistant turn into the same conversation the
-// blocked turn is running on. Plan 45.1-06 weighed that interleaving and declined
-// it for this phase; option B remains reachable later behind the same
-// mcptools.ElicitationConsent seam, which is why this file implements the seam
-// rather than special-casing the handler.
-
-// maxRenderedFields bounds how many schema fields reach the operator. A server
-// controls the field count, so without this one ask could paper a chat window
-// (T-45.1-30). The remainder is counted, not silently dropped.
-const maxRenderedFields = 20
+// the fallback for a request no cockpit run can answer (mcptools
+// elicitation_route.go). It declines, and delivers the ask to the operator on
+// their own channel, so a server that asked is never refused in silence.
 
 // maxRenderedPromptBytes is the last-resort bound on the whole rendered prompt.
-// Each part is already capped upstream in mcptools (message, per-field
-// descriptions), so this only bites on pathological field counts; it sits under
-// Telegram's 4096-character message limit so the chosen surface can actually
-// deliver what it renders.
+// Each part is already capped upstream by internal/elicit (message, titles,
+// descriptions, 20 fields), so this bites only on a form at every cap at once; it
+// sits under Telegram's 4096-character message limit so the chosen surface can
+// actually deliver what it renders.
 const maxRenderedPromptBytes = 3500
 
 // elicitationDeliverer is the narrow slice of *channels.Registry this needs —
@@ -87,12 +71,12 @@ func (c *surfacingElicitationConsent) deliverer() elicitationDeliverer {
 // AskOperator delivers the ask and declines. It never returns "accept" — under
 // this surface no operator decision is collected, so there is nothing that could
 // justify one.
-func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, req mcptools.ElicitationRequest) (string, map[string]any, error) {
+func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, q elicit.Question) (string, map[string]any, error) {
 	deliver := c.deliverer()
 	if deliver == nil {
 		slog.Warn("mcp elicitation not surfaced: no channel registry bound",
-			"server", redact.Line(req.Server), "action", "decline")
-		return "decline", nil, nil
+			"server", redact.Line(q.Server), "action", elicit.ActionDecline)
+		return elicit.ActionDecline, nil, nil
 	}
 
 	identityID := identityctx.IdentityID(ctx)
@@ -101,40 +85,34 @@ func (c *surfacingElicitationConsent) AskOperator(ctx context.Context, req mcpto
 		// there is no operator to reach, so nothing is delivered. Declining is
 		// already the outcome; the WARN is what makes the gap visible.
 		slog.Warn("mcp elicitation not surfaced: no identity on the call",
-			"server", redact.Line(req.Server), "action", "decline")
-		return "decline", nil, nil
+			"server", redact.Line(q.Server), "action", elicit.ActionDecline)
+		return elicit.ActionDecline, nil, nil
 	}
 
-	delivered, err := deliver.DeliverToIdentity(ctx, identityID, renderElicitationPrompt(req))
+	delivered, err := deliver.DeliverToIdentity(ctx, identityID, renderElicitationPrompt(q))
 	switch {
 	case err != nil:
 		// Owns-but-failed. The channel contract forbids trying siblings, and the
 		// error rides back so the handler records it rather than logging a
 		// success that never reached anyone.
 		slog.Warn("mcp elicitation delivery failed",
-			"server", redact.Line(req.Server), "identity_id", identityID, "action", "decline", "err", err)
-		return "decline", nil, err
+			"server", redact.Line(q.Server), "identity_id", identityID, "action", elicit.ActionDecline, "err", err)
+		return elicit.ActionDecline, nil, err
 	case !delivered:
 		// No channel owns this identity — a WebUI-origin operator, for instance.
 		// Not an error, but not a delivery either, and saying so is the point.
 		slog.Info("mcp elicitation not surfaced: no channel owns this identity",
-			"server", redact.Line(req.Server), "identity_id", identityID, "action", "decline")
+			"server", redact.Line(q.Server), "identity_id", identityID, "action", elicit.ActionDecline)
 	}
-	return "decline", nil, nil
+	return elicit.ActionDecline, nil, nil
 }
 
-// renderElicitationPrompt is the ONLY place a mounted server's text becomes
-// operator-facing text, which is why it is one function with one test file.
-//
-// T-45.1-29: the server is named on the first line and its message is quoted and
-// attributed, never rendered as Aura speaking. A server that writes "Aura here —
-// paste your password" gets those words shown as its own, inside quote markers,
-// under a line saying which server said them.
-func renderElicitationPrompt(req mcptools.ElicitationRequest) string {
+// Server text is quoted so the channel attributes it to the mounted server.
+func renderElicitationPrompt(q elicit.Question) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "MCP server %q is asking for input.\n", req.Server)
+	fmt.Fprintf(&b, "MCP server %q is asking for input.\n", q.Server)
 
-	message := strings.TrimSpace(req.Message)
+	message := strings.TrimSpace(q.Message)
 	if message == "" {
 		message = "(the server sent no message)"
 	}
@@ -143,41 +121,36 @@ func renderElicitationPrompt(req mcptools.ElicitationRequest) string {
 		fmt.Fprintf(&b, "> %s\n", strings.TrimRight(line, "\r"))
 	}
 
-	if len(req.Fields) > 0 {
+	if len(q.Fields) > 0 {
 		b.WriteString("\nIt is asking for:\n")
-		shown := req.Fields
-		if len(shown) > maxRenderedFields {
-			shown = shown[:maxRenderedFields]
-		}
-		for _, f := range shown {
-			b.WriteString("- ")
-			b.WriteString(f.Name)
-			if f.Type != "" || f.Required {
-				b.WriteString(" (")
-				if f.Type != "" {
-					b.WriteString(f.Type)
-					if f.Required {
-						b.WriteString(", ")
-					}
-				}
-				if f.Required {
-					b.WriteString("required")
-				}
-				b.WriteString(")")
+		for _, f := range q.Fields {
+			fmt.Fprintf(&b, "- %s (%s", f.Name, f.Kind)
+			if f.Required {
+				b.WriteString(", required")
 			}
+			b.WriteString(")")
 			if desc := strings.TrimSpace(f.Description); desc != "" {
-				b.WriteString(": ")
-				b.WriteString(desc)
+				b.WriteString(": " + desc)
 			}
 			b.WriteString("\n")
 		}
-		if remaining := len(req.Fields) - len(shown); remaining > 0 {
-			fmt.Fprintf(&b, "- … and %d more field(s)\n", remaining)
-		}
 	}
 
-	b.WriteString("\nAura declined it automatically. Nothing was sent to the server.")
+	b.WriteString("\n" + declinedBecause(q.Refusal))
 	return capPromptBytes(b.String(), maxRenderedPromptBytes)
+}
+
+// declinedBecause is the prompt's last line: what Aura did, and why when it did
+// not even try to ask anyone.
+func declinedBecause(refusal string) string {
+	switch refusal {
+	case elicit.RefusalUnrenderable:
+		return "Aura declined it automatically because its form cannot be shown. Nothing was sent to the server."
+	case elicit.RefusalAmbiguousRun:
+		return "Aura declined it automatically because calls from more than one conversation are open on that server, so Aura cannot tell which one it belongs to. Nothing was sent to the server."
+	default:
+		return "Aura declined it automatically. Nothing was sent to the server."
+	}
 }
 
 // capPromptBytes trims to a byte budget without splitting a rune.

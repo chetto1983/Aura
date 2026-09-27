@@ -187,17 +187,18 @@ func TestDeferralBridgeToolsEmptyAdvertisedIsSafe(t *testing.T) {
 	}
 }
 
-// captureWarnLogs swaps slog's default handler for a text handler over a
-// buffer, restoring the original on cleanup. Shared by every test in this file
-// that asserts on WARN output (task 2, D-27's reconnect-drift warning) so the
-// swap-and-restore mechanics live in exactly one place, mirroring
-// bridge_trust_test.go's TestBridgedToolRefreshSpecWarnsOnMutatingAndRequiredArgChanges,
-// which already establishes this pattern for refreshSpec's other warn blocks.
-func captureWarnLogs(t *testing.T) *bytes.Buffer {
+// captureLogs swaps slog's default handler for a text handler over a buffer at
+// level, restoring the original on cleanup. Shared by every test in this package
+// that asserts on log output (task 2, D-27's reconnect-drift warning, and the
+// elicitation resolved line) so the swap-and-restore mechanics live in exactly one
+// place, mirroring bridge_trust_test.go's
+// TestBridgedToolRefreshSpecWarnsOnMutatingAndRequiredArgChanges, which already
+// establishes this pattern for refreshSpec's other warn blocks.
+func captureLogs(t *testing.T, level slog.Level) *bytes.Buffer {
 	t.Helper()
 	var logs bytes.Buffer
 	old := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: level})))
 	t.Cleanup(func() { slog.SetDefault(old) })
 	return &logs
 }
@@ -209,7 +210,7 @@ func captureWarnLogs(t *testing.T) *bytes.Buffer {
 // calls grantLoadedSlot), so no reset is needed here.
 func TestDeferralWarnIfDeferralWouldFlip(t *testing.T) {
 	t.Run("warns when a would-no-longer-qualify reconnect crosses the ceiling", func(t *testing.T) {
-		logs := captureWarnLogs(t)
+		logs := captureLogs(t, slog.LevelWarn)
 		policy := bridgePolicy{alwaysLoaded: true, modelFacingCount: 2}
 		fiveTools := []*sdkmcp.Tool{
 			mustTool("a", "a", nil, nil), mustTool("b", "b", nil, nil), mustTool("c", "c", nil, nil),
@@ -235,7 +236,7 @@ func TestDeferralWarnIfDeferralWouldFlip(t *testing.T) {
 	})
 
 	t.Run("warns when a would-now-qualify reconnect crosses the ceiling", func(t *testing.T) {
-		logs := captureWarnLogs(t)
+		logs := captureLogs(t, slog.LevelWarn)
 		policy := bridgePolicy{alwaysLoaded: false, modelFacingCount: 5}
 		twoTools := []*sdkmcp.Tool{mustTool("a", "a", nil, nil), mustTool("b", "b", nil, nil)}
 		warnIfDeferralWouldFlip("qual", policy, twoTools)
@@ -255,7 +256,7 @@ func TestDeferralWarnIfDeferralWouldFlip(t *testing.T) {
 	})
 
 	t.Run("stays silent when the recomputed count leaves the decision unchanged", func(t *testing.T) {
-		logs := captureWarnLogs(t)
+		logs := captureLogs(t, slog.LevelWarn)
 		policy := bridgePolicy{alwaysLoaded: true, modelFacingCount: 2}
 		twoTools := []*sdkmcp.Tool{mustTool("a", "a", nil, nil), mustTool("b", "b", nil, nil)}
 		warnIfDeferralWouldFlip("qual", policy, twoTools)
@@ -353,7 +354,7 @@ func TestRefreshSpecsLockedFreezeSurvivesReconnectBothDirections(t *testing.T) {
 func TestRefreshSpecsLockedWarnsWhenReconnectWouldFlipDeferral(t *testing.T) {
 	t.Run("warns when the reconnect listing crosses the ceiling", func(t *testing.T) {
 		resetLoadedSlotBudgetForTest()
-		logs := captureWarnLogs(t)
+		logs := captureLogs(t, slog.LevelWarn)
 		twoTools := []*sdkmcp.Tool{mustTool("a", "a", nil, nil), mustTool("b", "b", nil, nil)}
 		bridged := bridgeTools("qual", nil, twoTools, defaultMCPCallTimeout)
 		srv := NewMountedServer("qual", nil)
@@ -383,7 +384,7 @@ func TestRefreshSpecsLockedWarnsWhenReconnectWouldFlipDeferral(t *testing.T) {
 
 	t.Run("stays silent when the reconnect listing leaves the decision unchanged", func(t *testing.T) {
 		resetLoadedSlotBudgetForTest()
-		logs := captureWarnLogs(t)
+		logs := captureLogs(t, slog.LevelWarn)
 		twoTools := []*sdkmcp.Tool{mustTool("a", "a", nil, nil), mustTool("b", "b", nil, nil)}
 		bridged := bridgeTools("qual", nil, twoTools, defaultMCPCallTimeout)
 		srv := NewMountedServer("qual", nil)
