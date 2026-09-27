@@ -151,11 +151,13 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if audio.Objects != objects {
 		t.Fatalf("audio processor object store = %T, want shared fake store", audio.Objects)
 	}
+	// Unlike vision, which reads the image with the primary model on the chat route, cloud STT
+	// runs on OpenRouter itself whatever the chat base is (config.SpeechCloudRoute).
 	scfg := sttConfigFrom(cfg)
 	if scfg.LocalBaseURL != "http://stt.test/v1" ||
 		scfg.LocalModel != "large-v3-turbo" ||
 		scfg.Language != "it" ||
-		scfg.OpenRouterBaseURL != "http://openrouter.test/api/v1" ||
+		scfg.OpenRouterBaseURL != openRouterBaseURL ||
 		scfg.OpenRouterAPIKey != "test-key" ||
 		scfg.TimeoutSec != 7 {
 		t.Fatalf("stt config = %+v, want projected STT config", scfg)

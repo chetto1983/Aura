@@ -14,7 +14,7 @@ import (
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/steer"
@@ -104,10 +104,10 @@ var bootRoster = []identity.Identity{
 	{ID: "owner-c", Kind: "user"},
 }
 
-func testMediaDeps(t *testing.T, store mediagen.JobStore, resolver snapshotResolver) *mediaDeps {
+func testMediaDeps(t *testing.T, store mediagen.JobStore, keys mediaKeyStore) *mediaDeps {
 	t.Helper()
 	return &mediaDeps{
-		credentials:   mediaCredentials{resolver: resolver},
+		credentials:   mediaCredentials{keys: keys},
 		client:        mediagen.NewClient(nil, 1<<20),
 		jobs:          store,
 		maxVideoBytes: mediagen.DefaultAssetMaxVideoBytes,
@@ -290,21 +290,21 @@ func TestServeCompletionDispatcherIsTheShellCompletionHook(t *testing.T) {
 	stopDispatcher(t, served)
 }
 
-// cancelObservingResolver blocks the supervisor's credential lookup until the watcher is
+// cancelObservingKeys blocks the supervisor's credential lookup until the watcher is
 // stopped, then reports whether the dispatcher was still open at that moment.
-type cancelObservingResolver struct {
+type cancelObservingKeys struct {
 	dispatcher *backgroundCompletionDispatcher
 	entered    chan struct{}
 	openAtStop chan bool
 }
 
-func (r *cancelObservingResolver) SnapshotFor(ctx context.Context, _ string) (llm.RuntimeSnapshot, error) {
+func (r *cancelObservingKeys) Load(ctx context.Context) (identitykey.Record, error) {
 	r.entered <- struct{}{}
 	<-ctx.Done()
 	r.dispatcher.mu.Lock()
 	r.openAtStop <- !r.dispatcher.closed
 	r.dispatcher.mu.Unlock()
-	return llm.RuntimeSnapshot{}, ctx.Err()
+	return identitykey.Record{}, ctx.Err()
 }
 
 // TestShutdownBackgroundWorkStopsTheWatcherBeforeTheDispatcher: the media producer is
@@ -312,8 +312,8 @@ func (r *cancelObservingResolver) SnapshotFor(ctx context.Context, _ string) (ll
 // closed when shutdown returns.
 func TestShutdownBackgroundWorkStopsTheWatcherBeforeTheDispatcher(t *testing.T) {
 	dispatcher := newBackgroundCompletionDispatcher(context.Background(), &fakeBackgroundCompletionRunner{}, acceptingSteerPusher{})
-	resolver := &cancelObservingResolver{dispatcher: dispatcher, entered: make(chan struct{}, 1), openAtStop: make(chan bool, 1)}
-	watcher := newMediaWatcher(context.Background(), testMediaDeps(t, &recoveryJobStore{}, resolver), dispatcher.NotifyMedia)
+	keys := &cancelObservingKeys{dispatcher: dispatcher, entered: make(chan struct{}, 1), openAtStop: make(chan bool, 1)}
+	watcher := newMediaWatcher(context.Background(), testMediaDeps(t, &recoveryJobStore{}, keys), dispatcher.NotifyMedia)
 	env := &serveEnv{
 		chatEnv:               &chatEnv{},
 		backgroundCompletions: dispatcher,
@@ -321,12 +321,12 @@ func TestShutdownBackgroundWorkStopsTheWatcherBeforeTheDispatcher(t *testing.T) 
 		mediaRecovery:         newMediaJobRecovery(watcher, &scriptedIdentityLister{}),
 	}
 	watcher.Track(recoverableVideoJob(t, "job-running", "owner-a", mediagen.StatusInProgress), false)
-	waitStarted(t, resolver.entered, "the job's supervisor")
+	waitStarted(t, keys.entered, "the job's supervisor")
 
 	shutdownBackgroundWork(env)
 
 	select {
-	case open := <-resolver.openAtStop:
+	case open := <-keys.openAtStop:
 		if !open {
 			t.Fatal("the dispatcher closed before the watcher's supervisors were stopped")
 		}

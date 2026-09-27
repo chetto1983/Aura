@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mediagen"
@@ -192,19 +191,6 @@ func TestVideoModelsCarryCapabilitiesAndOnlyPerSecondPrices(t *testing.T) {
 	assertRow(t, rows[2], map[string]any{
 		"id": "vendor/token-video", "kind": "video", "has_price": false,
 	})
-}
-
-func TestMediaModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
-	catalog := &fakeMediaCatalog{err: ErrCatalogLocalRoute}
-	for _, target := range []string{"/api/settings/image-models", "/api/settings/video-models?refresh=1"} {
-		rr := getMediaModels(t, mediaServer(catalog), target)
-		if rr.Code != http.StatusConflict {
-			t.Fatalf("%s: status = %d (%s), want 409", target, rr.Code, rr.Body.String())
-		}
-		if !strings.Contains(rr.Body.String(), "OpenRouter") || !strings.Contains(rr.Body.String(), "Cloud") {
-			t.Fatalf("%s: body = %s, want it to say how to reach the OpenRouter route", target, rr.Body.String())
-		}
-	}
 }
 
 func TestMediaModelsMapCatalogFailuresToBadGateway(t *testing.T) {

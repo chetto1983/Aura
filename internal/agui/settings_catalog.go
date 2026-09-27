@@ -2,24 +2,12 @@ package agui
 
 // settings_catalog.go is the ONE shape every cockpit model picker is answered in. Image,
 // video, cloud speech-to-text, text-to-speech and cloud embedding models come from two
-// different upstream reads, but the route contract is identical -- same envelope, same 503
-// when the catalogue is unwired, same 409 naming the way off a local route, same 502
-// carrying the upstream reason. Written twice it drifted: the refusal still spoke only of
-// image, video and voice after embeddings joined. One wrapper, and a picker added later
-// inherits the contract instead of copying it.
+// different upstream reads, both on OpenRouter whatever the chat route is, but the route
+// contract is identical -- same envelope, same 503 when the catalogue is unwired, same 502
+// carrying the upstream reason. One wrapper, so a picker added later inherits the contract
+// instead of copying it.
 
-import (
-	"errors"
-	"net/http"
-)
-
-// ErrCatalogLocalRoute refuses every picker catalogue on a llama.cpp, Ollama or other
-// non-OpenRouter route: generation, cloud speech and cloud embeddings are served by
-// OpenRouter only. It names the way out, because a picker that simply empties tells the
-// operator nothing about which control to change.
-var ErrCatalogLocalRoute = errors.New(
-	"image, video, voice and embedding models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
-)
+import "net/http"
 
 // catalogModelDTO is one picker row. A capability or price the catalog did not declare is
 // omitted rather than zeroed: a present zero price means free, an absent one unknown.
@@ -66,11 +54,7 @@ func writeCatalogRows[M any](
 		return
 	}
 	models, err := list()
-	switch {
-	case errors.Is(err, ErrCatalogLocalRoute):
-		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": err.Error()})
-		return
-	case err != nil:
+	if err != nil {
 		// The catalog's reason names the failing read ("GET videos/models: 503"), which is what
 		// tells the operator whether to wait or to look at the route.
 		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": err.Error()})

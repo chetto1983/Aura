@@ -272,13 +272,27 @@ describe('ModelSettingsPanel backend models', () => {
     });
   });
 
-  it('asks for no voice catalogue on a local route', async () => {
-    const { gets } = stubFetch(settingsBody('llamacpp', 'http://aura-llm:8084/v1'));
+  // Cloud speech and embeddings run on OpenRouter whatever the chat route is, so a chat on
+  // llama.cpp or Ollama still lists their OpenRouter models and offers the OpenRouter route.
+  it.each([
+    ['llama.cpp', 'llamacpp', 'http://aura-llm:8084/v1'],
+    ['Ollama', 'ollama', 'http://host.docker.internal:11434/v1'],
+  ])('offers the OpenRouter lists on a %s chat route', async (_name, provider, baseURL) => {
+    const { gets } = stubFetch(settingsBody(provider, baseURL));
     renderBackends();
 
-    await screen.findByLabelText('Speech-to-text cloud model');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(gets).toEqual([]);
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Speech-to-text cloud model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    expect(gets).toEqual([
+      '/api/settings/transcription-models',
+      '/api/settings/speech-models',
+      '/api/settings/embeddings-models',
+    ]);
+    const openRouter = screen.getByRole('radio', { name: 'OpenRouter' });
+    expect(openRouter.hasAttribute('disabled')).toBe(false);
   });
 
   // The embedding field used to be a free-text box, which is how a cloud model name reached

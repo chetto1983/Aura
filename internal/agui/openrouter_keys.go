@@ -2,8 +2,10 @@ package agui
 
 // openrouter_keys.go mints a person's own OpenRouter key. The provisioning saga (as its credit
 // port) and the reconciler (openrouter_reconcile.go) both go through IdentityKeyMinter, so the
-// rules live in one place: nothing on a local route or before a management key exists, no
-// limit for an admin, a zero cap for everyone else, and never two live keys for one identity.
+// rules live in one place: nothing before a management key exists, no limit for an admin, a
+// zero cap for everyone else, and never two live keys for one identity. The chat route does
+// not gate minting: image and video generation bill on OpenRouter whatever the chat runs on,
+// so an identity whose chat is on Ollama still needs its own key and cap.
 
 import (
 	"context"
@@ -41,11 +43,8 @@ type capabilityChecker interface {
 	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
 }
 
-// The reasons minting waits, reported by the reconciler.
-const (
-	skipLocalRoute         = "local_route"
-	skipManagementKeyUnset = "management_key_unset"
-)
+// skipManagementKeyUnset is why minting waits, reported by the reconciler.
+const skipManagementKeyUnset = "management_key_unset"
 
 // IdentityKeyMinter mints identities' OpenRouter keys.
 type IdentityKeyMinter struct {
@@ -55,16 +54,17 @@ type IdentityKeyMinter struct {
 	routeBills func() bool
 }
 
-// NewIdentityKeyMinter builds the minter. routeBills reports whether the live primary route
-// bills; a local route bills nothing, so it gets no keys (D-13).
+// NewIdentityKeyMinter builds the minter. routeBills reports whether the live chat route bills:
+// it never gates minting, and only decides whether the first-run setup must have the management
+// key, since a chat turn on a billing route has no key without it (D-13).
 func NewIdentityKeyMinter(minting OpenRouterMinting, keys identityKeyStore, caps capabilityChecker, routeBills func() bool) *IdentityKeyMinter {
 	return &IdentityKeyMinter{minting: minting, keys: keys, caps: caps, routeBills: routeBills}
 }
 
 var _ OpenRouterKeyMinter = (*IdentityKeyMinter)(nil)
 
-// MintKey is the provisioning saga's credit leg. On a local route, or before an admin set the
-// management key, it mints nothing and returns an empty key; the reconciler mints it later.
+// MintKey is the provisioning saga's credit leg. Before an admin set the management key it
+// mints nothing and returns an empty key; the reconciler mints it later.
 func (m *IdentityKeyMinter) MintKey(ctx context.Context, identityID, keyName string) (MintedKey, error) {
 	skip, err := m.readiness(ctx)
 	if err != nil || skip != "" {
@@ -84,9 +84,6 @@ func (m *IdentityKeyMinter) RevokeKey(ctx context.Context, hash string) error {
 
 // readiness is "" when keys can be minted now, else the reason they cannot.
 func (m *IdentityKeyMinter) readiness(ctx context.Context) (string, error) {
-	if m.routeBills != nil && !m.routeBills() {
-		return skipLocalRoute, nil
-	}
 	set, err := m.minting.ManagementKeySet(ctx)
 	if err != nil {
 		return "", err
@@ -95,6 +92,16 @@ func (m *IdentityKeyMinter) readiness(ctx context.Context) (string, error) {
 		return skipManagementKeyUnset, nil
 	}
 	return "", nil
+}
+
+// chatNeedsKeys reports whether the live chat route bills while no key can be minted yet: a
+// turn would then refuse for want of a key. A local route bills nothing, so it never needs one.
+func (m *IdentityKeyMinter) chatNeedsKeys(ctx context.Context) (bool, error) {
+	if m.routeBills != nil && !m.routeBills() {
+		return false, nil
+	}
+	skip, err := m.readiness(ctx)
+	return skip == skipManagementKeyUnset, err
 }
 
 // ensure mints identityID's key unless it already has one, and reports whether it minted. An

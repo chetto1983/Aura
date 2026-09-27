@@ -20,6 +20,7 @@ import {
   routeForProvider,
   type ModelSettingsGroup,
   type ProviderChoice,
+  type SettingDef,
 } from './modelSettingsDefs';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -116,28 +117,15 @@ export function ModelSettingsPanel({
   // The catalogue follows the FORM route, not the saved one, so the model list is the list
   // of the endpoint the operator is currently pointing at.
   const catalog = useModelCatalog(providerIDOf(provider), formBaseURL);
-  // The media models are Cloud rows of the routing pane, but the daemon lists them from the
-  // SAVED route: they are asked for only while the rows show AND the saved route is Cloud, and
-  // a save that changes the saved route asks again.
-  const savedProvider = loaded?.initial.AURA_LLM_PROVIDER ?? '';
-  const savedBaseURL = loaded?.initial.AURA_LLM_BASE_URL ?? '';
-  const savedRoute = `${savedProvider} ${savedBaseURL}`;
-  // ONE rule for every picker: the daemon lists from the route it runs on, so a list exists
-  // only while the SAVED route is OpenRouter, and only the pane on screen asks for one. The
-  // media and backend pickers used to spell this out separately and could therefore disagree.
-  const savedRouteIsCloud =
-    loaded !== undefined && resolveProvider(savedProvider, savedBaseURL) === 'cloud';
-  // The media rows additionally sit under the routing pane's Cloud button, so they follow the
-  // FORM provider as well: choosing Local hides them before the choice is saved.
-  const mediaEnabled = savedRouteIsCloud && groups.includes('routing') && provider === 'cloud';
-  // The cloud STT, TTS and embedding models are rows of the backends pane, and the clients
-  // that use them ride the same saved OpenRouter route.
-  const backendsEnabled = savedRouteIsCloud && groups.includes('backends');
-  const imageCatalog = useMediaModelCatalog('image', mediaEnabled, savedRoute);
-  const videoCatalog = useMediaModelCatalog('video', mediaEnabled, savedRoute);
-  const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled, savedRoute);
-  const speechCatalog = useMediaModelCatalog('speech', backendsEnabled, savedRoute);
-  const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled, savedRoute);
+  // Every picker below lists from OpenRouter whatever the chat route is: generation, cloud
+  // speech and cloud embeddings all run there. Only the pane on screen asks for its lists.
+  const mediaEnabled = loaded !== undefined && groups.includes('routing');
+  const backendsEnabled = loaded !== undefined && groups.includes('backends');
+  const imageCatalog = useMediaModelCatalog('image', mediaEnabled);
+  const videoCatalog = useMediaModelCatalog('video', mediaEnabled);
+  const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled);
+  const speechCatalog = useMediaModelCatalog('speech', backendsEnabled);
+  const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled);
   const cloudVoiceCatalog = ttsVoiceCatalog(speechCatalog, loaded?.values.AURA_TTS_MODEL ?? '');
 
   if (loadStatus === 'loading') {
@@ -212,6 +200,9 @@ export function ModelSettingsPanel({
     },
     AURA_TTS_CLOUD_VOICE: { catalog: cloudVoiceCatalog, formatRow },
   };
+  // The cloud voice row shows only once a cloud TTS model is chosen.
+  const shown = (def: SettingDef) =>
+    def.key !== 'AURA_TTS_CLOUD_VOICE' || (loaded.values.AURA_TTS_MODEL ?? '').trim() !== '';
   const embeddingPicker = pickers.AURA_EMBED_MODEL;
   if (embeddingPicker === undefined) throw new Error('embedding picker must be configured');
 
@@ -265,16 +256,11 @@ export function ModelSettingsPanel({
                 loaded={loaded}
                 onValueChange={setValue}
                 modelPicker={embeddingPicker}
-                openRouterAvailable={savedRouteIsCloud}
               />
               <EmbeddingSpacePanel />
               <SettingsFields
                 defs={group.fields.filter(
-                  (def) =>
-                    !def.key.startsWith('AURA_EMBED_') &&
-                    (def.cloudOnly !== true || provider === 'cloud') &&
-                    (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
-                      (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
+                  (def) => !def.key.startsWith('AURA_EMBED_') && shown(def),
                 )}
                 loaded={loaded}
                 resetting={resetting}
@@ -285,12 +271,7 @@ export function ModelSettingsPanel({
             </>
           ) : (
             <SettingsFields
-              defs={group.fields.filter(
-                (def) =>
-                  (def.cloudOnly !== true || provider === 'cloud') &&
-                  (def.key !== 'AURA_TTS_CLOUD_VOICE' ||
-                    (loaded.values.AURA_TTS_MODEL ?? '').trim() !== ''),
-              )}
+              defs={group.fields.filter(shown)}
               loaded={loaded}
               resetting={resetting}
               onValueChange={setValue}

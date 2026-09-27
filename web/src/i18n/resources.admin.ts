@@ -63,9 +63,6 @@ export const adminEn = {
       gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
       gaugeLabel: 'Spend against the cap; warns at {{near}}% and again at {{critical}}%',
       saveCap: 'Save cap',
-      emptyHeading: 'No spending cap to show',
-      emptyBody:
-        "This deployment runs on a local model backend, which doesn't bill — there's no cap or spend to show.",
       saveError: "Couldn't update the spending cap. Check the amount and try again.",
       latencyUp: 'Takes about 25 seconds to apply.',
       latencyDown: 'Takes about 5 seconds to apply.',
@@ -189,9 +186,6 @@ export const adminIt = {
       gaugeValue: '{{spend}} / {{cap}} · {{percent}}%',
       gaugeLabel: 'Spesa rispetto al limite; avvisa al {{near}}% e di nuovo al {{critical}}%',
       saveCap: 'Salva limite',
-      emptyHeading: 'Nessun limite di spesa da mostrare',
-      emptyBody:
-        'Questa installazione usa un backend a modello locale, che non fattura — non c’è un limite o una spesa da mostrare.',
       saveError: 'Impossibile aggiornare il limite di spesa. Controlla l’importo e riprova.',
       latencyUp: 'Richiede circa 25 secondi per applicarsi.',
       latencyDown: 'Richiede circa 5 secondi per applicarsi.',

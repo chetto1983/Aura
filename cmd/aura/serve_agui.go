@@ -224,13 +224,13 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	wirePIMProviderApps(aguiServer, chat)
 	wireRemoteAccess(ctx, aguiServer, chat)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
-	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
-	// STTClient, each built ONLY when its cloud model is configured, injected via
-	// SetVoice. With neither model set the three voice routes degrade (POSTs 503,
+	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + an STTClient,
+	// each on its local sidecar or, once its cloud model is set, on OpenRouter, injected via
+	// SetVoice. With neither configured the three voice routes degrade (POSTs 503,
 	// GET /api/voice/capabilities reports {false,false}); the Telegram opus path
 	// (multimodalConfig) is untouched.
 	wireVoiceProviders(aguiServer, chat.cfg)
-	aguiServer.SetModalityCatalog(newModalityCatalogRoute(chat.llmRuntime))
+	aguiServer.SetModalityCatalog(newModalityCatalogRoute())
 	// Wire the 37E reasoning-capability source (WEBMODEL-01/D-13): the active model's advertised
 	// effort set, selected by llm.ReasoningTarget and warmed once at boot (never blocking). It
 	// backs the composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run effort
@@ -244,7 +244,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetAuditStore(agui.NewPgAuditStore(chat.pool))
 	aguiServer.SetIdentityAdmin(chat.identity)
 	aguiServer.SetContextWindow(chat.cfg.LLM.ContextWindow)
-	// Wire Phase 2 plan 07's credit-cap read/write (CRED-03/CRED-06/CRED-09) and
+	// Wire Phase 2 plan 07's credit-cap read/write (CRED-03/CRED-06) and
 	// identity removal (RBAC-05). Both stay 503 until wired, matching the
 	// SetAuditStore/SetIdentityAdmin precedent immediately above.
 	//
@@ -253,41 +253,22 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	// one saga instance, not a second copy of its wiring — and buildDeprovisioner
 	// never returns nil, so no #2924-class typed-nil guard is needed here.
 	aguiServer.SetIdentityRemover(buildDeprovisioner(chat))
-	// backendBills classifies the deployment's PRIMARY LLM backend (D-13) on the live
-	// route, asked per request because the operator can switch route while the daemon
-	// runs — a SEPARATE question from whether the OpenRouter MANAGEMENT credential
-	// (below) is configured, so CRED-09's exemption must be wireable even when the
-	// management credential is entirely absent (a local-backend deployment has no
-	// reason to set it).
-	creditBackendBills := liveRouteBills(chat)
 	// creditResolver is the runner's own resolver, so a cap change it invalidates reaches the
 	// next turn. It may be nil (no AURA_AUTHULA_SECRET, or a broken one); routed through
 	// agui.NewCreditInvalidator so the nil check happens on the CONCRETE pointer, never
 	// producing a non-nil interface wrapping a nil one (#2924).
 	creditResolver := identityLLMResolver(chat)
-	// The OpenRouter ports are wired whenever the stores build; each call reads the
-	// management key and answers "management key not set" until an admin sets it.
+	// The OpenRouter ports are wired whenever the stores build, whatever the chat route: image
+	// and video generation bill on each identity's own key even when the chat runs on a local
+	// server. Each call reads the management key and answers "management key not set" until an
+	// admin sets it. Stores that cannot be built (a malformed AURA_AUTHULA_SECRET) leave the
+	// routes UNWIRED (503) — resolveOpenRouterKeyConfig already logged why.
 	if orCfg, ok := resolveOpenRouterKeyConfig(chat); ok {
 		aguiServer.SetCreditAPI(
 			agui.NewPgSpendReader(chat.pool),
 			orCfg.store,
 			openRouterKeyPatchAdapter{orCfg},
 			agui.NewCreditInvalidator(creditResolver),
-			creditBackendBills,
-		)
-	} else if !creditBackendBills() {
-		// Local backend: CRED-09's exemption path (credit_api.go) returns before
-		// either keys or provider is ever dereferenced, so wiring both nil here is
-		// safe. A billing backend whose stores cannot be built (a malformed
-		// AURA_AUTHULA_SECRET) is deliberately left UNWIRED (503) instead —
-		// resolveOpenRouterKeyConfig already logged why, and exposing a provider port
-		// that would panic on first use is worse than 503.
-		aguiServer.SetCreditAPI(
-			agui.NewPgSpendReader(chat.pool),
-			nil,
-			nil,
-			agui.NewCreditInvalidator(creditResolver),
-			creditBackendBills,
 		)
 	}
 	// Wire Phase 2 plan 09's account-wide reconciliation surface (RBAC-11/CRED-06):

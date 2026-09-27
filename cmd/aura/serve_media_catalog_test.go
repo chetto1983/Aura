@@ -17,7 +17,6 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
 )
 
@@ -79,14 +78,12 @@ func (r rewriteHost) RoundTrip(req *http.Request) (*http.Response, error) {
 	return http.DefaultTransport.RoundTrip(out)
 }
 
-func routeRuntime(provider, baseURL string) *llm.Runtime {
-	return llm.NewRuntime(nil, llm.Config{Provider: provider, BaseURL: baseURL, Model: "z-ai/glm-5.3"})
-}
-
+// TestMediaCatalogRouteServesThePickerAndTheToolsFromOneCache: the picker lists on the endpoint
+// the generation credential resolves to, so a tool's lookup is served by the picker's read.
 func TestMediaCatalogRouteServesThePickerAndTheToolsFromOneCache(t *testing.T) {
 	provider := newFakeOpenRouter(t)
 	catalog := mediagen.NewCatalog(provider.client)
-	route := mediaCatalogRoute{catalog: catalog, runtime: routeRuntime("openrouter", openRouterBaseURL)}
+	route := mediaCatalogRoute{catalog: catalog}
 
 	models, err := route.List(context.Background(), mediagen.KindVideo, false)
 	if err != nil {
@@ -95,9 +92,11 @@ func TestMediaCatalogRouteServesThePickerAndTheToolsFromOneCache(t *testing.T) {
 	if !slices.ContainsFunc(models, func(m mediagen.Model) bool { return m.ID == "minimax/hailuo-3-max" }) {
 		t.Fatalf("models = %d rows without minimax/hailuo-3-max", len(models))
 	}
-	// The video tool looks the model up with the base URL its credential resolved, which is
-	// the same live route: the picker's read already filled that cache entry.
-	hailuo, err := catalog.Find(context.Background(), openRouterBaseURL, mediagen.KindVideo, "minimax/hailuo-3-max")
+	base, _, err := mediaCredentials{keys: storedKey(nil)}.For(context.Background(), "owner")
+	if err != nil {
+		t.Fatalf("credential: %v", err)
+	}
+	hailuo, err := catalog.Find(context.Background(), base, mediagen.KindVideo, "minimax/hailuo-3-max")
 	if err != nil || hailuo == nil || !slices.Contains(hailuo.FrameImages, "first_frame") {
 		t.Fatalf("Find = %+v, %v, want the cached Hailuo row", hailuo, err)
 	}
@@ -113,48 +112,8 @@ func TestMediaCatalogRouteServesThePickerAndTheToolsFromOneCache(t *testing.T) {
 	}
 }
 
-func TestMediaCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		runtime *llm.Runtime
-	}{
-		{"llama.cpp", routeRuntime("llamacpp", "http://aura-llm:8084/v1")},
-		{"ollama", routeRuntime("ollama", "http://host.docker.internal:11434/v1")},
-		{"openrouter provider on a local host", routeRuntime("openrouter", "http://host.docker.internal:8084/v1")},
-		{"openrouter provider on a private address", routeRuntime("openrouter", "http://192.168.1.20/openrouter.ai/v1")},
-		{"no published route", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			provider := newFakeOpenRouter(t)
-			route := mediaCatalogRoute{catalog: mediagen.NewCatalog(provider.client), runtime: tc.runtime}
-			models, err := route.List(context.Background(), mediagen.KindImage, true)
-			if !errors.Is(err, agui.ErrCatalogLocalRoute) || models != nil {
-				t.Fatalf("List = %v, %v, want the local-route refusal", models, err)
-			}
-			if provider.reads() != 0 {
-				t.Fatalf("a refused route still reached the provider %d times", provider.reads())
-			}
-		})
-	}
-}
-
-func TestMediaCatalogRouteFollowsARouteSwitchWithoutARestart(t *testing.T) {
-	provider := newFakeOpenRouter(t)
-	runtime := routeRuntime("llamacpp", "http://aura-llm:8084/v1")
-	route := mediaCatalogRoute{catalog: mediagen.NewCatalog(provider.client), runtime: runtime}
-
-	if _, err := route.List(context.Background(), mediagen.KindVideo, false); !errors.Is(err, agui.ErrCatalogLocalRoute) {
-		t.Fatalf("List on the local route = %v, want the refusal", err)
-	}
-	runtime.Replace(nil, llm.Config{Provider: "openrouter", BaseURL: openRouterBaseURL})
-	if _, err := route.List(context.Background(), mediagen.KindVideo, false); err != nil {
-		t.Fatalf("List after switching to OpenRouter = %v, want the catalogue", err)
-	}
-}
-
 func TestWireMediaCatalogMountsTheSharedCatalogOnlyWhenMediaIsServed(t *testing.T) {
 	provider := newFakeOpenRouter(t)
-	chat := &chatEnv{llmRuntime: routeRuntime("openrouter", openRouterBaseURL)}
 	for _, tc := range []struct {
 		name  string
 		media *mediaDeps
@@ -165,7 +124,7 @@ func TestWireMediaCatalogMountsTheSharedCatalogOnlyWhenMediaIsServed(t *testing.
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := agui.NewServer(nil, nil, agui.ServerConfig{})
-			wireMediaCatalog(server, chat, tc.media)
+			wireMediaCatalog(server, tc.media)
 			rec := httptest.NewRecorder()
 			server.Mux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/settings/video-models", nil))
 			if rec.Code != tc.want {

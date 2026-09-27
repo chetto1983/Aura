@@ -24,6 +24,16 @@ func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
 	return ResolveEmbedRoute(c.Embed, c.LLM.APIKey)
 }
 
+// SpeechCloudRoute is where cloud speech-to-text and text-to-speech run: OpenRouter itself,
+// with the single OPENROUTER_API_KEY, never the chat LLM's base. Found by code reading on
+// 2026-09-27: the cloud speech clients were built on the chat base URL, so with the chat on
+// Ollama they would post /audio/* to the Ollama server with the OpenRouter key in the
+// Authorization header -- the embedding route's defect of 2026-09-23 in the two other cloud
+// backends.
+func (c *Config) SpeechCloudRoute() (baseURL, apiKey string) {
+	return llm.DefaultBaseURL, c.LLM.APIKey
+}
+
 // ResolveEmbedRoute exposes the daemon's route contract to processes that read the same
 // aura.settings rows without loading the daemon's full configuration.
 func ResolveEmbedRoute(embed EmbedConfig, apiKey string) (baseURL, credential, model string) {

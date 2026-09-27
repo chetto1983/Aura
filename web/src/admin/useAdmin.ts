@@ -78,8 +78,8 @@ export function useAudit(identityId: string, limit: number, offset: number) {
 
 const creditKey = (identityId: string) => ['admin', 'credit', identityId] as const;
 
-/** useIdentityCredit reads one identity's cap/reset/remaining/spend (CRED-03/CRED-06), or the
- * CRED-09 exemption shape on a non-billing backend. Disabled until an identity id is known. */
+/** useIdentityCredit reads one identity's cap/reset/remaining/spend (CRED-03/CRED-06).
+ * Disabled until an identity id is known. */
 export function useIdentityCredit(identityId: string) {
   return useQuery({
     queryKey: creditKey(identityId),

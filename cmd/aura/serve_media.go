@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/chetto1983/aura/internal/settings"
@@ -52,10 +53,12 @@ func newMediaDeps(chat *chatEnv) *mediaDeps {
 		references:    mediaAssetAdapter{svc: chat.assets},
 		maxVideoBytes: chat.assets.Limits.MaxVideoBytes,
 	}
-	// identityLLMResolver answers a nil pointer without a pool; stored in the interface it
-	// would stop reading as nil and be called through.
-	if resolver := identityLLMResolver(chat); resolver != nil {
-		media.credentials.resolver = resolver
+	// Assigned only on success: a nil *identitykey.Store stored in the interface would stop
+	// reading as nil and be called through.
+	if keys, err := identitykey.NewStore(chat.pool, chat.cfg.AuthulaSecret); err != nil {
+		slog.Warn("aura serve: identity key store unavailable — generation tools refuse no_key", "err", err)
+	} else {
+		media.credentials.keys = keys
 	}
 	if store, err := settings.NewStore(chat.pool, chat.cfg.AuthulaSecret); err != nil {
 		slog.Warn("aura serve: media settings unavailable — generation tools refused", "err", err)

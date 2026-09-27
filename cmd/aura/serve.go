@@ -371,7 +371,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// wiring (onboarding/bootstrap/password-reset) stays below, once auth/authulaProvider
 	// exist.
 	aguiServer, runRegistry := wireAGUIServer(ctx, chat, store, scheduler, readinessState, ownerExports, shareAPI, objectStore)
-	wireMediaCatalog(aguiServer, chat, media)
+	wireMediaCatalog(aguiServer, media)
 	wireStudio(aguiServer, chat, media, mediaWatcher)
 	// A token saved from Settings or the setup wizard swaps the running Telegram channel
 	// in place, and inside the container the web console can restart the daemon.

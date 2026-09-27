@@ -44,9 +44,6 @@ export interface SettingDef {
   /** One line under the input saying what the number governs, for knobs whose label
    *  alone reads ambiguously (two output caps side by side, a step vs. a token). */
   readonly helpKey?: string;
-  /** An OpenRouter setting: rendered only while Cloud is the route. Hidden is not
-   *  dropped, so a value typed under Cloud still saves after a switch to another route. */
-  readonly cloudOnly?: boolean;
 }
 
 export const PRIMARY_SETTINGS: readonly SettingDef[] = [
@@ -65,11 +62,11 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
   // The monthly cap of the key Aura mints for speech, embeddings and vision. It comes BEFORE the
   // management key on purpose: a save writes the rows outside the hot profile in this order, so
   // the management key's PUT runs the reconciler with the cap already stored and one pass mints
-  // both keys.
+  // both keys. Both rows show on every route: OpenRouter serves generation, and can serve
+  // embeddings, whatever the chat runs on.
   {
     key: 'AURA_OPENROUTER_SERVICES_CAP_USD',
     kind: 'string',
-    cloudOnly: true,
     labelKey: 'settings.fields.openRouterServicesCap',
     placeholder: '10',
     helpKey: 'settings.help.openRouterServicesCap',
@@ -81,26 +78,26 @@ export const PRIMARY_SETTINGS: readonly SettingDef[] = [
     key: 'AURA_OPENROUTER_MANAGEMENT_KEY',
     kind: 'string',
     secret: true,
-    cloudOnly: true,
     labelKey: 'settings.fields.openRouterManagementKey',
     placeholder: 'sk-or-v1-...',
     helpKey: 'settings.help.openRouterManagementKey',
   },
-  // Generation is served by OpenRouter only, so the two media models are Cloud rows. Each is
-  // read on every generation call: a saved model is live for the next image or video.
+  // Generation is served by OpenRouter whatever the chat route is, so the two media models show
+  // on every route. Each is read on every generation call: a saved model is live for the next
+  // image or video.
   {
     key: 'AURA_IMAGE_MODEL',
     kind: 'string',
-    cloudOnly: true,
     labelKey: 'settings.fields.imageModel',
     placeholder: 'microsoft/mai-image-2.6',
+    helpKey: 'settings.help.mediaModel',
   },
   {
     key: 'AURA_VIDEO_MODEL',
     kind: 'string',
-    cloudOnly: true,
     labelKey: 'settings.fields.videoModel',
     placeholder: 'minimax/hailuo-3-max',
+    helpKey: 'settings.help.mediaModel',
   },
 ];
 

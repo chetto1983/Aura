@@ -154,19 +154,26 @@ func TestMinterGivesAMemberAZeroCap(t *testing.T) {
 	}
 }
 
-func TestMinterMintsNothingYet(t *testing.T) {
-	for name, tc := range map[string]struct{ keySet, routeBills bool }{
-		"local route":           {keySet: true, routeBills: false},
-		"no management key yet": {keySet: false, routeBills: true},
-	} {
-		t.Run(name, func(t *testing.T) {
-			minting := &fakeMinting{keySet: tc.keySet}
-			minter := NewIdentityKeyMinter(minting, newFakeIdentityKeys(), adminCaps(), func() bool { return tc.routeBills })
-			minted, err := minter.MintKey(context.Background(), "id", "id")
-			if err != nil || minted != (MintedKey{}) || len(minting.minted) != 0 {
-				t.Fatalf("MintKey = %+v, %v with %d mints; want nothing minted and no error", minted, err, len(minting.minted))
-			}
-		})
+func TestMinterMintsNothingBeforeTheManagementKey(t *testing.T) {
+	minting := &fakeMinting{keySet: false}
+	minter := NewIdentityKeyMinter(minting, newFakeIdentityKeys(), adminCaps(), billing)
+	minted, err := minter.MintKey(context.Background(), "id", "id")
+	if err != nil || minted != (MintedKey{}) || len(minting.minted) != 0 {
+		t.Fatalf("MintKey = %+v, %v with %d mints; want nothing minted and no error", minted, err, len(minting.minted))
+	}
+}
+
+// A chat on Ollama bills nothing, but the identity's image and video generation bills on
+// OpenRouter, so the member still gets a key at a zero cap the admin can raise.
+func TestMinterMintsOnALocalChatRoute(t *testing.T) {
+	minting, keys := &fakeMinting{keySet: true}, newFakeIdentityKeys()
+	minter := NewIdentityKeyMinter(minting, keys, adminCaps(), func() bool { return false })
+	minted, err := minter.MintKey(context.Background(), "id-member", "id-member")
+	if err != nil || minted.Hash == "" || len(minting.minted) != 1 {
+		t.Fatalf("MintKey = %+v, %v with %d mints; want the member's key minted", minted, err, len(minting.minted))
+	}
+	if got := keys.records["id-member"].LimitUSD; got == nil || *got != 0 {
+		t.Fatal("the member's stored key is not at a zero cap")
 	}
 }
 
