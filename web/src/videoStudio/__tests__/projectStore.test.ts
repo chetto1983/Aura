@@ -351,6 +351,101 @@ describe('loadProject', () => {
   });
 });
 
+const MUSIC_SOURCE = {
+  id: 'src-music',
+  assetId: 'asset-music',
+  kind: 'audio',
+  duration: 8,
+  size: { width: 0, height: 0 },
+  speech: [[1, 2.5]],
+};
+
+function audioItem(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'bed-1',
+    sourceId: 'src-music',
+    anchor: { clipId: 'clip-1', offset: 0 },
+    sourceStart: 0,
+    duration: 6,
+    volume: 0.8,
+    muted: false,
+    fadeIn: 1,
+    fadeOut: 2,
+    envelope: [
+      { time: 0, gain: 1 },
+      { time: 3, gain: 0.4 },
+    ],
+    ducking: { amountDb: -12, ramp: 0.4 },
+    denoise: true,
+    label: 'Bed',
+    ...overrides,
+  };
+}
+
+function withAudio(item: Record<string, unknown>, sources: unknown[] = [MUSIC_SOURCE]) {
+  const base = project();
+  return {
+    ...base,
+    sources: [...base.sources, ...sources],
+    audio: [{ id: 'audio-1', items: [item] }],
+  };
+}
+
+describe('loadProject with audio lanes', () => {
+  it('round-trips a project that carries an audio lane', async () => {
+    const original = withAudio(audioItem());
+    serve(JSON.stringify(original));
+    const loaded = await loadProject('file-1', SOURCE);
+    expect(loaded.project).toEqual(original);
+  });
+
+  it('still reads a project saved before audio existed', async () => {
+    const legacy = project();
+    serve(JSON.stringify(legacy));
+    const loaded = await loadProject('file-1', SOURCE);
+    expect(loaded.project.audio).toBeUndefined();
+    expect(loaded.project.video).toEqual(legacy.video);
+  });
+
+  it.each([
+    [
+      'an audio item naming a source the file does not hold',
+      audioItem({ sourceId: 'src-gone' }),
+      undefined,
+    ],
+    ['an audio item playing a still image', audioItem({ sourceId: 'src-b' }), undefined],
+    [
+      'an audio item anchored to a clip the file does not hold',
+      audioItem({ anchor: { clipId: 'clip-gone', offset: 0 } }),
+      undefined,
+    ],
+    [
+      'an audio item extracted from a clip the file does not hold',
+      audioItem({ extractedFrom: 'clip-gone' }),
+      undefined,
+    ],
+    ['an audio volume JSON reads as Infinity', '__INFINITE_VOLUME__', undefined],
+    ['an envelope point with no gain', audioItem({ envelope: [{ time: 0 }] }), undefined],
+    ['ducking that is not an object', audioItem({ ducking: -12 }), undefined],
+    ['a speech window that runs backwards', audioItem(), [{ ...MUSIC_SOURCE, speech: [[3, 1]] }]],
+    ['a speech window that is not a pair', audioItem(), [{ ...MUSIC_SOURCE, speech: [[1]] }]],
+  ])('refuses a saved file carrying %s', async (_case, item, sources) => {
+    const body =
+      item === '__INFINITE_VOLUME__'
+        ? JSON.stringify(withAudio(audioItem())).replace('"volume":0.8', '"volume":1e999')
+        : JSON.stringify(withAudio(item as Record<string, unknown>, sources));
+    serve(body);
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/not a project/);
+  });
+
+  it('refuses a clip on the video lane that plays an audio source', async () => {
+    const base = withAudio(audioItem());
+    const broken = { ...base, video: [{ ...base.video[0], sourceId: 'src-music' }] };
+    serve(JSON.stringify(broken));
+    await expect(loadProject('file-1', SOURCE)).rejects.toThrow(/not a project/);
+  });
+});
+
 describe('the last project saved here', () => {
   it('is remembered across a reload and read back', () => {
     rememberSavedProject('file-9');

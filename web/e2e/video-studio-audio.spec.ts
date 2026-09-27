@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { deleteAssets, readAsset, trackCreatedAssets } from './support/assetCleanup';
-import { uploadAsset } from './support/assetUpload';
+import { uploadAsset, uploadBytes } from './support/assetUpload';
+import { FIXTURES, openStudioWith } from './support/videoStudio';
 
 // video-studio-audio.spec.ts — the audio half of the editor against a running Aura: here, that a
 // sound the editor stores is filed with the media and never sent to speech-to-text. The claim is
@@ -67,6 +69,112 @@ test.describe('audio sources in the library', () => {
           .status;
       });
       expect(refused).toBe(400);
+    } finally {
+      await deleteAssets(page, created.ids());
+    }
+  });
+});
+
+/** A project in the shape saved before audio existed: no `audio` key at all. */
+function legacyProject(clipAsset: string, name: string) {
+  return {
+    id: randomUUID(),
+    name,
+    size: { width: 320, height: 180 },
+    fps: 30,
+    sources: [
+      {
+        id: 'src-a',
+        assetId: clipAsset,
+        kind: 'video',
+        duration: 4,
+        size: { width: 320, height: 180 },
+        hasAudio: true,
+      },
+    ],
+    video: [{ id: 'clip-1', sourceId: 'src-a', duration: 4, sourceStart: 0, muted: false }],
+    overlays: [],
+  };
+}
+
+/** Puts a project file in the library and opens the Studio on it, the way a reload does. */
+async function reopen(page: Page, project: object, clipAsset: string) {
+  const fileId = await uploadBytes(
+    page,
+    Buffer.from(JSON.stringify(project)),
+    'project.json',
+    'application/json',
+  );
+  await page.addInitScript((id) => {
+    window.localStorage.setItem('aura.videoStudio.lastSavedProject', id);
+  }, fileId);
+  await openStudioWith(page, clipAsset, 'audio lane check');
+  await page.getByRole('button', { name: 'Reopen the last project you saved here' }).click();
+  return page.getByRole('dialog', { name: 'Video editor' });
+}
+
+test.describe('the project file with audio lanes', () => {
+  test('a project saved before audio existed opens unchanged', async ({ page }) => {
+    test.setTimeout(3 * 60_000);
+    const created = trackCreatedAssets(page);
+    await gotoAuthenticated(page, '/');
+    try {
+      const clip = await uploadAsset(
+        page,
+        resolve(FIXTURES, 'clip-a.mp4'),
+        'clip-a.mp4',
+        'video/mp4',
+        {
+          use: 'media',
+        },
+      );
+      const editor = await reopen(page, legacyProject(clip, 'legacy audio check'), clip);
+      await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 60_000 });
+      await expect(
+        editor.getByRole('heading', { name: 'legacy audio check', includeHidden: true }),
+      ).toBeAttached();
+      await expect(editor.getByRole('alert')).toHaveCount(0);
+    } finally {
+      await deleteAssets(page, created.ids());
+    }
+  });
+
+  test('an audio lane naming a missing source is refused at load', async ({ page }) => {
+    test.setTimeout(3 * 60_000);
+    const created = trackCreatedAssets(page);
+    await gotoAuthenticated(page, '/');
+    try {
+      const clip = await uploadAsset(
+        page,
+        resolve(FIXTURES, 'clip-a.mp4'),
+        'clip-a.mp4',
+        'video/mp4',
+        {
+          use: 'media',
+        },
+      );
+      const broken = {
+        ...legacyProject(clip, 'broken audio check'),
+        audio: [
+          {
+            id: 'audio-1',
+            items: [
+              {
+                id: 'bed',
+                sourceId: 'src-gone',
+                anchor: { clipId: 'clip-1', offset: 0 },
+                sourceStart: 0,
+                duration: 2,
+                volume: 1,
+                muted: false,
+              },
+            ],
+          },
+        ],
+      };
+      const editor = await reopen(page, broken, clip);
+      await expect(editor.getByRole('alert')).toBeVisible({ timeout: 60_000 });
+      await expect(editor.getByRole('button', { name: 'Clip 1' })).toHaveCount(0);
     } finally {
       await deleteAssets(page, created.ids());
     }

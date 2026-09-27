@@ -2,7 +2,16 @@ import { IDENTITY_SCOPED } from '../chat/artifacts/renderers/assetSourceContext'
 import { finalizeAsset, getAsset, presignAsset } from '../chat/attachments/api';
 import { isTerminalAsset, putWithProgress } from '../chat/attachments/upload';
 import { assetIsGone } from './assetStatus';
-import type { OverlayItem, OverlayTrack, ProjectSource, VideoItem, VideoProject } from './project';
+import { audioTracks } from './project';
+import type {
+  AudioItem,
+  AudioTrack,
+  OverlayItem,
+  OverlayTrack,
+  ProjectSource,
+  VideoItem,
+  VideoProject,
+} from './project';
 
 // projectStore.ts — the project as a file. It is a `.json` DOCUMENT uploaded through the same
 // presign the chat attachments use, which is what puts it under `chat/`: the server files by
@@ -131,6 +140,29 @@ function bagOf(value: unknown): Bag | undefined {
     : undefined;
 }
 
+/** `typeof Infinity === 'number'`, and JSON reads `1e999` as exactly that. */
+function finite(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function optionalFinite(value: unknown): boolean {
+  return value === undefined || finite(value);
+}
+
+function isSpeech(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (window) =>
+        Array.isArray(window) &&
+        window.length === 2 &&
+        finite(window[0]) &&
+        finite(window[1]) &&
+        window[0] <= window[1],
+    )
+  );
+}
+
 function isSize(value: unknown): boolean {
   const size = bagOf(value);
   return size !== undefined && typeof size.width === 'number' && typeof size.height === 'number';
@@ -142,9 +174,11 @@ function isSource(value: unknown): value is ProjectSource {
     source !== undefined &&
     typeof source.id === 'string' &&
     typeof source.assetId === 'string' &&
-    (source.kind === 'video' || source.kind === 'image') &&
+    (source.kind === 'video' || source.kind === 'image' || source.kind === 'audio') &&
     typeof source.duration === 'number' &&
     (source.hasAudio === undefined || typeof source.hasAudio === 'boolean') &&
+    (source.speech === undefined || isSpeech(source.speech)) &&
+    (source.denoisedAssetId === undefined || typeof source.denoisedAssetId === 'string') &&
     // No `fps`: nothing ever measured a source's frame rate — `probeVideo` does not report one —
     // and a file saved while the field existed still loads, with the number simply ignored.
     isSize(source.size)
@@ -161,6 +195,7 @@ function isClip(value: unknown): value is VideoItem {
     typeof clip.sourceStart === 'number' &&
     typeof clip.muted === 'boolean' &&
     (clip.volume === undefined || typeof clip.volume === 'number') &&
+    (clip.denoise === undefined || typeof clip.denoise === 'boolean') &&
     (clip.rotation === undefined || [0, 90, 180, 270].includes(clip.rotation as number)) &&
     (clip.fit === undefined || clip.fit === 'contain' || clip.fit === 'cover') &&
     (clip.flipX === undefined || typeof clip.flipX === 'boolean') &&
@@ -220,24 +255,84 @@ function isOverlayTrack(value: unknown): value is OverlayTrack {
   );
 }
 
+function isEnvelopePoint(value: unknown): boolean {
+  const point = bagOf(value);
+  return point !== undefined && finite(point.time) && finite(point.gain);
+}
+
+function isDucking(value: unknown): boolean {
+  const ducking = bagOf(value);
+  return ducking !== undefined && finite(ducking.amountDb) && finite(ducking.ramp);
+}
+
+function isAudioItem(value: unknown): value is AudioItem {
+  const item = bagOf(value);
+  if (item === undefined) return false;
+  const anchor = bagOf(item.anchor);
+  return (
+    typeof item.id === 'string' &&
+    typeof item.sourceId === 'string' &&
+    anchor !== undefined &&
+    typeof anchor.clipId === 'string' &&
+    finite(anchor.offset) &&
+    finite(item.sourceStart) &&
+    finite(item.duration) &&
+    finite(item.volume) &&
+    typeof item.muted === 'boolean' &&
+    optionalFinite(item.fadeIn) &&
+    optionalFinite(item.fadeOut) &&
+    optionalFinite(item.speed) &&
+    (item.envelope === undefined ||
+      (Array.isArray(item.envelope) && item.envelope.every(isEnvelopePoint))) &&
+    (item.ducking === undefined || isDucking(item.ducking)) &&
+    (item.denoise === undefined || typeof item.denoise === 'boolean') &&
+    (item.extractedFrom === undefined || typeof item.extractedFrom === 'string') &&
+    (item.label === undefined || typeof item.label === 'string')
+  );
+}
+
+function isAudioTrack(value: unknown): value is AudioTrack {
+  const track = bagOf(value);
+  return (
+    track !== undefined &&
+    typeof track.id === 'string' &&
+    Array.isArray(track.items) &&
+    track.items.every(isAudioItem)
+  );
+}
+
 /**
- * Whether every id the project points with has something to point at. A shape check cannot see
- * this, and both ways of failing it are already known: a clip naming a source the file does not
- * hold reaches `videoflow.ts`, which throws an untranslated internal sentence into the alert, and
- * an overlay anchored to a clip that is not there becomes a zero-length ghost on a lane. Neither
- * belongs on the far side of the load.
+ * Whether every id the project points with has something to point at, and at the right kind of
+ * thing. A shape check cannot see this, and every way of failing it is known: a clip naming a
+ * source the file does not hold reaches `videoflow.ts`, which throws an untranslated internal
+ * sentence into the alert; an overlay anchored to a clip that is not there becomes a zero-length
+ * ghost on a lane; a lane playing a source of the wrong kind (a clip over a sound, a sound over a
+ * still) hands the renderer media it cannot play; and a sound hanging off a missing clip has no
+ * project time at all. None of it belongs on the far side of the load.
  */
 function referencesHold(project: VideoProject): boolean {
-  const sources = new Set(project.sources.map((source) => source.id));
+  const kinds = new Map(project.sources.map((source) => [source.id, source.kind]));
   const clips = new Set(project.video.map((clip) => clip.id));
+  const plays = (sourceId: string, allowed: readonly ProjectSource['kind'][]) => {
+    const kind = kinds.get(sourceId);
+    return kind !== undefined && allowed.includes(kind);
+  };
   return (
-    project.video.every((clip) => sources.has(clip.sourceId)) &&
+    project.video.every((clip) => plays(clip.sourceId, ['video', 'image'])) &&
     project.video.every(
       (clip, index) =>
         clip.junctionFromClipId === undefined ||
         project.video[index - 1]?.id === clip.junctionFromClipId,
     ) &&
-    project.overlays.every((lane) => lane.items.every((item) => clips.has(item.anchor.clipId)))
+    project.overlays.every((lane) => lane.items.every((item) => clips.has(item.anchor.clipId))) &&
+    audioTracks(project).every((lane) =>
+      lane.items.every(
+        (item) =>
+          plays(item.sourceId, ['audio', 'video']) &&
+          clips.has(item.anchor.clipId) &&
+          (item.extractedFrom === undefined || clips.has(item.extractedFrom)),
+      ),
+    )
   );
 }
 
@@ -254,7 +349,9 @@ function hasProjectShape(value: unknown): value is VideoProject {
     Array.isArray(project.video) &&
     project.video.every(isClip) &&
     Array.isArray(project.overlays) &&
-    project.overlays.every(isOverlayTrack)
+    project.overlays.every(isOverlayTrack) &&
+    (project.audio === undefined ||
+      (Array.isArray(project.audio) && project.audio.every(isAudioTrack)))
   );
 }
 

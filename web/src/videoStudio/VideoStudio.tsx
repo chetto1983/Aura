@@ -1,16 +1,4 @@
-import {
-  ChevronLeft,
-  Clapperboard,
-  Maximize2,
-  Plus,
-  Redo2,
-  Save,
-  Scissors,
-  SlidersHorizontal,
-  Trash2,
-  Type,
-  Undo2,
-} from 'lucide-react';
+import { ChevronLeft, Clapperboard, Maximize2, Redo2, Save, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
@@ -34,6 +22,7 @@ import { Timeline } from './Timeline';
 import { VideoStudioTransport } from './VideoStudioTransport';
 import { MobileVideoTools } from './VideoStudio_mobile';
 import { ExportPanel } from './VideoStudio_export';
+import { StudioRail } from './VideoStudio_rail';
 import {
   openedProject,
   probeSource,
@@ -359,74 +348,34 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
           )
         ) : (
           <>
-            <div
-              role="toolbar"
-              aria-label={t('videoStudio.commands')}
-              className="video-studio-rail"
-            >
-              <button
-                type="button"
-                className="video-studio-rail-button"
-                data-primary="true"
-                onClick={() => fileInput.current?.click()}
-              >
-                <Plus aria-hidden="true" />
-                <span>{t('videoStudio.command.addSource')}</span>
-              </button>
-              <button
-                type="button"
-                className="video-studio-rail-button"
-                disabled={underPlayhead === undefined}
-                onClick={addTitle}
-              >
-                <Type aria-hidden="true" />
-                <span>{t('videoStudio.command.addText')}</span>
-              </button>
-              <button
-                type="button"
-                className="video-studio-rail-button"
-                onClick={() => {
-                  run((current) => splitAt(current, { time: playhead }));
-                }}
-              >
-                <Scissors aria-hidden="true" />
-                <span>{t('videoStudio.command.split')}</span>
-              </button>
-              <button
-                type="button"
-                className="video-studio-rail-button"
-                onClick={() => propertiesRef.current?.focus()}
-              >
-                <SlidersHorizontal aria-hidden="true" />
-                <span>{t('videoStudio.inspector.label')}</span>
-              </button>
-              <button
-                type="button"
-                className="video-studio-rail-button"
-                disabled={selectedId === undefined}
-                onClick={() => {
-                  if (selectedId !== undefined)
-                    run((current) => removeItem(current, { itemId: selectedId }));
-                }}
-              >
-                <Trash2 aria-hidden="true" />
-                <span>{t('videoStudio.command.remove')}</span>
-              </button>
-              <input
-                ref={fileInput}
-                type="file"
-                accept={SOURCE_ACCEPT}
-                className="sr-only"
-                aria-label={t('videoStudio.source.pick')}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  // The same file picked twice in a row fires no change event unless the input is
-                  // cleared, and a retry after a refusal is exactly that case.
-                  event.target.value = '';
-                  if (file !== undefined) void addFile(file);
-                }}
-              />
-            </div>
+            <StudioRail
+              canAddTitle={underPlayhead !== undefined}
+              canRemove={selectedId !== undefined}
+              onAddSource={() => fileInput.current?.click()}
+              onAddTitle={addTitle}
+              onSplit={() => {
+                run((current) => splitAt(current, { time: playhead }));
+              }}
+              onShowProperties={() => propertiesRef.current?.focus()}
+              onRemove={() => {
+                if (selectedId !== undefined)
+                  run((current) => removeItem(current, { itemId: selectedId }));
+              }}
+            />
+            <input
+              ref={fileInput}
+              type="file"
+              accept={SOURCE_ACCEPT}
+              className="sr-only"
+              aria-label={t('videoStudio.source.pick')}
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                // The same file picked twice in a row fires no change event unless the input is
+                // cleared, and a retry after a refusal is exactly that case.
+                event.target.value = '';
+                if (file !== undefined) void addFile(file);
+              }}
+            />
 
             <div className="video-studio-workspace">
               <section ref={canvasRef} className="video-studio-canvas">

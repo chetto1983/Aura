@@ -13,10 +13,14 @@ export interface ProjectSize {
 export interface ProjectSource {
   readonly id: string;
   readonly assetId: string;
-  readonly kind: 'video' | 'image';
+  readonly kind: 'video' | 'image' | 'audio';
   readonly duration: number; // seconds; 0 for an image, which takes the duration its item asks for
-  readonly size: ProjectSize;
+  readonly size: ProjectSize; // 0×0 for a sound
   readonly hasAudio?: boolean;
+  /** Where the VAD heard speech, in source seconds. Written once per source by the analysis. */
+  readonly speech?: readonly (readonly [number, number])[];
+  /** The same source with its noise removed, computed once when noise reduction is first asked. */
+  readonly denoisedAssetId?: string;
 }
 
 export type ClipTransition =
@@ -47,6 +51,7 @@ export interface VideoItem {
   readonly sourceStart: number;
   readonly muted: boolean;
   readonly volume?: number;
+  readonly denoise?: boolean;
   readonly rotation?: 0 | 90 | 180 | 270;
   readonly fit?: 'contain' | 'cover';
   readonly flipX?: boolean;
@@ -93,6 +98,45 @@ export interface OverlayTrack {
   readonly items: readonly OverlayItem[];
 }
 
+export interface EnvelopePoint {
+  readonly time: number; // seconds from the item's start
+  readonly gain: number; // 0–1: the envelope only attenuates; the item's volume boosts
+}
+
+export interface AudioDucking {
+  readonly amountDb: number; // −24 to −3
+  readonly ramp: number; // seconds, 0.1 to 2
+}
+
+/**
+ * A sound on an audio lane. It hangs off a clip like an overlay and rides the ripple with it, but
+ * unlike an overlay it may run past its clip: a music bed covers many. It is clipped at the
+ * project's end and never lengthens the project.
+ */
+export interface AudioItem {
+  readonly id: string;
+  readonly sourceId: string;
+  readonly anchor: OverlayAnchor;
+  readonly sourceStart: number;
+  readonly duration: number; // source seconds
+  readonly volume: number; // 0–2
+  readonly muted: boolean;
+  readonly fadeIn?: number;
+  readonly fadeOut?: number;
+  readonly speed?: number;
+  readonly envelope?: readonly EnvelopePoint[];
+  readonly ducking?: AudioDucking;
+  readonly denoise?: boolean;
+  /** The clip this sound was extracted from; removing that clip removes it. */
+  readonly extractedFrom?: string;
+  readonly label?: string;
+}
+
+export interface AudioTrack {
+  readonly id: string;
+  readonly items: readonly AudioItem[];
+}
+
 export interface VideoProject {
   readonly id: string;
   readonly name: string;
@@ -101,6 +145,7 @@ export interface VideoProject {
   readonly sources: readonly ProjectSource[];
   readonly video: readonly VideoItem[];
   readonly overlays: readonly OverlayTrack[];
+  readonly audio?: readonly AudioTrack[];
 }
 
 export function clipTimelineDuration(clip: VideoItem): number {
@@ -194,4 +239,9 @@ export function overlayWindow(
 
 export function sourceOf(project: VideoProject, sourceId: string): ProjectSource | undefined {
   return project.sources.find((source) => source.id === sourceId);
+}
+
+/** The audio lanes; a project saved before audio existed has none. */
+export function audioTracks(project: VideoProject): readonly AudioTrack[] {
+  return project.audio ?? [];
 }
