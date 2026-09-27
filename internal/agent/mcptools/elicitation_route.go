@@ -15,6 +15,14 @@ import (
 
 var errElicitationPanic = errors.New("elicitation surface panicked")
 
+const refusalNoticeAckTimeout = time.Second
+
+// refusalNotifier lets a run record a notice before a fast declined call ends.
+// Ordinary askers and channel surfaces keep their asynchronous delivery.
+type refusalNotifier interface {
+	NoticeRefusal(context.Context, elicit.Question)
+}
+
 // route is where one elicitation goes: the asker of the run whose call it arrived
 // in, that call's tool, and the open calls the wait belongs to. mixed means calls
 // from more than one run are open, so the request cannot be placed.
@@ -152,22 +160,48 @@ func askFallback(ctx context.Context, consent ElicitationConsent, q elicit.Quest
 
 // refuse declines a request Aura will not put to anyone and tells every run
 // concerned why. The notice carries none of the server's text: a refused form may
-// belong to another conversation, even another operator's. Each notice goes out on
-// its own goroutine, so the server hears its decline at once and a slow channel
-// cannot hold the call past its own bound.
+// belong to another conversation, even another operator's. Run askers that can
+// acknowledge a recorded notice do so before the decline, under one short bound;
+// other surfaces keep asynchronous delivery.
 func refuse(ctx context.Context, r route, consent ElicitationConsent, q elicit.Question, why string, timeout time.Duration) elicitOutcome {
 	notice := elicit.Question{Server: q.Server, Tool: q.Tool, Refusal: why}
+	out := elicitOutcome{action: elicit.ActionDecline, fields: len(q.Fields), reason: "refused: " + why}
 	told := map[runKey]bool{}
+	ackCtx, stopAck := context.WithTimeout(context.WithoutCancel(ctx), min(timeout, refusalNoticeAckTimeout))
+	defer stopAck()
+	acks := make(chan bool, len(r.calls))
+	waiting := 0
 	for _, call := range r.calls {
 		if run := runOf(call); !told[run] {
 			told[run] = true
-			go tell(call, run.asker, consent, notice, timeout)
+			if notifier, ok := run.asker.(refusalNotifier); ok {
+				waiting++
+				go func() {
+					defer func() {
+						if recover() != nil {
+							go tell(call, run.asker, consent, notice, timeout)
+							acks <- false
+						}
+					}()
+					notifier.NoticeRefusal(ackCtx, notice)
+					acks <- true
+				}()
+			} else {
+				go tell(call, run.asker, consent, notice, timeout)
+			}
 		}
 	}
 	if len(told) == 0 {
 		go tell(ctx, nil, consent, notice, timeout)
 	}
-	return elicitOutcome{action: elicit.ActionDecline, fields: len(q.Fields), reason: "refused: " + why}
+	for range waiting {
+		select {
+		case <-acks:
+		case <-ackCtx.Done():
+			return out
+		}
+	}
+	return out
 }
 
 // tell delivers a refusal notice to a run's asker, or through the fallback when the

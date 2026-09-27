@@ -6,6 +6,7 @@ import (
 	"errors"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/google/uuid"
@@ -25,6 +26,7 @@ import (
 const (
 	ElicitationEventName         = "aura.elicitation"
 	ElicitationResolvedEventName = "aura.elicitation_resolved"
+	elicitationDeliveryTimeout   = time.Second
 )
 
 // elicitationFrame is the question as the cockpit receives it. run_id rides along
@@ -93,6 +95,10 @@ func (rq *runQuestions) bind(runCtx context.Context) *runQuestions {
 // run already showing elicit.MaxOpenQuestions forms. An answer delivered as ctx
 // ends wins: it was already published as the outcome.
 func (rq *runQuestions) Ask(ctx context.Context, q elicit.Question) (elicit.Answer, error) {
+	if q.Refusal != "" {
+		rq.NoticeRefusal(ctx, q)
+		return elicit.Answer{Action: elicit.ActionDecline}, nil
+	}
 	q.ID = uuid.NewString()
 	p := &pendingQuestion{q: q, answer: make(chan elicit.Answer, 1)}
 	rq.mu.Lock()
@@ -110,13 +116,9 @@ func (rq *runQuestions) Ask(ctx context.Context, q elicit.Question) (elicit.Answ
 	p.order = rq.nextOrder
 	rq.nextOrder++
 	rq.pending[q.ID] = p
-	rq.sess.publish(ctx, events.NewCustomEvent(ElicitationEventName, events.WithValue(rq.frame(q))))
+	rq.publish(ctx, events.NewCustomEvent(ElicitationEventName, events.WithValue(rq.frame(q))))
 	rq.mu.Unlock()
 
-	if q.Refusal != "" {
-		rq.close(q.ID, elicit.ActionDecline, false)
-		return elicit.Answer{Action: elicit.ActionDecline}, nil
-	}
 	select {
 	case a := <-p.answer:
 		return a, nil
@@ -129,8 +131,34 @@ func (rq *runQuestions) Ask(ctx context.Context, q elicit.Question) (elicit.Answ
 	}
 }
 
+// NoticeRefusal records a bare question and its decline before returning. It
+// never opens an answerable question; a concurrent POST can only see it as closed.
+func (rq *runQuestions) NoticeRefusal(ctx context.Context, q elicit.Question) {
+	if q.Refusal == "" {
+		return
+	}
+	notice := elicit.Question{ID: uuid.NewString(), Server: q.Server, Tool: q.Tool, Refusal: q.Refusal}
+	rq.mu.Lock()
+	defer rq.mu.Unlock()
+	if rq.ended {
+		return
+	}
+	rq.closed[notice.ID] = struct{}{}
+	rq.publish(ctx, events.NewCustomEvent(ElicitationEventName, events.WithValue(rq.frame(notice))))
+	rq.publish(ctx, events.NewCustomEvent(ElicitationResolvedEventName,
+		events.WithValue(elicitationResolvedFrame{ID: notice.ID, Action: elicit.ActionDecline})))
+}
+
 func (rq *runQuestions) frame(q elicit.Question) elicitationFrame {
 	return elicitationFrame{RunID: rq.sess.RunID, Question: q}
+}
+
+// The ring records the frame before live fanout. A stalled viewer must not keep
+// the question lock until the call or detached run reaches its outer deadline.
+func (rq *runQuestions) publish(ctx context.Context, ev events.Event) {
+	deliveryCtx, cancel := context.WithTimeout(ctx, elicitationDeliveryTimeout)
+	defer cancel()
+	rq.sess.publish(deliveryCtx, ev)
 }
 
 // Arrival order is independent of each call's deadline, including refusal notices.
@@ -197,7 +225,7 @@ func (rq *runQuestions) closeLocked(id, action string, expired bool) bool {
 	}
 	delete(rq.pending, id)
 	rq.closed[id] = struct{}{}
-	rq.sess.publish(rq.runCtx, events.NewCustomEvent(ElicitationResolvedEventName,
+	rq.publish(rq.runCtx, events.NewCustomEvent(ElicitationResolvedEventName,
 		events.WithValue(elicitationResolvedFrame{ID: id, Action: action, Expired: expired})))
 	return true
 }

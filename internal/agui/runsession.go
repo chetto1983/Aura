@@ -121,6 +121,14 @@ func newRunSession(runID, threadID, identityID string, ringCap, subBuffer int, c
 // tolerated defensively rather than panicking a detached
 // goroutine) so the producer unwinds.
 func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
+	return s.appendWithAbortPolicy(ctx, ev, false)
+}
+
+// Published question frames are an ordered pair. If one misses a subscriber,
+// close that subscriber under mu so it reconnects through replay before seeing
+// a later resolution. The producer's append path keeps its existing cancellation
+// behavior: its terminal fallback may still reach an attached viewer.
+func (s *RunSession) appendWithAbortPolicy(ctx context.Context, ev events.Event, retireOnAbort bool) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.terminal {
@@ -137,6 +145,9 @@ func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
 	for id, sub := range s.subs {
 		switch pumpDeliver(ctx, sub.gone, sub.ch, sev, lifecycle) {
 		case pumpAbort:
+			if retireOnAbort {
+				s.closeSubscribersLocked()
+			}
 			return false
 		case pumpDropped:
 			recordSSEDropped()
@@ -148,9 +159,16 @@ func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
 	return true
 }
 
+func (s *RunSession) closeSubscribersLocked() {
+	for id, sub := range s.subs {
+		close(sub.ch)
+		delete(s.subs, id)
+	}
+}
+
 // publish uses the producer's redaction policy for out-of-band lifecycle frames.
 func (s *RunSession) publish(ctx context.Context, ev events.Event) bool {
-	return s.append(ctx, redactEvent(ev))
+	return s.appendWithAbortPolicy(ctx, redactEvent(ev), true)
 }
 
 // subscribeFrom snapshots every ring entry with Seq > fromSeq into a fresh channel
@@ -217,10 +235,7 @@ func (s *RunSession) finish() {
 	}
 	s.terminal = true
 	s.finishedAt = s.now()
-	for id, sub := range s.subs {
-		close(sub.ch)
-		delete(s.subs, id)
-	}
+	s.closeSubscribersLocked()
 	cleanup := s.cleanup
 	s.cleanup = nil
 	s.mu.Unlock()
