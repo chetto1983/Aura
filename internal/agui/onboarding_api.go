@@ -201,12 +201,12 @@ func (s *Server) routeStepRequired(ctx context.Context, identityID string) bool 
 	if !admin {
 		return false
 	}
-	skip, err := s.keyMinter.readiness(ctx)
+	required, err := s.keyMinter.chatNeedsKeys(ctx)
 	if err != nil {
 		slog.Warn("onboarding status: minting readiness unreadable", "err", err)
 		return false
 	}
-	return skip == skipManagementKeyUnset
+	return required
 }
 
 // handleProfileSubmit serves POST /api/onboarding/profile (Amendment #95): the whole seed

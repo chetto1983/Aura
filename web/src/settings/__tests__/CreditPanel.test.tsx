@@ -48,7 +48,6 @@ function renderPanel() {
 
 const BILLING = {
   identity_id: ID,
-  exempt: false,
   cap: 5,
   reset_interval: 'monthly',
   spend: 1.25,
@@ -68,7 +67,6 @@ describe('CreditPanel — a key with no limit', () => {
     stubFetch({
       credit: {
         identity_id: ID,
-        exempt: false,
         unlimited: true,
         cap: null,
         reset_interval: 'monthly',
@@ -254,25 +252,6 @@ describe('CreditPanel — saving a cap', () => {
     expect(
       await screen.findByText("Couldn't update the spending cap. Check the amount and try again."),
     ).toBeTruthy();
-  });
-});
-
-describe('CreditPanel — the CRED-09 exemption', () => {
-  // An exemption and an exhaustion are different facts. A deployment that bills nothing gets the
-  // Empty composition, never the $0.00 LibreChat's tokenCredits.toFixed(2) default produces.
-  it('renders the exempt empty state and no zero balance on a non-billing backend', async () => {
-    stubFetch({ credit: { identity_id: ID, exempt: true } });
-    renderPanel();
-
-    expect(await screen.findByText('No spending cap to show')).toBeTruthy();
-    expect(
-      screen.getByText(
-        "This deployment runs on a local model backend, which doesn't bill — there's no cap or spend to show.",
-      ),
-    ).toBeTruthy();
-    expect(screen.queryByText('$0.00')).toBeNull();
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Save cap' })).toBeNull();
   });
 });
 

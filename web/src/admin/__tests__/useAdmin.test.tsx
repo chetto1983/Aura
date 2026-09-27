@@ -195,7 +195,6 @@ describe('credit + removal hooks', () => {
           new Response(
             JSON.stringify({
               identity_id: 'id-1',
-              exempt: false,
               cap: 5,
               reset_interval: 'monthly',
               spend: 0,

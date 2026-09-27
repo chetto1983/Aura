@@ -31,8 +31,9 @@ const (
 )
 
 // MediaCredentials resolves the OpenRouter base URL + API key an identity's
-// image/video generation call uses, reusing the same per-identity credit
-// decision (CRED-05) the chat LLM path already makes instead of a second one.
+// image/video generation call uses: the identity's own key under the same
+// credit decision (identitykey.Decide, CRED-05) the chat path makes, on
+// OpenRouter whatever route the chat runs on.
 type MediaCredentials interface {
 	For(ctx context.Context, identityID string) (baseURL, apiKey string, err error)
 }

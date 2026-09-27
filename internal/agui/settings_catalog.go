@@ -3,8 +3,8 @@ package agui
 // settings_catalog.go is the ONE shape every cockpit model picker is answered in. Image,
 // video, cloud speech-to-text, text-to-speech and cloud embedding models come from two
 // different upstream reads, but the route contract is identical -- same envelope, same 503
-// when the catalogue is unwired, same 409 naming the way off a local route, same 502
-// carrying the upstream reason. Written twice it drifted: the refusal still spoke only of
+// when the catalogue is unwired, same 409 naming the way off a local route where the
+// catalogue follows the chat route, same 502 carrying the upstream reason. Written twice it drifted: the refusal still spoke only of
 // image, video and voice after embeddings joined. One wrapper, and a picker added later
 // inherits the contract instead of copying it.
 
@@ -13,12 +13,13 @@ import (
 	"net/http"
 )
 
-// ErrCatalogLocalRoute refuses every picker catalogue on a llama.cpp, Ollama or other
-// non-OpenRouter route: generation, cloud speech and cloud embeddings are served by
-// OpenRouter only. It names the way out, because a picker that simply empties tells the
-// operator nothing about which control to change.
+// ErrCatalogLocalRoute refuses the cloud speech and embedding catalogues on a llama.cpp,
+// Ollama or other non-OpenRouter chat route, which those pickers still list from. Image and
+// video are never refused: generation runs on OpenRouter whatever the chat route is. It names
+// the way out, because a picker that simply empties tells the operator nothing about which
+// control to change.
 var ErrCatalogLocalRoute = errors.New(
-	"image, video, voice and embedding models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
+	"voice and embedding models are listed only on the OpenRouter route: choose Cloud in Model routing and save",
 )
 
 // catalogModelDTO is one picker row. A capability or price the catalog did not declare is

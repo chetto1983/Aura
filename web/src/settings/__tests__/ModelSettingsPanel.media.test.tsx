@@ -181,15 +181,27 @@ describe('ModelSettingsPanel media models', () => {
     ).toHaveLength(1);
   });
 
-  it('hides the media rows and asks for no catalogue on a local route', async () => {
-    const calls = stubFetch(settingsBody('llamacpp', 'http://aura-llm:8084/v1'));
+  // Generation runs on OpenRouter whatever the chat route is, so a chat on llama.cpp or Ollama
+  // still picks its image and video models from OpenRouter's catalogue.
+  it.each([
+    ['llama.cpp', 'llamacpp', 'http://aura-llm:8084/v1'],
+    ['Ollama', 'ollama', 'http://host.docker.internal:11434/v1'],
+  ])('offers the media catalogues on a %s chat route', async (_name, provider, baseURL) => {
+    const calls = stubFetch(settingsBody(provider, baseURL));
     renderPanel();
 
-    await screen.findByLabelText('Primary model');
-    await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.queryByLabelText('Image generation model')).toBeNull();
-    expect(screen.queryByLabelText('Video generation model')).toBeNull();
-    expect(mediaGets(calls)).toEqual([]);
+    await screen.findByLabelText('Image generation model');
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Image generation model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(
+        within(fieldCard('Video generation model')).getByText(/2 models published here/),
+      ).toBeTruthy();
+    });
+    expect(mediaGets(calls)).toEqual(['/api/settings/image-models', '/api/settings/video-models']);
   });
 
   it('asks for no media catalogue from a pane that does not show the routing fields', async () => {
@@ -232,58 +244,23 @@ describe('ModelSettingsPanel media models', () => {
     });
   });
 
-  it('lists the media models as soon as the Cloud route is saved, with no Refresh', async () => {
-    // The daemon answers from the SAVED route: while it is local both catalogues refuse.
-    let saved = settingsBody('llamacpp', 'http://aura-llm:8084/v1');
-    const calls: Call[] = [];
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        const method = init?.method ?? 'GET';
-        calls.push({ method, url, body: typeof init?.body === 'string' ? init.body : undefined });
-        if (method === 'PUT') {
-          saved = settingsBody('openrouter', 'https://openrouter.ai/api/v1');
-          return Promise.resolve(json({ updated: 3, restart_required: false }));
-        }
-        const refused = json(
-          { error: 'image and video models are listed only on the OpenRouter route' },
-          409,
-        );
-        const local = saved.settings[0]?.value === 'llamacpp';
-        if (url.startsWith('/api/settings/image-models'))
-          return Promise.resolve(local ? refused : json(IMAGE_BODY));
-        if (url.startsWith('/api/settings/video-models'))
-          return Promise.resolve(local ? refused : json(VIDEO_BODY));
-        if (url.startsWith('/api/settings/llm-'))
-          return Promise.resolve(json({ models: [], routes: [] }));
-        return Promise.resolve(json(saved));
-      }),
-    );
+  it('keeps the media rows and asks for no catalogue again when the chat route changes', async () => {
+    const calls = stubFetch(settingsBody('ollama', 'http://host.docker.internal:11434/v1'));
     renderPanel();
 
-    await screen.findByLabelText('Primary model');
-    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
-    await screen.findByLabelText('Image generation model');
+    await waitFor(() => {
+      expect(mediaGets(calls)).toEqual([
+        '/api/settings/image-models',
+        '/api/settings/video-models',
+      ]);
+    });
+    for (const route of ['Cloud', 'Local', 'Ollama']) {
+      fireEvent.click(screen.getByRole('radio', { name: route }));
+      expect(screen.getByLabelText('Image generation model')).toBeTruthy();
+      expect(screen.getByLabelText('Video generation model')).toBeTruthy();
+    }
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(mediaGets(calls)).toEqual([]);
-    expect(screen.queryByText(/only on the OpenRouter route/)).toBeNull();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
-
-    await waitFor(() => {
-      expect(
-        within(fieldCard('Image generation model')).getByText(/2 models published here/),
-      ).toBeTruthy();
-    });
-    await waitFor(() => {
-      expect(
-        within(fieldCard('Video generation model')).getByText(/2 models published here/),
-      ).toBeTruthy();
-    });
-    expect(mediaGets(calls)).toEqual(['/api/settings/image-models', '/api/settings/video-models']);
-    expect(screen.queryByText(/only on the OpenRouter route/)).toBeNull();
+    expect(mediaGets(calls)).toHaveLength(2);
   });
 
   it('labels an unsaved media model as applying immediately', async () => {

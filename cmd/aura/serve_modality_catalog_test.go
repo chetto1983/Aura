@@ -66,6 +66,7 @@ func TestVoiceCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
 		{"llama.cpp", routeRuntime("llamacpp", "http://aura-llm:8084/v1")},
 		{"ollama", routeRuntime("ollama", "http://host.docker.internal:11434/v1")},
 		{"openrouter provider on a local host", routeRuntime("openrouter", "http://host.docker.internal:8084/v1")},
+		{"openrouter provider on a private address", routeRuntime("openrouter", "http://192.168.1.20/openrouter.ai/v1")},
 		{"no published route", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

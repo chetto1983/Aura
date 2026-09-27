@@ -29,12 +29,10 @@ const (
 )
 
 // reconcileTriggerKeys are the settings whose write can make minting possible, or move the
-// services key's cap.
+// services key's cap. The chat route is not one: minting does not depend on it.
 var reconcileTriggerKeys = map[string]struct{}{
 	"AURA_OPENROUTER_MANAGEMENT_KEY": {},
 	servicesCapSetting:               {},
-	"AURA_LLM_PROVIDER":              {},
-	"AURA_LLM_BASE_URL":              {},
 }
 
 // ErrServicesCapUnset keeps the services key unminted until the admin picks its monthly cap.

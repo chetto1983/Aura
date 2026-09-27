@@ -32,8 +32,6 @@ export function studioErrorSentence(t: TFunction, code: string, message: string)
       return t('studio.error.job_expired');
     case 'outcome_unknown':
       return t('studio.error.outcome_unknown');
-    case 'local_route':
-      return t('studio.error.local_route');
     default:
       return message.trim() === '' ? t('studio.error.generic') : message;
   }

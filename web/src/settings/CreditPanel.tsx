@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyRound, Wallet } from 'lucide-react';
+import { KeyRound } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useIdentityCredit, useSetIdentityCredit } from '../admin/useAdmin';
 import {
@@ -21,7 +21,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
-// CreditPanel (CRED-03/CRED-06/CRED-09) is the per-identity half of the cockpit's money
+// CreditPanel (CRED-03/CRED-06) is the per-identity half of the cockpit's money
 // surface: the cap the admin sets, the reset interval it rides, and the spend measured against
 // it. Every figure comes from GET /api/admin/identities/{id}/credit, which reads Aura's own
 // in-band ledger (D-08) -- never GET /api/v1/key's usage counter, which lags a spend by 30-40s
@@ -64,9 +64,8 @@ function asResetInterval(value: string): ResetInterval {
  * A client that then rendered it at two decimals would reintroduce the same defect one layer
  * up, so a sub-cent amount grows decimals until its leading significant digit is visible.
  *
- * A genuine zero on a BILLING backend renders as two decimals like any other amount. That is
- * not the zero CRED-09 forbids -- that one is a non-billing deployment, which never reaches
- * this function because the exempt branch replaces the whole panel.
+ * A genuine zero renders as two decimals like any other amount: every identity's key bills on
+ * OpenRouter, since image and video generation run there whatever the chat route is.
  */
 function formatUsd(amount: number): string {
   const value = Number.isFinite(amount) && amount > 0 ? amount : 0;
@@ -91,22 +90,13 @@ function clampPercent(percent: number): number {
   return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
-/** The Empty composition the panel shows in place of a cap: a backend that bills nothing, or an
- * identity with no key yet. */
-function CreditEmpty({
-  icon: Icon,
-  heading,
-  body,
-}: {
-  readonly icon: typeof Wallet;
-  readonly heading: string;
-  readonly body: string;
-}) {
+/** The Empty composition the panel shows in place of a cap: an identity with no key yet. */
+function CreditEmpty({ heading, body }: { readonly heading: string; readonly body: string }) {
   return (
     <Empty className="border border-dashed border-border bg-surface-2/40 py-8">
       <EmptyHeader>
         <EmptyMedia variant="icon">
-          <Icon aria-hidden="true" className="size-5" />
+          <KeyRound aria-hidden="true" className="size-5" />
         </EmptyMedia>
         <EmptyTitle className="text-sm">{heading}</EmptyTitle>
         <EmptyDescription>{body}</EmptyDescription>
@@ -155,26 +145,12 @@ export function CreditPanel({ identityId }: CreditPanelProps) {
   // admin is told what, if anything, to do about it.
   if (credit !== undefined && 'no_key' in credit) {
     return (
-      <CreditEmpty
-        icon={KeyRound}
-        heading={t('admin.credit.noKeyHeading')}
-        body={t(noKeyCauseKey(credit.cause))}
-      />
+      <CreditEmpty heading={t('admin.credit.noKeyHeading')} body={t(noKeyCauseKey(credit.cause))} />
     );
   }
 
-  // CRED-09: a deployment whose backend does not bill is told it is EXEMPT. It is never shown a
-  // zero balance -- an exemption and an exhaustion are different facts, and rendering the first
-  // as the second is the LibreChat `tokenCredits.toFixed(2)` shape the UI-SPEC rejected by name.
-  if (credit === undefined || credit.exempt) {
-    return (
-      <CreditEmpty
-        icon={Wallet}
-        heading={t('admin.credit.emptyHeading')}
-        body={t('admin.credit.emptyBody')}
-      />
-    );
-  }
+  // Nothing is read before an identity id is known.
+  if (credit === undefined) return null;
 
   // An administrator's own key has no spending limit, and the reconciler clears any cap put on
   // it, so there is no cap to edit and no gauge to fill: the panel says so and shows the spend.

@@ -188,23 +188,24 @@ func TestReconcileAlignsLimitsWithRoles(t *testing.T) {
 	}
 }
 
-func TestReconcileWaits(t *testing.T) {
-	for name, tc := range map[string]struct {
-		keySet, routeBills bool
-		want               string
-	}{
-		"local route":           {keySet: true, routeBills: false, want: skipLocalRoute},
-		"no management key yet": {keySet: false, routeBills: true, want: skipManagementKeyUnset},
-	} {
-		t.Run(name, func(t *testing.T) {
-			s, minting, _, _, _ := reconcileServer(routeRows, []identity.Identity{{ID: "admin-1", Kind: "user"}}, "admin-1")
-			minting.keySet = tc.keySet
-			s.keyMinter.routeBills = func() bool { return tc.routeBills }
-			res, err := s.EnsureOpenRouterKeys(context.Background())
-			if err != nil || res.Skipped != tc.want || len(minting.minted) != 0 {
-				t.Fatalf("result = %+v err = %v mints = %d; want skipped %q and nothing minted", res, err, len(minting.minted), tc.want)
-			}
-		})
+func TestReconcileWaitsForTheManagementKey(t *testing.T) {
+	s, minting, _, _, _ := reconcileServer(routeRows, []identity.Identity{{ID: "admin-1", Kind: "user"}}, "admin-1")
+	minting.keySet = false
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err != nil || res.Skipped != skipManagementKeyUnset || len(minting.minted) != 0 {
+		t.Fatalf("result = %+v err = %v mints = %d; want skipped %q and nothing minted",
+			res, err, len(minting.minted), skipManagementKeyUnset)
+	}
+}
+
+// The chat route does not gate the reconciler: on Ollama every person still gets the key their
+// image and video generation bills on.
+func TestReconcileMintsOnALocalChatRoute(t *testing.T) {
+	s, minting, _, _, _ := reconcileServer(withServicesKey(routeRows), []identity.Identity{{ID: "member-1", Kind: "user"}})
+	s.keyMinter.routeBills = func() bool { return false }
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err != nil || res.Skipped != "" || !slices.Equal(res.IdentitiesMinted, []string{"member-1"}) {
+		t.Fatalf("result = %+v err = %v mints = %d; want member-1 minted on the local route", res, err, len(minting.minted))
 	}
 }
 

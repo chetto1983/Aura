@@ -17,7 +17,6 @@ const CODES = [
   'job_failed',
   'job_expired',
   'outcome_unknown',
-  'local_route',
 ] as const;
 
 const SERVER_SAID = 'openrouter said something in English';

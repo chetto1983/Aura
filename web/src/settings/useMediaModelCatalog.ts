@@ -16,9 +16,9 @@ interface CatalogAnswer {
   readonly error: string | undefined;
 }
 
-// useMediaModelCatalog keeps the image, video or voice catalogue of the SAVED route. The daemon
-// answers from the route it runs on, so `route` names that saved route: saving a different one
-// asks again, and `enabled` is true only while the rows show on a saved Cloud route.
+// useMediaModelCatalog keeps one picker catalogue. `route` names the endpoint the daemon lists
+// it from — the SAVED chat route for voice and embeddings, OpenRouter itself for image and video
+// — so a change of it asks again, and `enabled` is true only while the rows show.
 //
 // Every change of kind, route or `enabled`, and every Refresh, is a new request, adjusted while
 // rendering so the render that changed already reads as loading rather than as the previous

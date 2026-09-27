@@ -94,24 +94,18 @@ export function fetchAudit(identityId: string, limit: number, offset: number): P
 }
 
 /**
- * GET /api/admin/identities/{id}/credit response (CRED-03/CRED-06/CRED-09,
+ * GET /api/admin/identities/{id}/credit response (CRED-03/CRED-06,
  * internal/agui/credit_api.go). `cap` arrives as a plain JSON number (the server's USDCap
  * marshals a fixed two-decimal token, but JSON has no fixed-decimal number type, so the wire
  * value loses its trailing zero the moment a JS number parses it — callers must re-apply
  * .toFixed(2) themselves). `spend`/`remaining` are FULL ledger precision, deliberately not
  * rounded to cents (migration 0124, aura.cache_metrics.cost_usd numeric(24,12)) — a caller
  * that rounds a sub-cent spend to "0.00" reintroduces the exact defect that migration fixed.
- * A local, non-billing backend returns the `exempt` shape instead, with none of the other
- * fields (D-13) — this is CRED-09's exemption, never a fabricated zero cap.
+ * The shape does not depend on the chat route: the identity's key bills image and video
+ * generation on OpenRouter even while the chat runs on a local server.
  */
-export interface CreditExempt {
-  readonly identity_id: string;
-  readonly exempt: true;
-}
-
 export interface CreditRecord {
   readonly identity_id: string;
-  readonly exempt: false;
   readonly unlimited?: false;
   readonly cap: number;
   readonly reset_interval: string;
@@ -125,7 +119,6 @@ export interface CreditRecord {
  * as exhausted. */
 export interface CreditUnlimited {
   readonly identity_id: string;
-  readonly exempt: false;
   readonly unlimited: true;
   readonly cap: null;
   readonly reset_interval: string;
@@ -143,7 +136,7 @@ export interface CreditNoKey {
   readonly cause: string;
 }
 
-export type CreditResponse = CreditExempt | CreditRecord | CreditUnlimited | CreditNoKey;
+export type CreditResponse = CreditRecord | CreditUnlimited | CreditNoKey;
 
 /** POST /api/admin/identities/{id}/credit body — either field may be omitted to leave it
  * unchanged (server-side nil-means-unchanged convention, credit_api.go's creditSetRequest). */

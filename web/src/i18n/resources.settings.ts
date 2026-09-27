@@ -115,6 +115,7 @@ export const settingsEn = {
         "Creates each person's own OpenRouter key and reads the account's spend. It can't run models.",
       openRouterServicesCap:
         'The monthly cap, in USD, of the key Aura mints for speech, embeddings and vision the first time OpenRouter is connected.',
+      mediaModel: "Runs on OpenRouter with each person's own key, whatever route the chat uses.",
       loopMaxSteps:
         'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
       loopMaxWallclock:
@@ -291,6 +292,7 @@ export const settingsIt = {
         "Crea la chiave OpenRouter di ogni persona e legge la spesa dell'account. Non può usare i modelli.",
       openRouterServicesCap:
         'Il limite mensile, in USD, della chiave che Aura crea per voce, embedding e visione la prima volta che OpenRouter viene collegato.',
+      mediaModel: 'Gira su OpenRouter con la chiave di ogni persona, qualunque rotta usi la chat.',
       loopMaxSteps:
         'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
       loopMaxWallclock:
