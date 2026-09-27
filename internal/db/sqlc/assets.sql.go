@@ -78,7 +78,7 @@ func (q *Queries) AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoTh
 }
 
 const assetNamesByObjectKey = `-- name: AssetNamesByObjectKey :many
-SELECT object_key, file_name FROM aura.assets
+SELECT id, object_key, file_name FROM aura.assets
 WHERE identity_id = $1
   AND object_key = ANY($2::text[])
   AND file_name <> ''
@@ -91,8 +91,9 @@ type AssetNamesByObjectKeyParams struct {
 }
 
 type AssetNamesByObjectKeyRow struct {
-	ObjectKey string `json:"object_key"`
-	FileName  string `json:"file_name"`
+	ID        pgtype.UUID `json:"id"`
+	ObjectKey string      `json:"object_key"`
+	FileName  string      `json:"file_name"`
 }
 
 // The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment
@@ -101,6 +102,8 @@ type AssetNamesByObjectKeyRow struct {
 // than deriving a search id and asking the document index — which failed whole-listing once
 // a page held more keys than that index accepts filters.
 // A key with no row simply has no entry, and the caller keeps the key tail it already shows.
+// The id rides along so a file opened from the manager can be edited AS its asset: without
+// it the editor took every file for a foreign object and uploaded a copy on each open.
 func (q *Queries) AssetNamesByObjectKey(ctx context.Context, arg AssetNamesByObjectKeyParams) ([]AssetNamesByObjectKeyRow, error) {
 	rows, err := q.db.Query(ctx, assetNamesByObjectKey, arg.IdentityID, arg.ObjectKeys)
 	if err != nil {
@@ -110,7 +113,7 @@ func (q *Queries) AssetNamesByObjectKey(ctx context.Context, arg AssetNamesByObj
 	items := []AssetNamesByObjectKeyRow{}
 	for rows.Next() {
 		var i AssetNamesByObjectKeyRow
-		if err := rows.Scan(&i.ObjectKey, &i.FileName); err != nil {
+		if err := rows.Scan(&i.ID, &i.ObjectKey, &i.FileName); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

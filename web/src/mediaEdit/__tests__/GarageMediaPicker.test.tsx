@@ -8,7 +8,7 @@ vi.mock('../../files/FilesWorkspace', () => ({
   default: ({
     onOpenFile,
   }: {
-    onOpenFile: (file: { id: string; name: string; size: number }) => void;
+    onOpenFile: (file: { id: string; name: string; size: number; assetId?: string }) => void;
   }) => (
     <div>
       <button
@@ -26,6 +26,19 @@ vi.mock('../../files/FilesWorkspace', () => ({
         }}
       >
         choose gif
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          onOpenFile({
+            id: '/media/7d1c.mp4',
+            name: 'videoplayback.mp4',
+            size: 13,
+            assetId: '7d1c',
+          });
+        }}
+      >
+        choose library clip
       </button>
     </div>
   ),
@@ -73,5 +86,19 @@ describe('GarageMediaPicker', () => {
     );
     expect(open).not.toHaveBeenCalled();
     expect(screen.getByRole('dialog', { name: 'Choose from Garage' })).toBeTruthy();
+  });
+});
+
+describe('GarageMediaPicker on a library file', () => {
+  // Opening a library file as a bucket object made the editor upload it as a new asset, and
+  // that copy was itself a library file: every open added one more twin.
+  it('opens a file that is already an asset as that asset, so nothing is uploaded again', async () => {
+    const open = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Garage library' }));
+    fireEvent.click(screen.getByRole('button', { name: 'choose library clip' }));
+
+    await waitFor(() => {
+      expect(open).toHaveBeenCalledWith({ assetId: '7d1c', kind: 'video' });
+    });
   });
 });

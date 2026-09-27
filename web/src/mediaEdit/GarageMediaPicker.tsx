@@ -23,12 +23,14 @@ export function GarageMediaPicker({ className }: { readonly className?: string }
       setProblem(t('mediaEdit.picker.unsupported'));
       return;
     }
-    launchEditor({
-      garageObjectId: file.id,
-      fileName: file.name,
-      sizeBytes: file.size ?? 0,
-      kind,
-    });
+    // A file that already is an asset opens as that asset. Opened as a bucket object instead,
+    // the editor uploads it as a new asset — and every open left one more twin in the library.
+    const assetId: unknown = file.assetId;
+    launchEditor(
+      typeof assetId === 'string' && assetId !== ''
+        ? { assetId, kind }
+        : { garageObjectId: file.id, fileName: file.name, sizeBytes: file.size ?? 0, kind },
+    );
     setProblem(undefined);
     setOpen(false);
   }

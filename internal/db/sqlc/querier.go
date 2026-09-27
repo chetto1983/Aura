@@ -43,6 +43,8 @@ type Querier interface {
 	// than deriving a search id and asking the document index — which failed whole-listing once
 	// a page held more keys than that index accepts filters.
 	// A key with no row simply has no entry, and the caller keeps the key tail it already shows.
+	// The id rides along so a file opened from the manager can be edited AS its asset: without
+	// it the editor took every file for a foreign object and uploaded a copy on each open.
 	AssetNamesByObjectKey(ctx context.Context, arg AssetNamesByObjectKeyParams) ([]AssetNamesByObjectKeyRow, error)
 	// First apply only: commit the freshly rebuilt plan authorization before any
 	// item can be claimed. A crash after this transition resumes persisted items

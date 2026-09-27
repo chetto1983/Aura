@@ -5,7 +5,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// buildFileNamer backs the real names in the file manager's listing.
+// buildFileAssetLookup backs the real names and asset ids in the file manager.s listing.
 //
 // The name lives on the SAME Postgres row as the object key (aura.assets carries both), so
 // the listing reads it there. It used to derive a search id from each key and ask the
@@ -17,7 +17,7 @@ import (
 // A key with no assets row still gets no name, and the file manager keeps labelling it with
 // the tail of the key — right for a file dropped straight into the bucket, where the key IS
 // the name.
-func buildFileNamer(pool *pgxpool.Pool) *assets.Store {
+func buildFileAssetLookup(pool *pgxpool.Pool) *assets.Store {
 	if pool == nil {
 		return nil
 	}

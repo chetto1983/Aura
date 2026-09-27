@@ -130,28 +130,30 @@ func TestServicePresignPutsMediaInItsOwnFolder(t *testing.T) {
 	}
 }
 
-// presignAndStore presigns fileName and puts body where the presign said, the way a browser does.
-func presignAndStore(t *testing.T, svc *Service, fileName, mimeType, body string) Asset {
+// storeUpload presigns req and puts body where the presign said, the way a browser does.
+func storeUpload(t *testing.T, svc *Service, req PresignRequest, body string) Asset {
 	t.Helper()
-	resp, err := svc.Presign(context.Background(), PresignRequest{
-		IdentityID:        serviceIdentityID,
-		SourceKind:        SourceWeb,
-		ThreadID:          "thread-1",
-		FileName:          fileName,
-		MIMEType:          mimeType,
-		DeclaredSizeBytes: int64(len(body)),
-	})
+	req.IdentityID = serviceIdentityID
+	req.SourceKind = SourceWeb
+	req.DeclaredSizeBytes = int64(len(body))
+	resp, err := svc.Presign(context.Background(), req)
 	if err != nil {
 		t.Fatalf("Presign() error = %v", err)
 	}
 	ref := objectstore.ObjectRef{Bucket: resp.Asset.ObjectBucket, Key: resp.Asset.ObjectKey}
 	if _, err := svc.Objects.Put(context.Background(), ref, strings.NewReader(body), objectstore.PutOptions{
-		MIMEType: mimeType,
+		MIMEType: req.MIMEType,
 		Size:     int64(len(body)),
 	}); err != nil {
 		t.Fatalf("Put object: %v", err)
 	}
 	return resp.Asset
+}
+
+// presignAndStore is storeUpload for a chat attachment of thread-1.
+func presignAndStore(t *testing.T, svc *Service, fileName, mimeType, body string) Asset {
+	t.Helper()
+	return storeUpload(t, svc, PresignRequest{ThreadID: "thread-1", FileName: fileName, MIMEType: mimeType}, body)
 }
 
 // An editor source is accepted and left alone. The plain finalize would run the modality's
@@ -215,31 +217,15 @@ func TestServiceFinalizeMediaRefusesADocumentHintedAsMedia(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{MaxDocumentBytes: 100, MaxImageBytes: 100, MaxAudioBytes: 100})
 	queue := &recordingProcessingQueue{}
 	svc.ProcessingJobs = queue
-	resp, err := svc.Presign(context.Background(), PresignRequest{
-		IdentityID:        serviceIdentityID,
-		SourceKind:        SourceWeb,
-		ThreadID:          "thread-1",
-		FileName:          "manual.pdf",
-		MIMEType:          "audio/wav",
-		ModalityHint:      ModalityAudio,
-		DeclaredSizeBytes: 9,
-	})
-	if err != nil {
-		t.Fatalf("Presign() error = %v", err)
-	}
-	ref := objectstore.ObjectRef{Bucket: resp.Asset.ObjectBucket, Key: resp.Asset.ObjectKey}
-	if _, err := svc.Objects.Put(context.Background(), ref, strings.NewReader("%PDF test"), objectstore.PutOptions{
-		MIMEType: "audio/wav",
-		Size:     9,
-	}); err != nil {
-		t.Fatalf("Put object: %v", err)
-	}
+	hinted := storeUpload(t, svc, PresignRequest{
+		ThreadID: "thread-1", FileName: "manual.pdf", MIMEType: "audio/wav", ModalityHint: ModalityAudio,
+	}, "%PDF test")
 
-	_, err = svc.FinalizeMedia(context.Background(), serviceIdentityID, resp.Asset.ID)
+	_, err := svc.FinalizeMedia(context.Background(), serviceIdentityID, hinted.ID)
 	if !errors.Is(err, ErrWrongModality) {
 		t.Fatalf("FinalizeMedia() error = %v, want ErrWrongModality", err)
 	}
-	if got := store.assets[resp.Asset.ID].Status; got == StatusAccepted {
+	if got := store.assets[hinted.ID].Status; got == StatusAccepted {
 		t.Fatalf("status = %q, want the document left unaccepted", got)
 	}
 	if queue.calls != 0 {

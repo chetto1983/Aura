@@ -314,21 +314,21 @@ func TestStoreListRecentImages(t *testing.T) {
 	}
 }
 
-// TestNamesByKeyResolvesNamesTheKeysDoNotCarry is the Postgres half of the cockpit's file
+// TestAssetsByKeyResolvesNamesTheKeysDoNotCarry is the Postgres half of the cockpit's file
 // manager: the listing shows bucket keys, and a chat attachment's key is a uuid on purpose,
 // so the name has to come back from the row that owns the key. The lookup used to go
 // through the document index instead and returned nothing at all once a folder held more
 // keys than that index accepts filters (117 against a cap of 100, live stack 2026-09-09).
-func TestNamesByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
+func TestAssetsByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	now := time.Now().UnixNano()
 	store := NewStore(pool)
-	create := func(identityID, name, key string) {
+	create := func(identityID, name, key string) Asset {
 		t.Helper()
-		if _, err := store.Create(ctx, CreateRequest{
+		created, err := store.Create(ctx, CreateRequest{
 			IdentityID:   identityID,
 			SourceKind:   SourceWeb,
 			SourceRef:    "https://example.test/" + name,
@@ -339,9 +339,11 @@ func TestNamesByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 			MIMEType:     "application/pdf",
 			ObjectBucket: "asset-test",
 			ObjectKey:    key,
-		}); err != nil {
+		})
+		if err != nil {
 			t.Fatalf("Create(%s): %v", name, err)
 		}
+		return created
 	}
 
 	// The second identity has to exist before it can own a row: only `local` is seeded by
@@ -354,23 +356,23 @@ func TestNamesByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 
 	mine := fmt.Sprintf("chat/%d-mine.pdf", now)
 	theirs := fmt.Sprintf("chat/%d-theirs.pdf", now)
-	create(localIdentityID, "report.pdf", mine)
+	report := create(localIdentityID, "report.pdf", mine)
 	create(otherIdentityID, "their-secret.pdf", theirs)
 
 	// The absent key is the file dropped straight into the bucket: no row, no name, and the
 	// caller keeps the key tail it already shows.
 	absent := fmt.Sprintf("chat/%d-absent.pdf", now)
-	names, err := store.NamesByKey(ctx, localIdentityID, []string{mine, theirs, absent})
+	found, err := store.AssetsByKey(ctx, localIdentityID, []string{mine, theirs, absent})
 	if err != nil {
-		t.Fatalf("NamesByKey: %v", err)
+		t.Fatalf("AssetsByKey: %v", err)
 	}
-	if names[mine] != "report.pdf" {
-		t.Fatalf("NamesByKey[%s] = %q, want report.pdf; got %#v", mine, names[mine], names)
+	if want := (KeyedAsset{ID: report.ID, FileName: "report.pdf"}); found[mine] != want {
+		t.Fatalf("AssetsByKey[%s] = %+v, want %+v; got %#v", mine, found[mine], want, found)
 	}
-	if _, leaked := names[theirs]; leaked {
-		t.Fatalf("NamesByKey leaked another identity's name: %#v", names)
+	if _, leaked := found[theirs]; leaked {
+		t.Fatalf("AssetsByKey leaked another identity's asset: %#v", found)
 	}
-	if _, invented := names[absent]; invented {
-		t.Fatalf("NamesByKey invented a name for an unindexed key: %#v", names)
+	if _, invented := found[absent]; invented {
+		t.Fatalf("AssetsByKey invented an asset for an unindexed key: %#v", found)
 	}
 }

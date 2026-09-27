@@ -6,12 +6,20 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
-// NamesByKey maps each object key this identity owns to the name a person gave the file.
+// KeyedAsset is what the file manager needs to know about the asset behind an object key.
+type KeyedAsset struct {
+	ID       string
+	FileName string
+}
+
+// AssetsByKey maps each object key this identity owns to its asset: the id, and the name a
+// person gave the file.
 //
 // The file manager lists bucket KEYS, and a key deliberately carries no name — a chat
 // attachment is `chat/<assetID>.<ext>` precisely so the name cannot leak through a
 // presigned URL or an access log. The name it needs is on the SAME ROW as the key, so this
-// is one indexed lookup rather than a trip through another datastore.
+// is one indexed lookup rather than a trip through another datastore. The id rides along so
+// an editor opens a library file AS its asset: without it every open uploaded a copy.
 //
 // It replaces a lookup that derived a search id from the key and asked the document index
 // (ArcadeDB) for the name. That path had three costs a join does not: it made a plain
@@ -23,7 +31,7 @@ import (
 // A key with no row is simply absent from the result: the caller keeps the key tail it
 // already displays, which for a file dropped straight into the bucket is the right label
 // because there the key IS the name.
-func (s *Store) NamesByKey(ctx context.Context, identityID string, keys []string) (map[string]string, error) {
+func (s *Store) AssetsByKey(ctx context.Context, identityID string, keys []string) (map[string]KeyedAsset, error) {
 	if s == nil || len(keys) == 0 {
 		return nil, nil
 	}
@@ -42,11 +50,11 @@ func (s *Store) NamesByKey(ctx context.Context, identityID string, keys []string
 	}); err != nil {
 		return nil, err
 	}
-	names := make(map[string]string, len(rows))
+	found := make(map[string]KeyedAsset, len(rows))
 	for _, row := range rows {
 		if row.FileName != "" {
-			names[row.ObjectKey] = row.FileName
+			found[row.ObjectKey] = KeyedAsset{ID: uuidString(row.ID), FileName: row.FileName}
 		}
 	}
-	return names, nil
+	return found, nil
 }

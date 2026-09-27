@@ -136,7 +136,7 @@ type Server struct {
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
 	files            FileBrowser
-	fileNames        FileNamer
+	fileAssets       FileAssetLookup
 	fileObjects      FileObjectOpener
 	fileWrites       FileObjectWriter
 	fileOps          FileOperations

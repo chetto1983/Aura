@@ -55,6 +55,21 @@ describe('SVAR file store label derivation', () => {
     expect(parsed.type).toBe('file');
   });
 
+  // The media picker opens a library file AS its asset by reading this field off the parsed row;
+  // a store that dropped it would put the editor back on uploading a copy per open.
+  it('keeps the asset id the listing sends beside the name', () => {
+    const parsed = parseOne({
+      id: key,
+      type: 'file',
+      name: 'colm2025_conference.pdf',
+      ext: 'pdf',
+      parent: 0,
+      assetId: 'b4e391e0-6141-4807-b8e5-88ca58f21162',
+    });
+
+    expect(parsed.assetId).toBe('b4e391e0-6141-4807-b8e5-88ca58f21162');
+  });
+
   it('leaves the id alone, because it is the route back to the object', () => {
     const parsed = parseOne({
       id: key,

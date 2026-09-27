@@ -118,17 +118,17 @@ func TestFileListReturnsAbsoluteIDs(t *testing.T) {
 	}
 }
 
-type fakeFileNamer struct {
+type fakeFileAssets struct {
 	keys  []string
-	names map[string]string
+	found map[string]assets.KeyedAsset
 	err   error
 }
 
-func (f *fakeFileNamer) NamesByKey(
+func (f *fakeFileAssets) AssetsByKey(
 	_ context.Context, _ string, keys []string,
-) (map[string]string, error) {
+) (map[string]assets.KeyedAsset, error) {
 	f.keys = append([]string(nil), keys...)
-	return f.names, f.err
+	return f.found, f.err
 }
 
 // A chat attachment's key is a uuid on purpose, so the tail of the id -- which is all the
@@ -139,11 +139,13 @@ func TestFileListLabelsAnAttachmentWithItsRealName(t *testing.T) {
 	page.Entries = append(page.Entries, assets.BrowseEntry{
 		Key: "b4e391e0-6141-4807-b8e5-88ca58f21162.pdf", SizeBytes: 122635,
 	})
-	namer := &fakeFileNamer{names: map[string]string{
-		"contabilita/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf": "colm2025_conference.pdf",
+	lookup := &fakeFileAssets{found: map[string]assets.KeyedAsset{
+		"contabilita/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf": {
+			ID: "b4e391e0-6141-4807-b8e5-88ca58f21162", FileName: "colm2025_conference.pdf",
+		},
 	}}
 	server := fileServer(&fakeFileBrowser{result: page}, nil)
-	server.fileNames = namer
+	server.fileAssets = lookup
 
 	entries := decodeEntries(t, serveFiles(t, server, fileManagerBase+"/files/"+"%2Fcontabilita"))
 	named := entries[len(entries)-1]
@@ -154,6 +156,14 @@ func TestFileListLabelsAnAttachmentWithItsRealName(t *testing.T) {
 	// is the whole reason the name is not in it.
 	if named.ID != "/contabilita/b4e391e0-6141-4807-b8e5-88ca58f21162.pdf" {
 		t.Fatalf("id = %q, want the object key", named.ID)
+	}
+	// The asset rides along, so an editor opens the file AS its asset instead of uploading it
+	// again — every open of a library file used to add one more copy to the library.
+	if named.AssetID != "b4e391e0-6141-4807-b8e5-88ca58f21162" {
+		t.Fatalf("assetId = %q, want the asset behind the key", named.AssetID)
+	}
+	if entries[1].AssetID != "" {
+		t.Fatalf("a file dropped in the bucket was given an asset: %+v", entries[1])
 	}
 	// Sent together or not at all: parent 0 is what stops the widget deriving the label,
 	// and skipping that derivation also skips the ext that drives the icon.
@@ -169,15 +179,15 @@ func TestFileListLabelsAnAttachmentWithItsRealName(t *testing.T) {
 	if entries[1].Name != "" || entries[1].Parent != nil {
 		t.Fatalf("unnamed object was given a name: %+v", entries[1])
 	}
-	if len(namer.keys) != 2 {
-		t.Fatalf("asked for %v, want only the two objects and never the folder", namer.keys)
+	if len(lookup.keys) != 2 {
+		t.Fatalf("asked for %v, want only the two objects and never the folder", lookup.keys)
 	}
 }
 
 // A folder the operator can see beats a 500 raised because one lookup was unavailable.
 func TestFileListSurvivesANameLookupFailure(t *testing.T) {
 	server := fileServer(&fakeFileBrowser{result: browsePage()}, nil)
-	server.fileNames = &fakeFileNamer{err: errors.New("arcadedb unreachable")}
+	server.fileAssets = &fakeFileAssets{err: errors.New("arcadedb unreachable")}
 
 	rec := serveFiles(t, server, fileManagerBase+"/files/"+"%2Fcontabilita")
 	if rec.Code != http.StatusOK {

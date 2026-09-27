@@ -132,10 +132,10 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	fileObjects := buildFileObjectAccess(chat.cfg, chat.pool, objectStore)
 	fileBrowser := buildFileBrowser(chat.cfg, chat.pool, objectStore)
 	aguiServer.SetFileBrowser(fileBrowser)
-	// A nil namer is wired deliberately rather than guarded against: the setter accepts it
+	// A nil lookup is wired deliberately rather than guarded against: the setter accepts it
 	// and the listing degrades to key-derived names.
-	if namer := buildFileNamer(chat.pool); namer != nil {
-		aguiServer.SetFileNamer(namer)
+	if lookup := buildFileAssetLookup(chat.pool); lookup != nil {
+		aguiServer.SetFileAssetLookup(lookup)
 	}
 	aguiServer.SetFileOpener(fileObjects)
 	aguiServer.SetFileWriter(fileObjects)

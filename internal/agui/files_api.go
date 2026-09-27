@@ -27,11 +27,11 @@ type FileBrowser interface {
 	List(ctx context.Context, identityID, prefix string, limit int) (assets.BrowseResult, error)
 }
 
-// FileNamer resolves the display names of stored objects, which their keys do not carry.
-// Optional: without one the manager falls back to the tail of the key, which is what it
-// showed before this existed.
-type FileNamer interface {
-	NamesByKey(ctx context.Context, identityID string, keys []string) (map[string]string, error)
+// FileAssetLookup resolves the assets behind stored objects: the name a person gave the file,
+// which its key does not carry, and the asset id an editor opens it as. Optional: without one
+// the manager falls back to the tail of the key, which is what it showed before this existed.
+type FileAssetLookup interface {
+	AssetsByKey(ctx context.Context, identityID string, keys []string) (map[string]assets.KeyedAsset, error)
 }
 
 // FileAttrs is what the store knows about an object beyond its bytes.
@@ -60,9 +60,9 @@ type FileObjectWriter interface {
 // SetFileBrowser wires the listing the file manager reads.
 func (s *Server) SetFileBrowser(browser FileBrowser) { s.files = browser }
 
-// SetFileNamer wires the lookup that turns an object key back into the name a person gave
-// the file. Leaving it unset is supported and degrades to key-derived names.
-func (s *Server) SetFileNamer(namer FileNamer) { s.fileNames = namer }
+// SetFileAssetLookup wires the lookup that turns an object key back into its asset and the
+// name a person gave the file. Leaving it unset is supported and degrades to key-derived names.
+func (s *Server) SetFileAssetLookup(lookup FileAssetLookup) { s.fileAssets = lookup }
 
 // SetFileOpener wires the byte stream behind a file manager download.
 func (s *Server) SetFileOpener(opener FileObjectOpener) { s.fileObjects = opener }
@@ -103,6 +103,9 @@ type fileEntry struct {
 	Size   int64  `json:"size,omitempty"`
 	Date   string `json:"date,omitempty"`
 	Lazy   bool   `json:"lazy,omitempty"`
+	// AssetID names the asset an object belongs to, so an editor opens it as that asset
+	// rather than uploading a copy. Empty for a file dropped straight into the bucket.
+	AssetID string `json:"assetId,omitempty"`
 }
 
 // handleFileList returns one folder of the caller's own bucket, root included.
@@ -130,20 +133,21 @@ func (s *Server) handleFileList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, fileEntries(result, s.displayNames(r.Context(), identityID, result)))
+	writeJSON(w, fileEntries(result, s.keyedAssets(r.Context(), identityID, result)))
 }
 
-// displayNames resolves this page's real names, and never fails the listing over them.
+// keyedAssets resolves the assets behind this page, with their real names, and never fails the
+// listing over them.
 //
 // A folder of files the operator can see beats a 500 because one lookup was unavailable:
 // without names the manager shows what it showed before, which for anything dropped
 // straight into the bucket is already the right answer. One statement for the whole page,
 // never a HEAD per row — the same choice garage-webui's own browser makes, where the
 // per-object HEAD is reserved for opening a single object.
-func (s *Server) displayNames(
+func (s *Server) keyedAssets(
 	ctx context.Context, identityID string, result assets.BrowseResult,
-) map[string]string {
-	if s.fileNames == nil {
+) map[string]assets.KeyedAsset {
+	if s.fileAssets == nil {
 		return nil
 	}
 	keys := make([]string, 0, len(result.Entries))
@@ -156,7 +160,7 @@ func (s *Server) displayNames(
 	if len(keys) == 0 {
 		return nil
 	}
-	names, err := s.fileNames.NamesByKey(ctx, identityID, keys)
+	found, err := s.fileAssets.AssetsByKey(ctx, identityID, keys)
 	if err != nil {
 		// Falling back to key tails is the right answer for the operator — a listing they
 		// can still read beats an error page. Saying nothing about WHY is not: the same
@@ -167,14 +171,14 @@ func (s *Server) displayNames(
 			"keys", len(keys), "err", err)
 		return nil
 	}
-	return names
+	return found
 }
 
 // fileEntries turns one browse page into the component's entity list.
 //
 // Never nil: an empty folder must encode as [] rather than null, which the widget would
 // treat as a load failure instead of as an empty folder.
-func fileEntries(result assets.BrowseResult, names map[string]string) []fileEntry {
+func fileEntries(result assets.BrowseResult, found map[string]assets.KeyedAsset) []fileEntry {
 	entries := make([]fileEntry, 0, len(result.Entries))
 	for _, entry := range result.Entries {
 		id := "/" + result.Prefix + strings.TrimSuffix(entry.Key, "/")
@@ -190,8 +194,9 @@ func fileEntries(result assets.BrowseResult, names map[string]string) []fileEntr
 		row := fileEntry{
 			ID: id, Type: "file", Size: entry.SizeBytes, Date: browseDate(entry.ModifiedAt),
 		}
-		if name := names[result.Prefix+entry.Key]; name != "" {
-			row.Name, row.Ext, row.Parent = name, entryExt(name), new(0)
+		if asset, ok := found[result.Prefix+entry.Key]; ok {
+			row.Name, row.Ext, row.Parent = asset.FileName, entryExt(asset.FileName), new(0)
+			row.AssetID = asset.ID
 		}
 		entries = append(entries, row)
 	}
