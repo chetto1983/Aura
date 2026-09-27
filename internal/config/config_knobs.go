@@ -171,7 +171,7 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_SANDBOX_IDLE_TTL_SEC", Kind: KindInt, Default: "1800"},
 		{Name: "AURA_SANDBOX_CPU_LIMIT", Kind: KindInt, Default: "2"},
 		{Name: "AURA_SANDBOX_MEMORY_LIMIT", Kind: KindInt, Default: "2147483648"},
-		{Name: "AURA_SANDBOX_PIDS_LIMIT", Kind: KindInt, Default: "512"},
+		{Name: "AURA_SANDBOX_PIDS_LIMIT", Kind: KindInt, Default: "1024"},
 		{Name: "AURA_SANDBOX_EGRESS_ALLOWLIST", Kind: KindString, Default: ""},
 		{Name: "AURA_SANDBOX_IMAGE", Kind: KindString, Default: "aura-sandbox:latest"},
 		{Name: "AURA_SANDBOX_EGRESS_IMAGE", Kind: KindString, Default: "aura-egress:latest"},

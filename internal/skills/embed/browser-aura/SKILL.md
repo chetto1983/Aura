@@ -30,10 +30,11 @@ Restoring brings back the login, not the open page: after a pause, `open` the pa
 before you read it. The first screenshot of a browser takes about ten seconds; later ones are
 quick.
 
-Each open session is its own Chromium: about 140 processes and 180 MB of your sandbox, which
-has room for three at most. Keep to one session per site, reuse its name, and
+Each open session is its own Chromium: on a real site about 200 processes and 400 MB of your
+sandbox, which has room for four at most. Keep to one session per site, reuse its name, and
 `browser__agent_browser_close` it when the site is done — the restore file keeps the login for
-next time, the process does not need to stay alive.
+next time, the process does not need to stay alive. A browser left idle for ten minutes closes
+by itself; open the page again with the same session and `restore: true`.
 
 If the `browser__` tools are not mounted, the same commands work through `shell_exec`:
 `agent-browser --session portal --restore open https://example.com/login`, then `snapshot -i`,

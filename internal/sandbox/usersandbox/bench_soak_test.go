@@ -40,7 +40,7 @@ const (
 	soakDefaultN          = 10
 	soakDefaultCPU        = 2              // AURA_SANDBOX_CPU_LIMIT — CPUs per box
 	soakDefaultMemBytes   = int64(2) << 30 // AURA_SANDBOX_MEMORY_LIMIT — 2 GiB per box
-	soakDefaultPids       = int64(512)     // AURA_SANDBOX_PIDS_LIMIT — 512 pids per box
+	soakDefaultPids       = int64(1024)    // AURA_SANDBOX_PIDS_LIMIT — 1024 pids per box
 	soakDefaultHeadroom   = int64(2) << 30 // AURA_SANDBOX_SOAK_HEADROOM_BYTES — min free RAM after N boxes
 	soakResolveP95BoundMs = 2000           // D-14 Resolve p95 < ~2 s
 	soakResumeP95BoundMs  = 1000           // D-14 Resume-from-suspend p95 < ~1 s

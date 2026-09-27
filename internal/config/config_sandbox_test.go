@@ -39,8 +39,8 @@ func TestLoad_SandboxConfig(t *testing.T) {
 		if s.MemoryLimit != int64(2)<<30 {
 			t.Errorf("MemoryLimit default: want %d (2 GiB), got %d", int64(2)<<30, s.MemoryLimit)
 		}
-		if s.PidsLimit != 512 {
-			t.Errorf("PidsLimit default: want 512, got %d", s.PidsLimit)
+		if s.PidsLimit != 1024 {
+			t.Errorf("PidsLimit default: want 1024, got %d", s.PidsLimit)
 		}
 		if len(s.EgressAllowlist) != 0 {
 			t.Errorf("EgressAllowlist default: want empty (floor-only), got %v", s.EgressAllowlist)

@@ -40,7 +40,10 @@ const (
 	defaultSandboxIdleTTLSec  = 1800           // 30 min idle-suspend TTL (D-08)
 	defaultSandboxCPULimit    = 2              // 2 CPUs per box (D-14 start)
 	defaultSandboxMemoryLimit = int64(2) << 30 // 2 GiB per box (D-14 start)
-	defaultSandboxPidsLimit   = int64(512)     // 512 pids per box (D-14 start)
+	// A browser session is a Chromium: on real sites each took about 200 pids, and three reached
+	// 560-594 (lab VM, 2026-09-27). At 512 the third launch hung for 153 s and the whole box stopped
+	// accepting execs, shell_exec included. 1024 fits four at that rate and still stops a fork bomb.
+	defaultSandboxPidsLimit = int64(1024)
 )
 
 // SandboxConfig is the AURA_SANDBOX_* operator surface for the Phase-37 per-identity
@@ -62,7 +65,7 @@ type SandboxConfig struct {
 	MemoryLimit int64 // AURA_SANDBOX_MEMORY_LIMIT — per-box memory bytes, default 2 GiB
 
 	// PidsLimit is the per-box PID cap (D-14) → container.Resources.PidsLimit.
-	PidsLimit int64 // AURA_SANDBOX_PIDS_LIMIT — per-box pids cap, default 512
+	PidsLimit int64 // AURA_SANDBOX_PIDS_LIMIT — per-box pids cap, default 1024
 
 	// EgressAllowlist is the operator-tightened egress allowlist (D-06). Empty (the default)
 	// = floor-only (full public internet minus the tenancy boundary); a non-empty list is

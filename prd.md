@@ -670,9 +670,9 @@ three (`spikes/agent-browser-auth/live_view.e2e.ts`). The run corrected three as
 - a frame is the viewport, not the screen: `deviceHeight` reported 720 for 1280x577 JPEGs, so the
   viewer maps both axes by one width scale;
 - Enter must carry `text: "\r"`, or CDP submits no form;
-- each open agent-browser session is its own Chromium, about 142 tasks and 180 MB, so the default
-  512-pid box holds three at most, and the box skill tells the agent to keep one per site and
-  close it.
+- each open agent-browser session is its own Chromium, about 142 tasks and 180 MB on the fixture,
+  so the 512-pid box held three at most, and the box skill tells the agent to keep one per site
+  and close it. Real sites take more, and the default is now 1024 (2026-09-27, below).
 
 It also found that the box's keep-alive PID 1 never reaped orphans: four sessions opened and
 closed left 177 zombies counting against the pid cap, which starves `shell_exec` as well as the
@@ -823,10 +823,33 @@ every browser that way. The user agent names the Chromium the image ships, read 
 build time, and the image contract fails when the page sees `navigator.webdriver` or a headless
 user agent. It failed on the image before this change and passed on that image plus the new
 layers. Headless was chosen over headed because agent-browser exempts headed browsers from its
-idle shutdown, and the box holds three at most. Wirasm/helm#374 reports the same refusal from a
-spoofed user agent plus a debugging port, and a plain Chrome that signs in. Not shown: a Google
-login surviving a box recreate or Google's later re-checks, other sites' bot defences, and whether
-the user-agent override is needed once the flag is set.
+idle shutdown, and a box has room for few browsers. Wirasm/helm#374 reports the same refusal from
+a spoofed user agent plus a debugging port, and a plain Chrome that signs in. The login did not
+survive a box recreate: reopened with `restore` in the recreated box, the page showed "Sign in"
+and Google's `SID`, `SAPISID` and `LOGIN_INFO` cookies were gone. That open then saved the
+signed-out state over the old one, so whether the saved state lacked the cookies or Google
+refused them in a new browser is not known. Not shown either: Google's later re-checks, other
+sites' bot defences, and whether the user-agent override is needed once the flag is set.
+
+**Browsers on real sites: the box's pids, not its CPU, measured 2026-09-27.** An agent turn on
+lastampa.it opened the site in 49 s, then read, clicked and read again in 0.08-0.24 s each.
+The live view was not the slow part: from the cockpit, a wheel event showed a scrolled frame
+in a median 42 ms and a key a new frame in 51-79 ms. A browser on a real site holds about 200
+pids and 400 MB. YouTube and lastampa.it open together kept a box at 398 pids and 783 MiB. A
+third browser took it to 560-594 pids: at the 512 cap its launch hung for 153 s and failed,
+and the whole box refused every exec, `shell_exec` included, until the third daemon was killed
+from the host. The default cap is now 1024 pids. CPU and memory stay at 2 CPUs and 2 GiB. With
+4 CPUs the box was no longer throttled, but lastampa.it still took 30-60 s or timed out. The
+slow loads came from the lab VM's network, not the box: the same image and script loaded the
+site to `domcontentloaded` in 16-20 s on the VM, in a plain container too, with no egress
+sidecar and no limits. On the workstation's Docker they took 0.7-0.8 s. On the VM, DNS
+answered 30 names in 0.1 s and a 10 MB download ran at 12 MB/s, while Chromium waited 19.4 s
+for the page's main document, which curl fetched in 0.43 s. Idle browsers now close after 10
+minutes instead of agent-browser's hour. On the box, a 15 s timeout closed an untouched browser
+within 25 s. The same timeout kept a browser alive for 32 s while the live view sent a key
+every 5 s, so an operator signing in is not cut off. Not shown: why Chromium is slow on the
+lab VM's network, an appliance's page loads, and four heavy browsers together under the new
+cap.
 
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
