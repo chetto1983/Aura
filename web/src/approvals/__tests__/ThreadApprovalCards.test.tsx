@@ -220,4 +220,32 @@ describe('ThreadApprovalCards active-thread presentation', () => {
     expect(screen.getByRole('status')).not.toBe(firstAnnouncement);
     expect(screen.getByRole('status').textContent).toBe('Answered.');
   });
+
+  it("draws a mounted server's forms after the approvals, in arrival order", () => {
+    const form = (id: string) => ({
+      run_id: 'run-1',
+      id,
+      server: 'forms',
+      message: 'm',
+      fields: [],
+      deadline: '2026-09-25T10:05:00Z',
+    });
+    render(
+      <QueryClientProvider client={client()}>
+        <ThreadApprovalCards
+          approvals={[approval({ token: 't-1', conversation_id: 'c-1' })]}
+          elicitations={[
+            { question: form('open') },
+            { question: form('done'), outcome: 'declined' },
+          ]}
+          isStreaming
+        />
+      </QueryClientProvider>,
+    );
+    const cards = document.querySelectorAll('[data-approval-token], [data-elicitation-id]');
+    const order = Array.from(cards).map(
+      (el) => el.getAttribute('data-approval-token') ?? el.getAttribute('data-elicitation-id'),
+    );
+    expect(order).toEqual(['t-1', 'open', 'done']);
+  });
 });

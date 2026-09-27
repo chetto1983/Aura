@@ -7,8 +7,10 @@ import {
   fetchConversation,
   type Conversation,
 } from '../conversations/useConversations';
+import { fetchOpenElicitations } from '../questions/elicitationApi';
 import { attachRun } from './sseResume';
 import type { SteerNotice, TurnUsage } from './sseAdapter';
+import type { ElicitationSignal } from './sseAdapter_elicitation';
 
 // ExternalStoreChat_liveRun — the RS-07 §4.2 reload-attach split out of
 // ExternalStoreChat.tsx (600-LOC cap): when a thread opens while its detached
@@ -40,6 +42,34 @@ export interface LiveRunAttachArgs {
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   /** D-10's reattach-pump half: fires on an aura.steer frame observed by a reloaded tab. */
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
+  /** A mounted MCP server's forms, from the replay and from the run's own list. */
+  readonly onElicitation?: ((signal: ElicitationSignal) => void) | undefined;
+}
+
+/** GET is ordered by arrival. Hold stream signals until it lands so a resolution cannot
+ * precede its listed question, or a later replayed question jump ahead of an older listed one. */
+function reconcileOpenForms(
+  runId: string,
+  onElicitation: (signal: ElicitationSignal) => void,
+  isCurrent: () => boolean,
+): (signal: ElicitationSignal) => void {
+  let queued: ElicitationSignal[] | null = [];
+  void fetchOpenElicitations(runId)
+    .then((questions) => {
+      if (!isCurrent()) return;
+      for (const question of questions) onElicitation({ kind: 'question', question });
+    })
+    .catch(() => undefined)
+    .finally(() => {
+      const signals = queued ?? [];
+      queued = null;
+      if (isCurrent()) for (const signal of signals) onElicitation(signal);
+    });
+  return (signal) => {
+    if (!isCurrent()) return;
+    if (queued !== null) queued.push(signal);
+    else onElicitation(signal);
+  };
 }
 
 export function useLiveRunAttach({
@@ -52,6 +82,7 @@ export function useLiveRunAttach({
   setMessages,
   onArtifact,
   onSteer,
+  onElicitation,
 }: LiveRunAttachArgs): void {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -63,6 +94,17 @@ export function useLiveRunAttach({
       const terminal = { observed: false };
       await foldAppendedStream(threadId, (controller, onUpdate) => {
         activeRunIdRef.current = runId;
+        const onForm =
+          onElicitation === undefined
+            ? undefined
+            : reconcileOpenForms(
+                runId,
+                onElicitation,
+                () =>
+                  !controller.signal.aborted &&
+                  !terminal.observed &&
+                  (activeRunIdRef.current === null || activeRunIdRef.current === runId),
+              );
         return attachRun({
           threadId,
           runId,
@@ -74,6 +116,7 @@ export function useLiveRunAttach({
           },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           ...(onSteer !== undefined ? { onSteer } : {}),
+          ...(onForm !== undefined ? { onElicitation: onForm } : {}),
           onUpdate: (assistant, usage) => {
             onUpdate(assistant, usage);
             setMessages(withoutRowsReplayedByRun);
@@ -102,6 +145,7 @@ export function useLiveRunAttach({
       t,
       onArtifact,
       onSteer,
+      onElicitation,
       activeRunIdRef,
       setMessages,
       queryClient,

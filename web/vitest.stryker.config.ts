@@ -8,6 +8,14 @@ const mutationTests = [
   'src/approvals/__tests__/approvalState.test.ts',
   // The question frame (spec 2026-09-25): the ask_user adapter's suites above reach it too.
   'src/questions/__tests__/QuestionFrame.test.tsx',
+  // A mounted server's form (spec 2026-09-25): the pump signal, the thread's fold, the route
+  // client, the step logic, the countdown and the card.
+  'src/chat/sseAdapter.onElicitation.test.ts',
+  'src/questions/__tests__/useThreadElicitations.test.ts',
+  'src/questions/__tests__/elicitationApi.test.ts',
+  'src/questions/__tests__/elicitationSteps.test.ts',
+  'src/questions/__tests__/useCountdown.test.ts',
+  'src/questions/__tests__/ElicitationCard.test.tsx',
   'src/chat/artifacts/artifactMeta.test.ts',
   'src/chat/artifacts/downloadAll.test.ts',
   'src/chat/voice/speechAdapter.test.ts',

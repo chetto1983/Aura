@@ -15,6 +15,7 @@ import {
   type StreamRunOptions,
   type TurnUsage,
 } from './sseAdapter';
+import { elicitationSignalValue, type ElicitationSignal } from './sseAdapter_elicitation';
 import { errorDetail } from './sseAdapter_frames';
 import {
   runControlURL,
@@ -60,6 +61,9 @@ export interface AttachRunOptions {
   /** Fires once per `aura.steer` frame — the reattach pump's half of the mid-turn redirect
    *  echo (amendment #132, STEER-03), mirroring StreamRunOptions.onSteer exactly. */
   readonly onSteer?: (notice: SteerNotice) => void;
+  /** Mirrors StreamRunOptions.onElicitation on the reattach pump: a reloaded tab's form
+   *  comes back. */
+  readonly onElicitation?: (signal: ElicitationSignal) => void;
   readonly newId?: () => string;
   readonly maxRetries?: number;
   readonly backoffBaseMs?: number;
@@ -79,6 +83,7 @@ interface EngineOptions {
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
+  readonly onElicitation?: ((signal: ElicitationSignal) => void) | undefined;
   readonly onRunId?: ((runId: string) => void) | undefined;
   readonly onSnapshotReplace?: ((messages: ThreadMessageLike[]) => void) | undefined;
   readonly onTerminal?: (() => void) | undefined;
@@ -110,6 +115,7 @@ function makeEngine(state: AssistantTurnState, opts: EngineOptions): ResumeEngin
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
+    onElicitation: opts.onElicitation,
     onRunId: opts.onRunId,
     onSnapshotReplace: opts.onSnapshotReplace,
     onTerminal: opts.onTerminal,
@@ -177,6 +183,8 @@ async function pumpBody(
     if (artifact !== null) eng.onArtifact?.(artifact.asset_id);
     const steer = steerNoticeValue(frame);
     if (steer !== null) eng.onSteer?.(steer);
+    const elicitation = elicitationSignalValue(frame);
+    if (elicitation !== null) eng.onElicitation?.(elicitation);
     if ((frame.type === 'RUN_FINISHED' || frame.type === 'RUN_ERROR') && !eng.terminal) {
       eng.terminal = true;
       eng.onTerminal?.();

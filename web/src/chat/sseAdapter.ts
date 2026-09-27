@@ -1,6 +1,7 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
 import { isMcpViewDescriptor } from './mcpapps/hostProtocol';
+import { elicitationSignalValue, type ElicitationSignal } from './sseAdapter_elicitation';
 import { errorDetail, type AguiFrame } from './sseAdapter_frames';
 import {
   ensureReasoning,
@@ -300,10 +301,11 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
       if (frame.name === 'aura.discard' && isDiscardNotice(frame.value)) {
         discardText(state, frame.value.message_id);
       }
-      // aura.steer (amendment #132, STEER-03) is deliberately NOT handled here: it falls
-      // through to the default no-op below every branch above, exactly as an unrecognized
-      // frame does. steerNoticeValue (above) is the ONLY decision point for it, fired from
-      // the PUMP (streamSSE below, and sseResume.ts's pumpBody) — never from this reducer.
+      // aura.steer (amendment #132, STEER-03) and aura.elicitation* (spec 2026-09-25) are
+      // deliberately NOT handled here: they fall through to the default no-op below every
+      // branch above, exactly as an unrecognized frame does. steerNoticeValue (above) and
+      // elicitationSignalValue are the ONLY decision points for them, fired from the PUMP
+      // (streamSSE below, and sseResume.ts's pumpBody) — never from this reducer.
       return state;
     }
     case 'REASONING_START':
@@ -416,6 +418,9 @@ export interface StreamRunOptions {
   /** Fires once per `aura.steer` frame (amendment #132, STEER-03) — the mid-turn redirect
    *  echo, from the PUMP, never from reduceFrame. Drives the cockpit's SteerNotice. */
   readonly onSteer?: (notice: SteerNotice) => void;
+  /** Fires once per aura.elicitation / aura.elicitation_resolved frame: a mounted MCP
+   *  server's form and how it closed, from the PUMP, never from reduceFrame. */
+  readonly onElicitation?: (signal: ElicitationSignal) => void;
   /** Mints the assistant message id; defaults to crypto.randomUUID. */
   readonly newId?: () => string;
 }
@@ -431,6 +436,7 @@ export interface StreamPostOptions {
   readonly onArtifact?: (assetId: string | undefined) => void;
   /** Mirrors StreamRunOptions.onSteer — the mid-turn redirect echo. */
   readonly onSteer?: (notice: SteerNotice) => void;
+  readonly onElicitation?: (signal: ElicitationSignal) => void;
   readonly newId?: () => string;
 }
 
@@ -444,6 +450,7 @@ interface StreamSSEOptions {
   readonly onUpdate: (message: ThreadMessageLike, usage: TurnUsage | undefined) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
+  readonly onElicitation?: ((signal: ElicitationSignal) => void) | undefined;
   readonly newId?: (() => string) | undefined;
 }
 
@@ -471,6 +478,8 @@ async function streamSSE(opts: StreamSSEOptions): Promise<TurnUsage | undefined>
     if (artifact !== null) opts.onArtifact?.(artifact.asset_id);
     const steer = steerNoticeValue(frame);
     if (steer !== null) opts.onSteer?.(steer);
+    const elicitation = elicitationSignalValue(frame);
+    if (elicitation !== null) opts.onElicitation?.(elicitation);
     opts.onUpdate(toThreadMessage(state), state.usage);
   }
   return state.usage;
@@ -488,6 +497,7 @@ export async function streamPost(opts: StreamPostOptions): Promise<TurnUsage | u
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
+    onElicitation: opts.onElicitation,
     request: () => [
       opts.url,
       {
@@ -513,6 +523,7 @@ export async function streamRun(opts: StreamRunOptions): Promise<TurnUsage | und
     onUpdate: opts.onUpdate,
     onArtifact: opts.onArtifact,
     onSteer: opts.onSteer,
+    onElicitation: opts.onElicitation,
     request: (id) => [
       '/agent/run',
       {

@@ -2,6 +2,7 @@ import { useCallback, type RefObject } from 'react';
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { assistantErrorMessage, isAbortError } from './ExternalStoreChat_folds';
 import { streamPost, type TurnUsage } from './sseAdapter';
+import type { ElicitationSignal } from './sseAdapter_elicitation';
 
 // ExternalStoreChat_streams — the scaffolding every non-primary stream shares: cancel the
 // history load in flight, take the run lock, open one AbortController, spend one usage
@@ -36,6 +37,9 @@ export interface StreamFoldDeps {
   ) => Promise<boolean>;
   readonly invalidateRuntimeReads: (id?: string) => void;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
+  /** A mounted MCP server's forms. Only the HITL resume can meet one: it runs detached through
+   *  /agent/run, while a branch re-run streams with no asker (conversations_branch_api.go). */
+  readonly onElicitation?: ((signal: ElicitationSignal) => void) | undefined;
   /** The message shown in place of the assistant turn when the stream fails. */
   readonly streamErrorText: string;
 }
@@ -70,6 +74,7 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
     prepareUsageBaseline,
     invalidateRuntimeReads,
     onArtifact,
+    onElicitation,
     streamErrorText,
   } = deps;
 
@@ -180,10 +185,11 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
           body: { threadId: resumeThreadId, messages: [] },
           signal: controller.signal,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
+          ...(onElicitation !== undefined ? { onElicitation } : {}),
           onUpdate,
         }),
       ),
-    [foldAppendedStream, onArtifact],
+    [foldAppendedStream, onArtifact, onElicitation],
   );
 
   return { foldReRun, foldAppendedStream, foldResumeRun };

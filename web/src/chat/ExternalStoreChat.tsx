@@ -17,6 +17,7 @@ import {
 } from '../conversations/useConversations';
 import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
+import { useThreadElicitations } from '../questions/useThreadElicitations';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer, type ComposerDraftPrompt } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
@@ -137,6 +138,7 @@ export function ExternalStoreChat({
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;
   const steer = useSteerSend({ threadId, liveRunId, activeRunIdRef, isRunning, setMessages });
+  const elicitations = useThreadElicitations(threadId, isRunning, liveRunId);
   const { effort, setEffort } = useReasoningEffort(
     threadId,
     hydratedEffort,
@@ -146,9 +148,11 @@ export function ExternalStoreChat({
   // assistant-ui publishes adapter callbacks in a passive effect; an older onNew callback must
   // still observe a selection committed by the current render.
   const effortRef = useRef(effort);
+  const elicitationRef = useRef({ threadId, onSignal: elicitations.onSignal });
   useLayoutEffect(() => {
     effortRef.current = effort;
-  }, [effort]);
+    elicitationRef.current = { threadId, onSignal: elicitations.onSignal };
+  }, [effort, threadId, elicitations.onSignal]);
 
   const invalidateRuntimeReads = useCallback(
     (id = threadId) => {
@@ -245,6 +249,10 @@ export function ExternalStoreChat({
           onSnapshotReplace: setMessages,
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           onSteer: steer.onFrame,
+          onElicitation: (signal) => {
+            if (!controller.signal.aborted && elicitationRef.current.threadId === runThreadId)
+              elicitationRef.current.onSignal(signal);
+          },
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
             setMessages((prev) => {
@@ -425,6 +433,7 @@ export function ExternalStoreChat({
     prepareUsageBaseline,
     invalidateRuntimeReads,
     onArtifact,
+    onElicitation: elicitations.onSignal,
     streamErrorText: t('chat.error.stream'),
   });
 
@@ -445,6 +454,7 @@ export function ExternalStoreChat({
     setMessages,
     onArtifact,
     onSteer: steer.onFrame,
+    onElicitation: elicitations.onSignal,
   });
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);
@@ -559,6 +569,7 @@ export function ExternalStoreChat({
 
             <ThreadApprovalCards
               approvals={threadApprovals.approvals}
+              elicitations={elicitations.items}
               isStreaming={isRunning}
               onResolutionStarted={threadApprovals.onResolutionStarted}
               onResolutionFailed={threadApprovals.onResolutionFailed}
