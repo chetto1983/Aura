@@ -31,6 +31,10 @@ import (
 // retry is never useful; 5s is a polite floor, not a measured SLA.
 const detachRetryAfterSec = "5"
 
+// Terminal delivery gets a short grace period after cancellation so a reading
+// viewer sees the ending, while a stalled viewer cannot retain the session lock.
+const terminalDeliveryTimeout = time.Second
+
 // detachedRunContext derives the producer ctx from the fully-decorated request ctx
 // (§1.1). Values survive, cancellation does not: the client's disconnect must never
 // reach the agent turn (golang-context: WithoutCancel for background work outliving
@@ -177,13 +181,13 @@ func (s *Server) runProducer(ctx context.Context, cancel context.CancelFunc, ses
 	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 		reason = sanitizeErr(err)
 	}
-	// WithoutCancel is the other half of the fix, and without it the first half does nothing.
-	// append writes the ring and THEN fans out to live subscribers, and the fan aborts on a done
-	// ctx — which this ctx, by construction, always is here. The frame would reach a later
-	// resume and never the subscriber actually waiting for it, so the cockpit would still hang
-	// on the one path that matters. The announcement of an ending must outlive the cancellation
-	// that caused it.
-	sess.append(context.WithoutCancel(ctx), redactEvent(events.NewRunErrorEvent(reason)))
+	// Outlive cancellation long enough to notify a reading viewer, but release
+	// sess.mu if a connected viewer stalls. Question resolution and finish also
+	// need that lock. append records the frame before fan-out, so even when the
+	// grace expires, replay retains the ending and every question can close.
+	terminalCtx, stopTerminal := context.WithTimeout(context.WithoutCancel(ctx), terminalDeliveryTimeout)
+	defer stopTerminal()
+	sess.append(terminalCtx, redactEvent(events.NewRunErrorEvent(reason)))
 }
 
 // isTerminalRunEvent reports whether ev is the frame a client ends a run on. Both types count:

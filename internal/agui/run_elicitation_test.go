@@ -513,3 +513,69 @@ func TestAnAnswerReplayNeverDeliversTwice(t *testing.T) {
 		t.Fatalf("replay = %+v, want a response without answer values", registry.replay)
 	}
 }
+
+func TestStalledTerminalFrameCannotHoldQuestionCancellation(t *testing.T) {
+	sess := newRunSession("run-forms", "thread", localIdentityID, 16, 1, nil)
+	runCtx, endRun := context.WithCancel(context.Background())
+	callCtx, endCall := context.WithCancel(context.Background())
+	sess.questions.bind(runCtx)
+	ch, unsubscribe, _ := sess.subscribeFrom(0)
+	defer func() {
+		endRun()
+		endCall()
+		unsubscribe() // Releases the deliberately stalled producer even on RED.
+		sess.finish()
+	}()
+	got := ask(callCtx, sess, nameQuestion(t))
+	question := nextCustom(t, ch, ElicitationEventName).(elicitationFrame)
+	sess.append(context.Background(), events.NewCustomEvent("fill-subscriber"))
+	endRun()
+	producerDone := make(chan struct{})
+	go func() {
+		(&Server{}).runProducer(runCtx, endRun, sess, func(func(events.Event, error) bool) {})
+		close(producerDone)
+	}()
+	// Only the producer can own sess.mu here. Its terminal frame has no room in
+	// the subscriber, so observing the held lock establishes the blocked send.
+	deadline := time.Now().Add(time.Second)
+	for sess.mu.TryLock() {
+		sess.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("producer never entered the stalled terminal publication")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	endCall()
+	select {
+	case <-producerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("terminal publication still holds the session and question cancellation after the run ended")
+	}
+	if r := result(t, got); !errors.Is(r.err, context.Canceled) && r.answer.Action != elicit.ActionCancel {
+		t.Fatalf("Ask = %+v, want cancellation", r)
+	}
+	if terminal, _ := sess.terminalState(); !terminal || len(sess.questions.open()) != 0 {
+		t.Fatal("finished producer left a live session or an open question")
+	}
+	replay, cancelReplay, ok := sess.subscribeFrom(0)
+	defer cancelReplay()
+	if !ok {
+		t.Fatal("terminal replay unavailable")
+	}
+	var terminalFrames, resolvedFrames int
+	for sev := range replay {
+		if sev.Ev.Type() == events.EventTypeRunError {
+			terminalFrames++
+		}
+		if ce, ok := sev.Ev.(*events.CustomEvent); ok && ce.Name == ElicitationResolvedEventName {
+			resolved := ce.Value.(elicitationResolvedFrame)
+			if resolved.ID != question.ID || resolved.Action != elicit.ActionCancel {
+				t.Fatalf("resolved = %+v, want this question cancelled", resolved)
+			}
+			resolvedFrames++
+		}
+	}
+	if terminalFrames != 1 || resolvedFrames != 1 {
+		t.Fatalf("replay has %d terminal and %d resolution frames, want one each", terminalFrames, resolvedFrames)
+	}
+}
