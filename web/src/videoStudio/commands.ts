@@ -6,14 +6,18 @@
 // The lane is a sequence, so a trim, a split and a removal all work the same way: they replace one
 // clip with the slices of it that survive, and every later clip moves because its start is what the
 // clips before it leave. An overlay rides the content it sits on — it follows its slice, and it
-// goes when that content goes, the way removing a clip removes the overlays anchored to it.
+// goes when that content goes, the way removing a clip removes the overlays anchored to it. A sound
+// never goes with its content: it re-anchors (audioLane.ts), and its own commands are in
+// commands_audio.ts.
 
+import { reanchorAudio, withoutAudioItem, type Placement } from './audioLane';
 import {
   clipAt,
   clipTimelineDuration,
   overlayWindow,
   projectDuration,
   sourceOf,
+  type AudioTrack,
   type OverlayAnchor,
   type OverlayItem,
   type OverlayTrack,
@@ -43,17 +47,12 @@ const REFUSAL = {
 // Handles, scrubs and agents all arrive with floats. Without a tolerance, dragging a handle to the
 // very end of a source refuses itself on the last bit of a sum, and a cut placed on a boundary
 // makes a clip a nanosecond long instead of refusing.
-const EPSILON = 1e-6;
+export const EPSILON = 1e-6;
 
 /** A surviving piece of a clip, in seconds measured from where that clip starts in its source. */
 interface Slice {
   readonly from: number;
   readonly to: number;
-}
-
-/** Where a slice landed: the id it carries, over the span of the original clip it holds. */
-interface Placement extends Slice {
-  readonly id: string;
 }
 
 /**
@@ -162,11 +161,17 @@ function resliceLane(
       });
     }
   }
-  return {
+  const next: VideoProject = {
     ...project,
     video: normalizeJunctions(video),
     overlays: reanchor(project.overlays, placements),
   };
+  return withAudio(next, reanchorAudio(project, next, placements));
+}
+
+/** The lanes a re-anchor produced; a project saved before audio existed stays without the key. */
+function withAudio(project: VideoProject, audio: readonly AudioTrack[] | undefined): VideoProject {
+  return audio === undefined ? project : { ...project, audio };
 }
 
 /** An overlay rides its content: it moves to the slice holding its offset, or goes with the rest. */
@@ -516,13 +521,14 @@ export interface RemoveItemArgs {
 }
 
 /**
- * Remove a clip or an overlay. A clip takes the overlays anchored to it with it — they have
- * nothing left to hang on — which is what the shell warns about before asking for this.
+ * Remove a clip, an overlay or a sound. A clip takes the overlays anchored to it with it — they
+ * have nothing left to hang on — which is what the shell warns about before asking for this. The
+ * sounds on it re-anchor instead (audioLane.ts), except one extracted from it.
  */
 export function removeItem(project: VideoProject, args: RemoveItemArgs): VideoProject {
   const clip = project.video.find((item) => item.id === args.itemId);
   if (clip !== undefined) {
-    return {
+    const next: VideoProject = {
       ...project,
       video: normalizeJunctions(project.video.filter((item) => item.id !== clip.id)),
       overlays: project.overlays.map((lane) => ({
@@ -530,7 +536,10 @@ export function removeItem(project: VideoProject, args: RemoveItemArgs): VideoPr
         items: lane.items.filter((item) => item.anchor.clipId !== clip.id),
       })),
     };
+    return withAudio(next, reanchorAudio(project, next, new Map([[clip.id, []]])));
   }
+  const withoutSound = withoutAudioItem(project, args.itemId);
+  if (withoutSound !== undefined) return withoutSound;
   const { track, item } = locateOverlay(project, args.itemId);
   return withTrackItems(project, track.id, (items) =>
     items.filter((candidate) => candidate.id !== item.id),

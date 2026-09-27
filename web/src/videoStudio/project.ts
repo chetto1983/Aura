@@ -99,7 +99,7 @@ export interface OverlayTrack {
 }
 
 export interface EnvelopePoint {
-  readonly time: number; // seconds from the item's start
+  readonly time: number; // source seconds from the item's sourceStart: it stays on its sound when the speed changes
   readonly gain: number; // 0–1: the envelope only attenuates; the item's volume boosts
 }
 

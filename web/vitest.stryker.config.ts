@@ -76,6 +76,9 @@ const mutationTests = [
   'src/update/__tests__/updateModel.test.ts',
   'src/update/__tests__/updateTime.test.ts',
   'src/update/__tests__/useSystemUpdate.test.tsx',
+  // Video Studio audio core (spec 2026-09-27): the lane rules and the audio commands.
+  'src/videoStudio/__tests__/audioLane.test.ts',
+  'src/videoStudio/__tests__/commands_audio.test.ts',
 ] as const;
 
 export default defineConfig({

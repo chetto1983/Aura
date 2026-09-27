@@ -6,6 +6,9 @@
 // unchanged, so renaming one of these five here renames nothing in commands.ts — it makes the
 // refusal render as its own key. The last two (`sourceUndecodable`, `sourceMissingAsset`) are
 // the shell's own, raised at the door where a source is read rather than inside a command.
+// The audio lanes' strings live in resources.videoStudioAudio.ts and are merged here as `audio`.
+
+import { videoStudioAudioEn, videoStudioAudioIt } from './resources.videoStudioAudio';
 
 export const videoStudioEn = {
   videoStudio: {
@@ -190,6 +193,7 @@ export const videoStudioEn = {
       saved: 'Project saved.',
       failed: 'The project could not be saved: {{reason}}',
     },
+    audio: videoStudioAudioEn,
   },
 };
 
@@ -376,5 +380,6 @@ export const videoStudioIt = {
       saved: 'Progetto salvato.',
       failed: 'Non è stato possibile salvare il progetto: {{reason}}',
     },
+    audio: videoStudioAudioIt,
   },
 };

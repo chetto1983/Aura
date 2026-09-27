@@ -70,7 +70,9 @@
     "src/update/systemUpdateApi.ts",
     "src/update/updateModel.ts",
     "src/update/updateTime.ts",
-    "src/update/useSystemUpdate.ts"
+    "src/update/useSystemUpdate.ts",
+    "src/videoStudio/audioLane.ts",
+    "src/videoStudio/commands_audio.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,
