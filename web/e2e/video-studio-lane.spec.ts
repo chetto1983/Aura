@@ -3,12 +3,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
 import { expect, test } from './support/assetCleanup';
+import { uploadAsset } from './support/assetUpload';
 import { levelBetween, windowPowers } from './support/audioMeasure';
 import {
   AUDIO_FIXTURES,
   exportTo,
   pressAddAction,
   reopen,
+  setField,
   uploadClip,
 } from './support/videoStudio';
 
@@ -123,4 +125,64 @@ test('a sound goes on its lane under a thumb, with the tools a sound has', async
   await tools.getByRole('button', { name: 'Audio', exact: true }).click();
   await expect(slider(editor, 'Fade in')).toBeVisible();
   await info.attach('lane-phone', { contentType: 'image/png', body: await page.screenshot() });
+});
+
+test('a trim that crowds one sound onto another gives it a lane of its own, and both stay editable', async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name.startsWith('mobile'),
+    'the lane rule is the same under a thumb; the phone path is the test above',
+  );
+  test.setTimeout(6 * 60_000);
+  const clip = await uploadClip(page);
+  const music = await uploadAsset(
+    page,
+    resolve(AUDIO_FIXTURES, 'music.wav'),
+    'music.wav',
+    'audio/wav',
+    { use: 'media' },
+  );
+  const film = silentFilm(clip, 'lane crowd check');
+  const sound = (id: string, clipId: string, duration: number) => ({
+    id,
+    sourceId: 'src-m',
+    anchor: { clipId, offset: 0 },
+    sourceStart: 0,
+    duration,
+    volume: 1,
+    muted: false,
+  });
+  // One lane: 0–3 s on clip 1 and 4–6 s on clip 2. Trimming clip 1 to 2 s brings clip 2's sound
+  // to 2–4 s, over the first one.
+  const editor = await reopen(
+    page,
+    {
+      ...film,
+      sources: [
+        ...film.sources,
+        { id: 'src-m', assetId: music, kind: 'audio', duration: 8, size: { width: 0, height: 0 } },
+      ],
+      audio: [{ id: 'lane-a', items: [sound('early', 'clip-1', 3), sound('late', 'clip-2', 2)] }],
+    },
+    clip,
+  );
+  await expect(editor.getByRole('button', { name: 'Sound 2' })).toBeVisible({ timeout: 60_000 });
+  await expect(editor.getByRole('group', { name: 'Audio 2' })).toHaveCount(0);
+
+  await editor.getByRole('button', { name: 'Clip 1' }).click();
+  const inspector = editor.getByRole('region', { name: 'Properties' });
+  await inspector.getByRole('tab', { name: 'Time' }).click();
+  await setField(inspector, 'End', '00:02.0');
+  const second = editor.getByRole('group', { name: 'Audio 2' });
+  await expect(second.getByRole('button', { name: 'Sound 2' })).toBeVisible();
+
+  for (const name of ['Sound 1', 'Sound 2']) {
+    await editor.getByRole('button', { name }).click();
+    await inspector.getByRole('tab', { name: 'Audio' }).click();
+    await inspector.getByRole('switch', { name: 'Mute' }).click();
+    await expect(inspector.getByRole('switch', { name: 'Mute' })).toBeChecked();
+  }
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await info.attach('lane-crowd', { contentType: 'image/png', body: await page.screenshot() });
 });
