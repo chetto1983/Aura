@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import urllib.error
 
 import cocoindex as coco
@@ -187,9 +188,13 @@ def test_a_route_failure_fails_the_batch_without_splitting_it(monkeypatch, code)
 
 def test_one_refused_input_fails_only_its_own_caller(monkeypatch):
     refused: list[int] = []
+    gate_entered, gate_open = threading.Event(), threading.Event()
 
     def answer(req):
         inputs = json.loads(req.data)["input"]
+        if any("CANCELLO" in text for text in inputs):
+            gate_entered.set()
+            gate_open.wait(timeout=30)
         if any("RIFIUTATO" in text for text in inputs):
             refused.append(len(inputs))
             raise _http_error(400)
@@ -197,9 +202,18 @@ def test_one_refused_input_fails_only_its_own_caller(monkeypatch):
 
     monkeypatch.setattr(embed.urllib.request, "urlopen", _embeddings_only(answer))
 
+    # CocoIndex sends the first call to arrive at once and batches the ones that queue behind
+    # it, and which call arrives first is timing: in CI the refused text went alone, 1 run in 20
+    # (2026-09-27). A first request held open makes the four queue and share the next one.
     async def embed_all():
+        gate = asyncio.ensure_future(embed.embed_text("CANCELLO"))
+        await asyncio.to_thread(gate_entered.wait, 30)
         texts = ["uno", "RIFIUTATO", "tre", "quattro"]
-        return await asyncio.gather(*(embed.embed_text(text) for text in texts), return_exceptions=True)
+        calls = asyncio.gather(*(embed.embed_text(text) for text in texts), return_exceptions=True)
+        await asyncio.sleep(0.5)
+        gate_open.set()
+        await gate
+        return await calls
 
     results = asyncio.run(embed_all())
 
