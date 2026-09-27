@@ -38,6 +38,9 @@ type runtimeToolHandles struct {
 	// no MCP server. `aura tools` does go through it, so it carries a router-less sink
 	// it never reaches: it executes no tool.
 	MCPFiles mcptools.FileSink
+	// Elicitation is the fallback for requests no run can answer. Runtime mounts
+	// advertise form elicitation; operator-less paths leave this nil.
+	Elicitation mcptools.ElicitationConsent
 	// MCPBox starts box-runtime MCP servers in the calling identity's sandbox. Nil where
 	// there is no sandbox router, which refuses such a server instead of running it here.
 	MCPBox mcp.BoxLauncher

@@ -25,11 +25,11 @@ import (
 // mount-time tools/list): a hung handshake is dropped within handshakeCtx's
 // deadline without affecting processCtx or any other server sharing it. opts
 // carries the per-mount choices. cmd/aura's boot mounts a stdio-configured server
-// through here with the file sink (Files) alone; a managed server, stdio or HTTP, goes
-// through MountManagedServerWithOptions with mcpMountOptions (Egress, Views, OAuth,
-// Files) at boot and live. No mount is given Elicitation today, so none advertises
-// that capability. A stdio mount has no use for Egress or OAuth, which shape an HTTP
-// connection.
+// through here with stdioMountOptions (Files, Elicitation); a managed server, stdio
+// or HTTP, goes through MountManagedServerWithOptions with mcpMountOptions (Egress,
+// Views, OAuth, Files, Box, Elicitation) at boot and live. Every runtime mount is
+// given Elicitation; `aura tools` and the one-shot pipe pass none. A stdio mount
+// has no use for Egress or OAuth, which shape an HTTP connection.
 func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, opts MountOptions) (closer func() error, names []string, err error) {
 	closer, names, _, err = mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, defaultBridgePolicy(name), opts)
 	return closer, names, err
@@ -40,10 +40,11 @@ func MountServer(processCtx, handshakeCtx context.Context, reg *tools.Registry, 
 // consent surface a server-initiated elicitation reaches (plan 45.1-06).
 //
 // A zero Elicitation is meaningful, not merely absent: it leaves
-// SessionOptions.Elicitation nil, and a nil ClientOptions.ElicitationHandler
-// means the client does NOT advertise the elicitation capability. That is
-// today's honest posture — only a mount with a real consent surface should tell
-// servers it can be asked.
+// SessionOptions.Elicitation nil, and a nil ClientOptions.ElicitationHandler means
+// the client does NOT advertise the capability. The paths with no operator pass
+// none. Every other mount passes the composition root's fallback, and a form
+// asked inside a cockpit run reaches that run's own elicit.Asker first
+// (elicitation_route.go).
 type MountOptions struct {
 	Egress      mcp.EgressPolicy
 	Elicitation ElicitationConsent
@@ -128,10 +129,10 @@ func configureIdentityScopedHeaders(options *mcp.SessionOptions, policy bridgePo
 // CALL after a successful mount gets the redial-on-transport-error behavior the
 // stdio branch already had.
 func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
-	elicit := elicitationHandlerFor(name, opts.Elicitation)
+	handler := elicitationHandlerFor(name, opts.Elicitation)
 	connect := func(_ context.Context, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy, identityctx.IdentityID(hctx))
-		o.Elicitation = elicit
+		o.Elicitation = handler
 		o.OAuth = opts.OAuth
 		// D-10 (Phase 51): only an identity-scoped mount (the memory/arcadedb-mcp
 		// surface today) needs the host-derived actor on the wire at all -- gated
@@ -156,10 +157,10 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 // exactly like an OAuth server: the manifest comes from the identity handshakeCtx carries,
 // and a call is refused unless it comes from the session's own identity.
 func mountBoxHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
-	elicit := elicitationHandlerFor(name, opts.Elicitation)
+	handler := elicitationHandlerFor(name, opts.Elicitation)
 	connect := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy, identityctx.IdentityID(hctx))
-		o.Elicitation = elicit
+		o.Elicitation = handler
 		o.Box = opts.Box
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
@@ -204,11 +205,11 @@ func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tool
 // behavior.
 func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	var srv *MountedServer
-	elicit := elicitationHandlerFor(name, opts.Elicitation)
+	handler := elicitationHandlerFor(name, opts.Elicitation)
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
 		o.Sending = sendingMiddleware(policy, "")
 		o.ToolListChanged = srv.onToolListChanged
-		o.Elicitation = elicit
+		o.Elicitation = handler
 		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
 	}
 	srv = NewMountedServer(name, open)

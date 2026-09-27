@@ -60,3 +60,36 @@ func requireFileSinkOver(t *testing.T, handles runtimeToolHandles, router *users
 		t.Fatalf("MCPFiles = %#v, want an MCPFileSink over the boot router", handles.MCPFiles)
 	}
 }
+
+func TestEveryRuntimeMountCarriesTheElicitationFallback(t *testing.T) {
+	consent := newElicitationConsent()
+	handles := &runtimeToolHandles{MCPFiles: &tools.MCPFileSink{}, Elicitation: consent}
+
+	managed := mcpMountOptions(context.Background(), true, mcp.ManagedServer{URL: "https://mcp.example/mcp"}, handles)
+	stdio := stdioMountOptions(handles)
+
+	if managed.Elicitation != consent || stdio.Elicitation != consent {
+		t.Fatalf("managed=%v stdio=%v, want both mounts handed the fallback consent", managed.Elicitation, stdio.Elicitation)
+	}
+	if stdio.Files != handles.MCPFiles {
+		t.Fatalf("stdio options lost the file sink: %+v", stdio)
+	}
+}
+
+// Live mounts read the consent off the boot handles, so it must be there even when
+// boot mounted nothing and left through the empty-set early return.
+func TestBuildRegistryWithMCP_NoBootServersStillHandsLiveMountsTheConsent(t *testing.T) {
+	withMemoryMCPRegistry(t)
+	seedMCPRegistry(t, withDefaultOnRecipesOff(mcp.ManagedConfig{}))
+	consent := newElicitationConsent()
+
+	_, handles, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil, nil, nil, consent)
+	if err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", err)
+	}
+	defer func() { _ = closeMCPServers(closers) }()
+
+	if handles.Elicitation != consent {
+		t.Fatalf("handles.Elicitation = %v, want the consent boot was given", handles.Elicitation)
+	}
+}

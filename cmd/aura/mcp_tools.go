@@ -270,10 +270,16 @@ func runtimeMCPOAuth(ctx context.Context) mcp.OAuthOptions {
 // carries. That already happened once with the grant store (runtimeMCPOAuth).
 func mcpMountOptions(ctx context.Context, strict bool, server mcp.ManagedServer, handles *runtimeToolHandles) mcptools.MountOptions {
 	return mcptools.MountOptions{
-		Egress: mcp.RuntimeEgressPolicy(strict, server),
-		Views:  handles.MCPViews,
-		OAuth:  runtimeMCPOAuth(ctx),
-		Files:  handles.MCPFiles,
-		Box:    handles.MCPBox,
+		Egress:      mcp.RuntimeEgressPolicy(strict, server),
+		Views:       handles.MCPViews,
+		OAuth:       runtimeMCPOAuth(ctx),
+		Files:       handles.MCPFiles,
+		Box:         handles.MCPBox,
+		Elicitation: handles.Elicitation,
 	}
+}
+
+// stdioMountOptions carries the runtime choices needed by a stdio-configured server.
+func stdioMountOptions(handles *runtimeToolHandles) mcptools.MountOptions {
+	return mcptools.MountOptions{Files: handles.MCPFiles, Elicitation: handles.Elicitation}
 }

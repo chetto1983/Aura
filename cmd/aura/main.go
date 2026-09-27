@@ -350,6 +350,7 @@ func buildRegistryWithMCP(
 	handles.MCPViews = mcp.NewViewCatalog()
 	handles.ViewCallers = mcptools.ViewCallers{}
 	handles.MCPFiles = &tools.MCPFileSink{Router: sandboxRouter}
+	handles.Elicitation = consent
 	handles.MCPBox = newSandboxMCPBox(sandboxRouter)
 	if len(mcpServers) == 0 && len(mcpPolicies) == 0 {
 		return reg, handles, nil, nil
@@ -416,7 +417,7 @@ func buildRegistryWithMCP(
 		mountOnce := func(c context.Context) (func() error, []string, error) {
 			server, managed := mcpPolicies[name]
 			if !managed {
-				return mcptools.MountServer(mountCtx, c, reg, name, mcpServers[name], mcptools.MountOptions{Files: handles.MCPFiles})
+				return mcptools.MountServer(mountCtx, c, reg, name, mcpServers[name], stdioMountOptions(&handles))
 			}
 			closer, names, host, mountErr := mcptools.MountManagedServerWithOptions(
 				mountCtx,
