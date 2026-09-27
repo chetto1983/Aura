@@ -33,6 +33,7 @@
     "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 283, "total_statements": 336},
     "github.com/chetto1983/aura/internal/documents": {"mode": "target"},
     "github.com/chetto1983/aura/internal/documents/filecard": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/elicit": {"mode": "target"},
     "github.com/chetto1983/aura/internal/embeddings": {"mode": "target"},
     "github.com/chetto1983/aura/internal/envutil": {"mode": "target"},
     "github.com/chetto1983/aura/internal/gateway": {"mode": "target"},
