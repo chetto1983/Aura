@@ -197,10 +197,25 @@ async function editorOnSeededClip(page: Page, prompt: string): Promise<Locator> 
   return editor;
 }
 
+/**
+ * Presses one of the editor's add actions. On a desktop they sit in the rail. At phone width the
+ * rail is gone and the tool bar offers them only while nothing is selected, and the editor opens
+ * with the first clip selected, so the bar's back button goes first: it closes an open panel,
+ * then clears the selection (VideoStudio_mobile.tsx, video-studio-mobile.css).
+ */
+async function pressAddAction(editor: Locator, name: string) {
+  const action = editor.getByRole('button', { name });
+  const back = editor.getByRole('button', { name: 'Close tool panel' });
+  for (let press = 0; press < 2 && !(await action.isVisible()); press += 1) {
+    await back.click();
+  }
+  await action.click();
+}
+
 /** Picks a file through the editor's own button, the way an operator does. */
 async function addClip(page: Page, editor: Locator, file: string) {
   const chooser = page.waitForEvent('filechooser');
-  await editor.getByRole('button', { name: 'Add a clip' }).click();
+  await pressAddAction(editor, 'Add a clip');
   await (await chooser).setFiles(resolve(FIXTURES, file));
 }
 
@@ -367,8 +382,12 @@ test.describe('the multi-track video editor', () => {
 
     // The title hangs on the clip under the playhead, which starts at zero, and lasts three
     // seconds. The workspace selects what it just added, so the inspector is already on it.
-    await editor.getByRole('button', { name: 'Add a title' }).click();
+    await pressAddAction(editor, 'Add a title');
     await expect(editor.getByRole('button', { name: 'Title 1' })).toBeVisible();
+    // At phone width the properties are a sheet only the tool bar opens, and adding a title does
+    // not open it; any of the bar's panels shows the selected title's fields.
+    const openSheet = editor.getByRole('button', { name: 'Transform' });
+    if (await openSheet.isVisible()) await openSheet.click();
     const inspector = editor.getByRole('region', { name: 'Properties' });
     await setField(inspector, 'Text', TITLE.text);
     await setField(inspector, 'Text size', TITLE.size);
@@ -526,12 +545,14 @@ test.describe('the multi-track video editor', () => {
     await editor.getByRole('button', { name: 'Zoom in' }).tap();
     await expect.poll(ruler).not.toBe(before);
 
-    // A tap selects, and the inspector's fields commit what a thumb types into them.
+    // A tap selects, the tool bar's Time panel opens the sheet on the clip's in and out points,
+    // and its fields commit what a thumb types into them. The sheet covers the lane, so it is
+    // closed before the lane is read.
     await editor.getByRole('button', { name: 'Clip 1' }).tap();
-    // On a phone the inspector opens from the tool bar, on the tool's own tab.
     await editor.getByRole('button', { name: 'Time', exact: true }).tap();
     const inspector = editor.getByRole('region', { name: 'Properties' });
     await setField(inspector, 'End', '00:03.0');
+    await editor.getByRole('button', { name: 'Close tool panel' }).tap();
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toHaveText('00:03.0');
 
     await expectNothingLeftTheAppliance(page, network);
