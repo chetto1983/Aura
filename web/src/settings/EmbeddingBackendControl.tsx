@@ -32,7 +32,6 @@ interface EmbeddingBackendControlProps {
   readonly loaded: LoadedState;
   readonly onValueChange: (key: SettingsKey, value: string) => void;
   readonly modelPicker: PickerBinding;
-  readonly openRouterAvailable: boolean;
 }
 
 type ChangeStatus =
@@ -59,7 +58,6 @@ export function EmbeddingBackendControl({
   loaded,
   onValueChange,
   modelPicker,
-  openRouterAvailable,
 }: EmbeddingBackendControlProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -162,7 +160,6 @@ export function EmbeddingBackendControl({
       id: 'openrouter',
       label: t('settings.embedding.openrouter'),
       icon: Cloud,
-      disabled: !openRouterAvailable,
     },
     { id: 'manual', label: t('settings.embedding.manual'), icon: Link2 },
   ];
@@ -184,11 +181,6 @@ export function EmbeddingBackendControl({
           options={options}
           onChange={choose}
         />
-        {!openRouterAvailable ? (
-          <p className="text-[12px] text-text-faint">
-            {t('settings.embedding.openrouterUnavailable')}
-          </p>
-        ) : null}
       </div>
       {choice === 'local' ? (
         <SettingsFields

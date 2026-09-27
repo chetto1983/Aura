@@ -223,13 +223,13 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	wirePIMProviderApps(aguiServer, chat)
 	wireRemoteAccess(ctx, aguiServer, chat)
 	// Wire the 37C web-voice providers (WEBVOICE-01/02/03, D-12/D-13): a DEDICATED mp3
-	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + a cloud-only
-	// STTClient, each built ONLY when its cloud model is configured, injected via
-	// SetVoice. With neither model set the three voice routes degrade (POSTs 503,
+	// web TTSClient (Format="mp3", distinct from Telegram's opus client) + an STTClient,
+	// each on its local sidecar or, once its cloud model is set, on OpenRouter, injected via
+	// SetVoice. With neither configured the three voice routes degrade (POSTs 503,
 	// GET /api/voice/capabilities reports {false,false}); the Telegram opus path
 	// (multimodalConfig) is untouched.
 	wireVoiceProviders(aguiServer, chat.cfg)
-	aguiServer.SetModalityCatalog(newModalityCatalogRoute(chat.llmRuntime))
+	aguiServer.SetModalityCatalog(newModalityCatalogRoute())
 	// Wire the 37E reasoning-capability source (WEBMODEL-01/D-13): the active model's advertised
 	// effort set, selected by llm.ReasoningTarget and warmed once at boot (never blocking). It
 	// backs the composer reasoning-capabilities endpoint AND Stage-2 of the /agent/run effort

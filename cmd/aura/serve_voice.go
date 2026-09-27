@@ -51,44 +51,24 @@ func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
 
 // buildWebTTSClient builds the DEDICATED mp3 web TTS client (D-02): Format="mp3" (the
 // web override — distinct from Telegram's opus client, which multimodalConfig leaves at
-// cfg.TTSFormat). Local↔cloud SELECTABLE: LocalBaseURL=cfg.TTSBaseURL (the aura-tts
-// Kokoro sidecar) is the default; CloudModel=cfg.TTSModel switches it to OpenRouter over
-// the shared LLM.BaseURL/APIKey credential (the same one serve_channels.go maps for
-// Telegram). Returns nil only when NEITHER a local base URL NOR a cloud model is set, so
-// the caller leaves the tts capability absent. Extracted so serve_voice_test.go asserts
-// AudioFormat()=="mp3" + the local/cloud selection with no live call.
+// cfg.TTSFormat). Local↔cloud SELECTABLE: the aura-tts Kokoro sidecar is the default, and
+// cfg.TTSModel switches it to OpenRouter with the services key, whatever route the chat runs
+// on (config.SpeechCloudRoute). Returns nil only when NEITHER a local base URL NOR a cloud
+// model is set, so the caller leaves the tts capability absent.
 func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
-	voiceCfg := multimodal.TTSConfig{
-		LocalBaseURL:      cfg.TTSBaseURL,
-		Voice:             cfg.TTSVoice,
-		Format:            "mp3",
-		CloudModel:        cfg.TTSModel,
-		CloudVoice:        cfg.TTSCloudVoice,
-		OpenRouterBaseURL: cfg.LLM.BaseURL,
-		OpenRouterAPIKey:  cfg.LLM.APIKey,
-		TimeoutSec:        cfg.MultimodalTimeoutSec,
-	}
+	voiceCfg := multimodal.TTSConfigFrom(cfg, "mp3")
 	if !voiceCfg.Configured() {
 		return nil
 	}
 	return multimodal.NewTTSClient(voiceCfg)
 }
 
-// buildWebSTTClient builds the web STT client. Local↔cloud SELECTABLE:
-// LocalBaseURL=cfg.STTBaseURL (the aura-stt faster-whisper sidecar, multipart, with
-// cfg.STTModel + language) is the default; CloudModel=cfg.STTCloudModel switches it to
-// OpenRouter's JSON transcription route over the shared credential. Returns nil only when
-// NEITHER a local base URL NOR a cloud model is set, leaving the stt capability absent.
+// buildWebSTTClient builds the web STT client over the same projection the asset pipeline
+// uses: the aura-stt faster-whisper sidecar by default, OpenRouter's JSON transcription route
+// once cfg.STTCloudModel is set. Returns nil only when NEITHER a local base URL NOR a cloud
+// model is set, leaving the stt capability absent.
 func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
-	voiceCfg := multimodal.STTConfig{
-		LocalBaseURL:      cfg.STTBaseURL,
-		LocalModel:        cfg.STTModel,
-		Language:          cfg.STTLanguage,
-		CloudModel:        cfg.STTCloudModel,
-		OpenRouterBaseURL: cfg.LLM.BaseURL,
-		OpenRouterAPIKey:  cfg.LLM.APIKey,
-		TimeoutSec:        cfg.MultimodalTimeoutSec,
-	}
+	voiceCfg := multimodal.STTConfigFrom(cfg)
 	if !voiceCfg.Configured() {
 		return nil
 	}

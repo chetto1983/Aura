@@ -17,7 +17,6 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
 )
 
@@ -77,10 +76,6 @@ func (r rewriteHost) RoundTrip(req *http.Request) (*http.Response, error) {
 	out.URL.Host = r.target.Host
 	out.Host = r.target.Host
 	return http.DefaultTransport.RoundTrip(out)
-}
-
-func routeRuntime(provider, baseURL string) *llm.Runtime {
-	return llm.NewRuntime(nil, llm.Config{Provider: provider, BaseURL: baseURL, Model: "z-ai/glm-5.3"})
 }
 
 // TestMediaCatalogRouteServesThePickerAndTheToolsFromOneCache: the picker lists on the endpoint

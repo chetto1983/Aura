@@ -15,7 +15,6 @@ import type { MediaCatalogModel, ModelRow, VoiceCatalogModel } from './mediaMode
 import { modelRowMeta, type MediaLabels } from './mediaModelCatalogFormat';
 import {
   MODEL_SETTINGS_GROUPS,
-  OPENROUTER_BASE_URL,
   PROVIDER_OPTIONS,
   resolveProvider,
   routeForProvider,
@@ -118,22 +117,15 @@ export function ModelSettingsPanel({
   // The catalogue follows the FORM route, not the saved one, so the model list is the list
   // of the endpoint the operator is currently pointing at.
   const catalog = useModelCatalog(providerIDOf(provider), formBaseURL);
-  const savedProvider = loaded?.initial.AURA_LLM_PROVIDER ?? '';
-  const savedBaseURL = loaded?.initial.AURA_LLM_BASE_URL ?? '';
-  const savedRoute = `${savedProvider} ${savedBaseURL}`;
-  // The cloud STT, TTS and embedding pickers list from the route the daemon runs on, so a list
-  // exists only while the SAVED route is OpenRouter, and only the pane on screen asks for one.
-  const savedRouteIsCloud =
-    loaded !== undefined && resolveProvider(savedProvider, savedBaseURL) === 'cloud';
-  const backendsEnabled = savedRouteIsCloud && groups.includes('backends');
-  // Image and video are listed from OpenRouter whatever the chat route is: their rows show on
-  // every route, and a route change never asks for them again.
+  // Every picker below lists from OpenRouter whatever the chat route is: generation, cloud
+  // speech and cloud embeddings all run there. Only the pane on screen asks for its lists.
   const mediaEnabled = loaded !== undefined && groups.includes('routing');
-  const imageCatalog = useMediaModelCatalog('image', mediaEnabled, OPENROUTER_BASE_URL);
-  const videoCatalog = useMediaModelCatalog('video', mediaEnabled, OPENROUTER_BASE_URL);
-  const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled, savedRoute);
-  const speechCatalog = useMediaModelCatalog('speech', backendsEnabled, savedRoute);
-  const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled, savedRoute);
+  const backendsEnabled = loaded !== undefined && groups.includes('backends');
+  const imageCatalog = useMediaModelCatalog('image', mediaEnabled);
+  const videoCatalog = useMediaModelCatalog('video', mediaEnabled);
+  const transcriptionCatalog = useMediaModelCatalog('transcription', backendsEnabled);
+  const speechCatalog = useMediaModelCatalog('speech', backendsEnabled);
+  const embeddingCatalog = useMediaModelCatalog('embeddings', backendsEnabled);
   const cloudVoiceCatalog = ttsVoiceCatalog(speechCatalog, loaded?.values.AURA_TTS_MODEL ?? '');
 
   if (loadStatus === 'loading') {
@@ -264,7 +256,6 @@ export function ModelSettingsPanel({
                 loaded={loaded}
                 onValueChange={setValue}
                 modelPicker={embeddingPicker}
-                openRouterAvailable={savedRouteIsCloud}
               />
               <EmbeddingSpacePanel />
               <SettingsFields

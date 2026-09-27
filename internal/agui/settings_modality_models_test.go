@@ -78,16 +78,6 @@ func TestSpeechModelsReturnSupportedVoicesAndDropUncallableRows(t *testing.T) {
 	})
 }
 
-func TestModalityModelsRefuseALocalRouteWithTheWayOut(t *testing.T) {
-	rr := getMediaModels(t, modalityCatalogServer(&fakeModalityCatalog{err: ErrCatalogLocalRoute}), "/api/settings/transcription-models")
-	if rr.Code != http.StatusConflict {
-		t.Fatalf("status = %d (%s), want 409", rr.Code, rr.Body.String())
-	}
-	if body := rr.Body.String(); !strings.Contains(body, "voice") || !strings.Contains(body, "Cloud") {
-		t.Fatalf("body = %s, want it to name voice models and the way out", body)
-	}
-}
-
 func TestModalityModelsMapCatalogFailuresToBadGateway(t *testing.T) {
 	err := fmt.Errorf("%w: %w", llm.ErrModelCatalogUnavailable, errors.New("GET /models returned 503"))
 	rr := getMediaModels(t, modalityCatalogServer(&fakeModalityCatalog{err: err}), "/api/settings/speech-models")

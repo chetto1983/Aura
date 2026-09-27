@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 // voiceCaps drives the real GET /api/voice/capabilities handler on a wired server and
@@ -69,23 +71,82 @@ func TestWireVoiceProviders_OpusUntouched(t *testing.T) {
 	}
 }
 
-func TestBuildWebTTSClient_CloudUsesTheSelectedModelVoice(t *testing.T) {
-	var gotBody map[string]any
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_ = json.NewDecoder(r.Body).Decode(&gotBody)
-		_, _ = w.Write([]byte("mp3-bytes"))
-	}))
-	defer ts.Close()
+// ollamaChatVoiceConfig is a deployment whose chat runs on Ollama while both speech legs use
+// OpenRouter models: the shape in which, until 2026-09-27, the cloud speech clients were built
+// on the chat base URL and would post /audio/* to Ollama with the OpenRouter key.
+func ollamaChatVoiceConfig() *config.Config {
+	return &config.Config{
+		TTSModel: "qwen/qwen-audio-3.0-tts-flash", TTSCloudVoice: "longanhuan_v3.6", TTSVoice: "if_sara",
+		STTCloudModel: "openai/whisper-large-v3",
+		LLM: llm.Config{
+			Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1", APIKey: "sk-or-v1-services",
+		},
+	}
+}
 
-	client := buildWebTTSClient(&config.Config{
-		TTSModel: "qwen/qwen-audio-3.0-tts-flash", TTSCloudVoice: "longanhuan_v3.6",
-		TTSVoice: "if_sara", LLM: llm.Config{BaseURL: ts.URL},
-	})
-	if _, err := client.Synthesize(t.Context(), "ciao"); err != nil {
+// capturedCall is what a cloud speech request carried before the fake answered it.
+type capturedCall struct {
+	url, auth string
+	body      map[string]any
+}
+
+// openRouterFake answers every request with answer and records what reached it, keeping the
+// URL the client built so a test sees the real destination.
+func openRouterFake(t *testing.T, answer string) (*http.Client, *[]capturedCall) {
+	t.Helper()
+	var calls []capturedCall
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		call := capturedCall{url: r.URL.String(), auth: r.Header.Get("Authorization")}
+		_ = json.NewDecoder(r.Body).Decode(&call.body)
+		calls = append(calls, call)
+		return &http.Response{
+			StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}},
+			Body: io.NopCloser(strings.NewReader(answer)), Request: r,
+		}, nil
+	})}
+	return client, &calls
+}
+
+func TestCloudTTSRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
+	voiceCfg := multimodal.TTSConfigFrom(ollamaChatVoiceConfig(), "mp3")
+	client, calls := openRouterFake(t, "mp3-bytes")
+	voiceCfg.HTTPClient = client
+	if _, err := multimodal.NewTTSClient(voiceCfg).Synthesize(t.Context(), "ciao"); err != nil {
 		t.Fatalf("Synthesize: %v", err)
 	}
-	if gotBody["voice"] != "longanhuan_v3.6" {
-		t.Fatalf("cloud voice = %v, want longanhuan_v3.6 (never the local if_sara)", gotBody["voice"])
+	if len(*calls) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*calls))
+	}
+	call := (*calls)[0]
+	if call.url != openRouterBaseURL+"/audio/speech" || call.auth != "Bearer sk-or-v1-services" {
+		t.Fatalf("cloud TTS went to %q with %q, want OpenRouter with the services key", call.url, call.auth)
+	}
+	if call.body["voice"] != "longanhuan_v3.6" || call.body["response_format"] != "mp3" {
+		t.Fatalf("cloud TTS body = %v, want the cloud voice (never the local if_sara) in mp3", call.body)
+	}
+}
+
+func TestCloudSTTRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
+	voiceCfg := multimodal.STTConfigFrom(ollamaChatVoiceConfig())
+	client, calls := openRouterFake(t, `{"text":"ciao mondo"}`)
+	voiceCfg.HTTPClient = client
+	transcript, err := multimodal.NewSTTClient(voiceCfg).Transcribe(t.Context(), []byte("webm-bytes"), "dictation", "webm")
+	if err != nil || transcript != "ciao mondo" {
+		t.Fatalf("Transcribe = %q, %v", transcript, err)
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("requests = %d, want 1", len(*calls))
+	}
+	if call := (*calls)[0]; call.url != openRouterBaseURL+"/audio/transcriptions" || call.auth != "Bearer sk-or-v1-services" {
+		t.Fatalf("cloud STT went to %q with %q, want OpenRouter with the services key", call.url, call.auth)
+	}
+}
+
+func TestTelegramCloudTTSRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
+	tg := multimodalConfig(ollamaChatVoiceConfig())
+	if tg.OpenRouterBaseURL != openRouterBaseURL || tg.OpenRouterAPIKey != "sk-or-v1-services" {
+		t.Fatalf("telegram cloud TTS route = (%q, %q), want OpenRouter with the services key",
+			tg.OpenRouterBaseURL, tg.OpenRouterAPIKey)
 	}
 }
 

@@ -132,7 +132,6 @@ export const settingsEn = {
       local: 'Local',
       openrouter: 'OpenRouter',
       manual: 'Manual endpoint',
-      openrouterUnavailable: 'OpenRouter embeddings require OpenRouter as the primary model route.',
       manualURLRequired: 'A manual endpoint requires its base URL.',
       modelRequired: 'Choose or type an embedding model before saving this cloud route.',
     },
@@ -309,8 +308,6 @@ export const settingsIt = {
       local: 'Locale',
       openrouter: 'OpenRouter',
       manual: 'Endpoint manuale',
-      openrouterUnavailable:
-        'Gli embedding OpenRouter richiedono OpenRouter come percorso del modello primario.',
       manualURLRequired: 'Un endpoint manuale richiede il suo URL base.',
       modelRequired: 'Scegli o digita un modello embedding prima di salvare questo percorso cloud.',
     },

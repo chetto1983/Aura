@@ -25,8 +25,8 @@ type MultimodalConfig struct {
 	TTSModel      string
 	TTSCloudVoice string
 
-	// OpenRouterBaseURL/APIKey are the shared cloud endpoint + key (the same
-	// credential the agent loop uses), used by the cloud TTS leg. The key is set ONLY
+	// OpenRouterBaseURL/APIKey are OpenRouter's endpoint + the services key, used by
+	// the cloud TTS leg whatever route the chat runs on. The key is set ONLY
 	// on the Authorization header at request-build time, never logged or serialized
 	// (the openai_compat D-28 discipline, enforced inside internal/multimodal).
 	OpenRouterBaseURL string

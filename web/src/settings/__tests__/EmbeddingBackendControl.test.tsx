@@ -46,7 +46,6 @@ function Harness() {
         setValues((prev) => ({ ...prev, [key]: value }));
       }}
       modelPicker={picker}
-      openRouterAvailable
     />
   );
 }

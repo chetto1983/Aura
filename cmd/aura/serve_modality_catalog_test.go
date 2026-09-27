@@ -2,15 +2,16 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
-
-	"github.com/chetto1983/aura/internal/agui"
-	"github.com/chetto1983/aura/internal/llm"
 )
+
+// roundTripFunc lets a test see the request its client built before a fake answers it.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 // voiceModelsServer answers GET /api/v1/models the way OpenRouter does for one output
 // modality, recording what each request asked for.
@@ -32,9 +33,16 @@ func voiceModelsServer(t *testing.T, seen *[]*http.Request) *http.Client {
 	return &http.Client{Transport: rewriteHost{target: target}}
 }
 
-func TestVoiceCatalogRouteListsTheModalityFromTheOpenRouterRoute(t *testing.T) {
+// The speech and embedding clients run on OpenRouter whatever route the chat runs on, so the
+// pickers list from OpenRouter with no view of the chat route at all.
+func TestVoiceCatalogRouteListsTheModalityFromOpenRouter(t *testing.T) {
 	var seen []*http.Request
-	route := modalityCatalogRoute{runtime: routeRuntime("openrouter", openRouterBaseURL), client: voiceModelsServer(t, &seen)}
+	var hosts []string
+	fake := voiceModelsServer(t, &seen)
+	route := modalityCatalogRoute{client: &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		hosts = append(hosts, r.URL.Host)
+		return fake.Transport.RoundTrip(r)
+	})}}
 
 	models, err := route.List(context.Background(), "speech")
 	if err != nil {
@@ -46,8 +54,8 @@ func TestVoiceCatalogRouteListsTheModalityFromTheOpenRouterRoute(t *testing.T) {
 	if got := models[1].SupportedVoices; len(got) != 1 || got[0] != "en-US-Harper:MAI-Voice-2" {
 		t.Fatalf("supported voices = %v, want the OpenRouter model voice", got)
 	}
-	if len(seen) != 1 {
-		t.Fatalf("provider reads = %d, want 1", len(seen))
+	if len(seen) != 1 || len(hosts) != 1 || hosts[0] != "openrouter.ai" {
+		t.Fatalf("provider reads = %d to %v, want 1 to openrouter.ai", len(seen), hosts)
 	}
 	if got := seen[0].URL.Query().Get("output_modalities"); got != "speech" {
 		t.Fatalf("output_modalities = %q, want speech", got)
@@ -58,33 +66,8 @@ func TestVoiceCatalogRouteListsTheModalityFromTheOpenRouterRoute(t *testing.T) {
 	}
 }
 
-func TestVoiceCatalogRouteRefusesEveryRouteThatIsNotOpenRouter(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		runtime *llm.Runtime
-	}{
-		{"llama.cpp", routeRuntime("llamacpp", "http://aura-llm:8084/v1")},
-		{"ollama", routeRuntime("ollama", "http://host.docker.internal:11434/v1")},
-		{"openrouter provider on a local host", routeRuntime("openrouter", "http://host.docker.internal:8084/v1")},
-		{"openrouter provider on a private address", routeRuntime("openrouter", "http://192.168.1.20/openrouter.ai/v1")},
-		{"no published route", nil},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			var seen []*http.Request
-			route := modalityCatalogRoute{runtime: tc.runtime, client: voiceModelsServer(t, &seen)}
-			models, err := route.List(context.Background(), "transcription")
-			if !errors.Is(err, agui.ErrCatalogLocalRoute) || models != nil {
-				t.Fatalf("List = %v, %v, want the local-route refusal", models, err)
-			}
-			if len(seen) != 0 {
-				t.Fatalf("a refused route still reached the provider %d times", len(seen))
-			}
-		})
-	}
-}
-
 func TestNewVoiceCatalogRouteBoundsItsReads(t *testing.T) {
-	route := newModalityCatalogRoute(nil)
+	route := newModalityCatalogRoute()
 	if route.client == nil || route.client.Timeout != modalityCatalogTimeout {
 		t.Fatalf("client = %+v, want one bounded by modalityCatalogTimeout", route.client)
 	}
