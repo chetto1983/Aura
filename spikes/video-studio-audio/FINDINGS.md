@@ -294,3 +294,38 @@ more precise than Silero on both fixtures.
   speakers, or reverberant rooms.
 - Not Silero v5, not Silero with a shorter `redemptionMs`, and not Silero on the denoised copy.
 - Not the realtime `MicVAD`: there is no live detection in this design.
+
+## M1 — are saved Studio projects indexed as documents?
+
+The brief's read-only query ran on the lab VM (`~/aura-vm/m1.sh`). `\d aura.assets` has
+`document_id`, `mime_type` and `file_name`. Rows with `mime_type = 'application/json'` and a
+`.json` name: **0 in every status**, including deleted. The VM holds no saved project, so its data
+cannot answer the question.
+
+Controlled measurement instead (`~/aura-vm/m1live.sh`), using the operator's cockpit account from
+`.env.google`. A 106-byte project JSON was saved exactly as `saveProject()` does:
+`POST /api/assets/presign` with `thread_id ''`, `application/json`, `modality_hint: document`;
+then the PUT; then `POST /finalize`. Its rows were read on the VM and the asset was deleted through
+the API.
+
+```
+asset 15e58dc4-b64b-4f94-9f61-94370bce94d1   object_key chat/….json   scope thread
+put 200 · finalize 200 · after finalize: accepted document · t+5…120 s: processing
+aura.assets:          processing | document | doc_47ae92d4fa1acf0adeb73a9296021263
+aura.ingestion_jobs:  asset_process | succeeded | accepted
+delete 200 → deleting
+```
+
+**Positive: a saved project is handed to the document pipeline.** `asset_process` succeeds and the
+asset gains a `document_id`, which is the brief's criterion for "indexed". Per the spec, this goes
+to the operator as its own item and is not fixed in this sub-project. Two side observations:
+- A project lands under `chat/` with `scope thread` although it has no thread (`folderFor`, the
+  rule T1a changes for media only).
+- The status stays `processing` for 120 s and more, the known state recorded in
+  `web/src/chat/attachments/upload.ts:116-120`.
+
+**What M1 does not show**
+- Whether chunks of the project actually reached the tenant's ArcadeDB, or surface in a chat answer.
+- Whether the pipeline would treat a large, real project differently.
+- That the delete completed: the row still read `deleting` minutes later. It is re-checked in the
+  T1a run on the VM.

@@ -69,12 +69,12 @@ Read from the installed packages and the npm registry on 2026-09-27. Nothing bel
 | Need | Package | Licence | Evidence |
 |---|---|---|---|
 | Audio lane in the render | `AudioLayer` of `@videoflow/core` 1.3.4 (installed) | Apache-2.0 | `node_modules/@videoflow/core/dist/layers/AudioLayer.d.ts` |
-| Volume envelope in the render | `volume` is `animatable: true` | Apache-2.0 | `AuditoryLayer.js:34`; the mixer applies it on the gain node, `renderer-browser/dist/audio/mixer.js:262` (`applyAudioKeyframes(layer, 'volume', gainNode.gain, …)`) |
+| Volume envelope in the render | `volume` is `animatable: true` | Apache-2.0 | `AuditoryLayer.js:34`; the mixer applies it on the gain node, `renderer-browser/dist/audio/mixer.js:262` (`applyAudioKeyframes(layer, 'volume', gainNode.gain, …)`). S1: only from `animations`, stepwise, absolute source seconds (§Compile) |
 | Same audio in preview and export | the DOM preview plays `renderMixedAudio`, the export's own mixer | Apache-2.0 | `renderer-dom/dist/DomRenderer.js:43,792` |
 | Waveform + draggable volume points + mic recording | `wavesurfer.js` 8.0.1, plugins `envelope`, `record`, `regions` | BSD-3-Clause | published 2026-09-24; `src/plugins/` lists `envelope.ts`, `record.ts`, `regions.ts` |
-| Speech detection for ducking — candidate A | `@ricky0123/vad-web` 0.0.31 (Silero) with offline `NonRealTimeVAD` | ISC | published 2026-09-12; exported from `packages/web/src/index.ts`. Loads its model and the `onnxruntime-web` WASM from jsDelivr unless `baseAssetPath`/`onnxWASMBasePath` point elsewhere (`docs/user-guide/browser.md`); `onnxruntime-web` 1.30.0 unpacks to 144 MB |
-| Speech detection for ducking — candidate B | `@echogarden/fvad-wasm` 0.2.0 (WebRTC VAD, libfvad) | BSD-3-Clause | 37 KB unpacked |
-| Noise reduction | `@sapphi-red/web-noise-suppressor` 0.4.1 (Web Audio nodes); fallback `@shiguredo/noise-suppression` 2025.1.0 | MIT / Apache-2.0 | both published 2026-09-19 |
+| Speech detection for ducking — candidate A, **rejected by S4** | `@ricky0123/vad-web` 0.0.31 (Silero) with offline `NonRealTimeVAD` | ISC | S4: ends 0.28–0.88 s late, and pulls the 28.3 MB JSEP ORT wasm + a 1.8 MB model (30.2 MB) into the dist. Published 2026-09-12; exported from `packages/web/src/index.ts`. Loads its model and the `onnxruntime-web` WASM from jsDelivr unless `baseAssetPath`/`onnxWASMBasePath` point elsewhere (`docs/user-guide/browser.md`); `onnxruntime-web` 1.30.0 unpacks to 144 MB |
+| Speech detection for ducking — candidate B, **chosen by S4** | `@echogarden/fvad-wasm` 0.2.0 (WebRTC VAD, libfvad), mode 3, on the RNNoise-denoised copy | BSD-3-Clause | 37 KB unpacked; adds 35,491 B to the dist; edges within 95 ms on both fixtures (alone it calls 10 dB SNR noise speech) |
+| Noise reduction | `@sapphi-red/web-noise-suppressor` 0.4.1 (Web Audio nodes), **RNNoise chosen by S3**; fallback `@shiguredo/noise-suppression` 2025.1.0 | MIT / Apache-2.0 | both published 2026-09-19. S3: RNNoise −37.7 dB noise floor for ≤0.5 dB of speech (GTCRN −14.9, Speex −4.5); adds 374,373 B (both wasm builds + worklet) |
 | Decode and encode audio files | `mediabunny` 1.58.1 (installed) | MPL-2.0 | already used by the export and by `e2e/video-studio.spec.ts` |
 | Text to speech | Aura's own `POST /api/tts` (Kokoro local or OpenRouter) and `GET /api/voice/capabilities` | ours | `internal/agui/voice_api.go:72-74`, `internal/multimodal/tts.go` |
 
@@ -168,20 +168,39 @@ reanchor change. Every command validates and throws `CommandRefusal` like the ex
 ## Compile
 
 `videoflow_audio.ts` (new; `videoflow.ts` is at 438 lines) adds, for each audio item, one VideoFlow
-`AudioLayer` with `startTime`, `sourceStart`, `sourceDuration` and `speed`, `mute`, and either a
-static `volume` or the keyframes from `volumeCurve`. Speech windows are mapped from source time into
+`AudioLayer` with `startTime`, `sourceStart`, `sourceDuration` and `speed`, `mute`, and its volume
+as `animations: [{property: 'volume', keyframes}]` written into the compiled VideoJSON. S1 measured
+three rules, and they apply to clips as well:
+- keyframe times are absolute source seconds;
+- the mixer never reads a static `volume` without transitions, and never interpolates between
+  keyframes (it calls `setValueAtTime` per keyframe);
+- the gain is 1 before the first keyframe.
+
+So every curve starts with a keyframe at `sourceStart`, and fades and envelope ramps are sampled
+densely enough to sound continuous. Speech windows are mapped from source time into
 project time through every clip and item that plays that source. The denoise swap for clips happens
 here. `toVideoJSON` stays the single entry point for preview, export and — in sub-project 2 — the
 server render.
 
 ## Browser-side analysis
 
-`audioAnalysis.ts`, lazy-loaded so the editor's first paint does not pay for ONNX:
+`audioAnalysis.ts`, lazy-loaded so the editor's first paint does not pay for the RNNoise and fvad
+WASM:
 
 - `decodeSource(url)` → `AudioBuffer`, via mediabunny.
-- `detectSpeech(buffer)` → speech windows, via the VAD that S4 picks.
-- `denoise(buffer)` → an Opus file encoded by mediabunny, uploaded through the existing presign
-  path, answered with its asset id.
+- `detectSpeech(buffer)` → speech windows. S4 picked this pipeline:
+  1. RNNoise at 48 kHz;
+  2. `OfflineAudioContext` resampling to 16 kHz;
+  3. `fvad-wasm` mode 3 on 30 ms frames;
+  4. pauses under 300 ms merged, windows under 250 ms dropped.
+
+  It runs on a denoised copy whether or not the user turned denoise on.
+- `denoise(buffer)` → RNNoise offline (S3), then an Opus file encoded by mediabunny, uploaded
+  through the existing presign path and answered with its asset id. Three details come from S3:
+  - It waits for the worklet's WASM before rendering, because nothing signals readiness.
+  - It refuses an all-silent result from non-silent input.
+  - It trims RNNoise's 992-sample (20.67 ms) delay, so the clean asset stays in sync with the
+    picture.
 - `peaks(buffer)` → the waveform, cached in memory per source for the session. Peaks are not saved:
   they are cheap to recompute and would bloat the project file.
 
@@ -229,13 +248,13 @@ Server side, two changes:
 Measure first, then amend the PRD, then build (CLAUDE.md, PRD-first). Each spike is throwaway code
 whose result is written into this spec and the PRD amendment before Task 1 starts.
 
-| Spike | Question | Pass condition |
-|---|---|---|
-| S1 | Does a VideoFlow `AudioLayer` with animated `volume` and a `speed` export as expected, and in which time domain are its keyframe times (source or layer)? | The exported MP4's audio RMS follows the keyframes within 1 dB. |
-| S2 | Does wavesurfer 8 render from peaks only (no media element) inside a `dnd-timeline` item, with envelope points draggable without starting the item's drag? | Both gestures work in Chromium desktop and mobile emulation; a 5-minute track renders under 200 ms from cached peaks. |
-| S3 | Which noise suppressor works in an `OfflineAudioContext`, and how well? | Noise floor in the gaps of the noisy-speech fixture drops by a measured margin; processing is faster than real time on this workstation. The margin becomes Task 6's E2E threshold. |
-| S4 | Silero (`vad-web`) or WebRTC VAD (`fvad-wasm`)? Both are run on the clean and the noisy speech fixtures with every file served from the probe's own origin. | For each: edge error against the fixture's ground truth, and the bytes it adds to the committed dist (11 MB and 688 files today, embedded in the binary). The lighter one wins unless its edges miss by more than 150 ms where the other's do not. |
-| M1 | Are saved Studio projects indexed as documents? A project is a `.json` (a document extension, `internal/assets/limits.go:46`) finalized with processing, in a bucket the ingest walker reads whole. | A read-only query on the lab VM's indexed documents. A positive answer is reported to the operator as its own item; it is not fixed inside this sub-project unasked. |
+| Spike | Question | Pass condition | Measured 2026-09-27 (`spikes/video-studio-audio/FINDINGS.md`) |
+|---|---|---|---|
+| S1 | Does a VideoFlow `AudioLayer` with animated `volume` and a `speed` export as expected, and in which time domain are its keyframe times (source or layer)? | The exported MP4's audio RMS follows the keyframes within 1 dB. | **Answered, with a correction.** Keyframe times are absolute source seconds: a drop at source 3.001 s lands at 1.0 s on a clip trimmed by 2 s, and at 0.5 s at speed 2. A static `volume` never reaches the mix (also on video layers: 0.5 and 1 both −24.08 dBFS), so the Studio's current clip Volume slider is a no-op without transitions. Gains step between keyframes and are 1 before the first. Measured on the offline mix (`renderAudio`), not on an MP4. |
+| S2 | Does wavesurfer 8 render from peaks only (no media element) inside a `dnd-timeline` item, with envelope points draggable without starting the item's drag? | Both gestures work in Chromium desktop and mobile emulation; a 5-minute track renders under 200 ms from cached peaks. | **Pass**, with a pointer guard that stops only `<ellipse>` presses (by `composedPath()`, since wavesurfer uses a shadow root), creation deferred until the host has width, a layer over the full item box instead of `itemContentStyle`, and `::part` non-scaling strokes. 10–15 ms from peaks; zoom re-render 104–136 ms. |
+| S3 | Which noise suppressor works in an `OfflineAudioContext`, and how well? | Noise floor in the gaps of the noisy-speech fixture drops by a measured margin; processing is faster than real time on this workstation. The margin becomes Task 6's E2E threshold. | **RNNoise**: −37.7 dB floor, ≤0.5 dB speech loss, faster than real time, 20.67 ms delay. The worklets need a wait for their WASM before an offline render (0 ms gives silence). T6 threshold: 34.7 dB. |
+| S4 | Silero (`vad-web`) or WebRTC VAD (`fvad-wasm`)? Both are run on the clean and the noisy speech fixtures with every file served from the probe's own origin. | For each: edge error against the fixture's ground truth, and the bytes it adds to the committed dist (11 MB and 688 files today, embedded in the binary). The lighter one wins unless its edges miss by more than 150 ms where the other's do not. | **WebRTC mode 3 on the RNNoise output**: edges within 95 ms on both files, 35,491 B. WebRTC alone calls the noisy file all speech; Silero ends 0.28–0.88 s late and costs 30.2 MB. |
+| M1 | Are saved Studio projects indexed as documents? A project is a `.json` (a document extension, `internal/assets/limits.go:46`) finalized with processing, in a bucket the ingest walker reads whole. | A read-only query on the lab VM's indexed documents. A positive answer is reported to the operator as its own item; it is not fixed inside this sub-project unasked. | **Positive.** The table held no saved project, so one was saved through `saveProject()`'s path as the operator's account: `asset_process` succeeded and the asset got `document_id doc_47ae…`, then it was deleted. Reported to the operator; not fixed here. |
 
 If S2 or S3 fails, the fallback is a question to the operator, not a component written in its place
 (CLAUDE.md, STOP BEFORE BESPOKE).
@@ -265,7 +284,7 @@ Every task ends with a real E2E. The protocol, from the operator's rules for thi
 | T3 | Extract audio | The clip is muted, its tone is still in the export, carried by the item; trimming the item's first second leaves that second silent. |
 | T4 | Waveform + envelope | An envelope point dragged to 0 produces the matching drop in the export; the waveform is visible (screenshot). |
 | T5 | TTS + voice recording | A TTS item's window carries speech energy; a recording made through Chromium's fake microphone (`--use-file-for-fake-audio-capture`) lands on the lane and in the export. |
-| T6 | Noise reduction (clips and items) | On the noisy-speech fixture, the gaps' noise floor drops by at least the S3 margin. |
+| T6 | Noise reduction (clips and items) | On the noisy-speech fixture, the gaps' noise floor drops by at least 34.7 dB (S3's 37.7 dB minus 3 dB). |
 | T7 | Ducking | With −12 dB, the music inside the speech windows sits 12 dB below the music outside them (±2 dB), with ramps no shorter than the chosen softness. |
 
 Fixtures, in `web/e2e/fixtures/video-studio/audio/`, small and committed with a README recording how

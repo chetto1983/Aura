@@ -575,6 +575,49 @@ background plugin are references, not shipped dependencies; the dependency and l
 decision is recorded in
 `docs/superpowers/specs/2026-09-21-video-studio-clideo-controls.md`.
 
+The audio lane was measured on 2026-09-27 with throwaway probes (`spikes/video-studio-audio/`)
+before any product code was written.
+
+**VideoFlow volume (S1).** VideoFlow's mixer applies volume only from a layer's compiled
+`animations`. It reads keyframe times as absolute source seconds: a keyframe at source 3.001 s
+lands at 1.0 s on a clip trimmed by 2 s, and at 0.5 s at speed 2. It steps between keyframes and
+starts from a gain of 1. It ignores a static `volume` on audio and video layers alike, so the clip
+Volume slider has been a no-op on clips without transitions. The compile therefore writes every
+volume curve into `animations`, beginning at `sourceStart`.
+
+**Waveform (S2).** wavesurfer 8 draws the waveform from cached peaks inside a dnd-timeline item in
+10–15 ms, and redraws after a zoom in 104–136 ms. Envelope points drag without moving the item,
+provided four conditions hold:
+- presses on an envelope `<ellipse>` are stopped by composed path;
+- the waveform is created only after its host has a width;
+- it is mounted over the full item box, not `itemContentStyle`;
+- strokes use `::part` non-scaling.
+
+**Noise reduction (S3).** RNNoise from `@sapphi-red/web-noise-suppressor` lowers the noise floor
+of the 10 dB SNR fixture by 37.7 dB for at most 0.5 dB of speech, faster than real time, with a
+20.67 ms delay. GTCRN manages 14.9 dB and Speex 4.5 dB. The worklets must be given time to
+instantiate their WASM before an offline render, or they return silence.
+
+**Speech detection (S4).** WebRTC VAD (`fvad-wasm`, mode 3) run on the RNNoise output places every
+speech edge within 95 ms on both fixtures and adds 35,491 B to the dist. Silero via `vad-web` ends
+0.28–0.88 s late and would add 30.2 MB.
+
+**Uploads and saved projects.** Decided, and landing in T1a with its own VM E2E: the Studio's media
+uploads will use `POST /api/assets/{id}/finalize?use=media`. `FinalizeMedia` will accept only
+image, video and audio and enqueue no processing, so a music track is never transcribed. A saved
+project, by contrast, is finalized as a document today and receives a `document_id` (M1): that is
+reported as its own issue and is not fixed by this work.
+
+This does not establish:
+- long-project memory use;
+- VAD or denoise quality on real noise, music under speech, babble or other languages (the fixtures
+  are synthetic, one voice at 10 dB SNR);
+- behaviour on Safari or a phone CPU;
+- the MP4 mux or the server render (sub-project 2);
+- whether the saved project's chunks reach ArcadeDB.
+
+Details: `docs/superpowers/specs/2026-09-27-video-studio-audio-design.md`.
+
 Measured 2026-09-08 using an agent-generated weather demo: the accepted HTML asset
 renders inline and expanded, its button executes, and showing source preserves
 the preview state. This is a viewing/export workflow; it does not establish direct
