@@ -55,7 +55,6 @@ jobs:
           build-args: |
             VCS_REF=${{ github.sha }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura:edge
             ghcr.io/${{ github.repository_owner }}/aura:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -77,7 +76,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura-caddy:edge
             ghcr.io/${{ github.repository_owner }}/aura-caddy:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -108,7 +106,6 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura-cloudflared:edge
             ghcr.io/${{ github.repository_owner }}/aura-cloudflared:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -124,7 +121,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura-ingest:edge
             ghcr.io/${{ github.repository_owner }}/aura-ingest:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -151,7 +147,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura-sandbox:edge
             ghcr.io/${{ github.repository_owner }}/aura-sandbox:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -171,10 +166,26 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/aura-egress:edge
             ghcr.io/${{ github.repository_owner }}/aura-egress:master-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha,scope=aura-egress-edge
           cache-to: type=gha,mode=max,scope=aura-egress-edge
+
+      # The edge tags move only here, together and aura last, once every image of this commit is
+      # in the registry. They used to move image by image as each build finished, aura first, so
+      # a run cancelled by the next push (concurrency above) or failing half way left aura:edge
+      # ahead of the images it needs. Measured 2026-09-27 on the lab VM: the run for 7647f8d was
+      # cancelled after its first build, the updater applied that aura, and the boxes still ran a
+      # sandbox image without agent-browser, so the browser recipe died at its handshake.
+      # --prefer-index=false keeps each edge tag a copy of its per-commit tag, digest for digest.
+      - name: Move the edge tags to this commit
+        env:
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+          SHA: ${{ github.sha }}
+        run: |
+          for image in aura-caddy aura-cloudflared aura-ingest aura-sandbox aura-egress aura; do
+            docker buildx imagetools create --prefer-index=false \
+              --tag "${REGISTRY}/${image}:edge" "${REGISTRY}/${image}:master-${SHA}"
+          done
