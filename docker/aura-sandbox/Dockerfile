@@ -177,6 +177,21 @@ RUN set -eu; \
     install -D -m 0755 "/tmp/package/bin/${bin}" /usr/local/lib/agent-browser/agent-browser; \
     install -D -m 0644 /tmp/package/LICENSE /usr/local/share/licenses/agent-browser/LICENSE; \
     rm -rf /tmp/agent-browser.tgz /tmp/package
+# Google refuses to sign anyone in to a browser that announces automation. Measured 2026-09-27 in
+# a box: the stock headless Chromium (user agent `HeadlessChrome/151`, navigator.webdriver true)
+# was sent to accounts.google.com/v3/signin/rejected at the email step, while with
+# AutomationControlled off and a plain Chrome user agent it went on to the account, and the operator
+# then signed in through the live view, password and second factor included. The entry point sets
+# both. The user agent names the Chromium this image ships, read from the binary (`Google Chrome
+# for Testing 151.0.7922.34`), so an upgrade cannot leave a stale version behind.
+RUN set -eu; \
+    set -- /opt/playwright-browsers/chromium-*/chrome-linux64/chrome; \
+    [ "$#" -eq 1 ] && [ -x "$1" ] || { echo "agent-browser: want one Playwright Chromium, found: $*" >&2; exit 1; }; \
+    major="$("$1" --version | grep -oE '[0-9]+(\.[0-9]+){3}' | cut -d. -f1)"; \
+    [ -n "$major" ] || { echo "agent-browser: cannot read the version of $1" >&2; exit 1; }; \
+    mkdir -p /usr/local/share/aura; \
+    echo "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36" \
+        > /usr/local/share/aura/browser-user-agent
 # The workspace-volume HOME both the entry point and the live-view relay read (state under /root
 # died with a box recreate).
 ENV AURA_AGENT_BROWSER_HOME=/workspace/.agent-browser-home

@@ -807,9 +807,26 @@ stays for other channels. The same run found Google's sign-in refusing the box b
 the live view the operator reached `accounts.google.com/v3/signin/rejected` ("Couldn't sign you
 in"), and the box's Chromium reports `HeadlessChrome/151` with `navigator.webdriver = true`. Not
 shown: the chat view on the VM or on a phone (it is tested in jsdom through the real runtime and
-snapshot replay); whether any launch configuration gets past Google's refusal (Wirasm/helm#374
-reports that a plain Chrome with no debugging port and no user-agent override signs in, and the
-live view rides CDP); and a login made without `restore` surviving a box suspend.
+snapshot replay), and a login made without `restore` surviving a box suspend.
+
+**The box browser stops announcing automation, measured 2026-09-27.** Three sessions in the same
+box took Google's sign-in page and a made-up address. The stock launch was sent to
+`signin/rejected` ("This browser or app may not be secure"). Two launches passed the email step,
+reaching "Couldn't find this account", so Google looked the address up. One was headless with
+`--disable-blink-features=AutomationControlled` and a Chrome user agent, and read
+`webdriver=false`, `Chrome/151`. The other was headed under the box's Xvfb with the same flag and
+no user-agent override. The operator then signed in to YouTube with their own account through the
+live view, password and second factor included, on a session launched headless with the flag,
+the user agent and `restore`. Afterwards the page had the account avatar and no sign-in link,
+Google's session cookies were set, and the encrypted state was saved. The entry point now starts
+every browser that way. The user agent names the Chromium the image ships, read from the binary at
+build time, and the image contract fails when the page sees `navigator.webdriver` or a headless
+user agent. It failed on the image before this change and passed on that image plus the new
+layers. Headless was chosen over headed because agent-browser exempts headed browsers from its
+idle shutdown, and the box holds three at most. Wirasm/helm#374 reports the same refusal from a
+spoofed user agent plus a debugging port, and a plain Chrome that signs in. Not shown: a Google
+login surviving a box recreate or Google's later re-checks, other sites' bot defences, and whether
+the user-agent override is needed once the flag is set.
 
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native

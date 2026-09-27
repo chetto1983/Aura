@@ -81,6 +81,7 @@ PY
 # agent-browser behind Aura's entry point (prd.md §12), offline. Without the key Aura writes on
 # Resolve it must refuse with 78 instead of letting the vault mint a key beside its ciphertext;
 # with one it must drive Chromium, keep its state on the workspace volume and write no key file.
+# The page must not see an automated browser: Google refuses sign-in to one (Dockerfile).
 docker run --rm --network none --entrypoint bash "$img" -c '
 set -e
 rc=0; agent-browser --version >/dev/null 2>&1 || rc=$?
@@ -88,10 +89,14 @@ rc=0; agent-browser --version >/dev/null 2>&1 || rc=$?
 mkdir -p /run/aura && head -c 32 /dev/urandom | xxd -p -c 64 > /run/aura/agent-browser.key
 agent-browser open "data:text/html,<button>Run</button>" >/dev/null
 agent-browser snapshot | grep -q "button \"Run\"" || { echo "FAIL: agent-browser snapshot misses the page" >&2; exit 1; }
+[ "$(agent-browser eval navigator.webdriver)" = false ] || { echo "FAIL: the page sees navigator.webdriver" >&2; exit 1; }
+ua="$(agent-browser eval navigator.userAgent)"
+case "$ua" in *HeadlessChrome*) echo "FAIL: the page sees a headless user agent: $ua" >&2; exit 1 ;; esac
+printf "%s" "$ua" | grep -qF "$(cat /usr/local/share/aura/browser-user-agent)" || { echo "FAIL: user agent $ua is not the image one" >&2; exit 1; }
 [ -d /workspace/.agent-browser-home/.agent-browser ] || { echo "FAIL: agent-browser state is not on /workspace" >&2; exit 1; }
 ! find / -name .encryption-key -path "*agent-browser*" 2>/dev/null | grep -q . || { echo "FAIL: the vault minted its own key" >&2; exit 1; }
 agent-browser close >/dev/null
 '
-echo "ok: agent-browser refuses without the Aura key and runs Chromium offline with it"
+echo "ok: agent-browser refuses without the Aura key, and with it runs Chromium offline without announcing automation"
 
 bash "$(dirname "$0")/artifact_toolchain_smoke.sh"
