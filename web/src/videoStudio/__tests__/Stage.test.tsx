@@ -16,7 +16,11 @@ interface FakeRenderer {
   destroyed: number;
 }
 
-const dom = vi.hoisted(() => ({ instances: [] as FakeRenderer[] }));
+// `seekHeld`, when set, is what every seek answers: a frame still rendering until it settles.
+const dom = vi.hoisted(() => ({
+  instances: [] as FakeRenderer[],
+  seekHeld: undefined as Promise<void> | undefined,
+}));
 
 vi.mock('@videoflow/renderer-dom', () => ({
   default: class {
@@ -40,7 +44,7 @@ vi.mock('@videoflow/renderer-dom', () => ({
     }
     seek(frame: number): Promise<void> {
       this.seeks.push(frame);
-      return Promise.resolve();
+      return dom.seekHeld ?? Promise.resolve();
     }
     destroy(): void {
       this.destroyed += 1;
@@ -119,7 +123,11 @@ function measured(element: Element, width: number, height: number): void {
 interface Mounted {
   readonly commands: ((current: VideoProject) => VideoProject)[];
   readonly selections: string[];
-  readonly rerender: (props: { time?: number; selectedId?: string }) => void;
+  readonly rerender: (props: {
+    project?: VideoProject;
+    time?: number;
+    selectedId?: string;
+  }) => void;
 }
 
 function mount(current: VideoProject, selectedId?: string, time = 2): Mounted {
@@ -150,6 +158,7 @@ function renderer(): FakeRenderer {
 
 beforeEach(() => {
   dom.instances.length = 0;
+  dom.seekHeld = undefined;
   HTMLElement.prototype.setPointerCapture = vi.fn();
 });
 
@@ -189,6 +198,35 @@ describe('Stage', () => {
     view.rerender({ time: 3.5 });
     await waitFor(() => {
       expect(renderer().seeks).toEqual([50, 88]);
+    });
+  });
+
+  it('loads no project while a seek is still rendering, then only the latest one', async () => {
+    // DomRenderer 1.3.4's loadVideo waits out an in-flight render on a microtask loop, which
+    // starves the media events that render awaits: overlapping the two froze the page.
+    const held: { settle?: () => void } = {};
+    dom.seekHeld = new Promise<void>((resolve) => {
+      held.settle = resolve;
+    });
+    const view = mount(project());
+    await waitFor(() => {
+      expect(renderer().seeks).toEqual([50]);
+    });
+    const shorter = (seconds: number): VideoProject => ({
+      ...project(),
+      video: project().video.map((clip) =>
+        clip.id === 'clip-2' ? { ...clip, duration: seconds } : clip,
+      ),
+    });
+    view.rerender({ project: shorter(2) });
+    view.rerender({ project: shorter(3) });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(renderer().loaded).toHaveLength(1);
+
+    dom.seekHeld = undefined;
+    held.settle?.();
+    await waitFor(() => {
+      expect(renderer().loaded.map((json) => (json as VideoJSON).duration)).toEqual([8, 7]);
     });
   });
 

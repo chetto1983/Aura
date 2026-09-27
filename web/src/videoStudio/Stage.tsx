@@ -12,9 +12,9 @@ import { toVideoJSON, withLocalFonts, type FontLoadingRenderer } from './videofl
 //
 // The renderer belongs to the host: built with it, destroyed with it. The project is compiled by
 // `videoflow.ts` — this file never composes a layer — and reloaded whenever it changes; the
-// playhead is a seek. Everything inside the picture is the renderer's and its shadow root is not
-// reached into; everything that can be grabbed is ordinary DOM over it, which is why there is no
-// canvas library here.
+// playhead is a seek, and a load and a seek never overlap. Everything inside the picture is the
+// renderer's and its shadow root is not reached into; everything that can be grabbed is ordinary
+// DOM over it, which is why there is no canvas library here.
 //
 // The drag is the editor's only live-feedback path: the box follows the pointer in local state
 // and the RELEASE is the command. Writing on every move would put a hundred entries in the
@@ -88,6 +88,13 @@ function localFontRenderer(host: HTMLElement): DomRenderer {
   const renderer = new DomRenderer(host);
   withLocalFonts(renderer as unknown as FontLoadingRenderer);
   return renderer;
+}
+
+/** Runs `call` once every call queued before it has settled, whether it resolved or failed. */
+function after<T>(queue: { current: Promise<unknown> }, call: () => Promise<T>): Promise<T> {
+  const next = queue.current.then(call, call);
+  queue.current = next.catch(() => undefined);
+  return next;
 }
 
 interface SelectionBoxProps {
@@ -183,6 +190,12 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
   // ask for a frame of a video the renderer has not been given.
   const [loaded, setLoaded] = useState<DomRenderer | null>(null);
   const [failed, setFailed] = useState(false);
+  // Every call made to the renderer, one after another. DomRenderer 1.3.4's `loadVideo` waits
+  // out an in-flight render on a `queueMicrotask` loop (DomRenderer.js, "Wait for any in-flight
+  // renderFrame()"), and a seek's render awaits media events that loop never lets fire: a load
+  // overlapping a seek froze the page. Each step checks when it runs whether it is still wanted,
+  // so a burst of edits costs one load, not one per keystroke.
+  const calls = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
     const host = hostRef.current;
@@ -199,7 +212,7 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
     if (renderer === null) return undefined;
     let live = true;
     void toVideoJSON(project, { assetUrl })
-      .then((json) => (live ? renderer.loadVideo(json) : undefined))
+      .then((json) => after(calls, async () => (live ? renderer.loadVideo(json) : undefined)))
       .then(
         () => {
           if (!live) return;
@@ -220,10 +233,16 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
   }, [renderer, project, assetUrl]);
 
   useEffect(() => {
-    if (loaded === null) return;
-    loaded.seek(Math.round(time * project.fps)).catch(() => {
+    if (loaded === null) return undefined;
+    let live = true;
+    after(calls, async () =>
+      live ? loaded.seek(Math.round(time * project.fps)) : undefined,
+    ).catch(() => {
       setFailed(true);
     });
+    return () => {
+      live = false;
+    };
   }, [loaded, time, project.fps]);
 
   const item = boxedOverlay(project, selectedId, time);
