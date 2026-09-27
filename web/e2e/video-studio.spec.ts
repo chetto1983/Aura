@@ -472,6 +472,8 @@ test.describe('the multi-track video editor', () => {
     // seconds through the inspector, and the lane prints each clip's length on it.
     await second.click();
     const inspector = editor.getByRole('region', { name: 'Properties' });
+    // A clip's trim lives on the inspector's Time tab; it opens on Transform.
+    await inspector.getByRole('tab', { name: 'Time' }).click();
     await setField(inspector, 'End', '00:02.0');
     await expect(second).toHaveText('00:02.0');
     await expect(first).toHaveText('00:04.0');
@@ -526,6 +528,8 @@ test.describe('the multi-track video editor', () => {
 
     // A tap selects, and the inspector's fields commit what a thumb types into them.
     await editor.getByRole('button', { name: 'Clip 1' }).tap();
+    // On a phone the inspector opens from the tool bar, on the tool's own tab.
+    await editor.getByRole('button', { name: 'Time', exact: true }).tap();
     const inspector = editor.getByRole('region', { name: 'Properties' });
     await setField(inspector, 'End', '00:03.0');
     await expect(editor.getByRole('button', { name: 'Clip 1' })).toHaveText('00:03.0');
