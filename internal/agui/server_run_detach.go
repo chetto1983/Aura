@@ -14,6 +14,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/encoding/encoder"
+	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -37,6 +38,8 @@ const detachRetryAfterSec = "5"
 // thread-lock-held marks are all value-keyed, so they ride. The wallclock timeout is
 // belt-and-suspenders over the agent Budget deadline (runner.buildAgent): it only
 // exists so a mis-configured budget can never leak a producer goroutine forever.
+// This cap stays fixed while MCP questions pause the budget, so repeated forms
+// cannot extend the detached run indefinitely.
 func detachedRunContext(reqCtx context.Context, maxWallclock time.Duration) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(reqCtx), maxWallclock)
 }
@@ -104,6 +107,8 @@ func (s *Server) handleRunDetached(w http.ResponseWriter, r *http.Request, ctx c
 		http.Error(w, "too many live runs", http.StatusServiceUnavailable)
 		return
 	}
+
+	dctx = elicit.WithAsker(dctx, sess.questions.bind(dctx))
 
 	// Subscriber #0 registers before the producer starts; fromSeq 0 on a fresh
 	// session can never gap, so ok is structural.

@@ -45,9 +45,10 @@ type runSubscriber struct {
 }
 
 // RunSession is one detached run's identity, replay ring, and live-subscriber set
-// (design §2.1). The producer goroutine is the sole appender and the sole caller of
-// finish; subscribers attach at any time via subscribeFrom. All mutable state is
-// guarded by mu — append and subscribeFrom serialize on it, which is what makes
+// (design §2.1). The producer and the run's question asker append events; the
+// producer calls finish. Subscribers attach at any time via subscribeFrom. Session
+// state is guarded by mu; questions have their own lock. append and subscribeFrom
+// serialize on mu, which makes
 // replay-then-live gapless and duplicate-free by construction.
 type RunSession struct {
 	RunID        string
@@ -79,8 +80,9 @@ type RunSession struct {
 	// (§1.1): fired by the cancel endpoint (RS-05) and by RunRegistry.Close at
 	// daemon shutdown. Set by RunRegistry.Start before the session is published;
 	// immutable afterwards.
-	cancel context.CancelFunc
-	now    func() time.Time
+	cancel    context.CancelFunc
+	now       func() time.Time
+	questions *runQuestions
 }
 
 // newRunSession builds a session with a fixed-cap ring. Non-positive caps fall back
@@ -93,7 +95,7 @@ func newRunSession(runID, threadID, identityID string, ringCap, subBuffer int, c
 	if subBuffer <= 0 {
 		subBuffer = fanoutBuffer
 	}
-	return &RunSession{
+	s := &RunSession{
 		RunID:      runID,
 		ThreadID:   threadID,
 		IdentityID: identityID,
@@ -105,6 +107,8 @@ func newRunSession(runID, threadID, identityID string, ringCap, subBuffer int, c
 		cleanup:    cleanup,
 		now:        time.Now,
 	}
+	s.questions = newRunQuestions(s)
+	return s
 }
 
 // append assigns the next sequence number, writes the event into the ring
@@ -112,8 +116,9 @@ func newRunSession(runID, threadID, identityID string, ringCap, subBuffer int, c
 // live subscriber under the session mutex with the shared pump discipline: a
 // non-lifecycle delta drops on a full channel (WARN + metric), a lifecycle frame
 // blocks until delivered, ctx-done, or the subscriber unsubscribes (pumpGone → the
-// dead entry is pruned). Producer-only. Returns false on ctx-cancel (or a terminal
-// session — a producer bug, tolerated defensively rather than panicking a detached
+// dead entry is pruned). Producer and question asker serialize on mu.
+// Returns false on ctx-cancel (or a terminal session — a producer bug,
+// tolerated defensively rather than panicking a detached
 // goroutine) so the producer unwinds.
 func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
 	s.mu.Lock()
@@ -141,6 +146,11 @@ func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
 		}
 	}
 	return true
+}
+
+// publish uses the producer's redaction policy for out-of-band lifecycle frames.
+func (s *RunSession) publish(ctx context.Context, ev events.Event) bool {
+	return s.append(ctx, redactEvent(ev))
 }
 
 // subscribeFrom snapshots every ring entry with Seq > fromSeq into a fresh channel
@@ -192,11 +202,14 @@ func (s *RunSession) terminalState() (bool, time.Time) {
 	return s.terminal, s.finishedAt
 }
 
-// finish marks the session terminal, stamps finishedAt (the reaper's linger clock,
-// §1.3), closes every subscriber channel (sole sender closes — the Fanout.closeAll
+// finish resolves pending forms, marks the session terminal, stamps finishedAt
+// (the reaper's linger clock, §1.3), closes every subscriber channel (the Fanout.closeAll
 // principle), and invokes the cleanup callback exactly once, after releasing the
 // mutex so the callback may take the registry lock. Idempotent; producer-only.
 func (s *RunSession) finish() {
+	// Resolution publishes into the ring, so it must precede both the session lock
+	// and subscriber closure. Keeping it here covers every terminal path.
+	s.questions.cancelAll()
 	s.mu.Lock()
 	if s.terminal {
 		s.mu.Unlock()

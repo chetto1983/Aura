@@ -367,6 +367,8 @@ func (s *Server) Mux() http.Handler {
 	// hiding posture, gated on its OWN flag (AURA_AGUI_RUN_STEER) via
 	// SetSteerInbox, independent of AGUIRun.Detach.
 	mux.HandleFunc("POST /agent/runs/{runID}/steer", s.handleRunSteer)
+	mux.HandleFunc("POST /agent/runs/{runID}/elicitations/{id}", s.handleRunElicitation)
+	mux.HandleFunc("GET /agent/runs/{runID}/elicitations", s.handleRunElicitations)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
 	// DISP-05/D-09 image-proxy: a same-origin SSRF-safe relay for web_result
 	// thumbnails/favicons. Mounted under /api/ so it inherits the parent-mux

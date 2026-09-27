@@ -65,7 +65,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /agent/runs/{runID}/cancel": httpMutationMeta("agent_run_cancel"),
 	// The cockpit mid-turn redirect (amendment #132 D-02, T-52-12): a replayed
 	// POST with the same Idempotency-Key must not enqueue a second steer.
-	"POST /agent/runs/{runID}/steer":                              httpMutationMeta("agent_run_steer"),
+	"POST /agent/runs/{runID}/steer": httpMutationMeta("agent_run_steer"),
+	// Only the response is retained; it carries no operator answer values.
+	"POST /agent/runs/{runID}/elicitations/{id}":                  httpMutationMeta("agent_run_elicitation_answer"),
 	"POST /api/conversations/{conv}/swarm/{child}/steer":          httpMutationMeta("worker_steer"),
 	"POST /api/conversations/{conv}/swarm/{child}/cancel":         httpMutationMeta("worker_cancel"),
 	"POST /api/admin/identities/{id}/capabilities":                httpMutationMeta("capability_grant"),
