@@ -1541,8 +1541,12 @@ jobs:
   web-mutation:
     name: Critical mutation testing (each boundary >= 70% killed)
     runs-on: ubuntu-latest
-    # 90, not 45, because the spread between runs is what this job actually needs headroom
-    # for. The TypeScript 7 / Stryker 10 / Vitest 5 upgrade broke the vitest-runner's
+    # 120, not 90: run 36320533867 (64 Stryker files) spent 78m36s in Stryker, then
+    # the 90m job wall cancelled the Go boundary gate after 11m14s, before the final
+    # elicitation_route scope could report. Keep every scope and its 70% floor; give the
+    # combined workload measured headroom without increasing mutation concurrency.
+    # Earlier, 90 rather than 45 was needed for runner variance. The TypeScript 7 /
+    # Stryker 10 / Vitest 5 upgrade broke the vitest-runner's
     # per-test filter, which made Stryker FASTER and worthless — 1.32 tests per mutant and a
     # 4.27% score (run 34229531588). Restoring the filter (6a4a8880a) restored the real
     # workload, and run 34251499133 then died on the 45m wall at 45m21s with about five
@@ -1557,20 +1561,21 @@ jobs:
     # the six Go scopes cost about a minute.
     #
     # UNRE-MEASURED (2026-09-16): the media scopes grew Stryker's mutate list from 34 files to
-    # 42, and no run under the larger list has been timed. The headroom above is a measurement
-    # of the 34-file list; if the job starts approaching 90m, that is the first thing to time.
+    # 42, and no run under the larger list had been timed then. That headroom measured only
+    # the 34-file list; the 64-file measurement above supersedes it for the current job.
     #
-    # UNRE-MEASURED (2026-09-25): the MCP form plan grows the mutate list from 47 files to 61
-    # and adds the pausable and elicitation_route Go scopes. Each Go scope runs its package's
-    # suite once per mutant: internal/agent/mcptools's takes 4.3s a run, where the six scored
-    # before take 0.005-0.15s (go test -count=1, WSL). Time the first run under this budget.
+    # MEASURED PARTIALLY (2026-09-27): the MCP form plan grew the mutate list from 47 to 61;
+    # three concurrent additions brought it to 64. Run 36320533867 completed Stryker and
+    # seven Go scopes (including pausable at 70.83%) before the 90m cancellation. The eighth
+    # scope, elicitation_route, runs the 4.3s mcptools suite once per mutant; its first
+    # complete runtime and score remain gates on the next run.
     #
     # Do not try to buy the headroom back with concurrency or isolation. Both were measured
     # on a two-file probe (160 mutants, 84.38% baseline in 3m21s): `isolate: false` ran
     # 3m29s — no faster — and moved the score to 83.75; concurrency 8 on 8 cores ran 3m14s
     # and turned 22 mutants into timeouts, inflating the score to 94.38. A timeout counts as
     # a kill, so oversubscription buys a greener number rather than a better suite.
-    timeout-minutes: 90
+    timeout-minutes: 120
     # REL-02: this is deliberately unconditional. The ten independently-scored
     # boundaries — eight Go files, the frontend aggregate and the media frontend on its own
     # denominator — publish one fresh candidate-bound report; no strong scope can
