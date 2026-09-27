@@ -21,6 +21,8 @@ describe('MobileVideoTools', () => {
         onSplit={onSplit}
         onRemove={onRemove}
         onAddClip={vi.fn()}
+        onAddAudio={vi.fn()}
+        soundSelected={false}
         onAddTitle={vi.fn()}
         onOpenInspector={onOpenInspector}
       />,
@@ -53,6 +55,7 @@ describe('MobileVideoTools', () => {
   it('switches to the general add tools when no clip is selected', () => {
     const onAddClip = vi.fn();
     const onAddTitle = vi.fn();
+    const onAddAudio = vi.fn();
     render(
       <MobileVideoTools
         selectedId={undefined}
@@ -62,6 +65,8 @@ describe('MobileVideoTools', () => {
         onSplit={vi.fn()}
         onRemove={vi.fn()}
         onAddClip={onAddClip}
+        onAddAudio={onAddAudio}
+        soundSelected={false}
         onAddTitle={onAddTitle}
         onOpenInspector={vi.fn()}
       />,
@@ -72,5 +77,33 @@ describe('MobileVideoTools', () => {
     fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.command.addText' }));
     expect(onAddClip).toHaveBeenCalledOnce();
     expect(onAddTitle).toHaveBeenCalledOnce();
+    fireEvent.click(within(tools).getByRole('button', { name: 'videoStudio.audio.add' }));
+    expect(onAddAudio).toHaveBeenCalledOnce();
+  });
+
+  it('offers a sound only the tools a sound has', () => {
+    render(
+      <MobileVideoTools
+        selectedId="bed"
+        inspectorTab="audio"
+        inspectorOpen={false}
+        onBack={vi.fn()}
+        onSplit={vi.fn()}
+        onRemove={vi.fn()}
+        onAddClip={vi.fn()}
+        onAddAudio={vi.fn()}
+        onAddTitle={vi.fn()}
+        onOpenInspector={vi.fn()}
+        soundSelected
+      />,
+    );
+
+    const tools = screen.getByRole('navigation', { name: 'videoStudio.mobileTools' });
+    for (const tab of ['adjust', 'animations', 'transform'] as const) {
+      expect(within(tools).queryByRole('button', { name: `videoStudio.mobile.${tab}` })).toBeNull();
+    }
+    for (const tab of ['speed', 'audio', 'time'] as const) {
+      expect(within(tools).getByRole('button', { name: `videoStudio.mobile.${tab}` })).toBeTruthy();
+    }
   });
 });

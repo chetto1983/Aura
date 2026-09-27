@@ -7,18 +7,29 @@ import {
   projectFromClip,
   REFUSAL_MISSING_ASSET,
   REFUSAL_UNDECODABLE,
+  REFUSAL_UNDECODABLE_SOUND,
   sourceEdit,
+  uploadSource,
 } from '../VideoStudio_sources';
 
 // The async half of the workspace, tested without a renderer: what the probe refuses, what the
 // first source is allowed to do to the project's frame, and which failures are allowed to be
 // worded as "the asset is gone".
 
-const media = vi.hoisted(() => ({ probeVideo: vi.fn() }));
+const media = vi.hoisted(() => ({ probeVideo: vi.fn(), probeAudio: vi.fn() }));
 vi.mock('../../mediaEdit/videoMedia', () => media);
 
 const store = vi.hoisted(() => ({ loadProject: vi.fn() }));
 vi.mock('../projectStore', () => store);
+
+const assets = vi.hoisted(() => ({
+  presignAsset: vi.fn(() =>
+    Promise.resolve({ asset: { id: 'x' }, upload: { upload_url: 'u', required_headers: {} } }),
+  ),
+  finalizeMediaAsset: vi.fn(() => Promise.resolve({ id: 'x' })),
+}));
+vi.mock('../../chat/attachments/api', () => assets);
+vi.mock('../../chat/attachments/upload', () => ({ putWithProgress: () => Promise.resolve() }));
 
 const SOURCE = {
   assetUrl: (assetId: string) => `/api/assets/${assetId}/download`,
@@ -227,5 +238,68 @@ describe('projectFromClip', () => {
         RANGE,
       ),
     ).toThrow(REFUSAL_UNDECODABLE);
+  });
+});
+
+const SOUND = { kind: 'audio' as const, duration: 6, width: 0, height: 0 };
+
+describe('a sound at the door', () => {
+  it('is probed as a sound when the bytes say they are one, and has no frame', async () => {
+    media.probeVideo.mockClear();
+    media.probeAudio.mockResolvedValue({ duration: 6, decodable: true });
+    await expect(probeSource(new Blob(['x'], { type: 'audio/wav' }))).resolves.toEqual(SOUND);
+    expect(media.probeVideo).not.toHaveBeenCalled();
+  });
+
+  it('is refused in its own words when this browser cannot decode it or read it', async () => {
+    media.probeAudio.mockResolvedValue({ duration: 6, decodable: false });
+    await expect(probeSource(new Blob(['x'], { type: 'audio/ogg' }))).rejects.toThrow(
+      REFUSAL_UNDECODABLE_SOUND,
+    );
+    media.probeAudio.mockRejectedValue(new Error('no audio track'));
+    await expect(probeSource(new Blob(['x'], { type: 'audio/ogg' }))).rejects.toThrow(
+      REFUSAL_UNDECODABLE_SOUND,
+    );
+  });
+
+  it('goes on a lane at the time asked, named after its file, and never re-frames the project', () => {
+    const film: VideoProject = {
+      ...emptyProject('film', DEFAULT_SIZE, 30),
+      sources: [
+        {
+          id: 'src-a',
+          assetId: 'a',
+          kind: 'video',
+          duration: 8,
+          size: { width: 640, height: 360 },
+        },
+      ],
+      video: [{ id: 'clip-1', sourceId: 'src-a', duration: 8, sourceStart: 0, muted: false }],
+    };
+    const next = sourceEdit(SOUND, 'sound-asset', { time: 2, label: 'bed.wav' })(film);
+    expect(next.size).toEqual(DEFAULT_SIZE);
+    expect(next.sources.at(-1)).toMatchObject({
+      assetId: 'sound-asset',
+      kind: 'audio',
+      duration: 6,
+    });
+    expect(next.audio?.[0]?.items[0]).toMatchObject({
+      anchor: { clipId: 'clip-1', offset: 2 },
+      label: 'bed.wav',
+    });
+    expect(next.video).toHaveLength(1);
+  });
+
+  it('is refused, not parked, when there is no film to hang it on', () => {
+    expect(() =>
+      sourceEdit(SOUND, 'sound-asset', { time: 0 })(emptyProject('empty', DEFAULT_SIZE, 30)),
+    ).toThrow('videoStudio.audio.refusal.noClip');
+  });
+
+  it('is filed as a sound', async () => {
+    await uploadSource(new File(['x'], 'bed.wav', { type: 'audio/wav' }));
+    expect(assets.presignAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ modality_hint: 'audio' }),
+    );
   });
 });

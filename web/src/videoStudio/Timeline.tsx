@@ -11,8 +11,11 @@ import { Blend, Minus, Plus } from 'lucide-react';
 import { useState, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
+import { audioWindow, findAudioItem } from './audioLane';
 import { moveClip, trimClip } from './commands';
+import { moveAudio, trimAudio } from './commands_audio';
 import {
+  audioTracks,
   clipStart,
   clipStarts,
   junctionDurationAt,
@@ -21,6 +24,7 @@ import {
   type VideoProject,
   type ClipJunction,
 } from './project';
+import { AudioLaneItems } from './Timeline_audio';
 import { ClipItem, OverlayItemView } from './Timeline_items';
 import {
   atMilli,
@@ -49,7 +53,8 @@ import { Button } from '@/components/ui/button';
 // component never catches one.
 //
 // The video lane is a sequence, so a drop is an INSERT: the drop's time picks a place among the
-// clips the dragged one has left, never a free position and never an overlap.
+// clips the dragged one has left, never a free position and never an overlap. A sound's lane is
+// not a sequence: its drop is a free position, re-hung on the clip under it.
 
 interface LaneProps {
   readonly id: string;
@@ -179,6 +184,8 @@ interface LanesProps extends Omit<TimelineProps, 'onCommand'> {
   readonly onZoom: (factor: number) => void;
   readonly onMove: (clipId: string, toIndex: number) => void;
   readonly onTrim: (clipId: string, args: TrimSpan) => void;
+  readonly onMoveAudio: (itemId: string, start: number, trackId: string | undefined) => void;
+  readonly onTrimAudio: (itemId: string, args: TrimSpan) => void;
 }
 
 /**
@@ -196,6 +203,8 @@ function Lanes({
   onZoom,
   onMove,
   onTrim,
+  onMoveAudio,
+  onTrimAudio,
   selectedJunction,
   onSelectJunction,
 }: LanesProps) {
@@ -211,8 +220,15 @@ function Lanes({
       const drag = event as DragEndEvent;
       const span = drag.active.data.current.getSpanFromDragEvent?.(drag);
       if (span === null || span === undefined) return;
-      const clipId = String(drag.active.id);
-      onMove(clipId, insertIndexFor(project, clipId, span.start));
+      const id = String(drag.active.id);
+      if (findAudioItem(project, id) !== undefined) {
+        // A sound lands where it is let go, onto the sound lane it is over; over anything else it
+        // keeps its own lane.
+        const over = drag.over?.id;
+        onMoveAudio(id, span.start, audioTracks(project).find((track) => track.id === over)?.id);
+        return;
+      }
+      onMove(id, insertIndexFor(project, id, span.start));
     },
   });
   const starts = clipStarts(project);
@@ -315,6 +331,23 @@ function Lanes({
           );
         })}
       </Lane>
+      {audioTracks(project).map((track, index, tracks) => (
+        <Lane
+          key={track.id}
+          id={track.id}
+          label={t('videoStudio.audio.lane', { index: index + 1 })}
+          droppable
+        >
+          <AudioLaneItems
+            project={project}
+            track={track}
+            before={tracks.slice(0, index).reduce((count, lane) => count + lane.items.length, 0)}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onTrim={onTrimAudio}
+          />
+        </Lane>
+      ))}
       <div
         aria-hidden="true"
         style={{ position: 'absolute', inset: 0 }}
@@ -351,6 +384,12 @@ export function Timeline({
   function onTrim(clipId: string, args: TrimSpan) {
     onCommand((current) => trimClip(current, { clipId, ...args }));
   }
+  function onMoveAudio(itemId: string, start: number, trackId: string | undefined) {
+    onCommand((current) => moveAudio(current, { itemId, start, trackId }));
+  }
+  function onTrimAudio(itemId: string, args: TrimSpan) {
+    onCommand((current) => trimAudio(current, { itemId, ...args }));
+  }
   return (
     <TimelineContext
       range={range}
@@ -359,12 +398,26 @@ export function Timeline({
         setView(update(range));
       }}
       onResizeEnd={(event: ResizeEndEvent) => {
-        const clipId = String(event.active.id);
-        const from = clipStart(project, clipId);
-        const clip = project.video.find((item) => item.id === clipId);
+        const id = String(event.active.id);
         const span = event.active.data.current.getSpanFromResizeEvent?.(event);
-        if (from === undefined || clip === undefined || span === null || span === undefined) return;
-        onTrim(clipId, trimArgsFromSpan(from, span, clip.speed));
+        if (span === null || span === undefined) return;
+        const sound = findAudioItem(project, id);
+        if (sound !== undefined) {
+          // Only the dragged edge moves and the other is kept exactly: a sound the film's end cuts
+          // short keeps the part nobody can see instead of losing it to the visible span.
+          const moved = trimArgsFromSpan(audioWindow(project, sound).start, span, sound.speed);
+          onTrimAudio(
+            id,
+            event.direction === 'start'
+              ? { start: moved.start, end: sound.duration }
+              : { start: 0, end: moved.end },
+          );
+          return;
+        }
+        const from = clipStart(project, id);
+        const clip = project.video.find((item) => item.id === id);
+        if (from === undefined || clip === undefined) return;
+        onTrim(id, trimArgsFromSpan(from, span, clip.speed));
       }}
     >
       <Lanes
@@ -380,6 +433,8 @@ export function Timeline({
         }}
         onMove={onMove}
         onTrim={onTrim}
+        onMoveAudio={onMoveAudio}
+        onTrimAudio={onTrimAudio}
         selectedJunction={selectedJunction}
         onSelectJunction={onSelectJunction}
       />

@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
-import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem, splitAt } from './commands';
+import { findAudioItem } from './audioLane';
+import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem } from './commands';
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
 import type { ClipTab } from './Inspector_clip';
@@ -22,8 +23,16 @@ import { Timeline } from './Timeline';
 import { VideoStudioTransport } from './VideoStudioTransport';
 import { MobileVideoTools } from './VideoStudio_mobile';
 import { ExportPanel } from './VideoStudio_export';
-import { StudioRail } from './VideoStudio_rail';
+import { FilePicker, StudioRail } from './VideoStudio_rail';
 import {
+  addedItem,
+  holds,
+  overlayCount,
+  splitEdit,
+  unplayableClips,
+} from './VideoStudio_selection';
+import {
+  AUDIO_ACCEPT,
   openedProject,
   probeSource,
   REFUSAL_MISSING_ASSET,
@@ -53,27 +62,6 @@ interface VideoStudioProps {
   readonly onSaved?: ((assetId: string) => void) | undefined;
 }
 
-function overlayCount(project: VideoProject): number {
-  return project.overlays.reduce((total, lane) => total + lane.items.length, 0);
-}
-
-function addedOverlay(before: VideoProject, after: VideoProject): string | undefined {
-  const had = new Set(before.overlays.flatMap((lane) => lane.items.map((item) => item.id)));
-  return after.overlays.flatMap((lane) => lane.items).find((item) => !had.has(item.id))?.id;
-}
-
-function holds(project: VideoProject, id: string | undefined): boolean {
-  if (id === undefined) return false;
-  return (
-    project.video.some((clip) => clip.id === id) ||
-    project.overlays.some((lane) => lane.items.some((item) => item.id === id))
-  );
-}
-
-function unplayableClips(project: VideoProject, missing: readonly string[]): readonly string[] {
-  return project.video.filter((clip) => missing.includes(clip.sourceId)).map((clip) => clip.id);
-}
-
 /**
  * The sentence an error becomes. A refusal speaks for itself and is shown unchanged, whichever
  * of the seven it is; anything else — a caller out of step with the model, a dropped connection
@@ -90,6 +78,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const assetSource = useAssetSource();
   const [history, setHistory] = useState<History>();
   const fileInput = useRef<HTMLInputElement>(null);
+  const audioInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedJunction, setSelectedJunction] = useState<ClipJunction>();
@@ -140,7 +129,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
       const before = history.current;
       const next = history.apply(edit);
       setProject(next);
-      reselect(next, addedOverlay(before, next));
+      reselect(next, addedItem(before, next));
       // The frame can only change by a project taking its first source's, and it has to be said:
       // a silent re-frame is the same class of surprise as the silent crop it prevents.
       if (before.size.width !== next.size.width || before.size.height !== next.size.height) {
@@ -183,17 +172,22 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   }
 
   async function addFile(file: File) {
+    const placement = { time: playhead, label: file.name };
     setProblem(undefined);
     setStatus(says('videoStudio.source.reading'));
     try {
       // Probed first, uploaded second: a clip this browser cannot decode never costs a transfer.
       const probed = await probeSource(file);
+      // And tried before the transfer too: a sound with no film under it is refused here, not
+      // after its bytes have become an asset nothing points at.
+      const current = history?.current;
+      if (current !== undefined) sourceEdit(probed, '', placement)(current);
       setStatus(says('videoStudio.source.uploading', { name: file.name }));
       const assetId = await uploadSource(file);
       // Cleared BEFORE the commit, never after: the commit may replace this line with the frame
       // the project has just taken from this source, and clearing afterwards would eat it.
       setStatus(undefined);
-      run(sourceEdit(probed, assetId));
+      run(sourceEdit(probed, assetId, placement));
     } catch (error) {
       setStatus(undefined);
       setProblem(failure(error, 'videoStudio.source.failed'));
@@ -352,9 +346,10 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               canAddTitle={underPlayhead !== undefined}
               canRemove={selectedId !== undefined}
               onAddSource={() => fileInput.current?.click()}
+              onAddAudio={() => audioInput.current?.click()}
               onAddTitle={addTitle}
               onSplit={() => {
-                run((current) => splitAt(current, { time: playhead }));
+                run(splitEdit(selectedId, playhead));
               }}
               onShowProperties={() => propertiesRef.current?.focus()}
               onRemove={() => {
@@ -362,19 +357,17 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}
             />
-            <input
-              ref={fileInput}
-              type="file"
+            <FilePicker
+              inputRef={fileInput}
               accept={SOURCE_ACCEPT}
-              className="sr-only"
-              aria-label={t('videoStudio.source.pick')}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                // The same file picked twice in a row fires no change event unless the input is
-                // cleared, and a retry after a refusal is exactly that case.
-                event.target.value = '';
-                if (file !== undefined) void addFile(file);
-              }}
+              label={t('videoStudio.source.pick')}
+              onFile={(file) => void addFile(file)}
+            />
+            <FilePicker
+              inputRef={audioInput}
+              accept={AUDIO_ACCEPT}
+              label={t('videoStudio.audio.pick')}
+              onFile={(file) => void addFile(file)}
             />
 
             <div className="video-studio-workspace">
@@ -500,7 +493,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               }}
               onSplit={() => {
                 setSelectedJunction(undefined);
-                run((current) => splitAt(current, { time: playhead }));
+                run(splitEdit(selectedId, playhead));
               }}
               onRemove={() => {
                 setSelectedJunction(undefined);
@@ -508,6 +501,10 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}
               onAddClip={() => fileInput.current?.click()}
+              onAddAudio={() => audioInput.current?.click()}
+              soundSelected={
+                selectedId !== undefined && findAudioItem(project, selectedId) !== undefined
+              }
               onAddTitle={addTitle}
               onOpenInspector={showInspector}
             />

@@ -46,7 +46,7 @@ vi.mock('../videoflow', async (original) => ({
   exportProject: flow.exportProject,
 }));
 
-const media = vi.hoisted(() => ({ probeVideo: vi.fn() }));
+const media = vi.hoisted(() => ({ probeVideo: vi.fn(), probeAudio: vi.fn() }));
 vi.mock('../../mediaEdit/videoMedia', () => media);
 
 const downloadBlob = vi.hoisted(() => vi.fn());

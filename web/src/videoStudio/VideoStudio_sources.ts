@@ -1,8 +1,9 @@
 import { finalizeMediaAsset, presignAsset } from '../chat/attachments/api';
 import { putWithProgress } from '../chat/attachments/upload';
-import { probeVideo, type VideoInfo } from '../mediaEdit/videoMedia';
+import { probeAudio, probeVideo, type VideoInfo } from '../mediaEdit/videoMedia';
 import { assetIsGone } from './assetStatus';
 import { addClip, CommandRefusal } from './commands';
+import { addAudio } from './commands_audio';
 import { emptyProject, type ProjectSource, type VideoProject } from './project';
 import { loadProject, type LoadedProject, type ProjectAssetSource } from './projectStore';
 
@@ -15,10 +16,20 @@ import { loadProject, type LoadedProject, type ProjectAssetSource } from './proj
 // decode by disabling the layer: the export then succeeds and the frames are black. A refusal at
 // the door is the only place that failure is still legible.
 
-/** The two refusals the SHELL raises. `commands.ts` owns the other five, one per decision a
- *  command declines; these two are about the bytes, which no pure command ever sees. */
+/** The three refusals the SHELL raises. `commands.ts` owns the other five, one per decision a
+ *  command declines; these are about the bytes, which no pure command ever sees. A sound gets its
+ *  own sentence: the clip's speaks of a black export. */
 export const REFUSAL_UNDECODABLE = 'videoStudio.refusal.sourceUndecodable';
 export const REFUSAL_MISSING_ASSET = 'videoStudio.refusal.sourceMissingAsset';
+export const REFUSAL_UNDECODABLE_SOUND = 'videoStudio.audio.refusal.undecodable';
+
+/**
+ * What the audio picker takes: MIME types only, because the probe is routed by the picked file's
+ * type and the server files a sound by it (`InferModality`, audio/* → ModalityAudio). Every one is
+ * a container Chromium and mediabunny both read.
+ */
+export const AUDIO_ACCEPT =
+  'audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac';
 
 /**
  * What the file picker takes. The clips are exactly what the asset route accepts as a video
@@ -27,8 +38,9 @@ export const REFUSAL_MISSING_ASSET = 'videoStudio.refusal.sourceMissingAsset';
  * below plus the decode probe — and it holds the three raster formats every browser this cockpit
  * targets decodes. GIF is left out on purpose: the video lane would show one frame of it and
  * say nothing about the rest, and a silent loss is the defect class this cycle keeps refusing.
+ * A sound picked here goes to an audio lane, as Clideo does.
  */
-export const SOURCE_ACCEPT = 'video/mp4,video/webm,image/png,image/jpeg,image/webp';
+export const SOURCE_ACCEPT = `video/mp4,video/webm,image/png,image/jpeg,image/webp,${AUDIO_ACCEPT}`;
 
 /**
  * How long a still is on screen when it is added. A number this module CHOOSES rather than
@@ -85,6 +97,18 @@ async function probeImage(bytes: Blob): Promise<ProbedSource> {
   }
 }
 
+/** Read a sound, or refuse it in its own words: it has no frame, and its length is its source's. */
+async function probeSound(bytes: Blob): Promise<ProbedSource> {
+  let probed;
+  try {
+    probed = await probeAudio(bytes);
+  } catch {
+    throw new CommandRefusal(REFUSAL_UNDECODABLE_SOUND);
+  }
+  if (!probed.decodable) throw new CommandRefusal(REFUSAL_UNDECODABLE_SOUND);
+  return { kind: 'audio', duration: probed.duration, width: 0, height: 0 };
+}
+
 /**
  * Read the bytes, or refuse them. Separate from `sourceEdit` so a PICKED file is probed before
  * it is uploaded: a clip this browser cannot decode is refused without paying for the transfer,
@@ -103,6 +127,7 @@ async function probeImage(bytes: Blob): Promise<ProbedSource> {
  */
 export async function probeSource(bytes: Blob): Promise<ProbedSource> {
   if (bytes.type.startsWith('image/')) return probeImage(bytes);
+  if (bytes.type.startsWith('audio/')) return probeSound(bytes);
   let probed;
   try {
     probed = await probeVideo(bytes);
@@ -132,6 +157,13 @@ function framedByDefault(project: VideoProject): boolean {
   );
 }
 
+/** Where a probed SOUND goes: the project time it starts at and the name its item shows. A clip
+ *  or a still needs neither — it joins the end of the video lane. */
+export interface SourcePlacement {
+  readonly time: number;
+  readonly label?: string | undefined;
+}
+
 /**
  * The edit that puts a probed source in the project, with a clip of its whole length.
  *
@@ -142,8 +174,15 @@ function framedByDefault(project: VideoProject): boolean {
  * the same disease: a SECOND source never re-frames the project, and neither does the first
  * source of a project whose frame came from somewhere (a clip, a saved file). The workspace
  * watches the size across the commit and says so when it changes.
+ *
+ * A sound goes on the first free audio lane at `placement.time` instead, hung on the clip there,
+ * and never frames anything: it has no picture to give.
  */
-export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
+export function sourceEdit(
+  probed: ProbedSource,
+  assetId: string,
+  placement: SourcePlacement = { time: 0 },
+): Edit {
   const size = { width: probed.width, height: probed.height };
   return (project) => {
     const source: ProjectSource = {
@@ -154,12 +193,20 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
       size,
       ...(probed.hasAudio === undefined ? {} : { hasAudio: probed.hasAudio }),
     };
+    const withSource: VideoProject = {
+      ...project,
+      size: probed.kind !== 'audio' && framedByDefault(project) ? size : project.size,
+      sources: [...project.sources, source],
+    };
+    if (probed.kind === 'audio') {
+      return addAudio(withSource, {
+        sourceId: source.id,
+        time: placement.time,
+        label: placement.label,
+      });
+    }
     return addClip(
-      {
-        ...project,
-        size: framedByDefault(project) ? size : project.size,
-        sources: [...project.sources, source],
-      },
+      withSource,
       // A still lasts as long as its ITEM says: the source's own duration is zero, and `addClip`
       // refuses a clip of no length.
       { sourceId: source.id, duration: probed.kind === 'image' ? IMAGE_SECONDS : probed.duration },
@@ -179,8 +226,13 @@ export async function uploadSource(file: File): Promise<string> {
     file_name: file.name,
     mime_type: file.type,
     // Named rather than guessed: the server files an .mp4 under media/, and a hint reading
-    // 'unknown' is how a clip ends up beside the documents. A still is filed as one.
-    modality_hint: file.type.startsWith('image/') ? 'image' : 'video',
+    // 'unknown' is how a clip ends up beside the documents. A still is filed as one, and a sound
+    // as one.
+    modality_hint: file.type.startsWith('image/')
+      ? 'image'
+      : file.type.startsWith('audio/')
+        ? 'audio'
+        : 'video',
     size_bytes: file.size,
   });
   await putWithProgress(presign.upload.upload_url, file, presign.upload.required_headers, () => {

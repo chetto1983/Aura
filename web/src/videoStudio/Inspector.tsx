@@ -1,6 +1,8 @@
 import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { findAudioItem } from './audioLane';
 import { setProperty } from './commands';
+import { AudioItemInspector } from './Inspector_audio';
 import { ClipInspector, type ClipTab } from './Inspector_clip';
 import { overlayWindow, type OverlayItem, type VideoProject } from './project';
 import { Input } from '@/components/ui/input';
@@ -274,6 +276,7 @@ export function Inspector({
   const overlay = project.overlays
     .flatMap((track) => track.items)
     .find((item) => item.id === selectedId);
+  const sound = selectedId === undefined ? undefined : findAudioItem(project, selectedId);
   return (
     <section
       aria-label={t('videoStudio.inspector.label')}
@@ -283,6 +286,14 @@ export function Inspector({
         <ClipInspector
           project={project}
           clip={clip}
+          onCommand={onCommand}
+          {...(activeClipTab === undefined ? {} : { activeTab: activeClipTab })}
+          {...(onClipTabChange === undefined ? {} : { onTabChange: onClipTabChange })}
+        />
+      ) : sound !== undefined ? (
+        <AudioItemInspector
+          project={project}
+          item={sound}
           onCommand={onCommand}
           {...(activeClipTab === undefined ? {} : { activeTab: activeClipTab })}
           {...(onClipTabChange === undefined ? {} : { onTabChange: onClipTabChange })}

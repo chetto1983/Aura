@@ -12,7 +12,8 @@ import {
 import { atMilli, clamp, stepOnArrow, TOUCH_FLOOR, type TrimSpan } from './timelineView';
 
 // Timeline_items.tsx — what sits on a lane: a clip with its two trim handles, and an overlay that
-// only selects, because cycle 1 has no command that moves one.
+// only selects, because cycle 1 has no command that moves one. A sound on an audio lane is drawn by
+// Timeline_audio.tsx, with this file's handle and block.
 //
 // A handle's pointer drag is not here. dnd-timeline owns it — the press lands inside the item's
 // resize band and the release reaches the shell as `onResizeEnd` — so nothing in this file writes
@@ -54,7 +55,17 @@ interface HandleProps {
  * widening the boundary itself, which is a lane redesign and not this fix. The keyboard steps and
  * the inspector's Start and End fields reach every edge whatever the width.
  */
-function Handle({ label, value, min, max, side, frame, abuts, selected, onSet }: HandleProps) {
+export function Handle({
+  label,
+  value,
+  min,
+  max,
+  side,
+  frame,
+  abuts,
+  selected,
+  onSet,
+}: HandleProps) {
   return (
     <div
       role="slider"
@@ -96,7 +107,7 @@ interface ItemButtonProps {
   readonly label: string;
   readonly length: number;
   readonly selected: boolean;
-  readonly kind: 'clip' | 'overlay';
+  readonly kind: 'clip' | 'overlay' | 'audio';
   readonly preview?: ReactNode;
   readonly idle: string;
   readonly onSelect: () => void;
@@ -107,7 +118,7 @@ interface ItemButtonProps {
 }
 
 /** What both lanes put on the timeline: a block that says how long it is and selects on click. */
-function ItemButton({
+export function ItemButton({
   label,
   length,
   selected,

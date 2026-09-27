@@ -13,12 +13,13 @@ import {
   ZoomIn,
   type LucideIcon,
 } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CROP_PRESETS, presetRect, rotateSize } from '../mediaEdit/cropMath';
 import { formatTimecode } from '../mediaEdit/timecode';
 import { TimeField } from '../mediaEdit/TimeField';
-import { removeRange, setClipPresentation, setFrameSize, setMuted, trimClip } from './commands';
+import { removeRange, setClipPresentation, setFrameSize, trimClip } from './commands';
+import { ClipAudioControls, SpeedSlider, type AudioTab } from './Inspector_audio';
 import {
   clipStart,
   sourceOf,
@@ -28,13 +29,12 @@ import {
 } from './project';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 
 type Commit = (edit: (current: VideoProject) => VideoProject) => void;
 type TransformMode = 'fill' | 'fit' | 'crop';
-export type ClipTab = 'transform' | 'animation' | 'adjust' | 'audio' | 'speed' | 'time';
+export type ClipTab = 'transform' | 'animation' | 'adjust' | AudioTab;
 
 interface ClipInspectorProps {
   readonly project: VideoProject;
@@ -240,86 +240,6 @@ function AdjustControls({ clip, onCommand }: ClipInspectorProps) {
   );
 }
 
-function AudioControls({ clip, onCommand }: ClipInspectorProps) {
-  const { t } = useTranslation();
-  const id = useId();
-  const volume = clip.volume ?? 1;
-  return (
-    <div className="video-studio-tab-panel">
-      <label className="video-studio-adjustment">
-        <span>{t('videoStudio.inspector.volume')}</span>
-        <span className="font-mono tabular-nums">{Math.round(volume * 100)}%</span>
-        <Slider
-          key={volume}
-          aria-label={t('videoStudio.inspector.volume')}
-          min={0}
-          max={200}
-          step={1}
-          defaultValue={[Math.round(volume * 100)]}
-          onValueCommit={([next = 100]) => {
-            onCommand((current) =>
-              setClipPresentation(current, { clipId: clip.id, volume: next / 100 }),
-            );
-          }}
-        />
-      </label>
-      <div className="flex items-center gap-2 text-xs text-text-muted">
-        <Switch
-          id={id}
-          checked={clip.muted}
-          aria-label={t('videoStudio.inspector.mute')}
-          onCheckedChange={(muted) => {
-            onCommand((current) => setMuted(current, { clipId: clip.id, muted }));
-          }}
-        />
-        <label htmlFor={id}>{t('videoStudio.inspector.mute')}</label>
-      </div>
-    </div>
-  );
-}
-
-function SpeedControls({ clip, onCommand }: ClipInspectorProps) {
-  const { t } = useTranslation();
-  const speed = clip.speed ?? 1;
-  const commit = (next: number) => {
-    onCommand((current) => setClipPresentation(current, { clipId: clip.id, speed: next }));
-  };
-  return (
-    <div className="video-studio-tab-panel">
-      <label className="video-studio-adjustment">
-        <span>{t('videoStudio.inspector.playbackRate')}</span>
-        <span className="font-mono tabular-nums">{speed.toFixed(2)}×</span>
-        <Slider
-          key={speed}
-          aria-label={t('videoStudio.inspector.playbackRate')}
-          min={25}
-          max={400}
-          step={5}
-          defaultValue={[Math.round(speed * 100)]}
-          onValueCommit={([next = 100]) => {
-            commit(next / 100);
-          }}
-        />
-      </label>
-      <div className="grid grid-cols-4 gap-1">
-        {[0.5, 1, 1.5, 2].map((value) => (
-          <Button
-            key={value}
-            type="button"
-            variant={speed === value ? 'default' : 'ghost'}
-            size="sm"
-            onClick={() => {
-              commit(value);
-            }}
-          >
-            {value}×
-          </Button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function TimeControls({ project, clip, onCommand }: ClipInspectorProps) {
   const { t } = useTranslation();
   const end = clip.sourceStart + clip.duration;
@@ -517,11 +437,20 @@ export function ClipInspector(props: ClipInspectorProps) {
       </TabsContent>
       {hasAudio ? (
         <TabsContent value="audio">
-          <AudioControls {...props} />
+          <ClipAudioControls clip={props.clip} onCommand={props.onCommand} />
         </TabsContent>
       ) : null}
       <TabsContent value="speed">
-        <SpeedControls {...props} />
+        <div className="video-studio-tab-panel">
+          <SpeedSlider
+            speed={props.clip.speed ?? 1}
+            onCommit={(speed) => {
+              props.onCommand((current) =>
+                setClipPresentation(current, { clipId: props.clip.id, speed }),
+              );
+            }}
+          />
+        </div>
       </TabsContent>
       <TabsContent value="time">
         <TimeControls {...props} />

@@ -3,6 +3,7 @@ import {
   Clock3,
   Crop,
   Gauge,
+  Music,
   Plus,
   Scissors,
   SlidersHorizontal,
@@ -23,6 +24,8 @@ interface MobileVideoToolsProps {
   readonly onSplit: () => void;
   readonly onRemove: () => void;
   readonly onAddClip: () => void;
+  readonly onAddAudio: () => void;
+  readonly soundSelected: boolean;
   readonly onAddTitle: () => void;
   readonly onOpenInspector: (tab: ClipTab) => void;
 }
@@ -42,6 +45,9 @@ const INSPECTOR_TOOLS: readonly InspectorTool[] = [
   { tab: 'time', icon: Clock3, labelKey: 'videoStudio.mobile.time' },
 ];
 
+/** A sound has no frame, no look and no motion: only these of the clip's tools apply to it. */
+const SOUND_TABS: readonly ClipTab[] = ['speed', 'audio', 'time'];
+
 export function MobileVideoTools({
   selectedId,
   inspectorTab,
@@ -50,11 +56,16 @@ export function MobileVideoTools({
   onSplit,
   onRemove,
   onAddClip,
+  onAddAudio,
+  soundSelected,
   onAddTitle,
   onOpenInspector,
 }: MobileVideoToolsProps) {
   const { t } = useTranslation();
   const hasSelection = selectedId !== undefined;
+  const tools = soundSelected
+    ? INSPECTOR_TOOLS.filter(({ tab }) => SOUND_TABS.includes(tab))
+    : INSPECTOR_TOOLS;
 
   if (!hasSelection) {
     return (
@@ -67,6 +78,15 @@ export function MobileVideoTools({
         >
           <Plus aria-hidden="true" />
           <span>{t('videoStudio.command.addSource')}</span>
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          className="video-studio-mobile-tool"
+          onClick={onAddAudio}
+        >
+          <Music aria-hidden="true" />
+          <span>{t('videoStudio.audio.add')}</span>
         </Button>
         <Button
           type="button"
@@ -96,7 +116,7 @@ export function MobileVideoTools({
         <Scissors aria-hidden="true" />
         <span>{t('videoStudio.mobile.split')}</span>
       </Button>
-      {INSPECTOR_TOOLS.slice(0, 3).map(({ tab, icon: Icon, labelKey }) => (
+      {tools.slice(0, 3).map(({ tab, icon: Icon, labelKey }) => (
         <Button
           key={tab}
           type="button"
@@ -115,7 +135,7 @@ export function MobileVideoTools({
         <Trash2 aria-hidden="true" />
         <span>{t('videoStudio.mobile.delete')}</span>
       </Button>
-      {INSPECTOR_TOOLS.slice(3).map(({ tab, icon: Icon, labelKey }) => (
+      {tools.slice(3).map(({ tab, icon: Icon, labelKey }) => (
         <Button
           key={tab}
           type="button"

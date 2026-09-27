@@ -1,0 +1,36 @@
+/* A sound on its lane: the clip's block in a colour of its own, over a fine vertical grain that
+   reads as a waveform at a glance, so a lane of sound never passes for a lane of picture. */
+.video-studio-audio {
+  position: relative;
+  gap: 6px;
+  border-color: color-mix(
+    in oklab,
+    var(--video-studio-accent) 55%,
+    var(--video-studio-border-strong)
+  );
+  border-radius: 5px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--video-studio-accent) 22%, transparent) 0 2px,
+      transparent 2px 6px
+    ),
+    color-mix(in oklab, var(--video-studio-accent) 14%, var(--video-studio-panel-strong));
+  color: var(--video-studio-text);
+}
+
+.video-studio-audio[aria-current='true'] {
+  border-color: var(--video-studio-selection);
+  box-shadow: inset 0 0 0 2px var(--video-studio-selection);
+}
+
+.video-studio-audio-name {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

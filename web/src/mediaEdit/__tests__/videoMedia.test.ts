@@ -33,7 +33,7 @@ vi.mock('mediabunny', () => ({
   },
 }));
 
-const { probeVideo } = await import('../videoMedia');
+const { probeAudio, probeVideo } = await import('../videoMedia');
 
 beforeEach(() => {
   state.disposed = 0;
@@ -71,5 +71,28 @@ describe('probeVideo', () => {
     controller.abort();
     await expect(reading).rejects.toHaveProperty('name', 'AbortError');
     expect(state.disposed).toBeGreaterThan(0);
+  });
+});
+
+describe('probeAudio', () => {
+  it('reports the length of the sound and whether this browser decodes it', async () => {
+    state.audio = { canDecode: () => Promise.resolve(false) };
+    await expect(probeAudio(new Blob())).resolves.toEqual({ duration: 10, decodable: false });
+    expect(state.disposed).toBe(1);
+  });
+
+  it('refuses a file without an audio track', async () => {
+    state.audio = null;
+    await expect(probeAudio(new Blob())).rejects.toThrow('no audio track');
+    expect(state.disposed).toBe(1);
+  });
+
+  it('refuses at once under a signal that already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(probeAudio(new Blob(), controller.signal)).rejects.toHaveProperty(
+      'name',
+      'AbortError',
+    );
   });
 });
