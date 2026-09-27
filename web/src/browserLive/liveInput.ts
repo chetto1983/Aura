@@ -34,6 +34,18 @@ export function parseRelayLine(line: string): RelayMessage {
     return { kind: 'frame', src: `data:image/jpeg;base64,${m.data}`, meta: { deviceWidth } };
   }
   if (m.type === 'url' && typeof m.url === 'string') return { kind: 'url', url: m.url };
+  // A `url` message comes only when the page navigates. A viewer that joins an open page learns
+  // its address from the tab list the stream sends on connect (measured 2026-09-27).
+  if (m.type === 'tabs' && Array.isArray(m.tabs)) {
+    const active = (m.tabs as unknown[]).find(
+      (tab): tab is { url: string } =>
+        typeof tab === 'object' &&
+        tab !== null &&
+        (tab as Record<string, unknown>).active === true &&
+        typeof (tab as Record<string, unknown>).url === 'string',
+    );
+    return active ? { kind: 'url', url: active.url } : { kind: 'other' };
+  }
   if (m.type === 'relay_error' && typeof m.reason === 'string')
     return { kind: 'error', reason: m.reason };
   return { kind: 'other' };

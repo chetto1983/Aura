@@ -57,6 +57,27 @@ describe('parseRelayLine', () => {
     expect(parseRelayLine('{"type":"relay_error"}')).toEqual({ kind: 'other' });
   });
 
+  it('reads the address of the active tab from the tab list a joining viewer gets', () => {
+    // The shape the stream sent on connect on 2026-09-27, trimmed to one background tab.
+    const tabs = (list: unknown[]) => JSON.stringify({ type: 'tabs', timestamp: 1, tabs: list });
+    const tab = { label: null, tabId: 't1', targetId: '9BF1', title: 'example.com', type: 'page' };
+    expect(
+      parseRelayLine(
+        tabs([
+          { ...tab, tabId: 't0', active: false, url: 'https://other.test/' },
+          { ...tab, active: true, url: 'https://example.com/' },
+        ]),
+      ),
+    ).toEqual({ kind: 'url', url: 'https://example.com/' });
+    expect(parseRelayLine(tabs([{ ...tab, active: false, url: 'https://example.com/' }]))).toEqual({
+      kind: 'other',
+    });
+    expect(parseRelayLine(tabs([{ ...tab, active: true, url: 7 }, null]))).toEqual({
+      kind: 'other',
+    });
+    expect(parseRelayLine('{"type":"tabs","tabs":"t1"}')).toEqual({ kind: 'other' });
+  });
+
   it('reads the type, not just the fields a message happens to carry', () => {
     const meta = { deviceWidth: 10, deviceHeight: 10 };
     expect(
