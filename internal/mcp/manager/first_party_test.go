@@ -10,11 +10,20 @@ func TestFirstPartyRecipeAcceptsEveryShippedSidecar(t *testing.T) {
 	t.Setenv("AURA_ARCADEDB_MCP_PORT", "")
 	t.Setenv("AURA_WHATSAPP_MCP_PORT", "")
 	t.Setenv("AURA_PIM_MCP_PORT", "")
-	entries := BuiltInCatalog()
-	if len(entries) != 3 {
-		t.Fatalf("catalog has %d entries; the first-party set is meant to be the whole catalog", len(entries))
+	// Every sidecar the catalog ships is first-party. The browser recipe is not a sidecar:
+	// it runs in the caller's own box, has no URL and needs no grant, so it stays out.
+	var sidecars []CatalogEntry
+	for _, entry := range BuiltInCatalog() {
+		if entry.Server.URL != "" {
+			sidecars = append(sidecars, entry)
+		} else if FirstPartyRecipe(entry.Server) {
+			t.Errorf("FirstPartyRecipe(%q) = true for a recipe with no sidecar to grant", entry.Name)
+		}
 	}
-	for _, entry := range entries {
+	if len(sidecars) != 3 {
+		t.Fatalf("catalog has %d sidecars; the first-party set is meant to be all of them", len(sidecars))
+	}
+	for _, entry := range sidecars {
 		if !FirstPartyRecipe(entry.Server) {
 			t.Errorf("FirstPartyRecipe(%q) = false, want true", entry.Name)
 		}

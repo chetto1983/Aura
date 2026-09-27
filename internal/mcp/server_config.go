@@ -14,4 +14,9 @@ type ServerConfig struct {
 	Args        []string      `json:"args,omitempty"`
 	Env         []string      `json:"env,omitempty"`
 	CallTimeout time.Duration `json:"-"`
+	// Box runs the server in the calling identity's sandbox box instead of on the host
+	// (RuntimeKindBox). It comes from the registry's runtime kind, never from this JSON.
+	Box bool `json:"-"`
+	// InitTimeout is a box server's first-start budget (BoxInitTimeout).
+	InitTimeout time.Duration `json:"-"`
 }

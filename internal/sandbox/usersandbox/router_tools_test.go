@@ -52,7 +52,7 @@ func TestRouterOptionalCaps_FailClosed(t *testing.T) {
 		if err := r.WriteFileStream(ctx, h, "/workspace/in.txt", 1, strings.NewReader("x")); err == nil {
 			t.Fatal("WriteFileStream without the capability: want error, got nil")
 		}
-		if _, err := r.ExecStream(ctx, h, ExecRequest{Command: "true"}, &bytes.Buffer{}); err == nil {
+		if _, err := r.ExecStream(ctx, h, ExecRequest{Command: "true"}, nil, &bytes.Buffer{}); err == nil {
 			t.Fatal("ExecStream without the capability: want error, got nil")
 		}
 	}

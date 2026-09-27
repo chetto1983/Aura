@@ -102,6 +102,30 @@ func TestTarSingleFile(t *testing.T) {
 	})
 }
 
+// TestScratchMountIsNeverACopyTarget pins the refusal both copy-in forms share: Docker's archive API
+// cannot write a tmpfs, so a scratch path must fail in singleFileHeader instead of returning nil
+// for a file that never appears.
+func TestScratchMountIsNeverACopyTarget(t *testing.T) {
+	t.Parallel()
+	for path, want := range map[string]bool{
+		"/workspace/.scratch":                true,
+		"/workspace/.scratch/notes.txt":      true,
+		"workspace/.scratch/a/b.txt":         true,
+		" /workspace//.scratch/./x ":         true,
+		"/workspace/.scratchpad/x":           false,
+		"/workspace/.scratch/../report.md":   false,
+		"/workspace/documents/.scratch/x.md": false,
+	} {
+		if got := OnScratchMount(path); got != want {
+			t.Errorf("OnScratchMount(%q) = %v, want %v", path, got, want)
+		}
+		_, err := singleFileHeader(path, 1, 0o600)
+		if refused := err != nil && strings.Contains(err.Error(), "scratch mount"); refused != want {
+			t.Errorf("singleFileHeader(%q) err = %v, want refused=%v", path, err, want)
+		}
+	}
+}
+
 // TestWriteTarEntryDeclaredLength covers the contract the STREAMED copy-in rests on. tar has no
 // length-suffixed framing, so CopyFileInStream declares the size before it has seen a byte of the
 // document; a source that then delivers a different count must fail rather than land a file whose

@@ -233,7 +233,7 @@ func (b *BackgroundShells) startBox(callerCtx context.Context, h usersandbox.Box
 		Command: command,
 		Dir:     dir,
 		Env:     env,
-	}, sh)
+	}, nil, sh)
 	if err != nil {
 		b.remove(id)
 		return "", fmt.Errorf("background box start: %w", err)

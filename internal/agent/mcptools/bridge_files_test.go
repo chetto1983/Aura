@@ -419,9 +419,9 @@ func TestIdentityScopedMountReadsLinksOnTheCallersSession(t *testing.T) {
 	sink := &recordingSink{}
 	reg := tools.NewRegistry()
 	handshakeCtx := identityctx.WithIdentityID(t.Context(), "identity-a")
-	closer, names, host, err := openIdentityScopedHTTPMount(t.Context(), handshakeCtx, reg, "fixture", policy, MountOptions{Files: sink}, connect)
+	closer, names, host, err := openIdentityScopedMount(t.Context(), handshakeCtx, reg, "fixture", policy, MountOptions{Files: sink}, connect, 0)
 	if err != nil {
-		t.Fatalf("openIdentityScopedHTTPMount: %v", err)
+		t.Fatalf("openIdentityScopedMount: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = closer()

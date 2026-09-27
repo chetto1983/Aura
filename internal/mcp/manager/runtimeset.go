@@ -18,7 +18,12 @@ const (
 	memoryRecipeName   = "memory"
 	calendarRecipeName = "calendar"
 	whatsappRecipeName = "whatsapp"
+	browserRecipeName  = "browser"
 )
+
+// BrowserRecipeSource marks the agent-browser recipe, whose tools the bridge grades by
+// its own table rather than by the server's hints.
+const BrowserRecipeSource = "recipe:browser"
 
 // containerDefaultOnRecipes mount out of the box inside the appliance image.
 //
@@ -37,7 +42,10 @@ const (
 // had zero WhatsApp tools, with no error anywhere to explain the gap. Same for Calendar.
 // Being on the list does not force them: an explicit `aura mcp disable whatsapp` still
 // wins, and a missing sidecar fail-softs to a WARN drop at mount like any other server.
-var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName}
+//
+// browser: the appliance runs every identity's sandbox box from the same image, which ships
+// agent-browser, so its MCP server is always there to start.
+var containerDefaultOnRecipes = []string{calendarRecipeName, whatsappRecipeName, browserRecipeName}
 
 // RuntimeSet composes what this host will actually mount from `managed`: the runnable
 // server configs plus the policy map (the managed recipes an operator may enable/disable).

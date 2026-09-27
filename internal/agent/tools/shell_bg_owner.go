@@ -23,7 +23,7 @@ import (
 // localOwnerID is the seeded `local` identity (migration 0004) — the CLI /
 // no-principal fallback owner. The CLI always runs as `local` (D-25); a background
 // job started without an authenticated principal is owned by, and reachable by, `local`.
-const localOwnerID = "00000000-0000-0000-0000-000000000001"
+const localOwnerID = identityctx.LocalOperatorIdentity
 
 // adminShellCapability grants cross-session poll/kill recovery (D-18). It reuses the
 // existing capability_grants seam — governance.write — per the RESEARCH OQ resolution

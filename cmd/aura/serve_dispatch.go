@@ -288,6 +288,7 @@ func newSandboxBackend(cli *client.Client, cfg *config.Config, pool *pgxpool.Poo
 		// but the run dir is a durable volume and one leaked tar per resume has nothing else
 		// pointing at the cause.
 		usersandbox.WithSpoolDir(filepath.Join(cfg.RunDir, "tmp")),
+		usersandbox.WithBoxFiles(browserStateKeyFiles(cfg.AuthulaSecret)),
 		usersandbox.WithEgress(cfg.Sandbox.EgressImage))
 }
 

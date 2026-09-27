@@ -1,5 +1,5 @@
-// router_provision.go adds EnsureBox (D-09/T-01-02): the EXPLICIT-identity get-or-create
-// seam the provisioning saga's sandbox leg calls, alongside Route's context-derived seam
+// router_provision.go adds EnsureBox (D-09/T-01-02) and Touch. EnsureBox is the
+// EXPLICIT-identity get-or-create seam the provisioning saga's sandbox leg calls, alongside Route's context-derived seam
 // every tool call uses. The two differ in exactly one way: Route resolves the caller
 // principal from context and falls back to the seeded `local` identity when none is
 // scoped (the CLI / no-principal case); EnsureBox takes identityID as an explicit
@@ -48,4 +48,19 @@ func (r *SandboxRouter) resolveAndTrack(ctx context.Context, id string) (BoxHand
 	r.handles[id] = h
 	r.mu.Unlock()
 	return h, nil
+}
+
+// Touch records a use of identityID's box without resolving it again. A caller that holds
+// one long-lived exec open — an MCP server session, the browser live view — reaches Route
+// once, and without this the idle reaper would suspend the box under it while it works. A
+// box the reaper already suspended is untracked and stays so: the next Route resumes it.
+func (r *SandboxRouter) Touch(identityID string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, tracked := r.lastUsed[identityID]; tracked {
+		r.lastUsed[identityID] = r.clock()
+	}
 }

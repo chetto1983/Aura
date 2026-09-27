@@ -318,16 +318,29 @@ func tarSingleFile(boxPath string, content []byte, mode int64) (io.Reader, error
 }
 
 // singleFileHeader is the one tar entry both copy-in forms share: boxPath POSIX-cleaned to a
-// "/"-relative name, with a traversal-shaped or empty path rejected (no escape above the box root).
+// "/"-relative name, with a traversal-shaped or empty path rejected (no escape above the box root)
+// and a scratch-mount path rejected rather than silently lost (OnScratchMount).
 func singleFileHeader(boxPath string, size, mode int64) (*tar.Header, error) {
 	name := strings.TrimPrefix(pathpkg.Clean("/"+strings.TrimSpace(boxPath)), "/")
 	if name == "" || name == ".." || strings.HasPrefix(name, "../") {
 		return nil, fmt.Errorf("invalid box path %q", boxPath)
 	}
+	if OnScratchMount(boxPath) {
+		return nil, fmt.Errorf("box path %q is on the tmpfs scratch mount %s, which the Docker copy API cannot write", boxPath, scratchTarget)
+	}
 	if mode == 0 {
 		mode = 0o644
 	}
 	return &tar.Header{Name: name, Mode: mode, Size: size, Typeflag: tar.TypeReg}, nil
+}
+
+// OnScratchMount reports whether boxPath lands on the tmpfs scratch mount. Docker's archive API
+// cannot write into a tmpfs (https://docs.docker.com/reference/cli/docker/container/cp/): the copy
+// returns success and the file never appears in the box. Measured 2026-09-26 on aura-sandbox:
+// CopyFileIn to /workspace/.scratch/probe.txt returned nil and `test -f` then failed.
+func OnScratchMount(boxPath string) bool {
+	c := pathpkg.Clean("/" + strings.TrimSpace(boxPath))
+	return c == scratchTarget || strings.HasPrefix(c, scratchTarget+"/")
 }
 
 // writeTarEntry writes one complete tar holding hdr and EXACTLY hdr.Size bytes from src. tar has no

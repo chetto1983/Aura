@@ -356,7 +356,7 @@ func principalFrom(ctx context.Context) string {
 // no-principal path (D-25). In production (Authula) RequireAuth always stamps the principal
 // via withPrincipal, so this fallback is dev-only and never silently scopes a real
 // authenticated request to `local`.
-const localIdentityID = "00000000-0000-0000-0000-000000000001"
+const localIdentityID = identityctx.LocalOperatorIdentity
 
 // scopedIdentityID resolves the owner key for an owner-scoped store call (Phase 36 MUSR-01):
 // the authenticated principal when present, else the `local` fallback so the operator is

@@ -292,6 +292,10 @@ type Server struct {
 	swarmTranscripts swarmTranscriptReader
 	workerJobs       workerControlJobStore
 	swarmWorkerIdle  time.Duration
+
+	// browserRelay opens the in-box live-view relay (browser_live.go); nil answers 503.
+	browserRelay   BrowserRelay
+	browserViewers browserViewers
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
@@ -402,6 +406,9 @@ func (s *Server) Mux() http.Handler {
 	// their handlers (voice_api.go); the parent-mux mounts (the two POSTs behind
 	// agentRunCapability, capabilities RequireAuth-only) live in serve_webui_voice.go.
 	s.registerVoiceRoutes(mux)
+	// Live view of an agent-browser session (browser_live.go); parent mounts in
+	// cmd/aura/serve_webui_browser.go, both behind agentRunCapability.
+	s.registerBrowserLiveRoutes(mux)
 	// WEBSKILL-01 composer skill-picker read route (37D-02): GET /api/composer/skills, the
 	// global active-skills snapshot behind plain RequireAuth (D-03/D-04). Colocated with its
 	// handler (composer_api.go); the parent-mux mount (bare aguiHandler, RequireAuth-only —

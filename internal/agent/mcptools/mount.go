@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -65,6 +66,9 @@ type MountOptions struct {
 	// turn's workspace (bridge_files.go). Nil means this host has none, and every
 	// file is reported as not materialized.
 	Files FileSink
+	// Box starts a box-runtime server in the calling identity's sandbox. Nil means this
+	// host has no sandbox, and such a server fails to mount instead of running here.
+	Box mcp.BoxLauncher
 }
 
 // MountManagedServerWithOptions opens a managed MCP server (stdio or streamable
@@ -82,6 +86,9 @@ func MountManagedServerWithOptions(processCtx, handshakeCtx context.Context, reg
 	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	if cfg.Box {
+		return mountBoxHost(processCtx, handshakeCtx, reg, name, cfg, policy, opts)
 	}
 	return mountStdioWithPolicyHost(processCtx, handshakeCtx, reg, name, cfg, policy, opts)
 }
@@ -133,7 +140,7 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 		return mcp.OpenSDKSession(hctx, name, server, opts.Egress, o)
 	}
 	if policy.identityScoped {
-		return openIdentityScopedHTTPMount(processCtx, handshakeCtx, reg, name, policy, opts, connect)
+		return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, 0)
 	}
 	var srv *MountedServer
 	open := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
@@ -144,10 +151,29 @@ func mountManagedHTTPHost(processCtx, handshakeCtx context.Context, reg *tools.R
 	return openAttachAndMount(srv, processCtx, handshakeCtx, open, reg, name, policy, opts)
 }
 
-func openIdentityScopedHTTPMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc) (closer func() error, names []string, host *MountedServer, err error) {
+// mountBoxHost mounts a server that runs in each identity's own box. Every identity gets its
+// own process, opened in its box on its first call, so the parent is identity-scoped
+// exactly like an OAuth server: the manifest comes from the identity handshakeCtx carries,
+// and a call is refused unless it comes from the session's own identity.
+func mountBoxHost(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
+	elicit := elicitationHandlerFor(name, opts.Elicitation)
+	connect := func(pctx, hctx context.Context, o mcp.SessionOptions) (*sdkmcp.ClientSession, error) {
+		o.Sending = sendingMiddleware(policy, identityctx.IdentityID(hctx))
+		o.Elicitation = elicit
+		o.Box = opts.Box
+		return mcp.OpenSDKSessionForConfig(pctx, hctx, name, cfg, o)
+	}
+	return openIdentityScopedMount(processCtx, handshakeCtx, reg, name, policy, opts, connect, cfg.InitTimeout)
+}
+
+// openIdentityScopedMount mounts a server whose sessions each belong to one identity. firstStart
+// is the least budget each identity's first session gets (a box server's cold start); zero for
+// an OAuth server.
+func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions, connect openSessionFunc, firstStart time.Duration) (closer func() error, names []string, host *MountedServer, err error) {
 	procCtx, cancel := context.WithCancel(processCtx)
 	parent := NewMountedServer(name, nil)
 	pool := newIdentitySessionPool(parent, connect, procCtx)
+	pool.firstStart = firstStart
 	parent.identityPool = pool
 	parent.files = opts.Files
 

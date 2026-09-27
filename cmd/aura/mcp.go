@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -211,105 +212,11 @@ func parseMCPInstallArgs(args []string) (recipe, name string, env []string, err 
 	return recipe, name, env, nil
 }
 
-func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Writer) error {
-	// Only guard against an empty arg vector (so args[0] below is safe). The real
-	// invariant — a non-empty name AND a non-empty command after "--" — is enforced
-	// precisely by the empty-name and len(commandParts)==0 checks below; a brittle
-	// `len(args) < 3` pre-check implied a different, contradictory contract (WR-06).
-	if len(args) == 0 {
-		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
-	}
-	name := strings.TrimSpace(args[0])
-	if name == "" {
-		return fmt.Errorf("MCP server name cannot be empty")
-	}
-	env := []string{}
-	enabled := true
-	trustClass := mcp.TrustBlocked
-	pendingEnv := false
-	pendingTrust := false
-	inCommand := false
-	commandParts := []string{}
-	for _, arg := range args[1:] {
-		if inCommand {
-			commandParts = append(commandParts, arg)
-			continue
-		}
-		if pendingEnv {
-			if !strings.Contains(arg, "=") {
-				return fmt.Errorf("--env value %q must be KEY=VALUE", arg)
-			}
-			env = append(env, arg)
-			pendingEnv = false
-			continue
-		}
-		if pendingTrust {
-			if arg != "local" {
-				return fmt.Errorf("--trust value %q must be local", arg)
-			}
-			trustClass = mcp.TrustTrustedLocal
-			pendingTrust = false
-			continue
-		}
-		switch arg {
-		case "--":
-			inCommand = true
-		case "--env":
-			pendingEnv = true
-		case "--trust":
-			pendingTrust = true
-		case "--disabled":
-			enabled = false
-		default:
-			return fmt.Errorf("unknown mcp add option %q", arg)
-		}
-	}
-	if pendingEnv {
-		return fmt.Errorf("--env requires KEY=VALUE")
-	}
-	if pendingTrust {
-		return fmt.Errorf("--trust requires local")
-	}
-	if len(commandParts) == 0 {
-		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
-	}
-	command, commandArgs := splitCommandParts(commandParts)
-	doc, err := loadManagedMCPConfig()
-	if err != nil {
-		return err
-	}
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]mcp.ManagedServer{}
-	}
-	if _, exists := doc.MCPServers[name]; exists {
-		return fmt.Errorf("MCP server %q already exists", name)
-	}
-	server := mcp.ManagedServer{
-		Command: command,
-		Args:    commandArgs,
-		Env:     env,
-		Enabled: new(enabled),
-		Source:  "manual",
-		Trust:   mcp.ManagedTrust{Class: trustClass},
-	}
-
-	// Amendment #211: an add is an install. Prepare the environment, rewrite the launch into
-	// it, and refuse to store a server that cannot complete a handshake — the declaration
-	// this used to write was only ever a promise that something would resolve at mount.
-	prepared, report, _, err := mcpInstallGuard(ctx, execPreparer(config.LoadDB()), name, server)
-	if err != nil {
-		return err
-	}
-
-	doc.MCPServers[name] = prepared
-	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
-	if err := mcpWriteManagedConfig(ctx, pool, doc, "add", name, ""); err != nil {
-		return err
-	}
-	if err := writef(out, "%s\n", describePreparation(report)); err != nil {
-		return err
-	}
-	return writef(out, "ok: added %s\n", name)
+// operatorBoxLauncher is the CLI's way into a box: the operator's own, the one the mount reads
+// a box server's tools in (boxDiscoveryIdentity).
+func operatorBoxLauncher(ctx context.Context, cfg *config.Config, pool *pgxpool.Pool) (context.Context, mcp.BoxLauncher) {
+	ctx = identityctx.WithIdentityID(ctx, boxDiscoveryIdentity(ctx, pool))
+	return ctx, newSandboxMCPBox(buildSandboxRouter(cfg, pool))
 }
 
 func mcpList(out io.Writer) error {
@@ -457,19 +364,6 @@ func sortedManagedNames(doc mcp.ManagedConfig) []string {
 func renderMCPCommand(cfg mcp.ServerConfig) string {
 	parts := append([]string{cfg.Command}, cfg.Args...)
 	return strings.Join(parts, " ")
-}
-
-func splitCommandParts(parts []string) (string, []string) {
-	command := ""
-	args := []string{}
-	for i, part := range parts {
-		if i == 0 {
-			command = part
-			continue
-		}
-		args = append(args, part)
-	}
-	return command, args
 }
 
 func writef(w io.Writer, format string, args ...any) error {

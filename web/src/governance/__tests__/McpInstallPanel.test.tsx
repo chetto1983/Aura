@@ -267,6 +267,41 @@ describe('McpInstallPanel (MCPW-01)', () => {
     });
   });
 
+  it('declares a box server with its first-start timeout, previewed as the CLI flags', async () => {
+    renderPanel({});
+    fireEvent.click(screen.getByRole('button', { name: 'Custom (stdio)', pressed: false }));
+    fireEvent.change(screen.getByLabelText('Server name'), { target: { value: 'fetch' } });
+    fireEvent.change(screen.getByLabelText('Command'), { target: { value: 'uvx' } });
+    fireEvent.change(screen.getByLabelText('Argument 1'), {
+      target: { value: 'mcp-server-fetch==2026.8.18' },
+    });
+    expect(screen.queryByLabelText('First-start timeout (seconds)')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: "Each identity's box", pressed: false }));
+    const timeout = screen.getByLabelText('First-start timeout (seconds)');
+    const install = screen.getByRole('button', { name: 'Install server' });
+
+    fireEvent.change(timeout, { target: { value: '601' } });
+    expect(timeout.getAttribute('aria-invalid')).toBe('true');
+    expect(install.hasAttribute('disabled')).toBe(true);
+
+    fireEvent.change(timeout, { target: { value: '120' } });
+    expect(
+      screen.getByText(
+        'aura mcp add fetch --box --init-timeout 120 -- uvx mcp-server-fetch==2026.8.18',
+      ),
+    ).toBeTruthy();
+    fireEvent.click(install);
+    await waitFor(() => {
+      expect(installMcpServer).toHaveBeenCalledWith({
+        name: 'fetch',
+        command: 'uvx',
+        args: ['mcp-server-fetch==2026.8.18'],
+        runtime: 'box',
+        initTimeoutSec: 120,
+      });
+    });
+  });
+
   it('adds a new argument row and edits each argument independently', () => {
     renderPanel({});
     fireEvent.click(screen.getByRole('button', { name: 'Custom (stdio)', pressed: false }));

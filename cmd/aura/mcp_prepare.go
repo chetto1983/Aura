@@ -72,30 +72,41 @@ var mcpInstallGuard = prepareAndVerify
 
 // prepareAndVerify resolves server into the one that should be stored. For a stdio server it
 // prepares the environment, rewrites the launch, and refuses to return unless the result
-// completes an MCP handshake. An HTTP server has nothing to prepare and keeps the existing
+// completes an MCP handshake; box runs a box-runtime server's handshake in the caller's box. An HTTP server has nothing to prepare and keeps the existing
 // post-save probe, so this narrows to the class that was actually broken.
 //
 // The verification's own ProbeResult is returned, not discarded: it already dialled, completed
 // initialize and counted tools/list, and a caller that then probed again spawned the server a
 // second time to recompute a number this one had (audit A5). It is nil for the transports this
 // does not verify, which is the caller's signal to probe for itself.
-func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, server mcp.ManagedServer) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
-	if serverType, _, err := mcp.Classify(server); err != nil || serverType != mcp.ServerTypeStdio {
+func prepareAndVerify(ctx context.Context, p *mcpenv.Preparer, name string, server mcp.ManagedServer, box mcp.BoxLauncher) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
+	// Refused before the handshake, not at the save: a box server's handshake runs in a box
+	// the agent's shell can read, so the secret the save refuses would already be in it.
+	if err := mcp.ValidateManagedServer(name, server); err != nil {
+		return mcp.ManagedServer{}, mcpenv.Report{}, nil, err
+	}
+	if serverType, _, _ := mcp.Classify(server); serverType != mcp.ServerTypeStdio {
 		return server, mcpenv.Report{}, nil, nil
 	}
-
-	prepareCtx, cancelPrepare := context.WithTimeout(ctx, installPrepareTimeout)
-	defer cancelPrepare()
-	prepared, report, err := p.Prepare(prepareCtx, name, mcpenv.Launch{Command: server.Command, Args: server.Args})
-	if err != nil {
-		return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf("prepare %q: %w", name, err)
+	// A box server's environment is the box: it fetches itself into the installing identity's
+	// caches on its first start there, so nothing is prepared on this host, and the handshake
+	// that verifies it gets that first start's budget.
+	report := mcpenv.Report{}
+	if !mcp.IsBoxRuntime(server) {
+		prepareCtx, cancelPrepare := context.WithTimeout(ctx, installPrepareTimeout)
+		defer cancelPrepare()
+		prepared, rep, err := p.Prepare(prepareCtx, name, mcpenv.Launch{Command: server.Command, Args: server.Args})
+		if err != nil {
+			return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf("prepare %q: %w", name, err)
+		}
+		server.Command = prepared.Command
+		server.Args = prepared.Args
+		report = rep
 	}
-	server.Command = prepared.Command
-	server.Args = prepared.Args
 
-	verifyCtx, cancel := context.WithTimeout(ctx, installVerifyTimeout)
+	verifyCtx, cancel := context.WithTimeout(ctx, max(installVerifyTimeout, mcp.BoxInitTimeout(server)))
 	defer cancel()
-	probe := mcp.ProbeServer(verifyCtx, name, server)
+	probe := mcp.ProbeServerWithOptions(verifyCtx, name, server, mcp.RuntimeEgressPolicy(false, server), mcp.SessionOptions{Box: box})
 	if !probe.OK {
 		return mcp.ManagedServer{}, mcpenv.Report{}, nil, fmt.Errorf(
 			"verify %q: the server did not complete an MCP handshake, so it was not installed: %s", name, probe.Err)

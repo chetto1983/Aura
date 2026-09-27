@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
+func TestPrepareForWriteKeepsServerArgs(t *testing.T) {
 	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
 		"calculator": {
 			Command: "uvx",
@@ -26,16 +26,6 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got.MCPServers["calculator"].Args, doc.MCPServers["calculator"].Args) {
 		t.Fatalf("calculator args = %#v, want %#v", got.MCPServers["calculator"].Args, doc.MCPServers["calculator"].Args)
-	}
-	enabled, err := got.EnabledServers()
-	if err != nil {
-		t.Fatalf("EnabledServers: %v", err)
-	}
-	if _, ok := enabled["calendar"]; ok {
-		t.Fatal("disabled calendar server should not be returned")
-	}
-	if enabled["calculator"].Command != "uvx" {
-		t.Fatalf("enabled calculator command = %q, want uvx", enabled["calculator"].Command)
 	}
 }
 
@@ -344,28 +334,6 @@ func TestValidateManagedServersRejectsMixedTransport(t *testing.T) {
 	}
 	if err := validateManagedServers(in); err == nil || !strings.Contains(err.Error(), "both url and command") {
 		t.Fatalf("validateManagedServers(mixed) = %v, want rejection containing %q", err, "both url and command")
-	}
-}
-
-func TestEnabledServersExcludesHTTPAndEmptyIsNil(t *testing.T) {
-	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
-		"remote": {Type: ServerTypeStreamableHTTP, URL: "https://x.test"},
-	}}
-	enabled, err := doc.EnabledServers()
-	if err != nil {
-		t.Fatalf("EnabledServers: %v", err)
-	}
-	if enabled != nil {
-		t.Fatalf("HTTP-only registry should yield nil, got %#v", enabled)
-	}
-}
-
-func TestEnabledServersValidationError(t *testing.T) {
-	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
-		"bad": {Type: "grpc", Command: "x"},
-	}}
-	if _, err := doc.EnabledServers(); err == nil || !strings.Contains(err.Error(), "unknown type") {
-		t.Fatalf("want validation error, got %v", err)
 	}
 }
 

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // Managed config schema constants: the registry version, default profile name, and
@@ -21,9 +24,12 @@ const (
 	TrustRemoteHTTP     = "remote_http"
 	TrustBlocked        = "blocked"
 
-	// RuntimeKindLocal is the only launch kind left: a stdio server started as a
-	// child process. `docker` and `docker_gateway` were retired by amendment #209.
+	// RuntimeKindLocal starts a stdio server as a child process of Aura. `docker` and
+	// `docker_gateway` were retired by amendment #209.
 	RuntimeKindLocal = "local"
+	// RuntimeKindBox starts a stdio server inside the calling identity's sandbox box, one
+	// process per identity, reached over an exec's stdin and stdout (box_session.go).
+	RuntimeKindBox = "box"
 )
 
 // SourceRecipeMemory marks the shared, admin-governed ArcadeDB memory MCP. The
@@ -83,9 +89,8 @@ type ManagedTrust struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
-// ManagedRuntime describes how a stdio server is launched (local process, Docker
-// container, or Docker gateway) and the container isolation knobs that apply.
-// ManagedRuntime carries a server's launch declaration. Image, CPUs, Memory and Profile
+// ManagedRuntime carries a stdio server's launch declaration: where it runs (Kind: a local
+// child process, or the calling identity's sandbox box). Image, CPUs, Memory and Profile
 // left with the docker kinds they belonged to (amendment #209), and Network followed when
 // the board stopped displaying it (#210) — its only enforcement had been the docker
 // builder, so what remained was a claim nothing backed. A stored row carrying any of those
@@ -96,6 +101,10 @@ type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
+	// InitTimeoutSec is the budget, in seconds, for a box server's first start in an
+	// identity's box, when `npx -y` or `uvx` fetch the server into that identity's caches
+	// (BoxInitTimeout). Box servers only; unset means DefaultBoxInitTimeout.
+	InitTimeoutSec int `json:"initTimeoutSec,omitempty"`
 }
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
@@ -118,33 +127,6 @@ func PrepareForWrite(doc *ManagedConfig) error {
 // where a malformed entry must not cost the caller every other server.
 func Normalize(doc *ManagedConfig) {
 	normalizeManagedConfig(doc)
-}
-
-// EnabledServers returns only enabled servers as runtime launch configs.
-func (c ManagedConfig) EnabledServers() (map[string]ServerConfig, error) {
-	if err := validateManagedServers(c.MCPServers); err != nil {
-		return nil, err
-	}
-	out := make(map[string]ServerConfig)
-	names := make([]string, 0, len(c.MCPServers))
-	for name := range c.MCPServers {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		s := c.MCPServers[name]
-		if s.Enabled != nil && !*s.Enabled {
-			continue
-		}
-		if normalizedServerType(s) == ServerTypeStreamableHTTP {
-			continue
-		}
-		out[name] = ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env}
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	return out, nil
 }
 
 // ActiveProfileName returns the configured active profile, falling back to
@@ -224,6 +206,12 @@ func normalizeManagedConfig(doc *ManagedConfig) {
 	}
 }
 
+// ValidateManagedServer checks one declaration as a save would, so an install can refuse it
+// before starting it.
+func ValidateManagedServer(name string, server ManagedServer) error {
+	return validateManagedServers(map[string]ManagedServer{name: server})
+}
+
 // validateManagedServers dispatches every server through Classify (D-01): an
 // ambiguous or internally-inconsistent entry (mixed url+command, an unknown
 // type, or an explicit type<->trust mismatch) fails validation with Classify's
@@ -240,13 +228,8 @@ func validateManagedServers(in map[string]ManagedServer) error {
 		}
 		switch serverType {
 		case ServerTypeStdio:
-			switch normalizedRuntimeKind(cfg) {
-			case RuntimeKindLocal:
-				if strings.TrimSpace(cfg.Command) == "" {
-					return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
-				}
-			default:
-				return fmt.Errorf("MCP managed config: server %q has unknown runtime kind %q", name, cfg.Runtime.Kind)
+			if err := validateStdioRuntime(name, cfg); err != nil {
+				return err
 			}
 		case ServerTypeStreamableHTTP:
 			if strings.TrimSpace(cfg.URL) == "" {
@@ -266,15 +249,71 @@ func validateManagedServers(in map[string]ManagedServer) error {
 	return nil
 }
 
-func normalizedRuntimeKind(cfg ManagedServer) string {
-	switch strings.TrimSpace(cfg.Runtime.Kind) {
-	case "":
-		return RuntimeKindLocal
-	case RuntimeKindLocal:
-		return RuntimeKindLocal
-	default:
-		return strings.TrimSpace(cfg.Runtime.Kind)
+func validateStdioRuntime(name string, cfg ManagedServer) error {
+	kind := normalizedRuntimeKind(cfg)
+	if kind != RuntimeKindLocal && kind != RuntimeKindBox {
+		return fmt.Errorf("MCP managed config: server %q has unknown runtime kind %q", name, cfg.Runtime.Kind)
 	}
+	if strings.TrimSpace(cfg.Command) == "" {
+		return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
+	}
+	switch {
+	case kind != RuntimeKindBox && cfg.Runtime.InitTimeoutSec != 0:
+		return fmt.Errorf("MCP managed config: server %q declares runtime.initTimeoutSec, which only a box server's first start uses", name)
+	case cfg.Runtime.InitTimeoutSec < 0 || cfg.Runtime.InitTimeoutSec > maxBoxInitTimeoutSec:
+		return fmt.Errorf("MCP managed config: server %q runtime.initTimeoutSec must be between 1 and %d", name, maxBoxInitTimeoutSec)
+	case kind != RuntimeKindBox:
+		return nil
+	}
+	return refuseBoxSecrets(name, cfg.Env)
+}
+
+// DefaultBoxInitTimeout is a box server's first-start budget when it declares none. A first
+// start fetches the server into the identity's own npm or uv cache; measured 2026-09-26 in a
+// box with empty caches, 3.5-5.4 s for light servers and 10.95 s for a numpy/scipy/sympy one,
+// against 0.6-1.8 s warm. LibreChat's per-server initTimeout defaults to the same 30 s.
+const DefaultBoxInitTimeout = 30 * time.Second
+
+// maxBoxInitTimeoutSec bounds what a registry row may ask for: a start that needs longer is
+// not a cold cache, and every caller waiting on it is a turn or a mount.
+const maxBoxInitTimeoutSec = 600
+
+// BoxInitTimeout is the budget s gets for its first start in a box: what it declares, or
+// DefaultBoxInitTimeout. Zero for a server that does not run in a box.
+func BoxInitTimeout(s ManagedServer) time.Duration {
+	if !IsBoxRuntime(s) {
+		return 0
+	}
+	if s.Runtime.InitTimeoutSec > 0 {
+		return time.Duration(s.Runtime.InitTimeoutSec) * time.Second
+	}
+	return DefaultBoxInitTimeout
+}
+
+// refuseBoxSecrets rejects a credential declared for a box server. The box exec drops
+// secret-shaped variables on the way in, because everything in a box is readable by the
+// agent's own shell, so the server would start without it and fail for a reason nobody
+// could see. Saying so at write time is the only honest place.
+func refuseBoxSecrets(name string, env []string) error {
+	for _, kv := range env {
+		key, value, _ := strings.Cut(kv, "=")
+		if secret.IsSecretEnvVar(key, value) {
+			return fmt.Errorf("MCP managed config: server %q runs in the sandbox box, where %s would be readable by the agent's shell; box servers take no secrets", name, key)
+		}
+	}
+	return nil
+}
+
+func normalizedRuntimeKind(cfg ManagedServer) string {
+	if kind := strings.TrimSpace(cfg.Runtime.Kind); kind != "" {
+		return kind
+	}
+	return RuntimeKindLocal
+}
+
+// IsBoxRuntime reports whether s is a stdio server that runs in the caller's sandbox box.
+func IsBoxRuntime(s ManagedServer) bool {
+	return normalizedServerType(s) == ServerTypeStdio && normalizedRuntimeKind(s) == RuntimeKindBox
 }
 
 // normalizedServerType resolves cfg's effective transport type. It is a thin

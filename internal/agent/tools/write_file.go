@@ -86,9 +86,8 @@ func (t *WriteFile) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	if err != nil {
 		return ToolResult{}, err
 	}
-	if deniedBoxSkillsWrite(boxPath) {
-		return ToolResult{}, fmt.Errorf("write_file: %s is inside the sandbox skills mount; author skills through the gated "+
-			"`skill` tool (action=create/update/delete), not direct file writes", boxPath)
+	if err := boxWriteRefusal("write_file", boxPath); err != nil {
+		return ToolResult{}, err
 	}
 
 	// Every guard above is content- or argument-based and runs BEFORE the route on purpose: an

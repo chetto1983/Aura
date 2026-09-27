@@ -1,0 +1,298 @@
+# Spike — can agent-browser be Aura's authenticated browser, without bespoke code?
+
+**Date:** 2026-09-26 · **Artifact:** `agent-browser` 0.38.1 (npm, Apache-2.0), tarball
+`sha512-k58FCz0y…hvnhw==` verified against the registry `dist.integrity`; native
+`bin/agent-browser-linux-x64` sha256 `5100149a1903211c889de4e545bf36d90803740cea4f99aa22651649f9205ea1`
+(18.2 MB, no Node needed by the daemon) · **Target:** the local fixture in this directory
+(`fixture_site.py`: password login → TOTP → HttpOnly session cookie → protected PDF). No
+third-party site was automated.
+
+Two rounds: **(A) native** on the Claude Code cloud container (Playwright Chromium 1194, no Docker
+daemon at the time), then **(B) inside Aura's per-identity box** — `docker/aura-sandbox` built
+unchanged except two spike-only layers (the session proxy CA, and the agent-browser binary),
+started, suspended, resumed and recreated by Aura's own `usersandbox.DockerBackend` through
+`boxrun/`, with the `aura-egress` sidecar applying the tenancy floor (runc, Docker 29.3.1, cgroup v1).
+
+## The claim under test
+
+Hermes Agent's browser (≈14.7k LOC read at `NousResearch/hermes-agent@d0288be5`) sits on top of
+agent-browser. The inventory of agent-browser's README says it already ships everything Aura would
+otherwise write: an agent CLI + MCP server, an encrypted credential vault the model never reads,
+encrypted session persistence, and a WebSocket viewport stream that accepts human input. If true,
+Aura's authenticated browser is a sandbox-image addition plus two small integration seams, not a
+subsystem.
+
+## (A) Native, outside the box
+
+| # | Question | Result |
+|---|---|---|
+| A1 | Cold `open` + snapshot | `open` 1.8 s cold; `snapshot` returns the a11y tree with `@eN` refs (`textbox "Email" [ref=e2]`…) |
+| A2 | Vault save via stdin | `auth save --password-stdin` ok; password **absent** from CLI output and from every file under `$HOME` (plaintext grep) |
+| A3 | Vault login | `auth login fixture` → server logged `username_ok=True password_ok=True`, landed on `/otp` |
+| A4 | Vault at rest | `auth/fixture.json` mode 0600, `{iv, authTag, data, encrypted, version}`; decrypts (AES-256-GCM, Go stdlib) only with the daemon's key, to `{name,url,username,password}` |
+| A5 | **Where the key comes from** | Read by the **daemon at spawn**, not by the CLI call. A daemon started without `AGENT_BROWSER_ENCRYPTION_KEY` generated `~/.agent-browser/.encryption-key` next to the vault and encrypted with it; the env key exported later failed GCM auth. With the key present from the first spawn, no key file was written and the env key decrypts. |
+| A6 | TOTP | The vault stores username/password only (`auth --help`: no OTP field). The code was typed with `fill` → `OTP ok=True` |
+| A7 | Protected download | `download @e5 <path>` → 193-byte `%PDF-1.4`, server `GET /docs/report.pdf -> 200` |
+| A8 | Restore after graceful `close` | state file 64 B → 616 B at close; next `open /docs` lands on **Documents** (no login) |
+| A9 | Restore after SIGKILL right after login | state still 64 B (empty); restore `loaded` but lands on **Sign in** — session lost |
+| A10 | Autosave cadence | file 64 B at t=10/20 s, 616 B at t=35 s (default 30 s); SIGKILL at 50 s → restore lands on **Documents** |
+| A11 | `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS=2000` | 615 B at t=3 s; SIGKILL → restore lands on **Documents** |
+| A12 | Wrong / missing key on restore | `restore: load_failed; save: skipped_restore_failed` → fail closed, state **not** overwritten, no key file generated |
+| A13 | State file permissions | `sessions/*.json.enc` is **0644** (the vault is 0600) |
+| A14 | Human login through the stream only | `stream_login.mjs` clicks and types over `ws://127.0.0.1:<port>` → `username_ok=True password_ok=True`, URL message `/otp` |
+| A15 | Stream cost, 1280×720, default quality 80 | ≈10 fps while typing, median 10.3 KB / max 10.7 KB per frame on the fixture, 1–2 frames per 2 s idle; first frame 520 ms after a click |
+| A16 | Stream bind | `127.0.0.1` only, OS-assigned port (in `~/.agent-browser/<session>.stream`), no auth |
+| A17 | Memory | daemon 13 MB RSS; daemon + Chromium 370 MB PSS for one session |
+| A18 | MCP surface (`agent-browser mcp`, default `core`) | 29 tools, `tools/list` = 66,733 bytes |
+| A19 | Socket path limit | `$HOME/.agent-browser/<session>.sock` must fit 103 bytes: a long `$HOME` refused to start (`Socket path would be 113 bytes`) |
+| A20 | Allowlist vs persistence | README: `--allowed-domains` is rejected together with restore/state replay/profiles |
+
+## (B) Inside Aura's box
+
+| # | Question | Result |
+|---|---|---|
+| B1 | Box as Aura builds it | `aura-box-spike-agent-browser` + `aura-egress-…` sidecar, `HOME=/root`, uid 0, `/workspace` named volume, `/workspace/.scratch` tmpfs, Node 24.21, image 4.74 GB |
+| B2 | Egress floor | `172.17.0.1`, `10.0.0.1`, `169.254.169.254` all time out from the box (`floor applied`) |
+| B3 | Browser discovery | agent-browser finds the image's Playwright Chromium (build 1234) with no `EXECUTABLE_PATH`; cold `open` 1.2 s |
+| B4 | **Key through `Exec` env** | **Dropped.** `usersandbox.scrubEnv` removes secret-named variables (`secret.IsSecretEnvVar`): `BOX_ENV_FOO` arrives, `AGENT_BROWSER_ENCRYPTION_KEY` arrives with length 0, so the daemon writes `.encryption-key` beside the vault |
+| B5 | Key as a file | Key delivered by `CopyFileIn` to `/run/aura-abkey` (0600) and exported by the in-box driver → no `.encryption-key`, vault decrypts only with the Aura-supplied key, password absent from every file under `/root` |
+| B6 | Vault login + TOTP + download | `username_ok=True password_ok=True`, `OTP ok=True`, `GET /docs -> 200` |
+| B7 | Aura `Suspend` right after login | state file never written; after `Resume`: `restore: loaded` → **Sign in** (lost). `Suspend` = `ContainerStop` with a 2 s grace on a `sleep infinity` PID 1, measured 4.3–4.6 s end to end |
+| B8 | Aura `Suspend` 35 s after login | 616 B saved; after `Resume` → **Documents** |
+| B9 | `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS=2000` (not secret-named, passes `Exec`) | 615 B at t=3 s; `Suspend`/`Resume` → **Documents** |
+| B10 | Box **recreated** (container removed, volumes kept, `Resolve` again) | `HOME=/root`: `restore: missing` → **Sign in** (state lived in the container layer). `HOME=/workspace/.abhome`: `restore: loaded` → **Documents** |
+| B11 | Human login via the stream, in the box | 9.7 fps, median 9.7 KB/frame, `/otp` reached, `username_ok=True password_ok=True` |
+| B12 | **Stream reachability** | the WebSocket binds `127.0.0.1` inside the box netns; Aura's only channel is `exec`. `ExecStream` is output-only (no stdin) |
+| B13 | Relay over `docker exec -i` (`ws_relay.mjs` ↔ `relay_login.py`) | login succeeded from the host with no published port: 14.0 fps, 13.1 KB per NDJSON line (base64), first frame 56 ms after the click, capture→host median 10 ms |
+| B14 | **What the model's shell can read** | a second `exec` (= `shell_exec`) reads the key from the daemon's `/proc/<pid>/environ` and from the key file; with it the vault and the session state decrypt. `auth show` does not print the password — an output convention, not a boundary |
+| B15 | Side finding (Aura bug, fixed in the same change) | `CopyFileIn` to `/workspace/.scratch/…` returned nil and the file never appeared (Docker's archive API cannot write a tmpfs), so `write_file` reported `wrote N bytes … verified:false`. Now refused with an explicit error |
+
+## (C) The shipped live view, end to end on a running Aura
+
+`aura serve` on Postgres 18.4 (106 migrations), Authula operator seeded, the real box image with
+agent-browser and the relay, the egress floor. `live_view.e2e.ts` drives the cockpit with
+Playwright: open `/browser/<session>` (the stream route resolves the box), start the site and open
+its login page in the box the way the agent would, then log in by clicking and typing in the
+cockpit only.
+
+| # | Result |
+|---|---|
+| C1 | 3/3 runs pass: box browser at `/otp` then `/docs`, the cockpit URL bar follows, the site grants exactly one new session |
+| C2 | **Bug found:** `deviceHeight` is the screen (720), the frame is the viewport (1280x577): y mapped by height landed 25% low. Fixed: one width scale for both axes |
+| C3 | **Bug found:** Enter without `text: "\r"` submits nothing through CDP. Fixed in `keyEvent` |
+| C4 | **Bug found:** a mousedown with `preventDefault` never focused the stage, so keys typed after a click went nowhere. Fixed: the stage focuses itself |
+| C5 | Each open session: ~142 tasks, ~180 MB (measured by closing four one at a time: 504 → 361 → 219 → 77 pids). A 512-pid box holds three |
+| C6 | **Bug found (pre-existing):** PID 1 `tail -f /dev/null` never reaps: 177 zombies after four sessions, all counted against the pid cap. Fixed with `HostConfig.Init`; after three more runs: 3 tasks, 0 zombies |
+| C7 | **Gap (pre-existing), since fixed:** an existing box kept its old image and host config; the first E2E hit a box built before the relay existed. `Resolve` now recreates a box whose image, init or cache mounts are stale |
+| C8 | The viewer rebuilt on an owned copy of `@assistant-ui/elements-computer-use` (address chrome, click trail, action line): 3/3 runs pass again. Screenshots at 1440x900 and 390x844 show the element fitting the frame, and the cursor landing on the click (frame at x=80, click at page x=373, cursor tip at x≈453) |
+
+## (D) agent-browser's MCP server inside the box, over exec
+
+`mcpbox/main.go`: the production `DockerBackend` resolves a box (egress floor, key file), runs
+`agent-browser mcp 2>>/tmp/agent-browser-mcp.log` through `ExecStream` with stdin, and the
+official go-sdk client (v1.8.0) connects over `IOTransport` on two `io.Pipe`s. No other channel.
+
+| # | Result |
+|---|---|
+| D1 | Handshake 61-133 ms, `tools/list` 10-20 ms: 29 tools (`core` profile), 64 KB of schemas, one page (no cursor). Every tool carries `session` and `restore` as arguments, plus about ten shared launch fields (`allowedDomains`, `caCert`, `extraArgs`, `idleTimeout`...) |
+| D2 | open 0.9 s; snapshot 33 ms; click 55 ms; get_title 28 ms (reads the title the click set). Click returns a JSON envelope with launch metadata, not a one-liner |
+| D3 | The first screenshot of a browser takes 9.6-9.7 s, the next 50 ms (twice). It returns the PNG as image content and its path in the box |
+| D4 | `Suspend` under a live session: the client's `Wait` returns cleanly after 2.3 s. A new exec reconnects in 99 ms; restored state brings back the cookies, not the open page (`get_title` reads nothing until the next `open`) |
+| D5 | stdout and stderr share one stream in `ExecStream`, so the server's stderr must go to a file or it corrupts the JSON-RPC framing |
+
+## (E) The box runtime, mounted, through Aura's production registry
+
+`runtime.kind: "box"` runs any stdio MCP server in the calling identity's box; the catalog's
+`browser` recipe is agent-browser's. `mcp_toolpipe_e2e.sh` drives `aura toolpipe`, which builds
+the registry `aura serve` builds (boot mount, per-identity session pool, the real router), so
+only the model choosing the calls is missing.
+
+| # | Result |
+|---|---|
+| E1 | Boot mounts `browser` with 29 tools, all deferred, its session opened in the operator's box (`transport=box`). `tool_search` loads their schemas |
+| E2 | 3/3 runs: fixture login page opened and snapshotted in the box through `browser__agent_browser_*`; after `docker stop` of the box, the next call brought box and server back (open 0.9-1.1 s) |
+| E3 | **Bug found (pre-existing, `MountedServer.CallTool`):** a session watch() had already seen die was treated as "failed after send", so a mutating call was redialed and then refused ("reconnected but not replayed") although it was never sent: the first action after every box suspend failed. Fixed: a never-sent call is sent once on the redialed session; the no-replay rule stays for calls that reached a transport |
+| E4 | **Gap found:** the idle reaper counts only new execs, so a long-lived MCP session or live view would have its box suspended under it after the idle TTL. Fixed: `SandboxRouter.Touch` on every tool call and every live-view input |
+| E5 | **Test bug found:** the live-view E2E failed once in sixteen runs: the fixture accepts only the current TOTP window and a code minted in its last ~1.5 s expired before Enter. Fixed in the test: 15 of 16 runs passed before, 3/3 after |
+| E6 | After the runs: no agent-browser MCP process and 0 zombies left in the box, 2 tasks |
+
+## (F) Counter-proof: a different stdio server in the same runtime
+
+`chetto1983/calculator-mcp-server@25f8388` (Python 3.11, FastMCP, numpy/sympy/matplotlib) shares
+nothing with agent-browser. `shell_exec`, through `aura toolpipe`, installed it in a venv on the
+operator's `/workspace` volume (the box reached GitHub and PyPI; 30 s cap, finished in the
+background); `aura mcp add calculator --box -- /workspace/.mcp/calculator/bin/calculator-mcp-server`
+completed its handshake in that box in 3 s, and `aura mcp trust ... --class sandboxed_local`
+approved it. `mcp_calculator_e2e.sh` then drives it like (E).
+
+| # | Result |
+|---|---|
+| F1 | Boot mounts 23 deferred `calculator__*` tools from the box; `tool_search` loads them |
+| F2 | 3/3 runs, 7/7 checks: 2**10 = 1024; x**2 - 4 = 0 gives [-2, 2]; det [[1,2],[3,4]] = -2; after `docker stop` of the box, mean [1,2,3,4] = 2.5 (2.3 s, box and server restarted); a 200-point plot renders in the box |
+| F3 | With `browser` mounted beside it: both E2Es pass in the same box; each server logs to its own `/tmp/aura-mcp-<name>.log`; both server processes are gone 0.45 s after `toolpipe` exits, 0 zombies |
+| F4 | **Gap found and closed:** the runtime was generic but only a catalog recipe could declare it; `aura mcp add --box` now does, verifying in the operator's box. The cockpit's install form still cannot |
+| F5 | The server states no tool annotations, so in a model turn every call is graded destructive by the fail-closed default and asks for approval. That is the existing policy for any unannotated server, not a property of the box runtime |
+| F6 | Installed on one identity's volume, the server is missing from every other identity's box: their calls fail until it is installed there too, or baked into the image |
+
+## (G) Per-identity install (superseded by H and I: the install line was removed)
+
+The operator chose one copy per identity (no shared package state, per the 2026-09-14 cache
+poisoning measurement) over a shared read-only volume or the image. `runtime.install` is a shell
+line run in an identity's box before its first session; the box records the hash of the last
+completed line, `flock` serialises concurrent starts, failures record nothing.
+
+| # | Result |
+|---|---|
+| G1 | calculator into an empty box: 39 s, 479 MB (`--no-cache-dir`, plain container) |
+| G2 | **Design bug found by the docker test:** extending only the connect deadline after an install left `tools/list` on the expired mount deadline. The install now runs before any handshake clock starts, at every entry: the mount (keeping its budget), each identity's first session (before the 10 s redial budget), and the install verification (before its 30 s) |
+| G3 | Docker test, two identities, real router and mount: a 12 s install (longer than both budgets) runs once in each box on that identity's first use; later calls reuse it; a changed line reinstalls; three concurrent starts install once; a failure reports `exit 3` and the log tail and records nothing |
+| G4 | Production registry: `aura mcp add calculator --box --install ...` on an empty box, 44 s; `mcp_calculator_e2e.sh` 3/3, 7/7. With the venv and its record deleted, the next `toolpipe` reinstalled at mount and answered 6*7 = 42: 44 s cold, 2.4 s warm |
+| G5 | Not solved: a new install line blocks `aura serve`'s boot mount while it installs in the operator's box, and other identities pay the install on their first call. Deleting the venv but keeping the record breaks that identity's server until the record goes too |
+
+## (H) LibreChat's model, measured in the box: the command installs itself
+
+LibreChat (7b2362d, 2026-09-25) has no install step for stdio servers: the command is
+`npx -y <pkg>` and fetches at spawn, on its host, into one npm cache shared by every user; the
+first spawn is covered by a per-server `initTimeout` (default 30 s). An Aura box already has npm,
+uv and pip caches per identity, so the same declaration there installs per identity with no
+install line. `mcp_cold_start.py` spawns the command in a production box (egress sidecar,
+per-identity cache volumes, empty at the start) and times it to the `initialize` and `tools/list`
+answers.
+
+| Server | Cold | Warm | After box recreate |
+|---|---|---|---|
+| `npx -y @modelcontextprotocol/server-filesystem@2026.8.31` (14 tools) | 5.4 s | 0.66 s | 0.78 s |
+| `uvx mcp-server-fetch` (1 tool) | 3.5 s | 0.56 s | 0.67 s |
+| `uvx --from git+…calculator-mcp-server@25f8388` (23 tools, numpy/scipy/sympy/matplotlib) | 10.95 s | 1.76 s | - |
+
+- No non-JSON-RPC line reached stdout in any run; npx and uvx write their progress to stderr.
+- The caches survived the box being recreated (92 MB npm, 71 MB uv for the two light servers).
+- uvx installed the heavy server in 11 s where `python3 -m venv` + `pip install` took 39 s (G1).
+- 10.95 s is past the 10 s an identity's first call gets to redial, and past the 10 s default
+  mount timeout (`AURA_MCP_MOUNT_TIMEOUT`, 180 s in compose): a cold start needs a budget of its
+  own, which is what LibreChat's `initTimeout` is.
+
+Not covered: a server that downloads more at runtime than its package (e.g. a browser), an
+unpinned `npx -y <pkg>` (which asks the registry on every spawn), a registry outage, and more than
+one identity at a time on one host.
+
+## (I) Self-installing box servers, implemented
+
+`runtime.install` and its record, lock and `--install` are gone; a box server declares a command
+that fetches itself (`npx -y <pkg>@<v>`, `uvx <pkg>==<v>`) and gets `runtime.initTimeoutSec`
+(default 30 s, at most 600) for its first start: at the mount, at each identity's first session
+(which otherwise has 10 s) and at the install verification.
+
+| # | Result |
+|---|---|
+| I1 | Docker test: a server whose every start takes 12 s mounts under a 10 s mount budget and answers a second identity's first call from that identity's box. With the default set to zero the same test fails at the mount with `context deadline exceeded` |
+| I2 | **Bug found:** `uvx mcp-server-fetch==2026.8.18`'s first `fetch` ran `npm install` for its readability helper and printed seven lines to stdout. The go-sdk ends a session on the first non-JSON line (transport.go decode loop), so the first call after a cold start failed "transport failed after send". The TypeScript SDK LibreChat uses (1.30.1, client/stdio.js) reports such a line and keeps reading. Box sessions now drop and log non-JSON-RPC stdout lines; without that the unit test reproduces `invalid character 'a' looking for beginning of value` |
+| I3 | Production registry, empty caches: `aura mcp add fetch --box -- uvx mcp-server-fetch==2026.8.18` in 3.3 s, box creation included; first `fetch` 4.1 s with npm's lines dropped and logged, then 1.0-1.2 s |
+| I4 | Not covered: local (host) stdio servers still use the go-sdk CommandTransport, which has the same intolerance to stdout noise; unmeasured whether any mounted local server hits it |
+
+## Gotchas that bite an integration
+
+- **Key before daemon, and not through `Exec` env.** The key must be in the daemon's environment
+  at its first spawn (A5), and Aura's `Exec` scrubs it by name (B4), so the vault silently falls
+  back to a key file beside the ciphertext — Hermes' weakness, reproduced twice. Measured working:
+  Aura delivers the per-identity key as a 0600 file outside the workspace volume on every
+  `Resolve` (B5), and the command that first spawns the daemon exports it. An `.encryption-key` file
+  is a failed invariant.
+- **Suspend kills the browser without a save.** `Suspend` gives PID 1 (`sleep infinity`) a 2 s
+  grace and the daemon is SIGKILLed: a login younger than the 30 s autosave is lost (B7).
+  `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS=2000` fixed it (B9); a pre-suspend `close` would too.
+- **State must live on the volume.** Under `HOME=/root` a box recreate loses every session (B10);
+  `HOME` on `/workspace` survives it. The socket path must still fit 103 bytes (A19;
+  `/workspace/.abhome/.agent-browser/vol1.sock` is 43).
+- **The live view needs a stdin-capable exec.** The stream is loopback inside the box netns (B12).
+  A relay over `docker exec -i` works (B13) and publishes no port, but `usersandbox.ExecStream`
+  has no stdin today: that is the one backend extension this path needs.
+- **The stream client must send real virtual key codes.** A character code as
+  `windowsVirtualKeyCode` turned `.` into VK_DELETE (46) and dropped it (A14); the bundled dashboard
+  forwards the DOM event's `keyCode`, and a cockpit viewer must do the same.
+- **No domain allowlist once sessions persist** (A20): the egress sidecar stays the only network
+  boundary (B2), which is the boundary Aura already trusts.
+- **Session state file is 0644** (A13), the vault 0600.
+- **The MCP profile is heavy** (A18, ≈66 KB of schemas). The CLI through `shell_exec` plus the
+  shipped skill (`agent-browser skills get core`) costs no manifest.
+
+## Threat model this spike establishes
+
+Nothing inside the box is secret from the model's shell (B14). The vault keeps passwords out of
+**normal tool output** and encrypts them **at rest outside the box** (volume backups, a stolen
+disk); it does not stop a prompt-injected model that runs `shell_exec` from reading the key and
+decrypting the vault or the session cookies. Hermes has the same property (its terminal tool can
+read `vault.key`). Consequences for the design:
+
+- Prefer the **human login through the live view** for anything sensitive: the box then holds a
+  session, never a reusable password.
+- A stored password is a convenience for low-value accounts, and must be presented to the user as
+  "readable by the agent's sandbox", not as "the model never sees it".
+
+## What this spike does NOT prove
+
+- **Only runc was measured.** The operator confirmed gVisor (`runsc`) is not used by Aura.
+- **No real site.** Anti-bot checks, CAPTCHAs, SSO redirects, iframes, passkeys and WebAuthn were
+  not exercised; the fixture is plain HTML over loopback HTTP.
+- **The live view was proven on loopback only** (C): a 390 px viewport was rendered, but no real
+  phone, no touch input, no Cloudflare, no two viewers in two real browsers (the takeover is
+  unit-tested only).
+- **No model turn drove the browser tools** (E): no LLM credential was available, so the
+  calls came from `aura toolpipe` over the production registry; the model's choice of tools
+  and its reading of the skill are unmeasured. Tool-result redaction was not checked.
+- **No redaction check through Aura's tool pipeline** (`tool_invocations`, traces, `internal/redact`).
+- The box ran with the spike image's proxy-CA environment (`SSL_CERT_FILE`, `NODE_EXTRA_CA_CERTS`),
+  which the production image does not carry; the fixture was loopback, so no request used it.
+- fps/KB are for one near-static page; the README quotes ≈54 KB/frame on a busy 1280×720 page.
+
+## Verdict
+
+REUSE holds inside Aura's box for the browser, the vault, persistence and the live stream: every
+capability worked without writing a component. The Aura-owned work is now measured, not guessed:
+
+1. a per-identity key file delivered on `Resolve` + `HOME` on the workspace volume + a short
+   autosave interval (configuration, no new component);
+2. stdin on `ExecStream`, so a cockpit viewer can relay the loopback stream without publishing a port;
+3. the cockpit viewer and its authenticated gateway route.
+
+(2) and (3) are bespoke and need the user's go-ahead before a line is written. Update: the user
+approved them; they shipped and were proven end to end in (C).
+
+## Reproduce
+
+```bash
+python3 fixture_site.py 8765 &                       # fixture
+export HOME=/tmp/abh AGENT_BROWSER_EXECUTABLE_PATH=<chromium> AGENT_BROWSER_ENCRYPTION_KEY=$(openssl rand -hex 32)
+printf '%s' 'Sp1ke-Passw0rd!x7' | agent-browser auth save fixture \
+  --url http://127.0.0.1:8765/login --username alice@example.test --password-stdin
+./login_flow.sh s1                                  # vault login + TOTP → "LOGGED_IN s1"
+agent-browser --session s1 --restore close          # persist
+agent-browser --session s1 --restore open http://127.0.0.1:8765/docs   # → Documents
+# human path: open /login in a session, read ~/.agent-browser/<session>.stream, then
+node stream_login.mjs <port> '<email box json>' '<password box json>' alice@example.test 'Sp1ke-Passw0rd!x7'
+```
+
+Inside the box (needs the spike image and `aura-egress:spike`, see B):
+
+```bash
+go run ./spikes/agent-browser-auth/mcpbox          # (D), needs aura-sandbox:latest + aura-egress:latest
+AURA_BIN=aura bash spikes/agent-browser-auth/mcp_toolpipe_e2e.sh   # (E), after `aura mcp install browser`
+AURA_BIN=aura bash spikes/agent-browser-auth/mcp_calculator_e2e.sh # (F), after installing it as in (F)
+# (H): copy mcp_cold_start.py into a box, then e.g. `python3 mcp_cold_start.py uvx mcp-server-fetch`
+go build -o /tmp/boxrun ./spikes/agent-browser-auth/boxrun
+/tmp/boxrun resolve && docker cp spikes/agent-browser-auth/. aura-box-spike-agent-browser:/workspace/spike/
+/tmp/boxrun put /run/aura-abkey key.hex
+R() { /tmp/boxrun exec "KEY_FILE=/run/aura-abkey bash spike/box_flow.sh $*"; }
+R fixture; R login s1; /tmp/boxrun suspend; /tmp/boxrun resume; R fixture; R check s1
+/tmp/boxrun exec 'bash spike/stream_box.sh'                     # human login via the stream
+python3 spikes/agent-browser-auth/relay_login.py aura-box-spike-agent-browser <port> '<box>' '<box>'
+/tmp/boxrun destroy
+```
+
+The live view on a running Aura (C), from `web/` with `aura serve` up and the operator seeded:
+
+```bash
+NODE_PATH=$PWD/node_modules AURA_E2E_ORIGIN=http://127.0.0.1:9080 \
+AURA_E2E_AUTHULA_EMAIL=... AURA_E2E_AUTHULA_PASSWORD=... AURA_E2E_CHROMIUM=<chromium> \
+npx playwright test -c ../spikes/agent-browser-auth/live_view.config.ts
+```

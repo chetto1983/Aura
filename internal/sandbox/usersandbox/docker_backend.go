@@ -63,13 +63,27 @@ type MaterializeSource struct {
 // half-known answer is the one outcome this seam must not produce.
 type SourceResolver func(ctx context.Context, identityID string) ([]MaterializeSource, error)
 
+// BoxFile is one per-identity file Resolve writes into the box outside the workspace volume.
+type BoxFile struct {
+	Path    string
+	Content []byte
+	Mode    int64
+}
+
+// BoxFileSource returns the files one identity's box must carry. It exists for material that
+// cannot travel through Exec env (scrubEnv drops secret-named variables) and must not live on
+// the workspace volume next to the data it protects: the browser's state key is the first. An
+// error fails Resolve closed, like SourceResolver.
+type BoxFileSource func(identityID string) ([]BoxFile, error)
+
 // DockerBackend implements Backend over the moby/moby/client Docker Engine API. It is the
 // per-identity box runtime every routed tool ultimately execs into.
 type DockerBackend struct {
-	cli     *client.Client
-	image   string
-	limits  Resources
-	sources SourceResolver
+	cli      *client.Client
+	image    string
+	limits   Resources
+	sources  SourceResolver
+	boxFiles BoxFileSource
 	// egressImage is the aura-egress sidecar image ref. Empty (the default) DISABLES the
 	// sidecar entirely — a dev/local backend or the 37-04 lifecycle tests run box-only. The
 	// composition root wires WithEgress under the strict profiles so every networked box
@@ -87,6 +101,11 @@ type Option func(*DockerBackend)
 // materialize the resolver's sources into the box at create and resume (D-10).
 func WithMaterializeSources(r SourceResolver) Option {
 	return func(b *DockerBackend) { b.sources = r }
+}
+
+// WithBoxFiles wires the per-identity files Resolve writes at create and resume.
+func WithBoxFiles(f BoxFileSource) Option {
+	return func(b *DockerBackend) { b.boxFiles = f }
 }
 
 // WithEgress enables the always-on per-box egress sidecar (SBX-04, D-07) using image as the

@@ -110,18 +110,18 @@ func (r *SandboxRouter) WriteFileStream(ctx context.Context, h BoxHandle, boxPat
 // DGX agent-sandbox E2B impl stays a valid Backend, and the streaming verb is surfaced structurally
 // here instead of widening the interface.
 type backgroundExecStreamer interface {
-	ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, out io.Writer) (*ExecStreamHandle, error)
+	ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, in io.ReadCloser, out io.Writer) (*ExecStreamHandle, error)
 }
 
-// ExecStream starts a streamed/detached background exec inside the box (shell_bg). It resolves the
-// streaming capability structurally; a backend without it returns an error the tool turns into a
-// fail-CLOSED deny (never a host background process).
-func (r *SandboxRouter) ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, out io.Writer) (*ExecStreamHandle, error) {
+// ExecStream starts a streamed/detached exec inside the box (shell_bg; with in, the browser live
+// view relay). It resolves the streaming capability structurally; a backend without it returns an
+// error the caller turns into a fail-CLOSED deny (never a host process).
+func (r *SandboxRouter) ExecStream(ctx context.Context, h BoxHandle, req ExecRequest, in io.ReadCloser, out io.Writer) (*ExecStreamHandle, error) {
 	s, ok := backendAs[backgroundExecStreamer](r)
 	if !ok {
 		return nil, fmt.Errorf("sandbox backend does not support background exec streaming")
 	}
-	return s.ExecStream(ctx, h, req, out)
+	return s.ExecStream(ctx, h, req, in, out)
 }
 
 // backendAs resolves an optional capability interface off the router's backend, nil-safe.

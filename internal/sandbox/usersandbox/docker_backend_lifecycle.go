@@ -45,7 +45,7 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 		return BoxHandle{}, fmt.Errorf("resolve: find box %q: %w", name, err)
 	}
 	if existing != "" {
-		existing, err = b.reconcileCacheMounts(ctx, existing, spec.IdentityID)
+		existing, err = b.reconcileBox(ctx, existing, spec)
 		if err != nil {
 			return BoxHandle{}, fmt.Errorf("resolve: reconcile box %q: %w", name, err)
 		}
@@ -70,6 +70,9 @@ func (b *DockerBackend) Resolve(ctx context.Context, spec SandboxSpec) (BoxHandl
 	// against a stale/missing skill set.
 	if err := b.materializeInputs(ctx, h); err != nil {
 		return BoxHandle{}, fmt.Errorf("resolve: materialize inputs: %w", err)
+	}
+	if err := b.writeBoxFiles(ctx, h); err != nil {
+		return BoxHandle{}, fmt.Errorf("resolve: write box files: %w", err)
 	}
 
 	// Launch the always-on egress sidecar sharing the box netns (SBX-04, D-07), AFTER the box
@@ -155,6 +158,24 @@ func ignoreNotFound(err error) error {
 // at create and resume (D-10) by delegating to the MaterializeIn tar-stream helper. With no
 // SourceResolver wired (or no sources for the identity) it is a no-op and Resolve still
 // succeeds; a resolver error and a materialize error both propagate so Resolve fails closed.
+// writeBoxFiles writes the identity's BoxFileSource files, at create and resume alike, so a
+// recreated box gets them back without anything having been stored in it.
+func (b *DockerBackend) writeBoxFiles(ctx context.Context, h BoxHandle) error {
+	if b.boxFiles == nil {
+		return nil
+	}
+	files, err := b.boxFiles(h.IdentityID)
+	if err != nil {
+		return fmt.Errorf("box files for %q: %w", h.IdentityID, err)
+	}
+	for _, f := range files {
+		if err := CopyFileIn(ctx, b.cli, h, f.Path, f.Content, f.Mode); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (b *DockerBackend) materializeInputs(ctx context.Context, h BoxHandle) error {
 	if b.sources == nil {
 		return nil

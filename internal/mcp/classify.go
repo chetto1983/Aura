@@ -63,7 +63,8 @@ func Classify(s ManagedServer) (serverType string, trust string, err error) {
 
 // resolveTrust picks the class for a server that did not state one. An explicit known
 // class always wins; a recipe:-sourced server (Aura's own vetted catalog) resolves to
-// TrustTrustedRecipe; anything else resolves BY TRANSPORT.
+// TrustTrustedRecipe; anything else resolves BY TRANSPORT, and a stdio server confined to
+// the sandbox box by where it runs.
 //
 // The unset case used to resolve to TrustBlocked (D-03), so a server had to be installed
 // and then trust-approved in a separate step. That step protected nobody it could reach:
@@ -86,6 +87,9 @@ func resolveTrust(s ManagedServer, serverType string) string {
 	}
 	if serverType == ServerTypeStreamableHTTP {
 		return TrustRemoteHTTP
+	}
+	if normalizedRuntimeKind(s) == RuntimeKindBox {
+		return TrustSandboxedLocal
 	}
 	return TrustTrustedLocal
 }

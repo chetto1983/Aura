@@ -35,6 +35,9 @@ func assertPinsSafe(t fatalf, hc *container.HostConfig) {
 	if hc.AutoRemove {
 		t.Fatalf("AutoRemove must be pinned false — the box must be suspendable, not --rm")
 	}
+	if hc.Init == nil || !*hc.Init {
+		t.Fatalf("Init must be pinned true — without an init, orphaned processes pile up as zombies against PidsLimit")
+	}
 	if hc.Runtime != "" && hc.Runtime != "runsc" {
 		t.Fatalf("Runtime must be \"\" or \"runsc\" (never a dangerous runtime), got %q", hc.Runtime)
 	}

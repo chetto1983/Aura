@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"sync"
+	"time"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -21,9 +22,10 @@ type identitySessionEntry struct {
 	err    error
 }
 
-// identitySessionPool keeps one SDK session per OAuth subject behind one global
-// tool manifest. Each child restores its token through the existing grant store;
-// the parent never owns a bearer and cannot accidentally share one across users.
+// identitySessionPool keeps one SDK session per identity behind one global tool
+// manifest. For an OAuth server each child restores its token through the existing
+// grant store, so the parent never owns a bearer and cannot share one across users;
+// for a box-runtime server each child is a process in that identity's own box.
 //
 // D-10 (Phase 51): the map key is identity+actor, not bare identity, but only a
 // WORKER dispatch diverges it (actorSessionKey) -- the operator's own turns
@@ -39,6 +41,10 @@ type identitySessionPool struct {
 	parent     *MountedServer
 	connect    openSessionFunc
 	processCtx context.Context
+	// firstStart is the least budget a new session's handshake gets: a box server fetches
+	// itself into the identity's caches on its first start (mcp.BoxInitTimeout). Zero for an
+	// OAuth server, whose sessions use the redial and mount budgets as they are.
+	firstStart time.Duration
 
 	mu      sync.Mutex
 	closed  bool
@@ -67,6 +73,8 @@ func (p *identitySessionPool) openInitial(ctx context.Context) (*sdkmcp.ClientSe
 	p.entries[key] = entry
 	p.mu.Unlock()
 
+	ctx, cancel := p.withFirstStart(ctx)
+	defer cancel()
 	child, session, advertised, err := p.open(ctx, owner)
 	entry.server, entry.err = child, err
 	close(entry.ready)
@@ -98,9 +106,9 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	p.mu.Unlock()
 
 	if !ok {
-		handshakeCtx, cancel := context.WithTimeout(ctx, defaultMCPRedialTimeout)
 		// open still authenticates as owner (the real identity): the key split
 		// is a client-side session bucket, never a second tenant selection.
+		handshakeCtx, cancel := context.WithTimeout(ctx, max(defaultMCPRedialTimeout, p.firstStart))
 		child, _, _, err := p.open(handshakeCtx, owner)
 		cancel()
 		entry.server, entry.err = child, err
@@ -117,6 +125,17 @@ func (p *identitySessionPool) server(ctx context.Context) (*MountedServer, error
 	case <-entry.ready:
 		return entry.server, entry.err
 	}
+}
+
+// withFirstStart gives a caller whose handshake clock is already running (the mount, bounded by
+// AURA_MCP_MOUNT_TIMEOUT, 10 s by default) at least the first-start budget. A box server's cold
+// start measured 10.95 s, which that default alone would cut short.
+func (p *identitySessionPool) withFirstStart(ctx context.Context) (context.Context, context.CancelFunc) {
+	deadline, bounded := ctx.Deadline()
+	if p.firstStart == 0 || !bounded || time.Until(deadline) >= p.firstStart {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), p.firstStart)
 }
 
 func (p *identitySessionPool) open(ctx context.Context, owner string) (*MountedServer, *sdkmcp.ClientSession, []*sdkmcp.Tool, error) {

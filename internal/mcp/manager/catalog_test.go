@@ -21,7 +21,8 @@ func TestCatalogIncludesTrustedRecipesAndCalendarHTTPRecipe(t *testing.T) {
 	// a uv cache warmed at image build time, and compose mounts a named volume over
 	// /root/.cache/uv, which is seeded once and never refreshed — so no later image could
 	// reach its own warm cache. See BuiltInCatalog.
-	wantNames := []string{"calendar", "memory", "whatsapp"}
+	// browser is agent-browser's MCP server, run in each identity's box (prd.md §12).
+	wantNames := []string{"browser", "calendar", "memory", "whatsapp"}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("catalog names = %#v, want %#v", names, wantNames)
 	}

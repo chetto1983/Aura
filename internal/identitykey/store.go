@@ -6,8 +6,8 @@
 // representation so an identity's turn is billed to its own account, and a missing key
 // is a refusal rather than a silent fallback to the deployment key (D-11).
 //
-// Structured on internal/mcpoauth's store (D-12): same AES-256-GCM-at-rest shape, same
-// HKDF derivation from AURA_AUTHULA_SECRET, same db.WithIdentityTx RLS scoping, same
+// Structured on internal/mcpoauth's store (D-12): the shared secret.Sealer for
+// AES-256-GCM at rest under an HKDF key from AURA_AUTHULA_SECRET, same db.WithIdentityTx RLS scoping, same
 // pgx.ErrNoRows -> sentinel translation. key_hash is stored in the clear alongside the
 // ciphertext — unlike mcpoauth's tokens, OpenRouter's key hash addresses the credential
 // for a revoke (PATCH/DELETE) and appears in the provider's own error messages, so a
@@ -16,12 +16,6 @@ package identitykey
 
 import (
 	"context"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/hkdf"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -36,6 +30,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/pgnumeric"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // keyDerivationInfo domain-separates this store's wrapping key from every other key
@@ -85,8 +80,8 @@ type Summary struct {
 // Store reads and writes the OpenRouter key for the identity carried on the request
 // context.
 type Store struct {
-	pool *pgxpool.Pool
-	aead cipher.AEAD
+	pool   *pgxpool.Pool
+	sealer *secret.Sealer
 }
 
 // NewStore builds the store. authulaSecretHex is the 64-hex-char AURA_AUTHULA_SECRET —
@@ -97,19 +92,11 @@ func NewStore(pool *pgxpool.Pool, authulaSecretHex string) (*Store, error) {
 	if pool == nil {
 		return nil, errors.New("identitykey: nil pool")
 	}
-	key, err := deriveKey(authulaSecretHex)
+	sealer, err := secret.NewSealer(authulaSecretHex, keyDerivationInfo)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("identitykey: %w", err)
 	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return nil, fmt.Errorf("identitykey: cipher: %w", err)
-	}
-	aead, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("identitykey: gcm: %w", err)
-	}
-	return &Store{pool: pool, aead: aead}, nil
+	return &Store{pool: pool, sealer: sealer}, nil
 }
 
 // rowParams validates r and encodes it for the identity on ctx; Save and InsertIfAbsent
@@ -126,7 +113,7 @@ func (s *Store) rowParams(ctx context.Context, r Record) (string, sqlc.UpsertIde
 	if strings.TrimSpace(r.Key) == "" {
 		return "", sqlc.UpsertIdentityLLMKeyParams{}, errors.New("identitykey: save needs a key")
 	}
-	ciphertext, err := s.seal([]byte(r.Key))
+	ciphertext, err := s.sealer.Seal([]byte(r.Key))
 	if err != nil {
 		return "", sqlc.UpsertIdentityLLMKeyParams{}, err
 	}
@@ -249,7 +236,7 @@ func (s *Store) List(ctx context.Context) ([]Summary, error) {
 }
 
 func (s *Store) decodeRow(row sqlc.AuraIdentityLlmKey) (Record, error) {
-	plaintext, err := s.open(row.KeyCiphertext)
+	plaintext, err := s.sealer.Open(row.KeyCiphertext)
 	if err != nil {
 		return Record{}, err
 	}
@@ -261,32 +248,6 @@ func (s *Store) decodeRow(row sqlc.AuraIdentityLlmKey) (Record, error) {
 		LimitReset: row.LimitReset,
 		UpdatedAt:  row.UpdatedAt.Time,
 	}, nil
-}
-
-// seal prepends a fresh random nonce to the ciphertext, matching internal/mcpoauth and
-// internal/objectstore.IdentityStore so every AES-GCM-at-rest store in this repo reads
-// the same on disk.
-func (s *Store) seal(plaintext []byte) ([]byte, error) {
-	nonce := make([]byte, s.aead.NonceSize())
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, fmt.Errorf("identitykey: nonce: %w", err)
-	}
-	return s.aead.Seal(nonce, nonce, plaintext, nil), nil
-}
-
-func (s *Store) open(ciphertext []byte) ([]byte, error) {
-	ns := s.aead.NonceSize()
-	if len(ciphertext) < ns {
-		return nil, fmt.Errorf("identitykey: ciphertext too short (%d < %d)", len(ciphertext), ns)
-	}
-	plaintext, err := s.aead.Open(nil, ciphertext[:ns], ciphertext[ns:], nil)
-	if err != nil {
-		// Deliberately does not echo the ciphertext: a decrypt failure means the
-		// wrapping key changed or the row was tampered with, and neither is
-		// diagnosed by dumping bytes into a log.
-		return nil, fmt.Errorf("identitykey: decrypt: %w", err)
-	}
-	return plaintext, nil
 }
 
 // requireIdentity fails closed on a context with no principal — a key belongs to a
@@ -309,27 +270,4 @@ func parseUUID(identity string) (pgtype.UUID, error) {
 
 func uuidString(u pgtype.UUID) string {
 	return uuid.UUID(u.Bytes).String()
-}
-
-func deriveKey(authulaSecretHex string) ([]byte, error) {
-	return deriveKeyWithInfo(authulaSecretHex, keyDerivationInfo)
-}
-
-// deriveKeyWithInfo takes the info string as a parameter so a test can derive a key
-// under ANOTHER store's info and assert the two differ — domain separation asserted in
-// a comment is domain separation nobody checks (mirrors internal/mcpoauth).
-func deriveKeyWithInfo(authulaSecretHex, info string) ([]byte, error) {
-	secret := strings.TrimSpace(authulaSecretHex)
-	if len(secret) != 64 {
-		return nil, errors.New("identitykey: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
-	}
-	raw, err := hex.DecodeString(secret)
-	if err != nil {
-		return nil, fmt.Errorf("identitykey: AURA_AUTHULA_SECRET must be valid hex: %w", err)
-	}
-	key, err := hkdf.Key(sha256.New, raw, nil, info, 32)
-	if err != nil {
-		return nil, fmt.Errorf("identitykey: derive key: %w", err)
-	}
-	return key, nil
 }

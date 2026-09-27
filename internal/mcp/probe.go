@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -71,6 +72,11 @@ func ProbeServerWithOptions(ctx context.Context, name string, server ManagedServ
 	}
 
 	session, err := OpenSDKSession(ctx, name, server, egress, opts)
+	if errors.Is(err, ErrNoBox) {
+		res.Detail = "runs in each identity's sandbox box; not probed from here"
+		res.Err = res.Detail
+		return res
+	}
 	if err != nil {
 		res.Detail = "dial failed"
 		res.Err = RedactSecrets(err.Error())

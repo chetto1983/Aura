@@ -3,8 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
+	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -19,7 +25,7 @@ import (
 func withoutMCPInstallGuard(t *testing.T) {
 	t.Helper()
 	prev := mcpInstallGuard
-	mcpInstallGuard = func(_ context.Context, _ *mcpenv.Preparer, _ string, s mcp.ManagedServer) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
+	mcpInstallGuard = func(_ context.Context, _ *mcpenv.Preparer, _ string, s mcp.ManagedServer, _ mcp.BoxLauncher) (mcp.ManagedServer, mcpenv.Report, *mcp.ProbeResult, error) {
 		return s, mcpenv.Report{}, nil, nil
 	}
 	t.Cleanup(func() { mcpInstallGuard = prev })
@@ -29,7 +35,7 @@ func withoutMCPInstallGuard(t *testing.T) {
 // so the guard must leave it exactly as it found it — including not spawning anything.
 func TestPrepareAndVerifyLeavesHTTPServersAlone(t *testing.T) {
 	in := mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP, URL: "https://mcp.example.test"}
-	out, rep, verified, err := prepareAndVerify(context.Background(), nil, "remote", in)
+	out, rep, verified, err := prepareAndVerify(context.Background(), nil, "remote", in, nil)
 	if err != nil {
 		t.Fatalf("prepareAndVerify: %v", err)
 	}
@@ -50,7 +56,7 @@ func TestPrepareAndVerifyLeavesHTTPServersAlone(t *testing.T) {
 // reported "recv: unexpected EOF" and sent the operator looking at the transport.
 func TestPrepareAndVerifyRefusesAServerThatCannotHandshake(t *testing.T) {
 	in := mcp.ManagedServer{Command: "/nonexistent/aura-test-mcp-server", Args: []string{"--stdio"}}
-	_, _, _, err := prepareAndVerify(context.Background(), nil, "broken", in)
+	_, _, _, err := prepareAndVerify(context.Background(), nil, "broken", in, nil)
 	if err == nil {
 		t.Fatal("prepareAndVerify accepted a server that cannot start")
 	}
@@ -116,12 +122,38 @@ func TestBuildInstallServerPreviewsTheWholeCommand(t *testing.T) {
 	}
 }
 
+// The cockpit declares a box server as `aura mcp add --box` does, and its preview says so.
+func TestBuildInstallServerDeclaresABoxRuntime(t *testing.T) {
+	server, cli, err := buildInstallServer(agui.MCPInstallRequest{
+		Name: "fetch", Command: "uvx", Args: []string{"mcp-server-fetch==2026.8.18"},
+		Runtime: mcp.RuntimeKindBox, InitTimeoutSec: 120,
+	})
+	if err != nil {
+		t.Fatalf("buildInstallServer: %v", err)
+	}
+	if !mcp.IsBoxRuntime(server) || mcp.BoxInitTimeout(server) != 120*time.Second {
+		t.Fatalf("server = %#v", server)
+	}
+	const want = "aura mcp add fetch --box --init-timeout 120 -- uvx mcp-server-fetch==2026.8.18"
+	if cli != want {
+		t.Fatalf("cli = %q, want %q", cli, want)
+	}
+	for _, req := range []agui.MCPInstallRequest{
+		{Name: "memory", Recipe: "memory", Runtime: mcp.RuntimeKindBox},
+		{Name: "gh", URL: "https://mcp.example.test", InitTimeoutSec: 60},
+	} {
+		if _, _, err := buildInstallServer(req); err == nil {
+			t.Fatalf("%+v: a runtime outside a custom stdio server was accepted", req)
+		}
+	}
+}
+
 func TestBuildInstallServerReadsTheOtherTwoShapes(t *testing.T) {
 	remote, cli, err := buildInstallServer(agui.MCPInstallRequest{Name: "gh", URL: "https://mcp.example.test", Type: mcp.ServerTypeStreamableHTTP})
 	if err != nil {
 		t.Fatalf("remote: %v", err)
 	}
-	if remote.URL != "https://mcp.example.test" || cli != "aura mcp add gh" {
+	if remote.URL != "https://mcp.example.test" || cli != "aura mcp add gh --url https://mcp.example.test" {
 		t.Fatalf("remote = %#v cli = %q", remote, cli)
 	}
 
@@ -138,5 +170,82 @@ func TestBuildInstallServerReadsTheOtherTwoShapes(t *testing.T) {
 	}
 	if _, _, err := buildInstallServer(agui.MCPInstallRequest{Name: "x", Recipe: "no-such-recipe"}); err == nil {
 		t.Fatal("an unknown recipe was accepted")
+	}
+}
+
+// A box server's environment is the box image, so an install prepares nothing on this host
+// and runs its handshake in the installing identity's box; with no box it is not installed.
+func TestPrepareAndVerifyRunsABoxServerInTheBoxAndPreparesNothingHere(t *testing.T) {
+	prep := &mcpenv.Preparer{Root: t.TempDir(), Run: func(context.Context, string, string, ...string) (string, error) {
+		t.Fatal("a box server was prepared on the host")
+		return "", nil
+	}}
+	in := mcp.ManagedServer{Command: "agent-browser", Args: []string{"mcp"}, Runtime: mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox}}
+
+	out, _, verified, err := prepareAndVerify(context.Background(), prep, "browser", in, sdkBox{})
+	if err != nil || verified == nil || !verified.OK || verified.ToolCount != 1 {
+		t.Fatalf("install in a box = %+v, %v", verified, err)
+	}
+	if out.Command != "agent-browser" || !slices.Equal(out.Args, in.Args) {
+		t.Fatalf("the launch was rewritten: %+v", out)
+	}
+	if _, _, _, err := prepareAndVerify(context.Background(), prep, "browser", in, nil); err == nil || !strings.Contains(err.Error(), "not installed") {
+		t.Fatalf("install without a box = %v, want refused", err)
+	}
+}
+
+// sdkBox answers a box start with a real one-tool SDK server over the exec's pipes.
+type sdkBox struct{}
+
+type sdkBoxProc struct {
+	stdin io.ReadCloser
+	done  chan struct{}
+}
+
+func (p sdkBoxProc) Wait() (int, error) { <-p.done; return 0, nil }
+func (p sdkBoxProc) Kill()              { _ = p.stdin.Close() }
+func (p sdkBoxProc) Touch()             {}
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }
+
+func (sdkBox) StartStdio(_ context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+	p := sdkBoxProc{stdin: stdin, done: make(chan struct{})}
+	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "box", Version: "0"}, nil)
+	server.AddTool(&sdkmcp.Tool{Name: "ping", InputSchema: map[string]any{"type": "object"}},
+		func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+			return &sdkmcp.CallToolResult{}, nil
+		})
+	go func() {
+		defer close(p.done)
+		if ss, err := server.Connect(context.Background(), &sdkmcp.IOTransport{Reader: stdin, Writer: nopWriteCloser{stdout}}, nil); err == nil {
+			_ = ss.Wait()
+		}
+	}()
+	return p, nil
+}
+
+// envBox records the env a box start was given, and starts nothing.
+type envBox struct{ env *[]string }
+
+func (b envBox) StartStdio(_ context.Context, _ string, _, env []string, _ io.ReadCloser, _ io.Writer) (mcp.BoxProcess, error) {
+	*b.env = env
+	return nil, errors.New("not started")
+}
+
+// A declaration the registry would refuse is refused before its handshake: a box server's
+// verification runs in a box the agent's shell can read, so a secret refused only at the save
+// had already been handed to that box.
+func TestInstallRefusesAnInvalidDeclarationBeforeStartingIt(t *testing.T) {
+	var seen []string
+	in := mcp.ManagedServer{Command: "uvx", Args: []string{"mcp-server-fetch==2026.8.18"},
+		Env: []string{"GITHUB_TOKEN=ghp_0123456789abcdef0123456789abcdef0123"}, Runtime: mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox}}
+	_, _, _, err := prepareAndVerify(context.Background(), nil, "fetch", in, envBox{env: &seen})
+	if err == nil || !strings.Contains(err.Error(), "box servers take no secrets") {
+		t.Fatalf("err = %v, want the secret refusal", err)
+	}
+	if seen != nil {
+		t.Fatalf("the box was started with %q before the refusal", seen)
 	}
 }

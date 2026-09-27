@@ -69,7 +69,7 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	// The preparation report is not projected: the panel closes on success, so the only thing
 	// an operator needs from here is the REFUSAL, which travels as the 502's reason. The CLI,
 	// which stays open, prints it.
-	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server)
+	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server, a.live.box())
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -270,7 +270,7 @@ func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
 func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.ManagedServer) *mcp.ProbeResult {
 	pctx, cancel := context.WithTimeout(ctx, mcpProbeTimeout)
 	defer cancel()
-	res := probeManagedMCPServer(pctx, name, server)
+	res := probeManagedMCPServer(pctx, name, server, a.live.box())
 	return &res
 }
 
@@ -280,6 +280,12 @@ func (a mcpWriteAdapter) probe(ctx context.Context, name string, server mcp.Mana
 // merged onto the recipe/custom base.
 func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, error) {
 	recipe := strings.TrimSpace(req.Recipe)
+	url := strings.TrimSpace(req.URL)
+	command := strings.TrimSpace(req.Command)
+	runtime := mcp.ManagedRuntime{Kind: strings.TrimSpace(req.Runtime), InitTimeoutSec: req.InitTimeoutSec}
+	if (recipe != "" || command == "") && (runtime.Kind != "" || runtime.InitTimeoutSec != 0) {
+		return mcp.ManagedServer{}, "", fmt.Errorf("mcp install: a runtime is declared only for a custom stdio server")
+	}
 	if recipe != "" {
 		entry, ok := mcpmanager.LookupCatalog(recipe)
 		if !ok {
@@ -292,8 +298,6 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		return server, "aura mcp install " + recipe, nil
 	}
 
-	url := strings.TrimSpace(req.URL)
-	command := strings.TrimSpace(req.Command)
 	if url == "" && command == "" {
 		return mcp.ManagedServer{}, "", fmt.Errorf("mcp install: a custom server needs a command (stdio) or url (http)")
 	}
@@ -304,12 +308,22 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		URL:     url,
 		Type:    strings.TrimSpace(req.Type),
 		Source:  "custom",
+		Runtime: runtime,
 		// No trust class: Classify resolves one from the transport. Installing IS the
 		// authorization — this route is operator-authenticated and capability-gated
 		// (governance.write), so the human who reached it already made the decision a
 		// trust-approve would have asked for a second time.
 	}
 	cli := "aura mcp add " + req.Name
+	if runtime.Kind == mcp.RuntimeKindBox {
+		cli += " --box"
+	}
+	if runtime.InitTimeoutSec != 0 {
+		cli += fmt.Sprintf(" --init-timeout %d", runtime.InitTimeoutSec)
+	}
+	if url != "" {
+		cli += " --url " + url
+	}
 	if command != "" {
 		// The arguments belong in the preview: without them it names a command the CLI would
 		// not run, and for a resolver launch they carry the package itself.

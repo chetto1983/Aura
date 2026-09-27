@@ -97,6 +97,7 @@ describe('FilesWorkspace', () => {
   });
 
   it('hands an opened file to a picker instead of opening a browser tab', async () => {
+    const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
     const onOpenFile = vi.fn();
     const { container } = render(<FilesWorkspace onOpenFile={onOpenFile} />);
 
@@ -105,12 +106,16 @@ describe('FilesWorkspace', () => {
       if (found === null) throw new Error('file card not rendered');
       return found;
     });
-    fireEvent.doubleClick(card);
-
+    // The double-click is repeated until the widget answers it. SVAR can drop one delivered in
+    // the same tick the card first paints: measured 2026-09-27, 1 run in 43, and in that run no
+    // open-file reached the bus at all. That instant is the widget's, not what this test claims.
     await waitFor(() => {
+      fireEvent.doubleClick(card);
       expect(onOpenFile).toHaveBeenCalledWith(
         expect.objectContaining({ id: '/clip.mp4', name: 'clip.mp4', size: 4 }),
       );
     });
+    expect(opened).not.toHaveBeenCalled();
+    opened.mockRestore();
   });
 });

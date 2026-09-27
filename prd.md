@@ -613,6 +613,168 @@ weather artifact's seven forecast cards and changing its selected day. Browser
 validation is an agent instruction and available capability, not an automatic
 server-side rejection gate for every file delivery.
 
+**Authenticated browsing reuses agent-browser, not a bespoke connector.** The box carries
+`agent-browser` 0.38.1 (Vercel, Apache-2.0; npm tarball and native binary sha256-pinned), the
+engine under Hermes Agent's ~14.7k-LOC browser stack. Measured 2026-09-26 against a disposable
+login fixture (password → TOTP → HttpOnly cookie → protected PDF), first natively and then in an
+`aura-sandbox` box that Aura's own `DockerBackend` resolved, suspended, resumed and recreated
+behind the egress floor (runc): the accessibility snapshot, the credential vault (`auth save
+--password-stdin` / `auth login`), TOTP entry, protected download, encrypted session restore and
+a human login driven only through its viewport stream all worked without a new component
+(`spikes/agent-browser-auth/FINDINGS.md`). Four constraints came out of the box, not the README:
+
+- the state key is read by agent-browser's daemon at spawn, and `Exec` scrubs secret-named
+  variables, so a key passed as env never arrives and the vault mints `.encryption-key` beside its
+  ciphertext. Aura therefore delivers a per-identity key as a 0600 file outside the workspace
+  volume on every `Resolve`, and the in-box entry point refuses to run without it;
+- `Suspend` stops a `sleep infinity` PID 1 with a 2 s grace, so the browser is SIGKILLed: a login
+  younger than the default 30 s autosave was lost, a 2 s autosave kept it;
+- state under `HOME=/root` died with a box recreate, state under `/workspace` survived it;
+- the viewport stream binds loopback inside the box netns, and Aura's only channel into a box is
+  `exec`. A relay over `docker exec -i` logged in from the host with no published port (14 fps,
+  first frame 56 ms after the click, capture-to-host median 10 ms), so the cockpit live view rides
+  a stdin-capable `ExecStream` rather than a published port.
+
+**Threat model.** Nothing inside the box is secret from the model's shell: a second `exec` read
+the key from the daemon's `/proc/<pid>/environ`, and with it the vault and session state decrypt.
+The vault keeps passwords out of tool output and encrypted at rest outside the box; it does not
+stop a prompt-injected model running `shell_exec`. Sensitive accounts are therefore logged into by
+the user through the live view, so the box holds a session, never a reusable password; a stored
+password is offered only as "readable by the agent's sandbox". The measurement does not cover
+gVisor (not used), real sites (anti-bot, CAPTCHA, SSO, iframes, passkeys), the cockpit viewer and
+its latency across LAN or Cloudflare, or redaction through Aura's tool pipeline.
+
+**Live view, measured end to end on 2026-09-26.** A signed-in Authula operator opened
+`/browser/<session>` on a running `aura serve` (Postgres, the real box image, the egress floor)
+and logged into the fixture — email, password, TOTP — by clicking and typing in the cockpit only;
+the fixture granted one new session and the box's browser reached `/docs`, three runs out of
+three (`spikes/agent-browser-auth/live_view.e2e.ts`). The run corrected three assumptions:
+
+- a frame is the viewport, not the screen: `deviceHeight` reported 720 for 1280x577 JPEGs, so the
+  viewer maps both axes by one width scale;
+- Enter must carry `text: "\r"`, or CDP submits no form;
+- each open agent-browser session is its own Chromium, about 142 tasks and 180 MB, so the default
+  512-pid box holds three at most, and the box skill tells the agent to keep one per site and
+  close it.
+
+It also found that the box's keep-alive PID 1 never reaped orphans: four sessions opened and
+closed left 177 zombies counting against the pid cap, which starves `shell_exec` as well as the
+browser. Boxes now run with Docker's init (`HostConfig.Init`), and the same runs ended at 3 tasks
+and 0 zombies. Existing boxes built before a change used to keep their old image and host config
+forever, since Docker cannot change them in place; the first E2E ran into exactly that. `Resolve`
+now recreates a box whose image, init or cache mounts are not current, keeping its volumes and
+logging why; an image that is not present locally is never a reason, because `Resolve` must not
+pull. The measurement does not cover the viewer on a phone, over Cloudflare, or with a second
+concurrent viewer in another browser.
+
+**Viewer on the assistant-ui element, and the MCP server in the box, measured 2026-09-26.** The
+live view now renders inside an owned copy of `@assistant-ui/elements-computer-use` (address
+chrome, the operator's last clicks as a cursor trail); the same E2E passed three runs out of three,
+and screenshots at 1440x900 and 390x844 put the cursor on the click. Separately,
+`agent-browser mcp` ran inside a production box behind `ExecStream` with stdin, reached by the
+go-sdk client over `IOTransport` and nothing else (`spikes/agent-browser-auth/mcpbox`): handshake
+61-133 ms, 29 tools and 64 KB of schemas in one page, snapshot 33 ms, click 55 ms, first
+screenshot 9.6 s then 50 ms. A `Suspend` ends the session cleanly within 2.3 s and a new exec
+reconnects in under 100 ms, with the cookies restored but not the open page. The server's stderr
+must be redirected, because `ExecStream` merges it into stdout. This does not measure a mount:
+no agent turn, no `tool_search` deferral, no bridge redial, no redaction of tool results.
+
+**Box runtime for stdio MCP servers, measured 2026-09-26.** A registry entry with
+`runtime.kind: "box"` runs in the calling identity's box, one process per identity, over the
+go-sdk `IOTransport` on an `ExecStream`; `ServerConfig.Box` makes `OpenSDKSessionForConfig` the
+single place that either starts it in a box or refuses it (`ErrNoBox`), so no path runs a box
+server on the host. Box servers default to `sandboxed_local`, take no secret-shaped env, and are
+identity-scoped like OAuth servers: the tool list is read at mount in the operator's box, each
+identity's first call opens its own process. The catalog adds `browser` (agent-browser, default-on
+in the appliance) with its 29 tools graded by a recipe table, reads and reversible writes, since
+the server states no destructive hint and the fail-closed default would gate every click.
+Through `aura toolpipe` on the production registry: boot mounts 29 deferred tools, `tool_search`
+loads them, a fixture page is driven in the box, and after the box is stopped the next call
+brings it back, three runs out of three. The run found that the bridge refused a mutating call
+on a session it already knew was dead, "reconnected but not replayed", though nothing had been
+sent, which failed the first action after every idle suspend; such a call is now sent once, and
+the no-replay rule is kept for calls that reached a transport. It also found that the idle reaper
+counts only new execs, so a working MCP session or live view would be suspended under it; tool
+calls and live-view input now mark the box as used. Not measured: a model choosing these tools,
+two identities' boxes on one host at once (unit-tested only), and redaction of browser output.
+
+**Counter-proof with an unrelated server, 2026-09-26.** `chetto1983/calculator-mcp-server`
+(Python, FastMCP) was installed by `shell_exec` into a venv on the operator's `/workspace`
+volume and declared with the new `aura mcp add --box`, which completes the handshake in the
+operator's box: until then only a catalog recipe could declare the runtime. Boot mounted its 23
+tools deferred; three runs out of three computed correct results in the box, came back after the
+box was stopped, rendered a plot, and ran beside the browser recipe with separate stderr logs and
+no process left 0.45 s after the caller exited. What it shows: the runtime carries a stdio server
+it was not written for. What it does not: a server installed on one identity's volume is absent
+from the others' boxes; an unannotated server's calls are graded destructive in a model turn;
+the cockpit install form cannot yet declare the runtime.
+
+**Per-identity install for box servers, measured 2026-09-26.** Chosen over a shared read-only
+volume and over the image: every identity gets its own copy, so no package state crosses
+identities (the 2026-09-14 cache-poisoning finding). `runtime.install` (CLI `--install`, box only,
+shape-checked at save and before it runs) is a shell line run in an identity's box before its first
+session and again when the line changes; the box records the hash of the last completed line, a
+lock makes concurrent starts install once, and a failure records nothing and returns the tail of
+its log. The install runs before any handshake clock (mount, first session, install
+verification) under its own 5-minute bound: the docker test first failed because only the connect
+deadline had been extended and `tools/list` still ran on the expired one. Measured: calculator
+installs in 39 s and 479 MB per identity; two identities each installed a 12 s line once, on first
+use; a changed line reinstalled; three concurrent starts installed once; on the production
+registry an empty box was served after a 44 s install (2.4 s warm). Not solved: a new line delays
+`aura serve`'s boot mount while it installs in the operator's box; each other identity pays the
+install on its first call; deleting an installed tree but not its record breaks it until the
+record is removed.
+
+**LibreChat's model measured in the box, 2026-09-26.** LibreChat (7b2362d) declares stdio servers
+only in operator YAML, runs them on its host, shares one process across users unless the config
+carries user context, installs nothing (`npx -y <pkg>` fetches at spawn into a host-wide npm
+cache) and gives a first spawn a per-server `initTimeout`, 30 s by default. In an Aura box the same
+declaration installs per identity, because npm, uv and pip caches are already per identity: in a
+production box with empty caches, `npx -y @modelcontextprotocol/server-filesystem@2026.8.31`
+answered `tools/list` in 5.4 s cold and 0.66 s warm, `uvx mcp-server-fetch` in 3.5 s and 0.56 s,
+and a numpy/scipy/sympy server from git through `uvx --from git+...` in 10.95 s and 1.76 s (39 s
+through venv + pip). The caches survived a box recreate, and nothing but JSON-RPC reached stdout.
+What it shows: the install line is not needed for npx/uvx servers, while a cold-start budget is,
+since 10.95 s exceeds both the 10 s first-call redial budget and the 10 s default mount timeout.
+What it does not: runtime downloads beyond the package, unpinned packages, a registry outage, or
+concurrent identities.
+
+**Self-installing box servers replace the install line, 2026-09-26.** Following that
+measurement, `runtime.install`, its record, lock and `--install` were removed: a box server
+declares a pinned command that fetches itself, as LibreChat's do, and gets
+`runtime.initTimeoutSec` (default 30 s, at most 600) for its first start at the mount, at each
+identity's first session and at the install verification. A docker test mounts a server whose
+every start takes 12 s under a 10 s mount budget and serves a second identity's first call; with
+no init timeout it fails at the mount. The first real run then found that a self-installing server
+may print to stdout: `mcp-server-fetch`'s first `fetch` ran `npm install` and wrote seven lines
+there, and the go-sdk ends a session on the first line that is not JSON, while the TypeScript SDK
+LibreChat uses reports the line and keeps reading. Box sessions now drop and log such lines. On the
+production registry with empty caches the server was added in 3.3 s and its first call answered in
+4.1 s, then 1.0-1.2 s. The paragraph above on per-identity install is superseded. Not covered: local
+host stdio servers have the same stdout intolerance and are unchanged.
+
+**Host stdio servers get the same stdout filter, and their children are reaped, 2026-09-26.**
+Measured against the go-sdk's `CommandTransport` (v1.8.0): a host server that printed one line of
+npm output before answering lost its session at `initialize` ("invalid character 'a' looking for
+beginning of value"), and a child it had forked (`sleep 300 &`) was still running after the session
+closed, although `procgroup.SetProcessGroup` makes every server lead its own group for exactly that
+(D-10): nothing ever signalled the group. `CommandTransport` pipes stdout itself and hides its
+connection, so `internal/mcp/stdio_command.go` replaces it: the same pipes read through the box
+path's `protocolLines`, and the spec's shutdown ladder (close stdin, 5 s, SIGTERM, 5 s, kill) with
+the kill, and a context cancel, taken by the whole group, which is also killed after a clean exit.
+Both tests fail against the previous code (negative controls). Not shown: that any server mounted
+today prints to stdout; the process-group kill on Windows (`taskkill /T`) is not exercised.
+
+**An install validates its declaration before the handshake, 2026-09-26.** A box server declared
+with a secret-shaped env (`GITHUB_TOKEN=ghp_...`) was started in the installing identity's box by
+the install's verification, with the secret in its environment, and only then refused by the
+save's validator: a unit test with a recording launcher saw the box started with that env.
+`prepareAndVerify` now runs the save's validation (`mcp.ValidateManagedServer`) first, for the CLI
+and the cockpit alike. The cockpit install then gained what `aura mcp add --box` had: a custom
+stdio server's `runtime` (`local` or `box`) and `initTimeoutSec`, with `--init-timeout` added to
+the CLI so the previewed command is one it runs. Not shown: an install from the cockpit against a
+live box; the handler, builder, form and CLI are unit-tested.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry

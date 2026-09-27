@@ -53,7 +53,7 @@ func closeSession(cs *sdkmcp.ClientSession) {
 // ReleaseSession closes cs without making the caller wait for it.
 //
 // Closing a session whose peer has stopped answering blocks on that peer — a
-// CommandTransport's Close waits for the child process to exit, and a child that hung
+// stdio transport's Close waits for the child process to exit, and a child that hung
 // during tools/list is exactly the child that will not. A mount that has already given
 // up on its deadline must not then pay an unbounded close, so the close is tracked like
 // any other abandoned call and drained by WaitForAbandonedCalls in tests.

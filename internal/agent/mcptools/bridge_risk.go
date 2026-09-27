@@ -7,6 +7,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // MCPActionClass is the per-action risk tier a trusted-recipe MCP source's
@@ -46,6 +47,7 @@ const (
 // table, one lookup site below, mixed key spaces documented here so a future
 // reader does not assume a uniformity that was never true.
 var trustedRecipeActions = map[string]map[string]MCPActionClass{
+	mcpmanager.BrowserRecipeSource: browserRecipeActions,
 	calendarRecipeSource: {
 		"list_accounts":              MCPActionRead,
 		"get_emails":                 MCPActionRead,
@@ -155,7 +157,8 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 		return policy
 	}
 	settings, oauthErr := mcp.OAuthSettingsFromEnv(server.Env)
-	policy.identityScoped = serverType == mcp.ServerTypeStreamableHTTP && oauthErr == nil && mcp.UsesOAuth(server, settings)
+	oauthScoped := serverType == mcp.ServerTypeStreamableHTTP && oauthErr == nil && mcp.UsesOAuth(server, settings)
+	policy.identityScoped = oauthScoped || mcp.IsBoxRuntime(server)
 	// Rendering a server's own document is a larger grant than calling its tools,
 	// so it is gated on the trust class and on nothing else (mcp.TrustMayRenderViews).
 	policy.views = mcp.TrustMayRenderViews(trust)

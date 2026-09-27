@@ -35,13 +35,19 @@ func identityCacheMounts(identityID string) []mount.Mount {
 //   - Binds       nil          no host bind-mounts, volumes only (D-10)
 //   - AutoRemove  false        the box is suspendable; --rm would destroy it (Pitfall 5)
 //   - CapDrop     empty        keep default caps (D-12: the box is not a jail)
+//   - Init        true         docker-init (tini) is PID 1 and reaps orphans. The keep-alive
+//     `tail` never waits on anyone, so every process a closed browser session left behind
+//     stayed a zombie and counted against PidsLimit: measured 2026-09-26, 177 zombies after
+//     four agent-browser sessions opened and closed, in a box capped at 512 pids.
 //
 // Mounts is built only from the per-identity workspace volume, a tmpfs scratch, and the
 // identity's uv / npm / pip warm-cache volumes. The docker socket is a host path whose only
 // mount vector is a bind — which never appears here — so the socket is unrepresentable.
 func toHostConfig(s SandboxSpec) *container.HostConfig {
 	pids := s.Limits.PidsLimit
+	reapOrphans := true
 	return &container.HostConfig{
+		Init:        &reapOrphans,
 		Privileged:  false,
 		NetworkMode: container.NetworkMode(""),
 		Binds:       nil,

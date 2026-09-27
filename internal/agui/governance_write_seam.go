@@ -44,14 +44,18 @@ var (
 // MCPInstallRequest is the install body: either a recipe `Name` (resolved against the
 // built-in catalog) or a custom stdio/HTTP server. Env carries the operator-supplied
 // values (a secret may arrive as its redacted ${KEY} placeholder, preserved by the merge).
+// Runtime and InitTimeoutSec place a custom stdio server, as mcp.ManagedRuntime's Kind and
+// InitTimeoutSec do: "local" (the default) or "box".
 type MCPInstallRequest struct {
-	Name    string   `json:"name"`
-	Recipe  string   `json:"recipe,omitempty"`
-	Command string   `json:"command,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	URL     string   `json:"url,omitempty"`
-	Type    string   `json:"type,omitempty"`
-	Env     []string `json:"env,omitempty"`
+	Name           string   `json:"name"`
+	Recipe         string   `json:"recipe,omitempty"`
+	Command        string   `json:"command,omitempty"`
+	Args           []string `json:"args,omitempty"`
+	URL            string   `json:"url,omitempty"`
+	Type           string   `json:"type,omitempty"`
+	Env            []string `json:"env,omitempty"`
+	Runtime        string   `json:"runtime,omitempty"`
+	InitTimeoutSec int      `json:"initTimeoutSec,omitempty"`
 }
 
 // MCPWriteResult is the common provider result the handlers project to the wire. Server is

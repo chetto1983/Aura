@@ -46,7 +46,7 @@ func TestShellBg_RunsInBox(t *testing.T) {
 
 	// Poll until the box produces output — proving the job runs (and streams) INSIDE the box.
 	var sawTick bool
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		res, perr := poll.Execute(ctx, json.RawMessage(pollArgs))
 		if perr != nil {
 			t.Fatalf("poll: %v", perr)
@@ -69,7 +69,7 @@ func TestShellBg_RunsInBox(t *testing.T) {
 
 	// After kill, poll reports the job as killed (not running).
 	var killed bool
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		res, perr := poll.Execute(ctx, json.RawMessage(pollArgs))
 		if perr != nil {
 			t.Fatalf("poll after kill: %v", perr)

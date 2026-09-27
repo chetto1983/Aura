@@ -8,11 +8,11 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// RuntimeLocal is the one kind a managed stdio MCP server can be launched with:
-// directly, as a child process. The `docker` and `docker_gateway` kinds were
-// retired by amendment #209 — RuntimeLaunchConfig refused both whenever
-// AURA_IN_CONTAINER=1, and the appliance image sets it unconditionally, so no
-// shipped deployment could ever take those paths.
+// RuntimeLocal launches a managed stdio MCP server directly, as a child process; its
+// sibling mcp.RuntimeKindBox runs it in the calling identity's sandbox box. The `docker`
+// and `docker_gateway` kinds were retired by amendment #209 — RuntimeLaunchConfig refused
+// both whenever AURA_IN_CONTAINER=1, and the appliance image sets it unconditionally, so
+// no shipped deployment could ever take those paths.
 const RuntimeLocal = mcp.RuntimeKindLocal
 
 var (
@@ -103,7 +103,10 @@ func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfi
 	if strings.TrimSpace(server.Command) == "" {
 		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q command cannot be empty", name)
 	}
-	return mcp.ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env}, nil
+	return mcp.ServerConfig{
+		Command: server.Command, Args: server.Args, Env: server.Env,
+		Box: mcp.IsBoxRuntime(server), InitTimeout: mcp.BoxInitTimeout(server),
+	}, nil
 }
 
 func runtimeKind(server mcp.ManagedServer) string {
