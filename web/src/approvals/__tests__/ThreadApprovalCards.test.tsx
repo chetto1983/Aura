@@ -129,7 +129,8 @@ describe('ThreadApprovalCards active-thread presentation', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
     await waitFor(() => {
       expect(onResolved).toHaveBeenCalledTimes(1);
     });
@@ -203,14 +204,16 @@ describe('ThreadApprovalCards active-thread presentation', () => {
       </QueryClientProvider>,
     );
 
-    fireEvent.click(first(screen.getAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
     await waitFor(() => {
       expect(onResolved).toHaveBeenCalledTimes(1);
     });
     const firstAnnouncement = screen.getByRole('status');
     expect(firstAnnouncement.textContent).toBe('Answered.');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
     await waitFor(() => {
       expect(onResolved).toHaveBeenCalledTimes(2);
     });

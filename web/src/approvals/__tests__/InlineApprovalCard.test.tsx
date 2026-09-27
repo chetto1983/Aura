@@ -86,14 +86,16 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     vi.unstubAllGlobals();
   });
 
-  it('renders the backend question VERBATIM + option buttons', () => {
+  it('renders the backend question VERBATIM + one row per option', () => {
     renderCard({
       approval: approval({ token: 't-1', conversation_id: 'c-1', options: ['Rome', 'Milan'] }),
     });
     // The question string is rendered as-is, no client-side rewrite.
     expect(screen.getByText('Which city should I check?')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Rome' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Milan' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Rome' })).toBeTruthy();
+    expect(screen.getByRole('option', { name: 'Milan' })).toBeTruthy();
+    const answer = screen.getByRole<HTMLButtonElement>('button', { name: 'Answer' });
+    expect(answer.disabled).toBe(true);
   });
 
   it('renders a free-text input when the pause offers no options', () => {
@@ -120,19 +122,22 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     });
   });
 
-  it('Answer (option) resolves {action:"accept", content} → answered terminal chip', async () => {
+  it('Answer (option) resolves {action:"accept", content} → answered receipt with the answer given', async () => {
     const onResolved = vi.fn();
     renderCard({
       approval: approval({ token: 't-1', conversation_id: 'c-1', options: ['Rome', 'Milan'] }),
       onResolved,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Milan' }));
+    fireEvent.click(screen.getByRole('option', { name: 'Milan' }));
+    expect(calls).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
     await waitFor(() => {
       expect(screen.getByText('Answered.')).toBeTruthy();
     });
     expect(screen.getByText('Answered.').closest('[data-tone]')?.getAttribute('data-tone')).toBe(
       'success',
     );
+    expect(screen.getByText('Milan')).toBeTruthy();
     expect(calls).toHaveLength(1);
     expect(calls[0]?.url).toContain('/api/approvals/t-1/resolve');
     expect(calls[0]?.body).toEqual({ action: 'accept', content: 'Milan' });
@@ -393,5 +398,120 @@ describe('InlineApprovalCard (APRV-02/03 / D-03/D-05/D-06)', () => {
     expect(screen.queryByText('failure secret/3')).toBeNull();
     expect(calls.at(-1)?.url).toContain('/failure%20secret%2F3/resolve');
     expect(calls.at(-1)?.body).toEqual({ action: 'accept', content: '' });
+  });
+
+  it('Enter on the chosen row answers, from the keyboard alone', async () => {
+    renderCard({
+      approval: approval({ token: 't-1', conversation_id: 'c-1', options: ['Rome', 'Milan'] }),
+    });
+    const list = screen.getByRole('listbox');
+    fireEvent.keyDown(list, { key: 'ArrowDown' });
+    fireEvent.keyDown(list, { key: 'Enter' });
+    fireEvent.keyDown(list, { key: 'Enter' });
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]?.body).toEqual({ action: 'accept', content: 'Milan' });
+  });
+
+  it('an approval shows the gateway scopes as a single choice and Approve sends the chosen scope', async () => {
+    renderCard({
+      approval: approval({
+        token: 't-scope',
+        conversation_id: 'c-1',
+        kind: 'approval',
+        options: [
+          { label: 'Approve once', value: 'gateway_scope:once:shell_exec' },
+          { label: 'Approve for this conversation', value: 'gateway_scope:session:shell_exec' },
+        ],
+      }),
+    });
+    const approve = screen.getByRole<HTMLButtonElement>('button', { name: 'Approve' });
+    expect(approve.disabled).toBe(true);
+    fireEvent.click(
+      screen.getByRole('option', { name: 'Approve shell_exec for this conversation' }),
+    );
+    expect(approve.disabled).toBe(false);
+    fireEvent.click(approve);
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]?.body).toEqual({
+      action: 'accept',
+      content: 'gateway_scope:session:shell_exec',
+    });
+  });
+
+  it('a gateway approval graded destructive draws the destructive variant', () => {
+    renderCard({
+      approval: approval({
+        token: 't-rm',
+        conversation_id: 'c-1',
+        kind: 'approval',
+        question: 'Approve shell_exec?',
+        options: [{ label: 'Approve once', value: 'gateway_scope:once:shell_exec' }],
+        presentation: {
+          key: 'approval.gateway.mutation',
+          params: { tool: 'shell_exec', risk: 'destructive', args: 'rm -rf /tmp/x' },
+        },
+      }),
+    });
+    expect(screen.getByRole('form').getAttribute('data-variant')).toBe('destructive');
+    expect(screen.getByRole('button', { name: 'Approve' }).className).toContain('bg-destructive');
+  });
+
+  // The spec keeps ask_user's behaviour: an approval with no options still takes a reply.
+  it('an approval with no options keeps its free-text reply and Answer', async () => {
+    renderCard({
+      approval: approval({ token: 't-plain', conversation_id: 'c-1', kind: 'approval' }),
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText('Type your answer'), {
+      target: { value: 'yes, go ahead' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]?.body).toEqual({ action: 'accept', content: 'yes, go ahead' });
+  });
+
+  it('an approval whose options are not gateway scopes says Answer, not Approve', async () => {
+    renderCard({
+      approval: approval({
+        token: 't-yn',
+        conversation_id: 'c-1',
+        kind: 'approval',
+        options: ['Yes', 'No'],
+      }),
+    });
+    expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: 'No' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    await waitFor(() => {
+      expect(calls).toHaveLength(1);
+    });
+    expect(calls[0]?.body).toEqual({ action: 'accept', content: 'No' });
+  });
+
+  it('two options with one value are still two rows, and the chosen one is shown', async () => {
+    renderCard({
+      approval: approval({
+        token: 't-dup',
+        conversation_id: 'c-1',
+        options: [
+          { label: 'Keep it', value: 'keep' },
+          { label: 'Keep it for now', value: 'keep' },
+        ],
+      }),
+    });
+    fireEvent.click(screen.getByRole('option', { name: 'Keep it for now' }));
+    expect(screen.getByRole('option', { name: 'Keep it' }).getAttribute('aria-selected')).toBe(
+      'false',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
+    await screen.findByText('Answered.');
+    expect(screen.getByText('Keep it for now').tagName).toBe('DD');
+    expect(calls[0]?.body).toEqual({ action: 'accept', content: 'keep' });
   });
 });

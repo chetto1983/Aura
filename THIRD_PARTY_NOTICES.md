@@ -29,3 +29,45 @@ This repository adapts a small number of open-source implementation patterns. Ke
 - Required hygiene:
   - Keep the attribution footer at the end of that SKILL.md; it names the author, the source and
     the license, and says the text is adapted.
+
+## assistant-ui/tool-ui
+
+- Source: `https://github.com/assistant-ui/tool-ui`, at commit
+  `49a870286facdbf28160cd647f0d337ebdc9b275`
+- License: MIT (`LICENSE.md` at that commit, reproduced below)
+- Use in Aura: the markup and classes of Question Flow
+  (`apps/www/components/tool-ui/question-flow/question-flow.tsx`), ported onto Aura's tokens
+  and translated. No Tool UI package or vendored file is installed.
+- Adapted files:
+  - `web/src/questions/QuestionCard.tsx`
+  - `web/src/questions/QuestionOptions.tsx`
+  - `web/src/questions/QuestionReceipt.tsx`
+- Required hygiene:
+  - Keep the attribution comment at the top of each adapted file; it names the commit, the
+    copyright holder and the license.
+  - A component later installed from the `@tool-ui` registry (`web/components.json`) is listed
+    here when it lands.
+
+```text
+MIT License
+
+Copyright (c) 2025 AgentbaseAI Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

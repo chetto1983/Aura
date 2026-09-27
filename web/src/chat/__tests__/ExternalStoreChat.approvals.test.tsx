@@ -165,7 +165,9 @@ describe('ExternalStoreChat approval gate', () => {
       renderChat(<ExternalStoreChat threadId="c-1" />);
 
       expect(await screen.findAllByText(frame)).toHaveLength(2);
-      expect(screen.getAllByText(review)).toHaveLength(2);
+      // The review line asks for a decision, so only the pending card carries it: a closed
+      // approval is a read-only receipt (spec 2026-09-25 §Cockpit, "After answering").
+      expect(screen.getAllByText(review)).toHaveLength(1);
       expect(screen.getByText(terminal).textContent).toBe(terminal);
       const composer = await screen.findByTestId('chat-composer');
       const hintId = composer.getAttribute('aria-describedby');
@@ -192,7 +194,8 @@ describe('ExternalStoreChat approval gate', () => {
     expect(screen.getByPlaceholderText('Ask Aura')).toHaveProperty('disabled', true);
     expect(screen.getByRole('button', { name: 'Add files' })).toHaveProperty('disabled', true);
 
-    fireEvent.click(first(screen.getAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
     await waitFor(() => {
       expect(runRequests).toHaveLength(0);
     });
@@ -204,7 +207,8 @@ describe('ExternalStoreChat approval gate', () => {
       ).toBe('token-2');
     });
 
-    fireEvent.click(first(screen.getAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
     await waitFor(() => {
       expect(runRequests).toHaveLength(0);
     });
@@ -215,7 +219,8 @@ describe('ExternalStoreChat approval gate', () => {
           ?.getAttribute('data-approval-token'),
       ).toBe('token-3');
     });
-    fireEvent.click(first(screen.getAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
     await waitFor(() => {
       expect(runRequests).toHaveLength(1);
     });
@@ -260,7 +265,8 @@ describe('ExternalStoreChat approval gate', () => {
     );
     renderChat(<ExternalStoreChat threadId="c-1" />);
 
-    fireEvent.click(first(await screen.findAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(await screen.findAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
 
     await waitFor(() => {
       expect(
@@ -281,7 +287,8 @@ describe('ExternalStoreChat approval gate', () => {
     );
     renderChat(<ExternalStoreChat threadId="c-1" />);
 
-    fireEvent.click(first(await screen.findAllByRole('button', { name: 'Yes' })));
+    fireEvent.click(first(await screen.findAllByRole('option', { name: 'Yes' })));
+    fireEvent.click(first(screen.getAllByRole('button', { name: 'Answer' })));
 
     await waitFor(() => {
       expect(

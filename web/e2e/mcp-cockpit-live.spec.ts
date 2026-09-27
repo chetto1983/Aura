@@ -207,7 +207,8 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
     );
     await composer.press('Enter');
 
-    const approveForConversation = page.getByRole('button', {
+    // The gateway's scopes are rows of one choice, sent by the Approve pill.
+    const approveForConversation = page.getByRole('option', {
       name: /Approve .* for this conversation|Approva .* per questa conversazione/i,
     });
     await expect(approveForConversation).toBeVisible({ timeout: 90_000 });
@@ -227,6 +228,7 @@ test('configures PIM in the cockpit and sends through the real agent to fake SMT
       )
       .catch(() => undefined);
     await approveForConversation.click();
+    await page.getByRole('button', { name: /^(Approve|Approva)$/ }).click();
     const resolved = await resolutionResponse;
     const resolvedBody = await resolved.text();
     expect(resolved.ok(), resolvedBody).toBe(true);

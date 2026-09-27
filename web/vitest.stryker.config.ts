@@ -5,6 +5,9 @@ const mutationTests = [
   'src/approvals/__tests__/ApprovalList.test.tsx',
   'src/approvals/__tests__/InlineApprovalCard.test.tsx',
   'src/approvals/__tests__/ThreadApprovalCards.test.tsx',
+  'src/approvals/__tests__/approvalState.test.ts',
+  // The question frame (spec 2026-09-25): the ask_user adapter's suites above reach it too.
+  'src/questions/__tests__/QuestionFrame.test.tsx',
   'src/chat/artifacts/artifactMeta.test.ts',
   'src/chat/artifacts/downloadAll.test.ts',
   'src/chat/voice/speechAdapter.test.ts',

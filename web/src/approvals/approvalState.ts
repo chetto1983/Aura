@@ -14,6 +14,14 @@ export function isTerminal(approval: Pick<Approval, 'terminal'>): boolean {
   return approval.terminal === true;
 }
 
+/**
+ * True when the gateway graded the approval's action Destructive (scoring.Destructive, carried
+ * as the presentation's `risk` param): the card then draws its destructive variant.
+ */
+export function isDestructiveApproval(approval: Pick<Approval, 'presentation'>): boolean {
+  return approval.presentation?.params.risk === 'destructive';
+}
+
 /** One rendered choice: the label the operator reads, the value the server records. */
 export interface ApprovalOption {
   readonly label: string;
@@ -21,7 +29,7 @@ export interface ApprovalOption {
 }
 
 /**
- * Parse the raw JSON option set into the choices the inline card renders as buttons.
+ * Parse the raw JSON option set into the choices the inline card renders as rows.
  *
  * The server persists `paused_states.options` from agent.PauseOption, which marshals as
  * `[{label, value}]` — NOT as a string array. This function used to accept only strings, so
@@ -73,4 +81,13 @@ export function parseScopeChoice(value: string): ScopeChoice | null {
   const subject = rest.slice(separator + 1);
   if (!SCOPES.includes(scope as ApprovalScope) || subject === '') return null;
   return { scope: scope as ApprovalScope, subject };
+}
+
+/**
+ * True when every option is a gateway scope: the card then says Approve. A model's own
+ * approval options, such as Yes and No, are answers, and Approve on "No" would say the
+ * opposite of what is sent.
+ */
+export function offersOnlyScopes(options: readonly ApprovalOption[]): boolean {
+  return options.length > 0 && options.every((option) => parseScopeChoice(option.value) !== null);
 }

@@ -30,6 +30,7 @@ import { studioEn, studioIt } from './resources.studio';
 import { videoStudioEn, videoStudioIt } from './resources.videoStudio';
 import { chatTurnNoticesEn, chatTurnNoticesIt } from './resources.turnnotices';
 import { updateEn, updateIt } from './resources.update';
+import { questionCardEn, questionCardIt } from './resources.questions';
 
 export const resources = {
   en: {
@@ -196,6 +197,7 @@ export const resources = {
       ...embeddingRouteEn,
       ...remoteAccessEn,
       ...updateEn,
+      ...questionCardEn,
       ...profileEn,
       ...adminEn,
       ...onboardingEn,
@@ -469,6 +471,7 @@ export const resources = {
       ...embeddingRouteIt,
       ...remoteAccessIt,
       ...updateIt,
+      ...questionCardIt,
       ...profileIt,
       ...adminIt,
       ...onboardingIt,

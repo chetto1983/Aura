@@ -229,7 +229,7 @@ test.describe('Calm Prism Chrome contracts', () => {
         .first(),
     ).toBeVisible();
     await expect(page.getByText('Approval required', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Pilot workspace' })).toBeVisible();
+    await expect(page.getByRole('option', { name: 'Pilot workspace' })).toBeVisible();
     await expect(page.getByText('Expired — auto-resolved.')).toBeVisible();
     await expect(page.getByText('Artifact', { exact: true })).toBeVisible();
     await expect(page.getByText(/calm-prism-release-readiness.*\.xlsx/)).toBeVisible();

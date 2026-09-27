@@ -448,7 +448,8 @@ describe('ExternalStoreChat (CHAT-01)', () => {
     const onUsage = vi.fn();
     renderChat(<ExternalStoreChat threadId="conv-1" onUsage={onUsage} />);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Yes' }));
+    fireEvent.click(await screen.findByRole('option', { name: 'Yes' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Answer' }));
     await waitFor(() => {
       expect(usageEvents(onUsage).some((event) => event.phase === 'settled')).toBe(true);
     });

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseOptions, parseScopeChoice } from '../approvalState';
+import {
+  isDestructiveApproval,
+  offersOnlyScopes,
+  parseOptions,
+  parseScopeChoice,
+} from '../approvalState';
 
 // The server persists paused_states.options from agent.PauseOption, which marshals as
 // [{label, value}] — NOT as a string array. parseOptions used to accept only strings, so
@@ -69,5 +74,25 @@ describe('parseScopeChoice', () => {
     expect(parseScopeChoice('gateway_scope:always')).toBeNull();
     expect(parseScopeChoice('gateway_scope:always:')).toBeNull();
     expect(parseScopeChoice('gateway_scope:everything:shell_exec')).toBeNull();
+  });
+});
+
+describe('isDestructiveApproval', () => {
+  it('is true only for a presentation the gateway graded destructive', () => {
+    const graded = (risk: string) => ({
+      presentation: { key: 'approval.gateway.mutation', params: { tool: 't', risk, args: '' } },
+    });
+    expect(isDestructiveApproval(graded('destructive'))).toBe(true);
+    expect(isDestructiveApproval(graded('risky'))).toBe(false);
+    expect(isDestructiveApproval({})).toBe(false);
+  });
+});
+
+describe('offersOnlyScopes', () => {
+  it('is true only when there are options and every one is a gateway scope', () => {
+    const scope = { label: 'Approve once', value: 'gateway_scope:once:shell_exec' };
+    expect(offersOnlyScopes([scope])).toBe(true);
+    expect(offersOnlyScopes([scope, { label: 'No', value: 'No' }])).toBe(false);
+    expect(offersOnlyScopes([])).toBe(false);
   });
 });
