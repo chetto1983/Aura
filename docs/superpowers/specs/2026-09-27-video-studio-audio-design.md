@@ -72,7 +72,8 @@ Read from the installed packages and the npm registry on 2026-09-27. Nothing bel
 | Volume envelope in the render | `volume` is `animatable: true` | Apache-2.0 | `AuditoryLayer.js:34`; the mixer applies it on the gain node, `renderer-browser/dist/audio/mixer.js:262` (`applyAudioKeyframes(layer, 'volume', gainNode.gain, …)`) |
 | Same audio in preview and export | the DOM preview plays `renderMixedAudio`, the export's own mixer | Apache-2.0 | `renderer-dom/dist/DomRenderer.js:43,792` |
 | Waveform + draggable volume points + mic recording | `wavesurfer.js` 8.0.1, plugins `envelope`, `record`, `regions` | BSD-3-Clause | published 2026-09-24; `src/plugins/` lists `envelope.ts`, `record.ts`, `regions.ts` |
-| Speech detection for ducking | `@ricky0123/vad-web` 0.0.31 (Silero) with offline `NonRealTimeVAD` | ISC | published 2026-09-12; exported from `packages/web/src/index.ts` |
+| Speech detection for ducking — candidate A | `@ricky0123/vad-web` 0.0.31 (Silero) with offline `NonRealTimeVAD` | ISC | published 2026-09-12; exported from `packages/web/src/index.ts`. Loads its model and the `onnxruntime-web` WASM from jsDelivr unless `baseAssetPath`/`onnxWASMBasePath` point elsewhere (`docs/user-guide/browser.md`); `onnxruntime-web` 1.30.0 unpacks to 144 MB |
+| Speech detection for ducking — candidate B | `@echogarden/fvad-wasm` 0.2.0 (WebRTC VAD, libfvad) | BSD-3-Clause | 37 KB unpacked |
 | Noise reduction | `@sapphi-red/web-noise-suppressor` 0.4.1 (Web Audio nodes); fallback `@shiguredo/noise-suppression` 2025.1.0 | MIT / Apache-2.0 | both published 2026-09-19 |
 | Decode and encode audio files | `mediabunny` 1.58.1 (installed) | MPL-2.0 | already used by the export and by `e2e/video-studio.spec.ts` |
 | Text to speech | Aura's own `POST /api/tts` (Kokoro local or OpenRouter) and `GET /api/voice/capabilities` | ours | `internal/agui/voice_api.go:72-74`, `internal/multimodal/tts.go` |
@@ -88,9 +89,9 @@ it is a pure function of a few dozen lines.
 
 The SPA is served without a Content-Security-Policy (only artifact renders and MCP views set one,
 `internal/agui/assets_render_api.go:85`, `internal/agui/mcp_views_api.go:105`), so WebAssembly and
-AudioWorklet are not blocked. The VAD model, the ONNX runtime WASM and the noise-suppressor worklets
-are **served from the Aura origin**, never a CDN: the existing E2E already fails any request to
-another origin (`e2e/video-studio.spec.ts`, header).
+AudioWorklet are not blocked. Whatever the VAD and the noise suppressor load (models, WASM,
+worklets) is **served from the Aura origin**, never a CDN: the existing E2E already fails any
+request to another origin (`e2e/video-studio.spec.ts`, header).
 
 ## Model
 
@@ -106,7 +107,7 @@ interface AudioItem {
   readonly fadeIn?: number;            // 0–5 s
   readonly fadeOut?: number;           // 0–5 s
   readonly speed?: number;             // same range as a clip; inherited on extraction
-  readonly envelope?: readonly EnvelopePoint[];   // item-local seconds, gain 0–2, sorted
+  readonly envelope?: readonly EnvelopePoint[];   // item-local seconds, gain 0–1, sorted
   readonly ducking?: { readonly amountDb: number; readonly ramp: number }; // −24..−3 dB, 0.1–2 s
   readonly denoise?: boolean;
   readonly extractedFrom?: string;     // clip id, when the item came from Extract audio
@@ -156,7 +157,7 @@ reanchor change. Every command validates and throws `CommandRefusal` like the ex
 | `addAudio` | Puts an audio source on the first free audio lane at a project time; the anchor is the clip under that time. |
 | `extractAudio` | As defined above. Refused for a clip whose source has no audio (`hasAudio === false`). |
 | `setAudioProperties` | volume, muted, fadeIn, fadeOut (their sum ≤ the item's timeline length), speed, denoise, ducking. |
-| `setEnvelope` | Replaces the envelope points; sorts them, clamps time to the item, gain to 0–2. |
+| `setEnvelope` | Replaces the envelope points; sorts them, clamps time to the item, gain to 0–1. The envelope only attenuates: boosting is the item's `volume` (0–2), one way to do it, and 0–1 is also the range of wavesurfer's `EnvelopePoint.volume` (`src/plugins/envelope.ts:12-16`). |
 | `moveAudio` / `trimAudio` | A drag on the audio lane: new start (re-anchored to the clip under it), new `sourceStart`/`duration` within the source. |
 | `splitAudio` | Splits the selected audio item at the playhead; envelope points go to the half they fall in. |
 | `recordAnalysis` | Writes `speech` and/or `denoisedAssetId` onto a source. The only door by which browser-side analysis enters the project. |
@@ -178,7 +179,7 @@ server render.
 `audioAnalysis.ts`, lazy-loaded so the editor's first paint does not pay for ONNX:
 
 - `decodeSource(url)` → `AudioBuffer`, via mediabunny.
-- `detectSpeech(buffer)` → speech windows, via `NonRealTimeVAD`.
+- `detectSpeech(buffer)` → speech windows, via the VAD that S4 picks.
 - `denoise(buffer)` → an Opus file encoded by mediabunny, uploaded through the existing presign
   path, answered with its asset id.
 - `peaks(buffer)` → the waveform, cached in memory per source for the session. Peaks are not saved:
@@ -208,8 +209,20 @@ leaves the project untouched and says so. A cancelled analysis writes nothing.
   gains the same panel.
 - Every string in English and Italian (react-i18next).
 
-Server side, one change: `folderFor` files `ModalityAudio` under `media/`, next to video and images
-(`internal/assets/service.go:179-184`); today audio lands in `chat/`.
+Server side, two changes:
+
+- `folderFor` files `ModalityAudio` under `media/`, next to video and images
+  (`internal/assets/service.go:179-184`); today audio lands in `chat/`. The ingest walker reads the
+  whole bucket except its reserved prefixes (`services/ingest/source.py:96-103`), so nothing stops
+  being indexed.
+- **Editor sources are finalized without processing.** The Studio uploads through the attachments'
+  `finalize` (`VideoStudio_sources.ts:169-190`), which runs the modality's processor
+  (`internal/assets/service.go:149-159`); for audio that processor is speech-to-text
+  (`internal/assets/audio_processor.go`), so every music bed, TTS clip and recording would be
+  transcribed on the appliance's CPU for nothing. `POST /api/assets/{id}/finalize?use=media` calls a
+  new `FinalizeMedia` that accepts only image, video and audio and enqueues nothing. The existing
+  unprocessed door (`/api/studio/uploads/{id}/finalize`) is image-only and exists only when
+  OpenRouter is configured (`cmd/aura/serve_studio.go:165-176`), so it is not reused.
 
 ## Spikes that gate the plan
 
@@ -221,7 +234,8 @@ whose result is written into this spec and the PRD amendment before Task 1 start
 | S1 | Does a VideoFlow `AudioLayer` with animated `volume` and a `speed` export as expected, and in which time domain are its keyframe times (source or layer)? | The exported MP4's audio RMS follows the keyframes within 1 dB. |
 | S2 | Does wavesurfer 8 render from peaks only (no media element) inside a `dnd-timeline` item, with envelope points draggable without starting the item's drag? | Both gestures work in Chromium desktop and mobile emulation; a 5-minute track renders under 200 ms from cached peaks. |
 | S3 | Which noise suppressor works in an `OfflineAudioContext`, and how well? | Noise floor in the gaps of the noisy-speech fixture drops by a measured margin; processing is faster than real time on this workstation. The margin becomes Task 6's E2E threshold. |
-| S4 | Does `NonRealTimeVAD` find the speech windows of the fixture with everything served from the Aura origin? | Windows match the fixture's ground truth within 150 ms at each edge; zero requests to another origin; the lazy chunk's size is recorded. |
+| S4 | Silero (`vad-web`) or WebRTC VAD (`fvad-wasm`)? Both are run on the clean and the noisy speech fixtures with every file served from the probe's own origin. | For each: edge error against the fixture's ground truth, and the bytes it adds to the committed dist (11 MB and 688 files today, embedded in the binary). The lighter one wins unless its edges miss by more than 150 ms where the other's do not. |
+| M1 | Are saved Studio projects indexed as documents? A project is a `.json` (a document extension, `internal/assets/limits.go:46`) finalized with processing, in a bucket the ingest walker reads whole. | A read-only query on the lab VM's indexed documents. A positive answer is reported to the operator as its own item; it is not fixed inside this sub-project unasked. |
 
 If S2 or S3 fails, the fallback is a question to the operator, not a component written in its place
 (CLAUDE.md, STOP BEFORE BESPOKE).
@@ -244,8 +258,9 @@ Every task ends with a real E2E. The protocol, from the operator's rules for thi
 
 | Task | Delivers | E2E measures |
 |---|---|---|
-| T0 | Spikes S1–S4, the PRD amendment, the audio fixtures with their provenance | — (measurements are the output) |
-| T1 | Model, loader compatibility, `folderFor` audio → `media/`, rail split | An old saved project opens unchanged; an uploaded audio file is listed under media. |
+| T0 | Spikes S1–S4, measurement M1, the PRD amendment, the audio fixtures with their provenance | — (measurements are the output) |
+| T1a | `folderFor` audio → `media/`, `FinalizeMedia` behind `finalize?use=media`, the Studio's uploads switched to it | An audio file finalized this way sits under `media/`, is `accepted` and gains no transcript; a PDF sent to the same door is refused. |
+| T1b | Model, loader compatibility, rail split, E2E helpers shared | A project saved in the pre-audio shape opens unchanged; a hand-broken audio lane is refused at load. |
 | T2 | Audio lane, upload, `addAudio`/`moveAudio`/`trimAudio`/`splitAudio`, inspector Audio/Speed/Time with volume and fades, compile | Music at 50 % exports about 6 dB below 100 % (±1 dB); a 2 s fade-in starts at least 15 dB below the steady level; the music stops at the video's end. |
 | T3 | Extract audio | The clip is muted, its tone is still in the export, carried by the item; trimming the item's first second leaves that second silent. |
 | T4 | Waveform + envelope | An envelope point dragged to 0 produces the matching drop in the export; the waveform is visible (screenshot). |
