@@ -100,9 +100,10 @@ func NewElicitationHandler(server string, consent ElicitationConsent) func(conte
 		if out.err != nil {
 			level = slog.LevelWarn
 		}
-		// The operator's values never reach a log: the action, the server and the
-		// field count do.
-		slog.Log(ctx, level, "mcp elicitation resolved", "server", redact.Line(server),
+		// The operator's values never reach a log: the action, bounded server
+		// name and field count do.
+		loggedServer := redact.Line(truncateUTF8Bytes(server, maxLoggedValueBytes))
+		slog.Log(ctx, level, "mcp elicitation resolved", "server", loggedServer,
 			"action", out.action, "fields", out.fields, "reason", out.reason, "err", loggedError(out.err))
 		return &sdkmcp.ElicitResult{Action: out.action, Content: out.content}, nil
 	}

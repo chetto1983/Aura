@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -164,7 +165,9 @@ func askFallback(ctx context.Context, consent ElicitationConsent, q elicit.Quest
 // acknowledge a recorded notice do so before the decline, under one short bound;
 // other surfaces keep asynchronous delivery.
 func refuse(ctx context.Context, r route, consent ElicitationConsent, q elicit.Question, why string, timeout time.Duration) elicitOutcome {
-	notice := elicit.Question{Server: q.Server, Tool: q.Tool, Refusal: why}
+	notice := elicit.Question{
+		Server: refusalLabel(q.Server, "MCP server"), Tool: refusalLabel(q.Tool, ""), Refusal: why,
+	}
 	out := elicitOutcome{action: elicit.ActionDecline, fields: len(q.Fields), reason: "refused: " + why}
 	told := map[runKey]bool{}
 	ackCtx, stopAck := context.WithTimeout(context.WithoutCancel(ctx), min(timeout, refusalNoticeAckTimeout))
@@ -202,6 +205,15 @@ func refuse(ctx context.Context, r route, consent ElicitationConsent, q elicit.Q
 		}
 	}
 	return out
+}
+
+// A refused form can have raw metadata that made the form exceed its total cap.
+// Do not put those names back into a notice, even on a fallback channel.
+func refusalLabel(label, fallback string) string {
+	if len(label) > elicit.MaxTitleBytes || !utf8.ValidString(label) {
+		return fallback
+	}
+	return label
 }
 
 // tell delivers a refusal notice to a run's asker, or through the fallback when the
