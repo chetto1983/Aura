@@ -15,7 +15,8 @@ func TestStaleBoxReason(t *testing.T) {
 		mounts = append(mounts, container.MountPoint{Type: mount.TypeVolume, Name: m.Source, Destination: m.Target, RW: true})
 	}
 	yes, no := true, false
-	current := container.InspectResponse{Image: "sha256:new", Mounts: mounts, HostConfig: &container.HostConfig{Init: &yes}}
+	current := container.InspectResponse{Image: "sha256:new", Mounts: mounts, HostConfig: &container.HostConfig{Init: &yes},
+		Config: &container.Config{Hostname: "aura-box"}}
 
 	for name, tc := range map[string]struct {
 		mutate  func(*container.InspectResponse)
@@ -28,6 +29,9 @@ func TestStaleBoxReason(t *testing.T) {
 		"init off":                                 {func(i *container.InspectResponse) { i.HostConfig = &container.HostConfig{Init: &no} }, "sha256:new", "no init to reap orphans"},
 		"init unset":                               {func(i *container.InspectResponse) { i.HostConfig = &container.HostConfig{} }, "sha256:new", "no init to reap orphans"},
 		"no host config":                           {func(i *container.InspectResponse) { i.HostConfig = nil }, "sha256:new", "no init to reap orphans"},
+		"hostname is the container id":             {func(i *container.InspectResponse) { i.Config = &container.Config{Hostname: "ca82f280a5ae"} }, "sha256:new", "a hostname that changes on recreate"},
+		"no config":                                {func(i *container.InspectResponse) { i.Config = nil }, "sha256:new", "a hostname that changes on recreate"},
+		"hostname wins over the image":             {func(i *container.InspectResponse) { i.Config = nil; i.Image = "sha256:old" }, "sha256:new", "a hostname that changes on recreate"},
 		"shared caches win over everything else":   {func(i *container.InspectResponse) { i.Mounts = nil; i.Image = "sha256:old" }, "sha256:new", "non-private cache mounts"},
 	} {
 		t.Run(name, func(t *testing.T) {

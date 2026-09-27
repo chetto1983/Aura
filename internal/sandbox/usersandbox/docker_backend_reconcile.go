@@ -22,17 +22,19 @@ func hasIdentityCacheMounts(actual []container.MountPoint, identityID string) bo
 }
 
 // staleBoxReason says why an existing box must be recreated, or "" when it is current. Docker
-// cannot change a container's mounts, host config or image in place, so a box built before any
-// of them changed keeps the old ones forever unless Resolve replaces it. Measured 2026-09-26: a
-// box created before the browser relay existed kept serving that image, and boxes created
-// before Init was pinned kept piling up zombies. wantImageID "" means the configured image is
-// not present locally; that is never a reason to recreate, because Resolve must not pull.
+// cannot change a container's mounts, host config, hostname or image in place, so a box built
+// before any of them changed keeps the old ones forever unless Resolve replaces it. Measured
+// 2026-09-26: a box created before the browser relay existed kept serving that image, and boxes
+// created before Init was pinned kept piling up zombies. wantImageID "" means the configured
+// image is not present locally; that is never a reason to recreate, because Resolve must not pull.
 func staleBoxReason(ins container.InspectResponse, identityID, wantImageID string) string {
 	switch {
 	case !hasIdentityCacheMounts(ins.Mounts, identityID):
 		return "non-private cache mounts"
 	case ins.HostConfig == nil || ins.HostConfig.Init == nil || !*ins.HostConfig.Init:
 		return "no init to reap orphans"
+	case ins.Config == nil || ins.Config.Hostname != boxHostname:
+		return "a hostname that changes on recreate"
 	case wantImageID != "" && ins.Image != wantImageID:
 		return "an older image"
 	}

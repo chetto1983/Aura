@@ -59,6 +59,9 @@ func TestResolveReplacesAStaleBox(t *testing.T) {
 	if ins.Container.Image != img.ID || ins.Container.HostConfig.Init == nil || !*ins.Container.HostConfig.Init {
 		t.Fatalf("recreated box: image %s init %v, want %s with init", ins.Container.Image, ins.Container.HostConfig.Init, img.ID)
 	}
+	if ins.Container.Config.Hostname != "aura-box" {
+		t.Fatalf("recreated box hostname = %q, want aura-box, which every recreate keeps", ins.Container.Config.Hostname)
+	}
 	assertBoxFile(t, cli, h.ContainerID, "/workspace/keep", "retained-work")
 
 	again, err := b.Resolve(ctx, spec)

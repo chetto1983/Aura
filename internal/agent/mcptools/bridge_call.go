@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/pausable"
 )
@@ -38,6 +39,14 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			observeErr = err
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
+	}
+	if b.policy.recipeSource == mcpmanager.BrowserRecipeSource {
+		profiled, err := withBrowserProfile(args)
+		if err != nil {
+			observeErr = err
+			return tools.ToolResult{}, err
+		}
+		args = profiled
 	}
 	callCtx := ctx
 	cancel := func() {}

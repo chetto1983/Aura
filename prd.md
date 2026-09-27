@@ -903,10 +903,13 @@ A box killed with its browser leaves the profile's `SingletonLock` behind, namin
 hostname and Chrome's pid. With the same hostname, Chrome takes the lock over, even when that pid
 now belongs to another process. With another hostname, it refuses the profile as "in use by another
 Chromium process on another computer". A recreated box would hit exactly that, since its hostname
-was the new container's id. Boxes are now created with their name as hostname, and `Resolve`
-recreates a box whose hostname is not its name. Not shown: that the login lasts for days, since
-Google may end it for other reasons; a stale lock whose pid now belongs to another Chrome; and how
-far a profile's caches grow.
+was the new container's id. Boxes are now created with one fixed hostname, `aura-box`, and
+`Resolve` recreates a box with any other. It is not the box's name, because the name carries the
+identity id and Docker refuses a hostname over 64 bytes ("is too long (maximum 64 bytes)"), which
+the integration tests' identities exceed. Not shown: that the login lasts for days, since
+Google may end it for other reasons; a stale lock whose pid now belongs to another Chrome; how far
+a profile's caches grow; and what `restore`, which the tool schema still offers, does on top of a
+profile.
 
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native

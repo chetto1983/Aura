@@ -14,30 +14,31 @@ screenshot, get_url, get_title, eval, close, tabs, waits). They are deferred: fi
 snapshot with `@eN` references you click and fill. `web_fetch` is still the right tool for a
 public page you only need to read.
 
-## Always name the session, always restore it
+## Always name the session
 
-Every call carries the same `session` (a short name of letters, digits, `-` and `_`, such as
-`bank` or `docs-portal`) and `restore: true`. The session keeps the site's cookies across your
-turns, across a sandbox restart, and across days — that is what makes a login last.
+Every call carries the same `session`: a short name of letters, digits, `-` and `_`, such as
+`bank` or `docs-portal`. Each session has its own browser profile in your sandbox, so the site's
+login lasts across your turns and across a sandbox restart. A call without `session` uses the
+one named `default`.
 
-1. `browser__agent_browser_open` with `url`, `session`, `restore: true`.
+1. `browser__agent_browser_open` with `url` and `session`.
 2. `browser__agent_browser_snapshot` with `interactive: true` to get the `@eN` refs.
 3. `browser__agent_browser_click` with `selector: "@e3"`, `browser__agent_browser_fill` with
    `selector` and `text`; take a new snapshot after anything that navigates, because refs are
    renumbered.
 
-Restoring brings back the login, not the open page: after a pause, `open` the page again
+A closed browser keeps the login, not the open page: after a pause, `open` the page again
 before you read it. The first screenshot of a browser takes about ten seconds; later ones are
 quick.
 
 Each open session is its own Chromium: on a real site about 200 processes and 400 MB of your
 sandbox, which has room for four at most. Keep to one session per site, reuse its name, and
-`browser__agent_browser_close` it when the site is done — the restore file keeps the login for
-next time, the process does not need to stay alive. A browser left idle for ten minutes closes
-by itself; open the page again with the same session and `restore: true`.
+`browser__agent_browser_close` it when the site is done — the profile keeps the login for next
+time, the process does not need to stay alive. A browser left idle for ten minutes closes by
+itself; open the page again with the same session.
 
 If the `browser__` tools are not mounted, the same commands work through `shell_exec`:
-`agent-browser --session portal --restore open https://example.com/login`, then `snapshot -i`,
+`agent-browser --session portal open https://example.com/login`, then `snapshot -i`,
 `click @e3`, `fill @e5 "text"`, `get url`, `download @e9 /workspace/downloads/report.pdf`.
 
 ## Logins: the operator types, you never see the password
@@ -68,4 +69,5 @@ a deletion — stop and ask the operator.
 ## Handing results back
 
 Files you download land in `/workspace`; give them to the operator with `send_file`. When
-you finish with a site for good, close its session to save it and free the browser.
+you finish with a site for good, close its session to free the browser; its profile keeps the
+login.

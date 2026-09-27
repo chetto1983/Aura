@@ -7,9 +7,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"regexp"
 	"sync"
 	"time"
+
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // browser_live.go serves the cockpit's live view of one agent-browser session in the caller's
@@ -30,8 +31,6 @@ type BrowserRelayHandle interface {
 type BrowserRelay interface {
 	Open(ctx context.Context, session string, in io.ReadCloser, out io.Writer) (BrowserRelayHandle, error)
 }
-
-var browserSessionPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,48}$`)
 
 // browserInputTypes mirrors the relay's own allowlist (docker/aura-sandbox/browser-relay.mjs):
 // only viewer input may reach the browser, and it is refused here before it reaches the box.
@@ -64,7 +63,7 @@ func (s *Server) registerBrowserLiveRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if !browserSessionPattern.MatchString(session) {
+	if !mcpmanager.ValidBrowserSession(session) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "invalid_session"})
 		return
 	}
@@ -129,7 +128,7 @@ func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBrowserInput(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if !browserSessionPattern.MatchString(session) {
+	if !mcpmanager.ValidBrowserSession(session) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "invalid_session"})
 		return
 	}

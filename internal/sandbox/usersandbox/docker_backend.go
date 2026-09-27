@@ -22,6 +22,11 @@ import (
 // separate Docker namespaces (containers vs volumes) so the shared name is not a collision.
 const boxNamePrefix = "aura-box-"
 
+// boxHostname is every box's hostname, the same across recreates. It is not the box's name,
+// because Docker refuses a hostname over 64 bytes and an identity id has no such bound; boxes
+// never share a volume, so they need no distinct names inside.
+const boxHostname = "aura-box"
+
 // keepAliveCmd is the container's foreground command: a portable idle keep-alive so the box
 // stays running (and thus exec-able) with no workload of its own. `tail -f /dev/null` blocks
 // forever on both BusyBox and GNU coreutils images, so it works for the fat aura-sandbox box

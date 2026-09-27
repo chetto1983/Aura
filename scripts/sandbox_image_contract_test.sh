@@ -82,7 +82,8 @@ PY
 # Resolve it must refuse with 78 instead of letting the vault mint a key beside its ciphertext;
 # with one it must drive Chromium, keep its state on the workspace volume and write no key file.
 # The page must not see an automated browser, since Google refuses sign-in to one, and Chrome
-# must not sign itself in to the account logged into on the web (both in the Dockerfile).
+# must not sign itself in to the account logged into on the web (both in the Dockerfile). A
+# session's cookies must outlast its browser, on the session's own profile on /workspace.
 docker run --rm --network none --entrypoint bash "$img" -c '
 set -e
 rc=0; agent-browser --version >/dev/null 2>&1 || rc=$?
@@ -99,7 +100,16 @@ agent-browser snapshot | grep -A1 "cell \"Account Consistency\"" | grep -q "cell
 [ -d /workspace/.agent-browser-home/.agent-browser ] || { echo "FAIL: agent-browser state is not on /workspace" >&2; exit 1; }
 ! find / -name .encryption-key -path "*agent-browser*" 2>/dev/null | grep -q . || { echo "FAIL: the vault minted its own key" >&2; exit 1; }
 agent-browser close >/dev/null
+python3 -m http.server 8765 --bind 127.0.0.1 --directory /tmp >/dev/null 2>&1 &
+for _ in 1 2 3 4 5 6 7 8 9 10; do curl -so /dev/null http://127.0.0.1:8765/ && break; sleep 0.5; done
+agent-browser --session kept open http://127.0.0.1:8765/ >/dev/null
+agent-browser --session kept eval "document.cookie=\"probe=kept; max-age=86400; path=/\"" >/dev/null
+agent-browser --session kept close >/dev/null
+agent-browser --session kept open http://127.0.0.1:8765/ >/dev/null
+agent-browser --session kept eval document.cookie | grep -qx "\"probe=kept\"" || { echo "FAIL: a session lost its cookie when its browser restarted" >&2; exit 1; }
+[ -f /workspace/.agent-browser-home/profiles/kept/Default/Cookies ] || { echo "FAIL: the session profile is not on /workspace" >&2; exit 1; }
+agent-browser --session kept close >/dev/null
 '
-echo "ok: agent-browser refuses without the Aura key, and with it runs Chromium offline without announcing automation or signing Chrome in"
+echo "ok: agent-browser refuses without the Aura key, and with it runs Chromium offline without announcing automation or signing Chrome in, and keeps a session's cookies across restarts"
 
 bash "$(dirname "$0")/artifact_toolchain_smoke.sh"

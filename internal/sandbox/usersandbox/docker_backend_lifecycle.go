@@ -235,7 +235,10 @@ func (b *DockerBackend) ensureRunning(ctx context.Context, containerID string) e
 
 // createBox ensures the image is present, creates the container from toHostConfig (the single
 // pinned-safe HostConfig — SBX-02) with the idle keep-alive command, and starts it. It never
-// sets AutoRemove (toHostConfig pins it false) so the box is suspendable.
+// sets AutoRemove (toHostConfig pins it false) so the box is suspendable. The hostname is
+// boxHostname, not Docker's per-container id: a browser killed with its box leaves a profile
+// lock naming the hostname, and Chrome refuses a profile locked from another host (prd.md §12,
+// a persistent profile per browser session).
 func (b *DockerBackend) createBox(ctx context.Context, name string, spec SandboxSpec) (string, error) {
 	if err := b.ensureImage(ctx, spec.Image); err != nil {
 		return "", err
@@ -243,6 +246,7 @@ func (b *DockerBackend) createBox(ctx context.Context, name string, spec Sandbox
 	res, err := b.cli.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Name: name,
 		Config: &container.Config{
+			Hostname:   boxHostname,
 			Image:      spec.Image,
 			Cmd:        keepAliveCmd,
 			WorkingDir: workspaceTarget,
