@@ -108,6 +108,7 @@ export function ExternalStoreChat({
   const abortRef = useRef<AbortController | null>(null);
   const historyAbortRef = useRef<AbortController | null>(null);
   const historyRequestRef = useRef(0);
+  const runGenerationRef = useRef(0);
   const isRunningRef = useRef(false);
   /** The live runId of the stream this tab drives/watches — the §4.4 cancel key. */
   const activeRunIdRef = useRef<string | null>(null);
@@ -207,6 +208,7 @@ export function ExternalStoreChat({
         return [...prev, user];
       });
       isRunningRef.current = true;
+      runGenerationRef.current += 1;
       setIsRunning(true);
 
       const controller = new AbortController();
@@ -417,11 +419,10 @@ export function ExternalStoreChat({
   // Attachment-chip actions live in ./ExternalStoreChat_assets (600-LOC split).
   const { handleAssetRetry, handleAssetPromote } = useAssetActions(setMessages);
 
-  // The stream scaffolding the three non-primary streams share (re-run from a branch point,
-  // HITL resume, live-run attach) lives in ./ExternalStoreChat_streams — 600-LOC split.
   const { foldReRun, foldAppendedStream, foldResumeRun } = useStreamFolds({
     threadId,
     historyRequestRef,
+    runGenerationRef,
     historyAbortRef,
     abortRef,
     isRunningRef,
@@ -442,19 +443,19 @@ export function ExternalStoreChat({
     await foldResumeRun(threadId);
   }, [foldResumeRun, threadId]);
 
-  // RS-07 §4.2 reload-attach lives in ./ExternalStoreChat_liveRun (600-LOC
-  // split): discovery via live_run_id + the read-only full-replay attach.
   useLiveRunAttach({
     threadId,
     liveRunId,
     historyReadiness,
     isRunningRef,
     activeRunIdRef,
+    runGenerationRef,
     foldAppendedStream,
     setMessages,
     onArtifact,
     onSteer: steer.onFrame,
     onElicitation: elicitations.onSignal,
+    onElicitationSnapshot: elicitations.onSnapshot,
   });
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);

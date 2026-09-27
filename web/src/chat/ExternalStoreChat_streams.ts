@@ -18,6 +18,7 @@ export interface StreamFoldDeps {
   /** Bumped to invalidate an in-flight history load, whose response must not overwrite the
    * turn this stream is about to produce. */
   readonly historyRequestRef: RefObject<number>;
+  readonly runGenerationRef?: RefObject<number>;
   readonly historyAbortRef: RefObject<AbortController | null>;
   readonly abortRef: RefObject<AbortController | null>;
   readonly isRunningRef: RefObject<boolean>;
@@ -63,6 +64,7 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
   const {
     threadId,
     historyRequestRef,
+    runGenerationRef,
     historyAbortRef,
     abortRef,
     isRunningRef,
@@ -82,6 +84,7 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
   const beginRun = useCallback(
     (runThreadId: string): AbortController => {
       historyRequestRef.current += 1;
+      if (runGenerationRef !== undefined) runGenerationRef.current += 1;
       historyAbortRef.current?.abort();
       historyAbortRef.current = null;
       const controller = new AbortController();
@@ -91,7 +94,15 @@ export function useStreamFolds(deps: StreamFoldDeps): StreamFolds {
       setIsRunning(true);
       return controller;
     },
-    [abortRef, historyAbortRef, historyRequestRef, isRunningRef, setIsRunning, usageThreadRef],
+    [
+      abortRef,
+      historyAbortRef,
+      historyRequestRef,
+      runGenerationRef,
+      isRunningRef,
+      setIsRunning,
+      usageThreadRef,
+    ],
   );
 
   /** Release it, but only if this controller is still the live one: a stream that lost the

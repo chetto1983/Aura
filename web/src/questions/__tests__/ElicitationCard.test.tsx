@@ -61,7 +61,8 @@ function stubAnswers(posts: Post[], ...responses: Response[]) {
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
       const key = new Headers(init?.headers).get('Idempotency-Key');
-      posts.push({ url, body: JSON.parse(init?.body as string), key });
+      if (init?.method !== 'POST') return Promise.reject(new Error('offline'));
+      posts.push({ url, body: JSON.parse(init.body as string), key });
       const delivered = new Response('{"status":"delivered"}', { status: 202 });
       return Promise.resolve(responses.shift() ?? delivered);
     }),
@@ -81,6 +82,55 @@ const click = (name: string) => {
 };
 
 describe('ElicitationCard', () => {
+  it.each([409, 410])(
+    'reconciles a missed resolution after %s without reopening controls',
+    async (status) => {
+      let resolveList: (response: Response) => void = () => undefined;
+      const list = new Promise<Response>((resolve) => {
+        resolveList = resolve;
+      });
+      const fetcher = vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+        init?.method === 'POST' ? Promise.resolve(new Response(null, { status })) : list,
+      );
+      vi.stubGlobal('fetch', fetcher);
+      renderCard({ question: question({ fields: [NAME] }) });
+      click('Decline');
+      expect(await screen.findByText('This form was already resolved.')).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+      await waitFor(() => {
+        expect(fetcher).toHaveBeenCalledTimes(2);
+      });
+      await act(async () => {
+        resolveList(Response.json({ questions: [] }));
+        await list;
+      });
+      await waitFor(() => {
+        expect(screen.queryByText('This form was already resolved.')).toBeNull();
+      });
+      expect(screen.queryByRole('form')).toBeNull();
+    },
+  );
+
+  it.each(['failed', 'still open'])(
+    'keeps a closed form non-actionable if its refresh is %s',
+    async (refresh) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
+          init?.method === 'POST'
+            ? Promise.resolve(new Response(null, { status: 409 }))
+            : refresh === 'failed'
+              ? Promise.reject(new Error('offline'))
+              : Promise.resolve(Response.json({ questions: [question()] })),
+        ),
+      );
+      renderCard({ question: question() });
+      click('Decline');
+      expect(await screen.findByText('This form was already resolved.')).toBeTruthy();
+      expect(screen.queryByRole('button')).toBeNull();
+    },
+  );
+
   it('shows an empty validation response and treats prototype field names as ordinary names', async () => {
     const posts: Post[] = [];
     stubAnswers(posts, refusal({}));

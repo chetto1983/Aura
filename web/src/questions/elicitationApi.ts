@@ -60,8 +60,14 @@ export async function postElicitationAnswer(
  * /events and no frame at all, so the forms come from here. An entry that does not parse is
  * dropped, as the stream drops a frame it cannot trust.
  */
-export async function fetchOpenElicitations(runId: string): Promise<ElicitationQuestion[]> {
-  const res = await fetch(runPath(runId), { credentials: 'same-origin' });
+export async function fetchOpenElicitations(
+  runId: string,
+  signal?: AbortSignal,
+): Promise<ElicitationQuestion[]> {
+  const res = await fetch(runPath(runId), {
+    credentials: 'same-origin',
+    ...(signal === undefined ? {} : { signal }),
+  });
   if (!res.ok) throw new Error(await errorDetail(res));
   const body: unknown = await res.json();
   const questions = (body as { questions?: unknown } | null)?.questions;

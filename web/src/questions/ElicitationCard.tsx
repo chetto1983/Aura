@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft } from 'lucide-react';
 import type { ElicitationAction } from '../chat/sseAdapter_elicitation';
@@ -9,7 +9,7 @@ import { FieldInput } from './FieldInput';
 import { QuestionCard, type QuestionCardProps } from './QuestionCard';
 import { QuestionOptions } from './QuestionOptions';
 import { QuestionReceipt, type ReceiptTone } from './QuestionReceipt';
-import { postElicitationAnswer, PROBLEM_REQUIRED } from './elicitationApi';
+import { fetchOpenElicitations, postElicitationAnswer, PROBLEM_REQUIRED } from './elicitationApi';
 import {
   contentFrom,
   fieldTitle,
@@ -47,11 +47,10 @@ const RECEIPTS: Record<ElicitationOutcome, Receipt> = {
   expired: { tone: 'neutral', key: 'questionCard.receipt.expired' },
 };
 
-type Problem = 'failed' | 'closed' | 'invalid';
+type Problem = 'failed' | 'invalid';
 
 const PROBLEM_KEYS: Record<Problem, string> = {
   failed: 'questionCard.error.failed',
-  closed: 'questionCard.error.closed',
   invalid: 'questionCard.error.invalid',
 };
 
@@ -71,9 +70,23 @@ export function ElicitationCard({ item, isStreaming }: ElicitationCardProps) {
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState<ElicitationAction | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [closed, setClosed] = useState<'visible' | 'absent' | null>(null);
   const titleId = `${baseId}-title`;
   const labels = { yes: t('questionCard.yes'), no: t('questionCard.no') };
-  const settled = outcome !== undefined || question.refusal !== undefined;
+  const settled = outcome !== undefined || question.refusal !== undefined || closed !== null;
+  useEffect(() => {
+    if (closed !== 'visible' || outcome !== undefined) return;
+    const controller = new AbortController();
+    void fetchOpenElicitations(question.run_id, controller.signal)
+      .then((questions) => {
+        if (!controller.signal.aborted && !questions.some((entry) => entry.id === question.id))
+          setClosed('absent');
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [closed, outcome, question.run_id, question.id]);
 
   function frame(children: ReactNode, extra: Partial<QuestionCardProps> = {}) {
     return (
@@ -104,6 +117,11 @@ export function ElicitationCard({ item, isStreaming }: ElicitationCardProps) {
       <QuestionReceipt tone={receipt.tone} label={t(receipt.key)} announce summary={summary} />,
     );
   }
+  if (closed === 'absent') return null;
+  if (closed === 'visible')
+    return frame(
+      <QuestionReceipt tone="neutral" label={t('questionCard.error.closed')} announce />,
+    );
 
   // A form of more than one field ends on Review, and only Review submits.
   const reviewStep = fields.length > 1 ? fields.length : null;
@@ -153,7 +171,7 @@ export function ElicitationCard({ item, isStreaming }: ElicitationCardProps) {
           setProblem('invalid');
         }
       } else {
-        setProblem('closed');
+        setClosed('visible');
       }
     } catch {
       setProblem('failed');

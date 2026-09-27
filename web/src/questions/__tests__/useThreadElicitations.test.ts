@@ -84,6 +84,7 @@ describe('useThreadElicitations', () => {
       { initialProps: { threadId: 't-1' } },
     );
     const oldSignal = result.current.onSignal;
+    const oldSnapshot = result.current.onSnapshot;
     act(() => {
       oldSignal(asked('old'));
     });
@@ -93,6 +94,7 @@ describe('useThreadElicitations', () => {
     });
     act(() => {
       oldSignal(asked('late'));
+      oldSnapshot('run-1', [question('late')]);
     });
     expect(result.current.items.map((item) => item.question.id)).toEqual(['new']);
     rerender({ threadId: 't-1' });
@@ -114,6 +116,7 @@ describe('useThreadElicitations', () => {
     });
     act(() => {
       result.current.onSignal(asked('late', 'run-1'));
+      result.current.onSnapshot('run-1', [question('late')]);
     });
     expect(result.current.items.map((item) => item.question.id)).toEqual(['new']);
   });
@@ -143,6 +146,25 @@ describe('useThreadElicitations', () => {
     expect(result.current.items).toHaveLength(1);
     rerender({ threadId: 't-2' });
     expect(result.current.items).toHaveLength(0);
+  });
+
+  it('reorders a late list while preserving receipts and newer stream-only forms', () => {
+    const { result } = renderHook(() => useThreadElicitations('t-1', true, undefined));
+    act(() => {
+      result.current.onSignal(asked('b'));
+      result.current.onSignal(resolved('b', 'accept'));
+      result.current.onSignal(asked('c'));
+      result.current.onSnapshot('run-1', [
+        question('a'),
+        question('b'),
+        question('wrong', 'run-2'),
+      ]);
+    });
+    expect(result.current.items.map((item) => [item.question.id, item.outcome])).toEqual([
+      ['a', undefined],
+      ['b', 'accepted'],
+      ['c', undefined],
+    ]);
   });
 
   // A Stop aborts the stream before the cancel's resolution can arrive: the form still goes

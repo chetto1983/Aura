@@ -145,14 +145,21 @@ describe('the pumps fire onElicitation', () => {
 });
 
 describe('reattach list and replay reconciliation', () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 
   function harness(replayGone = false) {
     let resolveList: (response: Response) => void = () => undefined;
     const promise = new Promise<Response>((resolve) => {
       resolveList = resolve;
     });
-    const list = { promise, resolve: resolveList };
+    const list = {
+      promise,
+      resolve: resolveList,
+      signal: undefined as AbortSignal | null | undefined,
+    };
     const stream = new TransformStream<Uint8Array, Uint8Array>();
     const writer = stream.writable.getWriter();
     const controller = new AbortController();
@@ -160,9 +167,12 @@ describe('reattach list and replay reconciliation', () => {
     const finished = vi.fn();
     vi.stubGlobal(
       'fetch',
-      vi.fn((input: RequestInfo | URL) => {
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
         const url = requestURL(input);
-        if (url.endsWith('/elicitations')) return list.promise;
+        if (url.endsWith('/elicitations')) {
+          list.signal = init?.signal;
+          return list.promise;
+        }
         if (url.includes('/events'))
           return Promise.resolve(
             replayGone
@@ -184,6 +194,7 @@ describe('reattach list and replay reconciliation', () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const refs = { current: false };
     const activeRunIdRef = { current: null as string | null };
+    const runGenerationRef = { current: 1 };
     const hook = renderHook(
       () => {
         const forms = useThreadElicitations('conv-1', true, 'run-1');
@@ -193,9 +204,11 @@ describe('reattach list and replay reconciliation', () => {
           historyReadiness: { threadId: 'conv-1', status: 'ready' },
           isRunningRef: refs,
           activeRunIdRef,
+          runGenerationRef,
           foldAppendedStream: fold,
           setMessages: () => undefined,
           onElicitation: forms.onSignal,
+          onElicitationSnapshot: forms.onSnapshot,
         });
         return forms;
       },
@@ -213,8 +226,89 @@ describe('reattach list and replay reconciliation', () => {
         );
       });
     }
-    return { ...hook, list, writer, controller, updates, finished, emit };
+    return { ...hook, list, writer, controller, updates, finished, emit, refs, runGenerationRef };
   }
+
+  it('releases live forms after a stalled list grace, then restores list arrival order', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(h.updates).toHaveBeenCalled();
+    await h.emit(
+      custom('aura.elicitation', { ...QUESTION, id: 'q-live' }),
+      custom('aura.elicitation_resolved', { id: 'q-1', action: 'cancel', expired: true }),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(h.result.current.items.map((item) => item.question.id)).toEqual(['q-live']);
+    await act(async () => {
+      h.list.resolve(Response.json({ questions: [QUESTION, { ...QUESTION, id: 'q-live' }] }));
+      await h.list.promise;
+    });
+    expect(h.result.current.items.map((item) => item.question.id)).toEqual(['q-1', 'q-live']);
+    expect(h.result.current.items[0]?.outcome).toBe('expired');
+    await h.emit(RUN_FINISHED);
+    await h.writer.close();
+    h.unmount();
+  });
+
+  it.each([true, false])(
+    'cannot deliver an old list after fallback and a new send (running=%s)',
+    async (running) => {
+      const h = harness(true);
+      await waitFor(
+        () => {
+          expect(h.finished).toHaveBeenCalled();
+        },
+        { timeout: 2000 },
+      );
+      h.refs.current = running;
+      h.runGenerationRef.current += 1;
+      await act(async () => {
+        h.list.resolve(Response.json({ questions: [QUESTION] }));
+        await h.list.promise;
+      });
+      expect(h.result.current.items).toEqual([]);
+      h.unmount();
+    },
+  );
+
+  it('restores a slow successful list after rotated replay and the live-display grace', async () => {
+    vi.useFakeTimers();
+    const h = harness(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
+    expect(h.finished).toHaveBeenCalled();
+    await act(async () => {
+      h.list.resolve(Response.json({ questions: [QUESTION] }));
+      await h.list.promise;
+    });
+    expect(h.result.current.items.map((item) => item.question.id)).toEqual(['q-1']);
+    h.unmount();
+  });
+
+  it('keeps streaming when the list never settles and aborts its GET on terminal', async () => {
+    vi.useFakeTimers();
+    const h = harness();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    await h.emit(custom('aura.elicitation', QUESTION));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(h.result.current.items.map((item) => item.question.id)).toEqual(['q-1']);
+    await h.emit(custom('aura.elicitation', { ...QUESTION, id: 'q-2' }));
+    expect(h.result.current.items).toHaveLength(2);
+    await h.emit(RUN_FINISHED);
+    expect(h.list.signal?.aborted).toBe(true);
+    await h.writer.close();
+    h.unmount();
+  });
 
   it('applies an in-flight resolution after the list and keeps pending forms in arrival order', async () => {
     const h = harness();
@@ -246,6 +340,7 @@ describe('reattach list and replay reconciliation', () => {
       expect(h.updates).toHaveBeenCalled();
     });
     h.controller.abort();
+    expect(h.list.signal?.aborted).toBe(true);
     await act(async () => {
       h.list.resolve(Response.json({ questions: [QUESTION] }));
       await h.list.promise;
@@ -267,6 +362,54 @@ describe('reattach list and replay reconciliation', () => {
     expect(h.result.current.items.map((item) => item.question.id)).toEqual(['q-1']);
     h.unmount();
   });
+});
+
+it('still recovers the rotated form after steering the detached run', async () => {
+  let resolveList: (response: Response) => void = () => undefined;
+  const list = new Promise<Response>((resolve) => {
+    resolveList = resolve;
+  });
+  const attached = vi.fn();
+  const steered = vi.fn();
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL) => {
+      const url = requestURL(input);
+      if (url.endsWith('/elicitations')) return list;
+      if (url.endsWith('/events')) {
+        attached();
+        return Promise.resolve(new Response(null, { status: 410 }));
+      }
+      if (url.endsWith('/steer')) {
+        steered();
+        return Promise.resolve(Response.json({ status: 'queued' }, { status: 202 }));
+      }
+      if (url === '/api/conversations/conv-1')
+        return Promise.resolve(
+          Response.json({ ID: 'conv-1', live_run_id: 'run-1', TitleSet: true }),
+        );
+      return Promise.resolve(Response.json([]));
+    }),
+  );
+  const view = renderChat(createElement(ExternalStoreChat, { threadId: 'conv-1' }));
+  try {
+    await waitFor(() => {
+      expect(attached).toHaveBeenCalled();
+      expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull();
+    });
+    sendPrompt('Please keep going');
+    await waitFor(() => {
+      expect(steered).toHaveBeenCalled();
+    });
+    await act(async () => {
+      resolveList(Response.json({ questions: [QUESTION] }));
+      await list;
+    });
+    expect(await screen.findByRole('heading', { name: 'name' })).toBeTruthy();
+  } finally {
+    view.unmount();
+    vi.unstubAllGlobals();
+  }
 });
 
 it('shows an elicitation on the first turn after creating the conversation', async () => {

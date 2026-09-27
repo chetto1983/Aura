@@ -81,6 +81,7 @@ export function useThreadElicitations(
 ): {
   readonly items: readonly ElicitationItem[];
   readonly onSignal: (signal: ElicitationSignal) => void;
+  readonly onSnapshot: (runId: string, questions: readonly ElicitationQuestion[]) => void;
 } {
   const scope = useMemo(() => Symbol(threadId), [threadId]);
   const [state, setState] = useState<ThreadForms>({ scope, items: [], retired: new Set() });
@@ -95,11 +96,30 @@ export function useThreadElicitations(
     },
     [scope],
   );
+  const onSnapshot = useCallback(
+    (runId: string, questions: readonly ElicitationQuestion[]) => {
+      setState((current) => {
+        if (current.scope !== scope || current.retired.has(runId)) return current;
+        const sameRun = current.items.filter((item) => item.question.run_id === runId);
+        const ordered = questions
+          .filter((question) => question.run_id === runId)
+          .map(
+            (question) => sameRun.find((item) => item.question.id === question.id) ?? { question },
+          );
+        const listed = new Set(ordered.map((item) => item.question.id));
+        return replaceItems(current, [
+          ...ordered,
+          ...sameRun.filter((item) => !listed.has(item.question.id)),
+        ]);
+      });
+    },
+    [scope],
+  );
   // Adjusted while rendering, the way React adjusts state that follows a prop (react.dev, "You
   // Might Not Need an Effect"): the pruned list is stored so a later run cannot bring it back.
   const held = state.scope === scope ? state.items : [];
   const items = isRunning ? held : keepLiveRun(held, liveRunId);
   if (state.scope !== scope) setState({ scope, items, retired: new Set() });
   else if (items !== held) setState(replaceItems(state, items));
-  return { items, onSignal };
+  return { items, onSignal, onSnapshot };
 }

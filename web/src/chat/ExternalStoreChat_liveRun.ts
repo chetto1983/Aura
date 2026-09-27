@@ -10,7 +10,7 @@ import {
 import { fetchOpenElicitations } from '../questions/elicitationApi';
 import { attachRun } from './sseResume';
 import type { SteerNotice, TurnUsage } from './sseAdapter';
-import type { ElicitationSignal } from './sseAdapter_elicitation';
+import type { ElicitationQuestion, ElicitationSignal } from './sseAdapter_elicitation';
 
 // ExternalStoreChat_liveRun — the RS-07 §4.2 reload-attach split out of
 // ExternalStoreChat.tsx (600-LOC cap): when a thread opens while its detached
@@ -37,6 +37,7 @@ export interface LiveRunAttachArgs {
   };
   readonly isRunningRef: { readonly current: boolean };
   readonly activeRunIdRef: { current: string | null };
+  readonly runGenerationRef?: { readonly current: number };
   readonly foldAppendedStream: AppendedStreamFold;
   readonly setMessages: Dispatch<SetStateAction<ThreadMessageLike[]>>;
   readonly onArtifact?: ((assetId: string | undefined) => void) | undefined;
@@ -44,32 +45,54 @@ export interface LiveRunAttachArgs {
   readonly onSteer?: ((notice: SteerNotice) => void) | undefined;
   /** A mounted MCP server's forms, from the replay and from the run's own list. */
   readonly onElicitation?: ((signal: ElicitationSignal) => void) | undefined;
+  readonly onElicitationSnapshot?:
+    ((runId: string, questions: readonly ElicitationQuestion[]) => void) | undefined;
 }
 
-/** GET is ordered by arrival. Hold stream signals until it lands so a resolution cannot
- * precede its listed question, or a later replayed question jump ahead of an older listed one. */
+/** Give the arrival-ordered list a short head start. Slow GETs must not hide live forms;
+ * their eventual snapshot restores order, then buffered resolutions win over that snapshot. */
 function reconcileOpenForms(
   runId: string,
   onElicitation: (signal: ElicitationSignal) => void,
   isCurrent: () => boolean,
-): (signal: ElicitationSignal) => void {
+  signal: AbortSignal,
+  onSnapshot: LiveRunAttachArgs['onElicitationSnapshot'],
+): { onSignal: (signal: ElicitationSignal) => void; cancel: () => void } {
+  const request = new AbortController();
   let queued: ElicitationSignal[] | null = [];
-  void fetchOpenElicitations(runId)
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    if (isCurrent()) for (const entry of queued ?? []) onElicitation(entry);
+  };
+  const timer = setTimeout(release, 1000);
+  const abort = () => {
+    clearTimeout(timer);
+    queued = null;
+    request.abort();
+  };
+  signal.addEventListener('abort', abort, { once: true });
+  void fetchOpenElicitations(runId, request.signal)
     .then((questions) => {
-      if (!isCurrent()) return;
-      for (const question of questions) onElicitation({ kind: 'question', question });
+      if (request.signal.aborted || !isCurrent()) return;
+      if (onSnapshot !== undefined) onSnapshot(runId, questions);
+      else for (const question of questions) onElicitation({ kind: 'question', question });
+      if (released) for (const entry of queued ?? []) onElicitation(entry);
     })
     .catch(() => undefined)
     .finally(() => {
-      const signals = queued ?? [];
+      clearTimeout(timer);
+      signal.removeEventListener('abort', abort);
+      release();
       queued = null;
-      if (isCurrent()) for (const signal of signals) onElicitation(signal);
     });
-  return (signal) => {
-    if (!isCurrent()) return;
+  const onSignal = (signal: ElicitationSignal) => {
+    if (request.signal.aborted || !isCurrent()) return;
     if (queued !== null) queued.push(signal);
-    else onElicitation(signal);
+    if (released || queued === null) onElicitation(signal);
   };
+  return { onSignal, cancel: abort };
 }
 
 export function useLiveRunAttach({
@@ -78,11 +101,13 @@ export function useLiveRunAttach({
   historyReadiness,
   isRunningRef,
   activeRunIdRef,
+  runGenerationRef,
   foldAppendedStream,
   setMessages,
   onArtifact,
   onSteer,
   onElicitation,
+  onElicitationSnapshot,
 }: LiveRunAttachArgs): void {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -93,6 +118,7 @@ export function useLiveRunAttach({
     async (runId: string) => {
       const terminal = { observed: false };
       await foldAppendedStream(threadId, (controller, onUpdate) => {
+        const generation = runGenerationRef?.current;
         activeRunIdRef.current = runId;
         const onForm =
           onElicitation === undefined
@@ -103,7 +129,11 @@ export function useLiveRunAttach({
                 () =>
                   !controller.signal.aborted &&
                   !terminal.observed &&
-                  (activeRunIdRef.current === null || activeRunIdRef.current === runId),
+                  runGenerationRef?.current === generation &&
+                  (activeRunIdRef.current === runId ||
+                    (activeRunIdRef.current === null && !isRunningRef.current)),
+                controller.signal,
+                onElicitationSnapshot,
               );
         return attachRun({
           threadId,
@@ -113,10 +143,11 @@ export function useLiveRunAttach({
           onSnapshotReplace: setMessages,
           onTerminal: () => {
             terminal.observed = true;
+            onForm?.cancel();
           },
           ...(onArtifact !== undefined ? { onArtifact } : {}),
           ...(onSteer !== undefined ? { onSteer } : {}),
-          ...(onForm !== undefined ? { onElicitation: onForm } : {}),
+          ...(onForm !== undefined ? { onElicitation: onForm.onSignal } : {}),
           onUpdate: (assistant, usage) => {
             onUpdate(assistant, usage);
             setMessages(withoutRowsReplayedByRun);
@@ -146,6 +177,9 @@ export function useLiveRunAttach({
       onArtifact,
       onSteer,
       onElicitation,
+      onElicitationSnapshot,
+      runGenerationRef,
+      isRunningRef,
       activeRunIdRef,
       setMessages,
       queryClient,
