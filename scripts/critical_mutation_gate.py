@@ -22,6 +22,8 @@ GO_SCOPES = {
     "sandbox": "internal/sandbox/usersandbox/spec.go",
     "media_clamp": "internal/mediagen/clamp.go",
     "media_watcher": "internal/mediagen/watcher_state.go",
+    "pausable": "internal/pausable/context.go",
+    "elicitation_route": "internal/agent/mcptools/elicitation_route.go",
 }
 # The generation cockpit is scored on its own denominator as well as inside the
 # aggregate: eight media files among thirty-odd others cannot carry survivors that a
@@ -50,6 +52,8 @@ REQUIRED_SCOPE_IDS = frozenset(
         "sandbox",
         "media_clamp",
         "media_watcher",
+        "pausable",
+        "elicitation_route",
         "frontend",
         "media_frontend",
     }

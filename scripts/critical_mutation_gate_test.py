@@ -60,6 +60,17 @@ class GoMutationParserTest(unittest.TestCase):
         for relative in critical_mutation_gate.GO_SCOPES.values():
             self.assertTrue((REPO / relative).is_file(), relative)
 
+    def test_elicitation_boundaries_are_scoped(self) -> None:
+        # The held clock and the request routing are the two Go boundaries a form rests on.
+        self.assertEqual(
+            critical_mutation_gate.GO_SCOPES["pausable"],
+            "internal/pausable/context.go",
+        )
+        self.assertEqual(
+            critical_mutation_gate.GO_SCOPES["elicitation_route"],
+            "internal/agent/mcptools/elicitation_route.go",
+        )
+
     def test_required_ids_and_go_scopes_cannot_drift(self) -> None:
         # REQUIRED_SCOPE_IDS is written out by hand on purpose. Deleting a boundary from
         # GO_SCOPES must fail the suite here rather than quietly delete its own requirement.
