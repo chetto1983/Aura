@@ -1441,6 +1441,12 @@ packages cannot hide weak-package regressions. Unknown packages, wrong tiers, em
 evidence and mismatched revisions fail. Critical mutation checks require at least 70%
 killed per declared boundary; non-compiling mutants are not assertion kills.
 
+Vitest isolation stays on under Stryker. Measured 2026-09-27: without it the 52 mutation suites
+ran in 9.3 s instead of 44.3 s in one Vitest run, but the CI Stryker step went from 39 min 42 s
+(run 36308693762) to 39 min 13 s (run 36311844463), with all 4,042 mutants in the same status. A
+mutant runs only the tests that cover it, usually one file, so there is little isolation to save.
+Not measured: where the 39 minutes go.
+
 MRS is an operational reliability score with a strict threshold above 96.5 and hard
 gates for integrity, isolation, provenance, live MCP, embedding contract, abstention,
 coverage and bounded latency. Retain cold samples; use at least 25 sequential calls
