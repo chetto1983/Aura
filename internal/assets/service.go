@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -146,30 +145,8 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	return PresignResponse{Asset: asset, Upload: upload}, nil
 }
 
-func (s *Service) Finalize(ctx context.Context, identityID, assetID string) (Asset, error) {
-	asset, err := s.accept(ctx, identityID, assetID, "")
-	if err != nil {
-		return asset, err
-	}
-	if err := s.enqueueProcessing(ctx, asset); err != nil {
-		updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "processing_enqueue_failed", err.Error())
-		return updated, err
-	}
-	return asset, nil
-}
-
-// ErrWrongModality refuses an asset finalized for a use that needs another modality.
-var ErrWrongModality = errors.New("assets: the asset is not of the expected modality")
-
-// FinalizeUnprocessed accepts an upload that is the input of one generation rather than
-// knowledge: the same checks as Finalize, and no processing, so no vision summary is paid for
-// and nothing is filed for the index. The asset must be of modality.
-func (s *Service) FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error) {
-	return s.accept(ctx, identityID, assetID, modality)
-}
-
-// folderFor sends pictures and clips to their own tree and everything else to the documents
-// one. A person browsing the bucket found one bag of ids: a PDF they wrote, a screenshot they
+// folderFor sends pictures, clips and sounds to their own tree and everything else to the
+// documents one. A person browsing the bucket found one bag of ids: a PDF they wrote, a screenshot they
 // pasted and a clip a model generated all landed in `chat/`, which says nothing about any of
 // them. Media is browsed, reused as a generation input and edited, so it is its own folder;
 // documents keep theirs, because the index sweep and the file cards already look there.
@@ -177,10 +154,12 @@ func (s *Service) FinalizeUnprocessed(ctx context.Context, identityID, assetID s
 // Only new uploads move. Every existing object keeps the key its row records, which is the
 // key every read already uses, so nothing has to be migrated or re-uploaded.
 func folderFor(modality Modality) objectstore.AssetFolder {
-	if modality == ModalityImage || modality == ModalityVideo {
+	switch modality {
+	case ModalityImage, ModalityVideo, ModalityAudio:
 		return objectstore.FolderMedia
+	default:
+		return objectstore.FolderChat
 	}
-	return objectstore.FolderChat
 }
 
 // recentImagesMax bounds the Studio picker.
@@ -192,69 +171,6 @@ func (s *Service) ListRecentImages(ctx context.Context, identityID string, limit
 		return nil, fmt.Errorf("asset service is not configured")
 	}
 	return s.Store.ListRecentImages(ctx, identityID, min(max(limit, 1), recentImagesMax))
-}
-
-// storedSizeMatchesUpload compares the object the store actually holds with the size the upload
-// declared. A presigned PUT that never carried its body leaves a 0-byte object the browser
-// believes it uploaded, and finalize used to accept it: a broken tile in the Studio picker and a
-// chat card over nothing (live, 2026-09-19). A declared 0 still refuses an empty object.
-func storedSizeMatchesUpload(declared, stored int64) error {
-	if stored == 0 {
-		return fmt.Errorf("%w: the uploaded object is empty", ErrAssetIncomplete)
-	}
-	if declared > 0 && stored != declared {
-		return fmt.Errorf("%w: %d bytes stored, %d declared", ErrAssetIncomplete, stored, declared)
-	}
-	return nil
-}
-
-// refuse marks the asset refused with the reason, drops the object no one will read, and hands
-// the caller the same error — the one exit every acceptance check takes.
-func (s *Service) refuse(ctx context.Context, objects objectstore.Store, ref objectstore.ObjectRef, asset Asset, identityID string, cause error) (Asset, error) {
-	updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusRefused, "asset_refused", cause.Error())
-	_ = objects.Delete(context.WithoutCancel(ctx), ref)
-	return updated, cause
-}
-
-// accept takes an uploaded object through every check that makes it an asset — it exists, it
-// is within the limits, its bytes are what its name claims — and stops at accepted. An empty
-// modality accepts any; anything else refuses a mismatch before a byte is read.
-func (s *Service) accept(ctx context.Context, identityID, assetID string, modality Modality) (Asset, error) {
-	if s.Store == nil || s.Objects == nil {
-		return Asset{}, fmt.Errorf("asset service is not configured")
-	}
-	asset, err := s.Store.GetForIdentity(ctx, assetID, identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	if modality != "" && asset.Modality != modality {
-		return Asset{}, ErrWrongModality
-	}
-	objects, _, err := s.objectsFor(identityctx.WithIdentityID(ctx, identityID))
-	if err != nil {
-		return Asset{}, err
-	}
-	ref := assetRef(asset)
-	attrs, err := objects.Head(ctx, ref)
-	if err != nil {
-		_, _ = s.Store.SetStatus(ctx, asset.ID, identityID, StatusFailed, "object_missing", "uploaded object was not found")
-		return Asset{}, err
-	}
-	if err = s.Limits.Validate(asset.Modality, asset.FileName, attrs.SizeBytes); err != nil {
-		return s.refuse(ctx, objects, ref, asset, identityID, err)
-	}
-	if err = storedSizeMatchesUpload(asset.DeclaredSizeBytes, attrs.SizeBytes); err != nil {
-		return s.refuse(ctx, objects, ref, asset, identityID, err)
-	}
-	asset, err = s.Store.MarkUploaded(ctx, asset.ID, identityID, attrs.SizeBytes, attrs.ETag)
-	if err != nil {
-		return Asset{}, err
-	}
-	hash, sniffed, err := s.hashAndSniff(ctx, objects, ref, asset.FileName)
-	if err != nil {
-		return Asset{}, err
-	}
-	return s.Store.MarkAccepted(ctx, asset.ID, identityID, attrs.SizeBytes, hash, sniffed)
 }
 
 func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {

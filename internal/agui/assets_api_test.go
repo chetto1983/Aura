@@ -181,6 +181,8 @@ type fakeAssetService struct {
 	// seekStore holds openAsset's bytes for OpenSeekableForIdentity.
 	seekStore objectstore.Store
 
+	finalizeCalls, finalizeMediaCalls int
+
 	// adopted records every "<assetID>-><threadID>" claim, so a test can assert that an
 	// attachment presigned before its conversation existed gets bound to it.
 	adopted []string
@@ -204,6 +206,12 @@ func (f *fakeAssetService) Presign(_ context.Context, req assets.PresignRequest)
 }
 
 func (f *fakeAssetService) Finalize(context.Context, string, string) (assets.Asset, error) {
+	f.finalizeCalls++
+	return f.getResp, f.getErr
+}
+
+func (f *fakeAssetService) FinalizeMedia(context.Context, string, string) (assets.Asset, error) {
+	f.finalizeMediaCalls++
 	return f.getResp, f.getErr
 }
 
@@ -288,4 +296,39 @@ func (f *fakeAssetService) Delete(context.Context, string, string) (assets.Asset
 
 func (f *fakeAssetService) Retry(context.Context, string, string) (assets.Asset, error) {
 	return f.getResp, f.getErr
+}
+
+// The editor's finalize is a query on the same route, so it keeps the route's capability gate
+// and idempotency metadata. A use nobody defined is refused rather than read as the default,
+// which would quietly queue speech-to-text.
+func TestAssetFinalizeRoutesTheMediaUse(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		target    string
+		wantCode  int
+		wantPlain int
+		wantMedia int
+	}{
+		{name: "plain finalize processes", target: "/api/assets/asset-1/finalize", wantCode: http.StatusOK, wantPlain: 1},
+		{name: "media finalize does not", target: "/api/assets/asset-1/finalize?use=media", wantCode: http.StatusOK, wantMedia: 1},
+		{name: "an unknown use is refused", target: "/api/assets/asset-1/finalize?use=everything", wantCode: http.StatusBadRequest},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assetSvc := &fakeAssetService{getResp: assets.Asset{ID: "asset-1"}}
+			s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+			s.SetAssetService(assetSvc)
+			req := withPrincipal(httptest.NewRequest(http.MethodPost, tc.target, nil), assetAPIIdentityID)
+			rec := httptest.NewRecorder()
+
+			s.Mux().ServeHTTP(rec, req)
+
+			if rec.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.wantCode, rec.Body.String())
+			}
+			if assetSvc.finalizeCalls != tc.wantPlain || assetSvc.finalizeMediaCalls != tc.wantMedia {
+				t.Fatalf("Finalize calls = %d, FinalizeMedia calls = %d; want %d and %d",
+					assetSvc.finalizeCalls, assetSvc.finalizeMediaCalls, tc.wantPlain, tc.wantMedia)
+			}
+		})
+	}
 }

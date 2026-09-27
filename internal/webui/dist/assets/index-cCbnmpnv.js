@@ -1,1 +1,0 @@
-import{t as e}from"./web-DPL10lyG.js";e();

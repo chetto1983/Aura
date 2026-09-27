@@ -6,17 +6,22 @@ import type { Page } from '@playwright/test';
 // session cookie the test already has, and so the PUT leaves the browser rather than Node — a
 // seeded asset that arrived by another route would not prove the browser can reach the store.
 
-/** Uploads a fixture file through the real asset routes and answers with its asset id. */
-export async function uploadAsset(
+export interface UploadOptions {
+  /** `media` finalizes the way the editor does: accepted, never processed. */
+  readonly use?: 'media';
+}
+
+/** Uploads bytes through the real asset routes and answers with the asset id. */
+export async function uploadBytes(
   page: Page,
-  path: string,
+  bytes: Buffer,
   fileName: string,
   mimeType: string,
+  options: UploadOptions = {},
 ): Promise<string> {
-  const bytes = readFileSync(path).toString('base64');
   return page.evaluate(
-    async ({ bytes, file, mimeType }) => {
-      const body = Uint8Array.from(atob(bytes), (c) => c.charCodeAt(0));
+    async ({ base64, file, mimeType, query }) => {
+      const body = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
       const presign = await fetch('/api/assets/presign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -39,10 +44,26 @@ export async function uploadAsset(
         body,
       });
       if (!put.ok) throw new Error(`put: HTTP ${String(put.status)}`);
-      const done = await fetch(`/api/assets/${asset.id}/finalize`, { method: 'POST' });
+      const done = await fetch(`/api/assets/${asset.id}/finalize${query}`, { method: 'POST' });
       if (!done.ok) throw new Error(`finalize: HTTP ${String(done.status)}`);
       return asset.id;
     },
-    { bytes, file: fileName, mimeType },
+    {
+      base64: bytes.toString('base64'),
+      file: fileName,
+      mimeType,
+      query: options.use === 'media' ? '?use=media' : '',
+    },
   );
+}
+
+/** Uploads a fixture file through the real asset routes and answers with its asset id. */
+export async function uploadAsset(
+  page: Page,
+  path: string,
+  fileName: string,
+  mimeType: string,
+  options: UploadOptions = {},
+): Promise<string> {
+  return uploadBytes(page, readFileSync(path), fileName, mimeType, options);
 }

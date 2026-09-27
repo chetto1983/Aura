@@ -15,13 +15,22 @@ export async function presignAsset(req: PresignAssetRequest): Promise<PresignRes
   return readJSON<PresignResponse>(res);
 }
 
-export async function finalizeAsset(id: string): Promise<Asset> {
-  const res = await fetch(`${assetURL(id)}/finalize`, {
+async function postFinalize(id: string, query: string): Promise<Asset> {
+  const res = await fetch(`${assetURL(id)}/finalize${query}`, {
     method: 'POST',
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
   });
   return readJSON<Asset>(res);
+}
+
+export async function finalizeAsset(id: string): Promise<Asset> {
+  return postFinalize(id, '');
+}
+
+/** Finalizes an editor source: accepted and left alone, never transcribed or summarized. */
+export async function finalizeMediaAsset(id: string): Promise<Asset> {
+  return postFinalize(id, '?use=media');
 }
 
 export async function getAsset(id: string): Promise<Asset> {

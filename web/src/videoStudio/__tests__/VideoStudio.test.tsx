@@ -59,7 +59,11 @@ vi.mock('../projectStore', async (original) => ({
   ...store,
 }));
 
-const assets = vi.hoisted(() => ({ presignAsset: vi.fn(), finalizeAsset: vi.fn() }));
+const assets = vi.hoisted(() => ({
+  presignAsset: vi.fn(),
+  finalizeAsset: vi.fn(),
+  finalizeMediaAsset: vi.fn(),
+}));
 vi.mock('../../chat/attachments/api', () => assets);
 vi.mock('../../chat/attachments/upload', () => ({ putWithProgress: () => Promise.resolve() }));
 
@@ -153,7 +157,7 @@ beforeEach(() => {
     asset: { id: 'asset-new' },
     upload: { upload_url: 'https://store/put', method: 'PUT', required_headers: {} },
   });
-  assets.finalizeAsset.mockResolvedValue({ id: 'asset-new' });
+  assets.finalizeMediaAsset.mockResolvedValue({ id: 'asset-new' });
 });
 
 afterEach(() => {
@@ -223,7 +227,8 @@ describe('VideoStudio', () => {
         screen.getByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) }),
       ).toBeTruthy();
     });
-    expect(assets.finalizeAsset).toHaveBeenCalledWith('asset-new');
+    expect(assets.finalizeMediaAsset).toHaveBeenCalledWith('asset-new');
+    expect(assets.finalizeAsset).not.toHaveBeenCalled();
   });
 
   it('takes a still through the same door and files it as an image', async () => {

@@ -12,6 +12,9 @@ import (
 type AssetService interface {
 	Presign(context.Context, assets.PresignRequest) (assets.PresignResponse, error)
 	Finalize(context.Context, string, string) (assets.Asset, error)
+	// FinalizeMedia accepts an editor source (picture, clip, sound) without running its
+	// processor: `POST /api/assets/{id}/finalize?use=media`.
+	FinalizeMedia(context.Context, string, string) (assets.Asset, error)
 	GetForIdentity(context.Context, string, string) (assets.Asset, error)
 	// OpenForIdentity streams the owner-scoped object body for the download route (WEBART-03/D-12):
 	// the ownership gate precedes any store read, and it returns a stream-through ReadCloser, never

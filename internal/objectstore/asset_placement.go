@@ -53,8 +53,8 @@ const (
 	// FolderChat holds what the index sweep and the file cards already look for: documents,
 	// and anything whose kind Aura could not place.
 	FolderChat AssetFolder = "chat/"
-	// FolderMedia holds pictures and clips. They are browsed, reused as generation inputs and
-	// edited, so they are their own tree rather than ids mixed among documents.
+	// FolderMedia holds pictures, clips and sounds. They are browsed, reused as generation inputs
+	// and edited, so they are their own tree rather than ids mixed among documents.
 	FolderMedia AssetFolder = "media/"
 )
 

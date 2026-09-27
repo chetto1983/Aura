@@ -1,4 +1,4 @@
-import { finalizeAsset, presignAsset } from '../chat/attachments/api';
+import { finalizeMediaAsset, presignAsset } from '../chat/attachments/api';
 import { putWithProgress } from '../chat/attachments/upload';
 import { probeVideo, type VideoInfo } from '../mediaEdit/videoMedia';
 import { assetIsGone } from './assetStatus';
@@ -167,7 +167,11 @@ export function sourceEdit(probed: ProbedSource, assetId: string): Edit {
   };
 }
 
-/** Presign, PUT, finalize — the attachments' own path — and answer with the asset id. */
+/**
+ * Presign, PUT, finalize-as-media — the attachments' own path, through the editor's door — and
+ * answer with the asset id. A source is accepted and left alone: the plain finalize would run the
+ * modality's processor, which for audio is speech-to-text over whatever the operator cuts.
+ */
 export async function uploadSource(file: File): Promise<string> {
   const presign = await presignAsset({
     // No thread: a source belongs to the identity, the way a Studio frame does.
@@ -183,7 +187,7 @@ export async function uploadSource(file: File): Promise<string> {
     // The sentence beside the picker names the file, not a percentage: a bar here would
     // re-render the editor — and recompile the preview — on every chunk.
   });
-  const finalized = await finalizeAsset(presign.asset.id);
+  const finalized = await finalizeMediaAsset(presign.asset.id);
   return finalized.id;
 }
 

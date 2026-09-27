@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   deleteAsset,
   finalizeAsset,
+  finalizeMediaAsset,
   getAsset,
   listThreadAssets,
   presignAsset,
@@ -90,6 +91,7 @@ describe('attachment API client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await finalizeAsset('asset/1');
+    await finalizeMediaAsset('asset/1');
     await promoteAsset('asset/1');
     await retryAsset('asset/1');
     await deleteAsset('asset/1');
@@ -97,6 +99,7 @@ describe('attachment API client', () => {
     const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
     expect(calls.map((call) => call[0])).toEqual([
       '/api/assets/asset%2F1/finalize',
+      '/api/assets/asset%2F1/finalize?use=media',
       '/api/assets/asset%2F1/promote',
       '/api/assets/asset%2F1/retry',
       '/api/assets/asset%2F1',
