@@ -177,6 +177,18 @@ func TestFromSchemaRefusesAnOverCapMessage(t *testing.T) {
 	}
 }
 
+func TestFromSchemaRefusesAnOverCapQuestionWithNilSchema(t *testing.T) {
+	t.Parallel()
+	tool := strings.Repeat("t", MaxQuestionBytes+1)
+	q, err := FromSchema("everything", tool, "Confirm?", nil)
+	if err == nil || !strings.Contains(err.Error(), "form is") {
+		t.Fatalf("over-cap nil-schema question accepted: %v", err)
+	}
+	if q.Server != "everything" || q.Tool != tool || q.Message != "" || q.Fields != nil || q.Schema != nil {
+		t.Fatalf("refusal metadata changed: %+v", q)
+	}
+}
+
 func TestDecodeSchemaRefusesWhatIsNotASchema(t *testing.T) {
 	t.Parallel()
 	if _, err := DecodeSchema(func() {}); err == nil {

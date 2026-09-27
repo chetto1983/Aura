@@ -51,20 +51,19 @@ func FromSchema(server, tool, message string, schema *jsonschema.Schema) (Questi
 		return refused, fmt.Errorf("message is %d bytes, over %d", len(message), MaxMessageBytes)
 	}
 	q := Question{Server: server, Tool: tool, Message: message, Fields: []Field{}}
-	if schema == nil {
-		return q, nil
+	if schema != nil {
+		fields, err := fieldsOf(schema)
+		if err != nil {
+			return refused, err
+		}
+		// Resolve here because the SDK otherwise does so after the handler returns.
+		// An invalid RE2 pattern must be refused before an operator sees the form.
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			return refused, fmt.Errorf("schema does not resolve: %w", err)
+		}
+		q.Fields, q.Schema = fields, resolved
 	}
-	fields, err := fieldsOf(schema)
-	if err != nil {
-		return refused, err
-	}
-	// Resolve here because the SDK otherwise does so after the handler returns.
-	// An invalid RE2 pattern must be refused before an operator sees the form.
-	resolved, err := schema.Resolve(nil)
-	if err != nil {
-		return refused, fmt.Errorf("schema does not resolve: %w", err)
-	}
-	q.Fields, q.Schema = fields, resolved
 	data, err := json.Marshal(q)
 	if err != nil {
 		return refused, fmt.Errorf("form does not encode: %w", err)
