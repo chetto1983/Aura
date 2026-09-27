@@ -277,17 +277,17 @@ describe('StudioWorkspace composing', () => {
     vi.restoreAllMocks();
   });
 
-  it('explains a deployment the Studio cannot run on, and offers no bar', async () => {
+  it('explains a catalog it could not read, and offers no bar', async () => {
     stubServer({
       modelsFailure: {
-        status: 409,
-        code: 'local_route',
-        error: 'the deployment routes models locally',
+        status: 500,
+        code: 'internal',
+        error: 'The Studio could not complete that request.',
       },
     });
     mountPage();
 
-    expect(await screen.findByText(/routes its models locally/)).toBeTruthy();
+    expect(await screen.findByText(/could not complete that request/)).toBeTruthy();
     expect(screen.queryByRole('textbox', { name: 'Prompt' })).toBeNull();
     expect(screen.queryByRole('button', { name: /Generate/ })).toBeNull();
   });

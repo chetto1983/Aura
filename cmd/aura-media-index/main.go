@@ -215,8 +215,10 @@ func mediaConfigFingerprint(cfg *config.Config, primaryAcceptsImages bool) strin
 		signature.VisionModel = cfg.MultimodalModel
 	}
 	if cfg.STTCloudModel != "" {
+		// The cloud leg runs where multimodal.STTConfigFrom sends it, never on the chat base: a
+		// chat route change must not re-transcribe every stored recording.
 		signature.STTMode = "cloud"
-		signature.STTBase = cfg.LLM.BaseURL
+		signature.STTBase, _ = cfg.SpeechCloudRoute()
 		signature.STTModel = cfg.STTCloudModel
 	} else {
 		signature.STTMode = "local"

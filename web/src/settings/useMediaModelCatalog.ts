@@ -5,7 +5,6 @@ import { catalogError, type ModelCatalogState } from './useModelCatalog';
 interface CatalogRequest {
   readonly kind: MediaKind;
   readonly enabled: boolean;
-  readonly route: string;
   readonly nonce: number;
   readonly refresh: boolean;
 }
@@ -16,11 +15,11 @@ interface CatalogAnswer {
   readonly error: string | undefined;
 }
 
-// useMediaModelCatalog keeps the image, video or voice catalogue of the SAVED route. The daemon
-// answers from the route it runs on, so `route` names that saved route: saving a different one
-// asks again, and `enabled` is true only while the rows show on a saved Cloud route.
+// useMediaModelCatalog keeps one picker catalogue. The daemon lists every one of them from
+// OpenRouter whatever route the chat runs on, so a route change never asks again; `enabled` is
+// true only while the rows show.
 //
-// Every change of kind, route or `enabled`, and every Refresh, is a new request, adjusted while
+// Every change of kind or `enabled`, and every Refresh, is a new request, adjusted while
 // rendering so the render that changed already reads as loading rather than as the previous
 // answer. State is otherwise set only when an answer arrives. Each request's AbortController
 // is its sequence ticket: a superseded request is aborted, and an answer that still arrives on
@@ -28,18 +27,16 @@ interface CatalogAnswer {
 export function useMediaModelCatalog(
   kind: MediaKind,
   enabled: boolean,
-  route: string,
 ): ModelCatalogState<MediaCatalogModel> {
   const [request, setRequest] = useState<CatalogRequest>({
     kind,
     enabled,
-    route,
     nonce: 0,
     refresh: false,
   });
   const [answer, setAnswer] = useState<CatalogAnswer | undefined>(undefined);
-  if (request.kind !== kind || request.enabled !== enabled || request.route !== route) {
-    setRequest({ kind, enabled, route, nonce: request.nonce + 1, refresh: false });
+  if (request.kind !== kind || request.enabled !== enabled) {
+    setRequest({ kind, enabled, nonce: request.nonce + 1, refresh: false });
   }
 
   useEffect(() => {
@@ -67,8 +64,8 @@ export function useMediaModelCatalog(
 
   if (!enabled) return { models: [], status: 'idle', error: undefined, reload };
   if (answer?.request !== request) {
-    // A refresh of the same list keeps it on screen; another kind or route never shows it.
-    const sameList = answer?.request.kind === kind && answer.request.route === route;
+    // A refresh of the same list keeps it on screen; another kind never shows it.
+    const sameList = answer?.request.kind === kind;
     return { models: sameList ? answer.models : [], status: 'loading', error: undefined, reload };
   }
   return {

@@ -105,7 +105,6 @@ describe('adminApi fetchers', () => {
           new Response(
             JSON.stringify({
               identity_id: 'id-1',
-              exempt: false,
               cap: 5,
               reset_interval: 'monthly',
               spend: 0.000004158,
@@ -119,7 +118,6 @@ describe('adminApi fetchers', () => {
     );
     await expect(fetchIdentityCredit('id-1')).resolves.toMatchObject({
       identity_id: 'id-1',
-      exempt: false,
       spend: 0.000004158,
     });
     expect(capturedUrl).toBe('/api/admin/identities/id-1/credit');

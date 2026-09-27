@@ -5,65 +5,59 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/identitykey"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
-	"github.com/chetto1983/aura/internal/runner"
 )
 
-// snapshotResolver is the seam mediaCredentials needs onto the daemon's one
-// per-identity LLM resolver (identityLLMResolver): identityLLMResolver(chat)'s
-// *runner.IdentityLLMResolver satisfies it structurally. Narrowed so a test can
-// substitute a stub without a live pool.
-type snapshotResolver interface {
-	SnapshotFor(context.Context, string) (llm.RuntimeSnapshot, error)
+// mediaBaseURL is where image and video generation run: OpenRouter itself, never the chat LLM's
+// base. The credential port and the settings picker's catalog both use it, so the picker fills
+// the cache entry the tools read. Reported 2026-09-27: with the chat route on Ollama every
+// generation refused, because credential and catalog followed the chat route, although
+// OpenRouter serves media whatever the chat runs on — the embedding route's defect of
+// 2026-09-23 (config_routes.go).
+const mediaBaseURL = llm.DefaultBaseURL
+
+// mediaKeyStore is identitykey.Store narrowed to the one read the media path needs; the caller
+// scopes ctx to the identity.
+type mediaKeyStore interface {
+	Load(ctx context.Context) (identitykey.Record, error)
 }
 
-// mediaCredentials implements mediagen.MediaCredentials over the daemon's
-// singleton identity LLM resolver, so a cap change invalidated on that resolver
-// also invalidates the media path's view of the same identity — there is no
-// second credit decision to keep in sync.
+// mediaCredentials implements mediagen.MediaCredentials over the identity's own OpenRouter key.
+// It never asks the chat resolver: a keyless local chat route is exempt from credit because it
+// bills nothing, while every generation bills on OpenRouter. The key is read on every call, so
+// a cap changed from the Credit panel applies to the next generation with nothing to invalidate.
 type mediaCredentials struct {
-	resolver snapshotResolver
+	keys mediaKeyStore
 }
 
 var _ mediagen.MediaCredentials = mediaCredentials{}
 
-// For resolves owner's OpenRouter base URL + API key, refusing with a
-// *mediagen.Error when generation is unavailable: no_key (no resolver, empty
-// owner, no stored key, or a route that is not billable OpenRouter — including
-// a keyless local backend, which is legitimate for chat but has no credential
-// this port can hand a generation call) and no_credit (the identity's cap is
-// exhausted, recognized either from identitykey.ErrNoCredit or from the
-// snapshot carrying cmd/aura's creditExhaustedClient sentinel — the resolver
-// caches DecisionRefuseNoCredit as a snapshot with a nil error, so the client
-// type is the only signal at that point). Any other resolver error is returned
-// unchanged: an infrastructure failure is never fabricated into no_credit.
+// For resolves owner's OpenRouter credential through identitykey.Decide, the one credit
+// decision, asked for a backend that always bills. It refuses with no_key when there is no key
+// store, no owner or no stored key, and with no_credit when the key's cap is exhausted. A store
+// failure is returned unchanged: an infrastructure error is never fabricated into a refusal.
+// The services key is never used (CRED-07).
 func (p mediaCredentials) For(ctx context.Context, owner string) (string, string, error) {
-	if p.resolver == nil || strings.TrimSpace(owner) == "" {
+	owner = strings.TrimSpace(owner)
+	if p.keys == nil || owner == "" {
 		return "", "", &mediagen.Error{Code: "no_key", Message: "No identity credential is available."}
 	}
-	snap, err := p.resolver.SnapshotFor(ctx, owner)
-	_, noCredit := snap.Client.(creditExhaustedClient)
-	if errors.Is(err, identitykey.ErrNoCredit) || (err == nil && noCredit) {
-		return "", "", &mediagen.Error{Code: "no_credit", Message: "This identity has no generation credit."}
-	}
-	if errors.Is(err, runner.ErrNoIdentityLLMKey) {
-		return "", "", &mediagen.Error{Code: "no_key", Message: "Connect this identity to OpenRouter."}
-	}
-	if err != nil {
+	rec, err := p.keys.Load(identityctx.WithIdentityID(ctx, owner))
+	if err != nil && !errors.Is(err, identitykey.ErrNoKey) {
 		return "", "", err
 	}
-	if !openRouterMediaRoute(snap.Config) || strings.TrimSpace(snap.Config.APIKey) == "" {
-		return "", "", &mediagen.Error{Code: "no_key", Message: "Generation requires the OpenRouter route."}
+	decision, _ := identitykey.Decide(identitykey.DecisionInput{
+		IdentityID: owner, HasKey: err == nil, LimitUSD: rec.LimitUSD, BackendBills: true,
+	})
+	switch decision {
+	case identitykey.DecisionAllow:
+		return mediaBaseURL, rec.Key, nil
+	case identitykey.DecisionRefuseNoCredit:
+		return "", "", &mediagen.Error{Code: "no_credit", Message: "This identity has no generation credit."}
+	default:
+		return "", "", &mediagen.Error{Code: "no_key", Message: "Connect this identity to OpenRouter."}
 	}
-	return snap.Config.BaseURL, snap.Config.APIKey, nil
-}
-
-// openRouterMediaRoute reports whether cfg is a route generation can run on: OpenRouter, and
-// not a keyless local host even when it is labelled openrouter. The credential port and the
-// settings picker's catalog decide it here, so they never disagree about a route.
-func openRouterMediaRoute(cfg llm.Config) bool {
-	return llm.ReasoningTarget(cfg.Provider, cfg.BaseURL) == llm.ReasoningTargetOpenRouter &&
-		!llm.IsKeylessLocalBaseURL(cfg.BaseURL)
 }

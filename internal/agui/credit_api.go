@@ -1,8 +1,10 @@
 package agui
 
 // credit_api.go implements GET/POST /api/admin/identities/{id}/credit (CRED-03,
-// CRED-06, CRED-09), on internal/agui/audit_api.go's pattern: ports declared
-// consumer-side, a Set*-after-construct wiring method, 503 until wired.
+// CRED-06), on internal/agui/audit_api.go's pattern: ports declared consumer-side, a
+// Set*-after-construct wiring method, 503 until wired. It answers on every chat route: a
+// local chat route bills nothing, but the identity's image and video generation bill on
+// its own OpenRouter key whatever the chat runs on, so its cap is always a real one.
 //
 // GET returns the cap, reset interval, period spend and remaining, sourced from
 // Task 1's credit_ledger.go over Aura's own in-band ledger (D-08) -- never from
@@ -82,21 +84,15 @@ func NewCreditInvalidator(r *runner.IdentityLLMResolver) creditCacheInvalidator 
 // creditPorts bundles this file's dependencies into one Server field (server.go
 // gains one line, not four).
 type creditPorts struct {
-	spend        creditSpendReader
-	keys         creditKeyStore
-	provider     creditProvider
-	invalidate   creditCacheInvalidator
-	backendBills func() bool
+	spend      creditSpendReader
+	keys       creditKeyStore
+	provider   creditProvider
+	invalidate creditCacheInvalidator
 }
 
-// SetCreditAPI wires the credit routes. backendBills is the deployment-wide
-// classification (D-13): false means the configured LLM backend does not charge at
-// all (a local llama.cpp/Ollama server), which makes CRED-09's exemption uniform
-// across every identity rather than a per-identity decision. backendBills is asked on
-// every request, because the operator can switch route while the daemon runs. Until
-// called, both routes answer 503.
-func (s *Server) SetCreditAPI(spend creditSpendReader, keys creditKeyStore, provider creditProvider, invalidate creditCacheInvalidator, backendBills func() bool) {
-	s.credit = &creditPorts{spend: spend, keys: keys, provider: provider, invalidate: invalidate, backendBills: backendBills}
+// SetCreditAPI wires the credit routes. Until called, both routes answer 503.
+func (s *Server) SetCreditAPI(spend creditSpendReader, keys creditKeyStore, provider creditProvider, invalidate creditCacheInvalidator) {
+	s.credit = &creditPorts{spend: spend, keys: keys, provider: provider, invalidate: invalidate}
 }
 
 func (s *Server) registerCreditRoutes(mux *http.ServeMux) {
@@ -114,18 +110,10 @@ func (s *Server) handleGetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid identity id"})
 		return
 	}
-	if !s.credit.backendBills() {
-		// CRED-09: a deployment-wide choice, uniform across every identity -- never a
-		// fabricated $0.00 for a backend that bills nothing.
-		writeJSON(w, map[string]any{"identity_id": targetID, "exempt": true})
-		return
-	}
 	if s.credit.keys == nil || s.credit.spend == nil {
-		// A billing backend with no management credential/store wired: the
-		// composition root's own SetCreditAPI call site never produces this
-		// combination deliberately (see cmd/aura/serve_agui.go), but a defensive
-		// 503 here is cheaper than a nil-pointer panic if that ever changes.
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "credit store not configured for this backend"})
+		// The composition root never wires this combination, but a defensive 503 here is
+		// cheaper than a nil-pointer panic if that ever changes.
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "credit store not configured"})
 		return
 	}
 
@@ -182,7 +170,7 @@ func (s *Server) noKeyCause(ctx context.Context) string {
 // and no percentage either — a zero there would read as exhausted.
 func unlimitedCreditResponse(identityID, limitReset string, spend float64) map[string]any {
 	return map[string]any{
-		"identity_id": identityID, "exempt": false, "unlimited": true, "cap": nil,
+		"identity_id": identityID, "unlimited": true, "cap": nil,
 		"reset_interval": limitReset, "spend": spend, "remaining": nil, "percent_used": nil,
 	}
 }
@@ -211,7 +199,6 @@ func creditGetResponse(identityID, limitReset string, cap openrouterprovision.US
 	}
 	return map[string]any{
 		"identity_id":    identityID,
-		"exempt":         false,
 		"unlimited":      false,
 		"cap":            cap,
 		"reset_interval": limitReset,
@@ -241,12 +228,8 @@ func (s *Server) handleSetCredit(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid identity id"})
 		return
 	}
-	if !s.credit.backendBills() {
-		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "this deployment's backend does not bill; there is no cap to set"})
-		return
-	}
 	if s.credit.keys == nil || s.credit.provider == nil {
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "credit store not configured for this backend"})
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "credit store not configured"})
 		return
 	}
 	raw, ok := readCappedBody(w, r)

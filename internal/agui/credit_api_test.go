@@ -101,7 +101,7 @@ func (f *fakeCreditInvalidator) Invalidate(identityID string) {
 	f.calls = append(f.calls, identityID)
 }
 
-func newTestCreditServer(spend *fakeCreditSpendReader, keys *fakeCreditKeyStore, provider *fakeCreditProvider, invalidate *fakeCreditInvalidator, backendBills bool) *Server {
+func newTestCreditServer(spend *fakeCreditSpendReader, keys *fakeCreditKeyStore, provider *fakeCreditProvider, invalidate *fakeCreditInvalidator) *Server {
 	s := &Server{}
 	var inv creditCacheInvalidator
 	if invalidate != nil {
@@ -119,7 +119,7 @@ func newTestCreditServer(spend *fakeCreditSpendReader, keys *fakeCreditKeyStore,
 	if spend != nil {
 		sp = spend
 	}
-	s.SetCreditAPI(sp, ks, prov, inv, func() bool { return backendBills })
+	s.SetCreditAPI(sp, ks, prov, inv)
 	return s
 }
 
@@ -147,7 +147,7 @@ func TestAdminGetCreditExplainsAMissingKey(t *testing.T) {
 		{"not minted yet", NewIdentityKeyMinter(&fakeMinting{keySet: true}, newFakeIdentityKeys(), adminCaps(), billing), "not_minted"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := newTestCreditServer(&fakeCreditSpendReader{}, &fakeCreditKeyStore{}, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+			s := newTestCreditServer(&fakeCreditSpendReader{}, &fakeCreditKeyStore{}, &fakeCreditProvider{}, &fakeCreditInvalidator{})
 			s.keyMinter = tc.minter
 			rec := httptest.NewRecorder()
 			s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
@@ -173,7 +173,7 @@ func TestAdminGetCredit(t *testing.T) {
 		LimitUSD: new(5.00), LimitReset: "monthly",
 	}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 1.50}}
-	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
@@ -206,34 +206,13 @@ func TestAdminGetCredit(t *testing.T) {
 	}
 }
 
-// TestAdminGetCreditLocalBackendExempt proves CRED-09: on a non-billing backend the
-// response says exempt rather than a fabricated zero cap.
-func TestAdminGetCreditLocalBackendExempt(t *testing.T) {
-	s := newTestCreditServer(&fakeCreditSpendReader{}, &fakeCreditKeyStore{}, &fakeCreditProvider{}, &fakeCreditInvalidator{}, false)
-	rec := httptest.NewRecorder()
-	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	var out map[string]any
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if out["exempt"] != true {
-		t.Errorf("exempt = %v, want true", out["exempt"])
-	}
-	if _, ok := out["cap"]; ok {
-		t.Errorf("exempt response must not carry cap, got %v", out)
-	}
-}
-
 // TestAdminGetCreditSpendEqualsCapReadsAsFull proves the CRED-06 boundary: spend
 // exactly equal to cap reports 100% and remaining zero; one cent below reports under
 // 100%.
 func TestAdminGetCreditSpendEqualsCapReadsAsFull(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(5.00), LimitReset: "monthly"}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 5.00}}
-	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
@@ -268,7 +247,7 @@ func TestAdminSetCredit(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Key: "sk-x", Hash: "hash-1", Label: "l", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
 	invalidator := &fakeCreditInvalidator{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator)
 
 	body := `{"cap":"5.00","reset_interval":"weekly"}`
 	rec := httptest.NewRecorder()
@@ -301,7 +280,7 @@ func TestAdminSetCredit(t *testing.T) {
 func TestAdminSetCreditCapOnly(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(1.00), LimitReset: "daily"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"9.00"}`))
@@ -324,7 +303,7 @@ func TestAdminSetCreditCapOnly(t *testing.T) {
 func TestAdminSetCreditIntervalOnly(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: new(3.00), LimitReset: "daily"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"reset_interval":"monthly"}`))
@@ -347,7 +326,7 @@ func TestAdminSetCreditIntervalOnly(t *testing.T) {
 func TestAdminSetCreditEmptyBodyRefused(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{}`))
@@ -368,7 +347,7 @@ func TestAdminSetCreditEmptyBodyRefused(t *testing.T) {
 func TestAdminSetCreditNegativeCapRefused(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"-1.00"}`))
@@ -385,7 +364,7 @@ func TestAdminSetCreditNegativeCapRefused(t *testing.T) {
 func TestAdminSetCreditPrecisionRule(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"5.126"}`))
@@ -413,7 +392,7 @@ func TestAdminSetCreditProviderFailureAfterStoreWrite(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(0), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{err: errors.New("provider unreachable")}
 	invalidator := &fakeCreditInvalidator{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, invalidator)
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"5.00"}`))
@@ -457,7 +436,7 @@ func TestAdminGetCreditReportsSubCentSpend(t *testing.T) {
 		LimitUSD: new(5.00), LimitReset: "monthly",
 	}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 0.000016632}}
-	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
@@ -484,7 +463,7 @@ func TestAdminGetCreditReportsSubCentSpend(t *testing.T) {
 func TestAdminGetCreditForAKeyWithNoLimit(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitReset: "monthly"}}
 	spend := &fakeCreditSpendReader{spend: map[string]float64{testLocalID: 2.5}}
-	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(spend, keys, &fakeCreditProvider{}, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleGetCredit(rec, creditRequest(http.MethodGet, "/api/admin/identities/"+testLocalID+"/credit", ""))
@@ -503,7 +482,7 @@ func TestAdminGetCreditForAKeyWithNoLimit(t *testing.T) {
 func TestAdminSetCreditClearsTheCap(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Key: "sk-x", Hash: "hash-1", Label: "l", LimitUSD: capUSD(5), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"clear_cap":true}`))
@@ -524,7 +503,7 @@ func TestAdminSetCreditClearsTheCap(t *testing.T) {
 func TestAdminSetCreditRefusesCapAndClearCapTogether(t *testing.T) {
 	keys := &fakeCreditKeyStore{hasKey: true, rec: identitykey.Record{Hash: "h", LimitUSD: capUSD(1), LimitReset: "monthly"}}
 	provider := &fakeCreditProvider{}
-	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{}, true)
+	s := newTestCreditServer(&fakeCreditSpendReader{}, keys, provider, &fakeCreditInvalidator{})
 
 	rec := httptest.NewRecorder()
 	s.handleSetCredit(rec, creditRequest(http.MethodPost, "/api/admin/identities/"+testLocalID+"/credit", `{"cap":"5","clear_cap":true}`))

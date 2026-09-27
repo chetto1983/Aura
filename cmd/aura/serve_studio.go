@@ -8,7 +8,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
 
 	"github.com/google/uuid"
@@ -70,9 +69,6 @@ func (b studioBackend) Models(ctx context.Context, kind mediagen.Kind) (string, 
 func (b studioBackend) listed(ctx context.Context, kind mediagen.Kind, model string) (*mediagen.Model, error) {
 	models, err := b.catalog.List(ctx, kind, false)
 	if err != nil {
-		if errors.Is(err, agui.ErrCatalogLocalRoute) {
-			return nil, err
-		}
 		slog.Error("aura serve: the Studio could not read the model catalog; nothing was generated",
 			"kind", kind, "err", redact.String(err.Error()))
 		return nil, &mediagen.Error{Code: "job_failed", Message: "The model catalog could not be read, so nothing was generated."}
@@ -184,7 +180,7 @@ func wireStudio(server *agui.Server, chat *chatEnv, media *mediaDeps, watcher *m
 		return
 	}
 	server.SetStudio(studioBackend{
-		catalog:     mediaCatalogRoute{catalog: media.catalog, runtime: chat.llmRuntime},
+		catalog:     mediaCatalogRoute{catalog: media.catalog},
 		settings:    media.settings,
 		credentials: media.credentials,
 		submit:      media.submitter.Submit,

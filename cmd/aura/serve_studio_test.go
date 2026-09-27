@@ -207,20 +207,6 @@ func TestStudioReportsAnUnavailableCatalogAsNothingGenerated(t *testing.T) {
 	fixture.assertNothingGenerated(t)
 }
 
-// A local route is not a failed generation: it is a routing choice the operator can undo, and
-// the cockpit prints its own sentence for it, so the sentinel has to survive the wrapping.
-func TestStudioKeepsTheLocalRouteRefusal(t *testing.T) {
-	fixture := newStudioFixture(t)
-	fixture.catalog.err = agui.ErrCatalogLocalRoute
-
-	_, err := fixture.backend.SubmitVideo(context.Background(), studioOwner, agui.StudioVideoRequest{Model: "m"})
-
-	if !errors.Is(err, agui.ErrCatalogLocalRoute) {
-		t.Fatalf("error = %v, want ErrCatalogLocalRoute", err)
-	}
-	fixture.assertNothingGenerated(t)
-}
-
 // The Studio's form leaves every option optional, and an option the body omits is not free:
 // the provider fills an absent field with its own default, which on a per-second SKU is the
 // long, high, audible clip. What leaves for the provider must be the cheapest the model offers.

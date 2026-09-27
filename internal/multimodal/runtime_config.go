@@ -40,15 +40,34 @@ func VisionConfigFrom(cfg *config.Config, primaryAcceptsImages bool) VisionConfi
 	}
 }
 
-// STTConfigFrom projects Aura's canonical runtime settings onto the shared client.
+// STTConfigFrom projects Aura's canonical runtime settings onto the shared client. The cloud
+// leg is OpenRouter whatever the chat route is (config.SpeechCloudRoute).
 func STTConfigFrom(cfg *config.Config) STTConfig {
+	cloudBase, cloudKey := cfg.SpeechCloudRoute()
 	return STTConfig{
 		LocalBaseURL:      cfg.STTBaseURL,
 		LocalModel:        cfg.STTModel,
 		Language:          cfg.STTLanguage,
 		CloudModel:        cfg.STTCloudModel,
-		OpenRouterBaseURL: cfg.LLM.BaseURL,
-		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		OpenRouterBaseURL: cloudBase,
+		OpenRouterAPIKey:  cloudKey,
+		TimeoutSec:        cfg.MultimodalTimeoutSec,
+	}
+}
+
+// TTSConfigFrom projects Aura's canonical runtime settings onto the shared client, in the
+// container format the caller delivers. The cloud leg is OpenRouter whatever the chat route is
+// (config.SpeechCloudRoute).
+func TTSConfigFrom(cfg *config.Config, format string) TTSConfig {
+	cloudBase, cloudKey := cfg.SpeechCloudRoute()
+	return TTSConfig{
+		LocalBaseURL:      cfg.TTSBaseURL,
+		Voice:             cfg.TTSVoice,
+		Format:            format,
+		CloudModel:        cfg.TTSModel,
+		CloudVoice:        cfg.TTSCloudVoice,
+		OpenRouterBaseURL: cloudBase,
+		OpenRouterAPIKey:  cloudKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }

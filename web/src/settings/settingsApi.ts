@@ -41,7 +41,7 @@ export interface SettingWriteResult extends SettingItem {
 /** One reconciler run (internal/agui/openrouter_reconcile.go's OpenRouterKeysResult). Labels are
  * OpenRouter's masked form; a key never crosses the wire. */
 export interface OpenRouterKeysResult {
-  /** Why nothing was minted: management_key_unset or local_route. */
+  /** Why nothing was minted: management_key_unset. */
   readonly skipped?: string;
   /** The services key's label, when this run minted it. */
   readonly services_label?: string;

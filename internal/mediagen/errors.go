@@ -7,9 +7,9 @@
 //
 // What it needs from the daemon arrives through ports the composition root
 // (cmd/aura) implements over infrastructure it already owns: Settings over
-// aura.settings, MediaCredentials over the per-identity LLM resolver
-// (CRED-01/CRED-05), and ReferenceReader and VideoAssets over the assets
-// service.
+// aura.settings, MediaCredentials over the identity's own OpenRouter key
+// (CRED-05/CRED-07, whatever the chat route is), and ReferenceReader and
+// VideoAssets over the assets service.
 package mediagen
 
 import "errors"

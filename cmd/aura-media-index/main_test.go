@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,6 +19,11 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+// roundTripFunc lets a test see the request its client built before a fake answers it.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 func TestMediaConfigFingerprintTracksRoutesWithoutSecrets(t *testing.T) {
 	base := &config.Config{
@@ -50,6 +56,23 @@ func TestMediaConfigFingerprintTracksRoutesWithoutSecrets(t *testing.T) {
 	changed.STTCloudModel = "vendor/another-stt"
 	if got := mediaConfigFingerprint(&changed, true); got == want {
 		t.Fatal("changing the selected STT model did not invalidate media derivation")
+	}
+}
+
+// Cloud STT runs on OpenRouter whatever the chat route is, so switching the chat to Ollama
+// while images go to the sidecar changes no media route and must re-derive nothing.
+func TestMediaConfigFingerprintIgnoresTheChatBaseForCloudSTT(t *testing.T) {
+	cfg := &config.Config{
+		LLM:               llm.Config{Model: "z-ai/glm-5.3", BaseURL: "https://openrouter.ai/api/v1"},
+		MultimodalBaseURL: "http://aura-ocr-vl:8082/v1",
+		MultimodalModel:   "glm-ocr",
+		STTCloudModel:     "openai/whisper-large-v3-turbo",
+	}
+	want := mediaConfigFingerprint(cfg, false)
+	ollama := *cfg
+	ollama.LLM = llm.Config{Model: "gemma4:31b-cloud", BaseURL: "http://host.docker.internal:11434/v1"}
+	if got := mediaConfigFingerprint(&ollama, false); got != want {
+		t.Fatalf("a chat route switch changed the cloud STT fingerprint: %q != %q", got, want)
 	}
 }
 
@@ -87,9 +110,11 @@ func TestLoadEffectiveConfigAllowsLocalRouteWithoutCloudKey(t *testing.T) {
 	}
 }
 
+// The cloud STT leg runs on OpenRouter whatever the chat route is: the chat here is on Ollama,
+// and the request must still leave for openrouter.ai with the services key.
 func TestMediaRuntimeDerivesAudioTextThroughSelectedCloudModel(t *testing.T) {
 	audio := []byte("audio-canary")
-	var gotAuth, gotModel, gotFormat, gotData string
+	var gotURL, gotAuth, gotModel, gotFormat, gotData string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		var body struct {
@@ -113,16 +138,31 @@ func TestMediaRuntimeDerivesAudioTextThroughSelectedCloudModel(t *testing.T) {
 		t.Fatalf("write audio fixture: %v", err)
 	}
 	cfg := &config.Config{
-		LLM:           llm.Config{BaseURL: srv.URL, APIKey: "shared-key"},
+		LLM:           llm.Config{Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1", APIKey: "shared-key"},
 		STTCloudModel: "vendor/changeable-stt",
 	}
-	runtime := newMediaRuntime(cfg, srv.Client(), true)
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse fake server URL: %v", err)
+	}
+	// Record where the client sent the request, then deliver it to the local fake: the test
+	// never reaches the network.
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotURL = r.URL.String()
+		out := r.Clone(r.Context())
+		out.URL.Scheme, out.URL.Host, out.Host = target.Scheme, target.Host, target.Host
+		return http.DefaultTransport.RoundTrip(out)
+	})}
+	runtime := newMediaRuntime(cfg, client, true)
 	text, err := runtime.derive(t.Context(), mediaKindAudio, path, "meeting.m4a")
 	if err != nil {
 		t.Fatalf("derive audio: %v", err)
 	}
 	if text != "progetto Fenice 42" {
 		t.Fatalf("derived text = %q", text)
+	}
+	if gotURL != "https://openrouter.ai/api/v1/audio/transcriptions" {
+		t.Fatalf("cloud STT went to %q, want OpenRouter whatever the chat base", gotURL)
 	}
 	if gotModel != "vendor/changeable-stt" || gotAuth != "Bearer shared-key" {
 		t.Fatalf("wire route model/auth = %q/%q", gotModel, gotAuth)

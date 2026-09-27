@@ -127,8 +127,8 @@ func telegramSteerOrNil(inbox *steer.PostgresStore) telegram.SteerPusher {
 
 // multimodalConfig projects the central config.Config TTS knobs onto the
 // telegram-package MultimodalConfig the outbound voice-note path reads. The cloud
-// leg reuses the LLM client's OpenRouter base + key (the same credential the agent
-// loop uses); the local leg reads the upstream-named sidecar URL. This is the
+// leg is OpenRouter with the services key whatever route the chat runs on
+// (config.SpeechCloudRoute); the local leg reads the upstream-named sidecar URL. This is the
 // serve-side mapper — it lives here (cmd/aura imports both packages) so the telegram
 // package stays free of an internal/config import (the sidecar.go contract).
 //
@@ -137,9 +137,10 @@ func telegramSteerOrNil(inbox *steer.PostgresStore) telegram.SteerPusher {
 // buildAssetService. Projecting them here too would recreate the second pipeline
 // this channel just stopped being.
 func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
+	cloudBase, cloudKey := cfg.SpeechCloudRoute()
 	return telegram.MultimodalConfig{
-		OpenRouterBaseURL: cfg.LLM.BaseURL,
-		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		OpenRouterBaseURL: cloudBase,
+		OpenRouterAPIKey:  cloudKey,
 		TTSBaseURL:        cfg.TTSBaseURL,
 		TTSVoice:          cfg.TTSVoice,
 		TTSFormat:         cfg.TTSFormat,

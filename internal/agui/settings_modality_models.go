@@ -1,10 +1,10 @@
 package agui
 
-// settings_voice_models.go answers the cockpit's speech model boxes (GET
-// /api/settings/transcription-models and /speech-models) the way image-models and
-// video-models answer theirs: same picker rows, same route rule. The cloud STT and TTS
-// clients ride the daemon's OpenRouter route, so their models are listed from it and a
-// local route is refused rather than answered with a list nothing could call.
+// settings_modality_models.go answers the cockpit's speech and embedding model boxes (GET
+// /api/settings/transcription-models, /speech-models and /embeddings-models) the way
+// image-models and video-models answer theirs: same picker rows, same route rule. The cloud
+// STT, TTS and embedding clients run on OpenRouter whatever route the chat runs on, so their
+// models are listed from OpenRouter.
 
 import (
 	"context"
@@ -13,8 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// ModalityCatalogLister lists the OpenRouter models of one output modality on the daemon's
-// live route; a route that is not OpenRouter answers ErrCatalogLocalRoute.
+// ModalityCatalogLister lists the OpenRouter models of one output modality.
 type ModalityCatalogLister interface {
 	List(ctx context.Context, modality string) ([]llm.ModelCatalogEntry, error)
 }

@@ -92,7 +92,9 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
     ]);
   });
 
-  it('shows the OpenRouter rows only while Cloud is the route', async () => {
+  // Image and video generation bill on OpenRouter whatever the chat runs on, so the key that
+  // mints every person's own key stays reachable on a local chat route too.
+  it('shows the OpenRouter rows on every route', async () => {
     stubSettingsAPI();
     await mount(<ModelSettingsPanel groups={['routing']} />);
     const shown = () =>
@@ -100,13 +102,10 @@ describe('ModelSettingsPanel OpenRouter rows', () => {
         (label) => screen.queryByLabelText(label) !== null,
       );
 
-    expect(shown()).toEqual([true, true]);
-    for (const route of ['Local', 'Ollama']) {
+    for (const route of ['Cloud', 'Local', 'Ollama']) {
       fireEvent.click(screen.getByRole('radio', { name: route }));
-      expect(shown()).toEqual([false, false]);
+      expect(shown()).toEqual([true, true]);
     }
-    fireEvent.click(screen.getByRole('radio', { name: 'Cloud' }));
-    expect(shown()).toEqual([true, true]);
   });
 
   it('never shows the services key Aura mints', async () => {

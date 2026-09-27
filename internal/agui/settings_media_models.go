@@ -3,9 +3,9 @@ package agui
 // settings_media_models.go answers the cockpit's image and video model boxes
 // (GET /api/settings/image-models and /video-models) from the daemon's one media catalog, the
 // cache the generation tools clamp against, in the shared shape of settings_catalog.go.
-// Unlike llm-models there is no probe target to accept: the catalog is read on the route the
-// daemon runs on, so a picker and a tool call see the same models, and the browser neither
-// names a host nor receives a credential.
+// Unlike llm-models there is no probe target to accept: the catalog is read on OpenRouter, where
+// every generation runs whatever the chat route is, so a picker and a tool call see the same
+// models, and the browser neither names a host nor receives a credential.
 
 import (
 	"context"
@@ -15,9 +15,8 @@ import (
 	"github.com/chetto1983/aura/internal/mediagen"
 )
 
-// MediaCatalogLister is the shared media catalog on the daemon's live route. The composition
-// root supplies that route's OpenRouter base URL; a route that is not OpenRouter answers
-// ErrCatalogLocalRoute.
+// MediaCatalogLister is the shared media catalog on the OpenRouter endpoint the generation
+// credentials resolve to; the composition root supplies it.
 type MediaCatalogLister interface {
 	List(ctx context.Context, kind mediagen.Kind, refresh bool) ([]mediagen.Model, error)
 }
