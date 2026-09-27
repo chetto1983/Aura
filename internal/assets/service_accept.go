@@ -63,9 +63,11 @@ func (s *Service) refuse(ctx context.Context, objects objectstore.Store, ref obj
 	return updated, cause
 }
 
-// accept takes an uploaded object through every check that makes it an asset — it exists, it
-// is within the limits, its bytes are what its name claims — and stops at accepted. No allowed
-// modality accepts any; otherwise a mismatch is refused before a byte is read.
+// accept takes an uploaded object through every check that makes it an asset — it exists and
+// is within the limits — and stops at accepted. No allowed modality accepts any; otherwise a
+// mismatch is refused before a byte is read. The recorded modality may be the client's hint, so
+// the name and declared type must also infer an allowed one: the ingest walker reads the name,
+// and a manual.pdf hinted as a sound would be filed as media and indexed anyway.
 func (s *Service) accept(ctx context.Context, identityID, assetID string, allowed ...Modality) (Asset, error) {
 	if s.Store == nil || s.Objects == nil {
 		return Asset{}, fmt.Errorf("asset service is not configured")
@@ -74,7 +76,8 @@ func (s *Service) accept(ctx context.Context, identityID, assetID string, allowe
 	if err != nil {
 		return Asset{}, err
 	}
-	if len(allowed) > 0 && !slices.Contains(allowed, asset.Modality) {
+	if len(allowed) > 0 && (!slices.Contains(allowed, asset.Modality) ||
+		!slices.Contains(allowed, InferModality(asset.FileName, asset.MIMEType))) {
 		return Asset{}, ErrWrongModality
 	}
 	objects, _, err := s.objectsFor(identityctx.WithIdentityID(ctx, identityID))

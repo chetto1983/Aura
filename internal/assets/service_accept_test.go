@@ -208,3 +208,41 @@ func TestServiceFinalizeMediaRefusesADocument(t *testing.T) {
 		t.Fatalf("processing enqueued %d times, want none", queue.calls)
 	}
 }
+
+// The hint is the client's word; the name is what the ingest walker reads. A document presigned
+// as a sound would be filed under media/, accepted unprocessed, and indexed anyway.
+func TestServiceFinalizeMediaRefusesADocumentHintedAsMedia(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{MaxDocumentBytes: 100, MaxImageBytes: 100, MaxAudioBytes: 100})
+	queue := &recordingProcessingQueue{}
+	svc.ProcessingJobs = queue
+	resp, err := svc.Presign(context.Background(), PresignRequest{
+		IdentityID:        serviceIdentityID,
+		SourceKind:        SourceWeb,
+		ThreadID:          "thread-1",
+		FileName:          "manual.pdf",
+		MIMEType:          "audio/wav",
+		ModalityHint:      ModalityAudio,
+		DeclaredSizeBytes: 9,
+	})
+	if err != nil {
+		t.Fatalf("Presign() error = %v", err)
+	}
+	ref := objectstore.ObjectRef{Bucket: resp.Asset.ObjectBucket, Key: resp.Asset.ObjectKey}
+	if _, err := svc.Objects.Put(context.Background(), ref, strings.NewReader("%PDF test"), objectstore.PutOptions{
+		MIMEType: "audio/wav",
+		Size:     9,
+	}); err != nil {
+		t.Fatalf("Put object: %v", err)
+	}
+
+	_, err = svc.FinalizeMedia(context.Background(), serviceIdentityID, resp.Asset.ID)
+	if !errors.Is(err, ErrWrongModality) {
+		t.Fatalf("FinalizeMedia() error = %v, want ErrWrongModality", err)
+	}
+	if got := store.assets[resp.Asset.ID].Status; got == StatusAccepted {
+		t.Fatalf("status = %q, want the document left unaccepted", got)
+	}
+	if queue.calls != 0 {
+		t.Fatalf("processing enqueued %d times, want none", queue.calls)
+	}
+}

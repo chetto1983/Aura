@@ -602,11 +602,16 @@ instantiate their WASM before an offline render, or they return silence.
 speech edge within 95 ms on both fixtures and adds 35,491 B to the dist. Silero via `vad-web` ends
 0.28–0.88 s late and would add 30.2 MB.
 
-**Uploads and saved projects.** Decided, and landing in T1a with its own VM E2E: the Studio's media
-uploads will use `POST /api/assets/{id}/finalize?use=media`. `FinalizeMedia` will accept only
-image, video and audio and enqueue no processing, so a music track is never transcribed. A saved
+**Uploads and saved projects.** Landed in T1a (`cdfdae5c5`) and measured on the lab VM on
+2026-09-27: the Studio's media uploads use `POST /api/assets/{id}/finalize?use=media`, and
+`FinalizeMedia` accepts only image, video and audio and enqueues no processing. A WAV finalized
+that way sits under `media/`, stays `accepted` with an empty summary, while the same file through
+the plain finalize is processed; a PDF sent to the same door is refused with 400. After the final
+review the door also refuses a document whose client hinted it as a sound: the recorded modality
+can be the client's hint, so the name and declared type must infer an allowed modality too. A saved
 project, by contrast, is finalized as a document today and receives a `document_id` (M1): that is
-reported as its own issue and is not fixed by this work.
+reported as its own issue and is not fixed by this work. The door reads no bytes: a file named and
+typed as a sound whose content is something else is accepted as a sound.
 
 This does not establish:
 - long-project memory use;
