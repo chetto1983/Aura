@@ -187,7 +187,13 @@ async function editorOnSeededClip(page: Page, prompt: string): Promise<Locator> 
   await page.getByRole('button', { name: 'Open in the video editor' }).click();
   const editor = page.getByRole('dialog', { name: 'Video editor' });
   await expect(editor.getByRole('button', { name: 'Clip 1' })).toBeVisible({ timeout: 60_000 });
-  await expect(editor.getByRole('heading', { name: prompt })).toBeVisible();
+  // The project is named after the prompt. At phone width the layout hides the name to make room
+  // for the tools (video-studio-mobile.css, max-width 540px), so there it is only in the DOM.
+  const title = editor.getByRole('heading', { name: prompt, includeHidden: true });
+  await expect(title).toBeAttached();
+  if ((page.viewportSize()?.width ?? Number.POSITIVE_INFINITY) > 540) {
+    await expect(title).toBeVisible();
+  }
   return editor;
 }
 
