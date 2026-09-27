@@ -232,3 +232,65 @@ speech on either file, and runs faster than real time.
 - The latency was measured once, on a single half-second window of the clean file; that it stays
   constant across a file is assumed, not measured.
 - The ×RT figure includes a fixed wait and so does not isolate the render cost.
+
+## S4 — Silero or WebRTC VAD
+
+`node s4.mjs`: `@ricky0123/vad-web` 0.0.31 (Silero legacy model) and `@echogarden/fvad-wasm` 0.2.0
+(WebRTC VAD, modes 0–3), on both speech fixtures at 16 kHz, with the same smoothing for both
+(merge pauses < 300 ms, drop windows < 250 ms). Each cell is `[start error, end error]` in ms against
+the ground-truth windows. `origins: ['http://127.0.0.1:5199']`: nothing reached a CDN.
+
+Getting Silero to run at all took two corrections:
+- `NonRealTimeVAD` imports the default `onnxruntime-web` entry, which loads the **JSEP (WebGPU)**
+  build, `ort-wasm-simd-threaded.jsep.{mjs,wasm}`. `setup.sh` had staged only the plain build.
+- ORT loads its `.mjs` with a dynamic `import()`, and the Vite dev server refuses to serve `/public`
+  files to `import()` ("should not be imported from source code"). The probe hands ORT the package's
+  own files as bundler URLs, `env.wasm.wasmPaths = { mjs, wasm }` via `?url` (ORT's
+  `WasmFilePaths`), which is also how a production build would ship them.
+
+| file | detector | edge errors (ms) | misses | false windows |
+|---|---|---|---|---|
+| speech | silero | [56,274] [22,303] [51,287] | 0 | 0 |
+| speech | webrtc-0 / 1 | [−10,148] [−2,153] [−27,155] | 0 | 0 |
+| speech | webrtc-2 | [−10,88] [−2,93] [−27,95] | 0 | 0 |
+| speech | webrtc-3 | [−10,58] [−2,63] [3,95] | 0 | 0 |
+| speech | rnnoise + webrtc-3 | [−10,58] [−2,63] [3,95] | 0 | 0 |
+| noisy | silero | [−40,754] [22,879] [−45,863] | 0 | 0 |
+| noisy | webrtc-0 … 3 | [−1000,9238] [−5162,5043] [−9357,995] | 0 | 0 |
+| noisy | rnnoise + webrtc-0 / 1 | [20,58] [−2,183] [3,185] | 0 | 1 |
+| noisy | rnnoise + webrtc-2 | [20,−2] [−2,123] [3,125] | 0 | 0 |
+| noisy | **rnnoise + webrtc-3** | [20,−62] [−2,63] [3,65] | 0 | 0 |
+
+On the noisy file, WebRTC alone returns ONE window spanning the whole file in every mode: it calls
+10 dB SNR noise speech. Its "0 misses" are that single window overlapping all three truth windows.
+Silero separates the windows but ends each 0.75–0.88 s late. About 0.3 s of that is its
+`redemptionMs` hold, which also accounts for its uniform ~0.28 s lateness on clean speech. The
+brief's decision rule has no answer when both detectors miss by more than 150 ms. So the probe
+added the composition the other choices already pay for: S3's RNNoise pass, with its 992-sample
+delay trimmed, then the browser's resampler (`OfflineAudioContext` at 16 kHz), then WebRTC mode 3.
+Its edges land within 95 ms on both files, with no miss and no false window.
+
+Bytes each detector adds to the committed dist (sizes on disk):
+- **WebRTC**: `fvad.wasm` 20,569 B + `fvad.js` 14,922 B = **35,491 B**. RNNoise is already there
+  for denoise (S3).
+- **Silero**, as vad-web ships it: `ort-wasm-simd-threaded.jsep.wasm` 28,312,028 B +
+  `.jsep.mjs` 46,851 B + `silero_vad_legacy.onnx` 1,807,522 B = **30,166,401 B**, plus the ORT and
+  vad-web JavaScript. Aliasing `onnxruntime-web` → `onnxruntime-web/wasm` would still leave
+  14,239,897 B of wasm. The probe's response log missed the 28 MB wasm body (a streamed
+  instantiate), which is why these figures are sizes on disk.
+
+**Verdict: WebRTC VAD, mode 3, run on the RNNoise-denoised copy.** It is lighter by about 850×, and
+more precise than Silero on both fixtures.
+
+**Consequences for Plan B**
+- Speech detection is decode → RNNoise at 48 kHz (wait for init, trim 992 samples) → resample to
+  16 kHz → fvad mode 3 in 30 ms frames → merge < 300 ms / drop < 250 ms. It runs on a denoised copy
+  whether or not the user turns denoise on for playback.
+- `@ricky0123/vad-web` and `onnxruntime-web` leave the dependency list, together with the spec's
+  ONNX lazy-loading concern (§Browser-side analysis).
+
+**What S4 does not show**
+- Only these two fixtures (one voice, synthetic 10 dB SNR noise): not music under speech, several
+  speakers, or reverberant rooms.
+- Not Silero v5, not Silero with a shorter `redemptionMs`, and not Silero on the denoised copy.
+- Not the realtime `MicVAD`: there is no live detection in this design.
