@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { STUDIO_LIBRARY_LIMIT } from '../src/studio/studioApi';
 import { expect, test } from './support/assetCleanup';
-import { uploadAsset } from './support/assetUpload';
+import { uploadAsset, uploadBytes } from './support/assetUpload';
 import { levelBetween, windowPowers } from './support/audioMeasure';
 import {
   AUDIO_FIXTURES,
@@ -19,11 +20,60 @@ import {
 // load audio from garage"). An asset already in Garage is picked from Add a sound or Add a clip
 // and lands on the timeline without being uploaded again; the sound is proven by the export, the
 // video and the picture by the timeline they lengthen. Each asset gets a name no earlier run used, so the list's
-// button is this run's asset and nothing else.
+// button is this run's asset and nothing else. The list is paged: an asset older than a full page
+// is reached through Show more.
 
 function unique(extension: string): string {
   return `library-${randomUUID().slice(0, 8)}.${extension}`;
 }
+
+/** A tenth of a second of 16 kHz mono 16-bit silence: a sound the library lists, and nothing
+ *  more — the paging test needs a page of them, never their audio. */
+function silence(): Buffer {
+  const data = 1600 * 2;
+  const wav = Buffer.alloc(44 + data);
+  wav.write('RIFF', 0);
+  wav.writeUInt32LE(36 + data, 4);
+  wav.write('WAVEfmt ', 8);
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(16_000, 24);
+  wav.writeUInt32LE(32_000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write('data', 36);
+  wav.writeUInt32LE(data, 40);
+  return wav;
+}
+
+// A full page of newer sounds puts an older one on the next page: the panel does not list it
+// until Show more reads that page, and then it is picked like any other. On the phone too.
+test('a sound older than a full page is reached through Show more', async ({ page }, info) => {
+  test.setTimeout(10 * 60_000);
+  const clip = await uploadClip(page);
+  const older = unique('wav');
+  await uploadAsset(page, resolve(AUDIO_FIXTURES, 'music.wav'), older, 'audio/wav', {
+    use: 'media',
+  });
+  for (let newer = 0; newer < STUDIO_LIBRARY_LIMIT; newer += 1) {
+    await uploadBytes(page, silence(), unique('wav'), 'audio/wav', { use: 'media' });
+  }
+  const editor = await reopen(page, silentFilm(clip, 'library paging'), clip);
+  const panel = await openAudioPanel(page, editor);
+  const more = panel.getByRole('button', { name: 'Show more' });
+  await expect(more).toBeVisible({ timeout: 30_000 });
+  await expect(panel.getByRole('button', { name: older })).toHaveCount(0);
+
+  await more.click();
+  const picked = panel.getByRole('button', { name: older });
+  await expect(picked).toBeVisible({ timeout: 30_000 });
+  await info.attach('library-more', { contentType: 'image/png', body: await page.screenshot() });
+  await picked.click();
+  const sound = editor.getByRole('button', { name: 'Sound 1' });
+  await expect(sound).toBeVisible({ timeout: 60_000 });
+  await expect(sound).toContainText(older);
+});
 
 test('a sound picked from the library goes on a lane and plays in the export', async ({
   page,
