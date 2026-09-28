@@ -533,6 +533,42 @@ it until its bytes change: the extraction memo is fingerprinted on `_extract`'s 
 not on the `media.py` it calls (cocoindex `_compute_logic_fingerprint`), and invalidating it
 would re-run every document's extraction, vision calls included.
 
+**Deleting an asset.** A deleted asset leaves `aura.assets`. The delete first stamps the row
+`deleting` with `deleted_at`, which hides it from every identity-scoped read and from every
+status write, so a job finishing late cannot bring it back. The object is then removed from
+the owner's bucket, a missing key counting as removed, and the row is hard-deleted; its
+`asset_events` and `ingestion_jobs` cascade, and their `ingestion_events` stay with `job_id`
+NULL. A row a `media_job` points at stays as a `deleted` tombstone instead, because a paid clip
+keeps its pointer (migration 0128 gives that key no `ON DELETE`). When the object removal or
+the row removal fails, the row stays `deleting` and a warning names the asset; the asset API
+still answers success. The daily `retention_sweep` visits every identity, takes its oldest
+`deleting` rows in a bounded batch, deletes the object, finalizes the row and retries the
+rest the next night. The file manager's delete does the same for the row that holds a key
+it removes, and still reports a key it could not remove. No migration is needed for the
+hard delete: 0001's default privileges already give `aura_app` DELETE on every table
+`aura_migrate` creates, and 0020's narrower grant never revoked it (the lab VM reads
+`aura_app=arwd/aura_migrate` on `aura.assets`).
+
+Measured 2026-09-28 on the lab VM, read-only: 258 rows were `deleting`, every one with
+`deleted_at` NULL, against 19 `accepted`, 26 `complete`, 15 `processing` and 7 `presigned`.
+The delete set `deleting` and nothing ever took a row further: `MarkAssetDeleted` had no
+caller, and a failed object removal was discarded without a log. All 258 belonged to one
+identity and were created between 2026-09-27 17:48 and 2026-09-28 07:42 UTC, mostly E2E
+fixtures (`clip-a.mp4` 87, `project.json` 68, `music.wav` 51); 108 video, 79 document, 71
+audio. None was referenced by a `media_job`; 99 had an `ingestion_jobs` row and those jobs
+206 `ingestion_events`; no row had `asset_events`. Read from the code, not measured: with
+`deleted_at` NULL those rows still came back from the thread listing, whose web consumers
+drop only `deleted` and `canceled`, and a library file, whose object key is fixed by its
+name, could not be presigned again while its old row held the key.
+
+This does not prove:
+- that the bucket holds no objects without a row, or keys the file manager's rename or move
+  left behind while the row still names the old key (reported, not fixed here);
+- that Garage removes each of the 258 objects: nothing was deleted by the measurement;
+- that the document index drops the passages of a deleted document (the ingest reconciler
+  owns that);
+- anything about `refused`, `failed` or abandoned `presigned` rows, which still accumulate.
+
 ## 12. Workspace, shell and web
 
 Tools and artifact delivery resolve the persistent working root consistently. Sandbox
