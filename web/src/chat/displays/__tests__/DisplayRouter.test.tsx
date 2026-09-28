@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { DisplayRouter } from '../DisplayRouter';
-import type { DisplayPayload } from '../types';
+import type { DisplayDiff, DisplayPayload } from '../types';
 
 // DisplayRouter routes a trusted-normalizer payload to its per-type card; the
 // SECURITY-critical contract is the `default:` — an unknown/foreign type must
@@ -130,26 +130,23 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
   });
 
   it('routes a verified diff and rejects inconsistent line counts', () => {
-    const complete = {
-      type: 'diff',
-      tool_call_id: 'patch-1',
-      diff: {
-        filename: 'a.txt',
-        additions: 1,
-        deletions: 1,
-        lines: [
-          { kind: 'removed', text: 'old' },
-          { kind: 'added', text: 'new' },
-        ],
-      },
-    } as DisplayPayload;
+    const diff: DisplayDiff = {
+      filename: 'a.txt',
+      additions: 1,
+      deletions: 1,
+      lines: [
+        { kind: 'removed', text: 'old' },
+        { kind: 'added', text: 'new' },
+      ],
+    };
+    const complete = { type: 'diff', tool_call_id: 'patch-1', diff } as DisplayPayload;
     const { rerender } = render(
       <DisplayRouter payload={complete} toolName="patch" result="raw patch" />,
     );
     expect(screen.getByText('a.txt')).toBeTruthy();
     rerender(
       <DisplayRouter
-        payload={{ ...complete, diff: { ...complete.diff!, additions: 2 } }}
+        payload={{ ...complete, diff: { ...diff, additions: 2 } }}
         toolName="patch"
         result="raw malformed patch"
       />,

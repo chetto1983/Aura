@@ -47,7 +47,9 @@ export function TodoList({
           {description ? <p className="text-xs text-text-muted">{description}</p> : null}
         </div>
         <span className="font-mono text-[11px] tracking-tight text-text-faint tabular-nums">
-          {revision === undefined ? `${done}/${total}` : `${done}/${total} · rev ${revision}`}
+          {revision === undefined
+            ? `${String(done)}/${String(total)}`
+            : `${String(done)}/${String(total)} · rev ${String(revision)}`}
         </span>
       </div>
       <ul className="flex flex-col gap-1">

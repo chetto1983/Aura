@@ -51,14 +51,14 @@ export function CodeDiff({
         <div className="w-max min-w-full py-1">
           {lines.map((line, index) => (
             <div
-              key={`${cycle}-${index}-${line.text}`}
+              key={`${String(cycle)}-${String(index)}-${line.text}`}
               className={cn(
                 'fade-in animate-in fill-mode-both flex px-3 py-0.5 leading-relaxed whitespace-pre duration-300 motion-reduce:animate-none',
                 line.kind === 'context' && 'text-text-muted',
                 line.kind === 'added' && 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
                 line.kind === 'removed' && 'bg-red-500/10 text-red-700 dark:text-red-300',
               )}
-              style={{ animationDelay: `${Math.min(index, 20) * 30}ms` }}
+              style={{ animationDelay: `${String(Math.min(index, 20) * 30)}ms` }}
             >
               <span aria-hidden className="w-4 shrink-0 select-none">
                 {GUTTER[line.kind]}

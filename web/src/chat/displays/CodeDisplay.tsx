@@ -93,7 +93,9 @@ export function CodeDisplay({ payload, rawResult }: CodeDisplayProps) {
         <Button
           type="button"
           variant="outline"
-          onClick={() => setShowRaw((value) => !value)}
+          onClick={() => {
+            setShowRaw((value) => !value);
+          }}
           aria-expanded={showRaw}
         >
           {showRaw ? t('display.code.hideRaw') : t('display.code.showRaw')}

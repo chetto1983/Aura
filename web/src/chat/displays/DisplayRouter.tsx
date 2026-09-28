@@ -1,6 +1,6 @@
 import { ToolResultPanel } from '../ToolResultPanel';
 import { McpViewFrame } from '../mcpapps/McpViewFrame';
-import type { DisplayPayload } from './types';
+import type { DisplayDiff, DisplayPayload, DisplayTodo } from './types';
 import { TableDisplay } from './TableDisplay';
 import { ChartDisplay } from './ChartDisplay';
 import { SystemEventCard } from './SystemEventCard';
@@ -105,24 +105,7 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         raw()
       );
     case 'todo':
-      return payload.todo &&
-        Array.isArray(payload.todo.items) &&
-        payload.todo.items.length <= 100 &&
-        payload.todo.items.every(
-          (item) =>
-            item !== null &&
-            typeof item === 'object' &&
-            typeof item.content === 'string' &&
-            item.content.length <= 512 &&
-            ['pending', 'in_progress', 'completed'].includes(item.status) &&
-            (item.active_form === undefined ||
-              (typeof item.active_form === 'string' && item.active_form.length <= 512)),
-        ) &&
-        payload.todo.items.filter((item) => item.status === 'in_progress').length <= 1 ? (
-        <TodoDisplay payload={payload} />
-      ) : (
-        raw()
-      );
+      return isTodo(payload.todo) ? <TodoDisplay payload={payload} /> : raw();
     case 'terminal':
       return payload.terminal &&
         typeof payload.terminal.command === 'string' &&
@@ -138,7 +121,7 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
           (Number.isInteger(payload.terminal.duration_ms) && payload.terminal.duration_ms >= 0)) &&
         (payload.terminal.truncated === undefined ||
           typeof payload.terminal.truncated === 'boolean') ? (
-        <TerminalDisplay payload={payload} />
+        <TerminalDisplay terminal={payload.terminal} />
       ) : (
         raw()
       );
@@ -151,23 +134,8 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         Number.isInteger(payload.diff.deletions) &&
         payload.diff.additions >= 0 &&
         payload.diff.deletions >= 0 &&
-        Array.isArray(payload.diff.lines) &&
-        payload.diff.lines.length > 0 &&
-        payload.diff.lines.length <= 1000 &&
-        payload.diff.lines.every(
-          (line) =>
-            line !== null &&
-            typeof line === 'object' &&
-            ['context', 'added', 'removed'].includes(line.kind) &&
-            typeof line.text === 'string' &&
-            line.text.length <= 65536,
-        ) &&
-        payload.diff.lines.reduce((total, line) => total + line.text.length, 0) <= 65536 &&
-        payload.diff.lines.filter((line) => line.kind === 'added').length ===
-          payload.diff.additions &&
-        payload.diff.lines.filter((line) => line.kind === 'removed').length ===
-          payload.diff.deletions ? (
-        <DiffDisplay payload={payload} {...(result !== undefined ? { rawResult: result } : {})} />
+        hasDiffLines(payload.diff) ? (
+        <DiffDisplay diff={payload.diff} {...(result !== undefined ? { rawResult: result } : {})} />
       ) : (
         raw()
       );
@@ -183,4 +151,69 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
       // raw output stays escaped, capped, and copyable.
       return raw();
   }
+}
+
+/** A todo or diff row as the wire may send it: every field unknown until checked. */
+interface WireRow {
+  readonly content?: unknown;
+  readonly status?: unknown;
+  readonly active_form?: unknown;
+  readonly kind?: unknown;
+  readonly text?: unknown;
+}
+
+/** A list slot's rows as the wire sent them: `Array.isArray` narrows a typed list to `any[]`, so
+ *  each row is read as unknown, field by field, before a card trusts it. A non-object row is
+ *  undefined here. */
+function wireRows(list: unknown): readonly (WireRow | undefined)[] | undefined {
+  if (!Array.isArray(list)) return undefined;
+  return (list as readonly unknown[]).map((row) =>
+    typeof row === 'object' && row !== null ? (row as WireRow) : undefined,
+  );
+}
+
+const TODO_STATUSES: readonly unknown[] = ['pending', 'in_progress', 'completed'];
+const TODO_TEXT_MAX = 512;
+
+function isTodoItem(item: WireRow | undefined): item is DisplayTodo['items'][number] {
+  return (
+    item !== undefined &&
+    typeof item.content === 'string' &&
+    item.content.length <= TODO_TEXT_MAX &&
+    TODO_STATUSES.includes(item.status) &&
+    (item.active_form === undefined ||
+      (typeof item.active_form === 'string' && item.active_form.length <= TODO_TEXT_MAX))
+  );
+}
+
+/** todo_write's list: at most 100 well-formed rows, at most one of them in progress. */
+function isTodo(todo: DisplayTodo | undefined): boolean {
+  const items = wireRows(todo?.items);
+  if (items === undefined || items.length > 100 || !items.every(isTodoItem)) return false;
+  return items.filter((item) => item.status === 'in_progress').length <= 1;
+}
+
+const DIFF_KINDS: readonly unknown[] = ['context', 'added', 'removed'];
+const DIFF_TEXT_MAX = 65536;
+
+function isDiffLine(line: WireRow | undefined): line is DisplayDiff['lines'][number] {
+  return (
+    line !== undefined &&
+    DIFF_KINDS.includes(line.kind) &&
+    typeof line.text === 'string' &&
+    line.text.length <= DIFF_TEXT_MAX
+  );
+}
+
+/** A patch's lines: 1 to 1000 well-formed rows, 64 KiB of text in all, and exactly as many added
+ *  and removed rows as the diff's counts claim. */
+function hasDiffLines(diff: DisplayDiff): boolean {
+  const lines = wireRows(diff.lines);
+  if (lines === undefined || lines.length === 0 || lines.length > 1000) return false;
+  if (!lines.every(isDiffLine)) return false;
+  return (
+    lines.reduce((total, line) => total + line.text.length, 0) <= DIFF_TEXT_MAX &&
+    lines.filter((line) => line.kind === 'added').length === diff.additions &&
+    lines.filter((line) => line.kind === 'removed').length === diff.deletions
+  );
 }

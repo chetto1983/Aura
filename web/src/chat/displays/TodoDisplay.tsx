@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { TodoList, type TodoItem } from '@/components/todo-list';
 import type { DisplayPayload } from './types';
+import { TodoList, type TodoItem } from '@/components/todo-list';
 
 export interface TodoDisplayProps {
   readonly payload: DisplayPayload;
@@ -9,7 +9,7 @@ export interface TodoDisplayProps {
 export function TodoDisplay({ payload }: TodoDisplayProps) {
   const { t } = useTranslation();
   const items: TodoItem[] = (payload.todo?.items ?? []).map((item, index) => ({
-    id: `${payload.tool_call_id}:${index}`,
+    id: `${payload.tool_call_id}:${String(index)}`,
     text: item.content,
     status:
       item.status === 'in_progress' ? 'active' : item.status === 'completed' ? 'done' : 'pending',

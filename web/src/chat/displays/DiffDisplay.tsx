@@ -1,21 +1,20 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useCopyAction } from './useCopyAction';
+import type { DisplayDiff } from './types';
 import { CodeDiff } from '@/components/code-diff';
 import { Button } from '@/components/ui/button';
-import { useCopyAction } from './useCopyAction';
-import type { DisplayPayload } from './types';
 
 export function DiffDisplay({
-  payload,
+  diff,
   rawResult,
 }: {
-  readonly payload: DisplayPayload;
+  readonly diff: DisplayDiff;
   readonly rawResult?: string;
 }) {
   const { t } = useTranslation();
   const { copied, copy } = useCopyAction();
   const [showRaw, setShowRaw] = useState(false);
-  const diff = payload.diff!;
   const copyText =
     rawResult ??
     diff.lines
@@ -37,7 +36,9 @@ export function DiffDisplay({
         <Button
           type="button"
           variant="outline"
-          onClick={() => copy(copyText)}
+          onClick={() => {
+            copy(copyText);
+          }}
           aria-label={t('display.diff.copy')}
         >
           {copied ? t('display.diff.copied') : t('display.diff.copy')}
@@ -46,7 +47,9 @@ export function DiffDisplay({
           <Button
             type="button"
             variant="outline"
-            onClick={() => setShowRaw((value) => !value)}
+            onClick={() => {
+              setShowRaw((value) => !value);
+            }}
             aria-expanded={showRaw}
           >
             {showRaw ? t('display.diff.hideRaw') : t('display.diff.showRaw')}

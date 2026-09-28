@@ -1,10 +1,9 @@
 import { useTranslation } from 'react-i18next';
+import type { DisplayTerminal } from './types';
 import { TerminalBlock } from '@/components/terminal-block';
-import type { DisplayPayload } from './types';
 
-export function TerminalDisplay({ payload }: { readonly payload: DisplayPayload }) {
+export function TerminalDisplay({ terminal }: { readonly terminal: DisplayTerminal }) {
   const { t } = useTranslation();
-  const terminal = payload.terminal!;
   const lines = terminal.output ? terminal.output.split('\n') : [];
   return (
     <TerminalBlock

@@ -100,7 +100,9 @@ export function TerminalBlock({
         <button
           type="button"
           className="w-full border-t border-border px-3 py-2 text-left text-accent-text hover:bg-surface-hover focus-visible:outline-2 focus-visible:outline-accent"
-          onClick={() => setExpanded((value) => !value)}
+          onClick={() => {
+            setExpanded((value) => !value);
+          }}
           aria-expanded={expanded}
         >
           {expanded ? showLessLabel : showAllLabel}
