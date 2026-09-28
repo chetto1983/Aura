@@ -41,7 +41,7 @@ rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundl
 | coverage | `coverage-report.json` | statements ≥85% with the `db_integration` tier; no empty/filtered tier |
 | Docker coverage | `docker-coverage-report.json` | exact merged statements ≥85% for owned sandbox surfaces under native `docker_integration` |
 | Agent Memory | `agent-memory-eval-report.json` | all-tier MRS passes and ArcadeDB package coverage is ≥85% |
-| mutation | `mutation-report.json` | killed ≥70% separately for gateway, identity, profile, sandbox, and frontend |
+| mutation | `mutation-report.json` | killed ≥70% separately for every boundary in `REQUIRED_SCOPE_IDS` (eight Go files, the frontend aggregate, the media frontend); each scope executed mutants; a Go scope reused from an earlier commit because its input fingerprint is identical names that full commit (`reused_from`) and the fingerprint, and the readiness report lists it under `reused_scopes` |
 | capability | `capability-eval.json` | every declared scenario executed and passed; zero skip/missing |
 | load | `load-report.json` | supported concurrency met; success ratio and p95 inside declared budget |
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |

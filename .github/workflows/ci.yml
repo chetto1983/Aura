@@ -82,6 +82,7 @@ jobs:
             scripts/agent_memory_eval_test.py \
             scripts/capability_eval_test.py \
             scripts/critical_mutation_gate_test.py \
+            scripts/go_mutation_cache_test.py \
             scripts/observability_evidence_test.py \
             scripts/production_load_chaos_test.py \
             scripts/release_check_run_gate_test.py \
@@ -1578,8 +1579,13 @@ jobs:
     timeout-minutes: 120
     # REL-02: this is deliberately unconditional. The ten independently-scored
     # boundaries — eight Go files, the frontend aggregate and the media frontend on its own
-    # denominator — publish one fresh candidate-bound report; no strong scope can
+    # denominator — publish one candidate-bound report on every run; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
+    # A Go scope is re-measured only when its input closure changed (2026-09-28): the result
+    # measured on a byte-identical closure (scripts/go_mutation_cache.py fingerprints the
+    # file, every main-module input of its package's test closure, go.mod/go.sum, the go env
+    # `go test` sees and the go-mutesting build) is reused, and the scope says so with
+    # reused_from + fingerprint, which release readiness checks and names.
     # The scope roster lives in scripts/critical_mutation_gate.py (REQUIRED_SCOPE_IDS), which
     # release readiness imports, so this job needs no edit when a boundary is added.
     steps:
@@ -1611,6 +1617,17 @@ jobs:
           restore-keys: |
             stryker-incremental-v1-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-
 
+      # go-mutesting has no cache of its own. Each entry holds one scope's measurement and the
+      # fingerprint of its inputs; the fingerprint decides reuse, so the key is only per commit.
+      - name: Restore Go mutation results
+        id: go_mutation_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/go-mutation-cache
+          key: go-mutation-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            go-mutation-v1-${{ runner.os }}-
+
       - name: Install pinned Go mutation runner
         run: |
           go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
@@ -1634,8 +1651,17 @@ jobs:
 
       - name: Per-boundary Go + frontend mutation gate
         run: |
-          PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py
-          PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py
+          PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py scripts/go_mutation_cache_test.py
+          PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py --go-cache-dir artifacts/go-mutation-cache
+
+      # Saved when the gate fails too: an entry is a measurement, and a below-floor scope stays
+      # below until something in its closure changes.
+      - name: Save Go mutation results
+        if: always() && steps.go_mutation_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/go-mutation-cache
+          key: ${{ steps.go_mutation_cache.outputs.cache-primary-key }}
 
       - name: Upload critical mutation evidence
         if: always()

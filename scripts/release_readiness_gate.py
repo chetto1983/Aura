@@ -11,7 +11,11 @@ from collections.abc import Callable
 from typing import Any
 
 from critical_mutation_gate import MEDIA_SCOPE_IDS, REQUIRED_SCOPE_IDS
+from evidence_metadata import FULL_GIT_SHA
 from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+
+
+SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class GateError(RuntimeError):
@@ -252,6 +256,7 @@ def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
             ),
         )
     scores: dict[str, float] = {}
+    reused: dict[str, str] = {}
     for scope_id in sorted(REQUIRED_SCOPE_IDS):
         scope = indexed[scope_id]
         score = scope.get("score_percent")
@@ -261,8 +266,22 @@ def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
             f"mutation: {scope_id} score {score!r} < 70%",
         )
         scores[scope_id] = float(score)
+        # A Go scope whose input closure is byte-identical to an earlier measurement carries
+        # that measurement. It must say where it came from, and the bundle names it.
+        if "reused_from" in scope:
+            origin = scope["reused_from"]
+            require(
+                isinstance(origin, str) and FULL_GIT_SHA.fullmatch(origin) is not None,
+                f"mutation: {scope_id} reuse names no full commit",
+            )
+            require(
+                isinstance(scope.get("fingerprint"), str)
+                and SHA256.fullmatch(scope["fingerprint"]) is not None,
+                f"mutation: {scope_id} reuse carries no input fingerprint",
+            )
+            reused[scope_id] = origin
     require(report.get("passed") is True, "mutation: report did not pass")
-    return {"scores": scores}
+    return {"scores": scores, "reused_scopes": reused}
 
 
 def validate_capability(report: dict[str, Any]) -> dict[str, Any]:
@@ -498,7 +517,7 @@ def run_gate(
     output: pathlib.Path,
     max_age_hours: float,
 ) -> dict[str, Any]:
-    require(re.fullmatch(r"[0-9a-f]{40}", candidate) is not None, "candidate must be a full Git SHA")
+    require(FULL_GIT_SHA.fullmatch(candidate) is not None, "candidate must be a full Git SHA")
     now = dt.datetime.now(dt.timezone.utc)
     max_age = dt.timedelta(hours=max_age_hours)
     require(max_age > dt.timedelta(0), "max evidence age must be positive")

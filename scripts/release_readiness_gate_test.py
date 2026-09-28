@@ -416,6 +416,42 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("media_clamp did not execute", result.stderr)
 
+    def test_a_reused_mutation_scope_is_candidate_evidence_and_named(self) -> None:
+        # Identical input closure, identical result: the scope measured on an earlier commit
+        # stands for this candidate, and the bundle says which scopes it did that for.
+        evidence = valid_evidence()
+        self.mutation_scope(evidence, "media_clamp").update(
+            {"reused_from": "b" * 40, "fingerprint": "f" * 64}
+        )
+        result = self.run_gate(evidence)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        mutation = next(
+            item for item in result.report["evidence"] if item["gate"] == "mutation"  # type: ignore[attr-defined]
+        )
+        self.assertEqual(mutation["reused_scopes"], {"media_clamp": "b" * 40})
+
+    def test_a_reused_mutation_scope_without_provenance_fails(self) -> None:
+        for label, fields in (
+            ("abbreviated commit", {"reused_from": "b" * 9, "fingerprint": "f" * 64}),
+            ("no fingerprint", {"reused_from": "b" * 40}),
+            ("malformed fingerprint", {"reused_from": "b" * 40, "fingerprint": "xyz"}),
+        ):
+            with self.subTest(label):
+                evidence = valid_evidence()
+                self.mutation_scope(evidence, "media_clamp").update(fields)
+                result = self.run_gate(evidence)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("media_clamp reuse", result.stderr)
+
+    def test_a_reused_mutation_scope_that_executed_no_mutants_fails(self) -> None:
+        evidence = valid_evidence()
+        self.mutation_scope(evidence, "media_clamp").update(
+            {"reused_from": "b" * 40, "fingerprint": "f" * 64, "executed": False}
+        )
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("media_clamp did not execute", result.stderr)
+
     def test_chaos_zero_postconditions_fail_closed_per_scenario(self) -> None:
         for scenario_id, fields in CHAOS_SCENARIO_ZERO_FIELDS.items():
             for field in fields:

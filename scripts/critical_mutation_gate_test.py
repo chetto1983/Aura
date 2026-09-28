@@ -9,6 +9,7 @@ import time
 import unittest
 
 import critical_mutation_gate
+import go_mutation_cache
 
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -91,16 +92,16 @@ class GoMutationParserTest(unittest.TestCase):
             "The mutation score is 0.750000 "
             "(3 passed, 1 failed, 2 duplicated, 1 skipped, total is 7)\n"
         )
-        parsed = critical_mutation_gate.parse_go_mutation_output(output)
+        parsed = go_mutation_cache.parse_go_mutation_output(output)
         self.assertEqual(parsed["killed"], 3)
         self.assertEqual(parsed["survived"], 1)
         self.assertEqual(parsed["score_percent"], 75.0)
 
     def test_rejects_missing_or_inconsistent_summary(self) -> None:
         with self.assertRaisesRegex(ValueError, "summary"):
-            critical_mutation_gate.parse_go_mutation_output("PASS only")
+            go_mutation_cache.parse_go_mutation_output("PASS only")
         with self.assertRaisesRegex(ValueError, "score"):
-            critical_mutation_gate.parse_go_mutation_output(
+            go_mutation_cache.parse_go_mutation_output(
                 "mutation score is 0.900000 (3 passed, 1 failed, 0 duplicated, 0 skipped)"
             )
 

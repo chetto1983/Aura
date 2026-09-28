@@ -5,14 +5,13 @@ import argparse
 import datetime as dt
 import json
 import pathlib
-import re
-import shutil
 import subprocess
 import sys
 import time
 from typing import Any
 
 from evidence_metadata import candidate_commit
+from go_mutation_cache import go_mutesting, measurer, provenance
 
 
 GO_SCOPES = {
@@ -60,37 +59,6 @@ REQUIRED_SCOPE_IDS = frozenset(
 )
 KILLED_STATUSES = ("Killed", "Timeout")
 SURVIVED_STATUSES = ("Survived", "NoCoverage")
-SUMMARY = re.compile(
-    r"mutation score is ([0-9.]+) "
-    r"\((\d+) passed, (\d+) failed, (\d+) duplicated, (\d+) skipped"
-    r"(?:, total is \d+)?\)",
-    re.IGNORECASE,
-)
-
-
-def parse_go_mutation_output(output: str) -> dict[str, Any]:
-    matches = list(SUMMARY.finditer(output))
-    if not matches:
-        raise ValueError("go-mutesting output has no mutation summary")
-    match = matches[-1]
-    reported, killed, survived, duplicated, skipped = match.groups()
-    killed_count = int(killed)
-    survived_count = int(survived)
-    scored = killed_count + survived_count
-    if scored == 0:
-        raise ValueError("go-mutesting summary has no scored mutants")
-    calculated = killed_count / scored
-    if abs(float(reported) - calculated) > 0.000001:
-        raise ValueError(
-            f"go-mutesting score {reported} differs from counts {killed_count}/{scored}"
-        )
-    return {
-        "killed": killed_count,
-        "survived": survived_count,
-        "duplicated": int(duplicated),
-        "skipped": int(skipped),
-        "score_percent": calculated * 100,
-    }
 
 
 def normalized_report_path(path: str) -> str:
@@ -180,32 +148,10 @@ def parse_frontend_report(
     }
 
 
-def run_go_scope(
-    executable: str,
-    repo: pathlib.Path,
-    scope_id: str,
-    relative_path: str,
-    log_dir: pathlib.Path,
-) -> dict[str, Any]:
-    completed = subprocess.run(
-        [executable, relative_path],
-        cwd=repo,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-        timeout=1800,
-    )
-    log_dir.mkdir(parents=True, exist_ok=True)
-    (log_dir / f"{scope_id}.log").write_text(completed.stdout, encoding="utf-8")
-    if completed.returncode != 0:
-        raise RuntimeError(f"{scope_id}: go-mutesting exited {completed.returncode}")
-    return scope(scope_id, [relative_path], parse_go_mutation_output(completed.stdout))
-
-
 def scope(scope_id: str, files: list[str], parsed: dict[str, Any]) -> dict[str, Any]:
     # `executed` is READ OFF the counts, never asserted: a scope that scored nothing says so
-    # in the field release readiness reads back, instead of claiming it ran.
+    # in the field release readiness reads back, instead of claiming it ran. A reused Go
+    # scope carries the counts measured on its identical input closure.
     return {
         "id": scope_id,
         "executed": parsed["killed"] + parsed["survived"] > 0,
@@ -235,9 +181,7 @@ def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     repo = pathlib.Path(__file__).resolve().parents[1]
-    executable = args.go_mutesting or shutil.which("go-mutesting")
-    if not executable:
-        raise RuntimeError("go-mutesting is required")
+    executable = go_mutesting(args.go_mutesting)
     output = args.output.resolve()
     log_dir = args.log_dir.resolve()
     report: dict[str, Any] = {
@@ -249,10 +193,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "scopes": [],
     }
     try:
+        measure_scope = measurer(
+            executable, repo, log_dir, args.go_cache_dir.resolve(), GO_SCOPES.values()
+        )
         for scope_id, relative_path in GO_SCOPES.items():
-            report["scopes"].append(
-                run_go_scope(executable, repo, scope_id, relative_path, log_dir)
+            measured = measure_scope(scope_id, relative_path)
+            print(
+                f"critical-mutation-gate: {scope_id} {measured['score_percent']:.2f}% "
+                f"({provenance(measured)})",
+                flush=True,
             )
+            report["scopes"].append(scope(scope_id, [relative_path], measured))
         frontend_report = args.frontend_report.resolve()
         report["scopes"].append(
             scope(
@@ -301,6 +252,11 @@ def parse_args() -> argparse.Namespace:
         "--log-dir",
         type=pathlib.Path,
         default=pathlib.Path("artifacts/production-readiness/mutation-logs"),
+    )
+    parser.add_argument(
+        "--go-cache-dir",
+        type=pathlib.Path,
+        default=pathlib.Path("artifacts/go-mutation-cache"),
     )
     parser.add_argument("--frontend-max-age-hours", type=float, default=24.0)
     parser.add_argument("--minimum", type=float, default=70.0)
