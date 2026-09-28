@@ -213,6 +213,59 @@ func TestDeleteLeavesARowWhoseObjectIsInAnotherBucket(t *testing.T) {
 	}
 }
 
+// rowsFailing lets the file manager reach an asset store whose lookup or finalize fails.
+type rowsFailing struct {
+	*fakeAssetStore
+	lookup, finalize error
+}
+
+func (r rowsFailing) ByObjectKey(ctx context.Context, identityID, key string) (Asset, error) {
+	if r.lookup != nil {
+		return Asset{}, r.lookup
+	}
+	return r.fakeAssetStore.ByObjectKey(ctx, identityID, key)
+}
+
+func (r rowsFailing) Finalize(ctx context.Context, id, identityID string) error {
+	if r.finalize != nil {
+		return r.finalize
+	}
+	return r.fakeAssetStore.Finalize(ctx, id, identityID)
+}
+
+// Without knowing whether a row holds the key, removing the bytes could strand a live row over
+// nothing, so the key stays and the delete reports the failure.
+func TestDeleteKeepsTheKeyWhenItsRowCannotBeLookedUp(t *testing.T) {
+	browser := opsFixture(t, "chat/row.pdf")
+	browser.Rows = rowsFailing{fakeAssetStore: newFakeAssetStore(), lookup: errors.New("database unreachable")}
+	if err := browser.Delete(t.Context(), "owner-1", []string{"/chat/row.pdf"}); err == nil {
+		t.Fatal("a delete that could not check the asset rows was reported done")
+	}
+	if !slices.Contains(allKeys(t, browser), "chat/row.pdf") {
+		t.Fatal("the object went although its row was never marked")
+	}
+}
+
+// Once the bytes are gone the file is gone for the person who asked; a row that could not be
+// finalized stays deleting, hidden, for the retention sweep, and the miss is logged.
+func TestDeleteSucceedsWhenOnlyTheRowIsLeftForTheSweep(t *testing.T) {
+	browser := opsFixture(t, "chat/row.pdf")
+	rows := withAssetRow(browser,
+		Asset{ID: "asset-row", IdentityID: "owner-1", Status: StatusAccepted, ObjectBucket: "aura-assets", ObjectKey: "chat/row.pdf"})
+	browser.Rows = rowsFailing{fakeAssetStore: rows, finalize: errors.New("serialization failure")}
+	logs := captureWarnings(t)
+
+	if err := browser.Delete(t.Context(), "owner-1", []string{"/chat/row.pdf"}); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if row, ok := rows.row("asset-row"); !ok || row.Status != StatusDeleting {
+		t.Fatalf("row = %+v (present %v), want it deleting for the sweep", row, ok)
+	}
+	if !strings.Contains(logs.String(), "asset-row") {
+		t.Fatalf("warning = %q, want the asset id", logs.String())
+	}
+}
+
 // The row is hidden before the bytes go, as in Service.Delete, so an object the store refuses
 // to remove leaves a deleting row for the retention sweep, never a live row over nothing.
 func TestDeleteLeavesTheRowDeletingWhenItsObjectStays(t *testing.T) {

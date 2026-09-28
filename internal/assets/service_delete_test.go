@@ -116,6 +116,58 @@ func TestServiceDeleteLeavesTheRowDeletingWhenTheObjectStays(t *testing.T) {
 	}
 }
 
+// Only the first step can fail the call: without a store, or for a row the caller cannot mark,
+// nothing was deleted and the caller must hear so.
+func TestServiceDeleteFailsWhenTheRowCannotBeMarked(t *testing.T) {
+	if _, err := (&Service{}).Delete(context.Background(), serviceIdentityID, "asset-x"); err == nil {
+		t.Fatal("an unconfigured service reported a delete")
+	}
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	asset := seedStoredAsset(t, svc, store, serviceIdentityID, "asset-del-4", time.Now())
+	if _, err := svc.Delete(context.Background(), "someone-else", asset.ID); err == nil {
+		t.Fatal("another identity's delete was reported as done")
+	}
+	if !objectExists(t, svc.Objects, asset) {
+		t.Fatal("a refused delete removed the object")
+	}
+}
+
+// A row with no object has nothing to remove from a bucket and leaves the table at once.
+func TestServiceDeleteFinishesARowWithoutAnObject(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	store.assets["asset-bare"] = Asset{ID: "asset-bare", IdentityID: serviceIdentityID, Status: StatusFailed}
+	if _, err := svc.Delete(context.Background(), serviceIdentityID, "asset-bare"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, ok := store.row("asset-bare"); ok {
+		t.Fatal("a row without an object stayed")
+	}
+}
+
+// When the owner's bucket cannot be reached at all the object may still exist, so the row is
+// not finalized: it stays deleting for the sweep, like any other failed removal.
+func TestServiceDeleteKeepsTheRowWhenTheOwnersStoreIsUnreachable(t *testing.T) {
+	for name, configure := range map[string]func(*Service){
+		"resolver fails": func(svc *Service) {
+			svc.IdentityObjects = fakeResolver{err: errors.New("no credentials for this identity")}
+			svc.PerIdentityStore = (&recordingFactory{store: svc.Objects}).factory
+		},
+		"no object store": func(svc *Service) { svc.Objects = nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, store := newAssetServiceTestRig(t, Limits{})
+			asset := seedStoredAsset(t, svc, store, serviceIdentityID, "asset-del-5", time.Now())
+			configure(svc)
+			if _, err := svc.Delete(context.Background(), serviceIdentityID, asset.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if row, ok := store.row(asset.ID); !ok || row.Status != StatusDeleting {
+				t.Fatalf("row = %+v (present %v), want it deleting for the sweep", row, ok)
+			}
+		})
+	}
+}
+
 // A key already gone from the bucket counts as removed, so a retry after a partial failure
 // converges instead of failing forever on the object it already deleted.
 func TestServiceDeleteTreatsAMissingObjectAsRemoved(t *testing.T) {

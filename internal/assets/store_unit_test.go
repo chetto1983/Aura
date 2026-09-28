@@ -105,6 +105,24 @@ func TestStoreLifecycleUpdatesValidateUUIDs(t *testing.T) {
 	}
 }
 
+// The delete sweep hands Finalize and ListDeleting ids it read back from the table, yet they
+// validate like every other targeted statement: a malformed id never reaches Postgres.
+func TestStoreDeleteLifecycleValidatesUUIDs(t *testing.T) {
+	store := NewStore(&captureAssetDBTX{})
+	ctx := context.Background()
+	for name, err := range map[string]error{
+		`invalid asset id "not-a-uuid"`:    store.Finalize(ctx, "not-a-uuid", unitIdentityID),
+		`invalid identity_id "not-a-uuid"`: store.Finalize(ctx, unitAssetID, "not-a-uuid"),
+	} {
+		if err == nil || !strings.Contains(err.Error(), name) {
+			t.Fatalf("Finalize error = %v, want %s", err, name)
+		}
+	}
+	if _, err := store.ListDeleting(ctx, "not-a-uuid", 1); err == nil || !strings.Contains(err.Error(), `invalid identity_id "not-a-uuid"`) {
+		t.Fatalf("ListDeleting error = %v, want an invalid identity", err)
+	}
+}
+
 func invokeLifecycleMethod(t *testing.T, store *Store, method, assetID, identityID string) error {
 	t.Helper()
 

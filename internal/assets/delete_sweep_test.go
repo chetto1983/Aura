@@ -91,6 +91,33 @@ func TestDeleteSweepReportsWhatItCouldNotRemoveAndRetriesItNextRun(t *testing.T)
 	}
 }
 
+// unlistableStore fails ListDeleting for one identity, as a lost connection would mid-sweep.
+type unlistableStore struct {
+	*fakeAssetStore
+	identityID string
+}
+
+func (s unlistableStore) ListDeleting(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+	if identityID == s.identityID {
+		return nil, errors.New("connection reset")
+	}
+	return s.fakeAssetStore.ListDeleting(ctx, identityID, limit)
+}
+
+// One identity the sweep cannot read does not cost the others their run.
+func TestDeleteSweepCarriesOnPastAnIdentityItCannotRead(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	readable := seedStoredAsset(t, svc, store, "owner-b", "b-stuck", time.Now())
+	markStuck(store, readable)
+	svc.Store = unlistableStore{fakeAssetStore: store, identityID: "owner-a"}
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a", "owner-b"}}.
+		SweepExpired(context.Background(), time.Now())
+	if finished != 1 || err == nil || !strings.Contains(err.Error(), "owner-a") {
+		t.Fatalf("sweep = %d, %v; want owner-b finished and owner-a named", finished, err)
+	}
+}
+
 func TestDeleteSweepFailsWhenItCannotListIdentities(t *testing.T) {
 	svc, _ := newAssetServiceTestRig(t, Limits{})
 	want := errors.New("identities unavailable")
