@@ -45,7 +45,6 @@ func TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, startVersion := range []int64{0, 42, 45} {
-		startVersion := startVersion
 		t.Run(fmt.Sprintf("from_%d", startVersion), func(t *testing.T) {
 			database := fmt.Sprintf("aura_cli_migrate_%d_%d", startVersion, time.Now().UnixNano())
 			if _, err := admin.Exec(ctx, `CREATE DATABASE `+quoteTestIdentifier(database)); err != nil {

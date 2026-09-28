@@ -310,7 +310,7 @@ WHERE locktype = 'advisory' AND granted
 
 func testMaintenanceCompleteReconcileRace(t *testing.T, ctx context.Context, migrateURL string, pool *pgxpool.Pool) {
 	t.Helper()
-	for iteration := 0; iteration < 20; iteration++ {
+	for iteration := range 20 {
 		t.Run(fmt.Sprintf("complete-vs-reconcile-%02d", iteration), func(t *testing.T) {
 			operationKey := fmt.Sprintf("reset-complete-reconcile-race-%02d", iteration)
 			prepared, _, err := prepareCLIIdempotency(ctx, []string{"db", "reset", "--yes", "--operation-key", operationKey}, nil)
