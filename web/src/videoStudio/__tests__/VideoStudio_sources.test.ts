@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommandRefusal } from '../commands';
 import { emptyProject, type VideoProject } from '../project';
 import {
@@ -306,25 +306,49 @@ describe('a sound at the door', () => {
 });
 
 describe('probeAsset', () => {
-  it('reads a library asset through the probe a picked file goes through, typed by its route', async () => {
+  /** What /api/assets/{id}/download answers for EVERY asset (the D-10 stored-XSS guard): the
+   *  bytes carry no type of their own. */
+  function serveAsTheAssetRoute(): void {
     vi.stubGlobal(
       'fetch',
-      vi.fn(() => Promise.resolve(new Response('x', { headers: { 'Content-Type': 'audio/wav' } }))),
+      vi.fn(() =>
+        Promise.resolve(
+          new Response('x', { headers: { 'Content-Type': 'application/octet-stream' } }),
+        ),
+      ),
     );
+  }
+
+  beforeEach(() => {
+    media.probeVideo.mockClear();
+  });
+
+  // Operator, 2026-09-28: a sound picked from the library was refused as an undecodable clip —
+  // the route's octet-stream sent it down the video probe.
+  it('reads a library sound as a sound by the type it was stored with', async () => {
+    serveAsTheAssetRoute();
     media.probeAudio.mockResolvedValue({ duration: 4, decodable: true });
-    expect(await probeAsset('bed', SOURCE)).toEqual({
+    expect(await probeAsset('bed', 'audio/wav', SOURCE)).toEqual({
       kind: 'audio',
       duration: 4,
       width: 0,
       height: 0,
     });
+    expect(media.probeVideo).not.toHaveBeenCalled();
     expect(fetch).toHaveBeenCalledWith('/api/assets/bed/download', {
       credentials: 'same-origin',
     });
   });
 
+  it('reads a library picture as a still by the type it was stored with', async () => {
+    serveAsTheAssetRoute();
+    decodesImages(true);
+    expect(await probeAsset('photo', 'image/png', SOURCE)).toEqual(STILL);
+    expect(media.probeVideo).not.toHaveBeenCalled();
+  });
+
   it('calls a library asset deleted since the list was read what it is: gone', async () => {
     serve(404);
-    await expect(probeAsset('bed', SOURCE)).rejects.toThrow(REFUSAL_MISSING_ASSET);
+    await expect(probeAsset('bed', 'audio/wav', SOURCE)).rejects.toThrow(REFUSAL_MISSING_ASSET);
   });
 });

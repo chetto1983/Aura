@@ -157,11 +157,16 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Every asset the editor reads answers with bytes of this type, as the asset route does. */
-function serveTyped(type: string): void {
+/** Every asset the editor reads answers as the asset route does for ALL assets: an
+ *  application/octet-stream attachment (the D-10 stored-XSS guard), whatever it holds. */
+function serveAsTheAssetRoute(): void {
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve(new Response('x', { headers: { 'Content-Type': type } }))),
+    vi.fn(() =>
+      Promise.resolve(
+        new Response('x', { headers: { 'Content-Type': 'application/octet-stream' } }),
+      ),
+    ),
   );
 }
 
@@ -222,7 +227,7 @@ describe('VideoStudio, with sounds', () => {
   });
 
   it('puts a sound picked from the library on a lane, read where it is stored, never uploaded', async () => {
-    serveTyped('audio/wav');
+    serveAsTheAssetRoute();
     mount(film());
     fireEvent.click(await screen.findByRole('button', { name: i18n.t('videoStudio.audio.add') }));
     const panel = await screen.findByRole('dialog', {
@@ -235,7 +240,7 @@ describe('VideoStudio, with sounds', () => {
   });
 
   it('opens the clip panel from Add a clip: its upload opens the picker, a library clip comes next', async () => {
-    serveTyped('video/mp4');
+    serveAsTheAssetRoute();
     media.probeVideo.mockResolvedValue({
       duration: 5,
       width: 1920,

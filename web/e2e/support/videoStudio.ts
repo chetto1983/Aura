@@ -145,7 +145,13 @@ export async function openStudioWith(page: Page, assetId: string, prompt: string
   await page.route('**/api/studio/history?**', (route) =>
     route.fulfill({ json: { records: [videoRecord(assetId, prompt)] } }),
   );
-  await page.route('**/api/studio/library**', (route) => route.fulfill({ json: { assets: [] } }));
+  // Only the image Studio's own picture list is stubbed. The video editor's sound and clip
+  // pickers ask for other kinds and read the real library: an empty stub there hid a pick that
+  // failed (operator, 2026-09-28).
+  await page.route(
+    (url) => url.pathname === '/api/studio/library' && url.search === '?modality=image',
+    (route) => route.fulfill({ json: { assets: [] } }),
+  );
   await page.addInitScript(() => {
     window.localStorage.setItem('aura.shell.surface', 'studio');
   });

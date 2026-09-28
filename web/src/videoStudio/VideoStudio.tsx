@@ -221,7 +221,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   /** An asset the library already holds: read where it is stored, never uploaded again. */
   function addFromLibrary(asset: StudioAssetRef) {
     return admit(asset.file_name, async () => ({
-      probed: await probeAsset(asset.id, assetSource),
+      probed: await probeAsset(asset.id, asset.mime_type, assetSource),
       assetId: asset.id,
     }));
   }

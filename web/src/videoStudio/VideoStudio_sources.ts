@@ -254,20 +254,25 @@ async function fetchSource(assetId: string, source: ProjectAssetSource): Promise
   return response.blob();
 }
 
-/** An asset already stored — a seeded one, or one picked from the library — read through the
- *  same probe a picked file goes through: nothing is uploaded, and a clip this browser cannot
- *  decode is refused at the same door. */
+/** An asset picked from the library, read through the same probe a picked file goes through:
+ *  nothing is uploaded, and a clip this browser cannot decode is refused at the same door. The
+ *  download route answers EVERY asset as application/octet-stream (the D-10 stored-XSS guard),
+ *  so the bytes are typed with the type the asset was stored with — untyped, a sound or a
+ *  picture went down the video probe and was refused as an undecodable clip. */
 export async function probeAsset(
   assetId: string,
+  mimeType: string,
   source: ProjectAssetSource,
 ): Promise<ProbedSource> {
-  return probeSource(await fetchSource(assetId, source));
+  const bytes = await fetchSource(assetId, source);
+  return probeSource(new Blob([bytes], { type: mimeType }));
 }
 
 /**
  * The project the editor opens on, and the sources it already knows are gone. A seeded asset
  * goes through the SAME probe as a picked file, so a generated clip this browser cannot decode
- * is refused at the entrance instead of exporting black.
+ * is refused at the entrance instead of exporting black. It is always a Studio video, which the
+ * video probe recognises by its bytes, so the untyped download needs no stored type here.
  */
 export async function openedProject(
   open: StudioOpen,
@@ -275,7 +280,7 @@ export async function openedProject(
 ): Promise<LoadedProject> {
   if (open.kind === 'project') return { project: open.project, missing: [] };
   if (open.kind === 'saved') return loadProject(open.assetId, source);
-  const edit = sourceEdit(await probeAsset(open.assetId, source), open.assetId);
+  const edit = sourceEdit(await probeSource(await fetchSource(open.assetId, source)), open.assetId);
   return {
     project: edit(emptyProject(open.name.trim(), STARTING_SIZE, STARTING_FPS)),
     missing: [],
