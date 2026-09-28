@@ -1,4 +1,11 @@
-import { test as base, expect, type Download, type Page, type Request } from '@playwright/test';
+import {
+  test as base,
+  expect,
+  type Download,
+  type Page,
+  type Request,
+  type Response,
+} from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
 // Several files at once, against the REAL bucket, on a desktop and on a phone.
@@ -112,7 +119,14 @@ async function openScratch(page: Page, folder: string, projectName: string): Pro
       : page.getByRole('navigation', { name: /Modes|Modalit/ });
   await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
   await card(page, folder.slice(1)).dblclick();
-  await expect(card(page, 'charlie.txt')).toBeVisible();
+  // `sub` is the one entry no test moves or deletes.
+  await expect(card(page, 'sub')).toBeVisible();
+}
+
+// A refusal names its reason: the status alone says a write failed, the body says why.
+async function expectAccepted(response: Response, verb: string): Promise<void> {
+  const reason = response.ok() ? '' : await response.text();
+  expect(response.status(), `the ${verb} was refused by the server: ${reason}`).toBe(200);
 }
 
 // The pointer each project has: Ctrl-click on a desktop, the card menu's Select and plain taps
@@ -174,7 +188,7 @@ test('two selected files are deleted together, in one request', async ({
       res.request().method() === 'DELETE',
   );
   await page.getByRole('button', { name: 'OK' }).click();
-  expect((await deleted).status(), 'the delete was refused by the server').toBe(200);
+  await expectAccepted(await deleted, 'delete');
 
   const del = writes.filter((write) => write.method === 'DELETE');
   expect(del, 'several files must go in ONE request').toHaveLength(1);
@@ -204,7 +218,7 @@ test('two selected files are moved together into a folder', async ({ page, scrat
   // Paste from a file's own ⋮ lands in the folder being viewed; it is reachable on both.
   await more(page, `${folder}/sub/keep.txt`).click();
   await choose(page, 'Paste');
-  expect((await moved).status(), 'the move was refused by the server').toBe(200);
+  await expectAccepted(await moved, 'move');
 
   const put = writes.filter((write) => write.method === 'PUT');
   expect(put, 'several files must go in ONE request').toHaveLength(1);
