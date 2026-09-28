@@ -97,6 +97,12 @@ func decodeToolPreview(in PreviewInput) (any, bool) {
 		return shellCodeInput(in.ResultPreview), true
 	case "todo_write":
 		return decodeTodoPreview(in)
+	case "patch":
+		return decodePatchDiff(in)
+	case "read_file":
+		return decodeReadFilePreview(in)
+	case "write_file":
+		return decodeWriteFilePreview(in)
 	default:
 		return nil, false
 	}

@@ -11,6 +11,7 @@ import { WebResultDisplay } from './WebResultDisplay';
 import { CodeDisplay } from './CodeDisplay';
 import { TodoDisplay } from './TodoDisplay';
 import { TerminalDisplay } from './TerminalDisplay';
+import { DiffDisplay } from './DiffDisplay';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point, now
 // hosted INSIDE the compact ToolActivityCard's expanded body (compact-chat spec
@@ -92,8 +93,14 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         raw()
       );
     case 'code':
-      return payload.code && typeof payload.code.body === 'string' ? (
-        <CodeDisplay payload={payload} />
+      return payload.code &&
+        typeof payload.code.body === 'string' &&
+        (payload.code.filename === undefined || typeof payload.code.filename === 'string') &&
+        (payload.code.first_line === undefined ||
+          (Number.isInteger(payload.code.first_line) && payload.code.first_line > 0)) &&
+        (payload.code.notice === undefined || typeof payload.code.notice === 'string') &&
+        (payload.code.extracted === undefined || typeof payload.code.extracted === 'boolean') ? (
+        <CodeDisplay payload={payload} {...(result !== undefined ? { rawResult: result } : {})} />
       ) : (
         raw()
       );
@@ -132,6 +139,35 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         (payload.terminal.truncated === undefined ||
           typeof payload.terminal.truncated === 'boolean') ? (
         <TerminalDisplay payload={payload} />
+      ) : (
+        raw()
+      );
+    case 'diff':
+      return payload.diff &&
+        typeof payload.diff.filename === 'string' &&
+        payload.diff.filename.length > 0 &&
+        payload.diff.filename.length <= 1024 &&
+        Number.isInteger(payload.diff.additions) &&
+        Number.isInteger(payload.diff.deletions) &&
+        payload.diff.additions >= 0 &&
+        payload.diff.deletions >= 0 &&
+        Array.isArray(payload.diff.lines) &&
+        payload.diff.lines.length > 0 &&
+        payload.diff.lines.length <= 1000 &&
+        payload.diff.lines.every(
+          (line) =>
+            line !== null &&
+            typeof line === 'object' &&
+            ['context', 'added', 'removed'].includes(line.kind) &&
+            typeof line.text === 'string' &&
+            line.text.length <= 65536,
+        ) &&
+        payload.diff.lines.reduce((total, line) => total + line.text.length, 0) <= 65536 &&
+        payload.diff.lines.filter((line) => line.kind === 'added').length ===
+          payload.diff.additions &&
+        payload.diff.lines.filter((line) => line.kind === 'removed').length ===
+          payload.diff.deletions ? (
+        <DiffDisplay payload={payload} {...(result !== undefined ? { rawResult: result } : {})} />
       ) : (
         raw()
       );

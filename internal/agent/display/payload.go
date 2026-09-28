@@ -27,6 +27,8 @@ const (
 	KindTodo Kind = "todo"
 	// KindTerminal identifies a verified completed shell result.
 	KindTerminal Kind = "terminal"
+	// KindDiff identifies a verified unified patch result.
+	KindDiff Kind = "diff"
 )
 
 // Payload is the flat tagged union a normalizer emits (R1). It is a struct, not an
@@ -49,6 +51,7 @@ type Payload struct {
 	Swarm      []ChildReport `json:"swarm,omitempty"`
 	Todo       *Todo         `json:"todo,omitempty"`
 	Terminal   *Terminal     `json:"terminal,omitempty"`
+	Diff       *Diff         `json:"diff,omitempty"`
 	Sources    []Source      `json:"sources,omitempty"`
 }
 
@@ -79,6 +82,10 @@ type Code struct {
 	Body      string `json:"body"`
 	Lang      string `json:"lang,omitempty"`
 	Cancelled bool   `json:"cancelled,omitempty"`
+	Filename  string `json:"filename,omitempty"`
+	FirstLine int    `json:"first_line,omitempty"`
+	Notice    string `json:"notice,omitempty"`
+	Extracted bool   `json:"extracted,omitempty"`
 }
 
 // Artifact is a local file output chip (filename + size + path); it reuses the

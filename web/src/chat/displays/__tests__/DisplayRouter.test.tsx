@@ -129,6 +129,49 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('raw shell').tagName.toLowerCase()).toBe('pre');
   });
 
+  it('routes a verified diff and rejects inconsistent line counts', () => {
+    const complete = {
+      type: 'diff',
+      tool_call_id: 'patch-1',
+      diff: {
+        filename: 'a.txt',
+        additions: 1,
+        deletions: 1,
+        lines: [
+          { kind: 'removed', text: 'old' },
+          { kind: 'added', text: 'new' },
+        ],
+      },
+    } as DisplayPayload;
+    const { rerender } = render(
+      <DisplayRouter payload={complete} toolName="patch" result="raw patch" />,
+    );
+    expect(screen.getByText('a.txt')).toBeTruthy();
+    rerender(
+      <DisplayRouter
+        payload={{ ...complete, diff: { ...complete.diff!, additions: 2 } }}
+        toolName="patch"
+        result="raw malformed patch"
+      />,
+    );
+    expect(screen.getByText('raw malformed patch').tagName.toLowerCase()).toBe('pre');
+  });
+
+  it('keeps an oversized diff line in the raw panel', () => {
+    const malformed = {
+      type: 'diff',
+      tool_call_id: 'patch-oversized',
+      diff: {
+        filename: 'a.txt',
+        additions: 1,
+        deletions: 0,
+        lines: [{ kind: 'added', text: 'x'.repeat(65537) }],
+      },
+    } as DisplayPayload;
+    render(<DisplayRouter payload={malformed} toolName="patch" result="raw long patch" />);
+    expect(screen.getByText('raw long patch').tagName.toLowerCase()).toBe('pre');
+  });
+
   it.each([
     'chart',
     'system_event',

@@ -34,6 +34,7 @@ export type DisplayKind =
   | 'swarm_report'
   | 'todo'
   | 'terminal'
+  | 'diff'
   | 'mcp_view';
 
 /** A single web-search result row (type=web_result). Mirrors display.WebItem. */
@@ -60,6 +61,20 @@ export interface DisplayCode {
   readonly body: string;
   readonly lang?: string;
   readonly cancelled?: boolean;
+  readonly filename?: string;
+  readonly first_line?: number;
+  readonly notice?: string;
+  readonly extracted?: boolean;
+}
+
+export interface DisplayDiff {
+  readonly filename: string;
+  readonly additions: number;
+  readonly deletions: number;
+  readonly lines: readonly {
+    readonly kind: 'context' | 'added' | 'removed';
+    readonly text: string;
+  }[];
 }
 
 /** A produced file (type=local_artifact). Mirrors display.Artifact. */
@@ -163,6 +178,7 @@ export interface DisplayPayload {
   readonly swarm?: readonly DisplayChildReport[];
   readonly todo?: DisplayTodo;
   readonly terminal?: DisplayTerminal;
+  readonly diff?: DisplayDiff;
   readonly sources?: readonly DisplaySource[];
   /** type=mcp_view — the MCP Apps descriptor the frame renders. */
   readonly mcp_view?: McpViewDescriptor;

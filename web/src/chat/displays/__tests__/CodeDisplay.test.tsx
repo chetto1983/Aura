@@ -33,6 +33,32 @@ beforeEach(() => {
 });
 
 describe('CodeDisplay (DISP-02 / D-10 / HARDEN-08)', () => {
+  it('can reveal the exact numbered raw file result', () => {
+    mockHighlight.mockReturnValue(new Promise(() => undefined));
+    render(<CodeDisplay payload={payload('hello')} rawResult={'3|hello\n\n[Truncated: more]'} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Show raw result' }));
+    expect(screen.getByText((_, node) => node?.tagName === 'PRE' && node.textContent === '3|hello\n\n[Truncated: more]')).toBeTruthy();
+  });
+
+  it('shows a verified filename, first line, extraction label and pagination notice', () => {
+    mockHighlight.mockReturnValue(new Promise(() => undefined));
+    const file = {
+      ...payload('hello'),
+      code: {
+        body: 'hello',
+        filename: 'report.txt',
+        first_line: 3,
+        extracted: true,
+        notice: '[Truncated: showing lines 3-3 of 10. Use offset=4 to continue reading.]',
+      },
+    } as DisplayPayload;
+    render(<CodeDisplay payload={file} />);
+    expect(screen.getByText('report.txt')).toBeTruthy();
+    expect(screen.getByText('3')).toBeTruthy();
+    expect(screen.getByText('Extracted text')).toBeTruthy();
+    expect(screen.getByText(file.code!.notice!)).toBeTruthy();
+  });
+
   it('renders a PLAIN escaped <pre> immediately (before/without the lazy chunk)', () => {
     // Never resolves → the plain fallback is what the operator sees first (A2).
     mockHighlight.mockReturnValue(new Promise(() => undefined));

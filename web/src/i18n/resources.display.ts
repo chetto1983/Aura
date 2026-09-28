@@ -18,6 +18,7 @@ export const displayEn = {
       swarm_report: 'Agents',
       todo: 'Checklist',
       terminal: 'Terminal',
+      diff: 'Diff',
       mcp_view: 'Interactive view',
     },
     mcpView: {
@@ -86,6 +87,9 @@ export const displayEn = {
       expandAria: 'Show the full code body',
       collapseAria: 'Collapse the code body',
       plainText: 'Plain text',
+      extracted: 'Extracted text',
+      showRaw: 'Show raw result',
+      hideRaw: 'Hide raw result',
     },
     todo: {
       title: 'Todos',
@@ -97,6 +101,12 @@ export const displayEn = {
       showAll: 'Show all',
       showLess: 'Show less',
       truncated: 'Output truncated',
+    },
+    diff: {
+      copy: 'Copy diff',
+      copied: 'Copied',
+      showRaw: 'Show raw diff',
+      hideRaw: 'Hide raw diff',
     },
     webResult: {
       relevance: 'Relevance {{score}}',
@@ -303,6 +313,7 @@ export const displayIt = {
       swarm_report: 'Agenti',
       todo: 'Attività',
       terminal: 'Terminale',
+      diff: 'Differenze',
       mcp_view: 'Vista interattiva',
     },
     mcpView: {
@@ -372,6 +383,9 @@ export const displayIt = {
       expandAria: 'Mostra il corpo completo del codice',
       collapseAria: 'Comprimi il corpo del codice',
       plainText: 'Testo semplice',
+      extracted: 'Testo estratto',
+      showRaw: 'Mostra risultato originale',
+      hideRaw: 'Nascondi risultato originale',
     },
     todo: {
       title: 'Attività',
@@ -383,6 +397,12 @@ export const displayIt = {
       showAll: 'Mostra tutto',
       showLess: 'Mostra meno',
       truncated: 'Output troncato',
+    },
+    diff: {
+      copy: 'Copia differenze',
+      copied: 'Copiato',
+      showRaw: 'Mostra differenze originali',
+      hideRaw: 'Nascondi differenze originali',
     },
     webResult: {
       relevance: 'Rilevanza {{score}}',

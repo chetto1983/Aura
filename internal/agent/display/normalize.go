@@ -65,6 +65,18 @@ func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registr
 			return Payload{}, false
 		}
 		return Payload{Type: KindTodo, ToolCallID: toolCallID, Todo: &items}, true
+	case "patch":
+		diff, ok := result.(Diff)
+		if !ok {
+			return Payload{}, false
+		}
+		return Payload{Type: KindDiff, ToolCallID: toolCallID, Diff: &diff}, true
+	case "read_file", "write_file":
+		in, ok := result.(CodeInput)
+		if !ok {
+			return Payload{}, false
+		}
+		return normalizeCode(toolCallID, in)
 	default:
 		return Payload{}, false
 	}

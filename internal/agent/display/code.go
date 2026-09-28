@@ -9,6 +9,10 @@ type CodeInput struct {
 	Body             string
 	Lang             string
 	Cancelled        bool
+	Filename         string
+	FirstLine        int
+	Notice           string
+	Extracted        bool
 	ArtifactFilename string
 	ArtifactSize     int64
 	ArtifactPath     string
@@ -34,6 +38,6 @@ func normalizeCode(toolCallID string, in CodeInput) (Payload, bool) {
 	return Payload{
 		Type:       KindCode,
 		ToolCallID: toolCallID,
-		Code:       &Code{Body: in.Body, Lang: in.Lang, Cancelled: in.Cancelled},
+		Code:       &Code{Body: in.Body, Lang: in.Lang, Cancelled: in.Cancelled, Filename: in.Filename, FirstLine: in.FirstLine, Notice: in.Notice, Extracted: in.Extracted},
 	}, true
 }

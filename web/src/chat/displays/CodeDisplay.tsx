@@ -5,6 +5,7 @@ import { DisplayCardShell } from './DisplayCardShell';
 import { useCopyAction } from './useCopyAction';
 import { highlightCode, resolveLang } from './shiki';
 import { Button } from '@/components/ui/button';
+import { CodeBlock } from '@/components/code-block';
 
 // CodeDisplay (D-10 / HARDEN-08): renders a code/shell body in mono. It shows a
 // PLAIN escaped <pre> immediately (React escapes the text — a <script> in the body
@@ -24,9 +25,10 @@ function isDarkTheme(): boolean {
 
 export interface CodeDisplayProps {
   readonly payload: { readonly code?: DisplayCode };
+  readonly rawResult?: string;
 }
 
-export function CodeDisplay({ payload }: CodeDisplayProps) {
+export function CodeDisplay({ payload, rawResult }: CodeDisplayProps) {
   const { t } = useTranslation();
   const { copied, copy } = useCopyAction();
   const bodyId = useId();
@@ -38,6 +40,7 @@ export function CodeDisplay({ payload }: CodeDisplayProps) {
   const lineCount = body.length === 0 ? 0 : body.split('\n').length;
   const collapsible = lineCount > COLLAPSE_LINES;
   const [expanded, setExpanded] = useState(false);
+  const [showRaw, setShowRaw] = useState(false);
   const [html, setHtml] = useState<string | null>(null);
 
   // Lazy-highlight on mount / when the body or lang changes. The plain <pre> shows
@@ -74,47 +77,48 @@ export function CodeDisplay({ payload }: CodeDisplayProps) {
   const showFull = expanded || !collapsible;
 
   const actions = (
-    <Button
-      type="button"
-      onClick={() => {
-        copy(body);
-      }}
-      aria-label={t('display.code.copyAria')}
-      variant="outline"
-      className="px-3 text-[0.75rem] text-text-muted hover:text-text"
-    >
-      {copied ? t('display.code.copied') : t('display.code.copy')}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Button
+        type="button"
+        onClick={() => {
+          copy(body);
+        }}
+        aria-label={t('display.code.copyAria')}
+        variant="outline"
+        className="px-3 text-[0.75rem] text-text-muted hover:text-text"
+      >
+        {copied ? t('display.code.copied') : t('display.code.copy')}
+      </Button>
+      {rawResult !== undefined ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => setShowRaw((value) => !value)}
+          aria-expanded={showRaw}
+        >
+          {showRaw ? t('display.code.hideRaw') : t('display.code.showRaw')}
+        </Button>
+      ) : null}
+    </div>
   );
 
   return (
     <DisplayCardShell label={label} meta={langMeta} actions={actions}>
-      <div
-        className={`overflow-hidden rounded-[var(--radius-md)] border border-border bg-surface ${
-          showFull ? '' : 'max-h-80'
-        }`}
-      >
-        {html !== null ? (
-          // Shiki output: escaped-span HTML (HARDEN-08-safe — codeToHtml escapes the
-          // code content). We override Shiki's inline pre background to our surface.
-          <div
-            id={bodyId}
-            data-testid="code-highlighted"
-            className="overflow-x-auto p-3 font-mono text-xs leading-relaxed [&_pre]:!bg-transparent [&_pre]:m-0 [&_pre]:whitespace-pre"
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        ) : (
-          // Plain escaped fallback (pre-resolve OR unsupported lang). React escapes
-          // the text — a <script> body is inert text, never an element.
-          <pre
-            id={bodyId}
-            data-testid="code-plain"
-            className="overflow-x-auto p-3 font-mono text-xs leading-relaxed text-text-muted"
-          >
-            {body}
-          </pre>
-        )}
-      </div>
+      <CodeBlock
+        body={body}
+        html={html}
+        bodyId={bodyId}
+        showFull={showFull}
+        {...(code?.filename ? { filename: code.filename } : {})}
+        {...(code?.first_line ? { firstLine: code.first_line } : {})}
+        {...(code?.notice ? { notice: code.notice } : {})}
+        {...(code?.extracted ? { extractedLabel: t('display.code.extracted') } : {})}
+      />
+      {showRaw && rawResult !== undefined ? (
+        <pre className="mt-2 max-w-full overflow-x-auto whitespace-pre rounded-[var(--radius-md)] border border-border bg-surface p-3 text-xs text-text-muted">
+          {rawResult}
+        </pre>
+      ) : null}
 
       {collapsible ? (
         <Button
