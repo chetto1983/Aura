@@ -2,6 +2,8 @@
 // component-only (react-refresh/only-export-components) and the serialization /
 // sort logic is directly unit- and mutation-testable (the toolStatus.ts idiom).
 
+import { compareDataTableValues, type DataTableSort } from '@/components/data-table-data';
+
 export type SortDir = 'asc' | 'desc';
 
 export interface SortState {
@@ -15,9 +17,8 @@ export function isNumericCell(value: string): boolean {
 }
 
 /** A cell that parses cleanly as a finite number sorts numerically; otherwise locale string. */
-export function compareCells(a: string, b: string): number {
-  if (isNumericCell(a) && isNumericCell(b)) return Number(a) - Number(b);
-  return a.localeCompare(b);
+export function compareCells(a: string, b: string, locale = 'en-US'): number {
+  return compareDataTableValues(a, b, locale);
 }
 
 /** RFC-4180-ish CSV: wrap a field in quotes and double interior quotes when needed. */
@@ -42,13 +43,19 @@ export function toTSV(columns: readonly string[], rows: readonly (readonly strin
 export function filterAndSort(
   rows: readonly (readonly string[])[],
   filter: string,
-  sort: SortState | null,
+  sort: SortState | DataTableSort | null,
+  columns?: readonly string[],
+  locale = 'en-US',
 ): readonly (readonly string[])[] {
   const q = filter.trim().toLowerCase();
   const matched = q === '' ? rows : rows.filter((r) => r.some((c) => c.toLowerCase().includes(q)));
   if (sort === null) return matched;
-  const sorted = [...matched].sort((a, b) => compareCells(a[sort.col] ?? '', b[sort.col] ?? ''));
-  if (sort.dir === 'desc') sorted.reverse();
+  const col = 'key' in sort ? (/^c\d+$/.test(sort.key) ? Number(sort.key.slice(1)) : -1) : sort.col;
+  const columnCount = columns?.length ?? rows[0]?.length ?? 0;
+  if (!Number.isInteger(col) || col < 0 || col >= columnCount) return matched;
+  const sorted = [...matched].sort((a, b) => compareCells(a[col] ?? '', b[col] ?? '', locale));
+  const direction = 'key' in sort ? sort.direction : sort.dir;
+  if (direction === 'desc') sorted.reverse();
   return sorted;
 }
 

@@ -33,7 +33,7 @@ func decodeTerminalPreview(in PreviewInput) (Terminal, bool) {
 	}
 	var terminal Terminal
 	switch in.ToolName {
-	case "shell_exec":
+	case "shell_exec", "sandbox_exec":
 		if !foreground {
 			return Terminal{}, false
 		}

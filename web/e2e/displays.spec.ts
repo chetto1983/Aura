@@ -321,7 +321,9 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
 
     // Filter narrows the rows.
     await page.getByPlaceholder('Filter rows').fill('Rome');
-    await expect(page.getByText('Rome')).toBeVisible();
+    await expect(
+      page.getByText('Rome', { exact: true }).and(page.locator(':visible')),
+    ).toBeVisible();
     await expect(page.getByText('Milan')).toHaveCount(0);
   });
 

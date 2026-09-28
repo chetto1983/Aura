@@ -96,6 +96,7 @@ export interface DisplayArtifact {
 export interface DisplayTable {
   readonly columns: readonly string[];
   readonly rows: readonly (readonly string[])[];
+  readonly notice?: string;
 }
 
 /** A numeric series (type=chart). Mirrors display.Chart (swap-ready, D-02). */

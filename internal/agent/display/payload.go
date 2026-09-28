@@ -104,6 +104,7 @@ type Artifact struct {
 type Table struct {
 	Columns []string   `json:"columns"`
 	Rows    [][]string `json:"rows"`
+	Notice  string     `json:"notice,omitempty"`
 }
 
 // Chart is the zero-dep SVG / table-as-bars MVP shape (D-02), swap-ready for a

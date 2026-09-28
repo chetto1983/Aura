@@ -45,7 +45,7 @@ func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registr
 		}
 		return normalizeSwarm(toolCallID, reports)
 	case "shell_exec", "sandbox_exec":
-		if terminal, ok := result.(Terminal); ok && toolName == "shell_exec" {
+		if terminal, ok := result.(Terminal); ok {
 			return Payload{Type: KindTerminal, ToolCallID: toolCallID, Terminal: &terminal}, true
 		}
 		in, ok := result.(CodeInput)
@@ -77,6 +77,12 @@ func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registr
 			return Payload{}, false
 		}
 		return normalizeCode(toolCallID, in)
+	case "search_files":
+		table, ok := result.(Table)
+		if !ok {
+			return Payload{}, false
+		}
+		return Payload{Type: KindTable, ToolCallID: toolCallID, Table: &table}, true
 	default:
 		return Payload{}, false
 	}

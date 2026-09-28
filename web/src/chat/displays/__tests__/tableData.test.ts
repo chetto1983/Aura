@@ -127,6 +127,21 @@ describe('filterAndSort', () => {
     filterAndSort(rows, '', { col: 0, dir: 'desc' });
     expect(rows).toEqual(before);
   });
+
+  it('sorts the full row set by indexed DataTable key and rejects unknown keys', () => {
+    const withDate = [...rows, ['Date', '7']];
+    const sorted = filterAndSort(
+      withDate,
+      '',
+      { key: 'c1', direction: 'asc' },
+      ['Name', 'Qty'],
+      'en-US',
+    );
+    expect(sorted.map((row) => row[0])).toEqual(['Banana', 'Cherry', 'Date', 'Apple']);
+    expect(
+      filterAndSort(withDate, '', { key: 'other', direction: 'asc' }, ['Name', 'Qty'], 'en-US'),
+    ).toEqual(withDate);
+  });
 });
 
 describe('nextSort', () => {

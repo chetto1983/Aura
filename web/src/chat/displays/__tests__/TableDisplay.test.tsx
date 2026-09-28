@@ -22,37 +22,70 @@ const fruits = payload(
   ],
 );
 
+function visibleTable() {
+  return within(screen.getByRole('table'));
+}
+
 describe('TableDisplay (DISP-03 / D-14)', () => {
+  it('shows a partial-walk notice beside structured search rows', () => {
+    const search = {
+      type: 'table',
+      tool_call_id: 'search-1',
+      table: {
+        columns: ['File', 'Line', 'Kind', 'Text'],
+        rows: [['src/a.go', '12', 'match', 'needle <b>']],
+        notice: 'Results are partial',
+      },
+    } as DisplayPayload;
+    render(<TableDisplay payload={search} />);
+    expect(visibleTable().getByText('needle <b>')).toBeTruthy();
+    expect(document.querySelector('b')).toBeNull();
+    expect(screen.getByText('Results are partial')).toBeTruthy();
+  });
+
+  it('keeps the partial-walk notice when a filter has no matches', () => {
+    render(
+      <TableDisplay
+        payload={{
+          table: { columns: ['File'], rows: [['src/a.go']], notice: 'Results are partial' },
+        }}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText('Filter rows'), { target: { value: 'missing' } });
+    expect(screen.getByText('No matches')).toBeTruthy();
+    expect(screen.getByText('Results are partial')).toBeTruthy();
+  });
+
   it('renders a native table with the columns and the first 3 rows by default', () => {
     render(<TableDisplay payload={fruits} />);
     expect(screen.getByRole('table')).toBeTruthy();
-    expect(screen.getByText('Cherry')).toBeTruthy();
-    expect(screen.getByText('Apple')).toBeTruthy();
-    expect(screen.getByText('Banana')).toBeTruthy();
+    expect(visibleTable().getByText('Cherry')).toBeTruthy();
+    expect(visibleTable().getByText('Apple')).toBeTruthy();
+    expect(visibleTable().getByText('Banana')).toBeTruthy();
     // Row 4 is on page 2 (default 3/page).
-    expect(screen.queryByText('Date')).toBeNull();
+    expect(visibleTable().queryByText('Date')).toBeNull();
     expect(screen.getByText('1–3 of 4')).toBeTruthy();
   });
 
   it('paginates rows at 3/page; next advances the window', () => {
     render(<TableDisplay payload={fruits} />);
     fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
-    expect(screen.getByText('Date')).toBeTruthy();
+    expect(visibleTable().getByText('Date')).toBeTruthy();
     expect(screen.getByText('4–4 of 4')).toBeTruthy();
-    expect(screen.queryByText('Cherry')).toBeNull();
+    expect(visibleTable().queryByText('Cherry')).toBeNull();
   });
 
   it('sorts ascending then descending when a column header is clicked, and announces state', () => {
     render(<TableDisplay payload={fruits} />);
-    const sortName = screen.getByRole('button', { name: 'Sort by Name' });
+    const sortName = visibleTable().getByRole('button', { name: 'Sort by Name' });
 
     // First click → ascending. Page-1 window shows the three smallest names.
     fireEvent.click(sortName);
     const headerAsc = sortName.closest('th');
     expect(headerAsc?.getAttribute('aria-sort')).toBe('ascending');
     // Apple, Banana, Cherry are the first 3 ascending; Date is on page 2.
-    expect(screen.getByText('Apple')).toBeTruthy();
-    expect(screen.queryByText('Date')).toBeNull();
+    expect(visibleTable().getByText('Apple')).toBeTruthy();
+    expect(visibleTable().queryByText('Date')).toBeNull();
     expect(within(headerAsc as HTMLElement).getByText('ascending')).toBeTruthy();
 
     // Second click → descending.
@@ -62,12 +95,12 @@ describe('TableDisplay (DISP-03 / D-14)', () => {
 
   it('sorts the numeric column numerically, not lexically', () => {
     render(<TableDisplay payload={fruits} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Sort by Qty' }));
+    fireEvent.click(visibleTable().getByRole('button', { name: 'Sort by Qty' }));
     // Numeric ascending: 1, 3, 7 on page 1 (NOT lexical "1","10","3").
-    expect(screen.getByText('Banana')).toBeTruthy(); // qty 1
-    expect(screen.getByText('Cherry')).toBeTruthy(); // qty 3
-    expect(screen.getByText('Date')).toBeTruthy(); // qty 7
-    expect(screen.queryByText('Apple')).toBeNull(); // qty 10 → page 2
+    expect(visibleTable().getByText('Banana')).toBeTruthy(); // qty 1
+    expect(visibleTable().getByText('Cherry')).toBeTruthy(); // qty 3
+    expect(visibleTable().getByText('Date')).toBeTruthy(); // qty 7
+    expect(visibleTable().queryByText('Apple')).toBeNull(); // qty 10 → page 2
   });
 
   it('filters rows by the query and shows "No matches" with the query when nothing hits', () => {
@@ -75,8 +108,8 @@ describe('TableDisplay (DISP-03 / D-14)', () => {
     const filter = screen.getByPlaceholderText('Filter rows');
 
     fireEvent.change(filter, { target: { value: 'app' } });
-    expect(screen.getByText('Apple')).toBeTruthy();
-    expect(screen.queryByText('Cherry')).toBeNull();
+    expect(visibleTable().getByText('Apple')).toBeTruthy();
+    expect(visibleTable().queryByText('Cherry')).toBeNull();
     expect(screen.getByText('1–1 of 1')).toBeTruthy();
 
     fireEvent.change(filter, { target: { value: 'zzz' } });
@@ -114,8 +147,8 @@ describe('TableDisplay (DISP-03 / D-14)', () => {
     fireEvent.change(screen.getByLabelText('Per page'), { target: { value: '6' } });
     // All 4 rows now fit on page 1; the count shows the full window.
     expect(screen.getByText('1–4 of 4')).toBeTruthy();
-    expect(screen.getByText('Date')).toBeTruthy();
-    expect(screen.getByText('Cherry')).toBeTruthy();
+    expect(visibleTable().getByText('Date')).toBeTruthy();
+    expect(visibleTable().getByText('Cherry')).toBeTruthy();
     // The single-page window hides prev/next.
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull();
   });
@@ -127,7 +160,7 @@ describe('TableDisplay (DISP-03 / D-14)', () => {
 
   it('marks the active sort column header aria-sort and leaves others "none"', () => {
     render(<TableDisplay payload={fruits} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Sort by Name' }));
+    fireEvent.click(visibleTable().getByRole('button', { name: 'Sort by Name' }));
     const headers = screen.getAllByRole('columnheader');
     const nameHeader = headers.find((h) => within(h).queryByText('Name'));
     const qtyHeader = headers.find((h) => within(h).queryByText('Qty'));

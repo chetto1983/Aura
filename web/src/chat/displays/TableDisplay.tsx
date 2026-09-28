@@ -1,23 +1,21 @@
 import { useId, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DisplayTable } from './types';
 import { DisplayCardShell } from './DisplayCardShell';
 import { useCopyAction } from './useCopyAction';
-import { filterAndSort, isNumericCell, nextSort, toCSV, toTSV, type SortState } from './tableData';
+import { filterAndSort, toCSV, toTSV } from './tableData';
+import { DataTable, type DataTableColumn } from '@/components/data-table';
+import type { DataTableSort } from '@/components/data-table-data';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 // TableDisplay (DISP-03 / D-14): a client-side sortable, filterable, copyable,
-// CSV-exportable table over the trusted `{columns, rows}` payload, paginated in-card
-// (default 3 rows/page). It keeps a single native <table> (one <thead>, a windowed
-// <tbody>) so sort headers, row semantics, and a11y reads stay correct; the in-card
-// pagination footer mirrors DisplayPagination's chrome (prev/next, "X–Y of N",
-// per-page) but windows ROWS, which a generic children-paginator can't do inside a
-// <tbody>. All values render as React-escaped <td> text — no markdown, no HTML
-// (T-26-13). Numeric/id cells use the mono face. Accent is reserved for the active
-// sort-column underline + the active page number only (Color rule).
+// CSV-exportable table over trusted `{columns, rows}`, paginated in-card (default
+// 3 rows/page). Elements DataTable renders a semantic table at wide widths and
+// labeled cards at narrow widths. Filtering and sorting happen over the full row
+// set before pagination. Cell values render as escaped React text (T-26-13).
 
 const PER_PAGE_OPTIONS = [3, 6, 9] as const;
 
@@ -26,11 +24,11 @@ export interface TableDisplayProps {
 }
 
 export function TableDisplay({ payload }: TableDisplayProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { copied, copy } = useCopyAction();
   const selectId = useId();
   const [filter, setFilter] = useState('');
-  const [sort, setSort] = useState<SortState | null>(null);
+  const [sort, setSort] = useState<DataTableSort | null>(null);
   const [page, setPage] = useState(0);
   const [perPage, setPerPage] = useState<number>(3);
 
@@ -38,13 +36,17 @@ export function TableDisplay({ payload }: TableDisplayProps) {
   // render off a fresh `?? []` reference (react-hooks/exhaustive-deps).
   const columns = useMemo(() => payload.table?.columns ?? [], [payload.table]);
   const rows = useMemo(() => payload.table?.rows ?? [], [payload.table]);
+  const notice = payload.table?.notice;
 
-  const filtered = useMemo(() => filterAndSort(rows, filter, sort), [rows, filter, sort]);
-
-  const toggleSort = (col: number) => {
-    setPage(0);
-    setSort((prev) => nextSort(prev, col));
-  };
+  const filtered = useMemo(
+    () => filterAndSort(rows, filter, sort, columns, i18n.language),
+    [rows, filter, sort, columns, i18n.language],
+  );
+  const dataColumns: DataTableColumn[] = columns.map((label, index) => ({
+    key: `c${String(index)}`,
+    label,
+    priority: index === 0 ? 'primary' : 'secondary',
+  }));
 
   const label = t('display.type.table');
 
@@ -53,6 +55,7 @@ export function TableDisplay({ payload }: TableDisplayProps) {
     return (
       <DisplayCardShell label={label}>
         <EmptyState heading={t('display.table.emptyHeading')} body={t('display.table.emptyBody')} />
+        {notice ? <p className="mt-2 text-xs text-text-muted">{notice}</p> : null}
       </DisplayCardShell>
     );
   }
@@ -62,6 +65,9 @@ export function TableDisplay({ payload }: TableDisplayProps) {
   const current = Math.min(page, totalPages - 1);
   const start = current * perPage;
   const visible = filtered.slice(start, start + perPage);
+  const dataRows = visible.map((cells) =>
+    Object.fromEntries(cells.map((value, index) => [`c${String(index)}`, value])),
+  );
   const from = total === 0 ? 0 : start + 1;
   const to = Math.min(start + perPage, total);
 
@@ -122,73 +128,20 @@ export function TableDisplay({ payload }: TableDisplayProps) {
         />
       ) : (
         <>
-          <div className="overflow-x-auto rounded-[var(--radius-md)] border border-border">
-            <table className="min-w-full border-collapse text-left text-sm">
-              <thead>
-                <tr>
-                  {columns.map((col, ci) => {
-                    const active = sort?.col === ci;
-                    const dir = active ? sort.dir : undefined;
-                    return (
-                      <th
-                        key={ci}
-                        aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                        className="border-b border-border bg-surface-2 p-0 text-left"
-                      >
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => {
-                            toggleSort(ci);
-                          }}
-                          aria-label={t('display.table.sortBy', { column: col })}
-                          className={`h-auto min-h-11 w-full justify-start rounded-none px-3 text-[0.75rem] uppercase text-text-faint hover:text-text ${active ? 'border-b-2 border-b-border-strong text-text' : ''}`}
-                        >
-                          <span>{col}</span>
-                          {active ? (
-                            <span aria-hidden="true" className="text-accent-text">
-                              {dir === 'asc' ? (
-                                <ArrowUp data-icon aria-hidden="true" />
-                              ) : (
-                                <ArrowDown data-icon aria-hidden="true" />
-                              )}
-                            </span>
-                          ) : null}
-                          <span className="sr-only">
-                            {active
-                              ? t(
-                                  dir === 'asc'
-                                    ? 'display.table.sortedAsc'
-                                    : 'display.table.sortedDesc',
-                                )
-                              : ''}
-                          </span>
-                        </Button>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((row, ri) => (
-                  <tr key={start + ri}>
-                    {columns.map((_, ci) => {
-                      const value = row[ci] ?? '';
-                      return (
-                        <td
-                          key={ci}
-                          className={`border-b border-border px-3 py-2 text-text-muted ${isNumericCell(value) ? 'font-mono tabular-nums' : ''}`}
-                        >
-                          {value}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
+          <DataTable
+            columns={dataColumns}
+            rows={dataRows}
+            sort={sort}
+            onSortChange={(next) => {
+              setSort(next);
+              setPage(0);
+            }}
+            caption={label}
+            locale={i18n.language}
+            sortByLabel={(column) => t('display.table.sortBy', { column })}
+            ascendingLabel={t('display.table.sortedAsc')}
+            descendingLabel={t('display.table.sortedDesc')}
+          />
           {/* In-card pagination footer (D-PAGINATION): per-page + "X–Y of N" + prev/next,
               windowing ROWS at 3/page. Mirrors DisplayPagination's native chrome. */}
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
@@ -252,6 +205,7 @@ export function TableDisplay({ payload }: TableDisplayProps) {
           </div>
         </>
       )}
+      {notice ? <p className="mt-2 text-xs text-text-muted">{notice}</p> : null}
     </DisplayCardShell>
   );
 }

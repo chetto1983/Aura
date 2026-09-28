@@ -94,6 +94,9 @@ func decodeToolPreview(in PreviewInput) (any, bool) {
 	case "shell_poll":
 		return decodeTerminalPreview(in)
 	case "sandbox_exec":
+		if in.Arguments != "" {
+			return decodeTerminalPreview(in)
+		}
 		return shellCodeInput(in.ResultPreview), true
 	case "todo_write":
 		return decodeTodoPreview(in)
@@ -103,6 +106,8 @@ func decodeToolPreview(in PreviewInput) (any, bool) {
 		return decodeReadFilePreview(in)
 	case "write_file":
 		return decodeWriteFilePreview(in)
+	case "search_files":
+		return decodeSearchFilesPreview(in)
 	default:
 		return nil, false
 	}
