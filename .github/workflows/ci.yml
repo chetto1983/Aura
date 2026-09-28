@@ -1616,8 +1616,13 @@ jobs:
           go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
+      # Vitest adds its github-actions reporter whenever GITHUB_ACTIONS=true, and that reporter
+      # appends a job summary after EVERY test run: under Stryker, one per mutant run. Run
+      # 36382875100 wrote 1123k against GitHub's 1024k cap and the upload was aborted. Unset here,
+      # not in vitest.stryker.config.ts, because that file keys the incremental cache above and
+      # editing it forces a full run (86m34s measured on the same run).
       - name: Stryker mutation run with fresh JSON evidence
-        run: cd web && npm ci && npm run mutation
+        run: cd web && npm ci && env -u GITHUB_STEP_SUMMARY npm run mutation
 
       # Save before the Go gate, so a weak or slow Go scope cannot waste the Stryker run.
       - name: Save Stryker incremental report
