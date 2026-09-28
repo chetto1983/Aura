@@ -1,4 +1,5 @@
 import type { DisplayPayload } from './displays/types';
+import type { McpViewDescriptor } from './mcpapps/hostProtocol';
 
 // sseAdapter_frames — the LEAF module of the SSE adapter split: the wire-frame
 // types the AG-UI SSE writer emits, the reducer part-union types, the snapshot
@@ -150,6 +151,8 @@ export interface ToolPart {
   /** Typed display attached by the CUSTOM/aura.display frame (live) or the
    *  re-derived snapshot tool turn (replay), keyed by toolCallId. */
   readonly display?: DisplayPayload;
+  /** MCP Apps view bound to the same call; retained beside a typed read card. */
+  readonly mcpView?: McpViewDescriptor;
 }
 export interface TextPart {
   readonly type: 'text';
@@ -187,6 +190,7 @@ export interface SnapshotToolCall {
   /** Re-derived typed display (D-06): the backend re-runs the display normalizer
    *  per tool turn at snapshot projection time and attaches it here. */
   readonly display?: unknown;
+  readonly mcpView?: unknown;
 }
 
 export interface SnapshotMessage {

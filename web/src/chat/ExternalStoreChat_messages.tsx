@@ -25,6 +25,7 @@ import { aggregateAnswerSources } from './displays/answerSources';
 import { useSourceExplorer } from './displays/sourceExplorerControls';
 import { SourcesButton } from './displays/SourcesButton';
 import { isDisplayPayload, type DisplayPayload } from './displays/types';
+import { isMcpViewDescriptor } from './mcpapps/hostProtocol';
 import { hasAnswerText } from './ExternalStoreChat_folds';
 import { GenerationToolDisplay } from './generation/GenerationToolDisplay';
 import { generationState } from './generation/generationState';
@@ -375,6 +376,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   const { openSources } = useSourceExplorer();
   const part = useAuiState((s) => s.part) as {
     display?: unknown;
+    mcpView?: unknown;
     startedAt?: unknown;
     finishedAt?: unknown;
   };
@@ -383,6 +385,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   const display: DisplayPayload | undefined = isDisplayPayload(part.display)
     ? part.display
     : undefined;
+  const mcpView = isMcpViewDescriptor(part.mcpView) ? part.mcpView : undefined;
   const resultText = typeof result === 'string' ? result : undefined;
   const startedAt = typeof part.startedAt === 'number' ? part.startedAt : undefined;
   const finishedAt = typeof part.finishedAt === 'number' ? part.finishedAt : undefined;
@@ -449,6 +452,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
         startedAt?: unknown;
         finishedAt?: unknown;
         display?: unknown;
+        mcpView?: unknown;
       };
       return [
         {
@@ -460,6 +464,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
           startedAt: typeof p.startedAt === 'number' ? p.startedAt : undefined,
           finishedAt: typeof p.finishedAt === 'number' ? p.finishedAt : undefined,
           display: isDisplayPayload(p.display) ? p.display : undefined,
+          mcpView: isMcpViewDescriptor(p.mcpView) ? p.mcpView : undefined,
         },
       ];
     });
@@ -483,6 +488,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
       {...(startedAt !== undefined ? { startedAt } : {})}
       {...(finishedAt !== undefined ? { finishedAt } : {})}
       {...(display !== undefined ? { display, onOpenSource } : {})}
+      {...(mcpView !== undefined ? { mcpView } : {})}
     />
   );
 };

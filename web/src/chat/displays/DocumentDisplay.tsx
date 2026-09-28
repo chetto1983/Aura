@@ -20,6 +20,8 @@ import { Button } from '@/components/ui/button';
 // inline `[n]` chips at the claim position, and images render (elysia's prose-img:hidden
 // is dropped). A Copy-text control copies the raw markdown. Citations resolve against
 // the code-owned source registry (payload.sources); an unknown `[n]` stays literal text.
+// The document heading follows Tool UI Link Preview's compact title/domain frame
+// (49a870286facdbf28160cd647f0d337ebdc9b275, MIT LICENSE.tool-ui).
 
 export interface DocumentDisplayProps {
   readonly payload: {
@@ -109,7 +111,10 @@ export function DocumentDisplay({ payload, onOpenSource }: DocumentDisplayProps)
   return (
     <DisplayCardShell label={label} {...(actions !== undefined ? { actions } : {})}>
       {title !== undefined && title.length > 0 ? (
-        <p className="mb-2 font-display text-lg leading-tight text-text">{title}</p>
+        <div data-slot="link-preview" className="mb-3 border-b border-border pb-3">
+          {doc?.url ? <p className="mb-1 truncate text-xs text-text-faint">{doc.url}</p> : null}
+          <p className="font-display text-lg leading-tight text-text">{title}</p>
+        </div>
       ) : null}
       <div className="prose-sm max-w-none text-sm leading-relaxed text-text-muted [&_h1]:mb-2 [&_h1]:mt-3 [&_h1]:text-base [&_h1]:font-medium [&_h1]:text-text [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:text-sm [&_h2]:font-medium [&_h2]:text-text [&_li]:my-1 [&_ol]:my-2 [&_ol]:list-decimal [&_ol]:ps-5 [&_p]:my-2 [&_ul]:my-2 [&_ul]:list-disc [&_ul]:ps-5">
         <ReactMarkdown

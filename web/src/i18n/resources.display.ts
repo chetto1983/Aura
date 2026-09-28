@@ -1,8 +1,10 @@
 // Copy for typed displays, sources, system events, and agent activity.
 import { artifactsEn, artifactsIt } from './resources.display_artifacts';
+import { sidecarDisplayEn, sidecarDisplayIt } from './resources.display_sidecars';
 
 export const displayEn = {
   display: {
+    ...sidecarDisplayEn,
     type: {
       web_result: 'Web results',
       document: 'Document',
@@ -288,6 +290,7 @@ export const displayEn = {
 
 export const displayIt = {
   display: {
+    ...sidecarDisplayIt,
     type: {
       web_result: 'Risultati web',
       document: 'Documento',

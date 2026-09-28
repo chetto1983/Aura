@@ -15,6 +15,8 @@ import { CitationBubble } from './CitationBubble';
 // a raw client `<img src="http…">` to an arbitrary host. The proxied <img> carries
 // referrerpolicy="no-referrer" + loading="lazy"; a broken image degrades to alt +
 // the domain chip (no toast).
+// Card framing follows Tool UI Link Preview at 49a870286facdbf28160cd647f0d337ebdc9b275
+// (MIT LICENSE.tool-ui); Aura keeps its explicit source URL and ref_id controls.
 
 const IMAGE_PROXY = '/api/image-proxy';
 
@@ -64,7 +66,11 @@ function ResultRow({ item, source, onOpenSource }: ResultRowProps) {
   const domain = item.domain ?? (item.url.length > 0 ? safeHost(item.url) : '');
 
   return (
-    <div className="flex gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-3">
+    <article
+      data-slot="link-preview"
+      data-tool-ui-id={item.ref_id}
+      className="group flex min-w-0 gap-3 rounded-[var(--radius-md)] border border-border bg-surface p-3 shadow-xs transition-colors hover:border-border-strong"
+    >
       {item.thumbnail !== undefined && item.thumbnail.length > 0 ? (
         <Thumbnail url={item.thumbnail} alt={item.title} />
       ) : null}
@@ -107,7 +113,7 @@ function ResultRow({ item, source, onOpenSource }: ResultRowProps) {
           ) : null}
         </div>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -159,7 +165,7 @@ export function WebResultDisplay({ payload, onOpenSource }: WebResultDisplayProp
           const source = item.ref_id !== undefined ? byRefId.get(item.ref_id) : undefined;
           return (
             <ResultRow
-              key={item.ref_id ?? `${item.url}-${String(i)}`}
+              key={`${item.ref_id ?? item.url}-${String(i)}`}
               item={item}
               {...(source !== undefined ? { source } : {})}
               {...(onOpenSource ? { onOpenSource } : {})}

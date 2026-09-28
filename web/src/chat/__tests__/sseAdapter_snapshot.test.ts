@@ -99,6 +99,32 @@ describe('snapshotToThreadMessages — roles', () => {
 });
 
 describe('snapshotToThreadMessages — tool calls + results', () => {
+  it('rehydrates a trusted read card beside its MCP Apps view', () => {
+    const display = {
+      type: 'table',
+      tool_call_id: 'c1',
+      title: 'calendar_accounts',
+      table: { columns: ['Account', 'Provider', 'Name'], rows: [['a1', 'google', 'Work']] },
+    };
+    const mcpView = { server: 'pim', resource_uri: 'ui://calendar/view.html', tool_call_id: 'c1' };
+    const out = snapshotToThreadMessages(
+      snap([
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [
+            {
+              id: 'c1',
+              function: { name: 'pim__calendar', arguments: '{"action":"list_accounts"}' },
+              display,
+              mcpView,
+            },
+          ],
+        },
+      ]),
+    );
+    expect(partsOf(messageAt(out, 0))[0]).toMatchObject({ display, mcpView });
+  });
   it('shapes assistant tool calls and tolerates a missing display / non-array toolCalls', () => {
     const out = snapshotToThreadMessages(
       snap([

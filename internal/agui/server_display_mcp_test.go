@@ -2,6 +2,8 @@ package agui
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -93,5 +95,53 @@ func TestMCPDisplaySnapshotRequiresMatchingOwnerFact(t *testing.T) {
 	}
 	if got := previewInputsByCallIDWithFacts(history, convID, []toolinvocations.Event{fact, fact})[call.ID].TrustedMCP; got != nil {
 		t.Fatalf("duplicate facts gained source %+v", got)
+	}
+	large := fact
+	large.ResultPreview = "redacted and capped in ledger"
+	sum := sha256.Sum256([]byte(history[1].Content))
+	large.Meta = map[string]any{
+		"aura_display_source":         fact.Meta["aura_display_source"],
+		"aura_display_preview_sha256": hex.EncodeToString(sum[:]),
+	}
+	if got := previewInputsByCallIDWithFacts(history, convID, []toolinvocations.Event{large})[call.ID].TrustedMCP; got == nil {
+		t.Fatal("digest-verified preview lost trust after ledger redaction")
+	}
+	large.Meta["aura_display_preview_sha256"] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if got := previewInputsByCallIDWithFacts(history, convID, []toolinvocations.Event{large})[call.ID].TrustedMCP; got != nil {
+		t.Fatal("incorrect preview digest gained trust")
+	}
+}
+
+func TestMCPViewAndReadCardReplayTogether(t *testing.T) {
+	const convID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+	call := llm.ToolCall{ID: "cal-1", Type: "function"}
+	call.Function.Name = "pim__calendar"
+	call.Function.Arguments = `{"action":"list_accounts"}`
+	preview := `{"accounts":[{"accountId":"a1","provider":"google","displayName":"Work"}]}`
+	history := []llm.Message{
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+		{Role: llm.RoleTool, ToolCallID: call.ID, Content: preview},
+	}
+	fact := toolinvocations.Event{
+		ConversationID: convID, ToolCallID: call.ID, ToolName: call.Function.Name,
+		Event: toolinvocations.EventEnd, Status: "ok", ResultPreview: preview,
+		Meta: map[string]any{
+			"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar", "action": "list_accounts"},
+			"mcp_view":            map[string]any{"server": "pim", "resource_uri": "ui://calendar/view.html", "text_content": preview},
+		},
+	}
+	snap := projectDisplaySnapshotWithFacts(history, convID, []toolinvocations.Event{fact})
+	got := snap.Messages[0].ToolCalls[0]
+	if got.Display == nil || got.Display.Table == nil || got.MCPView == nil {
+		t.Fatalf("replay lost card or view: %+v", got)
+	}
+	if got.MCPView["tool_call_id"] != call.ID || got.MCPView["tool_name"] != call.Function.Name {
+		t.Fatalf("view correlation mismatch: %+v", got.MCPView)
+	}
+	for _, bad := range [][]toolinvocations.Event{nil, {fact, fact}} {
+		degraded := projectDisplaySnapshotWithFacts(history, convID, bad).Messages[0].ToolCalls[0]
+		if degraded.Display != nil || degraded.MCPView != nil {
+			t.Fatalf("unverified fact retained card or view: %+v", degraded)
+		}
 	}
 }

@@ -3,6 +3,8 @@ import { ChevronDown } from 'lucide-react';
 import type { ToolCallMessagePartStatus } from '@assistant-ui/react';
 import { useTranslation } from 'react-i18next';
 import { DisplayRouter } from './displays/DisplayRouter';
+import { McpViewFrame } from './mcpapps/McpViewFrame';
+import type { McpViewDescriptor } from './mcpapps/hostProtocol';
 import type { DisplayPayload } from './displays/types';
 import { useElapsed } from './durationFormat';
 import { toolStatus, type ToolStatus } from './toolStatus';
@@ -54,6 +56,7 @@ export interface ToolActivityCardProps {
   readonly childActivity?: readonly ToolActivityChild[];
   /** Typed display payload — the expanded body renders the DisplayRouter card. */
   readonly display?: DisplayPayload;
+  readonly mcpView?: McpViewDescriptor;
   /** Citation click-through for the expanded evidence displays (D-04). */
   readonly onOpenSource?: (refId: string) => void;
 }
@@ -68,6 +71,7 @@ export function ToolActivityCard({
   finishedAt,
   childActivity,
   display,
+  mcpView,
   onOpenSource,
 }: ToolActivityCardProps) {
   const { t } = useTranslation();
@@ -194,9 +198,14 @@ export function ToolActivityCard({
               {...(onOpenSource !== undefined ? { onOpenSource } : {})}
             />
           </div>
-        ) : (
+        ) : mcpView === undefined ? (
           <ToolResultPanel argsText={argsText} result={result} />
-        )}
+        ) : null}
+        {mcpView !== undefined && display?.type !== 'mcp_view' ? (
+          <div className="p-2">
+            <McpViewFrame descriptor={mcpView} />
+          </div>
+        ) : null}
         {hasChildren ? (
           <div data-testid="tool-children" className="ms-3 mb-1 border-l border-border ps-4">
             {childActivity.map((child, i) => (

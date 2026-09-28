@@ -1,6 +1,10 @@
 package agui
 
 import (
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
+	"encoding/json"
 	"strings"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
@@ -53,6 +57,7 @@ type displaySnapshotToolCall struct {
 	Type     string             `json:"type"`
 	Function types.FunctionCall `json:"function"`
 	Display  *display.Payload   `json:"display,omitempty"`
+	MCPView  map[string]any     `json:"mcpView,omitempty"`
 }
 
 // projectDisplaySnapshot builds the display-aware MESSAGES_SNAPSHOT (D-06): it re-runs
@@ -67,6 +72,7 @@ func projectDisplaySnapshot(hist []llm.Message) displaySnapshotEvent {
 
 func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) displaySnapshotEvent {
 	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
+	views := replayMCPViews(hist, conversationID, facts)
 	recoveryResults := make(map[string]string)
 	for _, m := range hist {
 		for _, call := range m.ToolCalls {
@@ -82,7 +88,7 @@ func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, 
 			Content:    snapshotContent(m),
 			ToolCallID: m.ToolCallID,
 			IsError:    m.Role == llm.RoleTool && knownCall && m.Content == recovery,
-			ToolCalls:  projectDisplayToolCalls(m.ToolCalls, displays),
+			ToolCalls:  projectDisplayToolCalls(m.ToolCalls, displays, views),
 		})
 	}
 	return displaySnapshotEvent{Type: events.EventTypeMessagesSnapshot, Messages: msgs}
@@ -210,9 +216,17 @@ func previewInputsByCallIDWithFacts(hist []llm.Message, conversationID string, f
 		in.ResultPreview = m.Content
 		inputs[m.ToolCallID] = in
 	}
-	// A marker is usable only when an append-only end fact belongs to this owned
-	// conversation and matches the persisted call and preview. Multiple end facts
-	// for one call are ambiguous, so none of them grants a rich MCP display.
+	for id, fact := range matchingEndFacts(inputs, conversationID, facts) {
+		in := inputs[id]
+		in.TrustedMCP = display.TrustedMCPFromMeta(fact.Meta, in.ToolName, in.Arguments)
+		inputs[id] = in
+	}
+	return inputs
+}
+
+// A ledger decoration is usable only when one successful end fact belongs to
+// the owned conversation and matches the persisted call and model-facing result.
+func matchingEndFacts(inputs map[string]display.PreviewInput, conversationID string, facts []toolinvocations.Event) map[string]toolinvocations.Event {
 	endFacts := make(map[string]toolinvocations.Event)
 	duplicate := make(map[string]bool)
 	for _, fact := range facts {
@@ -224,15 +238,66 @@ func previewInputsByCallIDWithFacts(hist []llm.Message, conversationID string, f
 		}
 		endFacts[fact.ToolCallID] = fact
 	}
+	verified := make(map[string]toolinvocations.Event)
 	for id, fact := range endFacts {
 		in, ok := inputs[id]
-		if !ok || duplicate[id] || fact.Status != "ok" || fact.ToolName != in.ToolName || fact.ResultPreview != in.ResultPreview {
+		if !ok || duplicate[id] || fact.Status != "ok" || fact.ToolName != in.ToolName || !matchingPreview(fact, in.ResultPreview) {
 			continue
 		}
-		in.TrustedMCP = display.TrustedMCPFromMeta(fact.Meta, in.ToolName, in.Arguments)
-		inputs[id] = in
+		verified[id] = fact
 	}
-	return inputs
+	return verified
+}
+
+// The append-only ledger caps and redacts its preview independently of the
+// conversation. New host-owned result facts carry a digest of the original
+// model-facing result so replay matching still works beyond the 2 KiB ledger
+// cap, even when prompt rendering scrubbed a control marker from the raw result.
+func matchingPreview(fact toolinvocations.Event, preview string) bool {
+	if raw, present := fact.Meta["aura_display_preview_sha256"]; present {
+		digest, ok := raw.(string)
+		if !ok || len(digest) != 64 {
+			return false
+		}
+		sum := sha256.Sum256([]byte(preview))
+		actual := hex.EncodeToString(sum[:])
+		return subtle.ConstantTimeCompare([]byte(digest), []byte(actual)) == 1
+	}
+	return fact.ResultPreview == preview
+}
+
+// Rehydrate a host-owned MCP Apps descriptor beside the read card. The view
+// document itself is still fetched from the sandbox route and can be unavailable
+// if the mount has gone away; the snapshot never persists or serves that HTML.
+func replayMCPViews(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]map[string]any {
+	inputs := previewInputsByCallID(hist)
+	out := make(map[string]map[string]any)
+	for id, fact := range matchingEndFacts(inputs, conversationID, facts) {
+		meta, ok := fact.Meta["mcp_view"].(map[string]any)
+		if !ok {
+			continue
+		}
+		server, serverOK := meta["server"].(string)
+		uri, uriOK := meta["resource_uri"].(string)
+		if !serverOK || server == "" || !uriOK || !strings.HasPrefix(uri, "ui://") || len(uri) > 2048 {
+			continue
+		}
+		view := map[string]any{"server": server, "resource_uri": uri,
+			"tool_call_id": id, "tool_name": inputs[id].ToolName}
+		if json.Valid([]byte(inputs[id].Arguments)) {
+			view["arguments"] = json.RawMessage(inputs[id].Arguments)
+		}
+		if content, ok := meta["text_content"].(string); ok && len(content) <= 512<<10 {
+			view["text_content"] = content
+		}
+		if structured, exists := meta["structured_content"]; exists {
+			if raw, err := json.Marshal(structured); err == nil && len(raw) <= 512<<10 {
+				view["structured_content"] = structured
+			}
+		}
+		out[id] = view
+	}
+	return out
 }
 
 // attachTurnReasoning merges the persisted display-only reasoning rows (amendment
@@ -274,7 +339,7 @@ func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnRe
 // attaching the re-derived display (when the matching result turn was recognized).
 // Returns nil for an empty input so the omitempty toolCalls key is absent on non-tool
 // turns.
-func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.Payload) []displaySnapshotToolCall {
+func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.Payload, views map[string]map[string]any) []displaySnapshotToolCall {
 	if len(calls) == 0 {
 		return nil
 	}
@@ -288,6 +353,7 @@ func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.
 				Arguments: c.Function.Arguments,
 			},
 			Display: displays[c.ID],
+			MCPView: views[c.ID],
 		})
 	}
 	return out

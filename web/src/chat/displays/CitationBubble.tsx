@@ -23,6 +23,8 @@ import { Button } from '@/components/ui/button';
 //
 // COLOR (UI-SPEC): a `cited` chip is accent (the one thing to click); a
 // `consulted`-only chip stays neutral. Accent is otherwise scarce.
+// Presentation follows Tool UI Citation (49a870286facdbf28160cd647f0d337ebdc9b275,
+// MIT LICENSE.tool-ui); Aura's ref_id callback owns navigation and the hovercard.
 
 const ICON_FOR_KIND: Partial<Record<DisplayKind, LucideIcon>> = {
   web_result: Globe,
@@ -55,6 +57,8 @@ export function CitationBubble({ number, source, onOpenSource }: CitationBubbleP
       <HoverCardTrigger asChild>
         <Button
           type="button"
+          data-slot="citation"
+          data-tool-ui-id={source.ref_id}
           variant={source.cited ? 'default' : 'secondary'}
           // Tap path: a click toggles the controlled hovercard open AND opens the
           // source explorer — so a touch user both sees the preview and navigates.
@@ -63,7 +67,7 @@ export function CitationBubble({ number, source, onOpenSource }: CitationBubbleP
             onOpenSource?.(source.ref_id);
           }}
           aria-label={t('citation.aria', { n: number, title })}
-          className="mx-0.5 inline-flex h-auto min-h-[1.25rem] min-w-[1.25rem] rounded-[var(--radius-sm)] px-1 py-0 align-baseline text-[0.75rem] tabular-nums"
+          className="mx-0.5 inline-flex h-auto min-h-[1.25rem] min-w-[1.25rem] rounded-[var(--radius-sm)] px-1.5 py-0 align-baseline text-[0.75rem] tabular-nums transition-colors focus-visible:ring-2 focus-visible:ring-accent"
         >
           {number}
         </Button>

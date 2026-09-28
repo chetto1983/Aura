@@ -292,7 +292,7 @@ export function reduceFrame(state: AssistantTurnState, frame: AguiFrame): Assist
         );
         writeTool(state, {
           ...part,
-          display: { type: 'mcp_view', tool_call_id: d.tool_call_id, mcp_view: d },
+          mcpView: d,
         });
       }
       // aura.discard (amendment #191): the agent repudiated the prose it streamed on

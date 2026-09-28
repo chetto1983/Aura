@@ -1,5 +1,6 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { isDisplayPayload } from './displays/types';
+import { isMcpViewDescriptor } from './mcpapps/hostProtocol';
 import {
   errorDetail,
   type ChatPart,
@@ -115,6 +116,7 @@ function toolCallsFromSnapshot(value: unknown): ToolPart[] {
       // D-06: a re-derived display payload (when present) rides the tool part so
       // the DisplayRouter renders identically on replay. Tolerated when absent.
       ...(isDisplayPayload(call.display) ? { display: call.display } : {}),
+      ...(isMcpViewDescriptor(call.mcpView) ? { mcpView: call.mcpView } : {}),
     });
   }
   return parts;

@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { DisplayPayload } from './displays/types';
+import type { McpViewDescriptor } from './mcpapps/hostProtocol';
 import { formatElapsed } from './durationFormat';
 import { ToolActivityCard } from './ToolActivityCard';
 import { toolStatus } from './toolStatus';
@@ -24,6 +25,7 @@ export interface ToolGroupMember {
   readonly startedAt?: number | undefined;
   readonly finishedAt?: number | undefined;
   readonly display?: DisplayPayload | undefined;
+  readonly mcpView?: McpViewDescriptor | undefined;
 }
 
 export interface ToolGroupProps {
@@ -114,6 +116,7 @@ export function ToolGroup({ members, onOpenSource }: ToolGroupProps) {
                     : {}),
                 }
               : {})}
+            {...(member.mcpView !== undefined ? { mcpView: member.mcpView } : {})}
           />
         ))}
       </div>

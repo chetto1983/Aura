@@ -40,8 +40,13 @@ func NormalizeToolPreview(in PreviewInput, reg *Registry) (Payload, bool) {
 	if in.ResultPreview == "" || reg == nil {
 		return Payload{}, false
 	}
-	if in.TrustedMCP != nil && in.TrustedMCP.Recipe == "recipe:memory" && in.ToolName != "" {
-		return normalizeMemoryPreview(in)
+	if in.TrustedMCP != nil && in.ToolName != "" {
+		switch in.TrustedMCP.Recipe {
+		case "recipe:memory":
+			return normalizeMemoryPreview(in)
+		case "recipe:calendar", "recipe:whatsapp":
+			return normalizeSidecarPreview(in)
+		}
 	}
 	result, ok := decodeToolPreview(in)
 	if !ok {

@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"maps"
 	"time"
@@ -129,6 +131,11 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		status = "error"
 	}
 	resultMeta := toolResultMetaMap(run.Result.Meta)
+	if _, trusted := resultMeta["aura_display_source"]; trusted {
+		stampDisplayPreviewDigest(resultMeta, run.Preview)
+	} else if _, view := resultMeta["mcp_view"]; view {
+		stampDisplayPreviewDigest(resultMeta, run.Preview)
+	}
 	ev.Actions.ToolInvocation = &ToolInvocation{
 		Event:             ToolInvocationEnd,
 		ToolCallID:        run.ToolCallID,
@@ -182,6 +189,11 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		}
 	}
 	return ev
+}
+
+func stampDisplayPreviewDigest(meta map[string]any, preview string) {
+	sum := sha256.Sum256([]byte(preview))
+	meta["aura_display_preview_sha256"] = hex.EncodeToString(sum[:])
 }
 
 // metaMap pulls one nested descriptor off a ToolResult.Meta map, mirroring

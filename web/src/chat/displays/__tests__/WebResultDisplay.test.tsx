@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { WebResultDisplay } from '../WebResultDisplay';
@@ -33,6 +33,21 @@ function payload(items: WebItem[], sources?: DisplaySource[]): DisplayPayload {
 }
 
 describe('WebResultDisplay (DISP-02 / D-09)', () => {
+  it('keeps Tool UI framing bound to the same Source Explorer ref', () => {
+    const onOpenSource = vi.fn();
+    const source: DisplaySource = {
+      ref_id: 'src-rome',
+      index: 1,
+      title: 'Forecast for Rome',
+      cited: true,
+    };
+    const { container } = render(
+      <WebResultDisplay payload={payload([item()], [source])} onOpenSource={onOpenSource} />,
+    );
+    expect(container.querySelector('[data-slot="link-preview"]')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Source 1: Forecast for Rome' }));
+    expect(onOpenSource).toHaveBeenCalledWith('src-rome');
+  });
   it('renders the domain chip, snippet, relevance hint and published date', () => {
     render(<WebResultDisplay payload={payload([item()])} />);
     expect(screen.getByText('weather.example.com')).toBeTruthy();

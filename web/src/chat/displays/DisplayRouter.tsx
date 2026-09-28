@@ -4,6 +4,8 @@ import type { DisplayDiff, DisplayPayload, DisplayStats, DisplayTodo } from './t
 import { TableDisplay } from './TableDisplay';
 import { MemoryFactsDisplay } from './MemoryFactsDisplay';
 import { MemoryStatsDisplay } from './MemoryStatsDisplay';
+import { SidecarTableDisplay } from './SidecarTableDisplay';
+import { sidecarTableSpec } from './sidecarTableSpec';
 import { ChartDisplay } from './ChartDisplay';
 import { SystemEventCard } from './SystemEventCard';
 import { SwarmReportTable } from './SwarmReportTable';
@@ -48,28 +50,35 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
     // Per-type cases. The "data / status" half (table, chart, system_event,
     // swarm_report, local_artifact) lands in 26-04; the evidence half (web_result,
     // document, code) in 26-05. Each returns its typed display for payload.<slot>.
-    case 'table':
-      return payload.table &&
-        Array.isArray(payload.table.columns) &&
-        Array.isArray(payload.table.rows) &&
-        payload.table.columns.every((cell) => typeof cell === 'string') &&
-        payload.table.rows.every(
+    case 'table': {
+      const table = payload.table;
+      if (
+        !table ||
+        !Array.isArray(table.columns) ||
+        !Array.isArray(table.rows) ||
+        !table.columns.every((cell) => typeof cell === 'string') ||
+        !table.rows.every(
           (row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string'),
-        ) ? (
-        payload.table.omitted_rows !== undefined &&
-        (!Number.isInteger(payload.table.omitted_rows) || payload.table.omitted_rows < 0) ? (
-          raw()
-        ) : (payload.title === 'memory_facts' || payload.title === 'memory_entities') &&
-          !isMemoryTable(payload) ? (
-          raw()
-        ) : payload.title === 'memory_facts' || payload.title === 'memory_entities' ? (
-          <MemoryFactsDisplay payload={payload} />
+        ) ||
+        (table.omitted_rows !== undefined &&
+          (!Number.isInteger(table.omitted_rows) || table.omitted_rows < 0))
+      ) {
+        return raw();
+      }
+      if (payload.title === 'memory_facts' || payload.title === 'memory_entities') {
+        return isMemoryTable(payload) ? <MemoryFactsDisplay payload={payload} /> : raw();
+      }
+      const sidecar = sidecarTableSpec(payload.title);
+      if (sidecar) {
+        return table.columns.length === sidecar.columns.length &&
+          table.rows.every((row) => row.length === sidecar.columns.length) ? (
+          <SidecarTableDisplay payload={payload} />
         ) : (
-          <TableDisplay payload={payload} />
-        )
-      ) : (
-        raw()
-      );
+          raw()
+        );
+      }
+      return <TableDisplay payload={payload} />;
+    }
     case 'stats':
       return payload.title === 'memory_graph' && isMemoryStats(payload.stats) ? (
         <MemoryStatsDisplay payload={payload} />
