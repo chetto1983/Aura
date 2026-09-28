@@ -125,6 +125,10 @@ export class StudioError extends Error {
  *  can tell a full page from the last one. */
 export const STUDIO_HISTORY_LIMIT = 24;
 
+/** One page of a library picker, sent with every request so a full page can be told from the
+ *  last one. */
+export const STUDIO_LIBRARY_LIMIT = 24;
+
 function readInit(signal?: AbortSignal): RequestInit {
   const init: RequestInit = {
     method: 'GET',
@@ -214,10 +218,13 @@ export async function createStudioImage(body: StudioImageBody): Promise<StudioRe
 
 export async function listStudioLibrary(
   modalities: readonly LibraryModality[],
+  before: string | undefined,
   signal?: AbortSignal,
 ): Promise<readonly StudioAssetRef[]> {
-  const kinds = new URLSearchParams(modalities.map((modality) => ['modality', modality]));
-  const res = await fetch(`/api/studio/library?${kinds.toString()}`, readInit(signal));
+  const query = new URLSearchParams(modalities.map((modality) => ['modality', modality]));
+  query.set('limit', String(STUDIO_LIBRARY_LIMIT));
+  if (before !== undefined && before.length > 0) query.set('before', before);
+  const res = await fetch(`/api/studio/library?${query.toString()}`, readInit(signal));
   return envelope(await studioJSON<{ readonly assets: readonly StudioAssetRef[] }>(res), 'assets');
 }
 

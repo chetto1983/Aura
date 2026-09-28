@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { StudioRecord } from '../studioApi';
-import { STUDIO_HISTORY_LIMIT } from '../studioApi';
+import { STUDIO_HISTORY_LIMIT, STUDIO_LIBRARY_LIMIT } from '../studioApi';
 import {
   STUDIO_HISTORY_POLL_MS,
   hasActiveRecord,
@@ -312,7 +312,7 @@ describe('useStudioLibrary', () => {
     await waitFor(() => {
       expect(open.result.current.data).toBeDefined();
     });
-    expect(urls).toEqual(['/api/studio/library?modality=image']);
+    expect(urls).toEqual(['/api/studio/library?modality=image&limit=24']);
   });
 
   it('lists the kinds a picker asks for, apart from the images', async () => {
@@ -322,6 +322,43 @@ describe('useStudioLibrary', () => {
     await waitFor(() => {
       expect(sounds.result.current.data).toBeDefined();
     });
-    expect(urls).toEqual(['/api/studio/library?modality=audio']);
+    expect(urls).toEqual(['/api/studio/library?modality=audio&limit=24']);
+  });
+
+  // A full page may have more behind it; the next one starts after its last asset, and the
+  // picker reads one list, oldest page last. A short page is the end.
+  it('pages on the last asset of a full page, into one list', async () => {
+    const asset = (id: string) => ({ id, file_name: `${id}.wav`, mime_type: 'audio/wav' });
+    const full = Array.from({ length: STUDIO_LIBRARY_LIMIT }, (_, i) => asset(`a${String(i)}`));
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url = urlOf(input);
+        urls.push(url);
+        return Promise.resolve(
+          jsonBody({ assets: url.includes('before=') ? [asset('old')] : full }),
+        );
+      }),
+    );
+
+    const sounds = renderHook(() => useStudioLibrary(true, ['audio']), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(sounds.result.current.hasNextPage).toBe(true);
+    });
+    await act(async () => {
+      await sounds.result.current.fetchNextPage();
+    });
+
+    expect(urls.at(-1)).toBe(
+      `/api/studio/library?modality=audio&limit=24&before=a${String(STUDIO_LIBRARY_LIMIT - 1)}`,
+    );
+    await waitFor(() => {
+      expect(sounds.result.current.data?.map((row) => row.id)).toEqual([
+        ...full.map((row) => row.id),
+        'old',
+      ]);
+    });
+    expect(sounds.result.current.hasNextPage).toBe(false);
   });
 });

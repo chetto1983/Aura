@@ -125,7 +125,7 @@ describe('studio API client', () => {
   // read a failure as an empty history.
   it.each([
     ['history', () => listStudioHistory(undefined, undefined), { rows: [] }, 'records'],
-    ['library', () => listStudioLibrary(['image']), { images: [] }, 'assets'],
+    ['library', () => listStudioLibrary(['image'], undefined), { images: [] }, 'assets'],
   ])('refuses a %s body that carries no array', async (_name, call, body, member) => {
     stubFetch(jsonResponse(body));
 
@@ -141,18 +141,36 @@ describe('studio API client', () => {
       }),
     );
 
-    const refs = await listStudioLibrary(['image']);
+    const refs = await listStudioLibrary(['image'], undefined);
 
-    expect(callOf(fetchMock).url).toBe('/api/studio/library?modality=image');
+    expect(callOf(fetchMock).url).toBe('/api/studio/library?modality=image&limit=24');
     expect(refs.map((ref) => ref.file_name)).toEqual(['cat.png']);
   });
 
   it('asks the library for every kind the picker offers', async () => {
     const fetchMock = stubFetch(jsonResponse({ assets: [] }));
 
-    await listStudioLibrary(['video', 'image']);
+    await listStudioLibrary(['video', 'image'], undefined);
 
-    expect(callOf(fetchMock).url).toBe('/api/studio/library?modality=video&modality=image');
+    expect(callOf(fetchMock).url).toBe(
+      '/api/studio/library?modality=video&modality=image&limit=24',
+    );
+  });
+
+  // A page names its size, so a short one is the last; the next one starts after the last asset
+  // shown, escaped like every cursor.
+  it('asks the library for the page after the last asset shown', async () => {
+    const fetchMock = stubFetch(jsonResponse({ assets: [] }), jsonResponse({ assets: [] }));
+
+    await listStudioLibrary(['audio'], 'asset-9');
+    expect(callOf(fetchMock).url).toBe(
+      '/api/studio/library?modality=audio&limit=24&before=asset-9',
+    );
+
+    await listStudioLibrary(['audio'], 'a b&modality=image');
+    expect(callOf(fetchMock, 1).url).toBe(
+      '/api/studio/library?modality=audio&limit=24&before=a+b%26modality%3Dimage',
+    );
   });
 
   it('posts a video body the server can strict-decode', async () => {
@@ -248,7 +266,7 @@ describe('studio API client', () => {
     // The unwired Studio and the auth gate answer http.Error text, not a studioErrorDTO.
     stubFetch(new Response('studio unavailable', { status: 503 }));
 
-    const err = await refusalOf(listStudioLibrary(['image']));
+    const err = await refusalOf(listStudioLibrary(['image'], undefined));
 
     expect(err.status).toBe(503);
     expect(err.code).toBe('');

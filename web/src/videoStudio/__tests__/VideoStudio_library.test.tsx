@@ -10,10 +10,19 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
-type LibraryState =
-  | { isPending: true; isError: false; data: undefined }
-  | { isPending: false; isError: true; data: undefined }
-  | { isPending: false; isError: false; data: readonly StudioAssetRef[] };
+interface Paging {
+  hasNextPage?: boolean;
+  isFetchingNextPage?: boolean;
+  isFetchNextPageError?: boolean;
+  fetchNextPage?: () => unknown;
+}
+
+type LibraryState = Paging &
+  (
+    | { isPending: true; isError: false; data: undefined }
+    | { isPending: false; isError: true; data: undefined }
+    | { isPending: false; isError: boolean; data: readonly StudioAssetRef[] }
+  );
 
 const library = vi.hoisted(() => ({
   state: undefined as unknown,
@@ -26,8 +35,18 @@ vi.mock('../../studio/useStudio', () => ({
   },
 }));
 
-function listing(data: readonly StudioAssetRef[]): LibraryState {
-  return { isPending: false, isError: false, data };
+function listing(data: readonly StudioAssetRef[], paging: Paging = {}): LibraryState {
+  return { isPending: false, isError: false, data, ...paging };
+}
+
+function renderSounds() {
+  return render(
+    <LibraryPicker
+      modalities={['audio']}
+      empty="videoStudio.library.emptySounds"
+      onPick={vi.fn()}
+    />,
+  );
 }
 
 const BED = { id: 'a1', file_name: 'bed.wav', mime_type: 'audio/wav' };
@@ -125,5 +144,54 @@ describe('LibraryPicker', () => {
     );
     expect(screen.getByText('videoStudio.library.emptyClips')).toBeTruthy();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('offers the older assets only while the library has more, and asks for them', () => {
+    const fetchNextPage = vi.fn();
+    library.state = listing([BED], { hasNextPage: true, fetchNextPage });
+    const view = renderSounds();
+    fireEvent.click(screen.getByRole('button', { name: 'videoStudio.library.more' }));
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+
+    library.state = listing([BED], { hasNextPage: true, isFetchingNextPage: true, fetchNextPage });
+    view.rerender(
+      <LibraryPicker
+        modalities={['audio']}
+        empty="videoStudio.library.emptySounds"
+        onPick={vi.fn()}
+      />,
+    );
+    const busy = screen.getByRole('button', { name: 'videoStudio.library.loadingMore' });
+    expect(busy.hasAttribute('disabled')).toBe(true);
+
+    library.state = listing([BED]);
+    view.rerender(
+      <LibraryPicker
+        modalities={['audio']}
+        empty="videoStudio.library.emptySounds"
+        onPick={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['bed.wav']);
+  });
+
+  it('keeps what it shows when the older assets could not be read, and says so', () => {
+    library.state = {
+      ...listing([BED], { isFetchNextPageError: true, hasNextPage: true }),
+      isError: true,
+    };
+    renderSounds();
+    expect(screen.getByRole('button', { name: 'bed.wav' })).toBeTruthy();
+    expect(screen.getByRole('alert').textContent).toBe('videoStudio.library.moreFailed');
+    expect(screen.getByRole('button', { name: 'videoStudio.library.more' })).toBeTruthy();
+  });
+
+  // A page can hold nothing this panel offers (every row a GIF) with older assets behind it:
+  // that is not an empty library.
+  it('does not call the library empty while it has more to show', () => {
+    library.state = listing([], { hasNextPage: true, fetchNextPage: vi.fn() });
+    renderSounds();
+    expect(screen.queryByText('videoStudio.library.emptySounds')).toBeNull();
+    expect(screen.getByRole('button', { name: 'videoStudio.library.more' })).toBeTruthy();
   });
 });

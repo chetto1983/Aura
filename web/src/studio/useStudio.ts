@@ -8,12 +8,14 @@ import {
 } from '@tanstack/react-query';
 import {
   STUDIO_HISTORY_LIMIT,
+  STUDIO_LIBRARY_LIMIT,
   createStudioImage,
   createStudioVideo,
   fetchStudioModels,
   listStudioHistory,
   listStudioLibrary,
   type LibraryModality,
+  type StudioAssetRef,
   type StudioImageBody,
   type StudioKind,
   type StudioRecord,
@@ -120,16 +122,22 @@ export function useCreateStudioImage() {
   return useCreateStudio<StudioImageBody>(createStudioImage);
 }
 
-/** The identity's recent assets of the given kinds — images for the frame and reference pickers
- *  unless a picker asks for others. Read only while a picker is open: the page itself never needs
- *  the list. */
+type StudioLibraryData = InfiniteData<readonly StudioAssetRef[], string | undefined>;
+
+/** The identity's assets of the given kinds, newest first — images for the frame and reference
+ *  pickers unless a picker asks for others — paged on the last asset of a full page and read as
+ *  one list. Read only while a picker is open: the page itself never needs the list. */
 export function useStudioLibrary(
   enabled: boolean,
   modalities: readonly LibraryModality[] = IMAGES,
 ) {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: studioKeys.library(modalities),
-    queryFn: ({ signal }) => listStudioLibrary(modalities, signal),
+    queryFn: ({ pageParam, signal }) => listStudioLibrary(modalities, pageParam, signal),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: readonly StudioAssetRef[]) =>
+      lastPage.length < STUDIO_LIBRARY_LIMIT ? undefined : lastPage.at(-1)?.id,
+    select: (data: StudioLibraryData) => data.pages.flat(),
     enabled,
   });
 }

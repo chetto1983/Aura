@@ -172,7 +172,7 @@ describe('PhotoEditor', () => {
   it('keeps Save to library off until the Studio answers afresh, and off on a 503', async () => {
     const answer = pendingLibrary();
     const client = newClient();
-    client.setQueryData(studioKeys.library(), []);
+    client.setQueryData(studioKeys.library(), { pages: [[]], pageParams: [undefined] });
     mount(vi.fn(), client);
     const save = await screen.findByRole('button', { name: 'Save to library' });
     await waitFor(() => {

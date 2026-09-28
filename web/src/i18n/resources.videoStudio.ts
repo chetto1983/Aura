@@ -64,6 +64,9 @@ export const videoStudioEn = {
       failed: 'The library could not be read.',
       emptySounds: 'No sounds in the library yet.',
       emptyClips: 'No videos or pictures in the library yet.',
+      more: 'Show more',
+      loadingMore: 'Reading older ones…',
+      moreFailed: 'The older ones could not be read.',
     },
     clipPanel: {
       title: 'Add a clip',
@@ -265,6 +268,9 @@ export const videoStudioIt = {
       failed: 'Non è stato possibile leggere la libreria.',
       emptySounds: 'Nessun suono nella libreria, per ora.',
       emptyClips: 'Nessun video o immagine nella libreria, per ora.',
+      more: 'Mostra altri',
+      loadingMore: 'Lettura dei più vecchi…',
+      moreFailed: 'Non è stato possibile leggere i più vecchi.',
     },
     clipPanel: {
       title: 'Aggiungi una clip',
