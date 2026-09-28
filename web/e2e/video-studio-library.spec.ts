@@ -72,9 +72,13 @@ test('a sound older than a full page is reached through Show more', async ({ pag
     body: await page.screenshot(),
   });
 
-  await more.click();
+  // The desktop and phone projects run at once against the operator's one library, so the other
+  // project's newer sounds can push this one past the next page: read older pages until it shows.
   const picked = panel.getByRole('button', { name: older });
-  await expect(picked).toBeVisible({ timeout: 30_000 });
+  await expect(async () => {
+    if ((await more.isVisible()) && (await more.isEnabled())) await more.click();
+    await expect(picked).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 60_000 });
   await picked.scrollIntoViewIfNeeded();
   await info.attach('library-more', { contentType: 'image/png', body: await page.screenshot() });
   await picked.click();
