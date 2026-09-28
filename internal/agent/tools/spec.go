@@ -73,6 +73,9 @@ type Spec struct {
 	// managed recipe. It is runtime metadata, never taken from a tool schema or
 	// exposed to the model.
 	TrustedRecipeSource string `json:"-"`
+	// TrustedRecipeTool is the raw MCP tool name from the managed bridge. The
+	// model-facing Spec.Name may be truncated and hash-suffixed at 64 bytes.
+	TrustedRecipeTool string `json:"-"`
 	// OperationScope, OperationNormalizer, and ReplayPolicy are Aura-owned
 	// mutation metadata. They are runtime-only and never exposed to the model.
 	OperationScope      idempotency.Scope

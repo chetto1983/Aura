@@ -86,8 +86,7 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 	if strings.TrimSpace(input.ConversationID) == "" || len(input.ConversationID) > 128 ||
 		strings.TrimSpace(input.ToolCallID) == "" || len(input.ToolCallID) > 128 ||
 		!input.ExpiresAt.After(time.Now()) || input.ExpiresAt.After(time.Now().Add(24*time.Hour)) ||
-		!strings.HasSuffix(input.RegisteredToolName, "__"+input.Target.Tool) ||
-		len(input.RegisteredToolName) <= len(input.Target.Tool)+2 || len(input.RegisteredToolName) > 256 {
+		!validRegisteredToolName(input.RegisteredToolName) {
 		return Draft{}, errInvalidDraftArgs
 	}
 	owner, err := db.ParseUUID("owner id", input.IdentityID)
@@ -122,6 +121,20 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 		return insertErr
 	})
 	return result, err
+}
+
+func validRegisteredToolName(name string) bool {
+	if len(name) < 4 || len(name) > 64 || strings.Index(name, "__") < 1 {
+		return false
+	}
+	return strings.IndexFunc(name, func(r rune) bool {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '_', r == '-':
+			return false
+		default:
+			return true
+		}
+	}) < 0
 }
 
 // Get returns a draft only to its owner. Foreign IDs and missing IDs share the

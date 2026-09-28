@@ -105,6 +105,13 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
 		t.Fatal("a duplicate call changed its registered server")
 	}
+	hashed := input
+	hashed.ConversationID = "draft-hashed-conversation"
+	hashed.ToolCallID = "call-hashed"
+	hashed.RegisteredToolName = "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab"
+	if _, err := store.Create(ctx, hashed); err != nil {
+		t.Fatal("hash-suffixed bridge name was rejected by the migration")
+	}
 	if _, err := store.Get(ctx, foreign, draft.ID); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("foreign owner read a draft")
 	}

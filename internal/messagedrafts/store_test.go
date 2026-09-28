@@ -30,7 +30,7 @@ func TestStoreRejectsInvalidDraftBeforeDatabase(t *testing.T) {
 		{IdentityID: valid.IdentityID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: "invalid", ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: time.Now().Add(-time.Minute)},
-		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, RegisteredToolName: "other__calendar", OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
+		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, RegisteredToolName: "malformed:name", OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: Target{Recipe: "custom", Tool: "send_message"}, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 	}
 	for _, input := range cases {
@@ -46,5 +46,11 @@ func TestStoreRejectsInvalidDraftBeforeDatabase(t *testing.T) {
 	}
 	if _, err := store.Get(context.Background(), valid.IdentityID, "not-a-uuid"); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("malformed draft ID was not treated as unavailable")
+	}
+}
+
+func TestRegisteredToolNameAcceptsHashedBridgeName(t *testing.T) {
+	if !validRegisteredToolName("namespace_that_is_very_long_and_needs_truncate__c_0123456789ab") {
+		t.Fatal("a hash-suffixed bridge name was rejected")
 	}
 }

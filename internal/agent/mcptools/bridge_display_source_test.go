@@ -17,6 +17,9 @@ func TestMCPDisplaySourceOwnedByBridge(t *testing.T) {
 	if got := specFromToolDefWithPolicy("memory", tool, trusted).TrustedRecipeSource; got != mcp.SourceRecipeMemory {
 		t.Fatalf("trusted source = %q", got)
 	}
+	if got := specFromToolDefWithPolicy("memory", tool, trusted).TrustedRecipeTool; got != tool.Name {
+		t.Fatalf("trusted raw tool = %q", got)
+	}
 	if got := specFromToolDefWithPolicy("other", tool, bridgePolicy{}).TrustedRecipeSource; got != "" {
 		t.Fatalf("untrusted same-name tool gained source %q", got)
 	}

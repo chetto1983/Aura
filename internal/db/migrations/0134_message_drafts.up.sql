@@ -25,8 +25,9 @@ CREATE TABLE aura.message_drafts (
   UNIQUE (identity_id, conversation_id, tool_call_id),
   CHECK ((recipe = 'recipe:calendar' AND tool_name = 'calendar' AND action = 'send_email') OR
          (recipe = 'recipe:whatsapp' AND tool_name = 'send_message' AND action = '')),
-  CHECK (right(registered_tool_name, length(tool_name) + 2) = '__' || tool_name AND
-         length(registered_tool_name) > length(tool_name) + 2),
+  CHECK (length(registered_tool_name) BETWEEN 4 AND 64 AND
+         position('__' in registered_tool_name) > 1 AND
+         registered_tool_name ~ '^[A-Za-z0-9_-]+$'),
   CHECK ((status NOT IN ('dispatching', 'sent', 'failed', 'uncertain')) OR
          (effective_args IS NOT NULL AND effective_fingerprint IS NOT NULL AND dispatch_started_at IS NOT NULL)),
   CHECK ((status NOT IN ('sent', 'failed', 'declined', 'uncertain', 'expired')) OR resolved_at IS NOT NULL)
