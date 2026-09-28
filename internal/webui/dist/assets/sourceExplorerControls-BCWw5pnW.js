@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-CsOFd3vK.js";import{sa as t}from"./assistant-rendering-CeLaRYmq.js";function n(){return(0,r.useContext)(a)??i}var r,i,a;function o(){return(o=e((()=>{r=t(),i={openSources:()=>void 0},a=(0,r.createContext)(null)})))()}export{o as n,n as r,a as t};
