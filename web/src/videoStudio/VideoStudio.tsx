@@ -23,6 +23,7 @@ import { Timeline } from './Timeline';
 import { VideoStudioTransport } from './VideoStudioTransport';
 import { MobileVideoTools } from './VideoStudio_mobile';
 import { ExportPanel } from './VideoStudio_export';
+import { AudioPanel } from './VideoStudio_audioPanel';
 import { FilePicker, StudioRail } from './VideoStudio_rail';
 import {
   addedItem,
@@ -86,6 +87,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const [playing, setPlaying] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<ClipTab>('transform');
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [audioPanel, setAudioPanel] = useState(false);
   const [problem, setProblem] = useState<Sentence>();
   const [status, setStatus] = useState<Sentence>();
   const [pending, setPending] = useState<{ readonly edit: Edit; readonly lost: number }>();
@@ -171,8 +173,8 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     reselect(next);
   }
 
-  async function addFile(file: File) {
-    const placement = { time: playhead, label: file.name };
+  async function addFile(file: File, label = file.name) {
+    const placement = { time: playhead, label };
     setProblem(undefined);
     setStatus(says('videoStudio.source.reading'));
     try {
@@ -346,7 +348,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               canAddTitle={underPlayhead !== undefined}
               canRemove={selectedId !== undefined}
               onAddSource={() => fileInput.current?.click()}
-              onAddAudio={() => audioInput.current?.click()}
+              onAddAudio={() => {
+                setAudioPanel(true);
+              }}
               onAddTitle={addTitle}
               onSplit={() => {
                 run(splitEdit(selectedId, playhead));
@@ -501,7 +505,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}
               onAddClip={() => fileInput.current?.click()}
-              onAddAudio={() => audioInput.current?.click()}
+              onAddAudio={() => {
+                setAudioPanel(true);
+              }}
               soundSelected={
                 selectedId !== undefined && findAudioItem(project, selectedId) !== undefined
               }
@@ -524,6 +530,12 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
           )}
         </div>
 
+        <AudioPanel
+          open={audioPanel}
+          onOpenChange={setAudioPanel}
+          onUpload={() => audioInput.current?.click()}
+          onSound={addFile}
+        />
         <ConfirmDialog
           open={pending !== undefined}
           onOpenChange={(next) => {

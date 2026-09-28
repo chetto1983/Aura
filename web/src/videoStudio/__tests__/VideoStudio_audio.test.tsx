@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
 import type { VideoProject } from '../project';
@@ -41,6 +41,18 @@ const assets = vi.hoisted(() => ({
 }));
 vi.mock('../../chat/attachments/api', () => assets);
 vi.mock('../../chat/attachments/upload', () => ({ putWithProgress: () => Promise.resolve() }));
+
+const speech = vi.hoisted(() => ({
+  audio: vi.fn(() =>
+    Promise.resolve({ blob: new Blob(['mp3'], { type: 'audio/mpeg' }), truncated: false }),
+  ),
+}));
+vi.mock('../../chat/voice/voiceApi', () => ({ synthesizeSpeechAudio: speech.audio }));
+vi.mock('../../chat/voice/useVoiceCapabilities', () => ({
+  useVoiceCapabilities: () => ({ tts: true, stt: false }),
+}));
+// jsdom has no canvas and no microphone: the recorder is AudioRecorder.test.tsx's to judge.
+vi.mock('../AudioRecorder', () => ({ AudioRecorder: () => null }));
 
 const { default: VideoStudio } = await import('../VideoStudio');
 
@@ -158,13 +170,40 @@ describe('VideoStudio, with sounds', () => {
     ).toBeNull();
   });
 
-  it('offers Add audio on the rail, which opens the audio picker', async () => {
+  it('opens the audio panel from the rail, whose Upload audio opens the picker', async () => {
     mount(film());
     const picker = await screen.findByLabelText(i18n.t('videoStudio.audio.pick'));
     const click = vi.spyOn(picker, 'click');
     // The first clip is selected on open, so the phone bar shows its tools, not its add actions:
     // the one Add audio on screen is the rail's.
     fireEvent.click(screen.getByRole('button', { name: i18n.t('videoStudio.audio.add') }));
+    const panel = await screen.findByRole('dialog', {
+      name: i18n.t('videoStudio.audio.panel.title'),
+    });
+    fireEvent.click(
+      within(panel).getByRole('button', { name: i18n.t('videoStudio.audio.panel.upload') }),
+    );
     expect(click).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole('dialog', { name: i18n.t('videoStudio.audio.panel.title') }),
+    ).toBeNull();
+  });
+
+  it('puts a text read aloud at the playhead, named after the text', async () => {
+    mount(film());
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('videoStudio.audio.add') }));
+    const panel = await screen.findByRole('dialog', {
+      name: i18n.t('videoStudio.audio.panel.title'),
+    });
+    fireEvent.change(within(panel).getByLabelText(i18n.t('videoStudio.audio.panel.speech')), {
+      target: { value: 'The river runs.' },
+    });
+    fireEvent.click(
+      within(panel).getByRole('button', { name: i18n.t('videoStudio.audio.panel.speak') }),
+    );
+    expect((await sound(1)).textContent).toContain('The river runs.');
+    expect(assets.presignAsset).toHaveBeenCalledWith(
+      expect.objectContaining({ file_name: 'speech.mp3', mime_type: 'audio/mpeg' }),
+    );
   });
 });

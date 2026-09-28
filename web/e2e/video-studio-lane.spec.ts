@@ -21,6 +21,10 @@ import {
 async function addMusic(page: Page, editor: Locator): Promise<void> {
   const chooser = page.waitForEvent('filechooser');
   await pressAddAction(editor, 'Add audio');
+  await page
+    .getByRole('dialog', { name: 'Add a sound' })
+    .getByRole('button', { name: 'Upload audio' })
+    .click();
   await (await chooser).setFiles(resolve(AUDIO_FIXTURES, 'music.wav'));
   const sound = editor.getByRole('button', { name: 'Sound 1' });
   await expect(sound).toBeVisible({ timeout: 60_000 });

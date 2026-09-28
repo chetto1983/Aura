@@ -68,3 +68,18 @@
   fill: var(--video-studio-selection);
   stroke: var(--video-studio-panel-strong);
 }
+
+/* The recorder's live level: a strip the Record plugin scrolls while the microphone is open. The
+   panel is a dialog portalled to <body>, outside .video-studio-shell and its tokens, so it takes
+   the cockpit's own. */
+.video-studio-recorder {
+  display: grid;
+  gap: 8px;
+}
+
+.video-studio-recorder-level {
+  min-height: 40px;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--color-ring) 10%, transparent);
+  color: var(--color-ring);
+}

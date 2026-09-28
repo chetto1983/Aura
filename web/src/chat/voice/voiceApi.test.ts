@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { STT_ROUTE, TTS_ROUTE, synthesizeSpeech, transcribeAudio } from './voiceApi';
+import {
+  STT_ROUTE,
+  TTS_ROUTE,
+  synthesizeSpeech,
+  synthesizeSpeechAudio,
+  transcribeAudio,
+} from './voiceApi';
 import { stubObjectURL, ttsResponse, type ObjectUrlStub } from './voiceMocks';
 
 let urls: ObjectUrlStub | undefined;
@@ -80,5 +86,19 @@ describe('synthesizeSpeech', () => {
     stubFetch(new Response('nope', { status: 503 }));
     await expect(synthesizeSpeech('x')).rejects.toThrow('503');
     expect(urls.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('answers the audio itself for a caller that stores it, with the truncation flag', async () => {
+    const fetchMock = stubFetch(
+      new Response(new Uint8Array([1, 2, 3]), {
+        headers: { 'Content-Type': 'audio/mpeg', 'X-Aura-TTS-Truncated': 'true' },
+      }),
+    );
+    const controller = new AbortController();
+    const spoken = await synthesizeSpeechAudio('buongiorno', controller.signal);
+    expect(spoken.truncated).toBe(true);
+    expect(spoken.blob.type).toBe('audio/mpeg');
+    expect(spoken.blob.size).toBe(3);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
   });
 });

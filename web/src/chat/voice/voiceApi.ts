@@ -4,6 +4,8 @@
 // per-message speaker and the hands-free voice overlay all go through here, so the
 // wire shape — same-origin cookie, the `audio` multipart field name the Go handler
 // reads, the truncation header — has one definition instead of three that drift.
+// The Video Studio's Text to speech takes the bytes themselves (`synthesizeSpeechAudio`)
+// and stores them as a sound.
 //
 // Both throw on a non-2xx. An EMPTY transcript is NOT an error: /api/stt answers a
 // clean 200 {"text":""} when the clip held no speech, and the caller decides what that
@@ -36,16 +38,31 @@ export interface SynthesizedSpeech {
   readonly truncated: boolean;
 }
 
-/** POST text to /api/tts and wrap the audio/mpeg body in an object URL. */
-export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech> {
+interface SpokenAudio {
+  /** The audio/mpeg body. */
+  readonly blob: Blob;
+  /** True when the backend capped the input text (the D-05 "too long" hint). */
+  readonly truncated: boolean;
+}
+
+/** POST text to /api/tts and answer the audio/mpeg body: the Video Studio stores it as a sound. */
+export async function synthesizeSpeechAudio(
+  text: string,
+  signal?: AbortSignal,
+): Promise<SpokenAudio> {
   const res = await fetch(TTS_ROUTE, {
     method: 'POST',
     headers: { Accept: 'audio/mpeg', 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     body: JSON.stringify({ text }),
+    signal: signal ?? null,
   });
   if (!res.ok) throw new Error(`tts failed: ${String(res.status)}`);
-  const truncated = res.headers.get(TRUNCATED_HEADER) === 'true';
-  const blob = await res.blob();
+  return { blob: await res.blob(), truncated: res.headers.get(TRUNCATED_HEADER) === 'true' };
+}
+
+/** POST text to /api/tts and wrap the audio/mpeg body in an object URL. */
+export async function synthesizeSpeech(text: string): Promise<SynthesizedSpeech> {
+  const { blob, truncated } = await synthesizeSpeechAudio(text);
   return { url: URL.createObjectURL(blob), truncated };
 }
