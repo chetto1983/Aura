@@ -840,8 +840,37 @@ jobs:
             fi
           done
 
+      - name: Wait until the memory MCP can verify a token (aura serves its JWKS)
+        # The sidecar's /health above is liveness-only and `depends_on: aura` only STARTS the
+        # daemon, yet every bearer is verified against aura's JWKS: until aura has booted,
+        # `initialize` answers 500 (cmd/arcadedb-mcp/auth.go keySet()). In all three red MRS
+        # runs of 2026-09-27/28 the latency tier got there 155-161 s after aura started, while
+        # aura was still booting; the green runs got there after 183 s or more. Probed from
+        # INSIDE the sidecar at the URL its verifier fetches, and the boot time is printed so a
+        # slow daemon is measured, not absorbed.
+        run: |
+          ok=""
+          for i in $(seq 1 60); do
+            if docker compose exec -T arcadedb-mcp sh -c 'wget -q -T 5 -O /dev/null "$MCP_OAUTH_JWKS_URL"'; then ok=1; break; fi
+            echo "aura's JWKS not served yet ($i)"
+            sleep 5
+          done
+          started="$(docker inspect -f '{{.State.StartedAt}}' aura)"
+          echo "aura's JWKS probe ended $(( $(date +%s) - $(date -d "$started" +%s) )) s after aura started (restarts: $(docker inspect -f '{{.RestartCount}}' aura))"
+          if [ -z "$ok" ]; then
+            echo "aura never served its JWKS" >&2
+            docker compose logs --no-color --timestamps aura arcadedb-mcp || true
+            exit 1
+          fi
+
       - name: Agent Memory deterministic + live evaluator (strict MRS > 96.5)
         run: make agent-memory-eval
+
+      - name: Dump the memory MCP token path
+        # Whether the sidecar answered 401 or 500 is decided by what aura's JWKS said at that
+        # moment, and neither container's log reaches this job any other way.
+        if: failure()
+        run: docker compose logs --no-color --timestamps arcadedb-mcp aura
 
       - name: Upload Agent Memory evaluation report
         if: always()

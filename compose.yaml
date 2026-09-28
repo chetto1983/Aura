@@ -747,8 +747,10 @@ services:
       # MCP_OAUTH_JWKS_URL (http://aura:9080/oauth/jwks by default), so a stack where
       # nothing starts `aura` cannot resolve that name and answers 500 to `initialize`.
       # auth.go's keySet() records the same failure from 2026-09-06; dropping this line
-      # in 13baccf36 reproduced it in CI on f56549a90. service_started is enough: the
-      # JWKS fetch is lazy, so the daemon only has to exist by the first verified call.
+      # in 13baccf36 reproduced it in CI on f56549a90. service_started is enough for aura's
+      # own calls, which it makes only after its listener binds; any other caller must wait
+      # until aura SERVES the JWKS, because started is not booted -- the Agent Memory MRS
+      # job in ci.yml caught aura still booting 155-161 s after start on 2026-09-28.
       aura:
         condition: service_started
     environment:
