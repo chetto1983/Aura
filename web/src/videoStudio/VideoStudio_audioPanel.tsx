@@ -1,24 +1,19 @@
-import { Upload } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useVoiceCapabilities } from '../chat/voice/useVoiceCapabilities';
 import { synthesizeSpeechAudio } from '../chat/voice/voiceApi';
+import type { LibraryModality, StudioAssetRef } from '../studio/studioApi';
 import { AudioRecorder } from './AudioRecorder';
+import { SourcePanel } from './VideoStudio_sourcePanel';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 
-// VideoStudio_audioPanel.tsx — the rail's Add audio: a sound from a file, from the microphone, or
-// read aloud from a text by Aura's own voice (spec §UI). Whatever its origin, a sound enters the
-// project through the workspace's one door, `addFile`, so it is probed, uploaded and placed at the
-// playhead exactly as a picked file is. Text to speech is offered only where /api/voice/capabilities
-// says a voice is configured; the probe runs when the panel opens, not with the editor.
+// VideoStudio_audioPanel.tsx — the rail's Add audio: a sound from a file, from the library, from the
+// microphone, or read aloud from a text by Aura's own voice (spec §UI). A new sound enters the
+// project through the workspace's `addFile`, so it is probed, uploaded and placed at the playhead
+// exactly as a picked file is; a library sound through `onLibrary`, probed where it is stored and
+// never uploaded again. Text to speech is offered only where /api/voice/capabilities says a voice
+// is configured; the probe runs when the panel opens, not with the editor.
 
 /** How much of a text names the sound it became. */
 const LABEL_CHARS = 40;
@@ -119,14 +114,18 @@ function SpeechDoor({ onSound, onAdded }: SpeechDoorProps) {
   );
 }
 
+/** What the panel takes from the library. */
+const SOUNDS: readonly LibraryModality[] = ['audio'];
+
 interface AudioPanelProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly onUpload: () => void;
   readonly onSound: (file: File, label: string) => Promise<void>;
+  readonly onLibrary: (asset: StudioAssetRef) => void;
 }
 
-export function AudioPanel({ open, onOpenChange, onUpload, onSound }: AudioPanelProps) {
+export function AudioPanel({ open, onOpenChange, onUpload, onSound, onLibrary }: AudioPanelProps) {
   const { t, i18n } = useTranslation();
   const close = () => {
     onOpenChange(false);
@@ -135,36 +134,28 @@ export function AudioPanel({ open, onOpenChange, onUpload, onSound }: AudioPanel
     void onSound(file, label);
   };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="video-studio-audio-panel">
-        <DialogHeader>
-          <DialogTitle>{t('videoStudio.audio.panel.title')}</DialogTitle>
-          <DialogDescription>{t('videoStudio.audio.panel.description')}</DialogDescription>
-        </DialogHeader>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            close();
-            onUpload();
-          }}
-        >
-          <Upload aria-hidden="true" />
-          {t('videoStudio.audio.panel.upload')}
-        </Button>
-        <AudioRecorder
-          onRecorded={(file) => {
-            const time = new Date().toLocaleTimeString(i18n.language, {
-              hour: '2-digit',
-              minute: '2-digit',
-            });
-            add(file, t('videoStudio.audio.panel.recordingLabel', { time }));
-            close();
-          }}
-        />
-        <SpeechDoor onSound={add} onAdded={close} />
-      </DialogContent>
-    </Dialog>
+    <SourcePanel
+      open={open}
+      onOpenChange={onOpenChange}
+      title="videoStudio.audio.panel.title"
+      description="videoStudio.audio.panel.description"
+      upload="videoStudio.audio.panel.upload"
+      modalities={SOUNDS}
+      empty="videoStudio.library.emptySounds"
+      onUpload={onUpload}
+      onLibrary={onLibrary}
+    >
+      <AudioRecorder
+        onRecorded={(file) => {
+          const time = new Date().toLocaleTimeString(i18n.language, {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          add(file, t('videoStudio.audio.panel.recordingLabel', { time }));
+          close();
+        }}
+      />
+      <SpeechDoor onSound={add} onAdded={close} />
+    </SourcePanel>
   );
 }

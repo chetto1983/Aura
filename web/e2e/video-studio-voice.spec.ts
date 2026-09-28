@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import type { Locator, Page, TestInfo } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 import { expect, test } from './support/assetCleanup';
 import { levelBetween, windowPowers } from './support/audioMeasure';
 import {
   AUDIO_FIXTURES,
   exportTo,
-  pressAddAction,
+  openAudioPanel,
   reopen,
   silentFilm,
   uploadClip,
@@ -27,16 +27,6 @@ test.use({
     ],
   },
 });
-
-/** Waits for the reopened film, then opens the rail's Add audio panel. The wait comes first:
- *  `pressAddAction` looks for the rail once, and an editor still loading has none. */
-async function openAudioPanel(page: Page, editor: Locator): Promise<Locator> {
-  await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 60_000 });
-  await pressAddAction(editor, 'Add audio');
-  const panel = page.getByRole('dialog', { name: 'Add a sound' });
-  await expect(panel).toBeVisible();
-  return panel;
-}
 
 /** Where this Aura has no voice (CI), /api/tts answers with what the lab VM's voice said. */
 async function voiceOrStandIn(page: Page, info: TestInfo) {

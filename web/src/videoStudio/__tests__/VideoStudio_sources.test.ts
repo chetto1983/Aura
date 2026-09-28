@@ -3,6 +3,7 @@ import { CommandRefusal } from '../commands';
 import { emptyProject, type VideoProject } from '../project';
 import {
   openedProject,
+  probeAsset,
   probeSource,
   projectFromClip,
   REFUSAL_MISSING_ASSET,
@@ -301,5 +302,29 @@ describe('a sound at the door', () => {
     expect(assets.presignAsset).toHaveBeenCalledWith(
       expect.objectContaining({ modality_hint: 'audio' }),
     );
+  });
+});
+
+describe('probeAsset', () => {
+  it('reads a library asset through the probe a picked file goes through, typed by its route', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('x', { headers: { 'Content-Type': 'audio/wav' } }))),
+    );
+    media.probeAudio.mockResolvedValue({ duration: 4, decodable: true });
+    expect(await probeAsset('bed', SOURCE)).toEqual({
+      kind: 'audio',
+      duration: 4,
+      width: 0,
+      height: 0,
+    });
+    expect(fetch).toHaveBeenCalledWith('/api/assets/bed/download', {
+      credentials: 'same-origin',
+    });
+  });
+
+  it('calls a library asset deleted since the list was read what it is: gone', async () => {
+    serve(404);
+    await expect(probeAsset('bed', SOURCE)).rejects.toThrow(REFUSAL_MISSING_ASSET);
   });
 });

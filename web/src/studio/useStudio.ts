@@ -13,6 +13,7 @@ import {
   fetchStudioModels,
   listStudioHistory,
   listStudioLibrary,
+  type LibraryModality,
   type StudioImageBody,
   type StudioKind,
   type StudioRecord,
@@ -30,11 +31,14 @@ export const STUDIO_HISTORY_POLL_MS = 5000;
 
 const MODELS_STALE_MS = 5 * 60_000;
 const HISTORY_ROOT = ['studio', 'history'] as const;
+/** What the image Studio's pickers list, and what a library key means when it names nothing. */
+const IMAGES: readonly LibraryModality[] = ['image'];
 
 export const studioKeys = {
   models: (kind: StudioKind) => ['studio', 'models', kind] as const,
   history: (kind: StudioKind | undefined) => [...HISTORY_ROOT, kind ?? 'all'] as const,
-  library: () => ['studio', 'library'] as const,
+  library: (modalities: readonly LibraryModality[] = IMAGES) =>
+    ['studio', 'library', ...modalities] as const,
 };
 
 /** True while any loaded page still holds a generation that has not finished. */
@@ -116,12 +120,16 @@ export function useCreateStudioImage() {
   return useCreateStudio<StudioImageBody>(createStudioImage);
 }
 
-/** The identity's recent images, for the frame and reference pickers. Read only while a picker
- *  is open: the page itself never needs the list. */
-export function useStudioLibrary(enabled: boolean) {
+/** The identity's recent assets of the given kinds — images for the frame and reference pickers
+ *  unless a picker asks for others. Read only while a picker is open: the page itself never needs
+ *  the list. */
+export function useStudioLibrary(
+  enabled: boolean,
+  modalities: readonly LibraryModality[] = IMAGES,
+) {
   return useQuery({
-    queryKey: studioKeys.library(),
-    queryFn: ({ signal }) => listStudioLibrary(signal),
+    queryKey: studioKeys.library(modalities),
+    queryFn: ({ signal }) => listStudioLibrary(modalities, signal),
     enabled,
   });
 }

@@ -57,6 +57,18 @@ export const videoStudioEn = {
       uploading: 'Uploading {{name}}…',
       failed: 'The clip could not be added: {{reason}}',
     },
+    library: {
+      title: 'From the library',
+      loading: 'Reading the library…',
+      failed: 'The library could not be read.',
+      emptySounds: 'No sounds in the library yet.',
+      emptyClips: 'No videos or pictures in the library yet.',
+    },
+    clipPanel: {
+      title: 'Add a clip',
+      description: 'Upload a video or a picture, or take one from the library.',
+      upload: 'Upload a clip',
+    },
     timeline: {
       label: 'Timeline',
       duration: '{{time}} seconds',
@@ -243,6 +255,18 @@ export const videoStudioIt = {
       reading: 'Lettura della clip…',
       uploading: 'Caricamento di {{name}}…',
       failed: 'Non è stato possibile aggiungere la clip: {{reason}}',
+    },
+    library: {
+      title: 'Dalla libreria',
+      loading: 'Lettura della libreria…',
+      failed: 'Non è stato possibile leggere la libreria.',
+      emptySounds: 'Nessun suono nella libreria, per ora.',
+      emptyClips: 'Nessun video o immagine nella libreria, per ora.',
+    },
+    clipPanel: {
+      title: 'Aggiungi una clip',
+      description: 'Carica un video o un’immagine, oppure prendine uno dalla libreria.',
+      upload: 'Carica una clip',
     },
     timeline: {
       label: 'Linea del tempo',

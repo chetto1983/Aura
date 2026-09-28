@@ -1,8 +1,10 @@
 import { ChevronLeft, Clapperboard, Maximize2, Redo2, Save, Undo2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
+import type { LibraryModality, StudioAssetRef } from '../studio/studioApi';
 import { findAudioItem } from './audioLane';
 import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem } from './commands';
 import { createHistory, type Edit, type History } from './history';
@@ -22,8 +24,10 @@ import { Stage } from './Stage';
 import { Timeline } from './Timeline';
 import { VideoStudioTransport } from './VideoStudioTransport';
 import { MobileVideoTools } from './VideoStudio_mobile';
+import { usePlayback } from './VideoStudio_playback';
 import { ExportPanel } from './VideoStudio_export';
 import { AudioPanel } from './VideoStudio_audioPanel';
+import { SourcePanel } from './VideoStudio_sourcePanel';
 import { FilePicker, StudioRail } from './VideoStudio_rail';
 import {
   addedItem,
@@ -35,11 +39,14 @@ import {
 import {
   AUDIO_ACCEPT,
   openedProject,
+  probeAsset,
   probeSource,
   REFUSAL_MISSING_ASSET,
   sourceEdit,
   SOURCE_ACCEPT,
   uploadSource,
+  type ProbedSource,
+  type SourcePlacement,
   type StudioOpen,
 } from './VideoStudio_sources';
 import { Button } from '@/components/ui/button';
@@ -56,6 +63,8 @@ function says(key: string, values: Record<string, unknown> = {}): Sentence {
 }
 
 const TITLE_SECONDS = 3;
+/** What Add a clip takes from the library: a video, or a picture to hold as a still. */
+const CLIPS: readonly LibraryModality[] = ['video', 'image'];
 
 interface VideoStudioProps {
   readonly open: StudioOpen;
@@ -81,13 +90,15 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const fileInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
+  const duration = project === undefined ? 0 : projectDuration(project);
+  const { playhead, playing, seek, toggle } = usePlayback(duration);
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedJunction, setSelectedJunction] = useState<ClipJunction>();
-  const [playhead, setPlayhead] = useState(0);
-  const [playing, setPlaying] = useState(false);
   const [inspectorTab, setInspectorTab] = useState<ClipTab>('transform');
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [audioPanel, setAudioPanel] = useState(false);
+  const [clipPanel, setClipPanel] = useState(false);
+  const [propertiesShown, setPropertiesShown] = useState(true);
   const [problem, setProblem] = useState<Sentence>();
   const [status, setStatus] = useState<Sentence>();
   const [pending, setPending] = useState<{ readonly edit: Edit; readonly lost: number }>();
@@ -173,19 +184,17 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     reselect(next);
   }
 
-  async function addFile(file: File, label = file.name) {
+  /** One source into the project at the playhead: `bring` reads what it is — and stores it when it
+   *  is new — and the edit that places it is committed only once that has succeeded. */
+  async function admit(
+    label: string,
+    bring: (placement: SourcePlacement) => Promise<{ probed: ProbedSource; assetId: string }>,
+  ) {
     const placement = { time: playhead, label };
     setProblem(undefined);
     setStatus(says('videoStudio.source.reading'));
     try {
-      // Probed first, uploaded second: a clip this browser cannot decode never costs a transfer.
-      const probed = await probeSource(file);
-      // And tried before the transfer too: a sound with no film under it is refused here, not
-      // after its bytes have become an asset nothing points at.
-      const current = history?.current;
-      if (current !== undefined) sourceEdit(probed, '', placement)(current);
-      setStatus(says('videoStudio.source.uploading', { name: file.name }));
-      const assetId = await uploadSource(file);
+      const { probed, assetId } = await bring(placement);
       // Cleared BEFORE the commit, never after: the commit may replace this line with the frame
       // the project has just taken from this source, and clearing afterwards would eat it.
       setStatus(undefined);
@@ -194,6 +203,27 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
       setStatus(undefined);
       setProblem(failure(error, 'videoStudio.source.failed'));
     }
+  }
+
+  function addFile(file: File, label = file.name) {
+    return admit(label, async (placement) => {
+      // Probed first, uploaded second: a clip this browser cannot decode never costs a transfer.
+      const probed = await probeSource(file);
+      // And tried before the transfer too: a sound with no film under it is refused here, not
+      // after its bytes have become an asset nothing points at.
+      const current = history?.current;
+      if (current !== undefined) sourceEdit(probed, '', placement)(current);
+      setStatus(says('videoStudio.source.uploading', { name: file.name }));
+      return { probed, assetId: await uploadSource(file) };
+    });
+  }
+
+  /** An asset the library already holds: read where it is stored, never uploaded again. */
+  function addFromLibrary(asset: StudioAssetRef) {
+    return admit(asset.file_name, async () => ({
+      probed: await probeAsset(asset.id, assetSource),
+      assetId: asset.id,
+    }));
   }
 
   function addTitle() {
@@ -232,7 +262,6 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
 
   const name =
     project === undefined || project.name === '' ? t('videoStudio.untitled') : project.name;
-  const duration = project === undefined ? 0 : projectDuration(project);
   // A title hangs on a clip, so there has to be one under the playhead to hang it on.
   const underPlayhead = project === undefined ? undefined : clipAt(project, playhead);
   const unplayable = project === undefined ? [] : unplayableClips(project, missing);
@@ -244,27 +273,17 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
     return projectDuration(shown) <= 0 ? t('videoStudio.export.empty') : undefined;
   }
 
-  useEffect(() => {
-    if (!playing || duration <= 0) return undefined;
-    let last = performance.now();
-    const timer = window.setInterval(() => {
-      const now = performance.now();
-      const elapsed = (now - last) / 1000;
-      last = now;
-      setPlayhead((current) => {
-        const next = Math.min(duration, current + elapsed);
-        if (next >= duration) setPlaying(false);
-        return next;
-      });
-    }, 50);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [duration, playing]);
-
-  function seek(time: number) {
-    setPlaying(false);
-    setPlayhead(Math.min(Math.max(time, 0), duration));
+  /** The desktop panel beside the stage: hidden, the stage takes its width; shown again, the
+   *  keyboard lands in it — which is why it is shown synchronously, before the focus. */
+  function toggleProperties() {
+    if (propertiesShown) {
+      setPropertiesShown(false);
+      return;
+    }
+    flushSync(() => {
+      setPropertiesShown(true);
+    });
+    propertiesRef.current?.focus();
   }
 
   function showInspector(tab: ClipTab) {
@@ -275,7 +294,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
 
   return (
     <MediaEditorLayer label={t('videoStudio.title')} onEscape={onClose}>
-      <div className="video-studio-shell">
+      <div className="video-studio-shell" data-properties={propertiesShown ? 'shown' : 'hidden'}>
         <header className="video-studio-topbar">
           <span className="video-studio-mark" aria-hidden="true">
             <Clapperboard />
@@ -347,7 +366,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
             <StudioRail
               canAddTitle={underPlayhead !== undefined}
               canRemove={selectedId !== undefined}
-              onAddSource={() => fileInput.current?.click()}
+              onAddSource={() => {
+                setClipPanel(true);
+              }}
               onAddAudio={() => {
                 setAudioPanel(true);
               }}
@@ -355,7 +376,8 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               onSplit={() => {
                 run(splitEdit(selectedId, playhead));
               }}
-              onShowProperties={() => propertiesRef.current?.focus()}
+              propertiesShown={propertiesShown}
+              onToggleProperties={toggleProperties}
               onRemove={() => {
                 if (selectedId !== undefined)
                   run((current) => removeItem(current, { itemId: selectedId }));
@@ -403,10 +425,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                   playing={playing}
                   time={playhead}
                   duration={duration}
-                  onPlayToggle={() => {
-                    if (playhead >= duration) setPlayhead(0);
-                    setPlaying((current) => !current);
-                  }}
+                  onPlayToggle={toggle}
                   onSeek={seek}
                 />
                 <button
@@ -504,7 +523,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                 if (selectedId !== undefined)
                   run((current) => removeItem(current, { itemId: selectedId }));
               }}
-              onAddClip={() => fileInput.current?.click()}
+              onAddClip={() => {
+                setClipPanel(true);
+              }}
               onAddAudio={() => {
                 setAudioPanel(true);
               }}
@@ -535,6 +556,18 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
           onOpenChange={setAudioPanel}
           onUpload={() => audioInput.current?.click()}
           onSound={addFile}
+          onLibrary={(asset) => void addFromLibrary(asset)}
+        />
+        <SourcePanel
+          open={clipPanel}
+          onOpenChange={setClipPanel}
+          title="videoStudio.clipPanel.title"
+          description="videoStudio.clipPanel.description"
+          upload="videoStudio.clipPanel.upload"
+          modalities={CLIPS}
+          empty="videoStudio.library.emptyClips"
+          onUpload={() => fileInput.current?.click()}
+          onLibrary={(asset) => void addFromLibrary(asset)}
         />
         <ConfirmDialog
           open={pending !== undefined}

@@ -69,13 +69,20 @@ export interface StudioRecord {
   readonly completed_at?: string;
 }
 
-/** One library row. The server answers more (modality, status, size, created_at); the composer
- *  only ever needs to name the image it is attaching. */
-export interface StudioImageRef {
+/** The kinds a Studio picker lists: the image Studio's pictures, the video Studio's sounds and
+ *  clips. */
+export type LibraryModality = 'image' | 'audio' | 'video';
+
+/** One library row. The server answers more (modality, status, size, created_at); a picker only
+ *  ever needs to name the asset it is taking and read its type. */
+export interface StudioAssetRef {
   readonly id: string;
   readonly file_name: string;
   readonly mime_type: string;
 }
+
+/** A library row the image Studio attaches: always a picture. */
+export type StudioImageRef = StudioAssetRef;
 
 /** POST /api/studio/videos' body. The route strict-decodes, so an undeclared field is a 400 —
  *  which is why every optional axis is omitted rather than sent as null. */
@@ -205,9 +212,13 @@ export async function createStudioImage(body: StudioImageBody): Promise<StudioRe
   return studioJSON<StudioRecord>(res);
 }
 
-export async function listStudioLibrary(signal?: AbortSignal): Promise<readonly StudioImageRef[]> {
-  const res = await fetch('/api/studio/library', readInit(signal));
-  return envelope(await studioJSON<{ readonly assets: readonly StudioImageRef[] }>(res), 'assets');
+export async function listStudioLibrary(
+  modalities: readonly LibraryModality[],
+  signal?: AbortSignal,
+): Promise<readonly StudioAssetRef[]> {
+  const kinds = new URLSearchParams(modalities.map((modality) => ['modality', modality]));
+  const res = await fetch(`/api/studio/library?${kinds.toString()}`, readInit(signal));
+  return envelope(await studioJSON<{ readonly assets: readonly StudioAssetRef[] }>(res), 'assets');
 }
 
 export async function finalizeStudioUpload(id: string): Promise<StudioImageRef> {

@@ -354,4 +354,36 @@ test.describe('the multi-track video editor', () => {
 
     await expectNothingLeftTheAppliance(page, network);
   });
+
+  test('the rail hides the properties for the stage to take their width, and brings them back', async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name.startsWith('mobile'),
+      'the phone has a properties sheet, not a panel',
+    );
+    const editor = await editorOnSeededClip(page, 'video studio properties');
+    const properties = editor
+      .getByRole('toolbar', { name: 'Editing commands' })
+      .getByRole('button', { name: 'Properties' });
+    const stage = editor.locator('.video-studio-canvas');
+    await expect(properties).toHaveAttribute('aria-pressed', 'true');
+    const before = await boxOf(stage, 'the stage');
+
+    // Operator, 2026-09-28: "property button do nothing" — with the panel open it now closes it.
+    await properties.click();
+    await expect(properties).toHaveAttribute('aria-pressed', 'false');
+    await expect(editor.getByRole('region', { name: 'Properties' })).toBeHidden();
+    await expect
+      .poll(async () => (await boxOf(stage, 'the stage')).width)
+      .toBeGreaterThan(before.width + 250);
+    await info.attach('properties-hidden', {
+      contentType: 'image/png',
+      body: await page.screenshot(),
+    });
+
+    await properties.click();
+    await expect(editor.getByRole('region', { name: 'Properties' })).toBeVisible();
+    await expect(editor.locator('.video-studio-properties')).toBeFocused();
+  });
 });

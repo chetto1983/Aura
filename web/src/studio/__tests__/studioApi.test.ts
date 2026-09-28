@@ -125,7 +125,7 @@ describe('studio API client', () => {
   // read a failure as an empty history.
   it.each([
     ['history', () => listStudioHistory(undefined, undefined), { rows: [] }, 'records'],
-    ['library', () => listStudioLibrary(), { images: [] }, 'assets'],
+    ['library', () => listStudioLibrary(['image']), { images: [] }, 'assets'],
   ])('refuses a %s body that carries no array', async (_name, call, body, member) => {
     stubFetch(jsonResponse(body));
 
@@ -141,10 +141,18 @@ describe('studio API client', () => {
       }),
     );
 
-    const refs = await listStudioLibrary();
+    const refs = await listStudioLibrary(['image']);
 
-    expect(callOf(fetchMock).url).toBe('/api/studio/library');
+    expect(callOf(fetchMock).url).toBe('/api/studio/library?modality=image');
     expect(refs.map((ref) => ref.file_name)).toEqual(['cat.png']);
+  });
+
+  it('asks the library for every kind the picker offers', async () => {
+    const fetchMock = stubFetch(jsonResponse({ assets: [] }));
+
+    await listStudioLibrary(['video', 'image']);
+
+    expect(callOf(fetchMock).url).toBe('/api/studio/library?modality=video&modality=image');
   });
 
   it('posts a video body the server can strict-decode', async () => {
@@ -240,7 +248,7 @@ describe('studio API client', () => {
     // The unwired Studio and the auth gate answer http.Error text, not a studioErrorDTO.
     stubFetch(new Response('studio unavailable', { status: 503 }));
 
-    const err = await refusalOf(listStudioLibrary());
+    const err = await refusalOf(listStudioLibrary(['image']));
 
     expect(err.status).toBe(503);
     expect(err.code).toBe('');

@@ -53,6 +53,29 @@ vi.mock('../../chat/voice/useVoiceCapabilities', () => ({
 }));
 // jsdom has no canvas and no microphone: the recorder is AudioRecorder.test.tsx's to judge.
 vi.mock('../AudioRecorder', () => ({ AudioRecorder: () => null }));
+// The library's list is VideoStudio_library.test.tsx's to judge; here, what a pick does.
+const library = vi.hoisted(() => ({
+  audio: { id: 'lib-sound', file_name: 'river.wav', mime_type: 'audio/wav' },
+  video: { id: 'lib-clip', file_name: 'beach.mp4', mime_type: 'video/mp4' },
+}));
+vi.mock('../VideoStudio_library', () => ({
+  LibraryPicker: ({
+    modalities,
+    onPick,
+  }: {
+    modalities: readonly string[];
+    onPick: (asset: typeof library.audio) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        onPick(modalities.includes('audio') ? library.audio : library.video);
+      }}
+    >
+      {`library of ${modalities.join(' and ')}`}
+    </button>
+  ),
+}));
 
 const { default: VideoStudio } = await import('../VideoStudio');
 
@@ -131,7 +154,16 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
+
+/** Every asset the editor reads answers with bytes of this type, as the asset route does. */
+function serveTyped(type: string): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(new Response('x', { headers: { 'Content-Type': type } }))),
+  );
+}
 
 describe('VideoStudio, with sounds', () => {
   it('puts a picked sound on an audio lane at the playhead, named after its file, and selects it', async () => {
@@ -187,6 +219,54 @@ describe('VideoStudio, with sounds', () => {
     expect(
       screen.queryByRole('dialog', { name: i18n.t('videoStudio.audio.panel.title') }),
     ).toBeNull();
+  });
+
+  it('puts a sound picked from the library on a lane, read where it is stored, never uploaded', async () => {
+    serveTyped('audio/wav');
+    mount(film());
+    fireEvent.click(await screen.findByRole('button', { name: i18n.t('videoStudio.audio.add') }));
+    const panel = await screen.findByRole('dialog', {
+      name: i18n.t('videoStudio.audio.panel.title'),
+    });
+    fireEvent.click(within(panel).getByRole('button', { name: 'library of audio' }));
+    expect((await sound(1)).textContent).toContain('river.wav');
+    expect(fetch).toHaveBeenCalledWith('/api/assets/lib-sound/download', expect.anything());
+    expect(assets.presignAsset).not.toHaveBeenCalled();
+  });
+
+  it('opens the clip panel from Add a clip: its upload opens the picker, a library clip comes next', async () => {
+    serveTyped('video/mp4');
+    media.probeVideo.mockResolvedValue({
+      duration: 5,
+      width: 1920,
+      height: 1080,
+      hasAudio: false,
+      decodable: true,
+    });
+    mount(film());
+    const picker = await screen.findByLabelText(i18n.t('videoStudio.source.pick'));
+    const click = vi.spyOn(picker, 'click');
+    const openPanel = async () => {
+      fireEvent.click(
+        screen.getByRole('button', { name: i18n.t('videoStudio.command.addSource') }),
+      );
+      return screen.findByRole('dialog', { name: i18n.t('videoStudio.clipPanel.title') });
+    };
+    fireEvent.click(
+      within(await openPanel()).getByRole('button', {
+        name: i18n.t('videoStudio.clipPanel.upload'),
+      }),
+    );
+    expect(click).toHaveBeenCalledOnce();
+    fireEvent.click(
+      within(await openPanel()).getByRole('button', { name: 'library of video and image' }),
+    );
+    expect(
+      await screen.findByRole('button', {
+        name: i18n.t('videoStudio.timeline.clip', { index: 3 }),
+      }),
+    ).toBeTruthy();
+    expect(assets.presignAsset).not.toHaveBeenCalled();
   });
 
   it('puts a text read aloud at the playhead, named after the text', async () => {

@@ -81,8 +81,16 @@
 }
 
 .video-studio-recorder-level {
-  min-height: 40px;
+  height: 40px;
+  overflow: hidden;
   border-radius: 6px;
   background: color-mix(in oklab, var(--color-ring) 10%, transparent);
   color: var(--color-ring);
+  transition: height 160ms ease;
+}
+
+/* Shut until the microphone is open: an empty strip read as a field to type in. It collapses
+   instead of leaving the layout, so the waveform keeps the width it was created with. */
+.video-studio-recorder-level[data-live='false'] {
+  height: 0;
 }

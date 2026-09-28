@@ -312,6 +312,16 @@ describe('useStudioLibrary', () => {
     await waitFor(() => {
       expect(open.result.current.data).toBeDefined();
     });
-    expect(urls).toEqual(['/api/studio/library']);
+    expect(urls).toEqual(['/api/studio/library?modality=image']);
+  });
+
+  it('lists the kinds a picker asks for, apart from the images', async () => {
+    const { urls } = studioFetch();
+
+    const sounds = renderHook(() => useStudioLibrary(true, ['audio']), { wrapper: wrapper() });
+    await waitFor(() => {
+      expect(sounds.result.current.data).toBeDefined();
+    });
+    expect(urls).toEqual(['/api/studio/library?modality=audio']);
   });
 });

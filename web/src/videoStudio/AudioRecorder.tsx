@@ -68,7 +68,12 @@ export function AudioRecorder({ onRecorded }: { readonly onRecorded: (file: File
 
   return (
     <div className="video-studio-recorder">
-      <div ref={host} className="video-studio-recorder-level" aria-hidden="true" />
+      <div
+        ref={host}
+        className="video-studio-recorder-level"
+        data-live={phase === 'recording'}
+        aria-hidden="true"
+      />
       {phase === 'recording' ? (
         <>
           <p role="status" className="text-xs text-text-muted">

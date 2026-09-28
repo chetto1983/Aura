@@ -41,6 +41,8 @@ const assets = vi.hoisted(() => ({
 }));
 vi.mock('../../chat/attachments/api', () => assets);
 vi.mock('../../chat/attachments/upload', () => ({ putWithProgress: () => Promise.resolve() }));
+// Add a clip's panel lists the library; the list is VideoStudio_library.test.tsx's to judge.
+vi.mock('../VideoStudio_library', () => ({ LibraryPicker: () => null }));
 
 const { default: VideoStudio } = await import('../VideoStudio');
 
@@ -176,6 +178,13 @@ describe('VideoStudio, the phone bar', () => {
     fireEvent.click(
       within(bar).getByRole('button', { name: i18n.t('videoStudio.command.addSource') }),
     );
+    // Add a clip offers the device and the library: the device is one more press away.
+    const panel = await screen.findByRole('dialog', {
+      name: i18n.t('videoStudio.clipPanel.title'),
+    });
+    fireEvent.click(
+      within(panel).getByRole('button', { name: i18n.t('videoStudio.clipPanel.upload') }),
+    );
     expect(pick).toHaveBeenCalledOnce();
   });
 
@@ -191,5 +200,30 @@ describe('VideoStudio, the phone bar', () => {
         screen.queryByRole('button', { name: i18n.t('videoStudio.timeline.clip', { index: 3 }) }),
       ).toBeNull();
     });
+  });
+});
+
+describe('VideoStudio, the rail', () => {
+  it('hides the properties panel on Properties, and brings it back with focus inside', async () => {
+    await mount();
+    const rail = screen.getByRole('toolbar', { name: i18n.t('videoStudio.commands') });
+    const properties = within(rail).getByRole('button', {
+      name: i18n.t('videoStudio.inspector.label'),
+    });
+    const shell = document.querySelector<HTMLElement>('.video-studio-shell');
+    const panel = document.querySelector<HTMLElement>('.video-studio-properties');
+    expect(properties.getAttribute('aria-pressed')).toBe('true');
+    expect(shell?.dataset.properties).toBe('shown');
+
+    // Pressed with the panel open (operator, 2026-09-28: "property button do nothing"): it goes,
+    // and the stage takes its width.
+    fireEvent.click(properties);
+    expect(properties.getAttribute('aria-pressed')).toBe('false');
+    expect(shell?.dataset.properties).toBe('hidden');
+
+    fireEvent.click(properties);
+    expect(properties.getAttribute('aria-pressed')).toBe('true');
+    expect(shell?.dataset.properties).toBe('shown');
+    expect(document.activeElement).toBe(panel);
   });
 });

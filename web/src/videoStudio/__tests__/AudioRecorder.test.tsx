@@ -86,6 +86,18 @@ describe('AudioRecorder', () => {
     expect(screen.getByRole('button', { name: 'videoStudio.audio.panel.record' })).toBeTruthy();
   });
 
+  it('opens its level strip only while the microphone is open', async () => {
+    const { container } = render(<AudioRecorder onRecorded={vi.fn()} />);
+    const level = container.querySelector<HTMLElement>('.video-studio-recorder-level');
+    // Idle, an empty strip read as a field to type in (operator, 2026-09-28): it stays shut.
+    expect(level?.dataset.live).toBe('false');
+    record();
+    const stop = await screen.findByRole('button', { name: 'videoStudio.audio.panel.stop' });
+    expect(level?.dataset.live).toBe('true');
+    fireEvent.click(stop);
+    expect(level?.dataset.live).toBe('false');
+  });
+
   it('says a refused microphone in a sentence and records nothing', async () => {
     fake.refuse = true;
     const onRecorded = vi.fn();

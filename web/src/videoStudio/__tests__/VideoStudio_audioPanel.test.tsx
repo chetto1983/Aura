@@ -2,8 +2,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AudioPanel } from '../VideoStudio_audioPanel';
 
-// The Add audio panel with its three doors. The recorder and the voice are stood in for; what is
-// judged is what reaches the workspace's `onSound`, and when the panel closes.
+// The Add audio panel with its four doors. The recorder, the voice and the library are stood in for;
+// what is judged is what reaches the workspace's `onSound` or `onLibrary`, and when the panel
+// closes.
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -37,14 +38,41 @@ vi.mock('../AudioRecorder', () => ({
   ),
 }));
 
+const BED = { id: 'a1', file_name: 'bed.wav', mime_type: 'audio/wav' };
+vi.mock('../VideoStudio_library', () => ({
+  LibraryPicker: ({
+    modalities,
+    onPick,
+  }: {
+    modalities: readonly string[];
+    onPick: (asset: typeof BED) => void;
+  }) => (
+    <button
+      type="button"
+      onClick={() => {
+        onPick(BED);
+      }}
+    >
+      {`library of ${modalities.join(' and ')}`}
+    </button>
+  ),
+}));
+
 function mount() {
   const onOpenChange = vi.fn();
   const onUpload = vi.fn();
   const onSound = vi.fn((_file: File, _label: string) => Promise.resolve());
+  const onLibrary = vi.fn();
   const view = render(
-    <AudioPanel open onOpenChange={onOpenChange} onUpload={onUpload} onSound={onSound} />,
+    <AudioPanel
+      open
+      onOpenChange={onOpenChange}
+      onUpload={onUpload}
+      onSound={onSound}
+      onLibrary={onLibrary}
+    />,
   );
-  return { ...view, onOpenChange, onUpload, onSound };
+  return { ...view, onOpenChange, onUpload, onSound, onLibrary };
 }
 
 function speak(text: string) {
@@ -69,6 +97,14 @@ describe('AudioPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'videoStudio.audio.panel.upload' }));
     expect(onOpenChange).toHaveBeenCalledWith(false);
     expect(onUpload).toHaveBeenCalledOnce();
+  });
+
+  it('offers the sounds of the library, and closes on the one picked', () => {
+    const { onLibrary, onOpenChange, onSound } = mount();
+    fireEvent.click(screen.getByRole('button', { name: 'library of audio' }));
+    expect(onLibrary).toHaveBeenCalledWith(BED);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onSound).not.toHaveBeenCalled();
   });
 
   it('puts a text read aloud on a lane, named after the text, and closes', async () => {
@@ -140,10 +176,16 @@ describe('AudioPanel', () => {
       signal = given;
       return new Promise(() => undefined);
     });
-    const { onSound, rerender, onOpenChange, onUpload } = mount();
+    const { onSound, rerender, onOpenChange, onUpload, onLibrary } = mount();
     speak('Hello.');
     rerender(
-      <AudioPanel open={false} onOpenChange={onOpenChange} onUpload={onUpload} onSound={onSound} />,
+      <AudioPanel
+        open={false}
+        onOpenChange={onOpenChange}
+        onUpload={onUpload}
+        onSound={onSound}
+        onLibrary={onLibrary}
+      />,
     );
     await waitFor(() => {
       expect(signal?.aborted).toBe(true);

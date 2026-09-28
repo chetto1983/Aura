@@ -254,6 +254,16 @@ async function fetchSource(assetId: string, source: ProjectAssetSource): Promise
   return response.blob();
 }
 
+/** An asset already stored — a seeded one, or one picked from the library — read through the
+ *  same probe a picked file goes through: nothing is uploaded, and a clip this browser cannot
+ *  decode is refused at the same door. */
+export async function probeAsset(
+  assetId: string,
+  source: ProjectAssetSource,
+): Promise<ProbedSource> {
+  return probeSource(await fetchSource(assetId, source));
+}
+
 /**
  * The project the editor opens on, and the sources it already knows are gone. A seeded asset
  * goes through the SAME probe as a picked file, so a generated clip this browser cannot decode
@@ -265,8 +275,7 @@ export async function openedProject(
 ): Promise<LoadedProject> {
   if (open.kind === 'project') return { project: open.project, missing: [] };
   if (open.kind === 'saved') return loadProject(open.assetId, source);
-  const probed = await probeSource(await fetchSource(open.assetId, source));
-  const edit = sourceEdit(probed, open.assetId);
+  const edit = sourceEdit(await probeAsset(open.assetId, source), open.assetId);
   return {
     project: edit(emptyProject(open.name.trim(), STARTING_SIZE, STARTING_FPS)),
     missing: [],

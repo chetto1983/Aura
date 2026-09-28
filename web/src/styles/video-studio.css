@@ -167,6 +167,23 @@
   grid-row: 2;
 }
 
+/* The rail's Properties hides the panel on the desktop and the stage takes its column; the phone
+   layout has its own sheet and ignores this. */
+@media (min-width: 861px) {
+  .video-studio-shell[data-properties='hidden'] {
+    grid-template-columns: 76px 0 minmax(0, 1fr);
+  }
+
+  .video-studio-shell[data-properties='hidden'] .video-studio-properties {
+    display: none;
+  }
+}
+
+.video-studio-rail-button[aria-pressed='true'] {
+  background: var(--video-studio-panel-raised);
+  color: var(--video-studio-text);
+}
+
 .video-studio-properties::-webkit-scrollbar {
   width: 4px;
 }

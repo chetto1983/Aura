@@ -228,10 +228,34 @@ export async function pressAddAction(editor: Locator, name: string) {
   await action.click();
 }
 
-/** Picks a file through the editor's own button, the way an operator does. */
+/** Presses an Add action whose panel offers the device and the library, and answers the panel.
+ *  Waits for the editor's second clip first: `pressAddAction` looks for the action once, and while
+ *  the editor is still loading it would reach for the phone's tool bar instead. */
+async function openPanel(page: Page, editor: Locator, action: string, title: string) {
+  await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 60_000 });
+  await pressAddAction(editor, action);
+  const panel = page.getByRole('dialog', { name: title });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+export function openAudioPanel(page: Page, editor: Locator): Promise<Locator> {
+  return openPanel(page, editor, 'Add audio', 'Add a sound');
+}
+
+export function openClipPanel(page: Page, editor: Locator): Promise<Locator> {
+  return openPanel(page, editor, 'Add a clip', 'Add a clip');
+}
+
+/** Picks a file through the editor's own button, the way an operator does: Add a clip, then the
+ *  panel's Upload a clip. */
 export async function addClip(page: Page, editor: Locator, file: string) {
   const chooser = page.waitForEvent('filechooser');
   await pressAddAction(editor, 'Add a clip');
+  await page
+    .getByRole('dialog', { name: 'Add a clip' })
+    .getByRole('button', { name: 'Upload a clip' })
+    .click();
   await (await chooser).setFiles(resolve(FIXTURES, file));
 }
 

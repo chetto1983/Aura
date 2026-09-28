@@ -9,7 +9,9 @@ interface StudioRailProps {
   readonly onAddAudio: () => void;
   readonly onAddTitle: () => void;
   readonly onSplit: () => void;
-  readonly onShowProperties: () => void;
+  /** Whether the properties panel is open beside the stage; the rail's Properties toggles it. */
+  readonly propertiesShown: boolean;
+  readonly onToggleProperties: () => void;
   readonly onRemove: () => void;
 }
 
@@ -22,7 +24,8 @@ export function StudioRail({
   onAddAudio,
   onAddTitle,
   onSplit,
-  onShowProperties,
+  propertiesShown,
+  onToggleProperties,
   onRemove,
 }: StudioRailProps) {
   const { t } = useTranslation();
@@ -54,7 +57,12 @@ export function StudioRail({
         <Scissors aria-hidden="true" />
         <span>{t('videoStudio.command.split')}</span>
       </button>
-      <button type="button" className="video-studio-rail-button" onClick={onShowProperties}>
+      <button
+        type="button"
+        className="video-studio-rail-button"
+        aria-pressed={propertiesShown}
+        onClick={onToggleProperties}
+      >
         <SlidersHorizontal aria-hidden="true" />
         <span>{t('videoStudio.inspector.label')}</span>
       </button>
