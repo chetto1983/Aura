@@ -14,7 +14,8 @@ name: Skills (CAP-07 / CAP-08)
 # fuller stack. What remains here is genuinely unique: the FuzzSkillValidator smoke (SC#3),
 # the db_integration audit tier on internal/skills (SC#1/SC#2 + migration round-trip + TTL,
 # the one package ci.yml's integration-test omits), the by-path snippet-exec tier (SC#4,
-# host python3), and go-mutesting on the two critical files (validator.go + writer.go).
+# host python3), and go-mutesting on the two critical files (validator.go + writer.go),
+# which runs beside the gate in skills-mutation.
 # The paid LIVE xlsx North-Star E2E that used to back D-35 is gone with internal/eval
 # (2026-08-02): the harness it ran on was deleted, so there is no operator invocation
 # to point at any more.
@@ -37,55 +38,59 @@ concurrency:
   group: skills-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# One definition for both jobs: the mutants run the same db_integration tests as the gate, so
+# they need the same Postgres, DSNs and directories.
+env:
+  # Postgres primitives compose.yaml interpolates + the bootstrap the migratedPool
+  # helper composes (EnsureRoles needs the superuser DSN from POSTGRES_PASSWORD).
+  # AURA_ACCESS_TOKEN satisfies the caddy :? interpolation (Phase-17 appliance ingress;
+  # caddy is never started here) so `compose up postgres` doesn't fail to parse.
+  AURA_ACCESS_TOKEN: ci-not-a-secret
+  # Same reason, two more: they are :?-required on the aura service, so `compose up
+  # postgres` could not even parse the file. `:?` rejects empty as well as unset, so the
+  # blank entries in .env.example do not satisfy it. Both are public model identifiers,
+  # not credentials.
+  AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
+  AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
+  POSTGRES_USER: aura
+  POSTGRES_PASSWORD: ci-test-password
+  POSTGRES_DB: aura
+  POSTGRES_HOST: 127.0.0.1
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSLMODE: disable
+  # Composed role DSNs the db_integration tiers read directly
+  # (envOrSkip). NOT just the POSTGRES_* primitives — the audit store + migratedPool
+  # read AURA_DB_URL/AURA_DB_MIGRATE_URL. Without these the tagged tests SKIP and the
+  # job would go falsely green; CI=true turns that skip into a t.Fatal failure.
+  AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+  AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+  AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
+  SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
+  AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
+  AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
+  GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
+  # Phase 36 D-08: compose.yaml makes AURA_GARAGE_ADMIN_TOKEN :?-required on the aura +
+  # garage services; any `docker compose` parse needs it even though this job uses postgres.
+  AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
+  # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
+  # service, so a missing one of these aborts every compose invocation in the job —
+  # even the ones that start none of these containers.
+  ARCADEDB_PASSWORD: ci-test-password
+  ARCADEDB_APP_PASSWORD: ci-test-password
+  AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
+  # The host export dir the writer materializes ACTIVE snippets into; the SC#4
+  # by-path exec runs them from here on the host (D-17).
+  AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
+  AURA_RUN_DIR: /tmp/aura-run
+  # Arms the no-skip-as-green guards: a missing DSN/token under CI t.Fatals.
+  CI: "true"
+
 jobs:
   skills-gate:
-    name: Skills gate (unit + db_integration + fuzz + mutation + coverage)
+    name: Skills gate (db_integration + fuzz + snippet exec)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      # Postgres primitives compose.yaml interpolates + the bootstrap the migratedPool
-      # helper composes (EnsureRoles needs the superuser DSN from POSTGRES_PASSWORD).
-      # AURA_ACCESS_TOKEN satisfies the caddy :? interpolation (Phase-17 appliance ingress;
-      # caddy is never started here) so `compose up postgres` doesn't fail to parse.
-      AURA_ACCESS_TOKEN: ci-not-a-secret
-      # Same reason, two more: they are :?-required on the aura service, so `compose up
-      # postgres` could not even parse the file. `:?` rejects empty as well as unset, so the
-      # blank entries in .env.example do not satisfy it. Both are public model identifiers,
-      # not credentials.
-      AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
-      AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
-      POSTGRES_USER: aura
-      POSTGRES_PASSWORD: ci-test-password
-      POSTGRES_DB: aura
-      POSTGRES_HOST: 127.0.0.1
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
-      # Composed role DSNs the db_integration tiers read directly
-      # (envOrSkip). NOT just the POSTGRES_* primitives — the audit store + migratedPool
-      # read AURA_DB_URL/AURA_DB_MIGRATE_URL. Without these the tagged tests SKIP and the
-      # job would go falsely green; CI=true turns that skip into a t.Fatal failure.
-      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
-      SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
-      AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
-      AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
-      GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
-      # Phase 36 D-08: compose.yaml makes AURA_GARAGE_ADMIN_TOKEN :?-required on the aura +
-      # garage services; any `docker compose` parse needs it even though this job uses postgres.
-      AURA_GARAGE_ADMIN_TOKEN: ci-not-a-secret
-      # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
-      # service, so a missing one of these aborts every compose invocation in the job —
-      # even the ones that start none of these containers.
-      ARCADEDB_PASSWORD: ci-test-password
-      ARCADEDB_APP_PASSWORD: ci-test-password
-      AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
-      # The host export dir the writer materializes ACTIVE snippets into; the SC#4
-      # by-path exec runs them from here on the host (D-17).
-      AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
-      AURA_RUN_DIR: /tmp/aura-run
-      # Arms the no-skip-as-green guards: a missing DSN/token under CI t.Fatals.
-      CI: "true"
+    # Without the mutants this job took 5m17s of run 36412624404's 17m47s.
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -95,17 +100,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-
-      # Same reuse as ci.yml's Go mutation gate, through the same module: an entry is reused
-      # only when its fingerprint (scripts/go_mutation_cache.py) matches the checkout's.
-      - name: Restore skills mutation results
-        id: skills_mutation_cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: artifacts/skills-mutation-cache
-          key: skills-mutation-v1-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            skills-mutation-v1-${{ runner.os }}-
 
       - name: Prepare host dirs (the /skills mount source + the run dir)
         run: |
@@ -134,7 +128,69 @@ jobs:
         # no-skip-as-green; ubuntu-latest ships python3.
         run: go test -tags db_integration -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
 
-      - name: go-mutesting spot-check (validator.go + writer.go ≥70% killed)
+      # The owned-surface coverage gate used to run here too, with the same script and the
+      # same db_integration tag as ci.yml's knowledge-integration-test job -- but against a
+      # weaker stack (`make db-up`: Postgres only, no ArcadeDB, no embed sidecar) and
+      # publishing no artifact. So it was not a second opinion, it was the same measurement
+      # taken with less of the system up, ~20 minutes of it, on every push and every PR.
+      # ci.yml's run is the authority: it brings the full stack up and uploads the
+      # coverage-report.json that release readiness reads. The poppler-utils install that
+      # served this step went with it -- ci.yml installs its own.
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
+
+  skills-mutation:
+    name: Skills mutation (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    # One job per file, beside the gate. On run 36412624404 the two files ran in series inside
+    # the gate for 12m30s: validator.go 235.7 s, writer.go 509.3 s. One mutation job would take
+    # about 14m40s: that plus its own setup and Postgres, 2m09s on the same run. Two end with
+    # writer.go's job, about 11 minutes, for one more runner. Each timeout is at least 2.3 times
+    # its job's cold total.
+    timeout-minutes: ${{ matrix.timeout }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: validator
+            args: internal/skills/validator.go
+            timeout: 15
+          - name: writer
+            args: --advisory internal/skills/writer.go
+            timeout: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Same reuse as ci.yml's Go mutation gate, through the same module: an entry is reused
+      # only when its fingerprint (scripts/go_mutation_cache.py) matches the checkout's.
+      - name: Restore skills mutation results
+        id: skills_mutation_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/skills-mutation-cache
+          key: skills-mutation-v1-${{ runner.os }}-${{ matrix.name }}-${{ github.sha }}
+          restore-keys: |
+            skills-mutation-v1-${{ runner.os }}-${{ matrix.name }}-
+
+      # The mutants run the whole internal/skills suite, TestSnippetExec included.
+      - name: Prepare host dirs (the /skills mount source + the run dir)
+        run: |
+          mkdir -p "${AURA_SKILL_EXPORT_DIR}" "${AURA_RUN_DIR}"
+
+      - name: Start Postgres + migrate (through 0010)
+        run: |
+          make db-up
+          go run ./cmd/aura db migrate
+
+      - name: go-mutesting spot-check (≥70% killed)
         # The two CRITICAL files (RESEARCH §Validation Architecture / Phase gate): the
         # write-boundary validator + the durable gated writer. PASS=killed, FAIL=survived,
         # score=killed/total, reused while the file's input closure is unchanged.
@@ -142,7 +198,8 @@ jobs:
         # writer.go's killing tests are db_integration-gated (envOrSkip). The pinned
         # go-mutesting swaps each mutant into the checkout and runs a bare `go test <package>`,
         # so the tag reaches it only through GOFLAGS; without it the audit/pending-write tests
-        # are compiled out and every DB-path mutant falsely survives. writer.go is ADVISORY: a
+        # are compiled out and every DB-path mutant falsely survives. GOFLAGS is also part of
+        # each file's fingerprint, so both files keep it. writer.go is ADVISORY: a
         # 2026-06-06 WSL run scored it 0.379 (25/66). Measured 2026-09-28, the four runs
         # 36374190122, 36376741314, 36380553590 and 36382875089 all scored it 71/82 (86.59%);
         # whether it becomes a hard gate is the operator's decision; its correctness witness
@@ -155,7 +212,7 @@ jobs:
           PYTHONPATH=scripts python3 scripts/go_mutation_cache.py \
             --go-mutesting "$(go env GOPATH)/bin/go-mutesting" \
             --cache-dir artifacts/skills-mutation-cache --log-dir artifacts/skills-mutation-logs \
-            internal/skills/validator.go --advisory internal/skills/writer.go
+            ${{ matrix.args }}
 
       - name: Save skills mutation results
         if: always() && steps.skills_mutation_cache.outputs.cache-hit != 'true'
@@ -169,14 +226,6 @@ jobs:
         if: always()
         run: cat artifacts/skills-mutation-logs/*.log || true
 
-      # The owned-surface coverage gate used to run here too, with the same script and the
-      # same db_integration tag as ci.yml's knowledge-integration-test job -- but against a
-      # weaker stack (`make db-up`: Postgres only, no ArcadeDB, no embed sidecar) and
-      # publishing no artifact. So it was not a second opinion, it was the same measurement
-      # taken with less of the system up, ~20 minutes of it, on every push and every PR.
-      # ci.yml's run is the authority: it brings the full stack up and uploads the
-      # coverage-report.json that release readiness reads. The poppler-utils install that
-      # served this step went with it -- ci.yml installs its own.
       - name: Tear down
         if: always()
         run: docker compose down -v || true

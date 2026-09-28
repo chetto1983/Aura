@@ -192,6 +192,7 @@ evidence-contracts:
 		scripts/capability_eval_test.py \
 		scripts/critical_mutation_gate_test.py \
 		scripts/go_mutation_cache_test.py \
+		scripts/mutation_workflow_test.py \
 		scripts/observability_evidence_test.py \
 		scripts/production_load_chaos_test.py \
 		scripts/release_check_run_gate_test.py \
@@ -219,7 +220,7 @@ agent-memory-eval-running-aura: export AURA_E2E_RUNNING_AURA = 1
 agent-memory-eval-running-aura: agent-memory-eval
 
 critical-mutation:
-	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py scripts/go_mutation_cache_test.py
+	PYTHONPATH=scripts python3 -m unittest scripts/critical_mutation_gate_test.py scripts/go_mutation_cache_test.py scripts/mutation_workflow_test.py
 	PYTHONPATH=scripts python3 scripts/critical_mutation_gate.py
 
 observability-check:

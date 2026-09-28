@@ -5,9 +5,11 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
 from typing import Any
 
 from evidence_metadata import candidate_commit
@@ -179,7 +181,42 @@ def write_report(path: pathlib.Path, report: dict[str, Any]) -> None:
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
-def run(args: argparse.Namespace) -> dict[str, Any]:
+def announce(scope_id: str, measured: dict[str, Any]) -> None:
+    print(
+        f"critical-mutation-gate: {scope_id} {measured['score_percent']:.2f}% "
+        f"({provenance(measured)})",
+        flush=True,
+    )
+
+
+def measure_group(args: argparse.Namespace, make_measurer: Callable[..., Any] = measurer) -> None:
+    # One CI group job: measure (or reuse) only these scopes and export their entries for the
+    # aggregate. The 70% verdict stays with the aggregate, which sees every scope.
+    unknown = [scope_id for scope_id in args.measure_scopes if scope_id not in GO_SCOPES]
+    if unknown:
+        raise ValueError("unknown Go scope: " + ", ".join(unknown))
+    repo = pathlib.Path(__file__).resolve().parents[1]
+    cache_dir = args.go_cache_dir.resolve()
+    export_dir = args.export_dir.resolve()
+    measure_scope = make_measurer(
+        go_mutesting(args.go_mutesting),
+        repo,
+        export_dir,
+        cache_dir,
+        [GO_SCOPES[scope_id] for scope_id in args.measure_scopes],
+    )
+    failures = []
+    for scope_id in args.measure_scopes:
+        try:
+            announce(scope_id, measure_scope(scope_id, GO_SCOPES[scope_id]))
+            shutil.copyfile(cache_dir / f"{scope_id}.json", export_dir / f"{scope_id}.json")
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
+            failures.append(str(exc))
+    if failures:
+        raise RuntimeError("; ".join(failures))
+
+
+def run(args: argparse.Namespace, make_measurer: Callable[..., Any] = measurer) -> dict[str, Any]:
     repo = pathlib.Path(__file__).resolve().parents[1]
     executable = go_mutesting(args.go_mutesting)
     output = args.output.resolve()
@@ -193,16 +230,17 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "scopes": [],
     }
     try:
-        measure_scope = measurer(
-            executable, repo, log_dir, args.go_cache_dir.resolve(), GO_SCOPES.values()
+        measure_scope = make_measurer(
+            executable,
+            repo,
+            log_dir,
+            args.go_cache_dir.resolve(),
+            GO_SCOPES.values(),
+            require_measured=args.require_measured,
         )
         for scope_id, relative_path in GO_SCOPES.items():
             measured = measure_scope(scope_id, relative_path)
-            print(
-                f"critical-mutation-gate: {scope_id} {measured['score_percent']:.2f}% "
-                f"({provenance(measured)})",
-                flush=True,
-            )
+            announce(scope_id, measured)
             report["scopes"].append(scope(scope_id, [relative_path], measured))
         frontend_report = args.frontend_report.resolve()
         report["scopes"].append(
@@ -235,9 +273,19 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     return report
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Aura critical-boundary mutation gate")
     parser.add_argument("--go-mutesting")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--measure-scopes", nargs="+", metavar="SCOPE", help="measure only these Go scopes"
+    )
+    mode.add_argument(
+        "--require-measured",
+        action="store_true",
+        help="run no mutant: every Go scope must already be measured for its current inputs",
+    )
+    parser.add_argument("--export-dir", type=pathlib.Path)
     parser.add_argument(
         "--frontend-report",
         type=pathlib.Path,
@@ -260,12 +308,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--frontend-max-age-hours", type=float, default=24.0)
     parser.add_argument("--minimum", type=float, default=70.0)
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if (args.measure_scopes is None) != (args.export_dir is None):
+        parser.error("--measure-scopes and --export-dir go together")
+    return args
 
 
 def main() -> int:
     args = parse_args()
     try:
+        if args.measure_scopes:
+            measure_group(args)
+            return 0
         report = run(args)
     except (RuntimeError, ValueError, OSError, subprocess.SubprocessError) as exc:
         print(f"critical-mutation-gate: FAIL: {exc}", file=sys.stderr)

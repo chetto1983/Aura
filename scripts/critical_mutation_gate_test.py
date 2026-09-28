@@ -10,6 +10,7 @@ import unittest
 
 import critical_mutation_gate
 import go_mutation_cache
+from evidence_metadata import candidate_commit
 
 
 REPO = pathlib.Path(__file__).resolve().parents[1]
@@ -276,28 +277,6 @@ class FrontendMutationParserTest(unittest.TestCase):
             "reports/mutation/mutation.json",
         )
 
-    def test_ci_reuses_stryker_incremental_results_across_commits(self) -> None:
-        config = json.loads(
-            (REPO / "web/stryker.config.json").read_text(encoding="utf-8")
-        )
-        self.assertIs(config["incremental"], True)
-        self.assertEqual(
-            config["incrementalFile"], "reports/stryker-incremental.json"
-        )
-
-        workflow = (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        mutation_job = workflow.split("  web-mutation:\n", 1)[1].split(
-            "\n  web-e2e:", 1
-        )[0]
-        self.assertIn("actions/cache/restore@", mutation_job)
-        self.assertIn("actions/cache/save@", mutation_job)
-        self.assertEqual(
-            mutation_job.count("path: web/reports/stryker-incremental.json"), 2
-        )
-        self.assertIn("hashFiles('web/package-lock.json'", mutation_job)
-        self.assertIn("github.sha", mutation_job)
-        self.assertIn("restore-keys:", mutation_job)
-
     def test_scores_detected_and_undetected_mutants(self) -> None:
         report = {
             "schemaVersion": "1.0",
@@ -351,6 +330,185 @@ class FrontendMutationParserTest(unittest.TestCase):
             os.utime(path, (stale, stale))
             with self.assertRaisesRegex(ValueError, "stale"):
                 critical_mutation_gate.parse_frontend_report(path)
+
+
+FINGERPRINT = "f" * 64
+GO_SCOPES = critical_mutation_gate.GO_SCOPES
+
+
+def mutesting_log(killed: int = 8, survived: int = 2) -> str:
+    total = killed + survived
+    return (
+        f"The mutation score is {killed / total:.6f} "
+        f"({killed} passed, {survived} failed, 0 duplicated, 0 skipped, total is {total})\n"
+    )
+
+
+class GateModesTest(unittest.TestCase):
+    """CI's parallel shape with fakes: group jobs measure, the aggregate only reads."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self._tmp.name)
+        self.cache_dir = self.root / "cache"
+        self.cache_dir.mkdir()
+        self.candidate = candidate_commit(REPO)
+        self.mutated: list[str] = []
+        self.outcomes: dict[str, tuple[int, str]] = {}
+        self.frontend = self.root / "mutation.json"
+        self.frontend.write_text(
+            json.dumps(
+                {
+                    "schemaVersion": "1.0",
+                    "files": {
+                        name: {"mutants": [{"id": name, "status": "Killed"}]}
+                        for name in critical_mutation_gate.MEDIA_FRONTEND_FILES
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def mutate(self, relative_path: str) -> tuple[int, str]:
+        self.mutated.append(relative_path)
+        return self.outcomes.get(relative_path, (0, mutesting_log()))
+
+    def make_measurer(self, executable, repo, log_dir, cache_dir, relative_paths, require_measured=False):  # type: ignore[no-untyped-def]
+        return go_mutation_cache.scope_measurer(
+            relative_paths,
+            lambda path: FINGERPRINT,
+            None if require_measured else self.mutate,
+            cache_dir,
+            log_dir,
+            self.candidate,
+        )
+
+    def store(
+        self,
+        scope_id: str,
+        commit: str | None = None,
+        duration: float = 12.5,
+        fingerprint: str = FINGERPRINT,
+        log: str | None = None,
+    ) -> None:
+        entry = {
+            "schema_version": go_mutation_cache.SCHEMA_VERSION,
+            "scope": scope_id,
+            "file": GO_SCOPES[scope_id],
+            "fingerprint": fingerprint,
+            "commit": commit or self.candidate,
+            "duration_seconds": duration,
+            "log": log or mutesting_log(),
+        }
+        (self.cache_dir / f"{scope_id}.json").write_text(json.dumps(entry), encoding="utf-8")
+
+    def args(self, *extra: str):  # type: ignore[no-untyped-def]
+        return critical_mutation_gate.parse_args(
+            [
+                "--go-mutesting", "fake",
+                "--frontend-report", str(self.frontend),
+                "--output", str(self.root / "report.json"),
+                "--log-dir", str(self.root / "logs"),
+                "--go-cache-dir", str(self.cache_dir),
+                *extra,
+            ]
+        )
+
+    def aggregate(self) -> dict[str, object]:
+        return critical_mutation_gate.run(
+            self.args("--require-measured"), make_measurer=self.make_measurer
+        )
+
+    def written_report(self) -> dict[str, object]:
+        return json.loads((self.root / "report.json").read_text(encoding="utf-8"))
+
+    def group(self, *scopes: str) -> pathlib.Path:
+        export = self.root / "export"
+        critical_mutation_gate.measure_group(
+            self.args("--measure-scopes", *scopes, "--export-dir", str(export)),
+            make_measurer=self.make_measurer,
+        )
+        return export
+
+    def test_the_aggregate_reports_this_runs_measurements_as_measurements(self) -> None:
+        for index, scope_id in enumerate(GO_SCOPES):
+            self.store(scope_id, duration=100.0 + index)
+        report = self.aggregate()
+        measured = [scope for scope in report["scopes"] if scope["id"] in GO_SCOPES]  # type: ignore[union-attr,index]
+        self.assertEqual([scope["id"] for scope in measured], list(GO_SCOPES))
+        for index, scope in enumerate(measured):
+            self.assertNotIn("reused_from", scope)
+            self.assertEqual(scope["duration_seconds"], 100.0 + index)
+            self.assertEqual(scope["fingerprint"], FINGERPRINT)
+        self.assertIs(report["passed"], True)
+        self.assertEqual(self.mutated, [])
+
+    def test_the_aggregate_names_an_older_measurement_as_reused(self) -> None:
+        for scope_id in GO_SCOPES:
+            self.store(scope_id)
+        self.store("pausable", commit="b" * 40)
+        scopes = {scope["id"]: scope for scope in self.aggregate()["scopes"]}  # type: ignore[union-attr,index]
+        self.assertEqual(scopes["pausable"]["reused_from"], "b" * 40)
+        self.assertNotIn("reused_from", scopes["gateway"])
+
+    def test_the_aggregate_fails_closed_when_a_group_artifact_is_missing(self) -> None:
+        for scope_id in GO_SCOPES:
+            if scope_id != "elicitation_route":
+                self.store(scope_id)
+        with self.assertRaisesRegex(RuntimeError, "elicitation_route: no measurement .*missing"):
+            self.aggregate()
+        self.assertEqual(self.mutated, [], "the aggregate re-measured instead of failing")
+        report = self.written_report()
+        self.assertIs(report["passed"], False)
+        self.assertIn("elicitation_route", str(report["error"]))
+
+    def test_the_aggregate_fails_closed_on_a_stale_entry(self) -> None:
+        for scope_id in GO_SCOPES:
+            self.store(scope_id)
+        self.store("media_clamp", fingerprint="0" * 64)
+        with self.assertRaisesRegex(RuntimeError, "media_clamp: no measurement .*stale"):
+            self.aggregate()
+        self.assertEqual(self.mutated, [])
+
+    def test_the_aggregate_fails_on_a_below_floor_group_result(self) -> None:
+        for scope_id in GO_SCOPES:
+            self.store(scope_id)
+        self.store("gateway", log=mutesting_log(killed=6, survived=4))
+        with self.assertRaisesRegex(RuntimeError, "gateway=60.00%"):
+            self.aggregate()
+
+    def test_a_group_measures_only_its_scopes_and_exports_them(self) -> None:
+        export = self.group("gateway", "pausable")
+        self.assertEqual(self.mutated, [GO_SCOPES["gateway"], GO_SCOPES["pausable"]])
+        self.assertEqual(
+            sorted(path.name for path in export.iterdir()),
+            ["gateway.json", "gateway.log", "pausable.json", "pausable.log"],
+        )
+        self.assertFalse((self.root / "report.json").exists())
+
+    def test_a_group_exports_a_reused_entry_unchanged(self) -> None:
+        self.store("gateway", commit="b" * 40)
+        export = self.group("gateway")
+        self.assertEqual(self.mutated, [])
+        exported = json.loads((export / "gateway.json").read_text(encoding="utf-8"))
+        self.assertEqual(exported["commit"], "b" * 40)
+
+    def test_a_group_rejects_an_unknown_scope_before_measuring(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown Go scope: nosuch"):
+            self.group("gateway", "nosuch")
+        self.assertEqual(self.mutated, [])
+
+    def test_a_failing_scope_does_not_stop_its_group_siblings(self) -> None:
+        self.outcomes[GO_SCOPES["gateway"]] = (2, "panic: boom\n")
+        with self.assertRaisesRegex(RuntimeError, "gateway: go-mutesting exited 2"):
+            self.group("gateway", "pausable")
+        export = self.root / "export"
+        self.assertTrue((export / "pausable.json").is_file())
+        self.assertTrue((export / "gateway.log").is_file())
+        self.assertFalse((export / "gateway.json").exists())
 
 
 if __name__ == "__main__":

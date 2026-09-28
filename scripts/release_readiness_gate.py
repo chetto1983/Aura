@@ -266,13 +266,18 @@ def validate_mutation(report: dict[str, Any]) -> dict[str, Any]:
             f"mutation: {scope_id} score {score!r} < 70%",
         )
         scores[scope_id] = float(score)
-        # A Go scope whose input closure is byte-identical to an earlier measurement carries
-        # that measurement. It must say where it came from, and the bundle names it.
+        # A Go scope whose input closure is byte-identical to an earlier commit's measurement
+        # carries it, says where it came from, and the bundle names it. One measured on the
+        # candidate (by a sibling job of the same run) has no reused_from at all.
         if "reused_from" in scope:
             origin = scope["reused_from"]
             require(
                 isinstance(origin, str) and FULL_GIT_SHA.fullmatch(origin) is not None,
                 f"mutation: {scope_id} reuse names no full commit",
+            )
+            require(
+                origin != report.get("candidate_commit"),
+                f"mutation: {scope_id} reuse names the candidate itself",
             )
             require(
                 isinstance(scope.get("fingerprint"), str)

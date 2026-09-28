@@ -4,7 +4,6 @@ import contextlib
 import io
 import json
 import pathlib
-import re
 import tempfile
 import unittest
 
@@ -12,7 +11,6 @@ import critical_mutation_gate
 import go_mutation_cache
 
 
-REPO = pathlib.Path(__file__).resolve().parents[1]
 MODULE = {"Path": "example.com/m", "Main": True}
 TOOLCHAIN = {
     "GOFLAGS": "",
@@ -210,16 +208,38 @@ class MeasureTest(unittest.TestCase):
         self.calls.append(relative_path)
         return self.output
 
-    def measure(self, fingerprint: str = "f" * 64, commit: str = "1" * 40) -> dict[str, object]:
+    def measure(
+        self, fingerprint: str = "f" * 64, commit: str = "1" * 40, required: bool = False
+    ) -> dict[str, object]:
         return go_mutation_cache.measure(
             "gateway",
             "internal/gateway/classify.go",
             fingerprint,
-            self.mutate,
+            None if required else self.mutate,
             self.cache_dir,
             self.log_dir,
             commit,
         )
+
+    def test_an_entry_measured_on_this_commit_is_not_a_reuse(self) -> None:
+        # A sibling job of the same run measured it: that is a measurement of the candidate,
+        # carrying that job's duration, not a result carried over from another commit.
+        first = self.measure(commit="1" * 40)
+        again = self.measure(commit="1" * 40, required=True)
+        self.assertEqual(len(self.calls), 1)
+        self.assertNotIn("reused_from", again)
+        self.assertEqual(again["duration_seconds"], first["duration_seconds"])
+        self.assertEqual(
+            (self.log_dir / "gateway.log").read_text(encoding="utf-8"), mutesting_log()
+        )
+
+    def test_a_required_measurement_that_is_missing_or_stale_fails_closed(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "gateway: no measurement .*missing"):
+            self.measure(required=True)
+        self.measure(fingerprint="e" * 64)
+        with self.assertRaisesRegex(RuntimeError, "gateway: no measurement .*stale"):
+            self.measure(fingerprint="f" * 64, required=True)
+        self.assertEqual(len(self.calls), 1, "a required measurement must never run go-mutesting")
 
     def test_every_fingerprint_is_taken_before_the_first_mutant_runs(self) -> None:
         # A run leaves files behind (rapid writes a timestamped fail file into the mutated
@@ -422,57 +442,18 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FAIL: internal/skills/validator.go", out)
 
-
-def workflow_steps(workflow: str, job: str) -> list[str]:
-    text = (REPO / ".github/workflows" / workflow).read_text(encoding="utf-8")
-    body = re.split(r"\n  [A-Za-z0-9_-]+:\n", text.split(f"\n  {job}:\n", 1)[1], maxsplit=1)[0]
-    return body.split("\n      - name:")[1:]
-
-
-def step_index(steps: list[str], *needles: str) -> int:
-    matches = [i for i, step in enumerate(steps) if all(needle in step for needle in needles)]
-    if len(matches) != 1:
-        raise AssertionError(f"expected one step with {needles}, found {len(matches)}")
-    return matches[0]
-
-
-class WorkflowContractTest(unittest.TestCase):
-    def assert_cached_between_commits(
-        self, steps: list[str], cache_dir: str, command: str, flag: str
-    ) -> tuple[int, int]:
-        restore = step_index(steps, "actions/cache/restore@", f"path: {cache_dir}")
-        run = step_index(steps, command)
-        save = step_index(steps, "actions/cache/save@", f"path: {cache_dir}")
-        self.assertLess(restore, run)
-        self.assertLess(run, save)
-        self.assertIn("github.sha", steps[restore])
-        self.assertIn("restore-keys:", steps[restore])
-        self.assertIn("if: always()", steps[save])
-        self.assertIn("cache-hit != 'true'", steps[save])
-        self.assertIn(f"{flag} {cache_dir}", steps[run])
-        return run, save
-
-    def test_ci_mutation_job_reuses_go_scopes_across_commits(self) -> None:
-        steps = workflow_steps("ci.yml", "web-mutation")
-        _, save = self.assert_cached_between_commits(
-            steps,
-            "artifacts/go-mutation-cache",
-            "python3 scripts/critical_mutation_gate.py",
-            "--go-cache-dir",
+    def test_an_advisory_only_invocation_scores_without_gating(self) -> None:
+        # One file per parallel job: the writer job carries no hard file of its own.
+        code, out = self.run_cli(
+            ["--advisory", "internal/skills/writer.go", "--cache-dir", "c", "--log-dir", "l"],
+            {"internal/skills/writer.go": self.measured(25, 41)},
         )
-        # Saved before the evidence upload, so an upload failure cannot cost the cache.
-        self.assertLess(save, step_index(steps, "actions/upload-artifact@", "critical-mutation"))
+        self.assertEqual(code, 0, out)
+        self.assertIn("advisory: mutation score 37.88% < 70% for internal/skills/writer.go", out)
 
-    def test_skills_mutation_reuses_through_the_same_module(self) -> None:
-        steps = workflow_steps("skills.yml", "skills-gate")
-        run, _ = self.assert_cached_between_commits(
-            steps,
-            "artifacts/skills-mutation-cache",
-            "python3 scripts/go_mutation_cache.py",
-            "--cache-dir",
-        )
-        self.assertIn('GOFLAGS: "-tags=db_integration"', steps[run])
-        self.assertIn("internal/skills/validator.go --advisory internal/skills/writer.go", steps[run])
+    def test_an_invocation_without_any_file_is_refused(self) -> None:
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self.run_cli(["--cache-dir", "c", "--log-dir", "l"], {})
 
 
 if __name__ == "__main__":

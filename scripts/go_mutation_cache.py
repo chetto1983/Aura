@@ -146,6 +146,7 @@ def load_entry(path: pathlib.Path, relative_path: str, value: str) -> dict[str, 
             and entry.get("file") == relative_path
             and entry.get("fingerprint") == value
             and FULL_GIT_SHA.fullmatch(str(entry.get("commit"))) is not None
+            and isinstance(entry.get("duration_seconds"), (int, float))
         )
         if not usable:
             return None
@@ -159,7 +160,7 @@ def measure(
     scope_id: str,
     relative_path: str,
     value: str,
-    mutate: Mutate,
+    mutate: Mutate | None,
     cache_dir: pathlib.Path,
     log_dir: pathlib.Path,
     commit: str,
@@ -169,6 +170,15 @@ def measure(
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / f"{scope_id}.log"
     entry = load_entry(entry_path, relative_path, value)
+    if entry is not None and entry["commit"] == commit:
+        # Measured on this very commit, e.g. by a sibling job of the same CI run: that is
+        # the candidate's own measurement, so it carries that job's duration and no reuse.
+        log_path.write_text(entry["log"], encoding="utf-8")
+        return {
+            **entry["parsed"],
+            "fingerprint": value,
+            "duration_seconds": entry["duration_seconds"],
+        }
     if entry is not None:
         log_path.write_text(
             f"# reused: measured on {entry['commit']}, fingerprint {value}\n{entry['log']}",
@@ -180,6 +190,9 @@ def measure(
             "reused_from": entry["commit"],
             "duration_seconds": round(time.monotonic() - started, 3),
         }
+    if mutate is None:
+        state = "stale" if entry_path.exists() else "missing"
+        raise RuntimeError(f"{scope_id}: no measurement of its current inputs ({state} {entry_path})")
     returncode, output = mutate(relative_path)
     log_path.write_text(output, encoding="utf-8")
     if returncode != 0:
@@ -230,7 +243,7 @@ def go_toolchain(repo: pathlib.Path, executable: str) -> dict[str, str]:
 def scope_measurer(
     relative_paths: Iterable[str],
     fingerprint_of: Callable[[str], str],
-    mutate: Mutate,
+    mutate: Mutate | None,
     cache_dir: pathlib.Path,
     log_dir: pathlib.Path,
     commit: str,
@@ -254,6 +267,7 @@ def measurer(
     log_dir: pathlib.Path,
     cache_dir: pathlib.Path,
     relative_paths: Iterable[str],
+    require_measured: bool = False,
 ) -> MeasureScope:
     toolchain = go_toolchain(repo, executable)
 
@@ -275,7 +289,12 @@ def measurer(
         return completed.returncode, completed.stdout
 
     return scope_measurer(
-        relative_paths, fingerprint_of, mutate, cache_dir, log_dir, candidate_commit(repo)
+        relative_paths,
+        fingerprint_of,
+        None if require_measured else mutate,
+        cache_dir,
+        log_dir,
+        candidate_commit(repo),
     )
 
 
@@ -308,13 +327,16 @@ def verdict(
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="go-mutesting with input-closure reuse")
-    parser.add_argument("files", nargs="+", help="files whose score gates the exit status")
+    parser.add_argument("files", nargs="*", help="files whose score gates the exit status")
     parser.add_argument("--advisory", action="append", default=[], help="scored, never gating")
     parser.add_argument("--go-mutesting")
     parser.add_argument("--cache-dir", type=pathlib.Path, required=True)
     parser.add_argument("--log-dir", type=pathlib.Path, required=True)
     parser.add_argument("--minimum", type=float, default=70.0)
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not args.files and not args.advisory:
+        parser.error("give at least one file, hard or --advisory")
+    return args
 
 
 def main(argv: list[str] | None = None, measure_scope: MeasureScope | None = None) -> int:

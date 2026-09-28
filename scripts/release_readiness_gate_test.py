@@ -443,6 +443,17 @@ class ReleaseReadinessGateTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("media_clamp reuse", result.stderr)
 
+    def test_a_scope_reused_from_the_candidate_itself_is_malformed(self) -> None:
+        # A scope measured on the candidate (by a sibling job of the same run) carries no
+        # reused_from; naming the candidate as its own earlier source is a contradiction.
+        evidence = valid_evidence()
+        self.mutation_scope(evidence, "media_clamp").update(
+            {"reused_from": CANDIDATE, "fingerprint": "f" * 64}
+        )
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("media_clamp reuse names the candidate itself", result.stderr)
+
     def test_a_reused_mutation_scope_that_executed_no_mutants_fails(self) -> None:
         evidence = valid_evidence()
         self.mutation_scope(evidence, "media_clamp").update(
