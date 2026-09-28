@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n';
 import { VoiceOverlay } from './VoiceOverlay';
 import {
+  FakeMediaRecorder,
   stubAudio,
   stubGetUserMedia,
   stubMediaRecorder,
@@ -165,6 +166,10 @@ describe('VoiceOverlay', () => {
     audio?.last()?.fireEnded();
     await waitFor(() => {
       expect(screen.getByTestId('voice-status').textContent).toBe('Listening…');
+      // "Listening…" commits first; the effect it causes opens the next recording a task later.
+      // Awaited together, or that effect lands after teardown has unstubbed MediaRecorder (CI,
+      // 2026-09-28: "MediaRecorder is not defined").
+      expect(FakeMediaRecorder.instances).toHaveLength(2);
     });
   });
 
@@ -225,6 +230,7 @@ describe('VoiceOverlay', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('voice-status').textContent).toBe('Listening…');
+      expect(FakeMediaRecorder.instances).toHaveLength(2);
     });
     expect(h.send).not.toHaveBeenCalled();
     expect(screen.queryByTestId('voice-transcript')).toBeNull();
