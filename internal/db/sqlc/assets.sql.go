@@ -77,6 +77,40 @@ func (q *Queries) AdoptAssetIntoThread(ctx context.Context, arg AdoptAssetIntoTh
 	return i, err
 }
 
+const assetKeysHeld = `-- name: AssetKeysHeld :many
+SELECT object_key FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = ANY($2::text[])
+`
+
+type AssetKeysHeldParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	ObjectKeys []string    `json:"object_keys"`
+}
+
+// The keys among object_keys some row of the identity holds, in any status. A file-manager
+// write landing on one would replace an asset's bytes under its row, hand them to the sweep
+// removing a deleting row's object, or collide with the per-identity key index.
+func (q *Queries) AssetKeysHeld(ctx context.Context, arg AssetKeysHeldParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, assetKeysHeld, arg.IdentityID, arg.ObjectKeys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var object_key string
+		if err := rows.Scan(&object_key); err != nil {
+			return nil, err
+		}
+		items = append(items, object_key)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const assetNamesByObjectKey = `-- name: AssetNamesByObjectKey :many
 SELECT id, object_key, file_name FROM aura.assets
 WHERE identity_id = $1
@@ -797,6 +831,38 @@ func (q *Queries) PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToL
 		&i.ToolCallID,
 	)
 	return i, err
+}
+
+const relocateAsset = `-- name: RelocateAsset :exec
+UPDATE aura.assets
+SET object_key = $1,
+    file_name = CASE WHEN $2::text <> '' THEN $2::text ELSE file_name END,
+    updated_at = now()
+WHERE identity_id = $3
+  AND object_bucket = $4
+  AND object_key = $5
+`
+
+type RelocateAssetParams struct {
+	ToKey        string      `json:"to_key"`
+	NewName      string      `json:"new_name"`
+	IdentityID   pgtype.UUID `json:"identity_id"`
+	ObjectBucket string      `json:"object_bucket"`
+	FromKey      string      `json:"from_key"`
+}
+
+// Moves the identity's row in one bucket from from_key to to_key, taking new_name when the
+// move carries one. The file manager copies the object first and deletes the source after,
+// so the row never names a key without bytes.
+func (q *Queries) RelocateAsset(ctx context.Context, arg RelocateAssetParams) error {
+	_, err := q.db.Exec(ctx, relocateAsset,
+		arg.ToKey,
+		arg.NewName,
+		arg.IdentityID,
+		arg.ObjectBucket,
+		arg.FromKey,
+	)
+	return err
 }
 
 const resetAssetForIngestionRetry = `-- name: ResetAssetForIngestionRetry :one

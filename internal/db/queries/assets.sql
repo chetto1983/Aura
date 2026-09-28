@@ -242,3 +242,23 @@ WHERE identity_id = $1
   AND object_key = ANY(sqlc.arg(object_keys)::text[])
   AND file_name <> ''
   AND deleted_at IS NULL;
+
+-- name: AssetKeysHeld :many
+-- The keys among object_keys some row of the identity holds, in any status. A file-manager
+-- write landing on one would replace an asset's bytes under its row, hand them to the sweep
+-- removing a deleting row's object, or collide with the per-identity key index.
+SELECT object_key FROM aura.assets
+WHERE identity_id = $1
+  AND object_key = ANY(sqlc.arg(object_keys)::text[]);
+
+-- name: RelocateAsset :exec
+-- Moves the identity's row in one bucket from from_key to to_key, taking new_name when the
+-- move carries one. The file manager copies the object first and deletes the source after,
+-- so the row never names a key without bytes.
+UPDATE aura.assets
+SET object_key = sqlc.arg(to_key),
+    file_name = CASE WHEN sqlc.arg(new_name)::text <> '' THEN sqlc.arg(new_name)::text ELSE file_name END,
+    updated_at = now()
+WHERE identity_id = sqlc.arg(identity_id)
+  AND object_bucket = sqlc.arg(object_bucket)
+  AND object_key = sqlc.arg(from_key);

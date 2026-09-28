@@ -27,9 +27,19 @@ type Browser struct {
 	// is the pre-provisioning deployment shape (see resolveObjects).
 	PerIdentity  *ObjectResolverBundle
 	SharedBucket string
-	// Rows retires the asset row that holds a key Delete removes. Nil leaves rows alone,
-	// which is right only where no asset store exists.
-	Rows StoreBackend
+	// Rows keeps the asset rows in step with the keys: Delete retires the row of a key it
+	// removes, and a move or rename takes the rows of the keys it relocates. Nil leaves rows
+	// alone, which is right only where no asset store exists.
+	Rows BrowserRows
+}
+
+// BrowserRows is what the file manager does to the asset rows behind the keys it writes.
+type BrowserRows interface {
+	ByObjectKey(ctx context.Context, identityID, objectKey string) (Asset, error)
+	Delete(ctx context.Context, id, identityID string) (Asset, error)
+	Finalize(ctx context.Context, id, identityID string) error
+	KeysHeld(ctx context.Context, identityID string, keys []string) ([]string, error)
+	Relocate(ctx context.Context, identityID, bucket string, moves []KeyMove) error
 }
 
 // BrowseEntry is one row in a listing: a folder or an object.

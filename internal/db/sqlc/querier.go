@@ -37,6 +37,10 @@ type Querier interface {
 	// `aura task approve`). Returns rows affected so the caller distinguishes a hit (1) from
 	// a task that is not awaiting approval (0).
 	ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
+	// The keys among object_keys some row of the identity holds, in any status. A file-manager
+	// write landing on one would replace an asset's bytes under its row, hand them to the sweep
+	// removing a deleting row's object, or collide with the per-identity key index.
+	AssetKeysHeld(ctx context.Context, arg AssetKeysHeldParams) ([]string, error)
 	// The file manager lists bucket KEYS, which deliberately carry no name (a chat attachment
 	// is chat/<assetID>.<ext> so the name cannot leak through a presigned URL or an access log).
 	// The name it needs is on the same row as the key, so the listing resolves it here rather
@@ -615,6 +619,10 @@ type Querier interface {
 	RejectAnsweredDelegation(ctx context.Context, arg RejectAnsweredDelegationParams) (bool, error)
 	ReleaseConversationDeleteLease(ctx context.Context, arg ReleaseConversationDeleteLeaseParams) (int64, error)
 	ReleaseReservedConversationDelete(ctx context.Context, arg ReleaseReservedConversationDeleteParams) (int64, error)
+	// Moves the identity's row in one bucket from from_key to to_key, taking new_name when the
+	// move carries one. The file manager copies the object first and deletes the source after,
+	// so the row never names a key without bytes.
+	RelocateAsset(ctx context.Context, arg RelocateAssetParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	// Owner-scoped rename (Phase 36 MUSR-01 / D-06). rows-affected==0 drives the 403-vs-404 split.
 	RenameConversationForIdentity(ctx context.Context, arg RenameConversationForIdentityParams) (int64, error)

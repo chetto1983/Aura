@@ -127,6 +127,17 @@ func TestStoreDeleteLifecycleValidatesUUIDs(t *testing.T) {
 	}
 }
 
+func TestStoreKeyMovesValidateTheIdentity(t *testing.T) {
+	store := NewStore(&captureAssetDBTX{})
+	ctx := context.Background()
+	if _, err := store.KeysHeld(ctx, "not-a-uuid", []string{"a"}); err == nil || !strings.Contains(err.Error(), `invalid identity_id "not-a-uuid"`) {
+		t.Fatalf("KeysHeld error = %v, want an invalid identity", err)
+	}
+	if err := store.Relocate(ctx, "not-a-uuid", "bucket", []KeyMove{{From: "a", To: "b"}}); err == nil || !strings.Contains(err.Error(), `invalid identity_id "not-a-uuid"`) {
+		t.Fatalf("Relocate error = %v, want an invalid identity", err)
+	}
+}
+
 func invokeLifecycleMethod(t *testing.T, store *Store, method, assetID, identityID string) error {
 	t.Helper()
 

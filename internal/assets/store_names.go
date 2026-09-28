@@ -2,6 +2,7 @@ package assets
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
@@ -10,6 +11,13 @@ import (
 type KeyedAsset struct {
 	ID       string
 	FileName string
+}
+
+// KeyMove is one object key a file-manager move or rename relocated. Name, when not empty, is
+// the new file name of the row that held From: a rename changes what a file is called, a move
+// only where it lives.
+type KeyMove struct {
+	From, To, Name string
 }
 
 // AssetsByKey maps each object key this identity owns to its asset: the id, and the name a
@@ -57,4 +65,39 @@ func (s *Store) AssetsByKey(ctx context.Context, identityID string, keys []strin
 		}
 	}
 	return found, nil
+}
+
+// KeysHeld returns the keys among keys some row of the identity holds, in any status.
+func (s *Store) KeysHeld(ctx context.Context, identityID string, keys []string) ([]string, error) {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	var held []string
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var qErr error
+		held, qErr = q.AssetKeysHeld(ctx, sqlc.AssetKeysHeldParams{IdentityID: pgIdentityID, ObjectKeys: keys})
+		return qErr
+	})
+	return held, err
+}
+
+// Relocate moves the identity's rows in bucket along with the objects a move or rename
+// relocated, in one transaction: either every row follows or none does.
+func (s *Store) Relocate(ctx context.Context, identityID, bucket string, moves []KeyMove) error {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return err
+	}
+	return s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		for _, move := range moves {
+			if err := q.RelocateAsset(ctx, sqlc.RelocateAssetParams{
+				IdentityID: pgIdentityID, ObjectBucket: bucket,
+				FromKey: move.From, ToKey: move.To, NewName: move.Name,
+			}); err != nil {
+				return fmt.Errorf("relocate %s: %w", move.From, err)
+			}
+		}
+		return nil
+	})
 }

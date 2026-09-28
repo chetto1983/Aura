@@ -35,6 +35,10 @@ const maxFolderFanout = 10000
 // ErrTooManyObjects means a folder operation covers more keys than one request may touch.
 var ErrTooManyObjects = errors.New("assets: folder contains too many objects for one operation")
 
+// ErrDestinationHeld means a move, rename or copy would write over the object an asset row
+// holds: its bytes would be replaced under the row, or removed with a row being deleted.
+var ErrDestinationHeld = errors.New("assets: an asset already holds that name here")
+
 // Create makes an empty file or folder under parent and returns its new id.
 func (b *Browser) Create(ctx context.Context, identityID, parent, name, kind string) (string, error) {
 	store, bucket, err := b.resolveStore(ctx, identityID)
@@ -78,7 +82,7 @@ func (b *Browser) Rename(ctx context.Context, identityID, id, name string) (stri
 	} else {
 		target += "/"
 	}
-	return b.transfer(ctx, identityID, source, target+safe, true)
+	return b.transfer(ctx, identityID, source, target+safe, true, safe)
 }
 
 // Move relocates ids into target, returning their new ids in the same order.
@@ -102,7 +106,7 @@ func (b *Browser) transferAll(
 			continue
 		}
 		// The destination keeps the source's own name; only its parent changes.
-		id, err := b.transfer(ctx, identityID, source, folder+path.Base(source), removeSource)
+		id, err := b.transfer(ctx, identityID, source, folder+path.Base(source), removeSource, "")
 		if err != nil {
 			return nil, err
 		}
@@ -113,9 +117,13 @@ func (b *Browser) transferAll(
 
 // transfer copies one file or one whole folder to destination, optionally removing the
 // source afterwards. Copy-then-delete, in that order: a failed copy leaves the original
-// where it was, which is the only recoverable way round.
+// where it was, which is the only recoverable way round. A move takes the asset rows of the
+// keys it relocates between the two, so no row ever names a key without bytes; a failure
+// there leaves the sources and their rows as they were, and the copies without a row. name,
+// when not empty, is the renamed file's new name, which its row takes too. A copy gets no
+// row: it is a new file, not a new upload, and is listed by its key like any other.
 func (b *Browser) transfer(
-	ctx context.Context, identityID, source, destination string, removeSource bool,
+	ctx context.Context, identityID, source, destination string, removeSource bool, name string,
 ) (string, error) {
 	store, bucket, err := b.resolveStore(ctx, identityID)
 	if err != nil {
@@ -136,22 +144,59 @@ func (b *Browser) transfer(
 	if err != nil {
 		return "", err
 	}
+	moves := make([]KeyMove, 0, len(keys))
 	for _, key := range keys {
-		target := destination + strings.TrimPrefix(key, source)
+		move := KeyMove{From: key, To: destination + strings.TrimPrefix(key, source)}
+		if key == source {
+			move.Name = name
+		}
+		moves = append(moves, move)
+	}
+	if err := b.refuseHeldDestinations(ctx, identityID, moves); err != nil {
+		return "", err
+	}
+	for _, move := range moves {
 		if err := store.Copy(ctx,
-			objectstore.ObjectRef{Bucket: bucket, Key: key},
-			objectstore.ObjectRef{Bucket: bucket, Key: target}); err != nil {
-			return "", fmt.Errorf("copy %s: %w", key, err)
+			objectstore.ObjectRef{Bucket: bucket, Key: move.From},
+			objectstore.ObjectRef{Bucket: bucket, Key: move.To}); err != nil {
+			return "", fmt.Errorf("copy %s: %w", move.From, err)
 		}
 	}
-	if removeSource {
-		for _, key := range keys {
-			if err := store.Delete(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key}); err != nil {
-				return "", fmt.Errorf("remove %s: %w", key, err)
-			}
+	if !removeSource {
+		return "/" + destination, nil
+	}
+	if b.Rows != nil {
+		if err := b.Rows.Relocate(ctx, identityID, bucket, moves); err != nil {
+			return "", fmt.Errorf("move the asset rows: %w", err)
+		}
+	}
+	for _, move := range moves {
+		if err := store.Delete(ctx, objectstore.ObjectRef{Bucket: bucket, Key: move.From}); err != nil {
+			return "", fmt.Errorf("remove %s: %w", move.From, err)
 		}
 	}
 	return "/" + destination, nil
+}
+
+// refuseHeldDestinations fails before anything is copied when an asset row holds a key the
+// write would land on: the copy would replace that asset's bytes under its row, or hand them
+// to the sweep removing a deleting row's object.
+func (b *Browser) refuseHeldDestinations(ctx context.Context, identityID string, moves []KeyMove) error {
+	if b.Rows == nil {
+		return nil
+	}
+	targets := make([]string, 0, len(moves))
+	for _, move := range moves {
+		targets = append(targets, move.To)
+	}
+	held, err := b.Rows.KeysHeld(ctx, identityID, targets)
+	if err != nil {
+		return err
+	}
+	if len(held) > 0 {
+		return fmt.Errorf("%w: %s", ErrDestinationHeld, held[0])
+	}
+	return nil
 }
 
 // Delete removes files and folders, a folder taking everything under it.
