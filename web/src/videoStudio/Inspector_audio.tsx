@@ -12,7 +12,7 @@ import {
   trimAudio,
   type SetAudioPropertiesArgs,
 } from './commands_audio';
-import { NoiseReductionSwitch } from './Inspector_audioClean';
+import { DuckingControls, NoiseReductionSwitch } from './Inspector_audioClean';
 import type { AudioItem, VideoItem, VideoProject } from './project';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -21,7 +21,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Inspector_audio.tsx — what a sound shows in the inspector, and the audio controls a clip shares
 // with it: one volume slider, one mute, one speed control for both, so the two never drift. Noise
-// reduction lives in Inspector_audioClean.tsx: it analyses before it edits.
+// reduction and ducking live in Inspector_audioClean.tsx: they analyse before they edit.
 
 type Commit = (edit: (current: VideoProject) => VideoProject) => void;
 export type AudioTab = 'audio' | 'speed' | 'time';
@@ -268,6 +268,12 @@ export function AudioItemInspector({
               sourceId: item.sourceId,
               on: item.denoise === true,
             }}
+            onCommand={onCommand}
+          />
+          <DuckingControls
+            key={`duck-${item.id}`}
+            project={project}
+            item={item}
             onCommand={onCommand}
           />
           <FadeSlider

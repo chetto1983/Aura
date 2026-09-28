@@ -1,11 +1,12 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NoiseReductionSwitch } from '../Inspector_audioClean';
+import { DuckingControls, NoiseReductionSwitch } from '../Inspector_audioClean';
 import type { AudioItem, VideoProject } from '../project';
 
-// The Noise reduction switch, with the cleaning and the upload stood in for. What is judged is the
-// ONE edit it makes — the cleaned copy recorded and the switch turned on together, one undo step —
-// and that a copy already made is never made again (Review Focus 3).
+// The analysing controls — Noise reduction and ducking — with the cleaning, the upload and the speech
+// detector stood in for. What is judged is the ONE edit each makes — the analysis recorded and the
+// setting changed together, one undo step — and that an analysis already made is never made again
+// (Review Focus 3).
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -22,6 +23,11 @@ const cleaning = vi.hoisted(() => ({
 vi.mock('../audioClean', () => ({ cleanedFile: cleaning.cleanedFile }));
 vi.mock('../VideoStudio_sources', () => ({ uploadSource: cleaning.upload }));
 vi.mock('../../chat/attachments/api', () => ({ deleteAsset: cleaning.remove }));
+
+const hearing = vi.hoisted(() => ({
+  detect: vi.fn<(url: string, signal?: AbortSignal) => Promise<(readonly [number, number])[]>>(),
+}));
+vi.mock('../audioSpeech', () => ({ detectSpeech: hearing.detect }));
 
 function film(over: Partial<AudioItem> = {}, denoisedAssetId?: string): VideoProject {
   return {
@@ -92,6 +98,8 @@ function flip() {
 }
 
 beforeEach(() => {
+  hearing.detect.mockReset();
+  hearing.detect.mockResolvedValue([[1, 2]]);
   cleaning.cleanedFile.mockReset();
   cleaning.cleanedFile.mockResolvedValue(
     new File(['ogg'], 'src-v.clean.ogg', { type: 'audio/ogg' }),
@@ -233,5 +241,125 @@ describe('NoiseReductionSwitch', () => {
     const next = edits[0]?.(base);
     expect(next?.video[0]?.denoise).toBe(true);
     expect(next?.sources[0]?.denoisedAssetId).toBe('v-clean');
+  });
+});
+
+function mountDucking(project: VideoProject) {
+  const edits: Edit[] = [];
+  const item = project.audio?.[0]?.items[0];
+  if (item === undefined) throw new Error('fixture');
+  const view = render(
+    <DuckingControls
+      project={project}
+      item={item}
+      onCommand={(edit) => {
+        edits.push(edit);
+      }}
+    />,
+  );
+  return { ...view, edits, apply: (index = 0) => edits[index]?.(project) };
+}
+
+function heard(
+  project: VideoProject,
+  sourceId: string,
+  speech: (readonly [number, number])[],
+): VideoProject {
+  return {
+    ...project,
+    sources: project.sources.map((source) =>
+      source.id === sourceId ? { ...source, speech } : source,
+    ),
+  };
+}
+
+describe('DuckingControls', () => {
+  it('listens to the clip’s sound, then records it and turns ducking on in one edit', async () => {
+    const { edits, apply } = mountDucking(film());
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    expect((await screen.findByRole('status')).textContent).toBe('videoStudio.audio.listening');
+    await waitFor(() => {
+      expect(edits).toHaveLength(1);
+    });
+    expect(hearing.detect).toHaveBeenCalledWith('/api/assets/a/download', expect.any(AbortSignal));
+    const next = apply();
+    expect(next?.sources.find((source) => source.id === 'src-a')?.speech).toEqual([[1, 2]]);
+    expect(next?.audio?.[0]?.items[0]?.ducking).toEqual({ amountDb: -12, ramp: 0.5 });
+  });
+
+  it('records no speech as heard, so a silent film is not listened to again', async () => {
+    hearing.detect.mockResolvedValue([]);
+    const { apply, edits } = mountDucking(film());
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    await waitFor(() => {
+      expect(edits).toHaveLength(1);
+    });
+    expect(apply()?.sources.find((source) => source.id === 'src-a')?.speech).toEqual([]);
+  });
+
+  it('turns on at once when everything has been heard, and with nothing to listen to', () => {
+    const muted: VideoProject = {
+      ...film(),
+      video: film().video.map((clip) => ({ ...clip, muted: true })),
+    };
+    const { apply } = mountDucking(muted);
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    expect(hearing.detect).not.toHaveBeenCalled();
+    expect(apply()?.audio?.[0]?.items[0]?.ducking).toEqual({ amountDb: -12, ramp: 0.5 });
+  });
+
+  it('sets the amount and the softness, and turns off', () => {
+    const on = heard(film({ ducking: { amountDb: -12, ramp: 0.5 } }), 'src-a', [[1, 2]]);
+    const { apply } = mountDucking(on);
+    fireEvent.keyDown(
+      within(screen.getByLabelText('videoStudio.audio.duckAmount')).getByRole('slider'),
+      { key: 'ArrowLeft' },
+    );
+    expect(apply(0)?.audio?.[0]?.items[0]?.ducking).toEqual({ amountDb: -13, ramp: 0.5 });
+    fireEvent.keyDown(
+      within(screen.getByLabelText('videoStudio.audio.duckSoftness')).getByRole('slider'),
+      { key: 'ArrowRight' },
+    );
+    expect(apply(1)?.audio?.[0]?.items[0]?.ducking?.ramp).toBeCloseTo(0.6, 9);
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    expect(apply(2)?.audio?.[0]?.items[0]?.ducking).toBeUndefined();
+  });
+
+  it('offers to listen to a sound added after ducking was turned on, and records only what it hears', async () => {
+    const on = film({ ducking: { amountDb: -12, ramp: 0.5 } });
+    const { apply, edits } = mountDucking(on);
+    fireEvent.click(screen.getByRole('button', { name: 'videoStudio.audio.listenAgain' }));
+    await waitFor(() => {
+      expect(edits).toHaveLength(1);
+    });
+    const next = apply();
+    expect(next?.sources.find((source) => source.id === 'src-a')?.speech).toEqual([[1, 2]]);
+    expect(next?.audio?.[0]?.items[0]?.ducking).toEqual({ amountDb: -12, ramp: 0.5 });
+  });
+
+  it('says why listening failed and leaves ducking off', async () => {
+    hearing.detect.mockRejectedValue(new Error('Unable to decode audio data'));
+    const { edits } = mountDucking(film());
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'videoStudio.audio.listenFailed Unable to decode audio data',
+    );
+    expect(edits).toHaveLength(0);
+  });
+
+  it('writes nothing when it goes away while listening', async () => {
+    let signal: AbortSignal | undefined;
+    hearing.detect.mockImplementation((_url, given) => {
+      signal = given;
+      return new Promise(() => undefined);
+    });
+    const { edits, unmount } = mountDucking(film());
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' }));
+    await waitFor(() => {
+      expect(signal).toBeDefined();
+    });
+    unmount();
+    expect(signal?.aborted).toBe(true);
+    expect(edits).toHaveLength(0);
   });
 });

@@ -8,15 +8,27 @@
 //
 // A clip or sound with noise reduction on plays its cleaned copy (`denoisedAssetId`) once the copy
 // exists; a clip does so through a sound layer of its own under its muted picture.
+//
+// A ducking sound's curve goes down under the speech every other audible source carries
+// (`speechBesides`), mapped from source seconds through each clip and sound that plays it.
 
 import type VideoFlow from '@videoflow/core';
 import type { VideoJSON } from '@videoflow/core';
 import type { AssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { audioWindow } from './audioLane';
-import { audioTracks, clipStarts, sourceOf, type VideoItem, type VideoProject } from './project';
-import { volumeKeyframes, type CurveInput } from './volumeCurve';
+import {
+  audioTracks,
+  clipStarts,
+  clipTimelineDuration,
+  sourceOf,
+  type AudioItem,
+  type ProjectSource,
+  type VideoItem,
+  type VideoProject,
+} from './project';
+import { volumeKeyframes, type CurveInput, type Ducking } from './volumeCurve';
 
-type Loudness = Pick<CurveInput, 'volume' | 'fadeIn' | 'fadeOut' | 'envelope'>;
+type Loudness = Pick<CurveInput, 'volume' | 'fadeIn' | 'fadeOut' | 'envelope' | 'duck'>;
 
 /** The name of the sound layer a cleaned clip plays through; the clip's own layer keeps its id. */
 const CLEANED = '#clean';
@@ -96,6 +108,82 @@ export function addAudioItems(
   });
 }
 
+/** A source playing somewhere in the film: the timeline window it plays over, from which point of
+ *  the source, how fast. */
+interface Player {
+  readonly source: ProjectSource;
+  readonly start: number;
+  readonly end: number;
+  readonly sourceStart: number;
+  readonly speed: number;
+}
+
+/** What a ducking sound goes down under: every unmuted clip with a sound, and every unmuted sound
+ *  that does not duck itself — a bed does not duck under another bed — but never the sound itself. */
+function playersBesides(project: VideoProject, itemId: string): Player[] {
+  const starts = clipStarts(project);
+  const clips = project.video.flatMap((clip, index): Player[] => {
+    const source = sourceOf(project, clip.sourceId);
+    if (clip.muted || source?.kind !== 'video' || source.hasAudio === false) return [];
+    const start = starts[index] ?? 0;
+    const end = start + clipTimelineDuration(clip);
+    return [{ source, start, end, sourceStart: clip.sourceStart, speed: clip.speed ?? 1 }];
+  });
+  const sounds = audioTracks(project)
+    .flatMap((track) => track.items)
+    .flatMap((item): Player[] => {
+      const source = sourceOf(project, item.sourceId);
+      if (item.id === itemId || item.muted || item.ducking !== undefined || source === undefined) {
+        return [];
+      }
+      const window = audioWindow(project, item);
+      return [{ source, ...window, sourceStart: item.sourceStart, speed: item.speed ?? 1 }];
+    });
+  return [...clips, ...sounds];
+}
+
+/** The sources a ducking sound goes down under whose speech nobody has listened for yet. */
+export function unheardSources(project: VideoProject, itemId: string): ProjectSource[] {
+  const unheard = new Map<string, ProjectSource>();
+  for (const { source } of playersBesides(project, itemId)) {
+    if (source.speech === undefined) unheard.set(source.id, source);
+  }
+  return [...unheard.values()];
+}
+
+/** The speech the film carries besides this sound, on the film's clock, merged: each source's
+ *  speech mapped through every window that plays it (spec §Compile). */
+function speechBesides(project: VideoProject, itemId: string): [number, number][] {
+  const windows = playersBesides(project, itemId)
+    .flatMap((player) =>
+      (player.source.speech ?? []).map(([from, to]): [number, number] => [
+        Math.max(player.start, player.start + (from - player.sourceStart) / player.speed),
+        Math.min(player.end, player.start + (to - player.sourceStart) / player.speed),
+      ]),
+    )
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+  const merged: [number, number][] = [];
+  for (const window of windows) {
+    const last = merged.at(-1);
+    if (last !== undefined && window[0] <= last[1]) last[1] = Math.max(last[1], window[1]);
+    else merged.push(window);
+  }
+  return merged;
+}
+
+/** A sound's ducking on its own clock: the speech besides it, measured from where it starts. */
+function duckingOf(project: VideoProject, item: AudioItem): Ducking | undefined {
+  if (item.ducking === undefined) return undefined;
+  const start = audioWindow(project, item).start;
+  return {
+    ...item.ducking,
+    windows: speechBesides(project, item.id).map(
+      ([from, to]) => [from - start, to - start] as const,
+    ),
+  };
+}
+
 /** What each audible layer should sound like, by the name the compile gave it. */
 function loudnessByLayer(project: VideoProject): ReadonlyMap<string, Loudness> {
   const byName = new Map<string, Loudness>();
@@ -114,6 +202,7 @@ function loudnessByLayer(project: VideoProject): ReadonlyMap<string, Loudness> {
       fadeIn: item.fadeIn,
       fadeOut: item.fadeOut,
       envelope: item.envelope,
+      duck: duckingOf(project, item),
     });
   }
   return byName;

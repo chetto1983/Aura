@@ -31,6 +31,7 @@
     "@assistant-ui/react": "^0.15.18",
     "@assistant-ui/react-markdown": "^0.14.14",
     "@assistant-ui/react-syntax-highlighter": "^0.14.5",
+    "@echogarden/fvad-wasm": "0.2.0",
     "@emotion/is-prop-valid": "^1.4.0",
     "@radix-ui/react-dialog": "^1.1.17",
     "@radix-ui/react-hover-card": "1.1.23",

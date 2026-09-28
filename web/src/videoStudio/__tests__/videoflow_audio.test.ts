@@ -2,7 +2,7 @@ import type VideoFlow from '@videoflow/core';
 import type { VideoJSON } from '@videoflow/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { AudioItem, VideoItem, VideoProject } from '../project';
-import { addAudioItems, playsCleaned, withVolumes } from '../videoflow_audio';
+import { addAudioItems, playsCleaned, unheardSources, withVolumes } from '../videoflow_audio';
 
 // The audio half of the compile: what reaches VideoFlow for each sound, and what is written into
 // the compiled JSON for each audible layer — the only place its mixer reads a volume (S1).
@@ -253,5 +253,94 @@ describe('noise reduction in the compile', () => {
     expect(out.layers[1]?.animations).toEqual([
       { property: 'volume', keyframes: [{ time: 0, value: 0.5 }] },
     ]);
+  });
+});
+
+/** The fixture with speech heard in the clip's source and ducking on the bed. */
+function ducked(over: Partial<AudioItem> = {}, clip: Partial<VideoItem> = {}): VideoProject {
+  const base = project([sound({ ducking: { amountDb: -12, ramp: 0.5 }, ...over })], clip);
+  return {
+    ...base,
+    sources: base.sources.map((source) =>
+      source.id === 'src-a' ? { ...source, speech: [[1, 2]] } : source,
+    ),
+  };
+}
+
+function volumeFrames(out: VideoJSON) {
+  return (
+    out.layers[0]?.animations.find((animation) => animation.property === 'volume')?.keyframes ?? []
+  );
+}
+
+describe('ducking in the compile', () => {
+  const floor = 10 ** (-12 / 20);
+
+  it('lowers a sound under the speech the clips carry, on the sound’s own clock', () => {
+    // The clip's speech is 1–2 s of the film; the bed starts at 1 s, so it is ducked from its first
+    // instant for one second, then comes back over half a second.
+    const out = withVolumes(ducked(), json(layer('bed', { sourceStart: 2, sourceDuration: 4 })));
+    const keyframes = volumeFrames(out);
+    expect(keyframes[0]?.time).toBe(2);
+    expect(keyframes[0]?.value).toBeCloseTo(floor, 6);
+    const halfway = keyframes.find((keyframe) => Math.abs(keyframe.time - 3.25) < 1e-6);
+    expect(halfway?.value).toBeCloseTo(1 - 0.5 * (1 - floor), 6);
+    expect(keyframes.at(-1)?.value).toBeCloseTo(1, 6);
+  });
+
+  it('maps speech through the clip’s trim and speed', () => {
+    // Trimmed by 1 s and at double speed, source 1–2 s plays at film 0–0.5 s and its ramp is over
+    // at 1 s, which is where the bed starts (offset 2 source seconds at 2×): flat. Ignoring the
+    // trim (0.5–1 s) or the speed (0–1 s) would put speech under the bed's first instant.
+    const out = withVolumes(
+      ducked({ anchor: { clipId: 'clip-1', offset: 2 } }, { sourceStart: 1, speed: 2 }),
+      json(layer('bed', { sourceStart: 2, sourceDuration: 3 })),
+    );
+    expect(volumeFrames(out)).toEqual([]);
+  });
+
+  it('does not duck under a muted clip, under itself, or under another ducking sound', () => {
+    const compiled = json(layer('bed', { sourceStart: 2, sourceDuration: 4 }));
+    expect(volumeFrames(withVolumes(ducked({}, { muted: true }), compiled))).toEqual([]);
+    // The bed's own source has speech at 2–4 s, and a second sound plays that source from the
+    // film's start: the bed ducks under that sound, never under itself — and not at all once that
+    // sound ducks too.
+    const other = sound({ id: 'other', anchor: { clipId: 'clip-1', offset: 0 }, sourceStart: 0 });
+    const withOther = (over: Partial<AudioItem>): VideoProject => {
+      const base = ducked({}, { muted: true });
+      return {
+        ...base,
+        sources: base.sources.map((source) =>
+          source.id === 'src-m' ? { ...source, speech: [[2, 4]] } : source,
+        ),
+        audio: [...(base.audio ?? []), { id: 'lane-2', items: [{ ...other, ...over }] }],
+      };
+    };
+    expect(
+      volumeFrames(withVolumes(withOther({ ducking: { amountDb: -6, ramp: 1 } }), compiled)),
+    ).toEqual([]);
+    expect(volumeFrames(withVolumes(withOther({}), compiled))).not.toEqual([]);
+  });
+
+  it('keeps a sound flat when nothing it ducks under has speech', () => {
+    const quiet = project([sound({ ducking: { amountDb: -12, ramp: 0.5 } })]);
+    const heard: VideoProject = {
+      ...quiet,
+      sources: quiet.sources.map((source) =>
+        source.id === 'src-a' ? { ...source, speech: [] } : source,
+      ),
+    };
+    expect(volumeFrames(withVolumes(heard, json(layer('bed', { sourceStart: 2 }))))).toEqual([]);
+  });
+
+  it('names the sources a ducking sound has not heard yet, once each', () => {
+    const base = project([
+      sound({ ducking: { amountDb: -12, ramp: 0.5 } }),
+      sound({ id: 'voice', anchor: { clipId: 'clip-1', offset: 3 }, sourceStart: 0, duration: 1 }),
+    ]);
+    expect(unheardSources(base, 'bed').map((source) => source.id)).toEqual(['src-a', 'src-m']);
+    expect(unheardSources(ducked(), 'bed').map((source) => source.id)).toEqual([]);
+    const muted = project([sound()], { muted: true });
+    expect(unheardSources(muted, 'bed')).toEqual([]);
   });
 });

@@ -4,8 +4,11 @@ import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { deleteAsset } from '../chat/attachments/api';
 import { setClipPresentation } from './commands';
 import { recordAnalysis, setAudioProperties } from './commands_audio';
-import { sourceOf, type VideoProject } from './project';
+import { sourceOf, type AudioDucking, type AudioItem, type VideoProject } from './project';
+import { unheardSources } from './videoflow_audio';
 import { uploadSource } from './VideoStudio_sources';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 
 // Inspector_audioClean.tsx — the audio controls that need an analysis in the browser before they
@@ -47,6 +50,34 @@ function useAnalysis() {
     }
   }
   return { state, run };
+}
+
+/** What a control says while its analysis runs, and why it failed. */
+function AnalysisStatus({
+  state,
+  working,
+  failed,
+}: {
+  readonly state: AnalysisState;
+  readonly working: string;
+  readonly failed: string;
+}) {
+  const { t } = useTranslation();
+  if (state.state === 'working') {
+    return (
+      <p role="status" className="text-xs text-text-muted">
+        {t(working)}
+      </p>
+    );
+  }
+  if (state.state === 'failed') {
+    return (
+      <p role="alert" className="text-xs text-danger">
+        {t(failed, { reason: state.reason })}
+      </p>
+    );
+  }
+  return null;
 }
 
 /** What a switch turns: a clip's noise reduction or a sound's, over the source it plays. */
@@ -114,16 +145,135 @@ export function NoiseReductionSwitch({ project, target, onCommand }: NoiseReduct
         />
         <label htmlFor={id}>{t('videoStudio.audio.denoise')}</label>
       </div>
-      {state.state === 'working' ? (
-        <p role="status" className="text-xs text-text-muted">
-          {t('videoStudio.audio.cleaning')}
-        </p>
-      ) : null}
-      {state.state === 'failed' ? (
-        <p role="alert" className="text-xs text-danger">
-          {t('videoStudio.audio.cleanFailed', { reason: state.reason })}
-        </p>
-      ) : null}
+      <AnalysisStatus
+        state={state}
+        working="videoStudio.audio.cleaning"
+        failed="videoStudio.audio.cleanFailed"
+      />
+    </div>
+  );
+}
+
+/** Ducking as it is first turned on: the spec's defaults (spec §T7). */
+const DEFAULT_DUCKING: AudioDucking = { amountDb: -12, ramp: 0.5 };
+
+interface DuckingControlsProps {
+  readonly project: VideoProject;
+  readonly item: AudioItem;
+  readonly onCommand: Commit;
+}
+
+/** Lower this sound under the speech the rest of the film carries. The speech of every source it
+ *  goes down under is listened for once and recorded on the source; a source added later is offered
+ *  to be listened to rather than silently left out of the curve. */
+export function DuckingControls({ project, item, onCommand }: DuckingControlsProps) {
+  const { t } = useTranslation();
+  const { assetUrl } = useAssetSource();
+  const id = useId();
+  const { state, run } = useAnalysis();
+  const ducking = item.ducking;
+  const unheard = unheardSources(project, item.id);
+
+  const duck = (current: VideoProject, next: AudioDucking | null) =>
+    setAudioProperties(current, { itemId: item.id, ducking: next });
+
+  /** Listens to every unheard source, then makes ONE edit: what it heard, then `then`. */
+  function listen(then: (current: VideoProject) => VideoProject) {
+    void run(async (signal) => {
+      const { detectSpeech } = await import('./audioSpeech');
+      const heard: { sourceId: string; speech: (readonly [number, number])[] }[] = [];
+      for (const source of unheard) {
+        heard.push({
+          sourceId: source.id,
+          speech: await detectSpeech(assetUrl(source.assetId), signal),
+        });
+      }
+      signal.throwIfAborted();
+      onCommand((current) =>
+        then(heard.reduce((next, analysis) => recordAnalysis(next, analysis), current)),
+      );
+    });
+  }
+
+  function turn(on: boolean) {
+    if (!on) {
+      onCommand((current) => duck(current, null));
+      return;
+    }
+    if (unheard.length === 0) {
+      onCommand((current) => duck(current, DEFAULT_DUCKING));
+      return;
+    }
+    listen((current) => duck(current, DEFAULT_DUCKING));
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2 text-xs text-text-muted">
+        <Switch
+          id={id}
+          checked={ducking !== undefined}
+          disabled={state.state === 'working'}
+          aria-label={t('videoStudio.audio.ducking')}
+          onCheckedChange={turn}
+        />
+        <label htmlFor={id}>{t('videoStudio.audio.ducking')}</label>
+      </div>
+      {ducking === undefined ? null : (
+        <>
+          <label className="video-studio-adjustment">
+            <span>{t('videoStudio.audio.duckAmount')}</span>
+            <span className="font-mono tabular-nums">{ducking.amountDb} dB</span>
+            <Slider
+              key={ducking.amountDb}
+              aria-label={t('videoStudio.audio.duckAmount')}
+              min={-24}
+              max={-3}
+              step={1}
+              defaultValue={[ducking.amountDb]}
+              onValueCommit={([amountDb = ducking.amountDb]) => {
+                onCommand((current) => duck(current, { ...ducking, amountDb }));
+              }}
+            />
+          </label>
+          <label className="video-studio-adjustment">
+            <span>{t('videoStudio.audio.duckSoftness')}</span>
+            <span className="font-mono tabular-nums">{ducking.ramp.toFixed(1)}s</span>
+            <Slider
+              key={ducking.ramp}
+              aria-label={t('videoStudio.audio.duckSoftness')}
+              min={0.1}
+              max={2}
+              step={0.1}
+              defaultValue={[ducking.ramp]}
+              onValueCommit={([ramp = ducking.ramp]) => {
+                // A float step lands on 0.6000000000000001: rounded before the range check and
+                // the saved file see it.
+                onCommand((current) =>
+                  duck(current, { ...ducking, ramp: Math.round(ramp * 10) / 10 }),
+                );
+              }}
+            />
+          </label>
+          {unheard.length === 0 || state.state === 'working' ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                listen((current) => current);
+              }}
+            >
+              {t('videoStudio.audio.listenAgain')}
+            </Button>
+          )}
+        </>
+      )}
+      <AnalysisStatus
+        state={state}
+        working="videoStudio.audio.listening"
+        failed="videoStudio.audio.listenFailed"
+      />
     </div>
   );
 }

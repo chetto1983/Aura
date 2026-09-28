@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CURVE_STEP, gainAt, volumeKeyframes, type CurveInput } from '../volumeCurve';
+import { CURVE_STEP, duckAt, gainAt, volumeKeyframes, type CurveInput } from '../volumeCurve';
 
 // The curve, against the three rules S1 measured on VideoFlow's mixer: keyframe times are
 // absolute source seconds, gains step between keyframes, and the gain is 1 before the first.
@@ -88,5 +88,48 @@ describe('gainAt', () => {
   it('multiplies volume, fade and envelope', () => {
     const input = { ...flat, volume: 2, fadeIn: 2, envelope: [{ time: 0, gain: 0.5 }] };
     expect(gainAt(input, 1)).toBeCloseTo(0.5, 9);
+  });
+});
+
+describe('duckAt', () => {
+  const duck = { windows: [[2, 4]] as const, amountDb: -12, ramp: 0.5 };
+  const floor = 10 ** (-12 / 20);
+
+  it('lowers by the amount inside a speech window, and not at all far from one', () => {
+    expect(duckAt(duck, 3)).toBeCloseTo(floor, 9);
+    expect(duckAt(duck, 2)).toBeCloseTo(floor, 9);
+    expect(duckAt(duck, 1)).toBe(1);
+    expect(duckAt(duck, 5)).toBe(1);
+  });
+
+  it('ramps down before the window and back up after it, over the softness', () => {
+    expect(duckAt(duck, 1.75)).toBeCloseTo(1 - 0.5 * (1 - floor), 9);
+    expect(duckAt(duck, 4.25)).toBeCloseTo(1 - 0.5 * (1 - floor), 9);
+    expect(duckAt(duck, 1.5)).toBeCloseTo(1, 9);
+    expect(duckAt(duck, 4.5)).toBeCloseTo(1, 9);
+  });
+
+  it('takes the deeper duck where two windows’ ramps meet', () => {
+    const two = {
+      windows: [
+        [1, 2],
+        [2.6, 3],
+      ] as const,
+      amountDb: -12,
+      ramp: 0.5,
+    };
+    // 0.3 s after the first and 0.3 s before the second: each alone would be 40 % down.
+    expect(duckAt(two, 2.3)).toBeCloseTo(1 - 0.4 * (1 - floor), 9);
+  });
+
+  it('does not duck without ducking, or with nothing to duck under', () => {
+    expect(duckAt(undefined, 3)).toBe(1);
+    expect(duckAt({ windows: [], amountDb: -24, ramp: 1 }, 3)).toBe(1);
+  });
+
+  it('multiplies into the gain the mixer plays', () => {
+    const input = { sourceStart: 0, speed: 1, length: 6, volume: 0.5, duck };
+    expect(gainAt(input, 3)).toBeCloseTo(0.5 * floor, 9);
+    expect(gainAt(input, 0.5)).toBeCloseTo(0.5, 9);
   });
 });

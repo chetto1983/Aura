@@ -139,6 +139,11 @@ describe('Inspector, on a sound', () => {
     expect(screen.getByRole('switch', { name: 'videoStudio.audio.denoise' })).toBeTruthy();
   });
 
+  it('offers to lower the sound under speech', () => {
+    mount('bed');
+    expect(screen.getByRole('switch', { name: 'videoStudio.audio.ducking' })).toBeTruthy();
+  });
+
   it('sets the speed from a preset', () => {
     const applied = mount('bed');
     openTab('videoStudio.inspector.tabs.speed');
