@@ -75,6 +75,7 @@ type Querier interface {
 	// each other's lease (Phase 51, SWARM-09).
 	ClaimIngestionJobs(ctx context.Context, arg ClaimIngestionJobsParams) ([]ClaimIngestionJobsRow, error)
 	ClaimMediaJobDelivery(ctx context.Context, arg ClaimMediaJobDeliveryParams) (AuraMediaJob, error)
+	ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDraftSendParams) (AuraMessageDrafts, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
@@ -140,6 +141,7 @@ type Querier interface {
 	CreateRetentionItem(ctx context.Context, arg CreateRetentionItemParams) (AuraRetentionOperationItems, error)
 	CreateRetentionOperation(ctx context.Context, arg CreateRetentionOperationParams) (AuraRetentionOperations, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
+	DeclineMessageDraft(ctx context.Context, arg DeclineMessageDraftParams) (AuraMessageDrafts, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
 	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
@@ -227,6 +229,8 @@ type Querier interface {
 	// The turn path wants one string, not a row: the clock is rendered on every request.
 	GetIdentityTimezone(ctx context.Context, identityID pgtype.UUID) (string, error)
 	GetMediaJobForIdentity(ctx context.Context, arg GetMediaJobForIdentityParams) (AuraMediaJob, error)
+	GetMessageDraftByCall(ctx context.Context, arg GetMessageDraftByCallParams) (AuraMessageDrafts, error)
+	GetMessageDraftForIdentity(ctx context.Context, arg GetMessageDraftForIdentityParams) (AuraMessageDrafts, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
 	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
@@ -306,6 +310,7 @@ type Querier interface {
 	InsertIdentityRecoveryAudit(ctx context.Context, arg InsertIdentityRecoveryAuditParams) (AuraIdentityRecoveryAudit, error)
 	InsertMcpAudit(ctx context.Context, arg InsertMcpAuditParams) (AuraMcpAudit, error)
 	InsertMediaJob(ctx context.Context, arg InsertMediaJobParams) (AuraMediaJob, error)
+	InsertMessageDraft(ctx context.Context, arg InsertMessageDraftParams) (AuraMessageDrafts, error)
 	InsertPasswordResetChallenge(ctx context.Context, arg InsertPasswordResetChallengeParams) (AuraPasswordResetChallenges, error)
 	InsertPasswordResetToken(ctx context.Context, arg InsertPasswordResetTokenParams) (AuraPasswordResetTokens, error)
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
@@ -462,6 +467,7 @@ type Querier interface {
 	ListPIMProviderApps(ctx context.Context) ([]ListPIMProviderAppsRow, error)
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
+	ListPendingMessageDrafts(ctx context.Context, arg ListPendingMessageDraftsParams) ([]AuraMessageDrafts, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
 	// The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
 	// image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
@@ -548,6 +554,7 @@ type Querier interface {
 	// and marks that late row, so the renderer must use this atomic result set rather than
 	// its stale pre-claim snapshot or the late report is permanently omitted.
 	MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error)
+	MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDraftOutcomeParams) (AuraMessageDrafts, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a

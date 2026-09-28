@@ -489,6 +489,27 @@ type AuraMediaJob struct {
 	Kind string `json:"kind"`
 }
 
+type AuraMessageDrafts struct {
+	ID                   pgtype.UUID        `json:"id"`
+	IdentityID           pgtype.UUID        `json:"identity_id"`
+	ConversationID       string             `json:"conversation_id"`
+	ToolCallID           string             `json:"tool_call_id"`
+	Recipe               string             `json:"recipe"`
+	ToolName             string             `json:"tool_name"`
+	Action               string             `json:"action"`
+	OriginalArgs         []byte             `json:"original_args"`
+	OriginalFingerprint  string             `json:"original_fingerprint"`
+	EffectiveArgs        []byte             `json:"effective_args"`
+	EffectiveFingerprint pgtype.Text        `json:"effective_fingerprint"`
+	Status               string             `json:"status"`
+	OutcomeCode          pgtype.Text        `json:"outcome_code"`
+	ExpiresAt            pgtype.Timestamptz `json:"expires_at"`
+	DispatchStartedAt    pgtype.Timestamptz `json:"dispatch_started_at"`
+	ResolvedAt           pgtype.Timestamptz `json:"resolved_at"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Short-lived Telegram code challenges for self-service Authula password reset.
 type AuraPasswordResetChallenges struct {
 	ID             pgtype.UUID        `json:"id"`

@@ -376,8 +376,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0131 adds aura.pim_provider_app, the admin-set OAuth client per managed PIM provider.
 	// 0132 settles the assets the document processor left in 'processing' over a job that
 	// had succeeded. 0133 makes an ingestion job's events leave with it.
-	if head != 133 {
-		t.Fatalf("MigrationHead=%d, want embedded head 133", head)
+	// 0134 persists owner-scoped message drafts and their one-send disposition.
+	if head != 134 {
+		t.Fatalf("MigrationHead=%d, want embedded head 134", head)
 	}
 }
 
