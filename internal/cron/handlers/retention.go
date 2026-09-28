@@ -20,19 +20,22 @@ type RetentionPlanner interface {
 	Apply(context.Context, string) (retention.ApplyReport, error)
 }
 
-// OwnerExportSweeper physically removes expired durable owner-export archives.
-type OwnerExportSweeper interface {
+// Sweeper removes one bounded batch of what has come due by now and reports how many items
+// it removed: expired owner-export archives, and assets whose delete did not finish. A failure
+// is returned for the job to report; whatever it left is swept on the next run.
+type Sweeper interface {
 	SweepExpired(context.Context, time.Time) (int, error)
 }
 
 type retentionHandler struct {
-	engine       RetentionPlanner
-	ownerExports []OwnerExportSweeper
+	engine   RetentionPlanner
+	sweepers []Sweeper
 }
 
-// NewRetentionHandler constructs the non-overlapping scheduled retention owner.
-func NewRetentionHandler(engine RetentionPlanner, ownerExports ...OwnerExportSweeper) Handler {
-	return retentionHandler{engine: engine, ownerExports: ownerExports}
+// NewRetentionHandler constructs the non-overlapping scheduled retention owner. A nil sweeper
+// is skipped.
+func NewRetentionHandler(engine RetentionPlanner, sweepers ...Sweeper) Handler {
+	return retentionHandler{engine: engine, sweepers: sweepers}
 }
 
 func (h retentionHandler) Meta() HandlerMeta {
@@ -40,7 +43,7 @@ func (h retentionHandler) Meta() HandlerMeta {
 }
 
 func (h retentionHandler) Run(ctx context.Context, _ Job) (string, error) {
-	if h.engine == nil && len(h.ownerExports) == 0 {
+	if h.engine == nil && len(h.sweepers) == 0 {
 		return "retention: disabled (no engine)", nil
 	}
 	report := retention.ApplyReport{}
@@ -56,19 +59,18 @@ func (h retentionHandler) Run(ctx context.Context, _ Job) (string, error) {
 			}
 		}
 	}
-	exportsDeleted := 0
-	for _, sweeper := range h.ownerExports {
+	swept := 0
+	for _, sweeper := range h.sweepers {
 		if sweeper == nil {
 			continue
 		}
-		deleted, err := sweeper.SweepExpired(ctx, time.Now().UTC())
+		removed, err := sweeper.SweepExpired(ctx, time.Now().UTC())
+		swept += removed
 		if err != nil {
-			runErrors = append(runErrors, fmt.Errorf("owner export retention: %w", err))
-			continue
+			runErrors = append(runErrors, fmt.Errorf("retention sweep: %w", err))
 		}
-		exportsDeleted += deleted
 	}
-	summary := fmt.Sprintf("retention completed: completed %d item(s), %d byte(s), retryable %d, failed %d, owner exports deleted %d",
-		report.Completed, report.Bytes, report.Retryable, report.Failed, exportsDeleted)
+	summary := fmt.Sprintf("retention completed: completed %d item(s), %d byte(s), retryable %d, failed %d, swept %d item(s)",
+		report.Completed, report.Bytes, report.Retryable, report.Failed, swept)
 	return summary, errors.Join(runErrors...)
 }

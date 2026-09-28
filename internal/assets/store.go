@@ -3,11 +3,13 @@ package assets
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -236,7 +238,8 @@ func (s *Store) AdoptIntoThread(ctx context.Context, id, identityID, threadID st
 		})
 }
 
-// Delete soft-deletes an asset.
+// Delete marks an asset deleting: hidden from every read and write from now on, and left for
+// Finalize once its object is gone.
 func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error) {
 	return s.scopedTarget(ctx, id, identityID,
 		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
@@ -245,6 +248,41 @@ func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error
 				IdentityID: pgIdentityID,
 			})
 		})
+}
+
+// ListDeleting returns up to limit of the identity's deleting rows, oldest first.
+func (s *Store) ListDeleting(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return nil, err
+	}
+	return s.scopedRows(ctx, identityID, func(q *sqlc.Queries) ([]sqlc.AuraAssets, error) {
+		return q.ListDeletingAssets(ctx, sqlc.ListDeletingAssetsParams{
+			IdentityID: pgIdentityID,
+			Limit:      int32(limit), //nolint:gosec // DeleteSweep bounds this at deleteSweepBatch.
+		})
+	})
+}
+
+// Finalize ends a delete whose object is gone: the row leaves the table, or stays as a
+// deleted tombstone when a media_job points at it. A row that is not deleting, including one
+// a concurrent Finalize already removed, is left as it is.
+func (s *Store) Finalize(ctx context.Context, id, identityID string) error {
+	pgID, pgIdentityID, err := pgTarget(id, identityID)
+	if err != nil {
+		return err
+	}
+	return s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		removed, err := q.FinalizeAsset(ctx, sqlc.FinalizeAssetParams{ID: pgID, IdentityID: pgIdentityID})
+		if err != nil || removed > 0 {
+			return err
+		}
+		_, err = q.MarkAssetDeleted(ctx, sqlc.MarkAssetDeletedParams{ID: pgID, IdentityID: pgIdentityID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return err
+	})
 }
 
 func assetFromSQL(row sqlc.AuraAssets) (Asset, error) {
@@ -317,6 +355,19 @@ func pgUUID(field, value string) (pgtype.UUID, error) {
 		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, value, err)
 	}
 	return pgtype.UUID{Bytes: u, Valid: true}, nil
+}
+
+// pgTarget parses the (asset id, identity id) pair every targeted statement is addressed by.
+func pgTarget(id, identityID string) (pgtype.UUID, pgtype.UUID, error) {
+	pgID, err := pgUUID("asset id", id)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return pgtype.UUID{}, pgtype.UUID{}, err
+	}
+	return pgID, pgIdentityID, nil
 }
 
 func uuidString(value pgtype.UUID) string {

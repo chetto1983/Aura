@@ -176,6 +176,10 @@ type Querier interface {
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
+	// Removes a deleting row whose object is gone. A row a media_job points at is left for
+	// MarkAssetDeleted instead: that key has no ON DELETE action (migration 0128) because a paid
+	// clip keeps its pointer.
+	FinalizeAsset(ctx context.Context, arg FinalizeAssetParams) (int64, error)
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
@@ -388,6 +392,9 @@ type Querier interface {
 	// identity_id provides tenant isolation; child_id is optional so targeted reads do
 	// not become false not-found results when the worker is older than the list cap.
 	ListDelegationJobsForConversation(ctx context.Context, arg ListDelegationJobsForConversationParams) ([]ListDelegationJobsForConversationRow, error)
+	// What a delete left unfinished, oldest first, whether or not deleted_at was stamped: rows
+	// soft-deleted before SoftDeleteAsset stamped it are the backlog this drains.
+	ListDeletingAssets(ctx context.Context, arg ListDeletingAssetsParams) ([]AuraAssets, error)
 	// fix-plan 1.7 / Amendment #92 (REVISED): the per-tick approval-reminder sweep. Every
 	// pending_approval task with an ORIGIN CONVERSATION whose throttle stamp is due (never
 	// reminded, or older than the cadence cutoff computed in Go: now() -
@@ -649,6 +656,9 @@ type Querier interface {
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
+	// The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
+	// read and every status write, so a job finishing on it later cannot bring it back;
+	// FinalizeAsset or MarkAssetDeleted then ends it once its object is gone.
 	SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error)
 	// Preserve control intent committed while the worker held its original snapshot.
 	StageDelegationDelivery(ctx context.Context, arg StageDelegationDeliveryParams) (AuraIngestionJobs, error)

@@ -38,7 +38,12 @@ type StoreBackend interface {
 	// AdoptIntoThread(ctx, id, identityID, threadID) claims an asset presigned before its
 	// conversation existed. Only an unclaimed row is touched.
 	AdoptIntoThread(context.Context, string, string, string) (Asset, error)
+	// Delete(ctx, id, identityID) marks the row deleting; Finalize(ctx, id, identityID) ends
+	// that delete once the object is gone; ListDeleting(ctx, identityID, limit) finds the
+	// deletes left unfinished, oldest first (see service_delete.go).
 	Delete(context.Context, string, string) (Asset, error)
+	Finalize(context.Context, string, string) error
+	ListDeleting(context.Context, string, int) ([]Asset, error)
 }
 
 type ProcessingJobQueue interface {
@@ -257,24 +262,6 @@ func (s *Service) AdoptIntoThread(ctx context.Context, identityID, assetID, thre
 		return Asset{}, fmt.Errorf("asset service is not configured")
 	}
 	return s.Store.AdoptIntoThread(ctx, assetID, identityID, threadID)
-}
-
-func (s *Service) Delete(ctx context.Context, identityID, assetID string) (Asset, error) {
-	if s.Store == nil {
-		return Asset{}, fmt.Errorf("asset service is not configured")
-	}
-	asset, err := s.Store.Delete(ctx, assetID, identityID)
-	if err != nil {
-		return Asset{}, err
-	}
-	if s.Objects != nil && asset.ObjectBucket != "" && asset.ObjectKey != "" {
-		// Best-effort object cleanup on the OWNER's resolved store (a resolution fault must
-		// not fail the record delete — the row is already gone and the object is orphaned-safe).
-		if objects, _, rErr := s.objectsFor(identityctx.WithIdentityID(ctx, identityID)); rErr == nil {
-			_ = objects.Delete(context.WithoutCancel(ctx), assetRef(asset))
-		}
-	}
-	return asset, nil
 }
 
 func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset, error) {

@@ -143,14 +143,37 @@ WHERE id = $1
 RETURNING *;
 
 -- name: SoftDeleteAsset :one
+-- The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
+-- read and every status write, so a job finishing on it later cannot bring it back;
+-- FinalizeAsset or MarkAssetDeleted then ends it once its object is gone.
 UPDATE aura.assets
 SET status = 'deleting',
+    deleted_at = now(),
     updated_at = now()
 WHERE id = $1
   AND identity_id = $2
   AND deleted_at IS NULL
   AND status NOT IN ('deleting', 'deleted')
 RETURNING *;
+
+-- name: ListDeletingAssets :many
+-- What a delete left unfinished, oldest first, whether or not deleted_at was stamped: rows
+-- soft-deleted before SoftDeleteAsset stamped it are the backlog this drains.
+SELECT * FROM aura.assets
+WHERE identity_id = $1
+  AND status = 'deleting'
+ORDER BY created_at ASC, id ASC
+LIMIT $2;
+
+-- name: FinalizeAsset :execrows
+-- Removes a deleting row whose object is gone. A row a media_job points at is left for
+-- MarkAssetDeleted instead: that key has no ON DELETE action (migration 0128) because a paid
+-- clip keeps its pointer.
+DELETE FROM aura.assets
+WHERE assets.id = $1
+  AND assets.identity_id = $2
+  AND assets.status = 'deleting'
+  AND NOT EXISTS (SELECT 1 FROM aura.media_job WHERE media_job.asset_id = assets.id);
 
 -- name: ResetAssetForIngestionRetry :one
 UPDATE aura.assets

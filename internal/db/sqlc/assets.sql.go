@@ -211,6 +211,30 @@ func (q *Queries) CreateAsset(ctx context.Context, arg CreateAssetParams) (AuraA
 	return i, err
 }
 
+const finalizeAsset = `-- name: FinalizeAsset :execrows
+DELETE FROM aura.assets
+WHERE assets.id = $1
+  AND assets.identity_id = $2
+  AND assets.status = 'deleting'
+  AND NOT EXISTS (SELECT 1 FROM aura.media_job WHERE media_job.asset_id = assets.id)
+`
+
+type FinalizeAssetParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+// Removes a deleting row whose object is gone. A row a media_job points at is left for
+// MarkAssetDeleted instead: that key has no ON DELETE action (migration 0128) because a paid
+// clip keeps its pointer.
+func (q *Queries) FinalizeAsset(ctx context.Context, arg FinalizeAssetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, finalizeAsset, arg.ID, arg.IdentityID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getAsset = `-- name: GetAsset :one
 SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE id = $1
@@ -517,6 +541,73 @@ func (q *Queries) ListAssetsForThread(ctx context.Context, arg ListAssetsForThre
 	return items, nil
 }
 
+const listDeletingAssets = `-- name: ListDeletingAssets :many
+SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
+WHERE identity_id = $1
+  AND status = 'deleting'
+ORDER BY created_at ASC, id ASC
+LIMIT $2
+`
+
+type ListDeletingAssetsParams struct {
+	IdentityID pgtype.UUID `json:"identity_id"`
+	Limit      int32       `json:"limit"`
+}
+
+// What a delete left unfinished, oldest first, whether or not deleted_at was stamped: rows
+// soft-deleted before SoftDeleteAsset stamped it are the backlog this drains.
+func (q *Queries) ListDeletingAssets(ctx context.Context, arg ListDeletingAssetsParams) ([]AuraAssets, error) {
+	rows, err := q.db.Query(ctx, listDeletingAssets, arg.IdentityID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraAssets{}
+	for rows.Next() {
+		var i AuraAssets
+		if err := rows.Scan(
+			&i.ID,
+			&i.IdentityID,
+			&i.SourceKind,
+			&i.SourceRef,
+			&i.ThreadID,
+			&i.Scope,
+			&i.Modality,
+			&i.Status,
+			&i.FileName,
+			&i.MimeType,
+			&i.DeclaredSizeBytes,
+			&i.SizeBytes,
+			&i.ContentHash,
+			&i.ObjectBucket,
+			&i.ObjectKey,
+			&i.ObjectEtag,
+			&i.DocumentID,
+			&i.Summary,
+			&i.Metadata,
+			&i.ErrorCode,
+			&i.ErrorMessage,
+			&i.CreatedAt,
+			&i.UploadedAt,
+			&i.AcceptedAt,
+			&i.ProcessedAt,
+			&i.SearchableAt,
+			&i.CompletedAt,
+			&i.DeletedAt,
+			&i.UpdatedAt,
+			&i.PipelineGeneration,
+			&i.ToolCallID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentAssets = `-- name: ListRecentAssets :many
 SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
 WHERE identity_id = $1
@@ -766,6 +857,7 @@ func (q *Queries) ResetAssetForIngestionRetry(ctx context.Context, arg ResetAsse
 const softDeleteAsset = `-- name: SoftDeleteAsset :one
 UPDATE aura.assets
 SET status = 'deleting',
+    deleted_at = now(),
     updated_at = now()
 WHERE id = $1
   AND identity_id = $2
@@ -779,6 +871,9 @@ type SoftDeleteAssetParams struct {
 	IdentityID pgtype.UUID `json:"identity_id"`
 }
 
+// The durable intent of a delete. Stamping deleted_at hides the row from every identity-scoped
+// read and every status write, so a job finishing on it later cannot bring it back;
+// FinalizeAsset or MarkAssetDeleted then ends it once its object is gone.
 func (q *Queries) SoftDeleteAsset(ctx context.Context, arg SoftDeleteAssetParams) (AuraAssets, error) {
 	row := q.db.QueryRow(ctx, softDeleteAsset, arg.ID, arg.IdentityID)
 	var i AuraAssets

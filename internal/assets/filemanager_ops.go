@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/jackc/pgx/v5"
 )
 
 // The file manager's write half. Every operation here is expressed in the vocabulary the
@@ -171,12 +173,51 @@ func (b *Browser) Delete(ctx context.Context, identityID string, ids []string) e
 			return err
 		}
 		for _, key := range keys {
-			if err := store.Delete(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key}); err != nil {
+			if err := b.deleteKey(ctx, store, identityID, objectstore.ObjectRef{Bucket: bucket, Key: key}); err != nil {
 				return fmt.Errorf("remove %s: %w", key, err)
 			}
 		}
 	}
 	return nil
+}
+
+// deleteKey removes one object and retires the asset row holding its key, in Service.Delete's
+// order: the row is marked deleting before the bytes go, so a failure between the two leaves
+// a row the retention sweep finishes, never a live row over a missing object.
+func (b *Browser) deleteKey(ctx context.Context, store objectstore.Store, identityID string, ref objectstore.ObjectRef) error {
+	holder, err := b.claimRow(ctx, identityID, ref)
+	if err != nil {
+		return err
+	}
+	if err := store.Delete(ctx, ref); err != nil {
+		return err
+	}
+	if holder.ID == "" {
+		return nil
+	}
+	if err := b.Rows.Finalize(ctx, holder.ID, identityID); err != nil {
+		slog.Warn("aura assets: file manager delete left the row for the retention sweep", "asset_id", holder.ID, "err", err)
+	}
+	return nil
+}
+
+// claimRow marks deleting the identity's asset row that holds ref, if one does. A row on the
+// same key in another bucket points at bytes this delete does not remove, so it stays.
+func (b *Browser) claimRow(ctx context.Context, identityID string, ref objectstore.ObjectRef) (Asset, error) {
+	if b.Rows == nil {
+		return Asset{}, nil
+	}
+	holder, err := b.Rows.ByObjectKey(ctx, identityID, ref.Key)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Asset{}, nil
+	}
+	if err != nil {
+		return Asset{}, err
+	}
+	if holder.ObjectBucket != ref.Bucket {
+		return Asset{}, nil
+	}
+	return b.Rows.Delete(ctx, holder.ID, identityID)
 }
 
 // descendants returns every key an operation on source touches: the object itself if it is

@@ -166,6 +166,71 @@ func TestFolderOperationsAreBounded(t *testing.T) {
 	}
 }
 
+func withAssetRow(browser *Browser, rows ...Asset) *fakeAssetStore {
+	store := newFakeAssetStore()
+	for _, row := range rows {
+		store.assets[row.ID] = row
+	}
+	browser.Rows = store
+	return store
+}
+
+// A key the file manager removes can be an asset's object. Its row used to stay live over
+// bytes that were gone, for good; now it leaves the table with them. Another identity's row on
+// the same key is not this identity's to touch.
+func TestDeleteRetiresTheAssetRowOfARemovedKey(t *testing.T) {
+	browser := opsFixture(t, "chat/row.pdf", "chat/loose.txt")
+	rows := withAssetRow(browser,
+		Asset{ID: "asset-row", IdentityID: "owner-1", Status: StatusAccepted, ObjectBucket: "aura-assets", ObjectKey: "chat/row.pdf"},
+		Asset{ID: "asset-theirs", IdentityID: "owner-2", Status: StatusAccepted, ObjectBucket: "aura-other", ObjectKey: "chat/row.pdf"},
+	)
+	if err := browser.Delete(t.Context(), "owner-1", []string{"/chat"}); err != nil {
+		t.Fatal(err)
+	}
+	if row, ok := rows.row("asset-row"); ok {
+		t.Fatalf("the row of a removed key stayed as %s", row.Status)
+	}
+	if row, ok := rows.row("asset-theirs"); !ok || row.Status != StatusAccepted {
+		t.Fatalf("another identity's row was touched: %+v", row)
+	}
+	if keys := allKeys(t, browser); len(keys) != 0 {
+		t.Fatalf("keys left: %v", keys)
+	}
+}
+
+// A row is the holder of an object only in the bucket the row names. One recorded in another
+// bucket (an asset written to the shared bucket before this identity had its own) points at
+// bytes this delete did not touch, so it must stay.
+func TestDeleteLeavesARowWhoseObjectIsInAnotherBucket(t *testing.T) {
+	browser := opsFixture(t, "chat/row.pdf")
+	rows := withAssetRow(browser,
+		Asset{ID: "asset-shared", IdentityID: "owner-1", Status: StatusAccepted, ObjectBucket: "aura-shared", ObjectKey: "chat/row.pdf"})
+	if err := browser.Delete(t.Context(), "owner-1", []string{"/chat/row.pdf"}); err != nil {
+		t.Fatal(err)
+	}
+	if row, ok := rows.row("asset-shared"); !ok || row.Status != StatusAccepted {
+		t.Fatalf("a row whose object lives in another bucket was retired: %+v (present %v)", row, ok)
+	}
+}
+
+// The row is hidden before the bytes go, as in Service.Delete, so an object the store refuses
+// to remove leaves a deleting row for the retention sweep, never a live row over nothing.
+func TestDeleteLeavesTheRowDeletingWhenItsObjectStays(t *testing.T) {
+	browser := opsFixture(t, "chat/row.pdf")
+	browser.Objects = &deleteFailingStore{Store: browser.Objects, fail: map[string]error{
+		"chat/row.pdf": errors.New("garage unreachable"),
+	}}
+	rows := withAssetRow(browser,
+		Asset{ID: "asset-row", IdentityID: "owner-1", Status: StatusAccepted, ObjectBucket: "aura-assets", ObjectKey: "chat/row.pdf"})
+
+	if err := browser.Delete(t.Context(), "owner-1", []string{"/chat/row.pdf"}); err == nil {
+		t.Fatal("a key the store kept was reported removed")
+	}
+	if row, ok := rows.row("asset-row"); !ok || row.Status != StatusDeleting {
+		t.Fatalf("row = %+v (present %v), want it deleting for the sweep", row, ok)
+	}
+}
+
 // Every operation resolves the owner's bucket first, so an unconfigured browser is a
 // deployment fault rather than a silent no-op on somebody's files.
 func TestOperationsRefuseWhenUnconfigured(t *testing.T) {

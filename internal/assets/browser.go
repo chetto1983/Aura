@@ -27,6 +27,9 @@ type Browser struct {
 	// is the pre-provisioning deployment shape (see resolveObjects).
 	PerIdentity  *ObjectResolverBundle
 	SharedBucket string
+	// Rows retires the asset row that holds a key Delete removes. Nil leaves rows alone,
+	// which is right only where no asset store exists.
+	Rows StoreBackend
 }
 
 // BrowseEntry is one row in a listing: a folder or an object.

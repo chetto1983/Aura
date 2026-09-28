@@ -13,12 +13,19 @@ import (
 // through, so a listing is scoped by the owner's own credential rather than by a prefix
 // this code remembered to apply. A nil bundle is the pre-provisioning deployment, where
 // the shared bucket is the only bucket — assets.Browser handles that case itself.
+//
+// Rows lets a delete retire the asset row of each key it removes. Without a pool there is no
+// asset store, and Rows stays a nil interface rather than a Store with nothing to query.
 func buildFileBrowser(cfg *config.Config, pool *pgxpool.Pool, objects objectstore.Store) *assets.Browser {
-	return &assets.Browser{
+	browser := &assets.Browser{
 		Objects:      objects,
 		PerIdentity:  buildObjectResolverBundle(cfg, pool),
 		SharedBucket: cfg.ObjectStoreBucket,
 	}
+	if pool != nil {
+		browser.Rows = assets.NewStore(pool)
+	}
+	return browser
 }
 
 // buildFileObjectAccess backs the file manager's download and upload with the SAME

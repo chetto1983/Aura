@@ -9,14 +9,12 @@ import (
 // Status is the durable lifecycle state for a multimodal asset.
 type Status string
 
-// Asset lifecycle statuses.
+// Asset lifecycle statuses: the full set the aura.assets status CHECK admits (migration
+// 0020), kept whole on purpose, so a value the database accepts always has a name here.
 //
-// The full 12-state set is a DEFERRED lifecycle from
-// docs/superpowers/plans/2026-06-18-industrial-multimodal-asset-pipeline.md.
-// Production currently emits only StatusPresigned and StatusUploaded; the
-// remaining states are intentionally retained for the unbuilt asset-upload
-// pipeline, so future deadcode/audit runs should treat them as known-deferred
-// rather than dead. Do NOT delete any of these constants.
+// A delete marks a row StatusDeleting, with deleted_at, and then removes it from the table;
+// StatusDeleted survives only as the tombstone of a row a media_job still points at (see
+// Store.Finalize).
 //
 // This assets.Status lifecycle is DISTINCT from internal/documents.JobStatus
 // (the wired document-ingest lifecycle: JobEmbedding, JobCanceled, etc.): the
@@ -33,6 +31,7 @@ const (
 	StatusComplete   Status = "complete"
 	StatusFailed     Status = "failed"
 	StatusRefused    Status = "refused"
+	StatusDeleting   Status = "deleting"
 	StatusDeleted    Status = "deleted"
 	StatusCanceled   Status = "canceled"
 )

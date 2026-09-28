@@ -49,7 +49,7 @@ var _ cron.ApprovalChannel = (*channels.Registry)(nil)
 // so a scheduled notification can prefer the origin channel (Phase 20 R4/R7). The
 // agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
 // by the handlers package) over the live LLM client.
-func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, ownerExportSweepers ...handlers.OwnerExportSweeper) *cron.Dispatch {
+func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, sweepers ...handlers.Sweeper) *cron.Dispatch {
 	agentDeps := newCronAgentDeps(chat)
 	var observabilityChecker handlers.ObservabilityChecker
 	if chat.cfg.ObservabilityCheckEnabled {
@@ -84,7 +84,9 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, own
 		// (share_service_wiring.go) satisfies handlers.ShareExpirer via ExpireDue directly, no
 		// adapter — always non-nil once serve boots, so this registration is always safe.
 		cron.KindShareExpirySweep: handlers.NewShareExpiryHandler(chat.shareSvc),
-		cron.KindRetentionSweep:   handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool), ownerExportSweepers...),
+		// The caller's sweepers (the owner-export archives) plus the asset delete sweep.
+		cron.KindRetentionSweep: handlers.NewRetentionHandler(newRuntimeRetentionEngine(chat.cfg, chat.pool),
+			append(sweepers, buildAssetDeleteSweep(chat))...),
 		// The scheduled caller for the vectors (serve_memory_backfill.go): it visits every
 		// identity's memory database and embeds the facts that have none. buildMemoryEmbedBackfill
 		// returns a bare nil when ArcadeDB or the embedding sidecar is unconfigured, which

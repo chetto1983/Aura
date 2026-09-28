@@ -1,11 +1,11 @@
 // The identity leg of the asset store: the transaction seam every statement that touches
-// aura.assets runs inside, and the three folds that keep ten wrapped methods from becoming
-// ten copies of the same six lines.
+// aura.assets runs inside, and the three folds that keep the wrapped methods from becoming
+// copies of the same six lines.
 //
 // Split out of store.go on 2026-08-03, when migration 0090's fail-closed floor made the
 // seam necessary. It lives beside store.go rather than inside it for the reason
 // internal/documents/catalog_store_identity.go gives: the RLS reasoning is a concern of its
-// own, and a reader asking "how is this store scoped?" should not have to read ten CRUD
+// own, and a reader asking "how is this store scoped?" should not have to read the CRUD
 // methods to find out.
 
 package assets
@@ -23,7 +23,7 @@ import (
 // principal's rows. Without it every Create fails 42501: the floor is AS RESTRICTIVE, so an
 // unset session variable refuses the INSERT outright and hides every read.
 //
-// The scope is the identity the CALL carries, never the ambient context. All ten methods
+// The scope is the identity the CALL carries, never the ambient context. Every method
 // already took an identityID before this seam existed — the asset belongs to the principal
 // it was uploaded for, which on the processing path is not whoever is executing the job.
 // This is the idempotency.Store.withIdentity side of the choice db.WithCallerIdentityTx
@@ -41,9 +41,9 @@ func (s *Store) withIdentity(ctx context.Context, identityID string, fn func(*sq
 }
 
 // scopedRow runs one statement yielding a single aura.assets row as identityID and decodes
-// it. Eight of the ten Store methods are exactly that, and without this fold each would
+// it. Most Store methods are exactly that, and without this fold each would
 // carry its own copy of the open-transaction / capture-row / decode dance — enough
-// repetition for `dupl` to fire at its 100-token threshold, and enough for one of the ten to
+// repetition for `dupl` to fire at its 100-token threshold, and enough for one of them to
 // quietly lose its scope in a later edit.
 //
 // On failure it yields the zero Asset, never whatever fn assigned before the transaction
@@ -91,7 +91,7 @@ func (s *Store) scopedRows(
 	return out, nil
 }
 
-// scopedTarget is scopedRow for the seven statements addressed by an (asset id, identity id)
+// scopedTarget is scopedRow for the statements addressed by an (asset id, identity id)
 // pair: it parses both uuids once and hands them to fn.
 //
 // Both uuids stay in the statement even though app.current_identity now filters the same
@@ -103,11 +103,7 @@ func (s *Store) scopedTarget(
 	id, identityID string,
 	fn func(*sqlc.Queries, pgtype.UUID, pgtype.UUID) (sqlc.AuraAssets, error),
 ) (Asset, error) {
-	pgID, err := pgUUID("asset id", id)
-	if err != nil {
-		return Asset{}, err
-	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgID, pgIdentityID, err := pgTarget(id, identityID)
 	if err != nil {
 		return Asset{}, err
 	}

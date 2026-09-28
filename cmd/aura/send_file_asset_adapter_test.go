@@ -73,6 +73,10 @@ func (r *recordingAssetStore) Promote(context.Context, string, string) (assets.A
 func (r *recordingAssetStore) Delete(context.Context, string, string) (assets.Asset, error) {
 	return assets.Asset{}, nil
 }
+func (r *recordingAssetStore) Finalize(context.Context, string, string) error { return nil }
+func (r *recordingAssetStore) ListDeleting(context.Context, string, int) ([]assets.Asset, error) {
+	return nil, nil
+}
 
 // TestSendFileAssetAdapterForwards proves the adapter opens the host file and forwards the
 // delivery to IngestAgentFile with the correct identity/thread/tool-call/filename/mime/size

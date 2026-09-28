@@ -28,10 +28,10 @@ func TestRetentionHandlerUsesSharedPlanApplyEngine(t *testing.T) {
 	}
 }
 
-func TestRetentionHandlerSweepsOwnerExportsAndRetriesFailure(t *testing.T) {
-	sweeper := &fakeOwnerExportSweeper{deleted: 3}
+func TestRetentionHandlerRunsSweepersAndRetriesFailure(t *testing.T) {
+	sweeper := &fakeRetentionSweeper{deleted: 3}
 	summary, err := NewRetentionHandler(nil, sweeper).Run(context.Background(), Job{})
-	if err != nil || !strings.Contains(summary, "owner exports deleted 3") || sweeper.now.IsZero() {
+	if err != nil || !strings.Contains(summary, "swept 3 item(s)") || sweeper.now.IsZero() {
 		t.Fatalf("Run() = %q, %v; sweep now=%s", summary, err, sweeper.now)
 	}
 
@@ -42,10 +42,31 @@ func TestRetentionHandlerSweepsOwnerExportsAndRetriesFailure(t *testing.T) {
 	}
 }
 
-func TestRetentionHandlerSweepsOwnerExportsWhenPlanFails(t *testing.T) {
+// The slot carries owner exports and asset deletes today; the summary counts every sweeper,
+// and one the composition root could not build is skipped rather than called.
+func TestRetentionHandlerSumsEverySweeperAndSkipsAMissingOne(t *testing.T) {
+	exports := &fakeRetentionSweeper{deleted: 3}
+	deletes := &fakeRetentionSweeper{deleted: 5}
+	summary, err := NewRetentionHandler(nil, exports, nil, deletes).Run(context.Background(), Job{})
+	if err != nil || !strings.Contains(summary, "swept 8 item(s)") || exports.calls != 1 || deletes.calls != 1 {
+		t.Fatalf("Run() = %q, %v; calls exports=%d deletes=%d", summary, err, exports.calls, deletes.calls)
+	}
+}
+
+// A sweep that fails part-way still removed what it removed: the asset delete sweep finishes
+// every row it can and names the ones it could not.
+func TestRetentionHandlerCountsWhatAFailingSweeperRemoved(t *testing.T) {
+	partial := &fakeRetentionSweeper{deleted: 2, err: errors.New("asset a-stuck: garage unreachable")}
+	summary, err := NewRetentionHandler(nil, partial).Run(context.Background(), Job{})
+	if !errors.Is(err, partial.err) || !strings.Contains(summary, "swept 2 item(s)") {
+		t.Fatalf("Run() = %q, %v", summary, err)
+	}
+}
+
+func TestRetentionHandlerRunsSweepersWhenPlanFails(t *testing.T) {
 	planErr := errors.New("candidate query unavailable")
 	engine := &fakeScheduledRetention{planErr: planErr}
-	sweeper := &fakeOwnerExportSweeper{deleted: 2}
+	sweeper := &fakeRetentionSweeper{deleted: 2}
 
 	summary, err := NewRetentionHandler(engine, sweeper).Run(context.Background(), Job{})
 	if !errors.Is(err, planErr) {
@@ -54,29 +75,29 @@ func TestRetentionHandlerSweepsOwnerExportsWhenPlanFails(t *testing.T) {
 	if sweeper.calls != 1 || sweeper.now.IsZero() || engine.applyCalls != 0 {
 		t.Fatalf("plan failure calls: sweeper=%d apply=%d now=%s", sweeper.calls, engine.applyCalls, sweeper.now)
 	}
-	if !strings.Contains(summary, "owner exports deleted 2") {
+	if !strings.Contains(summary, "swept 2 item(s)") {
 		t.Fatalf("summary = %q", summary)
 	}
 }
 
-func TestRetentionHandlerSweepsOwnerExportsWhenApplyFails(t *testing.T) {
+func TestRetentionHandlerRunsSweepersWhenApplyFails(t *testing.T) {
 	applyErr := errors.New("retention claim unavailable")
-	exportErr := errors.New("owner export store unavailable")
+	sweepErr := errors.New("owner export store unavailable")
 	engine := &fakeScheduledRetention{
 		plan: retention.Plan{Token: strings.Repeat("b", 64)}, applyErr: applyErr,
 	}
-	failing := &fakeOwnerExportSweeper{err: exportErr}
-	succeeding := &fakeOwnerExportSweeper{deleted: 4}
+	failing := &fakeRetentionSweeper{err: sweepErr}
+	succeeding := &fakeRetentionSweeper{deleted: 4}
 
 	summary, err := NewRetentionHandler(engine, failing, succeeding).Run(context.Background(), Job{})
-	if !errors.Is(err, applyErr) || !errors.Is(err, exportErr) {
-		t.Fatalf("Run() error = %v, want joined apply and export failures", err)
+	if !errors.Is(err, applyErr) || !errors.Is(err, sweepErr) {
+		t.Fatalf("Run() error = %v, want joined apply and sweep failures", err)
 	}
 	if engine.applyCalls != 1 || failing.calls != 1 || succeeding.calls != 1 {
 		t.Fatalf("apply failure calls: apply=%d failing sweep=%d succeeding sweep=%d",
 			engine.applyCalls, failing.calls, succeeding.calls)
 	}
-	if !strings.Contains(summary, "owner exports deleted 4") {
+	if !strings.Contains(summary, "swept 4 item(s)") {
 		t.Fatalf("summary = %q", summary)
 	}
 }
@@ -97,14 +118,14 @@ type fakeScheduledRetention struct {
 	applyCalls int
 }
 
-type fakeOwnerExportSweeper struct {
+type fakeRetentionSweeper struct {
 	deleted int
 	err     error
 	now     time.Time
 	calls   int
 }
 
-func (f *fakeOwnerExportSweeper) SweepExpired(_ context.Context, now time.Time) (int, error) {
+func (f *fakeRetentionSweeper) SweepExpired(_ context.Context, now time.Time) (int, error) {
 	f.calls++
 	f.now = now
 	return f.deleted, f.err

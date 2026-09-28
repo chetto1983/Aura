@@ -2,16 +2,16 @@ package assets
 
 import (
 	"context"
-	"errors"
 	"maps"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
-
-	"github.com/jackc/pgx/v5/pgconn"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -335,15 +335,17 @@ func newFakeAssetStore() *fakeAssetStore {
 	return &fakeAssetStore{assets: make(map[string]Asset)}
 }
 
+// The fake answers like the real store: a row with deleted_at is invisible to every read
+// and every update, and a miss is pgx.ErrNoRows.
 func (s *fakeAssetStore) ByObjectKey(_ context.Context, identityID, objectKey string) (Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, asset := range s.assets {
-		if asset.IdentityID == identityID && asset.ObjectKey == objectKey {
+		if asset.IdentityID == identityID && asset.ObjectKey == objectKey && asset.DeletedAt.IsZero() {
 			return asset, nil
 		}
 	}
-	return Asset{}, errors.New("no asset holds that object key")
+	return Asset{}, pgx.ErrNoRows
 }
 
 func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, error) {
@@ -395,9 +397,13 @@ func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, er
 func (s *fakeAssetStore) GetForIdentity(_ context.Context, id, identityID string) (Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.live(id, identityID)
+}
+
+func (s *fakeAssetStore) live(id, identityID string) (Asset, error) {
 	asset, ok := s.assets[id]
-	if !ok || asset.IdentityID != identityID {
-		return Asset{}, errors.New("asset not found")
+	if !ok || asset.IdentityID != identityID || !asset.DeletedAt.IsZero() {
+		return Asset{}, pgx.ErrNoRows
 	}
 	return asset, nil
 }
@@ -407,7 +413,7 @@ func (s *fakeAssetStore) ListForThread(_ context.Context, identityID, threadID s
 	defer s.mu.Unlock()
 	var out []Asset
 	for _, asset := range s.assets {
-		if asset.IdentityID == identityID && asset.ThreadID == threadID {
+		if asset.IdentityID == identityID && asset.ThreadID == threadID && asset.DeletedAt.IsZero() {
 			out = append(out, asset)
 		}
 	}
@@ -419,7 +425,7 @@ func (s *fakeAssetStore) ListForLibrary(_ context.Context, identityID string, li
 	defer s.mu.Unlock()
 	var out []Asset
 	for _, asset := range s.assets {
-		if asset.IdentityID == identityID && asset.Scope == ScopeLibrary {
+		if asset.IdentityID == identityID && asset.Scope == ScopeLibrary && asset.DeletedAt.IsZero() {
 			out = append(out, asset)
 			if limit > 0 && len(out) >= limit {
 				break
@@ -513,16 +519,44 @@ func (s *fakeAssetStore) Promote(_ context.Context, id, identityID string) (Asse
 
 func (s *fakeAssetStore) Delete(_ context.Context, id, identityID string) (Asset, error) {
 	return s.update(id, identityID, func(asset *Asset) {
-		asset.Status = StatusDeleted
+		asset.Status = StatusDeleting
+		asset.DeletedAt = time.Now()
 	})
+}
+
+// Finalize drops a deleting row, as the real store does for a row no media_job points at;
+// the tombstone branch needs aura.media_job and is proven against Postgres.
+func (s *fakeAssetStore) Finalize(_ context.Context, id, identityID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if asset, ok := s.assets[id]; ok && asset.IdentityID == identityID && asset.Status == StatusDeleting {
+		delete(s.assets, id)
+	}
+	return nil
+}
+
+func (s *fakeAssetStore) ListDeleting(_ context.Context, identityID string, limit int) ([]Asset, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Asset
+	for _, asset := range s.assets {
+		if asset.IdentityID == identityID && asset.Status == StatusDeleting {
+			out = append(out, asset)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.Before(out[j].CreatedAt) })
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (s *fakeAssetStore) update(id, identityID string, apply func(*Asset)) (Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	asset, ok := s.assets[id]
-	if !ok || asset.IdentityID != identityID {
-		return Asset{}, errors.New("asset not found")
+	asset, err := s.live(id, identityID)
+	if err != nil {
+		return Asset{}, err
 	}
 	apply(&asset)
 	s.assets[id] = asset
