@@ -69,6 +69,14 @@ prepare() {
     return
   fi
   if is_our_worktree; then
+    # `git clean -ffdx` can traverse an ignored node_modules symlink on WSL/DrvFS
+    # and remove files from the shared install. Unlink only the symlinks first;
+    # they are restored below after the checkout is clean.
+    for dir in . web; do
+      if [ -L "$tree/$dir/node_modules" ]; then
+        rm -- "$tree/$dir/node_modules"
+      fi
+    done
     git -C "$tree" checkout -q --detach --force "$commit"
     git -C "$tree" clean -q -ffdx
   else
