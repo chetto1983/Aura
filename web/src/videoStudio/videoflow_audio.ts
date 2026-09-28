@@ -154,6 +154,17 @@ export function unheardSources(project: VideoProject, itemId: string): ProjectSo
   return [...unheard.values()];
 }
 
+/** What ducking still has to listen to before the film it compiles is right: the unheard sources
+ *  of every sound that ducks and plays. A muted one plays nothing, so it waits until unmuted. */
+export function unheardByDucking(project: VideoProject): ProjectSource[] {
+  const unheard = new Map<string, ProjectSource>();
+  for (const item of audioTracks(project).flatMap((track) => track.items)) {
+    if (item.ducking === undefined || item.muted) continue;
+    for (const source of unheardSources(project, item.id)) unheard.set(source.id, source);
+  }
+  return [...unheard.values()];
+}
+
 /** The speech the film carries besides this sound, on the film's clock, merged: each source's
  *  speech mapped through every window that plays it (spec §Compile). */
 function speechBesides(project: VideoProject, itemId: string): [number, number][] {

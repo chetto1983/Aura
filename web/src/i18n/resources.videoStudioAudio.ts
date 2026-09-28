@@ -16,7 +16,10 @@ export const videoStudioAudioEn = {
   duckSoftness: 'Softness',
   listening: 'Listening for speech…',
   listenFailed: 'Speech detection failed: {{reason}}',
-  listenAgain: 'Listen to the newly added sounds',
+  listenAgain: 'Listen again',
+  exportListening: 'Still listening for speech, so the ducking is not ready: export once it has.',
+  exportUnheard:
+    'Speech detection failed ({{reason}}), so the ducking is not ready: listen again, or mute that sound.',
   fadeIn: 'Fade in',
   fadeOut: 'Fade out',
   startsAt: 'Starts at',
@@ -66,7 +69,11 @@ export const videoStudioAudioIt: typeof videoStudioAudioEn = {
   duckSoftness: 'Morbidezza',
   listening: 'Ricerca del parlato…',
   listenFailed: 'Rilevamento del parlato non riuscito: {{reason}}',
-  listenAgain: 'Ascolta i suoni appena aggiunti',
+  listenAgain: 'Ascolta di nuovo',
+  exportListening:
+    'La ricerca del parlato non è finita, quindi l’abbassamento non è pronto: esporta quando avrà finito.',
+  exportUnheard:
+    'Rilevamento del parlato non riuscito ({{reason}}), quindi l’abbassamento non è pronto: ascolta di nuovo, o disattiva l’audio di quel suono.',
   fadeIn: 'Dissolvenza in entrata',
   fadeOut: 'Dissolvenza in uscita',
   startsAt: 'Inizia a',

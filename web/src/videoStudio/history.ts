@@ -29,6 +29,11 @@ export interface History {
   /** Run an edit and record it as ONE step, however many commands it ran. A refusal propagates
    *  and records nothing. */
   apply(edit: Edit): VideoProject;
+  /** Write a measurement beside the history: the project changes, no step is recorded and the
+   *  redo branch survives. Only for what undo must not take back — what ducking heard in a
+   *  source's bytes by itself — and only onto sources, which are only ever appended, so no later
+   *  undo or redo can shift it onto another one. */
+  annotate(edit: Edit): VideoProject;
   undo(): VideoProject;
   redo(): VideoProject;
 }
@@ -175,6 +180,10 @@ export function createHistory(initial: VideoProject): History {
       return undone.length > 0;
     },
     apply: record,
+    annotate: (edit) => {
+      current = diff(current, edit(current))[0];
+      return current;
+    },
     undo: () => replay(done, undone, (step) => step.back),
     redo: () => replay(undone, done, (step) => step.forward),
   };

@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DuckingControls, NoiseReductionSwitch } from '../Inspector_audioClean';
 import type { AudioItem, VideoProject } from '../project';
+import { DuckingListeningContext, type DuckingListening } from '../VideoStudio_ducking';
 
 // The analysing controls — Noise reduction and ducking — with the cleaning, the upload and the speech
 // detector stood in for. What is judged is the ONE edit each makes — the analysis recorded and the
@@ -244,18 +245,29 @@ describe('NoiseReductionSwitch', () => {
   });
 });
 
-function mountDucking(project: VideoProject) {
+/** The ducking controls, under the workspace's own listening as `listening` describes it. */
+function mountDucking(project: VideoProject, listening: Partial<DuckingListening> = {}) {
   const edits: Edit[] = [];
   const item = project.audio?.[0]?.items[0];
   if (item === undefined) throw new Error('fixture');
   const view = render(
-    <DuckingControls
-      project={project}
-      item={item}
-      onCommand={(edit) => {
-        edits.push(edit);
+    <DuckingListeningContext
+      value={{
+        listening: false,
+        failure: undefined,
+        refusal: undefined,
+        retry: vi.fn(),
+        ...listening,
       }}
-    />,
+    >
+      <DuckingControls
+        project={project}
+        item={item}
+        onCommand={(edit) => {
+          edits.push(edit);
+        }}
+      />
+    </DuckingListeningContext>,
   );
   return { ...view, edits, apply: (index = 0) => edits[index]?.(project) };
 }
@@ -325,16 +337,35 @@ describe('DuckingControls', () => {
     expect(apply(2)?.audio?.[0]?.items[0]?.ducking).toBeUndefined();
   });
 
-  it('offers to listen to a sound added after ducking was turned on, and records only what it hears', async () => {
-    const on = film({ ducking: { amountDb: -12, ramp: 0.5 } });
-    const { apply, edits } = mountDucking(on);
-    fireEvent.click(screen.getByRole('button', { name: 'videoStudio.audio.listenAgain' }));
-    await waitFor(() => {
-      expect(edits).toHaveLength(1);
+  // A sound added after ducking was turned on is listened to by itself (VideoStudio_ducking.ts),
+  // not offered: the control says so, and offers a second try only when that listening failed.
+  it('says on its control that ducking is listening by itself to a sound it has not heard', () => {
+    const { edits } = mountDucking(film({ ducking: { amountDb: -12, ramp: 0.5 } }), {
+      listening: true,
     });
-    const next = apply();
-    expect(next?.sources.find((source) => source.id === 'src-a')?.speech).toEqual([[1, 2]]);
-    expect(next?.audio?.[0]?.items[0]?.ducking).toEqual({ amountDb: -12, ramp: 0.5 });
+    expect(screen.getByRole('status').textContent).toBe('videoStudio.audio.listening');
+    expect(screen.queryByRole('button', { name: 'videoStudio.audio.listenAgain' })).toBeNull();
+    expect(hearing.detect).not.toHaveBeenCalled();
+    expect(edits).toHaveLength(0);
+  });
+
+  it('says why ducking could not hear a sound, and listens again when asked', () => {
+    const retry = vi.fn();
+    mountDucking(film({ ducking: { amountDb: -12, ramp: 0.5 } }), {
+      failure: 'Unable to decode audio data',
+      retry,
+    });
+    expect(screen.getByRole('alert').textContent).toBe(
+      'videoStudio.audio.listenFailed Unable to decode audio data',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'videoStudio.audio.listenAgain' }));
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it('says nothing of the listening while its own sound waits on nothing', () => {
+    const on = heard(film({ ducking: { amountDb: -12, ramp: 0.5 } }), 'src-a', [[1, 2]]);
+    mountDucking(on, { listening: true });
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('says why listening failed and leaves ducking off', async () => {

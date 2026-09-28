@@ -1,11 +1,14 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { use, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { deleteAsset } from '../chat/attachments/api';
+import { useAnalysis } from './analysisState';
+import { AnalysisStatus } from './analysisStatus';
 import { setClipPresentation } from './commands';
 import { recordAnalysis, setAudioProperties } from './commands_audio';
 import { sourceOf, type AudioDucking, type AudioItem, type VideoProject } from './project';
 import { unheardSources } from './videoflow_audio';
+import { DuckingListeningContext, listeningState } from './VideoStudio_ducking';
 import { uploadSource } from './VideoStudio_sources';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -16,69 +19,11 @@ import { Switch } from '@/components/ui/switch';
 // control that it is working, and enters the project in ONE edit — the analysis recorded and the
 // setting changed together, so one undo takes back both. A failure is said on the control and
 // leaves the project untouched; a control that goes away mid-way writes nothing (spec §Browser-side
-// analysis). The WASM behind each analysis is imported when it is first asked for.
+// analysis). The WASM behind each analysis is imported when it is first asked for. Once ducking is
+// on, a sound added under it is listened to by the workspace itself (VideoStudio_ducking.ts); the
+// ducking control only says so.
 
 type Commit = (edit: (current: VideoProject) => VideoProject) => void;
-
-type AnalysisState =
-  | { readonly state: 'idle' }
-  | { readonly state: 'working' }
-  | { readonly state: 'failed'; readonly reason: string };
-
-/** One analysis at a time for a control, aborted when the control goes: mounted with the item's id
- *  as its key, a control that goes is also a control whose selection changed. */
-function useAnalysis() {
-  const [state, setState] = useState<AnalysisState>({ state: 'idle' });
-  const running = useRef<AbortController>(undefined);
-  useEffect(
-    () => () => {
-      running.current?.abort();
-    },
-    [],
-  );
-  async function run(task: (signal: AbortSignal) => Promise<void>) {
-    running.current?.abort();
-    const controller = new AbortController();
-    running.current = controller;
-    setState({ state: 'working' });
-    try {
-      await task(controller.signal);
-      if (!controller.signal.aborted) setState({ state: 'idle' });
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setState({ state: 'failed', reason: error instanceof Error ? error.message : String(error) });
-    }
-  }
-  return { state, run };
-}
-
-/** What a control says while its analysis runs, and why it failed. */
-function AnalysisStatus({
-  state,
-  working,
-  failed,
-}: {
-  readonly state: AnalysisState;
-  readonly working: string;
-  readonly failed: string;
-}) {
-  const { t } = useTranslation();
-  if (state.state === 'working') {
-    return (
-      <p role="status" className="text-xs text-text-muted">
-        {t(working)}
-      </p>
-    );
-  }
-  if (state.state === 'failed') {
-    return (
-      <p role="alert" className="text-xs text-danger">
-        {t(failed, { reason: state.reason })}
-      </p>
-    );
-  }
-  return null;
-}
 
 /** What a switch turns: a clip's noise reduction or a sound's, over the source it plays. */
 interface CleanTarget {
@@ -163,22 +108,36 @@ interface DuckingControlsProps {
   readonly onCommand: Commit;
 }
 
-/** Lower this sound under the speech the rest of the film carries. The speech of every source it
- *  goes down under is listened for once and recorded on the source; a source added later is offered
- *  to be listened to rather than silently left out of the curve. */
+/** Lower this sound under the speech the rest of the film carries. Turned on, the speech of every
+ *  source it goes down under is listened for once and recorded on the source, with the switch, in
+ *  one edit; a source added later is listened to by the workspace itself, and this control says
+ *  so — or why it could not be heard, with a second try. */
 export function DuckingControls({ project, item, onCommand }: DuckingControlsProps) {
   const { t } = useTranslation();
   const { assetUrl } = useAssetSource();
   const id = useId();
   const { state, run } = useAnalysis();
+  const workspace = use(DuckingListeningContext);
   const ducking = item.ducking;
   const unheard = unheardSources(project, item.id);
+  // Its own listen while it turns on, else the workspace's for the sources it waits on.
+  const shown =
+    state.state === 'idle' && ducking !== undefined && unheard.length > 0
+      ? listeningState(workspace)
+      : state;
 
   const duck = (current: VideoProject, next: AudioDucking | null) =>
     setAudioProperties(current, { itemId: item.id, ducking: next });
 
-  /** Listens to every unheard source, then makes ONE edit: what it heard, then `then`. */
-  function listen(then: (current: VideoProject) => VideoProject) {
+  function turn(on: boolean) {
+    if (!on) {
+      onCommand((current) => duck(current, null));
+      return;
+    }
+    if (unheard.length === 0) {
+      onCommand((current) => duck(current, DEFAULT_DUCKING));
+      return;
+    }
     void run(async (signal) => {
       const { detectSpeech } = await import('./audioSpeech');
       const heard: { sourceId: string; speech: (readonly [number, number])[] }[] = [];
@@ -190,21 +149,12 @@ export function DuckingControls({ project, item, onCommand }: DuckingControlsPro
       }
       signal.throwIfAborted();
       onCommand((current) =>
-        then(heard.reduce((next, analysis) => recordAnalysis(next, analysis), current)),
+        duck(
+          heard.reduce((next, analysis) => recordAnalysis(next, analysis), current),
+          DEFAULT_DUCKING,
+        ),
       );
     });
-  }
-
-  function turn(on: boolean) {
-    if (!on) {
-      onCommand((current) => duck(current, null));
-      return;
-    }
-    if (unheard.length === 0) {
-      onCommand((current) => duck(current, DEFAULT_DUCKING));
-      return;
-    }
-    listen((current) => duck(current, DEFAULT_DUCKING));
   }
 
   return (
@@ -255,22 +205,15 @@ export function DuckingControls({ project, item, onCommand }: DuckingControlsPro
               }}
             />
           </label>
-          {unheard.length === 0 || state.state === 'working' ? null : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                listen((current) => current);
-              }}
-            >
+          {shown.state === 'failed' && state.state === 'idle' ? (
+            <Button type="button" variant="outline" size="sm" onClick={workspace.retry}>
               {t('videoStudio.audio.listenAgain')}
             </Button>
-          )}
+          ) : null}
         </>
       )}
       <AnalysisStatus
-        state={state}
+        state={shown}
         working="videoStudio.audio.listening"
         failed="videoStudio.audio.listenFailed"
       />

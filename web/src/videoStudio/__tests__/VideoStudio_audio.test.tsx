@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import i18n from '../../i18n/i18n';
 import type { VideoProject } from '../project';
@@ -53,6 +53,11 @@ vi.mock('../../chat/voice/useVoiceCapabilities', () => ({
 }));
 // jsdom has no canvas and no microphone: the recorder is AudioRecorder.test.tsx's to judge.
 vi.mock('../AudioRecorder', () => ({ AudioRecorder: () => null }));
+// No Web Audio either: the speech detector is audioSpeech.test.ts's to judge.
+const hearing = vi.hoisted(() => ({
+  detect: vi.fn<(url: string, signal?: AbortSignal) => Promise<(readonly [number, number])[]>>(),
+}));
+vi.mock('../audioSpeech', () => ({ detectSpeech: hearing.detect }));
 // The library's list is VideoStudio_library.test.tsx's to judge; here, what a pick does.
 const library = vi.hoisted(() => ({
   audio: { id: 'lib-sound', file_name: 'river.wav', mime_type: 'audio/wav' },
@@ -150,6 +155,7 @@ beforeEach(() => {
     upload: { upload_url: 'u', required_headers: {} },
   });
   assets.finalizeMediaAsset.mockResolvedValue({ id: 'sound-asset' });
+  hearing.detect.mockResolvedValue([[1, 2]]);
 });
 
 afterEach(() => {
@@ -290,5 +296,97 @@ describe('VideoStudio, with sounds', () => {
     expect(assets.presignAsset).toHaveBeenCalledWith(
       expect.objectContaining({ file_name: 'speech.mp3', mime_type: 'audio/mpeg' }),
     );
+  });
+});
+
+/** The film with its clips muted and its bed ducking: nothing it goes under yet. */
+function duckingFilm(): VideoProject {
+  const base = film(true);
+  return {
+    ...base,
+    video: base.video.map((clip) => ({ ...clip, muted: true })),
+    audio: (base.audio ?? []).map((lane) => ({
+      ...lane,
+      items: lane.items.map((item) => ({ ...item, ducking: { amountDb: -12, ramp: 0.5 } })),
+    })),
+  };
+}
+
+function exportButton(): HTMLElement {
+  return screen.getByRole('button', { name: i18n.t('videoStudio.export.action') });
+}
+
+describe('VideoStudio, ducking by itself', () => {
+  it('listens to a sound added under a ducking bed, says so wherever the operator is, and holds the export until it has heard it', async () => {
+    let answer: (speech: (readonly [number, number])[]) => void = () => undefined;
+    hearing.detect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    mount(duckingFilm());
+    await pickSound();
+    await sound(2);
+    // The new sound is selected, and it does not duck: the status line is where this is said.
+    expect(await screen.findByText(i18n.t('videoStudio.audio.listening'))).toBeTruthy();
+    expect(hearing.detect).toHaveBeenCalledWith(
+      '/api/assets/sound-asset/download',
+      expect.any(AbortSignal),
+    );
+    expect(exportButton()).toHaveProperty('disabled', true);
+    expect(exportButton().getAttribute('title')).toBe(i18n.t('videoStudio.audio.exportListening'));
+    await act(async () => {
+      answer([[1, 2]]);
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(screen.queryByText(i18n.t('videoStudio.audio.listening'))).toBeNull();
+    });
+    expect(exportButton()).toHaveProperty('disabled', false);
+  });
+
+  it('keeps what it heard out of the undo: one undo takes the sound back, and a redo brings it back heard', async () => {
+    mount(duckingFilm());
+    await pickSound();
+    await sound(2);
+    await waitFor(() => {
+      expect(exportButton()).toHaveProperty('disabled', false);
+    });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('videoStudio.command.undo') }));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('button', { name: i18n.t('videoStudio.audio.item', { index: 2 }) }),
+      ).toBeNull();
+    });
+    fireEvent.click(screen.getByRole('button', { name: i18n.t('videoStudio.command.redo') }));
+    expect(await sound(2)).toBeTruthy();
+    await waitFor(() => {
+      expect(exportButton()).toHaveProperty('disabled', false);
+    });
+    expect(hearing.detect).toHaveBeenCalledOnce();
+  });
+
+  it('says why it could not hear a sound, holds the export, and tries again from the bed’s control', async () => {
+    hearing.detect.mockRejectedValueOnce(new Error('Unable to decode audio data'));
+    mount(duckingFilm());
+    await pickSound();
+    await sound(2);
+    const failed = i18n.t('videoStudio.audio.listenFailed', {
+      reason: 'Unable to decode audio data',
+    });
+    expect(await screen.findByText(failed)).toBeTruthy();
+    expect(exportButton().getAttribute('title')).toBe(
+      i18n.t('videoStudio.audio.exportUnheard', { reason: 'Unable to decode audio data' }),
+    );
+    fireEvent.pointerDown(await sound(1));
+    fireEvent.click(
+      await screen.findByRole('button', { name: i18n.t('videoStudio.audio.listenAgain') }),
+    );
+    await waitFor(() => {
+      expect(exportButton()).toHaveProperty('disabled', false);
+    });
+    expect(screen.queryByText(failed)).toBeNull();
+    expect(hearing.detect).toHaveBeenCalledTimes(2);
   });
 });

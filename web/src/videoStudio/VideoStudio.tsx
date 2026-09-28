@@ -6,7 +6,7 @@ import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { MediaEditorLayer } from '../mediaEdit/MediaEditorLayer';
 import type { LibraryModality, StudioAssetRef } from '../studio/studioApi';
 import { findAudioItem } from './audioLane';
-import { addOverlay, CommandRefusal, freeOverlayTrack, removeItem } from './commands';
+import { addOverlay, freeOverlayTrack, removeItem } from './commands';
 import { createHistory, type Edit, type History } from './history';
 import { Inspector } from './Inspector';
 import type { ClipTab } from './Inspector_clip';
@@ -27,6 +27,9 @@ import { MobileVideoTools } from './VideoStudio_mobile';
 import { usePlayback } from './VideoStudio_playback';
 import { ExportPanel } from './VideoStudio_export';
 import { AudioPanel } from './VideoStudio_audioPanel';
+import { DuckingStatus } from './analysisStatus';
+import { DuckingListeningContext, useDuckingListener } from './VideoStudio_ducking';
+import { failure, says, type Sentence } from './VideoStudio_sentence';
 import { SourcePanel } from './VideoStudio_sourcePanel';
 import { FilePicker, StudioRail } from './VideoStudio_rail';
 import {
@@ -52,16 +55,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
-/** A string the operator will read, kept unresolved so the language can still change under it. */
-interface Sentence {
-  readonly key: string;
-  readonly values: Record<string, unknown>;
-}
-
-function says(key: string, values: Record<string, unknown> = {}): Sentence {
-  return { key, values };
-}
-
 const TITLE_SECONDS = 3;
 /** What Add a clip takes from the library: a video, or a picture to hold as a still. */
 const CLIPS: readonly LibraryModality[] = ['video', 'image'];
@@ -70,17 +63,6 @@ interface VideoStudioProps {
   readonly open: StudioOpen;
   readonly onClose: () => void;
   readonly onSaved?: ((assetId: string) => void) | undefined;
-}
-
-/**
- * The sentence an error becomes. A refusal speaks for itself and is shown unchanged, whichever
- * of the seven it is; anything else — a caller out of step with the model, a dropped connection
- * — is worded by whoever was attempting it and carries the message it came with. Neither is
- * silenced, and neither is dressed as the other.
- */
-function failure(error: unknown, fallbackKey: string): Sentence {
-  if (error instanceof CommandRefusal) return says(error.reasonKey);
-  return says(fallbackKey, { reason: error instanceof Error ? error.message : String(error) });
 }
 
 export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps) {
@@ -105,6 +87,9 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const propertiesRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLElement>(null);
   const [missing, setMissing] = useState<readonly string[]>([]);
+  const listening = useDuckingListener(project, (edit) => {
+    if (history !== undefined) setProject(history.annotate(edit));
+  });
 
   useEffect(() => {
     let live = true;
@@ -266,11 +251,13 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const underPlayhead = project === undefined ? undefined : clipAt(project, playhead);
   const unplayable = project === undefined ? [] : unplayableClips(project, missing);
 
-  /** Why the export cannot run, worded once and in one place: a clip whose bytes are gone, or a
-   *  lane with nothing on it. `undefined` is the only value that lets the button run. */
+  /** Why the export cannot run, worded once and in one place: a clip whose bytes are gone, a lane
+   *  with nothing on it, or ducking that has not heard every sound it goes under yet. `undefined`
+   *  is the only value that lets the button run. */
   function exportRefusal(shown: VideoProject): string | undefined {
     if (unplayable.length > 0) return t(REFUSAL_MISSING_ASSET);
-    return projectDuration(shown) <= 0 ? t('videoStudio.export.empty') : undefined;
+    if (projectDuration(shown) <= 0) return t('videoStudio.export.empty');
+    return listening.refusal;
   }
 
   /** The desktop panel beside the stage: hidden, the stage takes its width; shown again, the
@@ -454,13 +441,15 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                 className="video-studio-properties"
               >
                 {selectedJunction === undefined ? (
-                  <Inspector
-                    project={project}
-                    selectedId={selectedId}
-                    onCommand={run}
-                    activeClipTab={inspectorTab}
-                    onClipTabChange={setInspectorTab}
-                  />
+                  <DuckingListeningContext value={listening}>
+                    <Inspector
+                      project={project}
+                      selectedId={selectedId}
+                      onCommand={run}
+                      activeClipTab={inspectorTab}
+                      onClipTabChange={setInspectorTab}
+                    />
+                  </DuckingListeningContext>
                 ) : (
                   <JunctionTransitionInspector
                     project={project}
@@ -539,6 +528,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
         )}
 
         <div className="video-studio-status">
+          <DuckingStatus listening={listening} />
           {status === undefined ? null : (
             <p role="status" className="text-xs text-text-muted">
               {t(status.key, status.values)}

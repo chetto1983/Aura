@@ -9,6 +9,7 @@ import {
   splitAt,
   trimClip,
 } from '../commands';
+import { recordAnalysis } from '../commands_audio';
 import { projectDuration, type VideoProject } from '../project';
 
 function project(): VideoProject {
@@ -289,5 +290,56 @@ describe('history', () => {
     expect(ownProp(history.current, 'title', 'meta')).toBe('plain');
     expect(own(ownProp(history.redo(), 'title', 'meta'), '__proto__')).toBe('deep');
     expect(Object.keys(Object.prototype)).toEqual([]);
+  });
+});
+
+// What ducking hears by itself is a measurement of a source's bytes, not an edit: it is written
+// beside the history, so an undo never takes it back and a redo is never lost to it.
+describe('annotate', () => {
+  const speechOf = (current: VideoProject, sourceId: string) =>
+    current.sources.find((source) => source.id === sourceId)?.speech;
+  const hear = (sourceId: string) => (p: VideoProject) =>
+    recordAnalysis(p, { sourceId, speech: [[1, 2]] });
+
+  it('writes a measurement as no step, and keeps the redo branch', () => {
+    const history = createHistory(project());
+    history.apply((p) => setMuted(p, { clipId: 'clip-1', muted: true }));
+    history.undo();
+    history.annotate(hear('src-a'));
+    expect(speechOf(history.current, 'src-a')).toEqual([[1, 2]]);
+    expect(history.canUndo).toBe(false);
+    expect(history.canRedo).toBe(true);
+    expect(history.redo().video[0]?.muted).toBe(true);
+    expect(speechOf(history.current, 'src-a')).toEqual([[1, 2]]);
+  });
+
+  it('keeps a measurement through the undo and redo of the steps around it', () => {
+    const history = createHistory(project());
+    history.apply((p) => setMuted(p, { clipId: 'clip-1', muted: true }));
+    history.annotate(hear('src-a'));
+    history.apply((p) => setMuted(p, { clipId: 'clip-2', muted: true }));
+    history.undo();
+    history.undo();
+    expect(history.current.video[0]?.muted).toBe(false);
+    expect(speechOf(history.current, 'src-a')).toEqual([[1, 2]]);
+    history.redo();
+    expect(speechOf(history.redo(), 'src-a')).toEqual([[1, 2]]);
+    expect(history.current.video[1]?.muted).toBe(true);
+  });
+
+  it('lets a measured source go with the step that brought it, and come back unmeasured', () => {
+    const history = createHistory(project());
+    history.apply((p) => ({
+      ...p,
+      sources: [
+        ...p.sources,
+        { id: 'src-v', assetId: 'v', kind: 'audio', duration: 3, size: { width: 0, height: 0 } },
+      ],
+    }));
+    history.annotate(hear('src-v'));
+    expect(history.undo().sources.map((source) => source.id)).toEqual(['src-a']);
+    expect(history.redo().sources.map((source) => source.id)).toEqual(['src-a', 'src-v']);
+    // Heard again by whoever measured it: the redo brings the source as the step recorded it.
+    expect(speechOf(history.current, 'src-v')).toBeUndefined();
   });
 });

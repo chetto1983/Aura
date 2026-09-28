@@ -2,7 +2,13 @@ import type VideoFlow from '@videoflow/core';
 import type { VideoJSON } from '@videoflow/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { AudioItem, VideoItem, VideoProject } from '../project';
-import { addAudioItems, playsCleaned, unheardSources, withVolumes } from '../videoflow_audio';
+import {
+  addAudioItems,
+  playsCleaned,
+  unheardByDucking,
+  unheardSources,
+  withVolumes,
+} from '../videoflow_audio';
 
 // The audio half of the compile: what reaches VideoFlow for each sound, and what is written into
 // the compiled JSON for each audible layer — the only place its mixer reads a volume (S1).
@@ -342,5 +348,55 @@ describe('ducking in the compile', () => {
     expect(unheardSources(ducked(), 'bed').map((source) => source.id)).toEqual([]);
     const muted = project([sound()], { muted: true });
     expect(unheardSources(muted, 'bed')).toEqual([]);
+  });
+});
+
+describe('what ducking has still to hear', () => {
+  const ids = (next: VideoProject) => unheardByDucking(next).map((source) => source.id);
+  /** A voice put on a lane of its own, from a source nobody has listened to. */
+  function withVoice(base: VideoProject): VideoProject {
+    return {
+      ...base,
+      sources: [
+        ...base.sources,
+        { id: 'src-v', assetId: 'v', kind: 'audio', duration: 3, size: { width: 0, height: 0 } },
+      ],
+      audio: [
+        ...(base.audio ?? []),
+        {
+          id: 'lane-2',
+          items: [
+            sound({ id: 'voice', sourceId: 'src-v', anchor: { clipId: 'clip-1', offset: 0 } }),
+          ],
+        },
+      ],
+    };
+  }
+
+  it('is a sound added while a bed ducks', () => {
+    expect(ids(withVoice(ducked()))).toEqual(['src-v']);
+  });
+
+  it('is a clip unmuted while a bed ducks', () => {
+    const bed = sound({ ducking: { amountDb: -12, ramp: 0.5 } });
+    expect(ids(project([bed], { muted: true }))).toEqual([]);
+    expect(ids(project([bed]))).toEqual(['src-a']);
+  });
+
+  it('is nothing once every source has been heard', () => {
+    const heard = withVoice(ducked());
+    expect(
+      ids({
+        ...heard,
+        sources: heard.sources.map((source) =>
+          source.id === 'src-v' ? { ...source, speech: [] } : source,
+        ),
+      }),
+    ).toEqual([]);
+  });
+
+  it('is nothing while no sound ducks, or the one that does is muted', () => {
+    expect(ids(withVoice(project([sound()])))).toEqual([]);
+    expect(ids(withVoice(ducked({ muted: true })))).toEqual([]);
   });
 });
