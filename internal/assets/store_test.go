@@ -262,6 +262,7 @@ func TestStoreListRecent(t *testing.T) {
 		if _, err := store.SetStatus(ctx, asset.ID, owner, StatusAccepted, "", ""); err != nil {
 			t.Fatalf("SetStatus %s: %v", name, err)
 		}
+		t.Cleanup(func() { retireAsset(t, store, asset.ID, owner) })
 		return asset
 	}
 

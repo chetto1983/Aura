@@ -35,6 +35,20 @@ func createAcceptedAsset(t *testing.T, ctx context.Context, store *Store, req Cr
 	return accepted
 }
 
+// retireAsset removes a row a test created, through the delete lifecycle, so no fixture
+// outlives its test: internal/db's down/up round trip runs later against the same database,
+// and migration 0127's down step refuses while any video row exists.
+func retireAsset(t *testing.T, store *Store, id, identityID string) {
+	t.Helper()
+	ctx := context.Background()
+	if _, err := store.Delete(ctx, id, identityID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		t.Errorf("cleanup Delete %s: %v", id, err)
+	}
+	if err := store.Finalize(ctx, id, identityID); err != nil {
+		t.Errorf("cleanup Finalize %s: %v", id, err)
+	}
+}
+
 func deleteFixture(identityID, thread, key string, scope Scope) CreateRequest {
 	return CreateRequest{
 		IdentityID: identityID, SourceKind: SourceWeb, ThreadID: thread, Scope: scope,
@@ -217,6 +231,12 @@ INSERT INTO aura.media_job (identity_id, conversation_id, tool_call_id, provider
                             status, asset_id, completed_at)
 VALUES ($1, $2, 'call-clip', $3, 'test/video', '{}'::jsonb, 'completed', $4, now())`,
 		localIdentityID, conversation, "provider-"+conversation, clip.ID)
+	// A video row left behind blocks migration 0127's down step, which internal/db's
+	// down/up round trip runs later against the same database.
+	t.Cleanup(func() {
+		execAs(t, pool, localIdentityID, `DELETE FROM aura.media_job WHERE asset_id = $1`, clip.ID)
+		execAs(t, pool, localIdentityID, `DELETE FROM aura.assets WHERE id = $1`, clip.ID)
+	})
 
 	if _, err := store.Delete(ctx, clip.ID, localIdentityID); err != nil {
 		t.Fatalf("Delete: %v", err)
