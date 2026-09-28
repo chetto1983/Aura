@@ -69,8 +69,10 @@ func TestDocumentProcessorIDDoesNotDependOnTheChannel(t *testing.T) {
 	}
 }
 
-// StatusProcessing, not StatusSearchable: nothing here produced a passage. Whether the
-// document is searchable is ArcadeDB's answer, asked by BuildKnowledgeCatalog's isIndexed.
+// StatusComplete, not StatusSearchable: naming the object is all the asset pipeline does, so
+// its part is done, but nothing here produced a passage. Whether the document is searchable is
+// ArcadeDB's answer, asked by BuildKnowledgeCatalog's isIndexed. StatusProcessing was never
+// left by anything -- the sidecar writes no Postgres row -- so every document stayed in it.
 func TestDocumentProcessorReportsStoredNotSearchable(t *testing.T) {
 	asset := uploadedAsset(SourceWeb)
 
@@ -78,8 +80,8 @@ func TestDocumentProcessorReportsStoredNotSearchable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProcessAsset: %v", err)
 	}
-	if result.Status != StatusProcessing {
-		t.Fatalf("Status = %q, want %q", result.Status, StatusProcessing)
+	if result.Status != StatusComplete {
+		t.Fatalf("Status = %q, want %q: nothing would ever move the asset on from anything else", result.Status, StatusComplete)
 	}
 	// The object coordinates are the handoff to the sidecar: they are what a Passage's
 	// source_key is later matched against, so losing them breaks find-then-open silently.

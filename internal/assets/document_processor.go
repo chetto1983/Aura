@@ -26,9 +26,11 @@ import (
 // agent was never told about a single one; and the document_open the attachment block
 // advertises (context.go) pointed at an id nothing could resolve.
 //
-// The status stays "processing" rather than "searchable" because nothing here has produced
-// a passage. Nothing reads it to decide searchability either -- that is ArcadeDB's answer,
-// asked where it belongs (BuildKnowledgeCatalog's isIndexed).
+// The status is "complete", not "searchable": naming the object is the asset pipeline's whole
+// part, and nothing here has produced a passage. Searchability is ArcadeDB's answer, asked
+// where it belongs (BuildKnowledgeCatalog's isIndexed). It used to be "processing", which
+// nothing ever moved on from because the sidecar writes no Postgres row: on 2026-09-28 every
+// processing row on the lab VM, the oldest a week old, sat over a job that had succeeded.
 type DocumentProcessor struct{}
 
 // ProcessAsset returns the document identity the index will file this object under.
@@ -53,7 +55,7 @@ func (p *DocumentProcessor) ProcessAsset(ctx context.Context, asset Asset) (Resu
 		return Result{}, err
 	}
 	return Result{
-		Status:     StatusProcessing,
+		Status:     StatusComplete,
 		DocumentID: documentID,
 		Summary: fmt.Sprintf(
 			"%s is stored; the ingest sidecar indexes it from the bucket.", asset.FileName,

@@ -4,6 +4,7 @@ package db
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -110,17 +111,8 @@ func TestIdentityReferencesCascadeOrAreExplicitlyExempt(t *testing.T) {
 	// An exemption for a reference that no longer exists is stale documentation claiming
 	// to be a decision; drop it when the column goes.
 	for key := range identityDeleteExceptions {
-		if !contains(seen, key) {
+		if !slices.Contains(seen, key) {
 			t.Errorf("identityDeleteExceptions still lists %q, which no longer references aura.identities", key)
 		}
 	}
-}
-
-func contains(haystack []string, needle string) bool {
-	for _, s := range haystack {
-		if s == needle {
-			return true
-		}
-	}
-	return false
 }
