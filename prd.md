@@ -605,9 +605,25 @@ the lab VM, read-only: 0 `refused`, 0 `failed`, 0 `canceled` rows, so the rule i
 code and not from an observed pile. 384 of 406 `ingestion_events` had `job_id` NULL, all
 written since 2026-09-27 17:48. The cockpit offers a retry on a `failed` chip only.
 
+**Moving a file.** The file manager's move and rename are copy-then-delete. Between the two,
+the asset rows of every key they relocate now move with it, folders included, in one
+identity-scoped transaction limited to the bucket written. A rename also gives the renamed
+file's row its new name, because the listing shows the row's name. A copy is a new file,
+not a new upload: it gets no row, and the original's row keeps its provenance. A move,
+rename or copy onto a key any asset row holds, in any status, is refused before anything is
+copied. It would otherwise replace that asset's bytes under its row, or hand them to the
+sweep removing a deleting row's object. Measured 2026-09-28 11:52 UTC on the lab VM,
+read-only: the bucket held five objects (`prd.md`, two under `media/`, two under `chat/`),
+and 16 of 20 live rows named a key with no object. Nothing had been moved there, so those
+rows lost their bytes to deletes, not to moves.
+
 This does not prove:
-- that the bucket holds no objects without a row, or keys the file manager's rename or move
-  left behind while the row still names the old key (reported, not fixed here);
+- that the bucket holds no objects without a row;
+- why 16 live rows name a missing object. Until 2026-09-28 the file manager's delete left
+  the row live, which would produce exactly this, but the cause was not established and the
+  rows are not repaired here (reported);
+- that a copy's bytes are indexed as a document: the ingest sidecar reads the bucket, but no
+  row names the copy for the chat's knowledge catalog;
 - that Garage removes each of the 258 objects: nothing was deleted by the measurement;
 - that the document index drops the passages of a deleted document (the ingest reconciler
   owns that);
