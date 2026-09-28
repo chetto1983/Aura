@@ -25,11 +25,10 @@ type studioJobs interface {
 	InsertImage(ctx context.Context, job mediagen.Job) (mediagen.Job, error)
 }
 
-// studioAssetStore is the asset service's Studio half: the generated image it stores, the
-// identity's recent assets it lists for a picker, and the reference upload it finalizes.
+// studioAssetStore is the asset service's Studio half: the generated image it stores and the
+// reference upload it finalizes.
 type studioAssetStore interface {
 	IngestAgentFile(ctx context.Context, req assets.AgentIngestRequest) (assets.Asset, error)
-	ListRecent(ctx context.Context, identityID string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 	FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality assets.Modality) (assets.Asset, error)
 }
 
@@ -156,23 +155,21 @@ func (b studioBackend) History(ctx context.Context, owner, beforeID string, kind
 	return b.jobs.ListStudio(ctx, owner, beforeID, kind, limit)
 }
 
-func (b studioBackend) Library(
-	ctx context.Context, owner string, modalities []assets.Modality, limit int,
-) ([]assets.Asset, error) {
-	return b.assets.ListRecent(ctx, owner, modalities, limit)
-}
-
 // FinalizeUpload accepts an uploaded reference as an image and nothing else: a document
 // finalized here would become a reference no generation could read.
 func (b studioBackend) FinalizeUpload(ctx context.Context, owner, assetID string) (assets.Asset, error) {
 	return b.assets.FinalizeUnprocessed(ctx, owner, assetID, assets.ModalityImage)
 }
 
-// wireStudio serves the Studio only when every part of it is live: both shared generation
-// paths, the settings the picker defaults from, the watcher a submitted clip needs, the job
-// store its history reads and the asset service its library reads. Missing one, the routes
-// stay unwired and answer 503 rather than half-serving a page that pays.
+// wireStudio serves the Studio's generation only when every part of it is live: both shared
+// generation paths, the settings the picker defaults from, the watcher a submitted clip needs,
+// the job store its history reads and the asset service it stores into. Missing one, those
+// routes stay unwired and answer 503 rather than half-serving a page that pays. The library the
+// pickers list needs only the asset service, so it is served whenever that is.
 func wireStudio(server *agui.Server, chat *chatEnv, media *mediaDeps, watcher *mediagen.Watcher) {
+	if chat.assets != nil {
+		server.SetStudioLibrary(chat.assets)
+	}
 	if media == nil || media.settings == nil || watcher == nil || chat.assets == nil ||
 		!media.submitter.Configured() || !media.imager.Configured() {
 		return

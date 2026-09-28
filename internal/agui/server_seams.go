@@ -88,10 +88,14 @@ func (s *Server) SetContextWindow(tokens int) {
 func (s *Server) SetLLMRuntime(runtime *llm.Runtime) { s.llmRuntime = runtime }
 
 // SetStudio wires the cockpit Studio's live half: the media catalog, the two shared
-// generation paths, the job store and the identity's image library. Set by the daemon
-// composition root only when every one of them is configured (cmd/aura/serve_studio.go);
-// until set, every Studio route answers 503 rather than half-serving a page that pays.
+// generation paths and the job store. Set by the daemon composition root only when every one
+// of them is configured (cmd/aura/serve_studio.go); until set, the generation and history
+// routes answer 503 rather than half-serving a page that pays.
 func (s *Server) SetStudio(backend StudioBackend) { s.studio = backend }
+
+// SetStudioLibrary wires the library the Studio pickers list. It is set whenever the asset
+// service is, generation or not: the video editor's pickers read it with no media provider.
+func (s *Server) SetStudioLibrary(library StudioLibrary) { s.studioLibrary = library }
 
 // SetBrowserRelay wires the in-box live-view relay the /api/browser/sessions routes open
 // (cmd/aura over the sandbox router). Until set, the stream route answers 503.

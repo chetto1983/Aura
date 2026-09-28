@@ -4,7 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
-	"slices"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -56,11 +57,6 @@ type stubStudioAssets struct {
 	ingestErr error
 	body      []byte
 
-	listedOwner      string
-	listedModalities []assets.Modality
-	listedLimit      int
-	recent           []assets.Asset
-
 	finalizedID       string
 	finalizedModality assets.Modality
 }
@@ -78,13 +74,6 @@ func (s *stubStudioAssets) IngestAgentFile(_ context.Context, req assets.AgentIn
 		return assets.Asset{}, s.ingestErr
 	}
 	return assets.Asset{ID: "asset-studio-1", Modality: assets.ModalityImage}, nil
-}
-
-func (s *stubStudioAssets) ListRecent(
-	_ context.Context, identityID string, modalities []assets.Modality, limit int,
-) ([]assets.Asset, error) {
-	s.listedOwner, s.listedModalities, s.listedLimit = identityID, modalities, limit
-	return s.recent, nil
 }
 
 func (s *stubStudioAssets) FinalizeUnprocessed(_ context.Context, _, assetID string, modality assets.Modality) (assets.Asset, error) {
@@ -365,9 +354,8 @@ func TestStudioReportsAStoredImageThatCouldNotBeSaved(t *testing.T) {
 	}
 }
 
-func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
+func TestStudioReadsHistoryAndFinalizesForTheOwner(t *testing.T) {
 	fixture := newStudioFixture(t)
-	fixture.assets.recent = []assets.Asset{{ID: "asset-recent", Modality: assets.ModalityImage}}
 
 	if _, err := fixture.backend.History(context.Background(), studioOwner, "job-9", mediagen.KindImage, 7); err != nil {
 		t.Fatalf("History() error = %v", err)
@@ -378,20 +366,6 @@ func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
 			fixture.jobs.listedKind, fixture.jobs.listedLimit)
 	}
 
-	sounds := []assets.Modality{assets.ModalityAudio}
-	library, err := fixture.backend.Library(context.Background(), studioOwner, sounds, 5)
-	if err != nil {
-		t.Fatalf("Library() error = %v", err)
-	}
-	if len(library) != 1 || library[0].ID != "asset-recent" {
-		t.Fatalf("library = %#v, want the identity's recent assets", library)
-	}
-	if fixture.assets.listedOwner != studioOwner || fixture.assets.listedLimit != 5 ||
-		!slices.Equal(fixture.assets.listedModalities, sounds) {
-		t.Fatalf("library read = %q, %v, %d", fixture.assets.listedOwner, fixture.assets.listedModalities,
-			fixture.assets.listedLimit)
-	}
-
 	// The Studio finalizes a reference the operator uploaded, and only as an image: a document
 	// finalized here would become a reference no generation can read.
 	if _, err := fixture.backend.FinalizeUpload(context.Background(), studioOwner, "asset-7"); err != nil {
@@ -399,6 +373,36 @@ func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
 	}
 	if fixture.assets.finalizedID != "asset-7" || fixture.assets.finalizedModality != assets.ModalityImage {
 		t.Fatalf("finalize = %q as %q", fixture.assets.finalizedID, fixture.assets.finalizedModality)
+	}
+}
+
+// The video editor's pickers read the library where no generation is configured (CI, an
+// appliance with no media key): wireStudio serves it from the asset service alone, while the
+// routes that pay stay unwired. A wired route refuses an anonymous caller as unauthorized, an
+// unwired one as unavailable.
+func TestWireStudioServesTheLibraryWithoutAMediaProvider(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		chat    *chatEnv
+		library int
+	}{
+		{"with an asset service", &chatEnv{assets: &assets.Service{}}, http.StatusUnauthorized},
+		{"without one", &chatEnv{}, http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := agui.NewServer(nil, nil, agui.ServerConfig{})
+			wireStudio(server, tc.chat, nil, nil)
+			for target, want := range map[string]int{
+				"/api/studio/library?modality=audio": tc.library,
+				"/api/studio/history":                http.StatusServiceUnavailable,
+			} {
+				rec := httptest.NewRecorder()
+				server.Mux().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, target, nil))
+				if rec.Code != want {
+					t.Fatalf("GET %s = %d (%s), want %d", target, rec.Code, rec.Body.String(), want)
+				}
+			}
+		})
 	}
 }
 

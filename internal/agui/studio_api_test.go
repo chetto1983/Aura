@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -40,12 +39,6 @@ type fakeStudioBackend struct {
 	historyJobs   []mediagen.Job
 	historyErr    error
 
-	libraryOwner      string
-	libraryModalities []assets.Modality
-	libraryLimit      int
-	libraryAssets     []assets.Asset
-	libraryErr        error
-
 	finalizeOwner string
 	finalizeAsset string
 	finalizeOut   assets.Asset
@@ -70,13 +63,6 @@ func (f *fakeStudioBackend) GenerateImage(_ context.Context, owner string, req S
 func (f *fakeStudioBackend) History(_ context.Context, owner, beforeID string, kind mediagen.Kind, limit int) ([]mediagen.Job, error) {
 	f.historyOwner, f.historyBefore, f.historyKind, f.historyLimit = owner, beforeID, kind, limit
 	return f.historyJobs, f.historyErr
-}
-
-func (f *fakeStudioBackend) Library(
-	_ context.Context, owner string, modalities []assets.Modality, limit int,
-) ([]assets.Asset, error) {
-	f.libraryOwner, f.libraryModalities, f.libraryLimit = owner, modalities, limit
-	return f.libraryAssets, f.libraryErr
 }
 
 func (f *fakeStudioBackend) FinalizeUpload(_ context.Context, owner, assetID string) (assets.Asset, error) {
@@ -452,80 +438,11 @@ func TestStudioHistoryPassesCursorKindAndLimit(t *testing.T) {
 	}
 }
 
-// The video Studio picks sounds from the library, and clips and pictures together: the kinds
-// the request names are the kinds the backend is asked for, in that order.
-func TestStudioLibraryListsTheKindsAsked(t *testing.T) {
-	for _, tc := range []struct {
-		query string
-		want  []assets.Modality
-	}{
-		{"modality=audio", []assets.Modality{assets.ModalityAudio}},
-		{"modality=video&modality=image", []assets.Modality{assets.ModalityVideo, assets.ModalityImage}},
-	} {
-		backend := &fakeStudioBackend{}
-		rec := serveStudio(t, studioServer(t, backend), http.MethodGet, "/api/studio/library?"+tc.query, "")
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s: status = %d (%s), want 200", tc.query, rec.Code, rec.Body.String())
-		}
-		if !slices.Equal(backend.libraryModalities, tc.want) {
-			t.Fatalf("%s: backend asked for %v, want %v", tc.query, backend.libraryModalities, tc.want)
-		}
-	}
-}
-
-// A listing of no kind, or of a kind no picker offers, is the caller's mistake: said, never
-// guessed into images.
-func TestStudioLibraryRefusesAMissingOrUnknownKind(t *testing.T) {
-	for _, query := range []string{"", "?modality=document", "?modality=audio&modality=unknown"} {
-		backend := &fakeStudioBackend{}
-		rec := serveStudio(t, studioServer(t, backend), http.MethodGet, "/api/studio/library"+query, "")
-		if rec.Code != http.StatusBadRequest {
-			t.Fatalf("%q: status = %d (%s), want 400", query, rec.Code, rec.Body.String())
-		}
-		if backend.libraryOwner != "" {
-			t.Fatalf("%q: the backend was asked anyway", query)
-		}
-	}
-}
-
-func TestStudioLibraryAndUploadFinalize(t *testing.T) {
-	backend := &fakeStudioBackend{libraryAssets: []assets.Asset{{
-		ID: "asset-1", IdentityID: studioIdentityID, Modality: assets.ModalityImage,
-		FileName: "cat.png", MIMEType: "image/png", SizeBytes: 1024,
-		ObjectBucket: "aura-assets", ObjectKey: "identities/alice/secret-object-path.png",
-		CreatedAt: time.Date(2026, 9, 17, 9, 0, 0, 0, time.UTC),
-	}}}
+func TestStudioUploadFinalize(t *testing.T) {
+	backend := &fakeStudioBackend{finalizeErr: assets.ErrWrongModality}
 	s := studioServer(t, backend)
 
-	rec := serveStudio(t, s, http.MethodGet, "/api/studio/library?modality=image&limit=6", "")
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d (%s), want 200", rec.Code, rec.Body.String())
-	}
-	if backend.libraryOwner != studioIdentityID || backend.libraryLimit != 6 ||
-		!slices.Equal(backend.libraryModalities, []assets.Modality{assets.ModalityImage}) {
-		t.Fatalf("library call = %q, %v, %d", backend.libraryOwner, backend.libraryModalities, backend.libraryLimit)
-	}
-	body := rec.Body.String()
-	for _, leaked := range []string{"object_key", "object_bucket", "secret-object-path", "aura-assets"} {
-		if strings.Contains(body, leaked) {
-			t.Fatalf("library body exposed %q: %s", leaked, body)
-		}
-	}
-	out := decodeStudio[struct {
-		Assets []struct {
-			ID       string `json:"id"`
-			FileName string `json:"file_name"`
-			MIMEType string `json:"mime_type"`
-		} `json:"assets"`
-	}](t, rec)
-	if len(out.Assets) != 1 || out.Assets[0].ID != "asset-1" || out.Assets[0].FileName != "cat.png" ||
-		out.Assets[0].MIMEType != "image/png" {
-		t.Fatalf("library assets = %#v", out.Assets)
-	}
-
-	backend.finalizeErr = assets.ErrWrongModality
-	rec = serveStudio(t, s, http.MethodPost, "/api/studio/uploads/asset-2/finalize", "")
+	rec := serveStudio(t, s, http.MethodPost, "/api/studio/uploads/asset-2/finalize", "")
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("document finalize status = %d (%s), want 422", rec.Code, rec.Body.String())
 	}
@@ -555,7 +472,6 @@ func TestStudioNeedsABackendAndAPrincipal(t *testing.T) {
 		{http.MethodPost, "/api/studio/videos", `{"model":"m","prompt":"p"}`},
 		{http.MethodPost, "/api/studio/images", `{"model":"m","prompt":"p"}`},
 		{http.MethodGet, "/api/studio/history", ""},
-		{http.MethodGet, "/api/studio/library", ""},
 		{http.MethodPost, "/api/studio/uploads/asset-1/finalize", ""},
 	}
 	unwired := studioServer(t, nil)

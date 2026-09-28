@@ -155,12 +155,14 @@ type Server struct {
 	modelCatalog    modelCatalogFetcher
 	mediaCatalog    MediaCatalogLister
 	modalityCatalog ModalityCatalogLister
-	// studio serves the cockpit Studio's generation, history and library routes
-	// (studio_api.go); nil until SetStudio, and every Studio route then answers 503.
-	studio     StudioBackend
-	settingsMu sync.Mutex
-	audit      auditReader
-	idAdmin    identityAdmin
+	// studio serves the cockpit Studio's generation and history routes (studio_api.go); nil
+	// until SetStudio, and those routes then answer 503. studioLibrary serves the pickers'
+	// library route the same way, on its own because it needs no media provider.
+	studio        StudioBackend
+	studioLibrary StudioLibrary
+	settingsMu    sync.Mutex
+	audit         auditReader
+	idAdmin       identityAdmin
 	// credit bundles the CRED-03/CRED-06/CRED-09 credit-cap read/write dependencies
 	// (credit_api.go) in one field rather than four, wired by SetCreditAPI; nil until
 	// wired, matching audit's own 503-until-wired precedent.

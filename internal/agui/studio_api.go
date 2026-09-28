@@ -18,16 +18,22 @@ import (
 const studioHistoryDefault = 24
 
 // StudioBackend is the Studio's live half: the catalog it lists, the two shared generation
-// paths it pays through, the job store it reads back, and the identity's library by kind. The
-// composition root implements it over the daemon's media dependencies (cmd/aura), so this
-// package needs neither a provider client nor a database.
+// paths it pays through, and the job store it reads back. The composition root implements it
+// over the daemon's media dependencies (cmd/aura), so this package needs neither a provider
+// client nor a database.
 type StudioBackend interface {
 	Models(ctx context.Context, kind mediagen.Kind) (defaultModel string, models []mediagen.Model, err error)
 	SubmitVideo(ctx context.Context, owner string, req StudioVideoRequest) (mediagen.Job, error)
 	GenerateImage(ctx context.Context, owner string, req StudioImageRequest) (mediagen.Job, error)
 	History(ctx context.Context, owner, beforeID string, kind mediagen.Kind, limit int) ([]mediagen.Job, error)
-	Library(ctx context.Context, owner string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 	FinalizeUpload(ctx context.Context, owner, assetID string) (assets.Asset, error)
+}
+
+// StudioLibrary lists the identity's usable assets of the given kinds, newest first: what a
+// Studio picker offers. It is its own seam, not part of StudioBackend, because it needs no media
+// provider — the video editor's sound and clip pickers read it where no generation is configured.
+type StudioLibrary interface {
+	ListRecent(ctx context.Context, identityID string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 }
 
 func (s *Server) registerStudioRoutes(mux *http.ServeMux) {
@@ -39,10 +45,10 @@ func (s *Server) registerStudioRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/studio/uploads/{id}/finalize", s.handleStudioUploadFinalize)
 }
 
-// studioCaller is the gate every Studio route shares: an unwired Studio is unavailable, and
-// an unauthenticated caller has no identity to own a generation.
-func (s *Server) studioCaller(w http.ResponseWriter, r *http.Request) (string, bool) {
-	if s.studio == nil {
+// studioCaller is the gate every Studio route shares: an unwired route is unavailable, and an
+// unauthenticated caller has no identity to own a generation or a library.
+func studioCaller(w http.ResponseWriter, r *http.Request, wired bool) (string, bool) {
+	if !wired {
 		http.Error(w, "studio unavailable", http.StatusServiceUnavailable)
 		return "", false
 	}
@@ -97,7 +103,7 @@ func studioLimit(raw string, fallback, ceiling int) (int, bool) {
 }
 
 func (s *Server) handleStudioModels(w http.ResponseWriter, r *http.Request) {
-	_, ok := s.studioCaller(w, r)
+	_, ok := studioCaller(w, r, s.studio != nil)
 	if !ok {
 		return
 	}
@@ -125,7 +131,7 @@ func (s *Server) handleStudioModels(w http.ResponseWriter, r *http.Request) {
 func studioCreate[T any](s *Server, w http.ResponseWriter, r *http.Request,
 	create func(context.Context, string, T) (mediagen.Job, error),
 ) {
-	identityID, ok := s.studioCaller(w, r)
+	identityID, ok := studioCaller(w, r, s.studio != nil)
 	if !ok {
 		return
 	}
@@ -155,7 +161,7 @@ func (s *Server) handleStudioImageCreate(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleStudioHistory(w http.ResponseWriter, r *http.Request) {
-	identityID, ok := s.studioCaller(w, r)
+	identityID, ok := studioCaller(w, r, s.studio != nil)
 	if !ok {
 		return
 	}
@@ -185,7 +191,7 @@ func (s *Server) handleStudioHistory(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStudioLibrary(w http.ResponseWriter, r *http.Request) {
-	identityID, ok := s.studioCaller(w, r)
+	identityID, ok := studioCaller(w, r, s.studioLibrary != nil)
 	if !ok {
 		return
 	}
@@ -199,7 +205,7 @@ func (s *Server) handleStudioLibrary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "modality must be image, audio or video", http.StatusBadRequest)
 		return
 	}
-	library, err := s.studio.Library(r.Context(), identityID, modalities, limit)
+	library, err := s.studioLibrary.ListRecent(r.Context(), identityID, modalities, limit)
 	if err != nil {
 		writeStudioError(w, err)
 		return
@@ -212,7 +218,7 @@ func (s *Server) handleStudioLibrary(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleStudioUploadFinalize(w http.ResponseWriter, r *http.Request) {
-	identityID, ok := s.studioCaller(w, r)
+	identityID, ok := studioCaller(w, r, s.studio != nil)
 	if !ok {
 		return
 	}
