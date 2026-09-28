@@ -580,6 +580,17 @@ bytes each, PUT and never finalized). Two are videos whose object was never writ
 `media_job`, `ingestion_jobs` or `asset_events` row references them. There are 0 `created`
 and 0 `uploaded` rows, and the VM runs the 600 s TTL.
 
+**Settling a processed asset.** The document processor names an upload, and the document leg
+of an image, the way the ingest sidecar will index it. It used to report `processing`, and
+nothing moved an asset on from there: the sidecar indexes from the bucket and writes no
+Postgres row. It now reports `complete`: the asset pipeline's part is done. Searchability
+stays ArcadeDB's answer, asked by the knowledge catalog, and the cockpit already treated
+both statuses as ready. Migration 0132 settles the rows left behind, only those whose
+`asset_process` job succeeded. Measured 2026-09-28 10:51 UTC on the lab VM, read-only: 3
+`processing` rows (an image from 2026-09-21, two `project.json` from 2026-09-27), each over
+an `asset_process` job that had succeeded. The 15 counted that morning were not checked
+against their jobs before most of them were deleted.
+
 This does not prove:
 - that the bucket holds no objects without a row, or keys the file manager's rename or move
   left behind while the row still names the old key (reported, not fixed here);
@@ -588,7 +599,9 @@ This does not prove:
   owns that);
 - anything about `refused` or `failed` rows, which still accumulate;
 - why the photo editor's five uploads were never finalized (reported, not investigated);
-- whether Garage lets a PUT keep streaming past its URL's expiry: the hour assumes it can.
+- whether Garage lets a PUT keep streaming past its URL's expiry: the hour assumes it can;
+- anything about a `processing` row with no job, which an inline Telegram ingest interrupted
+  mid-processing would leave: 0132 leaves such a row alone.
 
 ## 12. Workspace, shell and web
 
