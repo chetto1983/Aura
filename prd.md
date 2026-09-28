@@ -1631,6 +1631,24 @@ ran in 9.3 s instead of 44.3 s in one Vitest run, but the CI Stryker step went f
 mutant runs only the tests that cover it, usually one file, so there is little isolation to save.
 Not measured: where the 39 minutes go.
 
+A Go mutation scope is re-measured only when its inputs change. Measured 2026-09-28: the pinned
+go-mutesting has no result cache, and with Stryker incremental (1 min 38 s on job 108847222120)
+the eight Go scopes dominate: 20 min 28 s for 338 mutants in run 36382875100. Timed one by one in
+WSL under load average 9-18 they took 1,626 s: elicitation_route 622 s (70 mutants), media_clamp
+462 s (158), gateway 249 s (17), media_watcher 99 s (22), pausable 99 s (48), sandbox 69 s (4),
+identity 20 s (13), profile 6 s (6), every count equal to CI's. The Skills job spent 7-11 min of
+11-17 in go-mutesting (runs 36374190122, 36376741314, 36380553590, 36382875089): validator.go
+2 min 10 s-3 min 23 s, writer.go 4 min 47 s-7 min 25 s, 71/82 each time. A scope now reuses the
+result stored under the same sha256 over its file, go.mod, go.sum, the go env `go test` sees
+(GOFLAGS carries build tags), the go-mutesting build, and every build, test, embed and testdata
+file of the main-module packages in its `go list -deps -test` closure, all taken before any mutant
+runs. The report names the measuring commit and fingerprint; release readiness accepts and lists
+it. Replayed over 263 master pushes (2026-09-05 to 09-28), a scope is reused on 64% (gateway and
+elicitation_route share one 1,245-file closure holding every other scope's package) to 98% of
+pushes; media_clamp on 87%. Not proven: that a result is deterministic (a 10 s per-mutant timeout
+counts as a kill, and pausable is one mutant above 70%), inputs a test reads outside its testdata
+or from a live service, and the replay used today's closures for older commits.
+
 MRS is an operational reliability score with a strict threshold above 96.5 and hard
 gates for integrity, isolation, provenance, live MCP, embedding contract, abstention,
 coverage and bounded latency. Retain cold samples; use at least 25 sequential calls
