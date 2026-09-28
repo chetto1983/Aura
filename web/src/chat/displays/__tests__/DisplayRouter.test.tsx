@@ -58,6 +58,58 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('raw table').tagName.toLowerCase()).toBe('pre');
   });
 
+  it('routes a trusted todo payload to its checklist', () => {
+    const payload = {
+      type: 'todo',
+      tool_call_id: 'todo-1',
+      todo: { items: [{ content: 'Build', status: 'in_progress', active_form: 'Building' }] },
+    } as DisplayPayload;
+    render(<DisplayRouter payload={payload} toolName="todo_write" result="[~] Build" />);
+    expect(screen.getByText('Build')).toBeTruthy();
+    expect(screen.getByText('Building')).toBeTruthy();
+  });
+
+  it('keeps malformed todo payloads on the raw path', () => {
+    const payload = { type: 'todo', tool_call_id: 'todo-2' } as DisplayPayload;
+    render(<DisplayRouter payload={payload} toolName="todo_write" result="[~] Build" />);
+    expect(screen.getByText('[~] Build').tagName.toLowerCase()).toBe('pre');
+  });
+
+  it('does not crash or mount a checklist for a malformed todo item', () => {
+    const payload = {
+      type: 'todo',
+      tool_call_id: 'todo-3',
+      todo: { items: [null] },
+    } as unknown as DisplayPayload;
+    render(<DisplayRouter payload={payload} toolName="todo_write" result="raw todo" />);
+    expect(screen.getByText('raw todo').tagName.toLowerCase()).toBe('pre');
+  });
+
+  it('keeps oversized todo text in the raw panel', () => {
+    const payload = {
+      type: 'todo',
+      tool_call_id: 'todo-4',
+      todo: { items: [{ content: 'x'.repeat(513), status: 'pending' }] },
+    } as DisplayPayload;
+    render(<DisplayRouter payload={payload} toolName="todo_write" result="raw oversized todo" />);
+    expect(screen.getByText('raw oversized todo').tagName.toLowerCase()).toBe('pre');
+  });
+
+  it('keeps a todo payload with two active items in the raw panel', () => {
+    const payload = {
+      type: 'todo',
+      tool_call_id: 'todo-5',
+      todo: {
+        items: [
+          { content: 'First', status: 'in_progress' },
+          { content: 'Second', status: 'in_progress' },
+        ],
+      },
+    } as DisplayPayload;
+    render(<DisplayRouter payload={payload} toolName="todo_write" result="raw ambiguous todo" />);
+    expect(screen.getByText('raw ambiguous todo').tagName.toLowerCase()).toBe('pre');
+  });
+
   it.each([
     'chart',
     'system_event',

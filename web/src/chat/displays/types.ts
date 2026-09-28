@@ -32,6 +32,7 @@ export type DisplayKind =
   | 'chart'
   | 'system_event'
   | 'swarm_report'
+  | 'todo'
   | 'mcp_view';
 
 /** A single web-search result row (type=web_result). Mirrors display.WebItem. */
@@ -88,6 +89,15 @@ export interface DisplayChart {
   readonly x_axis_label?: string;
 }
 
+/** One validated todo_write revision (type=todo). */
+export interface DisplayTodo {
+  readonly items: readonly {
+    readonly content: string;
+    readonly status: 'pending' | 'in_progress' | 'completed';
+    readonly active_form?: string;
+  }[];
+}
+
 /** A classified safe-reason event (type=system_event). Mirrors display.System. */
 export interface DisplaySystem {
   readonly class: string;
@@ -140,6 +150,7 @@ export interface DisplayPayload {
   readonly chart?: DisplayChart;
   readonly system?: DisplaySystem;
   readonly swarm?: readonly DisplayChildReport[];
+  readonly todo?: DisplayTodo;
   readonly sources?: readonly DisplaySource[];
   /** type=mcp_view — the MCP Apps descriptor the frame renders. */
   readonly mcp_view?: McpViewDescriptor;

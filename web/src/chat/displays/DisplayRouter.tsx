@@ -9,6 +9,7 @@ import { LocalArtifactDisplay } from './LocalArtifactDisplay';
 import { DocumentDisplay } from './DocumentDisplay';
 import { WebResultDisplay } from './WebResultDisplay';
 import { CodeDisplay } from './CodeDisplay';
+import { TodoDisplay } from './TodoDisplay';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point, now
 // hosted INSIDE the compact ToolActivityCard's expanded body (compact-chat spec
@@ -92,6 +93,25 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
     case 'code':
       return payload.code && typeof payload.code.body === 'string' ? (
         <CodeDisplay payload={payload} />
+      ) : (
+        raw()
+      );
+    case 'todo':
+      return payload.todo &&
+        Array.isArray(payload.todo.items) &&
+        payload.todo.items.length <= 100 &&
+        payload.todo.items.every(
+          (item) =>
+            item !== null &&
+            typeof item === 'object' &&
+            typeof item.content === 'string' &&
+            item.content.length <= 512 &&
+            ['pending', 'in_progress', 'completed'].includes(item.status) &&
+            (item.active_form === undefined ||
+              (typeof item.active_form === 'string' && item.active_form.length <= 512)),
+        ) &&
+        payload.todo.items.filter((item) => item.status === 'in_progress').length <= 1 ? (
+        <TodoDisplay payload={payload} />
       ) : (
         raw()
       );

@@ -87,6 +87,8 @@ func decodeToolPreview(in PreviewInput) (any, bool) {
 		return *queued.Workers, true
 	case "shell_exec", "sandbox_exec":
 		return shellCodeInput(in.ResultPreview), true
+	case "todo_write":
+		return decodeTodoPreview(in)
 	default:
 		return nil, false
 	}

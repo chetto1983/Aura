@@ -16,6 +16,7 @@ export const displayEn = {
       chart: 'Chart',
       system_event: 'System',
       swarm_report: 'Agents',
+      todo: 'Checklist',
       mcp_view: 'Interactive view',
     },
     mcpView: {
@@ -84,6 +85,12 @@ export const displayEn = {
       expandAria: 'Show the full code body',
       collapseAria: 'Collapse the code body',
       plainText: 'Plain text',
+    },
+    todo: {
+      title: 'Todos',
+      pending: 'Pending',
+      active: 'In progress',
+      done: 'Completed',
     },
     webResult: {
       relevance: 'Relevance {{score}}',
@@ -288,6 +295,7 @@ export const displayIt = {
       chart: 'Grafico',
       system_event: 'Sistema',
       swarm_report: 'Agenti',
+      todo: 'Attività',
       mcp_view: 'Vista interattiva',
     },
     mcpView: {
@@ -357,6 +365,12 @@ export const displayIt = {
       expandAria: 'Mostra il corpo completo del codice',
       collapseAria: 'Comprimi il corpo del codice',
       plainText: 'Testo semplice',
+    },
+    todo: {
+      title: 'Attività',
+      pending: 'Da fare',
+      active: 'In corso',
+      done: 'Completata',
     },
     webResult: {
       relevance: 'Rilevanza {{score}}',

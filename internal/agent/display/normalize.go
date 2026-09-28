@@ -50,6 +50,12 @@ func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registr
 			return Payload{}, false
 		}
 		return normalizeCode(toolCallID, in)
+	case "todo_write":
+		items, ok := result.(Todo)
+		if !ok {
+			return Payload{}, false
+		}
+		return Payload{Type: KindTodo, ToolCallID: toolCallID, Todo: &items}, true
 	default:
 		return Payload{}, false
 	}

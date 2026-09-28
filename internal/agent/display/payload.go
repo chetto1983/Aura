@@ -23,6 +23,8 @@ const (
 	KindSystemEvent Kind = "system_event"
 	// KindSwarmReport identifies a swarm child-report payload.
 	KindSwarmReport Kind = "swarm_report"
+	// KindTodo identifies a validated todo_write checklist snapshot.
+	KindTodo Kind = "todo"
 )
 
 // Payload is the flat tagged union a normalizer emits (R1). It is a struct, not an
@@ -43,6 +45,7 @@ type Payload struct {
 	Chart      *Chart        `json:"chart,omitempty"`
 	System     *System       `json:"system,omitempty"`
 	Swarm      []ChildReport `json:"swarm,omitempty"`
+	Todo       *Todo         `json:"todo,omitempty"`
 	Sources    []Source      `json:"sources,omitempty"`
 }
 
