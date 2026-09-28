@@ -388,6 +388,7 @@ func (s *Server) Mux() http.Handler {
 	// handlers; the parent-mux mount behind RequireAuth (+ RequireCapability on the
 	// mutating resolve) lives in cmd/aura/serve_webui.go.
 	s.registerApprovalRoutes(mux)
+	s.registerMessageDraftRoutes(mux)
 	s.registerAssetRoutes(mux)
 	s.registerStudioRoutes(mux)
 	// WEBSHARE-02/03 (Phase 37F plan 37F-10): the eight share-lifecycle routes across three

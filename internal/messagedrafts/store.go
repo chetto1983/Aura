@@ -73,6 +73,22 @@ type Draft struct {
 	CreatedAt            time.Time
 }
 
+// MatchesDispatch confirms a claimed row authorizes these exact effective
+// arguments for the same owner and mounted tool. JSONB key order is normalized
+// before comparing the stored fingerprint.
+func (d Draft) MatchesDispatch(ownerID, registeredName string, target Target, raw json.RawMessage) bool {
+	if d.Status != StatusDispatching || d.IdentityID != ownerID ||
+		d.RegisteredToolName != registeredName || d.Target != target || d.EffectiveFingerprint == "" {
+		return false
+	}
+	stored, err := MergeApprovedArgs(target, d.EffectiveArgs, nil)
+	if err != nil || argsFingerprint(target, stored) != d.EffectiveFingerprint {
+		return false
+	}
+	effective, err := MergeApprovedArgs(target, raw, nil)
+	return err == nil && argsFingerprint(target, effective) == d.EffectiveFingerprint
+}
+
 // Store is an owner-scoped PostgreSQL store. Every query runs with the RLS
 // identity set in the transaction, in addition to an explicit identity filter.
 type Store struct{ pool *pgxpool.Pool }
@@ -155,6 +171,53 @@ func (s *Store) Get(ctx context.Context, ownerID, draftID string) (Draft, error)
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Draft{}, ErrUnavailable
+	}
+	return result, err
+}
+
+// Reconcile closes an expired review or a dispatch interrupted long enough that
+// its external effect cannot be known. Both transitions are one-way; neither
+// grants another send. A concurrent resolution wins through the SQL predicates.
+func (s *Store) Reconcile(ctx context.Context, ownerID, draftID string) (Draft, error) {
+	draft, err := s.Get(ctx, ownerID, draftID)
+	if err != nil {
+		return Draft{}, err
+	}
+	var interrupted bool
+	switch draft.Status {
+	case StatusPending:
+		if draft.ExpiresAt.After(time.Now()) {
+			return draft, nil
+		}
+	case StatusDispatching:
+		if draft.DispatchStartedAt.IsZero() || draft.DispatchStartedAt.After(time.Now().Add(-30*time.Minute)) {
+			return draft, nil
+		}
+		interrupted = true
+	default:
+		return draft, nil
+	}
+	owner, id, err := draftKey(ownerID, draftID)
+	if err != nil {
+		return Draft{}, ErrUnavailable
+	}
+	var result Draft
+	err = db.WithIdentityTx(ctx, s.pool, ownerID, func(q *sqlc.Queries) error {
+		var row sqlc.AuraMessageDrafts
+		var updateErr error
+		if interrupted {
+			row, updateErr = q.MarkInterruptedMessageDraftUncertain(ctx, sqlc.MarkInterruptedMessageDraftUncertainParams{ID: id, IdentityID: owner})
+		} else {
+			row, updateErr = q.ExpireMessageDraft(ctx, sqlc.ExpireMessageDraftParams{ID: id, IdentityID: owner})
+		}
+		if updateErr != nil {
+			return updateErr
+		}
+		result, updateErr = draftFromRow(row)
+		return updateErr
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return s.Get(ctx, ownerID, draftID)
 	}
 	return result, err
 }

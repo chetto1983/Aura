@@ -16,10 +16,11 @@ import {
   useConversation,
 } from '../conversations/useConversations';
 import { ThreadApprovalCards } from '../approvals/ThreadApprovalCards';
+import { useThreadMessageDrafts } from '../approvals/useThreadMessageDrafts';
 import { useThreadApprovals } from '../approvals/useThreadApprovals';
 import { useThreadElicitations } from '../questions/useThreadElicitations';
 import type { Approval } from '../approvals/useApprovals';
-import { Composer, type ComposerDraftPrompt } from './Composer';
+import { Composer } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
 import { listThreadAssets } from './attachments/api';
 import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
@@ -52,8 +53,10 @@ import { useSteerSend } from './ExternalStoreChat_steer';
 import { SteerNotice } from './SteerNotice';
 import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
-import { useRunUsageLifecycle, type RunUsageEvent } from './runUsage';
-import { useRunUsageBaseline, type RunSessionBaselineListener } from './useRunUsageBaseline';
+import { useRunUsageLifecycle } from './runUsage';
+import { useRunUsageBaseline } from './useRunUsageBaseline';
+import type { ExternalStoreChatProps } from './ExternalStoreChat_props';
+export type { ExternalStoreChatProps } from './ExternalStoreChat_props';
 import { AutoSpeak } from './voice/AutoSpeak';
 import { VoiceOverlay } from './voice/VoiceOverlay';
 import { useVoiceRuntime } from './voice/useVoiceRuntime';
@@ -61,26 +64,6 @@ import { useApprovalFocus } from './useApprovalFocus';
 import { useWorkerReportRefresh } from './workers/useWorkerReportRefresh';
 
 const ignoreDraftPrompt = () => undefined;
-
-export interface ExternalStoreChatProps {
-  /** Conversation/thread id the run is POSTed against. */
-  readonly threadId: string;
-  /** Create/select a conversation before the first send when no thread is active. */
-  readonly onEnsureThread?: (initialPrompt: string) => Promise<string>;
-  readonly onUsage?: (event: RunUsageEvent) => void;
-  readonly onUsageBaseline?: RunSessionBaselineListener;
-  readonly allocateUsageRunId?: () => number;
-  /**
-   * 37B seam (mirrors onUsage): fires when a run emits an `aura.artifact` descriptor,
-   * carrying its asset_id. AppShell invalidates ['assets', threadId] + drives the
-   * one-time Artefatti panel auto-open (D-11). Forwarded into streamRun/streamPost.
-   */
-  readonly onArtifact?: (assetId: string | undefined) => void;
-  readonly draftPrompt?: ComposerDraftPrompt | undefined;
-  readonly onDraftPromptConsumed?: (nonce: number) => void;
-  readonly onRequestDraftPrompt?: (text: string) => void;
-  /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
-}
 
 export function ExternalStoreChat({
   threadId,
@@ -459,6 +442,7 @@ export function ExternalStoreChat({
   });
 
   const threadApprovals = useThreadApprovals(threadId, resumeRun, dispatchApprovalFocus);
+  const messageDrafts = useThreadMessageDrafts(threadId, isRunning, resumeRun);
   const requestApprovalFocus = useApprovalFocus(
     threadId,
     threadApprovals.isPending,
@@ -570,6 +554,7 @@ export function ExternalStoreChat({
 
             <ThreadApprovalCards
               approvals={threadApprovals.approvals}
+              messageDrafts={messageDrafts}
               elicitations={elicitations.items}
               isStreaming={isRunning}
               onResolutionStarted={threadApprovals.onResolutionStarted}
@@ -579,7 +564,7 @@ export function ExternalStoreChat({
             <Composer
               inputRef={composerInputRef}
               onInputAvailable={setComposerInput}
-              approvalLocked={threadApprovals.isPending}
+              approvalLocked={threadApprovals.isPending || messageDrafts.isPending}
               sendBlocked={false} // D-10: a live run redirects (steerAvailable) instead of blocking.
               steerAvailable={steer.available}
               onSteerSubmit={(steerText) => void steer.trySend(steerText)}

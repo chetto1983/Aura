@@ -1,4 +1,4 @@
-// Pause-DETECTION seam (D-A1-03 / AM-01). This file holds ONLY the half of the
+// Pause-DETECTION seam (D-A1-03 / AM-01). This file holds the half of the
 // HITL pause primitive that lives in the agent: catching the
 // tools.ErrAwaitingUserInput sentinel, applying intra-turn exclusivity, and
 // emitting the pause as an Actions.AwaitingInput Event. The agent stays DB-free —
@@ -38,17 +38,18 @@ var pauseBoundary = obs.NewGlobalBoundary(agentMeterName, obs.BoundaryConfig{
 	Operation: "pause_create", State: "pending", Count: obs.AgentPauseTransitionsID,
 })
 
-// pauseCalls scans the assistant's batched tool calls and returns the subset that
-// are valid ask_user pauses, with each call's ToolCallID stamped onto the carried
-// sentinel. Only calls whose tool name is ask_user are pre-executed (so no other
-// tool runs twice / side-effects early); a malformed ask_user that fails
+// pauseCalls scans the assistant's batched tool calls and returns ask_user pauses
+// first, with each call's ToolCallID stamped onto the carried sentinel. Only
+// ask_user is pre-executed; trusted outbound messages are instead persisted as
+// drafts without running their tool. A malformed ask_user that fails
 // validation is NOT a pause — it returns no sentinel and falls through to normal
 // dispatch as a RoleTool error. The returned []llm.ToolCall is the ask_user-only
 // rewrite of the assistant message (D-A1-07 OpenAI wire-correctness): siblings are
 // dropped and re-emitted by the model on the next round.
 //
-// ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ONLY ask_user pauses the turn.
-// The pause is NAME-GATED here — a non-ask_user tool whose Execute returns
+// ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ask_user alone can pause by
+// returning its sentinel. A host-owned trusted outbound message may also pause
+// through withholdOutboundMessage; it never calls Execute. A non-ask_user tool whose Execute returns
 // tools.ErrAwaitingUserInput does NOT pause; runTool renders it as a RoleTool error
 // (`error: awaiting user input`, the sentinel's Error() string) and the loop
 // continues. Spike 012b proved this: the old skill install-gate returned the
@@ -71,13 +72,23 @@ func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pause
 		pause.ToolCallID = call.ID
 		out = append(out, pauseCall{call: call, pause: pause})
 	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, call := range calls {
+		if pending, ok := a.withholdOutboundMessage(ctx, call); ok {
+			out = append(out, pending)
+		}
+	}
 	return out
 }
 
 // pauseCall pairs a finalized ask_user tool call with its decoded pause sentinel.
 type pauseCall struct {
-	call  llm.ToolCall
-	pause *tools.ErrAwaitingUserInput
+	call              llm.ToolCall
+	pause             *tools.ErrAwaitingUserInput
+	originalToolName  string
+	originalArguments string
 }
 
 // pauseToolCalls projects the detected pauses back to the ask_user-only
@@ -121,7 +132,10 @@ func (a *LlmAgent) emitPauses(ic InvocationContext, spanID [8]byte, parentSpanID
 	pauses []pauseCall, yield func(*Event, error) bool,
 ) {
 	for _, p := range pauses {
-		if !yield(a.pauseEvent(ic, spanID, parentSpanID, p.pause), nil) {
+		event := a.pauseEvent(ic, spanID, parentSpanID, p.pause)
+		event.Actions.AwaitingInput.OriginalToolName = p.originalToolName
+		event.Actions.AwaitingInput.OriginalArguments = p.originalArguments
+		if !yield(event, nil) {
 			return
 		}
 	}

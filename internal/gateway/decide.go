@@ -45,6 +45,9 @@ func gated(t scoring.RiskTier) bool { return t == scoring.Destructive }
 // store.Reserve call (reserve.go) before Allow is returned — exactly one durable
 // reservation start per executed call (GATE-03/04, D-03 point 2).
 func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
+	if verdict, handled, err := g.decideReviewedMessage(ctx, spec, rawArgs, key); handled {
+		return verdict, err
+	}
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
 	}

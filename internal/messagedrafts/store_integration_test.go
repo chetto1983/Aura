@@ -91,6 +91,9 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	if err != nil || draft.ID == "" || draft.Status != StatusPending {
 		t.Fatal("create pending draft failed")
 	}
+	if active, err := store.Reconcile(ctx, owner, draft.ID); err != nil || active.Status != StatusPending {
+		t.Fatal("active review was changed during recovery")
+	}
 	duplicate, err := store.Create(ctx, input)
 	if err != nil || duplicate.ID != draft.ID {
 		t.Fatal("same call did not resolve to one draft")
@@ -175,6 +178,9 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	if _, err := store.MarkOutcome(ctx, owner, draft.ID, StatusSent, "sent"); err != nil {
 		t.Fatal("sent outcome was not recorded")
 	}
+	if sent, err := store.Reconcile(ctx, owner, draft.ID); err != nil || sent.Status != StatusSent {
+		t.Fatal("terminal send was changed during recovery")
+	}
 	if _, err := store.ClaimSend(ctx, owner, draft.ID, nil); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("resolved draft was claimed again")
 	}
@@ -221,5 +227,32 @@ func TestMessageDraftStoreDeclineAndExpiry(t *testing.T) {
 	}
 	if _, err := store.ClaimSend(ctx, owner, expiring.ID, nil); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("expired draft was claimed")
+	}
+	expired, err := store.Reconcile(ctx, owner, expiring.ID)
+	if err != nil || expired.Status != StatusExpired {
+		t.Fatal("expired draft did not close without sending")
+	}
+
+	input.ToolCallID = "call-interrupted"
+	interrupted, err := store.Create(ctx, input)
+	if err != nil {
+		t.Fatal("create interrupted draft failed")
+	}
+	if _, err := store.ClaimSend(ctx, owner, interrupted.ID, nil); err != nil {
+		t.Fatal("claim interrupted draft failed")
+	}
+	err = db.WithIdentityTxRaw(ctx, pool, owner, func(tx pgx.Tx) error {
+		_, err := tx.Exec(ctx, `UPDATE aura.message_drafts SET dispatch_started_at=now()-interval '31 minutes' WHERE id=$1`, interrupted.ID)
+		return err
+	})
+	if err != nil {
+		t.Fatal("age interrupted dispatch failed")
+	}
+	uncertain, err := store.Reconcile(ctx, owner, interrupted.ID)
+	if err != nil || uncertain.Status != StatusUncertain || uncertain.OutcomeCode != "interrupted" {
+		t.Fatal("interrupted dispatch was not made uncertain")
+	}
+	if _, err := store.ClaimSend(ctx, owner, interrupted.ID, nil); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("interrupted dispatch gained another send authorization")
 	}
 }

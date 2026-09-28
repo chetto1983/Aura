@@ -117,6 +117,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// Method+path precedence keeps the resolve gate authoritative over the read path.
 	mux.Handle(approvalsResolveRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(approvalsListRoute, aguiHandler)
+	mux.Handle("/api/message-drafts", aguiHandler)
+	mux.Handle("POST /api/message-drafts/{id}/resolve", agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(approvalGrantsRoute, aguiHandler)
 	mux.Handle(approvalGrantsRevokeRoute, aguiHandler)
 	mux.Handle(assetsPresignRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))

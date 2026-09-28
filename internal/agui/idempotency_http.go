@@ -79,6 +79,7 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/admin/openrouter/reconcile":   httpMutationMeta("openrouter_reconcile"),
 	"DELETE /api/admin/identities/{id}":      httpMutationMeta("identity_remove"),
 	"POST /api/approvals/{token}/resolve":    httpMutationMeta("approval_resolve"),
+	"POST /api/message-drafts/{id}/resolve":  httpMutationMeta("message_draft_resolve"),
 	"POST /api/approvals/grants/revoke":      httpMutationMeta("approval_grant_revoke"),
 	// A replayed restart answers its stored 202 instead of stopping the daemon again.
 	"POST /api/admin/restart": httpMutationMeta("daemon_restart"),

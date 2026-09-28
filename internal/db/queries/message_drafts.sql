@@ -46,3 +46,19 @@ WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
   AND status = 'dispatching'
   AND sqlc.arg(status) IN ('sent', 'failed', 'uncertain')
 RETURNING *;
+
+-- name: ExpireMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
+  AND status = 'pending' AND expires_at <= now()
+RETURNING *;
+
+-- name: MarkInterruptedMessageDraftUncertain :one
+UPDATE aura.message_drafts
+SET status = 'uncertain', outcome_code = 'interrupted',
+    resolved_at = now(), updated_at = now()
+WHERE id = sqlc.arg(id) AND identity_id = sqlc.arg(identity_id)
+  AND status = 'dispatching'
+  AND dispatch_started_at <= now() - interval '30 minutes'
+RETURNING *;

@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
 // runner_deps.go carries the Runner's constructor surface — Deps, ResumeHook, and
@@ -60,6 +61,7 @@ type Deps struct {
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
 	// pool-less splitResumeCommitter (unit tests, cache_audit) with no code change.
 	ResumeCommitter ResumeCommitter
+	MessageDrafts   *messagedrafts.Store
 	Client          llm.Client
 	// Runtime is the hot primary-route source shared by interactive turns and the
 	// daemon's resident workers. nil preserves hand-built callers by wrapping Client/LLM.
@@ -207,6 +209,7 @@ func New(d Deps) *Runner {
 	r := &Runner{
 		Conv:                      d.Conv,
 		pause:                     d.Pause,
+		messageDrafts:             d.MessageDrafts,
 		approvalExpiry:            d.ApprovalExpiry,
 		identity:                  d.Identity,
 		cacheMetrics:              d.CacheMetrics,

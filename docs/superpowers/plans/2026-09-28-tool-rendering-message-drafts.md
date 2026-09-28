@@ -39,7 +39,7 @@
 - Consumes: authenticated `identityID`, `conversationID`, `toolCallID`, exact recipe/tool/action, original `json.RawMessage`, live tool schema.
 - Produces: `Store.Create(ctx, DraftInput) (Draft, error)`, `Store.ListPending(ctx, identityID, conversationID) ([]Draft, error)`, `Store.ClaimSend(ctx, identityID, draftID, overrides) (ClaimedDraft, error)`, `Store.Decline(...)`, `Store.MarkOutcome(...)`. `DraftInput` contains `IdentityID`, `ConversationID`, `ToolCallID`, `Recipe`, `Tool`, `Action`, `OriginalArgs json.RawMessage`, and `ExpiresAt time.Time`. `Draft` adds `ID`, `Status`, `OriginalFingerprint` and timestamps; `ClaimedDraft` adds `EffectiveArgs json.RawMessage` and `EffectiveFingerprint string`. These are server-side records; the owner-only API maps them to bounded review DTOs.
 
-- [ ] **Step 1: Write failing validation and DB integration tests.** Include email To/Cc/Bcc/subject/body, WhatsApp destination/body, Unicode, empty/over-cap fields, unknown override key, duplicate Create, two concurrent ClaimSend calls, expired/foreign draft, and a forged sender/tool/action. Use a DB transaction fixture with two identities; only the owner sees the row. Never print body or recipients on test failure.
+- [ ] **Step 1: Write failing validation and DB integration tests.** Include email To/Cc/subject and effective body fields (`body` or both `textBody`/`htmlBody` for multipart), a rejected Bcc override because the pinned fork has no Bcc argument, WhatsApp recipient/message, Unicode, empty/over-cap fields, unknown override key, duplicate Create, two concurrent ClaimSend calls, expired/foreign draft, and a forged sender/tool/action. Use a DB transaction fixture with two identities; only the owner sees the row. Never print body or recipients on test failure.
 
 ```go
 first, err := store.ClaimSend(ctxOwner, ownerID, draftID, json.RawMessage(`{"to":["edited@example.test"],"body":"revised"}`))
@@ -120,7 +120,7 @@ expect(resolveDraft).toHaveBeenCalledWith(expect.objectContaining({ overrides: {
 ```
 
 - [ ] **Step 2: Run `go test ./internal/agui -run TestMessageDraftAPI -count=1` and focused Vitest; confirm failures.**
-- [ ] **Step 3: Implement the API and card.** Read `identity_id` from authenticated context, ignore any client-supplied owner/server identity, and call only `ResolveMessageDraft` for sends. Return bounded public receipt fields without raw arguments. Fetch pending drafts on thread switch/reconnect, merge SSE by draft ID, and remove resolved cards. Adapt the copied message-draft source to controlled To/Cc/Bcc/subject/body and WhatsApp destination/body inputs, localized labels and error text; keep sender/account fixed and visible. Do not add client undo timers.
+- [ ] **Step 3: Implement the API and card.** Read `identity_id` from authenticated context, ignore any client-supplied owner/server identity, and call only `ResolveMessageDraft` for sends. Return bounded public receipt fields without raw arguments. Fetch pending drafts on thread switch/reconnect, merge SSE by draft ID, and remove resolved cards. Adapt the copied message-draft source to controlled To/Cc/subject and body inputs (including multipart text and HTML), and WhatsApp recipient/message inputs, localized labels and error text; keep sender/account, body format, attachments and quote context visible and fixed. Do not add client undo timers.
 
 ```ts
 type DraftResolution = { action: 'send' | 'decline'; overrides: Record<string, string | string[]> };

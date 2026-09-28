@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/mail"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
 const maxDraftArgsBytes = 256 * 1024
@@ -16,12 +18,33 @@ const maxDraftJSONDepth = 32
 
 var errInvalidDraftArgs = errors.New("message draft arguments are invalid")
 
+// ErrInvalidArgs is returned when editable fields do not match the trusted
+// message schema. Callers may map it to a client error without exposing content.
+var ErrInvalidArgs = errInvalidDraftArgs
+
 // Target is host-owned provenance, copied from the trusted managed recipe after
 // the bridge has selected the exact server tool. The client never supplies it.
 type Target struct {
 	Recipe string
 	Tool   string
 	Action string
+}
+
+// TrustedOutboundTarget matches only the managed bridge's host-owned recipe and
+// raw MCP tool identity. The registered name may be truncated with a hash.
+func TrustedOutboundTarget(spec tools.Spec, raw json.RawMessage) (Target, bool) {
+	switch {
+	case spec.TrustedRecipeSource == "recipe:whatsapp" && spec.TrustedRecipeTool == "send_message":
+		return Target{Recipe: "recipe:whatsapp", Tool: "send_message"}, true
+	case spec.TrustedRecipeSource == "recipe:calendar" && spec.TrustedRecipeTool == "calendar":
+		var action struct {
+			Action string `json:"action"`
+		}
+		if json.Unmarshal(raw, &action) == nil && action.Action == "send_email" {
+			return Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"}, true
+		}
+	}
+	return Target{}, false
 }
 
 // MergeApprovedArgs applies only schema-supported editable fields, then checks

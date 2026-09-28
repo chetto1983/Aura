@@ -8,6 +8,7 @@ import (
 	"slices"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 )
 
 const allowedDecisionsField = "allowed_decisions"
@@ -64,6 +65,9 @@ func normalizeAllowedDecisions(allowed []string) ([]string, error) {
 }
 
 func validatePendingResumeDecision(pending askuser.Pending, action string) error {
+	if messagedrafts.IsReviewPause(pending.ResumeContext) {
+		return fmt.Errorf("%w: message draft requires its dedicated review route", ErrResumeDecisionNotAllowed)
+	}
 	if !knownResumeAction(action) {
 		return fmt.Errorf("%w: action %q must be accept|decline|cancel", askuser.ErrInvalidAnswer, action)
 	}

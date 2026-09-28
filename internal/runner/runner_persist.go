@@ -480,6 +480,13 @@ func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
 func assistantAskUserToolCalls(pauses []*agent.AwaitingInput) ([]byte, error) {
 	out := make([]llm.ToolCall, 0, len(pauses))
 	for _, ai := range pauses {
+		if ai.OriginalToolName != "" {
+			tc := llm.ToolCall{ID: ai.ToolCallID, Type: "function"}
+			tc.Function.Name = ai.OriginalToolName
+			tc.Function.Arguments = ai.OriginalArguments
+			out = append(out, tc)
+			continue
+		}
 		args := map[string]any{"question": ai.Question, "kind": ai.Kind}
 		if len(ai.Options) > 0 {
 			opts := make([]map[string]string, len(ai.Options))

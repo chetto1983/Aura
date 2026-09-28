@@ -74,8 +74,9 @@ type LlmAgent struct {
 
 	// gateway is the optional Phase-35 policy PEP (GATE-01): execTool calls its Decide
 	// before tool.Execute. nil is an Allow no-op (dev-parity for tests/standalone).
-	gateway *gateway.Gateway
-	steer   SteerInbox // nil means drainSteer is a no-op, like a nil gateway means Allow (D-12)
+	gateway       *gateway.Gateway
+	messageDrafts MessageDraftCreator
+	steer         SteerInbox // nil means drainSteer is a no-op, like a nil gateway means Allow (D-12)
 	// ledgerConvID is the ORIGINATING conversation UUID the gateway ReservationKey is
 	// keyed on. It defaults to sessionID (the main runner path, where session_id ==
 	// conversation_id UUID); headless swarm/cron roots set it to the originating
@@ -184,8 +185,9 @@ type LlmAgentConfig struct {
 	HookManager *HookManager
 	// Gateway is the optional Phase-35 policy PEP (GATE-01). nil is an Allow no-op
 	// (dev-parity). The composition roots inject the one process-wide *gateway.Gateway.
-	Gateway *gateway.Gateway
-	Steer   SteerInbox // optional mid-turn redirect inbox; nil means drain is a no-op
+	Gateway       *gateway.Gateway
+	MessageDrafts MessageDraftCreator
+	Steer         SteerInbox // optional mid-turn redirect inbox; nil means drain is a no-op
 	// Ledger is the optional verification evidence ledger the verify-on-stop gate
 	// reads. nil disables that gate (tests/standalone, and any deployment with no
 	// Postgres pool behind NewEvidenceStore).

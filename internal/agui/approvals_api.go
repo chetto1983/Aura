@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -172,6 +173,9 @@ func (s *Server) handleListApprovals(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]approvalItem, 0, len(pendings))
 	for _, p := range pendings {
+		if messagedrafts.IsReviewPause(p.ResumeContext) {
+			continue
+		}
 		items = append(items, approvalItem{
 			Token:          p.Token,
 			ConversationID: p.ConversationID,

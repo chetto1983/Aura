@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/gateway"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/redact"
 	"github.com/google/uuid"
 )
@@ -66,6 +67,7 @@ type Runner struct {
 	reasoningGraphSink    ReasoningGraphSink
 	reasoningDeletion     ReasoningDeletionStore
 	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
+	messageDrafts         *messagedrafts.Store
 
 	runtime *llm.Runtime
 	// identityLLM resolves the turn identity's OWN credential (CRED-05/CRED-07). nil =>
@@ -416,7 +418,8 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		// (identity, session); the pool-owning store behind them is per process.
 		HookManager:       r.verificationHooks(ctx, convID),
 		Ledger:            r.verificationLedger(ctx),
-		Gateway:           r.gateway,       // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
+		Gateway:           r.gateway, // Phase-35 PEP; LedgerConversationID defaults to convID (UUID)
+		MessageDrafts:     r.messageDrafts,
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
 		Steer:             r.steer,
 	})

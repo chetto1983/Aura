@@ -180,6 +180,7 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
 	// Removes a deleting row whose object is gone. A row a media_job points at is left for
@@ -556,6 +557,7 @@ type Querier interface {
 	// and marks that late row, so the renderer must use this atomic result set rather than
 	// its stale pre-claim snapshot or the late report is permanently omitted.
 	MarkFanoutNudged(ctx context.Context, arg MarkFanoutNudgedParams) ([]MarkFanoutNudgedRow, error)
+	MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error)
 	MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDraftOutcomeParams) (AuraMessageDrafts, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error

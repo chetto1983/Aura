@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { ElicitationCard } from '../questions/ElicitationCard';
 import type { ElicitationItem } from '../questions/useThreadElicitations';
 import { InlineApprovalCard } from './InlineApprovalCard';
+import { MessageDraftCard } from './MessageDraftCard';
 import type { Approval } from './useApprovals';
 import type { ApprovalResolution, ApprovalResolutionAttempt } from './useThreadApprovals';
+import type { ThreadMessageDrafts } from './useThreadMessageDrafts';
 
 interface Announcement {
   readonly id: number;
@@ -14,6 +16,7 @@ interface Announcement {
 export interface ThreadApprovalCardsProps {
   /** Already-filtered active-thread rows in deterministic backend order. */
   readonly approvals: readonly Approval[];
+  readonly messageDrafts?: ThreadMessageDrafts;
   /** A mounted MCP server's forms for this thread, in arrival order. useThreadElicitations
    *  drops them with their run, so each one here is still worth showing. */
   readonly elicitations?: readonly ElicitationItem[];
@@ -25,6 +28,7 @@ export interface ThreadApprovalCardsProps {
 
 export function ThreadApprovalCards({
   approvals,
+  messageDrafts,
   elicitations = [],
   isStreaming,
   onResolutionStarted,
@@ -50,11 +54,19 @@ export function ThreadApprovalCards({
     <div
       data-testid="thread-approvals"
       className={
-        approvals.length + elicitations.length > 0
+        approvals.length + elicitations.length + (messageDrafts?.drafts.length ?? 0) > 0
           ? 'flex flex-col gap-2 px-3 pb-2 sm:px-4'
           : undefined
       }
     >
+      {messageDrafts?.drafts.map((draft) => (
+        <MessageDraftCard
+          key={draft.id}
+          draft={draft}
+          busy={messageDrafts.isResolving}
+          onResolve={messageDrafts.resolve}
+        />
+      ))}
       {approvals.map((approval) => (
         <InlineApprovalCard
           key={approval.token}

@@ -1,6 +1,7 @@
 import { conversationsEn, conversationsIt } from './resources.conversations';
 import { adminEn, adminIt } from './resources.admin';
 import { chatReasoningEn, chatReasoningIt, chatToolEn, chatToolIt } from './resources.chatactivity';
+import { messageDraftEn, messageDraftIt } from './resources.messageDraft';
 import {
   chatCompactionEn,
   chatCompactionIt,
@@ -50,6 +51,7 @@ export const resources = {
         hide: 'Hide {{label}}',
       },
       ...loginEn,
+      messageDraft: messageDraftEn,
       shell: {
         primaryNav: 'Primary',
         mobileModes: 'Modes',
@@ -324,6 +326,7 @@ export const resources = {
         hide: 'Nascondi {{label}}',
       },
       ...loginIt,
+      messageDraft: messageDraftIt,
       shell: {
         primaryNav: 'Principale',
         mobileModes: 'Modalità',

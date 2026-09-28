@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/messagedrafts"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -453,6 +454,7 @@ func assembleChatEnv(
 		// Atomic cross-store HITL durability (D-03/D-05): the pool-owning committer spans
 		// a pause claim + its answer turn (and pause exposure) in ONE db.WithTx.
 		ResumeCommitter: runner.NewPoolResumeCommitter(pool, convStore, pauseStore),
+		MessageDrafts:   messagedrafts.NewStore(pool),
 		Client:          client,
 		Runtime:         llmRuntime,
 		Registry:        reg,

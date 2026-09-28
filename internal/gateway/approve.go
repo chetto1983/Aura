@@ -46,6 +46,10 @@ func responderPresent(ctx context.Context) bool {
 	return v
 }
 
+// HasResponder reports whether a live owner can review a withheld outbound call.
+// Headless agent roots must fail closed instead of creating an unanswerable draft.
+func HasResponder(ctx context.Context) bool { return responderPresent(ctx) }
+
 // ResolvedApproval is an operator's answer to a gateway_approval pause. The resume hook
 // records it in the one-shot cross-turn ledger consumed by the next Decide.
 type ResolvedApproval struct {

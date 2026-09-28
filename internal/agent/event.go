@@ -149,6 +149,8 @@ type AwaitingInput struct {
 	OriginAgent        string          `json:"origin_agent,omitempty"`          // emitting agent name (swarm proxy forward-compat, D-A1-08)
 	ProxiedFromChildID string          `json:"proxied_from_child_id,omitempty"` // child id when this pause relays a child's needs_user_input report (D-05); empty on a direct call
 	ProxiedToolCallID  string          `json:"proxied_tool_call_id,omitempty"`  // child's originating tool_call id for the relay (D-05); empty on a direct call
+	OriginalToolName   string          `json:"-"`                               // only the Runner needs the parked tool call; never stream its arguments
+	OriginalArguments  string          `json:"-"`
 }
 
 // PauseOption mirrors a tools.Option on the wire. It is redeclared here (rather

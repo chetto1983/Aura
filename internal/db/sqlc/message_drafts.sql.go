@@ -100,6 +100,46 @@ func (q *Queries) DeclineMessageDraft(ctx context.Context, arg DeclineMessageDra
 	return i, err
 }
 
+const expireMessageDraft = `-- name: ExpireMessageDraft :one
+UPDATE aura.message_drafts
+SET status = 'expired', resolved_at = now(), updated_at = now()
+WHERE id = $1 AND identity_id = $2
+  AND status = 'pending' AND expires_at <= now()
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+`
+
+type ExpireMessageDraftParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, expireMessageDraft, arg.ID, arg.IdentityID)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMessageDraftByCall = `-- name: GetMessageDraftByCall :one
 SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND tool_call_id = $3
@@ -287,6 +327,48 @@ func (q *Queries) ListPendingMessageDrafts(ctx context.Context, arg ListPendingM
 		return nil, err
 	}
 	return items, nil
+}
+
+const markInterruptedMessageDraftUncertain = `-- name: MarkInterruptedMessageDraftUncertain :one
+UPDATE aura.message_drafts
+SET status = 'uncertain', outcome_code = 'interrupted',
+    resolved_at = now(), updated_at = now()
+WHERE id = $1 AND identity_id = $2
+  AND status = 'dispatching'
+  AND dispatch_started_at <= now() - interval '30 minutes'
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+`
+
+type MarkInterruptedMessageDraftUncertainParams struct {
+	ID         pgtype.UUID `json:"id"`
+	IdentityID pgtype.UUID `json:"identity_id"`
+}
+
+func (q *Queries) MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error) {
+	row := q.db.QueryRow(ctx, markInterruptedMessageDraftUncertain, arg.ID, arg.IdentityID)
+	var i AuraMessageDrafts
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.ConversationID,
+		&i.ToolCallID,
+		&i.Recipe,
+		&i.ToolName,
+		&i.RegisteredToolName,
+		&i.Action,
+		&i.OriginalArgs,
+		&i.OriginalFingerprint,
+		&i.EffectiveArgs,
+		&i.EffectiveFingerprint,
+		&i.Status,
+		&i.OutcomeCode,
+		&i.ExpiresAt,
+		&i.DispatchStartedAt,
+		&i.ResolvedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const markMessageDraftOutcome = `-- name: MarkMessageDraftOutcome :one

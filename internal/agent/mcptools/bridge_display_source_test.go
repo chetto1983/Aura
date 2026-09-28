@@ -3,6 +3,7 @@ package mcptools
 import (
 	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -46,6 +47,14 @@ func TestMCPDisplaySourceOwnedByBridge(t *testing.T) {
 	}
 	if result.Meta != nil && (*result.Meta)["aura_display_source"] != nil {
 		t.Fatalf("untrusted marker = %#v", (*result.Meta)["aura_display_source"])
+	}
+}
+
+func TestTrustedRecipeToolSurvivesHashedRegisteredName(t *testing.T) {
+	tool := &sdkmcp.Tool{Name: "calendar"}
+	spec := specFromToolDefWithPolicy(strings.Repeat("n", 60), tool, bridgePolicy{recipeSource: calendarRecipeSource})
+	if strings.HasSuffix(spec.Name, "__calendar") || spec.TrustedRecipeTool != "calendar" || len(spec.Name) > 64 {
+		t.Fatal("hash-suffixed bridge name lost its raw trusted tool identity")
 	}
 }
 

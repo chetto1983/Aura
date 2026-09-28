@@ -25,6 +25,7 @@ func TestHTTPMutationCoverageHasCompleteIdempotencyMetadata(t *testing.T) {
 		// require inventory entries (the graph-query/TTS/STT rationale).
 		"POST /agent/runs/{runID}/cancel",
 		"POST /api/approvals/{token}/resolve",
+		"POST /api/message-drafts/{id}/resolve",
 		"POST /api/conversations",
 		"DELETE /api/conversations/{id}",
 		"POST /api/assets/{id}/finalize",
