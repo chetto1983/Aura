@@ -82,8 +82,12 @@ export function AudioWaveform({
   // Read with the newest props when the effects below run, without rebuilding the waveform for every
   // envelope edit: a rebuild under a drag would take the point from under the pointer.
   const currentView = useEffectEvent(() => envelopeView(envelope, visible));
+  // The plugin reports every change it is told of too: setPoints below ends in the same
+  // `points-change` as a drag, 200 ms later (envelope.esm.js). Points the project already holds are
+  // that echo, not an edit — committing it would add the edges a trimmed envelope lacks as a new
+  // step and wipe the redo.
   const report = useEffectEvent((points: readonly { time: number; volume: number }[]) => {
-    onEnvelope(envelopeFromView(points, envelope, visible));
+    if (!sameView(points, currentView())) onEnvelope(envelopeFromView(points, envelope, visible));
   });
 
   useEffect(() => {
