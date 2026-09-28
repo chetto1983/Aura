@@ -19,8 +19,6 @@ const (
 	KindTable Kind = "table"
 	// KindStats identifies finite numeric metrics from a trusted read.
 	KindStats Kind = "stats"
-	// KindChart identifies a chart-ready numeric payload.
-	KindChart Kind = "chart"
 	// KindSystemEvent identifies a sanitized system status or error payload.
 	KindSystemEvent Kind = "system_event"
 	// KindSwarmReport identifies a swarm child-report payload.
@@ -49,7 +47,6 @@ type Payload struct {
 	Artifact   *Artifact     `json:"artifact,omitempty"`
 	Table      *Table        `json:"table,omitempty"`
 	Stats      *Stats        `json:"stats,omitempty"`
-	Chart      *Chart        `json:"chart,omitempty"`
 	System     *System       `json:"system,omitempty"`
 	Swarm      []ChildReport `json:"swarm,omitempty"`
 	Todo       *Todo         `json:"todo,omitempty"`
@@ -120,14 +117,6 @@ type Stats struct {
 type StatItem struct {
 	Label string `json:"label"`
 	Value int64  `json:"value"`
-}
-
-// Chart is the zero-dep SVG / table-as-bars MVP shape (D-02), swap-ready for a
-// real charting lib later.
-type Chart struct {
-	XLabels    []string  `json:"x_labels"`
-	YValues    []float64 `json:"y_values"`
-	XAxisLabel string    `json:"x_axis_label,omitempty"`
 }
 
 // System is the system_event payload (D-07). It carries ONLY classified, safe

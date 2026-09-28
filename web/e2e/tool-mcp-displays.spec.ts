@@ -122,6 +122,11 @@ async function installRoutes(page: Page) {
   await page.route('**/api/approvals', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  // The appliance can restart for a concurrent rollout during this display
+  // fixture; updater UI has its own tests and is unrelated to tool rendering.
+  await page.route('**/api/system/update', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"managed":false}' }),
+  );
   await page.route('**/threads/*/messages', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: snapshot() }),
   );
@@ -150,16 +155,21 @@ async function installRoutes(page: Page) {
 }
 
 test('MCP read cards, Apps views and source references survive thread reload', async ({ page }) => {
+  test.setTimeout(90_000);
   await installRoutes(page);
   await gotoAuthenticated(page, `/c/${CONV_ID}`);
 
   for (const replay of [false, true]) {
     if (replay) await page.reload();
     await expandToolRow(page, 0);
-    await expect(page.getByText('Ada knows Bea')).toBeVisible();
+    await expect(
+      page.getByText('Ada knows Bea').and(page.locator(':visible')).first(),
+    ).toBeVisible();
 
     await expandToolRow(page, 1);
-    await expect(page.getByText('Work Calendar')).toBeVisible();
+    await expect(
+      page.getByText('Work Calendar').and(page.locator(':visible')).first(),
+    ).toBeVisible();
     const calendarView = page.frameLocator(`iframe[title="pim ui://calendar/view.html"]`);
     await expect(page.locator(`iframe[title="pim ui://calendar/view.html"]`)).toHaveAttribute(
       'sandbox',
@@ -168,7 +178,9 @@ test('MCP read cards, Apps views and source references survive thread reload', a
     await expect(calendarView.getByText('Sandbox relay ready')).toBeVisible();
 
     await expandToolRow(page, 2);
-    await expect(page.getByText('Hello from Bea')).toBeVisible();
+    await expect(
+      page.getByText('Hello from Bea').and(page.locator(':visible')).first(),
+    ).toBeVisible();
     await expect(page.locator(`iframe[title="wa ui://whatsapp/chats.html"]`)).toBeVisible();
 
     await expandToolRow(page, 3);

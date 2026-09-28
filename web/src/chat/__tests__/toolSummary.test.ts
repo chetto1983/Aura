@@ -57,7 +57,7 @@ function payload(over: Partial<DisplayPayload> & Pick<DisplayPayload, 'type'>): 
 }
 
 describe('resultMeta — collapsed hint per payload type', () => {
-  it('counts web results, table rows, chart points, swarm workers', () => {
+  it('counts web results, table rows, and swarm workers', () => {
     expect(
       resultMeta(
         payload({ type: 'web_result', web_results: [{ title: 't', url: 'u' }] }),
@@ -67,9 +67,6 @@ describe('resultMeta — collapsed hint per payload type', () => {
     expect(
       resultMeta(payload({ type: 'table', table: { columns: ['a'], rows: [['1'], ['2']] } }), ''),
     ).toEqual({ key: 'display.table.rowCount', count: 2 });
-    expect(
-      resultMeta(payload({ type: 'chart', chart: { x_labels: ['a'], y_values: [1, 2, 3] } }), ''),
-    ).toEqual({ key: 'chat.tool.meta.points', count: 3 });
     expect(
       resultMeta(
         payload({

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { ToolResultPanel } from '../ToolResultPanel';
 import { McpViewFrame } from '../mcpapps/McpViewFrame';
 import type { DisplayDiff, DisplayPayload, DisplayStats, DisplayTodo } from './types';
@@ -6,7 +7,7 @@ import { MemoryFactsDisplay } from './MemoryFactsDisplay';
 import { MemoryStatsDisplay } from './MemoryStatsDisplay';
 import { SidecarTableDisplay } from './SidecarTableDisplay';
 import { sidecarTableSpec } from './sidecarTableSpec';
-import { ChartDisplay } from './ChartDisplay';
+import { nativeListSpec } from './nativeListSpec';
 import { SystemEventCard } from './SystemEventCard';
 import { SwarmReportTable } from './SwarmReportTable';
 import { LocalArtifactDisplay } from './LocalArtifactDisplay';
@@ -45,9 +46,10 @@ export interface DisplayRouterProps {
 }
 
 export function DisplayRouter({ payload, argsText, result, onOpenSource }: DisplayRouterProps) {
+  const { t } = useTranslation();
   const raw = () => <ToolResultPanel argsText={argsText} result={result} />;
   switch (payload.type) {
-    // Per-type cases. The "data / status" half (table, chart, system_event,
+    // Per-type cases. The "data / status" half (table, system_event,
     // swarm_report, local_artifact) lands in 26-04; the evidence half (web_result,
     // document, code) in 26-05. Each returns its typed display for payload.<slot>.
     case 'table': {
@@ -77,19 +79,28 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
           raw()
         );
       }
+      const native = nativeListSpec(payload.title);
+      if (native) {
+        return table.columns.length === native.columns.length &&
+          table.rows.every((row) => row.length === native.columns.length) ? (
+          <TableDisplay
+            payload={{
+              table: {
+                ...table,
+                columns: native.columns.map((key) => t(`display.nativeList.column.${key}`)),
+              },
+            }}
+            label={t(`display.nativeList.${native.title}`)}
+          />
+        ) : (
+          raw()
+        );
+      }
       return <TableDisplay payload={payload} />;
     }
     case 'stats':
       return payload.title === 'memory_graph' && isMemoryStats(payload.stats) ? (
         <MemoryStatsDisplay payload={payload} />
-      ) : (
-        raw()
-      );
-    case 'chart':
-      return payload.chart &&
-        Array.isArray(payload.chart.x_labels) &&
-        Array.isArray(payload.chart.y_values) ? (
-        <ChartDisplay payload={payload} />
       ) : (
         raw()
       );

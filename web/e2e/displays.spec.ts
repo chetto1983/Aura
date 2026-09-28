@@ -327,22 +327,6 @@ test.describe('Phase 26 — typed displays (desktop + mobile)', () => {
     await expect(page.getByText('Milan')).toHaveCount(0);
   });
 
-  test('chart card exposes an accessible data <table> fallback', async ({ page }) => {
-    const display = {
-      type: 'chart',
-      tool_call_id: 'call-1',
-      chart: { x_labels: ['Jan', 'Feb', 'Mar'], y_values: [10, 20, 15], x_axis_label: 'Month' },
-    };
-    await openWith(page, 'Chart follows.', display, 'shell_exec');
-    await expandToolRow(page);
-
-    await expect(page.getByText('Chart').first()).toBeVisible({ timeout: 15000 });
-    // D-02: the authoritative data path is a real <table> (bars are decorative).
-    await expect(page.getByRole('columnheader', { name: 'Value' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: 'Feb' })).toBeVisible();
-    await expect(page.getByRole('cell', { name: '20' })).toBeVisible();
-  });
-
   test('code card renders escaped body (no execution) with a copy control', async ({ page }) => {
     const display = {
       type: 'code',

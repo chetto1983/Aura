@@ -48,6 +48,9 @@ func NormalizeToolPreview(in PreviewInput, reg *Registry) (Payload, bool) {
 			return normalizeSidecarPreview(in)
 		}
 	}
+	if in.ToolName == "task" || in.ToolName == "skill" || in.ToolName == "plugin_pack" {
+		return normalizeNativeList(in)
+	}
 	result, ok := decodeToolPreview(in)
 	if !ok {
 		return Payload{}, false

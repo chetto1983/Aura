@@ -55,6 +55,7 @@ func TestSidecarReadsStayWithinTrustedShape(t *testing.T) {
 		calendarInput("get_email_attachment", `{"path":"/container/file.pdf"}`),
 		whatsappInput("send_message", `[{"jid":"123@s.whatsapp.net"}]`),
 		whatsappInput("download_media", `{"path":"/container/audio.ogg"}`),
+		whatsappInput("get_media_data", `{"path":"/container/audio.ogg"}`),
 		whatsappInput("get_message_context", `{"message":{},"before":[],"after":[]}`),
 		whatsappInput("list_chats", `[{"name":"Missing JID"}]`),
 	}

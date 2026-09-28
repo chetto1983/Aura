@@ -1,17 +1,18 @@
 // Copy for typed displays, sources, system events, and agent activity.
 import { artifactsEn, artifactsIt } from './resources.display_artifacts';
 import { sidecarDisplayEn, sidecarDisplayIt } from './resources.display_sidecars';
+import { nativeDisplayEn, nativeDisplayIt } from './resources.display_native';
 
 export const displayEn = {
   display: {
     ...sidecarDisplayEn,
+    ...nativeDisplayEn,
     type: {
       web_result: 'Web results',
       document: 'Document',
       code: 'Code',
       local_artifact: 'Artifact',
       table: 'Table',
-      chart: 'Chart',
       system_event: 'System',
       swarm_report: 'Agents',
       todo: 'Checklist',
@@ -77,12 +78,6 @@ export const displayEn = {
         isolated_nodes: 'Isolated nodes',
         zero_out_degree: 'Zero out-degree',
       },
-    },
-    chart: {
-      category: 'Category',
-      value: 'Value',
-      emptyHeading: 'No data',
-      emptyBody: 'This result has no chartable values.',
     },
     artifact: {
       sizeBytes: '{{count}} B',
@@ -291,13 +286,13 @@ export const displayEn = {
 export const displayIt = {
   display: {
     ...sidecarDisplayIt,
+    ...nativeDisplayIt,
     type: {
       web_result: 'Risultati web',
       document: 'Documento',
       code: 'Codice',
       local_artifact: 'Artefatto',
       table: 'Tabella',
-      chart: 'Grafico',
       system_event: 'Sistema',
       swarm_report: 'Agenti',
       todo: 'Attività',
@@ -364,12 +359,6 @@ export const displayIt = {
         isolated_nodes: 'Nodi isolati',
         zero_out_degree: 'Senza archi uscenti',
       },
-    },
-    chart: {
-      category: 'Categoria',
-      value: 'Valore',
-      emptyHeading: 'Nessun dato',
-      emptyBody: 'Questo risultato non ha valori rappresentabili.',
     },
     artifact: {
       sizeBytes: '{{count}} B',

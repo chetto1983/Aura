@@ -115,8 +115,6 @@ export function resultMeta(
           ? { text: title }
           : { key: 'display.document.untitled' };
       }
-      case 'chart':
-        return { key: 'chat.tool.meta.points', count: display.chart?.y_values.length ?? 0 };
       case 'swarm_report':
         return { key: 'chat.tool.meta.workers', count: display.swarm?.length ?? 0 };
       default:

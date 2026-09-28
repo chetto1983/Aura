@@ -30,7 +30,6 @@ export type DisplayKind =
   | 'local_artifact'
   | 'table'
   | 'stats'
-  | 'chart'
   | 'system_event'
   | 'swarm_report'
   | 'todo'
@@ -105,13 +104,6 @@ export interface DisplayStats {
   readonly items: readonly { readonly label: string; readonly value: number }[];
 }
 
-/** A numeric series (type=chart). Mirrors display.Chart (swap-ready, D-02). */
-export interface DisplayChart {
-  readonly x_labels: readonly string[];
-  readonly y_values: readonly number[];
-  readonly x_axis_label?: string;
-}
-
 /** One validated todo_write revision (type=todo). */
 export interface DisplayTodo {
   readonly items: readonly {
@@ -181,7 +173,6 @@ export interface DisplayPayload {
   readonly artifact?: DisplayArtifact;
   readonly table?: DisplayTable;
   readonly stats?: DisplayStats;
-  readonly chart?: DisplayChart;
   readonly system?: DisplaySystem;
   readonly swarm?: readonly DisplayChildReport[];
   readonly todo?: DisplayTodo;

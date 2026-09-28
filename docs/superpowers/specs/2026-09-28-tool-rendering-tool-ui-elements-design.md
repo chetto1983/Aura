@@ -16,6 +16,7 @@ Success means a completed tool call opens a useful, readable view when the data 
 - `web/src/chat/artifacts/renderers/previewDispatch.tsx` has no audio preview. Video uses a Range stream, keeps its natural proportions, and never autoplays. `AssetSourceContext` chooses authenticated or public-share URLs.
 - The mapping's approval caveat is stale: current `internal/agent/mcptools/bridge_risk.go` grades calendar `send_email` and WhatsApp `send_message` as Destructive, and the gateway withholds them for approval. However, `internal/gateway/approve.go` currently shows only argument keys and lets the model re-emit the call after approval. Standing grants can skip that question. The editable, exact-message review below requires a dedicated path.
 - `web/components.json` already contains both `@tool-ui` and `@assistant-ui` registries. The project uses `@assistant-ui/react` but owns its existing AG-UI thread wiring. Choose standalone, props-driven Elements; do not initialize a second chat runtime.
+- Measured in the 2026-09-28 Wave 3 producer inventory: `documents.RetrievalResponse` carries `document_id` and passage `citation_token`, but no URL or Source Explorer `ref_id`; `document_open` returns a sandbox path, not an Aura asset ID. The current URL-keyed `display.Registry` cannot register those results as clickable sources without a separate document identity contract. This code inspection does not establish that document references can never be added; it establishes the current rollout's safe fallback.
 
 ## Component selection
 
@@ -82,8 +83,8 @@ The table names every native and memory tool and all 15 WhatsApp tools. Calendar
 | `task` | Elements Data table for `list`; create/run/cancel receipts stay rows; Scheduler board stays separate | 3 |
 | `swarm_spawn`, `swarm_status` | Existing worker report and pane; optional Elements Subagent list for status, with errors and navigation retained | 3 |
 | `skill`, `skill_manage`, `plugin_pack` | Table for list results where structured; mutating/admin receipts remain rows | 3 |
-| `document_search` | Evidence cards with citation/ref identity and Source Explorer; no fabricated external URL | 3 |
-| `document_open` | Row and resulting artifact/download link when available | 3 |
+| `document_search` | Keep the escaped result with its document IDs and citation tokens. A Source Explorer card needs a registry identity for documents; the current registry accepts URLs only, while the producer returns no URL or `ref_id`. Do not synthesize either. | 3 |
+| `document_open` | Row; show an artifact/download link only when an Aura asset ID exists. The current producer returns a sandbox path and document ID, so it remains a receipt. | 3 |
 | `web_search`, `web_fetch` | Existing evidence/document data and Source Explorer with Tool UI citation/link-preview styling where safe | 3 |
 | `image_generate`, `video_generate` | Existing queued/progress/result frames; selected media/image view only on completed asset | 2 |
 | `send_file` | Existing `LocalArtifactDisplay` delivery/download controls; selected image/video/audio preview for supported MIME, otherwise file card | 2 |

@@ -31,7 +31,6 @@ func TestPayloadRoundTripIdentity(t *testing.T) {
 		{name: "code", in: Payload{Type: KindCode, ToolCallID: "c3", Code: &Code{Body: "print(1)", Lang: "python"}}},
 		{name: "local_artifact", in: Payload{Type: KindLocalArtifact, ToolCallID: "c4", Artifact: &Artifact{Filename: "out.csv", SizeBytes: 42, Path: "/run/out.csv"}}},
 		{name: "table", in: Payload{Type: KindTable, ToolCallID: "c5", Table: &Table{Columns: []string{"a", "b"}, Rows: [][]string{{"1", "2"}}}}},
-		{name: "chart", in: Payload{Type: KindChart, ToolCallID: "c6", Chart: &Chart{XLabels: []string{"q1"}, YValues: []float64{1.5}, XAxisLabel: "quarter"}}},
 		{name: "system_event", in: Payload{Type: KindSystemEvent, ToolCallID: "c7", System: &System{Class: "blocked_url", Reason: "private_or_metadata_target", Message: "blocked", Severity: "error"}}},
 		{name: "swarm_report", in: Payload{Type: KindSwarmReport, ToolCallID: "c8", Swarm: []ChildReport{{GoalIndex: 0, ChildID: "w1", Status: "ok", Summary: "done"}}}},
 	}
@@ -66,7 +65,6 @@ func TestPayloadKindWireLiterals(t *testing.T) {
 		KindCode:          "code",
 		KindLocalArtifact: "local_artifact",
 		KindTable:         "table",
-		KindChart:         "chart",
 		KindSystemEvent:   "system_event",
 		KindSwarmReport:   "swarm_report",
 	}
@@ -85,7 +83,7 @@ func TestPayloadOmitsUnsetTypeFields(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	wire := string(b)
-	for _, absent := range []string{"web_results", "document", "artifact", "table", "chart", "system", "swarm", "sources"} {
+	for _, absent := range []string{"web_results", "document", "artifact", "table", "system", "swarm", "sources"} {
 		if strings.Contains(wire, "\""+absent+"\"") {
 			t.Fatalf("unset field %q present on wire: %s", absent, wire)
 		}

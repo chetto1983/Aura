@@ -58,6 +58,31 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('raw table').tagName.toLowerCase()).toBe('pre');
   });
 
+  it('labels a verified native list table and keeps a mismatched row raw', () => {
+    const payload: DisplayPayload = {
+      type: 'table',
+      title: 'native_tasks',
+      tool_call_id: 'task-1',
+      table: {
+        columns: ['Task', 'Kind', 'Schedule', 'Next', 'State'],
+        rows: [['task-1', 'reminder', 'every', '2026-10-01T09:00:00Z', 'active']],
+      },
+    };
+    const { rerender } = render(
+      <DisplayRouter payload={payload} toolName="task" result="raw task list" />,
+    );
+    expect(screen.getAllByText('Scheduled tasks').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('task-1').length).toBeGreaterThan(0);
+    rerender(
+      <DisplayRouter
+        payload={{ ...payload, table: { columns: ['Task'], rows: [['forged']] } }}
+        toolName="task"
+        result="raw task list"
+      />,
+    );
+    expect(screen.getByText('raw task list').tagName.toLowerCase()).toBe('pre');
+  });
+
   it('routes a trusted todo payload to its checklist', () => {
     const payload = {
       type: 'todo',
@@ -169,19 +194,14 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('raw long patch').tagName.toLowerCase()).toBe('pre');
   });
 
-  it.each([
-    'chart',
-    'system_event',
-    'swarm_report',
-    'local_artifact',
-    'document',
-    'web_result',
-    'code',
-  ])('keeps a %s payload with no data slot in the raw panel', (type) => {
-    const malformed = { type, tool_call_id: 'missing-slot' } as DisplayPayload;
-    render(<DisplayRouter payload={malformed} toolName="tool" result="untrusted value" />);
-    expect(screen.getByText('untrusted value').tagName.toLowerCase()).toBe('pre');
-  });
+  it.each(['system_event', 'swarm_report', 'local_artifact', 'document', 'web_result', 'code'])(
+    'keeps a %s payload with no data slot in the raw panel',
+    (type) => {
+      const malformed = { type, tool_call_id: 'missing-slot' } as DisplayPayload;
+      render(<DisplayRouter payload={malformed} toolName="tool" result="untrusted value" />);
+      expect(screen.getByText('untrusted value').tagName.toLowerCase()).toBe('pre');
+    },
+  );
 
   it('renders untrusted result as ESCAPED text, never markdown/HTML (HARDEN-08 / T-26-05)', () => {
     const payload = '<img src=x onerror="alert(1)"><b>bold</b>';
@@ -220,7 +240,6 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
   // that card's own test; here we pin the ROUTING — the switch reaches each branch).
   it.each([
     [{ type: 'table', tool_call_id: 't', table: { columns: ['A'], rows: [['1']] } }, 'Table'],
-    [{ type: 'chart', tool_call_id: 't', chart: { x_labels: ['a'], y_values: [1] } }, 'Chart'],
     [
       {
         type: 'system_event',
