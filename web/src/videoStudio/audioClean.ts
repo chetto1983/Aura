@@ -20,13 +20,14 @@ export const DENOISE_RATE = 48000;
 const WORKLET_WARMUP_MS = 500;
 /** RNNoise's delay at 48 kHz, 20.67 ms (S3): trimmed, so a cleaned clip stays on its picture. */
 const RNNOISE_DELAY = 992;
-/** A peak under this is silence. */
-const SILENT = 1e-4;
 
-function peak(samples: Float32Array): number {
-  let loudest = 0;
-  for (const sample of samples) loudest = Math.max(loudest, Math.abs(sample));
-  return loudest;
+/**
+ * Whether RNNoise answered nothing at all to a sound: the worklet whose WASM is not ready yet skips
+ * `process()` and leaves its output at exact zeros (workletProcessor.js; S3). Only exact zeros:
+ * quiet room tone lowered a further 37.7 dB is small, not silent, and must not be refused.
+ */
+export function answeredSilence(input: Float32Array, output: Float32Array): boolean {
+  return input.some((sample) => sample !== 0) && output.every((sample) => sample === 0);
 }
 
 /** `samples` — mono, at DENOISE_RATE — with RNNoise run over them, as long as they were. */
@@ -54,7 +55,7 @@ export async function denoiseSamples(
   signal?.throwIfAborted();
   const rendered = await context.startRendering();
   const clean = rendered.getChannelData(0).slice(RNNOISE_DELAY, RNNOISE_DELAY + samples.length);
-  if (peak(samples) > SILENT && peak(clean) <= SILENT) {
+  if (answeredSilence(samples, clean)) {
     throw new Error('videoStudio: noise reduction answered silence to a sound');
   }
   return clean;

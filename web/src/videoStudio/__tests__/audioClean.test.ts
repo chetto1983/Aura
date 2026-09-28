@@ -1,15 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanedFile, denoiseSamples, DENOISE_RATE } from '../audioClean';
+import { answeredSilence, cleanedFile, denoiseSamples, DENOISE_RATE } from '../audioClean';
 
 // RNNoise offline, with the browser stood in for: jsdom has no Web Audio and no WebCodecs. The fake
-// renderer answers what RNNoise does to its input — the same samples 992 later (its delay, S3) — or
-// silence, and records when rendering started, so the trim, the silence refusal and the wait for
-// the worklet's WASM are each judged against a known answer.
+// renderer answers what RNNoise does to its input — the same samples 992 later (its delay, S3),
+// scaled by `gain` the way it lowers noise — or, like a worklet whose WASM is not ready, exact
+// zeros; it records when rendering started, so the trim, the silence refusal and the wait for the
+// worklet's WASM are each judged against a known answer.
 
 const DELAY = 992;
+/** S3's measured noise-floor drop on the noisy-speech fixture. */
+const FLOOR_DROP = 10 ** (-37.7 / 20);
 
 const audio = vi.hoisted(() => ({
   silence: false,
+  gain: 1,
   renderedAt: [] as number[],
   lengths: [] as number[],
 }));
@@ -91,7 +95,11 @@ class FakeContext {
   startRendering() {
     audio.renderedAt.push(Date.now());
     const out = new Float32Array(this.input.length + DELAY);
-    if (!audio.silence) out.set(this.input, DELAY);
+    if (!audio.silence)
+      out.set(
+        this.input.map((sample) => sample * audio.gain),
+        DELAY,
+      );
     return Promise.resolve({ getChannelData: () => out });
   }
 }
@@ -112,11 +120,22 @@ function ramp(length: number): Float32Array<ArrayBuffer> {
   return Float32Array.from({ length }, (_, index) => ((index % 100) - 50) / 100);
 }
 
+/** Noise peaking at `dbfs`, the same every run: room tone, a B-roll's hiss. */
+function noise(length: number, dbfs: number): Float32Array<ArrayBuffer> {
+  const peak = 10 ** (dbfs / 20);
+  let seed = 1;
+  return Float32Array.from({ length }, () => {
+    seed = (seed * 16807) % 2147483647;
+    return ((seed / 2147483647) * 2 - 1) * peak;
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal('OfflineAudioContext', FakeContext);
   vi.stubGlobal('AudioBuffer', FakeAudioBuffer);
   audio.silence = false;
+  audio.gain = 1;
   audio.renderedAt.length = 0;
   audio.lengths.length = 0;
   decode.rates.length = 0;
@@ -167,6 +186,13 @@ describe('denoiseSamples', () => {
     expect(out).toHaveLength(4800);
   });
 
+  it('keeps quiet noise it cleaned further still, which is not silence', async () => {
+    audio.gain = FLOOR_DROP;
+    const out = await settle(denoiseSamples(noise(4800, -55)));
+    expect(out).toHaveLength(4800);
+    expect(out.some((sample) => sample !== 0)).toBe(true);
+  });
+
   it('stops before rendering when its signal is aborted during the wait', async () => {
     const controller = new AbortController();
     const work = denoiseSamples(ramp(4800), controller.signal);
@@ -175,6 +201,26 @@ describe('denoiseSamples', () => {
     await vi.advanceTimersByTimeAsync(1000);
     await refused;
     expect(audio.renderedAt).toHaveLength(0);
+  });
+});
+
+describe('answeredSilence', () => {
+  it('is exact zeros answered to sound: the worklet whose WASM was not ready', () => {
+    expect(answeredSilence(noise(4800, -55), new Float32Array(4800))).toBe(true);
+  });
+
+  it('is not quiet noise answered to quieter noise', () => {
+    const input = noise(4800, -55);
+    expect(
+      answeredSilence(
+        input,
+        input.map((sample) => sample * FLOOR_DROP),
+      ),
+    ).toBe(false);
+  });
+
+  it('is not silence answered to silence', () => {
+    expect(answeredSilence(new Float32Array(4800), new Float32Array(4800))).toBe(false);
   });
 });
 
