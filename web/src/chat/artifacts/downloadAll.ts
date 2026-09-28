@@ -15,29 +15,51 @@ export interface DownloadAllOptions {
   readonly signal?: AbortSignal;
 }
 
-/** Sequentially download every accepted asset, reporting `(done, total)` progress.
- *  Total counts only accepted rows; no delay follows the final click. */
-export async function downloadAll(
-  assets: readonly Asset[],
-  onProgress: (done: number, total: number) => void,
+/** One same-origin download. An empty fileName leaves the name to the response's
+ *  Content-Disposition, which wins over the attribute anyway. */
+export interface DownloadLink {
+  readonly href: string;
+  readonly fileName: string;
+}
+
+/** Sequentially download every link, reporting `(done, total)` progress; no delay
+ *  follows the final click. The throttled loop behind every multi-file download. */
+export async function downloadLinks(
+  links: readonly DownloadLink[],
+  onProgress?: (done: number, total: number) => void,
   opts?: DownloadAllOptions,
 ): Promise<void> {
   const delay = opts?.delayMs ?? 500;
-  const rows = assets.filter((a) => a.status === 'accepted');
-  const total = rows.length;
+  const total = links.length;
   let done = 0;
-  for (const a of rows) {
+  for (const { href, fileName } of links) {
     if (opts?.signal?.aborted) break;
     const link = document.createElement('a');
-    link.href = `/api/assets/${encodeURIComponent(a.id)}/download`;
-    link.download = a.file_name;
+    link.href = href;
+    link.download = fileName;
     document.body.appendChild(link);
     link.click();
     link.remove();
     done += 1;
-    onProgress(done, total);
+    onProgress?.(done, total);
     if (done < total) {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
+}
+
+/** Sequentially download every accepted asset, reporting `(done, total)` progress.
+ *  Total counts only accepted rows; no delay follows the final click. */
+export function downloadAll(
+  assets: readonly Asset[],
+  onProgress: (done: number, total: number) => void,
+  opts?: DownloadAllOptions,
+): Promise<void> {
+  const links = assets
+    .filter((a) => a.status === 'accepted')
+    .map((a) => ({
+      href: `/api/assets/${encodeURIComponent(a.id)}/download`,
+      fileName: a.file_name,
+    }));
+  return downloadLinks(links, onProgress, opts);
 }

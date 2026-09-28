@@ -43,6 +43,8 @@ const filemanagerIt = {
   Copy: 'Copia',
   Paste: 'Incolla',
   Download: 'Scarica',
+  // Aura's own entry in the widget's menus (fileSelection.ts), looked up the same way.
+  Select: 'Seleziona',
   Count: 'Numero',
   folder: 'cartella',
   folders: 'cartelle',

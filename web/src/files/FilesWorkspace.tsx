@@ -11,7 +11,8 @@ import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
 import '@svar-ui/react-filemanager/all.css';
 import '@/styles/svar.css';
-import { createFileManagerProvider, directURL, parseDates } from './filesApi';
+import { createFileManagerProvider, directURL, parseDates, saveFiles } from './filesApi';
+import { createFileSelection } from './fileSelection';
 import { filesWords } from './filesLocale';
 import { useThemeMode } from '@/theme/useThemeMode';
 
@@ -39,6 +40,7 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
   // One provider for the component's lifetime: it is an event-bus link, and rebuilding it
   // per render would re-register handlers on every keystroke.
   const provider = useMemo(() => createFileManagerProvider(), []);
+  const selection = useMemo(() => createFileSelection(saveFiles), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,6 +81,7 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
       // Putting the provider last on the bus is what turns every local action into its REST
       // call. This one line replaces a handler per verb.
       api.setNext(provider);
+      selection.attach(api);
       // Open renders in a tab, download saves. The backend distinguishes the two and makes
       // inline safe with a sandbox CSP rather than by refusing to render at all.
       api.on('open-file', ({ id }: { id: string }) => {
@@ -90,10 +93,10 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
         window.open(directURL(id, false), '_blank', 'noopener,noreferrer');
       });
       api.on('download-file', ({ id }: { id: string }) => {
-        window.location.assign(directURL(id, true));
+        void saveFiles([id]);
       });
     },
-    [onOpenFile, provider],
+    [onOpenFile, provider, selection],
   );
 
   const requestData = useCallback(
@@ -140,10 +143,18 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
           appliance answers offline and must not phone anyone, so the icon font is served from
           this origin (src/styles/svar.css) and the per-type artwork is dropped for the font
           glyph the widget falls back to. */}
-      <div className="min-h-0 flex-1 [&>*]:h-full">
+      {/* Capture phase: the press has to be noted before the widget's own click handlers
+          act on it. */}
+      <div className="min-h-0 flex-1 [&>*]:h-full" onClickCapture={selection.notePress}>
         <Theme fonts={false}>
           <Locale words={filesWords(i18n.language)}>
-            <Filemanager data={data} init={init} onRequestData={requestData} icons="simple" />
+            <Filemanager
+              data={data}
+              init={init}
+              onRequestData={requestData}
+              icons="simple"
+              menuOptions={selection.menuOptions}
+            />
           </Locale>
         </Theme>
       </div>

@@ -1,5 +1,6 @@
 import type { IEntity } from '@svar-ui/react-filemanager';
 import { RestDataProvider } from '@svar-ui/filemanager-data-provider';
+import { downloadLinks } from '@/chat/artifacts/downloadAll';
 
 /**
  * The mount the file manager talks to. It implements the component's own REST dialect --
@@ -66,4 +67,13 @@ export function parseDates(entries: readonly IEntity[]): IEntity[] {
 export function directURL(id: string, download: boolean): string {
   const query = `id=${encodeURIComponent(id)}${download ? '&download=true' : ''}`;
   return `${fileManagerBase}/direct?${query}`;
+}
+
+/**
+ * Saves files through the cockpit's one multi-download loop -- the one "Download all" uses,
+ * paced against Chromium's multi-download burst block -- so one file and many take the same
+ * route.
+ */
+export function saveFiles(ids: readonly string[]): Promise<void> {
+  return downloadLinks(ids.map((id) => ({ href: directURL(id, true), fileName: '' })));
 }
