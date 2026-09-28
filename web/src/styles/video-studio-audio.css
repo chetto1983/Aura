@@ -34,3 +34,37 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* A sound's waveform fills its item box — not dnd-timeline's content box, which is padded down to
+   the part inside the range and would squeeze the waveform off its time (S2). The trim handles
+   (`z-10`) stay above it. */
+.video-studio-waveform-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  border-radius: 5px;
+}
+
+.video-studio-waveform {
+  height: 100%;
+  color: color-mix(in oklab, var(--video-studio-text) 45%, transparent);
+}
+
+/* The envelope freezes its viewBox at creation and stretches with the item on a zoom; pinned
+   strokes keep its line and points at their size at every zoom (S2). */
+.video-studio-waveform > div::part(polyline),
+.video-studio-waveform > div::part(envelope-circle) {
+  vector-effect: non-scaling-stroke;
+}
+
+/* The plugin paints its line and points through presentation attributes, which any CSS rule
+   outranks: the envelope takes the selection's colour. */
+.video-studio-waveform > div::part(polyline) {
+  stroke: var(--video-studio-selection);
+}
+
+.video-studio-waveform > div::part(envelope-circle) {
+  fill: var(--video-studio-selection);
+  stroke: var(--video-studio-panel-strong);
+}

@@ -39,6 +39,15 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
+// The waveform is AudioWaveform.test.tsx's to judge; here only what the lane hands it.
+const waves = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
+vi.mock('../AudioWaveform', () => ({
+  AudioWaveform: (props: Record<string, unknown>) => {
+    waves.props.push(props);
+    return <div data-testid="sound-waveform" />;
+  },
+}));
+
 function sound(id: string, offset: number, over: Partial<AudioItem> = {}): AudioItem {
   return {
     id,
@@ -162,6 +171,20 @@ describe('Timeline, on the audio lanes', () => {
       key: 'ArrowLeft',
     });
     expect(soundIn(applied(), 'voice')?.duration).toBeCloseTo(2 - 1 / 25, 9);
+  });
+
+  it('draws each sound’s waveform over what the lane shows, and commits its envelope', () => {
+    waves.props.length = 0;
+    const { applied } = mount('bed');
+    const bed = waves.props.findLast((props) => props.selected === true);
+    // bed: 2 source seconds from second 1 at speed 1, all of it inside the 8 s film.
+    expect(bed).toMatchObject({ assetId: 'm', sourceStart: 1, visible: 2 });
+    expect(waves.props.filter((props) => props.selected === false)).not.toHaveLength(0);
+    if (bed === undefined) throw new Error('the selected sound drew no waveform');
+    (bed.onEnvelope as (points: { time: number; gain: number }[]) => void)([
+      { time: 1, gain: 0.25 },
+    ]);
+    expect(soundIn(applied(), 'bed')?.envelope).toEqual([{ time: 1, gain: 0.25 }]);
   });
 
   it('steps the start handle too, measured from where the sound starts in its source', () => {

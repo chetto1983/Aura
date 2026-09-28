@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
 import { audioWindow, findAudioItem } from './audioLane';
 import { moveClip, trimClip } from './commands';
-import { moveAudio, trimAudio } from './commands_audio';
+import { moveAudio, setEnvelope, trimAudio } from './commands_audio';
 import {
   audioTracks,
   clipStart,
@@ -21,6 +21,7 @@ import {
   junctionDurationAt,
   overlayWindow,
   projectDuration,
+  type EnvelopePoint,
   type VideoProject,
   type ClipJunction,
 } from './project';
@@ -186,6 +187,7 @@ interface LanesProps extends Omit<TimelineProps, 'onCommand'> {
   readonly onTrim: (clipId: string, args: TrimSpan) => void;
   readonly onMoveAudio: (itemId: string, start: number, trackId: string | undefined) => void;
   readonly onTrimAudio: (itemId: string, args: TrimSpan) => void;
+  readonly onEnvelope: (itemId: string, points: readonly EnvelopePoint[]) => void;
 }
 
 /**
@@ -205,6 +207,7 @@ function Lanes({
   onTrim,
   onMoveAudio,
   onTrimAudio,
+  onEnvelope,
   selectedJunction,
   onSelectJunction,
 }: LanesProps) {
@@ -345,6 +348,7 @@ function Lanes({
             selectedId={selectedId}
             onSelect={onSelect}
             onTrim={onTrimAudio}
+            onEnvelope={onEnvelope}
           />
         </Lane>
       ))}
@@ -389,6 +393,9 @@ export function Timeline({
   }
   function onTrimAudio(itemId: string, args: TrimSpan) {
     onCommand((current) => trimAudio(current, { itemId, ...args }));
+  }
+  function onEnvelope(itemId: string, points: readonly EnvelopePoint[]) {
+    onCommand((current) => setEnvelope(current, { itemId, points }));
   }
   return (
     <TimelineContext
@@ -435,6 +442,7 @@ export function Timeline({
         onTrim={onTrim}
         onMoveAudio={onMoveAudio}
         onTrimAudio={onTrimAudio}
+        onEnvelope={onEnvelope}
         selectedJunction={selectedJunction}
         onSelectJunction={onSelectJunction}
       />

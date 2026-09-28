@@ -1,14 +1,22 @@
 import { useItem, type Span } from 'dnd-timeline';
 import { useTranslation } from 'react-i18next';
 import { audioWindow } from './audioLane';
-import { sourceOf, type AudioItem, type AudioTrack, type VideoProject } from './project';
+import { AudioWaveform } from './AudioWaveform';
+import {
+  sourceOf,
+  type AudioItem,
+  type AudioTrack,
+  type EnvelopePoint,
+  type VideoProject,
+} from './project';
 import { Handle, ItemButton } from './Timeline_items';
 import { TOUCH_FLOOR, type TrimSpan } from './timelineView';
 
 // Timeline_audio.tsx — the sounds on an audio lane. A sound drags and trims like a clip, but a drop
 // is a free position, not a place in a sequence: `moveAudio` re-hangs it on whatever clip is under
 // its new start. As for a clip, the handles' pointer drag is dnd-timeline's and reaches the shell
-// as `onResizeEnd`; a keystroke is the only edit this file emits.
+// as `onResizeEnd`; a keystroke is the only edit this file emits besides the envelope. Each sound
+// draws its waveform and, selected, its envelope (AudioWaveform.tsx).
 
 /** Two edges this close are one boundary, and two handles on it would fight for the press. */
 const TOUCHING = 1e-6;
@@ -22,8 +30,12 @@ interface AudioItemViewProps {
   readonly abutsEnd: boolean;
   readonly frame: number;
   readonly selected: boolean;
+  readonly assetId: string | undefined;
+  /** Source seconds the lane shows of this sound. */
+  readonly visible: number;
   readonly onSelect: (id: string) => void;
   readonly onTrim: (itemId: string, args: TrimSpan) => void;
+  readonly onEnvelope: (itemId: string, points: readonly EnvelopePoint[]) => void;
 }
 
 function AudioItemView({
@@ -35,8 +47,11 @@ function AudioItemView({
   abutsEnd,
   frame,
   selected,
+  assetId,
+  visible,
   onSelect,
   onTrim,
+  onEnvelope,
 }: AudioItemViewProps) {
   const { t } = useTranslation();
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, itemStyle, itemContentStyle } =
@@ -66,6 +81,26 @@ function AudioItemView({
           }}
         />
       </div>
+      {assetId === undefined ? null : (
+        // The item box, not dnd-timeline's content box: the waveform has to line up with time (S2).
+        // It takes presses only while selected — then its points are the controls — and lets the
+        // unselected sound's button take the click that selects it.
+        <div
+          className="video-studio-waveform-layer"
+          style={{ pointerEvents: selected ? 'auto' : 'none' }}
+        >
+          <AudioWaveform
+            assetId={assetId}
+            sourceStart={item.sourceStart}
+            visible={visible}
+            envelope={item.envelope}
+            selected={selected}
+            onEnvelope={(points) => {
+              onEnvelope(item.id, points);
+            }}
+          />
+        </div>
+      )}
       <Handle
         side="start"
         abuts={abutsStart}
@@ -104,6 +139,7 @@ interface AudioLaneItemsProps {
   readonly selectedId: string | undefined;
   readonly onSelect: (id: string) => void;
   readonly onTrim: (itemId: string, args: TrimSpan) => void;
+  readonly onEnvelope: (itemId: string, points: readonly EnvelopePoint[]) => void;
 }
 
 /** One lane's sounds. A handle beside a neighbour stays inside its own sound, for the reason a
@@ -115,6 +151,7 @@ export function AudioLaneItems({
   selectedId,
   onSelect,
   onTrim,
+  onEnvelope,
 }: AudioLaneItemsProps) {
   const placed = track.items.map((item) => ({ item, span: audioWindow(project, item) }));
   const touches = (at: number, edge: 'start' | 'end', self: string) =>
@@ -135,8 +172,11 @@ export function AudioLaneItems({
           abutsEnd={touches(span.end, 'start', item.id)}
           frame={1 / project.fps}
           selected={item.id === selectedId}
+          assetId={sourceOf(project, item.sourceId)?.assetId}
+          visible={(span.end - span.start) * Math.abs(item.speed ?? 1)}
           onSelect={onSelect}
           onTrim={onTrim}
+          onEnvelope={onEnvelope}
         />
       ))}
     </>

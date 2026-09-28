@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
@@ -17,6 +18,29 @@ export const FIXTURES = resolve(
 );
 
 export const AUDIO_FIXTURES = resolve(FIXTURES, 'audio');
+
+const FRAME = { width: 320, height: 180 };
+
+/** Muted 4 s clips of `clip-a.mp4`: the only sound in the export is the one the test puts there. */
+export function silentFilm(clip: string, name: string, clips = 2) {
+  return {
+    id: randomUUID(),
+    name,
+    size: FRAME,
+    fps: 30,
+    sources: [
+      { id: 'src-a', assetId: clip, kind: 'video', duration: 4, size: FRAME, hasAudio: true },
+    ],
+    video: Array.from({ length: clips }, (_, index) => ({
+      id: `clip-${String(index + 1)}`,
+      sourceId: 'src-a',
+      duration: 4,
+      sourceStart: 0,
+      muted: true,
+    })),
+    overlays: [],
+  };
+}
 
 export function videoRecord(assetId: string, prompt: string): StudioRecord {
   return {

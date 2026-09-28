@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Locator, Page } from '@playwright/test';
@@ -11,35 +10,13 @@ import {
   pressAddAction,
   reopen,
   setField,
+  silentFilm,
   uploadClip,
 } from './support/videoStudio';
 
 // video-studio-lane.spec.ts — sounds put in and shaped through the editor's own controls, the way
 // an operator does it: the rail's Add audio, the inspector's sliders, Split on a selected sound.
 // The export is then measured, so every control is proven by what it did to the file.
-
-const FRAME = { width: 320, height: 180 };
-
-/** Two muted 4 s clips: the only sound in the export is the one the test puts there. */
-function silentFilm(clip: string, name: string) {
-  return {
-    id: randomUUID(),
-    name,
-    size: FRAME,
-    fps: 30,
-    sources: [
-      { id: 'src-a', assetId: clip, kind: 'video', duration: 4, size: FRAME, hasAudio: true },
-    ],
-    video: ['clip-1', 'clip-2'].map((id) => ({
-      id,
-      sourceId: 'src-a',
-      duration: 4,
-      sourceStart: 0,
-      muted: true,
-    })),
-    overlays: [],
-  };
-}
 
 async function addMusic(page: Page, editor: Locator): Promise<void> {
   const chooser = page.waitForEvent('filechooser');

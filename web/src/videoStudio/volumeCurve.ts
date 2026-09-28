@@ -33,7 +33,7 @@ export interface CurveInput {
 
 /** The envelope's gain at `time`: linear between its points, held before the first and after the
  *  last, and 1 when there is none. */
-function envelopeAt(points: readonly EnvelopePoint[] | undefined, time: number): number {
+export function envelopeAt(points: readonly EnvelopePoint[] | undefined, time: number): number {
   const first = points?.[0];
   if (points === undefined || first === undefined) return 1;
   let previous = first;
