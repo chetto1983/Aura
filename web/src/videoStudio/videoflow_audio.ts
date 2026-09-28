@@ -26,6 +26,7 @@ import {
   type VideoItem,
   type VideoProject,
 } from './project';
+import { clipTransitions } from './videoflow_transitions';
 import { volumeKeyframes, type CurveInput, type Ducking } from './volumeCurve';
 
 type Loudness = Pick<CurveInput, 'volume' | 'fadeIn' | 'fadeOut' | 'envelope' | 'duck'>;
@@ -93,7 +94,8 @@ export function addAudioItems(
       : undefined;
     if (cleaned === undefined) return;
     // No cut nudge: it keeps the PICTURE off a frame boundary, and this layer has none. The
-    // cleaned copy is already trimmed of RNNoise's delay (audioClean.ts), so it sits on the picture.
+    // cleaned copy is already trimmed of RNNoise's delay (audioClean.ts), so it sits on the picture,
+    // and it takes the picture's transitions, so it fades where the clip's own sound would have.
     flow.addAudio(
       { mute: false },
       {
@@ -103,6 +105,7 @@ export function addAudioItems(
         sourceStart: clip.sourceStart,
         sourceDuration: clip.duration,
         speed: clip.speed ?? 1,
+        ...clipTransitions(project, index),
       },
     );
   });

@@ -14,17 +14,16 @@ import BrowserRenderer from '@videoflow/renderer-browser';
 import type { AssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import {
   clipStarts,
-  clipTimelineDuration,
   junctionDurationAt,
   overlayWindow,
   projectDuration,
   sourceOf,
   type OverlayItem,
-  type ClipTransition,
   type VideoItem,
   type VideoProject,
 } from './project';
 import { addAudioItems, playsCleaned, withVolumes } from './videoflow_audio';
+import { clipTransitions, type ClipTransitions } from './videoflow_transitions';
 
 /** Where a clip's bytes come from: the cockpit's own asset route, never a foreign URL. */
 export type MediaUrls = Pick<AssetSource, 'assetUrl'>;
@@ -39,24 +38,6 @@ export const LOCAL_FONTS: Readonly<Record<string, string>> = {
   'Noto Sans': '/fonts/noto-sans-alias.css',
   'Atkinson Hyperlegible Next': '/fonts/atkinson.css',
 };
-
-interface EdgeTransition {
-  readonly transition: ClipTransition;
-  readonly duration: number;
-}
-
-function junctionEdge(project: VideoProject, toIndex: number): EdgeTransition | undefined {
-  const incoming = project.video[toIndex];
-  const duration = junctionDurationAt(project, toIndex);
-  if (incoming === undefined || duration <= 0) return undefined;
-  const transition =
-    incoming.junctionTransition === 'zoom'
-      ? 'zoom'
-      : incoming.junctionTransition === 'blur'
-        ? 'blurResolve'
-        : 'fade';
-  return { transition, duration };
-}
 
 /**
  * The tenth of a millisecond that stops the renderer sampling a frame exactly on its own source
@@ -171,8 +152,7 @@ function addClip(
   urls: MediaUrls,
   clip: VideoItem,
   startTime: number,
-  edgeIn: EdgeTransition | undefined,
-  edgeOut: EdgeTransition | undefined,
+  transitions: ClipTransitions,
 ): void {
   const source = sourceOf(project, clip.sourceId);
   if (source === undefined) {
@@ -186,26 +166,7 @@ function addClip(
     startTime,
     sourceDuration: clip.duration,
     speed: clip.speed ?? 1,
-    ...(edgeIn !== undefined
-      ? { transitionIn: edgeIn }
-      : clip.transitionIn === undefined || clip.transitionIn === 'none'
-        ? {}
-        : {
-            transitionIn: {
-              transition: clip.transitionIn,
-              duration: Math.min(clip.transitionInDuration ?? 1, clipTimelineDuration(clip) / 2),
-            },
-          }),
-    ...(edgeOut !== undefined
-      ? { transitionOut: edgeOut }
-      : clip.transitionOut === undefined || clip.transitionOut === 'none'
-        ? {}
-        : {
-            transitionOut: {
-              transition: clip.transitionOut,
-              duration: Math.min(clip.transitionOutDuration ?? 1, clipTimelineDuration(clip) / 2),
-            },
-          }),
+    ...transitions,
   };
   // A still has one frame and no audio: no source window to sample, so no nudge and no mute.
   if (source.kind === 'image') {
@@ -311,15 +272,7 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   });
   const starts = clipStarts(project);
   project.video.forEach((clip, index) => {
-    addClip(
-      flow,
-      project,
-      urls,
-      clip,
-      starts[index] ?? 0,
-      junctionEdge(project, index),
-      junctionEdge(project, index + 1),
-    );
+    addClip(flow, project, urls, clip, starts[index] ?? 0, clipTransitions(project, index));
   });
   for (let index = 1; index < project.video.length; index += 1) {
     addJunctionWash(flow, project, index, starts[index] ?? 0);

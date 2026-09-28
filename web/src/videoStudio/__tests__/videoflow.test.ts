@@ -58,6 +58,40 @@ describe('toVideoJSON', () => {
     expect(calls.audios.map((audio) => audio.settings.name)).toEqual(['clip-1#clean']);
   });
 
+  it('fades a cleaned clip’s sound with its picture: its sound layer takes the clip’s transitions', async () => {
+    // The mixer fades a layer's volume only through that layer's own transitions (mixer.js
+    // applyAudioKeyframes; the `fade` preset multiplies volume): a sound layer without them would
+    // cut hard where the picture fades.
+    const base = project();
+    const [first, second] = base.video;
+    if (first === undefined || second === undefined) throw new Error('project fixture lost a clip');
+    await toVideoJSON(
+      {
+        ...base,
+        sources: base.sources.map((source) =>
+          source.id === 'src-a' ? { ...source, denoisedAssetId: 'asset-a-clean' } : source,
+        ),
+        video: [
+          { ...first, denoise: true, transitionIn: 'fade', transitionInDuration: 0.5 },
+          {
+            ...second,
+            junctionFromClipId: 'clip-1',
+            junctionTransition: 'crossfade',
+            junctionDuration: 1,
+          },
+        ],
+      },
+      urls,
+    );
+    const sound = calls.audios.find((audio) => audio.settings.name === 'clip-1#clean');
+    expect(sound?.settings).toMatchObject({
+      transitionIn: { transition: 'fade', duration: 0.5 },
+      transitionOut: { transition: 'fade', duration: 1 },
+    });
+    expect(sound?.settings.transitionIn).toEqual(calls.videos[0]?.settings.transitionIn);
+    expect(sound?.settings.transitionOut).toEqual(calls.videos[0]?.settings.transitionOut);
+  });
+
   it('carries the selected clip rotation and fit into VideoFlow, and no static volume', async () => {
     const base = project();
     const first = base.video[0];
