@@ -232,3 +232,63 @@ func TestServiceFinalizeMediaRefusesADocumentHintedAsMedia(t *testing.T) {
 		t.Fatalf("processing enqueued %d times, want none", queue.calls)
 	}
 }
+
+// undeletableStore is the fake object store with every delete failing, as an unreachable
+// Garage would.
+type undeletableStore struct{ objectstore.Store }
+
+func (undeletableStore) Delete(context.Context, objectstore.ObjectRef) error {
+	return errors.New("garage unreachable")
+}
+
+// A refusal drops the object no one will read, and a drop that failed used to vanish without a
+// trace, leaving bytes behind with nothing to say so. It is now logged by asset id, never by
+// name, and the refused row keeps the object's key: whatever retires the row removes the
+// object with it. Both doors that refuse an upload share that one exit.
+func TestServiceRefusalLogsAnObjectItCouldNotRemove(t *testing.T) {
+	limits := Limits{MaxDocumentBytes: 5, MaxImageBytes: 5, MaxAudioBytes: 5}
+	for name, refuse := range map[string]func(*testing.T, *Service) (Asset, error){
+		"finalize of an oversized upload": func(t *testing.T, svc *Service) (Asset, error) {
+			resp, err := svc.Presign(context.Background(), PresignRequest{
+				IdentityID: serviceIdentityID, SourceKind: SourceWeb, ThreadID: "thread-1",
+				FileName: "secret-plan.pdf", MIMEType: "application/pdf", DeclaredSizeBytes: 4,
+			})
+			if err != nil {
+				t.Fatalf("Presign: %v", err)
+			}
+			if _, err := svc.Objects.Put(context.Background(), assetRef(resp.Asset),
+				strings.NewReader("123456"), objectstore.PutOptions{Size: 6}); err != nil {
+				t.Fatalf("Put: %v", err)
+			}
+			return svc.Finalize(context.Background(), serviceIdentityID, resp.Asset.ID)
+		},
+		"telegram file past its cap": func(_ *testing.T, svc *Service) (Asset, error) {
+			return svc.IngestTelegramFile(context.Background(), TelegramIngestRequest{
+				IdentityID: serviceIdentityID, ChatID: 42, MessageID: 7, FileID: "voice-file",
+				FileName: "secret-plan.ogg", MIMEType: "audio/ogg", Modality: ModalityAudio,
+				SizeBytes: 4, Reader: strings.NewReader("123456"),
+			})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			svc, _ := newAssetServiceTestRig(t, limits)
+			svc.Objects = undeletableStore{Store: svc.Objects}
+			logs := captureWarnings(t)
+
+			refused, err := refuse(t, svc)
+			if !errors.Is(err, ErrAssetTooLarge) || refused.Status != StatusRefused {
+				t.Fatalf("refusal = %s, %v; want refused with the size error", refused.Status, err)
+			}
+			if !objectExists(t, svc.Objects, refused) {
+				t.Fatal("the object is gone although its delete failed")
+			}
+			logged := logs.String()
+			if !strings.Contains(logged, "asset_id="+refused.ID) || !strings.Contains(logged, "garage unreachable") {
+				t.Fatalf("log = %q, want a warning naming the asset and the cause", logged)
+			}
+			if strings.Contains(logged, "secret-plan") {
+				t.Fatalf("log = %q, carries the file name", logged)
+			}
+		})
+	}
+}

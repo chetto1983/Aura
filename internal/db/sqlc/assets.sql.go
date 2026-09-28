@@ -854,38 +854,44 @@ func (q *Queries) ResetAssetForIngestionRetry(ctx context.Context, arg ResetAsse
 	return i, err
 }
 
-const retireAbandonedUploads = `-- name: RetireAbandonedUploads :exec
+const retireIdleAssets = `-- name: RetireIdleAssets :exec
 UPDATE aura.assets
 SET status = 'deleting',
     deleted_at = now(),
     updated_at = now()
 WHERE assets.id IN (
-    SELECT stale.id FROM aura.assets AS stale
-    WHERE stale.identity_id = $1
-      AND stale.status = 'presigned'
-      AND stale.deleted_at IS NULL
-      AND stale.updated_at < $2
-    ORDER BY stale.updated_at ASC, stale.id ASC
-    LIMIT $3
+    SELECT idle.id FROM aura.assets AS idle
+    WHERE idle.identity_id = $1
+      AND idle.status = ANY($2::text[])
+      AND idle.deleted_at IS NULL
+      AND idle.updated_at < $3
+    ORDER BY idle.updated_at ASC, idle.id ASC
+    LIMIT $4
 )
-  AND assets.status = 'presigned'
+  AND assets.status = ANY($2::text[])
   AND assets.deleted_at IS NULL
-  AND assets.updated_at < $2
+  AND assets.updated_at < $3
 `
 
-type RetireAbandonedUploadsParams struct {
+type RetireIdleAssetsParams struct {
 	IdentityID pgtype.UUID        `json:"identity_id"`
+	Statuses   []string           `json:"statuses"`
 	Cutoff     pgtype.Timestamptz `json:"cutoff"`
 	RowLimit   int32              `json:"row_limit"`
 }
 
-// Marks deleting, oldest first, the presigned rows of an identity nothing has written since
-// the cutoff: an upload whose URL expired unused, or whose bytes arrived and were never
-// finalized. The outer conditions repeat the inner ones because Postgres re-checks only the
-// outer ones on a row a concurrent finalize changed while this waited for its lock: a row
-// that became uploaded meanwhile is left alone.
-func (q *Queries) RetireAbandonedUploads(ctx context.Context, arg RetireAbandonedUploadsParams) error {
-	_, err := q.db.Exec(ctx, retireAbandonedUploads, arg.IdentityID, arg.Cutoff, arg.RowLimit)
+// Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
+// has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
+// lifetime. The outer conditions repeat the inner ones because Postgres re-checks only the
+// outer ones on a row a concurrent write changed while this waited for its lock: a row a
+// finalize or a retry moved on meanwhile is left alone.
+func (q *Queries) RetireIdleAssets(ctx context.Context, arg RetireIdleAssetsParams) error {
+	_, err := q.db.Exec(ctx, retireIdleAssets,
+		arg.IdentityID,
+		arg.Statuses,
+		arg.Cutoff,
+		arg.RowLimit,
+	)
 	return err
 }
 

@@ -638,12 +638,12 @@ type Querier interface {
 	// that already un-parked the row, resolves zero rows.
 	ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
-	// Marks deleting, oldest first, the presigned rows of an identity nothing has written since
-	// the cutoff: an upload whose URL expired unused, or whose bytes arrived and were never
-	// finalized. The outer conditions repeat the inner ones because Postgres re-checks only the
-	// outer ones on a row a concurrent finalize changed while this waited for its lock: a row
-	// that became uploaded meanwhile is left alone.
-	RetireAbandonedUploads(ctx context.Context, arg RetireAbandonedUploadsParams) error
+	// Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
+	// has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
+	// lifetime. The outer conditions repeat the inner ones because Postgres re-checks only the
+	// outer ones on a row a concurrent write changed while this waited for its lock: a row a
+	// finalize or a retry moved on meanwhile is left alone.
+	RetireIdleAssets(ctx context.Context, arg RetireIdleAssetsParams) error
 	RetryIngestionJob(ctx context.Context, arg RetryIngestionJobParams) (RetryIngestionJobRow, error)
 	RetryRetentionItem(ctx context.Context, arg RetryRetentionItemParams) (int64, error)
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error

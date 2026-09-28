@@ -375,9 +375,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0130 persists non-secret Cloudflare remote-access intent and resumable resource IDs.
 	// 0131 adds aura.pim_provider_app, the admin-set OAuth client per managed PIM provider.
 	// 0132 settles the assets the document processor left in 'processing' over a job that
-	// had succeeded.
-	if head != 132 {
-		t.Fatalf("MigrationHead=%d, want embedded head 132", head)
+	// had succeeded. 0133 makes an ingestion job's events leave with it.
+	if head != 133 {
+		t.Fatalf("MigrationHead=%d, want embedded head 133", head)
 	}
 }
 

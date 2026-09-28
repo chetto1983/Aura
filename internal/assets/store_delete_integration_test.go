@@ -163,8 +163,9 @@ func TestStoreDeleteHidesTheRowFromEveryReadAndWrite(t *testing.T) {
 
 // Finalize is a hard delete as aura_app: the grant 0001's default privileges give, the RLS
 // policy that admits the owner, and the cascades the lab VM's stuck rows carry (99 of 258 had
-// an ingestion job, and those jobs 206 events). A library key is fixed by the file name, so it
-// must be free again for the same file to be uploaded.
+// an ingestion job, and those jobs 206 events). A job's events leave with it (migration 0133):
+// every writer names the job, and nothing reads the timeline of a job that is gone. A library
+// key is fixed by the file name, so it must be free again for the same file to be uploaded.
 func TestStoreFinalizeRemovesTheRowWithItsJobsAndFreesTheKey(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -184,7 +185,7 @@ VALUES ($1, 'asset_process', 'succeeded', $2, '{}'::jsonb, $3, $4)`,
 		jobID, "delete-test-"+jobID, localIdentityID, asset.ID)
 	execAs(t, pool, localIdentityID, `
 INSERT INTO aura.ingestion_events (entity_type, entity_id, job_id, event_type, identity_id)
-VALUES ('asset', $1, $2, 'processed', $3)`, asset.ID, jobID, localIdentityID)
+VALUES ('ingestion_job', $1, $1, 'job_succeeded', $2)`, jobID, localIdentityID)
 
 	if _, err := store.Delete(ctx, asset.ID, localIdentityID); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -203,8 +204,8 @@ VALUES ('asset', $1, $2, 'processed', $3)`, asset.ID, jobID, localIdentityID)
 		}
 	}
 	if n := countAs(t, pool, localIdentityID,
-		`SELECT count(*) FROM aura.ingestion_events WHERE entity_id = $1 AND job_id IS NULL`, asset.ID); n != 1 {
-		t.Fatalf("ingestion events kept with job_id NULL = %d, want the 1 event (ON DELETE SET NULL (job_id))", n)
+		`SELECT count(*) FROM aura.ingestion_events WHERE entity_id = $1`, jobID); n != 0 {
+		t.Fatalf("ingestion events of the deleted job = %d, want them gone with it", n)
 	}
 	if err := store.Finalize(ctx, asset.ID, localIdentityID); err != nil {
 		t.Fatalf("a second Finalize = %v, want a no-op", err)
@@ -372,7 +373,7 @@ func requireRowState(t *testing.T, pool *pgxpool.Pool, asset Asset, status Statu
 // The transition itself, as aura_app under RLS: the caller's presigned rows untouched since the
 // cutoff become deleting with deleted_at stamped. A fresh upload, an old row a finalize already
 // moved to uploaded, and another identity's old upload are left as they are.
-func TestStoreRetireAbandonedUploadsMarksOnlyTheCallersStaleUploads(t *testing.T) {
+func TestStoreRetireIdleMarksOnlyTheCallersStaleUploads(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -389,8 +390,8 @@ func TestStoreRetireAbandonedUploadsMarksOnlyTheCallersStaleUploads(t *testing.T
 	theirs := presignedUpload(t, ctx, pool, otherIdentityID, fmt.Sprintf("chat/%d-theirs.pdf", now), 3*time.Hour)
 	cutoff := time.Now().Add(-time.Hour)
 
-	if err := store.RetireAbandonedUploads(ctx, localIdentityID, cutoff, deleteSweepBatch); err != nil {
-		t.Fatalf("RetireAbandonedUploads as local: %v", err)
+	if err := store.RetireIdle(ctx, localIdentityID, []Status{StatusPresigned}, cutoff, deleteSweepBatch); err != nil {
+		t.Fatalf("RetireIdle as local: %v", err)
 	}
 	requireRowState(t, pool, stale, StatusDeleting, true)
 	requireRowState(t, pool, fresh, StatusPresigned, false)
@@ -401,8 +402,8 @@ func TestStoreRetireAbandonedUploadsMarksOnlyTheCallersStaleUploads(t *testing.T
 		t.Fatalf("ListDeleting = %v; want the retired upload offered to the sweep", err)
 	}
 
-	if err := store.RetireAbandonedUploads(ctx, otherIdentityID, cutoff, deleteSweepBatch); err != nil {
-		t.Fatalf("RetireAbandonedUploads as the owner: %v", err)
+	if err := store.RetireIdle(ctx, otherIdentityID, []Status{StatusPresigned}, cutoff, deleteSweepBatch); err != nil {
+		t.Fatalf("RetireIdle as the owner: %v", err)
 	}
 	requireRowState(t, pool, theirs, StatusDeleting, true)
 }
@@ -445,6 +446,52 @@ func TestDeleteSweepRemovesAbandonedUploadsFromPostgres(t *testing.T) {
 		if _, err := svc.Objects.Head(ctx, assetRef(upload)); err != nil {
 			t.Fatalf("Head %s after the sweep = %v, want the fresh upload's bytes kept", upload.ObjectKey, err)
 		}
+	}
+}
+
+// Refused and failed rows past their lifetime leave Postgres through the same sweep, bytes
+// included, for every identity it visits. A recent failure stays for the retry the cockpit
+// offers on it.
+func TestDeleteSweepRemovesFailedAndRefusedRowsPastTheirLifetime(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	now := time.Now().UnixNano()
+	store := NewStore(pool)
+	svc := &Service{Store: store, Objects: objectstore.NewFake(), Bucket: "asset-test", PresignTTL: 10 * time.Minute}
+	seedOtherIdentity(t, ctx, pool, "asset-failed-other")
+	lifetime := 14 * 24 * time.Hour
+	spent := func(identityID, name string, status Status, age time.Duration) Asset {
+		t.Helper()
+		upload := presignedUpload(t, ctx, pool, identityID, fmt.Sprintf("chat/%d-%s", now, name), 0)
+		if _, err := store.SetStatus(ctx, upload.ID, identityID, status, "asset_refused", "test"); err != nil {
+			t.Fatalf("SetStatus %s: %v", status, err)
+		}
+		backdate(t, pool, upload, age)
+		if _, err := svc.Objects.Put(ctx, assetRef(upload), strings.NewReader("%PDF"), objectstore.PutOptions{Size: 4}); err != nil {
+			t.Fatalf("Put %s: %v", upload.ObjectKey, err)
+		}
+		return upload
+	}
+	oldFailed := spent(localIdentityID, "old-failed.pdf", StatusFailed, lifetime+time.Hour)
+	oldRefused := spent(otherIdentityID, "old-refused.pdf", StatusRefused, lifetime+time.Hour)
+	recent := spent(localIdentityID, "recent-failed.pdf", StatusFailed, lifetime-time.Hour)
+
+	sweep := DeleteSweep{Assets: svc, Identities: identityList{localIdentityID, otherIdentityID}, FailedLifetime: lifetime}
+	if finished, err := sweep.SweepExpired(ctx, time.Now()); err != nil || finished < 2 {
+		t.Fatalf("sweep = %d, %v; want at least the two rows past their lifetime finished", finished, err)
+	}
+	for _, gone := range []Asset{oldFailed, oldRefused} {
+		if n := countAs(t, pool, gone.IdentityID, `SELECT count(*) FROM aura.assets WHERE id = $1`, gone.ID); n != 0 {
+			t.Fatalf("%s left %d row(s)", gone.ObjectKey, n)
+		}
+		if _, err := svc.Objects.Head(ctx, assetRef(gone)); !objectstore.IsNotFound(err) {
+			t.Fatalf("Head %s after the sweep = %v, want not found", gone.ObjectKey, err)
+		}
+	}
+	requireRowState(t, pool, recent, StatusFailed, false)
+	if _, err := svc.Objects.Head(ctx, assetRef(recent)); err != nil {
+		t.Fatalf("Head %s = %v, want the recent failure's bytes kept", recent.ObjectKey, err)
 	}
 }
 

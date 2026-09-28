@@ -78,7 +78,7 @@ func (r *recordingAssetStore) Finalize(context.Context, string, string) error { 
 func (r *recordingAssetStore) ListDeleting(context.Context, string, int) ([]assets.Asset, error) {
 	return nil, nil
 }
-func (r *recordingAssetStore) RetireAbandonedUploads(context.Context, string, time.Time, int) error {
+func (r *recordingAssetStore) RetireIdle(context.Context, string, []assets.Status, time.Time, int) error {
 	return nil
 }
 

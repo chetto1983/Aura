@@ -165,26 +165,26 @@ WHERE identity_id = $1
 ORDER BY created_at ASC, id ASC
 LIMIT $2;
 
--- name: RetireAbandonedUploads :exec
--- Marks deleting, oldest first, the presigned rows of an identity nothing has written since
--- the cutoff: an upload whose URL expired unused, or whose bytes arrived and were never
--- finalized. The outer conditions repeat the inner ones because Postgres re-checks only the
--- outer ones on a row a concurrent finalize changed while this waited for its lock: a row
--- that became uploaded meanwhile is left alone.
+-- name: RetireIdleAssets :exec
+-- Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
+-- has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
+-- lifetime. The outer conditions repeat the inner ones because Postgres re-checks only the
+-- outer ones on a row a concurrent write changed while this waited for its lock: a row a
+-- finalize or a retry moved on meanwhile is left alone.
 UPDATE aura.assets
 SET status = 'deleting',
     deleted_at = now(),
     updated_at = now()
 WHERE assets.id IN (
-    SELECT stale.id FROM aura.assets AS stale
-    WHERE stale.identity_id = sqlc.arg(identity_id)
-      AND stale.status = 'presigned'
-      AND stale.deleted_at IS NULL
-      AND stale.updated_at < sqlc.arg(cutoff)
-    ORDER BY stale.updated_at ASC, stale.id ASC
+    SELECT idle.id FROM aura.assets AS idle
+    WHERE idle.identity_id = sqlc.arg(identity_id)
+      AND idle.status = ANY(sqlc.arg(statuses)::text[])
+      AND idle.deleted_at IS NULL
+      AND idle.updated_at < sqlc.arg(cutoff)
+    ORDER BY idle.updated_at ASC, idle.id ASC
     LIMIT sqlc.arg(row_limit)
 )
-  AND assets.status = 'presigned'
+  AND assets.status = ANY(sqlc.arg(statuses)::text[])
   AND assets.deleted_at IS NULL
   AND assets.updated_at < sqlc.arg(cutoff);
 

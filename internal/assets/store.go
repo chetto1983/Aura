@@ -264,16 +264,21 @@ func (s *Store) ListDeleting(ctx context.Context, identityID string, limit int) 
 	})
 }
 
-// RetireAbandonedUploads marks deleting up to limit of the identity's presigned rows untouched
+// RetireIdle marks deleting up to limit of the identity's rows in one of statuses untouched
 // since before, oldest first, so the delete sweep finishes them like any other delete.
-func (s *Store) RetireAbandonedUploads(ctx context.Context, identityID string, before time.Time, limit int) error {
+func (s *Store) RetireIdle(ctx context.Context, identityID string, statuses []Status, before time.Time, limit int) error {
 	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return err
 	}
+	names := make([]string, 0, len(statuses))
+	for _, status := range statuses {
+		names = append(names, string(status))
+	}
 	return s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		return q.RetireAbandonedUploads(ctx, sqlc.RetireAbandonedUploadsParams{
+		return q.RetireIdleAssets(ctx, sqlc.RetireIdleAssetsParams{
 			IdentityID: pgIdentityID,
+			Statuses:   names,
 			Cutoff:     pgtype.Timestamptz{Time: before, Valid: true},
 			RowLimit:   int32(limit), //nolint:gosec // DeleteSweep bounds this at deleteSweepBatch.
 		})

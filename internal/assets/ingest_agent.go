@@ -107,9 +107,7 @@ func (s *Service) ingestObject(ctx context.Context, in objectIngest) (Asset, err
 	}
 	if in.enforceLimits {
 		if err = s.Limits.Validate(modality, name, attrs.SizeBytes); err != nil {
-			updated, _ := s.Store.SetStatus(ctx, asset.ID, in.identityID, StatusRefused, "asset_refused", err.Error())
-			_ = objects.Delete(context.WithoutCancel(ctx), ref)
-			return updated, err
+			return s.refuse(ctx, objects, ref, asset, in.identityID, err)
 		}
 	}
 	asset, err = s.Store.MarkUploaded(ctx, asset.ID, in.identityID, attrs.SizeBytes, attrs.ETag)

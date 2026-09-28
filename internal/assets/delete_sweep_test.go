@@ -3,6 +3,7 @@ package assets
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -129,14 +130,14 @@ func TestDeleteSweepFailsWhenItCannotListIdentities(t *testing.T) {
 	}
 }
 
-// RetireAbandonedUploads mirrors the real store: the identity's presigned rows untouched
-// since before, oldest first and at most limit, become deleting with deleted_at stamped.
-func (s *fakeAssetStore) RetireAbandonedUploads(_ context.Context, identityID string, before time.Time, limit int) error {
+// RetireIdle mirrors the real store: the identity's rows in one of statuses untouched since
+// before, oldest first and at most limit, become deleting with deleted_at stamped.
+func (s *fakeAssetStore) RetireIdle(_ context.Context, identityID string, statuses []Status, before time.Time, limit int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var stale []Asset
 	for _, asset := range s.assets {
-		if asset.IdentityID == identityID && asset.Status == StatusPresigned &&
+		if asset.IdentityID == identityID && slices.Contains(statuses, asset.Status) &&
 			asset.DeletedAt.IsZero() && asset.UpdatedAt.Before(before) {
 			stale = append(stale, asset)
 		}
@@ -249,17 +250,17 @@ func TestDeleteSweepRetiresTheOldestAbandonedUploadsWithinTheBatch(t *testing.T)
 	requireGone(t, svc, store, newer)
 }
 
-// unretirableStore fails the retirement of one identity's uploads, as a lost connection would.
+// unretirableStore fails the retirement of one identity's rows, as a lost connection would.
 type unretirableStore struct {
 	*fakeAssetStore
 	identityID string
 }
 
-func (s unretirableStore) RetireAbandonedUploads(ctx context.Context, identityID string, before time.Time, limit int) error {
+func (s unretirableStore) RetireIdle(ctx context.Context, identityID string, statuses []Status, before time.Time, limit int) error {
 	if identityID == s.identityID {
 		return errors.New("connection reset")
 	}
-	return s.fakeAssetStore.RetireAbandonedUploads(ctx, identityID, before, limit)
+	return s.fakeAssetStore.RetireIdle(ctx, identityID, statuses, before, limit)
 }
 
 // A failed retirement costs neither that identity's pending deletes nor anyone else's uploads.
@@ -278,4 +279,51 @@ func TestDeleteSweepFinishesDeletesPastAFailedRetirement(t *testing.T) {
 	}
 	requireGone(t, svc, store, stuck, theirs)
 	requireKept(t, svc, store, StatusPresigned, unreached)
+}
+
+// spend puts a row in the state an upload the pipeline gave up on is left in: failed or
+// refused, last written at touched.
+func spend(store *fakeAssetStore, asset Asset, status Status, touched time.Time) Asset {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	asset.Status, asset.UpdatedAt = status, touched
+	store.assets[asset.ID] = asset
+	return asset
+}
+
+// A refused or failed row outlives its use: a refused upload's bytes are gone, and a failed
+// one is retried within minutes if at all. Past its lifetime it leaves like any delete, taking
+// the object a failed refusal could not drop.
+func TestDeleteSweepRetiresFailedAndRefusedRowsPastTheirLifetime(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	lifetime := 14 * 24 * time.Hour
+	now := time.Now()
+	expired := now.Add(-lifetime - time.Hour)
+	failed := spend(store, seedStoredAsset(t, svc, store, "owner-a", "a-failed", now), StatusFailed, expired)
+	refused := spend(store, seedStoredAsset(t, svc, store, "owner-a", "a-refused", now), StatusRefused, expired)
+	dropObject(t, svc, refused)
+	recent := spend(store, seedStoredAsset(t, svc, store, "owner-a", "a-recent", now), StatusFailed, now.Add(-lifetime+time.Hour))
+	keptBytes := spend(store, seedStoredAsset(t, svc, store, "owner-b", "b-refused", now), StatusRefused, expired)
+	accepted := seedStoredAsset(t, svc, store, "owner-a", "a-accepted", now.Add(-4*lifetime))
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a", "owner-b"}, FailedLifetime: lifetime}.
+		SweepExpired(context.Background(), now)
+	if err != nil || finished != 3 {
+		t.Fatalf("sweep = %d, %v; want the three rows past their lifetime finished", finished, err)
+	}
+	requireGone(t, svc, store, failed, refused, keptBytes)
+	requireKept(t, svc, store, StatusFailed, recent)
+	requireKept(t, svc, store, StatusAccepted, accepted)
+}
+
+func TestDeleteSweepKeepsFailedRowsWithoutALifetime(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	now := time.Now()
+	failed := spend(store, seedStoredAsset(t, svc, store, "owner-a", "a-failed", now), StatusFailed, now.Add(-365*24*time.Hour))
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a"}}.SweepExpired(context.Background(), now)
+	if err != nil || finished != 0 {
+		t.Fatalf("sweep = %d, %v; want nothing retired without a lifetime", finished, err)
+	}
+	requireKept(t, svc, store, StatusFailed, failed)
 }

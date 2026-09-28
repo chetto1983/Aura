@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 
 	"github.com/chetto1983/aura/internal/identityctx"
@@ -56,10 +57,13 @@ func storedSizeMatchesUpload(declared, stored int64) error {
 }
 
 // refuse marks the asset refused with the reason, drops the object no one will read, and hands
-// the caller the same error — the one exit every acceptance check takes.
+// the caller the same error — the one exit every acceptance check takes. A drop that fails is
+// logged and left: the refused row keeps the key, so retiring the row removes the object.
 func (s *Service) refuse(ctx context.Context, objects objectstore.Store, ref objectstore.ObjectRef, asset Asset, identityID string, cause error) (Asset, error) {
 	updated, _ := s.Store.SetStatus(ctx, asset.ID, identityID, StatusRefused, "asset_refused", cause.Error())
-	_ = objects.Delete(context.WithoutCancel(ctx), ref)
+	if err := objects.Delete(context.WithoutCancel(ctx), ref); err != nil && !objectstore.IsNotFound(err) {
+		slog.Warn("aura assets: a refused upload kept its object", "asset_id", asset.ID, "err", err)
+	}
 	return updated, cause
 }
 

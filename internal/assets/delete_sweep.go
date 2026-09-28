@@ -24,17 +24,21 @@ type IdentityLister interface {
 
 // DeleteSweep finishes, on the retention schedule, the deletes Service.Delete could not: the
 // object removal or the row removal that failed, and the rows soft-deleted before a delete
-// went further than marking them deleting. It first marks deleting the abandoned uploads,
-// presigned rows untouched for the URL's lifetime plus uploadGrace, so they leave the same way.
+// went further than marking them deleting. It first marks deleting the rows that have outlived
+// their use, so they leave the same way: abandoned uploads, presigned rows untouched for the
+// URL's lifetime plus uploadGrace, and refused or failed rows untouched for FailedLifetime.
 type DeleteSweep struct {
 	Assets     *Service
 	Identities IdentityLister
 	// Batch overrides deleteSweepBatch; zero keeps it.
 	Batch int
+	// FailedLifetime is how long a refused or failed row is kept after its last write. Zero
+	// keeps them.
+	FailedLifetime time.Duration
 }
 
-// SweepExpired retires every identity's uploads abandoned by now, then finishes its oldest
-// deleting rows, a bounded batch each, and returns how many left the table or became
+// SweepExpired retires every identity's rows idle past their rule by now, then finishes its
+// oldest deleting rows, a bounded batch each, and returns how many left the table or became
 // tombstones. What it cannot retire or finish is named in the joined error and retried on the
 // next run.
 func (d DeleteSweep) SweepExpired(ctx context.Context, now time.Time) (int, error) {
@@ -46,12 +50,14 @@ func (d DeleteSweep) SweepExpired(ctx context.Context, now time.Time) (int, erro
 	if batch <= 0 {
 		batch = deleteSweepBatch
 	}
-	abandoned := now.Add(-d.Assets.ttl() - uploadGrace)
+	rules := d.idleRules(now)
 	finished := 0
 	var errs []error
 	for _, identityID := range identities {
-		if err := d.Assets.Store.RetireAbandonedUploads(ctx, identityID, abandoned, batch); err != nil {
-			errs = append(errs, fmt.Errorf("retire abandoned uploads of %s: %w", identityID, err))
+		for _, rule := range rules {
+			if err := d.Assets.Store.RetireIdle(ctx, identityID, rule.statuses, rule.before, batch); err != nil {
+				errs = append(errs, fmt.Errorf("retire idle %v assets of %s: %w", rule.statuses, identityID, err))
+			}
 		}
 		n, err := d.Assets.finishDeletes(ctx, identityID, batch)
 		finished += n
@@ -60,6 +66,20 @@ func (d DeleteSweep) SweepExpired(ctx context.Context, now time.Time) (int, erro
 		}
 	}
 	return finished, errors.Join(errs...)
+}
+
+// idleRule is one class of row the sweep retires: rows in statuses nothing wrote since before.
+type idleRule struct {
+	statuses []Status
+	before   time.Time
+}
+
+func (d DeleteSweep) idleRules(now time.Time) []idleRule {
+	rules := []idleRule{{statuses: []Status{StatusPresigned}, before: now.Add(-d.Assets.ttl() - uploadGrace)}}
+	if d.FailedLifetime > 0 {
+		rules = append(rules, idleRule{statuses: []Status{StatusRefused, StatusFailed}, before: now.Add(-d.FailedLifetime)})
+	}
+	return rules
 }
 
 func (s *Service) finishDeletes(ctx context.Context, identityID string, limit int) (int, error) {
