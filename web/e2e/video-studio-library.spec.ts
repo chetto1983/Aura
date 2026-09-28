@@ -64,15 +64,27 @@ test('a sound older than a full page is reached through Show more', async ({ pag
   const more = panel.getByRole('button', { name: 'Show more' });
   await expect(more).toBeVisible({ timeout: 30_000 });
   await expect(panel.getByRole('button', { name: older })).toHaveCount(0);
+  // The list scrolls inside the panel: each picture shows its bottom, where the page ends.
+  await panel.getByRole('listitem').last().scrollIntoViewIfNeeded();
+  await more.scrollIntoViewIfNeeded();
+  await info.attach('library-before-more', {
+    contentType: 'image/png',
+    body: await page.screenshot(),
+  });
 
   await more.click();
   const picked = panel.getByRole('button', { name: older });
   await expect(picked).toBeVisible({ timeout: 30_000 });
+  await picked.scrollIntoViewIfNeeded();
   await info.attach('library-more', { contentType: 'image/png', body: await page.screenshot() });
   await picked.click();
   const sound = editor.getByRole('button', { name: 'Sound 1' });
   await expect(sound).toBeVisible({ timeout: 60_000 });
   await expect(sound).toContainText(older);
+  await info.attach('library-more-on-lane', {
+    contentType: 'image/png',
+    body: await page.screenshot(),
+  });
 });
 
 test('a sound picked from the library goes on a lane and plays in the export', async ({
