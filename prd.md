@@ -537,8 +537,8 @@ would re-run every document's extraction, vision calls included.
 `deleting` with `deleted_at`, which hides it from every identity-scoped read and from every
 status write, so a job finishing late cannot bring it back. The object is then removed from
 the owner's bucket, a missing key counting as removed, and the row is hard-deleted; its
-`asset_events` and `ingestion_jobs` cascade, and their `ingestion_events` stay with `job_id`
-NULL. A row a `media_job` points at stays as a `deleted` tombstone instead, because a paid clip
+`asset_events` and `ingestion_jobs` cascade, and since migration 0133 so do the jobs'
+`ingestion_events`. A row a `media_job` points at stays as a `deleted` tombstone instead, because a paid clip
 keeps its pointer (migration 0128 gives that key no `ON DELETE`). When the object removal or
 the row removal fails, the row stays `deleting` and a warning names the asset; the asset API
 still answers success. The daily `retention_sweep` visits every identity, takes its oldest
@@ -591,13 +591,29 @@ both statuses as ready. Migration 0132 settles the rows left behind, only those 
 an `asset_process` job that had succeeded. The 15 counted that morning were not checked
 against their jobs before most of them were deleted.
 
+**Refused and failed uploads.** A `refused` or `failed` row records an outcome, not content.
+A refusal removes the bytes, and a failed row is retried within minutes by its job or once
+by hand from the chat chip. The same sweep therefore marks both `deleting` once untouched
+for the deployment's metadata-trace lifetime (`AURA_RETENTION_METADATA_TRACE_HOURS`, 14 days
+by default), and finishes them like any delete. No code writes `canceled` for an asset, so
+it is not swept. A refusal whose object removal fails now logs a warning naming the asset.
+The refused row keeps the key, so its retirement removes the object. An ingestion job's
+`ingestion_events` now leave with the job (migration 0133, both keys on `job_id` `ON DELETE
+CASCADE`). Every writer names the job, no query reads a gone job's timeline, and
+`aura.audit_logs`, not this table, is the one kept forever. Measured 2026-09-28 10:51 UTC on
+the lab VM, read-only: 0 `refused`, 0 `failed`, 0 `canceled` rows, so the rule is from the
+code and not from an observed pile. 384 of 406 `ingestion_events` had `job_id` NULL, all
+written since 2026-09-27 17:48. The cockpit offers a retry on a `failed` chip only.
+
 This does not prove:
 - that the bucket holds no objects without a row, or keys the file manager's rename or move
   left behind while the row still names the old key (reported, not fixed here);
 - that Garage removes each of the 258 objects: nothing was deleted by the measurement;
 - that the document index drops the passages of a deleted document (the ingest reconciler
   owns that);
-- anything about `refused` or `failed` rows, which still accumulate;
+- that a chip retry of a `failed` asset works once its job is exhausted: `Retry` re-queues
+  through the job's idempotency key, which returns the finished job, so the asset sits in
+  `accepted` (read from the code, reported, not fixed here);
 - why the photo editor's five uploads were never finalized (reported, not investigated);
 - whether Garage lets a PUT keep streaming past its URL's expiry: the hour assumes it can;
 - anything about a `processing` row with no job, which an inline Telegram ingest interrupted
