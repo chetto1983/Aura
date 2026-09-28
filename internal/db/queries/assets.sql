@@ -48,12 +48,17 @@ LIMIT $2;
 -- The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
 -- image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
 -- isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+-- One page: before_id is the last row of the previous page; an id the owner does not hold
+-- compares as NULL and yields an empty page.
 SELECT * FROM aura.assets
-WHERE identity_id = $1
-  AND modality = ANY(sqlc.arg(modalities)::text[])
-  AND status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
+WHERE assets.identity_id = sqlc.arg(identity_id)
+  AND assets.modality = ANY(sqlc.arg(modalities)::text[])
+  AND assets.status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
+  AND assets.deleted_at IS NULL
+  AND (sqlc.narg(before_id)::uuid IS NULL OR (assets.created_at, assets.id) < (
+      SELECT b.created_at, b.id FROM aura.assets b
+      WHERE b.id = sqlc.narg(before_id)::uuid AND b.identity_id = sqlc.arg(identity_id)))
+ORDER BY assets.created_at DESC, assets.id DESC
 LIMIT sqlc.arg(row_limit);
 
 -- name: UpdateAssetUploaded :one

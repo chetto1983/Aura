@@ -644,25 +644,36 @@ func (q *Queries) ListDeletingAssets(ctx context.Context, arg ListDeletingAssets
 
 const listRecentAssets = `-- name: ListRecentAssets :many
 SELECT id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, searchable_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id FROM aura.assets
-WHERE identity_id = $1
-  AND modality = ANY($2::text[])
-  AND status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
-  AND deleted_at IS NULL
-ORDER BY created_at DESC
-LIMIT $3
+WHERE assets.identity_id = $1
+  AND assets.modality = ANY($2::text[])
+  AND assets.status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
+  AND assets.deleted_at IS NULL
+  AND ($3::uuid IS NULL OR (assets.created_at, assets.id) < (
+      SELECT b.created_at, b.id FROM aura.assets b
+      WHERE b.id = $3::uuid AND b.identity_id = $1))
+ORDER BY assets.created_at DESC, assets.id DESC
+LIMIT $4
 `
 
 type ListRecentAssetsParams struct {
 	IdentityID pgtype.UUID `json:"identity_id"`
 	Modalities []string    `json:"modalities"`
+	BeforeID   pgtype.UUID `json:"before_id"`
 	RowLimit   int32       `json:"row_limit"`
 }
 
 // The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
 // image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
 // isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+// One page: before_id is the last row of the previous page; an id the owner does not hold
+// compares as NULL and yields an empty page.
 func (q *Queries) ListRecentAssets(ctx context.Context, arg ListRecentAssetsParams) ([]AuraAssets, error) {
-	rows, err := q.db.Query(ctx, listRecentAssets, arg.IdentityID, arg.Modalities, arg.RowLimit)
+	rows, err := q.db.Query(ctx, listRecentAssets,
+		arg.IdentityID,
+		arg.Modalities,
+		arg.BeforeID,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}

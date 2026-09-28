@@ -114,14 +114,21 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 	})
 }
 
-// ListRecent returns the identity's usable assets of the given kinds, newest first, for the
-// Studio pickers.
+// ListRecent returns one page of the identity's usable assets of the given kinds, newest first,
+// for the Studio pickers. beforeID is the last asset of the previous page, empty for the first;
+// a malformed one names no asset and yields an empty page.
 func (s *Store) ListRecent(
-	ctx context.Context, identityID string, modalities []Modality, limit int,
+	ctx context.Context, identityID, beforeID string, modalities []Modality, limit int,
 ) ([]Asset, error) {
 	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
+	}
+	var before pgtype.UUID
+	if beforeID != "" {
+		if before, err = pgUUID("before id", beforeID); err != nil {
+			return []Asset{}, nil
+		}
 	}
 	kinds := make([]string, 0, len(modalities))
 	for _, modality := range modalities {
@@ -131,6 +138,7 @@ func (s *Store) ListRecent(
 		return q.ListRecentAssets(ctx, sqlc.ListRecentAssetsParams{
 			IdentityID: pgIdentityID,
 			Modalities: kinds,
+			BeforeID:   before,
 			RowLimit:   int32(limit), //nolint:gosec // the service clamps this to recentAssetsMax.
 		})
 	})

@@ -14,15 +14,16 @@ import (
 
 type fakeStudioLibrary struct {
 	owner      string
+	before     string
 	modalities []assets.Modality
 	limit      int
 	rows       []assets.Asset
 }
 
 func (f *fakeStudioLibrary) ListRecent(
-	_ context.Context, identityID string, modalities []assets.Modality, limit int,
+	_ context.Context, identityID, beforeID string, modalities []assets.Modality, limit int,
 ) ([]assets.Asset, error) {
-	f.owner, f.modalities, f.limit = identityID, modalities, limit
+	f.owner, f.before, f.modalities, f.limit = identityID, beforeID, modalities, limit
 	return f.rows, nil
 }
 
@@ -79,14 +80,14 @@ func TestStudioLibraryAnswersTheOwnersRowsWithoutTheirStorageKeys(t *testing.T) 
 		CreatedAt: time.Date(2026, 9, 17, 9, 0, 0, 0, time.UTC),
 	}}}
 
-	rec := serveStudio(t, libraryServer(t, library), http.MethodGet, "/api/studio/library?modality=image&limit=6", "")
+	rec := serveStudio(t, libraryServer(t, library), http.MethodGet, "/api/studio/library?modality=image&limit=6&before=asset-0", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
-	if library.owner != studioIdentityID || library.limit != 6 ||
+	if library.owner != studioIdentityID || library.limit != 6 || library.before != "asset-0" ||
 		!slices.Equal(library.modalities, []assets.Modality{assets.ModalityImage}) {
-		t.Fatalf("library call = %q, %v, %d", library.owner, library.modalities, library.limit)
+		t.Fatalf("library call = %q, before %q, %v, %d", library.owner, library.before, library.modalities, library.limit)
 	}
 	body := rec.Body.String()
 	for _, leaked := range []string{"object_key", "object_bucket", "secret-object-path", "aura-assets"} {

@@ -121,7 +121,7 @@ func TestStoreDeleteHidesTheRowFromEveryReadAndWrite(t *testing.T) {
 		"thread":  func() ([]Asset, error) { return store.ListForThread(ctx, localIdentityID, thread) },
 		"library": func() ([]Asset, error) { return store.ListForLibrary(ctx, localIdentityID, 1000) },
 		"recent": func() ([]Asset, error) {
-			return store.ListRecent(ctx, localIdentityID, []Modality{ModalityDocument}, 48)
+			return store.ListRecent(ctx, localIdentityID, "", []Modality{ModalityDocument}, 48)
 		},
 	}
 	for name, list := range listings {

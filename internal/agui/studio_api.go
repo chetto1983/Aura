@@ -33,7 +33,7 @@ type StudioBackend interface {
 // Studio picker offers. It is its own seam, not part of StudioBackend, because it needs no media
 // provider — the video editor's sound and clip pickers read it where no generation is configured.
 type StudioLibrary interface {
-	ListRecent(ctx context.Context, identityID string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
+	ListRecent(ctx context.Context, identityID, beforeID string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 }
 
 func (s *Server) registerStudioRoutes(mux *http.ServeMux) {
@@ -195,17 +195,18 @@ func (s *Server) handleStudioLibrary(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	limit, ok := studioLimit(r.URL.Query().Get("limit"), studioHistoryDefault, mediagen.StudioPageMax)
+	query := r.URL.Query()
+	limit, ok := studioLimit(query.Get("limit"), studioHistoryDefault, mediagen.StudioPageMax)
 	if !ok {
 		http.Error(w, "limit must be a number", http.StatusBadRequest)
 		return
 	}
-	modalities, ok := studioModalities(r.URL.Query()["modality"])
+	modalities, ok := studioModalities(query["modality"])
 	if !ok {
 		http.Error(w, "modality must be image, audio or video", http.StatusBadRequest)
 		return
 	}
-	library, err := s.studioLibrary.ListRecent(r.Context(), identityID, modalities, limit)
+	library, err := s.studioLibrary.ListRecent(r.Context(), identityID, query.Get("before"), modalities, limit)
 	if err != nil {
 		writeStudioError(w, err)
 		return

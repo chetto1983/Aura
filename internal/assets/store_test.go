@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
@@ -283,7 +284,7 @@ func TestStoreListRecent(t *testing.T) {
 	sound := create(localIdentityID, ModalityAudio, "bed.wav")
 	clip := create(localIdentityID, ModalityVideo, "clip.mp4")
 
-	listed, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityImage}, 48)
+	listed, err := store.ListRecent(ctx, localIdentityID, "", []Modality{ModalityImage}, 48)
 	if err != nil {
 		t.Fatalf("ListRecent(image): %v", err)
 	}
@@ -314,7 +315,7 @@ func TestStoreListRecent(t *testing.T) {
 	}
 
 	// The video Studio asks for sounds, and for videos and pictures together.
-	sounds, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityAudio}, 48)
+	sounds, err := store.ListRecent(ctx, localIdentityID, "", []Modality{ModalityAudio}, 48)
 	if err != nil {
 		t.Fatalf("ListRecent(audio): %v", err)
 	}
@@ -328,7 +329,7 @@ func TestStoreListRecent(t *testing.T) {
 	if !heard {
 		t.Fatal("ListRecent(audio) is missing bed.wav")
 	}
-	clips, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityVideo, ModalityImage}, 48)
+	clips, err := store.ListRecent(ctx, localIdentityID, "", []Modality{ModalityVideo, ModalityImage}, 48)
 	if err != nil {
 		t.Fatalf("ListRecent(video, image): %v", err)
 	}
@@ -398,5 +399,79 @@ func TestAssetsByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 	}
 	if _, invented := found[absent]; invented {
 		t.Fatalf("AssetsByKey invented an asset for an unindexed key: %#v", found)
+	}
+}
+
+// A picker pages the library newest first on (created_at, id): each page starts right after
+// the last row the previous one showed -- a row sharing its created_at included -- so walking
+// the pages yields the whole listing once, in order. A cursor the identity does not hold, or
+// one that is no id at all, names nothing and yields an empty page.
+func TestStoreListRecentPagesNewestFirst(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	now := time.Now().UnixNano()
+	store := NewStore(pool)
+	seedOtherIdentity(t, ctx, pool, "asset-pages-other")
+	create := func(owner, name string) Asset {
+		t.Helper()
+		asset := fileManagerFixture(t, ctx, store, owner, fmt.Sprintf("assets/%d/%s", now, name))
+		execAs(t, pool, owner, `UPDATE aura.assets SET modality = 'image' WHERE id = $1`, asset.ID)
+		return asset
+	}
+	oldest := create(localIdentityID, "oldest.png")
+	tiedA := create(localIdentityID, "tied-a.png")
+	tiedB := create(localIdentityID, "tied-b.png")
+	theirs := create(otherIdentityID, "theirs.png")
+	tie := time.Now().Add(-time.Hour)
+	execAs(t, pool, localIdentityID, `UPDATE aura.assets SET created_at = $2 WHERE id = $1`, oldest.ID, tie.Add(-time.Minute))
+	for _, asset := range []Asset{tiedA, tiedB} {
+		execAs(t, pool, localIdentityID, `UPDATE aura.assets SET created_at = $2 WHERE id = $1`, asset.ID, tie)
+	}
+	images := []Modality{ModalityImage}
+
+	whole, err := store.ListRecent(ctx, localIdentityID, "", images, 1000)
+	if err != nil {
+		t.Fatalf("ListRecent: %v", err)
+	}
+	var walked []Asset
+	for cursor, pages := "", 0; ; pages++ {
+		if pages > len(whole) {
+			t.Fatalf("paging did not end after %d pages: the cursor is not moving", pages)
+		}
+		page, err := store.ListRecent(ctx, localIdentityID, cursor, images, 2)
+		if err != nil {
+			t.Fatalf("ListRecent page %d: %v", pages, err)
+		}
+		walked = append(walked, page...)
+		if len(page) < 2 {
+			break
+		}
+		cursor = page[len(page)-1].ID
+	}
+	if !slices.EqualFunc(walked, whole, func(a, b Asset) bool { return a.ID == b.ID }) {
+		t.Fatalf("the pages walked %d rows, the whole listing holds %d; want the same rows in the same order", len(walked), len(whole))
+	}
+	first, second := tiedA, tiedB
+	if tiedB.ID > tiedA.ID {
+		first, second = tiedB, tiedA
+	}
+	order := []string{}
+	for _, asset := range walked {
+		if asset.ID == first.ID || asset.ID == second.ID || asset.ID == oldest.ID {
+			order = append(order, asset.ID)
+		}
+		if asset.ID == theirs.ID {
+			t.Fatal("another identity's asset was listed")
+		}
+	}
+	if !slices.Equal(order, []string{first.ID, second.ID, oldest.ID}) {
+		t.Fatalf("order = %v, want the tie broken by id, then the oldest", order)
+	}
+	for name, cursor := range map[string]string{"another identity's": theirs.ID, "a malformed": "not-a-uuid"} {
+		page, err := store.ListRecent(ctx, localIdentityID, cursor, images, 2)
+		if err != nil || len(page) != 0 {
+			t.Fatalf("%s cursor = %d rows, %v; want an empty page", name, len(page), err)
+		}
 	}
 }

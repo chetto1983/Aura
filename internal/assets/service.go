@@ -27,9 +27,10 @@ type StoreBackend interface {
 	ByObjectKey(context.Context, string, string) (Asset, error)
 	ListForThread(context.Context, string, string) ([]Asset, error)
 	ListForLibrary(context.Context, string, int) ([]Asset, error)
-	// ListRecent(ctx, identityID, modalities, limit) lists the identity's usable assets of those
-	// kinds from any thread or none, newest first: what a Studio offers to pick.
-	ListRecent(context.Context, string, []Modality, int) ([]Asset, error)
+	// ListRecent(ctx, identityID, beforeID, modalities, limit) lists one page of the identity's
+	// usable assets of those kinds from any thread or none, newest first: what a Studio offers
+	// to pick. beforeID is the last asset of the previous page, empty for the first.
+	ListRecent(context.Context, string, string, []Modality, int) ([]Asset, error)
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
@@ -173,15 +174,15 @@ func folderFor(modality Modality) objectstore.AssetFolder {
 // recentAssetsMax bounds a Studio picker's page.
 const recentAssetsMax = 48
 
-// ListRecent lists the identity's usable assets of the given kinds, newest first, for a Studio
-// picker.
+// ListRecent lists one page of the identity's usable assets of the given kinds, newest first,
+// for a Studio picker; beforeID is the last asset of the previous page, empty for the first.
 func (s *Service) ListRecent(
-	ctx context.Context, identityID string, modalities []Modality, limit int,
+	ctx context.Context, identityID, beforeID string, modalities []Modality, limit int,
 ) ([]Asset, error) {
 	if s.Store == nil {
 		return nil, fmt.Errorf("asset service is not configured")
 	}
-	return s.Store.ListRecent(ctx, identityID, modalities, min(max(limit, 1), recentAssetsMax))
+	return s.Store.ListRecent(ctx, identityID, beforeID, modalities, min(max(limit, 1), recentAssetsMax))
 }
 
 func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {

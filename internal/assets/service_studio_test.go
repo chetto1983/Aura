@@ -139,7 +139,7 @@ func TestListRecentClampsTheLimit(t *testing.T) {
 	for _, tc := range []struct{ asked, want int }{
 		{-5, 1}, {0, 1}, {1, 1}, {30, 30}, {recentAssetsMax, recentAssetsMax}, {1000, recentAssetsMax},
 	} {
-		if _, err := svc.ListRecent(context.Background(), serviceIdentityID, images, tc.asked); err != nil {
+		if _, err := svc.ListRecent(context.Background(), serviceIdentityID, "", images, tc.asked); err != nil {
 			t.Fatalf("ListRecent(%d) error = %v", tc.asked, err)
 		}
 		if store.lastRecentLimit != tc.want {
@@ -153,7 +153,7 @@ func TestListRecentClampsTheLimit(t *testing.T) {
 func TestListRecentAsksTheStoreForTheKindsAsked(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{MaxImageBytes: 100})
 	kinds := []Modality{ModalityVideo, ModalityImage}
-	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, kinds, 10); err != nil {
+	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, "", kinds, 10); err != nil {
 		t.Fatalf("ListRecent() error = %v", err)
 	}
 	if !slices.Equal(store.lastRecentModalities, kinds) {
@@ -161,9 +161,20 @@ func TestListRecentAsksTheStoreForTheKindsAsked(t *testing.T) {
 	}
 }
 
+// A "Show more" names the last asset it already shows; the store answers what comes after it.
+func TestListRecentHandsTheStoreThePagesCursor(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{MaxImageBytes: 100})
+	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, "asset-7", []Modality{ModalityImage}, 10); err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+	if store.lastRecentBefore != "asset-7" {
+		t.Fatalf("ListRecent() asked the store for the page before %q, want asset-7", store.lastRecentBefore)
+	}
+}
+
 func TestListRecentNeedsAStore(t *testing.T) {
 	svc := &Service{}
-	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, []Modality{ModalityImage}, 10); err == nil ||
+	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, "", []Modality{ModalityImage}, 10); err == nil ||
 		!strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("ListRecent() error = %v, want the unconfigured refusal", err)
 	}

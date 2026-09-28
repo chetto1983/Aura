@@ -472,6 +472,8 @@ type Querier interface {
 	// The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
 	// image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
 	// isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+	// One page: before_id is the last row of the previous page; an id the owner does not hold
+	// compares as NULL and yields an empty page.
 	ListRecentAssets(ctx context.Context, arg ListRecentAssetsParams) ([]AuraAssets, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	// A completed, undelivered job is recoverable only while BindMediaJobAssetDelivery could still
