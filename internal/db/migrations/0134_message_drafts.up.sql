@@ -8,6 +8,7 @@ CREATE TABLE aura.message_drafts (
   tool_call_id text NOT NULL,
   recipe text NOT NULL CHECK (recipe IN ('recipe:calendar', 'recipe:whatsapp')),
   tool_name text NOT NULL,
+  registered_tool_name text NOT NULL,
   action text NOT NULL,
   original_args jsonb NOT NULL CHECK (jsonb_typeof(original_args) = 'object'),
   original_fingerprint text NOT NULL CHECK (length(original_fingerprint) = 64),
@@ -24,6 +25,8 @@ CREATE TABLE aura.message_drafts (
   UNIQUE (identity_id, conversation_id, tool_call_id),
   CHECK ((recipe = 'recipe:calendar' AND tool_name = 'calendar' AND action = 'send_email') OR
          (recipe = 'recipe:whatsapp' AND tool_name = 'send_message' AND action = '')),
+  CHECK (right(registered_tool_name, length(tool_name) + 2) = '__' || tool_name AND
+         length(registered_tool_name) > length(tool_name) + 2),
   CHECK ((status NOT IN ('dispatching', 'sent', 'failed', 'uncertain')) OR
          (effective_args IS NOT NULL AND effective_fingerprint IS NOT NULL AND dispatch_started_at IS NOT NULL)),
   CHECK ((status NOT IN ('sent', 'failed', 'declined', 'uncertain', 'expired')) OR resolved_at IS NOT NULL)

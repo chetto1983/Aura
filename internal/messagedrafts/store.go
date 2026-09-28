@@ -43,12 +43,13 @@ var (
 // DraftInput is written only by the bridge-owned, trusted send interception.
 // OriginalArgs may contain message content and must never be logged.
 type DraftInput struct {
-	IdentityID     string
-	ConversationID string
-	ToolCallID     string
-	Target         Target
-	OriginalArgs   json.RawMessage
-	ExpiresAt      time.Time
+	IdentityID         string
+	ConversationID     string
+	ToolCallID         string
+	Target             Target
+	RegisteredToolName string
+	OriginalArgs       json.RawMessage
+	ExpiresAt          time.Time
 }
 
 // Draft is a server-side record. API responses must build a separate owner-only
@@ -59,6 +60,7 @@ type Draft struct {
 	ConversationID       string
 	ToolCallID           string
 	Target               Target
+	RegisteredToolName   string
 	OriginalArgs         json.RawMessage
 	OriginalFingerprint  string
 	EffectiveArgs        json.RawMessage
@@ -83,7 +85,9 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool} }
 func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 	if strings.TrimSpace(input.ConversationID) == "" || len(input.ConversationID) > 128 ||
 		strings.TrimSpace(input.ToolCallID) == "" || len(input.ToolCallID) > 128 ||
-		!input.ExpiresAt.After(time.Now()) || input.ExpiresAt.After(time.Now().Add(24*time.Hour)) {
+		!input.ExpiresAt.After(time.Now()) || input.ExpiresAt.After(time.Now().Add(24*time.Hour)) ||
+		!strings.HasSuffix(input.RegisteredToolName, "__"+input.Target.Tool) ||
+		len(input.RegisteredToolName) <= len(input.Target.Tool)+2 || len(input.RegisteredToolName) > 256 {
 		return Draft{}, errInvalidDraftArgs
 	}
 	owner, err := db.ParseUUID("owner id", input.IdentityID)
@@ -99,7 +103,7 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 	err = db.WithIdentityTx(ctx, s.pool, input.IdentityID, func(q *sqlc.Queries) error {
 		row, insertErr := q.InsertMessageDraft(ctx, sqlc.InsertMessageDraftParams{
 			IdentityID: owner, ConversationID: input.ConversationID, ToolCallID: input.ToolCallID,
-			Recipe: input.Target.Recipe, ToolName: input.Target.Tool, Action: input.Target.Action,
+			Recipe: input.Target.Recipe, ToolName: input.Target.Tool, RegisteredToolName: input.RegisteredToolName, Action: input.Target.Action,
 			OriginalArgs: original, OriginalFingerprint: fingerprint,
 			ExpiresAt: pgtype.Timestamptz{Time: input.ExpiresAt, Valid: true},
 		})
@@ -107,7 +111,7 @@ func (s *Store) Create(ctx context.Context, input DraftInput) (Draft, error) {
 			row, insertErr = q.GetMessageDraftByCall(ctx, sqlc.GetMessageDraftByCallParams{
 				IdentityID: owner, ConversationID: input.ConversationID, ToolCallID: input.ToolCallID,
 			})
-			if insertErr == nil && (row.OriginalFingerprint != fingerprint || row.Recipe != input.Target.Recipe || row.ToolName != input.Target.Tool || row.Action != input.Target.Action) {
+			if insertErr == nil && (row.OriginalFingerprint != fingerprint || row.Recipe != input.Target.Recipe || row.ToolName != input.Target.Tool || row.RegisteredToolName != input.RegisteredToolName || row.Action != input.Target.Action) {
 				return ErrDuplicate
 			}
 		}
@@ -290,8 +294,9 @@ func draftFromRow(row sqlc.AuraMessageDrafts) (Draft, error) {
 	draft := Draft{
 		ID: uuid.UUID(row.ID.Bytes).String(), IdentityID: uuid.UUID(row.IdentityID.Bytes).String(),
 		ConversationID: row.ConversationID, ToolCallID: row.ToolCallID,
-		Target:       Target{Recipe: row.Recipe, Tool: row.ToolName, Action: row.Action},
-		OriginalArgs: json.RawMessage(row.OriginalArgs), OriginalFingerprint: row.OriginalFingerprint,
+		Target:             Target{Recipe: row.Recipe, Tool: row.ToolName, Action: row.Action},
+		RegisteredToolName: row.RegisteredToolName,
+		OriginalArgs:       json.RawMessage(row.OriginalArgs), OriginalFingerprint: row.OriginalFingerprint,
 		EffectiveArgs: json.RawMessage(row.EffectiveArgs), Status: Status(row.Status),
 		ExpiresAt: row.ExpiresAt.Time, CreatedAt: row.CreatedAt.Time,
 	}

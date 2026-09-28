@@ -496,6 +496,7 @@ type AuraMessageDrafts struct {
 	ToolCallID           string             `json:"tool_call_id"`
 	Recipe               string             `json:"recipe"`
 	ToolName             string             `json:"tool_name"`
+	RegisteredToolName   string             `json:"registered_tool_name"`
 	Action               string             `json:"action"`
 	OriginalArgs         []byte             `json:"original_args"`
 	OriginalFingerprint  string             `json:"original_fingerprint"`

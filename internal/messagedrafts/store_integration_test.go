@@ -82,9 +82,10 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	ctx := context.Background()
 	input := DraftInput{
 		IdentityID: owner, ConversationID: "draft-conversation", ToolCallID: "call-one",
-		Target:       Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
-		OriginalArgs: json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Original"}`),
-		ExpiresAt:    time.Now().Add(time.Hour),
+		Target:             Target{Recipe: "recipe:calendar", Tool: "calendar", Action: "send_email"},
+		RegisteredToolName: "calendar__calendar",
+		OriginalArgs:       json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Hello","body":"Original"}`),
+		ExpiresAt:          time.Now().Add(time.Hour),
 	}
 	draft, err := store.Create(ctx, input)
 	if err != nil || draft.ID == "" || draft.Status != StatusPending {
@@ -98,6 +99,11 @@ func TestMessageDraftStoreOwnerAndOneClaim(t *testing.T) {
 	changed.OriginalArgs = json.RawMessage(`{"action":"send_email","to":["first@example.test"],"subject":"Different","body":"Original"}`)
 	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
 		t.Fatal("conflicting duplicate call accepted")
+	}
+	changed = input
+	changed.RegisteredToolName = "other__calendar"
+	if _, err := store.Create(ctx, changed); !errors.Is(err, ErrDuplicate) {
+		t.Fatal("a duplicate call changed its registered server")
 	}
 	if _, err := store.Get(ctx, foreign, draft.ID); !errors.Is(err, ErrUnavailable) {
 		t.Fatal("foreign owner read a draft")
@@ -180,8 +186,9 @@ func TestMessageDraftStoreDeclineAndExpiry(t *testing.T) {
 	ctx := context.Background()
 	input := DraftInput{
 		IdentityID: owner, ConversationID: "draft-conversation", ToolCallID: "call-decline",
-		Target:       Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
-		OriginalArgs: json.RawMessage(`{"recipient":"12345","message":"Hello"}`), ExpiresAt: time.Now().Add(time.Hour),
+		Target:             Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		RegisteredToolName: "whatsapp__send_message",
+		OriginalArgs:       json.RawMessage(`{"recipient":"12345","message":"Hello"}`), ExpiresAt: time.Now().Add(time.Hour),
 	}
 	draft, err := store.Create(ctx, input)
 	if err != nil {

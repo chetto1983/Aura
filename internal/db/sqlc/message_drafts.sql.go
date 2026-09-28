@@ -18,7 +18,7 @@ SET status = 'dispatching', effective_args = $1,
     dispatch_started_at = now(), updated_at = now()
 WHERE id = $3 AND identity_id = $4
   AND status = 'pending' AND expires_at > now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
 `
 
 type ClaimMessageDraftSendParams struct {
@@ -43,6 +43,7 @@ func (q *Queries) ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDra
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,
@@ -64,7 +65,7 @@ UPDATE aura.message_drafts
 SET status = 'declined', resolved_at = now(), updated_at = now()
 WHERE id = $1 AND identity_id = $2
   AND status = 'pending' AND expires_at > now()
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
 `
 
 type DeclineMessageDraftParams struct {
@@ -82,6 +83,7 @@ func (q *Queries) DeclineMessageDraft(ctx context.Context, arg DeclineMessageDra
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,
@@ -99,7 +101,7 @@ func (q *Queries) DeclineMessageDraft(ctx context.Context, arg DeclineMessageDra
 }
 
 const getMessageDraftByCall = `-- name: GetMessageDraftByCall :one
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND tool_call_id = $3
 `
 
@@ -119,6 +121,7 @@ func (q *Queries) GetMessageDraftByCall(ctx context.Context, arg GetMessageDraft
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,
@@ -136,7 +139,7 @@ func (q *Queries) GetMessageDraftByCall(ctx context.Context, arg GetMessageDraft
 }
 
 const getMessageDraftForIdentity = `-- name: GetMessageDraftForIdentity :one
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts WHERE identity_id = $1 AND id = $2
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts WHERE identity_id = $1 AND id = $2
 `
 
 type GetMessageDraftForIdentityParams struct {
@@ -154,6 +157,7 @@ func (q *Queries) GetMessageDraftForIdentity(ctx context.Context, arg GetMessage
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,
@@ -172,15 +176,15 @@ func (q *Queries) GetMessageDraftForIdentity(ctx context.Context, arg GetMessage
 
 const insertMessageDraft = `-- name: InsertMessageDraft :one
 INSERT INTO aura.message_drafts (
-  identity_id, conversation_id, tool_call_id, recipe, tool_name, action,
+  identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action,
   original_args, original_fingerprint, expires_at
 ) VALUES (
   $1, $2, $3,
-  $4, $5, $6, $7,
-  $8, $9
+  $4, $5, $6, $7, $8,
+  $9, $10
 )
 ON CONFLICT (identity_id, conversation_id, tool_call_id) DO NOTHING
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
 `
 
 type InsertMessageDraftParams struct {
@@ -189,6 +193,7 @@ type InsertMessageDraftParams struct {
 	ToolCallID          string             `json:"tool_call_id"`
 	Recipe              string             `json:"recipe"`
 	ToolName            string             `json:"tool_name"`
+	RegisteredToolName  string             `json:"registered_tool_name"`
 	Action              string             `json:"action"`
 	OriginalArgs        []byte             `json:"original_args"`
 	OriginalFingerprint string             `json:"original_fingerprint"`
@@ -202,6 +207,7 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 		arg.ToolCallID,
 		arg.Recipe,
 		arg.ToolName,
+		arg.RegisteredToolName,
 		arg.Action,
 		arg.OriginalArgs,
 		arg.OriginalFingerprint,
@@ -215,6 +221,7 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,
@@ -232,7 +239,7 @@ func (q *Queries) InsertMessageDraft(ctx context.Context, arg InsertMessageDraft
 }
 
 const listPendingMessageDrafts = `-- name: ListPendingMessageDrafts :many
-SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts
+SELECT id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at FROM aura.message_drafts
 WHERE identity_id = $1 AND conversation_id = $2 AND status = 'pending' AND expires_at > now()
 ORDER BY created_at, id
 `
@@ -258,6 +265,7 @@ func (q *Queries) ListPendingMessageDrafts(ctx context.Context, arg ListPendingM
 			&i.ToolCallID,
 			&i.Recipe,
 			&i.ToolName,
+			&i.RegisteredToolName,
 			&i.Action,
 			&i.OriginalArgs,
 			&i.OriginalFingerprint,
@@ -288,7 +296,7 @@ SET status = $1, outcome_code = $2,
 WHERE id = $3 AND identity_id = $4
   AND status = 'dispatching'
   AND $1 IN ('sent', 'failed', 'uncertain')
-RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
+RETURNING id, identity_id, conversation_id, tool_call_id, recipe, tool_name, registered_tool_name, action, original_args, original_fingerprint, effective_args, effective_fingerprint, status, outcome_code, expires_at, dispatch_started_at, resolved_at, created_at, updated_at
 `
 
 type MarkMessageDraftOutcomeParams struct {
@@ -313,6 +321,7 @@ func (q *Queries) MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDr
 		&i.ToolCallID,
 		&i.Recipe,
 		&i.ToolName,
+		&i.RegisteredToolName,
 		&i.Action,
 		&i.OriginalArgs,
 		&i.OriginalFingerprint,

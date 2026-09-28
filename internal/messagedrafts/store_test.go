@@ -22,13 +22,15 @@ func TestStoreRejectsInvalidDraftBeforeDatabase(t *testing.T) {
 	store := NewStore(nil)
 	valid := DraftInput{
 		IdentityID: "11111111-1111-4111-8111-111111111111", ConversationID: "thread-1", ToolCallID: "call-1",
-		Target:       Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
-		OriginalArgs: json.RawMessage(`{"recipient":"12345","message":"hello"}`), ExpiresAt: time.Now().Add(time.Hour),
+		Target:             Target{Recipe: "recipe:whatsapp", Tool: "send_message"},
+		RegisteredToolName: "whatsapp__send_message",
+		OriginalArgs:       json.RawMessage(`{"recipient":"12345","message":"hello"}`), ExpiresAt: time.Now().Add(time.Hour),
 	}
 	cases := []DraftInput{
 		{IdentityID: valid.IdentityID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: "invalid", ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, OriginalArgs: valid.OriginalArgs, ExpiresAt: time.Now().Add(-time.Minute)},
+		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: valid.Target, RegisteredToolName: "other__calendar", OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 		{IdentityID: valid.IdentityID, ConversationID: valid.ConversationID, ToolCallID: valid.ToolCallID, Target: Target{Recipe: "custom", Tool: "send_message"}, OriginalArgs: valid.OriginalArgs, ExpiresAt: valid.ExpiresAt},
 	}
 	for _, input := range cases {
