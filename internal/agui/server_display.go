@@ -8,6 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
 // displaySnapshotEvent is a display-aware MESSAGES_SNAPSHOT (D-06). It marshals BYTE-
@@ -61,7 +62,11 @@ type displaySnapshotToolCall struct {
 // + replay"). It builds ONE registry for the whole thread and feeds it in turn order,
 // mirroring the live per-run registry, so source RefIDs/Index match the live run.
 func projectDisplaySnapshot(hist []llm.Message) displaySnapshotEvent {
-	displays := rederiveDisplays(hist)
+	return projectDisplaySnapshotWithFacts(hist, "", nil)
+}
+
+func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) displaySnapshotEvent {
+	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
 	recoveryResults := make(map[string]string)
 	for _, m := range hist {
 		for _, call := range m.ToolCalls {
@@ -150,8 +155,12 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 // registry accumulates across all web turns so cross-turn source RefIDs are stable —
 // identical to the live per-run registry (Pitfall 4 parity).
 func rederiveDisplays(hist []llm.Message) map[string]*display.Payload {
+	return rederiveDisplaysWithFacts(hist, "", nil)
+}
+
+func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]*display.Payload {
 	reg := display.NewRegistry()
-	inputs := previewInputsByCallID(hist)
+	inputs := previewInputsByCallIDWithFacts(hist, conversationID, facts)
 	out := make(map[string]*display.Payload)
 	for i := range hist {
 		m := &hist[i]
@@ -174,6 +183,10 @@ func rederiveDisplays(hist []llm.Message) map[string]*display.Payload {
 // previewInputsByCallID joins assistant call identity and arguments with tool results.
 // This lets replay call the same preview normalizer as the live event.
 func previewInputsByCallID(hist []llm.Message) map[string]display.PreviewInput {
+	return previewInputsByCallIDWithFacts(hist, "", nil)
+}
+
+func previewInputsByCallIDWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]display.PreviewInput {
 	inputs := make(map[string]display.PreviewInput)
 	for i := range hist {
 		for _, c := range hist[i].ToolCalls {
@@ -196,6 +209,28 @@ func previewInputsByCallID(hist []llm.Message) map[string]display.PreviewInput {
 		}
 		in.ResultPreview = m.Content
 		inputs[m.ToolCallID] = in
+	}
+	// A marker is usable only when an append-only end fact belongs to this owned
+	// conversation and matches the persisted call and preview. Multiple end facts
+	// for one call are ambiguous, so none of them grants a rich MCP display.
+	endFacts := make(map[string]toolinvocations.Event)
+	duplicate := make(map[string]bool)
+	for _, fact := range facts {
+		if fact.ConversationID != conversationID || fact.Event != toolinvocations.EventEnd {
+			continue
+		}
+		if _, seen := endFacts[fact.ToolCallID]; seen {
+			duplicate[fact.ToolCallID] = true
+		}
+		endFacts[fact.ToolCallID] = fact
+	}
+	for id, fact := range endFacts {
+		in, ok := inputs[id]
+		if !ok || duplicate[id] || fact.Status != "ok" || fact.ToolName != in.ToolName || fact.ResultPreview != in.ResultPreview {
+			continue
+		}
+		in.TrustedMCP = display.TrustedMCPFromMeta(fact.Meta, in.ToolName, in.Arguments)
+		inputs[id] = in
 	}
 	return inputs
 }

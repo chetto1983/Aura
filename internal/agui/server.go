@@ -123,10 +123,11 @@ type ApprovalStore interface {
 // writer. The bind is hardcoded loopback by the daemon (auth deferred this phase,
 // amendment #35); the loopback bind IS the compensating control (T-12-08).
 type Server struct {
-	run        Runner
-	conv       ConversationStore
-	operations operationRegistry
-	approvals  ApprovalStore
+	run             Runner
+	conv            ConversationStore
+	toolInvocations ToolInvocationReader
+	operations      operationRegistry
+	approvals       ApprovalStore
 	// approvalGrants serves the durable "always approve" grants (amendment #127). nil ⇒ the
 	// grant routes answer 503, exactly like the pending read without an ApprovalStore.
 	approvalGrants approvalGrantStore

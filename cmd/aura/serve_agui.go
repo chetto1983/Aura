@@ -95,6 +95,7 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		ReadinessProbes: serveReadinessProbes(chat),
 	}
 	aguiServer := agui.NewServer(chat.run, chat.conv, serverCfg)
+	aguiServer.SetToolInvocationReader(chat.toolInvocations)
 	// Fix-plan 1.3 Tier B (amendment #90 point 1): the detached-run registry exists
 	// ONLY behind the flag — a nil registry keeps the pre-Tier-B request-scoped
 	// /agent/run byte-identical and the resume/cancel routes hidden (404). Returned

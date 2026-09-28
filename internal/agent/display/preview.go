@@ -14,6 +14,7 @@ type PreviewInput struct {
 	ToolName      string
 	Arguments     string
 	ResultPreview string
+	TrustedMCP    *TrustedMCP
 }
 
 // NormalizeToolPreview is the SINGLE decode+normalize site shared by the live agent

@@ -128,6 +128,7 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	if run.Err != "" {
 		status = "error"
 	}
+	resultMeta := toolResultMetaMap(run.Result.Meta)
 	ev.Actions.ToolInvocation = &ToolInvocation{
 		Event:             ToolInvocationEnd,
 		ToolCallID:        run.ToolCallID,
@@ -145,7 +146,7 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		ResultTruncated:   run.Result.Truncated,
 		ResultSidecarPath: run.Result.FullPath,
 		ExitCode:          exitCodeFromMeta(run.Result.Meta),
-		Meta:              toolResultMetaMap(run.Result.Meta),
+		Meta:              resultMeta,
 	}
 	// A tool (send_file) may carry a channel-agnostic artifact descriptor on its
 	// Meta. Lift it onto Actions.ArtifactDelta (the named emit seam D-06): this is
@@ -175,6 +176,7 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		if p, ok := a.deriveDisplay(display.PreviewInput{
 			ToolCallID: run.ToolCallID, ToolName: run.ToolName,
 			Arguments: run.Arguments, ResultPreview: rawPreview,
+			TrustedMCP: display.TrustedMCPFromMeta(resultMeta, run.ToolName, run.Arguments),
 		}); ok {
 			ev.Actions.Display = p
 		}

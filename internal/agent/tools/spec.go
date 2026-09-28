@@ -69,6 +69,10 @@ type Spec struct {
 	// tier, so a newly-added multiplexed action can never silently under-gate. Like
 	// Mutating it is runtime-only and never wire-encoded (not LLM-visible).
 	Multiplexed bool
+	// TrustedRecipeSource is assigned only by the MCP bridge after classifying a
+	// managed recipe. It is runtime metadata, never taken from a tool schema or
+	// exposed to the model.
+	TrustedRecipeSource string `json:"-"`
 	// OperationScope, OperationNormalizer, and ReplayPolicy are Aura-owned
 	// mutation metadata. They are runtime-only and never exposed to the model.
 	OperationScope      idempotency.Scope

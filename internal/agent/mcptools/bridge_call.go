@@ -83,6 +83,12 @@ func (b *bridgedTool) newResult(ctx context.Context, args map[string]any, payloa
 		Source: "mcp:" + b.Spec().Name,
 		Trust:  tools.TrustTrusted,
 	}
+	if marker, ok := b.displaySource(args); ok {
+		if res.Meta == nil {
+			res.Meta = &tools.ToolResultMeta{}
+		}
+		(*res.Meta)["aura_display_source"] = marker
+	}
 	if descriptor, ok := b.viewDescriptor(payload); ok {
 		if res.Meta == nil {
 			res.Meta = &tools.ToolResultMeta{}

@@ -160,13 +160,14 @@ func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePo
 	mutating, destructive := mcpToolRisk(policy, t)
 	name := namespacedName(namespace, t.Name)
 	spec := tools.Spec{
-		Name:        name,
-		Summary:     summary,
-		Description: description,
-		Parameters:  params,
-		Deferred:    policy.deferredTool(t.Name),
-		Mutating:    mutating,
-		Destructive: destructive,
+		Name:                name,
+		Summary:             summary,
+		Description:         description,
+		Parameters:          params,
+		Deferred:            policy.deferredTool(t.Name),
+		Mutating:            mutating,
+		Destructive:         destructive,
+		TrustedRecipeSource: policy.recipeSource,
 	}
 	// D-34: Multiplexed is set ONLY when this tool's namespaced name already has a
 	// classifier (isKnownMultiplexedMCPTool, bridge_multiplex.go) — never inferred

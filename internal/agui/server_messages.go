@@ -16,6 +16,7 @@ import (
 	"net/http"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
 
@@ -47,13 +48,21 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
+	var facts []toolinvocations.Event
+	if s.toolInvocations != nil {
+		if listed, listErr := s.toolInvocations.ListByConversation(scopedCtx(ctx), id); listErr != nil {
+			slog.Warn("agui: list tool invocations (serving snapshot without MCP displays)", "thread", id, "err", listErr)
+		} else {
+			facts = listed
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	// D-06: emit the display-aware MESSAGES_SNAPSHOT — each tool-result turn re-derives
 	// its DisplayPayload through the SAME normalizer the live stream uses, so a reopened
 	// thread renders typed displays identically to live. The envelope is byte-compatible
 	// with the SDK MESSAGES_SNAPSHOT plus the additive per-tool-call `display` key the
 	// cockpit replay reads.
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, id, facts)
 	// Amendment #91 (fix-plan 1.12) display rehydration: merge the persisted per-turn
 	// CoT onto the assistant answer messages so the ReasoningDrawer survives reload.
 	// Fail-soft: reasoning is additive display data — a read failure degrades to a
