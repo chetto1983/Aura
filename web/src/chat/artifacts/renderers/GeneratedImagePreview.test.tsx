@@ -77,7 +77,9 @@ describe('GeneratedImagePreview', () => {
 
   it('revokes its object URL after unmount', async () => {
     const revoked: string[] = [];
-    URL.revokeObjectURL = (url) => { revoked.push(url); };
+    URL.revokeObjectURL = (url) => {
+      revoked.push(url);
+    };
     const view = render(<GeneratedImagePreview {...props} />);
     await loadedImage();
     view.unmount();

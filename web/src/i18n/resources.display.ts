@@ -1,9 +1,5 @@
-// The `display.*` i18n feature bundle (Phase 26 typed-display router) — extracted
-// from resources.ts to keep that file under the 600-LOC cap (CLAUDE.md "no god
-// class") as the per-type cards add copy. The main resources module spreads these
-// into each language's `translation` object. Keys live under `display.*` plus the
-// top-level `systemEvent.*` / `swarm.*` namespaces the system_event + swarm_report
-// cards read.
+// Copy for typed displays, sources, system events, and agent activity.
+import { artifactsEn, artifactsIt } from './resources.display_artifacts';
 
 export const displayEn = {
   display: {
@@ -261,52 +257,7 @@ export const displayEn = {
       parent: 'Open coordinating agent',
     },
   },
-  artifacts: {
-    title: 'Artifacts',
-    workspace: {
-      label: 'Artifact preview: {{name}}',
-      expand: 'Expand artifact',
-      close: 'Back to conversation',
-      showCode: 'Show code',
-      hideCode: 'Hide code',
-      resize: 'Resize code and preview',
-      copyError: 'Could not copy. Try again or download the file.',
-    },
-    downloadAll: 'Download all',
-    downloadAllProgress: 'Downloading {{done}} of {{total}}',
-    empty: 'No artifacts in this conversation',
-    emptyHint: 'Files the agent delivers appear here.',
-    toggleAria: 'Toggle the artifacts panel',
-    category: {
-      document: 'Document',
-      spreadsheet: 'Spreadsheet',
-      image: 'Image',
-      code: 'Code',
-      text: 'Text',
-      data: 'Data',
-      web: 'Web page',
-      file: 'File',
-    },
-    preview: {
-      loading: 'Loading preview…',
-      error: "Couldn't load this preview.",
-      play: 'Play',
-      pause: 'Pause',
-      seek: 'Seek',
-      downloadFallback: 'Download file',
-      download: 'Download {{name}}',
-      description: 'Preview of {{name}}. Use the download button to save the original file.',
-      unsupported: "This file type can't be previewed safely — download it to open.",
-      tabSource: 'Source',
-      tabRendered: 'Preview',
-    },
-    gallery: {
-      title: 'Images',
-      open: 'Open {{name}}',
-      close: 'Close gallery',
-      download: 'Download {{name}}',
-    },
-  },
+  artifacts: artifactsEn,
 } as const;
 
 export const displayIt = {
@@ -563,52 +514,5 @@ export const displayIt = {
       parent: 'Apri l’agente coordinatore',
     },
   },
-  artifacts: {
-    title: 'Artefatti',
-    workspace: {
-      label: 'Anteprima artefatto: {{name}}',
-      expand: 'Espandi artefatto',
-      close: 'Torna alla conversazione',
-      showCode: 'Mostra codice',
-      hideCode: 'Nascondi codice',
-      resize: 'Ridimensiona codice e anteprima',
-      copyError: 'Copia non riuscita. Riprova o scarica il file.',
-    },
-    downloadAll: 'Scarica tutto',
-    downloadAllProgress: 'Scaricamento {{done}} di {{total}}',
-    empty: 'Nessun artefatto in questa conversazione',
-    emptyHint: "I file consegnati dall'agente compaiono qui.",
-    toggleAria: 'Mostra o nascondi il pannello artefatti',
-    category: {
-      document: 'Documento',
-      spreadsheet: 'Foglio',
-      image: 'Immagine',
-      code: 'Codice',
-      text: 'Testo',
-      data: 'Dati',
-      web: 'Pagina web',
-      file: 'File',
-    },
-    preview: {
-      loading: 'Caricamento anteprima…',
-      error: "Impossibile caricare l'anteprima.",
-      play: 'Riproduci',
-      pause: 'Pausa',
-      seek: 'Cerca',
-      downloadFallback: 'Scarica il file',
-      download: 'Scarica {{name}}',
-      description:
-        'Anteprima di {{name}}. Usa il pulsante di download per salvare il file originale.',
-      unsupported:
-        'Questo tipo di file non può essere mostrato in anteprima — scaricalo per aprirlo.',
-      tabSource: 'Sorgente',
-      tabRendered: 'Anteprima',
-    },
-    gallery: {
-      title: 'Immagini',
-      open: 'Apri {{name}}',
-      close: 'Chiudi galleria',
-      download: 'Scarica {{name}}',
-    },
-  },
+  artifacts: artifactsIt,
 } as const;

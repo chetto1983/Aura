@@ -46,8 +46,8 @@ func decodeSearchFilesPreview(in PreviewInput) (Table, bool) {
 	}
 	result := in.ResultPreview
 	var notice string
-	if strings.HasSuffix(result, "\n"+walkTruncatedNotice) {
-		result = strings.TrimSuffix(result, "\n"+walkTruncatedNotice)
+	if trimmed, ok := strings.CutSuffix(result, "\n"+walkTruncatedNotice); ok {
+		result = trimmed
 		notice = walkTruncatedNotice
 	}
 	table := Table{Notice: notice, Rows: make([][]string, 0)}

@@ -3,6 +3,7 @@ src/styles/theme.css
 
 # Build output (committed embed source lives in ../internal/webui/dist).
 dist/
+.tmp-native-build/
 coverage/
 playwright-report/
 test-results/
