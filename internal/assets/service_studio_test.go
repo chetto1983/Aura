@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -132,24 +133,38 @@ func TestFinalizeUnprocessedRefusesAnotherModality(t *testing.T) {
 
 // The picker asks for a page; the service decides what a page may be, because the SQL LIMIT
 // below it takes whatever it is given.
-func TestListRecentImagesClampsTheLimit(t *testing.T) {
+func TestListRecentClampsTheLimit(t *testing.T) {
 	svc, store := newAssetServiceTestRig(t, Limits{MaxImageBytes: 100})
+	images := []Modality{ModalityImage}
 	for _, tc := range []struct{ asked, want int }{
-		{-5, 1}, {0, 1}, {1, 1}, {30, 30}, {recentImagesMax, recentImagesMax}, {1000, recentImagesMax},
+		{-5, 1}, {0, 1}, {1, 1}, {30, 30}, {recentAssetsMax, recentAssetsMax}, {1000, recentAssetsMax},
 	} {
-		if _, err := svc.ListRecentImages(context.Background(), serviceIdentityID, tc.asked); err != nil {
-			t.Fatalf("ListRecentImages(%d) error = %v", tc.asked, err)
+		if _, err := svc.ListRecent(context.Background(), serviceIdentityID, images, tc.asked); err != nil {
+			t.Fatalf("ListRecent(%d) error = %v", tc.asked, err)
 		}
-		if store.lastImageLimit != tc.want {
-			t.Fatalf("ListRecentImages(%d) asked the store for %d, want %d", tc.asked, store.lastImageLimit, tc.want)
+		if store.lastRecentLimit != tc.want {
+			t.Fatalf("ListRecent(%d) asked the store for %d, want %d", tc.asked, store.lastRecentLimit, tc.want)
 		}
 	}
 }
 
-func TestListRecentImagesNeedsAStore(t *testing.T) {
+// The kinds are the caller's question, handed to the store as asked: the image Studio asks for
+// pictures, the video Studio for sounds, or for clips and pictures together.
+func TestListRecentAsksTheStoreForTheKindsAsked(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{MaxImageBytes: 100})
+	kinds := []Modality{ModalityVideo, ModalityImage}
+	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, kinds, 10); err != nil {
+		t.Fatalf("ListRecent() error = %v", err)
+	}
+	if !slices.Equal(store.lastRecentModalities, kinds) {
+		t.Fatalf("ListRecent() asked the store for %v, want %v", store.lastRecentModalities, kinds)
+	}
+}
+
+func TestListRecentNeedsAStore(t *testing.T) {
 	svc := &Service{}
-	if _, err := svc.ListRecentImages(context.Background(), serviceIdentityID, 10); err == nil ||
+	if _, err := svc.ListRecent(context.Background(), serviceIdentityID, []Modality{ModalityImage}, 10); err == nil ||
 		!strings.Contains(err.Error(), "not configured") {
-		t.Fatalf("ListRecentImages() error = %v, want the unconfigured refusal", err)
+		t.Fatalf("ListRecent() error = %v, want the unconfigured refusal", err)
 	}
 }

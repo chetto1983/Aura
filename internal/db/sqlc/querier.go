@@ -452,9 +452,10 @@ type Querier interface {
 	// A phone notification does not consume the coordinator's saved input.
 	ListPendingDelegationResults(ctx context.Context, arg ListPendingDelegationResultsParams) ([]AuraSteerQueue, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
-	// The images an identity can pick as a Studio frame or reference: usable (the statuses the
-	// cockpit's isReadyAsset accepts) and not deleted, newest first, from any thread or none.
-	ListRecentImageAssets(ctx context.Context, arg ListRecentImageAssetsParams) ([]AuraAssets, error)
+	// The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
+	// image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
+	// isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+	ListRecentAssets(ctx context.Context, arg ListRecentAssetsParams) ([]AuraAssets, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	// A completed, undelivered job is recoverable only while BindMediaJobAssetDelivery could still
 	// bind its asset: once the clip is deleted no delivery can succeed, so waking the conversation

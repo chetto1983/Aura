@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -39,10 +40,11 @@ type fakeStudioBackend struct {
 	historyJobs   []mediagen.Job
 	historyErr    error
 
-	libraryOwner  string
-	libraryLimit  int
-	libraryAssets []assets.Asset
-	libraryErr    error
+	libraryOwner      string
+	libraryModalities []assets.Modality
+	libraryLimit      int
+	libraryAssets     []assets.Asset
+	libraryErr        error
 
 	finalizeOwner string
 	finalizeAsset string
@@ -70,8 +72,10 @@ func (f *fakeStudioBackend) History(_ context.Context, owner, beforeID string, k
 	return f.historyJobs, f.historyErr
 }
 
-func (f *fakeStudioBackend) Library(_ context.Context, owner string, limit int) ([]assets.Asset, error) {
-	f.libraryOwner, f.libraryLimit = owner, limit
+func (f *fakeStudioBackend) Library(
+	_ context.Context, owner string, modalities []assets.Modality, limit int,
+) ([]assets.Asset, error) {
+	f.libraryOwner, f.libraryModalities, f.libraryLimit = owner, modalities, limit
 	return f.libraryAssets, f.libraryErr
 }
 
@@ -448,6 +452,42 @@ func TestStudioHistoryPassesCursorKindAndLimit(t *testing.T) {
 	}
 }
 
+// The video Studio picks sounds from the library, and clips and pictures together: the kinds
+// the request names are the kinds the backend is asked for, in that order.
+func TestStudioLibraryListsTheKindsAsked(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		want  []assets.Modality
+	}{
+		{"modality=audio", []assets.Modality{assets.ModalityAudio}},
+		{"modality=video&modality=image", []assets.Modality{assets.ModalityVideo, assets.ModalityImage}},
+	} {
+		backend := &fakeStudioBackend{}
+		rec := serveStudio(t, studioServer(t, backend), http.MethodGet, "/api/studio/library?"+tc.query, "")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status = %d (%s), want 200", tc.query, rec.Code, rec.Body.String())
+		}
+		if !slices.Equal(backend.libraryModalities, tc.want) {
+			t.Fatalf("%s: backend asked for %v, want %v", tc.query, backend.libraryModalities, tc.want)
+		}
+	}
+}
+
+// A listing of no kind, or of a kind no picker offers, is the caller's mistake: said, never
+// guessed into images.
+func TestStudioLibraryRefusesAMissingOrUnknownKind(t *testing.T) {
+	for _, query := range []string{"", "?modality=document", "?modality=audio&modality=unknown"} {
+		backend := &fakeStudioBackend{}
+		rec := serveStudio(t, studioServer(t, backend), http.MethodGet, "/api/studio/library"+query, "")
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q: status = %d (%s), want 400", query, rec.Code, rec.Body.String())
+		}
+		if backend.libraryOwner != "" {
+			t.Fatalf("%q: the backend was asked anyway", query)
+		}
+	}
+}
+
 func TestStudioLibraryAndUploadFinalize(t *testing.T) {
 	backend := &fakeStudioBackend{libraryAssets: []assets.Asset{{
 		ID: "asset-1", IdentityID: studioIdentityID, Modality: assets.ModalityImage,
@@ -457,13 +497,14 @@ func TestStudioLibraryAndUploadFinalize(t *testing.T) {
 	}}}
 	s := studioServer(t, backend)
 
-	rec := serveStudio(t, s, http.MethodGet, "/api/studio/library?limit=6", "")
+	rec := serveStudio(t, s, http.MethodGet, "/api/studio/library?modality=image&limit=6", "")
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
-	if backend.libraryOwner != studioIdentityID || backend.libraryLimit != 6 {
-		t.Fatalf("library call = %q, %d", backend.libraryOwner, backend.libraryLimit)
+	if backend.libraryOwner != studioIdentityID || backend.libraryLimit != 6 ||
+		!slices.Equal(backend.libraryModalities, []assets.Modality{assets.ModalityImage}) {
+		t.Fatalf("library call = %q, %v, %d", backend.libraryOwner, backend.libraryModalities, backend.libraryLimit)
 	}
 	body := rec.Body.String()
 	for _, leaked := range []string{"object_key", "object_bucket", "secret-object-path", "aura-assets"} {

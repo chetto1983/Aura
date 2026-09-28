@@ -238,10 +238,10 @@ func TestPostgresAssetStoreDeduplicatesAgentSourceReference(t *testing.T) {
 	}
 }
 
-// The Studio picker offers an identity's usable images only: a failed one is not a frame, a
-// deleted one is gone, a document is the wrong modality, and another identity's image is not
-// this identity's to see.
-func TestStoreListRecentImages(t *testing.T) {
+// The Studio pickers offer an identity's usable assets of the kinds asked for only: a failed one
+// is not a frame, a deleted one is gone, another modality is the wrong kind, and another
+// identity's asset is not this identity's to see.
+func TestStoreListRecent(t *testing.T) {
 	pool := migratedAssetPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -284,10 +284,12 @@ func TestStoreListRecentImages(t *testing.T) {
 	}
 	document := create(localIdentityID, ModalityDocument, "manual.pdf")
 	foreign := create(otherIdentityID, ModalityImage, "foreign.png")
+	sound := create(localIdentityID, ModalityAudio, "bed.wav")
+	clip := create(localIdentityID, ModalityVideo, "clip.mp4")
 
-	listed, err := store.ListRecentImages(ctx, localIdentityID, 48)
+	listed, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityImage}, 48)
 	if err != nil {
-		t.Fatalf("ListRecentImages: %v", err)
+		t.Fatalf("ListRecent(image): %v", err)
 	}
 	seen := map[string]bool{}
 	for _, asset := range listed {
@@ -307,10 +309,42 @@ func TestStoreListRecentImages(t *testing.T) {
 		{deleted.ID, "a deleted image"},
 		{document.ID, "a document"},
 		{foreign.ID, "another identity's image"},
+		{sound.ID, "a sound"},
+		{clip.ID, "a video"},
 	} {
 		if seen[unwanted.id] {
 			t.Fatalf("%s was listed", unwanted.why)
 		}
+	}
+
+	// The video Studio asks for sounds, and for videos and pictures together.
+	sounds, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityAudio}, 48)
+	if err != nil {
+		t.Fatalf("ListRecent(audio): %v", err)
+	}
+	heard := false
+	for _, asset := range sounds {
+		heard = heard || asset.ID == sound.ID
+		if asset.Modality != ModalityAudio {
+			t.Fatalf("ListRecent(audio) listed a %s", asset.Modality)
+		}
+	}
+	if !heard {
+		t.Fatal("ListRecent(audio) is missing bed.wav")
+	}
+	clips, err := store.ListRecent(ctx, localIdentityID, []Modality{ModalityVideo, ModalityImage}, 48)
+	if err != nil {
+		t.Fatalf("ListRecent(video, image): %v", err)
+	}
+	kinds := map[string]bool{}
+	for _, asset := range clips {
+		kinds[asset.ID] = true
+		if asset.Modality != ModalityVideo && asset.Modality != ModalityImage {
+			t.Fatalf("ListRecent(video, image) listed a %s", asset.Modality)
+		}
+	}
+	if !kinds[clip.ID] || !kinds[wanted.ID] {
+		t.Fatalf("ListRecent(video, image) is missing clip.mp4 or wanted.png")
 	}
 }
 

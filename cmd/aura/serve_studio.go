@@ -26,10 +26,10 @@ type studioJobs interface {
 }
 
 // studioAssetStore is the asset service's Studio half: the generated image it stores, the
-// identity's recent images it lists, and the reference upload it finalizes.
+// identity's recent assets it lists for a picker, and the reference upload it finalizes.
 type studioAssetStore interface {
 	IngestAgentFile(ctx context.Context, req assets.AgentIngestRequest) (assets.Asset, error)
-	ListRecentImages(ctx context.Context, identityID string, limit int) ([]assets.Asset, error)
+	ListRecent(ctx context.Context, identityID string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 	FinalizeUnprocessed(ctx context.Context, identityID, assetID string, modality assets.Modality) (assets.Asset, error)
 }
 
@@ -156,8 +156,10 @@ func (b studioBackend) History(ctx context.Context, owner, beforeID string, kind
 	return b.jobs.ListStudio(ctx, owner, beforeID, kind, limit)
 }
 
-func (b studioBackend) Library(ctx context.Context, owner string, limit int) ([]assets.Asset, error) {
-	return b.assets.ListRecentImages(ctx, owner, limit)
+func (b studioBackend) Library(
+	ctx context.Context, owner string, modalities []assets.Modality, limit int,
+) ([]assets.Asset, error) {
+	return b.assets.ListRecent(ctx, owner, modalities, limit)
 }
 
 // FinalizeUpload accepts an uploaded reference as an image and nothing else: a document

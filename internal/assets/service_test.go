@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -324,9 +325,10 @@ type fakeAssetStore struct {
 	duplicateKey bool
 	// createErr fails Create with something that is NOT a duplicate key.
 	createErr error
-	// lastImageLimit is the limit ListRecentImages was called with, so the service's clamp is
-	// observable where the real store would only pass it to SQL.
-	lastImageLimit int
+	// lastRecentLimit and lastRecentModalities are what ListRecent was called with, so the
+	// service's clamp is observable where the real store would only pass it to SQL.
+	lastRecentLimit      int
+	lastRecentModalities []Modality
 }
 
 func newFakeAssetStore() *fakeAssetStore {
@@ -427,13 +429,16 @@ func (s *fakeAssetStore) ListForLibrary(_ context.Context, identityID string, li
 	return out, nil
 }
 
-func (s *fakeAssetStore) ListRecentImages(_ context.Context, identityID string, limit int) ([]Asset, error) {
+func (s *fakeAssetStore) ListRecent(
+	_ context.Context, identityID string, modalities []Modality, limit int,
+) ([]Asset, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.lastImageLimit = limit
+	s.lastRecentLimit = limit
+	s.lastRecentModalities = modalities
 	var out []Asset
 	for _, asset := range s.assets {
-		if asset.IdentityID != identityID || asset.Modality != ModalityImage ||
+		if asset.IdentityID != identityID || !slices.Contains(modalities, asset.Modality) ||
 			!usableAssetStatuses[asset.Status] || !asset.DeletedAt.IsZero() {
 			continue
 		}

@@ -112,16 +112,24 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 	})
 }
 
-// ListRecentImages returns the identity's usable images, newest first, for the Studio picker.
-func (s *Store) ListRecentImages(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+// ListRecent returns the identity's usable assets of the given kinds, newest first, for the
+// Studio pickers.
+func (s *Store) ListRecent(
+	ctx context.Context, identityID string, modalities []Modality, limit int,
+) ([]Asset, error) {
 	pgIdentityID, err := pgUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
+	kinds := make([]string, 0, len(modalities))
+	for _, modality := range modalities {
+		kinds = append(kinds, string(modality))
+	}
 	return s.scopedRows(ctx, identityID, func(q *sqlc.Queries) ([]sqlc.AuraAssets, error) {
-		return q.ListRecentImageAssets(ctx, sqlc.ListRecentImageAssetsParams{
+		return q.ListRecentAssets(ctx, sqlc.ListRecentAssetsParams{
 			IdentityID: pgIdentityID,
-			Limit:      int32(limit), //nolint:gosec // the service clamps this to recentImagesMax.
+			Modalities: kinds,
+			RowLimit:   int32(limit), //nolint:gosec // the service clamps this to recentAssetsMax.
 		})
 	})
 }

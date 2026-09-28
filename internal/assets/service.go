@@ -27,9 +27,9 @@ type StoreBackend interface {
 	ByObjectKey(context.Context, string, string) (Asset, error)
 	ListForThread(context.Context, string, string) ([]Asset, error)
 	ListForLibrary(context.Context, string, int) ([]Asset, error)
-	// ListRecentImages(ctx, identityID, limit) lists the identity's usable images from any
-	// thread or none, newest first: what the Studio offers as a frame or a reference.
-	ListRecentImages(context.Context, string, int) ([]Asset, error)
+	// ListRecent(ctx, identityID, modalities, limit) lists the identity's usable assets of those
+	// kinds from any thread or none, newest first: what a Studio offers to pick.
+	ListRecent(context.Context, string, []Modality, int) ([]Asset, error)
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
@@ -162,15 +162,18 @@ func folderFor(modality Modality) objectstore.AssetFolder {
 	}
 }
 
-// recentImagesMax bounds the Studio picker.
-const recentImagesMax = 48
+// recentAssetsMax bounds a Studio picker's page.
+const recentAssetsMax = 48
 
-// ListRecentImages lists the identity's usable images, newest first, for the Studio picker.
-func (s *Service) ListRecentImages(ctx context.Context, identityID string, limit int) ([]Asset, error) {
+// ListRecent lists the identity's usable assets of the given kinds, newest first, for a Studio
+// picker.
+func (s *Service) ListRecent(
+	ctx context.Context, identityID string, modalities []Modality, limit int,
+) ([]Asset, error) {
 	if s.Store == nil {
 		return nil, fmt.Errorf("asset service is not configured")
 	}
-	return s.Store.ListRecentImages(ctx, identityID, min(max(limit, 1), recentImagesMax))
+	return s.Store.ListRecent(ctx, identityID, modalities, min(max(limit, 1), recentAssetsMax))
 }
 
 func (s *Service) GetForIdentity(ctx context.Context, id, identityID string) (Asset, error) {

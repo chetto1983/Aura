@@ -54,7 +54,7 @@ func (r *recordingAssetStore) ListForThread(context.Context, string, string) ([]
 func (r *recordingAssetStore) ListForLibrary(context.Context, string, int) ([]assets.Asset, error) {
 	return nil, nil
 }
-func (r *recordingAssetStore) ListRecentImages(context.Context, string, int) ([]assets.Asset, error) {
+func (r *recordingAssetStore) ListRecent(context.Context, string, []assets.Modality, int) ([]assets.Asset, error) {
 	return nil, nil
 }
 func (r *recordingAssetStore) SetStatus(context.Context, string, string, assets.Status, string, string) (assets.Asset, error) {

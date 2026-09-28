@@ -44,16 +44,17 @@ WHERE identity_id = $1
 ORDER BY created_at DESC
 LIMIT $2;
 
--- name: ListRecentImageAssets :many
--- The images an identity can pick as a Studio frame or reference: usable (the statuses the
--- cockpit's isReadyAsset accepts) and not deleted, newest first, from any thread or none.
+-- name: ListRecentAssets :many
+-- The assets of the asked kinds an identity can pick in a Studio — a frame or a reference in the
+-- image Studio, a sound or a clip in the video Studio: usable (the statuses the cockpit's
+-- isReadyAsset accepts) and not deleted, newest first, from any thread or none.
 SELECT * FROM aura.assets
 WHERE identity_id = $1
-  AND modality = 'image'
+  AND modality = ANY(sqlc.arg(modalities)::text[])
   AND status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
   AND deleted_at IS NULL
 ORDER BY created_at DESC
-LIMIT $2;
+LIMIT sqlc.arg(row_limit);
 
 -- name: UpdateAssetUploaded :one
 UPDATE aura.assets

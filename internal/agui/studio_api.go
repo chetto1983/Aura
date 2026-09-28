@@ -18,7 +18,7 @@ import (
 const studioHistoryDefault = 24
 
 // StudioBackend is the Studio's live half: the catalog it lists, the two shared generation
-// paths it pays through, the job store it reads back, and the identity's image library. The
+// paths it pays through, the job store it reads back, and the identity's library by kind. The
 // composition root implements it over the daemon's media dependencies (cmd/aura), so this
 // package needs neither a provider client nor a database.
 type StudioBackend interface {
@@ -26,7 +26,7 @@ type StudioBackend interface {
 	SubmitVideo(ctx context.Context, owner string, req StudioVideoRequest) (mediagen.Job, error)
 	GenerateImage(ctx context.Context, owner string, req StudioImageRequest) (mediagen.Job, error)
 	History(ctx context.Context, owner, beforeID string, kind mediagen.Kind, limit int) ([]mediagen.Job, error)
-	Library(ctx context.Context, owner string, limit int) ([]assets.Asset, error)
+	Library(ctx context.Context, owner string, modalities []assets.Modality, limit int) ([]assets.Asset, error)
 	FinalizeUpload(ctx context.Context, owner, assetID string) (assets.Asset, error)
 }
 
@@ -62,6 +62,24 @@ func studioKind(raw string) (mediagen.Kind, bool) {
 		return kind, true
 	}
 	return "", false
+}
+
+// studioModalities reads the kinds a picker lists: at least one, each a kind some Studio picker
+// offers. A document is never a Studio input, so it is refused rather than listed.
+func studioModalities(raw []string) ([]assets.Modality, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+	modalities := make([]assets.Modality, 0, len(raw))
+	for _, name := range raw {
+		switch modality := assets.Modality(name); modality {
+		case assets.ModalityImage, assets.ModalityAudio, assets.ModalityVideo:
+			modalities = append(modalities, modality)
+		default:
+			return nil, false
+		}
+	}
+	return modalities, true
 }
 
 // studioLimit reads a page size: absent means the default, anything the caller names is
@@ -176,7 +194,12 @@ func (s *Server) handleStudioLibrary(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "limit must be a number", http.StatusBadRequest)
 		return
 	}
-	library, err := s.studio.Library(r.Context(), identityID, limit)
+	modalities, ok := studioModalities(r.URL.Query()["modality"])
+	if !ok {
+		http.Error(w, "modality must be image, audio or video", http.StatusBadRequest)
+		return
+	}
+	library, err := s.studio.Library(r.Context(), identityID, modalities, limit)
 	if err != nil {
 		writeStudioError(w, err)
 		return

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -55,9 +56,10 @@ type stubStudioAssets struct {
 	ingestErr error
 	body      []byte
 
-	listedOwner string
-	listedLimit int
-	recent      []assets.Asset
+	listedOwner      string
+	listedModalities []assets.Modality
+	listedLimit      int
+	recent           []assets.Asset
 
 	finalizedID       string
 	finalizedModality assets.Modality
@@ -78,8 +80,10 @@ func (s *stubStudioAssets) IngestAgentFile(_ context.Context, req assets.AgentIn
 	return assets.Asset{ID: "asset-studio-1", Modality: assets.ModalityImage}, nil
 }
 
-func (s *stubStudioAssets) ListRecentImages(_ context.Context, identityID string, limit int) ([]assets.Asset, error) {
-	s.listedOwner, s.listedLimit = identityID, limit
+func (s *stubStudioAssets) ListRecent(
+	_ context.Context, identityID string, modalities []assets.Modality, limit int,
+) ([]assets.Asset, error) {
+	s.listedOwner, s.listedModalities, s.listedLimit = identityID, modalities, limit
 	return s.recent, nil
 }
 
@@ -374,15 +378,18 @@ func TestStudioReadsHistoryAndLibraryForTheOwner(t *testing.T) {
 			fixture.jobs.listedKind, fixture.jobs.listedLimit)
 	}
 
-	library, err := fixture.backend.Library(context.Background(), studioOwner, 5)
+	sounds := []assets.Modality{assets.ModalityAudio}
+	library, err := fixture.backend.Library(context.Background(), studioOwner, sounds, 5)
 	if err != nil {
 		t.Fatalf("Library() error = %v", err)
 	}
 	if len(library) != 1 || library[0].ID != "asset-recent" {
-		t.Fatalf("library = %#v, want the identity's recent images", library)
+		t.Fatalf("library = %#v, want the identity's recent assets", library)
 	}
-	if fixture.assets.listedOwner != studioOwner || fixture.assets.listedLimit != 5 {
-		t.Fatalf("library read = %q, %d", fixture.assets.listedOwner, fixture.assets.listedLimit)
+	if fixture.assets.listedOwner != studioOwner || fixture.assets.listedLimit != 5 ||
+		!slices.Equal(fixture.assets.listedModalities, sounds) {
+		t.Fatalf("library read = %q, %v, %d", fixture.assets.listedOwner, fixture.assets.listedModalities,
+			fixture.assets.listedLimit)
 	}
 
 	// The Studio finalizes a reference the operator uploaded, and only as an image: a document
