@@ -1715,6 +1715,26 @@ pushes; media_clamp on 87%. Not proven: that a result is deterministic (a 10 s p
 counts as a kill, and pausable is one mutant above 70%), inputs a test reads outside its testdata
 or from a live service, and the replay used today's closures for older commits.
 
+Mutation evidence is measured in parallel (652ba82d7). Stryker, three groups of Go scopes and the
+gate are separate CI jobs. The groups are balanced on cold CI durations: elicitation_route alone
+(534-577 s), media_clamp with media_watcher (449-475 s), the five small scopes (201 s). Each scope
+still runs alone on its runner. The gate job runs no mutant: it merges the groups' entries, fails
+on a missing or stale one, and saves the cache once. A scope a group job measured on the candidate
+has no `reused_from`. Skills measures validator.go and writer.go in two jobs beside its gate.
+Measured 2026-09-28 on b52c69880 (CI run 36419041159, Skills run 36419041053) against 3dc8fd7ef
+(runs 36412624433, 36412624404). Both measured the same six Go scopes and reused identity_isolation
+and pausable; here the six closures hold internal/db and internal/db/sqlc, which a6033efad changed.
+Before, the serial mutation job took 27 min 07 s (Stryker 8 min 01 s, Go 18 min 27 s) and ended a
+28 min 36 s run. Now the longest mutation job is elicitation at 10 min 11 s, Stryker takes 4 min
+20 s, the gate 39 s, and the run 16 min 06 s. The media group waited 5 min 07 s for a runner (29
+jobs against the 20-job limit), so the gate still ended the run, 23 s after Agent Memory MRS. The
+Skills run went from 17 min 51 s to 6 min 50 s: gate 5 min 00 s, validator.go 5 min 38 s, writer.go
+6 min 20 s, both measured afresh (the per-file cache key had no older entry, and internal/db is in
+their closure too). Not shown: this is one run each, so queueing and runner speed are not known in
+general (writer.go took 276 s here, 509 s on run 36412624404); Stryker's work differs by push
+(6,406 of 6,653 mutants reused here); and the gate failing closed on a missing group artifact is
+shown by unit tests with fakes, not by a CI run.
+
 MRS is an operational reliability score with a strict threshold above 96.5 and hard
 gates for integrity, isolation, provenance, live MCP, embedding contract, abstention,
 coverage and bounded latency. Retain cold samples; use at least 25 sequential calls
