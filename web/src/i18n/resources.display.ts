@@ -17,6 +17,7 @@ export const displayEn = {
       system_event: 'System',
       swarm_report: 'Agents',
       todo: 'Checklist',
+      terminal: 'Terminal',
       mcp_view: 'Interactive view',
     },
     mcpView: {
@@ -91,6 +92,11 @@ export const displayEn = {
       pending: 'Pending',
       active: 'In progress',
       done: 'Completed',
+    },
+    terminal: {
+      showAll: 'Show all',
+      showLess: 'Show less',
+      truncated: 'Output truncated',
     },
     webResult: {
       relevance: 'Relevance {{score}}',
@@ -296,6 +302,7 @@ export const displayIt = {
       system_event: 'Sistema',
       swarm_report: 'Agenti',
       todo: 'Attività',
+      terminal: 'Terminale',
       mcp_view: 'Vista interattiva',
     },
     mcpView: {
@@ -371,6 +378,11 @@ export const displayIt = {
       pending: 'Da fare',
       active: 'In corso',
       done: 'Completata',
+    },
+    terminal: {
+      showAll: 'Mostra tutto',
+      showLess: 'Mostra meno',
+      truncated: 'Output troncato',
     },
     webResult: {
       relevance: 'Rilevanza {{score}}',

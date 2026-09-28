@@ -110,6 +110,25 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('raw ambiguous todo').tagName.toLowerCase()).toBe('pre');
   });
 
+  it('routes a completed terminal and keeps a missing exit code raw', () => {
+    const complete = {
+      type: 'terminal',
+      tool_call_id: 'shell-1',
+      terminal: { command: 'echo hello', output: 'hello', exit_code: 0 },
+    } as DisplayPayload;
+    const { rerender } = render(
+      <DisplayRouter payload={complete} toolName="shell_exec" result="raw" />,
+    );
+    expect(screen.getByText('echo hello')).toBeTruthy();
+    expect(screen.getByText('exit 0')).toBeTruthy();
+    const malformed = {
+      ...complete,
+      terminal: { command: 'echo hello', output: 'hello' },
+    } as DisplayPayload;
+    rerender(<DisplayRouter payload={malformed} toolName="shell_exec" result="raw shell" />);
+    expect(screen.getByText('raw shell').tagName.toLowerCase()).toBe('pre');
+  });
+
   it.each([
     'chart',
     'system_event',

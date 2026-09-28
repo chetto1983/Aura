@@ -25,6 +25,8 @@ const (
 	KindSwarmReport Kind = "swarm_report"
 	// KindTodo identifies a validated todo_write checklist snapshot.
 	KindTodo Kind = "todo"
+	// KindTerminal identifies a verified completed shell result.
+	KindTerminal Kind = "terminal"
 )
 
 // Payload is the flat tagged union a normalizer emits (R1). It is a struct, not an
@@ -46,6 +48,7 @@ type Payload struct {
 	System     *System       `json:"system,omitempty"`
 	Swarm      []ChildReport `json:"swarm,omitempty"`
 	Todo       *Todo         `json:"todo,omitempty"`
+	Terminal   *Terminal     `json:"terminal,omitempty"`
 	Sources    []Source      `json:"sources,omitempty"`
 }
 

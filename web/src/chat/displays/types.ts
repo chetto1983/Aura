@@ -33,6 +33,7 @@ export type DisplayKind =
   | 'system_event'
   | 'swarm_report'
   | 'todo'
+  | 'terminal'
   | 'mcp_view';
 
 /** A single web-search result row (type=web_result). Mirrors display.WebItem. */
@@ -98,6 +99,16 @@ export interface DisplayTodo {
   }[];
 }
 
+/** A verified completed shell result (type=terminal). */
+export interface DisplayTerminal {
+  readonly command: string;
+  readonly output: string;
+  readonly cwd?: string;
+  readonly exit_code: number;
+  readonly duration_ms?: number;
+  readonly truncated?: boolean;
+}
+
 /** A classified safe-reason event (type=system_event). Mirrors display.System. */
 export interface DisplaySystem {
   readonly class: string;
@@ -151,6 +162,7 @@ export interface DisplayPayload {
   readonly system?: DisplaySystem;
   readonly swarm?: readonly DisplayChildReport[];
   readonly todo?: DisplayTodo;
+  readonly terminal?: DisplayTerminal;
   readonly sources?: readonly DisplaySource[];
   /** type=mcp_view — the MCP Apps descriptor the frame renders. */
   readonly mcp_view?: McpViewDescriptor;

@@ -11,7 +11,7 @@ import "github.com/chetto1983/aura/internal/web"
 //   - web_search  -> []web.Result
 //   - web_fetch   -> web.Page
 //   - swarm_spawn -> []ChildReport
-//   - shell_exec / sandbox_exec -> CodeInput
+//   - shell_exec / shell_poll -> Terminal; legacy shell_exec / sandbox_exec -> CodeInput
 //   - any tool's error -> *web.WebError
 //
 // It takes an explicit tool-call id (the sseAdapter
@@ -45,11 +45,20 @@ func NormalizeWithRegistry(toolCallID, toolName string, result any, reg *Registr
 		}
 		return normalizeSwarm(toolCallID, reports)
 	case "shell_exec", "sandbox_exec":
+		if terminal, ok := result.(Terminal); ok && toolName == "shell_exec" {
+			return Payload{Type: KindTerminal, ToolCallID: toolCallID, Terminal: &terminal}, true
+		}
 		in, ok := result.(CodeInput)
 		if !ok {
 			return Payload{}, false
 		}
 		return normalizeCode(toolCallID, in)
+	case "shell_poll":
+		terminal, ok := result.(Terminal)
+		if !ok {
+			return Payload{}, false
+		}
+		return Payload{Type: KindTerminal, ToolCallID: toolCallID, Terminal: &terminal}, true
 	case "todo_write":
 		items, ok := result.(Todo)
 		if !ok {

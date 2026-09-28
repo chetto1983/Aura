@@ -29,7 +29,8 @@ type PreviewInput struct {
 //   - web_search → []web.Result (the adapter marshals {"results":[…]}, web_search.go)
 //   - web_fetch  → web.Page     (the adapter marshals the Page directly)
 //   - swarm_spawn → []ChildReport (the adapter marshals the ordered reports, swarm/report.go)
-//   - shell_exec / sandbox_exec → CodeInput (the command output text, structured footer stripped)
+//   - shell_exec / shell_poll → Terminal for verified completed output
+//   - legacy shell_exec / sandbox_exec → CodeInput
 //
 // Every other tool, an empty preview, an inline {error,…} preview, or malformed JSON
 // returns (Payload{}, false) so the caller keeps the raw escaped card (D-FALLBACK) and
@@ -85,7 +86,14 @@ func decodeToolPreview(in PreviewInput) (any, bool) {
 			return nil, false
 		}
 		return *queued.Workers, true
-	case "shell_exec", "sandbox_exec":
+	case "shell_exec":
+		if in.Arguments != "" {
+			return decodeTerminalPreview(in)
+		}
+		return shellCodeInput(in.ResultPreview), true
+	case "shell_poll":
+		return decodeTerminalPreview(in)
+	case "sandbox_exec":
 		return shellCodeInput(in.ResultPreview), true
 	case "todo_write":
 		return decodeTodoPreview(in)

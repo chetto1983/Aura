@@ -10,6 +10,7 @@ import { DocumentDisplay } from './DocumentDisplay';
 import { WebResultDisplay } from './WebResultDisplay';
 import { CodeDisplay } from './CodeDisplay';
 import { TodoDisplay } from './TodoDisplay';
+import { TerminalDisplay } from './TerminalDisplay';
 
 // DisplayRouter (DISP-02): the single switch(payload.type) entry point, now
 // hosted INSIDE the compact ToolActivityCard's expanded body (compact-chat spec
@@ -112,6 +113,25 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         ) &&
         payload.todo.items.filter((item) => item.status === 'in_progress').length <= 1 ? (
         <TodoDisplay payload={payload} />
+      ) : (
+        raw()
+      );
+    case 'terminal':
+      return payload.terminal &&
+        typeof payload.terminal.command === 'string' &&
+        payload.terminal.command.length > 0 &&
+        payload.terminal.command.length <= 4096 &&
+        typeof payload.terminal.output === 'string' &&
+        payload.terminal.output.length <= 65536 &&
+        Number.isInteger(payload.terminal.exit_code) &&
+        payload.terminal.exit_code >= 0 &&
+        payload.terminal.exit_code <= 255 &&
+        (payload.terminal.cwd === undefined || typeof payload.terminal.cwd === 'string') &&
+        (payload.terminal.duration_ms === undefined ||
+          (Number.isInteger(payload.terminal.duration_ms) && payload.terminal.duration_ms >= 0)) &&
+        (payload.terminal.truncated === undefined ||
+          typeof payload.terminal.truncated === 'boolean') ? (
+        <TerminalDisplay payload={payload} />
       ) : (
         raw()
       );
