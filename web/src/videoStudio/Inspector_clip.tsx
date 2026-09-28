@@ -19,7 +19,7 @@ import { CROP_PRESETS, presetRect, rotateSize } from '../mediaEdit/cropMath';
 import { formatTimecode } from '../mediaEdit/timecode';
 import { TimeField } from '../mediaEdit/TimeField';
 import { removeRange, setClipPresentation, setFrameSize, trimClip } from './commands';
-import { ClipAudioControls, SpeedSlider, type AudioTab } from './Inspector_audio';
+import { AudioTabContent, ClipAudioControls, SpeedSlider, type AudioTab } from './Inspector_audio';
 import {
   clipStart,
   sourceOf,
@@ -436,13 +436,13 @@ export function ClipInspector(props: ClipInspectorProps) {
         <AdjustControls {...props} />
       </TabsContent>
       {hasAudio ? (
-        <TabsContent value="audio">
+        <AudioTabContent tab={tab}>
           <ClipAudioControls
             project={props.project}
             clip={props.clip}
             onCommand={props.onCommand}
           />
-        </TabsContent>
+        </AudioTabContent>
       ) : null}
       <TabsContent value="speed">
         <div className="video-studio-tab-panel">

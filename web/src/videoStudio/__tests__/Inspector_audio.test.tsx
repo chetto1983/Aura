@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { Inspector } from '../Inspector';
 import type { AudioItem, VideoProject } from '../project';
@@ -8,6 +8,23 @@ import type { AudioItem, VideoProject } from '../project';
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+// The cleaning stood in for, held until the test lets it finish: what a tab switch does to it.
+const cleaning = vi.hoisted(() => ({
+  signals: [] as (AbortSignal | undefined)[],
+  finish: (): void => undefined,
+}));
+vi.mock('../audioClean', () => ({
+  cleanedFile: (_url: string, _name: string, signal?: AbortSignal) =>
+    new Promise<File>((resolve) => {
+      cleaning.signals.push(signal);
+      cleaning.finish = () => {
+        resolve(new File(['ogg'], 'x.clean.ogg', { type: 'audio/ogg' }));
+      };
+    }),
+}));
+vi.mock('../VideoStudio_sources', () => ({ uploadSource: () => Promise.resolve('cleaned') }));
+vi.mock('../../chat/attachments/api', () => ({ deleteAsset: () => Promise.resolve({}) }));
 
 function project(item: Partial<AudioItem> = {}): VideoProject {
   return {
@@ -198,5 +215,47 @@ describe('Inspector, on a clip Audio tab', () => {
     openTab('videoStudio.inspector.tabs.speed');
     fireEvent.click(screen.getByRole('button', { name: '0.5×' }));
     expect(applied().video[0]?.speed).toBe(0.5);
+  });
+});
+
+describe('Inspector, an analysis across a tab switch', () => {
+  /** Turns noise reduction on, moves to Speed while it cleans, and lets the cleaning finish. */
+  async function cleanWhileAway(selectedId: string, onAudio: () => void): Promise<VideoProject> {
+    cleaning.signals.length = 0;
+    const applied = mount(selectedId);
+    onAudio();
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.denoise' }));
+    await waitFor(() => {
+      expect(cleaning.signals).toHaveLength(1);
+    });
+    openTab('videoStudio.inspector.tabs.speed');
+    await act(async () => {
+      cleaning.finish();
+      await Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(() => applied()).not.toThrow();
+    });
+    expect(cleaning.signals[0]?.aborted).toBe(false);
+    return applied();
+  }
+
+  it('keeps a sound’s cleaning running while another tab shows, and commits it', async () => {
+    const next = await cleanWhileAway('bed', () => undefined);
+    expect(next.sources.find((source) => source.id === 'src-m')?.denoisedAssetId).toBe('cleaned');
+    expect(bed(next)?.denoise).toBe(true);
+  });
+
+  it('keeps a clip’s cleaning running while another tab shows, and commits it', async () => {
+    const next = await cleanWhileAway('clip-1', () => {
+      openTab('videoStudio.inspector.tabs.audio');
+    });
+    expect(next.video[0]?.denoise).toBe(true);
+  });
+
+  it('hides the Audio tab’s controls while another tab shows', () => {
+    mount('bed');
+    openTab('videoStudio.inspector.tabs.speed');
+    expect(screen.queryByRole('switch', { name: 'videoStudio.audio.denoise' })).toBeNull();
   });
 });

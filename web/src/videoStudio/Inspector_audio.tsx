@@ -1,5 +1,5 @@
 import { AudioLines } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { formatTimecode } from '../mediaEdit/timecode';
 import { TimeField } from '../mediaEdit/TimeField';
@@ -27,6 +27,23 @@ type Commit = (edit: (current: VideoProject) => VideoProject) => void;
 export type AudioTab = 'audio' | 'speed' | 'time';
 const AUDIO_TABS: readonly AudioTab[] = ['audio', 'speed', 'time'];
 const MAX_FADE = 5;
+
+/** The Audio tab's panel, a clip's or a sound's. It stays mounted, hidden, while another tab shows:
+ *  a cleaning or a listen started in it runs on through a tab switch rather than being cut off
+ *  without a word, and says how it went when the tab comes back. */
+export function AudioTabContent({
+  tab,
+  children,
+}: {
+  readonly tab: string;
+  readonly children: ReactNode;
+}) {
+  return (
+    <TabsContent value="audio" forceMount hidden={tab !== 'audio'}>
+      {children}
+    </TabsContent>
+  );
+}
 
 /** Volume, 0–200 %: a clip's and a sound's. */
 export function VolumeSlider({
@@ -245,7 +262,7 @@ export function AudioItemInspector({
           </TabsTrigger>
         ))}
       </TabsList>
-      <TabsContent value="audio">
+      <AudioTabContent tab={tab}>
         <div className="video-studio-tab-panel">
           <VolumeSlider
             volume={item.volume}
@@ -293,7 +310,7 @@ export function AudioItemInspector({
             }}
           />
         </div>
-      </TabsContent>
+      </AudioTabContent>
       <TabsContent value="speed">
         <div className="video-studio-tab-panel">
           <SpeedSlider
