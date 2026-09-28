@@ -6,7 +6,9 @@ import type {
   TimelineContextProps,
   useTimelineMonitor,
 } from 'dnd-timeline';
+import type { Ref } from 'react';
 import { describe, expect, it, vi } from 'vitest';
+import type { WaveformHandle } from '../AudioWaveform';
 import type { AudioItem, VideoProject } from '../project';
 import { Timeline } from '../Timeline';
 
@@ -40,13 +42,24 @@ vi.mock('react-i18next', () => ({
 }));
 
 // The waveform is AudioWaveform.test.tsx's to judge; here only what the lane hands it.
-const waves = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
-vi.mock('../AudioWaveform', () => ({
-  AudioWaveform: (props: Record<string, unknown>) => {
-    waves.props.push(props);
-    return <div data-testid="sound-waveform" />;
-  },
+const waves = vi.hoisted(() => ({
+  props: [] as Record<string, unknown>[],
+  added: [] as { selected: unknown; at: [number, number] }[],
 }));
+vi.mock('../AudioWaveform', async () => {
+  const { useImperativeHandle } = await import('react');
+  return {
+    AudioWaveform: (props: Record<string, unknown> & { ref?: Ref<WaveformHandle> }) => {
+      waves.props.push(props);
+      useImperativeHandle(props.ref, () => ({
+        addPointAt: (clientX: number, clientY: number) => {
+          waves.added.push({ selected: props.selected, at: [clientX, clientY] });
+        },
+      }));
+      return <div data-testid="sound-waveform" />;
+    },
+  };
+});
 
 function sound(id: string, offset: number, over: Partial<AudioItem> = {}): AudioItem {
   return {
@@ -185,6 +198,19 @@ describe('Timeline, on the audio lanes', () => {
       { time: 1, gain: 0.25 },
     ]);
     expect(soundIn(applied(), 'bed')?.envelope).toEqual([{ time: 1, gain: 0.25 }]);
+  });
+
+  it('hands a double-click on the selected sound to its envelope, and one on another sound to none', () => {
+    waves.added.length = 0;
+    mount('tail');
+    // The press lands on the sound's button: its waveform lets every press through but its points.
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'videoStudio.audio.item 2' }), {
+      clientX: 120,
+      clientY: 14,
+    });
+    expect(waves.added).toEqual([{ selected: true, at: [120, 14] }]);
+    fireEvent.doubleClick(screen.getByRole('button', { name: 'videoStudio.audio.item 1' }));
+    expect(waves.added).toHaveLength(1);
   });
 
   it('steps the start handle too, measured from where the sound starts in its source', () => {

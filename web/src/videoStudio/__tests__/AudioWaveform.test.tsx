@@ -1,6 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
+import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AudioWaveform } from '../AudioWaveform';
+import { AudioWaveform, type WaveformHandle } from '../AudioWaveform';
 import type { EnvelopePoint } from '../project';
 
 // The waveform with wavesurfer stood in for: a fake that records what it was created with, and a
@@ -15,9 +16,13 @@ const fakes = vi.hoisted(() => {
   class FakeEnvelope {
     points: FakePoint[];
     setCalls = 0;
+    added: FakePoint[] = [];
     private listener: ((points: FakePoint[]) => void) | undefined;
     constructor(points: FakePoint[]) {
       this.points = points;
+    }
+    addPoint(point: FakePoint) {
+      this.added.push(point);
     }
     on(_event: string, listener: (points: FakePoint[]) => void) {
       this.listener = listener;
@@ -103,6 +108,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -226,6 +232,30 @@ describe('AudioWaveform', () => {
     expect(outer).not.toHaveBeenCalled();
     fireEvent.pointerDown(host);
     expect(outer).toHaveBeenCalledOnce();
+  });
+
+  it('adds an envelope point where a double-click on its sound landed, at that height', async () => {
+    const handle = createRef<WaveformHandle>();
+    const view = mount({ selected: true, ref: handle });
+    await waitFor(() => {
+      expect(fakes.envelopes).toHaveLength(1);
+    });
+    vi.spyOn(view.getByTestId('sound-waveform'), 'getBoundingClientRect').mockReturnValue(
+      DOMRect.fromRect({ x: 100, y: 20, width: 400, height: 40 }),
+    );
+    // Three quarters across the 4 s the lane shows, a quarter of the way down.
+    handle.current?.addPointAt(400, 30);
+    expect(fakes.envelopes[0]?.added).toEqual([{ time: 3, volume: 0.75 }]);
+  });
+
+  it('adds no point while it shows no envelope', async () => {
+    const handle = createRef<WaveformHandle>();
+    mount({ ref: handle });
+    await waitFor(() => {
+      expect(fakes.created).toHaveLength(1);
+    });
+    handle.current?.addPointAt(400, 30);
+    expect(fakes.envelopes).toHaveLength(0);
   });
 
   it('draws no waveform for a source the browser cannot decode, and says nothing', async () => {

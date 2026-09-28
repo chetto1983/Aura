@@ -1,5 +1,5 @@
 import { useItem, type Span } from 'dnd-timeline';
-import type { KeyboardEvent, ReactNode, SyntheticEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode, SyntheticEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import { formatTimecode } from '../mediaEdit/timecode';
@@ -112,6 +112,7 @@ interface ItemButtonProps {
   readonly idle: string;
   readonly onSelect: () => void;
   readonly onKeyDown?: ((event: KeyboardEvent<HTMLButtonElement>) => void) | undefined;
+  readonly onDoubleClick?: ((event: MouseEvent<HTMLButtonElement>) => void) | undefined;
   readonly keyShortcuts?: string | undefined;
   readonly activatorRef?: ((element: HTMLElement | null) => void) | undefined;
   readonly attributes?: ItemAttributes | undefined;
@@ -127,6 +128,7 @@ export function ItemButton({
   idle,
   onSelect,
   onKeyDown,
+  onDoubleClick,
   keyShortcuts,
   activatorRef,
   attributes,
@@ -150,6 +152,7 @@ export function ItemButton({
       // about to drag. Enter and Space still arrive as clicks, with no drag before them.
       onPointerDown={onSelect}
       onClick={onSelect}
+      onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
       className={`video-studio-${kind} flex h-full w-full items-center overflow-hidden rounded-[var(--radius-md)] border px-2 text-left text-xs ${
         selected ? 'border-accent bg-surface-2' : idle

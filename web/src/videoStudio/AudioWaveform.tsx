@@ -1,9 +1,11 @@
 import {
   useEffect,
   useEffectEvent,
+  useImperativeHandle,
   useRef,
   useState,
   type PointerEvent,
+  type Ref,
   type RefObject,
 } from 'react';
 import WaveSurfer from 'wavesurfer.js';
@@ -19,6 +21,8 @@ import type { EnvelopePoint } from './project';
 // a width, because the envelope freezes its viewBox at creation; it fills the item box, not
 // dnd-timeline's content box; a press on a point is kept from dnd-kit, found by the composed path
 // because wavesurfer draws in a shadow root; and its strokes are pinned through ::part (CSS).
+// Every other press goes through to the sound's button (the layer takes none), so the double-click
+// that adds a point reaches the plugin through `addPointAt`, not through its own SVG.
 
 /** Peaks drawn per second of sound: finer than any zoom the lane offers shows. */
 const PEAKS_PER_SECOND = 100;
@@ -42,7 +46,14 @@ function useHasWidth(host: RefObject<HTMLDivElement | null>): boolean {
   return hasWidth;
 }
 
+export interface WaveformHandle {
+  /** Adds an envelope point where a double-click landed, as the plugin's own double-click would:
+   *  across is time, down is gain. Nothing while no envelope is shown. */
+  readonly addPointAt: (clientX: number, clientY: number) => void;
+}
+
 interface AudioWaveformProps {
+  readonly ref?: Ref<WaveformHandle>;
   readonly assetId: string;
   readonly sourceStart: number;
   /** Source seconds the lane shows: the window, through the speed, cut at the film's end. */
@@ -55,6 +66,7 @@ interface AudioWaveformProps {
 type Envelope = ReturnType<typeof EnvelopePlugin.create>;
 
 export function AudioWaveform({
+  ref,
   assetId,
   sourceStart,
   visible,
@@ -136,6 +148,22 @@ export function AudioWaveform({
     const wanted = currentView();
     if (shown !== undefined && !sameView(shown.getPoints(), wanted)) shown.setPoints(wanted);
   }, [viewKey]);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      addPointAt: (clientX, clientY) => {
+        const shown = plugin.current;
+        if (shown === undefined || host.current === null) return;
+        const box = host.current.getBoundingClientRect();
+        shown.addPoint({
+          time: ((clientX - box.left) / box.width) * visible,
+          volume: 1 - (clientY - box.top) / box.height,
+        });
+      },
+    }),
+    [visible],
+  );
 
   const keepPointsFromDrag = (event: PointerEvent<HTMLDivElement>) => {
     const onPoint = event.nativeEvent

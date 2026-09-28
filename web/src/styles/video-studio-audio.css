@@ -37,13 +37,16 @@
 
 /* A sound's waveform fills its item box — not dnd-timeline's content box, which is padded down to
    the part inside the range and would squeeze the waveform off its time (S2). The trim handles
-   (`z-10`) stay above it. */
+   (`z-10`) stay above it. It takes no press: the sound's button under it keeps its click, focus,
+   drag and double-click. The envelope's points still take theirs — the plugin sets
+   `pointer-events: all` on them, which overrides this. */
 .video-studio-waveform-layer {
   position: absolute;
   inset: 0;
   z-index: 1;
   overflow: hidden;
   border-radius: 5px;
+  pointer-events: none;
 }
 
 .video-studio-waveform {

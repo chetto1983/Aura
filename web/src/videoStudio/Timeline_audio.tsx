@@ -1,7 +1,8 @@
 import { useItem, type Span } from 'dnd-timeline';
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { audioWindow } from './audioLane';
-import { AudioWaveform } from './AudioWaveform';
+import { AudioWaveform, type WaveformHandle } from './AudioWaveform';
 import {
   sourceOf,
   type AudioItem,
@@ -56,6 +57,7 @@ function AudioItemView({
   const { t } = useTranslation();
   const { setNodeRef, setActivatorNodeRef, attributes, listeners, itemStyle, itemContentStyle } =
     useItem({ id: item.id, span, resizeHandleWidth: TOUCH_FLOOR });
+  const waveform = useRef<WaveformHandle>(null);
   const position = { index: number };
   const label = t('videoStudio.audio.item', position);
   const end = item.sourceStart + item.duration;
@@ -79,17 +81,22 @@ function AudioItemView({
           onSelect={() => {
             onSelect(item.id);
           }}
+          onDoubleClick={
+            selected
+              ? (event) => {
+                  waveform.current?.addPointAt(event.clientX, event.clientY);
+                }
+              : undefined
+          }
         />
       </div>
       {assetId === undefined ? null : (
         // The item box, not dnd-timeline's content box: the waveform has to line up with time (S2).
-        // It takes presses only while selected — then its points are the controls — and lets the
-        // unselected sound's button take the click that selects it.
-        <div
-          className="video-studio-waveform-layer"
-          style={{ pointerEvents: selected ? 'auto' : 'none' }}
-        >
+        // The layer takes no press but on an envelope point (CSS), so the button under it still
+        // selects, takes focus, drags and hears the double-click that adds a point.
+        <div className="video-studio-waveform-layer">
           <AudioWaveform
+            ref={waveform}
             assetId={assetId}
             sourceStart={item.sourceStart}
             visible={visible}
