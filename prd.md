@@ -559,7 +559,26 @@ audio. None was referenced by a `media_job`; 99 had an `ingestion_jobs` row and 
 206 `ingestion_events`; no row had `asset_events`. Read from the code, not measured: with
 `deleted_at` NULL those rows still came back from the thread listing, whose web consumers
 drop only `deleted` and `canceled`, and a library file, whose object key is fixed by its
-name, could not be presigned again while its old row held the key.
+name, could not be presigned again while its old row held the key. The sweep, brought
+forward on the operator's request, ran at 09:53:15 UTC: "swept 331 item(s)" (the backlog had
+grown from 258), and `next_run_at` returned to the cron time by itself.
+
+**Abandoned uploads.** A `presigned` row untouched for the upload URL's lifetime
+(`AURA_ASSET_PRESIGN_TTL_SEC`, 600 s by default) plus one hour is abandoned. The URL can no
+longer start an upload, and the hour covers one that began just before expiry and may still
+be streaming: the largest cap, 100 MiB, at about 29 KB/s. Every web client finalizes as soon
+as its PUT returns, and every server-side ingest puts its bytes right after creating the row,
+so nothing legitimate waits longer. The same `retention_sweep` marks those rows `deleting`
+with `deleted_at`, oldest first and bounded per identity, and finishes them like any other
+delete. `created` is written by no code path. An `uploaded` row strands only when finalize
+fails after the upload is recorded. Neither is swept: the VM held none of either.
+
+Measured 2026-09-28 10:15 UTC on the lab VM, read-only, after that sweep: 7 `presigned` rows,
+all `web`, all of one identity, none touched since creation, aged 10 h 17 m to 6 d 19 h. Five
+are `photo-edited.png` from the photo editor's save; their objects are in the bucket (12,451
+bytes each, PUT and never finalized). Two are videos whose object was never written. No
+`media_job`, `ingestion_jobs` or `asset_events` row references them. There are 0 `created`
+and 0 `uploaded` rows, and the VM runs the 600 s TTL.
 
 This does not prove:
 - that the bucket holds no objects without a row, or keys the file manager's rename or move
@@ -567,7 +586,9 @@ This does not prove:
 - that Garage removes each of the 258 objects: nothing was deleted by the measurement;
 - that the document index drops the passages of a deleted document (the ingest reconciler
   owns that);
-- anything about `refused`, `failed` or abandoned `presigned` rows, which still accumulate.
+- anything about `refused` or `failed` rows, which still accumulate;
+- why the photo editor's five uploads were never finalized (reported, not investigated);
+- whether Garage lets a PUT keep streaming past its URL's expiry: the hour assumes it can.
 
 ## 12. Workspace, shell and web
 
