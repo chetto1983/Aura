@@ -7,6 +7,15 @@ import (
 	"github.com/chetto1983/aura/internal/web"
 )
 
+// PreviewInput is the completed call data shared by live and replay projection.
+// Arguments are model-supplied and must be validated by each tool-specific parser.
+type PreviewInput struct {
+	ToolCallID    string
+	ToolName      string
+	Arguments     string
+	ResultPreview string
+}
+
 // NormalizeToolPreview is the SINGLE decode+normalize site shared by the live agent
 // loop and the replay snapshot projection (D-06, "one normalizer for live + replay").
 // It reverses a typed tool's model-visible result preview — the exact string the runner
@@ -25,33 +34,33 @@ import (
 // Every other tool, an empty preview, an inline {error,…} preview, or malformed JSON
 // returns (Payload{}, false) so the caller keeps the raw escaped card (D-FALLBACK) and
 // the registry is untouched — replay D-FALLBACK == live D-FALLBACK.
-func NormalizeToolPreview(toolCallID, toolName, preview string, reg *Registry) (Payload, bool) {
-	if preview == "" || reg == nil {
+func NormalizeToolPreview(in PreviewInput, reg *Registry) (Payload, bool) {
+	if in.ResultPreview == "" || reg == nil {
 		return Payload{}, false
 	}
-	result, ok := decodeToolPreview(toolName, preview)
+	result, ok := decodeToolPreview(in)
 	if !ok {
 		return Payload{}, false
 	}
-	return NormalizeWithRegistry(toolCallID, toolName, result, reg)
+	return NormalizeWithRegistry(in.ToolCallID, in.ToolName, result, reg)
 }
 
 // decodeToolPreview decodes a typed tool's result preview into the concrete value
 // NormalizeWithRegistry expects. An unrecognized tool, an error-shaped preview, or
 // malformed JSON returns ok=false so the caller keeps the raw card (D-FALLBACK).
-func decodeToolPreview(toolName, preview string) (any, bool) {
-	switch toolName {
+func decodeToolPreview(in PreviewInput) (any, bool) {
+	switch in.ToolName {
 	case "web_search":
 		var wrap struct {
 			Results []web.Result `json:"results"`
 		}
-		if err := json.Unmarshal([]byte(preview), &wrap); err != nil || wrap.Results == nil {
+		if err := json.Unmarshal([]byte(in.ResultPreview), &wrap); err != nil || wrap.Results == nil {
 			return nil, false
 		}
 		return wrap.Results, true
 	case "web_fetch":
 		var page web.Page
-		if err := json.Unmarshal([]byte(preview), &page); err != nil || page.URL == "" {
+		if err := json.Unmarshal([]byte(in.ResultPreview), &page); err != nil || page.URL == "" {
 			return nil, false
 		}
 		return page, true
@@ -62,7 +71,7 @@ func decodeToolPreview(toolName, preview string) (any, bool) {
 		// A non-array preview (the over-cap / context-unavailable inline error strings)
 		// fails to unmarshal → raw card, exactly as live.
 		var reports []ChildReport
-		if err := json.Unmarshal([]byte(preview), &reports); err == nil {
+		if err := json.Unmarshal([]byte(in.ResultPreview), &reports); err == nil {
 			return reports, true
 		}
 		// Background dispatch and the synchronous result deliberately share this
@@ -72,12 +81,12 @@ func decodeToolPreview(toolName, preview string) (any, bool) {
 		var queued struct {
 			Workers *[]ChildReport `json:"workers"`
 		}
-		if err := json.Unmarshal([]byte(preview), &queued); err != nil || queued.Workers == nil {
+		if err := json.Unmarshal([]byte(in.ResultPreview), &queued); err != nil || queued.Workers == nil {
 			return nil, false
 		}
 		return *queued.Workers, true
 	case "shell_exec", "sandbox_exec":
-		return shellCodeInput(preview), true
+		return shellCodeInput(in.ResultPreview), true
 	default:
 		return nil, false
 	}

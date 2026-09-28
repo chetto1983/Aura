@@ -151,18 +151,19 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 // identical to the live per-run registry (Pitfall 4 parity).
 func rederiveDisplays(hist []llm.Message) map[string]*display.Payload {
 	reg := display.NewRegistry()
-	toolNames := toolNamesByCallID(hist)
+	inputs := previewInputsByCallID(hist)
 	out := make(map[string]*display.Payload)
 	for i := range hist {
 		m := &hist[i]
 		if m.Role != llm.RoleTool || m.ToolCallID == "" {
 			continue
 		}
-		name := toolNames[m.ToolCallID]
-		if name == "" {
+		in, found := inputs[m.ToolCallID]
+		if !found || in.ToolName == "" {
 			continue
 		}
-		if p, ok := display.NormalizeToolPreview(m.ToolCallID, name, m.Content, reg); ok {
+		in.ResultPreview = m.Content
+		if p, ok := display.NormalizeToolPreview(in, reg); ok {
 			payload := p
 			out[m.ToolCallID] = &payload
 		}
@@ -170,19 +171,33 @@ func rederiveDisplays(hist []llm.Message) map[string]*display.Payload {
 	return out
 }
 
-// toolNamesByCallID maps each tool_call_id to its tool name by scanning the assistant
-// turns' ToolCalls — the RoleTool result turn carries only the id + preview, not the
-// name, so the name is recovered from the assistant call that produced it.
-func toolNamesByCallID(hist []llm.Message) map[string]string {
-	names := make(map[string]string)
+// previewInputsByCallID joins assistant call identity and arguments with tool results.
+// This lets replay call the same preview normalizer as the live event.
+func previewInputsByCallID(hist []llm.Message) map[string]display.PreviewInput {
+	inputs := make(map[string]display.PreviewInput)
 	for i := range hist {
 		for _, c := range hist[i].ToolCalls {
 			if c.ID != "" {
-				names[c.ID] = c.Function.Name
+				inputs[c.ID] = display.PreviewInput{
+					ToolCallID: c.ID, ToolName: c.Function.Name,
+					Arguments: c.Function.Arguments,
+				}
 			}
 		}
 	}
-	return names
+	for i := range hist {
+		m := hist[i]
+		if m.Role != llm.RoleTool || m.ToolCallID == "" {
+			continue
+		}
+		in, found := inputs[m.ToolCallID]
+		if !found {
+			continue
+		}
+		in.ResultPreview = m.Content
+		inputs[m.ToolCallID] = in
+	}
+	return inputs
 }
 
 // attachTurnReasoning merges the persisted display-only reasoning rows (amendment

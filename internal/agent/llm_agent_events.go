@@ -5,6 +5,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/display"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
@@ -171,7 +172,10 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	// source result leaves Display nil (D-FALLBACK), so every existing event is
 	// unchanged. Only a success preview feeds it; an error result is left raw.
 	if run.Err == "" {
-		if p, ok := a.deriveDisplay(run.ToolCallID, run.ToolName, rawPreview); ok {
+		if p, ok := a.deriveDisplay(display.PreviewInput{
+			ToolCallID: run.ToolCallID, ToolName: run.ToolName,
+			Arguments: run.Arguments, ResultPreview: rawPreview,
+		}); ok {
 			ev.Actions.Display = p
 		}
 	}

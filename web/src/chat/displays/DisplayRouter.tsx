@@ -38,40 +38,73 @@ export interface DisplayRouterProps {
 }
 
 export function DisplayRouter({ payload, argsText, result, onOpenSource }: DisplayRouterProps) {
+  const raw = () => <ToolResultPanel argsText={argsText} result={result} />;
   switch (payload.type) {
     // Per-type cases. The "data / status" half (table, chart, system_event,
     // swarm_report, local_artifact) lands in 26-04; the evidence half (web_result,
     // document, code) in 26-05. Each returns its typed display for payload.<slot>.
     case 'table':
-      return <TableDisplay payload={payload} />;
+      return payload.table &&
+        Array.isArray(payload.table.columns) &&
+        Array.isArray(payload.table.rows) &&
+        payload.table.columns.every((cell) => typeof cell === 'string') &&
+        payload.table.rows.every(
+          (row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string'),
+        ) ? (
+        <TableDisplay payload={payload} />
+      ) : (
+        raw()
+      );
     case 'chart':
-      return <ChartDisplay payload={payload} />;
+      return payload.chart &&
+        Array.isArray(payload.chart.x_labels) &&
+        Array.isArray(payload.chart.y_values) ? (
+        <ChartDisplay payload={payload} />
+      ) : (
+        raw()
+      );
     case 'system_event':
-      return <SystemEventCard payload={payload} />;
+      return payload.system && typeof payload.system.class === 'string' ? (
+        <SystemEventCard payload={payload} />
+      ) : (
+        raw()
+      );
     case 'swarm_report':
-      return <SwarmReportTable payload={payload} />;
+      return Array.isArray(payload.swarm) ? <SwarmReportTable payload={payload} /> : raw();
     case 'local_artifact':
-      return <LocalArtifactDisplay payload={payload} />;
+      return payload.artifact && typeof payload.artifact.filename === 'string' ? (
+        <LocalArtifactDisplay payload={payload} />
+      ) : (
+        raw()
+      );
     case 'document':
-      return <DocumentDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />;
+      return payload.document && typeof payload.document.content_md === 'string' ? (
+        <DocumentDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />
+      ) : (
+        raw()
+      );
     case 'web_result':
-      return <WebResultDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />;
+      return Array.isArray(payload.web_results) ? (
+        <WebResultDisplay payload={payload} {...(onOpenSource ? { onOpenSource } : {})} />
+      ) : (
+        raw()
+      );
     case 'code':
-      return <CodeDisplay payload={payload} />;
+      return payload.code && typeof payload.code.body === 'string' ? (
+        <CodeDisplay payload={payload} />
+      ) : (
+        raw()
+      );
     // MCP Apps (SEP-1865): a document the mounted server wrote, rendered in a
     // frame on the sandbox origin. A descriptor that did not survive the reducer's
     // narrowing falls through to the escaped panel like any other malformed payload.
     case 'mcp_view':
-      return payload.mcp_view ? (
-        <McpViewFrame descriptor={payload.mcp_view} />
-      ) : (
-        <ToolResultPanel argsText={argsText} result={result} />
-      );
+      return payload.mcp_view ? <McpViewFrame descriptor={payload.mcp_view} /> : raw();
     default:
       // D-FALLBACK: the escaped structured raw panel, never null (HARDEN-08).
       // ToolActivityCard now HOSTS this router (compact-chat §3.5), so the
       // unknown-type degrade returns the panel directly — no recursion, and the
       // raw output stays escaped, capped, and copyable.
-      return <ToolResultPanel argsText={argsText} result={result} />;
+      return raw();
   }
 }

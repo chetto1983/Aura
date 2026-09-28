@@ -20,7 +20,7 @@ func TestNormalizeToolPreviewWebSearch(t *testing.T) {
 	preview, _ := json.Marshal(map[string]any{"results": results})
 
 	reg := NewRegistry()
-	p, ok := NormalizeToolPreview("c1", "web_search", string(preview), reg)
+	p, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c1", ToolName: "web_search", ResultPreview: string(preview)}, reg)
 	if !ok {
 		t.Fatalf("recognized=false, want true")
 	}
@@ -35,6 +35,19 @@ func TestNormalizeToolPreviewWebSearch(t *testing.T) {
 	}
 }
 
+func TestNormalizeToolPreviewCarriesCallArguments(t *testing.T) {
+	in := PreviewInput{
+		ToolCallID:    "c-input",
+		ToolName:      "web_search",
+		Arguments:     `{"q":"rome"}`,
+		ResultPreview: `{"results":[{"title":"A","url":"https://a.test"}]}`,
+	}
+	p, ok := NormalizeToolPreview(in, NewRegistry())
+	if !ok || p.ToolCallID != "c-input" || p.Type != KindWebResult {
+		t.Fatalf("input display = %+v, recognized=%v", p, ok)
+	}
+}
+
 // TestNormalizeToolPreviewParityWithTypedNormalize (D-06 / Pitfall 4): re-deriving
 // from the persisted preview yields the SAME Payload (sans live-only registry identity)
 // the typed normalizer produces from the concrete value — replay == live by
@@ -44,7 +57,7 @@ func TestNormalizeToolPreviewParityWithTypedNormalize(t *testing.T) {
 	preview, _ := json.Marshal(map[string]any{"results": results})
 
 	live, okLive := NormalizeWithRegistry("c1", "web_search", results, NewRegistry())
-	replay, okReplay := NormalizeToolPreview("c1", "web_search", string(preview), NewRegistry())
+	replay, okReplay := NormalizeToolPreview(PreviewInput{ToolCallID: "c1", ToolName: "web_search", ResultPreview: string(preview)}, NewRegistry())
 	if !okLive || !okReplay {
 		t.Fatalf("recognized live=%v replay=%v", okLive, okReplay)
 	}
@@ -61,7 +74,7 @@ func TestNormalizeToolPreviewWebFetch(t *testing.T) {
 	page := web.Page{Title: "Doc", URL: "https://d.test/p", ContentMD: "# Doc"}
 	preview, _ := json.Marshal(page)
 	reg := NewRegistry()
-	p, ok := NormalizeToolPreview("c2", "web_fetch", string(preview), reg)
+	p, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c2", ToolName: "web_fetch", ResultPreview: string(preview)}, reg)
 	if !ok || p.Type != KindDocument || p.Document == nil || p.Document.URL != "https://d.test/p" {
 		t.Fatalf("web_fetch preview not re-derived: ok=%v p=%+v", ok, p)
 	}
@@ -76,7 +89,7 @@ func TestNormalizeToolPreviewSwarm(t *testing.T) {
 		{GoalIndex: 1, ChildID: "w2", Status: StatusFailed, Error: "boom"},
 	}
 	preview, _ := json.Marshal(reports)
-	p, ok := NormalizeToolPreview("c3", "swarm_spawn", string(preview), NewRegistry())
+	p, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c3", ToolName: "swarm_spawn", ResultPreview: string(preview)}, NewRegistry())
 	if !ok || p.Type != KindSwarmReport || len(p.Swarm) != 2 {
 		t.Fatalf("swarm preview not re-derived: ok=%v p=%+v", ok, p)
 	}
@@ -91,7 +104,7 @@ func TestNormalizeToolPreviewParitySwarm(t *testing.T) {
 	reports := []ChildReport{{GoalIndex: 0, ChildID: "w1", Status: StatusOK, Summary: "s"}}
 	preview, _ := json.Marshal(reports)
 	live, okLive := NormalizeWithRegistry("c1", "swarm_spawn", reports, NewRegistry())
-	replay, okReplay := NormalizeToolPreview("c1", "swarm_spawn", string(preview), NewRegistry())
+	replay, okReplay := NormalizeToolPreview(PreviewInput{ToolCallID: "c1", ToolName: "swarm_spawn", ResultPreview: string(preview)}, NewRegistry())
 	if !okLive || !okReplay {
 		t.Fatalf("recognized live=%v replay=%v", okLive, okReplay)
 	}
@@ -104,7 +117,7 @@ func TestNormalizeToolPreviewParitySwarm(t *testing.T) {
 
 func TestDecodeSwarmSpawnPreview(t *testing.T) {
 	t.Run("synchronous array", func(t *testing.T) {
-		got, ok := decodeToolPreview("swarm_spawn", `[{"goal_index":0,"child_id":"w1","status":"ok"}]`)
+		got, ok := decodeToolPreview(PreviewInput{ToolName: "swarm_spawn", ResultPreview: `[{"goal_index":0,"child_id":"w1","status":"ok"}]`})
 		reports, typed := got.([]ChildReport)
 		if !ok || !typed || len(reports) != 1 || reports[0].ChildID != "w1" {
 			t.Fatalf("decode = %#v, %v", got, ok)
@@ -112,7 +125,7 @@ func TestDecodeSwarmSpawnPreview(t *testing.T) {
 	})
 	t.Run("queued object", func(t *testing.T) {
 		const preview = `{"queued":2,"note":"background","workers":[{"goal_index":0,"child_id":"w1","status":"running","goal":"inspect","attempts":1},{"goal_index":1,"child_id":"w2","status":"running","goal":"compare","attempts":1}]}`
-		got, ok := decodeToolPreview("swarm_spawn", preview)
+		got, ok := decodeToolPreview(PreviewInput{ToolName: "swarm_spawn", ResultPreview: preview})
 		reports, typed := got.([]ChildReport)
 		if !ok || !typed || len(reports) != 2 {
 			t.Fatalf("decode = %#v, %v", got, ok)
@@ -121,18 +134,18 @@ func TestDecodeSwarmSpawnPreview(t *testing.T) {
 		if !strings.Contains(string(body), `"goal":"inspect"`) || !strings.Contains(string(body), `"attempts":1`) {
 			t.Fatalf("background fields lost: %s", body)
 		}
-		payload, normalized := NormalizeToolPreview("call-background", "swarm_spawn", preview, NewRegistry())
+		payload, normalized := NormalizeToolPreview(PreviewInput{ToolCallID: "call-background", ToolName: "swarm_spawn", ResultPreview: preview}, NewRegistry())
 		if !normalized || payload.Type != KindSwarmReport || payload.ToolCallID != "call-background" || len(payload.Swarm) != 2 {
 			t.Fatalf("NormalizeToolPreview = %+v, %v; want a two-row swarm_report", payload, normalized)
 		}
 	})
 	t.Run("queued object without workers", func(t *testing.T) {
-		if _, ok := decodeToolPreview("swarm_spawn", `{"queued":true,"note":"background"}`); ok {
+		if _, ok := decodeToolPreview(PreviewInput{ToolName: "swarm_spawn", ResultPreview: `{"queued":true,"note":"background"}`}); ok {
 			t.Fatal("queued object without workers must use the raw fallback")
 		}
 	})
 	t.Run("plain string", func(t *testing.T) {
-		if _, ok := decodeToolPreview("swarm_spawn", `capacity unavailable`); ok {
+		if _, ok := decodeToolPreview(PreviewInput{ToolName: "swarm_spawn", ResultPreview: `capacity unavailable`}); ok {
 			t.Fatal("plain string must use the raw fallback")
 		}
 	})
@@ -142,7 +155,7 @@ func TestDecodeSwarmSpawnPreview(t *testing.T) {
 // Payload with the structured [aura_shell {…}] footer stripped from the body.
 func TestNormalizeToolPreviewShell(t *testing.T) {
 	preview := "hello world\n[aura_shell {\"exit_code\":0,\"cwd\":\"/tmp\",\"duration_ms\":3,\"timed_out\":false}]"
-	p, ok := NormalizeToolPreview("c4", "shell_exec", preview, NewRegistry())
+	p, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c4", ToolName: "shell_exec", ResultPreview: preview}, NewRegistry())
 	if !ok || p.Type != KindCode || p.Code == nil {
 		t.Fatalf("shell preview not re-derived as code: ok=%v p=%+v", ok, p)
 	}
@@ -154,7 +167,7 @@ func TestNormalizeToolPreviewShell(t *testing.T) {
 // TestNormalizeToolPreviewShellNoFooter (DISP-02): a code preview with no structured
 // footer is wrapped verbatim — the strip degrades gracefully.
 func TestNormalizeToolPreviewShellNoFooter(t *testing.T) {
-	p, ok := NormalizeToolPreview("c5", "sandbox_exec", "plain output", NewRegistry())
+	p, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c5", ToolName: "sandbox_exec", ResultPreview: "plain output"}, NewRegistry())
 	if !ok || p.Type != KindCode || p.Code == nil || p.Code.Body != "plain output" {
 		t.Fatalf("code preview without footer not wrapped verbatim: ok=%v p=%+v", ok, p)
 	}
@@ -177,7 +190,7 @@ func TestNormalizeToolPreviewFallback(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, ok := NormalizeToolPreview("c", tc.tool, tc.preview, tc.reg); ok {
+			if _, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c", ToolName: tc.tool, ResultPreview: tc.preview}, tc.reg); ok {
 				t.Fatalf("recognized=true, want false (D-FALLBACK)")
 			}
 		})

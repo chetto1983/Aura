@@ -39,6 +39,39 @@ describe('DisplayRouter (DISP-02 / D-FALLBACK)', () => {
     expect(screen.getByText('OUTPUT')).toBeTruthy();
   });
 
+  it('renders escaped raw text when a recognized payload lacks its required slot', () => {
+    const malformed = { type: 'table', tool_call_id: 'missing-table' } as DisplayPayload;
+    const raw = '<b>untrusted</b>';
+    render(<DisplayRouter payload={malformed} toolName="search_files" result={raw} />);
+    const pre = screen.getByText(raw);
+    expect(pre.tagName.toLowerCase()).toBe('pre');
+    expect(pre.querySelector('b')).toBeNull();
+  });
+
+  it('keeps malformed table fields in the raw panel', () => {
+    const malformed = {
+      type: 'table',
+      tool_call_id: 'bad-table',
+      table: { columns: 'not columns', rows: [] },
+    } as unknown as DisplayPayload;
+    render(<DisplayRouter payload={malformed} toolName="search_files" result="raw table" />);
+    expect(screen.getByText('raw table').tagName.toLowerCase()).toBe('pre');
+  });
+
+  it.each([
+    'chart',
+    'system_event',
+    'swarm_report',
+    'local_artifact',
+    'document',
+    'web_result',
+    'code',
+  ])('keeps a %s payload with no data slot in the raw panel', (type) => {
+    const malformed = { type, tool_call_id: 'missing-slot' } as DisplayPayload;
+    render(<DisplayRouter payload={malformed} toolName="tool" result="untrusted value" />);
+    expect(screen.getByText('untrusted value').tagName.toLowerCase()).toBe('pre');
+  });
+
   it('renders untrusted result as ESCAPED text, never markdown/HTML (HARDEN-08 / T-26-05)', () => {
     const payload = '<img src=x onerror="alert(1)"><b>bold</b>';
     render(<DisplayRouter payload={unknownType} toolName="evil_tool" result={payload} />);

@@ -57,7 +57,7 @@ func TestProjectMessagesDisplay(t *testing.T) {
 	// Parity: the replay payload must equal the live normalizer's payload over the SAME
 	// preview shape (a fresh per-turn registry, as live builds).
 	preview, _ := json.Marshal(map[string]any{"results": results})
-	live, ok := display.NormalizeToolPreview("c1", "web_search", string(preview), display.NewRegistry())
+	live, ok := display.NormalizeToolPreview(display.PreviewInput{ToolCallID: "c1", ToolName: "web_search", ResultPreview: string(preview)}, display.NewRegistry())
 	if !ok {
 		t.Fatalf("live normalize failed")
 	}
@@ -65,6 +65,28 @@ func TestProjectMessagesDisplay(t *testing.T) {
 	lb, _ := json.Marshal(live)
 	if string(gb) != string(lb) {
 		t.Fatalf("replay diverged from live:\n replay=%s\n   live=%s", gb, lb)
+	}
+}
+
+func TestPreviewInputsByCallIDPreservesArgumentsAndResult(t *testing.T) {
+	hist := webSearchTurn("with-args", []web.Result{{Title: "A", URL: "https://a.test"}})
+	inputs := previewInputsByCallID(hist)
+	in, ok := inputs["with-args"]
+	if !ok || in.ToolCallID != "with-args" || in.ToolName != "web_search" || in.Arguments != `{"query":"weather"}` {
+		t.Fatalf("assistant call input lost: %+v, found=%v", in, ok)
+	}
+	if !strings.Contains(in.ResultPreview, `"results"`) {
+		t.Fatalf("tool result preview lost: %+v", in)
+	}
+	live, liveOK := display.NormalizeToolPreview(in, display.NewRegistry())
+	replay := rederiveDisplays(hist)["with-args"]
+	if !liveOK || replay == nil {
+		t.Fatalf("display missing: live=%v replay=%+v", liveOK, replay)
+	}
+	liveJSON, _ := json.Marshal(live)
+	replayJSON, _ := json.Marshal(replay)
+	if string(liveJSON) != string(replayJSON) {
+		t.Fatalf("live/replay mismatch: live=%s replay=%s", liveJSON, replayJSON)
 	}
 }
 
