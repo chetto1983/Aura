@@ -93,8 +93,10 @@ test('a waveform on the lane, and an envelope point pulled to the floor, heard i
     contentType: 'application/json',
     body: JSON.stringify(levels, null, 2),
   });
-  // The music is −18.24 dBFS. The envelope now falls from full gain at 0 s to the floor at 6 s: the
-  // first second loses about 1 dB to that slope, the dip far more.
-  expect(levels.start).toBeGreaterThan(-21);
+  // The music plays at −21.24 dBFS in an export, not its source's −18.24: the mono bed is panned
+  // into stereo (measured by video-studio-lane.spec.ts, 2026-09-27). The envelope now falls from
+  // full gain at 0 s to the floor at 6 s, so the first second loses 1.6 dB to that slope (−22.8
+  // dBFS) and the dip far more.
+  expect(levels.start).toBeGreaterThan(-24);
   expect(levels.start - levels.dip).toBeGreaterThan(10);
 });
