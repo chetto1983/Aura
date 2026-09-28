@@ -29,6 +29,7 @@ export type DisplayKind =
   | 'code'
   | 'local_artifact'
   | 'table'
+  | 'stats'
   | 'chart'
   | 'system_event'
   | 'swarm_report'
@@ -97,6 +98,11 @@ export interface DisplayTable {
   readonly columns: readonly string[];
   readonly rows: readonly (readonly string[])[];
   readonly notice?: string;
+  readonly omitted_rows?: number;
+}
+
+export interface DisplayStats {
+  readonly items: readonly { readonly label: string; readonly value: number }[];
 }
 
 /** A numeric series (type=chart). Mirrors display.Chart (swap-ready, D-02). */
@@ -174,6 +180,7 @@ export interface DisplayPayload {
   readonly code?: DisplayCode;
   readonly artifact?: DisplayArtifact;
   readonly table?: DisplayTable;
+  readonly stats?: DisplayStats;
   readonly chart?: DisplayChart;
   readonly system?: DisplaySystem;
   readonly swarm?: readonly DisplayChildReport[];

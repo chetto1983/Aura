@@ -17,6 +17,8 @@ const (
 	KindLocalArtifact Kind = "local_artifact"
 	// KindTable identifies a structured table payload.
 	KindTable Kind = "table"
+	// KindStats identifies finite numeric metrics from a trusted read.
+	KindStats Kind = "stats"
 	// KindChart identifies a chart-ready numeric payload.
 	KindChart Kind = "chart"
 	// KindSystemEvent identifies a sanitized system status or error payload.
@@ -46,6 +48,7 @@ type Payload struct {
 	Code       *Code         `json:"code,omitempty"`
 	Artifact   *Artifact     `json:"artifact,omitempty"`
 	Table      *Table        `json:"table,omitempty"`
+	Stats      *Stats        `json:"stats,omitempty"`
 	Chart      *Chart        `json:"chart,omitempty"`
 	System     *System       `json:"system,omitempty"`
 	Swarm      []ChildReport `json:"swarm,omitempty"`
@@ -102,9 +105,21 @@ type Artifact struct {
 
 // Table is a structured grid (D-14: client sorts/filters/exports it).
 type Table struct {
-	Columns []string   `json:"columns"`
-	Rows    [][]string `json:"rows"`
-	Notice  string     `json:"notice,omitempty"`
+	Columns     []string   `json:"columns"`
+	Rows        [][]string `json:"rows"`
+	Notice      string     `json:"notice,omitempty"`
+	OmittedRows int        `json:"omitted_rows,omitempty"`
+}
+
+// Stats is a bounded series of non-negative counters from a trusted source.
+type Stats struct {
+	Items []StatItem `json:"items"`
+}
+
+// StatItem is one named non-negative counter in a trusted stats display.
+type StatItem struct {
+	Label string `json:"label"`
+	Value int64  `json:"value"`
 }
 
 // Chart is the zero-dep SVG / table-as-bars MVP shape (D-02), swap-ready for a

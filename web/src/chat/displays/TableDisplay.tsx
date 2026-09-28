@@ -21,9 +21,10 @@ const PER_PAGE_OPTIONS = [3, 6, 9] as const;
 
 export interface TableDisplayProps {
   readonly payload: { readonly table?: DisplayTable };
+  readonly label?: string;
 }
 
-export function TableDisplay({ payload }: TableDisplayProps) {
+export function TableDisplay({ payload, label: labelOverride }: TableDisplayProps) {
   const { t, i18n } = useTranslation();
   const { copied, copy } = useCopyAction();
   const selectId = useId();
@@ -48,7 +49,8 @@ export function TableDisplay({ payload }: TableDisplayProps) {
     priority: index === 0 ? 'primary' : 'secondary',
   }));
 
-  const label = t('display.type.table');
+  const label = labelOverride ?? t('display.type.table');
+  const omittedRows = payload.table?.omitted_rows ?? 0;
 
   // No tabular data at all → the "No rows" empty state (Copywriting Contract).
   if (columns.length === 0 || rows.length === 0) {
@@ -56,6 +58,11 @@ export function TableDisplay({ payload }: TableDisplayProps) {
       <DisplayCardShell label={label}>
         <EmptyState heading={t('display.table.emptyHeading')} body={t('display.table.emptyBody')} />
         {notice ? <p className="mt-2 text-xs text-text-muted">{notice}</p> : null}
+        {omittedRows > 0 ? (
+          <p className="mt-2 text-xs text-text-muted">
+            {t('display.table.omittedRows', { count: omittedRows })}
+          </p>
+        ) : null}
       </DisplayCardShell>
     );
   }
@@ -206,6 +213,11 @@ export function TableDisplay({ payload }: TableDisplayProps) {
         </>
       )}
       {notice ? <p className="mt-2 text-xs text-text-muted">{notice}</p> : null}
+      {omittedRows > 0 ? (
+        <p className="mt-2 text-xs text-text-muted">
+          {t('display.table.omittedRows', { count: omittedRows })}
+        </p>
+      ) : null}
     </DisplayCardShell>
   );
 }

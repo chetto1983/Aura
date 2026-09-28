@@ -1,7 +1,9 @@
 import { ToolResultPanel } from '../ToolResultPanel';
 import { McpViewFrame } from '../mcpapps/McpViewFrame';
-import type { DisplayDiff, DisplayPayload, DisplayTodo } from './types';
+import type { DisplayDiff, DisplayPayload, DisplayStats, DisplayTodo } from './types';
 import { TableDisplay } from './TableDisplay';
+import { MemoryFactsDisplay } from './MemoryFactsDisplay';
+import { MemoryStatsDisplay } from './MemoryStatsDisplay';
 import { ChartDisplay } from './ChartDisplay';
 import { SystemEventCard } from './SystemEventCard';
 import { SwarmReportTable } from './SwarmReportTable';
@@ -54,7 +56,23 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
         payload.table.rows.every(
           (row) => Array.isArray(row) && row.every((cell) => typeof cell === 'string'),
         ) ? (
-        <TableDisplay payload={payload} />
+        payload.table.omitted_rows !== undefined &&
+        (!Number.isInteger(payload.table.omitted_rows) || payload.table.omitted_rows < 0) ? (
+          raw()
+        ) : (payload.title === 'memory_facts' || payload.title === 'memory_entities') &&
+          !isMemoryTable(payload) ? (
+          raw()
+        ) : payload.title === 'memory_facts' || payload.title === 'memory_entities' ? (
+          <MemoryFactsDisplay payload={payload} />
+        ) : (
+          <TableDisplay payload={payload} />
+        )
+      ) : (
+        raw()
+      );
+    case 'stats':
+      return payload.title === 'memory_graph' && isMemoryStats(payload.stats) ? (
+        <MemoryStatsDisplay payload={payload} />
       ) : (
         raw()
       );
@@ -151,6 +169,41 @@ export function DisplayRouter({ payload, argsText, result, onOpenSource }: Displ
       // raw output stays escaped, capped, and copyable.
       return raw();
   }
+}
+
+function isMemoryTable(payload: DisplayPayload): boolean {
+  const table = payload.table;
+  if (!table) return false;
+  const expectedColumns = payload.title === 'memory_entities' ? 4 : 7;
+  return (
+    table.columns.length === expectedColumns &&
+    table.rows.every((row) => row.length === expectedColumns)
+  );
+}
+
+function isMemoryStats(value: unknown): value is DisplayStats {
+  if (typeof value !== 'object' || value === null || !('items' in value)) return false;
+  const items: unknown = value.items;
+  if (!Array.isArray(items) || items.length === 0 || items.length > 4) return false;
+  const labels = new Set<string>();
+  for (const item of items as unknown[]) {
+    if (typeof item !== 'object' || item === null || !('label' in item) || !('value' in item)) {
+      return false;
+    }
+    const { label, value: count } = item;
+    if (
+      typeof label !== 'string' ||
+      !['nodes', 'edges', 'isolated_nodes', 'zero_out_degree'].includes(label) ||
+      labels.has(label) ||
+      typeof count !== 'number' ||
+      !Number.isSafeInteger(count) ||
+      count < 0
+    ) {
+      return false;
+    }
+    labels.add(label);
+  }
+  return true;
 }
 
 /** A todo or diff row as the wire may send it: every field unknown until checked. */
