@@ -1,5 +1,5 @@
 import { useState, type ComponentProps, type ReactNode } from 'react';
-import { CheckIcon, CopyIcon, DownloadIcon, ImageIcon, ImageOffIcon, XIcon } from 'lucide-react';
+import { CheckIcon, CopyIcon, DownloadIcon, XIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import {
   Dialog,
@@ -9,8 +9,8 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 
-// Owned copy of the @assistant-ui/image registry item, kept as its compound elements (Root,
-// Preview, Filename, Zoom, Actions) on the cockpit tokens. Changes from the installed source:
+// Owned copy of the @assistant-ui/image registry item, kept as compound elements
+// (Root, Filename, Zoom, Actions) on the cockpit tokens. Changes from the installed source:
 // - Zoom opens the cockpit's Radix Dialog from a native button, which already owns the focus
 //   trap, Escape, focus return and scroll lock the registry wrote by hand.
 // - Actions download through a caller-supplied href (the asset route of the active tier)
@@ -33,50 +33,6 @@ export function ImageRoot({ className, ...props }: ComponentProps<'div'>) {
       )}
       {...props}
     />
-  );
-}
-
-export function ImagePreview({ src, alt }: { readonly src: string; readonly alt: string }) {
-  const [loadedSrc, setLoadedSrc] = useState<string>();
-  const [errorSrc, setErrorSrc] = useState<string>();
-  const loaded = loadedSrc === src;
-  if (errorSrc === src) {
-    return (
-      <span
-        data-slot="image-preview-error"
-        role="img"
-        aria-label={alt}
-        className="flex min-h-32 items-center justify-center bg-surface-2 p-4"
-      >
-        <ImageOffIcon aria-hidden="true" className="size-8 text-text-faint" />
-      </span>
-    );
-  }
-  return (
-    <span data-slot="image-preview" className="relative block min-h-32">
-      {loaded ? null : (
-        <span
-          data-slot="image-preview-loading"
-          className="absolute inset-0 flex items-center justify-center bg-surface-2"
-        >
-          <ImageIcon
-            aria-hidden="true"
-            className="size-8 animate-pulse text-text-faint motion-reduce:animate-none"
-          />
-        </span>
-      )}
-      <img
-        src={src}
-        alt={alt}
-        className={cn('block h-auto w-full object-contain', !loaded && 'invisible')}
-        onLoad={() => {
-          setLoadedSrc(src);
-        }}
-        onError={() => {
-          setErrorSrc(src);
-        }}
-      />
-    </span>
   );
 }
 
