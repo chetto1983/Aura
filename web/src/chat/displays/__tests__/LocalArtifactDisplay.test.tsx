@@ -129,7 +129,9 @@ describe('LocalArtifactDisplay', () => {
           })}
         />,
       );
-      const img = await screen.findByRole('img', { name: 'lake.png' });
+      // WSL resolves the lazy renderer from the Windows mount more slowly than jsdom's
+      // default one-second async query window.
+      const img = await screen.findByRole('img', { name: 'lake.png' }, { timeout: 5000 });
       expect(img.getAttribute('src')).toBe('blob:inline');
       expect(screen.getByRole('link', { name: 'Download lake.png' }).getAttribute('href')).toBe(
         '/api/assets/img-1/download',
@@ -159,6 +161,32 @@ describe('LocalArtifactDisplay', () => {
       );
       expect(fetchMock).not.toHaveBeenCalled();
       expect(container.innerHTML).not.toContain(HOST_PATH);
+    });
+
+    it('keeps the audio download action after the player reports an error', async () => {
+      const fetchMock = stubAssetBytes();
+      const { container } = render(
+        <LocalArtifactDisplay
+          payload={payload({
+            filename: 'recording.mp3',
+            mime_type: 'audio/mpeg',
+            asset_id: 'aud-1',
+          })}
+        />,
+      );
+      const audio = await screen.findByLabelText('Play recording.mp3');
+      expect(audio.tagName).toBe('BUTTON');
+      expect(container.querySelector('audio')?.getAttribute('src')).toBe(
+        `${location.origin}/api/assets/aud-1/stream`,
+      );
+      const media = container.querySelector('audio');
+      if (media === null) throw new Error('audio player did not render');
+      fireEvent.error(media);
+      expect(screen.getByRole('alert')).toBeTruthy();
+      expect(
+        screen.getByRole('link', { name: 'Download recording.mp3' }).getAttribute('href'),
+      ).toBe('/api/assets/aud-1/download');
+      expect(fetchMock).not.toHaveBeenCalled();
     });
 
     it('hands a delivered clip to the editor from its caption', () => {

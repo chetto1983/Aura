@@ -290,6 +290,9 @@ export const displayEn = {
     preview: {
       loading: 'Loading preview…',
       error: "Couldn't load this preview.",
+      play: 'Play',
+      pause: 'Pause',
+      seek: 'Seek',
       downloadFallback: 'Download file',
       download: 'Download {{name}}',
       description: 'Preview of {{name}}. Use the download button to save the original file.',
@@ -583,6 +586,9 @@ export const displayIt = {
     preview: {
       loading: 'Caricamento anteprima…',
       error: "Impossibile caricare l'anteprima.",
+      play: 'Riproduci',
+      pause: 'Pausa',
+      seek: 'Cerca',
       downloadFallback: 'Scarica il file',
       download: 'Scarica {{name}}',
       description:

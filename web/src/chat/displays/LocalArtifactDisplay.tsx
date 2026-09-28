@@ -11,6 +11,7 @@ import { DisplayCardShell } from './DisplayCardShell';
 const InlineHtmlArtifact = lazy(() => import('../artifacts/InlineHtmlArtifact'));
 const GeneratedImagePreview = lazy(() => import('../artifacts/renderers/GeneratedImagePreview'));
 const VideoPreview = lazy(() => import('../artifacts/renderers/VideoPreview'));
+const AudioPreview = lazy(() => import('../artifacts/renderers/AudioPreview'));
 
 // Only delivered asset IDs enable previews. Host/container paths never reach the UI.
 
@@ -54,24 +55,30 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
     );
   }
 
-  if (assetId && kind === 'video') {
+  if (assetId && (kind === 'video' || kind === 'audio')) {
     return (
       <figure className="my-1 flex w-full max-w-[768px] flex-col gap-2">
         <Suspense fallback={<PreviewLoading />}>
-          <VideoPreview assetId={assetId} fileName={filename} mimeType={mimeType} />
+          {kind === 'video' ? (
+            <VideoPreview assetId={assetId} fileName={filename} mimeType={mimeType} />
+          ) : (
+            <AudioPreview assetId={assetId} fileName={filename} mimeType={mimeType} />
+          )}
         </Suspense>
         <figcaption className="flex min-w-0 items-center justify-between gap-3">
           <span className="min-w-0 truncate font-mono text-sm text-text" title={filename}>
             {filename}
           </span>
           <span className="flex shrink-0 items-center gap-1">
-            <EditMediaButton
-              assetId={assetId}
-              kind="video"
-              mimeType={mimeType}
-              fileName={filename}
-              compact
-            />
+            {kind === 'video' ? (
+              <EditMediaButton
+                assetId={assetId}
+                kind="video"
+                mimeType={mimeType}
+                fileName={filename}
+                compact
+              />
+            ) : null}
             <DownloadLink assetId={assetId} filename={filename} />
           </span>
         </figcaption>

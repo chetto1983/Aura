@@ -233,6 +233,49 @@ func TestAssetStreamServesOnlyTheAcceptedVideoTypes(t *testing.T) {
 	}
 }
 
+func TestAssetStreamAudioRangeAndAllowlist(t *testing.T) {
+	for _, tc := range []struct{ mimeType, contentType string }{
+		{"audio/mpeg", "audio/mpeg"},
+		{"audio/mp3", "audio/mp3"},
+		{"audio/ogg", "audio/ogg"},
+		{"audio/wav", "audio/wav"},
+		{"audio/x-wav", "audio/x-wav"},
+		{"audio/webm", "audio/webm"},
+		{"audio/mp4", "audio/mp4"},
+		{"audio/m4a", "audio/m4a"},
+		{"audio/x-m4a", "audio/x-m4a"},
+		{"audio/webm;codecs=opus", "audio/webm"},
+	} {
+		t.Run(tc.mimeType, func(t *testing.T) {
+			s, fake, store := newAssetStreamRig(t, tc.mimeType)
+			fake.openAsset.FileName = "recording.mp3"
+			rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, rangeHeader("bytes=2-5"))
+			if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Range") != "bytes 2-5/2048" || rec.Header().Get("Content-Type") != tc.contentType || rec.Header().Get("X-Content-Type-Options") != "nosniff" || !bytes.Equal(rec.Body.Bytes(), streamClip()[2:6]) {
+				t.Fatalf("audio range: status=%d headers=%v body=%v", rec.Code, rec.Header(), rec.Body.Bytes())
+			}
+			if store.heads != 1 || !slices.Equal(store.offsets, []int64{2}) {
+				t.Fatalf("store calls: heads=%d offsets=%v", store.heads, store.offsets)
+			}
+		})
+	}
+	s, _, _ := newAssetStreamRig(t, "audio/mpeg")
+	if rec := streamRequest(s, http.MethodHead, "/api/assets/asset-1/stream", assetAPIIdentityID, nil); rec.Code != http.StatusOK || rec.Header().Get("Content-Length") != "2048" || rec.Body.Len() != 0 {
+		t.Fatalf("audio HEAD = %d, headers=%v body=%d", rec.Code, rec.Header(), rec.Body.Len())
+	}
+	if rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, rangeHeader("bytes=999999-")); rec.Code != http.StatusRequestedRangeNotSatisfiable || rec.Header().Get("Content-Range") != "bytes */2048" {
+		t.Fatalf("audio invalid range = %d, headers=%v", rec.Code, rec.Header())
+	}
+	for _, mimeType := range []string{"text/html", "image/svg+xml", "audio/flac"} {
+		s, _, store := newAssetStreamRig(t, mimeType)
+		if rec := streamRequest(s, http.MethodGet, "/api/assets/asset-1/stream", assetAPIIdentityID, nil); rec.Code != http.StatusUnsupportedMediaType {
+			t.Errorf("%s status = %d, want 415", mimeType, rec.Code)
+		}
+		if len(store.offsets) != 0 {
+			t.Errorf("%s read bytes", mimeType)
+		}
+	}
+}
+
 // A foreign or absent asset is refused exactly as download refuses it: the same status and
 // the same body, so the stream route adds no existence oracle.
 func TestAssetStreamRefusesAForeignAssetLikeDownload(t *testing.T) {
@@ -276,7 +319,7 @@ func TestAssetStreamLogsAStoreFailureAfterTheStatusLine(t *testing.T) {
 	if rec.Code != http.StatusPartialContent || rec.Body.Len() != 0 {
 		t.Fatalf("status = %d with %d bytes, want the 206 already sent and nothing after it", rec.Code, rec.Body.Len())
 	}
-	for _, want := range []string{"video stream read failed", "asset_id=asset-1", "garage connection reset"} {
+	for _, want := range []string{"media stream read failed", "asset_id=asset-1", "garage connection reset"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("log %q does not contain %q", logs.String(), want)
 		}

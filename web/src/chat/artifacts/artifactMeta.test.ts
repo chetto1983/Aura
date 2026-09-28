@@ -34,6 +34,26 @@ describe('previewKind', () => {
     expect(previewKind('', 'clip.webm')).toBe('video');
   });
 
+  it('routes only approved stored audio MIME types to the audio player', () => {
+    for (const mime of [
+      'audio/mpeg',
+      'audio/mp3',
+      'audio/ogg',
+      'audio/wav',
+      'audio/x-wav',
+      'audio/webm',
+      'audio/mp4',
+      'audio/m4a',
+      'audio/x-m4a',
+      'audio/webm;codecs=opus',
+    ]) {
+      expect(previewKind(mime, 'recording.bin')).toBe('audio');
+    }
+    expect(previewKind('audio/flac', 'recording.mp3')).toBe('download');
+    expect(previewKind('application/octet-stream', 'recording.mp3')).toBe('download');
+    expect(previewKind('image/svg+xml; charset=utf-8', 'recording.mp3')).toBe('download');
+  });
+
   it('keeps video formats the stream route refuses download-only', () => {
     expect(previewKind('video/quicktime', 'clip.mov')).toBe('download');
     expect(previewKind('video/x-matroska', 'clip.mkv')).toBe('download');

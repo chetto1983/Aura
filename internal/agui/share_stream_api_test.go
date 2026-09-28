@@ -19,6 +19,7 @@ const (
 	streamShareID     = "0199a000-0000-7000-8000-00000000000a"
 	streamVideoID     = "0199a000-0000-7000-8000-0000000000b1"
 	streamDocID       = "0199a000-0000-7000-8000-0000000000b2"
+	streamAudioID     = "0199a000-0000-7000-8000-0000000000b3"
 	streamShareBucket = "share-bucket"
 )
 
@@ -84,10 +85,14 @@ func newShareStreamRig(t *testing.T) (*Server, *rangeRecordingStore) {
 	if _, err := store.Put(context.Background(), streamShareRef(t, link, streamDocID), bytes.NewReader(doc), objectstore.PutOptions{}); err != nil {
 		t.Fatalf("seed doc: %v", err)
 	}
+	if _, err := store.Put(context.Background(), streamShareRef(t, link, streamAudioID), bytes.NewReader(streamClip()), objectstore.PutOptions{Size: streamClipSize}); err != nil {
+		t.Fatalf("seed audio: %v", err)
+	}
 	svc := &streamShareService{
 		snap: share.Snapshot{Artifacts: []share.SnapshotArtifact{
 			{AssetID: streamVideoID, FileName: "clip.mp4", MIMEType: "video/mp4", SizeBytes: streamClipSize},
 			{AssetID: streamDocID, FileName: "notes.txt", MIMEType: "text/plain", SizeBytes: int64(len(doc))},
+			{AssetID: streamAudioID, FileName: "recording.webm", MIMEType: "audio/webm;codecs=opus", SizeBytes: streamClipSize},
 		}},
 		link:    link,
 		objects: store,
@@ -95,6 +100,31 @@ func newShareStreamRig(t *testing.T) (*Server, *rangeRecordingStore) {
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
 	s.SetShareService(svc)
 	return s, store
+}
+
+func TestShareStreamAudioRangeAndScope(t *testing.T) {
+	for _, tier := range shareTiers() {
+		t.Run(tier.name, func(t *testing.T) {
+			s, store := newShareStreamRig(t)
+			path := tier.asset(streamAudioID) + "/stream"
+			rec := streamRequest(s, http.MethodGet, path, tier.principal, rangeHeader("bytes=2-5"))
+			if rec.Code != http.StatusPartialContent || rec.Header().Get("Content-Range") != "bytes 2-5/2048" || rec.Header().Get("Content-Type") != "audio/webm" || rec.Header().Get("X-Content-Type-Options") != "nosniff" || !bytes.Equal(rec.Body.Bytes(), streamClip()[2:6]) {
+				t.Fatalf("audio range: status=%d headers=%v body=%v", rec.Code, rec.Header(), rec.Body.Bytes())
+			}
+			if store.heads != 1 || len(store.offsets) != 1 || store.offsets[0] != 2 {
+				t.Fatalf("store calls: heads=%d offsets=%v", store.heads, store.offsets)
+			}
+			if rec := streamRequest(s, http.MethodHead, path, tier.principal, nil); rec.Code != http.StatusOK || rec.Header().Get("Content-Length") != "2048" || rec.Body.Len() != 0 {
+				t.Fatalf("audio HEAD = %d, headers=%v body=%d", rec.Code, rec.Header(), rec.Body.Len())
+			}
+			if rec := streamRequest(s, http.MethodGet, path, tier.principal, rangeHeader("bytes=999999-")); rec.Code != http.StatusRequestedRangeNotSatisfiable || rec.Header().Get("Content-Range") != "bytes */2048" {
+				t.Fatalf("invalid range = %d, headers=%v", rec.Code, rec.Header())
+			}
+			if rec := streamRequest(s, http.MethodGet, tier.asset("0199a000-0000-7000-8000-0000000000ff")+"/stream", tier.principal, nil); rec.Code != http.StatusNotFound {
+				t.Fatalf("foreign asset = %d, want 404", rec.Code)
+			}
+		})
+	}
 }
 
 type shareTier struct {
@@ -195,7 +225,7 @@ func TestShareStreamLogsAStoreFailureAfterTheStatusLine(t *testing.T) {
 	if rec.Code != http.StatusOK || rec.Body.Len() != 0 {
 		t.Fatalf("status = %d with %d bytes, want the 200 already sent and nothing after it", rec.Code, rec.Body.Len())
 	}
-	for _, want := range []string{"video stream read failed", "asset_id=" + streamVideoID, "garage connection reset"} {
+	for _, want := range []string{"media stream read failed", "asset_id=" + streamVideoID, "garage connection reset"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("log %q does not contain %q", logs.String(), want)
 		}

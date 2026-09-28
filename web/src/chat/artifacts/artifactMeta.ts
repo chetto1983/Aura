@@ -22,7 +22,19 @@ import {
  *  `image`) to keep script-bearing SVG out of an executing <img> (T-37B-05). `video`
  *  is only the two formats the asset stream route serves; any other clip is `download`. */
 export type PreviewKind =
-  'image' | 'video' | 'pdf' | 'text' | 'html' | 'docx' | 'xlsx' | 'download';
+  'image' | 'audio' | 'video' | 'pdf' | 'text' | 'html' | 'docx' | 'xlsx' | 'download';
+
+const AUDIO_MIME = new Set([
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/ogg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/webm',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+]);
 
 // The raw-<pre> text family (D-07): rendered as escaped monospace, never as
 // interpreted markdown/HTML — zero injection surface.
@@ -53,9 +65,11 @@ function extOf(filename: string): string {
  *  the `image/*` branch — so a script-bearing SVG never reaches an executing <img>. */
 export function previewKind(mime: string, filename: string): PreviewKind {
   const ext = extOf(filename);
-  if (mime === 'image/svg+xml' || ext === 'svg') return 'download';
-  if (mime.startsWith('image/')) return 'image';
-  if (mime === 'video/mp4' || mime === 'video/webm' || ext === 'mp4' || ext === 'webm') {
+  const mediaType = mime.split(';', 1)[0]?.trim().toLowerCase() ?? '';
+  if (mediaType === 'image/svg+xml' || ext === 'svg') return 'download';
+  if (AUDIO_MIME.has(mediaType)) return 'audio';
+  if (mediaType.startsWith('image/')) return 'image';
+  if (mediaType === 'video/mp4' || mediaType === 'video/webm' || ext === 'mp4' || ext === 'webm') {
     return 'video';
   }
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';

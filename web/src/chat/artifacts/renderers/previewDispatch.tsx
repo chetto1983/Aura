@@ -21,6 +21,7 @@ const HtmlPreview = lazy(() => import('./HtmlPreview'));
 const DocxPreview = lazy(() => import('./DocxPreview'));
 const XlsxPreview = lazy(() => import('./XlsxPreview'));
 const VideoPreview = lazy(() => import('./VideoPreview'));
+const AudioPreview = lazy(() => import('./AudioPreview'));
 
 export interface PreviewByKindProps {
   readonly kind: PreviewKind;
@@ -45,6 +46,8 @@ export function PreviewByKind({ kind, asset, downloadFallback }: PreviewByKindPr
       return <XlsxPreview {...asset} />;
     case 'video':
       return <VideoPreview {...asset} />;
+    case 'audio':
+      return <AudioPreview {...asset} />;
     case 'download':
       return downloadFallback;
   }
