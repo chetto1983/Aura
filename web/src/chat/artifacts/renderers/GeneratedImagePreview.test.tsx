@@ -71,6 +71,27 @@ describe('GeneratedImagePreview', () => {
     expect(img.getAttribute('src')).toBe('blob:image-1');
     expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/assets/img%2F1/download');
     expect(screen.getByText('lake.png')).toBeTruthy();
+    expect(img.closest('[data-slot="image"]')).toBeTruthy();
+    expect(img.className).toContain('h-auto');
+  });
+
+  it('revokes its object URL after unmount', async () => {
+    const revoked: string[] = [];
+    URL.revokeObjectURL = (url) => { revoked.push(url); };
+    const view = render(<GeneratedImagePreview {...props} />);
+    await loadedImage();
+    view.unmount();
+    expect(revoked).toEqual(['blob:image-1']);
+  });
+
+  it('shows an image decode error while retaining the download', async () => {
+    render(<GeneratedImagePreview {...props} />);
+    const image = await loadedImage();
+    fireEvent.error(image);
+    expect(screen.getByRole('alert').textContent).toContain("Couldn't load this preview.");
+    expect(screen.getByRole('link', { name: 'Download lake.png' }).getAttribute('href')).toBe(
+      '/api/assets/img%2F1/download',
+    );
   });
 
   it('shows the shared error state when the asset cannot be fetched', async () => {
@@ -82,6 +103,9 @@ describe('GeneratedImagePreview', () => {
       expect(screen.getByRole('alert').textContent).toContain('404');
     });
     expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.getByRole('link', { name: 'Download lake.png' }).getAttribute('href')).toBe(
+      '/api/assets/img%2F1/download',
+    );
   });
 
   it('downloads through the identity asset route by asset ID', async () => {

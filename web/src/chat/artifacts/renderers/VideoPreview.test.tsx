@@ -57,6 +57,17 @@ describe('VideoPreview', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it('refuses a stream URL outside Aura', () => {
+    const source: AssetSource = {
+      assetUrl: () => '/safe/download',
+      streamUrl: () => 'https://provider.example/clip.mp4',
+      credentials: 'omit',
+    };
+    const { container } = renderIn(source, <VideoPreview {...props} />);
+    expect(container.querySelector('video')).toBeNull();
+    expect(screen.getByRole('alert')).toBeTruthy();
+  });
+
   it('plays only on request, with native controls, inline, loading metadata first', () => {
     const { container } = renderIn(undefined, <VideoPreview {...props} />);
     const video = videoOf(container);
@@ -67,6 +78,9 @@ describe('VideoPreview', () => {
     expect(video.autoplay).toBe(false);
     expect(video.getAttribute('aria-label')).toBe('sea.mp4');
     expect(screen.getByLabelText('sea.mp4')).toBe(video);
+    expect(video.closest('[data-slot="video-player"]')).toBeTruthy();
+    expect(video.className).toContain('max-h-[70vh]');
+    expect(video.className).toContain('h-auto');
   });
 
   it('never autoplays when the preview is mounted again', () => {

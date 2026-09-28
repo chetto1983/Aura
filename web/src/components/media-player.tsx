@@ -253,7 +253,10 @@ export function VideoPlayer({
           playsInline
           preload="metadata"
           aria-label={title ?? 'Video'}
-          className={cn('block max-w-full', ratio !== 'auto' && 'h-full w-full object-contain')}
+          className={cn(
+            'block max-w-full',
+            ratio === 'auto' ? 'max-h-[70vh] h-auto w-auto' : 'h-full w-full object-contain',
+          )}
           onLoadedMetadata={(event) => {
             setDurationFromMetadata(event.currentTarget.duration);
           }}

@@ -218,6 +218,20 @@ describe('LocalArtifactDisplay', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('does not preview an SVG with a PNG filename', () => {
+      const { container } = render(
+        <LocalArtifactDisplay
+          payload={payload({
+            filename: 'photo.png',
+            mime_type: 'image/svg+xml',
+            asset_id: 'svg-2',
+          })}
+        />,
+      );
+      expect(container.querySelector('img')).toBeNull();
+      expect(screen.getByRole('link', { name: 'Download photo.png' })).toBeTruthy();
+    });
+
     it('keeps an undelivered image on the degraded card', () => {
       const fetchMock = stubAssetBytes();
       const { container } = render(
