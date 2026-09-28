@@ -25,7 +25,7 @@ Selection is per result shape, not per brand. Port only selected component sourc
 |---|---|---|---|
 | Collapsed tool activity | Tool UI activity/progress | Tool call, tool timeline | Keep Aura `ToolActivityCard` and `ToolGroup`: they already encode running, nested, and completed states and the compact chat contract. Reuse visual details only. |
 | Working checklist | Plan | Todo list, agent plan | **Elements Todo list**, adapted for `todo_write`'s individual `pending`, `in_progress`, `completed` states and updates. Tool UI Plan is the fallback if its source adapts more cleanly. Avoid an active-index-only representation. |
-| Shell output | Terminal | Terminal block | **Elements Terminal block** standalone: command, stdout/stderr, cwd, exit code, duration, truncation. Show actual completed output; do not imply line streaming before Aura emits it. |
+| Shell output | Terminal | Terminal block | **Elements Terminal block** standalone: command, combined output, cwd, exit code, duration, truncation. Aura's shell preview combines stdout/stderr and may append a stderr tail; do not claim separate streams or imply line streaming before Aura emits it. |
 | Applied patch | Code diff | Code diff, reviewable diff | **Elements Code diff** standalone: parse the trusted applied unified diff into file/hunk lines. It avoids Tool UI's `@pierre/diffs` dependency. Read-only; no hunk acceptance or re-apply action. |
 | Read/written code | Code block | Syntax highlighter | **Tool UI Code block** for text with filename/language and line numbers where available. Keep a raw-text escape hatch for parsing failures and large output. |
 | Tabular results | Data table, stats display | Data table, spec sheet | **Elements Data table** for row-shaped results, with Aura's existing filtering, CSV export, pagination and copy retained. **Tool UI Stats display** for compact diagnostic counts. No table for a single acknowledgement. |
@@ -69,7 +69,7 @@ The table names every native and memory tool and all 15 WhatsApp tools. Calendar
 | Tool(s) | Result in cockpit | Rollout |
 |---|---|---|
 | `ask_user` | Spec 1 QuestionCard; no second approval/elicitation UI | Existing |
-| `shell_exec`, `shell_poll` | Elements Terminal block; widen trusted code payload for command, separated output, cwd, exit code, duration, truncation; polling stays associated with its job | 1 |
+| `shell_exec`, `shell_poll` | Elements Terminal block for completed output; widen trusted code payload for command, combined output, cwd, exit code, duration, truncation; a running/background poll remains a status row associated with its job | 1 |
 | `shell_kill` | Row with termination status | 1 |
 | `patch` | Elements Code diff from applied unified diff; multi-file patches keep each filename/hunk; show failure as error | 1 |
 | `read_file`, `write_file` | Tool UI Code block for supported text; line numbers on read; binary/image uses existing attachment/artifact path; write receipt shows target and bounded written preview | 1 |
