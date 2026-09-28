@@ -69,6 +69,31 @@ describe('LibraryPicker', () => {
     expect(screen.getByRole('button', { name: 'beach.mp4' }).querySelector('img')).toBeNull();
   });
 
+  it('offers no GIF among the clips, and says so when it was all there was', () => {
+    const loop = { id: 'g1', file_name: 'loop.gif', mime_type: 'image/gif' };
+    library.state = listing([CLIP, loop, STILL]);
+    const view = render(
+      <LibraryPicker
+        modalities={['video', 'image']}
+        empty="videoStudio.library.emptyClips"
+        onPick={vi.fn()}
+      />,
+    );
+    expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+      'beach.mp4',
+      'poster.png',
+    ]);
+    library.state = listing([loop]);
+    view.rerender(
+      <LibraryPicker
+        modalities={['video', 'image']}
+        empty="videoStudio.library.emptyClips"
+        onPick={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('videoStudio.library.emptyClips')).toBeTruthy();
+  });
+
   it('says it is reading the library, then that it could not', () => {
     library.state = { isPending: true, isError: false, data: undefined };
     const view = render(

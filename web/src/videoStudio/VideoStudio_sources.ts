@@ -22,6 +22,7 @@ import { loadProject, type LoadedProject, type ProjectAssetSource } from './proj
 export const REFUSAL_UNDECODABLE = 'videoStudio.refusal.sourceUndecodable';
 export const REFUSAL_MISSING_ASSET = 'videoStudio.refusal.sourceMissingAsset';
 export const REFUSAL_UNDECODABLE_SOUND = 'videoStudio.audio.refusal.undecodable';
+export const REFUSAL_NOT_A_STILL = 'videoStudio.refusal.sourceNotStill';
 
 /**
  * What the audio picker takes: MIME types only, because the probe is routed by the picked file's
@@ -32,15 +33,25 @@ export const AUDIO_ACCEPT =
   'audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/ogg,audio/webm,audio/flac';
 
 /**
- * What the file picker takes. The clips are exactly what the asset route accepts as a video
- * (internal/assets/limits.go `videoExts`), so the server has nothing left to refuse. The stills
- * are OURS to choose: `ModalityImage` has no extension allowlist at all, so the gate is the list
- * below plus the decode probe — and it holds the three raster formats every browser this cockpit
- * targets decodes. GIF is left out on purpose: the video lane would show one frame of it and
- * say nothing about the rest, and a silent loss is the defect class this cycle keeps refusing.
- * A sound picked here goes to an audio lane, as Clideo does.
+ * The pictures a clip may be. They are OURS to choose: `ModalityImage` has no extension allowlist
+ * at all, so the gate is this list plus the decode probe — the three raster formats every browser
+ * this cockpit targets decodes. GIF is left out on purpose: the video lane would show one frame
+ * of it and say nothing about the rest, and a silent loss is the defect class this cycle keeps
+ * refusing. One rule for every door: the picker, the library list and the probe.
  */
-export const SOURCE_ACCEPT = `video/mp4,video/webm,image/png,image/jpeg,image/webp,${AUDIO_ACCEPT}`;
+const STILL_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp'];
+
+/** Whether a source of this type can come in at all: a picture only as one of the stills. */
+export function takesAsSource(mimeType: string): boolean {
+  return !mimeType.startsWith('image/') || STILL_TYPES.includes(mimeType);
+}
+
+/**
+ * What the file picker takes. The clips are exactly what the asset route accepts as a video
+ * (internal/assets/limits.go `videoExts`), so the server has nothing left to refuse; the stills
+ * are STILL_TYPES. A sound picked here goes to an audio lane, as Clideo does.
+ */
+export const SOURCE_ACCEPT = `video/mp4,video/webm,${STILL_TYPES.join(',')},${AUDIO_ACCEPT}`;
 
 /**
  * How long a still is on screen when it is added. A number this module CHOOSES rather than
@@ -126,6 +137,7 @@ async function probeSound(bytes: Blob): Promise<ProbedSource> {
  * says, the probe it picks is the one that really decodes, and refuses when it cannot.
  */
 export async function probeSource(bytes: Blob): Promise<ProbedSource> {
+  if (!takesAsSource(bytes.type)) throw new CommandRefusal(REFUSAL_NOT_A_STILL);
   if (bytes.type.startsWith('image/')) return probeImage(bytes);
   if (bytes.type.startsWith('audio/')) return probeSound(bytes);
   let probed;

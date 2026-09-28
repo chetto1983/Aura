@@ -3,6 +3,7 @@ import { useId } from 'react';
 import { useTranslation } from 'react-i18next';
 import { assetDownloadUrl, type LibraryModality, type StudioAssetRef } from '../studio/studioApi';
 import { useStudioLibrary } from '../studio/useStudio';
+import { takesAsSource } from './VideoStudio_sources';
 
 // VideoStudio_library.tsx — the identity's library inside the Studio's panels: the sounds "Add a
 // sound" offers and the videos and pictures "Add a clip" offers, as stored in Garage, newest first
@@ -35,6 +36,8 @@ export function LibraryPicker({ modalities, empty, onPick }: LibraryPickerProps)
   const { t } = useTranslation();
   const id = useId();
   const library = useStudioLibrary(true, modalities);
+  // Offered only what the door takes: the picture the probe would refuse is not listed.
+  const offered = library.data?.filter((asset) => takesAsSource(asset.mime_type)) ?? [];
   return (
     <section aria-labelledby={id} className="grid gap-2">
       <h3 id={id} className="text-xs font-medium">
@@ -48,12 +51,12 @@ export function LibraryPicker({ modalities, empty, onPick }: LibraryPickerProps)
         <p role="alert" className="text-xs text-danger">
           {t('videoStudio.library.failed')}
         </p>
-      ) : library.data.length === 0 ? (
+      ) : offered.length === 0 ? (
         // Written only once the route has answered: empty-because-loading is not empty.
         <p className="text-xs text-text-muted">{t(empty)}</p>
       ) : (
         <ul className="grid max-h-48 gap-1 overflow-y-auto">
-          {library.data.map((asset) => (
+          {offered.map((asset) => (
             <li key={asset.id}>
               <button
                 type="button"

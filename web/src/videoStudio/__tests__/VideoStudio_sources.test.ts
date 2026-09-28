@@ -7,9 +7,12 @@ import {
   probeSource,
   projectFromClip,
   REFUSAL_MISSING_ASSET,
+  REFUSAL_NOT_A_STILL,
   REFUSAL_UNDECODABLE,
   REFUSAL_UNDECODABLE_SOUND,
+  SOURCE_ACCEPT,
   sourceEdit,
+  takesAsSource,
   uploadSource,
 } from '../VideoStudio_sources';
 
@@ -102,6 +105,28 @@ describe('probeSource, on a still', () => {
     decodesImages(true);
     media.probeVideo.mockRejectedValue(new Error('no video track'));
     await expect(probeSource(new File([], 'a.png', { type: 'image/png' }))).resolves.toEqual(STILL);
+  });
+
+  // The picker leaves GIF out on purpose (SOURCE_ACCEPT): an animation would play its first frame
+  // alone, and say nothing. The same rule holds whichever door the file comes through.
+  it('refuses a GIF, which the lane would show one frame of, before decoding it', async () => {
+    decodesImages(true);
+    await expect(probeSource(new File([], 'a.gif', { type: 'image/gif' }))).rejects.toThrow(
+      REFUSAL_NOT_A_STILL,
+    );
+    expect(createImageBitmap).not.toHaveBeenCalled();
+  });
+
+  it('takes as a still exactly the pictures the picker offers', () => {
+    expect(['image/png', 'image/jpeg', 'image/webp'].every(takesAsSource)).toBe(true);
+    expect(SOURCE_ACCEPT.split(',').filter((type) => type.startsWith('image/'))).toEqual([
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+    ]);
+    expect(takesAsSource('image/gif')).toBe(false);
+    expect(takesAsSource('video/mp4')).toBe(true);
+    expect(takesAsSource('audio/wav')).toBe(true);
   });
 });
 
@@ -345,6 +370,12 @@ describe('probeAsset', () => {
     decodesImages(true);
     expect(await probeAsset('photo', 'image/png', SOURCE)).toEqual(STILL);
     expect(media.probeVideo).not.toHaveBeenCalled();
+  });
+
+  it('refuses a library GIF the way the picker does', async () => {
+    serveAsTheAssetRoute();
+    decodesImages(true);
+    await expect(probeAsset('loop', 'image/gif', SOURCE)).rejects.toThrow(REFUSAL_NOT_A_STILL);
   });
 
   it('calls a library asset deleted since the list was read what it is: gone', async () => {

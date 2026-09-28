@@ -4,8 +4,9 @@
 // `videoStudio.refusal.*` is the one group whose paths are not a choice: `CommandRefusal`
 // carries `videoStudio.refusal.<name>` as its `reasonKey` and the workspace shows `t(reasonKey)`
 // unchanged, so renaming one of these five here renames nothing in commands.ts — it makes the
-// refusal render as its own key. The last two (`sourceUndecodable`, `sourceMissingAsset`) are
-// the shell's own, raised at the door where a source is read rather than inside a command.
+// refusal render as its own key. The last three (`sourceUndecodable`, `sourceMissingAsset`,
+// `sourceNotStill`) are the shell's own, raised at the door where a source is read rather than
+// inside a command.
 // The audio lanes' strings live in resources.videoStudioAudio.ts and are merged here as `audio`.
 
 import { videoStudioAudioEn, videoStudioAudioIt } from './resources.videoStudioAudio';
@@ -182,6 +183,8 @@ export const videoStudioEn = {
         'This browser cannot decode that clip, so it would export as black frames. Convert it to MP4, or try Chrome or Edge.',
       sourceMissingAsset:
         'A clip this project uses is no longer in your library: it cannot be played or exported.',
+      sourceNotStill:
+        'Only a PNG, JPEG or WebP picture can be a clip: a GIF would show its first frame alone. Convert it to MP4 first.',
     },
     confirm: {
       title_one: 'An overlay will be removed',
@@ -381,6 +384,8 @@ export const videoStudioIt = {
         'Questo browser non riesce a decodificare quella clip: verrebbe esportata come fotogrammi neri. Convertila in MP4, oppure prova con Chrome o Edge.',
       sourceMissingAsset:
         'Una clip usata da questo progetto non è più nella tua libreria: non può essere riprodotta né esportata.',
+      sourceNotStill:
+        'Solo un’immagine PNG, JPEG o WebP può essere una clip: una GIF mostrerebbe solo il primo fotogramma. Convertila prima in MP4.',
     },
     confirm: {
       title_one: 'Una sovrimpressione verrà rimossa',
