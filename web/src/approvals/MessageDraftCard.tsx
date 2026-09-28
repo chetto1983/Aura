@@ -84,7 +84,7 @@ export function MessageDraftCard({ draft, busy, onResolve }: MessageDraftCardPro
       className="rounded-xl border border-border bg-card px-4 py-3 text-card-foreground shadow-sm"
     >
       <header className="mb-3 flex items-center gap-2 text-sm font-semibold">
-        <Icon aria-hidden="true" className="size-4 text-primary" />
+        <Icon aria-hidden="true" className="size-4 text-text-muted" />
         <span>{title}</span>
         <ShieldCheck aria-hidden="true" className="ml-auto size-4 text-text-muted" />
       </header>
