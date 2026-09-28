@@ -71,7 +71,7 @@ The table names every native and memory tool and all 15 WhatsApp tools. Calendar
 | `ask_user` | Spec 1 QuestionCard; no second approval/elicitation UI | Existing |
 | `shell_exec`, `shell_poll` | Elements Terminal block for completed output; widen trusted code payload for command, combined output, cwd, exit code, duration, truncation; a running/background poll remains a status row associated with its job | 1 |
 | `shell_kill` | Row with termination status | 1 |
-| `patch` | Elements Code diff from applied unified diff; multi-file patches keep each filename/hunk; show failure as error | 1 |
+| `patch` | Elements Code diff from the applied unified diff for its one target path; show failure as error, and leave unexpected multi-file output raw | 1 |
 | `read_file`, `write_file` | Tool UI Code block for supported text; line numbers on read; binary/image uses existing attachment/artifact path; write receipt shows target and bounded written preview | 1 |
 | `search_files` | Elements Data table for file/line/match or file list; preserve paths and search term | 1 |
 | `read_tool_output` | Row and raw page; avoid presenting a partial page as a whole result | 1 |
