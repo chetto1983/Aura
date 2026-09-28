@@ -85,7 +85,20 @@ PY
 # must not sign itself in to the account logged into on the web (both in the Dockerfile). A
 # session's cookies must outlast its browser, on the session's own profile on /workspace.
 docker run --rm --network none --entrypoint bash "$img" -c '
-set -e
+set -eE
+trap "echo \"FAIL: agent-browser step exited \$?: \$BASH_COMMAND\" >&2" ERR
+# agent-browser 0.38.1 answers `close` while the session daemon is still up, so the next command
+# on that session can reach it dying and fail with "Failed to connect" (upstream issue 1837; 3 of
+# 30 close-then-open pairs in this image). session info reports it inactive once its socket is gone.
+closed() {
+  agent-browser --session "$1" close >/dev/null
+  for _ in $(seq 1 100); do
+    agent-browser --session "$1" session info --json | grep -q "\"active\":false" && return 0
+    sleep 0.1
+  done
+  echo "FAIL: session $1 still has a daemon 10 s after close" >&2
+  return 1
+}
 rc=0; agent-browser --version >/dev/null 2>&1 || rc=$?
 [ "$rc" = 78 ] || { echo "FAIL: agent-browser without a key exited $rc, want 78" >&2; exit 1; }
 mkdir -p /run/aura && head -c 32 /dev/urandom | xxd -p -c 64 > /run/aura/agent-browser.key
@@ -102,9 +115,10 @@ agent-browser snapshot | grep -A1 "cell \"Account Consistency\"" | grep -q "cell
 agent-browser close >/dev/null
 python3 -m http.server 8765 --bind 127.0.0.1 --directory /tmp >/dev/null 2>&1 &
 for _ in 1 2 3 4 5 6 7 8 9 10; do curl -so /dev/null http://127.0.0.1:8765/ && break; sleep 0.5; done
+curl -so /dev/null http://127.0.0.1:8765/ || { echo "FAIL: the local page server never answered on 127.0.0.1:8765" >&2; exit 1; }
 agent-browser --session kept open http://127.0.0.1:8765/ >/dev/null
 agent-browser --session kept eval "document.cookie=\"probe=kept; max-age=86400; path=/\"" >/dev/null
-agent-browser --session kept close >/dev/null
+closed kept
 agent-browser --session kept open http://127.0.0.1:8765/ >/dev/null
 agent-browser --session kept eval document.cookie | grep -qx "\"probe=kept\"" || { echo "FAIL: a session lost its cookie when its browser restarted" >&2; exit 1; }
 [ -f /workspace/.agent-browser-home/profiles/kept/Default/Cookies ] || { echo "FAIL: the session profile is not on /workspace" >&2; exit 1; }
