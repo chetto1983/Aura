@@ -96,6 +96,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # Same reuse as ci.yml's Go mutation gate, through the same module: an entry is reused
+      # only when its fingerprint (scripts/go_mutation_cache.py) matches the checkout's.
+      - name: Restore skills mutation results
+        id: skills_mutation_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/skills-mutation-cache
+          key: skills-mutation-v1-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            skills-mutation-v1-${{ runner.os }}-
+
       - name: Prepare host dirs (the /skills mount source + the run dir)
         run: |
           mkdir -p "${AURA_SKILL_EXPORT_DIR}" "${AURA_RUN_DIR}"
@@ -126,39 +137,37 @@ jobs:
       - name: go-mutesting spot-check (validator.go + writer.go ≥70% killed)
         # The two CRITICAL files (RESEARCH §Validation Architecture / Phase gate): the
         # write-boundary validator + the durable gated writer. PASS=killed, FAIL=survived,
-        # score=killed/total. Mirrors the Makefile/Phase-8 go-mutesting path.
+        # score=killed/total, reused while the file's input closure is unchanged.
         #
-        # writer.go's killing tests are db_integration-gated (envOrSkip). go-mutesting
-        # relocates the package to /tmp/go-mutesting-* and spawns its own `go test`; the build
-        # tag MUST be carried (GOFLAGS) or the audit/pending-write tests are compiled out and
-        # every DB-path mutant falsely survives. NOTE (2026-06-06): even WITH the tag + the live
-        # DB env, a local WSL run scored writer.go at 0.379 (25/66) — go-mutesting's built-in
-        # exec does not reliably re-run the db_integration tier in the relocated sandbox (the same
-        # subprocess unreliability documented for Phase-10 claim.go/heartbeat.go). writer.go
-        # correctness is witnessed instead by the live `db_integration` TestInstallAuditRow +
-        # TestAuditImmutable (which DO run + PASS); treat a sub-0.70 writer.go score here as the
-        # known artifact, not a real gap — the gate below stays advisory for writer.go until the
-        # exec wrapper is hardened. validator.go (pure, no DB) is the reliable mutation signal.
+        # writer.go's killing tests are db_integration-gated (envOrSkip). The pinned
+        # go-mutesting swaps each mutant into the checkout and runs a bare `go test <package>`,
+        # so the tag reaches it only through GOFLAGS; without it the audit/pending-write tests
+        # are compiled out and every DB-path mutant falsely survives. writer.go is ADVISORY: a
+        # 2026-06-06 WSL run scored it 0.379 (25/66). Measured 2026-09-28, the four runs
+        # 36374190122, 36376741314, 36380553590 and 36382875089 all scored it 71/82 (86.59%);
+        # whether it becomes a hard gate is the operator's decision; its correctness witness
+        # stays the live `db_integration` TestInstallAuditRow + TestAuditImmutable.
+        # validator.go (pure, no DB) is the hard gate.
         env:
           GOFLAGS: "-tags=db_integration"
         run: |
           go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
-          MUT="$(go env GOPATH)/bin/go-mutesting"
-          # validator.go is the HARD gate (pure write-boundary primitive, reliably scored).
-          # writer.go is ADVISORY: its db_integration-gated killing tests do not re-run reliably
-          # under go-mutesting's relocated exec (see the note above), so a sub-0.70 there is the
-          # known artifact, not a real gap — log it but do not fail the job on writer.go alone.
-          for f in internal/skills/validator.go internal/skills/writer.go; do
-            echo "==> mutation: $f"
-            # go-mutesting's final line is: `mutation score is 0.894118 (76 passed, ...)`.
-            "$MUT" "$f" | tee "mutation-$(basename "$f").log"
-            score="$(grep -oE 'mutation score is [0-9.]+' "mutation-$(basename "$f").log" | grep -oE '[0-9.]+' | tail -1)"
-            if [ "$f" = "internal/skills/validator.go" ]; then
-              awk -v s="${score:-0}" -v f="$f" 'BEGIN { if (s + 0 < 0.70) { printf "FAIL: mutation score %.3f < 0.70 for %s\n", s, f; exit 1 } printf "ok: mutation score %.3f >= 0.70 for %s (hard gate)\n", s, f }'
-            else
-              awk -v s="${score:-0}" -v f="$f" 'BEGIN { if (s + 0 < 0.70) { printf "advisory: mutation score %.3f < 0.70 for %s (db-subprocess artifact, witnessed by live db_integration tests)\n", s, f } else { printf "ok: mutation score %.3f >= 0.70 for %s (advisory)\n", s, f } }'
-            fi
-          done
+          PYTHONPATH=scripts python3 scripts/go_mutation_cache.py \
+            --go-mutesting "$(go env GOPATH)/bin/go-mutesting" \
+            --cache-dir artifacts/skills-mutation-cache --log-dir artifacts/skills-mutation-logs \
+            internal/skills/validator.go --advisory internal/skills/writer.go
+
+      - name: Save skills mutation results
+        if: always() && steps.skills_mutation_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: artifacts/skills-mutation-cache
+          key: ${{ steps.skills_mutation_cache.outputs.cache-primary-key }}
+
+      # The per-mutant PASS/FAIL lines and survivor diffs, measured or reused.
+      - name: Show skills mutation logs
+        if: always()
+        run: cat artifacts/skills-mutation-logs/*.log || true
 
       # The owned-surface coverage gate used to run here too, with the same script and the
       # same db_integration tag as ci.yml's knowledge-integration-test job -- but against a
