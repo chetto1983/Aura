@@ -11,12 +11,14 @@ vi.mock('react-i18next', () => ({
 
 // The cleaning stood in for, held until the test lets it finish: what a tab switch does to it.
 const cleaning = vi.hoisted(() => ({
+  names: [] as string[],
   signals: [] as (AbortSignal | undefined)[],
   finish: (): void => undefined,
 }));
 vi.mock('../audioClean', () => ({
-  cleanedFile: (_url: string, _name: string, signal?: AbortSignal) =>
+  cleanedFile: (_url: string, name: string, signal?: AbortSignal) =>
     new Promise<File>((resolve) => {
+      cleaning.names.push(name);
       cleaning.signals.push(signal);
       cleaning.finish = () => {
         resolve(new File(['ogg'], 'x.clean.ogg', { type: 'audio/ogg' }));
@@ -251,6 +253,17 @@ describe('Inspector, an analysis across a tab switch', () => {
       openTab('videoStudio.inspector.tabs.audio');
     });
     expect(next.video[0]?.denoise).toBe(true);
+  });
+
+  it('names a sound’s cleaned copy after the sound', async () => {
+    cleaning.names.length = 0;
+    render(
+      <Inspector project={project({ label: 'bed.wav' })} selectedId="bed" onCommand={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.audio.denoise' }));
+    await waitFor(() => {
+      expect(cleaning.names).toEqual(['bed.wav']);
+    });
   });
 
   it('hides the Audio tab’s controls while another tab shows', () => {

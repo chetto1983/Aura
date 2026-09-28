@@ -30,6 +30,8 @@ interface CleanTarget {
   readonly kind: 'clip' | 'sound';
   readonly id: string;
   readonly sourceId: string;
+  /** What the sound is called — its file, its text, its recording — and so its cleaned copy. */
+  readonly label?: string | undefined;
   readonly on: boolean;
 }
 
@@ -62,7 +64,7 @@ export function NoiseReductionSwitch({ project, target, onCommand }: NoiseReduct
     }
     void run(async (signal) => {
       const { cleanedFile } = await import('./audioClean');
-      const file = await cleanedFile(assetUrl(known.assetId), known.id, signal);
+      const file = await cleanedFile(assetUrl(known.assetId), target.label ?? target.kind, signal);
       signal.throwIfAborted();
       const assetId = await uploadSource(file);
       if (signal.aborted) {

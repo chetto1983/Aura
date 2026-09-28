@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { answeredSilence, cleanedFile, denoiseSamples, DENOISE_RATE } from '../audioClean';
+import {
+  answeredSilence,
+  cleanedFile,
+  cleanedName,
+  denoiseSamples,
+  DENOISE_RATE,
+} from '../audioClean';
 
 // RNNoise offline, with the browser stood in for: jsdom has no Web Audio and no WebCodecs. The fake
 // renderer answers what RNNoise does to its input — the same samples 992 later (its delay, S3),
@@ -224,6 +230,27 @@ describe('answeredSilence', () => {
   });
 });
 
+describe('cleanedName', () => {
+  it('names the copy after the sound’s own file, without its extension', () => {
+    expect(cleanedName('voice.mp3')).toBe('voice');
+  });
+
+  it('keeps letters, digits, dashes and underscores only', () => {
+    expect(cleanedName('The river runs.')).toBe('The-river-runs');
+    expect(cleanedName('Registrazione 12:04')).toBe('Registrazione-12-04');
+    expect(cleanedName('../../etc/passwd')).toBe('etc-passwd');
+    expect(cleanedName('così_è')).toBe('così_è');
+  });
+
+  it('keeps a long label to a file name’s length', () => {
+    expect(cleanedName('a'.repeat(200))).toHaveLength(80);
+  });
+
+  it('is “sound” when the label leaves nothing', () => {
+    expect(cleanedName('?!')).toBe('sound');
+  });
+});
+
 describe('cleanedFile', () => {
   it('decodes at RNNoise’s rate and answers an Ogg Opus file named after its source', async () => {
     decode.samples = ramp(9600);
@@ -233,5 +260,11 @@ describe('cleanedFile', () => {
     expect(file.type).toBe('audio/ogg');
     expect(file.size).toBe(4);
     expect(encoded.buffers).toEqual([expect.objectContaining({ length: 9600, sampleRate: 48000 })]);
+  });
+
+  it('names the file after the sound it was asked for, in safe characters', async () => {
+    decode.samples = ramp(9600);
+    const file = await settle(cleanedFile('/api/assets/a/download', 'Voice over.mp3'));
+    expect(file.name).toBe('Voice-over.clean.ogg');
   });
 });

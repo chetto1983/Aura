@@ -61,7 +61,20 @@ export async function denoiseSamples(
   return clean;
 }
 
-/** A source's cleaned copy as a file to store: decoded, RNNoise, encoded as Ogg Opus. */
+/** What a cleaned copy is called in the library: its sound's own name without the extension, in
+ *  letters, digits, `_` and `-` only — a label may be a whole sentence read aloud — and "sound"
+ *  when the label leaves nothing. */
+export function cleanedName(label: string): string {
+  const safe = label
+    .replace(/\.[\p{L}\p{N}]{1,5}$/u, '')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+    .slice(0, 80)
+    .replace(/^-+|-+$/g, '');
+  return safe === '' ? 'sound' : safe;
+}
+
+/** A source's cleaned copy as a file to store: decoded, RNNoise, encoded as Ogg Opus, and named
+ *  after `name`, the sound's label. */
 export async function cleanedFile(url: string, name: string, signal?: AbortSignal): Promise<File> {
   const clean = await denoiseSamples(await decodeMono(url, DENOISE_RATE, signal), signal);
   const buffer = new AudioBuffer({
@@ -78,5 +91,5 @@ export async function cleanedFile(url: string, name: string, signal?: AbortSigna
   await track.add(buffer);
   await output.finalize();
   if (target.buffer === null) throw new Error('videoStudio: the cleaned sound was not written');
-  return new File([target.buffer], `${name}.clean.ogg`, { type: 'audio/ogg' });
+  return new File([target.buffer], `${cleanedName(name)}.clean.ogg`, { type: 'audio/ogg' });
 }

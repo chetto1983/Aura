@@ -86,7 +86,7 @@ function mount(project: VideoProject, on = false) {
   const view = render(
     <NoiseReductionSwitch
       project={project}
-      target={{ kind: 'sound', id: 'voice', sourceId: 'src-v', on }}
+      target={{ kind: 'sound', id: 'voice', sourceId: 'src-v', label: 'voice.mp3', on }}
       onCommand={onCommand}
     />,
   );
@@ -119,9 +119,10 @@ describe('NoiseReductionSwitch', () => {
     await waitFor(() => {
       expect(onCommand).toHaveBeenCalledOnce();
     });
+    // Named after the sound, not after the project's internal id: the copy lands in the library.
     expect(cleaning.cleanedFile).toHaveBeenCalledWith(
       '/api/assets/v/download',
-      'src-v',
+      'voice.mp3',
       expect.any(AbortSignal),
     );
     const next = apply();
@@ -242,6 +243,12 @@ describe('NoiseReductionSwitch', () => {
     const next = edits[0]?.(base);
     expect(next?.video[0]?.denoise).toBe(true);
     expect(next?.sources[0]?.denoisedAssetId).toBe('v-clean');
+    // A clip carries no name of its own in the project: its copy is named after what it is.
+    expect(cleaning.cleanedFile).toHaveBeenCalledWith(
+      '/api/assets/a/download',
+      'clip',
+      expect.any(AbortSignal),
+    );
   });
 });
 

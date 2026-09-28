@@ -283,6 +283,7 @@ export function AudioItemInspector({
               kind: 'sound',
               id: item.id,
               sourceId: item.sourceId,
+              label: item.label,
               on: item.denoise === true,
             }}
             onCommand={onCommand}
