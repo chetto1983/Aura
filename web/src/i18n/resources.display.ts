@@ -300,6 +300,12 @@ export const displayEn = {
       tabSource: 'Source',
       tabRendered: 'Preview',
     },
+    gallery: {
+      title: 'Images',
+      open: 'Open {{name}}',
+      close: 'Close gallery',
+      download: 'Download {{name}}',
+    },
   },
 } as const;
 
@@ -597,6 +603,12 @@ export const displayIt = {
         'Questo tipo di file non può essere mostrato in anteprima — scaricalo per aprirlo.',
       tabSource: 'Sorgente',
       tabRendered: 'Anteprima',
+    },
+    gallery: {
+      title: 'Immagini',
+      open: 'Apri {{name}}',
+      close: 'Chiudi galleria',
+      download: 'Scarica {{name}}',
     },
   },
 } as const;

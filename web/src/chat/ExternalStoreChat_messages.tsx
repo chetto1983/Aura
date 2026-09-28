@@ -14,6 +14,8 @@ import { BrowserLiveView } from '../browserLive/BrowserLiveView';
 import { useVoiceMode } from './voice/voiceModeContext';
 import { AttachmentCard } from './attachments/AttachmentCard';
 import type { Asset } from './attachments/types';
+import { trustedImageDisplays } from './artifacts/trustedImageCandidates';
+import { TrustedImageGallery } from './artifacts/renderers/TrustedImageGallery';
 import { BranchPicker } from './BranchPicker';
 import { turnBrowserSession } from './browser/liveBrowserSession';
 import { messageBudgetLimit } from './budgetLimit';
@@ -377,6 +379,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
     finishedAt?: unknown;
   };
   const content = useAuiState((s) => s.message.content) as readonly unknown[];
+  const messageId = useAuiState((s) => s.message.id);
   const display: DisplayPayload | undefined = isDisplayPayload(part.display)
     ? part.display
     : undefined;
@@ -386,6 +389,24 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   const onOpenSource = (refId: string) => {
     openSources(display?.sources ?? [], refId);
   };
+
+  if (display?.type === 'local_artifact') {
+    const imageDisplays = trustedImageDisplays(content);
+    if (
+      imageDisplays.length >= 2 &&
+      imageDisplays.some((item) => item.tool_call_id === toolCallId)
+    ) {
+      if (imageDisplays[0]?.tool_call_id !== toolCallId) return null;
+      return (
+        <TrustedImageGallery
+          turnId={messageId}
+          artifacts={imageDisplays.flatMap((item) =>
+            item.artifact === undefined ? [] : [item.artifact],
+          )}
+        />
+      );
+    }
+  }
 
   if (display !== undefined && INLINE_DISPLAY_TYPES.has(display.type)) {
     return (
