@@ -7,7 +7,7 @@
 export const WAVEFORM_RATE = 8000;
 
 /** A decoded sound's channels averaged into one. */
-export function mixDown(buffer: AudioBuffer): Float32Array {
+export function mixDown(buffer: AudioBuffer): Float32Array<ArrayBuffer> {
   const mono = new Float32Array(buffer.length);
   for (let channel = 0; channel < buffer.numberOfChannels; channel += 1) {
     const data = buffer.getChannelData(channel);
@@ -23,7 +23,7 @@ export async function decodeMono(
   url: string,
   rate: number,
   signal?: AbortSignal,
-): Promise<Float32Array> {
+): Promise<Float32Array<ArrayBuffer>> {
   const response = await fetch(url, { credentials: 'same-origin', signal: signal ?? null });
   if (!response.ok) {
     throw new Error(`videoStudio: the sound could not be read (${String(response.status)})`);
@@ -32,12 +32,12 @@ export async function decodeMono(
   return mixDown(await context.decodeAudioData(await response.arrayBuffer()));
 }
 
-const waveforms = new Map<string, Promise<Float32Array>>();
+const waveforms = new Map<string, Promise<Float32Array<ArrayBuffer>>>();
 
 /** A source's waveform samples, decoded once per session: peaks are cheap to cut from them and
  *  would bloat the project file if saved (spec §Browser-side analysis). A failed decode is
  *  forgotten, so the next look tries again. */
-export function waveformSamples(url: string): Promise<Float32Array> {
+export function waveformSamples(url: string): Promise<Float32Array<ArrayBuffer>> {
   const cached = waveforms.get(url);
   if (cached !== undefined) return cached;
   const decoding = decodeMono(url, WAVEFORM_RATE);

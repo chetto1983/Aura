@@ -24,7 +24,7 @@ import {
   type VideoItem,
   type VideoProject,
 } from './project';
-import { addAudioItems, withVolumes } from './videoflow_audio';
+import { addAudioItems, playsCleaned, withVolumes } from './videoflow_audio';
 
 /** Where a clip's bytes come from: the cockpit's own asset route, never a foreign URL. */
 export type MediaUrls = Pick<AssetSource, 'assetUrl'>;
@@ -217,10 +217,11 @@ function addClip(
     // (spike 108 §6: a clip carrying `settings.muted` played at full volume). Muting does not
     // save the decode either, which is one more reason the cache below belongs to us. A static
     // `volume` here would be ignored as well: the mixer reads it only from the compiled
-    // `animations` (S1), which `withVolumes` writes.
+    // `animations` (S1), which `withVolumes` writes. A cleaned clip is muted too: its sound plays
+    // from the cleaned copy's own layer (videoflow_audio.ts).
     {
       fit: clip.fit ?? 'cover',
-      mute: clip.muted,
+      mute: clip.muted || playsCleaned(project, clip),
       rotation: clip.rotation ?? 0,
       scale: [clip.flipX === true ? -1 : 1, clip.flipY === true ? -1 : 1],
       filterBrightness: clip.brightness ?? 1,

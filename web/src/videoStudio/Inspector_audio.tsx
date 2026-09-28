@@ -12,6 +12,7 @@ import {
   trimAudio,
   type SetAudioPropertiesArgs,
 } from './commands_audio';
+import { NoiseReductionSwitch } from './Inspector_audioClean';
 import type { AudioItem, VideoItem, VideoProject } from './project';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -19,7 +20,8 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 // Inspector_audio.tsx — what a sound shows in the inspector, and the audio controls a clip shares
-// with it: one volume slider, one mute, one speed control for both, so the two never drift.
+// with it: one volume slider, one mute, one speed control for both, so the two never drift. Noise
+// reduction lives in Inspector_audioClean.tsx: it analyses before it edits.
 
 type Commit = (edit: (current: VideoProject) => VideoProject) => void;
 export type AudioTab = 'audio' | 'speed' | 'time';
@@ -123,9 +125,11 @@ export function SpeedSlider({
 
 /** A clip's Audio tab. */
 export function ClipAudioControls({
+  project,
   clip,
   onCommand,
 }: {
+  readonly project: VideoProject;
   readonly clip: VideoItem;
   readonly onCommand: Commit;
 }) {
@@ -143,6 +147,12 @@ export function ClipAudioControls({
         onChange={(muted) => {
           onCommand((current) => setMuted(current, { clipId: clip.id, muted }));
         }}
+      />
+      <NoiseReductionSwitch
+        key={clip.id}
+        project={project}
+        target={{ kind: 'clip', id: clip.id, sourceId: clip.sourceId, on: clip.denoise === true }}
+        onCommand={onCommand}
       />
       <Button
         type="button"
@@ -248,6 +258,17 @@ export function AudioItemInspector({
             onChange={(muted) => {
               set({ muted });
             }}
+          />
+          <NoiseReductionSwitch
+            key={item.id}
+            project={project}
+            target={{
+              kind: 'sound',
+              id: item.id,
+              sourceId: item.sourceId,
+              on: item.denoise === true,
+            }}
+            onCommand={onCommand}
           />
           <FadeSlider
             label={t('videoStudio.audio.fadeIn')}

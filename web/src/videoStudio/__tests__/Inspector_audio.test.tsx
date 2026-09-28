@@ -134,6 +134,11 @@ describe('Inspector, on a sound', () => {
     expect(bed(applied(3))?.fadeOut).toBe(4);
   });
 
+  it('offers noise reduction beside the mute', () => {
+    mount('bed');
+    expect(screen.getByRole('switch', { name: 'videoStudio.audio.denoise' })).toBeTruthy();
+  });
+
   it('sets the speed from a preset', () => {
     const applied = mount('bed');
     openTab('videoStudio.inspector.tabs.speed');
@@ -164,6 +169,12 @@ describe('Inspector, on a clip Audio tab', () => {
     expect(applied(0).video[0]?.volume).toBe(0);
     fireEvent.click(screen.getByRole('switch', { name: 'videoStudio.inspector.mute' }));
     expect(applied(1).video[0]?.muted).toBe(true);
+  });
+
+  it('offers noise reduction on the clip Audio tab too', () => {
+    mount('clip-1');
+    openTab('videoStudio.inspector.tabs.audio');
+    expect(screen.getByRole('switch', { name: 'videoStudio.audio.denoise' })).toBeTruthy();
   });
 
   it('extracts the clip sound from its Audio tab', () => {

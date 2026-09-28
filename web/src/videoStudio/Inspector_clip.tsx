@@ -437,7 +437,11 @@ export function ClipInspector(props: ClipInspectorProps) {
       </TabsContent>
       {hasAudio ? (
         <TabsContent value="audio">
-          <ClipAudioControls clip={props.clip} onCommand={props.onCommand} />
+          <ClipAudioControls
+            project={props.project}
+            clip={props.clip}
+            onCommand={props.onCommand}
+          />
         </TabsContent>
       ) : null}
       <TabsContent value="speed">

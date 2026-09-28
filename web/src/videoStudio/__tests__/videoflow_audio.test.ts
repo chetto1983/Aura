@@ -2,7 +2,7 @@ import type VideoFlow from '@videoflow/core';
 import type { VideoJSON } from '@videoflow/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { AudioItem, VideoItem, VideoProject } from '../project';
-import { addAudioItems, withVolumes } from '../videoflow_audio';
+import { addAudioItems, playsCleaned, withVolumes } from '../videoflow_audio';
 
 // The audio half of the compile: what reaches VideoFlow for each sound, and what is written into
 // the compiled JSON for each audible layer — the only place its mixer reads a volume (S1).
@@ -182,5 +182,76 @@ describe('withVolumes', () => {
       'volume',
     ]);
     expect(out.layers[1]).toEqual(compiled.layers[1]);
+  });
+});
+
+/** The project with its sources cleaned once: both have a denoised copy on record. */
+function cleaned(items: AudioItem[] = [], clip: Partial<VideoItem> = {}): VideoProject {
+  const base = project(items, clip);
+  return {
+    ...base,
+    sources: base.sources.map((source) =>
+      source.id === 'src-a' || source.id === 'src-m'
+        ? { ...source, denoisedAssetId: `${source.assetId}-clean` }
+        : source,
+    ),
+  };
+}
+
+describe('noise reduction in the compile', () => {
+  it('plays a denoised sound from its cleaned copy, and an undenoised one from its source', () => {
+    const { addAudio, flow } = flowSpy();
+    addAudioItems(flow, cleaned([sound({ denoise: true })]), urls);
+    expect(addAudio.mock.calls[0]?.[1]).toMatchObject({
+      name: 'bed',
+      source: '/api/assets/m-clean/content',
+    });
+    addAudio.mockClear();
+    addAudioItems(flow, cleaned([sound()]), urls);
+    expect(addAudio.mock.calls[0]?.[1]).toMatchObject({ source: '/api/assets/m/content' });
+  });
+
+  it('plays a sound whose cleaning never finished from its source', () => {
+    const { addAudio, flow } = flowSpy();
+    addAudioItems(flow, project([sound({ denoise: true })]), urls);
+    expect(addAudio.mock.calls[0]?.[1]).toMatchObject({ source: '/api/assets/m/content' });
+  });
+
+  it('gives a cleaned clip a sound layer of its own, on the clip’s window', () => {
+    const { addAudio, flow } = flowSpy();
+    addAudioItems(flow, cleaned([], { denoise: true, sourceStart: 2, speed: 2 }), urls);
+    expect(addAudio).toHaveBeenCalledWith(
+      { mute: false },
+      {
+        name: 'clip-1#clean',
+        source: '/api/assets/a-clean/content',
+        startTime: 0,
+        sourceStart: 2,
+        sourceDuration: 4,
+        speed: 2,
+      },
+    );
+  });
+
+  it('knows which clips play their cleaned copy', () => {
+    const base = cleaned([], { denoise: true });
+    const [clip, still] = base.video;
+    if (clip === undefined || still === undefined) throw new Error('fixture');
+    expect(playsCleaned(base, clip)).toBe(true);
+    expect(playsCleaned(base, { ...clip, muted: true })).toBe(false);
+    expect(playsCleaned(base, { ...clip, denoise: false })).toBe(false);
+    expect(playsCleaned(project([], { denoise: true }), clip)).toBe(false);
+    expect(playsCleaned(base, { ...still, denoise: true })).toBe(false);
+  });
+
+  it('moves a cleaned clip’s volume onto its sound layer, and leaves the muted picture alone', () => {
+    const out = withVolumes(
+      cleaned([], { denoise: true, volume: 0.5 }),
+      json(layer('clip-1', { sourceStart: 0.0001 }), layer('clip-1#clean', { sourceStart: 0 })),
+    );
+    expect(out.layers[0]?.animations).toEqual([]);
+    expect(out.layers[1]?.animations).toEqual([
+      { property: 'volume', keyframes: [{ time: 0, value: 0.5 }] },
+    ]);
   });
 });
