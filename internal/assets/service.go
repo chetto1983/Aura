@@ -41,9 +41,12 @@ type StoreBackend interface {
 	// Delete(ctx, id, identityID) marks the row deleting; Finalize(ctx, id, identityID) ends
 	// that delete once the object is gone; ListDeleting(ctx, identityID, limit) finds the
 	// deletes left unfinished, oldest first (see service_delete.go).
+	// RetireAbandonedUploads(ctx, identityID, before, limit) marks deleting the presigned rows
+	// untouched since before (see delete_sweep.go).
 	Delete(context.Context, string, string) (Asset, error)
 	Finalize(context.Context, string, string) error
 	ListDeleting(context.Context, string, int) ([]Asset, error)
+	RetireAbandonedUploads(context.Context, string, time.Time, int) error
 }
 
 type ProcessingJobQueue interface {

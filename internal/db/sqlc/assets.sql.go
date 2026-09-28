@@ -854,6 +854,41 @@ func (q *Queries) ResetAssetForIngestionRetry(ctx context.Context, arg ResetAsse
 	return i, err
 }
 
+const retireAbandonedUploads = `-- name: RetireAbandonedUploads :exec
+UPDATE aura.assets
+SET status = 'deleting',
+    deleted_at = now(),
+    updated_at = now()
+WHERE assets.id IN (
+    SELECT stale.id FROM aura.assets AS stale
+    WHERE stale.identity_id = $1
+      AND stale.status = 'presigned'
+      AND stale.deleted_at IS NULL
+      AND stale.updated_at < $2
+    ORDER BY stale.updated_at ASC, stale.id ASC
+    LIMIT $3
+)
+  AND assets.status = 'presigned'
+  AND assets.deleted_at IS NULL
+  AND assets.updated_at < $2
+`
+
+type RetireAbandonedUploadsParams struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Cutoff     pgtype.Timestamptz `json:"cutoff"`
+	RowLimit   int32              `json:"row_limit"`
+}
+
+// Marks deleting, oldest first, the presigned rows of an identity nothing has written since
+// the cutoff: an upload whose URL expired unused, or whose bytes arrived and were never
+// finalized. The outer conditions repeat the inner ones because Postgres re-checks only the
+// outer ones on a row a concurrent finalize changed while this waited for its lock: a row
+// that became uploaded meanwhile is left alone.
+func (q *Queries) RetireAbandonedUploads(ctx context.Context, arg RetireAbandonedUploadsParams) error {
+	_, err := q.db.Exec(ctx, retireAbandonedUploads, arg.IdentityID, arg.Cutoff, arg.RowLimit)
+	return err
+}
+
 const softDeleteAsset = `-- name: SoftDeleteAsset :one
 UPDATE aura.assets
 SET status = 'deleting',

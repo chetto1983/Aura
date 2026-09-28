@@ -3,6 +3,7 @@ package assets
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -126,4 +127,155 @@ func TestDeleteSweepFailsWhenItCannotListIdentities(t *testing.T) {
 	if finished != 0 || !errors.Is(err, want) {
 		t.Fatalf("sweep = %d, %v; want %v", finished, err, want)
 	}
+}
+
+// RetireAbandonedUploads mirrors the real store: the identity's presigned rows untouched
+// since before, oldest first and at most limit, become deleting with deleted_at stamped.
+func (s *fakeAssetStore) RetireAbandonedUploads(_ context.Context, identityID string, before time.Time, limit int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var stale []Asset
+	for _, asset := range s.assets {
+		if asset.IdentityID == identityID && asset.Status == StatusPresigned &&
+			asset.DeletedAt.IsZero() && asset.UpdatedAt.Before(before) {
+			stale = append(stale, asset)
+		}
+	}
+	sort.Slice(stale, func(i, j int) bool { return stale[i].UpdatedAt.Before(stale[j].UpdatedAt) })
+	for i, asset := range stale {
+		if i == limit {
+			break
+		}
+		asset.Status, asset.DeletedAt = StatusDeleting, time.Now()
+		s.assets[asset.ID] = asset
+	}
+	return nil
+}
+
+// presign puts a row in the state the lab VM held 7 of on 2026-09-28: presigned, its URL
+// issued at touched and nothing since. The seeded object stands for bytes PUT and never
+// finalized; dropping it stands for a URL never used.
+func presign(store *fakeAssetStore, asset Asset, touched time.Time) Asset {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	asset.Status, asset.CreatedAt, asset.UpdatedAt = StatusPresigned, touched, touched
+	store.assets[asset.ID] = asset
+	return asset
+}
+
+func dropObject(t *testing.T, svc *Service, asset Asset) {
+	t.Helper()
+	if err := svc.Objects.Delete(context.Background(), assetRef(asset)); err != nil {
+		t.Fatalf("Delete object of %s: %v", asset.ID, err)
+	}
+}
+
+// requireGone and requireKept read the row and the object together: a retired upload leaves
+// neither, a kept one keeps both exactly as they were.
+func requireGone(t *testing.T, svc *Service, store *fakeAssetStore, assets ...Asset) {
+	t.Helper()
+	for _, asset := range assets {
+		if row, ok := store.row(asset.ID); ok || objectExists(t, svc.Objects, asset) {
+			t.Fatalf("%s survived the sweep: row %+v (present %v)", asset.ID, row, ok)
+		}
+	}
+}
+
+func requireKept(t *testing.T, svc *Service, store *fakeAssetStore, status Status, assets ...Asset) {
+	t.Helper()
+	for _, asset := range assets {
+		row, ok := store.row(asset.ID)
+		if !ok || row.Status != status || !row.DeletedAt.IsZero() || !objectExists(t, svc.Objects, asset) {
+			t.Fatalf("%s = %+v (present %v), want it %s with its object", asset.ID, row, ok, status)
+		}
+	}
+}
+
+// An upload is abandoned an hour after its URL expires, measured from the last write to its
+// row. Its bytes go if they arrived, and a URL never used counts as removed.
+func TestDeleteSweepRetiresUploadsAbandonedAnHourPastTheirURL(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	svc.PresignTTL = 10 * time.Minute
+	now := time.Now()
+	abandoned := now.Add(-svc.PresignTTL - time.Hour)
+	putNeverFinalized := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-put", now), abandoned.Add(-time.Minute))
+	neverPut := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-unused", now), abandoned.Add(-72*time.Hour))
+	dropObject(t, svc, neverPut)
+	streaming := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-streaming", now), abandoned.Add(time.Minute))
+	theirs := presign(store, seedStoredAsset(t, svc, store, "owner-b", "b-put", now), abandoned.Add(-time.Minute))
+	accepted := seedStoredAsset(t, svc, store, "owner-a", "a-accepted", now.Add(-72*time.Hour))
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a", "owner-b"}}.SweepExpired(context.Background(), now)
+	if err != nil || finished != 3 {
+		t.Fatalf("sweep = %d, %v; want the three abandoned uploads finished", finished, err)
+	}
+	requireGone(t, svc, store, putNeverFinalized, neverPut, theirs)
+	requireKept(t, svc, store, StatusPresigned, streaming)
+	requireKept(t, svc, store, StatusAccepted, accepted)
+}
+
+// The hour is added to the URL lifetime the deployment configures, not to the default.
+func TestDeleteSweepWaitsOutTheConfiguredURLLifetime(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	svc.PresignTTL = 6 * time.Hour
+	now := time.Now()
+	insideLongURL := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-inside", now), now.Add(-3*time.Hour))
+	pastLongURL := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-past", now), now.Add(-7*time.Hour-time.Minute))
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a"}}.SweepExpired(context.Background(), now)
+	if err != nil || finished != 1 {
+		t.Fatalf("sweep = %d, %v; want only the upload past six hours and one", finished, err)
+	}
+	requireGone(t, svc, store, pastLongURL)
+	requireKept(t, svc, store, StatusPresigned, insideLongURL)
+}
+
+func TestDeleteSweepRetiresTheOldestAbandonedUploadsWithinTheBatch(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	now := time.Now()
+	oldest := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-oldest", now), now.Add(-5*time.Hour))
+	older := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-older", now), now.Add(-4*time.Hour))
+	newer := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-newer", now), now.Add(-3*time.Hour))
+	sweep := DeleteSweep{Assets: svc, Identities: identityList{"owner-a"}, Batch: 2}
+
+	if finished, err := sweep.SweepExpired(context.Background(), now); err != nil || finished != 2 {
+		t.Fatalf("first sweep = %d, %v; want the batch of two", finished, err)
+	}
+	requireGone(t, svc, store, oldest, older)
+	requireKept(t, svc, store, StatusPresigned, newer)
+	if finished, err := sweep.SweepExpired(context.Background(), now); err != nil || finished != 1 {
+		t.Fatalf("second sweep = %d, %v; want the upload the bound held back", finished, err)
+	}
+	requireGone(t, svc, store, newer)
+}
+
+// unretirableStore fails the retirement of one identity's uploads, as a lost connection would.
+type unretirableStore struct {
+	*fakeAssetStore
+	identityID string
+}
+
+func (s unretirableStore) RetireAbandonedUploads(ctx context.Context, identityID string, before time.Time, limit int) error {
+	if identityID == s.identityID {
+		return errors.New("connection reset")
+	}
+	return s.fakeAssetStore.RetireAbandonedUploads(ctx, identityID, before, limit)
+}
+
+// A failed retirement costs neither that identity's pending deletes nor anyone else's uploads.
+func TestDeleteSweepFinishesDeletesPastAFailedRetirement(t *testing.T) {
+	svc, store := newAssetServiceTestRig(t, Limits{})
+	now := time.Now()
+	stuck := seedStoredAsset(t, svc, store, "owner-a", "a-stuck", now)
+	markStuck(store, stuck)
+	unreached := presign(store, seedStoredAsset(t, svc, store, "owner-a", "a-unreached", now), now.Add(-5*time.Hour))
+	theirs := presign(store, seedStoredAsset(t, svc, store, "owner-b", "b-put", now), now.Add(-5*time.Hour))
+	svc.Store = unretirableStore{fakeAssetStore: store, identityID: "owner-a"}
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{"owner-a", "owner-b"}}.SweepExpired(context.Background(), now)
+	if finished != 2 || err == nil || !strings.Contains(err.Error(), "owner-a") || !strings.Contains(err.Error(), "connection reset") {
+		t.Fatalf("sweep = %d, %v; want owner-a's delete and owner-b's upload finished, owner-a named", finished, err)
+	}
+	requireGone(t, svc, store, stuck, theirs)
+	requireKept(t, svc, store, StatusPresigned, unreached)
 }

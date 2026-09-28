@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/assets"
@@ -76,6 +77,9 @@ func (r *recordingAssetStore) Delete(context.Context, string, string) (assets.As
 func (r *recordingAssetStore) Finalize(context.Context, string, string) error { return nil }
 func (r *recordingAssetStore) ListDeleting(context.Context, string, int) ([]assets.Asset, error) {
 	return nil, nil
+}
+func (r *recordingAssetStore) RetireAbandonedUploads(context.Context, string, time.Time, int) error {
+	return nil
 }
 
 // TestSendFileAssetAdapterForwards proves the adapter opens the host file and forwards the

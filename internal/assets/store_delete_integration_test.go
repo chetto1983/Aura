@@ -2,8 +2,8 @@
 
 // The delete lifecycle against Postgres itself, as aura_app under migration 0090's fail-closed
 // floor: the stamp that hides a deleting row, the hard delete and what cascades from it, and
-// the tombstone a media_job pin forces. The fake store in service_test.go mirrors these rules;
-// this is where they are proven.
+// the tombstone a media_job pin forces, and the retirement of abandoned uploads. The fake store
+// in service_test.go and delete_sweep_test.go mirrors these rules; this is where they are proven.
 
 package assets
 
@@ -68,6 +68,17 @@ func countAs(t *testing.T, pool *pgxpool.Pool, identityID, query string, args ..
 		t.Fatalf("count %q: %v", query, err)
 	}
 	return n
+}
+
+// seedOtherIdentity inserts the second owner an isolation leg needs: migration 0004 seeds only
+// `local`.
+func seedOtherIdentity(t *testing.T, ctx context.Context, pool *pgxpool.Pool, label string) {
+	t.Helper()
+	if _, err := pool.Exec(ctx,
+		"INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user') ON CONFLICT (id) DO NOTHING",
+		otherIdentityID, fmt.Sprintf("%s-%d", label, time.Now().UnixNano())); err != nil {
+		t.Fatalf("seed second identity: %v", err)
+	}
 }
 
 func execAs(t *testing.T, pool *pgxpool.Pool, identityID, statement string, args ...any) {
@@ -269,11 +280,7 @@ func TestStoreFinalizeTouchesOnlyTheCallersDeletingRow(t *testing.T) {
 	defer cancel()
 	now := time.Now().UnixNano()
 	store := NewStore(pool)
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user') ON CONFLICT (id) DO NOTHING",
-		otherIdentityID, fmt.Sprintf("asset-delete-other-%d", now)); err != nil {
-		t.Fatalf("seed second identity: %v", err)
-	}
+	seedOtherIdentity(t, ctx, pool, "asset-delete-other")
 	theirs := createAcceptedAsset(t, ctx, store,
 		deleteFixture(otherIdentityID, "", fmt.Sprintf("chat/%d-theirs.pdf", now), ScopeThread))
 	live := createAcceptedAsset(t, ctx, store,
@@ -329,6 +336,115 @@ func TestServiceDeleteLeavesNothingBehindInPostgres(t *testing.T) {
 	}
 	if _, err := svc.Objects.Head(ctx, assetRef(asset)); !objectstore.IsNotFound(err) {
 		t.Fatalf("Head after delete = %v, want not found", err)
+	}
+}
+
+// presignedUpload creates a presigned row whose last write was age ago, the state the lab VM
+// held 7 of on 2026-09-28, and removes it again when the test ends.
+func presignedUpload(t *testing.T, ctx context.Context, pool *pgxpool.Pool, identityID, key string, age time.Duration) Asset {
+	t.Helper()
+	store := NewStore(pool)
+	created, err := store.Create(ctx, deleteFixture(identityID, "", key, ScopeThread))
+	if err != nil {
+		t.Fatalf("Create %s: %v", key, err)
+	}
+	t.Cleanup(func() { retireAsset(t, store, created.ID, identityID) })
+	backdate(t, pool, created, age)
+	return created
+}
+
+func backdate(t *testing.T, pool *pgxpool.Pool, asset Asset, age time.Duration) {
+	t.Helper()
+	execAs(t, pool, asset.IdentityID, `UPDATE aura.assets SET updated_at = $2 WHERE id = $1`,
+		asset.ID, time.Now().Add(-age))
+}
+
+// requireRowState reads the row as its owner sees it, deleted or not.
+func requireRowState(t *testing.T, pool *pgxpool.Pool, asset Asset, status Status, stamped bool) {
+	t.Helper()
+	if n := countAs(t, pool, asset.IdentityID,
+		`SELECT count(*) FROM aura.assets WHERE id = $1 AND status = $2 AND (deleted_at IS NOT NULL) = $3`,
+		asset.ID, string(status), stamped); n != 1 {
+		t.Fatalf("%s is not %s with deleted_at stamped=%v", asset.FileName, status, stamped)
+	}
+}
+
+// The transition itself, as aura_app under RLS: the caller's presigned rows untouched since the
+// cutoff become deleting with deleted_at stamped. A fresh upload, an old row a finalize already
+// moved to uploaded, and another identity's old upload are left as they are.
+func TestStoreRetireAbandonedUploadsMarksOnlyTheCallersStaleUploads(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	now := time.Now().UnixNano()
+	store := NewStore(pool)
+	seedOtherIdentity(t, ctx, pool, "asset-abandoned-other")
+	stale := presignedUpload(t, ctx, pool, localIdentityID, fmt.Sprintf("chat/%d-stale.pdf", now), 3*time.Hour)
+	fresh := presignedUpload(t, ctx, pool, localIdentityID, fmt.Sprintf("chat/%d-fresh.pdf", now), 0)
+	finalized := presignedUpload(t, ctx, pool, localIdentityID, fmt.Sprintf("chat/%d-finalized.pdf", now), 0)
+	if _, err := store.MarkUploaded(ctx, finalized.ID, localIdentityID, 4, "etag-finalized"); err != nil {
+		t.Fatalf("MarkUploaded: %v", err)
+	}
+	backdate(t, pool, finalized, 3*time.Hour)
+	theirs := presignedUpload(t, ctx, pool, otherIdentityID, fmt.Sprintf("chat/%d-theirs.pdf", now), 3*time.Hour)
+	cutoff := time.Now().Add(-time.Hour)
+
+	if err := store.RetireAbandonedUploads(ctx, localIdentityID, cutoff, deleteSweepBatch); err != nil {
+		t.Fatalf("RetireAbandonedUploads as local: %v", err)
+	}
+	requireRowState(t, pool, stale, StatusDeleting, true)
+	requireRowState(t, pool, fresh, StatusPresigned, false)
+	requireRowState(t, pool, finalized, StatusUploaded, false)
+	requireRowState(t, pool, theirs, StatusPresigned, false)
+	pending, err := store.ListDeleting(ctx, localIdentityID, deleteSweepBatch)
+	if err != nil || !containsAsset(pending, stale.ID) {
+		t.Fatalf("ListDeleting = %v; want the retired upload offered to the sweep", err)
+	}
+
+	if err := store.RetireAbandonedUploads(ctx, otherIdentityID, cutoff, deleteSweepBatch); err != nil {
+		t.Fatalf("RetireAbandonedUploads as the owner: %v", err)
+	}
+	requireRowState(t, pool, theirs, StatusDeleting, true)
+}
+
+// The operator's case end to end on the real store: for every identity it visits, the sweep
+// takes an abandoned upload's bytes and row, and leaves a fresh upload with both.
+func TestDeleteSweepRemovesAbandonedUploadsFromPostgres(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	now := time.Now().UnixNano()
+	svc := &Service{Store: NewStore(pool), Objects: objectstore.NewFake(), Bucket: "asset-test", PresignTTL: 10 * time.Minute}
+	seedOtherIdentity(t, ctx, pool, "asset-sweep-other")
+	var stale, fresh []Asset
+	for _, identityID := range []string{localIdentityID, otherIdentityID} {
+		stale = append(stale, presignedUpload(t, ctx, pool, identityID, fmt.Sprintf("chat/%d-%s-stale.pdf", now, identityID), 3*time.Hour))
+		fresh = append(fresh, presignedUpload(t, ctx, pool, identityID, fmt.Sprintf("chat/%d-%s-fresh.pdf", now, identityID), 0))
+	}
+	for _, upload := range append(append([]Asset{}, stale...), fresh...) {
+		if _, err := svc.Objects.Put(ctx, assetRef(upload), strings.NewReader("%PDF"), objectstore.PutOptions{Size: 4}); err != nil {
+			t.Fatalf("Put %s: %v", upload.ObjectKey, err)
+		}
+	}
+
+	finished, err := DeleteSweep{Assets: svc, Identities: identityList{localIdentityID, otherIdentityID}}.
+		SweepExpired(ctx, time.Now())
+	if err != nil || finished < len(stale) {
+		t.Fatalf("sweep = %d, %v; want at least the %d abandoned uploads finished", finished, err, len(stale))
+	}
+	for _, upload := range stale {
+		if n := countAs(t, pool, upload.IdentityID, `SELECT count(*) FROM aura.assets WHERE id = $1`, upload.ID); n != 0 {
+			t.Fatalf("the abandoned upload %s left %d row(s)", upload.ObjectKey, n)
+		}
+		if _, err := svc.Objects.Head(ctx, assetRef(upload)); !objectstore.IsNotFound(err) {
+			t.Fatalf("Head %s after the sweep = %v, want not found", upload.ObjectKey, err)
+		}
+	}
+	for _, upload := range fresh {
+		requireRowState(t, pool, upload, StatusPresigned, false)
+		if _, err := svc.Objects.Head(ctx, assetRef(upload)); err != nil {
+			t.Fatalf("Head %s after the sweep = %v, want the fresh upload's bytes kept", upload.ObjectKey, err)
+		}
 	}
 }
 

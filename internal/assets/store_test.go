@@ -266,12 +266,7 @@ func TestStoreListRecent(t *testing.T) {
 		return asset
 	}
 
-	// Only `local` is seeded by migration 0004, and the isolation leg needs a second owner.
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user') ON CONFLICT (id) DO NOTHING",
-		otherIdentityID, fmt.Sprintf("asset-images-other-%d", now)); err != nil {
-		t.Fatalf("seed second identity: %v", err)
-	}
+	seedOtherIdentity(t, ctx, pool, "asset-images-other")
 
 	older := create(localIdentityID, ModalityImage, "older.png")
 	wanted := create(localIdentityID, ModalityImage, "wanted.png")
@@ -381,13 +376,7 @@ func TestAssetsByKeyResolvesNamesTheKeysDoNotCarry(t *testing.T) {
 		return created
 	}
 
-	// The second identity has to exist before it can own a row: only `local` is seeded by
-	// migration 0004, and the isolation leg below is the point of the test.
-	if _, err := pool.Exec(ctx,
-		"INSERT INTO aura.identities (id, name, kind) VALUES ($1::uuid, $2, 'user') ON CONFLICT (id) DO NOTHING",
-		otherIdentityID, fmt.Sprintf("asset-names-other-%d", now)); err != nil {
-		t.Fatalf("seed second identity: %v", err)
-	}
+	seedOtherIdentity(t, ctx, pool, "asset-names-other")
 
 	mine := fmt.Sprintf("chat/%d-mine.pdf", now)
 	theirs := fmt.Sprintf("chat/%d-theirs.pdf", now)

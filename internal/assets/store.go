@@ -264,6 +264,22 @@ func (s *Store) ListDeleting(ctx context.Context, identityID string, limit int) 
 	})
 }
 
+// RetireAbandonedUploads marks deleting up to limit of the identity's presigned rows untouched
+// since before, oldest first, so the delete sweep finishes them like any other delete.
+func (s *Store) RetireAbandonedUploads(ctx context.Context, identityID string, before time.Time, limit int) error {
+	pgIdentityID, err := pgUUID("identity_id", identityID)
+	if err != nil {
+		return err
+	}
+	return s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		return q.RetireAbandonedUploads(ctx, sqlc.RetireAbandonedUploadsParams{
+			IdentityID: pgIdentityID,
+			Cutoff:     pgtype.Timestamptz{Time: before, Valid: true},
+			RowLimit:   int32(limit), //nolint:gosec // DeleteSweep bounds this at deleteSweepBatch.
+		})
+	})
+}
+
 // Finalize ends a delete whose object is gone: the row leaves the table, or stays as a
 // deleted tombstone when a media_job points at it. A row that is not deleting, including one
 // a concurrent Finalize already removed, is left as it is.

@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -120,6 +121,9 @@ func TestStoreDeleteLifecycleValidatesUUIDs(t *testing.T) {
 	}
 	if _, err := store.ListDeleting(ctx, "not-a-uuid", 1); err == nil || !strings.Contains(err.Error(), `invalid identity_id "not-a-uuid"`) {
 		t.Fatalf("ListDeleting error = %v, want an invalid identity", err)
+	}
+	if err := store.RetireAbandonedUploads(ctx, "not-a-uuid", time.Now(), 1); err == nil || !strings.Contains(err.Error(), `invalid identity_id "not-a-uuid"`) {
+		t.Fatalf("RetireAbandonedUploads error = %v, want an invalid identity", err)
 	}
 }
 
