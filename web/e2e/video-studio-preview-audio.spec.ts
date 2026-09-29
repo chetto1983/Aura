@@ -4,7 +4,14 @@ import { gotoAuthenticated } from './auth';
 import { expect, test } from './support/assetCleanup';
 import { uploadAsset } from './support/assetUpload';
 import { levelBetween, windowPowers } from './support/audioMeasure';
-import { exportTo, FIXTURES, openStudioWith } from './support/videoStudio';
+import {
+  exportTo,
+  FIXTURES,
+  openStudioWith,
+  reopen,
+  silentFilm,
+  uploadClip,
+} from './support/videoStudio';
 
 test('a Garage clip plays its sound and exports video plus standalone WAV', async ({
   page,
@@ -66,4 +73,28 @@ test('a Garage clip plays its sound and exports video plus standalone WAV', asyn
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
   const audioLevel = levelBetween(await windowPowers(page, wav), 1, 3);
   expect(Math.abs(audioLevel - exportedLevel)).toBeLessThan(1);
+});
+
+test('mobile export controls and progress stay inside the editor header', async ({
+  page,
+}, info) => {
+  test.skip(!info.project.name.startsWith('mobile'), 'this layout needs a phone viewport');
+  test.setTimeout(2 * 60_000);
+  const clip = await uploadClip(page);
+  const editor = await reopen(page, silentFilm(clip, 'mobile export layout', 8), clip);
+  const header = editor.locator('.video-studio-topbar');
+  const fitsHeader = async () =>
+    header.evaluate((element) => ({
+      vertical: element.scrollHeight - element.clientHeight,
+      horizontal: element.scrollWidth - element.clientWidth,
+    }));
+
+  await expect(editor.getByRole('button', { name: 'Export', exact: true })).toBeVisible();
+  await expect(editor.getByRole('button', { name: 'Export audio (WAV)' })).toBeVisible();
+  expect(await fitsHeader()).toEqual({ vertical: 0, horizontal: 0 });
+
+  await editor.getByRole('button', { name: 'Export', exact: true }).tap();
+  await expect(editor.getByRole('progressbar', { name: 'Export progress' })).toBeVisible();
+  expect(await fitsHeader()).toEqual({ vertical: 0, horizontal: 0 });
+  await editor.getByRole('button', { name: 'Cancel' }).tap();
 });

@@ -113,10 +113,21 @@ async function twinFrameDiff(
           parseInt(ink.slice(5, 7), 16),
         ];
         const frameAt = async (time: number) => {
-          await new Promise<void>((resolve) => {
-            video.onseeked = () => {
+          // `seeked` can fire before the decoded frame reaches the compositor under CI load.
+          // Read only after Chrome reports the requested frame as presented.
+          await new Promise<void>((resolve, reject) => {
+            const timeout = window.setTimeout(() => {
+              reject(new Error(`the exported video did not present frame at ${String(time)}s`));
+            }, 10_000);
+            const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
+              if (Math.abs(metadata.mediaTime - time) > 0.1) {
+                video.requestVideoFrameCallback(onFrame);
+                return;
+              }
+              window.clearTimeout(timeout);
               resolve();
             };
+            video.requestVideoFrameCallback(onFrame);
             video.currentTime = time;
           });
           context.drawImage(video, 0, 0);
@@ -177,8 +188,9 @@ test.describe('the multi-track video editor', () => {
     await addClip(page, editor, 'clip-b.mp4');
     await expect(editor.getByRole('button', { name: 'Clip 2' })).toBeVisible({ timeout: 60_000 });
 
-    // The title hangs on the clip under the playhead, which starts at zero, and lasts three
-    // seconds. The workspace selects what it just added, so the inspector is already on it.
+    // The title hangs on the clip under the playhead and lasts three seconds. Set the playhead
+    // explicitly so the frame comparison below always samples the title's actual window.
+    await editor.getByRole('button', { name: 'Go to the start' }).click();
     await pressAddAction(editor, 'Add a title');
     await expect(editor.getByRole('button', { name: 'Title 1' })).toBeVisible();
     // At phone width the properties are a sheet only the tool bar opens, and adding a title does
@@ -216,6 +228,10 @@ test.describe('the multi-track video editor', () => {
     if (withTitle === undefined || withoutTitle === undefined) {
       throw new Error('the frame diff answered fewer pairs than it was asked');
     }
+    await info.attach('export-measurements', {
+      contentType: 'application/json',
+      body: JSON.stringify({ facts, withTitle, withoutTitle }, null, 2),
+    });
     // Inside its window the title is on the picture, in the colour the inspector was given.
     expect(withTitle.inked).toBeGreaterThan(300);
     // Outside it the same source frame comes back unmarked. Not a hard zero, and the reason is
@@ -224,13 +240,6 @@ test.describe('the multi-track video editor', () => {
     // A hundredfold is the claim that survives either — a title is a word, not four pixels.
     expect(withoutTitle.inked * 100).toBeLessThan(withTitle.inked);
     expect(withoutTitle.changed).toBeLessThan(withTitle.changed / 4);
-
-    // The numbers themselves, kept with the run: a threshold is only honest next to what it
-    // was measured against.
-    await info.attach('export-measurements', {
-      contentType: 'application/json',
-      body: JSON.stringify({ facts, withTitle, withoutTitle }, null, 2),
-    });
 
     await expectNothingLeftTheAppliance(page, network);
   });

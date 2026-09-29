@@ -400,6 +400,7 @@ describe('VideoStudio', () => {
     expect(bar.getAttribute('aria-valuemin')).toBe('0');
     expect(bar.getAttribute('aria-valuemax')).toBe('100');
     expect(bar.getAttribute('aria-valuenow')).toBe('0');
+    expect(screen.queryByText(i18n.t('videoStudio.export.audioAction'))).toBeNull();
 
     fireEvent.click(button('videoStudio.export.cancel'));
     await waitFor(() => {
@@ -408,6 +409,7 @@ describe('VideoStudio', () => {
     expect(downloadBlob).not.toHaveBeenCalled();
     // An abort is the operator's own decision: it is not reported back as a failure.
     expect(screen.queryByRole('alert')).toBeNull();
+    await screen.findByText(i18n.t('videoStudio.export.audioAction'));
   });
 
   it('downloads the finished export', async () => {

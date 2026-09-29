@@ -131,7 +131,7 @@
 
 @media (max-width: 540px) {
   .video-studio-shell {
-    grid-template-rows: 52px minmax(250px, 1fr) 255px 74px;
+    grid-template-rows: auto minmax(0, 1fr) minmax(140px, 35vh) 74px;
   }
 
   .video-studio-mark,
@@ -142,7 +142,18 @@
 
   .video-studio-top-actions {
     width: 100%;
+    flex-wrap: wrap;
     justify-content: flex-start;
+  }
+
+  .video-studio-topbar {
+    padding-block: 6px;
+  }
+
+  .video-studio-export {
+    order: 1;
+    width: 100%;
+    min-width: 0;
   }
 
   .video-studio-close {
@@ -150,7 +161,7 @@
     margin-right: auto;
   }
 
-  .video-studio-export [data-slot='button']:last-of-type {
+  .video-studio-export .video-studio-export-audio {
     padding-inline: 10px;
   }
 

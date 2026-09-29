@@ -1,0 +1,1 @@
+import{t as e}from"./web-BltnQB-J.js";e();

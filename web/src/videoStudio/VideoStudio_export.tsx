@@ -110,25 +110,30 @@ export function ExportPanel({ project, fileName, audioFileName, urls, refusal }:
           </Button>
         </>
       )}
-      <Button
-        type="button"
-        size="sm"
-        disabled={format !== undefined || refusal !== undefined}
-        title={refusal}
-        onClick={() => void run('video')}
-      >
-        {t('videoStudio.export.action')}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={format !== undefined || refusal !== undefined}
-        title={refusal}
-        onClick={() => void run('audio')}
-      >
-        {t('videoStudio.export.audioAction')}
-      </Button>
+      {format === undefined ? (
+        <>
+          <Button
+            type="button"
+            size="sm"
+            disabled={refusal !== undefined}
+            title={refusal}
+            onClick={() => void run('video')}
+          >
+            {t('videoStudio.export.action')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="video-studio-export-audio"
+            disabled={refusal !== undefined}
+            title={refusal}
+            onClick={() => void run('audio')}
+          >
+            {t('videoStudio.export.audioAction')}
+          </Button>
+        </>
+      ) : null}
       {failure === undefined ? null : (
         <p role="alert" className="text-xs text-danger">
           {failure}

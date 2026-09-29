@@ -80,14 +80,14 @@
   border-radius: 8px;
 }
 
-.video-studio-export [data-slot='button']:last-of-type {
+.video-studio-export .video-studio-export-audio {
   min-height: 38px;
   padding-inline: 16px;
   background: var(--video-studio-accent-fill);
   color: var(--video-studio-on-accent);
 }
 
-.video-studio-export [data-slot='button']:last-of-type:hover {
+.video-studio-export .video-studio-export-audio:hover {
   background: var(--color-accent-pressed);
 }
 
