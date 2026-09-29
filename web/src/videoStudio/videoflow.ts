@@ -318,7 +318,10 @@ interface PrimableRenderer {
  * 2 880 512 samples. The render-time saving is the noisy figure (−22 % and −40 % in two runs); the
  * decode collapse is the exact one.
  */
-async function primeDecodedBuffers(renderer: BrowserRenderer, signal?: AbortSignal): Promise<void> {
+export async function primeDecodedBuffers(
+  renderer: BrowserRenderer,
+  signal?: AbortSignal,
+): Promise<void> {
   const primable = renderer as unknown as PrimableRenderer;
   await primable.initLayers();
   signal?.throwIfAborted();

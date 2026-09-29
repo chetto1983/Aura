@@ -10,6 +10,7 @@ import type { VideoProject } from '../project';
 vi.mock('@videoflow/renderer-dom', () => ({
   default: class {
     loadedFonts: Record<string, string> = {};
+    stopped = 0;
     loadFont(): Promise<void> {
       return Promise.resolve();
     }
@@ -18,6 +19,12 @@ vi.mock('@videoflow/renderer-dom', () => ({
     }
     seek(): Promise<void> {
       return Promise.resolve();
+    }
+    play(): Promise<void> {
+      return Promise.resolve();
+    }
+    stop(): void {
+      this.stopped += 1;
     }
     destroy(): void {
       // Nothing to release: the renderer is a stand-in.

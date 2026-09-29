@@ -7,9 +7,18 @@ import type { VideoProject } from '../project';
 // full-screen preview, a selected junction surviving an edit, and the phone bar's handlers. On the
 // real bundle, like its sibling, so every sentence shown is one the operator would read.
 
+const renderers = vi.hoisted(() => ({
+  instances: [] as { onFrame?: (frame: number) => void }[],
+}));
+
 vi.mock('@videoflow/renderer-dom', () => ({
   default: class {
     loadedFonts: Record<string, string> = {};
+    stopped = 0;
+    onFrame?: (frame: number) => void;
+    constructor() {
+      renderers.instances.push(this);
+    }
     loadFont(): Promise<void> {
       return Promise.resolve();
     }
@@ -18,6 +27,12 @@ vi.mock('@videoflow/renderer-dom', () => ({
     }
     seek(): Promise<void> {
       return Promise.resolve();
+    }
+    play(): Promise<void> {
+      return Promise.resolve();
+    }
+    stop(): void {
+      this.stopped += 1;
     }
     destroy(): void {
       // Nothing to release: the renderer is a stand-in.
@@ -83,6 +98,7 @@ function playhead(): HTMLElement {
 }
 
 afterEach(() => {
+  renderers.instances.length = 0;
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
@@ -90,13 +106,14 @@ afterEach(() => {
 describe('VideoStudio, the transport', () => {
   it('plays to the end and stops, and plays again from the start', async () => {
     await mount();
-    vi.useFakeTimers();
-    vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
     fireEvent.click(button('videoStudio.transport.play'));
     act(() => {
-      vi.advanceTimersByTime(9_000);
+      renderers.instances.at(-1)?.onFrame?.(8 * 25);
     });
     expect(playhead().getAttribute('aria-valuenow')).toBe('8');
+    act(() => {
+      renderers.instances.at(-1)?.onFrame?.(0);
+    });
     // Stopped at the end, so the button offers play again — and play starts over.
     fireEvent.click(button('videoStudio.transport.play'));
     expect(playhead().getAttribute('aria-valuenow')).toBe('0');

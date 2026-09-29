@@ -6,7 +6,9 @@ import { uploadAsset } from './support/assetUpload';
 import { levelBetween, windowPowers } from './support/audioMeasure';
 import { exportTo, FIXTURES, openStudioWith } from './support/videoStudio';
 
-test('a Garage clip plays its sound and keeps it in the exported video', async ({ page }, info) => {
+test('a Garage clip plays its sound and exports video plus standalone WAV', async ({
+  page,
+}, info) => {
   test.setTimeout(2 * 60_000);
   await page.addInitScript(() => {
     const audible: HTMLAudioElement[] = [];
@@ -50,4 +52,15 @@ test('a Garage clip plays its sound and keeps it in the exported video', async (
   const originalLevel = levelBetween(await windowPowers(page, readFileSync(source)), 1, 3);
   const exportedLevel = levelBetween(await windowPowers(page, readFileSync(output)), 1, 3);
   expect(Math.abs(exportedLevel - originalLevel)).toBeLessThan(1);
+
+  const downloading = page.waitForEvent('download', { timeout: 60_000 });
+  await editor.getByRole('button', { name: 'Export audio (WAV)' }).click();
+  const audio = await downloading;
+  expect(audio.suggestedFilename()).toMatch(/\.wav$/);
+  const audioPath = info.outputPath('clip-sound.wav');
+  await audio.saveAs(audioPath);
+  const wav = readFileSync(audioPath);
+  expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
+  const audioLevel = levelBetween(await windowPowers(page, wav), 1, 3);
+  expect(Math.abs(audioLevel - originalLevel)).toBeLessThan(1);
 });

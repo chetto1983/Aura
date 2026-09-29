@@ -325,6 +325,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
               <ExportPanel
                 project={project}
                 fileName={projectFileName(project, 'mp4', name)}
+                audioFileName={projectFileName(project, 'wav', name)}
                 urls={assetSource}
                 refusal={exportRefusal(project)}
               />

@@ -199,6 +199,9 @@ export const videoStudioEn = {
     },
     export: {
       action: 'Export',
+      audioAction: 'Export audio (WAV)',
+      audioWorking: 'Exporting audio…',
+      noAudio: 'This project has no audio to export.',
       progress: 'Export progress',
       percent: 'Exporting… {{percent}}%',
       cancel: 'Cancel',
@@ -403,6 +406,9 @@ export const videoStudioIt = {
     },
     export: {
       action: 'Esporta',
+      audioAction: 'Esporta audio (WAV)',
+      audioWorking: 'Esportazione audio…',
+      noAudio: 'Questo progetto non contiene audio da esportare.',
       progress: "Avanzamento dell'esportazione",
       percent: 'Esportazione… {{percent}}%',
       cancel: 'Annulla',

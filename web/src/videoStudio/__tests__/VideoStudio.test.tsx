@@ -16,6 +16,7 @@ vi.mock('@videoflow/renderer-dom', () => ({
   default: class {
     loadedFonts: Record<string, string> = {};
     destroyed = 0;
+    stopped = 0;
     constructor() {
       renderers.instances.push(this);
     }
@@ -27,6 +28,12 @@ vi.mock('@videoflow/renderer-dom', () => ({
     }
     seek(): Promise<void> {
       return Promise.resolve();
+    }
+    play(): Promise<void> {
+      return Promise.resolve();
+    }
+    stop(): void {
+      this.stopped += 1;
     }
     destroy(): void {
       this.destroyed += 1;
