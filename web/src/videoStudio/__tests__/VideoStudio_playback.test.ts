@@ -1,31 +1,24 @@
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { usePlayback } from '../VideoStudio_playback';
 
-// The editor's clock, on fake time: it runs, stops at the film's end, restarts from the beginning
-// when played there, and a seek stops it inside the film.
-
-beforeEach(() => {
-  vi.useFakeTimers();
-});
-
-afterEach(() => {
-  vi.useRealTimers();
-});
+// The renderer paints the frames and mixes the sound; these checks keep the
+// transport on that one clock, including its wrap at the end of a film.
 
 describe('usePlayback', () => {
-  it('advances while playing, and stops at the end of the film', () => {
+  it('follows rendered frames and stops when the renderer wraps at the end', () => {
     const { result } = renderHook(() => usePlayback(1));
     act(() => {
       result.current.toggle();
     });
     act(() => {
-      vi.advanceTimersByTime(500);
+      result.current.onFrame(0.5);
     });
     expect(result.current.playing).toBe(true);
     expect(result.current.playhead).toBeCloseTo(0.5, 1);
     act(() => {
-      vi.advanceTimersByTime(1000);
+      result.current.onFrame(0.98);
+      result.current.onFrame(0);
     });
     expect(result.current.playhead).toBe(1);
     expect(result.current.playing).toBe(false);
@@ -63,7 +56,7 @@ describe('usePlayback', () => {
     const { result } = renderHook(() => usePlayback(0));
     act(() => {
       result.current.toggle();
-      vi.advanceTimersByTime(500);
+      result.current.onFrame(0.5);
     });
     expect(result.current.playhead).toBe(0);
   });

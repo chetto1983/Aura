@@ -73,7 +73,7 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
   const audioInput = useRef<HTMLInputElement>(null);
   const [project, setProject] = useState<VideoProject>();
   const duration = project === undefined ? 0 : projectDuration(project);
-  const { playhead, playing, seek, toggle } = usePlayback(duration);
+  const { playhead, playing, seek, toggle, onFrame } = usePlayback(duration);
   const [selectedId, setSelectedId] = useState<string>();
   const [selectedJunction, setSelectedJunction] = useState<ClipJunction>();
   const [inspectorTab, setInspectorTab] = useState<ClipTab>('transform');
@@ -399,6 +399,8 @@ export default function VideoStudio({ open, onClose, onSaved }: VideoStudioProps
                     <Stage
                       project={project}
                       time={playhead}
+                      playing={playing}
+                      onFrame={onFrame}
                       selectedId={selectedId}
                       onSelect={(id) => {
                         setSelectedJunction(undefined);

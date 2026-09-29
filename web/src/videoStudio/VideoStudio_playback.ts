@@ -1,43 +1,43 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
-// VideoStudio_playback.ts — the editor's clock: where the playhead is, whether it runs, and what
-// moves it — a tick while playing, and a seek. Playing stops on its own at the film's end, and a
-// play pressed there starts again from the beginning.
-
-/** How often a running playhead advances: often enough for the preview to follow it smoothly. */
-const TICK_MS = 50;
+// The renderer owns the picture and audio clock. The transport records its
+// painted frames, so a slow audio mix cannot make the displayed time run ahead.
 
 export function usePlayback(duration: number) {
   const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const lastFrameTime = useRef(0);
 
-  useEffect(() => {
-    if (!playing || duration <= 0) return undefined;
-    let last = performance.now();
-    const timer = window.setInterval(() => {
-      const now = performance.now();
-      const elapsed = (now - last) / 1000;
-      last = now;
-      setPlayhead((current) => {
-        const next = Math.min(duration, current + elapsed);
-        if (next >= duration) setPlaying(false);
-        return next;
-      });
-    }, TICK_MS);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, [duration, playing]);
+  const onFrame = useCallback(
+    (time: number) => {
+      const next = Math.min(Math.max(time, 0), duration);
+      if (next < lastFrameTime.current && lastFrameTime.current - next > duration / 2) {
+        lastFrameTime.current = duration;
+        setPlayhead(duration);
+        setPlaying(false);
+        return;
+      }
+      lastFrameTime.current = next;
+      setPlayhead(next);
+    },
+    [duration],
+  );
 
   function seek(time: number) {
+    const next = Math.min(Math.max(time, 0), duration);
     setPlaying(false);
-    setPlayhead(Math.min(Math.max(time, 0), duration));
+    lastFrameTime.current = next;
+    setPlayhead(next);
   }
 
   function toggle() {
-    if (playhead >= duration) setPlayhead(0);
+    if (duration <= 0) return;
+    if (playhead >= duration) {
+      lastFrameTime.current = 0;
+      setPlayhead(0);
+    }
     setPlaying((current) => !current);
   }
 
-  return { playhead, playing, seek, toggle };
+  return { playhead, playing, seek, toggle, onFrame };
 }

@@ -176,12 +176,22 @@ function SelectionBox({ label, at, onMove }: SelectionBoxProps) {
 interface StageProps {
   readonly project: VideoProject;
   readonly time: number;
+  readonly playing: boolean;
+  readonly onFrame: (time: number) => void;
   readonly selectedId: string | undefined;
   readonly onSelect: (id: string) => void;
   readonly onCommand: (edit: (current: VideoProject) => VideoProject) => void;
 }
 
-export function Stage({ project, time, selectedId, onSelect, onCommand }: StageProps) {
+export function Stage({
+  project,
+  time,
+  playing,
+  onFrame,
+  selectedId,
+  onSelect,
+  onCommand,
+}: StageProps) {
   const { t } = useTranslation();
   const { assetUrl } = useAssetSource();
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -190,6 +200,10 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
   // ask for a frame of a video the renderer has not been given.
   const [loaded, setLoaded] = useState<DomRenderer | null>(null);
   const [failed, setFailed] = useState(false);
+  const playbackTime = useRef(time);
+  const frameHandler = useRef(onFrame);
+  const activePlayback = useRef(playing);
+  const frameRate = useRef(project.fps);
   // Every call made to the renderer, one after another. DomRenderer 1.3.4's `loadVideo` waits
   // out an in-flight render on a `queueMicrotask` loop (DomRenderer.js, "Wait for any in-flight
   // renderFrame()"), and a seek's render awaits media events that loop never lets fire: a load
@@ -198,9 +212,19 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
   const calls = useRef<Promise<unknown>>(Promise.resolve());
 
   useEffect(() => {
+    playbackTime.current = time;
+    frameHandler.current = onFrame;
+    activePlayback.current = playing;
+    frameRate.current = project.fps;
+  }, [time, onFrame, playing, project.fps]);
+
+  useEffect(() => {
     const host = hostRef.current;
     if (host === null) return undefined;
     const instance = localFontRenderer(host);
+    instance.onFrame = (frame) => {
+      if (activePlayback.current) frameHandler.current(frame / frameRate.current);
+    };
     setRenderer(instance);
     return () => {
       setRenderer(null);
@@ -228,12 +252,13 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
       );
     return () => {
       live = false;
+      renderer.stop();
       setLoaded(null);
     };
   }, [renderer, project, assetUrl]);
 
   useEffect(() => {
-    if (loaded === null) return undefined;
+    if (loaded === null || playing) return undefined;
     let live = true;
     after(calls, async () =>
       live ? loaded.seek(Math.round(time * project.fps)) : undefined,
@@ -243,7 +268,29 @@ export function Stage({ project, time, selectedId, onSelect, onCommand }: StageP
     return () => {
       live = false;
     };
-  }, [loaded, time, project.fps]);
+  }, [loaded, time, playing, project.fps]);
+
+  useEffect(() => {
+    if (loaded === null || !playing) return undefined;
+    const controller = new AbortController();
+    // `play()` owns the audio mix and the frame clock. It resolves only after
+    // playback stops, so launch it after the queued seek without holding the
+    // queue. Frame callbacks update the transport without a second timer.
+    void after(calls, async () => {
+      controller.signal.throwIfAborted();
+      await loaded.seek(Math.round(playbackTime.current * project.fps));
+      controller.signal.throwIfAborted();
+      void loaded.play().catch(() => {
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    }).catch(() => {
+      if (!controller.signal.aborted) setFailed(true);
+    });
+    return () => {
+      controller.abort();
+      loaded.stop();
+    };
+  }, [loaded, playing, project.fps]);
 
   const item = boxedOverlay(project, selectedId, time);
   return (

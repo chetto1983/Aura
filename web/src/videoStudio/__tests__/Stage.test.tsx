@@ -12,6 +12,9 @@ import { Stage } from '../Stage';
 interface FakeRenderer {
   readonly loaded: unknown[];
   readonly seeks: number[];
+  readonly plays: number;
+  readonly stops: number;
+  onFrame: ((frame: number) => void) | null;
   readonly overriddenAtLoad: boolean[];
   destroyed: number;
 }
@@ -27,6 +30,9 @@ vi.mock('@videoflow/renderer-dom', () => ({
     loadedFonts: Record<string, string> = {};
     loaded: unknown[] = [];
     seeks: number[] = [];
+    plays = 0;
+    stops = 0;
+    onFrame: ((frame: number) => void) | null = null;
     overriddenAtLoad: boolean[] = [];
     destroyed = 0;
     host: HTMLElement;
@@ -45,6 +51,13 @@ vi.mock('@videoflow/renderer-dom', () => ({
     seek(frame: number): Promise<void> {
       this.seeks.push(frame);
       return dom.seekHeld ?? Promise.resolve();
+    }
+    play(): Promise<void> {
+      this.plays += 1;
+      return Promise.resolve();
+    }
+    stop(): void {
+      this.stops += 1;
     }
     destroy(): void {
       this.destroyed += 1;
@@ -123,9 +136,11 @@ function measured(element: Element, width: number, height: number): void {
 interface Mounted {
   readonly commands: ((current: VideoProject) => VideoProject)[];
   readonly selections: string[];
+  readonly frames: number[];
   readonly rerender: (props: {
     project?: VideoProject;
     time?: number;
+    playing?: boolean;
     selectedId?: string;
   }) => void;
 }
@@ -133,17 +148,21 @@ interface Mounted {
 function mount(current: VideoProject, selectedId?: string, time = 2): Mounted {
   const commands: ((project: VideoProject) => VideoProject)[] = [];
   const selections: string[] = [];
+  const frames: number[] = [];
   const props = {
     project: current,
     time,
+    playing: false,
     selectedId,
     onSelect: (id: string) => selections.push(id),
+    onFrame: (at: number) => frames.push(at),
     onCommand: (edit: (project: VideoProject) => VideoProject) => commands.push(edit),
   };
   const view = render(<Stage {...props} />);
   return {
     commands,
     selections,
+    frames,
     rerender: (next) => {
       view.rerender(<Stage {...props} {...next} />);
     },
@@ -201,6 +220,45 @@ describe('Stage', () => {
     });
   });
 
+  it('uses the renderer audio clock while playing instead of seeking every transport tick', async () => {
+    const view = mount(project(), undefined, 2);
+    await waitFor(() => {
+      expect(renderer().seeks).toEqual([50]);
+    });
+    view.rerender({ playing: true });
+    await waitFor(() => {
+      expect(renderer().plays).toBe(1);
+    });
+    renderer().onFrame?.(75);
+    expect(view.frames).toEqual([3]);
+    const seeksAtStart = renderer().seeks.length;
+    view.rerender({ playing: true, time: 2.5 });
+    expect(renderer().seeks).toHaveLength(seeksAtStart);
+    view.rerender({ playing: false, time: 2.5 });
+    await waitFor(() => {
+      expect(renderer().seeks.at(-1)).toBe(63);
+    });
+    expect(renderer().stops).toBeGreaterThan(0);
+  });
+
+  it('does not start audio after playback was paused during a queued seek', async () => {
+    const held: { settle?: () => void } = {};
+    dom.seekHeld = new Promise<void>((resolve) => {
+      held.settle = resolve;
+    });
+    const view = mount(project(), undefined, 2);
+    await waitFor(() => {
+      expect(renderer().seeks).toEqual([50]);
+    });
+    view.rerender({ playing: true });
+    view.rerender({ playing: false });
+    held.settle?.();
+    await waitFor(() => {
+      expect(renderer().seeks.length).toBeGreaterThan(1);
+    });
+    expect(renderer().plays).toBe(0);
+  });
+
   it('loads no project while a seek is still rendering, then only the latest one', async () => {
     // DomRenderer 1.3.4's loadVideo waits out an in-flight render on a microtask loop, which
     // starves the media events that render awaits: overlapping the two froze the page.
@@ -235,6 +293,8 @@ describe('Stage', () => {
       <Stage
         project={project()}
         time={0}
+        playing={false}
+        onFrame={() => undefined}
         selectedId={undefined}
         onSelect={() => undefined}
         onCommand={() => undefined}
