@@ -263,6 +263,7 @@ export async function installCalmPrismFixture(
   await page.route('**/api/approvals', (route) =>
     json(route, !empty && includeApprovals && matrixReady ? approvals() : []),
   );
+  await page.route('**/api/message-drafts?**', (route) => json(route, []));
   await page.route('**/api/approvals/*/resolve', (route) => route.fulfill({ status: 204 }));
   await page.route(`**/api/approvals/${ERROR_TOKEN}/resolve`, (route) =>
     json(route, { error: 'already resolved' }, 409),

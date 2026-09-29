@@ -51,7 +51,10 @@ test('a Garage clip plays its sound and exports video plus standalone WAV', asyn
   const output = await exportTo(page, editor, info, 'clip-sound.mp4');
   const originalLevel = levelBetween(await windowPowers(page, readFileSync(source)), 1, 3);
   const exportedLevel = levelBetween(await windowPowers(page, readFileSync(output)), 1, 3);
-  expect(Math.abs(exportedLevel - originalLevel)).toBeLessThan(1);
+  // This fixture is mono; VideoFlow's centered StereoPanner distributes it equally over two
+  // channels, so mean power per output channel is 3.01 dB lower than the source's sole channel.
+  const centerPanDb = 10 * Math.log10(0.5);
+  expect(Math.abs(exportedLevel - (originalLevel + centerPanDb))).toBeLessThan(1);
 
   const downloading = page.waitForEvent('download', { timeout: 60_000 });
   await editor.getByRole('button', { name: 'Export audio (WAV)' }).click();
@@ -62,5 +65,5 @@ test('a Garage clip plays its sound and exports video plus standalone WAV', asyn
   const wav = readFileSync(audioPath);
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
   const audioLevel = levelBetween(await windowPowers(page, wav), 1, 3);
-  expect(Math.abs(audioLevel - originalLevel)).toBeLessThan(1);
+  expect(Math.abs(audioLevel - exportedLevel)).toBeLessThan(1);
 });

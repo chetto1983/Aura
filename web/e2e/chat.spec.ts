@@ -240,6 +240,9 @@ async function installAppShellRoutes(page: Page) {
   await page.route(/\/api\/assets\?thread_id=/, (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  await page.route('**/api/message-drafts?**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
 }
 
 // installGoldenRoutes wires the deterministic golden replay over the served SPA: the

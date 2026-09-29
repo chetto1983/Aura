@@ -115,6 +115,9 @@ async function installConversationRoutes(page: Page) {
   await page.route('**/api/approvals', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
   );
+  await page.route('**/api/message-drafts?**', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  );
   await page.route('**/threads/*/messages', (route) =>
     route.fulfill({
       status: 200,
