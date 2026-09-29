@@ -16,6 +16,10 @@ jobs, and a web cockpit on infrastructure you control.
 
 [What is Aura?](#what-is-aura) · [Features](#key-features) · [Architecture](#architecture-one-screen) · [Quick Start](#quick-start) · [Docs](#documentation) · [Development](#development)
 
+<a href="https://buymeacoffee.com/chetto983">
+  <img src="https://media3.giphy.com/media/TDQOtnWgsBx99cNoyH/giphy.gif" alt="Buy me a coffee" width="60" height="60" />
+</a>
+
 </div>
 
 ---
