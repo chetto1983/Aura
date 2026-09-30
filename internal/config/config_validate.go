@@ -14,7 +14,7 @@
 // rejects sample object-store creds, an empty Garage RPC secret and an absent
 // web-auth secret; server_production additionally rejects a single-replica
 // object store and a disabled destructive-shell gate (the hardened↔prod differentiator,
-// D-11/D-15). The gates REFUSE and NAME — they never silently coerce an operator value
+// D-11/D-15), and an egress allowlist its runsc boxes cannot enforce. The gates REFUSE and NAME — they never silently coerce an operator value
 // to a "safe" one (D-05).
 package config
 
@@ -94,6 +94,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 	vs = append(vs, c.gateGarageRPCSecret(p)...)
 	vs = append(vs, c.gateReplication(p)...)
 	vs = append(vs, c.gateDestructiveShell(p)...)
+	vs = append(vs, c.gateEgressAllowlistRuntime(p)...)
 	vs = append(vs, c.gateReasoningTraceFull(p)...)
 	vs = append(vs, c.gateWebAuth(p)...)
 	vs = append(vs, c.gateObjectStoreEndpoint(p)...)
@@ -241,6 +242,23 @@ func (c *Config) gateReplication(p RuntimeProfile) []Violation {
 		return []Violation{{Knob: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Sev: Fatal, Msg: fmt.Sprintf("must be >= 2 for durability under server_production, got %d", c.ObjectStoreReplicationFactor)}}
 	}
 	return nil
+}
+
+// gateEgressAllowlistRuntime refuses an FQDN egress allowlist under server_production, whose
+// boxes run on gVisor runsc (usersandbox specFor). The allowlist needs the nat table runsc does not
+// implement (gVisor #934), so buildEgressSidecar rejects the pair — but only when a box is created,
+// which left the daemon booting healthy and then denying every sandboxed tool call.
+func (c *Config) gateEgressAllowlistRuntime(p RuntimeProfile) []Violation {
+	if p != ProfileServerProduction || len(c.Sandbox.EgressAllowlist) == 0 {
+		return nil
+	}
+	return []Violation{{
+		Knob: "AURA_SANDBOX_EGRESS_ALLOWLIST",
+		Sev:  Fatal,
+		Msg: "an FQDN allowlist cannot be enforced under server_production, whose boxes run on gVisor runsc " +
+			"(no nat table, gVisor #934): leave it empty (the always-on egress floor still blocks private " +
+			"ranges and cloud metadata) or use single_user_hardened, which runs runc",
+	}}
 }
 
 // gateDestructiveShell forbids an explicitly DISABLED destructive-shell gate under

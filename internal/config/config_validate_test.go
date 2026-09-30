@@ -137,6 +137,24 @@ func TestGateReplication(t *testing.T) {
 	}
 }
 
+// TestGateEgressAllowlistRuntime: server_production boxes run on runsc, which cannot enforce
+// the FQDN allowlist, so the pair must fail at boot instead of at every box creation. Every
+// other profile runs runc, where the allowlist works.
+func TestGateEgressAllowlistRuntime(t *testing.T) {
+	withAllowlist := &Config{Sandbox: SandboxConfig{EgressAllowlist: []string{"pypi.org"}}}
+	if vs := withAllowlist.ValidateProfile(ProfileServerProduction); !hasViolation(vs, "AURA_SANDBOX_EGRESS_ALLOWLIST", Fatal) {
+		t.Fatalf("server_production with an allowlist must be Fatal naming AURA_SANDBOX_EGRESS_ALLOWLIST, got %+v", vs)
+	}
+	if vs := (&Config{}).gateEgressAllowlistRuntime(ProfileServerProduction); len(vs) != 0 {
+		t.Errorf("server_production without an allowlist must pass, got %+v", vs)
+	}
+	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened} {
+		if vs := withAllowlist.gateEgressAllowlistRuntime(p); len(vs) != 0 {
+			t.Errorf("%s runs runc and must allow the allowlist, got %+v", p, vs)
+		}
+	}
+}
+
 // TestGateDestructiveShell locks D-11/D-15/F-002: explicit `off` is Fatal under
 // server_production ONLY (single_user_hardened ALLOWS it, A3); it reads the raw env
 // value (case-insensitive) and never imports the tools leaf.
