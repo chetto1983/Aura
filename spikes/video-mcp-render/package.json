@@ -1,0 +1,18 @@
+{
+  "name": "video-mcp-render-spikes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@echogarden/fvad-wasm": "0.2.0",
+    "@sapphi-red/web-noise-suppressor": "0.4.1",
+    "@videoflow/core": "1.3.4",
+    "@videoflow/renderer-browser": "1.3.4",
+    "@videoflow/renderer-server": "1.3.4",
+    "esbuild": "0.24.2",
+    "mediabunny": "1.58.1",
+    "playwright": "1.62.1"
+  },
+  "allowScripts": {
+    "esbuild@0.24.2": true
+  }
+}

@@ -1,0 +1,13 @@
+# S3's minimal candidate: Node 24 + ONE browser + renderer-server + the Studio's core runtime
+# packages (the spike's package.json is exactly that list), nothing to build with and no ffmpeg.
+# BROWSER/INSTALL_FLAGS pick one `playwright install` target: chromium --only-shell (the headless
+# shell), chromium --no-shell (the full Chrome for Testing build), or chrome (Google's .deb).
+# --with-deps installs the apt libraries the browser needs.
+FROM node:24-bookworm-slim
+ARG BROWSER=chromium
+ARG INSTALL_FLAGS=--only-shell
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-audit --no-fund \
+ && npx playwright install --with-deps ${INSTALL_FLAGS} ${BROWSER} \
+ && rm -rf /var/lib/apt/lists/* /root/.npm /tmp/*

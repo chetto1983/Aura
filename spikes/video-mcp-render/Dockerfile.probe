@@ -1,0 +1,11 @@
+# The measuring container: node:24 (the repo's engine, web/package.json "node": ">=24.16.0 <25") on
+# Debian 12, which both Playwright's install-deps and Google's Chrome .deb support. It carries all
+# three browsers S1 compares and ffmpeg for the fixtures, ffprobe and renderer-server's ffmpeg path.
+FROM node:24-bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+WORKDIR /spike
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund \
+ && npx playwright install --with-deps chromium chromium-headless-shell chrome \
+ && rm -rf /var/lib/apt/lists/*
+COPY . .
