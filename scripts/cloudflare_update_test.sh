@@ -57,6 +57,7 @@ case "$*" in
       *) exit 1 ;;
     esac ;;
   'compose config --images'|'images --no-trunc --format {{.Repository}}:{{.Tag}} {{.ID}}'|'image prune --force') ;;
+  'volume prune --force --filter label=com.docker.volume.anonymous') ;;
   *) echo 'Unexpected Docker mutation' >&2; exit 1 ;;
 esac
 STUB
@@ -67,6 +68,7 @@ grep -q 're-executing it' "$fixture/output"
 grep -qx 'compose pull aura-cloudflared' "$fixture/calls"
 grep -qx 'compose up -d --no-deps aura-cloudflared' "$fixture/calls"
 grep -q 'healthy' "$fixture/output"
+grep -qx 'volume prune --force --filter label=com.docker.volume.anonymous' "$fixture/calls"
 [[ "$(stat -c '%a:%u:%g' "$INSTALL_DIR/.env")" == "$env_metadata" ]]
 grep -qx 'POSTGRES_PASSWORD=synthetic-preserve' "$INSTALL_DIR/.env"
 ! grep -q 'synthetic-preserve' "$fixture/output"
