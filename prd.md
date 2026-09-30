@@ -1640,8 +1640,15 @@ model download. `aura-stt` now mounts the named volume `aura-stt-models`, and an
 by pruning unused volumes that carry `com.docker.volume.anonymous`, so the named per-user box
 workspaces a sandbox refresh detaches are never candidates. Still anonymous and recreated on
 every `compose down`: SearXNG's rendered settings and cache, and ArcadeDB's `log`,
-`replication` and `config`. The last holds `server-users.jsonl`; whether losing it on a stop
-matters was not measured.
+`replication` and `config`. The last holds `server-users.jsonl`, and losing it is healed at
+boot: measured the same day with `systemctl restart aura` on the VM, the new `config` volume
+started with root alone, two tenant binds were refused, and within four seconds `aura`'s boot
+reconcile and `arcadedb-mcp` recreated the tenant user from its derived password (the second
+create answering "already exists"); `aura`, whose boot fails on a reconcile error, came up
+healthy. So `config` needs no backup. Not shown: an identity that is not an active human is
+reprovisioned only on its first memory use. Separately, ArcadeDB logged 841 refused binds in
+the six days before, from the memory backfill sweep probing identities without memory by
+binding as them, the pattern `TenantClients.Existing` avoids with the admin's `DatabaseExists`.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
