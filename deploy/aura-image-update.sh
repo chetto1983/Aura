@@ -242,6 +242,16 @@ remove_superseded_images() {
   done < <(docker images --no-trunc --format '{{.Repository}}:{{.Tag}} {{.ID}}')
 }
 
+# aura.service stops with `compose down`, which removes the containers and orphans every volume
+# an image declares without a compose name: the next start creates a fresh one, so the old copy
+# is unreachable. Measured on the lab VM (2026-09-30): four 1.6 GB whisper model caches and 34
+# smaller ones. The label filter keeps this to anonymous volumes even on an engine whose bare
+# `volume prune` still removes named ones -- such as the per-user box workspaces a sandbox
+# refresh detaches on purpose, which aura reattaches on that identity's next tool call.
+remove_orphan_volumes() {
+  docker volume prune --force --filter label=com.docker.volume.anonymous
+}
+
 # MCP sidecars ride the same timer. A service whose container does not exist is
 # skipped on purpose: `up -d` must never START a surface the operator has not
 # enabled, only refresh one that is already running.
@@ -382,10 +392,11 @@ apply_update() {
 
   refresh_sandbox_images
 
-  # Only a tick that got this far reclaims images: tagged ones no pin names any more, then
-  # the untagged ones a moving tag left behind.
+  # Only a tick that got this far reclaims images -- tagged ones no pin names any more, then
+  # the untagged ones a moving tag left behind -- and orphaned volumes.
   remove_superseded_images
   docker image prune --force >/dev/null
+  remove_orphan_volumes
   image_id "$(env_value AURA_IMAGE)" >"$(update_dir)/applied-image" || true
   RUNNING_REV="$(image_revision "$(container_image_id aura)")"
   AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''

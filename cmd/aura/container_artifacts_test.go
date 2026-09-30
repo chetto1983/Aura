@@ -132,6 +132,10 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// escape hatch rather than protect anything.
 		"${AURA_GARAGE_CONFIG:-./docker/garage/garage.toml}:/etc/garage.toml:ro",
 		"garage-data:",
+		// The STT image declares VOLUME /var/lib/whisper. Left unnamed, aura.service's
+		// `compose down` orphaned it on every stop and the next start downloaded the 1.6 GB
+		// model into a fresh one (measured on the lab VM, 2026-09-30).
+		"aura-stt-models:/var/lib/whisper",
 		"driver: nvidia",
 		"capabilities: [gpu]",
 		"start_period: 300s",

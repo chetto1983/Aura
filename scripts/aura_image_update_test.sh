@@ -82,11 +82,17 @@ LIB
   docker() {
     case "$*" in
       'compose pull aura aura-migrate garage-bootstrap'|'compose up -d aura'|'compose exec -T aura aura version'|'image prune --force') ;;
+      'volume prune --force --filter label=com.docker.volume.anonymous') echo pruned >"$fixture/volume-prune" ;;
       *) fail "unexpected Docker mutation: $*" ;;
     esac
   }
   main
   grep -qx aura-cloudflared "$fixture/updated-services" || fail 'cloudflared excluded from update'
+  # aura.service stops with `compose down`, which orphans every volume an image declares
+  # without a compose name. Only anonymous ones may go: the named per-user box workspaces a
+  # refresh detaches are recreated by aura and must survive, even on an engine whose bare
+  # `volume prune` would still remove named volumes.
+  [[ -f "$fixture/volume-prune" ]] || fail 'a finished apply left orphaned anonymous volumes behind'
   [[ "$(cat "$INSTALL_DIR/update/applied-image")" == image-id ]] || fail 'a finished apply did not record the image it applied'
   [[ "$(cat "$INSTALL_DIR/postgres-sentinel")" == 'database state' ]] || fail 'database state changed'
   [[ "$(cat "$INSTALL_DIR/projection-sentinel")" == 'projection state' ]] || fail 'projection state changed'

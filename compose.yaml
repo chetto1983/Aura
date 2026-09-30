@@ -1152,6 +1152,10 @@ services:
       # this is explicitly empty. Aura talks to this loopback sidecar without an
       # Authorization header.
       WHISPER_API_KEY: ""
+    volumes:
+      # The image declares VOLUME /var/lib/whisper. Unnamed, aura.service's `compose down`
+      # orphaned it on every stop and the next start downloaded the model into a fresh one.
+      - aura-stt-models:/var/lib/whisper
     ports:
       - "127.0.0.1:${AURA_STT_PORT:-9000}:9000"
     healthcheck:
@@ -1589,6 +1593,8 @@ volumes:
   aura-whatsapp-session:
   caddy-data:
   aura-ocr-vl:
+  # faster-whisper model cache (~1.6 GB for large-v3-turbo), kept across stack restarts.
+  aura-stt-models:
   aura-pim-data:
   aura-prometheus:
   aura-tempo:
