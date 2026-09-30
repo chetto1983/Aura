@@ -59,7 +59,7 @@ func parseTaskList(preview string) ([][]string, bool) {
 	if err != nil || count <= 0 || count != len(lines)-1 {
 		return nil, false
 	}
-	rows := make([][]string, 0, count)
+	rows := make([][]string, 0, len(lines)-1)
 	for _, line := range lines[1:] {
 		if !strings.HasPrefix(line, "  ") {
 			return nil, false
@@ -144,7 +144,7 @@ func parsePackList(preview string) ([][]string, bool) {
 	if err != nil || count < 0 || count != len(lines)-1 {
 		return nil, false
 	}
-	rows := make([][]string, 0, count)
+	rows := make([][]string, 0, len(lines)-1)
 	for _, line := range lines[1:] {
 		if !strings.HasPrefix(line, "  ") {
 			return nil, false
