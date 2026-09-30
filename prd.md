@@ -1648,7 +1648,8 @@ create answering "already exists"); `aura`, whose boot fails on a reconcile erro
 healthy. So `config` needs no backup. Not shown: an identity that is not an active human is
 reprovisioned only on its first memory use. Separately, ArcadeDB logged 841 refused binds in
 the six days before, from the memory backfill sweep probing identities without memory by
-binding as them, the pattern `TenantClients.Existing` avoids with the admin's `DatabaseExists`.
+binding as them; the sweep now asks the admin's `DatabaseExists`, as `TenantClients.Existing`
+already did, and a tenant walk without the admin pair is disabled rather than binding.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
