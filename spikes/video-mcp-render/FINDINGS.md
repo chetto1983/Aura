@@ -335,10 +335,12 @@ VM. The operator moved S3 off the VM to save time: image size does not depend on
 - `docker save` exports the compressed blobs. Check: the Playwright image's save is 949,433,856 B,
   and its registry manifest sums to 949,411,114 B for amd64.
 - Cross-check on the VM, before S3 moved: two candidates built there from the same Dockerfile.
-  - Chromium (CfT): store `Size` 1,435,629,189 B, `docker save | gzip -6` 401,828,416 B.
-  - Headless shell: 1,231,756,855 B and 331,985,516 B, with the same 648 MB install layer.
+  - Chromium (CfT): store `Size` 1,435,629,189 B, `docker save | gzip -6` 401,828,416 B, install
+    layer 782 MB.
+  - Headless shell: 1,231,756,855 B, 331,985,516 B, 648 MB.
 
-  Both equal the workstation's unpacked + compressed within 1 %.
+  Both store sizes are within 0.1 % of the table's unpacked + compressed below. The gzip-6 saves
+  come out 0.8–0.9 % under its compressed column, and the install layers are identical.
 
 **Numbers:**
 
