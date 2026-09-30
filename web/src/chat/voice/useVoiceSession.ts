@@ -36,8 +36,7 @@ export interface VoiceSession extends VoiceSessionState {
 
 /** The text an assistant message reads aloud: its text parts, joined. Reasoning, tool
  *  calls and sources are not speech and are skipped. */
-function assistantText(message: { readonly content: readonly unknown[] } | undefined): string {
-  if (message === undefined) return '';
+function assistantText(message: { readonly content: readonly unknown[] }): string {
   let spoken = '';
   for (const part of message.content) {
     if (typeof part !== 'object' || part === null) continue;
