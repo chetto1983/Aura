@@ -237,7 +237,7 @@ func (b *TenantBackfill) CorpusWork(ctx context.Context, memorySpace, documentSp
 // is logged and left out; the walk fails only when no tenant answered and one failed, so one
 // broken database does not blank the whole card.
 func (b *TenantBackfill) eachTenant(ctx context.Context, read func(context.Context, *Client, string) error) error {
-	if b == nil || b.identities == nil || b.credentials == nil {
+	if !b.wired() {
 		return fmt.Errorf("arcadedb: the embedding space report is not configured")
 	}
 	identities, err := b.identities.IdentityIDs(ctx)

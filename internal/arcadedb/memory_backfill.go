@@ -48,17 +48,19 @@ type MemoryIdentities interface {
 // TenantBackfill walks every identity's memory database and runs a sweep against
 // each one. EmbedMissing and LinkMentions are two such sweeps: they share the
 // identical tenant walk (sweepTenants/sweepTenant below) — enumerate identities,
-// build a per-tenant *Client with that tenant's derived credential, skip a tenant
-// that has no memory yet — and differ only in the per-tenant work they run.
+// skip a tenant that has no memory yet, build a per-tenant *Client with that
+// tenant's derived credential — and differ only in the per-tenant work they run.
 //
 // Memory is one database per identity (tenant.go), so a sweep that held a single
 // client would only ever fix whichever tenant it happened to point at. It
 // therefore enumerates identities and visits each one's database with that
 // tenant's own derived credential — the same credential the sidecar provisions
-// with, so the server still refuses anything out of scope.
+// with, so the server still refuses anything out of scope. Whether a tenant has
+// memory at all is the admin's question (DatabaseExists), never a login attempt.
 type TenantBackfill struct {
 	identities  MemoryIdentities
 	base        Config
+	admin       *Client
 	credentials *TenantCredentials
 	embedder    DenseEmbedder
 	rotation    atomic.Uint64
@@ -66,14 +68,16 @@ type TenantBackfill struct {
 
 // NewTenantBackfill wires the sweep. base carries the server address only: the
 // database is chosen per identity, and a default here would be a fallback that
-// writes one tenant's vectors into another's memory.
+// writes one tenant's vectors into another's memory. admin holds server rights and
+// is used only to ask which tenant databases exist.
 func NewTenantBackfill(
 	identities MemoryIdentities,
 	base Config,
+	admin *Client,
 	credentials *TenantCredentials,
 	embedder DenseEmbedder,
 ) *TenantBackfill {
-	return &TenantBackfill{identities: identities, base: base, credentials: credentials, embedder: embedder}
+	return &TenantBackfill{identities: identities, base: base, admin: admin, credentials: credentials, embedder: embedder}
 }
 
 // EmbedMissing runs the pass (memory_embed_pass.go) over every identity's memory and
@@ -148,7 +152,7 @@ func (b *TenantBackfill) sweepTenants(
 	sweep string,
 	work func(ctx context.Context, client *Client, database string) (int, error),
 ) (int, error) {
-	if b == nil || b.identities == nil || b.credentials == nil {
+	if !b.wired() {
 		return 0, fmt.Errorf("arcadedb: memory %s sweep is not configured", sweep)
 	}
 	identities, err := b.identities.IdentityIDs(ctx)
@@ -193,6 +197,10 @@ func (b *TenantBackfill) sweepTenants(
 	return total, nil
 }
 
+func (b *TenantBackfill) wired() bool {
+	return b != nil && b.identities != nil && b.admin != nil && b.credentials != nil
+}
+
 // sweepTenant runs work against one identity's memory database. The bool reports
 // whether the tenant HAS memory: false means it has never been provisioned, which
 // is a skip rather than an error.
@@ -205,6 +213,18 @@ func (b *TenantBackfill) sweepTenant(
 	if err != nil {
 		return 0, false, fmt.Errorf("memory backfill: %w", err)
 	}
+	// Existence is the admin's read, not a bind as the tenant: ArcadeDB counts every refused
+	// login against the user name and past a threshold answers "Too many failed
+	// authentication attempts", so a bind probe logged one refusal per identity without
+	// memory on every pass (841 in six days on the lab VM, 2026-09-30). A database that
+	// exists while its user was lost now fails its work visibly instead of reading as empty.
+	exists, err := b.admin.DatabaseExists(ctx, database)
+	if err != nil {
+		return 0, false, fmt.Errorf("memory backfill for %s: %w", database, err)
+	}
+	if !exists {
+		return 0, false, nil
+	}
 	cfg := b.base
 	cfg.Database = database
 	cfg.User = TenantUserFor(database)
@@ -212,19 +232,6 @@ func (b *TenantBackfill) sweepTenant(
 	client, err := New(cfg)
 	if err != nil {
 		return 0, false, fmt.Errorf("memory backfill for %s: %w", database, err)
-	}
-	// The existence probe is a BIND, not a database read. A tenant's database and
-	// its server user are created together, so a refused credential is the exact,
-	// documented signal that this identity has no memory yet — and unlike matching
-	// on a query's error text it cannot mistake a syntax error for an absence.
-	// (The (bool, error) split is load-bearing: false is REFUSED, an error is
-	// "unknown", and a server that is merely down must not read as "no memory".)
-	provisioned, err := client.CredentialAccepted(ctx)
-	if err != nil {
-		return 0, false, fmt.Errorf("memory backfill for %s: %w", database, err)
-	}
-	if !provisioned {
-		return 0, false, nil
 	}
 	count, err := work(ctx, client, database)
 	if err != nil {

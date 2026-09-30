@@ -4,11 +4,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/identity"
@@ -21,8 +23,8 @@ import (
 // DEACTIVATED identities are included deliberately. Their memory survives until the
 // grace window closes and identity_purge drops the database, and until then it is
 // still readable — so it is still worth embedding. Once the database is gone the
-// tenant's credential is refused and the sweep skips it, which is the same code path
-// as an identity that never stored anything.
+// server reports it absent and the sweep skips it, which is the same code path as an
+// identity that never stored anything.
 type identityRoster struct {
 	store *identity.Store
 }
@@ -125,7 +127,28 @@ func memoryTenantWalk(chat *chatEnv, purpose string, embedder arcadedb.DenseEmbe
 		slog.Warn("aura serve: no ArcadeDB tenant secret — "+purpose+" disabled", "error", err)
 		return nil
 	}
+	admin, err := newArcadeAdmin(chat.cfg.ArcadeDB)
+	if err != nil {
+		slog.Warn("aura serve: "+purpose+" disabled", "error", err)
+		return nil
+	}
 	// Database is deliberately unset: the walk selects it per identity, and a default here
 	// would be a fallback that writes one tenant's vectors into another's memory.
-	return arcadedb.NewTenantBackfill(identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, credentials, embedder)
+	return arcadedb.NewTenantBackfill(identityRoster{store: chat.identity}, arcadedb.Config{BaseURL: base}, admin, credentials, embedder)
+}
+
+// errNoArcadeAdmin names the pair a tenant walk needs to ask which tenants have memory. The
+// alternative, binding as each identity, is a refused login ArcadeDB counts for every identity
+// without memory, on every pass.
+var errNoArcadeAdmin = errors.New("no ArcadeDB server credential: set ARCADEDB_ADMIN_USER and ARCADEDB_ADMIN_PASSWORD")
+
+// newArcadeAdmin builds the server-rights client from the configured admin pair.
+func newArcadeAdmin(server config.ArcadeDBConfig) (*arcadedb.Client, error) {
+	if strings.TrimSpace(server.AdminUser) == "" || strings.TrimSpace(server.AdminPassword) == "" {
+		return nil, errNoArcadeAdmin
+	}
+	return arcadedb.New(arcadedb.Config{
+		BaseURL: server.BaseURL, Database: server.Database,
+		User: server.AdminUser, Password: server.AdminPassword,
+	})
 }

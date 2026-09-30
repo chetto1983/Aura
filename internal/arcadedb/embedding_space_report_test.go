@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -152,20 +153,16 @@ func TestCorpusWorkSkipsTheOverLimitCountWithoutALimit(t *testing.T) {
 	}
 }
 
-// reportTenantServer provisions the databases whose tenant user provisioned accepts and answers
-// every query with row (none when row is empty). It returns the URL and the databases queried.
+// reportTenantServer reports the databases provisioned accepts as existing and answers every
+// query with row (none when row is empty). It returns the URL and the databases queried.
 func reportTenantServer(t *testing.T, row string, provisioned func(database string) bool) (string, *[]string) {
 	t.Helper()
 	var mu sync.Mutex
 	queried := []string{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/api/v1/ready") {
-			user, _, _ := r.BasicAuth()
-			if provisioned("mem_" + strings.TrimPrefix(user, "u_")) {
-				w.WriteHeader(http.StatusNoContent)
-				return
-			}
-			w.WriteHeader(http.StatusUnauthorized)
+		if database, ok := strings.CutPrefix(r.URL.Path, "/api/v1/exists/"); ok {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"result":`+strconv.FormatBool(provisioned(database))+`}`)
 			return
 		}
 		_, _ = io.ReadAll(r.Body)
@@ -181,7 +178,7 @@ func reportTenantServer(t *testing.T, row string, provisioned func(database stri
 
 func TestTenantBackfillSpaceReportsCoverEveryProvisionedTenant(t *testing.T) {
 	url, queried := reportTenantServer(t, "", func(database string) bool { return database == databaseA })
-	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantB, tenantA}}, Config{BaseURL: url}, testCredentials(t), nil)
+	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantB, tenantA}}, Config{BaseURL: url}, mustClient(t, url), testCredentials(t), nil)
 	reports, err := backfill.SpaceReports(t.Context(), "es1-mem", "es1-docs")
 	if err != nil {
 		t.Fatalf("SpaceReports: %v", err)
@@ -193,7 +190,7 @@ func TestTenantBackfillSpaceReportsCoverEveryProvisionedTenant(t *testing.T) {
 
 func TestTenantBackfillCorpusWorkSumsEveryTenant(t *testing.T) {
 	url, _ := reportTenantServer(t, `{"n":2,"chars":30}`, func(string) bool { return true })
-	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantA, tenantB}}, Config{BaseURL: url}, testCredentials(t), nil)
+	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantA, tenantB}}, Config{BaseURL: url}, mustClient(t, url), testCredentials(t), nil)
 	work, err := backfill.CorpusWork(t.Context(), "es1-mem", "es1-docs", 100)
 	if err != nil {
 		t.Fatalf("CorpusWork: %v", err)
@@ -205,15 +202,15 @@ func TestTenantBackfillCorpusWorkSumsEveryTenant(t *testing.T) {
 
 func TestTenantBackfillReportFailsOnlyWhenNoTenantAnswered(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/api/v1/ready") {
-			w.WriteHeader(http.StatusNoContent)
+		if strings.HasPrefix(r.URL.Path, "/api/v1/exists/") {
+			_, _ = io.WriteString(w, `{"result":true}`)
 			return
 		}
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"error":"boom","detail":"disk","exception":"java.io.IOException"}`)
 	}))
 	t.Cleanup(server.Close)
-	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantA}}, Config{BaseURL: server.URL}, testCredentials(t), nil)
+	backfill := NewTenantBackfill(staticRoster{ids: []string{tenantA}}, Config{BaseURL: server.URL}, mustClient(t, server.URL), testCredentials(t), nil)
 	if _, err := backfill.SpaceReports(t.Context(), "es1-mem", "es1-docs"); err == nil {
 		t.Fatal("SpaceReports hid a failure of every tenant")
 	}

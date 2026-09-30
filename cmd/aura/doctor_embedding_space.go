@@ -83,12 +83,16 @@ func defaultDoctorEmbeddingReports(ctx context.Context, cfg *config.Config) (emb
 	if err != nil {
 		return embeddings.Space{}, nil, err
 	}
+	admin, err := newArcadeAdmin(cfg.ArcadeDB)
+	if err != nil {
+		return embeddings.Space{}, nil, err
+	}
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
 		return embeddings.Space{}, nil, err
 	}
 	defer pool.Close()
-	walk := arcadedb.NewTenantBackfill(identityRoster{store: identity.New(pool)}, arcadedb.Config{BaseURL: base}, credentials, nil)
+	walk := arcadedb.NewTenantBackfill(identityRoster{store: identity.New(pool)}, arcadedb.Config{BaseURL: base}, admin, credentials, nil)
 	reports, err := walk.SpaceReports(ctx, memory.ID, documents.ID)
 	return documents, reports, err
 }

@@ -46,7 +46,9 @@ type tenantServer struct {
 	mu         sync.Mutex
 	selects    map[string]int
 	statements []string
-	url        string
+	// binds are the users that authenticated against /api/v1/ready, the credential probe.
+	binds []string
+	url   string
 }
 
 func newTenantServer(t *testing.T, provisioned map[string]bool, pending map[string]int) *tenantServer {
@@ -64,14 +66,21 @@ func newTenantServer(t *testing.T, provisioned map[string]bool, pending map[stri
 
 func (s *tenantServer) serve(w http.ResponseWriter, r *http.Request) {
 	user, _, _ := r.BasicAuth()
-	if strings.HasSuffix(r.URL.Path, "/api/v1/ready") {
-		// The credential exists exactly when its database does: the sidecar creates
-		// both in one provisioning step. 204 is what ArcadeDB's /api/v1/ready answers
-		// an accepted credential — 200 would be a fake that proves the wrong thing.
-		if s.provisioned["mem_"+strings.TrimPrefix(user, "u_")] {
-			w.WriteHeader(http.StatusNoContent)
+	if database, ok := strings.CutPrefix(r.URL.Path, "/api/v1/exists/"); ok {
+		if user != "root" {
+			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]bool{"result": s.provisioned[database]})
+		return
+	}
+	if strings.HasSuffix(r.URL.Path, "/api/v1/ready") {
+		// The credential probe. Recorded so a sweep that logs in to learn whether a tenant
+		// exists is caught; the real server would log each refusal against the user.
+		s.mu.Lock()
+		s.binds = append(s.binds, user)
+		s.mu.Unlock()
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -134,7 +143,7 @@ func testCredentials(t *testing.T) *TenantCredentials {
 
 func testBackfill(t *testing.T, s *tenantServer, roster MemoryIdentities, embedder DenseEmbedder) *TenantBackfill {
 	t.Helper()
-	return NewTenantBackfill(roster, Config{BaseURL: s.url}, testCredentials(t), embedder)
+	return NewTenantBackfill(roster, Config{BaseURL: s.url}, mustClient(t, s.url), testCredentials(t), embedder)
 }
 
 const (
@@ -163,6 +172,28 @@ func TestTenantBackfillSkipsTenantWithoutMemory(t *testing.T) {
 	}
 	if server.sawDatabase(databaseB) {
 		t.Fatal("the sweep queried a database that does not exist")
+	}
+}
+
+// Whether a tenant has memory is asked of the admin, never by logging in as the tenant.
+// ArcadeDB counts every refused login against the user name and past a threshold answers
+// "Too many failed authentication attempts" (measured 2026-09-06); probing by bind logged a
+// refusal for each identity without memory on every pass, 841 in six days on the lab VM
+// (2026-09-30).
+func TestTenantBackfillAsksTheAdminWhichTenantsHaveMemory(t *testing.T) {
+	server := newTenantServer(t,
+		map[string]bool{databaseA: true},
+		map[string]int{databaseA: 1})
+	backfill := testBackfill(t, server, staticRoster{ids: []string{tenantA, tenantB}}, &batchEmbedder{})
+
+	if _, err := backfill.EmbedMissing(context.Background(), time.Time{}); err != nil {
+		t.Fatalf("EmbedMissing: %v", err)
+	}
+	if len(server.binds) != 0 {
+		t.Fatalf("the sweep logged in as %v to learn whether they have memory", server.binds)
+	}
+	if !server.sawDatabase(databaseA) || server.sawDatabase(databaseB) {
+		t.Fatal("the sweep must visit the tenant with memory and only that one")
 	}
 }
 
@@ -388,9 +419,10 @@ func TestTenantBackfillRefusesAnIncompleteWiring(t *testing.T) {
 	roster := staticRoster{ids: []string{tenantA}}
 	for name, backfill := range map[string]*TenantBackfill{
 		"nil":            nil,
-		"no roster":      NewTenantBackfill(nil, Config{BaseURL: server.url}, testCredentials(t), &batchEmbedder{}),
-		"no embedder":    NewTenantBackfill(roster, Config{BaseURL: server.url}, testCredentials(t), nil),
-		"no credentials": NewTenantBackfill(roster, Config{BaseURL: server.url}, nil, &batchEmbedder{}),
+		"no roster":      NewTenantBackfill(nil, Config{BaseURL: server.url}, mustClient(t, server.url), testCredentials(t), &batchEmbedder{}),
+		"no admin":       NewTenantBackfill(roster, Config{BaseURL: server.url}, nil, testCredentials(t), &batchEmbedder{}),
+		"no embedder":    NewTenantBackfill(roster, Config{BaseURL: server.url}, mustClient(t, server.url), testCredentials(t), nil),
+		"no credentials": NewTenantBackfill(roster, Config{BaseURL: server.url}, mustClient(t, server.url), nil, &batchEmbedder{}),
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := backfill.EmbedMissing(context.Background(), time.Time{}); err == nil {

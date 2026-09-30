@@ -16,10 +16,19 @@ import (
 // before any I/O.
 func backfillEnv(arcadeURL, embedURL string) *chatEnv {
 	return &chatEnv{
-		cfg:            &config.Config{ArcadeDB: config.ArcadeDBConfig{BaseURL: arcadeURL}},
+		cfg: &config.Config{ArcadeDB: config.ArcadeDBConfig{
+			BaseURL: arcadeURL, Database: "aura_memory", AdminUser: "root", AdminPassword: "pw",
+		}},
 		identity:       identity.New(nil),
 		memoryEmbedder: arcadedb.NewMemoryEmbedder(config.EmbedConfig{BaseURL: embedURL}, nil),
 	}
+}
+
+// withoutArcadeAdmin drops the server credential, the pair the walk needs to ask which
+// tenants have memory without logging in as each of them.
+func withoutArcadeAdmin(env *chatEnv) *chatEnv {
+	env.cfg.ArcadeDB.AdminUser, env.cfg.ArcadeDB.AdminPassword = "", ""
+	return env
 }
 
 // Every unconfigured path must return a BARE nil. A nil *arcadedb.TenantBackfill returned
@@ -32,6 +41,7 @@ func TestBuildMemoryEmbedBackfillReturnsBareNilWhenUnconfigured(t *testing.T) {
 		"no config":            {},
 		"no memory server":     backfillEnv("", "http://127.0.0.1:8081"),
 		"no embedding sidecar": backfillEnv("http://127.0.0.1:2480", ""),
+		"no server credential": withoutArcadeAdmin(backfillEnv("http://127.0.0.1:2480", "http://127.0.0.1:8081")),
 	}
 	for name, env := range cases {
 		t.Run(name, func(t *testing.T) {
