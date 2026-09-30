@@ -1632,6 +1632,17 @@ the new build. Not shown by these measurements: what a member sees (the VM has o
 account), behaviour under a slow or failing registry, several appliances at once, and
 whether 15 minutes suits real usage.
 
+`aura.service` stops the stack with `compose down`, which removes the containers, so every
+volume an image declares without a compose name is orphaned and the next start creates a new
+one. Measured 2026-09-30 on the lab VM: 38 orphaned anonymous volumes, four of them 1.62 GB
+whisper model caches next to the live one, on a disk 87% full; each stop had cost a 1.6 GB
+model download. `aura-stt` now mounts the named volume `aura-stt-models`, and an apply ends
+by pruning unused volumes that carry `com.docker.volume.anonymous`, so the named per-user box
+workspaces a sandbox refresh detaches are never candidates. Still anonymous and recreated on
+every `compose down`: SearXNG's rendered settings and cache, and ArcadeDB's `log`,
+`replication` and `config`. The last holds `server-users.jsonl`; whether losing it on a stop
+matters was not measured.
+
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
 new identities, and backs up every 60 minutes to a separate volume. Retention is
