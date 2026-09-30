@@ -216,6 +216,72 @@ func TestSendFile_DegradeMatrix(t *testing.T) {
 	}
 }
 
+// noAssetIDDeliverer reports success without an asset id: a store that claims to have kept the
+// bytes but names nothing to download them from.
+type noAssetIDDeliverer struct{}
+
+func (noAssetIDDeliverer) IngestAgentDelivery(context.Context, string, string, string, string, string, string, int64) (string, error) {
+	return "", nil
+}
+
+// TestSendFile_LogsWhyAWiredIngestFailed: with a deliverer wired and an identity and thread in
+// hand, a failed ingest is not the planned path-only degrade. The model is still told the file
+// was queued and the web card says delivery is unavailable, so the log is the one place the
+// cause can survive.
+func TestSendFile_LogsWhyAWiredIngestFailed(t *testing.T) {
+	cases := []struct {
+		name      string
+		deliverer AssetDeliverer
+		wantCause string
+	}{
+		{"ingest error", &fakeDeliverer{err: errors.New("objectstore: put: connection refused")}, "connection refused"},
+		{"no asset id", noAssetIDDeliverer{}, "no asset id"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			logs := captureLogs(t)
+			res, err := (&SendFile{Router: boxDelivery(t, "clip.mp4", "mp4"), Assets: tc.deliverer}).
+				Execute(ctxWithIdentity(t, "conv-l", "call-l", "id-l"), sfArgs(t, "/workspace/clip.mp4", ""))
+			if err != nil {
+				t.Fatalf("a failed ingest must not error the turn: %v", err)
+			}
+			if _, ok := artifactMap(t, res)["asset_id"]; ok {
+				t.Fatalf("a failed ingest must not carry asset_id: %#v", res.Meta)
+			}
+			logged := logs.String()
+			for _, want := range []string{"level=WARN", "owner=id-l", "tool_call_id=call-l", "filename=clip.mp4", tc.wantCause} {
+				if !strings.Contains(logged, want) {
+					t.Errorf("log %q lacks %q", logged, want)
+				}
+			}
+		})
+	}
+}
+
+// TestSendFile_PlannedPathOnlyDeliveryLogsNothing: no deliverer (CLI, static registry) and no
+// identity are the designed path-only modes, so they must not raise a warning on every call.
+func TestSendFile_PlannedPathOnlyDeliveryLogsNothing(t *testing.T) {
+	for name, build := range map[string]func(t *testing.T) (*SendFile, context.Context){
+		"nil Assets": func(t *testing.T) (*SendFile, context.Context) {
+			return &SendFile{Router: boxDelivery(t, "a.txt", "a")}, ctxWithIdentity(t, "conv-n", "call-n", "id-n")
+		},
+		"no identity": func(t *testing.T) (*SendFile, context.Context) {
+			return &SendFile{Router: boxDelivery(t, "a.txt", "a"), Assets: &fakeDeliverer{}}, ctxWith(t, "conv-n", "call-n")
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			logs := captureLogs(t)
+			sf, ctx := build(t)
+			if _, err := sf.Execute(ctx, sfArgs(t, "/workspace/a.txt", "")); err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if logs.Len() != 0 {
+				t.Fatalf("a planned path-only delivery logged %q", logs.String())
+			}
+		})
+	}
+}
+
 // routedBackend is a daemon-free usersandbox.Backend that also satisfies the structural
 // artifactCopier (CopyArtifactsOut) send_file's routed branch resolves — so deliverFromBox can be
 // driven end-to-end without a Docker daemon. CopyArtifactsOut replays an in-memory tar (the

@@ -3,16 +3,19 @@
 // imports internal/assets (the substrate names no concrete service — the *assets.Service adapter
 // lives in cmd/aura, the only package importing both). The ingest is best-effort (D-02): any
 // miss — a nil deliverer, an unscoped identity, an empty thread id, or an ingest error — degrades
-// to today's path-only descriptor and NEVER errors the turn.
+// to today's path-only descriptor and NEVER errors the turn; an ingest error is logged.
 
 package tools
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"mime"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/redact"
 )
 
 // AssetDeliverer stores a host-file's bytes under the identity's object store and returns the
@@ -32,6 +35,10 @@ type AssetDeliverer interface {
 // (sessionID == ConvID) is empty (D-05), or the underlying IngestAgentDelivery errors (D-02
 // Put-failure). The size is the caller's already-stat'd size the maxSendFileBytes gate computed,
 // so the ingest and the descriptor's size_bytes agree and the file is stat'd exactly once.
+//
+// Only the last miss is logged: the first three are the designed path-only modes, while a failed
+// ingest leaves send_file's model believing the file was queued and image_generate's paid image
+// undelivered, with the web card as the only other sign — and it carries no cause.
 func ingestForDelivery(ctx context.Context, deliverer AssetDeliverer, hostPath, filename string, size int64) (assetID, mimeType string, ok bool) {
 	if deliverer == nil {
 		return "", "", false
@@ -46,7 +53,13 @@ func ingestForDelivery(ctx context.Context, deliverer AssetDeliverer, hostPath, 
 	}
 	mimeType = guessDeliveryMIME(filename)
 	id, err := deliverer.IngestAgentDelivery(ctx, identityID, tc.sessionID, tc.toolCallID, hostPath, filename, mimeType, size)
-	if err != nil || id == "" {
+	if err == nil && id == "" {
+		err = errors.New("ingest returned no asset id")
+	}
+	if err != nil {
+		slog.Warn("delivery ingest failed; the file has no downloadable asset",
+			"owner", identityID, "tool_call_id", tc.toolCallID, "filename", filename, "size_bytes", size,
+			"err", redact.String(err.Error()))
 		return "", "", false
 	}
 	return id, mimeType, true
