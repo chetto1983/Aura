@@ -120,13 +120,7 @@
   },
   "overrides": {
     "@svar-ui/react-core": "$@svar-ui/react-core",
-    "qs": "6.16.0",
-    "minimatch@^3.1.2": {
-      "brace-expansion": "1.1.18"
-    },
-    "minimatch@^10.2.0": {
-      "brace-expansion": "5.0.9"
-    }
+    "qs": "6.16.0"
   },
   "allowScripts": {
     "unrs-resolver@1.12.2": true
