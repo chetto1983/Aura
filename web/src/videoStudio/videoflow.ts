@@ -1,8 +1,9 @@
 // videoflow.ts — the only file that composes VideoFlow. It turns the editor's project into a
-// VideoJSON, exports it in the browser, and owns the four behaviours the spikes measured:
-// fonts from our own origin, the cut nudge, mute and volume where the mixer reads them, and one
-// decode per source instead of one per layer. The audio half — sounds and every volume curve —
-// is videoflow_audio.ts; every fade reaches the renderer through videoflow_keyframes.ts.
+// VideoJSON and exports it in the browser, with the behaviours the spikes measured: fonts from our
+// own origin, the cut nudge, and mute and volume where the mixer reads them. The audio half —
+// sounds and every volume curve — is videoflow_audio.ts; every fade reaches the renderer through
+// videoflow_keyframes.ts; the media an export reads, once per source and never silently lost, is
+// videoflow_media.ts.
 //
 // Everything here is the renderer's vocabulary; nothing of it leaks into the model. `project.ts`
 // knows about lanes and clips, this file knows about layers and settings, and the translation
@@ -25,6 +26,7 @@ import {
 } from './project';
 import { addAudioItems, playsCleaned, withVolumes } from './videoflow_audio';
 import { withKeyframes } from './videoflow_keyframes';
+import { renderLoaded } from './videoflow_media';
 import { clipTransitions, type ClipTransitions } from './videoflow_transitions';
 
 /** Where a clip's bytes come from: the cockpit's own asset route, never a foreign URL. */
@@ -53,9 +55,6 @@ export const LOCAL_FONTS: Readonly<Record<string, string>> = {
  * nudging only the clips with `sourceStart > 0` would leave the commonest gesture broken.
  */
 const CUT_NUDGE = 1e-4;
-
-/** The rate BrowserRenderer mixes at (`renderAudio`, `sampleRate: 48000`) — primed buffers match. */
-const MIX_SAMPLE_RATE = 48000;
 
 /** A clip's opacity: a value, or its fades as keyframes on the film's clock — half a second of
  *  what the viewer sees, whatever the clip's speed. `withKeyframes` carries them onto the source
@@ -182,10 +181,11 @@ function addClip(
   flow.addVideo(
     // `muted` in a layer's SETTINGS is a no-op — the mixer reads `mute` in its PROPERTIES
     // (spike 108 §6: a clip carrying `settings.muted` played at full volume). Muting does not
-    // save the decode either, which is one more reason the cache below belongs to us. A static
-    // `volume` here would be ignored as well: the mixer reads it only from the compiled
-    // `animations` (S1), which `withVolumes` writes. A cleaned clip is muted too: its sound plays
-    // from the cleaned copy's own layer (videoflow_audio.ts).
+    // save the decode either, which is one more reason the export decodes once per source
+    // (videoflow_media.ts `primeDecodedBuffers`). A static `volume` here would be ignored as
+    // well: the mixer reads it only from the compiled `animations` (S1), which `withVolumes`
+    // writes. A cleaned clip is muted too: its sound plays from the cleaned copy's own layer
+    // (videoflow_audio.ts).
     {
       fit: clip.fit ?? 'cover',
       mute: clip.muted || playsCleaned(project, clip),
@@ -294,74 +294,11 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   return withVolumes(project, withKeyframes(await flow.compile()));
 }
 
-/** What the decode cache touches on a live renderer. `initLayers` and the layers' `decodedBuffer`
- *  are not in BrowserRenderer's public type — see `primeDecodedBuffers` for why we reach for them
- *  anyway, and spike 108 §8 for the measurement that says it is safe. */
-interface PrimableLayer {
-  readonly json: { readonly settings: { readonly source?: string } };
-  readonly hasAudio: boolean;
-  decodedBuffer: AudioBuffer | null;
-}
-
-interface PrimableRenderer {
-  readonly layers: readonly PrimableLayer[];
-  initLayers(): Promise<void>;
-}
-
-/**
- * One decoded buffer per SOURCE, because VideoFlow decodes once per LAYER.
- *
- * Measured, spike 108: 3 layers over 2 sources cost 3 decodes; 16 layers over 1 source cost 16,
- * and every decode reads the WHOLE file whatever `sourceDuration` says — 8 layers of a 60 s clip
- * hold 175.8 MB of PCM alive and spend 1.85 s, 32.7 % of the render, decoding. A cut is the
- * commonest gesture in this editor, so the pathological case is the normal case.
- *
- * The seam is VideoFlow's own and needs no fork: `decodeLayerAudio` reads `layer.decodedBuffer`
- * off ANY layer although only `RuntimeAudioLayer` ever writes it, and `initLayers()` is idempotent
- * (`elementsSetup`), so the export re-entering it costs nothing. `scheduleBufferOnContext` still
- * applies `sourceStart` / `sourceDuration` / `speed` / `mute` per layer. Measured: 16 decodes → 1,
- * 8 → 1, decode time 1 847 → 234 ms on the 60 s case, audio identical sample for sample over
- * 2 880 512 samples. The render-time saving is the noisy figure (−22 % and −40 % in two runs); the
- * decode collapse is the exact one.
- */
-export async function primeDecodedBuffers(
-  renderer: BrowserRenderer,
-  signal?: AbortSignal,
-): Promise<void> {
-  const primable = renderer as unknown as PrimableRenderer;
-  await primable.initLayers();
-  signal?.throwIfAborted();
-  const audioCtx = new OfflineAudioContext(2, MIX_SAMPLE_RATE, MIX_SAMPLE_RATE);
-  const bySource = new Map<string, Promise<AudioBuffer | null>>();
-  for (const layer of primable.layers) {
-    const source = layer.json.settings.source;
-    if (source === undefined || !layer.hasAudio) continue;
-    let decoding = bySource.get(source);
-    if (decoding === undefined) {
-      // `decodeAudioData` detaches its input, so the promise rather than the bytes is shared.
-      // A source that will not decode — a clip with no audio track, which VideoFlow hands to the
-      // decoder anyway because `RuntimeVideoLayer.hasAudio` is hard-coded true — resolves null and
-      // is left to the mixer's own path, which catches the same failure. Failing the export here
-      // would be stricter than VideoFlow is with itself.
-      decoding = fetch(source, signal ? { signal } : undefined)
-        .then((response) => response.arrayBuffer())
-        .then((bytes) => audioCtx.decodeAudioData(bytes))
-        .catch(() => null);
-      bySource.set(source, decoding);
-    }
-    const buffer = await decoding;
-    // That catch swallows an aborted fetch along with an undecodable source, so the signal is what
-    // tells the two apart. `decodeAudioData` has no cancellation of its own: a decode already
-    // running finishes, and nothing after it is ever scheduled.
-    signal?.throwIfAborted();
-    if (buffer) layer.decodedBuffer = buffer;
-  }
-}
-
 export interface ExportOptions {
   readonly onProgress?: (progress: number) => void;
-  /** Aborting destroys the renderer. The previous cycle shipped an editor that kept transcoding
-   *  after its dialog closed; this one cannot. */
+  /** Aborting stops the export and destroys the renderer: at once while it encodes, and as soon as
+   *  its media has settled while that loads (videoflow_media.ts `renderLoaded`). The previous
+   *  cycle shipped an editor that kept transcoding after its dialog closed; this one cannot. */
   readonly signal?: AbortSignal;
 }
 
@@ -377,30 +314,16 @@ export async function exportProject(
   const { signal } = options;
   signal?.throwIfAborted();
   const json = await toVideoJSON(project, urls);
-  // Rechecked after every await, because the listener below cannot cover what happens before it
-  // exists: an abort landing while the project compiles would otherwise construct a renderer that
-  // nothing ever destroys.
+  // Rechecked after every await, because the abort listener `renderLoaded` adds cannot cover what
+  // happens before it exists: an abort landing while the project compiles would otherwise
+  // construct a renderer that nothing ever destroys.
   signal?.throwIfAborted();
   const renderer = withLocalFonts(new BrowserRenderer(json));
-  let closed = false;
-  const close = (): void => {
-    if (closed) return;
-    closed = true;
-    renderer.destroy();
-  };
-  signal?.addEventListener('abort', close, { once: true });
-  try {
-    await primeDecodedBuffers(renderer, signal);
-    // The priming loop reaches its own check only when there is audio to prime; a lane of stills
-    // would otherwise fall straight through into an export the editor has already closed.
-    signal?.throwIfAborted();
-    return await renderer.exportVideo({
+  return await renderLoaded(renderer, project, urls, signal, () =>
+    renderer.exportVideo({
       worker: true,
       ...(options.onProgress ? { onProgress: options.onProgress } : {}),
       ...(signal ? { signal } : {}),
-    });
-  } finally {
-    signal?.removeEventListener('abort', close);
-    close();
-  }
+    }),
+  );
 }

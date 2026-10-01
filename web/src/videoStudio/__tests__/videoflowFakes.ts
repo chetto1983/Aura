@@ -2,12 +2,27 @@ import { vi } from 'vitest';
 import type { VideoProject } from '../project';
 
 // videoflowFakes.ts — VideoFlow's builder and browser renderer stood in for, shared by
-// videoflow.test.ts (what the compile hands the builder) and videoflow_export.test.ts (what the
-// export does with the renderer). Each file mocks both packages with the classes below:
+// videoflow.test.ts (what the compile hands the builder) and the export tests (what an export does
+// with the renderer). An export test mocks both packages with the classes below, and hands out the
+// media cache through a getter, so the code under test always reads this test's own cache:
 //
-//   vi.mock('@videoflow/core', async () => ({ default: (await import('./videoflowFakes')).FakeVideoFlow }));
+//   vi.mock('@videoflow/core', async () => {
+//     const fakes = await import('./videoflowFakes');
+//     return { default: fakes.FakeVideoFlow, get loadedMedia() { return fakes.media.cache; } };
+//   });
+//   vi.mock('@videoflow/renderer-browser', async () => ({
+//     default: (await import('./videoflowFakes')).FakeRenderer,
+//   }));
 //
 // The builder records every call it is given; the renderer records what the export asked of it.
+// The media cache is NOT a stand-in: it is VideoFlow's own `MediaCache`, a fresh one per test, so
+// a hit, a miss and a failed fetch behave exactly as they do under the real renderer.
+
+const { MediaCache } = await vi.importActual<typeof import('@videoflow/core')>('@videoflow/core');
+
+/** The page's `loadedMedia`, replaced by a fresh cache in `installFakes`. A module mock hands it
+ *  out through a getter, so the code under test always reads the current one. */
+export const media = { cache: new MediaCache() };
 
 interface Call {
   props: Record<string, unknown>;
@@ -58,10 +73,34 @@ export class FakeVideoFlow {
   }
 }
 
-interface FakeLayer {
-  json: { settings: { source?: string } };
+export interface FakeLayer {
+  json: {
+    type: string;
+    settings: { source?: string; enabled?: boolean };
+    properties: { mute?: boolean };
+  };
   hasAudio: boolean;
   decodedBuffer: unknown;
+  /** Its bytes arrive but it cannot read them — an HEVC clip, a corrupt still. */
+  unreadable?: true;
+}
+
+/**
+ * A layer over `source`, the way VideoFlow's runtime would hold it before `initLayers`. Whether it
+ * carries sound follows from its type, as in VideoFlow: `RuntimeVideoLayer` and `RuntimeAudioLayer`
+ * answer `hasAudio` true whatever the file holds, and every other layer false.
+ */
+export function layer(
+  source: string,
+  options: { type?: 'video' | 'image' | 'audio'; muted?: true; unreadable?: true } = {},
+): FakeLayer {
+  const type = options.type ?? 'video';
+  return {
+    json: { type, settings: { source }, properties: options.muted ? { mute: true } : {} },
+    hasAudio: type !== 'image',
+    decodedBuffer: null,
+    ...(options.unreadable ? { unreadable: true } : {}),
+  };
 }
 
 export const renderer = {
@@ -72,6 +111,8 @@ export const renderer = {
   exportOptions: [] as { worker?: boolean; signal?: AbortSignal }[],
   // Each test decides how the export behaves: a Blob by default, a hang for the abort case.
   exportImpl: null as null | ((options: { signal?: AbortSignal }) => Promise<Blob>),
+  /** What `renderAudio` answers: a mix by default, `null` for a project with no sound. */
+  audio: {} as object | null,
 };
 
 export class FakeRenderer {
@@ -79,6 +120,7 @@ export class FakeRenderer {
   layers: FakeLayer[] = [];
   loadedFonts: Record<string, string> = {};
   destroyed = 0;
+  private readonly held: string[] = [];
   constructor(json: unknown) {
     this.json = json;
     renderer.instances.push(this);
@@ -89,22 +131,42 @@ export class FakeRenderer {
     renderer.stockFontRequests.push(name);
     return Promise.resolve();
   }
-  initLayers(): Promise<void> {
+  /** What BrowserRenderer.initLayers does (dist/BrowserRenderer.js:427-445): every layer takes its
+   *  bytes from the media cache, and one that cannot load is disabled, never thrown. */
+  async initLayers(): Promise<void> {
     renderer.initCalls += 1;
     this.layers = renderer.layers;
-    return Promise.resolve();
+    await Promise.all(
+      this.layers.map(async (held) => {
+        const source = held.json.settings.source;
+        if (source === undefined) return;
+        try {
+          await media.cache.acquire(source);
+          this.held.push(source);
+          if (held.unreadable) throw new Error('the layer could not read its bytes');
+        } catch {
+          held.json.settings.enabled = false;
+        }
+      }),
+    );
   }
   exportVideo(options: { worker?: boolean; signal?: AbortSignal }): Promise<Blob> {
     renderer.exportOptions.push(options);
     if (renderer.exportImpl) return renderer.exportImpl(options);
     return Promise.resolve(new Blob(['mp4'], { type: 'video/mp4' }));
   }
+  renderAudio(): Promise<object | null> {
+    return Promise.resolve(renderer.audio);
+  }
   destroy() {
     this.destroyed += 1;
+    for (const source of this.held.splice(0)) media.cache.release(source);
   }
 }
 
-export const decoded = { calls: [] as ArrayBuffer[] };
+/** Every decode asked for, and the sources whose bytes the decoder refuses: a fetched body is its
+ *  own URL (see `installFakes`), so the decoder knows which source it was handed. */
+export const decoded = { calls: [] as ArrayBuffer[], refused: new Set<string>() };
 
 export function project(): VideoProject {
   return {
@@ -170,17 +232,24 @@ export function installFakes(): void {
   renderer.initCalls = 0;
   renderer.exportOptions.length = 0;
   renderer.exportImpl = null;
+  renderer.audio = {};
   decoded.calls.length = 0;
+  decoded.refused.clear();
+  media.cache = new MediaCache();
 
+  // Each source's body is its own URL, so a decode can tell which source it was handed.
   vi.stubGlobal(
     'fetch',
-    vi.fn(() => Promise.resolve({ arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)) })),
+    vi.fn((url: string) => Promise.resolve(new Response(url))),
   );
   vi.stubGlobal(
     'OfflineAudioContext',
     class {
       decodeAudioData(bytes: ArrayBuffer) {
         decoded.calls.push(bytes);
+        if (decoded.refused.has(new TextDecoder().decode(bytes))) {
+          return Promise.reject(new DOMException('Unable to decode audio data', 'EncodingError'));
+        }
         return Promise.resolve({ id: decoded.calls.length });
       }
     },

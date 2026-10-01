@@ -85,6 +85,9 @@ const mutationTests = [
   'src/videoStudio/__tests__/videoflow_audio.test.ts',
   // aura-video-mcp Plan A: the fade compile, read through the renderer's own runtime layers.
   'src/videoStudio/__tests__/videoflow_keyframes.test.ts',
+  // aura-video-mcp Plan A: an export's media, once per source, and the sound-only export.
+  'src/videoStudio/__tests__/videoflow_export.test.ts',
+  'src/videoStudio/__tests__/videoflow_exportAudio.test.ts',
 ] as const;
 
 export default defineConfig({
