@@ -497,7 +497,8 @@ exit "$rc"
 # vm-lib.sh -- sourced by Plan A's lab-VM scripts: ssh, read-only SQL, the ingest's cycle and the
 # ingest's own index witness. Nothing here writes to the VM.
 VM=aura@192.168.101.158
-PW=aura
+# The ssh password never enters git: the operator keeps it in vm-ssh-password beside these helpers.
+PW="$(cat "$(dirname "${BASH_SOURCE[0]}")/vm-ssh-password")" || return 1
 
 vm() { sshpass -p "$PW" ssh -o StrictHostKeyChecking=no "$VM" "$@"; }
 
