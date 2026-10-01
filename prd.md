@@ -687,6 +687,35 @@ starts from a gain of 1. It ignores a static `volume` on audio and video layers 
 Volume slider has been a no-op on clips without transitions. The compile therefore writes every
 volume curve into `animations`, beginning at `sourceStart`.
 
+**VideoFlow opacity and media (aura-video-mcp spikes S1.3 and S1.4, 2026-09-30).** Measured on the
+lab VM: a clip's fade-out frame read RGB (233, 100, 90) where opacity 0.4 over black allows 102
+(S1.3), and a source behind a refused fetch came out as a black, silent 26,604 B MP4 that the export
+reported as a success, with every source fetched twice, once by VideoFlow's media cache and once by
+the pre-decode (S1.4). Read in VideoFlow 1.3.4's source: handed a keyframe array as a layer's
+initial property, `compile()` stores the array as the value of one step keyframe and writes it out
+as a static property (core `dist/VideoFlow.js:629-638`, `:856-864`); the renderer unit-converts each
+keyframe object in it to the number NaN (renderer-browser `dist/layers/RuntimeBaseLayer.js:311-323`,
+`:472-494`), and a NaN opacity draws as full opacity (`dist/LayerRasterizer.js:909`). VideoFlow
+disables a layer whose media fails to load, logs a warning and lets the export resolve
+(`dist/BrowserRenderer.js:427-445`). The rules: the compile is to move every keyframed property into
+the layer's `animations`, on its source clock, as volume already is; a clip's fade is to last half a
+second of film at any speed; the export is to load each source once, through VideoFlow's
+`loadedMedia` cache, and to write no file when a layer was disabled or a sound that is not muted
+will not decode, naming the source by its file name and saying whether its bytes never arrived or
+did not play.
+
+This does not establish:
+- that title fades and the fade-to-black and fade-to-white washes are lost on an exported frame:
+  they take the same path, but that was computed on the renderer's own runtime layers in a unit
+  test, not measured on a frame;
+- the HTTP status of a failed fetch: VideoFlow keeps it in its console warning and the page never
+  sees it;
+- what an expired presigned URL or a 403 does: S1.4 exercised only a missing CORS rule;
+- the Stage preview on screen: it compiles the same JSON and builds the same runtime layers
+  (`@videoflow/renderer-dom` imports them from renderer-browser), but only the export was measured;
+- anything about a video whose own audio will not decode: the mixer drops that audio, so such a
+  clip is to export silent, with no error.
+
 **Waveform (S2).** wavesurfer 8 draws the waveform from cached peaks inside a dnd-timeline item in
 10–15 ms, and redraws after a zoom in 104–136 ms. Envelope points drag without moving the item,
 provided four conditions hold:
@@ -711,8 +740,8 @@ that way sits under `media/`, stays `accepted` with an empty summary, while the 
 the plain finalize is processed; a PDF sent to the same door is refused with 400. After the final
 review the door also refuses a document whose client hinted it as a sound: the recorded modality
 can be the client's hint, so the name and declared type must infer an allowed modality too. A saved
-project, by contrast, is finalized as a document today and receives a `document_id` (M1): that is
-reported as its own issue and is not fixed by this work. The door reads no bytes: a file named and
+project, by contrast, is finalized as a document today and receives a `document_id` (M1): that was
+reported as its own issue; its rule follows this section's details. The door reads no bytes: a file named and
 typed as a sound whose content is something else is accepted as a sound.
 
 This does not establish:
@@ -724,6 +753,37 @@ This does not establish:
 - whether the saved project's chunks reach ArcadeDB.
 
 Details: `docs/superpowers/specs/2026-09-27-video-studio-audio-design.md`.
+
+**Saved Studio projects and the document index (M1; aura-video-mcp Plan A).** Measured 2026-10-01 on
+the lab VM, read-only: 2 live JSON assets with a `.json` key, 2 of them named as documents,
+0 at keys the file manager named; every other key is `chat/<uuid>.json`, with no file name in it,
+and in 0 of them the uuid is the row's own id: it is the one Presign minted for the object. 2
+rows look like Studio saves by the row rule below, and the index holds the keys of 2 of them
+(`IndexedDocument` rows, read with the ingest's own `arcade.indexed_source_keys`). The ingest's
+matcher reads only the object key (CocoIndex 1.0.24 `connectors/amazon_s3/_source.py:304-317`), and
+its audit lists keys without reading a single object's metadata (`services/ingest/source.py`
+`expected_keys`), so a project can be told apart by its key and by nothing else. The rules:
+- the Studio is to name a project `<slug>.aura-video.json`, and the object key is to keep that
+  suffix whole (`objectstore.StudioProjectSuffix`);
+- the ingest is to exclude `**/*.aura-video.json` from its walk and from its audit, and to keep
+  indexing every other `.json`;
+- a project saved before the change is to be moved once, at boot, to `chat/<uuid>.aura-video.json`
+  through the file manager's own transfer, keeping its row and its id. Only a row that is a cockpit
+  upload with no thread and thread scope, a JSON document named `<slug>.json` at `chat/<uuid>.json`
+  in the file manager's bucket, at most 4 MiB, whose bytes have the Studio's typed project shape,
+  is moved. Saving again is no remedy: every save is a new asset;
+- no code is to read an asset id out of an object key.
+
+This does not establish:
+- that the boot pass moves exactly the Studio saves, and that the index drops them, on a real
+  stack: both are measured after the fix;
+- anything about a project an operator renamed in the file manager before the change: Rename
+  writes the typed name into the key (`internal/assets/filemanager_ops.go` `Rename`), so its key
+  fails the `chat/<uuid>.json` test, and it stays indexed until it is deleted or renamed to end in
+  `.aura-video.json`;
+- that the asset stops receiving a `document_id`: `DocumentProcessor` names one for every document,
+  and the knowledge catalog asks ArcadeDB whether a document is indexed
+  (`internal/assets/document_processor.go:11-33`).
 
 Measured 2026-09-08 using an agent-generated weather demo: the accepted HTML asset
 renders inline and expanded, its button executes, and showing source preserves

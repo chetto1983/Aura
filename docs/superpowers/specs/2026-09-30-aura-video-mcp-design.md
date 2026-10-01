@@ -158,6 +158,10 @@ measures otherwise.
   (`internal/assets/limits.go`). The cockpit's `projectFileName` writes the same suffix; this is the
   one change to how the Studio saves. Projects saved before the change stay indexed until they are
   saved again.
+  *Superseded 2026-10-01 (Plan A; recorded in prd.md §12 "Saved Studio projects and the document
+  index"):* the ingest cannot skip a project by its name, because its matcher and its audit see only
+  the object key, so the key keeps the suffix whole; and a project saved before the change is not
+  fixed by saving it again, because every save is a new asset: the daemon is to move it once, at boot.
 
 ## Tools
 
@@ -270,6 +274,10 @@ Each fix has a failing test first:
 1. **A source that cannot be fetched fails the export, naming the source.** `primeDecodedBuffers`
    stops swallowing a failed fetch, and a layer VideoFlow could not load is treated as an error, not
    silence. The cockpit's export dialog shows the reason.
+   *Superseded 2026-10-01 (Plan A; recorded in prd.md §12 "VideoFlow opacity and media"):* the page
+   never learns the HTTP status of a failed fetch, so the dialog names the source by its file name
+   and says whether its bytes never arrived or did not play. The pre-decode is to decode the
+   bytes VideoFlow's cache already holds, and to fetch nothing.
 2. **A clip's fade-out appears in the export**: `clipOpacity`, `videoflow.ts:58`, confirmed on a
    rendered frame against the expected opacity.
 3. **Each source is fetched once**: `primeDecodedBuffers` reuses the bytes VideoFlow's cache already
