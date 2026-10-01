@@ -2,7 +2,7 @@
 // VideoJSON, exports it in the browser, and owns the four behaviours the spikes measured:
 // fonts from our own origin, the cut nudge, mute and volume where the mixer reads them, and one
 // decode per source instead of one per layer. The audio half — sounds and every volume curve —
-// is videoflow_audio.ts.
+// is videoflow_audio.ts; every fade reaches the renderer through videoflow_keyframes.ts.
 //
 // Everything here is the renderer's vocabulary; nothing of it leaks into the model. `project.ts`
 // knows about lanes and clips, this file knows about layers and settings, and the translation
@@ -14,6 +14,7 @@ import BrowserRenderer from '@videoflow/renderer-browser';
 import type { AssetSource } from '../chat/artifacts/renderers/assetSourceContext';
 import {
   clipStarts,
+  clipTimelineDuration,
   junctionDurationAt,
   overlayWindow,
   projectDuration,
@@ -23,6 +24,7 @@ import {
   type VideoProject,
 } from './project';
 import { addAudioItems, playsCleaned, withVolumes } from './videoflow_audio';
+import { withKeyframes } from './videoflow_keyframes';
 import { clipTransitions, type ClipTransitions } from './videoflow_transitions';
 
 /** Where a clip's bytes come from: the cockpit's own asset route, never a foreign URL. */
@@ -55,12 +57,16 @@ const CUT_NUDGE = 1e-4;
 /** The rate BrowserRenderer mixes at (`renderAudio`, `sampleRate: 48000`) — primed buffers match. */
 const MIX_SAMPLE_RATE = 48000;
 
+/** A clip's opacity: a value, or its fades as keyframes on the film's clock — half a second of
+ *  what the viewer sees, whatever the clip's speed. `withKeyframes` carries them onto the source
+ *  clock the renderer reads. */
 function clipOpacity(clip: VideoItem): unknown {
   const value = clip.opacity ?? 1;
   const fadeIn = clip.fadeIn === true || clip.animation === 'fadeIn';
   const fadeOut = clip.fadeOut === true || clip.animation === 'fadeOut';
   if (!fadeIn && !fadeOut) return value;
-  const edge = Math.min(0.5, clip.duration / 2);
+  const length = clipTimelineDuration(clip);
+  const edge = Math.min(0.5, length / 2);
   return [
     ...(fadeIn
       ? [
@@ -70,8 +76,8 @@ function clipOpacity(clip: VideoItem): unknown {
       : []),
     ...(fadeOut
       ? [
-          { time: clip.duration - edge, value },
-          { time: clip.duration, value: 0 },
+          { time: length - edge, value },
+          { time: length, value: 0 },
         ]
       : []),
   ];
@@ -190,8 +196,8 @@ function addClip(
       filterSaturate: clip.saturation ?? 1,
       filterHueRotate: clip.hue ?? 0,
       filterBlur: clip.blur ?? 0,
-      // Runtime accepts property keyframes; the package's static property type names only the
-      // scalar form. Overlay properties cross the same VideoJSON seam.
+      // Fades are keyframes, which the builder cannot take as a value: `withKeyframes` moves them
+      // where the renderer reads them, and the cast is over the builder's scalar type.
       opacity: clipOpacity(clip) as number,
     },
     { ...settings, sourceStart: clip.sourceStart + CUT_NUDGE },
@@ -285,7 +291,7 @@ export async function toVideoJSON(project: VideoProject, urls: MediaUrls): Promi
   // gives the compiled JSON the lane's own length rather than a float sum of layer ends — and what
   // keeps a sound running past the last frame from lengthening the film.
   flow.wait(projectDuration(project));
-  return withVolumes(project, await flow.compile());
+  return withVolumes(project, withKeyframes(await flow.compile()));
 }
 
 /** What the decode cache touches on a live renderer. `initLayers` and the layers' `decodedBuffer`

@@ -74,7 +74,8 @@
     "src/videoStudio/audioLane.ts",
     "src/videoStudio/commands_audio.ts",
     "src/videoStudio/volumeCurve.ts",
-    "src/videoStudio/videoflow_audio.ts"
+    "src/videoStudio/videoflow_audio.ts",
+    "src/videoStudio/videoflow_keyframes.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,
