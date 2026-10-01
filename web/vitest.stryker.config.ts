@@ -81,6 +81,7 @@ const mutationTests = [
   'src/videoStudio/__tests__/audioLane.test.ts',
   'src/videoStudio/__tests__/commands_audio.test.ts',
   'src/videoStudio/__tests__/volumeCurve.test.ts',
+  'src/videoStudio/__tests__/sourceClock.test.ts',
   'src/videoStudio/__tests__/videoflow_audio.test.ts',
   // aura-video-mcp Plan A: the fade compile, read through the renderer's own runtime layers.
   'src/videoStudio/__tests__/videoflow_keyframes.test.ts',

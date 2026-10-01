@@ -73,6 +73,7 @@
     "src/update/useSystemUpdate.ts",
     "src/videoStudio/audioLane.ts",
     "src/videoStudio/commands_audio.ts",
+    "src/videoStudio/sourceClock.ts",
     "src/videoStudio/volumeCurve.ts",
     "src/videoStudio/videoflow_audio.ts",
     "src/videoStudio/videoflow_keyframes.ts"

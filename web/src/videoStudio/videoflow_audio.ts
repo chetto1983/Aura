@@ -26,6 +26,7 @@ import {
   type VideoItem,
   type VideoProject,
 } from './project';
+import { sourceClockOf } from './sourceClock';
 import { clipTransitions } from './videoflow_transitions';
 import { volumeKeyframes, type CurveInput, type Ducking } from './volumeCurve';
 
@@ -231,12 +232,11 @@ export function withVolumes(project: VideoProject, json: VideoJSON): VideoJSON {
       const name: unknown = layer.settings.name;
       const wanted = typeof name === 'string' ? loudness.get(name) : undefined;
       if (wanted === undefined) return layer;
-      const speed = Math.abs(Number(layer.settings.speed ?? 1)) || 1;
+      const clock = sourceClockOf(layer);
       const keyframes = volumeKeyframes({
         ...wanted,
-        sourceStart: layer.settings.sourceStart ?? 0,
-        speed,
-        length: layer.settings.sourceDuration / speed,
+        ...clock,
+        length: layer.settings.sourceDuration / clock.speed,
       });
       if (keyframes === undefined) return layer;
       return {

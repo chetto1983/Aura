@@ -7,6 +7,7 @@
 // continuous. Ducking multiplies in: the layer goes down under the other sounds' speech (`duckAt`).
 
 import type { EnvelopePoint } from './project';
+import { sourceSeconds } from './sourceClock';
 
 /** Seconds between the samples of a ramp: 10 ms steps are finer than the ear hears as stairs. */
 export const CURVE_STEP = 0.01;
@@ -103,7 +104,7 @@ export function volumeKeyframes(input: CurveInput): readonly VolumeKeyframe[] | 
     const value = gainAt(input, t);
     const last = frames.at(-1);
     if (last !== undefined && Math.abs(last.value - value) < SAME_GAIN) continue;
-    frames.push({ time: input.sourceStart + t * input.speed, value });
+    frames.push({ time: sourceSeconds(input, t), value });
   }
   const only = frames.length === 1 ? frames[0] : undefined;
   return only !== undefined && Math.abs(only.value - 1) < SAME_GAIN ? undefined : frames;

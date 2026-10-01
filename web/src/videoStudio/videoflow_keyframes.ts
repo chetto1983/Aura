@@ -15,10 +15,11 @@
 //
 // The Studio writes these keyframes on the layer's own film clock: seconds since the layer came on
 // screen. The renderer looks keyframes up in absolute source seconds (`sourceTimeAtFrame`,
-// RuntimeBaseLayer.js:175-186), so each time is carried through the layer's own `sourceStart` and
-// `speed`, cut nudge included — the numbers `withVolumes` maps a volume curve through.
+// RuntimeBaseLayer.js:175-186), so each time is carried through the layer's own source clock,
+// cut nudge included: `sourceClock.ts`, the same one `withVolumes` maps a volume curve through.
 
 import type { VideoJSON } from '@videoflow/core';
+import { sourceClockOf, sourceSeconds } from './sourceClock';
 
 type Layer = VideoJSON['layers'][number];
 
@@ -50,8 +51,7 @@ function animated(layer: Layer): Layer {
     isKeyframes(entry[1]),
   );
   if (keyed.length === 0) return layer;
-  const sourceStart = layer.settings.sourceStart ?? 0;
-  const speed = Math.abs(Number(layer.settings.speed ?? 1)) || 1;
+  const clock = sourceClockOf(layer);
   return {
     ...layer,
     properties: Object.fromEntries(entries.filter(([, value]) => !isKeyframes(value))),
@@ -60,7 +60,7 @@ function animated(layer: Layer): Layer {
       ...keyed.map(([property, frames]) => ({
         property,
         keyframes: frames.map((frame) => ({
-          time: sourceStart + frame.time * speed,
+          time: sourceSeconds(clock, frame.time),
           value: frame.value,
         })),
       })),
