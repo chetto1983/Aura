@@ -43,6 +43,17 @@ func countOutside(t *testing.T, c *Client, typeName, space string) int {
 	return int(rowInt(rows[0], "n"))
 }
 
+// freshReasoningTrace is validReasoningTrace finished a minute ago. The fixture's fixed
+// 2026-09-01 terminal time outlived its 30-day success retention on 2026-10-01, and every live
+// read skips an expired trace (activeReasoningTraceFilter).
+func freshReasoningTrace() ReasoningTrace {
+	trace := validReasoningTrace()
+	trace.TerminalAt = time.Now().UTC().Add(-time.Minute)
+	trace.CreatedAt = trace.TerminalAt.Add(-time.Minute)
+	trace.Steps[0].CreatedAt = trace.CreatedAt
+	return trace
+}
+
 // Review Focus 1, concurrent (final review #4, #9): a writer still on route A rewrites a
 // trace while the pass is embedding its old text. The pass's write must not land over it --
 // its vector describes text the row no longer holds -- so the gate stays closed until the
@@ -51,7 +62,7 @@ func TestMemoryPassLiveKeepsARowRewrittenDuringThePass(t *testing.T) {
 	client := disposableMemoryClient(t)
 	ctx := context.Background()
 	routeA := constantEmbedder{value: 1, space: "es1-route-a"}
-	trace := validReasoningTrace()
+	trace := freshReasoningTrace()
 	if err := client.WithEmbedder(routeA).UpsertReasoningTrace(ctx, trace); err != nil {
 		t.Fatalf("UpsertReasoningTrace: %v", err)
 	}
@@ -101,7 +112,7 @@ func TestMemoryPassLiveLeavesNothingTheGateCannotClear(t *testing.T) {
 			t.Fatalf("empty the statement %q: %v", statement, err)
 		}
 	}
-	trace := validReasoningTrace()
+	trace := freshReasoningTrace()
 	if err := client.WithEmbedder(routeA).UpsertReasoningTrace(ctx, trace); err != nil {
 		t.Fatalf("UpsertReasoningTrace: %v", err)
 	}
@@ -180,7 +191,7 @@ func TestMemoryPassLiveWithTheRealEmbedder(t *testing.T) {
 	if err := client.WithEmbedder(before).ApplyConversationProjection(ctx, projection); err != nil {
 		t.Fatalf("ApplyConversationProjection: %v", err)
 	}
-	if err := client.WithEmbedder(before).UpsertReasoningTrace(ctx, validReasoningTrace()); err != nil {
+	if err := client.WithEmbedder(before).UpsertReasoningTrace(ctx, freshReasoningTrace()); err != nil {
 		t.Fatalf("UpsertReasoningTrace: %v", err)
 	}
 
@@ -244,7 +255,7 @@ func TestMemoryPassLiveMovesTheMemoryAndReopensTheGate(t *testing.T) {
 	if err := client.WithEmbedder(routeA).ApplyConversationProjection(ctx, projection); err != nil {
 		t.Fatalf("ApplyConversationProjection: %v", err)
 	}
-	if err := client.WithEmbedder(routeA).UpsertReasoningTrace(ctx, validReasoningTrace()); err != nil {
+	if err := client.WithEmbedder(routeA).UpsertReasoningTrace(ctx, freshReasoningTrace()); err != nil {
 		t.Fatalf("UpsertReasoningTrace: %v", err)
 	}
 

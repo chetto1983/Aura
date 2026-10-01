@@ -55,7 +55,7 @@ func TestMemoryGateLiveDenseLegsFilterByTheReadersSpace(t *testing.T) {
 	if _, err := client.WithEmbedder(routeA).UpsertFact(ctx, fact, time.Now().UTC()); err != nil {
 		t.Fatalf("UpsertFact: %v", err)
 	}
-	trace := validReasoningTrace()
+	trace := freshReasoningTrace()
 	if err := client.WithEmbedder(routeA).UpsertReasoningTrace(ctx, trace); err != nil {
 		t.Fatalf("UpsertReasoningTrace: %v", err)
 	}
