@@ -131,7 +131,10 @@ The output check verifies each of these properties on the delivered file (§Jobs
 A Node 24 project in the repository, published as `ghcr.io/chetto1983/aura-video-mcp` (amd64). The
 image holds Node, Playwright's **Chrome Headless Shell** (pinned by the Playwright version) and
 Debian's ffmpeg/ffprobe. On arm64 it answers `unsupported platform` until an S1.1 run there
-measures otherwise.
+measures otherwise. *Amended 2026-10-02, the operator: "arm64 non supportato". The image is
+published for amd64 only, and the sidecar carries no arm64 branch, no `unsupported platform`
+answer and no architecture check. The two cannot coexist: an amd64 image on an arm64 host runs
+emulated and reports `x64`, so such a check would never fire (Plan B, Q4).*
 
 1. **MCP server** over streamable HTTP (`@modelcontextprotocol/sdk`).
    - It verifies Aura's bearer the way `cmd/arcadedb-mcp/auth.go` does: issuer, audience (the
@@ -401,7 +404,8 @@ called (no `video_generate`) unless the operator asks.
 
 ## What this does not prove
 
-- Anything on arm64, or render times on the mini-PC's CPU. S2's seconds are the lab VM's.
+- Anything on arm64, which is not supported (amended 2026-10-02), or render times on the mini-PC's
+  CPU. S2's seconds are the lab VM's.
 - Camera footage and 4K: the spikes used test patterns.
 - Two renders at once.
 - Whether the Opus → AAC transcode changes loudness. The E2E measures it; the spikes did not.
