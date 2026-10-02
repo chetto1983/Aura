@@ -26,6 +26,11 @@ type OpenRouterMinting interface {
 	// List is the provider's roster, GET /api/v1/keys. The services key is found in it by name,
 	// because the settings keep the key and not its provider id.
 	List(ctx context.Context) ([]openrouterprovision.KeyRecord, error)
+	// Get is GET /api/v1/keys/{hash}: openrouterprovision.ErrKeyNotFound once the key is deleted.
+	Get(ctx context.Context, hash string) (openrouterprovision.KeyRecord, error)
+	// CheckKey asks the provider about key itself, GET /api/v1/key: openrouterprovision.ErrKeyRevoked
+	// when it refuses the key. It is how a key Aura holds without its hash is checked.
+	CheckKey(ctx context.Context, key string) error
 	Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error
 	Revoke(ctx context.Context, hash string) error
 }
@@ -120,34 +125,74 @@ func (m *IdentityKeyMinter) ensure(ctx context.Context, identityID, keyName stri
 	if err != nil {
 		return MintedKey{}, false, err
 	}
-	var limit *openrouterprovision.USDCap
 	var limitUSD *float64
 	if !admin {
-		limit, limitUSD = new(openrouterprovision.USDCap), new(float64)
+		limitUSD = new(float64)
 	}
-	res, err := m.minting.Mint(ctx, openrouterprovision.MintRequest{
-		IdentityID: identityID, Name: keyName, Limit: limit, LimitReset: openrouterprovision.LimitResetMonthly,
-	})
+	rec, err := m.mint(ctx, identityID, keyName, limitUSD, openrouterprovision.LimitResetMonthly)
 	if err != nil {
 		return MintedKey{}, false, err
 	}
-	inserted, err := m.keys.InsertIfAbsent(scoped, identitykey.Record{
-		Key: res.Key, Hash: res.Record.Hash, Label: res.Record.Label,
-		LimitUSD: limitUSD, LimitReset: string(openrouterprovision.LimitResetMonthly),
-	})
+	inserted, err := m.keys.InsertIfAbsent(scoped, rec)
 	if err != nil {
-		m.revokeUnrecorded(ctx, res.Record.Hash)
+		m.revokeUnrecorded(ctx, rec.Hash)
 		return MintedKey{}, false, err
 	}
 	if !inserted {
-		m.revokeUnrecorded(ctx, res.Record.Hash)
+		m.revokeUnrecorded(ctx, rec.Hash)
 		winner, err := m.keys.Load(scoped)
 		if err != nil {
 			return MintedKey{}, false, err
 		}
 		return MintedKey{Hash: winner.Hash, Label: winner.Label}, false, nil
 	}
-	return MintedKey{Hash: res.Record.Hash, Label: res.Record.Label}, true, nil
+	return MintedKey{Hash: rec.Hash, Label: rec.Label}, true, nil
+}
+
+// replaceGone mints identityID a fresh key when the provider no longer holds the one its row
+// names (GET /api/v1/keys/{hash} answers 404: the key was deleted at OpenRouter), at the limit
+// and reset the row held, and reports whether it did. Any other answer keeps the key. Only the
+// reconciler calls it, under settingsMu, and the saga only mints for an identity with no row,
+// so nothing else writes this row meanwhile: it is overwritten, not compared and swapped.
+func (m *IdentityKeyMinter) replaceGone(ctx context.Context, identityID string) (MintedKey, bool, error) {
+	scoped := identityctx.WithIdentityID(ctx, identityID)
+	old, err := m.keys.Load(scoped)
+	if err != nil {
+		return MintedKey{}, false, err
+	}
+	if _, err := m.minting.Get(ctx, old.Hash); !errors.Is(err, openrouterprovision.ErrKeyNotFound) {
+		return MintedKey{}, false, err
+	}
+	rec, err := m.mint(ctx, identityID, identityID, old.LimitUSD, openrouterprovision.LimitReset(old.LimitReset))
+	if err != nil {
+		return MintedKey{}, false, err
+	}
+	if err := m.keys.Save(scoped, rec); err != nil {
+		m.revokeUnrecorded(ctx, rec.Hash)
+		return MintedKey{}, false, err
+	}
+	return MintedKey{Hash: rec.Hash, Label: rec.Label}, true, nil
+}
+
+// mint asks the provider for a key at limitUSD (nil: no limit) and returns the row recording it.
+func (m *IdentityKeyMinter) mint(ctx context.Context, identityID, keyName string, limitUSD *float64, reset openrouterprovision.LimitReset) (identitykey.Record, error) {
+	var limit *openrouterprovision.USDCap
+	if limitUSD != nil {
+		usd, err := usdCapFromFloat(*limitUSD)
+		if err != nil {
+			return identitykey.Record{}, err
+		}
+		limit = &usd
+	}
+	res, err := m.minting.Mint(ctx, openrouterprovision.MintRequest{
+		IdentityID: identityID, Name: keyName, Limit: limit, LimitReset: reset,
+	})
+	if err != nil {
+		return identitykey.Record{}, err
+	}
+	return identitykey.Record{
+		Key: res.Key, Hash: res.Record.Hash, Label: res.Record.Label, LimitUSD: limitUSD, LimitReset: string(reset),
+	}, nil
 }
 
 // alignLimit keeps a key's limit in step with its owner's role: an admin's key has no limit,

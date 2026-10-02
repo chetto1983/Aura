@@ -15,6 +15,11 @@ import (
 // zero, because "you spent nothing" and "I could not tell" are different statements.
 var ErrSpendUnavailable = errors.New("provider spend unavailable")
 
+// ErrKeyRevoked marks a key the provider refuses with 401: deleted, expired or never issued.
+// Measured 2026-10-02: GET /key with a key OpenRouter never issued answers 401 "User not
+// found.". openrouterprovision re-exports it, so a refused key has one name in both packages.
+var ErrKeyRevoked = errors.New("provider refused the key")
+
 // ErrSpendNotApplicable marks a backend that bills nothing, so there is no spend to
 // fetch. A local llama.cpp/vLLM server has no account behind it.
 var ErrSpendNotApplicable = errors.New("provider spend not applicable to this backend")
@@ -67,6 +72,9 @@ func FetchSpend(ctx context.Context, client *http.Client, baseURL, apiKey string
 	}
 	defer resp.Body.Close() //nolint:errcheck // read-only response
 
+	if resp.StatusCode == http.StatusUnauthorized {
+		return Spend{}, fmt.Errorf("%w: %w: GET /key returned 401", ErrSpendUnavailable, ErrKeyRevoked)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return Spend{}, fmt.Errorf("%w: GET /key returned %d", ErrSpendUnavailable, resp.StatusCode)
 	}

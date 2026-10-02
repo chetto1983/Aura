@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,31 @@ func TestListKeysSendsManagementAuthorization(t *testing.T) {
 	}
 	if auth != "Bearer sk-mgmt-secret" {
 		t.Errorf("Authorization = %q, want Bearer sk-mgmt-secret", auth)
+	}
+}
+
+// GET /keys answers the 100 most recent keys and pages with offset (OpenRouter's
+// management-key guide, read 2026-10-02). A key past the first page must still be found, or
+// a live key reads as deleted.
+func TestListKeysReadsEveryPage(t *testing.T) {
+	var offsets []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		offset := r.URL.Query().Get("offset")
+		offsets = append(offsets, offset)
+		n := map[string]int{"0": 100, "100": 3}[offset]
+		rows := make([]string, n)
+		for i := range rows {
+			rows[i] = `{"hash":"hash-` + offset + `-` + strconv.Itoa(i) + `"}`
+		}
+		_, _ = w.Write([]byte(`{"data":[` + strings.Join(rows, ",") + `]}`))
+	}))
+	defer srv.Close()
+	records, err := openrouterprovision.ListKeys(context.Background(), srv.Client(), srv.URL, "sk-mgmt")
+	if err != nil {
+		t.Fatalf("ListKeys: %v", err)
+	}
+	if len(records) != 103 || records[102].Hash != "hash-100-2" || !slices.Equal(offsets, []string{"0", "100"}) {
+		t.Fatalf("records = %d, offsets = %v; want 103 keys read at offsets 0 and 100", len(records), offsets)
 	}
 }
 

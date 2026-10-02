@@ -26,8 +26,9 @@ var ErrKeyLimitExceeded = errors.New("openrouterprovision: key limit exceeded")
 // ErrKeyRevoked marks a 401. Measured live 2026-09-08 (M-10): DELETE kills
 // inference within about 5 seconds, and a subsequent call with that key
 // returns 401 — for a key this package mints and manages, a 401 means
-// revoked.
-var ErrKeyRevoked = errors.New("openrouterprovision: key revoked")
+// revoked. It is llm.ErrKeyRevoked, the 401 GET /key answers, re-exported like
+// ErrKeyNotApplicable below.
+var ErrKeyRevoked = llm.ErrKeyRevoked
 
 // ErrKeyNotFound marks a 404 from a by-hash lookup. After RevokeKey's
 // verifying GET (CRED-08) this is the expected, successful outcome, not a

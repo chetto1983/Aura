@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -140,6 +141,103 @@ func TestReconcileRefusesToGuessTheServicesKey(t *testing.T) {
 				t.Fatalf("result = %+v err = %v patched = %v; want one reported error and no patch", res, err, minting.patched)
 			}
 		})
+	}
+}
+
+// Measured 2026-10-02 on the lab VM: every key was deleted at OpenRouter and a new management
+// key saved. Aura's rows still named the deleted keys, so they counted as keys and the run
+// minted nothing. A key the provider no longer holds is replaced: a person's at the limit and
+// reset its row held, the services key at the services cap.
+func TestReconcileReplacesKeysDeletedAtTheProvider(t *testing.T) {
+	ids := []identity.Identity{{ID: "admin-1", Kind: "user"}, {ID: "member-1", Kind: "user"}}
+	s, minting, keys, store, reloader := reconcileServer(withServicesKey(routeRows), ids, "admin-1")
+	keys.records["admin-1"] = identitykey.Record{Key: "k1", Hash: "hash-admin", LimitReset: "monthly"}
+	keys.records["member-1"] = identitykey.Record{Key: "k2", Hash: "hash-member", LimitUSD: capUSD(5), LimitReset: "weekly"}
+	minting.listed = nil
+	minting.gone = map[string]bool{"hash-admin": true, "hash-member": true}
+	minting.keyErr = fmt.Errorf("%w: GET /key returned 401", openrouterprovision.ErrKeyRevoked)
+	inv := &fakeCreditInvalidator{}
+	s.credit = &creditPorts{invalidate: inv}
+
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureOpenRouterKeys: %v", err)
+	}
+	if !slices.Equal(minting.checked, []string{"sk-or-v1-existing"}) || store.upserted["OPENROUTER_API_KEY"] != "sk-or-v1-hash-1" || len(reloader.applied) != 1 {
+		t.Fatalf("checked = %v stored = %v applied = %d; want the refused services key replaced and the profile published",
+			minting.checked, store.upserted, len(reloader.applied))
+	}
+	if !slices.Equal(res.IdentitiesMinted, []string{"admin-1", "member-1"}) || res.MintedLabels["member-1"] != "sk-or-v1-...hash-3" {
+		t.Fatalf("result = %+v, want both identities' keys replaced and labelled", res)
+	}
+	if keys.records["admin-1"].Hash != "hash-2" || keys.records["admin-1"].LimitUSD != nil || minting.minted[1].Limit != nil {
+		t.Fatalf("admin row = %+v mint = %+v, want hash-2 with no limit", keys.records["admin-1"], minting.minted[1])
+	}
+	member := keys.records["member-1"]
+	if req := minting.minted[2]; req.Limit == nil || *req.Limit != 500 || req.LimitReset != openrouterprovision.LimitResetWeekly ||
+		member.Hash != "hash-3" || member.LimitUSD == nil || *member.LimitUSD != 5 || member.LimitReset != "weekly" {
+		t.Fatalf("member row = %+v mint = %+v, want hash-3 at the 5.00 weekly limit the row held", member, req)
+	}
+	if !slices.Equal(inv.calls, []string{"admin-1", "member-1"}) {
+		t.Fatalf("invalidated = %v, want both identities' cached clients dropped", inv.calls)
+	}
+}
+
+// A key the provider still holds is kept, disabled or not: only a 404 means it is gone.
+func TestReconcileKeepsAKeyTheProviderStillHolds(t *testing.T) {
+	s, minting, keys, _, _ := reconcileServer(withServicesKey(routeRows), []identity.Identity{{ID: "member-1", Kind: "user"}})
+	keys.records["member-1"] = identitykey.Record{Key: "k", Hash: "hash-live", LimitUSD: capUSD(0), LimitReset: "monthly"}
+	if _, err := s.EnsureOpenRouterKeys(context.Background()); err != nil {
+		t.Fatalf("EnsureOpenRouterKeys: %v", err)
+	}
+	if len(minting.minted) != 0 || keys.records["member-1"].Hash != "hash-live" {
+		t.Fatalf("mints = %+v row = %+v, want the live key kept", minting.minted, keys.records["member-1"])
+	}
+}
+
+// A lookup that fails for any other reason proves nothing about the key, so it is reported and
+// the key kept.
+func TestReconcileReportsAKeyLookupItCannotRead(t *testing.T) {
+	s, minting, keys, _, _ := reconcileServer(withServicesKey(routeRows), []identity.Identity{{ID: "member-1", Kind: "user"}})
+	keys.records["member-1"] = identitykey.Record{Key: "k", Hash: "hash-member", LimitUSD: capUSD(0), LimitReset: "monthly"}
+	minting.getErr = errors.New("provider 503")
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err == nil || len(res.Errors) != 1 || len(minting.minted) != 0 || keys.records["member-1"].Hash != "hash-member" {
+		t.Fatalf("result = %+v err = %v mints = %d; want one reported error and the row kept", res, err, len(minting.minted))
+	}
+}
+
+func TestReconcileRevokesAReplacementItCouldNotRecord(t *testing.T) {
+	s, minting, keys, _, _ := reconcileServer(withServicesKey(routeRows), []identity.Identity{{ID: "member-1", Kind: "user"}})
+	keys.records["member-1"] = identitykey.Record{Key: "k", Hash: "hash-member", LimitUSD: capUSD(0), LimitReset: "monthly"}
+	minting.gone = map[string]bool{"hash-member": true}
+	keys.saveErr = errors.New("store down")
+	if _, err := s.EnsureOpenRouterKeys(context.Background()); err == nil {
+		t.Fatal("a failed store write passed silently")
+	}
+	if !slices.Equal(minting.revoked, []string{"hash-1"}) {
+		t.Fatalf("revoked = %v, want the unrecorded replacement hash-1", minting.revoked)
+	}
+}
+
+// A refused services key is as good as none: it is replaced only once the admin set the cap.
+func TestReconcileWaitsForTheCapToReplaceARefusedServicesKey(t *testing.T) {
+	s, minting, _, _, _ := reconcileServer(withServicesKey(routeRows[:2]), nil)
+	minting.keyErr = fmt.Errorf("%w: GET /key returned 401", openrouterprovision.ErrKeyRevoked)
+	if _, err := s.EnsureOpenRouterKeys(context.Background()); !errors.Is(err, ErrServicesCapUnset) || len(minting.minted) != 0 {
+		t.Fatalf("err = %v mints = %d; want ErrServicesCapUnset and no mint", err, len(minting.minted))
+	}
+}
+
+// Only a 401 proves the services key dead; any other failure to check it is reported and the
+// key kept, so a working key is never replaced.
+func TestReconcileReportsAServicesKeyItCannotCheck(t *testing.T) {
+	s, minting, _, store, _ := reconcileServer(withServicesKey(routeRows), nil)
+	minting.keyErr = errors.New("provider spend unavailable: GET /key returned 500")
+	res, err := s.EnsureOpenRouterKeys(context.Background())
+	if err == nil || len(res.Errors) != 1 || len(minting.minted) != 0 || len(store.upserted) != 0 {
+		t.Fatalf("result = %+v err = %v mints = %d stored = %v; want one reported error and nothing replaced",
+			res, err, len(minting.minted), store.upserted)
 	}
 }
 

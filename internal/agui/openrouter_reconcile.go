@@ -1,9 +1,11 @@
 package agui
 
 // openrouter_reconcile.go is EnsureOpenRouterKeys: it mints every OpenRouter key the
-// deployment is missing, aligns each person's key with their role, and keeps the services key
-// at its monthly cap. It is idempotent, so boot, the settings writes that can make minting
-// possible or move the cap, and the admin endpoint all run the same thing.
+// deployment is missing, replaces every key the provider no longer holds, aligns each person's
+// key with their role, and keeps the services key at its monthly cap. A key counts as present
+// only while the provider holds it, not while Aura still has a row for it. It is idempotent, so
+// boot, the settings writes that can make minting possible or move the cap, and the admin
+// endpoint all run the same thing.
 
 import (
 	"context"
@@ -101,18 +103,28 @@ func (s *Server) ensureOpenRouterKeysLocked(ctx context.Context) (OpenRouterKeys
 	return res, errors.Join(errs...)
 }
 
-// reconcileIdentity mints the identity's key, or aligns an existing one with its role.
+// reconcileIdentity mints the identity's key, replaces one the provider no longer holds, or
+// aligns an existing one with its role.
 func (s *Server) reconcileIdentity(ctx context.Context, identityID string, res *OpenRouterKeysResult) error {
 	minted, created, err := s.keyMinter.ensure(ctx, identityID, identityID)
 	if err != nil {
 		return err
 	}
-	if created {
+	replaced := false
+	if !created {
+		if minted, replaced, err = s.keyMinter.replaceGone(ctx, identityID); err != nil {
+			return err
+		}
+	}
+	if created || replaced {
 		res.IdentitiesMinted = append(res.IdentitiesMinted, identityID)
 		if res.MintedLabels == nil {
 			res.MintedLabels = map[string]string{}
 		}
 		res.MintedLabels[identityID] = minted.Label
+		if replaced {
+			s.invalidateIdentityClient(identityID)
+		}
 		return nil
 	}
 	aligned, err := s.keyMinter.alignLimit(ctx, identityID)
@@ -121,19 +133,26 @@ func (s *Server) reconcileIdentity(ctx context.Context, identityID string, res *
 	}
 	if aligned {
 		res.LimitsAligned = append(res.LimitsAligned, identityID)
-		if s.credit != nil && s.credit.invalidate != nil {
-			s.credit.invalidate.Invalidate(identityID)
-		}
+		s.invalidateIdentityClient(identityID)
 	}
 	return nil
 }
 
-// ensureServicesKeyLocked mints the aura-services key when the settings hold none, and keeps an
-// existing one at the monthly cap the settings hold: an admin can change that cap after the
-// first run, and the provider is what enforces it. A new key is written the way a settings PUT
-// does: Prepare with the whole persisted profile, so the route is kept (Prepare resets every
-// profile key it is not given), then ReplaceMany, then apply. It is revoked if either step
-// fails, so a key the deployment never recorded does not stay live at the provider.
+// invalidateIdentityClient drops the identity's cached chat client, which carries its key and
+// cap: a turn after a replaced key or a moved limit must not run on the old one.
+func (s *Server) invalidateIdentityClient(identityID string) {
+	if s.credit != nil && s.credit.invalidate != nil {
+		s.credit.invalidate.Invalidate(identityID)
+	}
+}
+
+// ensureServicesKeyLocked mints the aura-services key when the settings hold none, or one the
+// provider refuses, and keeps a live one at the monthly cap the settings hold: an admin can
+// change that cap after the first run, and the provider is what enforces it. A new key is
+// written the way a settings PUT does: Prepare with the whole persisted profile, so the route
+// is kept (Prepare resets every profile key it is not given), then ReplaceMany, then apply. It
+// is revoked if either step fails, so a key the deployment never recorded does not stay live
+// at the provider.
 func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	rows, err := s.settings.List(ctx)
 	if err != nil {
@@ -143,7 +162,10 @@ func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	for _, row := range rows {
 		values[row.Key] = strings.TrimSpace(row.Value)
 	}
-	hasKey := values[servicesKeySetting] != ""
+	hasKey, err := s.servicesKeyLive(ctx, values[servicesKeySetting])
+	if err != nil {
+		return "", err
+	}
 	if values[servicesCapSetting] == "" {
 		if hasKey {
 			return "", nil
@@ -175,6 +197,20 @@ func (s *Server) ensureServicesKeyLocked(ctx context.Context) (string, error) {
 	}
 	apply()
 	return minted.Record.Label, nil
+}
+
+// servicesKeyLive reports whether the settings hold a services key the provider still accepts.
+// The settings keep the key but not its hash, so the key itself is asked (GET /api/v1/key).
+// Only a 401 makes it dead; any other failure is reported, so a working key is never replaced.
+func (s *Server) servicesKeyLive(ctx context.Context, key string) (bool, error) {
+	if key == "" {
+		return false, nil
+	}
+	err := s.keyMinter.minting.CheckKey(ctx, key)
+	if errors.Is(err, openrouterprovision.ErrKeyRevoked) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 // alignServicesLimit moves aura-services to limit when the provider holds another. The settings

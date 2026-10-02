@@ -33,6 +33,14 @@ func TestClassify401IsRevoked(t *testing.T) {
 	}
 }
 
+// A 401 from the Provisioning API and a 401 from GET /key are one condition, so the
+// reconciler tells a refused key from any other failure with one sentinel.
+func TestClassify401IsTheSameRefusalAsGetKey(t *testing.T) {
+	if err := classify(http.StatusUnauthorized, nil); !errors.Is(err, llm.ErrKeyRevoked) {
+		t.Fatalf("err = %v, want llm.ErrKeyRevoked", err)
+	}
+}
+
 func TestClassify404IsNotFound(t *testing.T) {
 	err := classify(http.StatusNotFound, []byte(`{"error":{"message":"key not found"}}`))
 	if !errors.Is(err, ErrKeyNotFound) {

@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -67,6 +69,42 @@ func TestMintingAdapterWithoutAManagementKey(t *testing.T) {
 	}
 	if _, err := adapter.Mint(context.Background(), openrouterprovision.MintRequest{}); !errors.Is(err, openrouterprovision.ErrManagementKeyUnset) {
 		t.Fatalf("Mint error = %v, want ErrManagementKeyUnset", err)
+	}
+}
+
+// The reconciler tells a deleted key from a live one through these two calls: a person's key
+// by its hash with the management key, the services key by asking the provider with the key
+// itself, since the settings keep no hash for it.
+func TestMintingAdapterAsksTheProviderAboutAKey(t *testing.T) {
+	auth := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth[r.URL.Path] = r.Header.Get("Authorization")
+		switch {
+		case r.URL.Path == "/keys/hash-gone":
+			w.WriteHeader(http.StatusNotFound)
+		case r.URL.Path == "/key" && r.Header.Get("Authorization") == "Bearer sk-dead":
+			w.WriteHeader(http.StatusUnauthorized)
+		case r.URL.Path == "/key":
+			_, _ = w.Write([]byte(`{"data":{"usage":0}}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	adapter := openRouterMintingAdapter{openRouterKeyConfig{
+		client: srv.Client(), baseURL: srv.URL,
+		managementKey: func(context.Context) (string, error) { return "sk-mgmt", nil },
+	}}
+	ctx := context.Background()
+
+	if _, err := adapter.Get(ctx, "hash-gone"); !errors.Is(err, openrouterprovision.ErrKeyNotFound) || auth["/keys/hash-gone"] != "Bearer sk-mgmt" {
+		t.Fatalf("Get error = %v auth = %q; want ErrKeyNotFound asked with the management key", err, auth["/keys/hash-gone"])
+	}
+	if err := adapter.CheckKey(ctx, "sk-dead"); !errors.Is(err, openrouterprovision.ErrKeyRevoked) {
+		t.Fatalf("CheckKey(dead) error = %v, want ErrKeyRevoked", err)
+	}
+	if err := adapter.CheckKey(ctx, "sk-live"); err != nil || auth["/key"] != "Bearer sk-live" {
+		t.Fatalf("CheckKey(live) error = %v auth = %q; want nil, asked with the key itself", err, auth["/key"])
 	}
 }
 

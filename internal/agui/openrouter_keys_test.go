@@ -33,6 +33,31 @@ type fakeMinting struct {
 	// listed is the provider's roster, what GET /api/v1/keys answers; listErr fails that read.
 	listed  []openrouterprovision.KeyRecord
 	listErr error
+	// gone holds the hashes the provider no longer has: GET /api/v1/keys/{hash} answers 404.
+	gone   map[string]bool
+	getErr error
+	// keyErr is what GET /api/v1/key answers for a key checked by itself; checked records it.
+	keyErr  error
+	checked []string
+}
+
+func (f *fakeMinting) Get(_ context.Context, hash string) (openrouterprovision.KeyRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return openrouterprovision.KeyRecord{}, f.getErr
+	}
+	if f.gone[hash] {
+		return openrouterprovision.KeyRecord{}, fmt.Errorf("%w: provider 404", openrouterprovision.ErrKeyNotFound)
+	}
+	return openrouterprovision.KeyRecord{Hash: hash}, nil
+}
+
+func (f *fakeMinting) CheckKey(_ context.Context, key string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.checked = append(f.checked, key)
+	return f.keyErr
 }
 
 func (f *fakeMinting) List(context.Context) ([]openrouterprovision.KeyRecord, error) {
@@ -79,6 +104,7 @@ type fakeIdentityKeys struct {
 	mu        sync.Mutex
 	records   map[string]identitykey.Record
 	insertErr error
+	saveErr   error
 	// raceWinner is written by "someone else" just before the next InsertIfAbsent runs.
 	raceWinner *identitykey.Record
 }
@@ -100,6 +126,9 @@ func (f *fakeIdentityKeys) Load(ctx context.Context) (identitykey.Record, error)
 func (f *fakeIdentityKeys) Save(ctx context.Context, r identitykey.Record) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.saveErr != nil {
+		return f.saveErr
+	}
 	f.records[identityctx.IdentityID(ctx)] = r
 	return nil
 }

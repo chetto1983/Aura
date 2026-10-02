@@ -58,11 +58,14 @@ Response `201`:
 The `key` field appears in this response only. Losing it means deleting the key and minting
 another — there is no endpoint that returns it again.
 
-## GET /api/v1/keys — the whole roster in one call
+## GET /api/v1/keys — the whole roster, 100 keys a page
 
 Management key. Query params: `include_disabled`, `offset`, `workspace_id`. Returns
-`data: array` of the same record shape as above, minus `key`. One call yields every identity's
+`data: array` of the same record shape as above, minus `key`. It yields every identity's
 cap, remaining and spend — this is the admin roster, and it needs no table of ours.
+Corrected 2026-10-02: one call answers "the most recent 100 API keys" and the rest is read
+with `offset` (OpenRouter's management-key guide). `include_disabled` has no documented
+default, only the example `false`; whether a disabled key is listed without it is unmeasured.
 
 ## GET /api/v1/keys/{hash} — one key
 

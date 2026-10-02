@@ -87,6 +87,19 @@ func TestFetchSpendUnavailableCases(t *testing.T) {
 		}
 	})
 
+	t.Run("refused_key", func(t *testing.T) {
+		for status, refused := range map[int]bool{http.StatusUnauthorized: true, http.StatusInternalServerError: false} {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(status)
+			}))
+			_, err := llm.FetchSpend(context.Background(), srv.Client(), srv.URL, "k")
+			srv.Close()
+			if !errors.Is(err, llm.ErrSpendUnavailable) || errors.Is(err, llm.ErrKeyRevoked) != refused {
+				t.Errorf("status %d: err = %v, want ErrSpendUnavailable and ErrKeyRevoked=%v", status, err, refused)
+			}
+		}
+	})
+
 	t.Run("malformed_body", func(t *testing.T) {
 		bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte("not json"))

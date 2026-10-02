@@ -84,6 +84,21 @@ func (a openRouterMintingAdapter) List(ctx context.Context) ([]openrouterprovisi
 	return openrouterprovision.ListKeys(ctx, a.client, a.baseURL, managementKey)
 }
 
+func (a openRouterMintingAdapter) Get(ctx context.Context, hash string) (openrouterprovision.KeyRecord, error) {
+	managementKey, err := a.key(ctx)
+	if err != nil {
+		return openrouterprovision.KeyRecord{}, err
+	}
+	return openrouterprovision.GetKey(ctx, a.client, a.baseURL, managementKey, hash)
+}
+
+// CheckKey asks GET /api/v1/key with key itself, the call that reads a key's own spend, so it
+// needs no management key; a 401 comes back as openrouterprovision.ErrKeyRevoked.
+func (a openRouterMintingAdapter) CheckKey(ctx context.Context, key string) error {
+	_, err := llm.FetchSpend(ctx, a.client, a.baseURL, key)
+	return err
+}
+
 func (a openRouterMintingAdapter) Patch(ctx context.Context, hash string, patch openrouterprovision.KeyPatch) error {
 	managementKey, err := a.key(ctx)
 	if err != nil {

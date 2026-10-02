@@ -1,5 +1,5 @@
 // analytics.go is the three reconciliation calls COVERAGE.md reclassified INTEGRATE for
-// plan 02-09: ListKeys (GET /api/v1/keys, the whole roster in one call), GetCredits
+// plan 02-09: ListKeys (GET /api/v1/keys, the whole roster, 100 keys a page), GetCredits
 // (GET /api/v1/credits, the account pool) and AnalyticsQuery (POST
 // /api/v1/analytics/query, per-identity everything). All three require the MANAGEMENT
 // credential and are server-side only (COVERAGE.md, T-02-11) — the browser never calls
@@ -25,11 +25,31 @@ import (
 	"time"
 )
 
-// ListKeys reads the whole key roster in one call (GET /api/v1/keys). Same record shape
+// keysPageSize is how many keys one GET /api/v1/keys answers: "List the most recent 100 API
+// keys ... You can paginate using the offset parameter" (OpenRouter's management-key guide,
+// read 2026-10-02).
+const keysPageSize = 100
+
+// ListKeys reads the whole key roster (GET /api/v1/keys), page by page. Same record shape
 // GetKey decodes (keyDataWire, minus the raw key), reused here rather than declaring a
 // second decoder for the identical wire shape (CLAUDE.md REUSABLE CODE).
 func ListKeys(ctx context.Context, client *http.Client, baseURL, apiKey string) ([]KeyRecord, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(baseURL, "/")+"/keys", nil)
+	var out []KeyRecord
+	for offset := 0; ; offset += keysPageSize {
+		page, err := listKeysPage(ctx, client, baseURL, apiKey, offset)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, page...)
+		if len(page) < keysPageSize {
+			return out, nil
+		}
+	}
+}
+
+func listKeysPage(ctx context.Context, client *http.Client, baseURL, apiKey string, offset int) ([]KeyRecord, error) {
+	url := fmt.Sprintf("%s/keys?offset=%d", strings.TrimRight(baseURL, "/"), offset)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("openrouterprovision: list keys: build request: %w", err)
 	}
