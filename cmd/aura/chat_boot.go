@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/cachemetrics"
+	"github.com/chetto1983/aura/internal/chatgptplan"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -103,10 +104,17 @@ type chatEnv struct {
 	// identityLLMResolver, which builds it once.
 	identityLLM     *runner.IdentityLLMResolver
 	identityLLMOnce sync.Once
+	chatGPTPlan     *chatgptplan.Service
+	chatGPTBrowser  *chatgptplan.BrowserLogin
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
+	if e.chatGPTBrowser != nil {
+		if err := e.chatGPTBrowser.Close(); err != nil {
+			slog.Warn("ChatGPT login browser shutdown incomplete", "error", err)
+		}
+	}
 	if e.deleteReconciler != nil {
 		e.deleteReconciler.Stop()
 	}
@@ -418,7 +426,8 @@ func assembleChatEnv(
 		slog.Warn("model profile unresolved; using configured fallback",
 			"provider", cfg.LLM.Provider, "model", cfg.LLM.Model, "err", err)
 	}
-	client := newLLMClient(cfg.LLM)
+	chatGPTPlan := newChatGPTPlan(cfg)
+	client := newLLMClient(cfg.LLM, chatGPTTokenSourceOrNil(chatGPTPlan))
 	llmRuntime := llm.NewRuntime(client, cfg.LLM)
 	// The mid-turn steer inbox (amendment #132, D-01/D-12): ONE
 	// *steer.PostgresStore instance for the whole process, gated on its own
@@ -517,7 +526,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox, chatGPTPlan: chatGPTPlan}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

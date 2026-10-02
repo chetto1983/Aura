@@ -368,6 +368,9 @@ func FetchModelPrice(ctx context.Context, client *http.Client, baseURL, apiKey, 
 // fills only defaults. Local rates are an explicit zero entry so included compute is
 // distinguishable from an unresolved cloud rate at every CostUSD call site.
 func (c *Config) ResolveModelProfile(ctx context.Context) error {
+	if c.Provider == ChatGPTProvider {
+		return c.ResolveChatGPTProfile()
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	defer client.CloseIdleConnections()
 	metadata, err := fetchModelProfileWithRetry(ctx, client, c.Provider, c.BaseURL, c.APIKey, c.Model)

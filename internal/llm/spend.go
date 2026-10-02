@@ -95,6 +95,9 @@ func FetchSpend(ctx context.Context, client *http.Client, baseURL, apiKey string
 // cannot. It is a live call with no cache: the figure it answers is "what has this key
 // cost", which changes with every turn, so a stale one would be worse than none.
 func (c *Config) Spend(ctx context.Context) (Spend, error) {
+	if c.Provider == ChatGPTProvider {
+		return Spend{}, fmt.Errorf("%w: ChatGPT plan exposes no per-key spend", ErrSpendSubscriptionIncluded)
+	}
 	switch ReasoningTarget(c.Provider, c.BaseURL) {
 	case ReasoningTargetLlamaCpp:
 		return Spend{}, fmt.Errorf("%w: local backend bills nothing", ErrSpendNotApplicable)

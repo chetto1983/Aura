@@ -72,6 +72,7 @@ export interface LLMProviderRoute {
 /** One model the configured endpoint publishes. Rates are per 1M tokens and OpenRouter-only. */
 export interface LLMCatalogModel {
   readonly id: string;
+  readonly display_name?: string;
   readonly context_window?: number;
   readonly input_per_1m?: number;
   readonly output_per_1m?: number;
@@ -145,11 +146,13 @@ export async function fetchLLMRoutes(): Promise<readonly LLMProviderRoute[]> {
 export async function fetchLLMModels(
   provider: string,
   baseURL: string,
+  signal?: AbortSignal,
 ): Promise<readonly LLMCatalogModel[]> {
   const query = new URLSearchParams({ provider, base_url: baseURL });
   const res = await fetch(`/api/settings/llm-models?${query.toString()}`, {
     headers: { Accept: 'application/json' },
     credentials: 'same-origin',
+    ...(signal === undefined ? {} : { signal }),
   });
   const body = await readJSON<{ readonly models?: readonly LLMCatalogModel[] }>(res);
   return body.models ?? [];

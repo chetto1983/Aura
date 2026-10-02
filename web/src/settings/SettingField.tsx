@@ -42,6 +42,9 @@ export interface PickerBinding {
   readonly catalog: ModelCatalogState<ModelRow>;
   readonly formatRow: (row: ModelRow, freeLabel: string) => string;
   readonly onValueChange?: (value: string) => void;
+  readonly allowCustom?: boolean;
+  readonly disabled?: boolean;
+  readonly noPriceLabel?: string;
   /** Optional choice that stores an empty model id (for example, use the local sidecar). */
   readonly emptyOption?: {
     readonly label: string;
@@ -185,6 +188,9 @@ function SettingField({
           catalog={picker.catalog}
           formatRow={picker.formatRow}
           {...(picker.emptyOption === undefined ? {} : { emptyOption: picker.emptyOption })}
+          {...(picker.allowCustom === undefined ? {} : { allowCustom: picker.allowCustom })}
+          {...(picker.disabled === undefined ? {} : { disabled: picker.disabled })}
+          {...(picker.noPriceLabel === undefined ? {} : { noPriceLabel: picker.noPriceLabel })}
           onChange={picker.onValueChange ?? onChange}
         />
       ) : def.secret ? (

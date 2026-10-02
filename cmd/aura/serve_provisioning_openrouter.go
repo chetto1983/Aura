@@ -118,7 +118,10 @@ func (a openRouterMintingAdapter) Revoke(ctx context.Context, hash string) error
 
 // liveRouteBills reports whether the primary route the operator runs right now bills.
 func liveRouteBills(chat *chatEnv) func() bool {
-	return func() bool { return !llm.IsKeylessLocalBaseURL(chat.llmRuntime.Snapshot().Config.BaseURL) }
+	return func() bool {
+		cfg := chat.llmRuntime.Snapshot().Config
+		return cfg.Provider != llm.ChatGPTProvider && !llm.IsKeylessLocalBaseURL(cfg.BaseURL)
+	}
 }
 
 // openRouterKeyPatchAdapter satisfies agui/credit_api.go's unexported creditProvider

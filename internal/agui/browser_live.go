@@ -7,6 +7,8 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,7 +65,12 @@ func (s *Server) registerBrowserLiveRoutes(mux *http.ServeMux) {
 
 func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if !mcpmanager.ValidBrowserSession(session) {
+	privateLogin := strings.HasPrefix(session, "chatgpt-")
+	if privateLogin {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+	}
+	if !s.browserSessionAllowed(r.Context(), session) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "invalid_session"})
 		return
 	}
@@ -75,7 +82,7 @@ func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 	key := scopedIdentityID(ctx) + "\x00" + session
 	lines := make(chan []byte, browserLineBuffer)
 	pr, pw := io.Pipe()
-	h, err := s.browserRelay.Open(ctx, session, pr, &browserLineSink{ctx: ctx, out: lines})
+	h, err := s.browserRelay.Open(ctx, session, pr, &browserLineSink{ctx: ctx, out: lines, privateLogin: privateLogin})
 	if err != nil {
 		_ = pw.Close()
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "sandbox_unavailable"})
@@ -92,7 +99,9 @@ func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
+	if !privateLogin {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	flusher, _ := w.(http.Flusher)
@@ -128,7 +137,7 @@ func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleBrowserInput(w http.ResponseWriter, r *http.Request) {
 	session := r.PathValue("session")
-	if !mcpmanager.ValidBrowserSession(session) {
+	if !s.browserSessionAllowed(r.Context(), session) {
 		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "invalid_session"})
 		return
 	}
@@ -156,6 +165,16 @@ func (s *Server) handleBrowserInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) browserSessionAllowed(ctx context.Context, session string) bool {
+	if !mcpmanager.ValidBrowserSession(session) {
+		return false
+	}
+	if strings.HasPrefix(session, "chatgpt-") {
+		return s.chatGPTBrowser != nil && s.chatGPTBrowser.Owns(scopedCtx(ctx), scopedIdentityID(ctx), session)
+	}
+	return true
 }
 
 // claim makes pw the session's input target. A second viewer replaces the first: closing the
@@ -200,9 +219,10 @@ func (b *browserViewer) send(line []byte) error {
 // pump goroutine: frames are dropped when the viewer is behind, and a relay_error line, which is
 // the viewer's only explanation for a stream that ends, always waits for room.
 type browserLineSink struct {
-	ctx     context.Context
-	out     chan<- []byte
-	pending []byte
+	ctx          context.Context
+	out          chan<- []byte
+	pending      []byte
+	privateLogin bool
 }
 
 func (b *browserLineSink) Write(p []byte) (int, error) {
@@ -216,6 +236,12 @@ func (b *browserLineSink) Write(p []byte) (int, error) {
 		b.pending = b.pending[i+1:]
 		if len(line) == 0 {
 			continue
+		}
+		if b.privateLogin {
+			line = browserLoginMetadata(line)
+			if len(line) == 0 {
+				continue
+			}
 		}
 		if !bytes.Contains(line, []byte(`"relay_error"`)) {
 			select {
@@ -234,4 +260,36 @@ func (b *browserLineSink) Write(p []byte) (int, error) {
 		b.pending = nil
 	}
 	return len(p), nil
+}
+
+// Browser metadata must not carry returning-login ID token hints or callback codes to the SPA.
+func browserLoginMetadata(line []byte) []byte {
+	var value any
+	if json.Unmarshal(line, &value) != nil {
+		return nil
+	}
+	var clean func(any) any
+	clean = func(value any) any {
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, item := range typed {
+				typed[key] = clean(item)
+			}
+		case []any:
+			for key, item := range typed {
+				typed[key] = clean(item)
+			}
+		case string:
+			if parsed, err := url.Parse(typed); err == nil && parsed.Host != "" && (parsed.Scheme == "https" || parsed.Scheme == "http") {
+				parsed.RawQuery, parsed.Fragment, parsed.User = "", "", nil
+				return parsed.String()
+			}
+		}
+		return value
+	}
+	result, err := json.Marshal(clean(value))
+	if err != nil {
+		return nil
+	}
+	return result
 }

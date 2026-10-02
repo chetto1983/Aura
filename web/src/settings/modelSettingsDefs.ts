@@ -13,6 +13,8 @@ export const OLLAMA_MODEL = 'gemma4:31b-cloud';
 export const CLOUD_PROVIDER = 'openrouter';
 export const LOCAL_PROVIDER = 'llamacpp';
 export const OLLAMA_PROVIDER = 'ollama';
+export const CHATGPT_PROVIDER = 'chatgpt';
+export const CHATGPT_BASE_URL = 'https://api.openai.com/v1';
 
 export type SettingsKey =
   | 'AURA_LLM_MODEL'
@@ -200,7 +202,7 @@ function isOllamaBaseURL(value: string): boolean {
   }
 }
 
-export type ProviderChoice = 'cloud' | 'local' | 'ollama';
+export type ProviderChoice = 'cloud' | 'local' | 'ollama' | 'chatgpt';
 
 /** One routing button: which provider it selects and the route to fall back on. */
 export interface ProviderOption {
@@ -233,6 +235,13 @@ export const PROVIDER_OPTIONS: readonly ProviderOption[] = [
     labelKey: 'settings.provider.ollama',
     fallbackBaseURL: OLLAMA_BASE_URL,
     fallbackModel: OLLAMA_MODEL,
+  },
+  {
+    id: 'chatgpt',
+    provider: CHATGPT_PROVIDER,
+    labelKey: 'settings.provider.chatgpt',
+    fallbackBaseURL: CHATGPT_BASE_URL,
+    fallbackModel: '',
   },
 ];
 
@@ -273,6 +282,7 @@ export function routeForProvider(
 // only the fallback for a deployment whose row was never written.
 export function resolveProvider(storedProvider: string, baseURL: string): ProviderChoice {
   const normalized = storedProvider.trim().toLowerCase();
+  if (normalized === CHATGPT_PROVIDER) return 'chatgpt';
   if (normalized === OLLAMA_PROVIDER) return 'ollama';
   if (normalized === LOCAL_PROVIDER) return 'local';
   if (normalized === CLOUD_PROVIDER) return 'cloud';

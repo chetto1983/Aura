@@ -3,6 +3,7 @@ import { ShieldAlert } from 'lucide-react';
 import { useCapabilities } from '../admin/useAdmin';
 import { IdentityAccessPanel } from './IdentityAccessPanel';
 import { ModelSettingsPanel } from './ModelSettingsPanel';
+import { ChatGPTPlanConnection } from './ChatGPTPlanConnection';
 import { ProfilePanel } from './ProfilePanel';
 import { SettingsRail } from './SettingsRail';
 import { SharedLinksSection } from './SharedLinksSection';
@@ -44,6 +45,13 @@ export default function SettingsWorkspace({ onCreateIdentity }: SettingsWorkspac
       <div className="h-full min-h-0 overflow-y-auto bg-bg">
         <div className="mx-auto flex w-full max-w-3xl flex-col items-start gap-6 px-4 py-10 sm:px-6">
           <ProfilePanel />
+          <section aria-labelledby="own-chatgpt-account" className="flex w-full flex-col gap-3">
+            <h2 id="own-chatgpt-account" className="text-[20px] font-semibold text-text">
+              {t('settings.chatgpt.accountHeading')}
+            </h2>
+            <p className="text-[13px] text-text-muted">{t('settings.chatgpt.accountBody')}</p>
+            <ChatGPTPlanConnection />
+          </section>
           <div className="flex w-full flex-col items-start gap-3 border-t border-border pt-6">
             <span className="grid size-12 place-items-center rounded-full border border-border bg-surface text-accent-text">
               <ShieldAlert aria-hidden="true" />

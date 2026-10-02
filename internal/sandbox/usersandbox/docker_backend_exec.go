@@ -300,7 +300,10 @@ func (s *ExecStreamHandle) Kill() {
 // a non-nil INFRA failure (inspect failed), distinct from a non-zero exit code.
 func (s *ExecStreamHandle) Wait() (int, error) {
 	<-s.done
-	ins, err := s.cli.ExecInspect(context.Background(), s.execID, client.ExecInspectOptions{})
+	// The stream has ended; an unreachable Docker daemon must not prevent callers joining cleanup.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	ins, err := s.cli.ExecInspect(ctx, s.execID, client.ExecInspectOptions{})
 	if err != nil {
 		return 0, fmt.Errorf("box bg exec inspect: %w", err)
 	}

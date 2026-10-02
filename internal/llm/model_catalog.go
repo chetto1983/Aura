@@ -44,6 +44,7 @@ type ollamaTagsWire struct {
 // (measured 2026-09-14) -- and an embedding input must fit the provider that serves it.
 type ModelCatalogEntry struct {
 	ID                       string
+	DisplayName              string
 	ContextWindow            int
 	TopProviderContextWindow int
 	Price                    Price

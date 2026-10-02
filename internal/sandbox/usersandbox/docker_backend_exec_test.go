@@ -9,10 +9,41 @@
 package usersandbox
 
 import (
+	"context"
+	"errors"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestExecStreamWaitBoundsDockerInspectAfterProcessExit(t *testing.T) {
+	for _, unavailable := range []bool{false, true} {
+		cli := newFakeDockerClient(t, func(request *http.Request) (*http.Response, error) {
+			deadline, bounded := request.Context().Deadline()
+			if !bounded || time.Until(deadline) > 5*time.Second {
+				t.Fatal("process cleanup may wait forever for Docker")
+			}
+			if unavailable {
+				return nil, context.DeadlineExceeded
+			}
+			return dockerJSONResponse(http.StatusOK, `{"ExitCode":17}`), nil
+		})
+		done := make(chan struct{})
+		close(done)
+		handle := &ExecStreamHandle{cli: cli, execID: "finished-login", done: done}
+		code, err := handle.Wait()
+		if unavailable {
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatal("Docker timeout was hidden")
+			}
+		} else if err != nil || code != 17 {
+			t.Fatal("lost process exit result")
+		}
+		_ = cli.Close()
+	}
+}
 
 // TestWrapCommandWithPIDFile_RecordsPIDBeforeRunningCmd pins the shape ExecStream's background
 // jobs and Exec's synchronous cancel/timeout path both depend on: the wrapper records $$ to

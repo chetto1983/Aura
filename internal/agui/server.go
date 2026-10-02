@@ -185,6 +185,8 @@ type Server struct {
 	// credit/audit 503-until-wired precedent.
 	spendOverview    *spendOverviewPorts
 	telegramProbe    TelegramBotProbe
+	chatGPTPlan      ChatGPTPlanService
+	chatGPTBrowser   ChatGPTBrowserLogin
 	telegram         *telegramChannelPorts // nil until SetTelegramActivator
 	restartTrigger   func()                // nil until SetRestartTrigger (restart_api.go)
 	onboarding       OnboardingService

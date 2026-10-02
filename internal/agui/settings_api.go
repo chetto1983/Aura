@@ -94,6 +94,7 @@ func (s *Server) SetLLMRouteReloader(reloader llmRouteReloader) { s.llmRouteRelo
 func (s *Server) SetTelegramBotProbe(probe TelegramBotProbe) { s.telegramProbe = probe }
 
 func (s *Server) registerSettingsRoutes(mux *http.ServeMux) {
+	s.registerChatGPTPlanRoutes(mux)
 	mux.HandleFunc("GET /api/settings", s.handleListSettings)
 	mux.HandleFunc("GET /api/settings/llm-routes", s.handleListLLMRoutes)
 	mux.HandleFunc("GET /api/settings/llm-models", s.handleListLLMModels)
@@ -306,7 +307,7 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 	for _, key := range resetKeys {
 		delete(overrides, key)
 	}
-	apply, err := s.llmRouteReloader.Prepare(r.Context(), overrides, resetKeys)
+	apply, err := s.llmRouteReloader.Prepare(scopedCtx(r.Context()), overrides, resetKeys)
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
@@ -414,7 +415,7 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 	if s.hotLLMRouteEnabled(key) {
 		routeOverrides = llmProfileOverrides(rows)
 		routeOverrides[key] = body.Value
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
+		applyRoute, err = s.llmRouteReloader.Prepare(scopedCtx(r.Context()), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
@@ -472,7 +473,7 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		}
 		routeOverrides = llmProfileOverrides(rows)
 		delete(routeOverrides, key)
-		applyRoute, err = s.llmRouteReloader.Prepare(r.Context(), routeOverrides, nil)
+		applyRoute, err = s.llmRouteReloader.Prepare(scopedCtx(r.Context()), routeOverrides, nil)
 		if err != nil {
 			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return

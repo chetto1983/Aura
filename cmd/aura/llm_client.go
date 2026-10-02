@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/chatgpt"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
@@ -39,7 +40,18 @@ type creditExhaustedClient struct{}
 
 type creditExhaustedError struct{}
 
-func newLLMClient(cfg llm.Config) llm.Client {
+type chatGPTTokenSource interface {
+	AccessToken(context.Context) (string, error)
+}
+
+func newLLMClient(cfg llm.Config, sources ...chatGPTTokenSource) llm.Client {
+	if cfg.Provider == llm.ChatGPTProvider {
+		var source chatGPTTokenSource
+		if len(sources) > 0 {
+			source = sources[0]
+		}
+		return chatgpt.New(cfg, source)
+	}
 	if strings.TrimSpace(cfg.APIKey) == "" && !llm.IsKeylessLocalBaseURL(cfg.BaseURL) {
 		return llmNotConfiguredClient{}
 	}

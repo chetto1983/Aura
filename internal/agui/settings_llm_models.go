@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/chatgpt"
 )
 
 // modelCatalogTimeout bounds the probe. OpenRouter's catalogue is ~600 KB over the wire
@@ -31,7 +32,7 @@ import (
 const modelCatalogTimeout = 20 * time.Second
 
 var errUnsupportedCatalogProvider = errors.New(
-	"provider must be openrouter, llamacpp, or ollama",
+	"provider must be openrouter, llamacpp, ollama, or chatgpt",
 )
 
 // modelCatalogFetcher is the outbound seam (llm.FetchModelCatalog in production). Tests
@@ -42,6 +43,7 @@ type modelCatalogFetcher func(
 
 type modelCatalogEntryDTO struct {
 	ID            string  `json:"id"`
+	DisplayName   string  `json:"display_name,omitempty"`
 	ContextWindow int     `json:"context_window,omitempty"`
 	InputPer1M    float64 `json:"input_per_1m,omitempty"`
 	OutputPer1M   float64 `json:"output_per_1m,omitempty"`
@@ -58,7 +60,7 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 	provider := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("provider")))
 	baseURL := strings.TrimSpace(r.URL.Query().Get("base_url"))
 	switch provider {
-	case "openrouter", "llamacpp", "ollama":
+	case "openrouter", "llamacpp", "ollama", llm.ChatGPTProvider:
 	default:
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": errUnsupportedCatalogProvider.Error()})
 		return
@@ -78,6 +80,13 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), modelCatalogTimeout)
 	defer cancel()
+	ctx = scopedCtx(ctx)
+	if provider == llm.ChatGPTProvider && (baseURL != llm.ChatGPTBaseURL || !s.chatGPTAvailable(w)) {
+		if baseURL != llm.ChatGPTBaseURL {
+			writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "ChatGPT plan requires the official OpenAI endpoint"})
+		}
+		return
+	}
 	entries, err := s.fetchModelCatalog(ctx, provider, baseURL, apiKey)
 	if err != nil {
 		// The reason is the whole value of this response when it fails: "GET /models
@@ -94,6 +103,7 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range entries {
 		out.Models = append(out.Models, modelCatalogEntryDTO{
 			ID:            entry.ID,
+			DisplayName:   entry.DisplayName,
 			ContextWindow: entry.ContextWindow,
 			InputPer1M:    entry.Price.InputPer1M,
 			OutputPer1M:   entry.Price.OutputPer1M,
@@ -109,6 +119,9 @@ func (s *Server) fetchModelCatalog(
 ) ([]llm.ModelCatalogEntry, error) {
 	if s.modelCatalog != nil {
 		return s.modelCatalog(ctx, provider, baseURL, apiKey)
+	}
+	if provider == llm.ChatGPTProvider {
+		return chatgpt.FetchModels(ctx, s.chatGPTPlan)
 	}
 	client := &http.Client{Timeout: modelCatalogTimeout}
 	return llm.FetchModelCatalog(ctx, client, provider, baseURL, apiKey)

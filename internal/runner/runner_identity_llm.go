@@ -122,7 +122,19 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 		return llm.RuntimeSnapshot{}, errors.New("runner: empty identity id")
 	}
 
-	base, version := rs.liveBase()
+	// Classify and use the client from one immutable publication: a concurrent
+	// settings switch must never substitute a hosted deployment credential.
+	route := rs.runtime.Snapshot()
+	base, version := route.Config, route.Version
+	if rs.runtime == nil {
+		base = rs.base
+	}
+	if base.Provider == llm.ChatGPTProvider {
+		snapshot := route
+		snapshot.Config.APIKey = ""
+		snapshot.Client = &identityScopedLLMClient{client: snapshot.Client, identityID: identityID}
+		return snapshot, nil
+	}
 	if cached, ok := rs.cachedSnapshot(identityID, version); ok {
 		return cached, nil
 	}
@@ -146,7 +158,7 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 	refusal.APIKey = ""
 	switch decision {
 	case identitykey.DecisionExemptLocal:
-		return rs.exemptionSnapshot(), nil
+		return route, nil
 	case identitykey.DecisionAllow:
 		cfg := base
 		cfg.APIKey = rec.Key
@@ -168,27 +180,6 @@ func (rs *IdentityLLMResolver) SnapshotFor(ctx context.Context, identityID strin
 		// fifth value added to identitykey.Decide without this switch.
 		return llm.RuntimeSnapshot{}, fmt.Errorf("runner: %s: unrecognized credit decision %d", identityID, decision)
 	}
-}
-
-// liveBase is the route every identity-scoped client is built on: the runtime the Settings
-// API republishes when the operator switches route or model, and the boot config only when no
-// runtime is wired.
-func (rs *IdentityLLMResolver) liveBase() (llm.Config, uint64) {
-	if rs.runtime == nil {
-		return rs.base, 0
-	}
-	snap := rs.runtime.Snapshot()
-	return snap.Config, snap.Version
-}
-
-// exemptionSnapshot is the D-13 local-backend exemption's ONLY caller of
-// rs.runtime.Snapshot() for a client — split out under its own name so the refusal and
-// the exemption can never be mistaken for one another in the code.
-func (rs *IdentityLLMResolver) exemptionSnapshot() llm.RuntimeSnapshot {
-	if rs.runtime == nil {
-		return llm.RuntimeSnapshot{}
-	}
-	return rs.runtime.Snapshot()
 }
 
 func (rs *IdentityLLMResolver) cachedSnapshot(identityID string, version uint64) (llm.RuntimeSnapshot, bool) {

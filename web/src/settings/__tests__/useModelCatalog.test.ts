@@ -85,4 +85,30 @@ describe('useModelCatalog', () => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
   });
+
+  it('clears a disconnected catalog and discards a response still in flight', async () => {
+    let resolveRequest: ((res: Response) => void) | undefined;
+    const fetchMock = stubFetch(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const { result, rerender } = renderHook(
+      ({ enabled }) => useModelCatalog('chatgpt', 'https://api.openai.com/v1', enabled),
+      { initialProps: { enabled: true } },
+    );
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    rerender({ enabled: false });
+    expect(result.current.models).toEqual([]);
+    expect(result.current.status).toBe('idle');
+    await act(async () => {
+      resolveRequest?.(new Response(JSON.stringify({ models: MODELS })));
+      await Promise.resolve();
+    });
+    expect(result.current.models).toEqual([]);
+    expect(result.current.status).toBe('idle');
+  });
 });

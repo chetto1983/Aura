@@ -144,6 +144,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/onboarding/start":                               httpMutationMeta("onboarding_start"),
 	"POST /api/onboarding/{sessionToken}/provision":            httpMutationMeta("onboarding_provision"),
 	"POST /api/settings/telegram/link":                         httpMutationMeta("settings_telegram_link"),
+	"POST /api/settings/chatgpt/login":                         httpMutationMeta("chatgpt_login"),
+	"DELETE /api/settings/chatgpt/login":                       httpMutationMeta("chatgpt_login_cancel"),
+	"DELETE /api/settings/chatgpt":                             httpMutationMeta("chatgpt_disconnect"),
 	"PUT /api/settings/{key}":                                  httpMutationMeta("setting_put"),
 	"POST /api/settings/embedding-route":                       httpMutationMeta("embedding_route_apply"),
 	"PUT /api/settings/llm-profile":                            httpMutationMeta("llm_profile_put"),
@@ -284,7 +287,9 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 		}
 		r = r.WithContext(ctx)
 
-		if meta.Normalize == "agent_run" {
+		// Reauthorization URLs contain an OIDC id_token_hint. Deliver them directly
+		// and retain only operation metadata, never credentials in the replay journal.
+		if meta.Normalize == "agent_run" || meta.Normalize == "chatgpt_login" {
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					_ = s.operations.MarkIndeterminate(
@@ -299,7 +304,7 @@ func (s *Server) idempotencyMutation(next http.Handler, meta mutationRouteMeta) 
 				r.Context(), operation.Key, operation.Fingerprint,
 				operation.ClaimToken,
 			); err != nil {
-				slog.Error("agui: mark streaming mutation indeterminate", "err", err)
+				slog.Error("agui: mark non-replayable mutation indeterminate", "err", err)
 			}
 			return
 		}

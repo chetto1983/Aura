@@ -12,6 +12,7 @@ import {
   ModelSelectorRoot,
   ModelSelectorSearch,
   ModelSelectorTrigger,
+  ModelSelectorValue,
   type ModelOption,
 } from '@/components/model-selector';
 import { CommandItem } from '@/components/ui/command';
@@ -32,6 +33,9 @@ interface ModelPickerProps<M extends { readonly id: string }> {
   readonly catalog: ModelCatalogState<M>;
   readonly onChange: (value: string) => void;
   readonly formatRow: (model: M, freeLabel: string) => string;
+  readonly allowCustom?: boolean;
+  readonly disabled?: boolean;
+  readonly noPriceLabel?: string;
   readonly emptyOption?: {
     readonly label: string;
     readonly description?: string;
@@ -61,7 +65,12 @@ function toModelOptions<M extends { readonly id: string }>(
     const vendor = vendorOf(model.id);
     return {
       id: model.id,
-      name: model.id,
+      name:
+        'display_name' in model &&
+        typeof model.display_name === 'string' &&
+        model.display_name.trim() !== ''
+          ? model.display_name
+          : model.id,
       description: formatRow(model, freeLabel),
       ...(vendor === '' ? {} : { keywords: [vendor] }),
     };
@@ -86,10 +95,17 @@ export function ModelPicker<M extends { readonly id: string }>({
   onChange,
   formatRow,
   emptyOption,
+  allowCustom = true,
+  disabled = false,
+  noPriceLabel,
 }: ModelPickerProps<M>) {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
-  const publishedOptions = toModelOptions(catalog.models, t('settings.models.noCharge'), formatRow);
+  const publishedOptions = toModelOptions(
+    catalog.models,
+    noPriceLabel ?? t('settings.models.noCharge'),
+    formatRow,
+  );
   const options: readonly ModelOption[] =
     emptyOption === undefined
       ? publishedOptions
@@ -115,11 +131,16 @@ export function ModelPicker<M extends { readonly id: string }>({
     known || value.trim() === ''
       ? options
       : [
-          { id: value, name: value, ...(unpublished === '' ? {} : { description: unpublished }) },
+          {
+            id: value,
+            name: value,
+            disabled: !allowCustom,
+            ...(unpublished === '' ? {} : { description: unpublished }),
+          },
           ...options,
         ];
   const typed = query.trim();
-  const custom = typed !== '' && !selectable.some((option) => option.id === typed);
+  const custom = allowCustom && typed !== '' && !selectable.some((option) => option.id === typed);
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -130,7 +151,9 @@ export function ModelPicker<M extends { readonly id: string }>({
           onChange(next === EMPTY_MODEL_VALUE ? '' : next);
         }}
       >
-        <ModelSelectorTrigger id={id} className="w-full font-mono text-[13px]" />
+        <ModelSelectorTrigger id={id} disabled={disabled} className="w-full font-mono text-[13px]">
+          <ModelSelectorValue placeholder={t('settings.models.select')} />
+        </ModelSelectorTrigger>
         <ModelSelectorContent searchable className="w-(--radix-popover-trigger-width)">
           <ModelSelectorSearch
             placeholder={t('settings.models.search')}
@@ -176,13 +199,15 @@ export function ModelPicker<M extends { readonly id: string }>({
           {catalog.status === 'loading'
             ? t('settings.models.loading')
             : catalog.error !== undefined
-              ? t('settings.models.error', { message: catalog.error })
+              ? t(allowCustom ? 'settings.models.error' : 'settings.models.accountError', {
+                  message: catalog.error,
+                })
               : t('settings.models.count', { count: catalog.models.length })}
         </span>
         <button
           type="button"
           onClick={catalog.reload}
-          disabled={catalog.status === 'loading'}
+          disabled={disabled || catalog.status === 'loading'}
           className="inline-flex shrink-0 items-center gap-1 text-text-muted underline-offset-2 hover:underline disabled:opacity-60"
         >
           {catalog.status === 'loading' ? (

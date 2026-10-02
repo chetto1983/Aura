@@ -1,6 +1,19 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**ChatGPT subscription measurement:** 2026-10-02 — final WSL full vet/build/race,
+touched-package lint, deadcode/model/capability contracts and file-size checks passed.
+Disposable unit plus `db_integration` coverage is **48,017/54,095 = 88.8%** with
+package-local policy passing. OAuth/browser lifecycle targeted coverage is 92.4%;
+9/9 browser lifecycle mutation overlays were killed. New UI/hook/API coverage is
+95.76% statements / 88.26% branches / 100% lines, with 46/46 focused cases and
+3/3 final bundle browser fixtures passing. The actual daemon/Authula/Postgres and
+sandbox Chromium opened official OpenAI login, streamed frames and cancelled safely.
+VM helper probes additionally verified callback placement and early-redirect cleanup.
+These boundaries do not prove human consent, real account models or completed inference,
+and do not replace separate Docker/ArcadeDB coverage authorities. Full evidence:
+`.planning/quick/261002-pfr-add-chatgpt-plan-sign-in-and-account-mod/261002-pfr-VALIDATION.md`.
+
 **Dependency-upgrade measurement:** 2026-09-14 — PRs #79–81 plus pypdf 6.18.1.
 Full disposable Go unit + `db_integration` matrix, including `cmd/aura` execution:
 **39,881/45,558 = 87.54%**. The pgx URI correction adds one covered statement to

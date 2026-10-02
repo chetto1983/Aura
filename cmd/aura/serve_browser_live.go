@@ -1,9 +1,9 @@
 package main
 
 // serve_browser_live.go wires the cockpit's live view of an agent-browser session (prd.md §12):
-// the relay adapter over the sandbox router, and the two parent-mux mounts. Both routes sit
-// behind agentRunCapability like POST /agent/run, because driving the box's browser is running
-// the agent's tools.
+// the relay adapter over the sandbox router, and the two parent-mux mounts. Ordinary browser
+// sessions require agent.run. Reserved ChatGPT login sessions are additionally owner-checked
+// by the AG-UI handler and need only the authenticated connection owner's session.
 
 import (
 	"context"
@@ -22,8 +22,16 @@ const (
 )
 
 func registerBrowserLiveRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.AuthDeps) {
-	mux.Handle(browserStreamRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
-	mux.Handle(browserInputRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
+	protected := agui.RequireCapability(aguiHandler, auth, agentRunCapability)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if chatGPTBrowserSessionPattern.MatchString(r.PathValue("session")) {
+			aguiHandler.ServeHTTP(w, r)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})
+	mux.Handle(browserStreamRoute, handler)
+	mux.Handle(browserInputRoute, handler)
 }
 
 // sandboxBrowserRelay opens the relay in the box of the identity ctx carries. The session name

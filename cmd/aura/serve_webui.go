@@ -212,6 +212,11 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// llm-models is a GET behind governance.WRITE on purpose: it makes the daemon fetch
 	// an operator-supplied URL, which is the same power as pointing the chat route at it.
 	mux.Handle("GET /api/settings/llm-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	for _, pattern := range agui.ChatGPTPlanRoutes() {
+		// Every authenticated owner may connect their own account. Deployment-wide
+		// provider/model changes retain the settings administration capability.
+		mux.Handle(pattern, aguiHandler)
+	}
 	// The media catalogues take no URL from the browser, but refresh=1 makes the daemon call
 	// the provider, so they share llm-models' gate rather than governance.read.
 	for _, pattern := range agui.SettingsCatalogRoutes() {

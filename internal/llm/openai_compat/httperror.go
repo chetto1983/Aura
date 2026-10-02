@@ -26,6 +26,7 @@ type HTTPError struct {
 	StatusCode    int
 	RetryAfterSec int
 	Body          string
+	RequestID     string
 }
 
 func adaptSDKError(err error) error {
@@ -38,6 +39,9 @@ func adaptSDKError(err error) error {
 		body = body[:maxErrorBodyBytes]
 	}
 	result := &HTTPError{StatusCode: apiErr.StatusCode, Body: body}
+	if apiErr.Response != nil {
+		result.RequestID = responseRequestID(apiErr.Response)
+	}
 	if apiErr.StatusCode == http.StatusTooManyRequests && apiErr.Response != nil {
 		if value := strings.TrimSpace(apiErr.Response.Header.Get("Retry-After")); value != "" {
 			if seconds, parseErr := strconv.Atoi(value); parseErr == nil {
@@ -66,6 +70,9 @@ func (e *HTTPError) Error() string {
 	if e.RetryAfterSec > 0 {
 		head = fmt.Sprintf("%s (retry after %ds)", head, e.RetryAfterSec)
 	}
+	if e.RequestID != "" {
+		head += " (request id: " + e.RequestID + ")"
+	}
 	if detail := e.providerMessage(); detail != "" {
 		return head + ": " + detail
 	}
@@ -89,15 +96,22 @@ func (e *HTTPError) providerMessage() string {
 		Error struct {
 			Message string `json:"message"`
 		} `json:"error"`
-		Message string `json:"message"`
+		Message string          `json:"message"`
+		Detail  json.RawMessage `json:"detail"`
 	}
 	message := body
 	if err := json.Unmarshal([]byte(body), &wire); err == nil {
+		var detail string
+		_ = json.Unmarshal(wire.Detail, &detail)
 		switch {
 		case strings.TrimSpace(wire.Error.Message) != "":
 			message = wire.Error.Message
 		case strings.TrimSpace(wire.Message) != "":
 			message = wire.Message
+		case strings.TrimSpace(detail) != "":
+			// Direct ChatGPT plan admission errors use this projection.
+			// https://developers.openai.com/siwc/token-sharing-open-source/errors-and-recovery
+			message = detail
 		default:
 			// Valid JSON that names no message: the raw object says less than nothing
 			// to a reader, so leave the headline clean rather than pasting braces.
@@ -116,7 +130,7 @@ func (e *HTTPError) providerMessage() string {
 // confirmed StatusCode/100 != 2.
 func newHTTPError(resp *http.Response) *HTTPError {
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
-	e := &HTTPError{StatusCode: resp.StatusCode, Body: string(body)}
+	e := &HTTPError{StatusCode: resp.StatusCode, Body: string(body), RequestID: responseRequestID(resp)}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		if ra := resp.Header.Get("Retry-After"); ra != "" {
 			if n, err := strconv.Atoi(ra); err == nil {
@@ -125,4 +139,12 @@ func newHTTPError(resp *http.Response) *HTTPError {
 		}
 	}
 	return e
+}
+
+func responseRequestID(resp *http.Response) string {
+	id := strings.Join(strings.Fields(resp.Header.Get("x-request-id")), " ")
+	if len(id) > 128 {
+		id = id[:128]
+	}
+	return id
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchLLMModels, type LLMCatalogModel } from './settingsApi';
 
 export type CatalogStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -33,46 +33,61 @@ function probeable(provider: string, baseURL: string): boolean {
 // useModelCatalog keeps the list of models the CURRENT form route publishes. It follows
 // the form rather than the saved settings, so the operator sees what an endpoint serves
 // before committing to it.
-export function useModelCatalog(provider: string, baseURL: string): ModelCatalogState {
-  const [models, setModels] = useState<readonly LLMCatalogModel[]>([]);
-  const [status, setStatus] = useState<CatalogStatus>('idle');
-  const [error, setError] = useState<string | undefined>(undefined);
+export function useModelCatalog(
+  provider: string,
+  baseURL: string,
+  enabled = true,
+): ModelCatalogState {
+  const route = useMemo(() => ({ provider, baseURL, enabled }), [baseURL, enabled, provider]);
+  const [catalog, setCatalog] = useState<{
+    readonly route: typeof route;
+    readonly models: readonly LLMCatalogModel[];
+    readonly status: CatalogStatus;
+    readonly error: string | undefined;
+  }>();
   // Every probe carries a sequence number: a slow answer for a route the operator has
   // already moved off must not overwrite the list for the route they are looking at.
   const sequence = useRef(0);
+  const controller = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
-    if (!probeable(provider, baseURL)) {
-      setModels([]);
-      setStatus('idle');
-      setError(undefined);
-      return;
-    }
+    controller.current?.abort();
     sequence.current += 1;
     const ticket = sequence.current;
-    setStatus('loading');
-    setError(undefined);
+    if (!route.enabled || !probeable(route.provider, route.baseURL)) {
+      setCatalog({ route, models: [], status: 'idle', error: undefined });
+      return;
+    }
+    const request = new AbortController();
+    controller.current = request;
+    setCatalog({ route, models: [], status: 'loading', error: undefined });
     try {
-      const list = await fetchLLMModels(provider.trim(), baseURL.trim());
+      const list = await fetchLLMModels(
+        route.provider.trim(),
+        route.baseURL.trim(),
+        request.signal,
+      );
       if (ticket !== sequence.current) return;
-      setModels(list);
-      setStatus('ready');
+      setCatalog({ route, models: list, status: 'ready', error: undefined });
     } catch (err) {
       if (ticket !== sequence.current) return;
-      setModels([]);
-      setStatus('error');
-      setError(catalogError(err));
+      setCatalog({ route, models: [], status: 'error', error: catalogError(err) });
     }
-  }, [baseURL, provider]);
+  }, [route]);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void load();
-    }, PROBE_DEBOUNCE_MS);
+    const timer =
+      route.enabled && probeable(route.provider, route.baseURL)
+        ? setTimeout(() => {
+            void load();
+          }, PROBE_DEBOUNCE_MS)
+        : undefined;
     return () => {
-      clearTimeout(timer);
+      if (timer !== undefined) clearTimeout(timer);
+      sequence.current += 1;
+      controller.current?.abort();
     };
-  }, [load]);
+  }, [load, route]);
 
   // The refresh button skips the debounce: the operator asking for the list now is not a
   // keystroke to wait out.
@@ -80,5 +95,11 @@ export function useModelCatalog(provider: string, baseURL: string): ModelCatalog
     void load();
   }, [load]);
 
-  return { models, status, error, reload };
+  if (enabled && catalog?.route === route) return { ...catalog, reload };
+  return {
+    models: [],
+    status: enabled && probeable(provider, baseURL) ? 'loading' : 'idle',
+    error: undefined,
+    reload,
+  };
 }

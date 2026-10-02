@@ -28,10 +28,14 @@ func wireSettingsProviders(server *agui.Server, chat *chatEnv) {
 	wireEmbeddingRoutes(server, chat)
 	server.SetTelegramBotProbe(telegramGetMeProbe)
 	server.SetLLMRuntime(chat.llmRuntime)
+	if chat.chatGPTPlan != nil {
+		server.SetChatGPTPlan(chat.chatGPTPlan)
+	}
 	server.SetLLMRouteReloader(&primaryLLMRouteReloader{
 		fallback: chat.llmFallback,
 		runtime:  chat.llmRuntime,
 		server:   server,
+		chatGPT:  chatGPTTokenSourceOrNil(chat.chatGPTPlan),
 	})
 }
 
@@ -39,6 +43,7 @@ type primaryLLMRouteReloader struct {
 	fallback llm.Config
 	runtime  *llm.Runtime
 	server   *agui.Server
+	chatGPT  chatGPTTokenSource
 }
 
 func (r *primaryLLMRouteReloader) Prepare(ctx context.Context, overrides map[string]string, resetKeys []string) (func(), error) {
@@ -49,7 +54,10 @@ func (r *primaryLLMRouteReloader) Prepare(ctx context.Context, overrides map[str
 	if err := cfg.ResolveModelProfile(ctx); err != nil {
 		return nil, err
 	}
-	client := newLLMClient(cfg)
+	if err := validateChatGPTModel(ctx, &cfg, r.chatGPT); err != nil {
+		return nil, err
+	}
+	client := newLLMClient(cfg, r.chatGPT)
 	return func() {
 		r.runtime.Replace(client, cfg)
 		if r.server != nil {
@@ -192,8 +200,11 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		cfg.MaxOutputTokens = parsed
 		cfg.MaxOutputTokensConfigured = true
 	}
-	if cfg.Provider != "openrouter" && cfg.Provider != "llamacpp" && cfg.Provider != "ollama" {
-		return llm.Config{}, fmt.Errorf("primary LLM provider must be openrouter, llamacpp, or ollama")
+	if cfg.Provider != "openrouter" && cfg.Provider != "llamacpp" && cfg.Provider != "ollama" && cfg.Provider != llm.ChatGPTProvider {
+		return llm.Config{}, fmt.Errorf("primary LLM provider must be openrouter, llamacpp, ollama, or chatgpt")
+	}
+	if cfg.Provider == llm.ChatGPTProvider && cfg.BaseURL != llm.ChatGPTBaseURL {
+		return llm.Config{}, fmt.Errorf("ChatGPT plan requires the official OpenAI endpoint")
 	}
 	if cfg.Model == "" {
 		return llm.Config{}, fmt.Errorf("primary LLM model must not be empty")
