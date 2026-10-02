@@ -25,11 +25,18 @@ name: Skills (CAP-07 / CAP-08)
 # rather than passing it green. A sub-second integration runtime is a skip tell — the
 # steps below stand up Postgres so the tiers actually RUN.
 
+# Prose-only changes run nothing; the filter and its two exceptions are explained in ci.yml.
 on:
   push:
     branches: [ "master", "main", "tabula-rasa" ]
+    paths: &code-paths
+      - "**"
+      - "!prd.md"
+      - "!docs/**/*.md"
+      - "docs/deployment/**"
   pull_request:
     branches: [ "master", "main", "tabula-rasa" ]
+    paths: *code-paths
 
 permissions:
   contents: read

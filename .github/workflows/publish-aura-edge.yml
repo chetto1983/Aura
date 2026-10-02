@@ -8,10 +8,17 @@ name: Publish Aura edge image
 # convenience channel for the appliance host, not a release.
 # The small cloudflared supervisor publishes both amd64 and arm64.
 
+# The image carries no prose, so a prose-only push ships nothing: republishing it would only make
+# the appliance's updater restart aura for an identical binary. Filter as in ci.yml.
 on:
   workflow_dispatch:
   push:
     branches: [master]
+    paths:
+      - "**"
+      - "!prd.md"
+      - "!docs/**/*.md"
+      - "docs/deployment/**"
 
 permissions:
   contents: read

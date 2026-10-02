@@ -1,10 +1,21 @@
 name: CI
 
+# A push or PR that changes only prose (prd.md, Markdown under docs/) runs nothing: no code
+# reads it, and the next code push's run covers it. docs/deployment/ stays in, because
+# cmd/aura/distribution_artifacts_test.go asserts what may live there; docs/*.json stays in
+# too (cmd/arcadedb-mcp/tool_manifest_test.go reads one). No tag trigger here, so `paths`
+# cannot swallow a tag push (it would: see create-aura-appliance.yml).
 on:
   push:
     branches: ["master", "main", "tabula-rasa"]
+    paths: &code-paths
+      - "**"
+      - "!prd.md"
+      - "!docs/**/*.md"
+      - "docs/deployment/**"
   pull_request:
     branches: ["master", "main", "tabula-rasa"]
+    paths: *code-paths
 
 permissions:
   contents: read

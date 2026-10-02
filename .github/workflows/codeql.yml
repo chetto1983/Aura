@@ -11,11 +11,18 @@ name: CodeQL
 #                             (CodeQL extracts the sources directly, no build).
 # Scope for the frontend leg is set in .github/codeql/codeql-config.yml.
 
+# Prose-only changes run nothing (see ci.yml); the weekly schedule still scans everything.
 on:
   push:
     branches: [ "master", "main", "tabula-rasa" ]
+    paths: &code-paths
+      - "**"
+      - "!prd.md"
+      - "!docs/**/*.md"
+      - "docs/deployment/**"
   pull_request:
     branches: [ "master", "main", "tabula-rasa" ]
+    paths: *code-paths
   schedule:
     # Weekly, Monday 03:27 UTC — catches advisories in code that hasn't changed.
     - cron: "27 3 * * 1"
