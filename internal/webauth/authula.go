@@ -59,6 +59,24 @@ const (
 	CSRFHeaderName = "X-AUTHULA-CSRF-TOKEN"
 )
 
+// csrfProtectedRoutes are every state-changing route the enabled plugins register.
+// authula_csrf_test.go walks the registered routes, so an Authula upgrade that adds one
+// fails it until the route is named here.
+var csrfProtectedRoutes = []string{
+	"POST:/sign-out",
+	"POST:/email-password/sign-up",
+	"POST:/email-password/sign-in",
+	"POST:/email-password/send-email-verification",
+	"POST:/email-password/request-password-reset",
+	"POST:/email-password/change-password",
+	"POST:/email-password/request-email-change",
+	"POST:/totp/enable",
+	"POST:/totp/disable",
+	"POST:/totp/verify",
+	"POST:/totp/verify-backup-code",
+	"POST:/totp/generate-backup-codes",
+}
+
 // sessionAbsoluteTTL matches Aura's existing passphrase cookie absolute lifetime
 // (agui.defaultSessionTTL = 12h) so the cutover does not change how long a session
 // survives. It maps to Authula's CookieMaxAge + ExpiresIn.
@@ -140,9 +158,9 @@ func New(cfg Config) (_ *Provider, err error) {
 			SameSite:           "strict",
 			MaxSessionsPerUser: 5,
 		}),
-		// H3 origin defense: the CSRF plugin's Fetch-Metadata layer compares the
-		// request Origin / Sec-Fetch-Site against these trusted origins, on the routes
-		// mapped to "csrf.protect".
+		// H3 origin defense: on the csrf.protect routes, the CSRF plugin's Fetch-Metadata
+		// layer (Go's http.CrossOriginProtection) refuses a cross-site browser request
+		// unless its Origin is one of these.
 		authulaconfig.WithSecurity(authulamodels.SecurityConfig{
 			TrustedOrigins: cfg.TrustedOrigins,
 		}),
@@ -163,8 +181,9 @@ func New(cfg Config) (_ *Provider, err error) {
 		// /totp/enable (2026-09-08) and on /sign-out (2026-10-01, where the cockpit's logout
 		// left the session alive for its 12 h). GET:/me and POST:/sign-out are Authula's
 		// documented core mapping (docs/get-started/basic-usage.mdx). The two other actor
-		// routes, /email-password/send-email-verification and request-email-change, stay
-		// unmapped on purpose: Aura offers neither flow and wires no mailer.
+		// routes, /email-password/send-email-verification and request-email-change, stay off
+		// session.auth on purpose: Aura offers neither flow and wires no mailer. A path in
+		// two mappings gets both plugins (util.ConvertRouteMetadata merges them).
 		authulaconfig.WithRouteMappings([]authulamodels.RouteMapping{
 			{
 				Paths: []string{
@@ -176,6 +195,10 @@ func New(cfg Config) (_ *Provider, err error) {
 					"POST:/totp/generate-backup-codes",
 				},
 				Plugins: []string{sessionplugin.HookIDSessionAuth.String()},
+			},
+			{
+				Paths:   csrfProtectedRoutes,
+				Plugins: []string{csrfplugin.HookIDCSRFProtect.String()},
 			},
 		}),
 	)

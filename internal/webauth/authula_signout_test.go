@@ -22,16 +22,7 @@ func TestAuthulaSignOutRevokesTheSession(t *testing.T) {
 	defer cancel()
 
 	provider, _, _ := newMultiUserProvider(t, ctx)
-	userID := enrollUser(t, ctx, provider, "signout")
-	core := provider.CoreServices()
-	rawToken, err := core.TokenService.Generate()
-	if err != nil {
-		t.Fatalf("token generate: %v", err)
-	}
-	hashed := core.TokenService.Hash(rawToken)
-	if _, err := core.SessionService.Create(ctx, userID, hashed, nil, nil, time.Hour); err != nil {
-		t.Fatalf("session create: %v", err)
-	}
+	rawToken, hashed := mintSession(t, ctx, provider, "signout")
 
 	rec := httptest.NewRecorder()
 	provider.Handler().ServeHTTP(rec, cockpitSignOut(rawToken))
@@ -39,12 +30,28 @@ func TestAuthulaSignOutRevokesTheSession(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("sign-out answered %d %s, want 200", rec.Code, strings.TrimSpace(rec.Body.String()))
 	}
-	if sess, err := core.SessionService.GetByToken(ctx, hashed); err != nil || sess != nil {
+	if sess, err := provider.CoreServices().SessionService.GetByToken(ctx, hashed); err != nil || sess != nil {
 		t.Fatalf("session after sign-out = %+v (err %v), want none", sess, err)
 	}
 	if !clearsCookie(rec.Result().Cookies(), SessionCookieName) {
 		t.Errorf("sign-out did not clear %s; Set-Cookie: %q", SessionCookieName, rec.Header().Values("Set-Cookie"))
 	}
+}
+
+// mintSession enrolls a user and stores a one-hour session for it, returning the raw cookie
+// value and the hash Authula keeps.
+func mintSession(t *testing.T, ctx context.Context, provider *Provider, suffix string) (raw, hashed string) {
+	t.Helper()
+	core := provider.CoreServices()
+	raw, err := core.TokenService.Generate()
+	if err != nil {
+		t.Fatalf("token generate: %v", err)
+	}
+	hashed = core.TokenService.Hash(raw)
+	if _, err := core.SessionService.Create(ctx, enrollUser(t, ctx, provider, suffix), hashed, nil, nil, time.Hour); err != nil {
+		t.Fatalf("session create: %v", err)
+	}
+	return raw, hashed
 }
 
 // cockpitSignOut is the request web/src/shell/useLogoutSession.ts sends: an empty JSON

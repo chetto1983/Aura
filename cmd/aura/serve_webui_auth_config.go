@@ -47,7 +47,7 @@ func newAuthConfigHandler(bootstrapProvider bootstrapAvailabilityProvider) http.
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 
-		token, err := newCSRFToken()
+		token, err := csrfTokenFor(r)
 		if err != nil {
 			http.Error(w, "csrf token", http.StatusInternalServerError)
 			return
@@ -100,8 +100,20 @@ func bootstrapAvailabilityProviderConfigured(provider bootstrapAvailabilityProvi
 	}
 }
 
-func newCSRFToken() (string, error) {
-	var raw [32]byte
+const csrfTokenBytes = 32
+
+// csrfTokenFor keeps the token the browser already holds when it has this handler's shape,
+// and mints one otherwise. Authula compares the CSRF header with the cookie, and the browser
+// keeps only the newest cookie, so a token minted on every call would fail the first of two
+// login tabs. Keeping it is what Authula's own CSRF plugin does (generateCSRFTokenHook); the
+// __Host- prefix stops another origin or a subdomain from planting the cookie.
+func csrfTokenFor(r *http.Request) (string, error) {
+	if c, err := r.Cookie(webauth.CSRFCookieName); err == nil {
+		if raw, err := base64.RawURLEncoding.DecodeString(c.Value); err == nil && len(raw) == csrfTokenBytes {
+			return c.Value, nil
+		}
+	}
+	var raw [csrfTokenBytes]byte
 	if _, err := rand.Read(raw[:]); err != nil {
 		return "", err
 	}

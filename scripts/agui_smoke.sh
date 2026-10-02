@@ -293,7 +293,7 @@ PY
       -H 'Content-Type: application/json' \
       -H "${CSRF_HEADER}: ${CSRF_TOKEN}" \
       -H "Origin: ${BASE}" \
-      -H "Cookie: ${AUTH_COOKIE_HEADER}" \
+      -H "Cookie: ${AUTH_COOKIE_HEADER}; ${CSRF_COOKIE}=${CSRF_TOKEN}" \
       -c "${COOKIE_JAR}" \
       -d "${VERIFY_PAYLOAD}")" || {
       echo "FAIL: POST ${AUTH_BASE_PATH}/totp/verify failed" >&2

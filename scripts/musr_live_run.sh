@@ -441,7 +441,7 @@ VERIFY_B_CODE="$(curl -sS -o "${VERIFY_B_BODY}" -w '%{http_code}' \
   -H 'Content-Type: application/json' \
   -H "${B_CSRF_HEADER}: ${B_CSRF_TOKEN}" \
   -H "Origin: ${BASE}" \
-  -H "Cookie: totp_pending=${B_PENDING_COOKIE}" \
+  -H "Cookie: totp_pending=${B_PENDING_COOKIE}; ${B_CSRF_COOKIE}=${B_CSRF_TOKEN}" \
   -d "${VERIFY_B_PAYLOAD}")"
 if [[ "${VERIFY_B_CODE}" != "200" ]]; then
   echo "FAIL: identity B POST /totp/verify (enrollment) returned HTTP ${VERIFY_B_CODE}" >&2
