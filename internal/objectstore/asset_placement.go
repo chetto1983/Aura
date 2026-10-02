@@ -68,8 +68,10 @@ func folderPrefix(folder AssetFolder) string {
 }
 
 // AssetKey places an uploaded file where its owner can see it and the reconciler can read
-// it: "<folder>/<assetID><.ext>" in the identity's own bucket — media/ for pictures and
-// clips, chat/ for documents (see AssetFolder).
+// it: "<folder>/<assetID><ext>" in the identity's own bucket — media/ for pictures and
+// clips, chat/ for documents (see AssetFolder). assetID is whatever the caller minted for the
+// object: Presign mints a fresh uuid, and the asset row's own id is the database's, so the two
+// differ and an asset id is never read back out of a key.
 //
 // It used to be "identity/<id>/asset/<id>/original", and every part of that has stopped
 // earning its place:
@@ -85,18 +87,31 @@ func folderPrefix(folder AssetFolder) string {
 //     working pipeline look broken.
 //
 // The EXTENSION is carried and the name is NOT: ".pdf" leaks nothing and is exactly what the
-// extractor routes on. The name rides in metadata instead — see PlaceAsset, which is what
-// callers should use.
+// extractor routes on, and the Studio's ".aura-video.json" is what the ingest's matcher skips.
+// The name rides in metadata instead — see PlaceAsset, which is what callers should use.
 func AssetKey(assetID, fileName string, folder AssetFolder) string {
 	return folderPrefix(folder) + assetID + assetExtension(fileName)
 }
 
-// assetExtension returns a lowercase ".ext", or "" when the name has none.
+// StudioProjectSuffix ends the name of a Video Studio project file
+// (web/src/videoStudio/projectStore.ts PROJECT_FILE_EXTENSION). It is the one compound
+// extension a key keeps whole: a project is the editor's state, not a document anyone
+// searches, and the ingest sidecar skips it by path (services/ingest/source.py
+// STUDIO_PROJECT_PATTERN) because the key is all its matcher sees. Like ".pdf", it names a
+// kind of file and never the file.
+const StudioProjectSuffix = ".aura-video.json"
+
+// assetExtension returns the lowercase extension a key keeps: StudioProjectSuffix whole for a
+// Studio project, otherwise the last ".ext", or "" when the name has none.
 //
 // Bounded and character-checked because it is caller-supplied: a chat client or a Telegram
 // message can send any name, and this fragment becomes part of an object key.
 func assetExtension(name string) string {
-	ext := strings.ToLower(path.Ext(baseName(name)))
+	base := strings.ToLower(baseName(name))
+	if strings.HasSuffix(base, StudioProjectSuffix) {
+		return StudioProjectSuffix
+	}
+	ext := path.Ext(base)
 	if len(ext) < 2 || len(ext) > 12 {
 		return ""
 	}

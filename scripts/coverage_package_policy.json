@@ -54,7 +54,7 @@
     "github.com/chetto1983/aura/internal/mediagen": {"mode": "target"},
     "github.com/chetto1983/aura/internal/messagedrafts": {"mode": "target"},
     "github.com/chetto1983/aura/internal/multimodal": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 456, "total_statements": 598},
+    "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 459, "total_statements": 601},
     "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 109, "total_statements": 139},
     "github.com/chetto1983/aura/internal/obs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/onboarding": {"mode": "target"},
