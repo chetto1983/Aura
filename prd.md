@@ -234,6 +234,23 @@ speech call with the chat on Ollama; and the Credit panel's spend reads
 `aura.cache_metrics`, so generation spend is enforced by the key's OpenRouter limit but
 not shown there.
 
+A key counts as present only while the provider still holds it, not while Aura still has a
+row for it. Measured 2026-10-02 on the lab VM, reproducing an operator report: every key of
+the account was deleted on OpenRouter and a new management key saved from the cockpit. The
+reconcile that write runs minted nothing: the person's row in `aura.identity_llm_key` still
+named the deleted key and so counted as a key, and the services key stopped on `the provider
+holds 0 live keys named aura-services`. The deleted keys were gone from the provider's
+roster, not listed as disabled. The reconciler therefore asks the provider: a person's key
+whose `GET /api/v1/keys/{hash}` answers 404 is replaced by a fresh key at the limit its row
+held, and a services key that `GET /api/v1/key` refuses with 401 is replaced by a fresh
+`aura-services` at the services cap. A key the provider still holds, disabled or not, is
+kept. `GET /api/v1/keys` returns the 100 most recent keys and pages with `offset`
+(OpenRouter's management-key guide, read the same day), so the roster is read page by page.
+What this does not prove: the 401 was measured with a key OpenRouter never issued, not with
+a deleted one; a replacement starts with no spend at the provider, so a capped member's
+monthly allowance restarts with it; and when the new management key belongs to another
+account, the keys the old account still holds are replaced here but stay live there.
+
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
 from the fixed, unauthenticated `https://ollama.com/api/tags` endpoint, deduplicating
