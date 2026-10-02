@@ -5772,3 +5772,77 @@ What Plan A lands and later plans may rely on. These are the exact names.
 | Tests and E2E: failing test first, E2E on the lab VM | every task's RED step; Task 8 RED on the VM, GREEN locally before the push, GREEN on the VM |
 | Mutation only in CI | Tasks 1 and 2 add the new modules to `stryker.config.json` and their suites to `vitest.stryker.config.ts`; read after Task 8's push |
 | What this does not prove | Task 0's two lists; Task 9 completes them |
+
+## Close-out (2026-10-02)
+
+Executed subagent-driven (headless `claude -p` implementers and read-only reviewers), commits `69a983f0b..0a2a6a5cf`, all on master and pushed. The final whole-plan review (opus, read-only, over `0372483bb..0a2a6a5cf` without the generated `internal/webui/dist`) answered **Ready to merge: Yes — Critical 0, Important 0, Minor 4**; re-graded by their effect on a user, all four stay Minor, so there was no fix pass. The VM's second boot after the change logged `studio project re-key done moved=0` (`b2e29d2a2`). This section is the record of the execution ledger, which is deleted with the workspace.
+
+### Rulings made during execution
+
+- Setup: Ruling: the plan's literal VM ssh password moved to an untracked file (530e1deec) — operator's rule "don't commit the VM ssh password"; it is still in a46186b19/ee1cac3b8 history, reported to the operator — cost if wrong: none.
+- Setup: Ruling: $W is one shared helper folder in the controller's scratchpad, not each implementer's own — the plan's helpers are identical for every task and Task 8/9 read logs earlier tasks wrote — cost if wrong: an implementer reads the plan's "your own scratchpad" and recreates them; harmless.
+- Pre-flight F1: Ruling: vm-ssh-password exists in the shared $W (controller setup); waitfix.sh sources vm-lib.sh, which returns 1 without it — resolved, no plan change needed for execution — cost if wrong: none.
+- Pre-flight F2: Ruling: Task 9's ⟨c′⟩ = the `candidates:` count Task 8 Step 8 printed — carried into Task 9's dispatch — cost if wrong: one PRD number to correct.
+- Pre-flight F3: Ruling: Task 0's two spec notes are phrased as rules ("is to be moved once, at boot"; "the pre-decode is to decode the bytes VideoFlow's cache already holds and fetch nothing") — PRD-first: post-fix states wait for Task 9 — cost if wrong: none.
+- Pre-flight F4: Ruling: Global Constraint "CI green before the lab-VM E2E" means before the GREEN run (Task 8 Step 9); the RED run on the VM before the push stands (Plan C precedent) — cost if wrong: none; RED changes nothing on the VM.
+- Pre-flight F5: Ruling: Task 3 RED is 6 failures = 5 text + the cancel case ("four" at plan 3056 is a typo) — cost if wrong: none.
+- Pre-flight F6: Ruling: Task 7's wiring test uses the existing `captureLog(t)` (cmd/aura/serve_sandbox_preflight_test.go:123-130) instead of an inline slog capture — CLAUDE.md REUSABLE CODE — cost if wrong: one expected length to adjust.
+- Pre-flight F7: Ruling: Task 5 deletes `test_the_audit_reports_the_objects_with_no_row` (it computes a set difference on two literals and calls no Aura code), justified in the commit body; counts become 8 / 35 passed — cost if wrong: one empty test lost.
+- Pre-flight F8: Ruling: Task 7's `readAtMost` drops the `+1` (the enforced cap is the row's size_bytes; an over-long object is truncated and refused by the content check) — cost if wrong: a refusal logged as "not a project" instead of "too large".
+- Pre-flight F9: Ruling: wording only — `captureWarnings` delegates to a new `captureLogs` (three callers keep it) — cost if wrong: none.
+- Pre-flight F10: Ruling: the boot pass must never hold the boot indefinitely: Task 7 bounds it (a deadline inside `rekeyStudioProjects`, or the codebase's existing pattern for boot passes if it has one), with a test that a hung store gives the warning and the boot continues; the plan's "runs once" means "once per boot; a refused candidate is re-read each boot" — cost if wrong: a bounded pass that times out on a huge library (logged, retried next boot).
+- Task 1: Ruling: extract one shared source-clock helper used by both withKeyframes and withVolumes (and volumeCurve's mapping if it is the same expression), touching videoflow_audio.ts outside the task's file list — CLAUDE.md "REUSABLE CODE"; the spec is silent — cost if wrong: one small refactor in a mutated module.
+- Task 2: Ruling: fix both — I1 add the test the reviewer describes (first decode held open, abort, release: decoded.calls 1, exportOptions 0, destroyed 1), RED by deleting the check; I2 CLAUDE.md "fix on touch" for a file this task rewrote whole: withLocalFonts on the sound export's renderer plus an assertion that no stock font request is made — cost if wrong: one more test and one line in a mutated module.
+- Final: Ruling: Setup's VM-password ruling stands as a move, but its "cost if wrong: none" was wrong — the password is in pushed history (a46186b19, ee1cac3b8); the remedy is rotating it on the VM, which is the operator's call — cost if wrong: a LAN lab VM's ssh password readable from the public repo.
+- Final: Ruling: still-image clips ignoring opacity/fade/flip/filters stands — predates Plan A, editor and export agree, stills fade through transitions — cost if wrong: a still's static opacity is lost on export as on the Stage.
+- Final: Ruling: a video whose own audio will not decode exporting silent stands — spec ruling 6, the Stage is silent too — cost if wrong: a silent export the user did not expect.
+- Final: Ruling: edge publishing before CI stands for Plan A — release pipeline, outside the plan; reported to the operator as a follow-up — cost if wrong: a data-changing boot pass reaches the VM before CI's verdict again.
+- Final: Ruling: the re-keyed object keeping its old file name in S3 metadata and its document_id derived from the old key stands — every Move/Rename behaves so, nothing reads either for a skipped project — cost if wrong: a stale name in object metadata.
+- Final: Ruling: file-manager keys keep their case (chat/Reel.AURA-VIDEO.json is indexed) stands — by design (Review Focus 5); the Studio writes lowercase — cost if wrong: a renamed project in capitals is indexed.
+- Final: Ruling: any *.aura-video.json from any door being skipped stands — spec design — cost if wrong: a non-Studio file with that suffix is not searchable.
+- Final: Ruling: the Relocate/Delete split in transfer stays a follow-up — affects every caller, already deferred — cost if wrong: a cut between them leaves an old object indexed.
+- Final: Ruling: boot-pass cost on very large libraries stands — keyset paging is index-served and the pass has a 1-minute deadline — cost if wrong: the oldest rows go unreached on a huge library (retried next boot).
+- Final: Ruling: Cancel during media load waiting for VideoFlow's fetches stands — unchanged from before Plan A — cost if wrong: a slow cancel during load.
+- Final: Ruling: decodeHeld copying each source's blob stands — same memory as the old second fetch — cost if wrong: none new.
+
+### Deferred minors, open
+
+Inputs for Plans B and C are marked `→ Plan B contract`, `→ Plan B/C contract` and `→ Plan C E2E`.
+
+- Task 1: minor (deferred): isKeyframes' strictness (empty array, null element, missing time/value, non-number time) has no test; likely surviving mutants — read the critical-mutation artifact after Task 8's push.
+- Task 1: minor (deferred): no test that existing `animations` entries survive withKeyframes (`...layer.animations`).
+- Task 1: minor (deferred): runtimeLayer rebuilds the registry per opacityAt call (test only).
+- Task 1: minor (deferred): the new sourceClock test's RED was only an unresolved import (written with the module).
+- Task 2: minor (deferred): `failure` may read `undecodable` when another page consumer re-acquires a failed URL mid-load (shared loadedMedia.has) — doc sentence.
+- Task 2: minor (deferred): the `?? source` asset-id fallback (videoflow_media.ts:159) untested; no current producer reaches it.
+- Task 2: minor (deferred): `Pick<AssetSource,'assetUrl'>` spelled three times in videoflow_media.ts while videoflow.ts exports MediaUrls.
+- Task 3: minor (deferred): a hung getAsset keeps the export panel in its running state until the read settles (brief-mandated order; no request timeout checked).
+- Task 3: minor (deferred): the first abort check (`controller.signal.aborted ? undefined :`, VideoStudio_export.tsx:164) is not pinned by a test.
+- Task 4: minor (deferred): the older `presigns a .json document` test asserts only /\.json$/ (the new test pins the exact name).
+- Task 5: minor (deferred): fake_s3.py:41 line ~108 chars (carried verbatim).
+- Task 6: minor (deferred): AssetKey's doc repeats the literal ".aura-video.json" instead of naming StudioProjectSuffix.
+- Task 6: minor (deferred): the parity test reads ../../web and ../../services from disk (prefix_parity_test.go precedent).
+- Task 7: minor (deferred, follow-up candidate): transfer's Relocate and old-object Delete share one ctx (filemanager_ops.go:169/174); a cut between them leaves the old object indexed, never retried — fix once in transfer (delete on context.WithoutCancel with a short bound) for every caller; the implementer's concern 1, confirmed.
+- Task 7: minor (deferred): the "tried again on the next run" comments (studio_project_rekey.go:54-55, wiring.go:35) need the transfer-split exception; moved=N undercounts that case.
+- Task 7: minor (deferred): the timeout comment (wiring.go:12-13) reasons from 2 candidates, while the cost is paging every document of every identity, newest first; an overrun would leave the oldest rows (where old projects sit) unreached.
+- Task 7: minor (deferred): the store is resolved twice per candidate (rekey :113 and transfer :128).
+- Task 7: minor (deferred): no test makes transfer fail (pins the `remove chat/…` WARN Task 9 reads).
+- Task 7: minor (deferred): Go's JSON field match is case-insensitive (within the brief's accepted "may accept what the Studio refuses").
+- Task 8: minor (deferred, final review): surviving mutants — videoflow_media.ts L85-86 (finally emptied / loadedMedia.release removed: nothing tests a source is released after the export), L195/L198 (abort-listener wiring); videoflow_keyframes.ts L36-43 (every→some, frame!==null→true).
+- Task 8: minor (deferred): "nothing downloads" is checked as "the sentence came first" (Promise.race), plan-mandated.
+- Task 8: minor (deferred): twinFrameDiff repeats the max-abs-channel expression (isInk/moved), moved verbatim.
+- Task 8: minor (deferred): frames.ts load wait has no timeout of its own.
+- Task 8: minor (deferred): Dockerfile comment says "two suites"; five test files import repo-root fixtures.
+- Task 9: minor (deferred): plan line citations (projectStore.ts:409, spec :276) will drift again (plan-mandated).
+- Final: minor (deferred): a project row whose bytes are gone logs the false WARN "re-key left projects in the index" at every boot (studio_project_rekey.go:124-127, wiring.go:44); NotFound should be a refusal at INFO, and the test should use a store whose Get fails.
+- Final: minor (deferred, plan-level → Plan B/C contract): the re-key is a permanent per-boot pass with no stated exit, and its rule also moves a project-shaped .json attached to a new chat after Plan A; write a retirement condition (e.g. delete once appliances report moved=0 on a post-Plan-A image).
+- Final: minor (deferred → Plan C E2E): the frame-level E2E measures the clip fadeOut boolean, which no cockpit control writes any more (agent-written and older projects only); the title fade and fade-to-black/white junction are proven only on runtime layers in jsdom — add a twin-frame title-fade check.
+- Final: minor (deferred → Plan B contract): a sound over a video with no audio track stops the export with "could not read <file>" when hasAudio is undefined; unreachable from the cockpit (probeVideo always sets hasAudio, present since 8f88a61d4), reachable from hand- or agent-written projects: Plan B's tools must fill hasAudio from ffprobe and refuse it at edit time like commands_audio.ts:136,171.
+- Final: minor (deferred): addition to Task 3's hung-getAsset minor — Cancel cannot end that wait either (run's finally awaits failureText, VideoStudio_export.tsx:100); race getAsset against the signal.
+
+### Deferred minors, closed
+
+- Pre-flight F11 (stale plan line numbers): `0a2a6a5cf`.
+- Task 0's three M1 wording minors (perimeter bullet, k=0/o=0 wording, re-wrap): completed by Task 9's PRD paragraph, `6c21462bc`.
+- Task 9's "the only one so far": the second boot measured and recorded, `b2e29d2a2`.
+- Task 9's "gave a local run the same six numbers": moved into the measured paragraph, `b2e29d2a2`.
