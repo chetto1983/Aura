@@ -302,6 +302,27 @@ These measurements establish browser navigation, streaming and callback placemen
 they do not establish human consent, issued credentials, account entitlement or real
 Responses inference. Those remain required deployed E2E acceptance measurements.
 
+The same appliance subsequently completed owner sign-in: authenticated status returned
+`connected=true`, `plan_enabled=true`, `approved`, and the account catalogue returned
+five visible models. With GPT-5.6-Sol active, Aura still returned undetected reasoning
+capabilities and only Auto/Off. The official account catalogue measured on that VM
+publishes `supported_reasoning_levels` objects: low, medium, high, xhigh and max for
+that model, default low, and reasoning summaries enabled. Its additional ultra token
+is outside Aura's current effort vocabulary and is excluded until separately supported.
+The existing allowlist, composer capability source, fixed/adaptive policy and Responses
+SDK must carry the selected model's advertised levels, including after daemon restart;
+no inherited provider effort set or fabricated levels may substitute for that catalogue.
+This measures catalogue metadata and granted access, not completed inference or a
+streamed reasoning summary; those remain separate deployed acceptance checks.
+
+The pinned Playwright 1.63.0 API request path omits Secure CSRF cookies on HTTP
+127.0.0.1. Measured with real Authula v1.46.0 and a disposable Postgres fixture:
+HTTP sign-in returned 403 `missing csrf cookie`, while the existing TLS proxy returned
+sign-in 200 and authenticated ChatGPT status 200, with Secure/HttpOnly cookies intact.
+The web CI gate therefore runs its existing complete browser matrix through that
+HTTPS proxy. Production authentication and the deployment Compose remain unchanged.
+This establishes the login transport, not a passing full browser suite.
+
 ## 7. Conversations, compaction and steering
 
 Conversation writes and aggregates are atomic and owner-scoped. Branch history,
