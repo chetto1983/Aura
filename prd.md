@@ -708,17 +708,17 @@ Measured after the fix on 2026-10-02 on the lab VM (image `b31109815`,
 7.8 s now keeps 0.4040 of the level, where a control clip drawn at a static 0.4 keeps 0.3980 and
 the fade is due 0.40 (the image before the fix kept 0.9994); the frame before the fade keeps
 0.9993. The export now fetches a source the Stage already holds 0 times, where the image before
-the fix fetched it once. When a Playwright stub answers 404 for a source's bytes, the export now
-stops with the sentence that names the source's file and downloads nothing, and so does a source
-whose bytes the renderer cannot read (`unplayable.mp4`).
+the fix fetched it once. A local run of the same spec gave the same six numbers: the three levels,
+the due level, the frame time and the fetch count. When a Playwright stub answers 404 for a
+source's bytes, the export now stops with the sentence that names the source's file and downloads
+nothing, and so does a source whose bytes the renderer cannot read (`unplayable.mp4`).
 
 This does not establish:
 - that title fades and the fade-to-black and fade-to-white washes are lost on an exported frame:
   they take the same path, but that was computed on the renderer's own runtime layers in a unit
   test, not measured on a frame;
 - a clip's fade-in, or a fade at a speed other than 1×, on an exported frame: the E2E measured one
-  muted fade-out at 1×, encoded and decoded by one Chromium, which gave a local run the same six
-  numbers;
+  muted fade-out at 1×, encoded and decoded by one Chromium;
 - the HTTP status of a failed fetch: VideoFlow keeps it in its console warning and the page never
   sees it;
 - what an expired presigned URL or a 403 does: S1.4 exercised only a missing CORS rule, and the
@@ -786,11 +786,12 @@ its audit lists keys without reading a single object's metadata (`services/inges
   is moved. Saving again is no remedy: every save is a new asset;
 - no code is to read an asset id out of an object key.
 
-Measured after the fix on 2026-10-02 on the lab VM (image `b31109815`): at its start on that image,
-the only one so far, the daemon moved 2 of the 2 candidates and left none; the index held both of
-their old keys before, and now holds none of their keys, old or new. A project saved through the
-cockpit's upload door as `plan-a-probe.aura-video.json` now gets the key
-`chat/3bd55ef5-2c38-48cf-a1a0-85727bc727df.aura-video.json` while its asset id is
+Measured after the fix on 2026-10-02 on the lab VM (image `b31109815`): at its first start on that
+image the daemon moved 2 of the 2 candidates and left none; the index held both of their old keys
+before, and now holds none of their keys, old or new. Its next start, on image `851f32dec` at 09:32
+UTC, met no candidate: `studio project re-key done moved=0`, with no row moved or left where it
+is. A project saved through the cockpit's upload door as `plan-a-probe.aura-video.json` now gets
+the key `chat/3bd55ef5-2c38-48cf-a1a0-85727bc727df.aura-video.json` while its asset id is
 `5aed9fc8-73a0-4117-b60b-6dc89c3f89b4`, and two ingest cycles later the index holds no row for it,
 while the operator's `plan-a-control.json` saved beside it is indexed; both were deleted afterwards,
 and two cycles later neither their rows nor their keys were left.
@@ -798,9 +799,9 @@ and two cycles later neither their rows nor their keys were left.
 This does not establish:
 - that the boot pass would refuse every JSON an operator saved that is not a project: on the VM it
   met the 2 candidates above, and the other shapes were shown by the unit tests;
-- that a second boot on the VM moves nothing: the daemon has started once on this image; the moved
-  rows no longer pass the row rule (0 candidates, read afterwards), and a unit test runs the pass
-  twice;
+- that a later boot finds nothing to move: the second boot met an index with no pre-change save
+  left, so it shows the moved rows no longer pass the row rule, not how the pass treats a `.json`
+  saved after the change by a cockpit tab still running the old bundle;
 - that the counts hold beyond their sample: before the fix they are 2 rows of one identity on one
   VM, both named `project.json`, and after it one project and one control the probe saved;
 - anything about a project an operator renamed in the file manager before the change: Rename
