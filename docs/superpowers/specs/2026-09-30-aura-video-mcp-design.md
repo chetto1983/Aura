@@ -150,7 +150,7 @@ emulated and reports `x64`, so such a check would never fire (Plan B, Q4).*
 3. **Job engine**: one job at a time, in a FIFO queue.
    - A job launches its own headless shell and closes it at the end, so the only thing resident at
      rest is Node.
-   - Launch flags come from renderer-server's (`ServerRenderer.js:100-110`), including
+   - Launch flags come from renderer-server's (`ServerRenderer.js:98-129`), including
      `--js-flags=--max-old-space-size=4096`.
    - The page is **our export page**: `exportProject`, `withLocalFonts`, the fonts served locally,
      and the two analyses.
@@ -232,7 +232,8 @@ timeout, `internal/agent/mcptools/timeout.go:13`). **Everything heavy runs in a 
 - overlays and items: `add_overlay`, `set_property`, `remove_item`;
 - audio: `add_audio`, `extract_audio`, `move_audio`, `trim_audio`, `split_audio`,
   `set_audio_properties` (volume, fades, speed, ducking, `denoise`), `set_envelope`;
-- **`add_speech`** {text, voice, language, where}: Aura's TTS through the internal API. The voice
+- **`add_speech`** {text, voice, language, time} (*corrected 2026-10-02: `time`, the field
+  `add_audio` already takes, `commands_audio.ts:121`*): Aura's TTS through the internal API. The voice
   becomes an audio asset and then an `add_audio`.
 
 Adding a source probes it with ffprobe for duration, size and whether it has audio. HEVC is refused:
@@ -318,6 +319,10 @@ cancel (5) are gone; delivery is the status call's.*
   - there is no internet egress.
 - **Gateway.** No approval gate: edits add versions, and render and cancel create or stop jobs;
   nothing is destroyed. Under the current policy only destructive actions reach the gate.
+  *Amended 2026-10-02:* this holds only if each write tool says so. The bridge grades a tool with
+  no `destructiveHint`, or a non-idempotent write that does not declare itself closed-world, as
+  destructive (`internal/agent/mcptools/bridge_risk.go:225-234`, `:265-292`). So the sidecar's
+  write tools carry explicit annotations: not destructive, closed-world.
 
 ## Fixes to the Studio export (the cockpit benefits too)
 
@@ -384,12 +389,18 @@ Each fix has a failing test first:
      film in the chat when it is under the bridge's cap, and in the library otherwise;
    - the downloaded MP4 gets the same checks.
 3. **Aura on Telegram (CDP harness):** the same request; *amended 2026-10-02:* a native video when the
-   film comes through under the bridge's 25 MiB cap, and the library otherwise.
+   film comes through under the bridge's 25 MiB cap, and the library otherwise. Measured by Plan B
+   (Task 11): a 1080p reel fits under 25 MiB up to about 54 s and a 60 s 720p reel is about 15 MB,
+   so the native-video run uses a reel inside those bounds.
 4. **Editing an existing project from chat:**
    - "accorcia l'intro di 2 s e abbassa la musica";
    - a new version, a new render, and the difference measured.
 5. **A job that must fail:** a source deleted after the project was made. The job fails naming it,
    and no black video is produced.
+   *Amended 2026-10-02:* under the normal-MCP shape a render reads every source it plays at its
+   start, so a source deleted before the start makes `video_render_start` refuse, naming it. A job
+   still fails, naming the source, when the source is deleted after the start or its bytes are
+   broken. The E2E covers both.
 
 Assets created only for tests are deleted from the operator's library afterwards. Nothing paid is
 called (no `video_generate`) unless the operator asks.
