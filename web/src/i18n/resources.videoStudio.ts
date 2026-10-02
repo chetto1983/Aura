@@ -206,6 +206,10 @@ export const videoStudioEn = {
       percent: 'Exporting… {{percent}}%',
       cancel: 'Cancel',
       failed: 'The export failed: {{reason}}',
+      sourceUnreachable:
+        'The export stopped: {{source}} could not be fetched, so no file was written.',
+      sourceUndecodable:
+        'The export stopped: the renderer could not read {{source}}, so no file was written.',
       empty: 'There is nothing to export yet.',
     },
     save: {
@@ -413,6 +417,10 @@ export const videoStudioIt = {
       percent: 'Esportazione… {{percent}}%',
       cancel: 'Annulla',
       failed: 'Esportazione non riuscita: {{reason}}',
+      sourceUnreachable:
+        'Esportazione interrotta: non è stato possibile recuperare {{source}}, quindi non è stato scritto alcun file.',
+      sourceUndecodable:
+        'Esportazione interrotta: il renderer non è riuscito a leggere {{source}}, quindi non è stato scritto alcun file.',
       empty: "Non c'è ancora niente da esportare.",
     },
     save: {

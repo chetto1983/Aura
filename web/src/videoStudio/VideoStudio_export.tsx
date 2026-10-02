@@ -1,9 +1,12 @@
+import type { TFunction } from 'i18next';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getAsset } from '../chat/attachments/api';
 import { downloadBlob } from '../mediaEdit/download';
 import type { VideoProject } from './project';
 import { exportProject, type MediaUrls } from './videoflow';
 import { exportProjectAudio, NoProjectAudioError } from './videoflow_exportAudio';
+import { ExportSourceError } from './videoflow_media';
 import { Button } from '@/components/ui/button';
 
 // VideoStudio_export.tsx — the export, its bar and its cancel, kept whole in one file because
@@ -27,8 +30,35 @@ interface ExportPanelProps {
   readonly refusal?: string | undefined;
 }
 
-function reason(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+/**
+ * What a source is called where the operator sees it: its asset row's file name, the name the
+ * library lists. The project file holds only the asset id, so the row is read here, once, after
+ * the failure — a source added since the project loaded, or a clip's cleaned copy, has a row the
+ * load never read. A row that does not answer, or answers with no name, leaves the id: a source
+ * whose bytes are gone may have lost its row too.
+ */
+async function sourceName(assetId: string): Promise<string> {
+  try {
+    const name = (await getAsset(assetId)).file_name;
+    return name === '' ? assetId : name;
+  } catch {
+    return assetId;
+  }
+}
+
+/** What the operator reads when an export fails: the source that stopped it, by name, or the
+ *  sound export's empty mix, or the error's own reason. */
+async function failureText(t: TFunction, error: unknown): Promise<string> {
+  if (error instanceof ExportSourceError) {
+    const source = await sourceName(error.assetId);
+    return error.failure === 'unreachable'
+      ? t('videoStudio.export.sourceUnreachable', { source })
+      : t('videoStudio.export.sourceUndecodable', { source });
+  }
+  if (error instanceof NoProjectAudioError) return t('videoStudio.export.noAudio');
+  return t('videoStudio.export.failed', {
+    reason: error instanceof Error ? error.message : String(error),
+  });
 }
 
 export function ExportPanel({ project, fileName, audioFileName, urls, refusal }: ExportPanelProps) {
@@ -65,14 +95,10 @@ export function ExportPanel({ project, fileName, audioFileName, urls, refusal }:
         downloadBlob(blob, audioFileName);
       }
     } catch (error) {
-      // An abort is the operator's own decision, not a failure to report back to them.
-      if (!controller.signal.aborted) {
-        setFailure(
-          error instanceof NoProjectAudioError
-            ? t('videoStudio.export.noAudio')
-            : t('videoStudio.export.failed', { reason: reason(error) }),
-        );
-      }
+      // An abort is the operator's own decision, not a failure to report back to them — and it
+      // can land while the failing source's name is read, so it is asked again after.
+      const text = controller.signal.aborted ? undefined : await failureText(t, error);
+      if (text !== undefined && !controller.signal.aborted) setFailure(text);
     } finally {
       running.current = undefined;
       setPercent(undefined);
