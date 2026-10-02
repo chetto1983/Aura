@@ -29,17 +29,58 @@ It proposes the acceptance chain this design adopts:
 | Question | Decision |
 |---|---|
 | What must pass end to end | **Both, chat first.** Primary: from chat or Telegram, "make me a video with these clips and this music, lower the music under the voice". Aura builds a Studio project, renders it on the server, and delivers a downloadable card; the project also opens in the Studio. Secondary: the same tools edit an existing project. |
-| How a render waits | **Background job**, the `video_generate` pattern: the tool returns straight away with a progress card, and Aura wakes the conversation when the MP4 is ready. Cancellable. |
+| How a render waits | **Background job**, the `video_generate` pattern: the tool returns straight away with a progress card, and Aura wakes the conversation when the MP4 is ready. Cancellable. *Superseded 2026-10-02: no wake; see §"Amended 2026-10-02".* |
 | Sources | **The identity's library assets only.** The sidecar never downloads an arbitrary URL. |
 | Tool scope | **Full Studio parity**, ducking (speech detection) and noise reduction included. |
 | Telegram | **As today**: native video up to 50 MB, above that "⚠️ Il video è disponibile nel cockpit." (`internal/channels/telegram/artifact.go:33,143-149`). |
 | Architecture | **A central sidecar**, a Node container, MCP-over-HTTP with Aura's OAuth. Not an MCP in each identity's box. |
 | Studio export bugs the spikes found | **Fixed in this sub-project**: the sidecar renders with the same export page. |
-| Who owns a render job | **Aura**, for its own conversations (native tools, job row, watcher, wake). The sidecar is the engine. |
+| Who owns a render job | **Aura**, for its own conversations (native tools, job row, watcher, wake). The sidecar is the engine. *Superseded 2026-10-02: the sidecar owns every job; see §"Amended 2026-10-02".* |
 | E2E | **Aura's own Instagram Reels.** Claude mounts the MCP in Claude Code as `claude@aura.local` and makes them; Aura makes one from chat and from Telegram too. |
-| Render in the MCP | **Yes, for external clients too.** Aura hides the MCP's render tools from its model and keeps its native wrapper. |
+| Render in the MCP | **Yes, for external clients too.** Aura hides the MCP's render tools from its model and keeps its native wrapper. *Superseded 2026-10-02: nothing hidden, no native wrapper.* |
 | Project versions | **Every version kept**, as the Studio does today. Saved projects are left out of document indexing. |
 | Music in the reels | **Synthetic**, generated procedurally, like the Plan A spikes. |
+
+## Amended 2026-10-02: the sidecar mounts as a normal MCP
+
+The operator on 2026-10-02, on what Aura's Go side has to build: *"si monta come un normale MCP"*.
+Offered three shapes, they chose the one that keeps only the internal API. This section supersedes
+every part of this document that gives Aura's side more than that, and each of those places points
+here.
+
+**Aura's side is now three things:**
+- the recipe `video` in the catalog, next to `calendar` and `whatsapp`, which makes it a first-party
+  sidecar whose grant Aura mints and renews (`cmd/aura/mcp_first_party_grants.go`);
+- the Compose service `aura-video-mcp`;
+- the internal API's four operations (§Security), unchanged.
+
+**Gone:**
+- the `aura.render_jobs` table and `internal/renderjobs` (store, client, watcher);
+- the native tools `video_render` and `video_render_cancel`;
+- the completion route that woke the conversation;
+- the bridge's hidden tool set.
+
+`video_render_start`, `video_render_status` and `video_render_cancel` are ordinary MCP tools. Aura's
+model sees them exactly as an external client does, so every client has one delivery path.
+
+**What this changes** (read in the code on 2026-10-02):
+1. **No wake and no progress card.** A render answers with a job id and the turn goes on. Aura
+   learns that a film is ready only by calling `video_render_status`. One MCP call is bounded at
+   60 s (`internal/agent/mcptools/timeout.go:13`); a 60 s film rendered in about 113 s (S2).
+2. **The caller's token can expire during a render.**
+   - Aura's access tokens last 15 minutes, and without the native wrapper nothing mints §Jobs 1's
+     90-minute job token.
+   - The upload URL does not bridge the gap: a presign lasts 600 s (`AURA_ASSET_PRESIGN_TTL_SEC`).
+   - A render that finishes after its token expired must not be lost. The checked film is kept for a
+     bounded time, which the plan fixes, and the identity's next tool call saves it. A film nobody
+     claims in time is discarded, and the failure says why.
+3. **A film reaches the chat only under the bridge's cap.** The bridge writes a file a tool result
+   carries into the turn's workspace, up to 25 MiB per file and 50 MiB per call
+   (`internal/mcp/file.go:20-22`).
+   - A finished status therefore carries the film as a `resource_link` when it fits, and the model
+     hands it to `send_file`, on the web and on Telegram.
+   - A larger film is reached through the library and the Studio, and the status says so.
+   - Telegram's native video therefore stops at 25 MiB on this path, not 50 MB.
 
 ## Measured before designing (spikes, `spikes/video-mcp-render/FINDINGS.md`, bd3ac9243 + 234302bbf)
 
@@ -127,6 +168,9 @@ measures otherwise.
 
 ### Aura's side (Go)
 
+*Amended 2026-10-02 (§"Amended 2026-10-02"): only the recipe, the Compose service and the internal
+API remain. The hidden tool set, render jobs, native tools and completion route below are gone.*
+
 - **Recipe** `video` in `internal/mcp/manager/catalog.go`, next to `calendar` and `whatsapp`:
   streamable HTTP, trusted recipe, tools deferred.
   - The recipe declares a **hidden tool set**, `video_render_start`, `video_render_status` and
@@ -204,6 +248,10 @@ It saves them as a new version, the way the Studio records an automatic analysis
 (`History.annotate`, plan C ruling). A later render reuses what is saved.
 
 ## Jobs and delivery
+
+*Amended 2026-10-02 (§"Amended 2026-10-02"): every client, Aura included, submits through
+`video_render_start` under its own token. Supervision (3), the wake and the card (4) and the native
+cancel (5) are gone; delivery is the status call's.*
 
 1. **Start.**
    - From Aura, `video_render` writes the row (identity, conversation, project, quality, status
@@ -296,7 +344,8 @@ Each fix has a failing test first:
 - **Sidecar integration in CI:** a real render in the image (headless shell + ffmpeg) on synthetic
   fixtures, asserting H.264 High, AAC 48 kHz stereo, faststart, no edit list, 1080×1920 at 30 fps and
   the duration. Under `$CI` it fails if anything is missing; it never skips.
-- **Aura (Go):**
+- **Aura (Go)** *(amended 2026-10-02: the internal API and the recipe only; the store, watcher,
+  native tools, completion route and hidden tool set are gone)*:
   - the internal API: audience, identity, "not found" semantics;
   - the `render_jobs` store (db_integration);
   - the watcher against a fake sidecar;
@@ -328,7 +377,8 @@ Each fix has a failing test first:
    The reels stay in Claude's library for the operator to judge.
 2. **Aura from chat, with the operator's login:**
    - "fammi un reel di Aura con queste clip e questa musica, abbassa la musica sotto la voce";
-   - the job card with progress, the wake, and the card with the download;
+   - *amended 2026-10-02:* Aura starts the render and reports the job; a later status delivers the
+     film in the chat when it is under the bridge's cap, and in the library otherwise;
    - the downloaded MP4 gets the same checks.
 3. **Aura on Telegram (CDP harness):** the same request; a native video if ≤ 50 MB, otherwise the
    cockpit notice.
@@ -363,4 +413,5 @@ called (no `video_generate`) unless the operator asks.
   credential that carries the identity. The alternative, a storage key in the sidecar, would bypass
   asset ownership, and was rejected.
 - Hiding the MCP's render tools from Aura's model, rather than teaching the bridge to track jobs,
-  keeps one delivery path per client.
+  keeps one delivery path per client. *Superseded 2026-10-02: nothing is hidden, and Aura uses the
+  MCP's render tools like any client (§"Amended 2026-10-02").*
