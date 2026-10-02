@@ -12,10 +12,12 @@ COPY web/package.json web/package-lock.json ./
 COPY web/patches ./patches
 RUN npm ci
 COPY web/ ./
-# The web TypeScript build includes src/__tests__; sseAdapter tests import the
-# captured AG-UI fixture from the repo root. Copy only that fixture into the path
-# the relative import resolves to inside this stage.
+# The web TypeScript build includes src/__tests__, and two suites import a fixture
+# from the repo root: sseAdapter the captured AG-UI stream, projectStore the Studio
+# project the Go re-key check also reads. Copy only those fixtures into the paths
+# the relative imports resolve to inside this stage.
 COPY internal/agui/testdata/golden-events.json /internal/agui/testdata/golden-events.json
+COPY internal/assets/testdata/studio-project.json /internal/assets/testdata/studio-project.json
 RUN npm run build
 
 # Keep in lockstep with the garage service pin in compose.yaml — the bootstrap
