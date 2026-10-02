@@ -12,7 +12,12 @@
     "mediabunny": "1.58.1",
     "playwright": "1.62.1"
   },
+  "overrides": {
+    "@videoflow/renderer-server": {
+      "esbuild": "$esbuild"
+    }
+  },
   "allowScripts": {
-    "esbuild@0.24.2": true
+    "esbuild@0.28.1": true
   }
 }
