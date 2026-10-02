@@ -77,6 +77,55 @@ function renderShell() {
   );
 }
 
+// The shell beside a /login route, so a test can see where Sign out leads.
+function renderShellWithLogin() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={['/']}>
+        <Routes>
+          <Route path="/" element={<AppShell />} />
+          <Route path="/login" element={<div>login page</div>} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+// fetch for a shell whose provider is Authula: each POST to /auth/sign-out is recorded and
+// gets `answer()`.
+function stubAuthulaSignOut(answer: () => Response): RequestInit[] {
+  const signOuts: RequestInit[] = [];
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      if (url === '/api/auth/config') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              provider: 'authula',
+              auth_base_path: '/auth',
+              csrf_header_name: 'X-AUTHULA-CSRF-TOKEN',
+              csrf_token: 'csrf-token',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      if (url === '/auth/sign-out') {
+        signOuts.push(init ?? {});
+        return Promise.resolve(answer());
+      }
+      if (url.includes('/api/conversations')) {
+        return Promise.resolve(new Response('[]', { status: 200 }));
+      }
+      return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
+    }),
+  );
+  return signOuts;
+}
+
 describe('AppShell', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -352,17 +401,7 @@ describe('AppShell', () => {
         return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
       }),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/']}>
-          <Routes>
-            <Route path="/" element={<AppShell />} />
-            <Route path="/login" element={<div>login page</div>} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    renderShellWithLogin();
 
     const signOut = screen.getByRole('button', { name: 'Sign out' });
     expect(signOut.getAttribute('data-slot')).toBe('button');
@@ -376,53 +415,44 @@ describe('AppShell', () => {
   });
 
   it('uses the Authula sign-out endpoint with its CSRF token when configured', async () => {
-    let signOut: RequestInit | undefined;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (url === '/api/auth/config') {
-          return Promise.resolve(
-            new Response(
-              JSON.stringify({
-                provider: 'authula',
-                auth_base_path: '/auth',
-                csrf_header_name: 'X-AUTHULA-CSRF-TOKEN',
-                csrf_token: 'csrf-token',
-              }),
-              { status: 200, headers: { 'Content-Type': 'application/json' } },
-            ),
-          );
-        }
-        if (url === '/auth/sign-out') {
-          signOut = init;
-          return Promise.resolve(new Response('{"message":"signed out"}', { status: 200 }));
-        }
-        if (url.includes('/api/conversations')) {
-          return Promise.resolve(new Response('[]', { status: 200 }));
-        }
-        return Promise.resolve(new Response('{"ok":true,"ready":true,"deps":{}}', { status: 200 }));
-      }),
+    const signOuts = stubAuthulaSignOut(
+      () => new Response('{"message":"signed out"}', { status: 200 }),
     );
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <MemoryRouter initialEntries={['/']}>
-          <Routes>
-            <Route path="/" element={<AppShell />} />
-            <Route path="/login" element={<div>login page</div>} />
-          </Routes>
-        </MemoryRouter>
-      </QueryClientProvider>,
-    );
+    renderShellWithLogin();
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
 
     await waitFor(() => {
-      expect(signOut?.method).toBe('POST');
-      expect(signOut?.credentials).toBe('same-origin');
-      expect(signOut?.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
+      expect(signOuts[0]?.method).toBe('POST');
+      expect(signOuts[0]?.credentials).toBe('same-origin');
+      expect(signOuts[0]?.headers).toMatchObject({ 'X-AUTHULA-CSRF-TOKEN': 'csrf-token' });
+      expect(screen.getByText('login page')).toBeTruthy();
+    });
+  });
+
+  it('stays in the cockpit when the server does not end the session', async () => {
+    const signOuts = stubAuthulaSignOut(
+      () => new Response('{"message":"invalid csrf token"}', { status: 403 }),
+    );
+    renderShellWithLogin();
+    const signOut = screen.getByRole('button', { name: 'Sign out' });
+
+    fireEvent.click(signOut);
+
+    await waitFor(() => {
+      expect(signOuts).toHaveLength(1);
+      expect(signOut.hasAttribute('disabled')).toBe(false);
+    });
+    expect(screen.queryByText('login page')).toBe(null);
+  });
+
+  it('goes to the login page when the server holds no session to end', async () => {
+    stubAuthulaSignOut(() => new Response('{"message":"unauthorized"}', { status: 401 }));
+    renderShellWithLogin();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out' }));
+
+    await waitFor(() => {
       expect(screen.getByText('login page')).toBeTruthy();
     });
   });

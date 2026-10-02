@@ -2,18 +2,12 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { readCookie, readJSON, stringField, valueOrFallback } from '../auth/authConfig';
 
-// 37F plan 14 — the logout/session-teardown state seam, extracted from AppShell.tsx so the shell
-// stays under the 600-LOC cap (refactor-on-touch, R-02): AppShell.tsx was already at 597/600
-// BEFORE this plan's ShareToggle wiring landed, leaving no margin for even a few new lines. This
-// is a pure extraction with NO behavior change — mirrors useArtifactsPanel.ts's stated reason for
-// existing (:4-7) — proven by AppShell.shell.test.tsx's pre-existing logout tests
-// ("does not fall back to the legacy passphrase logout route" / "uses the Authula sign-out
-// endpoint...") passing unedited after the move.
+// Kept out of AppShell.tsx, which sits at the 600-line cap.
 
 interface LogoutTarget {
   path: string;
-  headers?: Record<string, string>;
-  body?: string;
+  headers: Record<string, string>;
+  body: string;
 }
 
 const defaultAuthulaBasePath = '/auth';
@@ -61,14 +55,25 @@ async function loadLogoutTarget(): Promise<LogoutTarget | null> {
   }
 }
 
+// A 401 means the server holds no session for this cookie, so there is nothing left to end.
+async function endSession(target: LogoutTarget): Promise<boolean> {
+  const res = await fetch(target.path, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: target.headers,
+    body: target.body,
+  });
+  return res.ok || res.status === 401;
+}
+
 export interface LogoutSession {
   readonly logoutPending: boolean;
   readonly logout: () => Promise<void>;
 }
 
-// Loads the Authula sign-out target (if the configured provider is Authula), posts to it with
-// its CSRF header, then routes to /login. A non-Authula provider or a load failure leaves the
-// operator in the cockpit rather than navigating away from an unclear state.
+// Posts the Authula sign-out with its CSRF header and routes to /login only once the server
+// has ended the session. A non-Authula provider, a load failure or a refused sign-out leaves
+// the operator in the cockpit: navigating away would show a logout while the session lives on.
 export function useLogoutSession(): LogoutSession {
   const navigate = useNavigate();
   const [logoutPending, setLogoutPending] = useState(false);
@@ -78,21 +83,12 @@ export function useLogoutSession(): LogoutSession {
     setLogoutPending(true);
     try {
       const target = await loadLogoutTarget();
-      if (target === null) {
-        setLogoutPending(false);
+      if (target !== null && (await endSession(target))) {
+        void navigate('/login', { replace: true });
         return;
       }
-      const init: RequestInit = {
-        method: 'POST',
-        credentials: 'same-origin',
-      };
-      if (target.headers !== undefined) init.headers = target.headers;
-      if (target.body !== undefined) init.body = target.body;
-      await fetch(target.path, init);
-      void navigate('/login', { replace: true });
-      return;
     } catch {
-      // Keep the operator in the cockpit if the server could not clear the session.
+      // A network failure is a refused sign-out too.
     }
     setLogoutPending(false);
   }, [logoutPending, navigate]);

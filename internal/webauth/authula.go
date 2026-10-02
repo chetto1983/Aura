@@ -11,7 +11,8 @@
 //   - H2 cookie: __Host-authula_session + Secure + SameSite=Strict + 12h absolute
 //     lifetime (Authula defaults Secure=false / SameSite=lax — flipped here).
 //   - H3 CSRF: the csrf plugin (double-submit cookie + Fetch-Metadata header
-//     protection) plus a per-cookie-name __Host- CSRF token.
+//     protection) plus a per-cookie-name __Host- CSRF token. Authula enforces it only
+//     on the routes WithRouteMappings maps to "csrf.protect".
 //
 // The validate-only seam (RequireAuth's cookie core) lives in session_validate.go;
 // the operator user-id <-> `local` identity binding lives in identity_link.go. This
@@ -140,7 +141,8 @@ func New(cfg Config) (_ *Provider, err error) {
 			MaxSessionsPerUser: 5,
 		}),
 		// H3 origin defense: the CSRF plugin's Fetch-Metadata layer compares the
-		// request Origin / Sec-Fetch-Site against these trusted origins.
+		// request Origin / Sec-Fetch-Site against these trusted origins, on the routes
+		// mapped to "csrf.protect".
 		authulaconfig.WithSecurity(authulamodels.SecurityConfig{
 			TrustedOrigins: cfg.TrustedOrigins,
 		}),
@@ -153,35 +155,21 @@ func New(cfg Config) (_ *Provider, err error) {
 			authulamodels.PluginRateLimit.String():        map[string]any{"enabled": true},
 			mcpJWTPluginName:                              map[string]any{"enabled": true},
 		}),
-		// MEASURED (2026-09-08, Phase 01 Plan 06 live dry run): the TOTP plugin's own
-		// non-verify routes (/totp/enable, /totp/disable, /totp/get-uri,
-		// /totp/generate-backup-codes) declare ONLY middleware.RequireActor(models.ActorUser)
-		// (plugins/totp/routes.go) — they never populate reqCtx.Actor themselves (unlike
-		// /totp/verify, whose handler sets it from the totp_pending token directly). Actor
-		// population for a session cookie is Authula's OWN "session.auth" hook
-		// (plugins/session/hooks.go validateSessionHook), and router.go's runHooks only
-		// dispatches a PluginID-scoped hook when the REQUEST'S route metadata lists that
-		// PluginID (`ctx.Route.Metadata["plugins"]`) — populated exclusively from
-		// models.Config.RouteMappings (auth.go:276-288), which nothing in this file ever
-		// set. Result, measured live: a valid, freshly-signed-in session cookie sent to
-		// POST /totp/enable gets 401 {"message":"unauthorized"} from RequireActor every
-		// time — reqCtx.Actor is nil not because the session is invalid, but because
-		// nothing ever ran the hook that would have read it. This left the enrollment leg
-		// 01-AUTHULA-TOTP-CONTRACT.md measured as automatable at the PLUGIN level
-		// structurally unreachable at the AURA-WIRING level — a gap that document's own
-		// "what this does not show" section correctly flagged as unmeasured ("whether any
-		// Aura-side handler wraps or rejects the call before it reaches the plugin"), now
-		// measured. This also means the cockpit's own TOTP self-service (viewing/rotating
-		// an already-enrolled identity's QR via GET /totp/get-uri, or /totp/disable) was
-		// equally broken before this fix — not a test-only gap. Declaring these four routes
-		// here does not relax anything: it connects the ALREADY-DECLARED RequireActor
-		// check to the session hook that lets it verify a REAL session correctly, exactly
-		// as /email-password/* routes already work (their capability comes from being
-		// registered through Aura's own webauth.Validator path, not this hook, which is
-		// why they were unaffected).
+		// Authula runs a plugin capability hook ("session.auth", "csrf.protect") only on the
+		// routes listed here: router.go runHooks reads the route's "plugins" metadata, which
+		// RouteMappings alone fills. A route that declares RequireActor(ActorUser) and is
+		// not mapped to session.auth answers 401 {"message":"unauthorized"} to a valid
+		// session, because nothing reads the cookie into the actor. Measured live on
+		// /totp/enable (2026-09-08) and on /sign-out (2026-10-01, where the cockpit's logout
+		// left the session alive for its 12 h). GET:/me and POST:/sign-out are Authula's
+		// documented core mapping (docs/get-started/basic-usage.mdx). The two other actor
+		// routes, /email-password/send-email-verification and request-email-change, stay
+		// unmapped on purpose: Aura offers neither flow and wires no mailer.
 		authulaconfig.WithRouteMappings([]authulamodels.RouteMapping{
 			{
 				Paths: []string{
+					"GET:/me",
+					"POST:/sign-out",
 					"POST:/totp/enable",
 					"POST:/totp/disable",
 					"GET:/totp/get-uri",
