@@ -190,6 +190,12 @@ API remain. The hidden tool set, render jobs, native tools and completion route 
 
   It sits on the internal network with no internet egress. Chromium's memory limit comes from S2
   (1,549 MiB peak at 60 s): the plan measures a 10-minute film before fixing the container limit.
+  *Amended 2026-10-02:* no egress and the loopback publish cannot both hold for one container. On
+  Docker 29.8.1, a container on an `internal: true` network alone has no egress, but its published
+  port answers nothing on the host; adding an ordinary network brings the port back, and the
+  internet with it (Plan B, Q7). The operator chose the publish: *"e chi se ne frega"*. The service
+  sits on the default network with a direct loopback publish, as `aura-pim-mcp` does, and has
+  internet egress.
 - **Internal API** `/internal/video/…` (§Security), and the Caddyfile answers 404 on that prefix.
 - **Render jobs**: the new package `internal/renderjobs`:
   - a store (table `aura.render_jobs`; the migration takes the next free number when it lands, per
@@ -316,7 +322,8 @@ cancel (5) are gone; delivery is the status call's.*
   - it runs as a non-root user on a read-only filesystem;
   - scratch space is a tmpfs, emptied after every job;
   - the page reaches only its own origin and the proxy, and the proxy only the job's allowlist;
-  - there is no internet egress.
+  - there is no internet egress. *Superseded 2026-10-02: the container has egress (see the Compose
+    service); the page's allowlist above is what keeps a render off the network.*
 - **Gateway.** No approval gate: edits add versions, and render and cancel create or stop jobs;
   nothing is destroyed. Under the current policy only destructive actions reach the gate.
   *Amended 2026-10-02:* this holds only if each write tool says so. The bridge grades a tool with
