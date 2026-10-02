@@ -280,6 +280,28 @@ transport and credential lifecycles. A configurable base URL does not establish 
 support. Credentials require protected identity/operator storage, refresh and
 revocation; they do not belong in prompts, logs, source or public artifacts.
 
+ChatGPT plan sign-in uses OpenAI's published OSS registration and Responses contract,
+with a separate protected registration per Aura identity, the VM's stable host ID,
+PKCE, validated OIDC identity, renewable tokens and explicit plan permission. Its
+model picker reads the selected account's catalogue; an identity token alone grants
+no inference access. The existing official SDK supplies Responses and streamed local
+tool calls; subscription turns do not probe or debit OpenRouter credit.
+
+Measured 2026-10-02 on the Ubuntu appliance at `192.168.101.158`: Chromium in the
+existing owner sandbox received a callback at an ephemeral
+`http://127.0.0.1:<port>/auth/callback`, opened the official OpenAI authorization
+request to the "Welcome back" screen, and supplied a live frame in 26 ms through
+agent-browser's existing loopback stream. Thus the cockpit can reuse its authenticated
+live browser to let the person sign in on the VM where the callback listener runs.
+The login returns an owner-scoped cockpit browser route, never an unreachable
+client-PC loopback. No Compose changes, forwarded ports or GitHub relay are needed.
+OpenAI's documented loopback URI remains identical in authorization and exchange.
+The bounded browser flow closes its listener and temporary browser on completion,
+cancel, disconnect, timeout and daemon shutdown; errors preserve an existing account.
+These measurements establish browser navigation, streaming and callback placement;
+they do not establish human consent, issued credentials, account entitlement or real
+Responses inference. Those remain required deployed E2E acceptance measurements.
+
 ## 7. Conversations, compaction and steering
 
 Conversation writes and aggregates are atomic and owner-scoped. Branch history,
