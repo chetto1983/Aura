@@ -92,11 +92,22 @@ operator's account): sign-out answered 200 `signed out` and cleared the session 
 and the same cookie then answered 401 on `/api/voice/capabilities`, where it answered 200
 a moment before.
 
+**Every state-changing auth route checks CSRF (2026-10-02).** Authula enforces its
+double-submit token and its origin check (Go's `http.CrossOriginProtection`) only on routes
+mapped to `csrf.protect`, and none was: they ran nowhere, and sign-in, which has no session
+for `SameSite=Strict` to protect, could be submitted from another site. All twelve
+state-changing routes of the enabled plugins are now mapped, a test walks the registered
+routes so an Authula upgrade that adds one fails until it is named, and `/api/auth/config`
+keeps the token the browser already holds instead of minting one per call, which would have
+failed the first of two login tabs. Measured on the lab VM (image `157373882`, behind Caddy
+over HTTPS, the operator's account): with two login tabs open, the first signed in through
+the real login page (200) and reached the cockpit; the cockpit's own sign-out answered 200
+and the old cookie then answered 401; a cross-site sign-in carrying a matching token pair
+answered 403 `csrf validation failed`, and one without the pair 403 `missing csrf cookie`.
+
 This does not establish:
-- CSRF protection on Authula's routes: Authula enforces its CSRF token and origin checks
-  only on routes mapped to `csrf.protect`, and none is (read from Authula v1.46.0's source
-  and its CSRF plugin documentation, not probed); the session cookie's `SameSite=Strict`
-  is what keeps another site from riding an existing session;
+- browsers other than Chromium, or a client reaching the cockpit from an origin that is
+  neither its own nor in the trusted list (it is refused by design);
 - sign-out from every other session of the same user: the cockpit ends the current one.
 
 ## 4. Agent lifecycle, tools and completion
