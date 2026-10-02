@@ -24,6 +24,7 @@ func TestClampReasoningEffortSubstitutesTheNearestAcceptedGear(t *testing.T) {
 		// Equidistant from max and high: the tie resolves downward, so a substitution
 		// never buys more reasoning than the classifier asked for.
 		{"xhigh resolves down to high on a tie", glm, ReasoningEffortXHigh, ReasoningEffortHigh},
+		{"mandatory model with only high never receives low", Config{ReasoningMandatory: true, SupportedReasoningEfforts: []ReasoningEffort{ReasoningEffortHigh}}, ReasoningEffortNone, ReasoningEffortHigh},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := tc.cfg.ClampReasoningEffort(tc.want); got != tc.gets {
@@ -48,7 +49,7 @@ func TestClampReasoningEffortLeavesAnUndeclaredModelAlone(t *testing.T) {
 // The allowlist is the security boundary on catalogue input: a token Aura does not model
 // must be dropped, never carried through to the wire.
 func TestClampAdvertisedEffortsDropsUnknownTokens(t *testing.T) {
-	got := clampAdvertisedEfforts([]string{"high", "ludicrous", "low", "high", ""})
+	got := ClampAdvertisedEfforts([]string{"high", "ludicrous", "low", "high", ""})
 	if len(got) != 2 || got[0] != ReasoningEffortHigh || got[1] != ReasoningEffortLow {
 		t.Fatalf("efforts = %v, want [high low] with the unknown and the duplicate dropped", got)
 	}

@@ -43,13 +43,15 @@ type ollamaTagsWire struct {
 // can be lower than ContextWindow -- qwen/qwen3-embedding-8b publishes 32768 and 32000
 // (measured 2026-09-14) -- and an embedding input must fit the provider that serves it.
 type ModelCatalogEntry struct {
-	ID                       string
-	DisplayName              string
-	ContextWindow            int
-	TopProviderContextWindow int
-	Price                    Price
-	HasPrice                 bool
-	SupportedVoices          []string
+	ID                        string
+	DisplayName               string
+	ContextWindow             int
+	TopProviderContextWindow  int
+	Price                     Price
+	HasPrice                  bool
+	SupportedVoices           []string
+	SupportedReasoningEfforts []ReasoningEffort
+	ReasoningMandatory        bool
 }
 
 // FetchModelCatalog returns the provider's selectable models, sorted by id. Ollama's

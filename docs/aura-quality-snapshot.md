@@ -1,6 +1,19 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
+**Connected ChatGPT reasoning measurement:** 2026-10-02 — follow-up disposable
+unit plus `db_integration` coverage is **48,029/54,107 = 88.8%**, with the package-local
+policy passing. Full Go vet/build/race and touched-package lint/contracts passed.
+Targeted reasoning and multi-user boot race tests passed; four
+critical reasoning mutation overlays were killed. Full frontend CI command passed
+**3,607 tests / 395 files**, with coverage **93.13% statements / 87.67% branches /
+92.56% functions / 95.01% lines** and full lint/typecheck/format passing. Independent
+real Authula/Aura desktop/mobile TLS cockpit E2E passed **2/2**, preserving Secure
+cookies and validating runner cleanup. The installed VM account is connected and
+its real five-model catalog was read; completed inference/summary and fresh remote
+CI for the correction remain pending. Evidence and limits are in the validation
+report linked below. Separate Docker/ArcadeDB authorities are not replaced.
+
 **ChatGPT subscription measurement:** 2026-10-02 — final WSL full vet/build/race,
 touched-package lint, deadcode/model/capability contracts and file-size checks passed.
 Disposable unit plus `db_integration` coverage is **48,017/54,095 = 88.8%** with

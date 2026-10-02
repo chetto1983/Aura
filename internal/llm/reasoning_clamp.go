@@ -49,11 +49,11 @@ func reasoningEffortTokens(reasoning *struct {
 	return reasoning.SupportedEfforts
 }
 
-// clampAdvertisedEfforts maps advertised tokens onto the internal vocabulary through the
+// ClampAdvertisedEfforts maps advertised tokens onto the internal vocabulary through the
 // same strict allowlist the capability source uses: a token Aura does not model is
 // DROPPED rather than passed through, so a future or hostile upstream value can never
 // become an effort that goes on the wire.
-func clampAdvertisedEfforts(tokens []string) []ReasoningEffort {
+func ClampAdvertisedEfforts(tokens []string) []ReasoningEffort {
 	var out []ReasoningEffort
 	for _, token := range tokens {
 		if effort, ok := allowedReasoningEfforts[token]; ok && !slices.Contains(out, effort) {
@@ -102,7 +102,7 @@ func (c Config) reasoningCanBeDisabled() bool {
 // it was ours.
 func (c Config) ClampReasoningEffort(want ReasoningEffort) ReasoningEffort {
 	if want == ReasoningEffortNone && !c.reasoningCanBeDisabled() {
-		return ReasoningEffortLow
+		want = ReasoningEffortLow
 	}
 	if want == "" || len(c.SupportedReasoningEfforts) == 0 ||
 		slices.Contains(c.SupportedReasoningEfforts, want) {

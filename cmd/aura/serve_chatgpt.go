@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"slices"
 
 	"github.com/chetto1983/aura/internal/chatgptplan"
 	"github.com/chetto1983/aura/internal/config"
@@ -50,13 +51,20 @@ func applyChatGPTCatalogModel(cfg *llm.Config, models []llm.ModelCatalogEntry) e
 		if model.ID != cfg.Model {
 			continue
 		}
-		if model.ContextWindow > 0 && !cfg.ContextWindowConfigured {
-			cfg.ContextWindow = model.ContextWindow
+		candidate := *cfg
+		if model.ContextWindow > 0 && !candidate.ContextWindowConfigured {
+			candidate.ContextWindow = model.ContextWindow
 		}
-		if !cfg.MaxOutputTokensConfigured {
-			cfg.MaxOutputTokens = llm.DerivedMaxOutputTokens(cfg.ContextWindow)
+		if !candidate.MaxOutputTokensConfigured {
+			candidate.MaxOutputTokens = llm.DerivedMaxOutputTokens(candidate.ContextWindow)
 		}
-		return cfg.Validate()
+		candidate.SupportedReasoningEfforts = slices.Clone(model.SupportedReasoningEfforts)
+		candidate.ReasoningMandatory = model.ReasoningMandatory
+		if err := candidate.Validate(); err != nil {
+			return err
+		}
+		*cfg = candidate
+		return nil
 	}
 	return errors.New("select a model available to your ChatGPT account")
 }

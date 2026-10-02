@@ -44,6 +44,12 @@ fissata nel codice. La rotta è l'endpoint ufficiale `https://api.openai.com/v1`
 Responses streaming, contesto completo, `store=false` e strumenti Aura eseguiti
 localmente. Una risposta interrotta o priva dell'evento di completamento è un errore.
 
+Nel compositore, il selettore del ragionamento mostra i livelli dichiarati dal modello
+scelto. **Auto** applica la politica di Aura; un livello esplicito viene inviato a
+ChatGPT. **Off** compare soltanto quando il modello consente di disattivare il
+ragionamento. Aura visualizza il riepilogo restituito da OpenAI nelle risposte che lo
+forniscono, se `AURA_SHOW_REASONING` è abilitato.
+
 Quando il catalogo non pubblica una finestra di contesto, Aura usa un budget di
 lavoro prudente di 32.768 token: questo numero è un limite di Aura, non una capacità
 dichiarata del modello. I budget espliciti dell'operatore restano configurabili.

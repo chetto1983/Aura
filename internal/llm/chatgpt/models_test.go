@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
@@ -29,6 +30,28 @@ func TestAccountCatalog(t *testing.T) {
 	for _, entry := range entries {
 		if entry.HasPrice {
 			t.Fatal("catalog fabricated price")
+		}
+	}
+}
+
+func TestAccountCatalogAdvertisedReasoningLevels(t *testing.T) {
+	client := fixtureClient(t, func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"models":[{"slug":"thinking","visibility":"list","supported_reasoning_levels":[{"effort":"low"},{"effort":"medium"},{"effort":"high"},{"effort":"xhigh"},{"effort":"max"},{"effort":"ultra"},{"effort":"high"}]},{"slug":"optional","visibility":"list","supported_reasoning_levels":[{"effort":"none"},{"effort":"low"}]},{"slug":"unknown","visibility":"list","supported_reasoning_levels":[{"effort":"untrusted"}]},{"slug":"absent","visibility":"list"}]}`)
+	})
+	entries, err := fetchModels(context.Background(), client.httpClient, client.baseURL, "oauth-test-token")
+	if err != nil || len(entries) != 4 {
+		t.Fatalf("catalog %v, error %v", entries, err)
+	}
+	want := []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortMedium, llm.ReasoningEffortHigh, llm.ReasoningEffortXHigh, llm.ReasoningEffortMax}
+	if !slices.Equal(entries[0].SupportedReasoningEfforts, want) || !entries[0].ReasoningMandatory {
+		t.Fatalf("thinking model %#v", entries[0])
+	}
+	if !slices.Equal(entries[1].SupportedReasoningEfforts, []llm.ReasoningEffort{llm.ReasoningEffortNone, llm.ReasoningEffortLow}) || entries[1].ReasoningMandatory {
+		t.Fatalf("optional model %#v", entries[1])
+	}
+	for _, entry := range entries[2:] {
+		if len(entry.SupportedReasoningEfforts) != 0 || entry.ReasoningMandatory {
+			t.Fatalf("fabricated capability %#v", entry)
 		}
 	}
 }

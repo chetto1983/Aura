@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -172,7 +173,8 @@ func fetchLlamaCppProps(ctx context.Context, cfg Config, httpClient *http.Client
 // NewReasoningCapabilitySource selects the capability source for the active backend by
 // llm.ReasoningTarget(cfg.Provider, cfg.BaseURL): OpenRouter → a TTL-cached /models
 // source; llama.cpp → the provider+ops-contract source (best-effort /props narrowing);
-// Ollama → the effort set narrowed by that model's own /api/show capabilities; anything else (e.g. a local
+// Ollama → the effort set narrowed by that model's own /api/show capabilities;
+// ChatGPT → the resolved account-model snapshot; anything else (e.g. a local
 // vLLM/DGX endpoint) → nil, so the caller shows the safe
 // floor {auto,off}. This is the boot seam the daemon composition root wires into the
 // agui Server via SetReasoningCapabilitySource (plan 06).
@@ -187,6 +189,8 @@ func NewReasoningCapabilitySource(cfg Config, ttl time.Duration) ReasoningCapabi
 		return newLlamaCppReasoningCaps(cfg)
 	case ReasoningTargetOllama:
 		return newOllamaReasoningCaps(cfg)
+	case ReasoningTargetChatGPT:
+		return &chatGPTReasoningCaps{efforts: slices.Clone(cfg.SupportedReasoningEfforts), mandatory: cfg.ReasoningMandatory}
 	default:
 		return nil
 	}

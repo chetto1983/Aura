@@ -211,7 +211,7 @@ func FetchModelProfile(
 				},
 				HasPrice:                  true,
 				Sampling:                  samplingDefaultsFromNumbers(m.DefaultParameters),
-				SupportedReasoningEfforts: clampAdvertisedEfforts(reasoningEffortTokens(m.Reasoning)),
+				SupportedReasoningEfforts: ClampAdvertisedEfforts(reasoningEffortTokens(m.Reasoning)),
 				ReasoningMandatory:        m.Reasoning != nil && m.Reasoning.Mandatory,
 			}, nil
 		default:

@@ -28,6 +28,7 @@ func TestIsReasoningTarget(t *testing.T) {
 		{"llamacpp_fires_generalized_only", "llamacpp", "http://127.0.0.1:8080/v1", true, false},
 		{"llamacpp_case_insensitive", "LlamaCpp", "", true, false},
 		{"ollama_fires_generalized_only", "ollama", "http://127.0.0.1:11434/v1", true, false},
+		{"chatgpt_official_responses", llm.ChatGPTProvider, llm.ChatGPTBaseURL, true, false},
 		{"vllm_local_is_none", "vllm", "http://127.0.0.1:8000/v1", false, false},
 		{"openrouter_provider_foreign_url_is_none", "openrouter", "http://127.0.0.1:8080/v1", false, false},
 		{"anthropic_is_none", "anthropic", "", false, false},

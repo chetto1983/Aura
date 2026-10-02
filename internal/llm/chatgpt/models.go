@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -21,6 +22,11 @@ type modelWire struct {
 	ContextLength   int      `json:"context_length"`
 	InputModalities []string `json:"input_modalities"`
 	SupportsImage   bool     `json:"supports_image"`
+	// Account metadata uses effort objects, unlike the API-key catalogue:
+	// https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs
+	SupportedReasoningLevels []struct {
+		Effort string `json:"effort"`
+	} `json:"supported_reasoning_levels"`
 }
 
 // FetchModels keeps visible account models in the server's preferred picker order.
@@ -49,7 +55,16 @@ func fetchModels(ctx context.Context, client *http.Client, baseURL, token string
 		if window <= 0 {
 			window = model.ContextLength
 		}
-		entries = append(entries, llm.ModelCatalogEntry{ID: model.Slug, DisplayName: model.DisplayName, ContextWindow: max(window, 0)})
+		tokens := make([]string, 0, len(model.SupportedReasoningLevels))
+		for _, level := range model.SupportedReasoningLevels {
+			tokens = append(tokens, level.Effort)
+		}
+		efforts := llm.ClampAdvertisedEfforts(tokens)
+		entries = append(entries, llm.ModelCatalogEntry{
+			ID: model.Slug, DisplayName: model.DisplayName, ContextWindow: max(window, 0),
+			SupportedReasoningEfforts: efforts,
+			ReasoningMandatory:        len(efforts) > 0 && !slices.Contains(efforts, llm.ReasoningEffortNone),
+		})
 	}
 	return entries, nil
 }

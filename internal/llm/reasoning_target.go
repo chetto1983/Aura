@@ -23,6 +23,8 @@ const (
 	// ReasoningTargetOllama marks Ollama's OpenAI-compatible bridge, which accepts
 	// reasoning_effort without OpenRouter or llama.cpp extensions.
 	ReasoningTargetOllama
+	// ReasoningTargetChatGPT uses the official Responses reasoning controls.
+	ReasoningTargetChatGPT
 )
 
 // String names the target for logs. Without it an operator reading
@@ -37,6 +39,8 @@ func (k ReasoningTargetKind) String() string {
 		return "llamacpp"
 	case ReasoningTargetOllama:
 		return "ollama"
+	case ReasoningTargetChatGPT:
+		return ChatGPTProvider
 	default:
 		return "none"
 	}
@@ -52,6 +56,9 @@ func (k ReasoningTargetKind) String() string {
 // misfire and drop the reasoning object on a non-llama backend. Both matches are
 // case-insensitive; anything unrecognized is None.
 func ReasoningTarget(provider, baseURL string) ReasoningTargetKind {
+	if strings.EqualFold(provider, ChatGPTProvider) && baseURL == ChatGPTBaseURL {
+		return ReasoningTargetChatGPT
+	}
 	if strings.EqualFold(provider, "llamacpp") {
 		return ReasoningTargetLlamaCpp
 	}

@@ -204,3 +204,28 @@ The VM follow-up also consulted [OpenAI's loopback registration contract](https:
 
 _Reviewer: Codex (gsd-code-reviewer)_
 _Review artifact only; no source modifications or commits._
+
+## Connected-account reasoning review
+
+The follow-up reviewed catalog parsing, profile application, capability projection,
+fixed/adaptive policy, SDK effort/summary requests and boot-time owner resolution.
+No frontend production change is needed: the existing composer consumes the endpoint.
+
+### CR-08: A multi-user restart lost the saved account's capabilities
+
+**Classification:** BLOCKER
+**Disposition:** corrected; no longer open.
+**Files:** `cmd/aura/chat_boot.go`, `cmd/aura/serve_chatgpt_boot.go`
+**Issue:** `OperatorIdentity` cannot choose an owner when more than one identity is
+enrolled. Boot could then publish an empty reasoning set despite a valid saved model.
+**Fix verified:** Read the saved non-secret model setting and its valid `UpdatedBy`,
+require the model to match, and fetch only that author's catalog metadata. Operator
+fallback is permitted only for an absent setting. Database errors, invalid authors,
+secret rows and mismatches fail closed. The faithful SQLC regression includes two
+enrolled identities and proves no operator lookup occurs for the saved profile.
+Request-time inference remains scoped to each request's own identity credential.
+
+No open finding remains in this follow-up. Catalog efforts use the existing strict
+allowlist, immutable copies prevent capability aliasing, and mandatory reasoning
+clamps within the advertised set. This source review does not establish a completed
+deployed account response or returned summary; those remain live acceptance gates.

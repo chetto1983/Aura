@@ -126,7 +126,7 @@ func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 // choosing a tier that no other backend ever received (see ApplyAdaptiveReasoning).
 func IsReasoningTarget(provider, baseURL string) bool {
 	switch llm.ReasoningTarget(provider, baseURL) {
-	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama:
+	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama, llm.ReasoningTargetChatGPT:
 		return true
 	default:
 		return false

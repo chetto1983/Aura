@@ -427,6 +427,15 @@ func assembleChatEnv(
 			"provider", cfg.LLM.Provider, "model", cfg.LLM.Model, "err", err)
 	}
 	chatGPTPlan := newChatGPTPlan(cfg)
+	if cfg.LLM.Provider == llm.ChatGPTProvider {
+		owner, err := chatGPTBootOwner(ctx, cfg.LLM.Model, pool)
+		if err == nil {
+			err = validateChatGPTModel(identityctx.WithIdentityID(ctx, owner), &cfg.LLM, chatGPTTokenSourceOrNil(chatGPTPlan))
+		}
+		if err != nil {
+			slog.Warn("ChatGPT model profile unresolved; using configured fallback")
+		}
+	}
 	client := newLLMClient(cfg.LLM, chatGPTTokenSourceOrNil(chatGPTPlan))
 	llmRuntime := llm.NewRuntime(client, cfg.LLM)
 	// The mid-turn steer inbox (amendment #132, D-01/D-12): ONE

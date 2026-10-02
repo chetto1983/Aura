@@ -94,6 +94,9 @@ func TestStreamingRequestAndHistory(t *testing.T) {
 	if body["store"] != false || body["stream"] != true || body["model"] != "account-model" {
 		t.Fatalf("body %#v", body)
 	}
+	if reasoning := body["reasoning"].(map[string]any); reasoning["effort"] != "low" || reasoning["summary"] != "auto" {
+		t.Fatalf("reasoning request %#v", reasoning)
+	}
 	for _, key := range []string{"max_output_tokens", "temperature", "top_p", "previous_response_id", "conversation", "metadata"} {
 		if _, ok := body[key]; ok {
 			t.Errorf("unsupported field %s", key)

@@ -4,7 +4,7 @@ plan: 01
 type: execute
 wave: 1
 depends_on: []
-autonomous: false
+autonomous: true
 status: in_progress
 requirements: [CRED-07, E2E-05]
 files_modified:
@@ -65,6 +65,17 @@ files_modified:
   - web/src/i18n/resources.settings.ts
   - docs/chatgpt-plan.md
   - prd.md
+  - cmd/aura/serve_chatgpt_boot.go
+  - cmd/aura/serve_chatgpt_boot_test.go
+  - cmd/aura/chatgpt_reasoning_test.go
+  - internal/llm/chatgpt_caps.go
+  - internal/llm/chatgpt_caps_test.go
+  - internal/llm/reasoning_target.go
+  - internal/llm/reasoning_clamp.go
+  - internal/agent/prompt/reasoning_chatgpt_test.go
+  - scripts/web_e2e_ci.sh
+  - .github/workflows/ci.yml
+  - web/src/settings/__tests__/ModelSettingsPanel.test.tsx
 must_haves:
   truths:
     - "Settings offers ChatGPT beside the existing providers, with a login button and account model selection (D-01)."
@@ -181,6 +192,33 @@ Execution ownership: OAuth package, SDK provider, frontend, composition root int
 </task>
 
 </tasks>
+
+## Connected-account reasoning follow-up
+
+The user completed OpenAI consent on the deployed `92a9aef62` revision. Real status
+reports connected and plan enabled; the selected account model is `gpt-5.6-sol`.
+Its actual account catalog advertises low, medium, high, xhigh and max, plus ultra
+outside Aura's current SDK/vocabulary. The deployed composer incorrectly returns
+only Auto/Off. Preserve the active grant while correcting that measured gap.
+
+Task 4 resolves the advertised effort set into the prepared and boot-time route,
+recognizes the fixed ChatGPT target in the existing reasoning policy, and supplies
+the immutable route capabilities to the composer. A persisted profile uses its
+validated `UpdatedBy` identity to fetch catalog metadata at boot; inference still
+uses each request's identity. Missing metadata, profile corruption and database
+errors cannot select another user's account. Mandatory reasoning clamps against
+the actual allowed set. Reuse the installed SDK's effort and summary fields.
+
+Acceptance: the deployed composer offers Auto/Low/Mid/High/Extra/Max for this
+account model, omits Off, sends High on a real turn, completes a local tool round,
+and displays the provider's returned reasoning summary. Recheck after restart.
+Do not disconnect or replace the user's completed grant during verification.
+
+Task 5 closes the two failed original CI jobs. Scope the broken spinner test to
+the busy action and assert disabled/completed behavior. Run the unchanged browser
+matrix through the existing TLS proxy, preserving Secure/HttpOnly Authula cookies.
+The concurrent `web/e2e/auth.ts` change belongs to another session and is excluded
+from this task's commits. Fresh CI and exact-revision VM deployment remain gates.
 
 <threat_model>
 | Boundary | Description |

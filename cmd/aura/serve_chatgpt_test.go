@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -58,11 +59,19 @@ func TestChatGPTModelSaveUsesAccountCatalogAndClearsOtherKeys(t *testing.T) {
 	if err := cfg.ResolveChatGPTProfile(); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyChatGPTCatalogModel(&cfg, []llm.ModelCatalogEntry{{ID: "account-model", ContextWindow: 128000}}); err != nil {
+	efforts := []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortHigh}
+	if err := applyChatGPTCatalogModel(&cfg, []llm.ModelCatalogEntry{{ID: "account-model", ContextWindow: 128000, SupportedReasoningEfforts: efforts, ReasoningMandatory: true}}); err != nil {
 		t.Fatal(err)
 	}
 	if cfg.ContextWindow != 128000 || cfg.CostStatus != llm.CostStatusSubscriptionIncluded || cfg.APIKey != "" {
 		t.Fatal("wrong profile metadata")
+	}
+	if !slices.Equal(cfg.SupportedReasoningEfforts, efforts) || !cfg.ReasoningMandatory {
+		t.Fatal("account reasoning capabilities were discarded")
+	}
+	efforts[0] = llm.ReasoningEffortNone
+	if cfg.SupportedReasoningEfforts[0] != llm.ReasoningEffortLow {
+		t.Fatal("catalog alias mutated route snapshot")
 	}
 	if applyChatGPTCatalogModel(&cfg, nil) == nil {
 		t.Fatal("accepted model outside account catalog")
