@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Page } from '@playwright/test';
 import { expect, test } from './support/assetCleanup';
+import { readFrames } from './support/frames';
 import {
   FIXTURES,
   addClip,
@@ -76,10 +77,7 @@ interface FrameDiff {
 
 /**
  * How much of the picture differs between two instants that show the same source frame, and how
- * much of that difference is the title's own colour.
- *
- * Decoding happens in the page rather than in Node: Node has no WebCodecs, and a `<video>` fed
- * the exported bytes is also the bluntest available proof that what came out is playable.
+ * much of that difference is the title's own colour. The frames are read by `readFrames`.
  */
 async function twinFrameDiff(
   page: Page,
@@ -87,89 +85,32 @@ async function twinFrameDiff(
   pairs: readonly (readonly [number, number])[],
   ink: string,
 ): Promise<readonly FrameDiff[]> {
-  return page.evaluate(
-    async ({ base64, pairs, ink, changedChannel, inkDistance }) => {
-      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: 'video/mp4' }));
-      const video = document.createElement('video');
-      video.muted = true;
-      video.preload = 'auto';
-      video.src = url;
-      try {
-        await new Promise<void>((resolve, reject) => {
-          video.onloadeddata = () => {
-            resolve();
-          };
-          video.onerror = () => {
-            reject(new Error('the exported file did not decode in the browser'));
-          };
-        });
-        const canvas = new OffscreenCanvas(video.videoWidth, video.videoHeight);
-        const context = canvas.getContext('2d', { willReadFrequently: true });
-        if (context === null) throw new Error('no 2d context');
-        const target = [
-          parseInt(ink.slice(1, 3), 16),
-          parseInt(ink.slice(3, 5), 16),
-          parseInt(ink.slice(5, 7), 16),
-        ];
-        const frameAt = async (time: number) => {
-          // `seeked` can fire before the decoded frame reaches the compositor under CI load.
-          // Read only after Chrome reports the requested frame as presented.
-          await new Promise<void>((resolve, reject) => {
-            const timeout = window.setTimeout(() => {
-              reject(new Error(`the exported video did not present frame at ${String(time)}s`));
-            }, 10_000);
-            const onFrame: VideoFrameRequestCallback = (_now, metadata) => {
-              if (Math.abs(metadata.mediaTime - time) > 0.1) {
-                video.requestVideoFrameCallback(onFrame);
-                return;
-              }
-              window.clearTimeout(timeout);
-              resolve();
-            };
-            video.requestVideoFrameCallback(onFrame);
-            video.currentTime = time;
-          });
-          context.drawImage(video, 0, 0);
-          return context.getImageData(0, 0, canvas.width, canvas.height).data;
-        };
-        const isInk = (frame: Uint8ClampedArray, at: number) =>
-          Math.max(
-            Math.abs((frame[at] ?? 0) - (target[0] ?? 0)),
-            Math.abs((frame[at + 1] ?? 0) - (target[1] ?? 0)),
-            Math.abs((frame[at + 2] ?? 0) - (target[2] ?? 0)),
-          ) <= inkDistance;
-        const diffs = [];
-        for (const [first, second] of pairs) {
-          const a = await frameAt(first);
-          const b = await frameAt(second);
-          let changed = 0;
-          let inked = 0;
-          for (let i = 0; i < a.length; i += 4) {
-            const moved = Math.max(
-              Math.abs((a[i] ?? 0) - (b[i] ?? 0)),
-              Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0)),
-              Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0)),
-            );
-            if (moved < changedChannel) continue;
-            changed += 1;
-            if (isInk(a, i) && !isInk(b, i)) inked += 1;
-          }
-          diffs.push({ changed, inked });
-        }
-        return diffs;
-      } finally {
-        URL.revokeObjectURL(url);
-      }
-    },
-    {
-      base64: mp4.toString('base64'),
-      pairs: pairs.map(([a, b]) => [a, b] as [number, number]),
-      ink,
-      changedChannel: CHANGED_CHANNEL,
-      inkDistance: INK_DISTANCE,
-    },
-  );
+  const frames = await readFrames(page, mp4, pairs.flat());
+  const target = [1, 3, 5].map((at) => parseInt(ink.slice(at, at + 2), 16));
+  const isInk = (frame: Buffer, at: number) =>
+    Math.max(
+      Math.abs((frame[at] ?? 0) - (target[0] ?? 0)),
+      Math.abs((frame[at + 1] ?? 0) - (target[1] ?? 0)),
+      Math.abs((frame[at + 2] ?? 0) - (target[2] ?? 0)),
+    ) <= INK_DISTANCE;
+  return pairs.map((_pair, index) => {
+    const a = frames[2 * index]?.rgba;
+    const b = frames[2 * index + 1]?.rgba;
+    if (a === undefined || b === undefined) throw new Error('a twin frame was not read');
+    let changed = 0;
+    let inked = 0;
+    for (let i = 0; i < a.length; i += 4) {
+      const moved = Math.max(
+        Math.abs((a[i] ?? 0) - (b[i] ?? 0)),
+        Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0)),
+        Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0)),
+      );
+      if (moved < CHANGED_CHANNEL) continue;
+      changed += 1;
+      if (isInk(a, i) && !isInk(b, i)) inked += 1;
+    }
+    return { changed, inked };
+  });
 }
 
 test.describe('the multi-track video editor', () => {
