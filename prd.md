@@ -81,6 +81,24 @@ Web sessions use Authula. Recovery and administration are audited and require th
 actual capabilities. Sharing does not imply administration. A wildcard capability
 grant is not a standing approval for every tool action.
 
+**Signing out ends the session (2026-10-02).** Authula runs a plugin's capability hook
+only on the routes Aura lists in its route mappings, and `/sign-out` was not listed, so
+the session hook never read the cookie: on the lab VM on 2026-10-01, `POST /auth/sign-out`
+answered 401 and the same cookie went on answering 200 until the 12 h expiry, while the
+cockpit showed the login page. `GET:/me` and `POST:/sign-out` now carry `session.auth`
+(Authula's documented core mapping), and the cockpit leaves only when the server ended the
+session or holds none. Measured after the fix on the lab VM (image `b71a33dac`, the
+operator's account): sign-out answered 200 `signed out` and cleared the session cookie,
+and the same cookie then answered 401 on `/api/voice/capabilities`, where it answered 200
+a moment before.
+
+This does not establish:
+- CSRF protection on Authula's routes: Authula enforces its CSRF token and origin checks
+  only on routes mapped to `csrf.protect`, and none is (read from Authula v1.46.0's source
+  and its CSRF plugin documentation, not probed); the session cookie's `SameSite=Strict`
+  is what keeps another site from riding an existing session;
+- sign-out from every other session of the same user: the cockpit ends the current one.
+
 ## 4. Agent lifecycle, tools and completion
 
 The open `Agent` interface returns `iter.Seq2[*Event, error]`. Termination, budget
