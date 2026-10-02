@@ -703,14 +703,26 @@ second of film at any speed; the export is to load each source once, through Vid
 `loadedMedia` cache, and to write no file when a layer was disabled or a sound that is not muted
 will not decode, naming the source by its file name and saying whether its bytes never arrived or
 did not play.
+Measured after the fix on 2026-10-02 on the lab VM (image `b31109815`,
+`web/e2e/video-studio-export.spec.ts`): against its twin 4 s earlier, a clip's fade-out frame at
+7.8 s now keeps 0.4040 of the level, where a control clip drawn at a static 0.4 keeps 0.3980 and
+the fade is due 0.40 (the image before the fix kept 0.9994); the frame before the fade keeps
+0.9993. The export now fetches a source the Stage already holds 0 times, where the image before
+the fix fetched it once. When a Playwright stub answers 404 for a source's bytes, the export now
+stops with the sentence that names the source's file and downloads nothing, and so does a source
+whose bytes the renderer cannot read (`unplayable.mp4`).
 
 This does not establish:
 - that title fades and the fade-to-black and fade-to-white washes are lost on an exported frame:
   they take the same path, but that was computed on the renderer's own runtime layers in a unit
   test, not measured on a frame;
+- a clip's fade-in, or a fade at a speed other than 1×, on an exported frame: the E2E measured one
+  muted fade-out at 1×, encoded and decoded by one Chromium, which gave a local run the same six
+  numbers;
 - the HTTP status of a failed fetch: VideoFlow keeps it in its console warning and the page never
   sees it;
-- what an expired presigned URL or a 403 does: S1.4 exercised only a missing CORS rule;
+- what an expired presigned URL or a 403 does: S1.4 exercised only a missing CORS rule, and the
+  E2E after the fix only a stubbed 404;
 - the Stage preview on screen: it compiles the same JSON and builds the same runtime layers
   (`@videoflow/renderer-dom` imports them from renderer-browser), but only the export was measured;
 - anything about a video whose own audio will not decode: the mixer drops that audio, so such a
@@ -741,8 +753,8 @@ the plain finalize is processed; a PDF sent to the same door is refused with 400
 review the door also refuses a document whose client hinted it as a sound: the recorded modality
 can be the client's hint, so the name and declared type must infer an allowed modality too. A saved
 project, by contrast, is finalized as a document today and receives a `document_id` (M1): that was
-reported as its own issue; its rule follows this section's details. The door reads no bytes: a file named and
-typed as a sound whose content is something else is accepted as a sound.
+reported as its own issue; its rule follows this section's details. The door reads no bytes: a
+file named and typed as a sound whose content is something else is accepted as a sound.
 
 This does not establish:
 - long-project memory use;
@@ -755,10 +767,10 @@ This does not establish:
 Details: `docs/superpowers/specs/2026-09-27-video-studio-audio-design.md`.
 
 **Saved Studio projects and the document index (M1; aura-video-mcp Plan A).** Measured 2026-10-01 on
-the lab VM, read-only: 2 live JSON assets with a `.json` key, 2 of them named as documents,
-0 at keys the file manager named; every other key is `chat/<uuid>.json`, with no file name in it,
-and in 0 of them the uuid is the row's own id: it is the one Presign minted for the object. 2
-rows look like Studio saves by the row rule below, and the index holds the keys of 2 of them
+the lab VM, read-only: 2 live JSON assets with a `.json` key, 2 of them named as documents, none
+at a key the file manager named: every key is `chat/<uuid>.json`, with no file name in it, and in
+none of them is the uuid the row's own id; it is the one Presign minted for the object. 2 rows look
+like Studio saves by the row rule below, and the index holds the keys of 2 of them
 (`IndexedDocument` rows, read with the ingest's own `arcade.indexed_source_keys`). The ingest's
 matcher reads only the object key (CocoIndex 1.0.24 `connectors/amazon_s3/_source.py:304-317`), and
 its audit lists keys without reading a single object's metadata (`services/ingest/source.py`
@@ -774,9 +786,23 @@ its audit lists keys without reading a single object's metadata (`services/inges
   is moved. Saving again is no remedy: every save is a new asset;
 - no code is to read an asset id out of an object key.
 
+Measured after the fix on 2026-10-02 on the lab VM (image `b31109815`): at its start on that image,
+the only one so far, the daemon moved 2 of the 2 candidates and left none; the index held both of
+their old keys before, and now holds none of their keys, old or new. A project saved through the
+cockpit's upload door as `plan-a-probe.aura-video.json` now gets the key
+`chat/3bd55ef5-2c38-48cf-a1a0-85727bc727df.aura-video.json` while its asset id is
+`5aed9fc8-73a0-4117-b60b-6dc89c3f89b4`, and two ingest cycles later the index holds no row for it,
+while the operator's `plan-a-control.json` saved beside it is indexed; both were deleted afterwards,
+and two cycles later neither their rows nor their keys were left.
+
 This does not establish:
-- that the boot pass moves exactly the Studio saves, and that the index drops them, on a real
-  stack: both are measured after the fix;
+- that the boot pass would refuse every JSON an operator saved that is not a project: on the VM it
+  met the 2 candidates above, and the other shapes were shown by the unit tests;
+- that a second boot on the VM moves nothing: the daemon has started once on this image; the moved
+  rows no longer pass the row rule (0 candidates, read afterwards), and a unit test runs the pass
+  twice;
+- that the counts hold beyond their sample: before the fix they are 2 rows of one identity on one
+  VM, both named `project.json`, and after it one project and one control the probe saved;
 - anything about a project an operator renamed in the file manager before the change: Rename
   writes the typed name into the key (`internal/assets/filemanager_ops.go` `Rename`), so its key
   fails the `chat/<uuid>.json` test, and it stays indexed until it is deleted or renamed to end in
