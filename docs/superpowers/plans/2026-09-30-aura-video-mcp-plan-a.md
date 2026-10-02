@@ -5720,7 +5720,7 @@ What Plan A lands and later plans may rely on. These are the exact names.
 
 **Projects saved before Plan A**
 - `StudioProjectRekey` (`internal/assets`) runs once at every boot and moves each pre-Plan-A project that passes its rule to `chat/<uuid>.aura-video.json`. The row and its id stay the same.
-- A project that fails the rule keeps its `.json` key and stays indexed: one renamed in the file manager, one attached in a thread, one over 4 MiB, one whose bytes the content check refuses. A listing "by suffix" misses those. A listing that must include them has to read the content, as `loadProject` does with its `isProject` check (`projectStore.ts:436`, not exported today), not the name.
+- A project that fails the rule keeps its `.json` key and stays indexed: one renamed in the file manager, one attached in a thread, one over 4 MiB, one whose bytes the content check refuses. A listing "by suffix" misses those. A listing that must include them has to read the content, as `loadProject` does with its `isProject` check (`projectStore.ts:409`, not exported today), not the name.
 
 **Export errors**
 - `ExportSourceError` from `web/src/videoStudio/videoflow_media.ts`.
@@ -5757,7 +5757,7 @@ What Plan A lands and later plans may rely on. These are the exact names.
 - The failure is decided after `initLayers`. The sidecar can map `{ assetId, failure }` straight to the job's "failed, naming the source" state. This path never hands a black or silent file to its output check.
 - The E2E helpers `readFrames` and `meanLevel` (`web/e2e/support/frames.ts`) are there for Plan C's reel checks (black frames, sampled frames).
 
-**Spec sentences superseded.** Task 0 dates two spec sentences that the measurements overturned (spec `:160` and `:272`). Plans B and C read the notes beside them, not the original sentences.
+**Spec sentences superseded.** Task 0 dates two spec sentences that the measurements overturned (spec `:160` and `:276`). Plans B and C read the notes beside them, not the original sentences.
 
 ## Spec coverage
 
