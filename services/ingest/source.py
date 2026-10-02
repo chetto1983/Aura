@@ -45,6 +45,14 @@ _ESCAPES_WELL_FORMED = re.compile(r"(?:[^%]|%[0-9A-Fa-f]{2})*")
 # broken were entirely about files the user never uploaded here.
 RESERVED_PATTERNS = ("identity/**", "share/**")
 
+# A Video Studio project: the editor's state, not a document anyone searches. It belongs to the
+# person -- so it is NOT a reserved prefix, and the file manager still lists it -- but it is never
+# indexed. The Studio names it `<slug>.aura-video.json` and the object key keeps that suffix whole
+# (Go objectstore.StudioProjectSuffix, which TestStudioProjectSuffixMatchesTheCockpitAndTheIngest
+# reads from this line): the filename itself rides in metadata this matcher never sees. `**/`
+# matches at the bucket root too (globset semantics, CocoIndex PatternFilePathMatcher).
+STUDIO_PROJECT_PATTERN = "**/*.aura-video.json"
+
 
 @dataclasses.dataclass(frozen=True, slots=True)
 class S3Config:
@@ -93,12 +101,23 @@ def create_client(config: S3Config):
     )
 
 
+def path_matcher() -> PatternFilePathMatcher:
+    """What the pipeline reads: everything but Aura's own layout and Studio projects.
+
+    One matcher for walk() and expected_keys(): the audit compares against exactly what the
+    walker fed the pipeline, and two filters would manufacture a discrepancy or hide a real one.
+    """
+    return PatternFilePathMatcher(
+        excluded_patterns=[*RESERVED_PATTERNS, STUDIO_PROJECT_PATTERN]
+    )
+
+
 def walk(client: object, config: S3Config) -> amazon_s3.S3Walker:
     return amazon_s3.list_objects(
         client,
         config.bucket,
         prefix=config.prefix,
-        path_matcher=PatternFilePathMatcher(excluded_patterns=list(RESERVED_PATTERNS)),
+        path_matcher=path_matcher(),
     )
 
 
@@ -183,14 +202,13 @@ async def object_facts(client: object, config: S3Config, key: str) -> ObjectFact
 def expected_keys(config: S3Config) -> set[str]:
     """The object keys a completed pass must have produced a document row for.
 
-    Same bucket, same prefix and the same reserved-prefix exclusion as walk(), because
-    the point is to compare against what walk() fed the pipeline -- a different filter
-    here would manufacture a discrepancy or hide a real one.
+    Same bucket, same prefix and the same path_matcher() as walk(), because the point is
+    to compare against what walk() fed the pipeline.
 
     Synchronous botocore rather than the aiobotocore client above: this runs after the
     pass has finished and its event loop is gone.
     """
-    matcher = PatternFilePathMatcher(excluded_patterns=list(RESERVED_PATTERNS))
+    matcher = path_matcher()
     client = sync_get_session().create_client(
         "s3",
         endpoint_url=config.endpoint,

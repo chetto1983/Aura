@@ -11,54 +11,21 @@ answer is parsed.
 import pytest
 
 from ingest import arcade, source
-
-
-class _FakePaginator:
-    def __init__(self, pages):
-        self._pages = pages
-
-    def paginate(self, **_kwargs):
-        return self._pages
-
-
-class _FakeS3:
-    def __init__(self, pages):
-        self._pages = pages
-        self.requested = None
-
-    def get_paginator(self, name):
-        self.requested = name
-        return _FakePaginator(self._pages)
-
-
-def _config(prefix=""):
-    return source.S3Config(
-        identity_id="11111111-1111-1111-1111-111111111111",
-        endpoint="http://garage:3900", bucket="aura-bench",
-        access_key="k", secret_key="s", region="garage", prefix=prefix,
-    )
-
-
-def _install_fake_s3(monkeypatch, pages):
-    client = _FakeS3(pages)
-    monkeypatch.setattr(
-        "ingest.source.sync_get_session", lambda: type("S", (), {"create_client": lambda *a, **k: client})()
-    )
-    return client
+from ingest.tests import fake_s3
 
 
 def test_expected_keys_excludes_the_prefixes_the_walker_excludes(monkeypatch):
     # RESERVED_PATTERNS keeps Aura's own layout out of the pipeline, so counting those
     # objects here would invent a discrepancy on every single pass: they are never
     # supposed to produce a document row.
-    _install_fake_s3(monkeypatch, [{"Contents": [
+    fake_s3.install(monkeypatch, [{"Contents": [
         {"Key": "laws/statute.pdf"},
         {"Key": "identity/abcd/original"},
         {"Key": "share/token/thing.pdf"},
         {"Key": "laws/table.csv"},
     ]}])
 
-    assert source.expected_keys(_config()) == {"laws/statute.pdf", "laws/table.csv"}
+    assert source.expected_keys(fake_s3.config()) == {"laws/statute.pdf", "laws/table.csv"}
 
 
 def test_expected_keys_skips_folder_markers(monkeypatch):
@@ -66,30 +33,30 @@ def test_expected_keys_skips_folder_markers(monkeypatch):
     # listing. The walker never offers one to the pipeline, so expecting a row for it
     # invents a discrepancy that can never clear. MEASURED 2026-08-16: one "test/" marker
     # made every catch-up run exit 1.
-    _install_fake_s3(monkeypatch, [{"Contents": [
+    fake_s3.install(monkeypatch, [{"Contents": [
         {"Key": "test/"},
         {"Key": "test/statute.pdf"},
     ]}])
 
-    assert source.expected_keys(_config()) == {"test/statute.pdf"}
+    assert source.expected_keys(fake_s3.config()) == {"test/statute.pdf"}
 
 
 def test_expected_keys_still_counts_an_empty_file(monkeypatch):
     # The test is the trailing slash, not the size: an empty file a person uploaded is a
     # document, gets a row, and must still be audited.
-    _install_fake_s3(monkeypatch, [{"Contents": [{"Key": "vuoto.txt", "Size": 0}]}])
+    fake_s3.install(monkeypatch, [{"Contents": [{"Key": "vuoto.txt", "Size": 0}]}])
 
-    assert source.expected_keys(_config()) == {"vuoto.txt"}
+    assert source.expected_keys(fake_s3.config()) == {"vuoto.txt"}
 
 
 def test_expected_keys_spans_pages(monkeypatch):
-    _install_fake_s3(monkeypatch, [
+    fake_s3.install(monkeypatch, [
         {"Contents": [{"Key": "a.pdf"}]},
         {"Contents": [{"Key": "b.pdf"}]},
         {},
     ])
 
-    assert source.expected_keys(_config()) == {"a.pdf", "b.pdf"}
+    assert source.expected_keys(fake_s3.config()) == {"a.pdf", "b.pdf"}
 
 
 def test_indexed_source_keys_reads_the_rows(monkeypatch):
@@ -116,12 +83,3 @@ def test_indexed_source_keys_treats_an_empty_index_as_empty_not_as_success(monke
     monkeypatch.setattr("ingest.arcade._post", lambda *a, **k: body)
 
     assert arcade.indexed_source_keys("http://x", "mem_x", ("root", "pw"), 1.0) == set()
-
-
-def test_the_audit_reports_the_objects_with_no_row(monkeypatch):
-    # The whole point, expressed as the set difference it is: an object present in the
-    # bucket and absent from the index is a document the pass lost.
-    expected = {"laws/a.pdf", "laws/b.csv", "laws/c.pdf"}
-    indexed = {"laws/a.pdf", "laws/c.pdf"}
-
-    assert sorted(expected - indexed) == ["laws/b.csv"]
