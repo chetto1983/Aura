@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Asset, PresignResponse } from '../../chat/attachments/types';
+import savedStudioProject from '../../../../internal/assets/testdata/studio-project.json';
 import type { VideoProject } from '../project';
 import {
   lastSavedProject,
@@ -182,6 +183,14 @@ describe('saveProject', () => {
     expect(api.finalizeAsset).toHaveBeenCalledWith('file-1');
   });
 
+  it('marks the file as a Studio project, which keeps it out of the document index', async () => {
+    await saveProject(project());
+
+    const request = api.presignAsset.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request.file_name).toBe('A-film.aura-video.json');
+    expect(uploaded.files[0]?.name).toBe('A-film.aura-video.json');
+  });
+
   it('writes no frame rate onto a source, because nothing ever measured one', async () => {
     // `probeVideo` does not report a frame rate, so the field could only ever hold the PROJECT's
     // default while calling itself the clip's. Saved, it would become a fact cycle 2 reads.
@@ -221,6 +230,17 @@ describe('loadProject', () => {
 
     const loaded = await loadProject('file-1', SOURCE);
     expect(loaded.project).toEqual(original);
+    expect(loaded.missing).toEqual([]);
+  });
+
+  it('loads the project file the server re-keys out of the document index', async () => {
+    // internal/assets/studio_project_rekey.go moves a project saved before the Studio suffix only
+    // when its own check accepts this file. The Studio's parser accepting the same file is what
+    // keeps that check describing a project rather than a guess at one.
+    serve(JSON.stringify(savedStudioProject));
+
+    const loaded = await loadProject('file-1', SOURCE);
+    expect(loaded.project.name).toBe('Reel di Aura');
     expect(loaded.missing).toEqual([]);
   });
 

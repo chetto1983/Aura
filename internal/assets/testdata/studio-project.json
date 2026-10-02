@@ -1,0 +1,85 @@
+{
+  "id": "6f1c2a9e-4b7d-4e2a-9c51-0d3e8f7a1b24",
+  "name": "Reel di Aura",
+  "size": { "width": 1920, "height": 1080 },
+  "fps": 30,
+  "sources": [
+    {
+      "id": "src-clip",
+      "assetId": "9b2f0c1e-7a34-4d5e-8f61-2c3b4a5d6e7f",
+      "kind": "video",
+      "duration": 12.5,
+      "hasAudio": true,
+      "size": { "width": 1920, "height": 1080 }
+    },
+    {
+      "id": "src-still",
+      "assetId": "1d4e5f60-8a9b-4c0d-9e1f-2a3b4c5d6e70",
+      "kind": "image",
+      "duration": 0,
+      "size": { "width": 800, "height": 600 }
+    },
+    {
+      "id": "src-music",
+      "assetId": "3c5d7e9f-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+      "kind": "audio",
+      "duration": 95.2,
+      "hasAudio": true,
+      "size": { "width": 0, "height": 0 }
+    }
+  ],
+  "video": [
+    {
+      "id": "clip-1",
+      "sourceId": "src-clip",
+      "duration": 4,
+      "sourceStart": 1.25,
+      "muted": false,
+      "volume": 1,
+      "fadeIn": true,
+      "fadeOut": true
+    },
+    {
+      "id": "clip-2",
+      "sourceId": "src-still",
+      "duration": 3,
+      "sourceStart": 0,
+      "muted": true,
+      "junctionFromClipId": "clip-1",
+      "junctionTransition": "crossfade",
+      "junctionDuration": 0.5
+    }
+  ],
+  "overlays": [
+    {
+      "id": "lane-1",
+      "items": [
+        {
+          "id": "title-1",
+          "kind": "text",
+          "anchor": { "clipId": "clip-1", "offset": 0.5 },
+          "duration": 2,
+          "props": { "text": "Ciao", "color": "#FFFFFF", "position": [0.5, 0.25] }
+        }
+      ]
+    }
+  ],
+  "audio": [
+    {
+      "id": "music",
+      "items": [
+        {
+          "id": "sound-1",
+          "sourceId": "src-music",
+          "anchor": { "clipId": "clip-1", "offset": 0 },
+          "sourceStart": 0,
+          "duration": 7,
+          "volume": 0.6,
+          "muted": false,
+          "fadeIn": 1,
+          "fadeOut": 1
+        }
+      ]
+    }
+  ]
+}

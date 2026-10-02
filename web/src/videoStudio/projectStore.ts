@@ -13,9 +13,9 @@ import type {
   VideoProject,
 } from './project';
 
-// projectStore.ts — the project as a file. It is a `.json` DOCUMENT uploaded through the same
-// presign the chat attachments use, which is what puts it under `chat/`: the server files by
-// modality (internal/assets/service.go `folderFor`), and `media/` is where the sources live.
+// projectStore.ts — the project as a file. It is a `.aura-video.json` DOCUMENT uploaded through
+// the same presign the chat attachments use, which is what puts it under `chat/`: the server files
+// by modality (internal/assets/service.go `folderFor`), and `media/` is where the sources live.
 // No table, no route and no migration of its own — a project is bytes with an asset id.
 //
 // A load answers with the project AND with the sources whose bytes are gone, because a saved
@@ -37,6 +37,18 @@ export interface LoadedProject {
 }
 
 const PROJECT_MIME = 'application/json';
+
+/**
+ * What a project file's name ends in: the Studio's marker, never a separate format. It still ends
+ * in `.json`, the extension the upload allowlist accepts (internal/assets/limits.go), and the
+ * object key keeps it whole (internal/objectstore `StudioProjectSuffix`), which is what the
+ * ingest skips (services/ingest/source.py `STUDIO_PROJECT_PATTERN`): a project is the editor's
+ * state, not a document anyone searches. A project saved before the marker was plain `.json`: the
+ * server moves it to the marker once, at boot (internal/assets/studio_project_rekey.go), and it
+ * loads either way, because `loadProject` reads by asset id and never looks at a name.
+ */
+export const PROJECT_FILE_EXTENSION = 'aura-video.json';
+
 /** Long enough to recognise the project, short enough that no store has to think about it. */
 const NAME_MAX = 60;
 
@@ -66,9 +78,11 @@ export function projectFileName(
 
 /** Save the project and answer with the asset id it now lives at. */
 export async function saveProject(project: VideoProject, name = project.name): Promise<string> {
-  const file = new File([JSON.stringify(project)], projectFileName(project, 'json', name), {
-    type: PROJECT_MIME,
-  });
+  const file = new File(
+    [JSON.stringify(project)],
+    projectFileName(project, PROJECT_FILE_EXTENSION, name),
+    { type: PROJECT_MIME },
+  );
   const presign = await presignAsset({
     // No thread: a project belongs to the identity, the way a Studio frame does.
     thread_id: '',
