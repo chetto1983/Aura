@@ -32,7 +32,7 @@ It proposes the acceptance chain this design adopts:
 | How a render waits | **Background job**, the `video_generate` pattern: the tool returns straight away with a progress card, and Aura wakes the conversation when the MP4 is ready. Cancellable. *Superseded 2026-10-02: no wake; see §"Amended 2026-10-02".* |
 | Sources | **The identity's library assets only.** The sidecar never downloads an arbitrary URL. |
 | Tool scope | **Full Studio parity**, ducking (speech detection) and noise reduction included. |
-| Telegram | **As today**: native video up to 50 MB, above that "⚠️ Il video è disponibile nel cockpit." (`internal/channels/telegram/artifact.go:33,143-149`). |
+| Telegram | **As today**: native video up to 50 MB, above that "⚠️ Il video è disponibile nel cockpit." (`internal/channels/telegram/artifact.go:33,143-149`). *Amended 2026-10-02: on this path a film reaches Telegram only under the bridge's 25 MiB cap.* |
 | Architecture | **A central sidecar**, a Node container, MCP-over-HTTP with Aura's OAuth. Not an MCP in each identity's box. |
 | Studio export bugs the spikes found | **Fixed in this sub-project**: the sidecar renders with the same export page. |
 | Who owns a render job | **Aura**, for its own conversations (native tools, job row, watcher, wake). The sidecar is the engine. *Superseded 2026-10-02: the sidecar owns every job; see §"Amended 2026-10-02".* |
@@ -380,8 +380,8 @@ Each fix has a failing test first:
    - *amended 2026-10-02:* Aura starts the render and reports the job; a later status delivers the
      film in the chat when it is under the bridge's cap, and in the library otherwise;
    - the downloaded MP4 gets the same checks.
-3. **Aura on Telegram (CDP harness):** the same request; a native video if ≤ 50 MB, otherwise the
-   cockpit notice.
+3. **Aura on Telegram (CDP harness):** the same request; *amended 2026-10-02:* a native video when the
+   film comes through under the bridge's 25 MiB cap, and the library otherwise.
 4. **Editing an existing project from chat:**
    - "accorcia l'intro di 2 s e abbassa la musica";
    - a new version, a new render, and the difference measured.
