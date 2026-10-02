@@ -167,9 +167,30 @@ async function applyAuthState(page: Page): Promise<boolean> {
 }
 
 interface AuthConfig {
+  origin: string;
   authBasePath: string;
   csrfHeaderName: string;
   csrfToken: string;
+}
+
+// browserCookieHeader is the Cookie header Chromium sends to url. page.request builds its own
+// from the same jar but drops every Secure cookie over http unless the host is localhost, while
+// Chromium also trusts 127.0.0.1, where CI serves the cockpit. Without it Authula never sees the
+// __Host- CSRF cookie, and its csrf.protect on sign-in answers 403. The auth calls stay on
+// page.request rather than a page fetch because specs mock /api/* with context.route, which
+// page.request bypasses.
+async function browserCookieHeader(page: Page, url: string): Promise<Record<string, string>> {
+  const { hostname, pathname } = new URL(url);
+  const value = (await page.context().cookies())
+    .filter(
+      (cookie) =>
+        (cookie.domain.startsWith('.')
+          ? `.${hostname}`.endsWith(cookie.domain)
+          : hostname === cookie.domain) && pathname.startsWith(cookie.path),
+    )
+    .map((cookie) => `${cookie.name}=${cookie.value}`)
+    .join('; ');
+  return value === '' ? {} : { Cookie: value };
 }
 
 async function authConfig(page: Page): Promise<AuthConfig> {
@@ -191,6 +212,7 @@ async function authConfig(page: Page): Promise<AuthConfig> {
   const bodyToken =
     typeof raw.csrf_token === 'string' && raw.csrf_token !== '' ? raw.csrf_token : undefined;
   return {
+    origin: new URL(res.url()).origin,
     authBasePath: typeof raw.auth_base_path === 'string' ? raw.auth_base_path : '/auth',
     csrfHeaderName,
     csrfToken: bodyToken ?? headers[csrfHeaderName.toLowerCase()] ?? headers[csrfHeaderName] ?? '',
@@ -253,12 +275,18 @@ async function authenticateViaAuthula(page: Page, config: AuthConfig) {
     throw new Error('E2E Authula auth failed: /api/auth/config did not return a CSRF token');
   }
 
-  const headers = { [config.csrfHeaderName]: config.csrfToken };
-  const signIn = await page.request.post(`${config.authBasePath}/email-password/sign-in`, {
-    data: { email, password },
-    headers,
-    failOnStatusCode: false,
-  });
+  const post = async (path: string, data: Record<string, unknown>) => {
+    const url = `${config.origin}${config.authBasePath}${path}`;
+    return page.request.post(url, {
+      data,
+      headers: {
+        [config.csrfHeaderName]: config.csrfToken,
+        ...(await browserCookieHeader(page, url)),
+      },
+      failOnStatusCode: false,
+    });
+  };
+  const signIn = await post('/email-password/sign-in', { email, password });
   if (!signIn.ok()) {
     throw new Error(`E2E Authula auth failed: sign-in returned HTTP ${String(signIn.status())}`);
   }
@@ -269,11 +297,7 @@ async function authenticateViaAuthula(page: Page, config: AuthConfig) {
       'E2E Authula TOTP required, but AURA_E2E_AUTHULA_TOTP_CODE or TOTP_SECRET is missing',
     );
   }
-  const verify = await page.request.post(`${config.authBasePath}/totp/verify`, {
-    data: { code, trust_device: false },
-    headers,
-    failOnStatusCode: false,
-  });
+  const verify = await post('/totp/verify', { code, trust_device: false });
   if (!verify.ok()) {
     throw new Error(
       `E2E Authula auth failed: TOTP verify returned HTTP ${String(verify.status())}`,
