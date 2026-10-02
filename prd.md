@@ -246,10 +246,17 @@ held, and a services key that `GET /api/v1/key` refuses with 401 is replaced by 
 `aura-services` at the services cap. A key the provider still holds, disabled or not, is
 kept. `GET /api/v1/keys` returns the 100 most recent keys and pages with `offset`
 (OpenRouter's management-key guide, read the same day), so the roster is read page by page.
-What this does not prove: the 401 was measured with a key OpenRouter never issued, not with
-a deleted one; a replacement starts with no spend at the provider, so a capped member's
-monthly allowance restarts with it; and when the new management key belongs to another
-account, the keys the old account still holds are replaced here but stay live there.
+Measured the same day on the VM after `9f2032773` reached it, with both keys still deleted:
+the boot reconcile, within a second of start, rewrote `OPENROUTER_API_KEY` as
+`aura-reconciler` and replaced the person's row (new hash and label, still no limit for the
+admin) with nothing logged as a failure; the provider's roster then listed the new key under
+that identity, a second reconcile minted and aligned nothing, and the operator's next chat
+turn billed on the new key (19,506 prompt tokens, $0.00035) with no 401 logged. The services key is
+rewritten only when `GET /api/v1/key` refuses the stored one, so a deleted key answers 401
+there. What this does not prove: a replacement starts with no spend at the provider, so a
+capped member's monthly allowance restarts with it; a member's replacement was covered by
+unit tests only, the VM holding one admin; and when the new management key belongs to
+another account, the keys the old account still holds are replaced here but stay live there.
 
 The Ollama route uses the signed-in local server for inference. Its model picker merges
 the models available from that server's `/api/tags` with the current cloud catalogue
