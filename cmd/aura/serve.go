@@ -271,6 +271,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		return nil, fmt.Errorf("build object store: %w", err)
 	}
 	chat.assets = buildAssetService(chat.cfg, chat.pool, objectStore)
+	rekeyStudioProjects(ctx, buildStudioProjectRekey(chat, objectStore), studioProjectRekeyTimeout)
 	ownerExports := agui.NewObjectStoreExportDestination(objectStore, chat.cfg.ObjectStoreBucket)
 	// Wire send_file's ingest seam to the live asset service now that chat.assets exists
 	// (VERIF-7 post-construction, mirroring the .Caps set above): an authenticated

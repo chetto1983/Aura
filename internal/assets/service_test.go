@@ -444,21 +444,35 @@ func (s *fakeAssetStore) ListRecent(
 	s.lastRecentLimit = limit
 	s.lastRecentModalities = modalities
 	s.lastRecentBefore = beforeID
+	// A before_id the owner does not hold compares as NULL in the query, so the page is empty.
+	before, paged := s.assets[beforeID]
+	if beforeID != "" && (!paged || before.IdentityID != identityID) {
+		return nil, nil
+	}
 	var out []Asset
 	for _, asset := range s.assets {
 		if asset.IdentityID != identityID || !slices.Contains(modalities, asset.Modality) ||
-			!usableAssetStatuses[asset.Status] || !asset.DeletedAt.IsZero() {
+			!usableAssetStatuses[asset.Status] || !asset.DeletedAt.IsZero() ||
+			(paged && !newerFirst(before, asset)) {
 			continue
 		}
 		out = append(out, asset)
 	}
-	// The query orders by created_at DESC and only then applies the LIMIT; a map's iteration
-	// order would otherwise make this fake answer a different question than the store does.
-	sort.Slice(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	// The query orders by (created_at, id) DESC and only then applies the LIMIT; a map's
+	// iteration order would otherwise make this fake answer a different question than the store.
+	sort.Slice(out, func(i, j int) bool { return newerFirst(out[i], out[j]) })
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
 	return out, nil
+}
+
+// newerFirst is the query's (created_at, id) DESC order: whether a comes before b.
+func newerFirst(a, b Asset) bool {
+	if !a.CreatedAt.Equal(b.CreatedAt) {
+		return a.CreatedAt.After(b.CreatedAt)
+	}
+	return a.ID > b.ID
 }
 
 // The statuses ListRecentImageAssets accepts, kept beside the fake that has to agree with it.

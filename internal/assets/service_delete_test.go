@@ -63,9 +63,16 @@ func (s *fakeAssetStore) row(id string) (Asset, bool) {
 
 func captureWarnings(t *testing.T) *bytes.Buffer {
 	t.Helper()
+	return captureLogs(t, slog.LevelWarn)
+}
+
+// captureLogs sends the default logger's records at level and above to the returned buffer for
+// the rest of the test.
+func captureLogs(t *testing.T, level slog.Level) *bytes.Buffer {
+	t.Helper()
 	var logs bytes.Buffer
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: level})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	return &logs
 }
