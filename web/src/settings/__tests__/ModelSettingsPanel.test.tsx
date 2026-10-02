@@ -393,7 +393,8 @@ describe('ModelSettingsPanel', () => {
     }
 
     fireEvent.click(firstReset);
-    expect(screen.getByTestId('spinner')).toBeTruthy();
+    // Scoped to the button: the model picker's Refresh spins too while its catalogue probe waits.
+    expect(within(firstReset).getByTestId('spinner')).toBeTruthy();
     expect(firstReset.hasAttribute('disabled')).toBe(true);
 
     fireEvent.click(secondReset);
@@ -404,7 +405,12 @@ describe('ModelSettingsPanel', () => {
     );
     await waitFor(() => {
       expect(getCount).toBe(2);
+      const resetAfterReload = screen.getAllByRole('button', { name: 'Reset' })[0];
+      if (resetAfterReload === undefined) throw new Error('expected Reset after reload');
+      expect(resetAfterReload.hasAttribute('disabled')).toBe(false);
+      expect(within(resetAfterReload).queryByTestId('spinner')).toBeNull();
     });
+    expect(calls.filter((call) => call.startsWith('DELETE')).length).toBe(1);
   });
 
   it('resets an overridden token setting', async () => {
@@ -444,13 +450,20 @@ describe('ModelSettingsPanel', () => {
     const saveButton = screen.getByRole('button', { name: 'Save runtime settings' });
     fireEvent.click(saveButton);
     expect(saveButton.getAttribute('aria-busy')).toBe('true');
-    expect(screen.getByTestId('spinner')).toBeTruthy();
+    expect(saveButton.hasAttribute('disabled')).toBe(true);
+    expect(within(saveButton).getByTestId('spinner')).toBeTruthy();
 
     fireEvent.click(saveButton);
 
     resolvePut?.(jsonResponse({ ok: true }));
     expect(await screen.findByText('Runtime settings saved.')).toBeTruthy();
     expect(calls.filter((call) => call.startsWith('PUT')).length).toBe(1);
+    await waitFor(() => {
+      const savedButton = screen.getByRole('button', { name: 'Save runtime settings' });
+      expect(savedButton.getAttribute('aria-busy')).toBe('false');
+      expect(savedButton.hasAttribute('disabled')).toBe(false);
+      expect(within(savedButton).queryByTestId('spinner')).toBeNull();
+    });
   });
 
   it('skips the ready state when a settings load resolves after unmount', async () => {

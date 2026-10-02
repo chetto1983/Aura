@@ -1864,6 +1864,7 @@ jobs:
               - 'web/**'
               - 'internal/webui/dist/**'
               - '.github/workflows/ci.yml'
+              - 'scripts/web_e2e_ci.sh'
 
       - name: Set up Go
         if: steps.changes.outputs.web == 'true'
@@ -2015,24 +2016,17 @@ jobs:
         if: steps.changes.outputs.web == 'true'
         run: cd web && npx playwright install --with-deps chromium
 
-      - name: Playwright E2E (webServer boots ../aura serve, SC2)
-        # Playwright's webServer does not inherit runner env (#19780); playwright.config.ts
-        # forwards the DB/serve vars from process.env into the webServer process, and this
-        # job exports them above. The shell.spec asserts theme-before-paint + brand + no
-        # hero text against the served embedded shell.
-        #
-        # The job does NOT export AURA_AGUI_BIND: the daemon defaults to 127.0.0.1:9080
-        # (config.go AGUIBind default), and playwright.config.ts's SERVE_ORIGIN tracks
-        # that same default (single source). The webServer gates on .../healthz, so a
-        # boot failure fails this step via the webServer readiness timeout rather than a
-        # green run — see the WR-06 note in playwright.config.ts.
+      - name: Playwright E2E (HTTPS cockpit, SC2)
+        # page.request filters Secure CSRF/session cookies from HTTP 127.0.0.1.
+        # The runner preserves the web cwd, CI exports, and full browser matrix while
+        # using the existing TLS proxy and bounded /healthz readiness on its HTTPS origin.
         if: steps.changes.outputs.web == 'true'
         # TEMP-harvest (revert after committing the PNGs, playbook 64ba3ec4/ecc98359):
         # the calm-prism baselines drifted after the shell containing-block fix; CI
         # renders with the runner's Chrome, so off-runner regeneration fails on
         # font/build diffs. --update-snapshots regenerates them ON the runner while the
         # rest of the suite still runs as a real gate; the artifact below is harvested.
-        run: cd web && npm run test:e2e -- --update-snapshots
+        run: bash scripts/web_e2e_ci.sh --update-snapshots
 
       - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
         if: always() && steps.changes.outputs.web == 'true'
