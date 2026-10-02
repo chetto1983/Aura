@@ -323,6 +323,41 @@ describe('exportProject', () => {
     media.cache.release(A);
   });
 
+  it('decodes no further source and exports nothing when the abort lands mid-decode', async () => {
+    // The media is held, so the decode is the longest wait left before the encoder starts.
+    const controller = new AbortController();
+    let finish: (() => void) | undefined;
+    vi.stubGlobal(
+      'OfflineAudioContext',
+      class {
+        decodeAudioData(bytes: ArrayBuffer) {
+          decoded.calls.push(bytes);
+          // Only the first decode is held open; any later one would answer at once.
+          if (decoded.calls.length > 1) return Promise.resolve({ id: decoded.calls.length });
+          return new Promise((resolve) => {
+            finish = () => {
+              resolve({ id: 1 });
+            };
+          });
+        }
+      },
+    );
+    renderer.layers = [layer(A), layer(B, { type: 'audio' })];
+
+    const running = exportProject(withSound(), urls, { signal: controller.signal });
+    await vi.waitFor(() => {
+      expect(finish).toBeDefined();
+    });
+    controller.abort();
+    // `decodeAudioData` cannot be cancelled: the decode under way finishes after the close.
+    finish?.();
+
+    await expect(running).rejects.toBe(controller.signal.reason);
+    expect(decoded.calls).toHaveLength(1);
+    expect(renderer.exportOptions).toHaveLength(0);
+    expect(renderer.instances[0]?.destroyed).toBe(1);
+  });
+
   it('renders nothing at all when its signal is already aborted', async () => {
     const controller = new AbortController();
     controller.abort();

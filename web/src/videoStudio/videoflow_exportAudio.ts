@@ -1,7 +1,7 @@
 import BrowserRenderer from '@videoflow/renderer-browser';
 import { AudioBufferSource, BufferTarget, Output, WavOutputFormat } from 'mediabunny';
 import type { VideoProject } from './project';
-import { toVideoJSON, type MediaUrls } from './videoflow';
+import { toVideoJSON, withLocalFonts, type MediaUrls } from './videoflow';
 import { renderLoaded } from './videoflow_media';
 
 /** The renderer found no sound layers; the UI translates this separately from a failed encode. */
@@ -16,7 +16,8 @@ export async function exportProjectAudio(
   signal?.throwIfAborted();
   const json = await toVideoJSON(project, urls);
   signal?.throwIfAborted();
-  const renderer = new BrowserRenderer(json);
+  // Even a sound-only render loads a font: `initLayers` asks for 'Noto Sans' before any layer.
+  const renderer = withLocalFonts(new BrowserRenderer(json));
   return await renderLoaded(renderer, project, urls, signal, async () => {
     const audio = await renderer.renderAudio();
     signal?.throwIfAborted();

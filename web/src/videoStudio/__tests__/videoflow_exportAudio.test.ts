@@ -95,6 +95,13 @@ describe('exportProjectAudio', () => {
     expect(renderer.instances[0]?.destroyed).toBe(1);
   });
 
+  it('loads the renderer default font from our own origin, never from Google', async () => {
+    await exportProjectAudio(project(), urls);
+
+    expect(renderer.stockFontRequests).toEqual([]);
+    expect(renderer.instances[0]?.loadedFonts['Noto Sans']).toBe('/fonts/noto-sans-alias.css');
+  });
+
   it('says there is nothing to write when the project has no sound', async () => {
     renderer.audio = null;
 

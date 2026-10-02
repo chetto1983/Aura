@@ -131,10 +131,12 @@ export class FakeRenderer {
     renderer.stockFontRequests.push(name);
     return Promise.resolve();
   }
-  /** What BrowserRenderer.initLayers does (dist/BrowserRenderer.js:427-445): every layer takes its
-   *  bytes from the media cache, and one that cannot load is disabled, never thrown. */
+  /** What BrowserRenderer.initLayers does (dist/BrowserRenderer.js:418-445): it loads its default
+   *  font first, then every layer takes its bytes from the media cache, and one that cannot load
+   *  is disabled, never thrown. */
   async initLayers(): Promise<void> {
     renderer.initCalls += 1;
+    await this.loadFont('Noto Sans');
     this.layers = renderer.layers;
     await Promise.all(
       this.layers.map(async (held) => {
