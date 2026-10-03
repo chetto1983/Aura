@@ -1843,6 +1843,11 @@ jobs:
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
       AURA_E2E_AUTHULA_PASSWORD: ci-e2e-password-123
+      # The appliance's admin pair (compose.yaml, aura service). Without it Aura cannot tell a
+      # memory database nobody created from a failure, and deleting a conversation answers 500
+      # until the memory MCP has created it (prd.md §3, measured 2026-10-03).
+      ARCADEDB_ADMIN_USER: root
+      ARCADEDB_ADMIN_PASSWORD: ci-test-password
       OPENROUTER_API_KEY: ci-degraded-no-network
       AURA_OBJECTSTORE_BACKEND: garage
       AURA_OBJECTSTORE_ENDPOINT: http://127.0.0.1:3900
