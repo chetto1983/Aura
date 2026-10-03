@@ -12,10 +12,8 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"net/http"
 	"os"
 	"regexp"
 	"slices"
@@ -97,8 +95,6 @@ func TestCalendarServerLive(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	assertOAuthResourceAuthenticates(t, ctx, issuer, endpoint, tokenA)
-	seedCalendarAccount(t, ctx, endpoint, tokenA, calendarTenantA)
-	seedCalendarAccount(t, ctx, endpoint, tokenB, calendarTenantB)
 
 	sessionA := openOAuthResourceSession(t, ctx, issuer, "calendar-a", endpoint, tokenA)
 	sessionB := openOAuthResourceSession(t, ctx, issuer, "calendar-b", endpoint, tokenB)
@@ -132,8 +128,10 @@ func TestCalendarServerLive(t *testing.T) {
 		t.Errorf("curated tool schema required = %v, want [action] — the flat-union D-19 shape has no other root-required field", required)
 	}
 
-	// list_accounts is read-only. CI seeds the same local JSON provider for two
-	// identities so this tier proves isolation, not merely empty-list behavior.
+	// list_accounts is read-only. CI configures, as the operator, one local JSON
+	// account per identity (testdata/pim-appsettings.json) so this tier proves
+	// isolation, not merely empty-list behavior. The admin API cannot seed them: the
+	// sidecar refuses a tenant-written JSON account that reads its own disk.
 	_ = awaitCalendarAccount(t, ctx, sessionA, calendarTenantAccount, calendarForeignAccount)
 	_ = awaitCalendarAccount(t, ctx, sessionB, calendarForeignAccount, calendarTenantAccount)
 
@@ -168,33 +166,6 @@ func awaitCalendarAccount(
 			t.Fatalf("wait for calendar account %q: %v", want, ctx.Err())
 		case <-time.After(100 * time.Millisecond):
 		}
-	}
-}
-
-func seedCalendarAccount(t *testing.T, ctx context.Context, endpoint, token, identity string) {
-	t.Helper()
-	body, err := json.Marshal(map[string]any{
-		"id": "fixture", "displayName": "Fixture calendar (no provider OAuth)",
-		"provider": "json", "enabled": true, "priority": 1,
-		"providerConfig": map[string]string{"source": "local", "filePath": "/app/data/fixture-calendar.json"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-		strings.TrimRight(endpoint, "/")+"/admin/accounts", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Content-Type", "application/json")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		t.Fatalf("seed calendar account for %s: %v", identity, err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusConflict {
-		t.Fatalf("seed calendar account for %s: HTTP %d", identity, response.StatusCode)
 	}
 }
 

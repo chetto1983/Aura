@@ -1,0 +1,24 @@
+{
+  "CalendarMcp": {
+    "Accounts": [
+      {
+        "id": "00000000000000000000000000000001__fixture",
+        "tenantId": "00000000-0000-0000-0000-000000000001",
+        "displayName": "Fixture calendar (no provider OAuth)",
+        "provider": "json",
+        "enabled": true,
+        "priority": 1,
+        "providerConfig": { "source": "local", "filePath": "/app/data/fixture-calendar.json" }
+      },
+      {
+        "id": "00000000000000000000000000000002__fixture",
+        "tenantId": "00000000-0000-0000-0000-000000000002",
+        "displayName": "Fixture calendar (no provider OAuth)",
+        "provider": "json",
+        "enabled": true,
+        "priority": 1,
+        "providerConfig": { "source": "local", "filePath": "/app/data/fixture-calendar.json" }
+      }
+    ]
+  }
+}

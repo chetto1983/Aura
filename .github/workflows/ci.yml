@@ -1419,9 +1419,11 @@ jobs:
       # The job runs the sidecar via `docker run` (NOT `docker compose`): compose would
       # interpolate the WHOLE compose.yaml and fail on the unrelated `aura` service's
       # :?-required POSTGRES_PASSWORD. The standalone GHCR image has no compose deps.
-      # Pinned by commit, matching compose.yaml; a floating tag is how CI and dev end up
-      # exercising different servers.
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
+      # :latest is what appliances run: the fork publishes :latest and :sidecar together,
+      # and compose.yaml defaults to :latest. The pin this replaced (5909c808, 2026-08-28)
+      # still let a tenant seed a local JSON account through /admin; production refuses
+      # that, so the tier had been proving an image no appliance runs.
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:latest
       # The container's MCP-over-HTTP path is the root "/" (spike 064); we publish it on
       # host 127.0.0.1:8093 (the container listens on 8080).
       AURA_PIM_MCP_URL: http://127.0.0.1:8093/
@@ -1442,11 +1444,12 @@ jobs:
 
       - name: Start the Aura PIM sidecar (published GHCR image)
         # Standalone `docker run` — the public image carries its own HEALTHCHECK
-        # (curl /health), so the wait step reads .State.Health.Status. Zero accounts is
-        # fine: tools/list + list_accounts answer without OAuth.
+        # (curl /health), so the wait step reads .State.Health.Status. The operator
+        # configuration declares one local JSON account per test identity: only the
+        # operator may point an account at the server's own disk, never /admin.
         run: |
-          # Base64 is {"CalendarMcp":{"Accounts":[]}} without quote loss across
-          # the workflow shell, docker argv and the container shell.
+          # Base64 carries the configuration without quote loss across the workflow
+          # shell, docker argv and the container shell.
           docker run -d --name aura-pim-mcp \
             --add-host=host.docker.internal:host-gateway \
             -p 127.0.0.1:8093:8080 \
@@ -1454,10 +1457,10 @@ jobs:
             -e CALENDAR_MCP_OAuth__MetadataAddress=http://host.docker.internal:18090/.well-known/oauth-authorization-server \
             -e CALENDAR_MCP_OAuth__Resource=http://127.0.0.1:8093/ \
             -e CALENDAR_MCP_OAuth__ToolsScope=mcp:tools \
-            -e AURA_PIM_EMPTY_CONFIG_B64=eyJDYWxlbmRhck1jcCI6eyJBY2NvdW50cyI6W119fQ== \
+            -e AURA_PIM_CONFIG_B64="$(base64 -w0 internal/mcp/testdata/pim-appsettings.json)" \
             --entrypoint /bin/sh \
             "$AURA_PIM_MCP_IMAGE" \
-            -c 'test -s /app/data/appsettings.json || printf "%s" "$AURA_PIM_EMPTY_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll'
+            -c 'printf "%s" "$AURA_PIM_CONFIG_B64" | base64 -d > /app/data/appsettings.json; exec dotnet CalendarMcp.HttpServer.dll'
 
       - name: Wait for the PIM sidecar healthy
         run: |
@@ -1855,7 +1858,7 @@ jobs:
       # schema production no longer serves -- the same stale image behind
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
-      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
+      AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:latest
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout
