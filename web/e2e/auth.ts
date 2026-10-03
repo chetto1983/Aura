@@ -366,7 +366,17 @@ async function installRuntimeHealthFixture(page: Page) {
   );
 }
 
-export async function gotoAuthenticated(page: Page, path: string) {
+interface GotoAuthenticatedOptions {
+  // Signing out revokes the session server-side. A spec that signs out must therefore own a
+  // session of its own: on the shared cached one it logs out every spec running in parallel.
+  readonly isolatedSession?: boolean;
+}
+
+export async function gotoAuthenticated(
+  page: Page,
+  path: string,
+  options: GotoAuthenticatedOptions = {},
+) {
   // English is the default the role- and label-based assertions read, but a fixture that
   // pinned another language registers its init script first and this one would overwrite it
   // (init scripts run in registration order, last writer wins) — so only fill an empty slot.
@@ -378,12 +388,17 @@ export async function gotoAuthenticated(page: Page, path: string) {
   await installCompletedProfileFixture(page);
   await installRuntimeHealthFixture(page);
 
-  await applyAuthState(page);
-  const firstResponse = await page.goto(path, { waitUntil: 'domcontentloaded' });
-  if (isLoginUrl(page.url()) || firstResponse?.status() === 401) {
-    clearAuthState();
-    await ensureAuthState(page);
+  if (options.isolatedSession === true) {
+    await authenticateViaApi(page);
     await page.goto(path, { waitUntil: 'domcontentloaded' });
+  } else {
+    await applyAuthState(page);
+    const firstResponse = await page.goto(path, { waitUntil: 'domcontentloaded' });
+    if (isLoginUrl(page.url()) || firstResponse?.status() === 401) {
+      clearAuthState();
+      await ensureAuthState(page);
+      await page.goto(path, { waitUntil: 'domcontentloaded' });
+    }
   }
 
   await expect(page).not.toHaveURL(/\/login(?:[?#]|$)/, { timeout: 10_000 });
