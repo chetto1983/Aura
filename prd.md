@@ -1578,6 +1578,15 @@ administrative rights are explicit; ordinary ownership labels do not authorize e
 deployment policy. Builtins are application-owned and must not offer lifecycle actions
 that boot materialization immediately undoes.
 
+`find-skills-aura` loads on demand, not in every turn (2026-10-03). Its body was the only
+always-on skill: 3,762 bytes injected into messages[1] of every turn, about half of that
+6,788-character block on the measured turn, to teach a path the `skill` tool description
+already teaches (look at the installed list first, install through `skill_manage`, never
+through the CLI). The installed-skills list in messages[1] still names it with its
+description, and the capability-gap replies of `tool_search` and `skill action=list` point
+to `skill action=use name=find-skills-aura`. This does not establish how often a turn
+needed the body: no usage data was read.
+
 Skills and snippets are not permanent model self-modification. Retired pending stages,
 `Agent.md` provisioning, orphan pyscripts/MCP roots and hidden legacy landing zones are
 not current mechanisms. Group principal support and moving bodies into Postgres require
