@@ -1871,6 +1871,7 @@ jobs:
               # The memory sidecar is built from this commit, so its own changes must
               # re-run the browser suite that drives it.
               - 'cmd/arcadedb-mcp/**'
+              - 'docker/arcadedb-mcp/**'
 
       - name: Set up Go
         if: steps.changes.outputs.web == 'true'
