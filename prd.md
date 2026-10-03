@@ -142,18 +142,19 @@ whether the identity's `mem_<uuid>` database exists, so it binds as the tenant, 
 database nobody has created answers 403: the delete lifecycle's reasoning step returned
 `reasoning graph: memory for …: http 403: User/Password not valid`. Without admin Aura
 cannot create that database either; in that job only the memory MCP could, once the cockpit
-authorized memory, and in that run the cockpit spec never got that far. Reproduced locally against an empty ArcadeDB: without admin the spec
-fails with exactly that body; with admin `Existing` answers `ok=false`, the step is skipped
-and the delete answers 204. The job now passes the appliance's admin pair.
+authorized memory, and in that run the cockpit spec never got that far. Reproduced locally
+against an empty ArcadeDB: without admin the spec fails with exactly that body; with admin
+`Existing` answers `ok=false`, the step is skipped and the delete answers 204. The job now
+passes the appliance's admin pair. A deployment without that pair is not a supported shape
+(operator decision, 2026-10-03): ArcadeDB ships inside the appliance and the installer always
+hands Aura its admin credentials, so the no-admin path is not hardened.
 
 This does not establish:
 - why the member's runs ended with the interrupted-round marker: that cause is in the
   daemon log of their appliance (`round ended with no answer … cause=`), not read yet;
 - the lifetime choices (12 h idle, 1 h renewal, 7 days absolute) as measured needs: they
   are a policy, kept where the passphrase cookie had them for the idle window;
-- the behaviour on the lab VM or behind Caddy: measured on the local stack only;
-- whether a deployment without ArcadeDB admin credentials is supported: there, a member
-  whose memory database was never created cannot delete a conversation.
+- the behaviour on the lab VM or behind Caddy: measured on the local stack only.
 
 ## 4. Agent lifecycle, tools and completion
 
