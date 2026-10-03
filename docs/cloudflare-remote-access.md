@@ -5,8 +5,10 @@ Access OTP and Authula, and another that additionally requires your organization
 One client through Gateway. A registered domain is required. Aura does not purchase domains.
 
 As of 2026-09-20 the implementation has hermetic browser, installer and isolated Caddy evidence.
-Named-tunnel live acceptance is **blocked: the operator has no registered domain**. No result
-from a mock, a local certificate or a Quick Tunnel closes that acceptance.
+Named-tunnel live acceptance was then **blocked: the operator had no registered domain**. On
+2026-09-22 provisioning ran against an appliance with a registered domain and exposed a Gateway
+posture ownership defect, since fixed; no run of the live acceptance runner below is recorded.
+No result from a mock, a local certificate or a Quick Tunnel closes that acceptance.
 
 ## Install and enable
 
@@ -64,6 +66,10 @@ guidance. Do not infer an enrollment URL from the zone; the live harness require
 
 No LAN, Docker, Postgres, Garage-admin, MCP or CIDR route is published. Cloudflared joins only
 the dedicated egress-capable tunnel network, with Caddy bridging to the application network.
+That network is not a data-plane barrier: Docker's rules for ports published in `compose.yaml`
+admit traffic from any bridge, and those ports were reachable from it when measured on Docker
+Desktop (finding F-1 of the
+[2026-09-21 review](superpowers/verification/2026-09-21-cloudflare-remote-access-review.md)).
 Garage browser PUT/download paths still pass through Caddy on the same public hostname.
 The private Caddy listener explicitly forwards HTTPS as the browser scheme even though the
 connector-to-Caddy hop is HTTP; this prevents HTTP presigned upload URLs.
@@ -188,5 +194,5 @@ and retry deletion there. Never “clean up” by deleting an entire zone or any
 Interactive checkpoints supply OTP, enrollment, image-edit actions and Dashboard rotation; the
 subsequent network/state assertions determine success. Attachments contain only non-secret
 measurements, including continuous health samples during rotation. A failure or missing checkpoint
-leaves acceptance incomplete. The live suite has not run for this delivery because the domain
-prerequisite is absent; full release/coverage gates belong to Task 7.
+leaves acceptance incomplete. No live-suite result is recorded; the 2026-09-21 security and
+release review linked above lists the thirteen live assertions still unrun.
