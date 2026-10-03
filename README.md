@@ -37,8 +37,9 @@ ChatGPT plan, the bundled local llama.cpp server, or Ollama. Local storage does 
 make cloud inference offline: a cloud provider receives the context sent to its
 model; with a local server nothing leaves the host for inference.
 
-> **Deployment:** Aura can run on hardware the operator owns or manages. Select
-> capacity for the chosen model, workload, documents and backup retention.
+> **Hardware:** a mini PC with 16 GB of RAM is enough. The default stack measured
+> 7 GB with speech-to-text and text-to-speech running on a 16 GB mini PC
+> (2026-09-02). No local LLM runs by default: inference goes to the provider you choose.
 
 <div align="center">
 
@@ -73,8 +74,32 @@ model; with a local server nothing leaves the host for inference.
 - **Per-identity sandbox** — a full-capability box per operator (opt-in `sandbox` profile; gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
 - **Multi-user** — Authula sign-in (password + TOTP), one isolated ArcadeDB database per identity enforced by the server, capability grants, and an admin audit view.
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, voice input/output, and live settings.
-- **Studio** — image and video generation over OpenRouter's media models, with in-browser photo and video editing.
+- **Studio** — image and video generation, photo and video editing, and a multi-track video editor, all in the cockpit ([details](#studio)).
 - **Bundled integrations** — calendar/e-mail (PIM MCP, OAuth providers), WhatsApp (unofficial client), web search through a bundled SearXNG, snapshot share links to a conversation, and Cloudflare remote access.
+
+## Studio
+
+The cockpit's creative workspace, per identity.
+
+- **Generate images and video** from a prompt over OpenRouter's media models. The model
+  picker shows each model's price (per image, per second or per million output tokens)
+  and the estimated cost before you press Generate. Options cover resolution, aspect
+  ratio, seed, and duration and sound for video; advanced inputs take a start frame, an
+  end frame and reference images from your library. Every generation lands in a
+  searchable history you can reuse or download. Generation needs the OpenRouter route.
+- **Edit photos and clips** in the browser: a photo editor (Filerobot) and a quick video
+  editor (trim, crop, rotate, audio) for any image or clip in a chat or in the Garage
+  library.
+- **Multi-track video editor**:
+  - a video lane plus overlay lanes for titles and images, with transitions between clips;
+  - per-clip transform (fill, fit, crop, flip, rotate), adjustments (opacity, brightness,
+    contrast, saturation, hue, blur), animations and speed;
+  - audio lanes for an uploaded sound, a recorded voice, a text read aloud, or the sound
+    extracted from a clip, with noise reduction, fades and automatic ducking under speech;
+  - undo and redo, saved projects, a mobile layout, and an export rendered in the browser
+    (video, or the audio alone as WAV).
+
+  A generated video opens in the editor with one click.
 
 ## Architecture (one screen)
 
