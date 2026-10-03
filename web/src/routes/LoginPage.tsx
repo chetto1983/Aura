@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ariaInvalid } from '../a11y/aria';
+import { safeReturnPath } from '../api/sessionExpiry';
 import {
   booleanField,
   readCookie,
@@ -149,6 +150,7 @@ export function LoginPage() {
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const sessionExpired = searchParams.get('expired') === '1';
+  const returnPath = safeReturnPath(searchParams.get('next'));
 
   const [state, setState] = useState<SubmitState>('idle');
   const [authConfig, setAuthConfig] = useState<AuthConfig>(defaultAuthConfig);
@@ -189,7 +191,7 @@ export function LoginPage() {
     return signInAuthula(
       typeof email === 'string' ? email : '',
       typeof password === 'string' ? password : '',
-      '/',
+      returnPath,
     );
   }
 
@@ -239,7 +241,7 @@ export function LoginPage() {
       credentials: 'same-origin',
     });
     if (res.ok) {
-      enterCockpit('/');
+      enterCockpit(returnPath);
       return 'done';
     }
     setError('login.errors.wrongCode');
