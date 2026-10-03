@@ -14,7 +14,7 @@ jobs, and a web cockpit on infrastructure you control.
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go)](go.mod)
 
-[What is Aura?](#what-is-aura) · [Features](#key-features) · [Architecture](#architecture-one-screen) · [Quick Start](#quick-start) · [Docs](#documentation) · [Development](#development)
+[What is Aura?](#what-is-aura) · [Features](#key-features) · [Studio](#studio) · [Compare](#how-aura-compares) · [Architecture](#architecture-one-screen) · [Quick Start](#quick-start) · [Docs](#documentation) · [Development](#development)
 
 <a href="https://buymeacoffee.com/chetto983">
   <img src="https://media3.giphy.com/media/TDQOtnWgsBx99cNoyH/giphy.gif" alt="Buy me a coffee" width="60" height="60" />
@@ -100,6 +100,28 @@ The cockpit's creative workspace, per identity.
     (video, or the audio alone as WAV).
 
   A generated video opens in the editor with one click.
+
+## How Aura compares
+
+Checked on 2026-10-03 against each project's own documentation. Open WebUI and
+LibreChat are mature, much larger projects; this table shows where Aura differs, not
+that it is ahead.
+
+| | Aura | Open WebUI | LibreChat |
+|---|---|---|---|
+| **Backend** | Go, one binary + Compose appliance | Python | Node.js |
+| **License** | MIT | Open WebUI License (BSD-3 up to v0.6.5; branding must stay above 50 users) | MIT |
+| **Long-term memory** | Temporal knowledge graph: facts with sources and validity windows, one ArcadeDB database per identity | Facts and notes the model can search and update | Memory with per-agent partitions |
+| **Scheduled work** | `task` tool (`at`, `every`, `cron`) running full agent jobs | Scheduled prompts | Scheduled Chats (beta) |
+| **Tool approval (HITL)** | Yes | Not documented | Yes (v0.8.8) |
+| **Messaging channels** | Telegram, WhatsApp, e-mail/calendar | Not documented | Not documented |
+| **Video** | Generation plus a multi-track editor | Voice and video calls | Not documented |
+| **Single sign-on** | No: email/password + TOTP | SSO/OIDC, LDAP, SCIM | OAuth2, SAML, LDAP |
+| **Community** | Small, one maintainer | Very large | Large |
+
+Choose Open WebUI or LibreChat for a polished multi-model chat front end with SSO and
+a large ecosystem. Choose Aura for a long-running personal agent that remembers over
+time, works on a schedule and reaches you on Telegram or WhatsApp.
 
 ## Architecture (one screen)
 
