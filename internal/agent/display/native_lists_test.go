@@ -18,7 +18,7 @@ func TestNativeListResultsBecomeBoundedTables(t *testing.T) {
 	}{
 		{"tasks", nativeInput("task", "list", "2 task(s):\n  11111111-1111-1111-1111-111111111111  kind=reminder  every  next=2026-10-01T09:00:00Z  notify=stdout\n  22222222-2222-2222-2222-222222222222  kind=agent_job  cron  next=2026-10-02T09:00:00Z [awaiting approval]  payload=check inbox"), 5, 2},
 		{"empty tasks", nativeInput("task", "list", "no scheduled tasks"), 5, 0},
-		{"skills", nativeInput("skill", "list", "- alpha: Alpha does A.\n- zeta: Zeta does Z.\n\nNOTE: this listed INSTALLED skills only. If none cover the task family at hand, the always-on find-skills skill teaches how to discover and install skills from the open ecosystem — follow it before hand-coding the deliverable."), 2, 2},
+		{"skills", nativeInput("skill", "list", "- alpha: Alpha does A.\n- zeta: Zeta does Z.\n\nNOTE: this listed INSTALLED skills only. If none cover the task family at hand, load the find-skills-aura skill (skill action=use name=find-skills-aura): it teaches how to discover and install skills from the open ecosystem — follow it before hand-coding the deliverable."), 2, 2},
 		{"packs", PreviewInput{ToolCallID: "native-1", ToolName: "plugin_pack", Arguments: `{"action":"list","ref":"owner/repo"}`, ResultPreview: "2 pack(s)\n  sales                        v1          2 skills   1 connectors   3 commands  owner/repo/sales\n  support                      -           4 skills   0 connectors   1 commands  owner/repo/support\n"}, 6, 2},
 	}
 	for _, tc := range cases {

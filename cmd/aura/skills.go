@@ -3,8 +3,8 @@
 // mirroring runIdentity/runTask (cmd/aura/identity.go), NOT cobra — go.mod has no
 // spf13/cobra and the codebase uses nested switch dispatchers; CLAUDE.md mandates
 // following existing patterns. The install/catalog legs were removed in plan 11-09
-// (amendment #51 / D-40): discovery+install is the find-skills always-on skill
-// driving `npx skills` in the sandbox, not a CLI/tool leg.
+// (amendment #51 / D-40): discovery is taught by the on-demand find-skills-aura skill
+// and installing runs through skill_manage action=install, not a CLI leg.
 //
 // This is the operator-side governance channel. create/update/delete apply
 // immediately (amendment #97 — there is no approve command, because there is nothing

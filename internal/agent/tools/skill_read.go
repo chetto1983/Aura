@@ -17,11 +17,10 @@ import (
 const UseAuthorityFrame = "Follow these skill instructions for the current task:\n\n"
 
 // listSkillTail rides on every list result: a list miss is the capability-gap
-// decision point. Discovery+install is NOT a tool action (amendment #51 / D-40) —
-// it points the model at the always-on find-skills skill, which teaches the
-// `npx skills find/add` self-extension loop in the sandbox. Fixed per-turn result
-// literal — no cache invariant rides on it.
-const listSkillTail = "\n\nNOTE: this listed INSTALLED skills only. If none cover the task family at hand, the always-on find-skills skill teaches how to discover and install skills from the open ecosystem — follow it before hand-coding the deliverable."
+// decision point: it names the call that loads find-skills-aura, which teaches how to
+// find and install a skill and loads on demand (prd.md §14, 2026-10-03). Fixed
+// per-turn result literal — no cache invariant rides on it.
+const listSkillTail = "\n\nNOTE: this listed INSTALLED skills only. If none cover the task family at hand, load the find-skills-aura skill (skill action=use name=find-skills-aura): it teaches how to discover and install skills from the open ecosystem — follow it before hand-coding the deliverable."
 
 // actionList renders the manifest, or — when a query is supplied and the skill set
 // is large — ranks the skills by BM25 over their name+description and returns the
@@ -42,12 +41,11 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 
 	ranked := rankSkills(t.Loader.List(ctx), query)
 	if len(ranked) == 0 {
-		// A queried list miss is the capability-gap decision point. Discovery+install
-		// is NOT a tool action (amendment #51 / D-40): point the model at the always-on
-		// find-skills skill, which teaches the npx self-extension loop in the sandbox.
+		// A queried list miss is the capability-gap decision point: name the call that
+		// loads find-skills-aura, which teaches how to find and install a skill.
 		return NewResult(ctx, fmt.Sprintf(
 			"No INSTALLED skills match %q. This searched only the installed list.\n"+
-				"NEXT STEP (for a reusable artifact-family task before any hand-built fallback): the always-on find-skills skill teaches how to discover and install a skill from the open ecosystem — follow it.", query))
+				"NEXT STEP (for a reusable artifact-family task before any hand-built fallback): load the find-skills-aura skill (skill action=use name=find-skills-aura) — it teaches how to discover and install a skill from the open ecosystem.", query))
 	}
 	var b strings.Builder
 	for _, s := range ranked {
