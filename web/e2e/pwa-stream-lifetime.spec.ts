@@ -8,7 +8,13 @@ interface WorkerVersion {
   runningStatus: string;
 }
 
-test.use({ serviceWorkers: 'allow' });
+// ignoreHTTPSErrors does not reach the service-worker script fetch: against the CI's
+// self-signed TLS origin Chromium refuses registration with "An SSL certificate error
+// occurred when fetching the script" unless the browser itself ignores certificate errors.
+test.use({
+  serviceWorkers: 'allow',
+  launchOptions: { args: ['--ignore-certificate-errors'] },
+});
 
 test('PWA caches assets but leaves live agent streams on the native network', async ({
   page,

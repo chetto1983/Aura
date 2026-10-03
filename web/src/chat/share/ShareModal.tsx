@@ -8,6 +8,7 @@ import { createShare, revokeShare, updateShareSnapshot, type Tier } from './shar
 import type { ShareLink } from './shareTypes';
 import {
   DEFAULT_MAX_EXPIRY_DAYS,
+  EXPIRY_TICK_MS,
   absoluteShareUrl,
   computeStaleCount,
   daysUntil,
@@ -18,6 +19,7 @@ import {
   type ExpiryChip,
 } from './shareViewModel';
 import { Button } from '@/components/ui/button';
+import { useNow } from '@/lib/useNow';
 import {
   Dialog,
   DialogContent,
@@ -123,7 +125,7 @@ export function ShareModal({ threadId, onClose }: ShareModalProps) {
     copy(absoluteShareUrl(link.url));
   }
 
-  const now = new Date();
+  const now = new Date(useNow(EXPIRY_TICK_MS));
   const staleCount = computeStaleCount(conversation, link);
 
   const showCreateForm = phase === 'idle' || phase === 'creating' || phase === 'revoked';

@@ -1,17 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useNow } from '@/lib/useNow';
 
 /** Seconds left until an RFC 3339 deadline, re-read every second. Never negative. */
 export function useCountdown(deadline: string): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      window.clearInterval(timer);
-    };
-  }, []);
-  return secondsLeft(deadline, now);
+  return secondsLeft(deadline, useNow(1000));
 }
 
 export function secondsLeft(deadline: string, now: number): number {

@@ -2,9 +2,16 @@ import { useTranslation } from 'react-i18next';
 import { Link2 } from 'lucide-react';
 import { useCopyAction } from '../displays/useCopyAction';
 import type { ShareLink } from './shareTypes';
-import { absoluteShareUrl, daysUntil, formatShareDate, isLinkExpired } from './shareViewModel';
+import {
+  EXPIRY_TICK_MS,
+  absoluteShareUrl,
+  daysUntil,
+  formatShareDate,
+  isLinkExpired,
+} from './shareViewModel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useNow } from '@/lib/useNow';
 
 // ShareLinkRow — the row BOTH share-management surfaces render: the per-thread "Condiviso"
 // section (SharedSection.tsx) and the global Settings list (SharedLinksSection.tsx). Built once
@@ -44,7 +51,8 @@ export function ShareLinkRow({
 }: ShareLinkRowProps) {
   const { t } = useTranslation();
   const { copied, copy } = useCopyAction();
-  const clock = now ?? new Date();
+  const liveNow = useNow(EXPIRY_TICK_MS);
+  const clock = now ?? new Date(liveNow);
   const expired = isLinkExpired(link, clock);
   const copyHref = link.tier === 'internal' ? `/shared/${link.id}` : undefined;
 

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { MediaKind } from './generationState';
 import { ImageGeneration } from '@/components/image-generation';
+import { useNow } from '@/lib/useNow';
 
 // GenerationFrame (spec §5 "While running", R22/R23): the ImageGeneration element for a
 // running image_generate/video_generate call, or for a detached video job replayed from the
@@ -61,15 +62,7 @@ function ElapsedClock({ startedAt }: { readonly startedAt: number | undefined })
 
 function useElapsedClock(startedAt: number | undefined): string {
   const [mountedAt] = useState(() => Date.now());
-  const [now, setNow] = useState(mountedAt);
-  useEffect(() => {
-    const id = setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-    return () => {
-      clearInterval(id);
-    };
-  }, []);
+  const now = useNow(1000);
   const seconds = Math.max(0, Math.floor((now - (startedAt ?? mountedAt)) / 1000));
   return `${String(Math.floor(seconds / 60))}:${String(seconds % 60).padStart(2, '0')}`;
 }

@@ -243,7 +243,7 @@ test.describe('embedded operator shell', () => {
 
   test('shows logout in the layout and returns to login', async ({ page }) => {
     await installShellUiRoutes(page);
-    await gotoAuthenticated(page, '/');
+    await gotoAuthenticated(page, '/', { isolatedSession: true });
 
     const signOut = page.getByRole('button', { name: 'Sign out' });
     await expect(signOut).toBeVisible({ timeout: 15000 });

@@ -1,8 +1,8 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 
-// phase32-uat.spec.ts — automates the two human-verification items recorded in
-// .planning/phases/32-quality-cleanup-dead-code-shared-helpers/32-VERIFICATION.md:
+// phase32-uat.spec.ts — automates Phase 32's two human-verification items (screenshots are
+// attached to the test result, never written into the tracked tree):
 //   (1) the canonical web/src/a11y/focusTrap.ts (trapTabKey) keyboard behaviour in the
 //       McpLifecycleCluster RemoveDialog — Tab/Shift+Tab cycle through every focusable
 //       element and wrap at the edges, focus never escapes the dialog; and
@@ -14,9 +14,6 @@ import { gotoAuthenticated } from './auth';
 // only the served SPA + Authula come from `aura serve`.
 
 const CONV_ID = '99999999-9999-9999-9999-999999999999';
-
-// Durable UAT evidence (relative to the web/ cwd) — committed alongside 32-UAT.md as visual proof.
-const EVIDENCE_DIR = '../.planning/phases/32-quality-cleanup-dead-code-shared-helpers/uat-evidence';
 
 function json(body: unknown) {
   return { status: 200, contentType: 'application/json', body: JSON.stringify(body) } as const;
@@ -164,7 +161,7 @@ test.describe('Phase 32 UAT — focusTrap keyboard accessibility (McpLifecycleCl
     expect(await focusInside()).toBe(true);
 
     await testInfo.attach('phase32-focustrap-dialog.png', {
-      body: await page.screenshot({ path: `${EVIDENCE_DIR}/phase32-focustrap-dialog.png` }),
+      body: await page.screenshot(),
       contentType: 'image/png',
     });
 
@@ -213,7 +210,7 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     await expect(page.locator('.animate-pulse')).toHaveCount(0);
 
     await testInfo.attach('phase32-skeleton-sidebar.png', {
-      body: await page.screenshot({ path: `${EVIDENCE_DIR}/phase32-skeleton-sidebar.png` }),
+      body: await page.screenshot(),
       contentType: 'image/png',
     });
   });
@@ -250,7 +247,7 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     await expect(page.locator('.animate-pulse')).toHaveCount(0);
 
     await testInfo.attach('phase32-skeleton-search.png', {
-      body: await page.screenshot({ path: `${EVIDENCE_DIR}/phase32-skeleton-search.png` }),
+      body: await page.screenshot(),
       contentType: 'image/png',
     });
   });
@@ -281,7 +278,7 @@ test.describe('Phase 32 UAT — SkeletonBlock CSS-wave loading visuals (3 migrat
     await expect(page.locator('.animate-pulse')).toHaveCount(0);
 
     await testInfo.attach('phase32-skeleton-governance.png', {
-      body: await page.screenshot({ path: `${EVIDENCE_DIR}/phase32-skeleton-governance.png` }),
+      body: await page.screenshot(),
       contentType: 'image/png',
     });
   });

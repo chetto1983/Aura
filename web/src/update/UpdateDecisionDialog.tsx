@@ -98,9 +98,9 @@ function DecisionDialog({
     }
   }
 
-  async function runDefer(choice: DeferChoice) {
+  async function runDefer(choice: DeferChoice, clickedAt: Date) {
     setFailure(undefined);
-    const asked = toRFC3339(deferTarget(choice, new Date()));
+    const asked = toRFC3339(deferTarget(choice, clickedAt));
     try {
       const res = await defer.mutateAsync(asked);
       const until = parseTime(res.deferred_until) ?? Date.parse(asked);
@@ -211,7 +211,7 @@ function DecisionDialog({
                   variant="outline"
                   size="sm"
                   disabled={busy}
-                  onClick={() => void runDefer(choice)}
+                  onClick={() => void runDefer(choice, new Date())}
                   className="gap-1.5 rounded-full"
                 >
                   {deferLabel(choice, t)}

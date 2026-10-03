@@ -98,18 +98,25 @@ contiene tutti e 33 i nomi più uno. **`gsd-tools.cjs` e gli agent si invocano s
 > **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
 > v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
 > HERMES-CLAUDE_PARITY) dai comandi GSD `/gsd-ingest-docs`, `/gsd-map-codebase`,
-> `/gsd-graphify`. Contiene oggi `PROJECT.md`, `ROADMAP.md`, `REQUIREMENTS.md`,
-> `STATE.md`, `INGEST-CONFLICTS.md`, `config.json` e le directory `codebase/`, `intel/`,
-> `phases/`, `handoffs/`, `research/`, `debug/`. Gli unici percorsi non versionati sono
-> `.planning/tmp/` e `.planning/graphs/*` (vedi `.gitignore`). I riferimenti a
-> `.planning/...` qui sotto sono quindi percorsi leggibili adesso, non una struttura
-> promessa.
+> `/gsd-graphify`. L'inventario è `git ls-files .planning`, non un elenco in questo file.
+> Gli unici percorsi non versionati sono `.planning/tmp/` e `.planning/graphs/*` (vedi
+> `.gitignore`).
 >
-> **Ma il contenuto invecchia.** `STATE.md` è fermo al 2026-08-05 (Phase 45 di 52, `status:
-> planning`, 0 fasi completate) e `phases/` ne conserva una sola, `32-quality-cleanup-dead-code-shared-helpers`,
-> residuo della milestone precedente. Prima di trattare un file di `.planning/` come stato
-> corrente, confronta il suo `last_updated` con `git log`: la data nel file è un'asserzione,
-> non una misura.
+> **Le directory di fase vecchie non ci sono più.** `5bff1faa4` (2026-09-07) ha cancellato
+> tutte le fasi della milestone precedente, `32-quality-cleanup-dead-code-shared-helpers`
+> compresa: 193 file, raggiungibili solo dalla storia git (`git show 5bff1faa4^:<path>`).
+> `.planning/milestones/` e `MILESTONES.md` erano già stati rimossi in `9f9f2d974`
+> (2026-08-02). Misurato il 2026-10-03, `phases/` contiene solo le fasi della milestone
+> v1.1.0 *Production Launch — Multi-Tenant* (`01-…`, `02-…`, `03-…`, numerazione ripartita
+> da 01), e `STATE.md` dichiara la fase 02 `complete` con `last_updated` 2026-09-12. Un test
+> che scrive dentro `.planning/phases/<fase cancellata>/` ricrea una directory non tracciata:
+> le evidenze di test vanno allegate al risultato (`testInfo.attach`), non scritte nel tree.
+>
+> **Il contenuto invecchia.** Prima di trattare un file di `.planning/` come stato corrente,
+> confronta il suo `last_updated` con `git log`: la data nel file è un'asserzione, non una
+> misura. E su un clone shallow (il default delle sessioni cloud) `git log` su un percorso
+> mente per omissione: `git rev-parse --is-shallow-repository` prima di concludere che un
+> percorso "non è mai stato tracciato".
 
 > **Slice → Phase (Rosetta).** Il PRD numera per **Slice** (0.5, 0.7, 1, 3, 11a-e, 13 — vocabolario storico, tuttora in `prd.md`); `.planning/ROADMAP.md`, `.planning/phases/` e gli scope dei commit numerano per **Phase** (0-43). Le due sequenze NON coincidono: una Slice può atterrare in una Phase con numero diverso. Per qualunque decisione di ordine/atterraggio (migrations su tutte) vale l'**ordine-fase**, mai l'ordine-slice.
 
@@ -264,7 +271,7 @@ Fix issues before moving on.
 - `make coverage` → `scripts/coverage_gate.sh` — **owned-surface aggregate floor ≥85% plus package-local policy** (`internal/*` minus generated `sqlc`, `internal/agent/agenttest`, `internal/dbtest`, and the pre-rewrite `internal/llm/client.go`; `cmd/aura` tests contribute execution but its glue stays outside the denominator). Go native covdata supplies truthful cross-package attribution. `scripts/coverage_package_policy.json` is an explicit fail-closed inventory: target packages must remain ≥85%; below-target packages cannot regress below their pinned exact ratio or change denominator silently; `usersandbox` is checked by the independent Docker authority. **Current disposable full-matrix measurement: 27,671/31,839 = 86.9091% (2026-08-26)**; 58/71 packages are at target, 12 have named non-regression debt, and one is delegated. `internal/mcpregistry` is 71/75 = 94.6667%. The JSON release artifact carries all package results and release readiness recomputes their contract rather than trusting a self-attested boolean.
 - `make vuln` → `govulncheck ./...` — supply-chain CVE scan (CI `vulncheck` job).
 - `dupl` is enabled in `.golangci.yml` (threshold 100, `_test.go` excluded — table tests are intentionally repetitive).
-- Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (recent: 37F-03 SC3 core 87.5% killed; the v0.0.0 examples db.go 82.8% + budget.go/budget_dedup.go 89.4% are now archived under `.planning/milestones/v0.0.0-phases/`).
+- Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (recent: 37F-03 SC3 core 87.5% killed; the v0.0.0 examples db.go 82.8% + budget.go/budget_dedup.go 89.4% lived under `.planning/milestones/v0.0.0-phases/`, removed in `9f9f2d974` and readable only from git history).
 
 **No-skip-as-green** still governs: the coverage gate runs the tagged tiers, which `t.Fatal` under `$CI` when their env is unset — a skipped tier fails the gate, never passes it. Phase validation (deep) executes every tier live, never compile-checks — bring the stack up and run the real integration + smoke + mutation, do not trust a compile-check.
 
