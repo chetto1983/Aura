@@ -45,6 +45,7 @@ type oidcFixture struct {
 	exchanges, refreshes, revocations                  int
 	refreshSeen                                        []url.Values
 	discoveryOverride                                  string
+	revokeDrop                                         bool
 }
 
 func newOIDC(t *testing.T) *oidcFixture {
@@ -96,6 +97,15 @@ func (f *oidcFixture) handle(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"issuer": f.server.URL, "revocation_endpoint": endpoint})
 	case "/revoke":
 		f.revocations++
+		if f.revokeDrop {
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				f.t.Error(err)
+				return
+			}
+			_ = conn.Close()
+			return
+		}
 		r.ParseForm()
 		if r.Form.Get("token_type_hint") != "refresh_token" || !strings.HasPrefix(r.Form.Get("client_id"), "oaiapp_") || !strings.HasPrefix(r.Form.Get("token"), "refresh-") {
 			f.t.Error("incorrect revoke form")
