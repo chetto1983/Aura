@@ -2,10 +2,13 @@ package webauth
 
 import (
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
+	authulaservices "github.com/Authula/authula/services"
 )
 
 func TestRenewedExpiry(t *testing.T) {
@@ -72,7 +75,66 @@ func TestValidate_PastAbsoluteLifetimeIsRefusedAndDeleted(t *testing.T) {
 	}
 }
 
-func TestRenewSession_NoCookieIsANoOp(t *testing.T) {
-	var p Provider
-	p.RenewSession(nil, reqWithCookie(""))
+type issuedCookie struct {
+	token   string
+	expires time.Time
+}
+
+type fakeCookies struct{ issued []issuedCookie }
+
+func (f *fakeCookies) SetSessionCookie(_ http.ResponseWriter, token string, expires time.Time) {
+	f.issued = append(f.issued, issuedCookie{token, expires})
+}
+
+func TestRenewSession(t *testing.T) {
+	const cookie = "rawtoken"
+	now := time.Now().UTC()
+	due := &authulamodels.Session{ID: "due", CreatedAt: now.Add(-3 * time.Hour), ExpiresAt: now.Add(30 * time.Minute)}
+	fresh := &authulamodels.Session{ID: "fresh", CreatedAt: now, ExpiresAt: now.Add(sessionIdleTTL)}
+	tests := []struct {
+		name       string
+		sessions   fakeSession
+		core       bool
+		req        *http.Request
+		wantRenew  bool
+		wantCookie bool
+	}{
+		{"no cookie", fakeSession{}, true, reqWithCookie(""), false, false},
+		{"no core services", fakeSession{}, false, reqWithCookie(cookie), false, false},
+		{"unknown token", fakeSession{byToken: map[string]*authulamodels.Session{}}, true, reqWithCookie(cookie), false, false},
+		{"session service error", fakeSession{err: errors.New("db down")}, true, reqWithCookie(cookie), false, false},
+		{"fresh session", fakeSession{byToken: map[string]*authulamodels.Session{"h:" + cookie: fresh}}, true, reqWithCookie(cookie), false, false},
+		{"due session", fakeSession{byToken: map[string]*authulamodels.Session{"h:" + cookie: due}}, true, reqWithCookie(cookie), true, true},
+		{"update fails", fakeSession{byToken: map[string]*authulamodels.Session{"h:" + cookie: due}, updateErr: errors.New("db down")}, true, reqWithCookie(cookie), false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var updated []authulamodels.Session
+			tt.sessions.updated = &updated
+			var core *authulaservices.CoreServices
+			if tt.core {
+				core = &authulaservices.CoreServices{TokenService: fakeToken{}, SessionService: tt.sessions}
+			}
+			cookies := &fakeCookies{}
+
+			renewSession(fakeCore{cs: core}, cookies, httptest.NewRecorder(), tt.req)
+
+			if renewed := len(updated) == 1; renewed != tt.wantRenew {
+				t.Fatalf("renewed = %v, want %v", renewed, tt.wantRenew)
+			}
+			if issued := len(cookies.issued) == 1; issued != tt.wantCookie {
+				t.Fatalf("cookie issued = %v, want %v", issued, tt.wantCookie)
+			}
+			if !tt.wantRenew {
+				return
+			}
+			want := now.Add(sessionIdleTTL)
+			if got := updated[0].ExpiresAt; got.Before(want.Add(-time.Minute)) || got.After(want.Add(time.Minute)) {
+				t.Errorf("renewed expiry %s, want about %s", got, want)
+			}
+			if c := cookies.issued[0]; c.token != cookie || !c.expires.Equal(updated[0].ExpiresAt) {
+				t.Errorf("cookie %+v does not carry the renewed session", c)
+			}
+		})
+	}
 }

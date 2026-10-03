@@ -78,12 +78,14 @@ func (fakeToken) Hash(t string) string             { return "h:" + t }
 func (fakeToken) Encrypt(t string) (string, error) { return t, nil }
 func (fakeToken) Decrypt(t string) (string, error) { return t, nil }
 
-// fakeSession implements authulaservices.SessionService; GetByToken and Delete are
-// exercised, and deleted, when set, records the ids Delete was called with.
+// fakeSession implements authulaservices.SessionService; GetByToken, Update and Delete are
+// exercised. deleted and updated, when set, record the calls; updateErr fails Update.
 type fakeSession struct {
-	byToken map[string]*authulamodels.Session
-	err     error
-	deleted *[]string
+	byToken   map[string]*authulamodels.Session
+	err       error
+	deleted   *[]string
+	updated   *[]authulamodels.Session
+	updateErr error
 }
 
 func (f fakeSession) GetByToken(_ context.Context, hashed string) (*authulamodels.Session, error) {
@@ -99,8 +101,14 @@ func (fakeSession) Create(context.Context, string, string, *string, *string, tim
 func (fakeSession) GetByUserID(context.Context, string) (*authulamodels.Session, error) {
 	return nil, nil
 }
-func (fakeSession) Update(context.Context, *authulamodels.Session) (*authulamodels.Session, error) {
-	return nil, nil
+func (f fakeSession) Update(_ context.Context, s *authulamodels.Session) (*authulamodels.Session, error) {
+	if f.updateErr != nil {
+		return nil, f.updateErr
+	}
+	if f.updated != nil {
+		*f.updated = append(*f.updated, *s)
+	}
+	return s, nil
 }
 func (f fakeSession) Delete(_ context.Context, id string) error {
 	if f.deleted != nil {

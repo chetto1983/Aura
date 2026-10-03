@@ -47,15 +47,24 @@ func renewedExpiry(sess *authulamodels.Session, now time.Time) (time.Time, bool)
 	return next, next.After(sess.ExpiresAt)
 }
 
+// sessionCookieSetter re-issues the session cookie; Authula's session plugin implements it.
+type sessionCookieSetter interface {
+	SetSessionCookie(w http.ResponseWriter, sessionToken string, expiresAt time.Time)
+}
+
 // RenewSession slides the request's session forward when a renewal is due and re-issues
 // its cookie through Authula's session plugin, so the attributes stay Authula's. It never
 // fails the request: a missed renewal leaves the session valid until its current expiry.
 func (p *Provider) RenewSession(w http.ResponseWriter, r *http.Request) {
+	renewSession(p, p.session, w, r)
+}
+
+func renewSession(sessions coreServicesProvider, cookies sessionCookieSetter, w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(SessionCookieName)
 	if err != nil || cookie.Value == "" {
 		return
 	}
-	core := p.CoreServices()
+	core := sessions.CoreServices()
 	if core == nil || core.TokenService == nil || core.SessionService == nil {
 		return
 	}
@@ -74,5 +83,5 @@ func (p *Provider) RenewSession(w http.ResponseWriter, r *http.Request) {
 			"err", err)
 		return
 	}
-	p.session.SetSessionCookie(w, cookie.Value, expires)
+	cookies.SetSessionCookie(w, cookie.Value, expires)
 }
