@@ -1,6 +1,6 @@
 # Aura — Architecture
 
-Updated 2026-09-07. Module: `github.com/chetto1983/aura`.
+Updated 2026-10-03. Module: `github.com/chetto1983/aura`.
 
 Aura is a Go application with an embedded web frontend and a Compose service stack.
 The composition root wires domain interfaces into the turn runtime. The same runtime
@@ -48,9 +48,12 @@ The model-facing tool registry separates loaded definitions from a deferred rost
 bounded previews and sidecar-backed continuation. Budgets and loop controls bound
 work rather than claiming that an agent can run indefinitely.
 
-Primary model routing is managed by `internal/llm`. The OpenAI-compatible wire client
-uses the official OpenAI Go SDK. Provider-specific capability and reasoning settings
-are translated by that layer. Supported profile changes can be hot-applied; model
+Primary model routing is managed by `internal/llm`; the cockpit selects OpenRouter
+(default), a ChatGPT plan, the bundled llama.cpp server (`localllm` profile) or Ollama.
+The OpenAI-compatible client (`internal/llm/openai_compat`) and the ChatGPT plan client
+(`internal/llm/chatgpt`, per-identity OAuth via `internal/chatgptplan`) both use the
+official OpenAI Go SDK. Provider-specific capability and reasoning settings are
+translated by that layer. Supported profile changes can be hot-applied; model
 credentials and limits are not frozen in this document.
 
 Terminal responses, tool outcomes, approval pauses, cancellation and transport loss
@@ -61,12 +64,19 @@ conversation. An explicit delivery action is required to send them elsewhere.
 
 The gateway classifies tool calls, applies the active policy, and records execution
 reservations. An indeterminate interrupted operation is not a successful retry and
-must not be silently replayed as a fresh side effect.
+must not be silently replayed as a fresh side effect. An outbound e-mail or WhatsApp
+send through the bundled MCPs dispatches only against a one-shot draft the owner has
+reviewed (`internal/messagedrafts`, `aura.message_drafts`).
 
-Identity is resolved by the host. Postgres operations carry owner scope and RLS;
-ArcadeDB uses one database and credential per identity. Garage bindings, conversations,
-OAuth grants, skills ownership and grants are also identity-aware. Administrative
-shared resources are distinct from an ordinary user's resources.
+Identity is resolved by the host. Web requests are authenticated by Authula
+(`internal/webauth`) behind Caddy: sessions live in `authula.sessions`, with a 12-hour
+idle window renewed while used and capped at 7 days. Without a live session,
+`RequireAuth` (`internal/agui/auth.go`) redirects a browser navigation to the login page
+and answers an API call with a 401 carrying `WWW-Authenticate: Session`. Postgres
+operations carry owner scope and RLS; ArcadeDB uses one database and credential per
+identity. Garage bindings, conversations, OAuth grants, skills ownership and grants are
+also identity-aware. Administrative shared resources are distinct from an ordinary
+user's resources.
 
 `AURA_PROFILE` selects `dev`, `local_trusted`, `single_user_hardened`, or
 `server_production`. Strictness and sandbox routing depend on configuration and the
@@ -77,9 +87,9 @@ Desktop with that boundary or describe a default installation as universally har
 
 | Store | Authority and responsibility |
 |---|---|
-| Postgres | Conversations, identities, settings, scheduling, approvals, control metadata and audit records |
+| Postgres | Conversations, identities, Authula web sessions, settings, scheduling, approvals, media jobs, control metadata and audit records |
 | ArcadeDB | Memory facts and graph relationships; derived conversation, reasoning and document retrieval records |
-| Garage | Original objects and identity-bound file storage |
+| Garage | Original objects and identity-bound file storage, including generated media and Studio projects |
 | Aura/workspace volumes | Runtime files, tool-result sidecars, materialized working files and integration state |
 
 Postgres schema migrations are numbered from the migration directory at landing time.
@@ -125,7 +135,10 @@ retrieval are distinct contracts even when stored in the same tenant database.
 
 ## Extensions and transport
 
-The managed MCP registry is in Postgres. Connections use HTTP or stdio, with native
+Operator-installed MCP servers are registered in Postgres (`internal/mcpregistry`); the
+bundled recipes (the ArcadeDB memory MCP, the `aura-pim-mcp` mail/calendar/contacts
+sidecar and the WhatsApp bridge) are declared in code (`internal/mcp/manager`), and
+`internal/agent/mcptools` mounts them as tools. Connections use HTTP or stdio, with native
 SDK lifecycle and authorization handling. Stdio package preparation is separate
 from starting a long-lived connection. Mounted MCP results are trusted by the
 current product policy and retain size limits and tool authorization controls.
@@ -141,11 +154,22 @@ sources.
 embeds the frontend build. Telegram is a channel adapter using shared attachment,
 turn, cancellation and delivery behavior. The runtime remains independent of AG-UI.
 
+Voice input and output go through `internal/multimodal` to the `aura-stt` (Whisper) and
+`aura-tts` (Kokoro) sidecars, or to an OpenRouter model when one is configured. The
+cockpit Studio generates images and video through OpenRouter (`internal/mediagen`,
+durable jobs in `aura.media_job`) and edits photos, clips and multi-track projects in
+the browser; `internal/assets` tracks the resulting Garage objects. Optional Cloudflare
+remote access (`internal/remotetunnel`, the `aura-cloudflared` supervisor) stays idle
+until an administrator configures it under Settings > Remote access.
+
 ## Operations and verification
 
 Logs, OpenTelemetry, metrics and readiness expose different aspects of runtime state.
 Backup mechanisms are owned by Aura for Postgres and by ArcadeDB for its databases.
 [Backup and restore](BACKUP-RESTORE.md) documents the four-plane drill and its limits.
+Appliances installed with `--appliance` self-update through the host
+`aura-image-update` systemd timer (images plus the Compose payload they carry);
+`internal/hostupdate` is Aura's side of that channel.
 
 Quality checks include unit/race, live integration, browser tests, mutation and
 separate coverage authorities. A tagged release requires the complete

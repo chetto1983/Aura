@@ -1,6 +1,6 @@
 # Aura — Technical overview
 
-Updated 2026-09-07. This document describes the current implementation and product
+Updated 2026-10-03. This document describes the current implementation and product
 scope. A capability being implemented is distinct from approving a release; use
 [Release readiness](release-readiness.md) for the exact-candidate evidence contract.
 
@@ -8,13 +8,16 @@ scope. A capability being implemented is distinct from approving a release; use
 
 Aura is an agent for ongoing work on infrastructure the operator controls. It combines
 conversations, temporal memory, document retrieval, tool execution, scheduled work,
-and an embedded web cockpit. CLI and Telegram use the same underlying turn runtime.
-The intended appliance audience includes small organizations that want to operate
-their own assistant and choose their model provider.
+voice, image/video generation and editing (the cockpit Studio), and an embedded web
+cockpit behind an Authula sign-in. CLI, Telegram and the cockpit use the same
+underlying turn runtime. The intended appliance audience includes small organizations
+that want to operate their own assistant and choose their model provider.
 
 The runtime is a Go binary, accompanied by Compose services. Postgres, ArcadeDB,
-Garage, embeddings, ingestion, optional model/media services and integrations are
-separate processes. "One binary" describes the application, not the whole stack.
+Garage, embeddings, ingestion, web search (SearXNG), speech-to-text and text-to-speech,
+the Caddy front door, integration sidecars and optional local-model, OCR and
+observability services are separate processes. "One binary" describes the
+application, not the whole stack.
 
 ## What makes the implementation useful
 
@@ -23,8 +26,8 @@ separate processes. "One binary" describes the application, not the whole stack.
 | Ongoing context | Durable conversations, compaction, memory recall and projection | Earlier work can be retrieved after it leaves the current context |
 | Changing knowledge | Facts with sources and validity windows; explicit correction and erasure | Historical and current evidence can be distinguished |
 | Document work | Indexed passages with citations, plus original-file access | Lookup and whole-file computation use the appropriate evidence |
-| Account boundaries | Owner-scoped Postgres operations, per-identity ArcadeDB credentials/databases, Garage bindings and skills ownership | Identity is resolved by the host rather than accepted from a tool argument |
-| Consequential tools | Policy decisions, approvals and durable execution records | Operators can inspect what was requested and what actually ran |
+| Account boundaries | Authula web sign-in, owner-scoped Postgres operations, per-identity ArcadeDB credentials/databases, Garage bindings and skills ownership | Identity is resolved by the host rather than accepted from a tool argument |
+| Consequential tools | Policy decisions, approvals, owner-reviewed drafts for outbound e-mail/WhatsApp, and durable execution records | Operators can inspect what was requested and what actually ran |
 | Extensibility | Instruction skills, executable snippets and managed MCP connections | Capabilities can be added without changing the core agent loop |
 | Operations | Health/readiness, logs/traces, backup schedules and restore drills | Deployment state has executable checks and inspectable evidence |
 
@@ -35,14 +38,16 @@ in [Memory validation](memory-graph-validation.md).
 ## Deployment and model boundary
 
 The interactive `create-aura-appliance` installer can target the workstation or a Linux
-host over SSH. It probes the target and selects CPU or CUDA embeddings. Its requirements
-and defaults are maintained in the [installer guide](../packages/create-aura/README.md).
+host over SSH. It probes the target and selects CUDA, Vulkan or CPU embeddings. Its
+requirements and defaults are maintained in the
+[installer guide](../packages/create-aura/README.md).
 
-Model routing is configurable. OpenRouter is the default route; local
-OpenAI-compatible endpoints are supported. A cloud route receives the context supplied
-to it, so self-hosted storage does not imply fully offline processing. Optional
-integrations similarly contact their configured services. Credentials and supported
-model settings can be managed through the cockpit.
+Model routing is configurable in the cockpit settings. OpenRouter is the default route
+(`deepseek/deepseek-v4-flash:nitro`); a ChatGPT plan, the bundled llama.cpp server
+(`localllm` Compose profile) and Ollama are the alternatives. A cloud route receives
+the context supplied to it, so self-hosted storage does not imply fully offline
+processing. Optional integrations similarly contact their configured services.
+Credentials and supported model settings can be managed through the cockpit.
 
 Runtime profiles and sandbox configuration determine execution boundaries. Do not
 infer a hardened or mutually-untrusted multi-user deployment from a default install.
@@ -74,7 +79,7 @@ restore timings are not service-level recovery commitments.
 
 ## Distribution and evidence
 
-As checked on 2026-09-07, `v1.0.2-rc1` is the latest tagged prerelease; `edge` tracks
+As checked on 2026-10-03, `v1.0.2-rc1` is the latest tagged prerelease; `edge` tracks
 master. Check [Releases](https://github.com/chetto1983/Aura/releases) for current tags.
 Tagged publication requires the release evidence bundle. CI, image publication,
 local deployment and release approval are distinct results.
