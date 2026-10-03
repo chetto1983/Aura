@@ -1544,6 +1544,20 @@ Overflow stays discoverable. Four memory entry points remain loaded; the rest ca
 found through search. An unmeasured global tool-count target cannot justify making
 tools unreachable. MCP UI resources are rendering metadata, not extra model instructions.
 
+The calendar recipe never takes an always-loaded slot (2026-10-03). Its one model-facing
+tool qualified by count, but the manifest a real turn sent measured 43,403 characters
+across 19 tools, and `calendar__calendar` alone was 13,136 of them (30%): the PIM schema
+rode in every turn, including turns about nothing on the calendar. It is now reached
+through `tool_search` like the WhatsApp surface. Native tools and the memory core are
+unchanged.
+
+This does not establish:
+- how often a turn needs the calendar, or what the extra `tool_search` round trip costs
+  when it does: no usage data was read;
+- the memory core's own weight on the appliance: the pinned E2E image measured 3,603
+  characters for its three core tools, while `docs/arcadedb-mcp-live-tools.json`
+  documents 18,554 for the four in the current server.
+
 ## 14. Skills and sharing
 
 Postgres owns catalog and grants; filesystem roots hold bodies. Names are owner-scoped.
