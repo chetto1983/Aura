@@ -392,16 +392,15 @@ describe('CalendarConnect', () => {
     expect(pimDeviceStart).not.toHaveBeenCalled();
   });
 
-  it('JSON: source select toggles between filePath and oneDrivePath', async () => {
+  it('JSON: offers a OneDrive source only, never a local file path', async () => {
     listPimAccounts.mockResolvedValue({ accounts: [] });
     renderConnect();
     await screen.findByText(/No calendar accounts yet/i);
 
     selectProvider('json');
-    expect(screen.getByLabelText(/File path/i)).toBeTruthy();
-    expect(screen.queryByLabelText(/OneDrive path/i)).toBeNull();
-
-    fireEvent.change(screen.getByLabelText('Source'), { target: { value: 'onedrive' } });
+    const source = screen.getByLabelText('Source');
+    if (!(source instanceof HTMLSelectElement)) throw new Error('Source is not a select');
+    expect(Array.from(source.options).map((o) => o.value)).toEqual(['onedrive']);
     expect(screen.getByLabelText(/OneDrive path/i)).toBeTruthy();
     expect(screen.queryByLabelText(/File path/i)).toBeNull();
   });

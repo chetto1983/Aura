@@ -70,9 +70,6 @@ export function ProviderConfigFields({
   return (
     <>
       {def.fields.map((field) => {
-        if (field.showIf !== undefined && values[field.showIf.key] !== field.showIf.value) {
-          return null;
-        }
         const invalid = submitted && missing.has(field.key);
         if (field.type === 'select' && field.options) {
           return (
