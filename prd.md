@@ -119,20 +119,30 @@ authenticated `/api` calls left `authula.sessions.expires_at` at sign-in + 12 h 
 a new sign-in revived, because no cockpit code acted on a 401 (Authula SPEC §4.8 required
 the redirect). `RequireAuth` now renews the session after the identity re-check: a 12 h idle
 window renewed at most once an hour, capped at 7 days from sign-in, after which the session
-is deleted so Authula's own routes refuse it too. A same-origin 401 outside `/auth/*` and
-the public pages sends the cockpit to `/login?expired=1` with the page to return to, and the
-login returns there, accepting only a path on this origin. Measured after the fix on the
-local stack: a fresh session was not rewritten; one with 30 min left was renewed to
-now + 12 h with the hardened cookie re-issued; one created 7 days and a minute earlier
-answered 401 on `/api/me` and on `/auth/me`, its row gone; in the browser, a cleared session
-led from an open conversation to the expiry notice and, after signing in, back to it.
+is deleted so Authula's own routes refuse it too. The auth gate's 401 carries
+`WWW-Authenticate: Session`; a same-origin 401 carrying it, outside the public pages, sends
+the cockpit to `/login?expired=1` with the page to return to, and the login returns there,
+accepting only a path on this origin. Measured after the fix on the local stack: a fresh
+session was not rewritten; one with 30 min left was renewed to now + 12 h with the hardened
+cookie re-issued; one created 7 days and a minute earlier answered 401 on `/api/me` and on
+`/auth/me`, its row gone; in the browser, a cleared session led from an open conversation to
+the expiry notice and, after signing in, back to it.
+
+The first version redirected on any same-origin 401 outside `/auth/*`, and CI on master
+refuted it (2026-10-03, run 37117206196): on a fresh database the cockpit's calendar panel
+answers 401 "calendar authorization required" while the session is valid, so opening it
+landed on the sign-in page, on chrome and mobile-chrome, retries included. A 401 is not
+evidence of an ended session; only the challenge the auth gate adds is.
 
 This does not establish:
 - why the member's runs ended with the interrupted-round marker: that cause is in the
   daemon log of their appliance (`round ended with no answer … cause=`), not read yet;
 - the lifetime choices (12 h idle, 1 h renewal, 7 days absolute) as measured needs: they
   are a policy, kept where the passphrase cookie had them for the idle window;
-- the behaviour on the lab VM or behind Caddy: measured on the local stack only.
+- the behaviour on the lab VM or behind Caddy: measured on the local stack only;
+- why `DELETE /api/conversations/{id}` answered 500 in the PWA spec on the same CI run: it
+  passed locally against a database where the calendar was already authorized, and the
+  spec now reports the response body.
 
 ## 4. Agent lifecycle, tools and completion
 
