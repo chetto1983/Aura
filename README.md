@@ -43,9 +43,12 @@ model; with a local server nothing leaves the host for inference.
 
 <div align="center">
 
-<img src="public/cockpit.png" alt="Aura operator cockpit — chat with reasoning, human-in-the-loop approval cards, and a live token/cost footer" width="820" />
+<img src="public/demo.gif" alt="Aura cockpit: the agent stores a birthday in its memory graph and schedules a reminder, then a new chat answers from memory" width="820" />
 
-<sub>The web cockpit (AG-UI/SSE): streaming chat with reasoning, human-in-the-loop approval &amp; input-required gates, and live token/cost accounting.</sub>
+<sub>A real run on a local stack: Aura stores the fact in its memory graph, loads the deferred
+<code>task</code> tool and schedules the reminder; a new chat then answers from memory, with
+provenance. Model replies were written by Claude through an OpenAI-compatible endpoint;
+waiting time is trimmed.</sub>
 
 </div>
 
