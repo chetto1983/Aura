@@ -1549,14 +1549,17 @@ tool qualified by count, but the manifest a real turn sent measured 43,403 chara
 across 19 tools, and `calendar__calendar` alone was 13,136 of them (30%): the PIM schema
 rode in every turn, including turns about nothing on the calendar. It is now reached
 through `tool_search` like the WhatsApp surface. Native tools and the memory core are
-unchanged.
+unchanged: of the 43,403, the 15 native tools were 26,664 and the memory core 3,603.
 
 This does not establish:
 - how often a turn needs the calendar, or what the extra `tool_search` round trip costs
   when it does: no usage data was read;
-- the memory core's own weight on the appliance: the pinned E2E image measured 3,603
-  characters for its three core tools, while `docs/arcadedb-mcp-live-tools.json`
-  documents 18,554 for the four in the current server.
+- the memory core's own weight on the appliance: the 3,603 came from the stale pinned
+  E2E image and its three core tools. The current server's four (recall, upsert_fact,
+  batch, entities), serialized as the bridge sends them (description plus input schema,
+  after the B-15 caps), compute to 9,065 from `docs/arcadedb-mcp-live-tools.json`; no
+  live turn has measured it. The 18,554 first written here counted the raw `tools/list`
+  entries, whose output schemas, annotations and titles never reach the manifest.
 
 ## 14. Skills and sharing
 
