@@ -1565,7 +1565,10 @@ This does not establish:
 - how often a turn needs the calendar, or what the extra `tool_search` round trip costs
   when it does: no usage data was read;
 - token counts: every figure here is characters of serialized JSON;
-- the WhatsApp tool count on an appliance running a different WhatsApp image.
+- whether the WhatsApp tool schemas changed between the two images. The tool count did
+  not: `whatsapp-mcp:latest` as published on 2026-09-24 (`1ec0233`) advertises the same
+  15 tool names as the CI pin, so it is deferred on an appliance too. The curated
+  WhatsApp merge that would bring it to 3 tools has not landed.
 
 ## 14. Skills and sharing
 
