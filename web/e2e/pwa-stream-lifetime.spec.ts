@@ -103,8 +103,8 @@ test('PWA caches assets but leaves live agent streams on the native network', as
     await cdp?.detach();
     const deleted = await page.evaluate(async (id) => {
       const response = await fetch(`/api/conversations/${id}`, { method: 'DELETE' });
-      return response.status;
+      return { status: response.status, body: await response.text() };
     }, created.body.ID);
-    expect([200, 204]).toContain(deleted);
+    expect([200, 204], `DELETE answered: ${deleted.body}`).toContain(deleted.status);
   }
 });

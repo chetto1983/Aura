@@ -1,28 +1,35 @@
 // Pages that work without a session and render a 401 themselves.
 const PUBLIC_PAGE_PREFIXES = ['/login', '/s/', '/shared/'];
 
+// The WWW-Authenticate value the server's auth gate puts on the 401 that means the
+// request has no live session (sessionChallenge, internal/agui/auth.go).
+const SESSION_CHALLENGE = 'Session';
+
 /**
  * Sends the person to the login page as soon as the server says their session is gone.
- * Every cockpit call is a same-origin fetch, so a 401 from one means the session expired
- * or was revoked; before this, each panel showed its own error and only a manual reload
- * reached /login. Authula's own /auth/* routes answer 401 as part of their flows (a
- * refused sign-in, a sign-out of an ended session) and are left to their callers.
+ * Only the auth gate's 401 says that: it carries the session challenge. Other 401s
+ * arrive while the session is valid (the calendar not yet authorized, an upstream
+ * refusal relayed, Authula refusing a sign-in) and stay with their callers. Before
+ * this, each panel showed its own error and only a manual reload reached /login.
  */
 export function installSessionExpiryRedirect(): void {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const response = await nativeFetch(input, init);
-    if (response.status === 401 && isCockpitCall(input) && !onPublicPage()) {
+    if (endsSession(response) && isSameOrigin(input) && !onPublicPage()) {
       window.location.assign(expiredLoginPath(window.location));
     }
     return response;
   };
 }
 
-function isCockpitCall(input: RequestInfo | URL): boolean {
+function endsSession(response: Response): boolean {
+  return response.status === 401 && response.headers.get('WWW-Authenticate') === SESSION_CHALLENGE;
+}
+
+function isSameOrigin(input: RequestInfo | URL): boolean {
   const rawURL = input instanceof Request ? input.url : input instanceof URL ? input.href : input;
-  const url = new URL(rawURL, window.location.href);
-  return url.origin === window.location.origin && !url.pathname.startsWith('/auth/');
+  return new URL(rawURL, window.location.href).origin === window.location.origin;
 }
 
 function onPublicPage(): boolean {

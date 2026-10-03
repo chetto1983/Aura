@@ -247,6 +247,12 @@ func (d AuthDeps) validateSession(r *http.Request) (identityID string, ok bool) 
 	return verifySession(d.SigningKey, c.Value, d.ttl(), time.Now())
 }
 
+// sessionChallenge is the WWW-Authenticate value on the 401 that means the request has
+// no live session. The SPA sends the person to the login page on it and on nothing else:
+// a handler's own 401 (the calendar not yet authorized, a relayed upstream refusal)
+// arrives while the session is still valid (web/src/api/sessionExpiry.ts).
+const sessionChallenge = "Session"
+
 // redirectToLogin sends a browser navigation (Accept: text/html GET) to the login page
 // with 302, but answers an API/XHR request with a plain 401 — so a fetch() gets a clean
 // status code instead of an HTML login page it cannot use.
@@ -255,6 +261,7 @@ func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, d.loginPath(), http.StatusFound)
 		return
 	}
+	w.Header().Set("WWW-Authenticate", sessionChallenge)
 	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }
 

@@ -70,18 +70,20 @@ func TestRequireAuth_SessionValidatorSeam(t *testing.T) {
 
 // TestRequireAuth_SessionRenewerOrder pins that a session is slid forward only once the
 // request is fully authenticated: never for a missing session, never for a deactivated
-// identity, and before next so the refreshed cookie rides the response headers.
+// identity, and before next so the refreshed cookie rides the response headers. Both
+// refusals carry the session challenge, the one 401 the SPA treats as a signed-out person.
 func TestRequireAuth_SessionRenewerOrder(t *testing.T) {
 	cases := []struct {
-		name      string
-		valid     bool
-		identity  Identity
-		wantRenew bool
-		wantCode  int
+		name          string
+		valid         bool
+		identity      Identity
+		wantRenew     bool
+		wantCode      int
+		wantChallenge string
 	}{
-		{"authenticated request renews", true, Identity{ID: testLocalID, Kind: "user"}, true, http.StatusOK},
-		{"missing session does not renew", false, Identity{ID: testLocalID, Kind: "user"}, false, http.StatusUnauthorized},
-		{"deactivated identity does not renew", true, Identity{ID: testLocalID, Kind: "user", Deactivated: true}, false, http.StatusUnauthorized},
+		{"authenticated request renews", true, Identity{ID: testLocalID, Kind: "user"}, true, http.StatusOK, ""},
+		{"missing session does not renew", false, Identity{ID: testLocalID, Kind: "user"}, false, http.StatusUnauthorized, sessionChallenge},
+		{"deactivated identity does not renew", true, Identity{ID: testLocalID, Kind: "user", Deactivated: true}, false, http.StatusUnauthorized, sessionChallenge},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -112,6 +114,9 @@ func TestRequireAuth_SessionRenewerOrder(t *testing.T) {
 			}
 			if tc.wantRenew && rec.Header().Get("Set-Cookie") != "renewed=1" {
 				t.Error("renewed cookie did not reach the response")
+			}
+			if got := rec.Header().Get("WWW-Authenticate"); got != tc.wantChallenge {
+				t.Errorf("WWW-Authenticate = %q, want %q", got, tc.wantChallenge)
 			}
 		})
 	}
