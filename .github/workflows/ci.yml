@@ -1868,6 +1868,9 @@ jobs:
               - 'internal/webui/dist/**'
               - '.github/workflows/ci.yml'
               - 'scripts/web_e2e_ci.sh'
+              # The memory sidecar is built from this commit, so its own changes must
+              # re-run the browser suite that drives it.
+              - 'cmd/arcadedb-mcp/**'
 
       - name: Set up Go
         if: steps.changes.outputs.web == 'true'
