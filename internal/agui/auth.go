@@ -104,6 +104,10 @@ type AuthDeps struct {
 	// withPrincipal + RequireCapability contract — only the issuer/validator of the
 	// cookie changes, never the principalKey{} downstream.
 	SessionValidator func(r *http.Request) (identityID string, ok bool)
+	// SessionRenewer, when non-nil, slides the session behind an authenticated request
+	// forward. RequireAuth calls it only after the identity re-check, so the session of a
+	// deleted or deactivated identity is never extended.
+	SessionRenewer func(w http.ResponseWriter, r *http.Request)
 	// DenialRecorder persists a capability refusal (RBAC-10): RequireCapability calls it
 	// on each of its three refusal branches before writing the 403. nil is a no-op — the
 	// gate must work before the composition root wires the store, matching
@@ -169,10 +173,11 @@ func (d AuthDeps) isPublicPath(p string) bool {
 //     (T-24-13, golang-security client-header anti-pattern);
 //  3. redirects a browser GET to the login page (302) / 401s an API request on a
 //     missing or invalid cookie;
-//  4. verifySession (HMAC + absolute TTL);
+//  4. validates the session (SessionValidator, else HMAC verifySession);
 //  5. confirms the bound identity still exists (a deleted identity invalidates the
 //     session);
-//  6. stashes the principal on the request context and calls next.
+//  6. slides the session forward (SessionRenewer, when wired);
+//  7. stashes the principal on the request context and calls next.
 func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 	if !deps.SecretConfigured {
 		return next // loopback dev — auth disabled, pass-through (boot guard confines this to loopback)
@@ -208,6 +213,9 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 		if id, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil || id.Deactivated {
 			deps.redirectToLogin(w, r)
 			return
+		}
+		if deps.SessionRenewer != nil {
+			deps.SessionRenewer(w, r)
 		}
 		next.ServeHTTP(w, withPrincipal(r, identityID))
 	})
