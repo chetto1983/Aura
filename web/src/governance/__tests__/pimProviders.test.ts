@@ -3,7 +3,6 @@ import {
   PIM_PROVIDERS,
   normalizePimAccountId,
   pimAccountIdError,
-  pimFieldVisible,
   pimInitialValues,
   pimMissingRequired,
   pimProviderById,
@@ -12,7 +11,7 @@ import {
 } from '../pimProviders';
 
 // pimProviders unit tests — the provider/field schema is the contract the wizard submits to the
-// aura-pim-mcp sidecar, so its visibility/validation/submit helpers get direct ground-truth coverage
+// aura-pim-mcp sidecar, so its validation/submit helpers get direct ground-truth coverage
 // independent of the React render path.
 
 describe('pimProviderById', () => {
@@ -43,7 +42,7 @@ describe('schema keys mirror the sidecar', () => {
       'password',
     ]);
     expect(keys('ics')).toEqual(['icsUrl']);
-    expect(keys('json')).toEqual(['source', 'filePath', 'oneDrivePath', 'authAccountId']);
+    expect(keys('json')).toEqual(['source', 'oneDrivePath', 'authAccountId']);
   });
   it('covers exactly the sidecar KnownProviders set', () => {
     expect(PIM_PROVIDERS.map((p) => p.id).sort()).toEqual(
@@ -56,31 +55,25 @@ describe('pimInitialValues', () => {
   it('seeds selects to their first option and text fields to empty', () => {
     const json = pimProviderById('json');
     const values = pimInitialValues(json);
-    expect(values.source).toBe('local');
-    expect(values.filePath).toBe('');
+    expect(values.source).toBe('onedrive');
+    expect(values.oneDrivePath).toBe('');
   });
 });
 
-describe('pimFieldVisible', () => {
-  it('hides a showIf field until its gate matches', () => {
+// The sidecar refuses, through /admin, a JSON account that reads its own disk (aura-pim-mcp
+// Admin/TenantProviderConfig, measured 2026-10-03 against aura-pim-mcp:latest): offering `local`
+// would hand every member a form that can only end in HTTP 400.
+describe('json source', () => {
+  it('offers OneDrive only, never a local file', () => {
     const json = pimProviderById('json');
-    const filePath = json.fields.find((f) => f.key === 'filePath');
-    const oneDrivePath = json.fields.find((f) => f.key === 'oneDrivePath');
-    if (filePath === undefined || oneDrivePath === undefined) throw new Error('missing field');
-
-    expect(pimFieldVisible(filePath, { source: 'local' })).toBe(true);
-    expect(pimFieldVisible(filePath, { source: 'onedrive' })).toBe(false);
-    expect(pimFieldVisible(oneDrivePath, { source: 'onedrive' })).toBe(true);
-  });
-  it('always shows a field with no showIf', () => {
-    const icsUrl = pimProviderById('ics').fields[0];
-    if (icsUrl === undefined) throw new Error('missing ics field');
-    expect(pimFieldVisible(icsUrl, {})).toBe(true);
+    const source = json.fields.find((f) => f.key === 'source');
+    expect(source?.options?.map((o) => o.value)).toEqual(['onedrive']);
+    expect(json.fields.some((f) => f.key === 'filePath')).toBe(false);
   });
 });
 
 describe('pimSubmitConfig', () => {
-  it('keeps only visible, non-empty, trimmed values', () => {
+  it('keeps only non-empty, trimmed values', () => {
     const imap = pimProviderById('imap');
     const out = pimSubmitConfig(imap, {
       imapHost: '  imap.example.com ',
@@ -99,15 +92,14 @@ describe('pimSubmitConfig', () => {
     });
     expect(out.imapPort).toBeUndefined();
   });
-  it('drops hidden branch fields (json onedrive path omitted when source=local)', () => {
+  it('sends a json account with source onedrive and drops a blank optional field', () => {
     const json = pimProviderById('json');
     const out = pimSubmitConfig(json, {
-      source: 'local',
-      filePath: '/tmp/cal.json',
-      oneDrivePath: '/Docs/cal.json',
-      authAccountId: 'ms',
+      ...pimInitialValues(json),
+      oneDrivePath: ' /Docs/cal.json ',
+      authAccountId: '',
     });
-    expect(out).toEqual({ source: 'local', filePath: '/tmp/cal.json' });
+    expect(out).toEqual({ source: 'onedrive', oneDrivePath: '/Docs/cal.json' });
   });
 });
 
@@ -171,10 +163,10 @@ describe('pimMissingRequired', () => {
       }),
     ).toEqual([]);
   });
-  it('does not require a hidden branch field', () => {
+  it('requires the OneDrive path of a json account', () => {
     const json = pimProviderById('json');
-    // source=local → oneDrivePath is hidden, so it is NOT required even though required:true.
-    expect(pimMissingRequired(json, { source: 'local', filePath: '/p' })).toEqual([]);
+    expect(pimMissingRequired(json, pimInitialValues(json))).toEqual(['oneDrivePath']);
+    expect(pimMissingRequired(json, { source: 'onedrive', oneDrivePath: '/p' })).toEqual([]);
   });
 });
 

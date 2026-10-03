@@ -134,15 +134,26 @@ answers 401 "calendar authorization required" while the session is valid, so ope
 landed on the sign-in page, on chrome and mobile-chrome, retries included. A 401 is not
 evidence of an ended session; only the challenge the auth gate adds is.
 
+The same run's PWA spec failed its cleanup `DELETE /api/conversations/{id}` with 500, and
+the cause is the web-e2e job, not the delete path (measured 2026-10-03). The job runs
+`aura serve` without `ARCADEDB_ADMIN_USER`/`ARCADEDB_ADMIN_PASSWORD`, which every appliance
+passes (compose.yaml, `aura` service). With no admin, `TenantClients.Existing` cannot ask
+whether the identity's `mem_<uuid>` database exists, so it binds as the tenant, and a
+database nobody has created answers 403: the delete lifecycle's reasoning step returned
+`reasoning graph: memory for …: http 403: User/Password not valid`. Without admin Aura
+cannot create that database either; in that job only the memory MCP could, once the cockpit
+authorized memory, and in that run the cockpit spec never got that far. Reproduced locally against an empty ArcadeDB: without admin the spec
+fails with exactly that body; with admin `Existing` answers `ok=false`, the step is skipped
+and the delete answers 204. The job now passes the appliance's admin pair.
+
 This does not establish:
 - why the member's runs ended with the interrupted-round marker: that cause is in the
   daemon log of their appliance (`round ended with no answer … cause=`), not read yet;
 - the lifetime choices (12 h idle, 1 h renewal, 7 days absolute) as measured needs: they
   are a policy, kept where the passphrase cookie had them for the idle window;
 - the behaviour on the lab VM or behind Caddy: measured on the local stack only;
-- why `DELETE /api/conversations/{id}` answered 500 in the PWA spec on the same CI run: it
-  passed locally against a database where the calendar was already authorized, and the
-  spec now reports the response body.
+- whether a deployment without ArcadeDB admin credentials is supported: there, a member
+  whose memory database was never created cannot delete a conversation.
 
 ## 4. Agent lifecycle, tools and completion
 
@@ -1565,7 +1576,10 @@ This does not establish:
 - how often a turn needs the calendar, or what the extra `tool_search` round trip costs
   when it does: no usage data was read;
 - token counts: every figure here is characters of serialized JSON;
-- the WhatsApp tool count on an appliance running a different WhatsApp image.
+- whether the WhatsApp tool schemas changed between the two images. The tool count did
+  not: `whatsapp-mcp:latest` as published on 2026-09-24 (`1ec0233`) advertises the same
+  15 tool names as the CI pin, so it is deferred on an appliance too. The curated
+  WhatsApp merge that would bring it to 3 tools has not landed.
 
 ## 14. Skills and sharing
 

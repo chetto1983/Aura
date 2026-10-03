@@ -66,7 +66,7 @@ export interface PimAuthStatus {
 
 /** POST /api/connect/pim/accounts request body. provider is one of PimProviderId; providerConfig
  * carries the exact lowercase keys the sidecar provider service reads (clientId/clientSecret,
- * tenantId, icsUrl, imapHost/smtpHost/username/password, source/filePath/oneDrivePath, …).
+ * tenantId, icsUrl, imapHost/smtpHost/username/password, source/oneDrivePath, …).
  * domains/priority are optional account-routing hints (omitted when unset). */
 export interface PimCreateAccountRequest {
   readonly id: string;

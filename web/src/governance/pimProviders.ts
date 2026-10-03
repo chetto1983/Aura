@@ -7,14 +7,17 @@
 //   - each field's `key` is the EXACT lowercase providerConfig key the provider service reads via
 //     ProviderConfig.TryGetValue (GoogleProviderService → clientId/clientSecret; M365/OutlookCom →
 //     tenantId/clientId; IcsProviderService → icsUrl; ImapProviderService → imapHost/imapPort/
-//     smtpHost/smtpPort/username/password; JsonCalendarProviderService → source/filePath/oneDrivePath/
+//     smtpHost/smtpPort/username/password; JsonCalendarProviderService → source/oneDrivePath/
 //     authAccountId). The sidecar folds providerConfig keys case-insensitively, and Aura drops any
 //     case variant of clientId/clientSecret/tenantId before injecting the admin-set app;
 //   - `appFields` are the OAuth client of the three managed providers (google, microsoft365,
 //     outlook.com): an admin sets them once, the account wizard never shows them;
 //   - `authFlow` routes the post-create connect step: 'google' = web-redirect (pimGoogleStart),
 //     'device' = Microsoft/Outlook device-code (pimDeviceStart + poll), 'none' = credentials/URL ARE
-//     the connection (imap/ics/json-local), nothing more to do.
+//     the connection (imap/ics/json), nothing more to do;
+//   - a JSON account's source is OneDrive only. The sidecar refuses a JSON account that reads its own
+//     disk unless the operator wrote it into the server's configuration, so `local` and `filePath`
+//     are not offered (aura-pim-mcp Admin/TenantProviderConfig).
 //
 // i18n label keys live under governance.mcp.calendar.{providers,fields,sources}.*. `outlook.com`
 // carries a dot (the i18next key separator), so its provider label key is decoupled to `outlookCom`.
@@ -36,8 +39,6 @@ export interface PimFieldDef {
   readonly placeholder?: string;
   /** i18n key under governance.mcp.calendar.fields.* for an explanatory hint. */
   readonly hintKey?: string;
-  /** Show this field only when another field's value equals `value` (json source branch). */
-  readonly showIf?: { readonly key: string; readonly value: string };
 }
 
 export interface PimProviderDef {
@@ -151,24 +152,13 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
         labelKey: `${F}.source`,
         type: 'select',
         required: true,
-        options: [
-          { value: 'local', labelKey: `${S}.local` },
-          { value: 'onedrive', labelKey: `${S}.onedrive` },
-        ],
-      },
-      {
-        key: 'filePath',
-        labelKey: `${F}.filePath`,
-        type: 'text',
-        required: true,
-        showIf: { key: 'source', value: 'local' },
+        options: [{ value: 'onedrive', labelKey: `${S}.onedrive` }],
       },
       {
         key: 'oneDrivePath',
         labelKey: `${F}.oneDrivePath`,
         type: 'text',
         required: true,
-        showIf: { key: 'source', value: 'onedrive' },
       },
       {
         key: 'authAccountId',
@@ -176,7 +166,6 @@ export const PIM_PROVIDERS: readonly PimProviderDef[] = [
         type: 'text',
         required: false,
         hintKey: `${F}.authAccountIdHint`,
-        showIf: { key: 'source', value: 'onedrive' },
       },
     ],
   },
@@ -196,12 +185,6 @@ export function pimProviderById(id: string): PimProviderDef {
   return first;
 }
 
-/** A field is visible when it has no showIf, or the gating field currently holds the showIf value. */
-export function pimFieldVisible(field: PimFieldDef, values: Record<string, string>): boolean {
-  if (field.showIf === undefined) return true;
-  return values[field.showIf.key] === field.showIf.value;
-}
-
 /** The initial providerConfig draft for a provider: every select seeds to its first option so a
  * required select is never empty; text/password fields start blank. */
 export function pimInitialValues(def: PimProviderDef): Record<string, string> {
@@ -213,22 +196,20 @@ export function pimInitialValues(def: PimProviderDef): Record<string, string> {
   return values;
 }
 
-/** The providerConfig actually submitted: only VISIBLE fields with a non-empty trimmed value. (An
- * optional hidden/blank field is dropped so the sidecar sees just the keys it needs.) */
+/** The providerConfig actually submitted: only fields with a non-empty trimmed value. (An optional
+ * blank field is dropped so the sidecar sees just the keys it needs.) */
 export function pimSubmitConfig(
   def: PimProviderDef,
   values: Record<string, string>,
 ): Record<string, string> {
   const out: Record<string, string> = {};
   for (const field of def.fields) {
-    if (!pimFieldVisible(field, values)) continue;
     const value = (values[field.key] ?? '').trim();
     if (value !== '') out[field.key] = value;
   }
   return out;
 }
 
-/** The visible required fields that are still empty — drives inline validation before submit. */
 // PIM_ACCOUNT_ID_RE mirrors the sidecar's AccountValidation.SlugRegex (`^[a-z0-9][a-z0-9\-_]*$`):
 // a lowercase letter or digit, then lowercase letters, digits, hyphens and underscores. Anything
 // else is a 400 from the sidecar, so the wizard has to refuse it before the request is sent.
@@ -249,12 +230,13 @@ export function pimAccountIdError(raw: string): 'required' | 'slug' | null {
   return PIM_ACCOUNT_ID_RE.test(id) ? null : 'slug';
 }
 
+/** The required fields that are still empty — drives inline validation before submit. */
 export function pimMissingRequired(
   def: PimProviderDef,
   values: Record<string, string>,
 ): readonly string[] {
   return def.fields
-    .filter((field) => field.required && pimFieldVisible(field, values))
+    .filter((field) => field.required)
     .filter((field) => (values[field.key] ?? '').trim() === '')
     .map((field) => field.key);
 }

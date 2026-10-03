@@ -5,61 +5,32 @@
 // simultaneously-loaded servers, granted in mount order (BuiltInCatalog's
 // sorted order, internal/mcp/manager/catalog.go), overflow deferred.
 //
-// The tiering axis used to be schema size; the operator's decision
-// (docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md §2) made it
-// frequency + count instead: the calendar curated fork exposes 1 model-facing
-// tool and WhatsApp's exposes 3 (1 curated multiplex tool plus the 2 view-bound
-// raw reads its fork deliberately keeps outside the merge, because their live
-// MCP Apps views break under CallReadOnlyTool's Mutating gate) — both qualify,
-// WhatsApp with zero headroom to spare.
+// The tiering axis is frequency + count, not schema size
+// (docs/superpowers/specs/2026-08-17-mcp-curated-surface-design.md §2).
 //
-// Memory used to hide most of its surface from the model to fit under this
-// ceiling. That set is GONE as of 2026-09-03, on the operator's decision, and the
-// reason it had to go is that hiding was never deferral: bridgeToolsWithPolicy
-// SKIPPED a hidden tool, so it was absent from the model's world entirely and
-// tool_search could not reach it either. The memory-aura skill and the per-turn
-// memory pointer both instructed calls to tools that did not exist -- the skill
-// requires reading memory_entities before any write, and the pointer routed to
-// memory_facts_about and memory_search; all three were absent. Read back from the
-// live database on 2026-09-03, the agent had answered every memory question with
-// memory_recall because recall, upsert and batch were the only three it held.
+// Memory bridges every tool it advertises. Hiding one was never deferral:
+// bridgeToolsWithPolicy SKIPS a hidden tool, so tool_search cannot reach it
+// either. Read back from the live database on 2026-09-03, the agent had answered
+// every memory question with memory_recall because recall, upsert and batch were
+// the only memory tools it held. Its manifest count is memoryManifestCore (4),
+// and the ceiling is 4 because of that core: memory_entities has no model-facing
+// substitute and the memory-aura skill requires it before any write. Measured on
+// a real memory, 108 facts had produced 211 entities, 207 of them used once.
 //
-// All eleven memory tools are bridged now. Memory is therefore over this ceiling
-// and does NOT hold an always-loaded slot: its tools are deferred, exactly like
-// web_search, and one tool_search reaches any of them. That is the trade the
-// operator chose -- a tool the model can find beats a tool the model cannot see --
-// and the slot memory gives up goes to whatsapp, which had been the one deferred
-// under the previous arrangement.
+// Who holds a slot, measured on a live turn on 2026-10-03 (prd.md §13):
+//   - memory: yes, its core of 4;
+//   - calendar: never (bridgePolicy.neverLoaded). Its one tool qualified by
+//     count but was 13,136 of the 43,403 manifest characters a real turn sent;
+//   - whatsapp: no. The curated merge meant to bring it to 3 tools has not
+//     landed: the image CI pins (a463da5) and whatsapp-mcp:latest (1ec0233)
+//     both advertise the same 15 raw tools.
 //
-// The ceiling moved 3 -> 4 on 2026-09-03, and the reason is a measurement rather
-// than a preference. Hiding a tool here does not defer it: bridgeToolsWithPolicy
-// SKIPS it, so it is absent from the model's world and tool_search cannot reach
-// it either. At 3, the memory surface the model actually held was recall, upsert
-// and batch -- and recall subsumes facts_about and search, while batch subsumes
-// forget and merge, so that set is nearly complete. `memory_entities` was the one
-// exception: the vocabulary listing has NO model-facing substitute, and it is the
-// read the memory-aura skill makes mandatory before any write, because reusing an
-// existing name is the only thing that makes two facts meet. Measured on a real
-// memory: 108 facts had produced 211 entities, 207 of them used exactly once.
-// Keeping the ceiling at 3 was therefore not saving context, it was buying a
-// disconnected graph -- for 1327 bytes of schema, a fifth of what recall costs.
+// The second slot is therefore unused by the built-in set.
 //
-// The slot outcome is unchanged by the move: calendar (1), memory (4) and
-// whatsapp (3) all qualify at 4, there are still only maxAlwaysLoadedMCPSlots of
-// them, and alphabetical order still hands them to calendar and memory.
-// Because mounts are granted in alphabetical order against only 2 slots,
-// calendar and memory now hold them and WHATSAPP is the one that stays
-// deferred. That reordering is the deliberate outcome, not a side effect: read
-// the trade described above before changing either constant.
-//
-// Since 2026-10-03 the calendar recipe takes no slot at all (bridgePolicy.neverLoaded,
-// prd.md §13): its one tool qualified by count, yet it was 13,136 of the 43,403
-// manifest characters a real turn sent. Memory keeps its slot; the second now goes to
-// the next qualifying mount in order. N=1 was
-// rejected as brittle: a fork that split one verb into two tools would fall off
-// the cliff for no reason related to what the model actually carries. Both
-// numbers are Go constants, not env vars — no declaration ceremony is needed at
-// mount time, and the AURA_MCP_* env catalogue is already in measured debt.
+// N=1 was rejected as brittle: a fork that split one verb into two tools would
+// fall off the cliff for no reason related to what the model actually carries.
+// Both numbers are Go constants, not env vars: no declaration ceremony is needed
+// at mount time, and the AURA_MCP_* env catalogue is already in measured debt.
 package mcptools
 
 import (
@@ -87,10 +58,6 @@ var loadedSlotBudget struct {
 	mu    sync.Mutex
 	spent int
 }
-
-// countModelFacing counts advertised's tools AFTER policy.modelFacing
-// filtering, comparing names as exact byte strings — no case folding, no
-// Unicode normalization, no trimming, so "Send" and "send" count as two tools.
 
 // grantLoadedSlot decides whether namespace's mount earns one of the
 // maxAlwaysLoadedMCPSlots global always-loaded slots for a mount exposing
