@@ -5,8 +5,8 @@ import { gotoAuthenticated } from './auth';
 // graph-a11y.spec.ts — the Phase 27 accessibility + auth-resilience E2E. It runs axe against the
 // live Graph Explorer surface (0 serious/critical WCAG-AA violations), asserts the non-hover
 // access path (tap/keyboard opens the inspector, NOT hover), the canvas accessible name, AND the
-// named session-expiry case: a 401 on the next graph fetch surfaces a VISIBLE auth-error state,
-// never a silent blank canvas (B3, threat T-27-03). axe is loaded directly from the resolvable
+// named session-expiry case: a 401 on the next graph fetch lands on the sign-in page with a
+// VISIBLE expiry notice, never a silent blank canvas (B3, threat T-27-03). axe is loaded directly from the resolvable
 // axe-core engine (node_modules/axe-core/axe.js) via addScriptTag — no @axe-core/playwright dep.
 
 const require = createRequire(import.meta.url);
@@ -156,11 +156,13 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
     await expect(page.getByRole('button', { name: 'Pin path' })).toBeVisible();
   });
 
-  test('session expires mid-workspace surfaces a visible auth error, not a blank canvas', async ({
+  test('session expires mid-workspace sends the person to sign in again, not a blank canvas', async ({
     page,
   }) => {
     // B3 / T-27-03: open the workspace authenticated, then make the NEXT graph fetch return 401
-    // (expired/absent session). The UI must show a visible auth-error state, never a silent blank.
+    // (expired/absent session). The expiry must be visible, never a silent blank. Since
+    // api/sessionExpiry.ts a 401 sends the whole cockpit to the login page with the expiry
+    // notice and the way back (Authula SPEC §4.8), so that is what the person sees.
     await installBaseRoutes(page);
     await page.route('**/api/graph/schema', (route) =>
       route.fulfill({
@@ -193,12 +195,11 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
     // Trigger the next graph refresh; the expired authentication now returns 401.
     await page.getByRole('button', { name: 'Load memory graph' }).first().click();
 
-    // A VISIBLE auth-error alert, never a blank canvas.
-    await expect(
-      page.getByText('Your session has expired. Sign in again to view the graph.'),
-    ).toBeVisible({
+    // A VISIBLE expiry on the sign-in page, with the way back, never a blank canvas.
+    await expect(page).toHaveURL(`/login?expired=1&next=${encodeURIComponent(`/c/${CONV_ID}`)}`, {
       timeout: 10000,
     });
+    await expect(page.getByText('Your session expired. Sign in again to continue.')).toBeVisible();
     await expect(page.getByRole('img', { name: /Memory graph:/ })).toHaveCount(0);
   });
 });

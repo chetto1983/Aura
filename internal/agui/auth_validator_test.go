@@ -68,6 +68,55 @@ func TestRequireAuth_SessionValidatorSeam(t *testing.T) {
 	})
 }
 
+// TestRequireAuth_SessionRenewerOrder pins that a session is slid forward only once the
+// request is fully authenticated: never for a missing session, never for a deactivated
+// identity, and before next so the refreshed cookie rides the response headers.
+func TestRequireAuth_SessionRenewerOrder(t *testing.T) {
+	cases := []struct {
+		name      string
+		valid     bool
+		identity  Identity
+		wantRenew bool
+		wantCode  int
+	}{
+		{"authenticated request renews", true, Identity{ID: testLocalID, Kind: "user"}, true, http.StatusOK},
+		{"missing session does not renew", false, Identity{ID: testLocalID, Kind: "user"}, false, http.StatusUnauthorized},
+		{"deactivated identity does not renew", true, Identity{ID: testLocalID, Kind: "user", Deactivated: true}, false, http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			renewed := false
+			deps := AuthDeps{
+				SecretConfigured: true,
+				Identities:       &fakeIdentities{known: map[string]Identity{testLocalID: tc.identity}},
+				LoginPath:        "/login",
+				SessionValidator: func(*http.Request) (string, bool) { return testLocalID, tc.valid },
+				SessionRenewer: func(w http.ResponseWriter, _ *http.Request) {
+					renewed = true
+					w.Header().Set("Set-Cookie", "renewed=1")
+				},
+			}
+			h := RequireAuth(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				if !renewed {
+					t.Error("next ran before the session was renewed")
+				}
+				w.WriteHeader(http.StatusOK)
+			}), deps)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/me", nil))
+			if rec.Code != tc.wantCode {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.wantCode)
+			}
+			if renewed != tc.wantRenew {
+				t.Fatalf("renewed = %v, want %v", renewed, tc.wantRenew)
+			}
+			if tc.wantRenew && rec.Header().Get("Set-Cookie") != "renewed=1" {
+				t.Error("renewed cookie did not reach the response")
+			}
+		})
+	}
+}
+
 // TestIsPublicPath_AuthBasePath pins that the Authula credential subtree is reachable
 // without a session (login/TOTP happen pre-session) while a non-/auth path stays gated.
 func TestIsPublicPath_AuthBasePath(t *testing.T) {

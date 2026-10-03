@@ -77,11 +77,6 @@ var csrfProtectedRoutes = []string{
 	"POST:/totp/generate-backup-codes",
 }
 
-// sessionAbsoluteTTL matches Aura's existing passphrase cookie absolute lifetime
-// (agui.defaultSessionTTL = 12h) so the cutover does not change how long a session
-// survives. It maps to Authula's CookieMaxAge + ExpiresIn.
-const sessionAbsoluteTTL = 12 * time.Hour
-
 // authPoolMaxConns keeps Authula's own pool modest — auth is low-QPS (spec §6.2).
 const authPoolMaxConns = 5
 
@@ -104,6 +99,7 @@ type Config struct {
 // can leave it unset.
 type Provider struct {
 	auth      *authula.Auth
+	session   *sessionplugin.SessionPlugin
 	tokens    *mcpTokenPlugin
 	oauth     *OAuthServer
 	closeOnce sync.Once
@@ -147,12 +143,12 @@ func New(cfg Config) (_ *Provider, err error) {
 			Provider:  "gochannel",
 			GoChannel: &authulamodels.GoChannelConfig{BufferSize: 100},
 		}),
-		// H2: __Host- + Secure + SameSite=Strict + 12h absolute lifetime.
+		// H2: __Host- + Secure + SameSite=Strict. Lifetime policy: session_renew.go.
 		authulaconfig.WithSession(authulamodels.SessionConfig{
 			CookieName:         SessionCookieName,
-			ExpiresIn:          sessionAbsoluteTTL,
-			UpdateAge:          sessionAbsoluteTTL,
-			CookieMaxAge:       sessionAbsoluteTTL,
+			ExpiresIn:          sessionIdleTTL,
+			UpdateAge:          sessionUpdateAge,
+			CookieMaxAge:       sessionIdleTTL,
 			Secure:             true,
 			HttpOnly:           true,
 			SameSite:           "strict",
@@ -203,8 +199,9 @@ func New(cfg Config) (_ *Provider, err error) {
 		}),
 	)
 
+	sessionPlugin := sessionplugin.New(sessionplugin.SessionPluginConfig{Enabled: true})
 	tokenPlugin := newMCPTokenPlugin()
-	plugins := buildPlugins(rateLimitMax(cfg.RateLimitMax))
+	plugins := buildPlugins(sessionPlugin, rateLimitMax(cfg.RateLimitMax))
 	plugins = append(plugins, tokenPlugin)
 	auth := authula.New(&authula.AuthConfig{
 		Config:  authCfg,
@@ -213,7 +210,7 @@ func New(cfg Config) (_ *Provider, err error) {
 	// Force handler construction now (registers routes/hooks once via sync.Once) so a
 	// late registration error surfaces at boot, not on the first request.
 	_ = auth.Handler()
-	return &Provider{auth: auth, tokens: tokenPlugin}, nil
+	return &Provider{auth: auth, session: sessionPlugin, tokens: tokenPlugin}, nil
 }
 
 func validateAuthulaSecret(secret string) error {
@@ -242,9 +239,9 @@ func rateLimitMax(max int) int {
 // true (the manual-instantiation path, verified in auth.go:102-112 + util.IsPluginEnabled).
 // access-control / oauth2 / jwt / bearer are deliberately OMITTED: Aura keeps authz in
 // capability_grants (spec §5) and v1 is single-operator password+TOTP (spec §4.3).
-func buildPlugins(rateLimitAttempts int) []authulamodels.Plugin {
+func buildPlugins(session *sessionplugin.SessionPlugin, rateLimitAttempts int) []authulamodels.Plugin {
 	return []authulamodels.Plugin{
-		sessionplugin.New(sessionplugin.SessionPluginConfig{Enabled: true}),
+		session,
 		emailpasswordplugin.New(emailpasswordtypes.EmailPasswordPluginConfig{
 			Enabled: true,
 			// Single operator: no public sign-up, no email verification flow (no mailer

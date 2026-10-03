@@ -16,6 +16,7 @@ package webauth
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -63,8 +64,8 @@ func NewValidator(p coreServicesProvider, r userResolver) *Validator {
 }
 
 // Validate reads the hardened session cookie, hashes it, looks the session up via
-// Authula's SessionService, checks the absolute expiry itself (Authula does the expiry
-// comparison in its hook, not inside GetByToken — OQ-3), then maps the Authula user-id
+// Authula's SessionService, checks its expiry and absolute lifetime itself (Authula does
+// the expiry comparison in its hook, not inside GetByToken — OQ-3), then maps the Authula user-id
 // to the Aura identity UUID. Any miss/expiry/decode failure returns ErrNoSession (never
 // a panic) so the seam fails closed.
 func (v *Validator) Validate(r *http.Request) (identityID string, err error) {
@@ -95,8 +96,17 @@ func (v *Validator) SessionIdentity(r *http.Request) (SessionIdentity, error) {
 	if gerr != nil || sess == nil {
 		return SessionIdentity{}, ErrNoSession
 	}
-	if !sess.ExpiresAt.After(time.Now().UTC()) {
+	now := time.Now().UTC()
+	if !sess.ExpiresAt.After(now) {
 		return SessionIdentity{}, ErrNoSession // expired — fail closed (mirrors session/plugin.go:136)
+	}
+	if !sessionDeadline(sess).After(now) {
+		// Deleted, as Authula deletes an expired one, so its own /auth/* routes refuse it
+		// too: their renewal slides expires_at without knowing the absolute cap.
+		if err := core.SessionService.Delete(r.Context(), sess.ID); err != nil {
+			slog.Warn("webauth: could not delete a session past its absolute lifetime", "err", err)
+		}
+		return SessionIdentity{}, ErrNoSession
 	}
 	auraID, rerr := v.resolver.ResolveIdentityID(r.Context(), sess.UserID)
 	if rerr != nil || auraID == "" {

@@ -78,10 +78,14 @@ func (fakeToken) Hash(t string) string             { return "h:" + t }
 func (fakeToken) Encrypt(t string) (string, error) { return t, nil }
 func (fakeToken) Decrypt(t string) (string, error) { return t, nil }
 
-// fakeSession implements authulaservices.SessionService; only GetByToken is exercised.
+// fakeSession implements authulaservices.SessionService; GetByToken, Update and Delete are
+// exercised. deleted and updated, when set, record the calls; updateErr fails Update.
 type fakeSession struct {
-	byToken map[string]*authulamodels.Session
-	err     error
+	byToken   map[string]*authulamodels.Session
+	err       error
+	deleted   *[]string
+	updated   *[]authulamodels.Session
+	updateErr error
 }
 
 func (f fakeSession) GetByToken(_ context.Context, hashed string) (*authulamodels.Session, error) {
@@ -97,10 +101,21 @@ func (fakeSession) Create(context.Context, string, string, *string, *string, tim
 func (fakeSession) GetByUserID(context.Context, string) (*authulamodels.Session, error) {
 	return nil, nil
 }
-func (fakeSession) Update(context.Context, *authulamodels.Session) (*authulamodels.Session, error) {
-	return nil, nil
+func (f fakeSession) Update(_ context.Context, s *authulamodels.Session) (*authulamodels.Session, error) {
+	if f.updateErr != nil {
+		return nil, f.updateErr
+	}
+	if f.updated != nil {
+		*f.updated = append(*f.updated, *s)
+	}
+	return s, nil
 }
-func (fakeSession) Delete(context.Context, string) error                    { return nil }
+func (f fakeSession) Delete(_ context.Context, id string) error {
+	if f.deleted != nil {
+		*f.deleted = append(*f.deleted, id)
+	}
+	return nil
+}
 func (fakeSession) DeleteAllByUserID(context.Context, string) error         { return nil }
 func (fakeSession) DeleteAllExpired(context.Context) error                  { return nil }
 func (fakeSession) GetDistinctUserIDs(context.Context) ([]string, error)    { return nil, nil }
@@ -144,7 +159,7 @@ func TestValidate_Hit(t *testing.T) {
 	const uid = "authula-user-1"
 	const auraID = "00000000-0000-0000-0000-000000000001"
 	sess := fakeSession{byToken: map[string]*authulamodels.Session{
-		"h:" + cookie: {UserID: uid, ExpiresAt: time.Now().Add(time.Hour)},
+		"h:" + cookie: {UserID: uid, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)},
 	}}
 	v := validatorWith(sess, fakeResolver{byUser: map[string]string{uid: auraID}})
 	got, err := v.Validate(reqWithCookie(cookie))
@@ -159,7 +174,7 @@ func TestValidate_Hit(t *testing.T) {
 func TestValidate_Failures(t *testing.T) {
 	const cookie = "rawtoken"
 	const uid = "u1"
-	live := map[string]*authulamodels.Session{"h:" + cookie: {UserID: uid, ExpiresAt: time.Now().Add(time.Hour)}}
+	live := map[string]*authulamodels.Session{"h:" + cookie: {UserID: uid, CreatedAt: time.Now(), ExpiresAt: time.Now().Add(time.Hour)}}
 
 	tests := []struct {
 		name string
@@ -170,7 +185,7 @@ func TestValidate_Failures(t *testing.T) {
 		{"unknown token", validatorWith(fakeSession{byToken: map[string]*authulamodels.Session{}}, fakeResolver{}), reqWithCookie(cookie)},
 		{"session service error", validatorWith(fakeSession{err: errors.New("db down")}, fakeResolver{}), reqWithCookie(cookie)},
 		{"expired session", validatorWith(fakeSession{byToken: map[string]*authulamodels.Session{
-			"h:" + cookie: {UserID: uid, ExpiresAt: time.Now().Add(-time.Minute)},
+			"h:" + cookie: {UserID: uid, CreatedAt: time.Now().Add(-time.Hour), ExpiresAt: time.Now().Add(-time.Minute)},
 		}}, fakeResolver{byUser: map[string]string{uid: "x"}}), reqWithCookie(cookie)},
 		{"resolver miss", validatorWith(fakeSession{byToken: live}, fakeResolver{byUser: map[string]string{}}), reqWithCookie(cookie)},
 		{"resolver error", validatorWith(fakeSession{byToken: live}, fakeResolver{err: errors.New("link down")}), reqWithCookie(cookie)},

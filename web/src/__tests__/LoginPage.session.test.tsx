@@ -23,15 +23,16 @@ function authulaConfig() {
   );
 }
 
-function renderWithCachedAdmin() {
+function renderWithCachedAdmin(entry = '/login') {
   const client = new QueryClient();
   client.setQueryData(['me'], PREVIOUS_ADMIN);
   render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/login']}>
+      <MemoryRouter initialEntries={[entry]}>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<div>cockpit home</div>} />
+          <Route path="/c/:id" element={<div>conversation page</div>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -87,5 +88,59 @@ describe('LoginPage session boundary', () => {
 
     await screen.findByText('cockpit home');
     expect(client.getQueryData(['me'])).toBeUndefined();
+  });
+});
+
+// A 401 sends the person to /login?expired=1&next=<where they were> (api/sessionExpiry.ts);
+// signing in again must land them back there, and only ever on this origin.
+describe('LoginPage return after an expired session', () => {
+  it('returns to the conversation after a password sign-in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(authulaConfig())
+        .mockResolvedValueOnce(new Response('{"session":{"id":"s1"}}', { status: 200 })),
+    );
+    renderWithCachedAdmin('/login?expired=1&next=%2Fc%2Fthread-1');
+
+    await submitCredentials();
+
+    await screen.findByText('conversation page');
+  });
+
+  it('returns to the conversation after a TOTP sign-in', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(authulaConfig())
+        .mockResolvedValueOnce(new Response('{"totp_redirect":true}', { status: 200 }))
+        .mockResolvedValueOnce(new Response('{"session":{"id":"s1"}}', { status: 200 })),
+    );
+    renderWithCachedAdmin('/login?expired=1&next=%2Fc%2Fthread-1');
+
+    await submitCredentials();
+    fireEvent.change(await screen.findByLabelText('Verification code'), {
+      target: { value: '123456' },
+    });
+    fireEvent.submit(screen.getByRole('form', { name: 'Sign in' }));
+
+    await screen.findByText('conversation page');
+  });
+
+  it('ignores a next that leaves this origin', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(authulaConfig())
+        .mockResolvedValueOnce(new Response('{"session":{"id":"s1"}}', { status: 200 })),
+    );
+    renderWithCachedAdmin('/login?expired=1&next=%2F%2Fevil.example%2F');
+
+    await submitCredentials();
+
+    await screen.findByText('cockpit home');
   });
 });

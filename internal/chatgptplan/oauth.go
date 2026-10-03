@@ -351,16 +351,16 @@ func (s *Service) revoke(ctx context.Context, c *credential) error {
 	if err != nil {
 		return err
 	}
-	response, err := s.client.Do(request)
+	discovery, err := s.client.Do(request)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = response.Body.Close() }()
+	defer func() { _ = discovery.Body.Close() }()
 	var metadata struct {
 		Issuer             string `json:"issuer"`
 		RevocationEndpoint string `json:"revocation_endpoint"`
 	}
-	if response.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&metadata) != nil || metadata.Issuer != s.endpoint.issuer {
+	if discovery.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(discovery.Body, 1<<20)).Decode(&metadata) != nil || metadata.Issuer != s.endpoint.issuer {
 		return ErrRevocationUnconfirmed
 	}
 	target, err := url.Parse(metadata.RevocationEndpoint)
@@ -370,12 +370,12 @@ func (s *Service) revoke(ctx context.Context, c *credential) error {
 	}
 	form := url.Values{"token": {c.RefreshToken}, "token_type_hint": {"refresh_token"}, "client_id": {c.ClientID}}
 	for attempt := range 2 {
-		request, err = http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(form.Encode()))
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.String(), strings.NewReader(form.Encode()))
 		if err != nil {
 			return err
 		}
 		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		response, err = s.client.Do(request)
+		response, err := s.client.Do(request)
 		if err == nil {
 			_ = response.Body.Close()
 			if response.StatusCode == http.StatusOK {

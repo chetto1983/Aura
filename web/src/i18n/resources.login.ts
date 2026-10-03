@@ -92,7 +92,7 @@ export const loginIt = {
       wrongCode: 'Il codice di verifica non corrisponde. Controllalo e riprova.',
       network: 'Impossibile raggiungere Aura. Verifica che il server sia in esecuzione e riprova.',
     },
-    sessionExpired: 'La sessione e scaduta. Accedi di nuovo per continuare.',
+    sessionExpired: 'La sessione è scaduta. Accedi di nuovo per continuare.',
     authula: {
       emailLabel: 'Email operatore',
       passwordLabel: 'Password',
