@@ -10,6 +10,7 @@ package agui
 // than the thread it would otherwise take down with it.
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -88,7 +89,29 @@ func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 			attachToolArtifacts(&snap, files)
 		}
 	}
+	markAwaitingInput(&snap, s.pendingToolCalls(ctx, id))
 	if err := json.NewEncoder(w).Encode(snap); err != nil {
 		slog.Warn("agui: encode messages snapshot", "err", err)
 	}
+}
+
+// pendingToolCalls returns the tool calls of this thread whose turn waits on a pending
+// pause. Fail-soft like the rest of the additive snapshot data: without it a pending call
+// keeps the recovery placeholder.
+func (s *Server) pendingToolCalls(ctx context.Context, threadID string) map[string]struct{} {
+	if s.approvals == nil {
+		return nil
+	}
+	pendings, err := s.approvals.ListPendingAllForIdentity(ctx, scopedIdentityID(ctx), defaultApprovalsLimit)
+	if err != nil {
+		slog.Warn("agui: list pending pauses (serving snapshot without them)", "thread", threadID, "err", err)
+		return nil
+	}
+	out := make(map[string]struct{})
+	for _, p := range pendings {
+		if p.ConversationID == threadID && p.ToolCallID != "" {
+			out[p.ToolCallID] = struct{}{}
+		}
+	}
+	return out
 }

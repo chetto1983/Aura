@@ -1,7 +1,6 @@
 ---
 name: find-skills-aura
 description: Discover agent skills from the open skills ecosystem (skills.sh), and install them when authorized, when current capabilities don't cover a task — file formats (xlsx, pdf, docx), integrations, or specialized workflows.
-always: true
 ---
 
 # Find Skills

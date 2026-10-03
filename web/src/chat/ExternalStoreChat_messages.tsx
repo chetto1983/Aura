@@ -377,6 +377,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
   const part = useAuiState((s) => s.part) as {
     display?: unknown;
     mcpView?: unknown;
+    awaitingInput?: unknown;
     startedAt?: unknown;
     finishedAt?: unknown;
   };
@@ -453,6 +454,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
         finishedAt?: unknown;
         display?: unknown;
         mcpView?: unknown;
+        awaitingInput?: unknown;
       };
       return [
         {
@@ -465,6 +467,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
           finishedAt: typeof p.finishedAt === 'number' ? p.finishedAt : undefined,
           display: isDisplayPayload(p.display) ? p.display : undefined,
           mcpView: isMcpViewDescriptor(p.mcpView) ? p.mcpView : undefined,
+          awaitingInput: p.awaitingInput === true ? true : undefined,
         },
       ];
     });
@@ -485,6 +488,7 @@ export const ToolFallback: ToolCallMessagePartComponent = ({
       partStatus={status}
       {...(resultText !== undefined ? { result: resultText } : {})}
       {...(isError !== undefined ? { isError } : {})}
+      {...(part.awaitingInput === true ? { awaitingInput: true } : {})}
       {...(startedAt !== undefined ? { startedAt } : {})}
       {...(finishedAt !== undefined ? { finishedAt } : {})}
       {...(display !== undefined ? { display, onOpenSource } : {})}

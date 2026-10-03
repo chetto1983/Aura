@@ -36,7 +36,7 @@ export const onboardingEn = {
       name: {
         label: 'Name',
         help: 'How Aura should address you. Stored exactly as typed.',
-        placeholder: 'Davide',
+        placeholder: 'Alex',
         required: 'Add your name — everything else you fill in is stored about it.',
       },
       lang: {
@@ -47,7 +47,7 @@ export const onboardingEn = {
       location: {
         label: 'Where you are',
         help: 'City or region. Becomes a place Aura can reason about.',
-        placeholder: 'Caraglio',
+        placeholder: 'Turin',
       },
       timezone: {
         label: 'Time zone',
@@ -62,7 +62,7 @@ export const onboardingEn = {
       company: {
         label: 'Organisation',
         help: 'Company, team, or project you work with.',
-        placeholder: 'PmSync',
+        placeholder: 'Acme Studio',
       },
     },
     credentials: {
@@ -199,7 +199,7 @@ export const onboardingIt = {
       name: {
         label: 'Nome',
         help: 'Come Aura deve chiamarti. Salvato esattamente come lo scrivi.',
-        placeholder: 'Davide',
+        placeholder: 'Alex',
         required: 'Aggiungi il tuo nome — tutto il resto viene salvato riferito a lui.',
       },
       lang: {
@@ -210,7 +210,7 @@ export const onboardingIt = {
       location: {
         label: 'Dove sei',
         help: 'Città o zona. Diventa un luogo su cui Aura può ragionare.',
-        placeholder: 'Caraglio',
+        placeholder: 'Torino',
       },
       timezone: {
         label: 'Fuso orario',
@@ -225,7 +225,7 @@ export const onboardingIt = {
       company: {
         label: 'Organizzazione',
         help: 'Azienda, team o progetto con cui lavori.',
-        placeholder: 'PmSync',
+        placeholder: 'Acme Studio',
       },
     },
     credentials: {

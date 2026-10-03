@@ -317,8 +317,8 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // skill-creator appears in the very first scan. When a live pool is supplied
 // (serve/chat boot) the write actions are wired to the durable, gated Writer (11-05)
 // via skilladapters.NewWriter; the pool-free path leaves Writer nil (write actions
-// error loudly). Discovery+install is no longer a tool concern (amendment #51 /
-// D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
+// error loudly). The on-demand find-skills-aura skill teaches discovery; installing
+// runs through skill_manage action=install.
 // registerSkillTools registers BOTH halves of the skills grammar over ONE SkillTool:
 // the read verb `skill` (list/info/use) and the write verb `skill_manage` (authoring,
 // install, snippet lifecycle). They share the instance so one loader, one writer and one

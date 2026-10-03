@@ -31,27 +31,28 @@ func TestMaterializeBuiltinsAppearsInLoader(t *testing.T) {
 	}
 }
 
-func TestMaterializeFindSkillsAuraAlwaysOn(t *testing.T) {
+func TestMaterializeFindSkillsAuraLoadsOnDemand(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	if err := MaterializeBuiltins(dir); err != nil {
 		t.Fatalf("MaterializeBuiltins: %v", err)
 	}
 
-	// The find-skills-aura builtin (amendment #51 / D-40) must materialize alongside
-	// skill-creator.
+	// The find-skills-aura builtin must materialize alongside skill-creator.
 	if _, err := os.Stat(filepath.Join(dir, "find-skills-aura", "SKILL.md")); err != nil {
 		t.Fatalf("find-skills-aura/SKILL.md not materialized: %v", err)
 	}
 
-	// It must load from the same root AND be always:true (it rides messages[1]).
+	// It loads from the same root and is NOT always-on (prd.md §14, 2026-10-03): its
+	// body no longer rides messages[1]; the installed-skills list names it, and the
+	// capability-gap replies point at skill action=use.
 	l := NewLoader(Config{Roots: []string{dir}})
 	got, ok := l.Get("find-skills-aura")
 	if !ok {
 		t.Fatalf("find-skills-aura not found by the loader after materialization; got %v", names(l.List()))
 	}
-	if !got.Always {
-		t.Fatalf("find-skills-aura must be always:true (it teaches self-extension in the always-block)")
+	if got.Always {
+		t.Fatalf("find-skills-aura must load on demand, not ride every turn's always-block")
 	}
 	if got.Description == "" {
 		t.Fatalf("find-skills-aura description is empty")

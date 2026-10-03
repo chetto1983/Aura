@@ -105,18 +105,17 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 	"you are about to take."
 
 // noMatchOrientation is the fixed no-result reply (amendment #49, retargeted #52/D-41).
-// A failed tool_search is usually a capability gap; the always-on find-skills skill is the
+// A failed tool_search is usually a capability gap; the find-skills-aura skill is the
 // designed path for packaged capabilities, so the model is pointed there explicitly
-// instead of being left to improvise ad-hoc code. The old `{"action":"catalog",...}`
-// routing was removed: that action was deleted in 11-09 (#51/D-40), and discovery+install
-// now ride the host terminal (`npx skills find/add`), taught by find-skills-aura.
+// instead of being left to improvise ad-hoc code. It loads on demand (prd.md §14,
+// 2026-10-03), so the reply names the call that loads it.
 //
 // This is the CAPABILITY-GAP path (no tool matched the query) — distinct from the
 // NAMING path (a select: named a tool that is not registered), which reports the bad
 // name and the closest registered ones.
 const noMatchOrientation = "no matching tools. " +
 	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
-	"the always-on find-skills skill teaches how to discover and install skills from the open ecosystem in your terminal — " +
+	"load the find-skills-aura skill (skill action=use name=find-skills-aura): it teaches how to discover and install skills from the open ecosystem — " +
 	"installable skills ship tested instructions and bundled scripts that beat ad-hoc code."
 
 // nsDelimiterStr is the "<namespace>__<tool>" delimiter from the mcptools

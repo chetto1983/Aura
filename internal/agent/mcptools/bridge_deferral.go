@@ -50,7 +50,12 @@
 // Because mounts are granted in alphabetical order against only 2 slots,
 // calendar and memory now hold them and WHATSAPP is the one that stays
 // deferred. That reordering is the deliberate outcome, not a side effect: read
-// the trade described above before changing either constant. N=1 was
+// the trade described above before changing either constant.
+//
+// Since 2026-10-03 the calendar recipe takes no slot at all (bridgePolicy.neverLoaded,
+// prd.md §13): its one tool qualified by count, yet it was 13,136 of the 43,403
+// manifest characters a real turn sent. Memory keeps its slot; the second now goes to
+// the next qualifying mount in order. N=1 was
 // rejected as brittle: a fork that split one verb into two tools would fall off
 // the cliff for no reason related to what the model actually carries. Both
 // numbers are Go constants, not env vars — no declaration ceremony is needed at

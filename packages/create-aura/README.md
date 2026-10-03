@@ -22,8 +22,11 @@ included) selects Vulkan; otherwise embeddings run on the CPU. Apple's Metal is 
 from a Docker container on macOS, so a Mac runs embeddings on the CPU. You are not asked.
 
 Installs made from this package track the `edge` channel: the appliance images carry the
-moving `:edge` tag, Docker is set to always re-pull them, and a systemd timer applies new
-images as they are published — so the box keeps itself current without you returning to it.
+moving `:edge` tag, Docker is set to always re-pull them, and a systemd timer downloads new
+images as they are published. It restarts Aura into a new build when an admin asks from the
+cockpit, once Aura has been idle for 15 minutes with nothing running, or when the first
+pending build has waited 24 hours — so the box keeps itself current without you returning
+to it. An admin can defer an update up to that deadline.
 
 The appliance uses `single_user_hardened` with identity isolation enabled. Reinstalling
 or updating also repairs existing configurations that omitted these settings or selected

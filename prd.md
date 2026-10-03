@@ -1544,6 +1544,23 @@ Overflow stays discoverable. Four memory entry points remain loaded; the rest ca
 found through search. An unmeasured global tool-count target cannot justify making
 tools unreachable. MCP UI resources are rendering metadata, not extra model instructions.
 
+The calendar recipe never takes an always-loaded slot (2026-10-03). Its one model-facing
+tool qualified by count, but the manifest a real turn sent measured 43,403 characters
+across 19 tools, and `calendar__calendar` alone was 13,136 of them (30%): the PIM schema
+rode in every turn, including turns about nothing on the calendar. It is now reached
+through `tool_search` like the WhatsApp surface. Native tools and the memory core are
+unchanged: of the 43,403, the 15 native tools were 26,664 and the memory core 3,603.
+
+This does not establish:
+- how often a turn needs the calendar, or what the extra `tool_search` round trip costs
+  when it does: no usage data was read;
+- the memory core's own weight on the appliance: the 3,603 came from the stale pinned
+  E2E image and its three core tools. The current server's four (recall, upsert_fact,
+  batch, entities), serialized as the bridge sends them (description plus input schema,
+  after the B-15 caps), compute to 9,065 from `docs/arcadedb-mcp-live-tools.json`; no
+  live turn has measured it. The 18,554 first written here counted the raw `tools/list`
+  entries, whose output schemas, annotations and titles never reach the manifest.
+
 ## 14. Skills and sharing
 
 Postgres owns catalog and grants; filesystem roots hold bodies. Names are owner-scoped.
@@ -1563,6 +1580,15 @@ the same identity and roots. Completed writes invalidate the loader view. Shared
 administrative rights are explicit; ordinary ownership labels do not authorize editing
 deployment policy. Builtins are application-owned and must not offer lifecycle actions
 that boot materialization immediately undoes.
+
+`find-skills-aura` loads on demand, not in every turn (2026-10-03). Its body was the only
+always-on skill: 3,762 bytes injected into messages[1] of every turn, about half of that
+6,788-character block on the measured turn, to teach a path the `skill` tool description
+already teaches (look at the installed list first, install through `skill_manage`, never
+through the CLI). The installed-skills list in messages[1] still names it with its
+description, and the capability-gap replies of `tool_search` and `skill action=list` point
+to `skill action=use name=find-skills-aura`. This does not establish how often a turn
+needed the body: no usage data was read.
 
 Skills and snippets are not permanent model self-modification. Retired pending stages,
 `Agent.md` provisioning, orphan pyscripts/MCP roots and hidden legacy landing zones are

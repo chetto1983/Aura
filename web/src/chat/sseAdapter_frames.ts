@@ -153,6 +153,8 @@ export interface ToolPart {
   readonly display?: DisplayPayload;
   /** MCP Apps view bound to the same call; retained beside a typed read card. */
   readonly mcpView?: McpViewDescriptor;
+  /** Replay only: the turn is paused waiting on the person's answer to this call. */
+  readonly awaitingInput?: boolean;
 }
 export interface TextPart {
   readonly type: 'text';
@@ -191,6 +193,7 @@ export interface SnapshotToolCall {
    *  per tool turn at snapshot projection time and attaches it here. */
   readonly display?: unknown;
   readonly mcpView?: unknown;
+  readonly awaitingInput?: unknown;
 }
 
 export interface SnapshotMessage {

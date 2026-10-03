@@ -58,6 +58,8 @@ type displaySnapshotToolCall struct {
 	Function types.FunctionCall `json:"function"`
 	Display  *display.Payload   `json:"display,omitempty"`
 	MCPView  map[string]any     `json:"mcpView,omitempty"`
+	// AwaitingInput marks a call whose turn is paused on a pending answer (markAwaitingInput).
+	AwaitingInput bool `json:"awaitingInput,omitempty"`
 }
 
 // projectDisplaySnapshot builds the display-aware MESSAGES_SNAPSHOT (D-06): it re-runs
@@ -339,6 +341,30 @@ func attachTurnReasoning(snap *displaySnapshotEvent, rows []conversations.TurnRe
 // attaching the re-derived display (when the matching result turn was recognized).
 // Returns nil for an empty input so the omitempty toolCalls key is absent on non-tool
 // turns.
+// markAwaitingInput shows a tool call whose turn is paused on the person's answer as still
+// waiting rather than failed. While the pause is pending the call has no result, so
+// LoadHistory pairs it with the crash-recovery placeholder and the projection flags that
+// as an error. For a pending call the placeholder is dropped and the call carries
+// AwaitingInput instead, which the cockpit renders as still running.
+func markAwaitingInput(snap *displaySnapshotEvent, pending map[string]struct{}) {
+	if len(pending) == 0 {
+		return
+	}
+	kept := snap.Messages[:0]
+	for _, m := range snap.Messages {
+		if _, ok := pending[m.ToolCallID]; ok && m.IsError {
+			continue
+		}
+		for i := range m.ToolCalls {
+			if _, ok := pending[m.ToolCalls[i].ID]; ok {
+				m.ToolCalls[i].AwaitingInput = true
+			}
+		}
+		kept = append(kept, m)
+	}
+	snap.Messages = kept
+}
+
 func projectDisplayToolCalls(calls []llm.ToolCall, displays map[string]*display.Payload, views map[string]map[string]any) []displaySnapshotToolCall {
 	if len(calls) == 0 {
 		return nil

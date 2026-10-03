@@ -27,6 +27,10 @@ type bridgePolicy struct {
 	// what changed (warnIfDeferralWouldFlip) without ever recomputing the
 	// decision itself.
 	modelFacingCount int
+	// neverLoaded keeps a mount out of the always-loaded slots whatever its tool count:
+	// the calendar recipe's single tool carried 13,136 of the 43,403 manifest characters
+	// a real turn sent (prd.md §13, 2026-10-03), so it is reached through tool_search.
+	neverLoaded bool
 }
 
 func defaultBridgePolicy(namespace string) bridgePolicy {

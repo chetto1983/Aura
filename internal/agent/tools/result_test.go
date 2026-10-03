@@ -404,7 +404,7 @@ func TestToolSearch_Migrated(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 	// Contract updated with amendment #49, retargeted #52/D-41: the no-result reply
-	// carries the fixed orientation tail pointing at the always-on find-skills skill
+	// carries the fixed orientation tail pointing at the on-demand find-skills-aura skill
 	// (the deleted `action=catalog` routing is gone; capability gaps route into the
 	// host-terminal skills loop).
 	if res.Preview != noMatchOrientation {

@@ -169,6 +169,7 @@ func managedBridgePolicy(server mcp.ManagedServer) bridgePolicy {
 	if _, ok := trustedRecipeActions[source]; ok {
 		policy.recipeSource = source
 	}
+	policy.neverLoaded = source == calendarRecipeSource
 	return policy
 }
 
