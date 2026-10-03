@@ -110,6 +110,30 @@ This does not establish:
   neither its own nor in the trusted list (it is refused by design);
 - sign-out from every other session of the same user: the cockpit ends the current one.
 
+**A session lives while it is used, up to seven days (2026-10-03).** Authula slides a
+session only inside its own middleware, which guards `/auth/*`; the cockpit's routes are
+validated by Aura's `Validator` and never reached it. Measured on the local stack: three
+authenticated `/api` calls left `authula.sessions.expires_at` at sign-in + 12 h while one
+`GET /auth/me` moved it, and the SPA never calls `/auth/me`, so a session used all day died
+12 h after sign-in. A member reported the consequence: a dead cockpit that only a reload and
+a new sign-in revived, because no cockpit code acted on a 401 (Authula SPEC §4.8 required
+the redirect). `RequireAuth` now renews the session after the identity re-check: a 12 h idle
+window renewed at most once an hour, capped at 7 days from sign-in, after which the session
+is deleted so Authula's own routes refuse it too. A same-origin 401 outside `/auth/*` and
+the public pages sends the cockpit to `/login?expired=1` with the page to return to, and the
+login returns there, accepting only a path on this origin. Measured after the fix on the
+local stack: a fresh session was not rewritten; one with 30 min left was renewed to
+now + 12 h with the hardened cookie re-issued; one created 7 days and a minute earlier
+answered 401 on `/api/me` and on `/auth/me`, its row gone; in the browser, a cleared session
+led from an open conversation to the expiry notice and, after signing in, back to it.
+
+This does not establish:
+- why the member's runs ended with the interrupted-round marker: that cause is in the
+  daemon log of their appliance (`round ended with no answer … cause=`), not read yet;
+- the lifetime choices (12 h idle, 1 h renewal, 7 days absolute) as measured needs: they
+  are a policy, kept where the passphrase cookie had them for the idle window;
+- the behaviour on the lab VM or behind Caddy: measured on the local stack only.
+
 ## 4. Agent lifecycle, tools and completion
 
 The open `Agent` interface returns `iter.Seq2[*Event, error]`. Termination, budget
