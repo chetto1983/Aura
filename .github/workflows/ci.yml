@@ -1322,7 +1322,10 @@ jobs:
     timeout-minutes: 15
     env:
       CI: "true"
-      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
+      # :latest is what appliances run (scripts/install_env.sh), so this tier and
+      # web-e2e test the production WhatsApp server. The price is that a new upstream
+      # image can turn this job red without an Aura change.
+      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
       AURA_WHATSAPP_MCP_URL: http://127.0.0.1:18092/mcp
       AURA_WHATSAPP_GATEWAY_URL: http://127.0.0.1:18094/api/status
       AURA_WHATSAPP_BRIDGE_TOKEN: ci-whatsapp-bridge-token-2026
@@ -1853,7 +1856,7 @@ jobs:
       # .planning/debug/resolved/memory-recall-schema-stale.md.
       AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
       AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
-      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
+      AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
