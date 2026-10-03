@@ -12,7 +12,7 @@ jobs, and a web cockpit on infrastructure you control.
 [![CI](https://github.com/chetto1983/Aura/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
+[![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go)](go.mod)
 
 [What is Aura?](#what-is-aura) · [Features](#key-features) · [Architecture](#architecture-one-screen) · [Quick Start](#quick-start) · [Docs](#documentation) · [Development](#development)
 
@@ -26,12 +26,16 @@ jobs, and a web cockpit on infrastructure you control.
 
 ## What is Aura?
 
-Aura is a self-hosted AI agent. Its Go binary hosts the runtime, tools, CLI,
-Telegram gateway, and embedded web cockpit. Docker Compose runs Postgres,
-ArcadeDB, Garage, embedding, ingestion, and selected integrations alongside it.
-The model is configurable; the default route uses OpenRouter. Local storage does
-not make cloud inference offline: the selected provider receives the context sent
-to that model. Local OpenAI-compatible endpoints are also supported.
+Aura is a self-hosted, multi-user AI agent. Its Go binary hosts the runtime, tools,
+CLI, Telegram gateway, and embedded web cockpit; each person signs in to their own
+identity, with their own memory database, workspace and sandbox. Docker Compose runs
+Postgres, ArcadeDB, Garage, embedding, ingestion, web search, voice and the bundled
+integrations alongside it.
+
+The model is chosen in the cockpit settings: OpenRouter (the default route), a
+ChatGPT plan, the bundled local llama.cpp server, or Ollama. Local storage does not
+make cloud inference offline: a cloud provider receives the context sent to its
+model; with a local server nothing leaves the host for inference.
 
 > **Deployment:** Aura can run on hardware the operator owns or manages. Select
 > capacity for the chosen model, workload, documents and backup retention.
@@ -48,13 +52,13 @@ to that model. Local OpenAI-compatible endpoints are also supported.
 
 | | |
 |---|---|
-| **Language** | Go 1.26 |
+| **Language** | Go 1.27 |
 | **Tests** | Unit, property, race, leak, mutation, live integration, and browser tests |
 | **Test coverage** | Owned-surface aggregate **≥85%**, with package policies and separate live memory/sandbox coverage authorities |
 | **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
 | **Persistence** | Postgres (sqlc, pgx) + ArcadeDB (graph memory, full-text + LSM vector index) + Garage (S3 object store) |
-| **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral; the active profile (provider, model, budgets) is hot-reloaded from the cockpit settings, no restart |
-| **Distribution** | `edge` tracks master; `v1.0.2-rc1` is the latest tagged prerelease checked on 2026-09-07. See Releases for current availability |
+| **Models** | Default DeepSeek-V4 Flash via OpenRouter; also a ChatGPT plan, the bundled llama.cpp server (Gemma 4 12B QAT, `localllm` profile) or Ollama. The active profile (provider, model, budgets) is hot-reloaded from the cockpit settings, no restart |
+| **Distribution** | `edge` tracks master; `v1.0.2-rc1` is the latest tagged prerelease checked on 2026-10-03. See Releases for current availability |
 
 ## Key features
 
@@ -66,19 +70,22 @@ to that model. Local OpenAI-compatible endpoints are also supported.
 - **Document retrieval** — indexed passages with source hashes and citations, plus access to the original file for calculations and whole-file tasks.
 - **Self-extension** — author and run skills, use bundled memory/PIM/WhatsApp integrations, and connect additional MCP servers.
 - **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs, with job policy, operator controls and outcomes delivered to the owning conversation.
-- **Per-identity sandbox** — a full-capability box per operator (gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
-- **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, and live settings.
+- **Per-identity sandbox** — a full-capability box per operator (opt-in `sandbox` profile; gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
+- **Multi-user** — Authula sign-in (password + TOTP), one isolated ArcadeDB database per identity enforced by the server, capability grants, and an admin audit view.
+- **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, voice input/output, and live settings.
+- **Studio** — image and video generation over OpenRouter's media models, with in-browser photo and video editing.
+- **Bundled integrations** — calendar/e-mail (PIM MCP, OAuth providers), WhatsApp (unofficial client), web search through a bundled SearXNG, snapshot share links to a conversation, and Cloudflare remote access.
 
 ## Architecture (one screen)
 
 ```text
-Transport & UX     cmd/aura (CLI) · channels (+telegram) · agui (SSE) · setup · askuser
-Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/Loop) · swarm
-Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
-Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoningtrace · scoring
-Capabilities       web · skills · cron · onboarding · documents
-Persistence        db (Postgres+sqlc) · arcadedb (memory + retrieval) · conversations · identity · objectstore · secret
-Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics
+Transport & UX     cmd/aura (CLI) · channels (+telegram) · agui (SSE) · webui (embedded SPA) · webauth (Authula) · setup · askuser
+Agent runtime      agent (LlmAgent, Budget, Events, hooks, workflow Seq/Par/Loop) · runner · swarm · steer
+Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · agent/mcptools · mcp (+manager) · mcpoauth · sandbox
+Intelligence       llm (+openai_compat) · chatgptplan · semindex (embed-index core) · reasoningtrace · scoring · multimodal · mediagen
+Capabilities       web · skills · cron · onboarding · documents · share · retention
+Persistence        db (Postgres+sqlc) · arcadedb (memory + retrieval) · conversations · identity · objectstore · secret · settings
+Observability      obs · agent/panicobs · reasoningtrace · toolinvocations · cachemetrics
 ```
 
 ## Documentation
@@ -97,8 +104,13 @@ Observability      obs · panicobs · reasoningtrace · toolinvocations · cache
 ## Deployment (Docker Compose appliance)
 
 Aura is a self-hosted agent runtime packaged as a Docker Compose appliance. The
-default stack brings up Aura, Postgres, ArcadeDB and its MCP, the local embedding sidecar, Caddy
-TLS/token access, and optional MCP siblings.
+default stack brings up Aura (with its migration one-shot), Postgres, ArcadeDB and its
+MCP, Garage, the local embedding sidecar, document ingestion, SearXNG, speech-to-text
+and text-to-speech, the PIM and WhatsApp MCP sidecars, the Cloudflare tunnel
+supervisor (idle until enabled), and Caddy in front of the Authula sign-in. Compose
+profiles add the rest: `localllm` (a llama.cpp server with Gemma 4 12B QAT), `ocr`,
+`observability` (Prometheus, Tempo, Grafana) and `sandbox` (the Docker socket proxy
+for per-identity boxes).
 
 ## Quick Start
 
@@ -213,10 +225,14 @@ data volume directly.
 
 ### Access
 
-Aura publishes AG-UI and setup on loopback and Caddy on HTTPS:
+Aura listens on loopback; Caddy serves the cockpit on HTTPS at `https://<host>`, behind
+the Authula sign-in. On a fresh install the sign-in page offers **Create first user**:
+that account is the operator, and after signing in the cockpit's first-run setup
+finishes the configuration. The Telegram bot is connected through the setup wizard,
+gated by the access token the installer prints:
 
 ```text
-https://localhost/setup/?token=<AURA_ACCESS_TOKEN>
+https://<host>/setup/?token=<AURA_ACCESS_TOKEN>
 ```
 
 Caddy uses `tls internal`. Browsers on other LAN machines will warn until they
@@ -300,9 +316,9 @@ docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
 
 Take a fresh backup before restoring over a live database.
 
-## Optional WhatsApp MCP
+## WhatsApp MCP
 
-The `whatsapp` service is an optional sibling mounted through Aura's MCP catalog.
+The `whatsapp` service is part of the default stack, mounted through Aura's MCP catalog.
 It uses an unofficial whatsmeow-based client, so it carries WhatsApp Terms of Service and account-ban risk. First pairing is headless:
 
 ```bash
@@ -392,11 +408,15 @@ make quality-full
 
 ```text
 cmd/aura/                CLI entry and subcommands
-internal/agent/          Agent interface, Event, Budget tree, workflow agents
-internal/db/             Postgres: pgx pool, golang-migrate, sqlc bindings
-internal/config/         environment to typed config
-internal/canonicaljson/  deterministic JSON for dedup fingerprints
+cmd/arcadedb-mcp/        Aura's own ArcadeDB memory MCP server
+cmd/aura-*/              sidecar binaries (Cloudflare and ingest supervisors, media index, file cards)
+internal/                the runtime, one package per concern (see Architecture)
+web/                     React cockpit, embedded into the binary from internal/webui/dist
+services/ingest/         document ingestion sidecar
+packages/create-aura/    the npx installer (create-aura-appliance)
+docker/ deploy/ caddy/   image builds, systemd units and the updater, Caddy front door
 scripts/                 install, smoke, restore drill, coverage, file-size cap
+docs/                    architecture, capabilities, release and backup guides
 .planning/               GSD planning artifacts
 ```
 
@@ -404,7 +424,8 @@ scripts/                 install, smoke, restore drill, coverage, file-size cap
 
 Aura is PRD-first. Persistence is Postgres plus an ArcadeDB graph, with graph access
 through MCP for model-facing tools. The default packaged deployment keeps Aura
-socketless: no Docker socket is mounted into the Aura container.
+socketless: no Docker socket is mounted into the Aura container. The opt-in `sandbox`
+profile reaches Docker only through a socket proxy that allows the box lifecycle verbs.
 
 ## Contributing And Security
 
