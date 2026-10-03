@@ -1925,7 +1925,11 @@ jobs:
           done
           [ "$(docker inspect -f '{{.State.Health.Status}}' aura-arcadedb)" = "healthy" ]
 
+          # AURA_DB_URL + AURA_AUTHULA_SECRET: the sidecar reads its sealed settings
+          # from Postgres at boot and exits without them (cmd/arcadedb-mcp/boot_settings.go).
           docker run -d --name aura-memory-web-ci --network host \
+            -e AURA_DB_URL="$AURA_DB_URL" \
+            -e AURA_AUTHULA_SECRET="$AURA_AUTHULA_SECRET" \
             -e ARCADEDB_URL=http://127.0.0.1:2480 \
             -e ARCADEDB_DATABASE=aura_memory \
             -e ARCADEDB_USER=root \
