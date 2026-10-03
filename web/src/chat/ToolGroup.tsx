@@ -26,6 +26,7 @@ export interface ToolGroupMember {
   readonly finishedAt?: number | undefined;
   readonly display?: DisplayPayload | undefined;
   readonly mcpView?: McpViewDescriptor | undefined;
+  readonly awaitingInput?: boolean | undefined;
 }
 
 export interface ToolGroupProps {
@@ -117,6 +118,7 @@ export function ToolGroup({ members, onOpenSource }: ToolGroupProps) {
                 }
               : {})}
             {...(member.mcpView !== undefined ? { mcpView: member.mcpView } : {})}
+            {...(member.awaitingInput === true ? { awaitingInput: true } : {})}
           />
         ))}
       </div>

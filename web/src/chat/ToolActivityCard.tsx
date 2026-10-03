@@ -47,6 +47,8 @@ export interface ToolActivityCardProps {
   /** Raw tool-result preview, when the call has completed. */
   readonly result?: string;
   readonly isError?: boolean;
+  /** The turn is paused on the person's answer to this call. */
+  readonly awaitingInput?: boolean;
   readonly partStatus?: ToolCallMessagePartStatus;
   /** Epoch-ms when the tool call started (AG-UI TOOL_CALL_START). Optional. */
   readonly startedAt?: number;
@@ -66,6 +68,7 @@ export function ToolActivityCard({
   argsText,
   result,
   isError,
+  awaitingInput,
   partStatus,
   startedAt,
   finishedAt,
@@ -78,7 +81,7 @@ export function ToolActivityCard({
   const bodyId = useId();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const status = toolStatus({ result, isError, display, partStatus });
+  const status = toolStatus({ result, isError, awaitingInput, display, partStatus });
   const running = status === 'running';
   const elapsed = useElapsed(
     status === 'interrupted' && finishedAt === undefined ? undefined : startedAt,

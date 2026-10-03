@@ -117,6 +117,7 @@ function toolCallsFromSnapshot(value: unknown): ToolPart[] {
       // the DisplayRouter renders identically on replay. Tolerated when absent.
       ...(isDisplayPayload(call.display) ? { display: call.display } : {}),
       ...(isMcpViewDescriptor(call.mcpView) ? { mcpView: call.mcpView } : {}),
+      ...(call.awaitingInput === true ? { awaitingInput: true } : {}),
     });
   }
   return parts;
