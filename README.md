@@ -72,7 +72,7 @@ model; with a local server nothing leaves the host for inference.
 - **Self-extension** — author and run skills, use bundled memory/PIM/WhatsApp integrations, and connect additional MCP servers.
 - **Scheduler and self wake-ups** — one `task` tool (`at | every | cron`) for reminders and `agent_job` runs, with job policy, operator controls and outcomes delivered to the owning conversation.
 - **Per-identity sandbox** — a full-capability box per operator (opt-in `sandbox` profile; gVisor `runsc` on native Linux), with deliverables handed back over the channel (`send_file`), never as a path.
-- **Multi-user** — Authula sign-in (password + TOTP), one isolated ArcadeDB database per identity enforced by the server, capability grants, and an admin audit view.
+- **Multi-user** — Authula sign-in (password, plus a TOTP step for accounts enrolled in it), one isolated ArcadeDB database per identity enforced by the server, capability grants, and an admin audit view.
 - **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE with mid-turn steering, approvals, voice input/output, and live settings.
 - **Studio** — image and video generation, photo and video editing, and a multi-track video editor, all in the cockpit ([details](#studio)).
 - **Bundled integrations** — calendar/e-mail (PIM MCP, OAuth providers), WhatsApp (unofficial client), web search through a bundled SearXNG, snapshot share links to a conversation, and Cloudflare remote access.
@@ -116,7 +116,7 @@ that it is ahead.
 | **Tool approval (HITL)** | Yes | Not documented | Yes (v0.8.8) |
 | **Messaging channels** | Telegram, WhatsApp, e-mail/calendar | Not documented | Not documented |
 | **Video** | Generation plus a multi-track editor | Voice and video calls | Not documented |
-| **Single sign-on** | No: email/password + TOTP | SSO/OIDC, LDAP, SCIM | OAuth2, SAML, LDAP |
+| **Single sign-on** | No: email/password (TOTP for enrolled accounts) | SSO/OIDC, LDAP, SCIM | OAuth2, SAML, LDAP |
 | **Community** | Small, one maintainer | Very large | Large |
 
 Choose Open WebUI or LibreChat for a polished multi-model chat front end with SSO and
