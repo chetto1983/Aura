@@ -145,7 +145,7 @@ func bridgeFromAdvertisedWithPolicy(namespace string, srv *MountedServer, advert
 // refreshSpec later relies on never being recomputed.
 func bridgeToolsWithPolicy(namespace string, srv *MountedServer, advertised []*sdkmcp.Tool, callTimeout time.Duration, policy bridgePolicy) []tools.Tool {
 	policy.modelFacingCount = policy.manifestCount(len(advertised))
-	policy.alwaysLoaded = grantLoadedSlot(namespace, policy.modelFacingCount)
+	policy.alwaysLoaded = !policy.neverLoaded && grantLoadedSlot(namespace, policy.modelFacingCount)
 	out := make([]tools.Tool, 0, len(advertised))
 	for _, t := range advertised {
 		bt := &bridgedTool{srv: srv, name: t.Name, callTimeout: callTimeout, policy: policy, view: viewRefFor(policy, t)}

@@ -12,6 +12,7 @@ import (
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // This file's budget-touching subtests are deliberately NOT t.Parallel(): the
@@ -170,6 +171,29 @@ func TestDeferralBridgeToolsAppliesTheArithmetic(t *testing.T) {
 	for _, tool := range bridgeTools("over", nil, fiveTools, defaultMCPCallTimeout) {
 		if !tool.Spec().Deferred {
 			t.Fatalf("%s: a 5-tool server exceeds the ceiling and must stay Deferred:true", tool.Spec().Name)
+		}
+	}
+}
+
+// TestDeferralCalendarRecipeNeverTakesASlot pins prd.md §13 (2026-10-03): the calendar
+// recipe's one tool qualifies by count but stays deferred, and it spends no slot, so the
+// next qualifying mount still earns one.
+func TestDeferralCalendarRecipeNeverTakesASlot(t *testing.T) {
+	resetLoadedSlotBudgetForTest()
+	t.Cleanup(resetLoadedSlotBudgetForTest)
+	calendar := managedBridgePolicy(mcp.ManagedServer{
+		Source: "recipe:calendar", URL: "http://calendar/mcp",
+		Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+	})
+	one := []*sdkmcp.Tool{mustTool("calendar", "calendar", nil, nil)}
+	for _, tool := range bridgeToolsWithPolicy("calendar", nil, one, defaultMCPCallTimeout, calendar) {
+		if !tool.Spec().Deferred {
+			t.Fatalf("%s: the calendar recipe must stay Deferred:true on a fresh budget", tool.Spec().Name)
+		}
+	}
+	for _, tool := range bridgeTools("next", nil, one, defaultMCPCallTimeout) {
+		if tool.Spec().Deferred {
+			t.Fatalf("%s: the calendar spent a slot it must not take", tool.Spec().Name)
 		}
 	}
 }
