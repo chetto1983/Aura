@@ -161,8 +161,9 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
   }) => {
     // B3 / T-27-03: open the workspace authenticated, then make the NEXT graph fetch return 401
     // (expired/absent session). The expiry must be visible, never a silent blank. Since
-    // api/sessionExpiry.ts a 401 sends the whole cockpit to the login page with the expiry
-    // notice and the way back (Authula SPEC §4.8), so that is what the person sees.
+    // api/sessionExpiry.ts the auth gate's 401, the one carrying the session challenge, sends
+    // the whole cockpit to the login page with the expiry notice and the way back (Authula
+    // SPEC §4.8), so that is what the person sees.
     await installBaseRoutes(page);
     await page.route('**/api/graph/schema', (route) =>
       route.fulfill({
@@ -185,6 +186,7 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
       // The session has expired — the second fetch is rejected 401.
       return route.fulfill({
         status: 401,
+        headers: { 'WWW-Authenticate': 'Session' },
         contentType: 'application/json',
         body: '{"error":"unauthorized"}',
       });

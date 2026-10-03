@@ -19,8 +19,11 @@ function at(pathname: string, search = '') {
   });
 }
 
-function answering(status: number) {
-  window.fetch = vi.fn().mockResolvedValue(new Response(null, { status }));
+// The auth gate's refusal: a 401 carrying the session challenge (internal/agui/auth.go).
+const SESSION_ENDED = { status: 401, headers: { 'WWW-Authenticate': 'Session' } };
+
+function answering(init: ResponseInit) {
+  window.fetch = vi.fn().mockResolvedValue(new Response(null, init));
   installSessionExpiryRedirect();
 }
 
@@ -35,28 +38,31 @@ afterEach(() => {
 });
 
 describe('installSessionExpiryRedirect', () => {
-  it('sends a cockpit 401 to the login page and keeps where the person was', async () => {
-    answering(401);
+  it('sends an ended session to the login page and keeps where the person was', async () => {
+    answering(SESSION_ENDED);
     const res = await window.fetch('/api/me');
     expect(res.status).toBe(401);
     expect(assign).toHaveBeenCalledWith('/login?expired=1&next=%2Fc%2Fthread-1');
   });
 
   it('leaves other statuses alone', async () => {
-    answering(403);
+    answering({ status: 403, headers: SESSION_ENDED.headers });
     await window.fetch('/api/settings');
     expect(assign).not.toHaveBeenCalled();
   });
 
-  it("leaves Authula's own 401s to their callers", async () => {
-    answering(401);
-    await window.fetch('/auth/sign-out', { method: 'POST' });
+  // The cockpit's calendar panel answers 401 "calendar authorization required" until the
+  // person authorizes the calendar, and Authula answers 401 to a refused sign-in: neither
+  // ends the session, so neither carries the challenge.
+  it('leaves a 401 without the session challenge to its caller', async () => {
+    answering({ status: 401 });
+    await window.fetch('/api/connect/pim/accounts');
     await window.fetch(new Request(`${originalLocation.origin}/auth/email-password/sign-in`));
     expect(assign).not.toHaveBeenCalled();
   });
 
   it('ignores another origin', async () => {
-    answering(401);
+    answering(SESSION_ENDED);
     await window.fetch('https://objects.example/upload');
     expect(assign).not.toHaveBeenCalled();
   });
@@ -65,7 +71,7 @@ describe('installSessionExpiryRedirect', () => {
     'does not redirect from the public page %s',
     async (page) => {
       at(page);
-      answering(401);
+      answering(SESSION_ENDED);
       await window.fetch('/api/shares/share-1/data');
       expect(assign).not.toHaveBeenCalled();
     },
