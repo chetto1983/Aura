@@ -764,17 +764,15 @@ jobs:
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
       AURA_EMBED_NGL: "0"
-      # AURA_ARCADEDB_MCP_IMAGE is deliberately NOT pinned here, unlike in web-e2e. This
-      # job reaches the sidecar through `docker compose up`, and compose.yaml's
-      # arcadedb-mcp service carries a `build:` stanza -- so compose builds it and then
-      # tries to tag the result with whatever `image:` resolves to. A tag+digest reference
-      # cannot be a build tag ("refusing to create a tag with a digest reference") and the
-      # job died there. web-e2e keeps its pin because it hands the reference to a raw
-      # `docker run`, which never builds and never tags.
+      # AURA_ARCADEDB_MCP_IMAGE is deliberately NOT pinned here. This job reaches the
+      # sidecar through `docker compose up`, and compose.yaml's arcadedb-mcp service
+      # carries a `build:` stanza -- so compose builds it and then tries to tag the result
+      # with whatever `image:` resolves to. A tag+digest reference cannot be a build tag
+      # ("refusing to create a tag with a digest reference") and the job died there.
       # Unpinned is also the right thing on the merits: this gate exists to catch memory
       # regressions, and a published image is by definition from an EARLIER commit -- the
       # change under test would not be in it. Building from source measures the sidecar
-      # this push actually produces.
+      # this push actually produces. web-e2e builds it the same way for the same reason.
       # The latency gate includes the real CLI operator-identity lookup, so this
       # job also starts a disposable migrated Postgres instead of timing a shortcut.
       POSTGRES_PASSWORD: ci-test-password
@@ -1848,7 +1846,12 @@ jobs:
       AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
       AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       AURA_OBJECTSTORE_PATH_STYLE: "true"
-      AURA_ARCADEDB_MCP_IMAGE: ghcr.io/chetto1983/aura-arcadedb-mcp:3c1723cc5d3c4a23c9585c96b9c35d3d79416050@sha256:621438a7bb77983899c22f43c52714d08c25af1efcd9ad14fc3479e8893225a4
+      # A local tag built from this commit, never a published pin. The digest pinned here
+      # until 2026-10-03 was revision 3c1723cc (2026-08-26): it predated the host-derived
+      # write actor and the recall `mode` contract, so the browser suite drove a memory
+      # schema production no longer serves -- the same stale image behind
+      # .planning/debug/resolved/memory-recall-schema-stale.md.
+      AURA_ARCADEDB_MCP_IMAGE: aura-arcadedb-mcp:web-e2e
       AURA_PIM_MCP_IMAGE: ghcr.io/chetto1983/aura-pim-mcp:5909c808f75bb1c612256666dd0f1aacf6921dd4@sha256:1d0e9c3f62aba446eb123ea39d5abb9d97e6be7784d2dac403ea1e1e5e4a6986
       AURA_WHATSAPP_MCP_IMAGE: ghcr.io/chetto1983/whatsapp-mcp:sha-a463da5@sha256:006602da0893ada0eb80c812384032e262c1c7f0642866bf194041078e86130f
     steps:
@@ -1900,6 +1903,12 @@ jobs:
         run: |
           go run ./cmd/aura mcp install calendar
           go run ./cmd/aura mcp install whatsapp
+
+      - name: Build the ArcadeDB MCP sidecar from this commit
+        if: steps.changes.outputs.web == 'true'
+        # compose.yaml's build stanza tags the result with AURA_ARCADEDB_MCP_IMAGE, the
+        # reference the raw `docker run` below starts.
+        run: docker compose build arcadedb-mcp
 
       - name: Start live MCP OAuth resource sidecars
         if: steps.changes.outputs.web == 'true'
