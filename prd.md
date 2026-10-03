@@ -1551,15 +1551,21 @@ rode in every turn, including turns about nothing on the calendar. It is now rea
 through `tool_search` like the WhatsApp surface. Native tools and the memory core are
 unchanged: of the 43,403, the 15 native tools were 26,664 and the memory core 3,603.
 
+The 3,603 came from the stale pinned E2E image and its three core tools. Measured again
+the same day on a live turn (master `1d83f3ee5`, memory MCP built from that commit, the
+request captured at the OpenAI-compatible endpoint): the manifest is 35,729 characters
+across 19 tools, the 15 native tools at 26,664 and the memory core at 9,065 (`batch`
+3,675, `upsert_fact` 2,596, `recall` 2,043, `entities` 751), calendar at 0. The second
+always-loaded slot stayed unused: the WhatsApp image the stack ran (`sha-a463da5`, the
+one CI pins) advertises 15 tools, over `maxAlwaysLoadedMCPTools`, so it is deferred by
+count. The 18,554 first written here for the memory core counted the raw `tools/list`
+entries, whose output schemas, annotations and titles never reach the manifest.
+
 This does not establish:
 - how often a turn needs the calendar, or what the extra `tool_search` round trip costs
   when it does: no usage data was read;
-- the memory core's own weight on the appliance: the 3,603 came from the stale pinned
-  E2E image and its three core tools. The current server's four (recall, upsert_fact,
-  batch, entities), serialized as the bridge sends them (description plus input schema,
-  after the B-15 caps), compute to 9,065 from `docs/arcadedb-mcp-live-tools.json`; no
-  live turn has measured it. The 18,554 first written here counted the raw `tools/list`
-  entries, whose output schemas, annotations and titles never reach the manifest.
+- token counts: every figure here is characters of serialized JSON;
+- the WhatsApp tool count on an appliance running a different WhatsApp image.
 
 ## 14. Skills and sharing
 
@@ -1587,8 +1593,9 @@ always-on skill: 3,762 bytes injected into messages[1] of every turn, about half
 already teaches (look at the installed list first, install through `skill_manage`, never
 through the CLI). The installed-skills list in messages[1] still names it with its
 description, and the capability-gap replies of `tool_search` and `skill action=list` point
-to `skill action=use name=find-skills-aura`. This does not establish how often a turn
-needed the body: no usage data was read.
+to `skill action=use name=find-skills-aura`. Measured on a live turn the same day (master
+`1d83f3ee5`): messages[1] is 3,283 characters, down from 6,788. This does not establish
+how often a turn needed the body: no usage data was read.
 
 Skills and snippets are not permanent model self-modification. Retired pending stages,
 `Agent.md` provisioning, orphan pyscripts/MCP roots and hidden legacy landing zones are
