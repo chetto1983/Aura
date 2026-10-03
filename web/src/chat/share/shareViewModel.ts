@@ -16,6 +16,9 @@ export type ExpiryChip = '1d' | '7d' | '30d' | 'custom';
  *  server gate" posture T-37F-72 already applies to tier gating, applied here to expiry). */
 export const DEFAULT_MAX_EXPIRY_DAYS = 90;
 
+/** Expiry is shown in days, so a minute is fine-grained enough for a surface left open. */
+export const EXPIRY_TICK_MS = 60_000;
+
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /** Maps the modal's expiry chip + custom-days input to the wire-level ExpiryOption shareApi
