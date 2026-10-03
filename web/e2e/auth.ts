@@ -392,7 +392,12 @@ export async function gotoAuthenticated(
     await authenticateViaApi(page);
     await page.goto(path, { waitUntil: 'domcontentloaded' });
   } else {
-    await applyAuthState(page);
+    // Sign in before the first navigation when nothing is cached: landing on /login and
+    // leaving it again aborts the requests LoginPage already started, which specs that
+    // assert a clean network report as failures.
+    if (!(await applyAuthState(page))) {
+      await ensureAuthState(page);
+    }
     const firstResponse = await page.goto(path, { waitUntil: 'domcontentloaded' });
     if (isLoginUrl(page.url()) || firstResponse?.status() === 401) {
       clearAuthState();
