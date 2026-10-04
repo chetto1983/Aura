@@ -207,11 +207,26 @@ download reaches the sheet with the file's name, type and bytes and starts no do
 This does not establish:
 - what iOS does with the sheet, or how an iPad renders a PDF in the preview's iframe:
   Playwright runs neither the home-screen app nor iOS's PDF view;
-- that a clip opened from the Documents page plays in the preview on iOS: the direct route
-  answers no Range request, which iOS requires of a media server;
 - that iOS's `canShare` takes a Documents file: the listing carries no media type, so the
-  probe has none, and a refusal leaves that link downloading as before;
-- several files downloaded at once from the Documents page: that path still navigates.
+  probe has none, and a refusal leaves that link downloading as before.
+
+**Clips and several files from the Documents page.** Two exits remained, closed the same day.
+The direct route answered no Range request, which iOS requires of a media server, so a clip
+opened in the preview could not play; and selecting several files and downloading them still
+navigated once per file. No package closes the second: `file-saver` and `browser-fs-access`
+fall back to a navigating download on iOS, while the share sheet takes several files natively.
+So the direct route now serves through the same `SeekableObject` and `http.ServeContent` the
+asset stream uses, and several files -- a Documents selection, or the artifacts panel's
+*Scarica tutto* -- go to ONE share sheet, with the same second tap when the first lapsed.
+
+Measured on the local stack against Garage: a clip uploaded to the Documents bucket answers
+`Range: bytes=0-99` with 206, `Content-Range: bytes 0-99/<size>` and `video/mp4`; two files
+selected on the Documents page reach one emulated sheet with their names and sizes, and no
+download starts (Chromium 141 and WebKit 26.6).
+
+This does not establish that iOS plays the clip in the preview, or that the sheet on the device
+takes several files whose type is `application/octet-stream`; and each file is fetched whole
+before the sheet opens, so a selection of large files is held in memory at once.
 
 ## 4. Agent lifecycle, tools and completion
 
