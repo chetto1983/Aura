@@ -562,6 +562,26 @@ visible. The snippet now starts a few words before the first literal occurrence,
 word boundary, and a fuzzy match (a typo, a plural) still shows the start. `aura chat search`
 and Telegram's `/search` already cut theirs around the match.
 
+Search reads only the turns the thread shows as messages (2026-10-04). Measured on the
+local database, 31 turns: six words returned 41 hits, 20 of them in `tool` turns, and all
+five hits for `task` were tool turns (a skill's instructions, a scheduled task's
+confirmation). The cockpit never shows a tool turn as a message: its text is the result
+inside the assistant's tool card. A `system` turn is not shown at all. Tool turns averaged
+4,191 characters against 32 to 58 for user and assistant turns, so they win hits by length.
+The operator chose to exclude both, everywhere: the query keeps `role IN ('user',
+'assistant')`, and Telegram's `/search` and `aura chat search` share it. A tool's output is
+found only where the assistant repeated it.
+
+Verified the same day through the cockpit on the rebuilt stack: the same six words returned
+21 hits. The 20 that disappeared were all tool turns, the 21 kept were all user or assistant
+turns, and the panel now shows nothing for `task`, where it had listed five tool outputs.
+
+What this does not show: the cost at scale. The trigram index still covers tool text, so a
+large deployment may read tool rows that the filter then drops; a partial index on the two
+roles would avoid that if a measurement shows it matters. Still searched although the thread
+hides them: the context envelope Aura wraps around a user turn sent with pinned knowledge or
+attachments, and worker reports (assistant turns keyed `<uuid>:terminal`).
+
 This does not establish:
 - ranking quality across many real conversations: the measurement used one message and a
   local database of test conversations;

@@ -21,8 +21,9 @@ type SearchResult struct {
 }
 
 // SearchConversationTurns runs the one conversation search the cockpit, Telegram /search
-// and the CLI share: a pg_trgm word_similarity match, best first, then newest
-// (queries/conversation_turns.sql). This wrapper only projects pgtype at the boundary.
+// and the CLI share: a pg_trgm word_similarity match over user and assistant turns, best
+// first, then newest (queries/conversation_turns.sql). This wrapper only projects pgtype at
+// the boundary.
 //
 // A spilled turn (content over the cap) stores content=NULL and is never found: its text
 // lives in the sidecar file. With word_similarity a long body would match if its text were
