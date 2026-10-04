@@ -99,7 +99,7 @@ func seedConversation(t *testing.T, s *conversations.Store, pool *pgxpool.Pool, 
 		t.Fatalf("Create conversation: %v", err)
 	}
 	t.Cleanup(func() {
-		_, _ = pool.Exec(ownerCtx(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		seedAsOwner(t, pool, localIdentityID, "DELETE FROM aura.conversations WHERE id = $1", id)
 	})
 	for i := range turns {
 		turns[i].ConversationID = id

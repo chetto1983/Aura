@@ -183,8 +183,15 @@ func (h *liveHarness) newLiveConversation(t *testing.T, ctx context.Context) str
 		// (D-A5-01). It also auto-resolves any orphan pending. Best-effort: the row is
 		// deleted next regardless.
 		_ = h.r.Stop(context.Background(), id)
-		// ON DELETE CASCADE removes conversation_turns + paused_states + cache_metrics.
-		_, _ = h.pool.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+		// ON DELETE CASCADE removes conversation_turns + paused_states + cache_metrics. The
+		// conversation plane is fail closed, so a DELETE without the owner's identity
+		// matches no row and still succeeds.
+		if err := db.WithIdentityTxRaw(context.Background(), h.pool, identityctx.LocalOperatorIdentity, func(tx pgx.Tx) error {
+			_, err := tx.Exec(context.Background(), "DELETE FROM aura.conversations WHERE id = $1", id)
+			return err
+		}); err != nil {
+			t.Errorf("delete live conversation %s: %v", id, err)
+		}
 	})
 	return id
 }
