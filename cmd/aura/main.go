@@ -161,7 +161,7 @@ func buildRegistry() *tools.Registry {
 }
 
 // buildBaseRegistry is the shared composition root for every boot path. ts is the
-// live scheduler store the non-deferred `task` tool persists against (D-11): serve/
+// live scheduler store the deferred `task` tool persists against (D-11): serve/
 // chat inject the cronTaskStore over the open pool; the pool-free manifest paths
 // (`aura tools`, buildRegistry) pass nil — the tool still registers (its Spec needs no
 // store) so the manifest lists it, and an Execute without a store would error loudly.
@@ -171,7 +171,7 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 }
 
 // buildBaseRegistryWithHandles threads sandboxRouter onto every box-capable tool (shell_exec, the
-// five fs_* tools, send_file, document_open) so their work happens INSIDE the caller's per-identity
+// four file tools, send_file, document_open) so their work happens INSIDE the caller's per-identity
 // box on EVERY profile (plan 37-07). A nil router — the pool-free `aura tools`/manifest paths, which
 // build the tools to read their Specs and never Execute — is not a host-direct mode: Route denies,
 // and so does every tool holding it. web_fetch / web_search are deliberately NEVER routed (D-11 —
@@ -217,8 +217,7 @@ func buildBaseRegistryWithHandles(
 	handles.Documents = newDocumentLibrary(taskStorePool(ts), cfg)
 	reg.Register(&tools.DocumentSearch{Library: handles.Documents})
 	// shell_exec is the full terminal — THE execution surface — and it runs inside the caller's
-	// per-identity box, never on the host. Deferred so simple chat/web turns do not carry a giant
-	// shell schema in the hot manifest. No tool below is given the HOST workspace root: every one
+	// per-identity box, never on the host. No tool below is given the HOST workspace root: every one
 	// of them resolves against the box's own /workspace, which is where the agent's files live.
 	reg.Register(&tools.ShellExec{
 		Background: handles.BackgroundShells,
@@ -230,8 +229,7 @@ func buildBaseRegistryWithHandles(
 		InstallHook: skillInstallHook(handles.SkillManage),
 	})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
-	// output from, and terminate, a background shell_exec job. Deferred — the model
-	// tool_searches for them once it holds a background shell_id to follow. The pointers
+	// output from, and terminate, a background shell_exec job. The pointers
 	// are retained on handles (VERIF-7) so serve boot can wire .Caps to the live capability
 	// store (D-18 admin cross-session recovery); .Caps stays nil here so the pool-free
 	// manifest paths keep the owner-only fail-closed default.
@@ -252,8 +250,7 @@ func buildBaseRegistryWithHandles(
 	reg.Register(&tools.Patch{Router: sandboxRouter})
 	reg.Register(&tools.SearchFiles{Router: sandboxRouter})
 	// send_file hands a file from the box's /workspace to the user as an attachment (D-05/D-06).
-	// Deferred: the model tool_searches for it when it has a produced/found file to deliver; the
-	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
+	// The agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
 	sf := &tools.SendFile{Router: sandboxRouter}
 	handles.SendFile = sf
 	reg.Register(sf)

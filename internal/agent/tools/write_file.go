@@ -51,8 +51,7 @@ func (t *WriteFile) Spec() Spec {
 			"the write landed; that hash check already did. Always report the absolute path of what you wrote. " +
 			"Example: {\"path\":\"results/report.md\",\"content\":\"# Results\\n\\nAll tests passed.\\n\"}.",
 		Parameters: params,
-		// Deferred alongside patch/search_files (matches the pre-port fs_write): only read_file
-		// stays always-visible.
+		// Always visible, with read_file/patch/search_files: they are one toolset.
 		Deferred:       false,
 		Mutating:       true,
 		OperationScope: OperationScopeAgent, OperationNormalizer: OperationNormalizerCanonical,

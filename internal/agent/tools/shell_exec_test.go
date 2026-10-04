@@ -68,6 +68,24 @@ func TestShellExecSpecCarriesItsOperationalRules(t *testing.T) {
 	}
 }
 
+// shell_exec's description is where the model is told to stop using the shell for file
+// work, so it must name the file tools that exist. Until 2026-10-03 it named fs_read,
+// fs_grep, fs_glob, fs_write and fs_edit, eight weeks after read_file, search_files,
+// write_file and patch replaced them. The names come from the tools' own Specs, so a
+// rename breaks this test instead of the model's next turn.
+func TestShellExecSpecNamesTheFileToolsThatExist(t *testing.T) {
+	s := (&ShellExec{}).Spec()
+	text := s.Description + string(s.Parameters)
+	for _, tool := range []Tool{&ReadFile{}, &SearchFiles{}, &WriteFile{}, &Patch{}} {
+		if name := tool.Spec().Name; !strings.Contains(text, name) {
+			t.Errorf("shell_exec spec does not name %q", name)
+		}
+	}
+	if strings.Contains(text, "fs_") {
+		t.Errorf("shell_exec spec still names a retired fs_* tool: %s", text)
+	}
+}
+
 func TestShellExecSpecMentionsStructuredFooter(t *testing.T) {
 	s := (&ShellExec{}).Spec()
 	for _, needle := range []string{"[aura_shell", "exit_code", "cwd", "duration_ms"} {
@@ -451,8 +469,10 @@ func TestShellExecBadJSONSteersLargeContentToFileTools(t *testing.T) {
 		t.Fatal("Execute returned nil error for malformed JSON")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "fs_write") || !strings.Contains(msg, "fs_edit") {
-		t.Fatalf("malformed-args hint should steer large content to file tools, got: %q", msg)
+	for _, tool := range []Tool{&WriteFile{}, &Patch{}} {
+		if name := tool.Spec().Name; !strings.Contains(msg, name) {
+			t.Fatalf("malformed-args hint should steer large content to %s, got: %q", name, msg)
+		}
 	}
 	if strings.Contains(msg, "cat >>") || strings.Contains(msg, "heredoc") {
 		t.Fatalf("malformed-args hint should not steer the model to shell heredocs/appends, got: %q", msg)

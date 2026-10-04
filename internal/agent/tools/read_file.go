@@ -70,10 +70,10 @@ func (t *ReadFile) Spec() Spec {
 			"returned here. Example: {\"path\":\"cmd/aura/main.go\"} for a whole file, or " +
 			"{\"path\":\"app.log\",\"offset\":2000,\"limit\":200} to read just a window.",
 		Parameters: params,
-		// NOT deferred, alone among the four ported file tools (matches the pre-port fs_read):
-		// reading a file whose path the model already has is not a choice between tools, it is
-		// the next step, and keeping it deferred bought a search round trip in the middle of
-		// every open-then-read flow (see always_active_test.go for the full budget rationale).
+		// NOT deferred, like the other three file tools: reading a file whose path the model
+		// already has is not a choice between tools, it is the next step, and keeping it
+		// deferred bought a search round trip in the middle of every open-then-read flow (see
+		// always_active_test.go for the full budget rationale).
 		Deferred: false,
 	}
 }

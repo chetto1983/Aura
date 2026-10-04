@@ -117,7 +117,7 @@ func (s *ShellExec) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
   "properties": {
-    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through a POSIX shell inside your workspace container, so pipes, redirects, and && chains all work. For long scripts, create the file with fs_write first, then run it here."},
+    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through a POSIX shell inside your workspace container, so pipes, redirects, and && chains all work. For long scripts, create the file with write_file first, then run it here."},
     "cwd": {"type": "string", "description": "Optional working directory override, as an absolute path inside your workspace container (e.g. \"/workspace/project\"). Your working directory PERSISTS between calls (a cd carries over) and starts at /workspace."},
     "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional: how long to BLOCK waiting for this command, in milliseconds. Omit for the default (a few seconds). This is not a kill deadline — a command still running when it elapses is handed back as a background job, never killed. Raise it only when you want to sit and wait for the result inline."},
     "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."},
@@ -129,8 +129,8 @@ func (s *ShellExec) Spec() Spec {
 		Name:    "shell_exec",
 		Summary: "Run a shell command in your workspace container — a full terminal.",
 		Description: "Run a command line through a POSIX shell inside YOUR workspace container — use it for builds, scripts, and glue work that dedicated tools do not cover. " +
-			"Every path you name is a path in that container, which is where fs_read/fs_write and document_open also work; the machine hosting Aura is not reachable from here. " +
-			"Do NOT reach for it when a dedicated tool fits: to read, search, or write files use fs_read / fs_grep / fs_glob and fs_write / fs_edit (they return structured results and page large files instead of flooding context); to get current web facts like a price, the weather, or today's news use the dedicated web search/fetch tools (load them with tool_search if they are not in your list). Reaching for the shell because the specific tool is not visible is the most common mistake. " +
+			"Every path you name is a path in that container, which is where the file tools and document_open also work; the machine hosting Aura is not reachable from here. " +
+			"Do NOT reach for it when a dedicated tool fits: to read, find, write or edit files use read_file, search_files, write_file and patch (they return structured results and page large files instead of flooding context); to get current web facts like a price, the weather, or today's news use the dedicated web search/fetch tools (load them with tool_search if they are not in your list). Reaching for the shell because the specific tool is not visible is the most common mistake. " +
 			"Pipes, redirects, && chains, any installed interpreter (python, node), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at /workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
@@ -145,7 +145,7 @@ func (s *ShellExec) Spec() Spec {
 			// call searching the dump she had just made (13.626). The script is where
 			// the filtering belongs; stdout is for the answer.
 			"- QUERY data, never dump it. When the answer is a row, a count or an aggregate, do the filtering INSIDE the script — pandas, awk, jq, sqlite — and print only the result. Printing a whole sheet, table or log into the conversation so you can search it in the next call costs two calls and a context window to do one call's work.\n" +
-			"- Never author file content here. Heredocs and quoted echo/printf blobs break on quoting — write the file with fs_write, then run it.\n" +
+			"- Never author file content here. Heredocs and quoted echo/printf blobs break on quoting — write the file with write_file, then run it.\n" +
 			"- Pick ONE interpreter per task and install into it: `python3 -m pip install ...`, never bare `pip`, so the install lands on the interpreter you run. An import that fails right after installing means pip used a different one; fix it with `python3 -m pip`, do not alternate between python and python3.\n" +
 			"- Treat code you generated as untrusted: read it before running it, and prefer a scratch directory you can clean up.",
 		Parameters: params,
@@ -176,7 +176,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		// data). The hint steers the model to the incremental pattern instead of
 		// retrying the same oversized call (D-15 self-correction).
 		return ToolResult{}, fmt.Errorf("shell_exec args: %w — your arguments were likely truncated by the output budget; "+
-			"put large or multi-line content in files with fs_write/fs_edit, then run the file here", err)
+			"put large or multi-line content in files with write_file/patch, then run the file here", err)
 	}
 	if strings.TrimSpace(a.Command) == "" {
 		return ToolResult{}, fmt.Errorf("shell_exec: command is required")

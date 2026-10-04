@@ -38,7 +38,7 @@ func TestUntrustedSource_SafeBuiltinsStayTrusted(t *testing.T) {
 
 // Known content-embedding tools remain untrusted.
 func TestUntrustedSource_ContentToolsStayUntrusted(t *testing.T) {
-	for _, name := range []string{"web_fetch", "web_search", "fs_read", "fs_grep", "fs_glob", "read_tool_output", "shell_exec", "shell_poll"} {
+	for _, name := range []string{"web_fetch", "web_search", "read_file", "search_files", "read_tool_output", "shell_exec", "shell_poll"} {
 		if _, wrap := untrustedSource(name, tools.ToolResult{Preview: "x"}); !wrap {
 			t.Fatalf("content tool %q was trusted; want untrusted", name)
 		}

@@ -186,7 +186,7 @@ func TestBoxPathArg(t *testing.T) {
 		{"/workspace/deep/", "/workspace/deep"},
 		{"~user/x", "/workspace/~user/x"}, // a named home was literal on the host arm too
 	} {
-		got, err := boxPathArg("fs_read", tt.in)
+		got, err := boxPathArg("read_file", tt.in)
 		if err != nil {
 			t.Errorf("boxPathArg(%q): %v", tt.in, err)
 			continue
@@ -200,7 +200,7 @@ func TestBoxPathArg(t *testing.T) {
 	// taking it literally would put the file at /workspace/~/notes.txt — real, and where nobody
 	// looks. Neither write path can expand it either (tar copy-in runs no shell).
 	for _, in := range []string{"~", "~/notes.txt", "  ~/deep/x  "} {
-		if _, err := boxPathArg("fs_write", in); err == nil {
+		if _, err := boxPathArg("write_file", in); err == nil {
 			t.Errorf("boxPathArg(%q) = nil error, want a refusal naming /workspace", in)
 		}
 	}
