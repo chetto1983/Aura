@@ -108,6 +108,10 @@ type AuthDeps struct {
 	// forward. RequireAuth calls it only after the identity re-check, so the session of a
 	// deleted or deactivated identity is never extended.
 	SessionRenewer func(w http.ResponseWriter, r *http.Request)
+	// SessionCookieName is the cookie SessionValidator reads (Authula's). It only tells a
+	// refused session from one the browser never sent, for the log; empty means the
+	// passphrase cookie.
+	SessionCookieName string
 	// DenialRecorder persists a capability refusal (RBAC-10): RequireCapability calls it
 	// on each of its three refusal branches before writing the 403. nil is a no-op — the
 	// gate must work before the composition root wires the store, matching
@@ -200,7 +204,7 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 		}
 		identityID, ok := deps.validateSession(r)
 		if !ok {
-			deps.redirectToLogin(w, r)
+			deps.refuseSession(w, r, deps.missingOrRefused(r))
 			return
 		}
 		// The bound identity must still exist AND not be soft-deleted — a deleted OR
@@ -211,7 +215,7 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 		// re-authenticate during the D-27 de-provisioning grace window even though its
 		// row still exists for the deprovision saga + admin roster.
 		if id, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil || id.Deactivated {
-			deps.redirectToLogin(w, r)
+			deps.refuseSession(w, r, refusedIdentityGone)
 			return
 		}
 		if deps.SessionRenewer != nil {
@@ -245,24 +249,6 @@ func (d AuthDeps) validateSession(r *http.Request) (identityID string, ok bool) 
 		return "", false
 	}
 	return verifySession(d.SigningKey, c.Value, d.ttl(), time.Now())
-}
-
-// sessionChallenge is the WWW-Authenticate value on the 401 that means the request has
-// no live session. The SPA sends the person to the login page on it and on nothing else:
-// a handler's own 401 (the calendar not yet authorized, a relayed upstream refusal)
-// arrives while the session is still valid (web/src/api/sessionExpiry.ts).
-const sessionChallenge = "Session"
-
-// redirectToLogin sends a browser navigation (Accept: text/html GET) to the login page
-// with 302, but answers an API/XHR request with a plain 401 — so a fetch() gets a clean
-// status code instead of an HTML login page it cannot use.
-func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
-	if wantsHTML(r) {
-		http.Redirect(w, r, d.loginPath(), http.StatusFound)
-		return
-	}
-	w.Header().Set("WWW-Authenticate", sessionChallenge)
-	http.Error(w, "unauthorized", http.StatusUnauthorized)
 }
 
 // RequireCapability wraps a mutating-route handler with the capability_grants check

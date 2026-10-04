@@ -18,14 +18,17 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 // token-scoped public route once a provider is mounted — R-05); Radix owns focus-trap, Esc,
 // backdrop, and the aria wiring (DialogTitle + DialogDescription).
 
+/** What a preview needs of an asset: the chat's artifact card has these, not a whole Asset. */
+export type PreviewTarget = Pick<Asset, 'id' | 'file_name' | 'mime_type'>;
+
 export interface PreviewModalProps {
   /** The asset to preview, or undefined when the modal is closed. */
-  readonly active: Asset | undefined;
+  readonly active: PreviewTarget | undefined;
   /** Called when the user dismisses the modal (Esc, backdrop, or the close ✕). */
   readonly onClose: () => void;
 }
 
-function renderKind(active: Asset): React.ReactNode {
+function renderKind(active: PreviewTarget): React.ReactNode {
   const props: RendererProps = {
     assetId: active.id,
     mimeType: active.mime_type,
@@ -42,7 +45,7 @@ function renderKind(active: Asset): React.ReactNode {
 
 /** The affordance for the download-only kinds (svg/pptx/unknown, T-37B-05): no renderer is
  *  mounted — script-bearing or unpreviewable bytes never reach an executing context. */
-function DownloadCard({ active }: { active: Asset }) {
+function DownloadCard({ active }: { active: PreviewTarget }) {
   const { t } = useTranslation();
   const { assetUrl } = useAssetSource();
   return (

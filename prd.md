@@ -156,6 +156,35 @@ This does not establish:
   are a policy, kept where the passphrase cookie had them for the idle window;
 - the behaviour on the lab VM or behind Caddy: measured on the local stack only.
 
+**A PDF opened on an iPad, then a new sign-in.** On 2026-10-04 a member reported that
+tapping a PDF the agent had delivered left the cockpit for iOS's file page ("dati – 30
+KB", *Apri in Anteprima*), and that coming back asked them to sign in again. The
+screenshot shows no browser chrome: the cockpit installed on the home screen. Measured the
+same day on the local stack, in WebKit 26.6 with Playwright's iPad Pro 11 profile and in
+Chromium 141, with the same results in both:
+
+| What | Result |
+|---|---|
+| Session cookie | persistent: `Max-Age` up to 12 h, `SameSite=Strict`, `Secure`, `HttpOnly` |
+| `GET /api/assets/{id}/download` of a PDF | `application/octet-stream`, `Content-Disposition: attachment` |
+| The chat's PDF card | its only action is that download link |
+| Tapping that link | a download event; the page stays on `/`; `/api/me` still 200 |
+| The same URL without a session | 302 to `/login`, with no return path |
+| Daemon log when a session is refused | nothing |
+
+So the engine neither leaves the page nor loses the session. What the screenshot shows is
+iOS's home-screen app presenting an attachment as a page with no way back. Playwright does
+not reproduce that mode. Three changes follow from what was measured, not from the iPad:
+
+- every refused session is logged with its reason (no cookie, refused, identity gone);
+- a refused navigation keeps its page in `next`, as the SPA's own expiry redirect already does;
+- the chat's PDF, document, spreadsheet and text cards gain an in-cockpit *Apri* that opens
+  the existing preview, so reading a file no longer depends on a download.
+
+This does not establish why the member was asked to sign in again. Both engines stored the
+cookie as persistent; a restart of the home-screen app was not measured. Whether iOS sent
+the cookie after the file page is what the new log line will answer on their appliance.
+
 ## 4. Agent lifecycle, tools and completion
 
 The open `Agent` interface returns `iter.Seq2[*Event, error]`. Termination, budget
