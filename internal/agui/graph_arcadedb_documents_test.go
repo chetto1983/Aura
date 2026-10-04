@@ -98,7 +98,7 @@ func TestGraphCaptionPrefersANameAndBoundsAText(t *testing.T) {
 	}
 	text := strings.Repeat("parola ", 40)
 	got := graphCaption(map[string]any{"text": text}, "Passage")
-	if utf8.RuneCountInString(got) != graphCaptionRunes+1 || !strings.HasSuffix(got, "…") {
-		t.Fatalf("caption = %q (%d runes), want %d runes and an ellipsis", got, utf8.RuneCountInString(got), graphCaptionRunes+1)
+	if utf8.RuneCountInString(got) != 81 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("caption = %q (%d runes), want 80 runes and an ellipsis", got, utf8.RuneCountInString(got))
 	}
 }

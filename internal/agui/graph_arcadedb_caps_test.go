@@ -89,15 +89,18 @@ func TestArcadeGraphViewOverviewStopsReadingAtTheEdgeCap(t *testing.T) {
 			}},
 		},
 	}
-	_, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+	got, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
 		Op: OpOverview, UserID: "id-1", EdgeCap: 3,
 	})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
 	want := "SELECT FROM `KNOWS` LIMIT 3 @3; SELECT FROM `LIKES` LIMIT 2 @2"
-	if got := graphReads(reader.queries); got != want {
-		t.Fatalf("reads = %s, want %s", got, want)
+	if reads := graphReads(reader.queries); reads != want {
+		t.Fatalf("reads = %s, want %s", reads, want)
+	}
+	if want := "SELECT FROM `KNOWS` LIMIT 3\nSELECT FROM `LIKES` LIMIT 2"; got.Query != want {
+		t.Fatalf("query = %q, want the statements that ran, %q", got.Query, want)
 	}
 }
 
@@ -108,14 +111,17 @@ func TestArcadeGraphViewOverviewStopsReadingAtTheNodeCap(t *testing.T) {
 			typeRead("Person"): {Vertices: studioVertices("Person", "#1:0", "#1:1")},
 		},
 	}
-	_, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
+	got, err := NewArcadeGraphView(reader).Query(context.Background(), GraphIntent{
 		Op: OpOverview, UserID: "id-1", NodeCap: 2,
 	})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
-	if got, want := graphReads(reader.queries), "SELECT FROM `Person` LIMIT 2 @2"; got != want {
-		t.Fatalf("reads = %s, want %s", got, want)
+	if reads, want := graphReads(reader.queries), "SELECT FROM `Person` LIMIT 2 @2"; reads != want {
+		t.Fatalf("reads = %s, want %s", reads, want)
+	}
+	if want := "SELECT FROM `Person` LIMIT 2"; got.Query != want {
+		t.Fatalf("query = %q, want the statement that ran, %q", got.Query, want)
 	}
 }
 
@@ -217,6 +223,9 @@ func TestArcadeGraphViewExpandReportsAReadThatReachedACap(t *testing.T) {
 			}
 			if got.Truncated != tc.want {
 				t.Fatalf("truncated = %t, want %t", got.Truncated, tc.want)
+			}
+			if want := "SELECT expand(bothE('KNOWS')) FROM #1:0 LIMIT 2"; got.Query != want {
+				t.Fatalf("query = %q, want the statement that ran, %q", got.Query, want)
 			}
 		})
 	}
