@@ -1,6 +1,6 @@
 // Package mcpregistry owns the MCP server registry: which servers this deployment has
-// configured, what transport each speaks, whether it is enabled, and which profiles it
-// belongs to.
+// configured, what transport each speaks, whether it is enabled, which profiles it
+// belongs to, and which profile is active.
 //
 // It exists to be the ONE place that answers those questions. Before it, the registry was a
 // single root-owned JSON file, and the cockpit board did not read that file alone — it
@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -86,7 +87,8 @@ type Entry struct {
 }
 
 // List returns every registered server, keyed by name, with profile membership rebuilt into
-// the ManagedConfig shape the rest of Aura already speaks.
+// the ManagedConfig shape the rest of Aura already speaks. A profile is any name a server
+// belongs to plus any row in aura.mcp_profile, which also says which one is active.
 func (s *Store) List(ctx context.Context) (mcp.ManagedConfig, error) {
 	rows, err := s.q.ListMCPServers(ctx)
 	if err != nil {
@@ -109,8 +111,53 @@ func (s *Store) List(ctx context.Context) (mcp.ManagedConfig, error) {
 			doc.Profiles[profile] = p
 		}
 	}
+	profiles, err := s.q.ListMCPProfiles(ctx)
+	if err != nil {
+		return mcp.ManagedConfig{}, fmt.Errorf("mcpregistry: list profiles: %w", err)
+	}
+	for _, row := range profiles {
+		if _, ok := doc.Profiles[row.Name]; !ok {
+			doc.Profiles[row.Name] = mcp.ManagedProfile{}
+		}
+		if row.Active {
+			doc.ActiveProfile = row.Name
+		}
+	}
 	mcp.Normalize(&doc)
 	return doc, nil
+}
+
+// SaveProfiles makes aura.mcp_profile match doc: one row per profile doc holds, and the
+// active flag on doc's active profile. Membership is not written here; it rides each
+// server's row (Upsert).
+//
+// A profile that has members gets a row too, so it outlives its last server leaving it:
+// before 0135 such a profile vanished, and an emptied `default` silently widened the mount
+// to every enabled server. The flag is cleared before it is set because the table admits
+// one active row and checks that per statement.
+func (s *Store) SaveProfiles(ctx context.Context, doc mcp.ManagedConfig) error {
+	active := strings.TrimSpace(doc.ActiveProfile)
+	names := make([]string, 0, len(doc.Profiles)+1)
+	for name := range doc.Profiles {
+		if name = strings.TrimSpace(name); name != "" && !slices.Contains(names, name) {
+			names = append(names, name)
+		}
+	}
+	if active != "" && !slices.Contains(names, active) {
+		names = append(names, active)
+	}
+	if err := s.q.DeleteMCPProfilesExcept(ctx, names); err != nil {
+		return fmt.Errorf("mcpregistry: prune profiles: %w", err)
+	}
+	if err := s.q.ClearActiveMCPProfile(ctx); err != nil {
+		return fmt.Errorf("mcpregistry: clear active profile: %w", err)
+	}
+	for _, name := range names {
+		if err := s.q.UpsertMCPProfile(ctx, sqlc.UpsertMCPProfileParams{Name: name, Active: name == active}); err != nil {
+			return fmt.Errorf("mcpregistry: save profile %q: %w", name, err)
+		}
+	}
+	return nil
 }
 
 // Upsert writes a server, creating or replacing it in one statement. createdBy is the

@@ -78,6 +78,7 @@ type Querier interface {
 	ClaimMessageDraftSend(ctx context.Context, arg ClaimMessageDraftSendParams) (AuraMessageDrafts, error)
 	ClaimRetentionItems(ctx context.Context, arg ClaimRetentionItemsParams) ([]AuraRetentionOperationItems, error)
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
+	ClearActiveMCPProfile(ctx context.Context) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
 	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
 	// The asset must be deliverable by BindMediaJobAssetDelivery when the job completes: owned,
@@ -158,6 +159,7 @@ type Querier interface {
 	// whether a row existed cannot tell a real revocation from a no-op on someone else's row
 	// that RLS filtered away.
 	DeleteIdentityMCPOAuth(ctx context.Context, arg DeleteIdentityMCPOAuthParams) (int64, error)
+	DeleteMCPProfilesExcept(ctx context.Context, keep []string) error
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
 	DeleteSetting(ctx context.Context, key string) error
 	// execrows, not exec: a caller that reports "removed" without knowing whether a row existed
@@ -450,6 +452,7 @@ type Querier interface {
 	ListIdentityMCPOAuthServers(ctx context.Context, identityID pgtype.UUID) ([]ListIdentityMCPOAuthServersRow, error)
 	ListInFlightToolInvocationsBefore(ctx context.Context, startedAt pgtype.Timestamptz) ([]AuraToolInvocations, error)
 	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
+	ListMCPProfiles(ctx context.Context) ([]AuraMcpProfile, error)
 	ListMCPServers(ctx context.Context) ([]AuraMcpServer, error)
 	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
 	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
@@ -766,6 +769,7 @@ type Querier interface {
 	UpsertIdentityProfile(ctx context.Context, arg UpsertIdentityProfileParams) (AuraIdentityProfiles, error)
 	UpsertIdentityRecovery(ctx context.Context, arg UpsertIdentityRecoveryParams) error
 	UpsertLLMProviderRoute(ctx context.Context, arg UpsertLLMProviderRouteParams) (AuraLlmProviderRoutes, error)
+	UpsertMCPProfile(ctx context.Context, arg UpsertMCPProfileParams) error
 	UpsertMCPServer(ctx context.Context, arg UpsertMCPServerParams) (AuraMcpServer, error)
 	UpsertPIMProviderApp(ctx context.Context, arg UpsertPIMProviderAppParams) error
 	UpsertSetting(ctx context.Context, arg UpsertSettingParams) (AuraSettings, error)
