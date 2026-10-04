@@ -681,8 +681,12 @@ type Querier interface {
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	SaveCloudflareRemoteAccessDesired(ctx context.Context, arg SaveCloudflareRemoteAccessDesiredParams) (AuraCloudflareRemoteAccess, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
-	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
-	// reuses this EXACT query; only the excerpt rendering differs per channel.
+	// The one conversation search: cockpit, Telegram /search and the CLI share it and differ
+	// only in how they render the excerpt. word_similarity compares the query with the best
+	// matching extent of the message, so a word is found inside a long message; similarity()
+	// compared it with the whole message and found almost nothing (prd.md §7, 2026-10-04).
+	// `<%` is strict "greater than" pg_trgm.word_similarity_threshold (0.6), and the planner
+	// answers it from the gin_trgm_ops index as `content %> query`.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07

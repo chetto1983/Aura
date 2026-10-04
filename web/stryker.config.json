@@ -79,7 +79,8 @@
     "src/videoStudio/volumeCurve.ts",
     "src/videoStudio/videoflow_audio.ts",
     "src/videoStudio/videoflow_keyframes.ts",
-    "src/videoStudio/videoflow_media.ts"
+    "src/videoStudio/videoflow_media.ts",
+    "src/conversations/searchHighlight.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

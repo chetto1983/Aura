@@ -830,16 +830,16 @@ func (q *Queries) NextConversationTurnSeq(ctx context.Context, conversationID pg
 }
 
 const searchConversationTurns = `-- name: SearchConversationTurns :many
-SELECT conversation_id, seq, content, similarity(content, $1) AS sim
+SELECT conversation_id, seq, content, word_similarity($1, content) AS sim
 FROM aura.conversation_turns
-WHERE content % $1
-ORDER BY similarity(content, $1) DESC
+WHERE $1 <% content
+ORDER BY sim DESC, created_at DESC
 LIMIT $2
 `
 
 type SearchConversationTurnsParams struct {
-	Similarity string `json:"similarity"`
-	Limit      int32  `json:"limit"`
+	Query   string `json:"query"`
+	MaxHits int32  `json:"max_hits"`
 }
 
 type SearchConversationTurnsRow struct {
@@ -849,10 +849,14 @@ type SearchConversationTurnsRow struct {
 	Sim            float32     `json:"sim"`
 }
 
-// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
-// reuses this EXACT query; only the excerpt rendering differs per channel.
+// The one conversation search: cockpit, Telegram /search and the CLI share it and differ
+// only in how they render the excerpt. word_similarity compares the query with the best
+// matching extent of the message, so a word is found inside a long message; similarity()
+// compared it with the whole message and found almost nothing (prd.md §7, 2026-10-04).
+// `<%` is strict "greater than" pg_trgm.word_similarity_threshold (0.6), and the planner
+// answers it from the gin_trgm_ops index as `content %> query`.
 func (q *Queries) SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error) {
-	rows, err := q.db.Query(ctx, searchConversationTurns, arg.Similarity, arg.Limit)
+	rows, err := q.db.Query(ctx, searchConversationTurns, arg.Query, arg.MaxHits)
 	if err != nil {
 		return nil, err
 	}

@@ -91,6 +91,8 @@ const mutationTests = [
   // aura-video-mcp Plan A: an export's media, once per source, and the sound-only export.
   'src/videoStudio/__tests__/videoflow_export.test.ts',
   'src/videoStudio/__tests__/videoflow_exportAudio.test.ts',
+  // Conversation search: the snippet that shows where a word matched (prd.md §7).
+  'src/conversations/__tests__/SearchPanel.test.tsx',
 ] as const;
 
 export default defineConfig({

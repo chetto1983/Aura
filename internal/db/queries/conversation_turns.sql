@@ -132,13 +132,17 @@ WHERE conversation_id = $1
   AND content_sidecar_path IS NOT NULL;
 
 -- name: SearchConversationTurns :many
--- LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
--- reuses this EXACT query; only the excerpt rendering differs per channel.
-SELECT conversation_id, seq, content, similarity(content, $1) AS sim
+-- The one conversation search: cockpit, Telegram /search and the CLI share it and differ
+-- only in how they render the excerpt. word_similarity compares the query with the best
+-- matching extent of the message, so a word is found inside a long message; similarity()
+-- compared it with the whole message and found almost nothing (prd.md §7, 2026-10-04).
+-- `<%` is strict "greater than" pg_trgm.word_similarity_threshold (0.6), and the planner
+-- answers it from the gin_trgm_ops index as `content %> query`.
+SELECT conversation_id, seq, content, word_similarity(sqlc.arg(query), content) AS sim
 FROM aura.conversation_turns
-WHERE content % $1
-ORDER BY similarity(content, $1) DESC
-LIMIT $2;
+WHERE sqlc.arg(query) <% content
+ORDER BY sim DESC, created_at DESC
+LIMIT sqlc.arg(max_hits);
 
 -- name: CanonicalBranchLeafSeq :one
 -- D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
