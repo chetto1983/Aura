@@ -2,9 +2,9 @@
 
 // mcp_files_docker_test.go is the docker_integration proof for MCPFileSink: against a
 // live box, a file an MCP result carried lands at the path the model is told, with the
-// bytes it came with, and is gone once the turn's cleanup has run; and a turn directory
+// bytes it came with, and is gone once the turn's cleanup has run; and a call directory
 // an unclean exit left behind is gone after the next write, while a younger sibling and the
-// writing turn's own directory are not.
+// writing call's own directory are not.
 
 package tools
 
@@ -30,7 +30,7 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 	out := (&MCPFileSink{Router: router}).Materialize(ctx, "aura-pim", []mcp.FilePart{
 		{Name: "Fattura è.pdf", MIMEType: "application/pdf", Data: []byte("%PDF-1.7 docker")},
 	})
-	if out[0].Path != "/workspace/mcp-files/req-dk-mcp/aura-pim/Fattura è.pdf" {
+	if out[0].Path != "/workspace/mcp-files/req-dk-mcp-call-dk-mcp/aura-pim/Fattura è.pdf" {
 		t.Fatalf("outcome = %+v", out[0])
 	}
 
@@ -46,21 +46,21 @@ func TestMCPFileSink_AFileLivesForItsTurnInARealBox(t *testing.T) {
 	if err := cleanup.Run(context.Background()); err != nil {
 		t.Fatalf("turn cleanup: %v", err)
 	}
-	gone, err := router.Exec(ctx, handle, usersandbox.ExecRequest{Command: "test -e /workspace/mcp-files/req-dk-mcp && echo LEFT || echo GONE"})
+	gone, err := router.Exec(ctx, handle, usersandbox.ExecRequest{Command: "test -e /workspace/mcp-files/req-dk-mcp-call-dk-mcp && echo LEFT || echo GONE"})
 	if err != nil || strings.TrimSpace(string(gone.Stdout)) != "GONE" {
-		t.Fatalf("after cleanup the turn directory is %q (err %v), want GONE", gone.Stdout, err)
+		t.Fatalf("after cleanup the call directory is %q (err %v), want GONE", gone.Stdout, err)
 	}
 }
 
 // A process that died mid-turn never ran its turn's removal, so its directory stays in the
 // volume: the next call's write, of any turn, sweeps it once it is a day old. The sweep runs
-// before the write, so the writing turn's own directory is seeded as old as the orphan: only
-// the sweep's exclusion of it keeps what the turn already holds.
-func TestMCPFileSink_SweepsATurnDirectoryAnUncleanExitLeftBehind(t *testing.T) {
+// before the write, so the writing call's own directory is seeded as old as the orphan: only
+// the sweep's exclusion of it keeps what the call already holds.
+func TestMCPFileSink_SweepsACallDirectoryAnUncleanExitLeftBehind(t *testing.T) {
 	skipUnlessDockerdTools(t)
 	router := newDockerRouter(t, nil)
 	ctx, cleanup := WithTurnCleanup(WithRequestID(ctxWith(t, "sess-dk-sweep", "call-dk-sweep"), "req-dk-sweep"))
-	// Run forgets its steps, so this removes the new turn's directory once and only once.
+	// Run forgets its steps, so this removes the new call's directory once and only once.
 	t.Cleanup(func() { _ = cleanup.Run(context.Background()) })
 	handle, err := router.Route(ctx)
 	if err != nil {
@@ -70,12 +70,12 @@ func TestMCPFileSink_SweepsATurnDirectoryAnUncleanExitLeftBehind(t *testing.T) {
 	const (
 		orphan  = "/workspace/mcp-files/req-old-orphan"
 		sibling = "/workspace/mcp-files/req-young-sibling"
-		turnDir = "/workspace/mcp-files/req-dk-sweep"
+		callDir = "/workspace/mcp-files/req-dk-sweep-call-dk-sweep"
 	)
 	for _, seed := range []struct{ dir, file, content, age string }{
 		{orphan, "left.pdf", "orphan", "2 days ago"},
 		{sibling, "live.pdf", "sibling", ""},
-		{turnDir, "prior.pdf", "prior", "2 days ago"},
+		{callDir, "prior.pdf", "prior", "2 days ago"},
 	} {
 		t.Cleanup(func() {
 			_, _ = router.Exec(context.Background(), handle, usersandbox.ExecRequest{Command: "rm -rf -- " + ShellQuoteArg(seed.dir)})
@@ -93,7 +93,7 @@ func TestMCPFileSink_SweepsATurnDirectoryAnUncleanExitLeftBehind(t *testing.T) {
 	out := (&MCPFileSink{Router: router}).Materialize(ctx, "aura-pim", []mcp.FilePart{
 		{Name: "new.pdf", MIMEType: "application/pdf", Data: []byte("%PDF-1.7 sweep")},
 	})
-	if out[0].Path != "/workspace/mcp-files/req-dk-sweep/aura-pim/new.pdf" {
+	if out[0].Path != "/workspace/mcp-files/req-dk-sweep-call-dk-sweep/aura-pim/new.pdf" {
 		t.Fatalf("outcome = %+v", out[0])
 	}
 
@@ -103,8 +103,8 @@ func TestMCPFileSink_SweepsATurnDirectoryAnUncleanExitLeftBehind(t *testing.T) {
 	if got := boxRead(ctx, t, router, handle, sibling+"/aura-pim/live.pdf"); got != "sibling" {
 		t.Errorf("the fresh sibling directory holds %q, want %q: a sweep that ignores age removes it", got, "sibling")
 	}
-	if got := boxRead(ctx, t, router, handle, turnDir+"/aura-pim/prior.pdf"); got != "prior" {
-		t.Errorf("the turn's own two-day-old directory holds %q, want %q: the sweep must exclude it", got, "prior")
+	if got := boxRead(ctx, t, router, handle, callDir+"/aura-pim/prior.pdf"); got != "prior" {
+		t.Errorf("the call's own two-day-old directory holds %q, want %q: the sweep must exclude it", got, "prior")
 	}
 	if got := boxRead(ctx, t, router, handle, out[0].Path); got != "%PDF-1.7 sweep" {
 		t.Errorf("the box holds %q at %s, want the file's bytes", got, out[0].Path)

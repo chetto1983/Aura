@@ -36,6 +36,8 @@ const (
 	envNodeTimeoutSec     = "AURA_LOOP_NODE_TIMEOUT_SEC"
 	envDedupExemptTools   = "AURA_LOOP_DEDUP_EXEMPT_TOOLS"
 	envDedupResultCap     = "AURA_LOOP_DEDUP_RESULT_CAP"
+	envBackgroundAfterSec = "AURA_LOOP_BACKGROUND_AFTER_SEC"
+	envBackgroundMaxSec   = "AURA_LOOP_BACKGROUND_MAX_SEC"
 )
 
 // Builtin defaults (D-06 precedence: CLI flag > env > builtin default).
@@ -45,6 +47,12 @@ const (
 	defaultDedupWindow        = 3    // AURA_LOOP_DEDUP_WINDOW (D-20)
 	defaultBranchSoftFrac     = 1.0  // AURA_LOOP_BRANCH_SOFT_FRACTION: 1.0 → softCap = ceil(remaining/fanout)
 	defaultDedupResultCap     = 2048 // AURA_LOOP_DEDUP_RESULT_CAP: result-preview byte cap (A7)
+	// AURA_LOOP_BACKGROUND_AFTER_SEC: how long a turn waits on one tool call before moving
+	// it to the background -- the 60 s an MCP call used to be cut at (prd.md §15).
+	defaultBackgroundAfterSec = 60
+	// AURA_LOOP_BACKGROUND_MAX_SEC: how long a backgrounded call may run, LibreChat's 30
+	// minutes and the maximum the MCP lifecycle says a client should always enforce.
+	defaultBackgroundMaxSec = 1800
 )
 
 // Budget bounds one agent run. The steps counter is shared by pointer across the
@@ -69,6 +77,10 @@ type Budget struct {
 	resultCap      int                 // dedup result-preview byte cap (A7)
 	nodeTimeout    time.Duration       // optional per-node soft timeout (D-13); 0 = disabled
 	softFrac       float64             // AURA_LOOP_BRANCH_SOFT_FRACTION, feeds Child's softCap (D-12)
+	// backgroundAfter and backgroundMax are the window a tool call holds its turn for and
+	// the ceiling it runs under once moved to the background (tools.BackgroundCalls).
+	backgroundAfter time.Duration
+	backgroundMax   time.Duration
 }
 
 // now defaults to time.Now via the W8 injectable-clock field. W8 RATIONALE:
@@ -95,6 +107,10 @@ type BudgetOptions struct {
 	MaxWallclockSec *int                // overrides AURA_LOOP_MAX_WALLCLOCK_SEC
 	DedupWindow     *int                // overrides AURA_LOOP_DEDUP_WINDOW
 	ExemptTools     map[string]struct{} // overrides AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist
+	// BackgroundAfterSec / BackgroundMaxSec override AURA_LOOP_BACKGROUND_AFTER_SEC /
+	// AURA_LOOP_BACKGROUND_MAX_SEC.
+	BackgroundAfterSec *int
+	BackgroundMaxSec   *int
 	// Now is the injectable clock (W8). When nil it defaults to time.Now. It is
 	// the SINGLE time source for BOTH the wallclock deadline anchor (computed as
 	// Now().Add(wallclock) at construction) AND the ConsumeStep deadline check, so
@@ -111,19 +127,25 @@ func NewBudgetFromEnv() (*Budget, error) {
 }
 
 // BudgetOptionsFromConfig lifts the hot loop budget off the runtime profile
-// (amendment #188): a positive LoopMaxSteps / LoopMaxWallclockSec becomes an
-// explicit override, a zero field stays nil so NewBudget falls through to the
-// AURA_LOOP_* env and the builtin default (D-06). Callers that hold a stronger
-// override (a per-job step_budget, a CLI flag) set it on the returned value.
+// (amendment #188, and the background window and ceiling of prd.md §15): a positive
+// profile field becomes an explicit override, a zero one stays nil so NewBudget falls
+// through to the AURA_LOOP_* env and the builtin default (D-06). Callers that hold a
+// stronger override (a per-job step_budget, a CLI flag) set it on the returned value.
 func BudgetOptionsFromConfig(cfg llm.Config) BudgetOptions {
-	var opts BudgetOptions
-	if cfg.LoopMaxSteps > 0 {
-		opts.MaxSteps = &cfg.LoopMaxSteps
+	return BudgetOptions{
+		MaxSteps:           positiveOverride(cfg.LoopMaxSteps),
+		MaxWallclockSec:    positiveOverride(cfg.LoopMaxWallclockSec),
+		BackgroundAfterSec: positiveOverride(cfg.LoopBackgroundAfterSec),
+		BackgroundMaxSec:   positiveOverride(cfg.LoopBackgroundMaxSec),
 	}
-	if cfg.LoopMaxWallclockSec > 0 {
-		opts.MaxWallclockSec = &cfg.LoopMaxWallclockSec
+}
+
+// positiveOverride is n as an override, or nil when the profile leaves it unset (0).
+func positiveOverride(n int) *int {
+	if n <= 0 {
+		return nil
 	}
-	return opts
+	return &n
 }
 
 // NewBudget builds a Budget applying CLI > env > builtin-default precedence (D-06)
@@ -171,6 +193,10 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 	if err != nil {
 		return nil, err
 	}
+	backgroundAfter, backgroundMax, err := resolveBackground(opts)
+	if err != nil {
+		return nil, err
+	}
 
 	exempt := opts.ExemptTools
 	if exempt == nil {
@@ -201,8 +227,31 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 		resultCap:         resultCap,
 		nodeTimeout:       time.Duration(nodeTimeoutSec) * time.Second,
 		softFrac:          softFrac,
+		backgroundAfter:   backgroundAfter,
+		backgroundMax:     backgroundMax,
 	}
 	return b, nil
+}
+
+// resolveBackground resolves the background window and ceiling. A ceiling no longer
+// than the window would end every moved call the moment it moved.
+func resolveBackground(opts BudgetOptions) (after, ceiling time.Duration, err error) {
+	afterSec, err := resolveInt(opts.BackgroundAfterSec, envBackgroundAfterSec, defaultBackgroundAfterSec)
+	if err != nil {
+		return 0, 0, err
+	}
+	maxSec, err := resolveInt(opts.BackgroundMaxSec, envBackgroundMaxSec, defaultBackgroundMaxSec)
+	if err != nil {
+		return 0, 0, err
+	}
+	if afterSec < 1 {
+		return 0, 0, fmt.Errorf("%s=%q: must be >= 1", envBackgroundAfterSec, strconv.Itoa(afterSec))
+	}
+	if maxSec <= afterSec {
+		return 0, 0, fmt.Errorf("%s=%q: must be greater than %s=%q", envBackgroundMaxSec, strconv.Itoa(maxSec),
+			envBackgroundAfterSec, strconv.Itoa(afterSec))
+	}
+	return time.Duration(afterSec) * time.Second, time.Duration(maxSec) * time.Second, nil
 }
 
 // resolveInt applies the D-06 precedence for one int knob: an explicit override
@@ -361,6 +410,8 @@ func (b *Budget) Child(fanout int) *Budget {
 		resultCap:         b.resultCap,
 		nodeTimeout:       b.nodeTimeout,
 		softFrac:          b.softFrac,
+		backgroundAfter:   b.backgroundAfter,
+		backgroundMax:     b.backgroundMax,
 	}
 	return c
 }
@@ -388,3 +439,11 @@ func (b *Budget) WithDeadline(parent context.Context) (context.Context, context.
 // NodeTimeout is the optional per-node soft timeout (AURA_LOOP_NODE_TIMEOUT_SEC,
 // D-13); zero means disabled.
 func (b *Budget) NodeTimeout() time.Duration { return b.nodeTimeout }
+
+// BackgroundWindow is how long one tool call holds its turn before it moves to the
+// background (AURA_LOOP_BACKGROUND_AFTER_SEC).
+func (b *Budget) BackgroundWindow() time.Duration { return b.backgroundAfter }
+
+// BackgroundCeiling is how long a call moved to the background may run
+// (AURA_LOOP_BACKGROUND_MAX_SEC).
+func (b *Budget) BackgroundCeiling() time.Duration { return b.backgroundMax }

@@ -1,7 +1,9 @@
 package agent
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -44,5 +46,56 @@ func TestBudgetOptionsFromConfig(t *testing.T) {
 	}
 	if got := b.Remaining(); got != 40 {
 		t.Fatalf("remaining = %d, want env 40 when the profile is silent", got)
+	}
+}
+
+// The background window and ceiling (prd.md §15) follow the same precedence, and a child
+// branch keeps both.
+func TestBudgetResolvesTheBackgroundWindowAndCeiling(t *testing.T) {
+	t.Setenv(envBackgroundAfterSec, "")
+	t.Setenv(envBackgroundMaxSec, "")
+
+	b, err := NewBudget(BudgetOptionsFromConfig(llm.Config{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.BackgroundWindow() != time.Minute || b.BackgroundCeiling() != 30*time.Minute {
+		t.Fatalf("defaults = %v / %v, want 1m / 30m", b.BackgroundWindow(), b.BackgroundCeiling())
+	}
+
+	t.Setenv(envBackgroundAfterSec, "45")
+	t.Setenv(envBackgroundMaxSec, "900")
+	b, err = NewBudget(BudgetOptionsFromConfig(llm.Config{LoopBackgroundMaxSec: 600}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.BackgroundWindow() != 45*time.Second || b.BackgroundCeiling() != 10*time.Minute {
+		t.Fatalf("got %v / %v, want env 45s and profile 10m over env 15m", b.BackgroundWindow(), b.BackgroundCeiling())
+	}
+	child := b.Child(2)
+	if child.BackgroundWindow() != b.BackgroundWindow() || child.BackgroundCeiling() != b.BackgroundCeiling() {
+		t.Fatalf("child = %v / %v, want the parent's", child.BackgroundWindow(), child.BackgroundCeiling())
+	}
+}
+
+func TestBudgetRefusesABackgroundCeilingThatEndsEveryMovedCall(t *testing.T) {
+	for name, c := range map[string]struct {
+		cfg          llm.Config
+		after, limit string
+		want         string
+	}{
+		"ceiling at the window":    {cfg: llm.Config{LoopBackgroundAfterSec: 60, LoopBackgroundMaxSec: 60}, want: "must be greater than"},
+		"ceiling under the window": {cfg: llm.Config{LoopBackgroundAfterSec: 120}, limit: "90", want: "must be greater than"},
+		"zero window from env":     {after: "0", want: envBackgroundAfterSec + `="0": must be >= 1`},
+		"malformed env window":     {after: "soon", want: envBackgroundAfterSec},
+		"malformed env ceiling":    {limit: "later", want: envBackgroundMaxSec},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(envBackgroundAfterSec, c.after)
+			t.Setenv(envBackgroundMaxSec, c.limit)
+			if _, err := NewBudget(BudgetOptionsFromConfig(c.cfg)); err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("NewBudget err = %v, want %q", err, c.want)
+			}
+		})
 	}
 }

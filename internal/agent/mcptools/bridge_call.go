@@ -48,11 +48,17 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 		}
 		args = profiled
 	}
+	timeout := b.callTimeout
+	if ceiling, ok := tools.CallCeiling(ctx); ok {
+		// The agent loop stopped waiting at its window and moved the call to the
+		// background; the bound left is the one it gives every backgrounded call.
+		timeout = ceiling
+	}
 	callCtx := ctx
 	cancel := func() {}
-	if b.callTimeout > 0 {
+	if timeout > 0 {
 		// The operator's time is excluded while the server's form waits.
-		callCtx, cancel = pausable.WithTimeout(ctx, b.callTimeout)
+		callCtx, cancel = pausable.WithTimeout(ctx, timeout)
 	}
 	defer cancel()
 

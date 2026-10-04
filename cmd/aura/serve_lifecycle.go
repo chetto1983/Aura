@@ -26,6 +26,10 @@ type shellCompletionHookSetter interface {
 	SetCompletionHook(tools.BackgroundShellCompletionHook)
 }
 
+type callCompletionHookSetter interface {
+	SetCompletionHook(tools.BackgroundCallCompletionHook)
+}
+
 // newServeCompletionDispatcher builds the daemon's one background-completion dispatcher. It is
 // nil without the steer rail that carries its wakes: shells then keep explicit polls, and
 // completed video jobs stay undelivered until a boot with the rail wakes them. The nil checks
@@ -35,33 +39,40 @@ func newServeCompletionDispatcher(ctx context.Context, chat *chatEnv) *backgroun
 	if chat.run == nil || chat.steer == nil {
 		return nil
 	}
-	return installBackgroundCompletions(ctx, chat.run, chat.steer, chat.toolHandles.BackgroundShells)
+	return installBackgroundCompletions(ctx, chat.run, chat.steer,
+		chat.toolHandles.BackgroundShells, chat.toolHandles.BackgroundCalls)
 }
 
-// installBackgroundCompletions makes the dispatcher the shells' completion hook. A nil
-// *tools.BackgroundShells is a valid setter: its SetCompletionHook is nil-safe.
+// installBackgroundCompletions makes the dispatcher the completion hook of the shells and
+// of the backgrounded tool calls. A nil *tools.BackgroundShells or *tools.BackgroundCalls
+// is a valid setter: both SetCompletionHook methods are nil-safe.
 func installBackgroundCompletions(
 	ctx context.Context,
 	run backgroundCompletionWakeRunner,
 	pusher runner.SteerPusher,
 	shells shellCompletionHookSetter,
+	calls callCompletionHookSetter,
 ) *backgroundCompletionDispatcher {
 	dispatcher := newBackgroundCompletionDispatcher(ctx, run, pusher)
 	shells.SetCompletionHook(dispatcher.NotifyShell)
+	calls.SetCompletionHook(dispatcher.NotifyTool)
 	return dispatcher
 }
 
 // shutdownBackgroundWork stops, in order, the work that starts agent turns on its own: video job
 // recovery, then the watcher and its supervisors, then the completion dispatcher and its wakes,
-// then the background shells. The dispatcher closes before the shells are killed because a
-// running shell keeps the completion hook it started with, so killing it first would wake its
-// conversation with a completion that shutdown itself produced.
+// then the backgrounded tool calls and the background shells. The dispatcher closes before the
+// shells are killed because a running shell keeps the completion hook it started with, so
+// killing it first would wake its conversation with a completion that shutdown itself produced.
+// A backgrounded call reads its hook when it settles, and Stop drops what settles after it.
 func shutdownBackgroundWork(env *serveEnv) {
 	env.mediaRecovery.Stop()
 	if env.mediaWatcher != nil {
 		stopBackground("video job watcher", env.mediaWatcher.Stop)
 	}
 	stopBackground("background completion dispatcher", env.backgroundCompletions.Stop)
+	env.toolHandles.BackgroundCalls.SetCompletionHook(nil)
+	stopBackground("background tool calls", env.toolHandles.BackgroundCalls.Stop)
 	env.toolHandles.BackgroundShells.SetCompletionHook(nil)
 	stopBackground("background shells", env.toolHandles.BackgroundShells.Shutdown)
 }

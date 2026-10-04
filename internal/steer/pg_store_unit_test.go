@@ -230,7 +230,7 @@ func TestDrainRejectsMalformedConversationIDWithoutQuerying(t *testing.T) {
 
 func TestIsRuntimeSourceNamesOnlyAurasOwnSources(t *testing.T) {
 	for source, want := range map[string]bool{
-		SourceWorker: true, SourceShell: true, SourceMedia: true,
+		SourceWorker: true, SourceShell: true, SourceMedia: true, SourceTool: true,
 		"cockpit": false, "telegram": false, "": false, "Swarm": false,
 	} {
 		if got := IsRuntimeSource(source); got != want {

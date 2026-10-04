@@ -40,7 +40,7 @@ type backgroundCompletionRoute struct {
 }
 
 // backgroundCompletionDispatcher is the daemon-lifecycle bridge from background producers — the
-// shell process registry and the video watcher — to Runner. It starts at most one goroutine per
+// shell process registry, the backgrounded tool calls and the video watcher — to Runner. It starts at most one goroutine per
 // owning conversation; completions that arrive while that route is active queue behind it and
 // wake the conversation serially rather than racing a second turn.
 type backgroundCompletionDispatcher struct {
@@ -81,6 +81,17 @@ func (d *backgroundCompletionDispatcher) NotifyShell(completion tools.Background
 		ConversationID: completion.SessionID,
 		Source:         steer.SourceShell,
 		Line:           formatShellCompletion(completion),
+	})
+}
+
+// NotifyTool is the backgrounded tool calls' completion hook. It runs on the settling call's
+// goroutine, so like every enqueue it only queues and returns.
+func (d *backgroundCompletionDispatcher) NotifyTool(completion tools.BackgroundCallCompletion) {
+	d.enqueue(backgroundCompletion{
+		OwnerID:        completion.OwnerID,
+		ConversationID: completion.SessionID,
+		Source:         steer.SourceTool,
+		Line:           formatToolCompletion(completion),
 	})
 }
 

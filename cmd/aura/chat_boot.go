@@ -139,6 +139,7 @@ func (e *chatEnv) close() {
 		}
 		cancel()
 	}
+	stopBackground("background tool calls", e.toolHandles.BackgroundCalls.Stop)
 	if e.toolHandles.BackgroundShells != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -516,7 +517,8 @@ func assembleChatEnv(
 		// SteerInboxOrNil is the ONE place a concrete, possibly-nil *steer.PostgresStore
 		// is boxed into the agent.SteerInbox interface Deps.Steer now carries (Phase 51
 		// plan 02) — avoids the classic Go nil-interface trap (D-06).
-		Steer: runner.SteerInboxOrNil(steerInbox),
+		Steer:           runner.SteerInboxOrNil(steerInbox),
+		BackgroundCalls: toolHandles.BackgroundCalls,
 	}
 	wireChatReasoningMemory(&deps, reasoningMemory)
 	run := runner.New(deps)

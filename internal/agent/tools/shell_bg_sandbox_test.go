@@ -89,13 +89,13 @@ func TestShellBg_OwnerModelUnchanged(t *testing.T) {
 	}
 
 	// IDs stay unguessable 128-bit crypto-random hex (never sequential, never colliding).
-	a, err := newBackgroundShellID()
+	a, err := newBackgroundJobID()
 	if err != nil {
-		t.Fatalf("newBackgroundShellID: %v", err)
+		t.Fatalf("newBackgroundJobID: %v", err)
 	}
-	b2, err := newBackgroundShellID()
+	b2, err := newBackgroundJobID()
 	if err != nil {
-		t.Fatalf("newBackgroundShellID: %v", err)
+		t.Fatalf("newBackgroundJobID: %v", err)
 	}
 	if a == b2 || len(a) != 32 {
 		t.Fatalf("background ids not unguessable/unique: %q, %q", a, b2)

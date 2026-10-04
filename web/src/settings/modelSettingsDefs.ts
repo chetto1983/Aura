@@ -28,6 +28,8 @@ export type SettingsKey =
   | 'AURA_MODEL_MAX_OUTPUT_TOKENS'
   | 'AURA_LOOP_MAX_STEPS'
   | 'AURA_LOOP_MAX_WALLCLOCK_SEC'
+  | 'AURA_LOOP_BACKGROUND_AFTER_SEC'
+  | 'AURA_LOOP_BACKGROUND_MAX_SEC'
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_EMBED_CLOUD_BASE_URL'
@@ -158,6 +160,22 @@ export const TOKEN_SETTINGS: readonly SettingDef[] = [
     labelKey: 'settings.fields.loopMaxWallclock',
     placeholder: '300',
     helpKey: 'settings.help.loopMaxWallclock',
+  },
+  // A tool call still running after the first is moved out of the turn, not stopped, and
+  // bounded by the second (prd.md §15). Both are live like the two above.
+  {
+    key: 'AURA_LOOP_BACKGROUND_AFTER_SEC',
+    kind: 'int',
+    labelKey: 'settings.fields.loopBackgroundAfter',
+    placeholder: '60',
+    helpKey: 'settings.help.loopBackgroundAfter',
+  },
+  {
+    key: 'AURA_LOOP_BACKGROUND_MAX_SEC',
+    kind: 'int',
+    labelKey: 'settings.fields.loopBackgroundMax',
+    placeholder: '1800',
+    helpKey: 'settings.help.loopBackgroundMax',
   },
 ];
 

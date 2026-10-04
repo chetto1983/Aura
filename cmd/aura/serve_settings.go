@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/redact"
@@ -95,6 +96,10 @@ func (r *primaryLLMRouteReloader) EffectiveValue(key string) (string, bool) {
 		return optionalLoopSetting(cfg.LoopMaxSteps)
 	case "AURA_LOOP_MAX_WALLCLOCK_SEC":
 		return optionalLoopSetting(cfg.LoopMaxWallclockSec)
+	case "AURA_LOOP_BACKGROUND_AFTER_SEC":
+		return optionalLoopSetting(cfg.LoopBackgroundAfterSec)
+	case "AURA_LOOP_BACKGROUND_MAX_SEC":
+		return optionalLoopSetting(cfg.LoopBackgroundMaxSec)
 	default:
 		return "", false
 	}
@@ -133,6 +138,8 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		cfg.APIKey = r.fallback.APIKey
 		cfg.LoopMaxSteps = r.fallback.LoopMaxSteps
 		cfg.LoopMaxWallclockSec = r.fallback.LoopMaxWallclockSec
+		cfg.LoopBackgroundAfterSec = r.fallback.LoopBackgroundAfterSec
+		cfg.LoopBackgroundMaxSec = r.fallback.LoopBackgroundMaxSec
 	}
 	cfg.Headers = maps.Clone(cfg.Headers)
 	cfg.Prices = maps.Clone(r.fallback.Prices)
@@ -154,19 +161,29 @@ func (r *primaryLLMRouteReloader) resolve(overrides map[string]string, resetKeys
 		}
 		cfg.CompactionTriggerPercent = parsed
 	}
-	if value, ok := overrides["AURA_LOOP_MAX_STEPS"]; ok {
-		parsed, err := positiveLLMSetting("AURA_LOOP_MAX_STEPS", value)
+	for _, knob := range []struct {
+		key   string
+		field *int
+	}{
+		{"AURA_LOOP_MAX_STEPS", &cfg.LoopMaxSteps},
+		{"AURA_LOOP_MAX_WALLCLOCK_SEC", &cfg.LoopMaxWallclockSec},
+		{"AURA_LOOP_BACKGROUND_AFTER_SEC", &cfg.LoopBackgroundAfterSec},
+		{"AURA_LOOP_BACKGROUND_MAX_SEC", &cfg.LoopBackgroundMaxSec},
+	} {
+		value, ok := overrides[knob.key]
+		if !ok {
+			continue
+		}
+		parsed, err := positiveLLMSetting(knob.key, value)
 		if err != nil {
 			return llm.Config{}, err
 		}
-		cfg.LoopMaxSteps = parsed
+		*knob.field = parsed
 	}
-	if value, ok := overrides["AURA_LOOP_MAX_WALLCLOCK_SEC"]; ok {
-		parsed, err := positiveLLMSetting("AURA_LOOP_MAX_WALLCLOCK_SEC", value)
-		if err != nil {
-			return llm.Config{}, err
-		}
-		cfg.LoopMaxWallclockSec = parsed
+	// The loop budget is built from these on every turn; a combination it refuses -- a
+	// background ceiling no longer than its window -- would fail every turn after the save.
+	if _, err := agent.NewBudget(agent.BudgetOptionsFromConfig(cfg)); err != nil {
+		return llm.Config{}, err
 	}
 	if value, ok := overrides["AURA_LLM_PROVIDER"]; ok {
 		cfg.Provider = strings.TrimSpace(value)

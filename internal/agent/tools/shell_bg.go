@@ -210,7 +210,7 @@ func (s *bgShell) statusLocked() string {
 // A box start failure returns an error the caller maps to the fail-CLOSED deny (D-09/GATE-01) —
 // no host process is spawnable from here.
 func (b *BackgroundShells) startBox(callerCtx context.Context, h usersandbox.BoxHandle, command, dir string, env []string) (string, error) {
-	id, err := newBackgroundShellID()
+	id, err := newBackgroundJobID()
 	if err != nil {
 		return "", err
 	}

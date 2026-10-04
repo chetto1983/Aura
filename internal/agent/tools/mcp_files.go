@@ -8,7 +8,6 @@ import (
 	"fmt"
 	pathpkg "path"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
 
@@ -17,18 +16,18 @@ import (
 )
 
 // MCPFileSink puts the files an MCP tool result carried into the caller's box, at
-// /workspace/mcp-files/<request-id>/<server>/<name>, and asks the turn to remove
-// /workspace/mcp-files/<request-id> when it ends. It writes through the router seam
-// document_open uses, for the reason document_open gives: a path the agent is handed
-// must be one shell_exec and fs_read can open.
+// /workspace/mcp-files/<request-id>-<tool-call-id>/<server>/<name>, and asks the call's
+// cleanup to remove that directory. A call that settles in its turn hands its cleanup to
+// the turn; one moved to the background hands it to the turn that reads its result
+// (background_calls.go), which is why the directory is the call's and not the turn's: a
+// turn ending must not take the files of a call still on its way. It writes through the
+// router seam document_open uses, for the reason document_open gives: a path the agent is
+// handed must be one shell_exec and fs_read can open.
 //
 // It lives here, not in mcptools, so the MCP bridge never imports the sandbox; the
 // bridge sees it as mcptools.FileSink.
 type MCPFileSink struct {
 	Router *usersandbox.SandboxRouter
-
-	// mu holds a call's directory listing and its writes together; see Materialize.
-	mu sync.Mutex
 }
 
 const (
@@ -39,9 +38,10 @@ const (
 	// maxMCPExtensionBytes is the longest suffix still kept as an extension when a
 	// long name is cut; anything longer is part of the name.
 	maxMCPExtensionBytes = 16
-	// staleMCPTurnDirAge is far above the length of any turn; a turn directory's mtime is
-	// set when its server subdirectory is created, and its age counts from there.
-	staleMCPTurnDirAge = 24 * time.Hour
+	// staleMCPCallDirAge is far above the length of any turn or background call; a call
+	// directory's mtime is set when its server subdirectory is created, and its age
+	// counts from there.
+	staleMCPCallDirAge = 24 * time.Hour
 )
 
 // mcpFileExtensions gives a nameless or extensionless file an extension from its
@@ -79,12 +79,9 @@ func (s *MCPFileSink) Materialize(ctx context.Context, server string, parts []mc
 	}
 	w, reason := s.open(ctx, server, total)
 	if reason == "" {
-		// The listing decides each file's name and the write claims it, so two calls must
-		// not interleave them: executeBatch runs the calls of one assistant message on
-		// parallel workers, and both would find the same name free. Taken after Route, so
-		// a cold box start does not hold it.
-		s.mu.Lock()
-		defer s.mu.Unlock()
+		// No lock: the listing and the writes are this call's alone, because the
+		// directory is (open), even when executeBatch runs the calls of one assistant
+		// message on parallel workers.
 		if err := w.listTaken(ctx); err != nil {
 			reason = "sandbox unavailable: " + err.Error()
 		}
@@ -99,12 +96,12 @@ func (s *MCPFileSink) Materialize(ctx context.Context, server string, parts []mc
 	return out
 }
 
-// open routes to the caller's box and prepares the call's directory. The turn owns
-// it, so it is registered for removal before anything is written into it.
+// open routes to the caller's box and prepares the call's directory. The call's cleanup
+// owns it, so it is registered for removal before anything is written into it.
 func (s *MCPFileSink) open(ctx context.Context, server string, total int) (*mcpFileWriter, string) {
 	cleanup := TurnCleanupFromContext(ctx)
-	requestID := RequestIDFromContext(ctx)
-	if cleanup == nil || requestID == "" {
+	requestID, toolCallID := RequestIDFromContext(ctx), ToolCallIDFromContext(ctx)
+	if cleanup == nil || requestID == "" || toolCallID == "" {
 		// Nothing would ever remove the file: toolpipe, the docs MCP and a readiness
 		// probe get the text alone.
 		return nil, "no agent turn owns the file"
@@ -116,22 +113,22 @@ func (s *MCPFileSink) open(ctx context.Context, server string, total int) (*mcpF
 	if err != nil {
 		return nil, "sandbox unavailable: " + err.Error()
 	}
-	turnDir := pathpkg.Join(mcpFilesBoxDir, mcpPathSegment(requestID))
-	cleanup.Add(handle.ContainerID+":"+turnDir, func(ctx context.Context) error {
-		return removeBoxDir(ctx, s.Router, handle, turnDir)
+	callDir := pathpkg.Join(mcpFilesBoxDir, mcpPathSegment(requestID+"-"+toolCallID))
+	cleanup.Add(handle.ContainerID+":"+callDir, func(ctx context.Context) error {
+		return removeBoxDir(ctx, s.Router, handle, callDir)
 	})
-	dir := pathpkg.Join(turnDir, mcpPathSegment(server))
-	return &mcpFileWriter{router: s.Router, handle: handle, turnDir: turnDir, dir: dir}, ""
+	dir := pathpkg.Join(callDir, mcpPathSegment(server))
+	return &mcpFileWriter{router: s.Router, handle: handle, callDir: callDir, dir: dir}, ""
 }
 
-// staleTurnDirSweep is the shell command that removes the turn directories under
-// mcpFilesBoxDir older than staleMCPTurnDirAge, except keep, the one this turn writes
+// staleCallDirSweep is the shell command that removes the call directories under
+// mcpFilesBoxDir older than staleMCPCallDirAge, except keep, the one this call writes
 // into. A turn whose process died (an updater restart, an OOM kill) never ran its own
 // removal, and nothing else would. It writes nothing to stdout, and the caller chains it
 // with `;`, so neither its output nor its exit status reaches what follows.
-func staleTurnDirSweep(keep string) string {
+func staleCallDirSweep(keep string) string {
 	return fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -type d -mmin +%d ! -path %s -exec rm -rf -- {} + 2>/dev/null",
-		ShellQuoteArg(mcpFilesBoxDir), int(staleMCPTurnDirAge/time.Minute), ShellQuoteArg(keep))
+		ShellQuoteArg(mcpFilesBoxDir), int(staleMCPCallDirAge/time.Minute), ShellQuoteArg(keep))
 }
 
 func removeBoxDir(ctx context.Context, router *usersandbox.SandboxRouter, h usersandbox.BoxHandle, dir string) error {
@@ -145,22 +142,22 @@ func removeBoxDir(ctx context.Context, router *usersandbox.SandboxRouter, h user
 	return nil
 }
 
-// mcpFileWriter writes one call's files into one directory (dir, under its turn's turnDir)
-// of one box.
+// mcpFileWriter writes one call's files into one directory (dir, under the call's
+// callDir) of one box.
 type mcpFileWriter struct {
 	router  *usersandbox.SandboxRouter
 	handle  usersandbox.BoxHandle
-	turnDir string
+	callDir string
 	dir     string
 	taken   map[string]bool
 }
 
 // listTaken reads what the directory already holds, so a second file of the same name
-// in the same turn gets a -2 instead of overwriting the first. A dir that does not
-// exist yet is empty. The same exec first sweeps the turn directories an unclean exit
+// in the same result gets a -2 instead of overwriting the first. A dir that does not
+// exist yet is empty. The same exec first sweeps the call directories an unclean exit
 // left behind, and its failure cannot fail the listing.
 func (w *mcpFileWriter) listTaken(ctx context.Context) error {
-	command := staleTurnDirSweep(w.turnDir) + "; ls -1A -- " + ShellQuoteArg(w.dir) + " 2>/dev/null"
+	command := staleCallDirSweep(w.callDir) + "; ls -1A -- " + ShellQuoteArg(w.dir) + " 2>/dev/null"
 	res, err := w.router.Exec(ctx, w.handle, usersandbox.ExecRequest{Command: command})
 	if err != nil {
 		return err

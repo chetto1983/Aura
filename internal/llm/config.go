@@ -158,9 +158,14 @@ type Config struct {
 	// completion-gate knobs do: the runtime snapshot is the one per-run carrier.
 	LoopMaxSteps        int
 	LoopMaxWallclockSec int
-	Headers             map[string]string
-	Prices              map[string]Price
-	CostStatus          CostStatus
+	// LoopBackgroundAfterSec / LoopBackgroundMaxSec are the window a tool call holds its
+	// turn for and the ceiling it then runs under in the background (prd.md §15), hot
+	// the same way and with the same 0 = not set.
+	LoopBackgroundAfterSec int
+	LoopBackgroundMaxSec   int
+	Headers                map[string]string
+	Prices                 map[string]Price
+	CostStatus             CostStatus
 
 	// CompletionGate enables deterministic reply hygiene without an LLM auditor.
 	CompletionGate bool

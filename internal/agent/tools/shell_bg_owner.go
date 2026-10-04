@@ -39,13 +39,14 @@ type capabilityChecker interface {
 	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
 }
 
-// newBackgroundShellID mints an unguessable 128-bit crypto-random hex id, replacing
-// the pre-MUSR-03 sequential sh_%d. A crypto/rand failure is fatal to the start (no
-// guessable fallback is ever minted — fail closed).
-func newBackgroundShellID() (string, error) {
+// newBackgroundJobID mints an unguessable 128-bit crypto-random hex id for a background
+// shell or a background tool call, replacing the pre-MUSR-03 sequential sh_%d. A
+// crypto/rand failure is fatal to the start (no guessable fallback is ever minted —
+// fail closed).
+func newBackgroundJobID() (string, error) {
 	var raw [16]byte
 	if _, err := rand.Read(raw[:]); err != nil {
-		return "", fmt.Errorf("background shell id: %w", err)
+		return "", fmt.Errorf("background job id: %w", err)
 	}
 	return hex.EncodeToString(raw[:]), nil
 }

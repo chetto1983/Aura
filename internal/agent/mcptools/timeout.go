@@ -8,6 +8,9 @@ import (
 	"time"
 )
 
+// envMCPCallTimeoutSec bounds an MCP call no agent turn waits on with a window of its
+// own: the tool pipe, a notification send. Inside a turn the loop moves a slow call to
+// the background and bounds it with its own ceiling instead (tools.CallCeiling).
 const envMCPCallTimeoutSec = "AURA_MCP_CALL_TIMEOUT_SEC"
 
 const defaultMCPCallTimeout = 60 * time.Second

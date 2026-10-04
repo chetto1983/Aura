@@ -73,6 +73,10 @@ var AllowedKeys = map[string]KeyMeta{
 	// longer recreates the container to get them.
 	"AURA_LOOP_MAX_STEPS":         {Kind: KindInt, Label: "Max agent steps per turn"},
 	"AURA_LOOP_MAX_WALLCLOCK_SEC": {Kind: KindInt, Label: "Max wallclock per turn (seconds)"},
+	"AURA_LOOP_BACKGROUND_AFTER_SEC": {
+		Kind: KindInt, Label: "Seconds a tool call holds its turn before moving to the background",
+	},
+	"AURA_LOOP_BACKGROUND_MAX_SEC": {Kind: KindInt, Label: "Max seconds a background tool call may run"},
 	// The proactive per-message memory preload. Hot because it is the one knob that
 	// decides whether a turn ARRIVES with what the memory knows or has to go and ask:
 	// off, the prompt carries only the pointer ("you have N facts across M entities")

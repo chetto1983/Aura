@@ -160,6 +160,9 @@ func (s *ShellExec) Spec() Spec {
 		// frequently used tools loaded so the model can call them without searching
 		// first. Having zero is what made her wander.
 		Deferred: false,
+		// It moves itself to the background at its own cap (shell_bg_promote.go), which can
+		// be ten minutes; the loop's promotion must not take it first.
+		Foreground: true,
 		// Conservatively Mutating (D-43): a command line can write files or mutate
 		// state and the agent cannot tell `ls` from `python build.py` statically.
 		Mutating:       true,

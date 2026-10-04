@@ -186,6 +186,7 @@ func buildBaseRegistryWithHandles(
 		// under a strict profile shell_exec routes background jobs into the box via startBox; a nil
 		// router (pool-free manifest paths, dev/local_trusted) keeps every job host-direct.
 		BackgroundShells: tools.NewBackgroundShells(sandboxRouter),
+		BackgroundCalls:  tools.NewBackgroundCalls(),
 		ShellApprovals:   tools.NewShellApprovals(),
 	}
 	reg := tools.NewRegistry()
@@ -239,6 +240,9 @@ func buildBaseRegistryWithHandles(
 	handles.ShellKill = sk
 	reg.Register(sp)
 	reg.Register(sk)
+	// tool_poll reads, once, a call the agent loop moved to the background, for every tool
+	// shell_exec's own promotion does not cover (prd.md §15).
+	reg.Register(&tools.ToolPoll{Calls: handles.BackgroundCalls})
 	// Claude-Code-style file ergonomics over the box's filesystem — a Go port of hermes-agent's
 	// four file_tools.py tools (read_file/write_file/patch/search_files, replacing the prior
 	// fs_read/fs_write/fs_edit/fs_grep/fs_glob five). The skills-library fence (#54 / D-43)

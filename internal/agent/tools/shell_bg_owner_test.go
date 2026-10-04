@@ -39,9 +39,9 @@ func TestBackgroundJobID(t *testing.T) {
 
 	seen := make(map[string]bool, 512)
 	for range 512 {
-		id, err := newBackgroundShellID()
+		id, err := newBackgroundJobID()
 		if err != nil {
-			t.Fatalf("newBackgroundShellID: %v", err)
+			t.Fatalf("newBackgroundJobID: %v", err)
 		}
 		if !hexRe.MatchString(id) {
 			t.Fatalf("id %q is not 128-bit lowercase hex", id)
@@ -61,11 +61,11 @@ func TestBackgroundJobID(t *testing.T) {
 	t.Run("registration binds crypto ids", func(t *testing.T) {
 		bg := NewBackgroundShells(nil)
 		ctx := ctxWith(t, "sess-id", "call-id")
-		id1, err := newBackgroundShellID()
+		id1, err := newBackgroundJobID()
 		if err != nil {
 			t.Fatalf("mint1: %v", err)
 		}
-		id2, err := newBackgroundShellID()
+		id2, err := newBackgroundJobID()
 		if err != nil {
 			t.Fatalf("mint2: %v", err)
 		}

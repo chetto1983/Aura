@@ -193,6 +193,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		a.ledgerConvID,
 		a.gateway,
 	)
+	toolCtx = withBackgroundLimits(toolCtx, budget)
 	if d := budget.NodeTimeout(); d > 0 {
 		// Pausable like the run's own deadline: an MCP call waiting on the operator
 		// holds every clock above it, and a fixed per-node timer would still cut it.

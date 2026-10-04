@@ -47,7 +47,7 @@ type promotedShell struct {
 // stops a promoted job exactly like a natively-backgrounded one — promotion must never
 // mint work nobody can stop.
 func (b *BackgroundShells) adopt(callerCtx context.Context, cancel context.CancelFunc) (*promotedShell, error) {
-	id, err := newBackgroundShellID()
+	id, err := newBackgroundJobID()
 	if err != nil {
 		return nil, err
 	}

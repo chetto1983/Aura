@@ -107,6 +107,8 @@ func (e *SwarmSpawn) Spec() Spec {
 		// only after the description is cut to that size; the set is not the whole story, the
 		// bytes are.
 		Deferred: true,
+		// Its workers report through their own wake (prd.md §15), not through tool_poll.
+		Foreground: true,
 		// D-02/D-02d: a swarm worker turn wields the full tool set, so swarm_spawn is
 		// the fail-closed Mutating floor. It has no `action` field, but it is treated
 		// as Multiplexed so the boot-guard asserts the classifier tiers it (flat Risky).

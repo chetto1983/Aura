@@ -8,7 +8,10 @@ import (
 
 type runtimeToolHandles struct {
 	BackgroundShells *tools.BackgroundShells
-	ShellApprovals   *tools.ShellApprovals
+	// BackgroundCalls holds the tool calls interactive turns moved to the background
+	// (prd.md §15). Serve boot hooks it to the completion dispatcher and stops it on drain.
+	BackgroundCalls *tools.BackgroundCalls
+	ShellApprovals  *tools.ShellApprovals
 	// SkillManage is retained so chat boot can attach the live identity capability
 	// checker to the exact process-global catalog writer registered for agent turns.
 	SkillManage   *tools.SkillManageTool
