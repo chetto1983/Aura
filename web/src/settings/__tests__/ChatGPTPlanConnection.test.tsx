@@ -234,7 +234,11 @@ describe('ChatGPT plan connection', () => {
       'textContent',
       'Remote revocation failed.',
     );
-    expect(onConnectionChange).toHaveBeenLastCalledWith(false);
+    // onConnectionChange runs from a useEffect, after the commit that already shows the
+    // alert, so it is awaited rather than read at once (failed once on master, 2026-10-04).
+    await waitFor(() => {
+      expect(onConnectionChange).toHaveBeenLastCalledWith(false);
+    });
     expect(screen.queryByRole('button', { name: 'Disconnect ChatGPT' })).toBeNull();
   });
 
