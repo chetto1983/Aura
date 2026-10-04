@@ -80,7 +80,8 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 			}
 			return id, true
 		},
-		SessionRenewer: provider.RenewSession,
+		SessionRenewer:    provider.RenewSession,
+		SessionCookieName: webauth.SessionCookieName,
 	}
 	return withDenialRecorder(deps, chat.pool), provider, nil
 }
