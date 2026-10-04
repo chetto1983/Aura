@@ -799,6 +799,23 @@ the CHECK has never admitted them, and nothing writes them. What this does not s
 state of appliances not measured here, which is why the migration checks instead of
 assuming.
 
+**A library upload that reuses a name replaces the file.** A library object's key derives
+from the file name (`libraryObjectID`), so that ingesting `report.pdf` twice replaces
+`report.pdf`. Agent and CLI ingest honour that through `reingestTarget`. `POST
+/api/assets/presign` with `scope: "library"` did not: it inserted a new row on the same
+key. Measured 2026-10-04 on the local stack, the second presign of a library name answered
+400 with Postgres's text, `duplicate key value violates unique constraint
+"assets_identity_object_key_idx" (SQLSTATE 23505)`. Its unit test passed because the fake
+store does not enforce that index. The presign now re-arms the row already holding the key:
+it goes back to `presigned` with the new upload's name, type and declared size, so finalize
+checks the new bytes against the new declaration and not against the old file's size. A name
+whose row is being deleted answers 409 rather than racing the delete. No cockpit screen
+sends `scope: "library"`: chat, Studio and Video Studio presign into a thread, and the Files
+workspace writes objects directly. What this does not fix: the processing job keeps its
+idempotency key (`asset_process:<id>`), so a replaced document stays `accepted` and is not
+reprocessed, as with agent re-ingest. Its passages are re-indexed by the sidecar, which
+watches the bucket key.
+
 **Refused and failed uploads.** A `refused` or `failed` row records an outcome, not content.
 A refusal removes the bytes, and a failed row is retried within minutes by its job or once
 by hand from the chat chip. The same sweep therefore marks both `deleting` once untouched
