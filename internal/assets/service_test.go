@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/objectstore"
@@ -358,11 +357,7 @@ func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, er
 	if s.duplicateKey {
 		s.duplicateKey = false
 		s.mu.Unlock()
-		return Asset{}, &pgconn.PgError{
-			Code:           "23505",
-			ConstraintName: "assets_identity_object_key_idx",
-			Message:        "duplicate key value violates unique constraint",
-		}
+		return Asset{}, objectKeyViolation()
 	}
 	defer s.mu.Unlock()
 	if req.SourceKind == SourceAgent && req.SourceRef != "" {
@@ -371,6 +366,9 @@ func (s *fakeAssetStore) Create(_ context.Context, req CreateRequest) (Asset, er
 				return asset, nil
 			}
 		}
+	}
+	if s.holdsObjectKey(req.IdentityID, req.ObjectKey) {
+		return Asset{}, objectKeyViolation()
 	}
 	s.next++
 	id := "asset-test-" + string(rune('0'+s.next))

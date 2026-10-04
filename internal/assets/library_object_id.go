@@ -1,11 +1,20 @@
 package assets
 
 import (
+	"context"
+	"errors"
 	"path"
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+
+	"github.com/chetto1983/aura/internal/db"
 )
+
+// ErrLibraryNameBusy refuses a library upload whose name is held by a file still being deleted:
+// re-arming that row would race the delete that is about to remove its object.
+var ErrLibraryNameBusy = errors.New("assets: a file with this name is still being removed from the library")
 
 // libraryObjectNamespace seeds the v5 UUIDs below. It is a constant of this codebase, not a
 // secret: it only keeps these ids from colliding with any other uuid space.
@@ -47,4 +56,27 @@ func libraryObjectID(identityID, sourceRef, fileName string) string {
 		return newAssetID()
 	}
 	return uuid.NewSHA1(libraryObjectNamespace, []byte(identityID+"\x00"+seed)).String()
+}
+
+// replaceLibraryFile turns a library upload that lands on a name the library already holds
+// into a replacement of that file: the rule libraryObjectID exists for, and the one agent
+// ingest already keeps (reingestTarget). The web presign did not: measured 2026-10-04, it
+// inserted a second row on the same key and answered 400 with Postgres's duplicate-key text.
+//
+// Any other failure is returned as it arrived. A thread upload takes a random key and cannot
+// collide, so a violation there is not the one assumed.
+func (s *Service) replaceLibraryFile(ctx context.Context, req CreateRequest, createErr error) (Asset, error) {
+	if req.Scope != ScopeLibrary || !db.IsUniqueViolation(createErr) {
+		return Asset{}, createErr
+	}
+	held, err := s.Store.ByObjectKey(ctx, req.IdentityID, req.ObjectKey)
+	if err == nil {
+		held, err = s.Store.Rearm(ctx, held.ID, req.IdentityID, req)
+	}
+	// No live row holds the key, or it was marked deleting between the two statements: the
+	// key belongs to a file on its way out.
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Asset{}, ErrLibraryNameBusy
+	}
+	return held, err
 }

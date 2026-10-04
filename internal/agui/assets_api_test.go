@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,19 @@ func TestAssetAPIUnavailableWithoutService(t *testing.T) {
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+// A library name whose file is still being removed is a conflict the caller can retry, not a
+// malformed request.
+func TestAssetAPIPresignLibraryNameBusy409(t *testing.T) {
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetAssetService(&fakeAssetService{presignErr: fmt.Errorf("presign: %w", assets.ErrLibraryNameBusy)})
+	req := httptest.NewRequest(http.MethodPost, "/api/assets/presign", strings.NewReader(`{"file_name":"old.pdf","size_bytes":12,"scope":"library"}`))
+	rec := httptest.NewRecorder()
+	s.Mux().ServeHTTP(rec, withPrincipal(req, assetAPIIdentityID))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", rec.Code)
 	}
 }
 

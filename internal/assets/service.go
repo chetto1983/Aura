@@ -39,6 +39,9 @@ type StoreBackend interface {
 	// AdoptIntoThread(ctx, id, identityID, threadID) claims an asset presigned before its
 	// conversation existed. Only an unclaimed row is touched.
 	AdoptIntoThread(context.Context, string, string, string) (Asset, error)
+	// Rearm(ctx, id, identityID, req) sends a library row back to presigned for an upload
+	// that replaces its file, with req's name, type and declared size.
+	Rearm(context.Context, string, string, CreateRequest) (Asset, error)
 	// Delete(ctx, id, identityID) marks the row deleting; Finalize(ctx, id, identityID) ends
 	// that delete once the object is gone; ListDeleting(ctx, identityID, limit) finds the
 	// deletes left unfinished, oldest first (see service_delete.go).
@@ -124,7 +127,7 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 	}
 	place := objectstore.PlaceAsset(objectAssetID(scope, req.IdentityID, "", name), name, folderFor(modality))
 	key := place.Key
-	asset, err := s.Store.Create(ctx, CreateRequest{
+	create := CreateRequest{
 		IdentityID:        req.IdentityID,
 		SourceKind:        req.SourceKind,
 		ThreadID:          req.ThreadID,
@@ -136,9 +139,12 @@ func (s *Service) Presign(ctx context.Context, req PresignRequest) (PresignRespo
 		ObjectBucket:      bucket,
 		ObjectKey:         key,
 		Metadata:          map[string]any{},
-	})
+	}
+	asset, err := s.Store.Create(ctx, create)
 	if err != nil {
-		return PresignResponse{}, err
+		if asset, err = s.replaceLibraryFile(ctx, create, err); err != nil {
+			return PresignResponse{}, err
+		}
 	}
 	upload, err := objects.PresignPut(ctx, objectstore.PresignPutRequest{
 		Ref:        objectstore.ObjectRef{Bucket: bucket, Key: key},

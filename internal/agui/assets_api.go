@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -93,6 +94,10 @@ func (s *Server) handleAssetPresign(w http.ResponseWriter, r *http.Request) {
 		DeclaredSizeBytes: body.SizeBytes,
 		ModalityHint:      assets.Modality(body.Modality),
 	})
+	if errors.Is(err, assets.ErrLibraryNameBusy) {
+		http.Error(w, "a file with this name is still being removed from the library; try again shortly", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusBadRequest)
 		return
