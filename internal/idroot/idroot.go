@@ -21,10 +21,10 @@ var ErrInvalidIdentity = errors.New("invalid profile identity")
 
 // RootIdentityDir joins root and identity behind the traversal-safe containment guard
 // (identityPattern charset + ".."/slash reject + filepath.Rel "escapes root" assertion)
-// and returns the absolute per-identity directory WITHOUT creating it. It is the shared
-// rooting primitive the mcp and skills packages reuse for their per-identity roots
-// (~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}), so there is exactly
-// one path-traversal guard for per-identity filesystem rooting (D-20/D-21). An empty or
+// and returns the absolute per-identity directory WITHOUT creating it. It is the one
+// path-traversal guard for operator-keyed directories (D-20/D-21): each identity's skills
+// root under $AURA_SKILLS_IDENTITY_DIR (the skills package and the provisioning adapter)
+// and each stdio server's environment under AURA_MCP_ENV_DIR (mcpenv). An empty or
 // malformed identity, or one that escapes root, yields ErrInvalidIdentity.
 func RootIdentityDir(root, identity string) (string, error) {
 	if err := ValidateIdentity(identity); err != nil {
