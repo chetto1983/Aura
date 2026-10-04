@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/dbtest"
 	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -39,19 +40,8 @@ func TestDBResetSameKeyReplaysWithoutDestroyingPostResetSentinel(t *testing.T) {
 	port := envDefaultForTest("PGPORT", "5432")
 	adminDatabase := envDefaultForTest("POSTGRES_DB", "aura")
 	adminURL := migrationTestDSN("aura", password, host, port, adminDatabase)
-	admin, err := db.Open(ctx, &db.Config{URL: adminURL})
-	if err != nil {
-		t.Fatalf("open admin pool: %v", err)
-	}
-	defer admin.Close()
-
 	database := fmt.Sprintf("aura_cli_reset_%d", time.Now().UnixNano())
-	if _, err := admin.Exec(ctx, `CREATE DATABASE `+quoteTestIdentifier(database)); err != nil {
-		t.Fatalf("create disposable database: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), `DROP DATABASE IF EXISTS `+quoteTestIdentifier(database)+` WITH (FORCE)`)
-	})
+	dbtest.DrillDatabase(t, adminURL, database)
 
 	bootstrapURL := migrationTestDSN("aura", password, host, port, database)
 	migrateURL := migrationTestDSN("aura_migrate", password, host, port, database)
