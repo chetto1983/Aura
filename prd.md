@@ -185,6 +185,34 @@ This does not establish why the member was asked to sign in again. Both engines 
 cookie as persistent; a restart of the home-screen app was not measured. Whether iOS sent
 the cookie after the file page is what the new log line will answer on their appliance.
 
+**What else left the home-screen app.** Reading the cockpit the same day found exits the
+*Apri* card did not close: the Documents page opened a file with `window.open(…, '_blank')`,
+and every download (chat card, artifacts panel, preview) was a link the app follows by
+navigating. Apple documents the home-screen app as its own WebView, apart from Safari
+(`navigator.standalone`, *Configuring Web Applications*), so a page that opens outside it
+carries none of its cookies. The changes key on `navigator.standalone === true`, which only
+WebKit's iOS family sets; a browser tab and Android or desktop installs keep their behaviour:
+
+- the Documents page shows an opened or downloaded file in the cockpit's preview, read from
+  the file manager's own route;
+- a download link fetches the bytes and hands them to the share sheet (*Save to Files*), which
+  closes onto the cockpit. A tap's activation does not reliably survive a fetch (WebKit, *The
+  User Activation API*), so a tap that lapsed leaves a *Save* for a second one.
+
+Measured on the local stack in Chromium 141 and WebKit 26.6 (Playwright's iPhone 13 profile),
+with `navigator.standalone` and a share sheet that refuses a lapsed activation emulated: the
+Documents page shows the preview with no new tab and the page does not move; the chat card's
+download reaches the sheet with the file's name, type and bytes and starts no download.
+
+This does not establish:
+- what iOS does with the sheet, or how an iPad renders a PDF in the preview's iframe:
+  Playwright runs neither the home-screen app nor iOS's PDF view;
+- that a clip opened from the Documents page plays in the preview on iOS: the direct route
+  answers no Range request, which iOS requires of a media server;
+- that iOS's `canShare` takes a Documents file: the listing carries no media type, so the
+  probe has none, and a refusal leaves that link downloading as before;
+- several files downloaded at once from the Documents page: that path still navigates.
+
 ## 4. Agent lifecycle, tools and completion
 
 The open `Agent` interface returns `iter.Seq2[*Event, error]`. Termination, budget
