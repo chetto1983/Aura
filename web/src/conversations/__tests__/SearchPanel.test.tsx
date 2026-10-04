@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router';
 import '../../i18n/i18n';
 import { SearchPanel } from '../SearchPanel';
-import { highlightSegments } from '../searchHighlight';
+import { highlightSegments, searchSnippet } from '../searchHighlight';
 import type { Conversation, SearchResult } from '../useConversations';
 
 // Capture navigate() calls so the /c/:id deep-link assertion is exact.
@@ -100,6 +100,45 @@ describe('highlightSegments', () => {
   });
 });
 
+// The message measured on 2026-10-04 (prd.md §7): the word sits 70 characters in.
+const LONG_MESSAGE =
+  'Ciao Aura, ti scrivo per organizzare la settimana prossima: lunedì devo mandare la fattura a ' +
+  "Bianchi per il lavoro di ristrutturazione del bagno, martedì c'è la riunione con il " +
+  'commercialista per la dichiarazione dei redditi.';
+
+describe('searchSnippet', () => {
+  it('starts a few words before a word deep in a long message, at a word boundary', () => {
+    const snippet = searchSnippet(LONG_MESSAGE, 'commercialista');
+    expect(snippet.startsWith('…')).toBe(true);
+    expect(snippet.indexOf('commercialista')).toBeLessThanOrEqual(21);
+    expect(LONG_MESSAGE).toContain(` ${snippet.slice(1, 12)}`);
+    expect(snippet).not.toContain('Ciao Aura');
+  });
+  it('keeps the start, without a leading ellipsis, when the word is near it', () => {
+    const snippet = searchSnippet(LONG_MESSAGE, 'scrivo');
+    expect(snippet.startsWith('Ciao Aura, ti scrivo')).toBe(true);
+    expect(snippet.endsWith('…')).toBe(true);
+  });
+  it('shows the start when only a fuzzy match found the message', () => {
+    expect(searchSnippet(LONG_MESSAGE, 'fatura')).toBe(`${LONG_MESSAGE.slice(0, 120)}…`);
+  });
+  it('flattens whitespace and matches without regard to case or surrounding spaces', () => {
+    expect(searchSnippet('\n one\n\n  Two   three ', ' TWO ')).toBe('one Two three');
+    expect(searchSnippet(LONG_MESSAGE, '  commercialista ').startsWith('…')).toBe(true);
+  });
+  it('never starts after the match when the word before it has no space to cut at', () => {
+    const text = `aaaa ${'b'.repeat(30)}needle and more`;
+    expect(searchSnippet(text, 'needle')).toBe(`…${'b'.repeat(20)}needle and more`);
+  });
+  it('never cuts a surrogate pair in half', () => {
+    const emoji = '😀';
+    // With no space to cut at, the window starts on the first emoji's second half and ends
+    // on the second emoji's.
+    const text = `${emoji}${'a'.repeat(19)}needle${'b'.repeat(93)}${emoji}tail`;
+    expect(searchSnippet(text, 'needle')).toBe(`…${'a'.repeat(19)}needle${'b'.repeat(93)}…`);
+  });
+});
+
 describe('SearchPanel (CHAT-02 / D-08)', () => {
   beforeEach(() => {
     navigateMock.mockReset();
@@ -141,6 +180,25 @@ describe('SearchPanel (CHAT-02 / D-08)', () => {
     // The matched term is wrapped in a <mark> (safe element composition, no raw HTML).
     const marks = document.querySelectorAll('mark');
     expect(Array.from(marks).some((m) => m.textContent === 'meteo')).toBe(true);
+  });
+
+  it('shows the matched word of a long message, not just its start', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch([{ ConversationID: 'c-1', Seq: 1, Content: LONG_MESSAGE, Similarity: 1 }]),
+    );
+    renderPanel();
+    fireEvent.change(screen.getByPlaceholderText('Search conversations'), {
+      target: { value: 'commercialista' },
+    });
+    await waitFor(() => {
+      expect(
+        Array.from(document.querySelectorAll('mark')).some(
+          (m) => m.textContent === 'commercialista',
+        ),
+      ).toBe(true);
+    });
+    expect(screen.queryByText(/Ciao Aura/)).toBeNull();
   });
 
   it('opens the matched thread at the seq and navigates to /c/:id on click', async () => {

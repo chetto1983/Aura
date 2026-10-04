@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Search, SearchX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import { highlightSegments } from './searchHighlight';
+import { highlightSegments, searchSnippet } from './searchHighlight';
 import {
   displayTitle,
   useConversations,
@@ -123,17 +123,18 @@ export function SearchPanel({ onOpen }: SearchPanelProps) {
                     {title}
                   </span>
                   <span className="line-clamp-2 text-[0.8125rem] text-text-muted">
-                    {highlightSegments(hit.Content, trimmed).map((seg, i) =>
-                      seg.match ? (
-                        <mark
-                          key={i}
-                          className="bg-transparent font-medium text-text underline decoration-accent"
-                        >
-                          {seg.text}
-                        </mark>
-                      ) : (
-                        <span key={i}>{seg.text}</span>
-                      ),
+                    {highlightSegments(searchSnippet(hit.Content, trimmed), trimmed).map(
+                      (seg, i) =>
+                        seg.match ? (
+                          <mark
+                            key={i}
+                            className="bg-transparent font-medium text-text underline decoration-accent"
+                          >
+                            {seg.text}
+                          </mark>
+                        ) : (
+                          <span key={i}>{seg.text}</span>
+                        ),
                     )}
                   </span>
                 </Button>

@@ -259,8 +259,7 @@ func (s *Server) handleGetConversation(w http.ResponseWriter, r *http.Request) {
 
 // handleSearchConversations returns SearchConversationTurns(ctx, q, limit) projected
 // to JSON (the D-08 snippet + conversationID + title hits). An empty q is a 400. The
-// query string binds via the LOCKED sqlc content % $1 contract — never rewritten here
-// (T-25-01).
+// query string is a bound parameter of the sqlc query, never spliced into SQL (T-25-01).
 func (s *Server) handleSearchConversations(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
 	if q == "" {

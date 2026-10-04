@@ -1,8 +1,7 @@
 package conversations
 
-// store_search.go is the cross-slice full-text search half of the Store, split out of
-// store.go when that file crossed the 600-LOC ceiling (CLAUDE.md, refactor-on-touch). The
-// LOCKED sqlc query (SPEC Req#13 / D-A5-03) and the owner filter are unchanged by the move.
+// store_search.go is the conversation-search half of the Store, split out of store.go
+// when that file crossed the 600-LOC ceiling (CLAUDE.md, refactor-on-touch).
 
 import (
 	"context"
@@ -21,30 +20,24 @@ type SearchResult struct {
 	Similarity     float32
 }
 
-// SearchConversationTurns wraps the LOCKED cross-slice FTS query (SPEC Req#13 /
-// D-A5-03): content % $1 ORDER BY similarity(content,$1) DESC LIMIT $2. The query
-// SQL is the contract Telegram /search (Phase 13) reuses byte-for-byte; this
-// wrapper only projects pgtype at the boundary. The SQL is never rewritten here.
+// SearchConversationTurns runs the one conversation search the cockpit, Telegram /search
+// and the CLI share: a pg_trgm word_similarity match, best first, then newest
+// (queries/conversation_turns.sql). This wrapper only projects pgtype at the boundary.
 //
-// LOOP-10 / D-10 boundary: spilled turns (content over the cap) store content=NULL
-// and are therefore EXCLUDED from this search by construction — `content % $1` never
-// matches a NULL. This is a documented+asserted boundary (see maybeSpill and the
-// SearchSpill db_integration test), not an oversight: pg_trgm similarity() is
-// length-normalized, so a >cap (≥64 KiB) body scores ~0 and would never clear the
-// 0.3 threshold even if content were repopulated. The deferred upgrade path is a
-// short-preview column (length-compatible with %) at a future migration, never a
-// rewrite of this locked query.
+// A spilled turn (content over the cap) stores content=NULL and is never found: its text
+// lives in the sidecar file. With word_similarity a long body would match if its text were
+// indexed, so that is a real gap, bounded by the cap (prd.md §7).
 func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	return s.searchTurns(ctx, query, limit, "")
 }
 
-// searchTurns is the shared FTS body behind SearchConversationTurns (unscoped) and
-// SearchConversationTurnsForIdentity (Phase 36 owner-scoped). The LOCKED sqlc query is
-// NEVER rewritten — ownerFilter is applied Go-side alongside the existing deleted-status
-// skip (a hit whose conversation is not owned by ownerFilter is dropped so an FTS query
-// can never surface another identity's turn content, MUSR-01). ownerFilter == "" keeps
-// the pre-Phase-36 unscoped behavior. The per-hit conversation is cached (status + owner
-// both read from the one projection) so a repeated conversation costs a single Get.
+// searchTurns is the shared search body behind SearchConversationTurns (unscoped) and
+// SearchConversationTurnsForIdentity (Phase 36 owner-scoped). ownerFilter is applied
+// Go-side alongside the deleted-status skip (a hit whose conversation is not owned by
+// ownerFilter is dropped so a search can never surface another identity's turn content,
+// MUSR-01). ownerFilter == "" keeps the pre-Phase-36 unscoped behavior. The per-hit
+// conversation is cached (status + owner both read from the one projection) so a
+// repeated conversation costs a single Get.
 func (s *Store) searchTurns(ctx context.Context, query string, limit int, ownerFilter string) ([]SearchResult, error) {
 	// ownerFilter, when set, is BOTH the Go-side predicate and the RLS scope: the caller named
 	// the owner explicitly, so the transaction is bound to them rather than to whoever is on
@@ -56,8 +49,8 @@ func (s *Store) searchTurns(ctx context.Context, query string, limit int, ownerF
 	var out []SearchResult
 	if err := s.scopedTx(ctx, scope, func(q *sqlc.Queries) error {
 		rows, sErr := q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
-			Similarity: query,
-			Limit:      normalizeSearchLimit(limit),
+			Query:   query,
+			MaxHits: normalizeSearchLimit(limit),
 		})
 		if sErr != nil {
 			return fmt.Errorf("search conversation turns: %w", sErr)
