@@ -118,6 +118,30 @@ describe('FilesWorkspace and its provider', () => {
     opened.mockRestore();
   });
 
+  // iOS's home-screen app has no back button and its own cookies: a tab would leave it for a
+  // browser that holds no session (prd.md §3), so the file opens in the cockpit's preview.
+  it('opens a file in the cockpit preview in the iOS home-screen app', async () => {
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+    try {
+      const { container } = render(<FilesWorkspace />);
+      const clip = await card(container, '/clip.mp4');
+
+      const preview = await waitFor(() => {
+        fireEvent.doubleClick(clip);
+        return screen.getByRole('dialog', { name: 'clip.mp4' });
+      });
+      expect(opened).not.toHaveBeenCalled();
+      // The preview reads the file manager's own route; the asset route knows no such id.
+      expect(preview.querySelector('a[download]')?.getAttribute('href')).toBe(
+        '/api/filemanager/direct?id=%2Fclip.mp4',
+      );
+    } finally {
+      opened.mockRestore();
+      Reflect.deleteProperty(navigator, 'standalone');
+    }
+  });
+
   it('never lets a slower, older listing overwrite a newer one', async () => {
     let answerFirst: (files: IEntity[]) => void = () => undefined;
     provider.loadFiles

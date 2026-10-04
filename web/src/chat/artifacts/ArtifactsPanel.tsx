@@ -4,7 +4,9 @@ import { DownloadCloud, PackageOpen, X } from 'lucide-react';
 import type { Asset } from '../attachments/types';
 import { SharedSection } from '../share/SharedSection';
 import { ArtifactRow } from './ArtifactRow';
-import { downloadAll } from './downloadAll';
+import { assetLinks, downloadAll } from './downloadAll';
+import { SaveIcon } from './SaveFileLink';
+import { sameLinks, useSaveLabel, useShareFiles } from './useSaveFile';
 import { useThreadArtifacts } from './useThreadArtifacts';
 
 // ArtifactsPanel (D-13/D-17/WEBART-05/06): the self-contained "Artefatti" surface.
@@ -14,7 +16,7 @@ import { useThreadArtifacts } from './useThreadArtifacts';
 // newest-first over the identity-scoped list), renders one ArtifactRow per row, a
 // considered empty-state, a throttled "Scarica tutto" bulk download with N/M
 // progress (skips degraded rows, disabled during the run, aborted on unmount/thread
-// switch), and a LAZILY-mounted PreviewModal for the active row — so docx-preview/
+// switch; one share sheet instead in iOS's home-screen app), and a LAZILY-mounted PreviewModal for the active row — so docx-preview/
 // xlsx and the other renderer chunks stay out of the panel's static import graph
 // until the user first opens a preview. Below the artifact list it also renders
 // SharedSection (D-05, 37F-17) — the "Condiviso" list of this thread's active share
@@ -49,6 +51,11 @@ export function ArtifactsPanel({ threadId, onClose }: ArtifactsPanelProps) {
   const [progress, setProgress] = useState<Progress | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const running = progress !== null;
+  // iOS's home-screen app saves every file through one share sheet instead of the loop.
+  const share = useShareFiles();
+  const links = assetLinks(rows);
+  const saveState = sameLinks(share.held.links, links) ? share.held.state : 'idle';
+  const saveLabel = useSaveLabel(saveState);
 
   // Abort an in-flight bulk download when the thread changes or the panel unmounts,
   // so a stale run never keeps firing clicks against the previous conversation.
@@ -61,6 +68,7 @@ export function ArtifactsPanel({ threadId, onClose }: ArtifactsPanelProps) {
 
   async function handleDownloadAll() {
     if (running || acceptedCount === 0) return;
+    if (share.save(links)) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setProgress({ done: 0, total: acceptedCount });
@@ -103,13 +111,19 @@ export function ArtifactsPanel({ threadId, onClose }: ArtifactsPanelProps) {
         onClick={() => {
           void handleDownloadAll();
         }}
-        disabled={running || acceptedCount === 0}
+        disabled={running || acceptedCount === 0 || saveState === 'preparing'}
+        aria-busy={saveState === 'preparing'}
         className="group flex shrink-0 items-center justify-center gap-2 rounded-lg border border-accent/40 bg-surface-2/60 px-3 py-2 text-[0.8125rem] font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:border-accent/40 disabled:hover:bg-surface-2/60"
       >
-        <DownloadCloud className="size-4 transition-transform group-hover:translate-y-px" />
-        {progress !== null
-          ? t('artifacts.downloadAllProgress', { done: progress.done, total: progress.total })
-          : t('artifacts.downloadAll')}
+        {saveState === 'idle' ? (
+          <DownloadCloud className="size-4 transition-transform group-hover:translate-y-px" />
+        ) : (
+          <SaveIcon state={saveState} className="size-4" />
+        )}
+        {saveLabel ??
+          (progress !== null
+            ? t('artifacts.downloadAllProgress', { done: progress.done, total: progress.total })
+            : t('artifacts.downloadAll'))}
       </button>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">

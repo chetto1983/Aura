@@ -12,6 +12,12 @@ export const artifactsEn = {
   },
   downloadAll: 'Download all',
   downloadAllProgress: 'Downloading {{done}} of {{total}}',
+  // The installed app saves through the share sheet; a slow file needs a second tap.
+  save: {
+    preparing: 'Preparing…',
+    ready: 'Save',
+    failed: "Couldn't save — tap to retry",
+  },
   empty: 'No artifacts in this conversation',
   emptyHint: 'Files the agent delivers appear here.',
   toggleAria: 'Toggle the artifacts panel',
@@ -59,6 +65,11 @@ export const artifactsIt = {
   },
   downloadAll: 'Scarica tutto',
   downloadAllProgress: 'Scaricamento {{done}} di {{total}}',
+  save: {
+    preparing: 'Preparazione…',
+    ready: 'Salva',
+    failed: 'Salvataggio non riuscito, tocca per riprovare',
+  },
   empty: 'Nessun artefatto in questa conversazione',
   emptyHint: "I file consegnati dall'agente compaiono qui.",
   toggleAria: 'Mostra o nascondi il pannello artefatti',

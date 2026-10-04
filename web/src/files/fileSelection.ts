@@ -2,6 +2,7 @@ import {
   getMenuOptions,
   type IApi,
   type IFileMenuOption,
+  type IParsedEntity,
   type TContextMenuType,
   type TID,
 } from '@svar-ui/react-filemanager';
@@ -28,7 +29,9 @@ export interface FileSelection {
   readonly notePress: (event: { readonly target: EventTarget }) => void;
 }
 
-export function createFileSelection(save: (ids: readonly TID[]) => unknown): FileSelection {
+export function createFileSelection(
+  save: (files: readonly IParsedEntity[]) => unknown,
+): FileSelection {
   // Assigned by attach, which the widget's init runs before it can open a single menu.
   let api!: IApi;
   let selecting = false;
@@ -39,9 +42,12 @@ export function createFileSelection(save: (ids: readonly TID[]) => unknown): Fil
     return panels?.[panel ?? activePanel ?? 0]?.selected ?? [];
   }
 
-  function selectedFiles(): TID[] {
+  function selectedFiles(): IParsedEntity[] {
     // The direct route streams one object; a folder is a prefix, and there is nothing to send.
-    return selected().filter((id) => api.getFile(id)?.type !== 'folder');
+    // Entities, not ids: a share sheet names each file, and the key does not always carry it.
+    return selected()
+      .map((id) => api.getFile(id))
+      .filter((file): file is IParsedEntity => file !== null && file.type !== 'folder');
   }
 
   // Fresh objects per call: the widget writes the translated label and the hotkey hint back

@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/objectstore"
 )
 
 // fileManagerBase is the mount point of the SVAR File Manager REST contract.
@@ -47,8 +48,12 @@ type FileAttrs struct {
 // FileObjectOpener streams one object out of one identity's own bucket. The implementation
 // MUST resolve the owner's own store before reading: this handler relies on that as its
 // ownership gate, exactly as document_open does.
+//
+// Seekable, so the direct route answers Range requests: iOS plays no <video> from a server
+// that does not, and a clip opened from the file manager in iOS's home-screen app plays in
+// the cockpit's preview, not in a tab (prd.md §3).
 type FileObjectOpener interface {
-	ReadObject(ctx context.Context, identityID, key string) (io.ReadCloser, FileAttrs, error)
+	OpenSeekable(ctx context.Context, identityID, key string) (*objectstore.SeekableObject, FileAttrs, error)
 }
 
 // FileObjectWriter stores one object in one identity's own bucket, with the same ownership
@@ -248,14 +253,12 @@ func browseDate(at time.Time) string {
 // an attachment for a download — the component's own distinction.
 //
 // Inline is the interesting one, because these are user-supplied bytes on the cockpit's own
-// origin: an uploaded .html rendered here would run with the operator's session. What makes
-// it safe is Content-Security-Policy: sandbox, which drops the response into an opaque
-// origin with no scripts, no forms and no same-origin access — so the document renders and
-// can reach nothing. That is the same control GitHub applies to raw user content, and it is
-// why the answer is a header rather than refusing to open files at all.
+// origin: an uploaded .html rendered here would run with the operator's session. Only the
+// types inlineSafeMIME admits are rendered; everything else goes out as an attachment.
 //
 // nosniff stays regardless, so a mislabelled type is never upgraded by the browser's guess,
-// and the read is scoped to the request context so a disconnect cancels it.
+// and the read is scoped to the request context so a disconnect cancels it. Either way the
+// response answers Range requests (serveObject), which media playback needs.
 func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	if s.fileObjects == nil {
 		http.Error(w, "file browser unavailable", http.StatusServiceUnavailable)
@@ -277,7 +280,7 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	body, attrs, err := s.fileObjects.ReadObject(r.Context(), identityID, key)
+	body, attrs, err := s.fileObjects.OpenSeekable(r.Context(), identityID, key)
 	if err != nil {
 		// Not-found and not-owned collapse to the same 404 so the response cannot be used to
 		// probe which keys exist in someone else's bucket (D-12 existence hiding).
@@ -287,16 +290,17 @@ func (s *Server) handleFileDirect(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = body.Close() }()
 
 	name := downloadFileName(key, attrs)
-	header := w.Header()
-	header.Set("X-Content-Type-Options", "nosniff")
-	if inlineDisposition(r) && inlineSafeMIME(attrs.MIMEType) {
-		header.Set("Content-Type", attrs.MIMEType)
-		header.Set("Content-Disposition", inlineContentDisposition(name))
-	} else {
-		header.Set("Content-Type", "application/octet-stream")
-		header.Set("Content-Disposition", contentDisposition(name))
+	resp := objectResponse{
+		contentType: "application/octet-stream",
+		disposition: contentDisposition(name),
+		fileName:    name,
+		failure:     "agui: file read failed",
+		logArgs:     []any{"identity_id", identityID},
 	}
-	_, _ = io.Copy(w, body)
+	if inlineDisposition(r) && inlineSafeMIME(attrs.MIMEType) {
+		resp.contentType, resp.disposition = attrs.MIMEType, inlineContentDisposition(name)
+	}
+	serveObject(w, r, body, resp)
 }
 
 // handleFileUpload stores one uploaded file in the folder the caller is viewing.

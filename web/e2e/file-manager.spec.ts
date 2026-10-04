@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { emulateIOSHomeScreen } from './iosHomeScreen';
 
 // E2E of the corpus browser, which is SVAR React File Manager driven by
 // GET /api/filemanager/files. It replaces the two document-library specs, whose subject —
@@ -78,6 +81,41 @@ test('the file manager lists the bucket root', async ({ page }, testInfo) => {
   // rows come back and render — and asserting a searchbox by role was a guess copied from
   // the workspace this replaced, which had its own labelled input. It failed on both
   // projects while the rows rendered fine.
+});
+
+// A browser opens a file in a new tab. iOS's home-screen app would leave itself for a page
+// with no way back, in a browser that holds no session (prd.md §3): there the file opens in
+// the cockpit's own preview, read from the file manager's route, and the page never moves.
+test('a file opens in the cockpit preview in the iOS home-screen app', async ({
+  page,
+  context,
+}, testInfo) => {
+  await emulateIOSHomeScreen(page);
+  const pdf = readFileSync(resolve(process.cwd(), 'e2e/fixtures/documents/Appunti.pdf'));
+  const read: string[] = [];
+  await page.route(
+    (url) => url.pathname === '/api/filemanager/direct',
+    async (route) => {
+      read.push(new URL(route.request().url()).search);
+      await route.fulfill({ status: 200, contentType: 'application/pdf', body: pdf });
+    },
+  );
+  const tabs: string[] = [];
+  context.on('page', (opened) => tabs.push(opened.url()));
+  await openFiles(page, testInfo.project.name);
+  const before = page.url();
+
+  await panelEntry(page, 'listino-2026.pdf').dblclick();
+  const preview = page.getByRole('dialog', { name: 'listino-2026.pdf' });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('iframe[src^="blob:"]')).toHaveCount(1);
+  expect(read).toContain('?id=%2Flistino-2026.pdf');
+  expect(tabs).toEqual([]);
+  expect(page.url()).toBe(before);
+
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCount(0);
+  await expect(panelEntry(page, 'listino-2026.pdf')).toBeVisible();
 });
 
 test('descending into a folder loads it on demand', async ({ page }, testInfo) => {

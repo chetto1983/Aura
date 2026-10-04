@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   test as base,
   expect,
@@ -7,6 +9,7 @@ import {
   type Response,
 } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { emulateIOSHomeScreen, sharedFiles } from './iosHomeScreen';
 
 // Several files at once, against the REAL bucket, on a desktop and on a phone.
 //
@@ -258,4 +261,74 @@ test('two selected files are both downloaded from the menu for several', async (
   for (const download of downloads) {
     expect(await download.failure(), `${download.suggestedFilename()} did not arrive`).toBeNull();
   }
+});
+
+// iOS's home-screen app: the two files go to ONE share sheet, read from the live route, and no
+// download starts -- each would navigate the app to iOS's file page (prd.md §3). A tap whose
+// activation lapsed while the files were fetched leaves a Save on the bar for a second one.
+test('two selected files go to one share sheet in the iOS home-screen app', async ({
+  page,
+  scratch,
+}, testInfo) => {
+  const { folder } = scratch;
+  await emulateIOSHomeScreen(page);
+  await page.reload();
+  const downloads: Download[] = [];
+  page.on('download', (download) => downloads.push(download));
+  await openScratch(page, folder, testInfo.project.name);
+  await selectTwoAndOpenMenu(page, folder, testInfo.project.name, ['alpha.txt', 'charlie.txt']);
+
+  await choose(page, 'Download');
+  const save = page.getByRole('button', { name: 'Save' });
+  await expect
+    .poll(async () => (await sharedFiles(page)).length > 0 || (await save.count()) > 0)
+    .toBe(true);
+  if ((await sharedFiles(page)).length === 0) await save.click();
+
+  await expect
+    .poll(async () => (await sharedFiles(page)).map(({ name, size }) => ({ name, size })))
+    .toEqual([
+      { name: 'alpha.txt', size: 'e2e alpha.txt'.length },
+      { name: 'charlie.txt', size: 'e2e charlie.txt'.length },
+    ]);
+  expect(downloads).toEqual([]);
+});
+
+// The direct route answers a byte range from the live store: iOS plays no <video> from a server
+// that does not, and a clip opened from the Documents page streams from this route.
+test('a clip in the Documents bucket is served by byte range', async ({ page, scratch }) => {
+  const clip = readFileSync(resolve(process.cwd(), 'e2e/fixtures/media-edit/clip.mp4'));
+  const answer = await page.evaluate(
+    async ({ dir, base64 }) => {
+      const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+      const form = new FormData();
+      form.append('file', new File([bytes], 'clip.mp4', { type: 'video/mp4' }));
+      form.append('name', 'clip.mp4');
+      const upload = await fetch(`/api/filemanager/upload?id=${encodeURIComponent(dir)}`, {
+        method: 'POST',
+        body: form,
+      });
+      const res = await fetch(
+        `/api/filemanager/direct?id=${encodeURIComponent(`${dir}/clip.mp4`)}`,
+        {
+          headers: { Range: 'bytes=0-99' },
+        },
+      );
+      return {
+        upload: upload.status,
+        status: res.status,
+        range: res.headers.get('content-range'),
+        type: res.headers.get('content-type'),
+        length: (await res.arrayBuffer()).byteLength,
+      };
+    },
+    { dir: scratch.folder, base64: clip.toString('base64') },
+  );
+  expect(answer).toEqual({
+    upload: 200,
+    status: 206,
+    range: `bytes 0-99/${String(clip.length)}`,
+    type: 'video/mp4',
+    length: 100,
+  });
 });

@@ -7,6 +7,7 @@ import type { Asset } from '../attachments/types';
 import { listThreadAssets } from '../attachments/api';
 import { downloadAll } from './downloadAll';
 import { ArtifactsPanel } from './ArtifactsPanel';
+import { emulateHomeScreen, leaveHomeScreen, sharedFiles } from '@/test/iosHomeScreen';
 
 // ArtifactsPanel (D-13/D-17): the container. listThreadAssets is mocked so the REAL
 // useThreadArtifacts query runs (proving the agent-only, newest-first projection
@@ -16,7 +17,11 @@ import { ArtifactsPanel } from './ArtifactsPanel';
 // chunk graph.
 
 vi.mock('../attachments/api', () => ({ listThreadAssets: vi.fn() }));
-vi.mock('./downloadAll', () => ({ downloadAll: vi.fn() }));
+// Only the side-effecting loop is mocked; assetLinks is the pure list the panel also reads.
+vi.mock('./downloadAll', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./downloadAll')>()),
+  downloadAll: vi.fn(),
+}));
 vi.mock('./PreviewModal', () => ({
   PreviewModal: ({ active, onClose }: { active?: Asset; onClose: () => void }) =>
     active ? (
@@ -140,6 +145,74 @@ describe('ArtifactsPanel', () => {
         false,
       );
     });
+  });
+
+  // iOS's home-screen app: every accepted file goes to ONE share sheet; the browser loop
+  // (which would navigate the app to iOS's file page once per file) is not run.
+  it('hands every accepted file to one share sheet in the iOS home-screen app', async () => {
+    const sheet = emulateHomeScreen();
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({ ok: true, status: 200, blob: () => Promise.resolve(new Blob([url])) }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    try {
+      mockList.mockResolvedValue([...ASC_LIST, asset({ id: 'p', status: 'processing' })]);
+      renderPanel();
+      const btn = await screen.findByRole('button', { name: /download all/i });
+      await waitFor(() => {
+        expect(btn).toHaveProperty('disabled', false);
+      });
+      fireEvent.click(btn);
+
+      await waitFor(() => {
+        expect(sheet.share).toHaveBeenCalledTimes(1);
+      });
+      expect(sharedFiles(sheet).map((file) => file.name)).toEqual(['new.docx', 'old.docx']);
+      // The panel's share list fetches too; only the two downloads are this path's.
+      const downloads = fetchMock.mock.calls.filter(([url]) => url.includes('/download'));
+      expect(downloads.map(([url]) => url)).toEqual([
+        '/api/assets/new/download',
+        '/api/assets/old/download',
+      ]);
+      expect(mockDownloadAll).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /download all/i })).toBeTruthy();
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      leaveHomeScreen();
+    }
+  });
+
+  it('turns into Save when the tap lapsed while the files were fetched', async () => {
+    const sheet = emulateHomeScreen();
+    sheet.activation.isActive = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({ ok: true, status: 200, blob: () => Promise.resolve(new Blob(['x'])) }),
+      ),
+    );
+    try {
+      mockList.mockResolvedValue([...ASC_LIST]);
+      renderPanel();
+      const btn = await screen.findByRole('button', { name: /download all/i });
+      await waitFor(() => {
+        expect(btn).toHaveProperty('disabled', false);
+      });
+      fireEvent.click(btn);
+
+      const save = await screen.findByRole('button', { name: 'Save' });
+      expect(sheet.share).not.toHaveBeenCalled();
+      fireEvent.click(save);
+      await waitFor(() => {
+        expect(sheet.share).toHaveBeenCalledTimes(1);
+      });
+      expect(sharedFiles(sheet)).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+      leaveHomeScreen();
+    }
   });
 
   it('disables "Scarica tutto" when there are no accepted rows', async () => {

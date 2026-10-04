@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import FilesWorkspace from './FilesWorkspace';
 import i18n from '@/i18n/i18n';
+import { emulateHomeScreen, leaveHomeScreen, sharedFiles } from '@/test/iosHomeScreen';
 
 // Several files at once, driven through the REAL widget: its cards, its ⋮ menu, its delete
 // confirmation. Only the provider is stubbed, and it is the provider that proves what the
@@ -101,6 +102,13 @@ async function expectSelected(container: HTMLElement, ids: string[]): Promise<vo
   });
 }
 
+async function selectAlphaAndCharlie(container: HTMLElement): Promise<void> {
+  fireEvent.click(cardOf(container, '/alpha.txt'));
+  fireEvent.click(cardOf(container, '/charlie.txt'), { ctrlKey: true });
+  await expectSelected(container, ['/alpha.txt', '/charlie.txt']);
+  fireEvent.click(moreOf(container, '/charlie.txt'));
+}
+
 describe('FilesWorkspace selection', () => {
   it('lets a pointer without modifier keys select several files and delete them together', async () => {
     const { container } = await mount();
@@ -167,6 +175,90 @@ describe('FilesWorkspace selection', () => {
     await waitFor(() => {
       expect(saved).toEqual(['/api/filemanager/direct?id=%2Fbravo.txt&download=true']);
     });
+  });
+
+  // A download navigates iOS's home-screen app to a file page with no way back (prd.md §3):
+  // the file opens in the cockpit's preview, whose save goes through the share sheet.
+  it('opens the preview instead of downloading in the iOS home-screen app', async () => {
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    const read = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => 'bravo' }));
+    vi.stubGlobal('fetch', read);
+    try {
+      const { container } = await mount();
+      fireEvent.click(moreOf(container, '/bravo.txt'));
+      await chooseFromMenu('Download');
+
+      await screen.findByRole('dialog', { name: 'bravo.txt' });
+      await waitFor(() => {
+        expect(read).toHaveBeenCalledWith('/api/filemanager/direct?id=%2Fbravo.txt', {
+          credentials: 'same-origin',
+          signal: expect.any(AbortSignal) as AbortSignal,
+        });
+      });
+      expect(saved).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+      Reflect.deleteProperty(navigator, 'standalone');
+    }
+  });
+
+  // iOS's home-screen app: the selected files go to ONE share sheet instead of one download
+  // each, every one of which would navigate the app to iOS's file page (prd.md §3).
+  it('hands the selected files to one share sheet in the iOS home-screen app', async () => {
+    const sheet = emulateHomeScreen();
+    const read = vi.fn((url: string) =>
+      Promise.resolve({ ok: true, status: 200, blob: () => Promise.resolve(new Blob([url])) }),
+    );
+    vi.stubGlobal('fetch', read);
+    try {
+      const { container } = await mount();
+      await selectAlphaAndCharlie(container);
+      await chooseFromMenu('Download');
+
+      await waitFor(() => {
+        expect(sheet.share).toHaveBeenCalledTimes(1);
+      });
+      expect(sharedFiles(sheet).map((file) => file.name)).toEqual(['alpha.txt', 'charlie.txt']);
+      expect(read.mock.calls.map(([url]) => url)).toEqual([
+        '/api/filemanager/direct?id=%2Falpha.txt&download=true',
+        '/api/filemanager/direct?id=%2Fcharlie.txt&download=true',
+      ]);
+      expect(saved).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+      leaveHomeScreen();
+    }
+  });
+
+  // The menu closes as soon as it is used, so the Save a lapsed tap needs lives on a bar.
+  it('keeps a Save on the bar when the tap lapsed while the files were fetched', async () => {
+    const sheet = emulateHomeScreen();
+    sheet.activation.isActive = false;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({ ok: true, status: 200, blob: () => Promise.resolve(new Blob(['x'])) }),
+      ),
+    );
+    try {
+      const { container } = await mount();
+      await selectAlphaAndCharlie(container);
+      await chooseFromMenu('Download');
+
+      const save = await screen.findByRole('button', { name: 'Save' });
+      expect(screen.getByRole('status').textContent).toContain('2 files');
+      expect(sheet.share).not.toHaveBeenCalled();
+      fireEvent.click(save);
+      await waitFor(() => {
+        expect(sheet.share).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(screen.queryByRole('status')).toBeNull();
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      leaveHomeScreen();
+    }
   });
 
   it('goes back to single selection once nothing is selected', async () => {

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/assets"
+	"github.com/chetto1983/aura/internal/objectstore"
 )
 
 const fileAPIIdentityID = "11111111-1111-4111-8111-111111111111"
@@ -41,15 +42,25 @@ type fakeFileOpener struct {
 	err      error
 }
 
-func (f *fakeFileOpener) ReadObject(
-	_ context.Context, identityID, key string,
-) (io.ReadCloser, FileAttrs, error) {
+// OpenSeekable serves body from a real SeekableObject over the fake store, so the route's
+// Range handling runs against the same reader production hands it.
+func (f *fakeFileOpener) OpenSeekable(
+	ctx context.Context, identityID, key string,
+) (*objectstore.SeekableObject, FileAttrs, error) {
 	f.identity, f.key = identityID, key
 	if f.err != nil {
 		return nil, FileAttrs{}, f.err
 	}
-	return io.NopCloser(strings.NewReader(f.body)),
-		FileAttrs{MIMEType: f.mime, SizeBytes: int64(len(f.body)), FileName: f.fileName}, nil
+	store := objectstore.NewFake()
+	ref := objectstore.ObjectRef{Bucket: "files", Key: key}
+	if _, err := store.Put(ctx, ref, strings.NewReader(f.body), objectstore.PutOptions{MIMEType: f.mime}); err != nil {
+		return nil, FileAttrs{}, err
+	}
+	object, err := objectstore.OpenSeekableObject(ctx, store, ref)
+	if err != nil {
+		return nil, FileAttrs{}, err
+	}
+	return object, FileAttrs{MIMEType: f.mime, SizeBytes: int64(len(f.body)), FileName: f.fileName}, nil
 }
 
 func fileServer(browser FileBrowser, opener FileObjectOpener) *Server {
