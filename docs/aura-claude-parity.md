@@ -1,5 +1,11 @@
 # Aura ↔ Claude Code — tool parity roadmap
 
+> **Historical record (loop log, 2026-06-10).** The code has moved on. Today the file tools are
+> `read_file`, `write_file`, `patch` and `search_files` (no glob tool), `shell_exec` runs inside
+> the calling identity's own sandbox box rather than on the host, and `dispatch`/`runTool` live
+> in `internal/agent/llm_agent_dispatch.go` and `internal/agent/llm_agent_tool.go`. Read the
+> code, not this log, for current behaviour.
+
 **Goal (loop spine):** close the capability gaps between Aura's agent loop and Claude Code's tool harness, one increment per `/loop` iteration. This file is the durable anchor — each iteration re-reads it to know *what's done / what's next / what's blocked on the user*.
 
 **Started:** 2026-06-10. Ground truth: [internal/agent/llm_agent.go](../internal/agent/llm_agent.go) (run loop + `dispatch` + `runTool`), [internal/agent/tools/spec.go](../internal/agent/tools/spec.go) (Tool interface).

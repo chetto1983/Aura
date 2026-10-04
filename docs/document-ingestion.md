@@ -63,9 +63,14 @@ when `requires_open` is true, for calculations or transformations, or when retri
 passages do not contain the answer. Aggregates over a spreadsheet require the relevant
 whole-file computation rather than an inference from a few matching passages.
 
-The retrieval response distinguishes `complete` from `degraded_card_only`. Causes
-include an unavailable query embedder, unavailable ArcadeDB, or an unconfigured
-passage index. Card-only results remain openable and do not supply passage evidence.
+The retrieval response carries one of three statuses, with the reason in its degradation
+field (`internal/documents/retrieval.go`):
+
+- `complete`: both retrieval legs ran.
+- `lexical_only`: the query could not be embedded, or the library holds vectors from
+  another embedding space, so passages come from the full-text indexes alone.
+- `degraded_card_only`: ArcadeDB is unavailable or no passage index is configured.
+  Card-only results remain openable and do not supply passage evidence.
 
 ## Operations and scope
 
@@ -86,23 +91,28 @@ are defined in `internal/documents/extensions.go`, `services/ingest/extract.py`,
 
 ## Direct MCP access
 
-`aura docs mcp` exposes `document_ingest` and `document_search` over stdio using
-the official MCP SDK. They call the same handlers as `aura docs ingest` and
-`aura docs search`, with the operator identity resolved at startup. Tool inputs
-cannot select another identity. Ingestion paths must be inside Aura's configured
-workspace. An accepted upload remains separate from completed indexing.
+`aura docs mcp` serves, over stdio with the official MCP SDK, the document tools the
+agent itself runs: every registry tool whose name starts with `document_` (such as
+`document_search` and `document_open`) plus `read_tool_output`. Name, description and
+schema come from each tool's own spec, and a call goes straight to its `Execute`, so the
+server cannot drift from what the agent sees. It adds a `document_ingest` tool, backed by
+`aura docs ingest`, when the registry has none (`cmd/aura/docs_mcp.go`).
+The operator identity is resolved at startup; tool inputs cannot select another identity.
+Ingestion paths must be inside Aura's configured workspace. An accepted upload remains
+separate from completed indexing.
 
-Search returns full retrieval JSON, including passages, citations, source hashes,
-locators and degradation status. No model generates or summarizes its response.
+Search returns retrieval JSON, including passages, citations, source hashes, locators and
+degradation status. A result larger than the preview cap is truncated and spilled to a
+sidecar file, and the client pages the rest back with `read_tool_output`, the same limit
+the agent meets. No model generates or summarizes the response.
 This makes it possible to check whether evidence is present before asking a model
 to formulate an answer.
 
 For an external MCP client, launch `aura docs mcp` inside the configured Aura
-environment. A container-backed diagnostic binary can live in the persistent
-workspace, for example:
+environment, for example:
 
 ```text
-docker exec -i aura /workspace/.aura/bin/aura-documents-mcp docs mcp
+docker exec -i aura aura docs mcp
 ```
 
 Use stdio without a TTY; stdout carries MCP messages. Refresh the client's MCP

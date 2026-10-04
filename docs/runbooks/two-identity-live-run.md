@@ -13,12 +13,15 @@ run passed; the rubric below is recorded as phase evidence and **gates nothing**
 Read `scripts/musr_live_run.sh`'s own header comment before running it — it is the primary
 source, this document does not repeat its detail. In short: a live, healthy compose stack
 (`docker compose ps` — `postgres`, `arcadedb`, `garage` at minimum), `.env` sourced into the
-shell with `AURA_PROFILE` set to a strict profile, `AURA_MUSR_ISOLATION=true`, a reachable
-`AURA_SANDBOX_IMAGE`, `AURA_ARCADEDB_TENANT_SECRET`, `AURA_AUTHULA_SECRET`, a **real**
-`TELEGRAM_BOT_TOKEN` (the provisioning saga mints a genuine deep link — D-08, the one use of
-the bot this run makes), `OPENROUTER_API_KEY` (or a local model endpoint the agent can
-actually answer from), and `AURA_E2E_AUTHULA_EMAIL`/`AURA_E2E_AUTHULA_PASSWORD` for the
-bootstrap `local` operator. Run it from WSL (`go`, `python3` with a real PTY, Docker
+shell with `AURA_PROFILE` set to a strict profile, `AURA_ARCADEDB_TENANT_SECRET`,
+`AURA_AUTHULA_SECRET`, `ARCADEDB_PASSWORD`, a **real** `TELEGRAM_BOT_TOKEN` (the provisioning
+saga mints a genuine deep link — D-08, the one use of the bot this run makes),
+`AURA_OPENROUTER_MANAGEMENT_KEY` (every identity's own OpenRouter key is minted from it), and
+`AURA_E2E_AUTHULA_EMAIL`/`AURA_E2E_AUTHULA_PASSWORD` for the bootstrap `local` operator. The
+Telegram token and the management key may come from the shell or from the `aura.settings`
+store. When `AURA_MUSR_ISOLATION` or `AURA_SANDBOX_IMAGE` is unset, the harness defaults them
+to `true` and `ghcr.io/chetto1983/aura-sandbox:edge` for its own process
+(`scripts/musr_live_run_preconditions.sh`). Run it from WSL (`go`, `python3` with a real PTY, Docker
 reachable) — the primary dev environment per `CLAUDE.md`.
 
 ```sh
@@ -26,9 +29,9 @@ wsl bash -lc 'cd /mnt/d/Repo/Aura && set -a; source <(awk "{ sub(/\r\$/, \"\"); 
 ```
 
 The harness refuses to start — before building the binary, naming every missing
-variable — if any precondition is absent. A missing `TELEGRAM_BOT_TOKEN` or
-`OPENROUTER_API_KEY` cannot be worked around by the harness itself: neither is something a
-script can fabricate, and the harness does not try.
+variable — if a required precondition is absent, or if the profile is not strict. A missing
+`TELEGRAM_BOT_TOKEN` or `AURA_OPENROUTER_MANAGEMENT_KEY` cannot be worked around by the
+harness itself: neither is something a script can fabricate, and the harness does not try.
 
 Debug env vars (not part of the acceptance contract): `MUSR_SKIP_CONVERSATIONS=1` stops
 after document upload and the ingest wait, printing readiness without spending a model
@@ -41,9 +44,9 @@ exercised through first. `MUSR_DOC_INGEST_WAIT_SEC` overrides the async ingest w
 Every run deprovisions the identity B it provisioned, from its `EXIT` trap — so on a
 failure and on a Ctrl-C too, not only on the happy path. It runs `aura identity purge
 <uuid> --confirm`, the documented reverse of the `aura identity create` that made her: the
-D-27 saga tears down the sandbox box, the conversations, the ArcadeDB database, the Garage
-bucket and key, the filesystem roots, the identity row and the Authula user, in that order
-and journalled at every step. The run's own exit status is preserved across the teardown —
+D-27 saga revokes the identity's OpenRouter key, then tears down the sandbox box, the
+conversations, the ArcadeDB database, the Garage bucket and key, the filesystem roots, the
+identity row and the Authula user, in that order and journalled at every step. The run's own exit status is preserved across the teardown —
 the acceptance verdict is never replaced by a cleanup result — and a teardown failure is
 reported as a warning naming `artifacts/musr-live-run/deprovision.log`, with the re-run
 command to finish it (the saga is resumable and skips the steps already done).
