@@ -9,7 +9,7 @@ import (
 func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"long-term memory",
-		"bounded current index",
+		"Its content is NOT in your context",
 		"<memory_context>",
 		"current explicit instruction wins",
 	} {
@@ -37,13 +37,15 @@ func TestPrompt_ProfileUsageRules(t *testing.T) {
 	}
 }
 
-// TestPrompt_MemoryDoctrine asserts automatic bounded recall, deep-recall fallback,
-// proactive writes, and fail-soft posture without naming deferred memory tools.
+// TestPrompt_MemoryDoctrine asserts recall-before-answering, proactive writes, and
+// fail-soft posture without naming memory tools: their names carry the server prefix
+// and exist only when memory is connected, and the turn's <memory_context> note
+// names them when it does.
 func TestPrompt_MemoryDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"persistent long-term memory",
-		"Read the supplied <memory_context>",
-		"use deep memory recall before answering",
+		"Its core read and write tools are loaded",
+		"recall it from memory before answering or asking",
 		"without being asked",
 		"fail-soft",
 	} {
@@ -162,7 +164,10 @@ func TestPrompt_FullToolSurfaceDoctrine(t *testing.T) {
 	}
 	// The families are the replacement for the enumeration the old wording assumed.
 	// Without them "pick the most specific capability" is advice she cannot act on.
-	for _, family := range []string{"filesystem —", "web —", "memory —", "documents —", "skills —", "delegation —"} {
+	// Only DEFERRED families are listed: the file tools and the document pair are
+	// loaded and named, and "documents — index a file you made" described a tool
+	// deleted on 2026-08-07.
+	for _, family := range []string{"web —", "memory —", "skills —", "media —", "scheduling —", "delegation —", "connected accounts —"} {
 		if !strings.Contains(SystemPrompt, family) {
 			t.Errorf("system prompt no longer lists the %q capability family", family)
 		}
@@ -220,7 +225,7 @@ func TestPrompt_SkillInstallRoutingIsTheTool(t *testing.T) {
 // TestPrompt_DocumentsDoctrine asserts the <documents> doctrine block: an uploaded
 // document is not on the filesystem until it is fetched, document_search names the
 // files, document_open writes one of them into /workspace, and a file the agent
-// wrote becomes findable only once document_index records it.
+// wrote never enters the library.
 func TestPrompt_DocumentsDoctrine(t *testing.T) {
 	for _, needle := range []string{
 		"<documents>",
@@ -229,10 +234,10 @@ func TestPrompt_DocumentsDoctrine(t *testing.T) {
 		// useless if the model has to guess what performs steps 1 and 2.
 		"document_search",
 		"document_open",
-		// document_index is deferred, so it is named by family instead — but the
-		// doctrine it carries (a file you wrote is not findable until it is indexed)
-		// must survive the rename.
-		"documents capability",
+		// document_index was deleted on 2026-08-07 (the ingest bucket is the source of
+		// truth), so no tool of hers indexes a file. The prompt used to send her to "the
+		// documents capability" for it, which only bought a fruitless tool_search.
+		"never enters the document library",
 		// The sharp clause, added after she searched the PUBLIC WEB on 2026-08-03 for
 		// a customer code that was in the operator's own spreadsheet.
 		"NEVER the public web",

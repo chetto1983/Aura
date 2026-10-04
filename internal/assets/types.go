@@ -10,7 +10,7 @@ import (
 type Status string
 
 // Asset lifecycle statuses: the full set the aura.assets status CHECK admits (migration
-// 0020), kept whole on purpose, so a value the database accepts always has a name here.
+// 0136), kept whole on purpose, so a value the database accepts always has a name here.
 //
 // A delete marks a row StatusDeleting, with deleted_at, and then removes it from the table;
 // StatusDeleted survives only as the tombstone of a row a media_job still points at (see
@@ -18,16 +18,14 @@ type Status string
 //
 // This assets.Status lifecycle is DISTINCT from internal/documents.JobStatus
 // (the wired document-ingest lifecycle: JobEmbedding, JobCanceled, etc.): the
-// two share some string values ("embedding"/"canceled") but are different types
-// in different packages and must not be conflated.
+// two share the string "canceled" but are different types in different packages
+// and must not be conflated.
 const (
 	StatusCreated    Status = "created"
 	StatusPresigned  Status = "presigned"
 	StatusUploaded   Status = "uploaded"
 	StatusAccepted   Status = "accepted"
 	StatusProcessing Status = "processing"
-	StatusSearchable Status = "searchable"
-	StatusEmbedding  Status = "embedding"
 	StatusComplete   Status = "complete"
 	StatusFailed     Status = "failed"
 	StatusRefused    Status = "refused"
@@ -99,14 +97,13 @@ type Asset struct {
 	// it never suppressed anything and a zero time has always been serialised as
 	// "0001-01-01T00:00:00Z". Dropping it is byte-identical; omitzero would instead
 	// change the response shape for every not-yet-reached lifecycle stage.
-	CreatedAt    time.Time `json:"created_at"`
-	UploadedAt   time.Time `json:"uploaded_at"`
-	AcceptedAt   time.Time `json:"accepted_at"`
-	ProcessedAt  time.Time `json:"processed_at"`
-	SearchableAt time.Time `json:"searchable_at"`
-	CompletedAt  time.Time `json:"completed_at"`
-	DeletedAt    time.Time `json:"deleted_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedAt   time.Time `json:"created_at"`
+	UploadedAt  time.Time `json:"uploaded_at"`
+	AcceptedAt  time.Time `json:"accepted_at"`
+	ProcessedAt time.Time `json:"processed_at"`
+	CompletedAt time.Time `json:"completed_at"`
+	DeletedAt   time.Time `json:"deleted_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // CreateRequest carries the fields needed to create a presigned asset record.

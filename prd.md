@@ -226,6 +226,30 @@ This observation proves a replay presentation defect, not the process's final ex
 Deliverables are sent through the channel's artifact mechanism; a path alone is not
 delivery. Partial outcomes identify unfinished work and the applicable limit.
 
+The system prompt describes the manifest the model actually receives. A live request
+captured on 2026-10-03 ("What do you remember about my sister?") contradicted itself in
+three places:
+
+| Prompt said | The same request carried |
+|---|---|
+| `<memory_context>` is "a bounded current index"; "when that block answers the current request, answer directly from it: do not call tool_search or open deep memory recall" | `<memory_context>`: "You have 1 facts across 2 entities … The content is NOT in this context" (the pointer that replaced the preload on 2026-09-03) |
+| Loaded: `shell_exec`, `fs_read`, `document_search`, `document_open`, `ask_user`, `read_tool_output`, `text_response`; memory tools "are deferred" | 19 loaded tools: `read_file`, `write_file`, `patch`, `search_files`, `send_file`, `skill`, `shell_poll`, `shell_kill` and four memory core tools among them; no `fs_read` |
+| Deferred families: filesystem write/edit/glob/grep, delivery, background shell, documents "index a file you made" | none of these was deferred; the index/describe tools were deleted on 2026-08-07, and nothing in the roster indexes a file |
+
+`fs_read`, `fs_write`, `fs_edit`, `fs_grep` and `fs_glob` were replaced by `read_file`, `write_file`,
+`patch` and `search_files` on 2026-08-07, but `shell_exec`'s description and the
+truncated-call nudge still sent the model to the old names. The guard that keeps the prompt
+honest only checked the deferred names it found there, so a name matching no tool at all
+passed. The prompt now lists the always-loaded set that `TestOnlyTheWorkingSetIsAlwaysActive`
+pins, names only the deferred families that exist, and says memory content is not in
+context; a `<memory_recall>` block, when the preload attaches one, may still be answered
+from directly. Every snake_case word the prompt uses outside a tag must name a
+registered tool or a declared argument.
+
+What this does not show: how often a model followed the stale instruction. The
+2026-10-03 turn was answered through a bridge by the same assistant that wrote this
+change, which is not independent evidence of model behavior.
+
 ## 5. Approvals and durable grants
 
 Approvals are host-issued and bound to identity, operation and effective arguments.
@@ -732,6 +756,19 @@ both statuses as ready. Migration 0132 settles the rows left behind, only those 
 `processing` rows (an image from 2026-09-21, two `project.json` from 2026-09-27), each over
 an `asset_process` job that had succeeded. The 15 counted that morning were not checked
 against their jobs before most of them were deleted.
+
+**`searchable` and `embedding` are not asset statuses.** No code writes either to
+`aura.assets` since the in-process pipeline was deleted. The Go constants had no writer and
+`StatusEmbedding` had no reference at all, yet both values survived in the CHECK, in a
+`searchable_at` column, in the Studio's asset filter and in the cockpit's status union.
+Measured 2026-10-04: the local database held `accepted` 9, `complete` 29 and `presigned` 5,
+and no row in either status. The live deployment held 0 `searchable` on 2026-08-13, the
+last time it was counted. Migration 0136 drops both values and the column. It refuses to run
+while any row still holds either status rather than guess what that row should become. The
+cockpit's union also listed `indexed` and `recovered`, attributed to the retention sweeper;
+the CHECK has never admitted them, and nothing writes them. What this does not show: the
+state of appliances not measured here, which is why the migration checks instead of
+assuming.
 
 **Refused and failed uploads.** A `refused` or `failed` row records an outcome, not content.
 A refusal removes the bytes, and a failed row is retried within minutes by its job or once
@@ -1327,6 +1364,19 @@ confuses routing defaults with opaque handles returned by a previous operation.
 The registry is Postgres-backed. Launch kinds are local stdio and Streamable HTTP.
 Retired Docker declarations fail with a useful migration message rather than falling
 through to an empty stdio command. The UI cannot display an unenforced network allowlist.
+
+Profiles and the active profile are registry state, not process state. Measured on
+2026-10-04 with the release binary against the local registry: `aura mcp profile create
+work` answered `ok` and wrote a `profile_create` audit row, and `profile list` did not show
+`work`; after `profile add work calendar`, `profile use work` answered `ok` and wrote a
+`profile_use` row, and the active profile stayed `default`. Membership lived on server
+rows (migration 0101), so a profile existed only while a server belonged to it, and
+nothing stored which one was active. The ledger therefore recorded two changes that never
+happened. A profile table now holds every profile and the single active one. A profile
+persists after its last server leaves, and an empty active profile mounts no registry
+server. Before, an empty `default` fell back to every enabled server, so removing the last
+member from `default` mounted everything else. There is still no command to delete a
+profile. This measures the CLI; the cockpit offers no profile switch.
 
 Session termination is observed through the SDK lifecycle rather than a duplicate
 liveness poller. Mount, call, elicitation and shutdown have finite configured bounds;

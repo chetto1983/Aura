@@ -122,7 +122,7 @@ func TestAssetAPIListUsesPrincipalAndThread(t *testing.T) {
 			IdentityID: assetAPIIdentityID,
 			ThreadID:   "thread-1",
 			FileName:   "manual.pdf",
-			Status:     assets.StatusSearchable,
+			Status:     assets.StatusComplete,
 		}},
 	}
 	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})

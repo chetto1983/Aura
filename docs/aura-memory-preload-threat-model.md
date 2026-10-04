@@ -11,9 +11,10 @@ Scope: what `internal/runner` inserts before the current user message.
   context (`cmd/aura/serve_memory_context.go`).
 - An opt-in per-message preload, which calls `memory_recall` with `mode: "semantic"`.
 
-Known inconsistency: the system-prompt doctrine (`internal/agent/prompt.go`) still describes a
-"bounded current index" inside `<memory_context>` and tells the model to answer from it, while
-that block now carries only counts.
+The system-prompt doctrine (`internal/agent/prompt.go`) matches this since 2026-10-04: it says
+memory content is not in context, and only a `<memory_recall>` block may be answered from
+without another memory call. Until then it still described `<memory_context>` as "a bounded
+current index" to answer from (prd.md §4).
 
 ## Security objective
 

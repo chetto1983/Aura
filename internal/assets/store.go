@@ -346,7 +346,6 @@ func assetFromSQL(row sqlc.AuraAssets) (Asset, error) {
 		UploadedAt:        timeValue(row.UploadedAt),
 		AcceptedAt:        timeValue(row.AcceptedAt),
 		ProcessedAt:       timeValue(row.ProcessedAt),
-		SearchableAt:      timeValue(row.SearchableAt),
 		CompletedAt:       timeValue(row.CompletedAt),
 		DeletedAt:         timeValue(row.DeletedAt),
 		UpdatedAt:         timeValue(row.UpdatedAt),

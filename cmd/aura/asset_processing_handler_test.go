@@ -25,7 +25,7 @@ func (p *recordingAssetProcessor) ProcessAccepted(ctx context.Context, identityI
 	if p.result.ID != "" {
 		return p.result, p.err
 	}
-	return assets.Asset{ID: assetID, IdentityID: identityID, Status: assets.StatusSearchable}, p.err
+	return assets.Asset{ID: assetID, IdentityID: identityID, Status: assets.StatusComplete}, p.err
 }
 
 func TestRuntimeAssetProcessHandlerProcessesPayload(t *testing.T) {
@@ -52,7 +52,7 @@ func TestRuntimeAssetProcessHandlerProcessesPayload(t *testing.T) {
 
 func TestRuntimeAssetProcessHandlerRecognizesAtomicPipelineCompletion(t *testing.T) {
 	processor := &recordingAssetProcessor{result: assets.Asset{
-		ID: "asset-1", IdentityID: "identity-1", Status: assets.StatusSearchable,
+		ID: "asset-1", IdentityID: "identity-1", Status: assets.StatusComplete,
 		Metadata: map[string]any{"pipeline_activation_job_id": "queue-job-1"},
 	}}
 	err := (runtimeAssetProcessHandler{assets: processor}).HandleIngestionJob(

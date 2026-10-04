@@ -24,6 +24,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
@@ -48,31 +50,12 @@ func TestMigrate0019_AuthulaSchemaAndLink(t *testing.T) {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, db)
 	}
 
-	admin, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
-	if err != nil {
-		t.Fatalf("open admin pool: %v", err)
-	}
-	defer admin.Close()
-	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
-		t.Fatalf("pre-drop fresh db: %v", err)
-	}
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
-		t.Fatalf("create fresh db: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
-	})
-	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+freshDB+" TO aura_migrate"); err != nil {
-		t.Fatalf("grant create on fresh db: %v", err)
-	}
+	dbtest.DrillDatabase(t, dsn("aura", "aura"), freshDB)
 	freshAdmin, err := Open(ctx, &Config{URL: dsn("aura", freshDB)})
 	if err != nil {
 		t.Fatalf("open fresh-db admin pool: %v", err)
 	}
 	defer freshAdmin.Close()
-	if _, err := freshAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
-		t.Fatalf("grant create on public schema: %v", err)
-	}
 
 	migrateURL := dsn("aura_migrate", freshDB)
 	if _, err := Migrate(ctx, migrateURL); err != nil {

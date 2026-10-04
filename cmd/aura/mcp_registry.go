@@ -116,8 +116,8 @@ var saveManagedMCPConfig = func(ctx context.Context, pool *pgxpool.Pool, doc mcp
 	})
 }
 
-// applyManagedMCPConfig makes the registry match doc: every server in it is upserted, and
-// any server no longer in it is removed.
+// applyManagedMCPConfig makes the registry match doc: every server in it is upserted, any
+// server no longer in it is removed, and its profiles and active profile are saved.
 //
 // The callers all follow the same shape — read the whole config, change one thing, save it
 // back — which is only safe because the whole document round-trips. actor is recorded on
@@ -150,7 +150,7 @@ func applyManagedMCPConfig(ctx context.Context, store *mcpregistry.Store, doc mc
 			return err
 		}
 	}
-	return nil
+	return store.SaveProfiles(ctx, doc)
 }
 
 // profilesFor collects the profiles a server belongs to. Membership rides the server's own

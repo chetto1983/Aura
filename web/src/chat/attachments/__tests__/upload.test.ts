@@ -23,9 +23,9 @@ describe('isReadyAsset', () => {
     expect(isReadyAsset(asset('processing'))).toBe(true);
   });
 
-  it('still accepts the indexed states, for the day the pipeline sets them again', () => {
-    expect(isReadyAsset(asset('searchable'))).toBe(true);
-    expect(isReadyAsset(asset('embedding'))).toBe(true);
+  // 'searchable' and 'embedding' were accepted here "for the day the pipeline sets them
+  // again"; migration 0136 retired both, so 'complete' is the one finished state.
+  it('accepts a completed asset', () => {
     expect(isReadyAsset(asset('complete'))).toBe(true);
   });
 

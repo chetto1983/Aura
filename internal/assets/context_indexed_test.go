@@ -8,7 +8,7 @@ import (
 )
 
 // The knowledge catalog is how the agent learns that a document it can search exists at all.
-// It used to be gated on Status == StatusSearchable, and on the live deployment NO asset has
+// It used to be gated on the "searchable" status (retired by migration 0136), and on the live deployment NO asset has
 // ever held that status: measured 2026-08-13, presigned 6 / processing 2 / accepted 2 /
 // searchable 0. So the catalog was always empty and the agent was never told about a single
 // uploaded file.

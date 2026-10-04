@@ -52,12 +52,17 @@ aura mcp profile add work calendar
 aura mcp profile remove work calendar
 ```
 
-Aura mounts the servers of the `default` profile, or every enabled server when no server
-belongs to `default`; a server installed from the cockpit joins `default`.
+```bash
+aura mcp profile create work
+aura mcp profile use work
+```
 
-Known defect: `aura mcp profile create` and `aura mcp profile use` answer `ok` but persist
-nothing. A profile exists only while a server belongs to it, and the active profile is
-always `default`.
+Aura mounts the servers of the active profile (`default` until `profile use` changes it);
+a server installed from the cockpit or with `aura mcp add` joins the active profile.
+Profiles and the active one are stored in `aura.mcp_profile` (migration 0135), so a
+profile outlives its last server and an existing profile with no servers mounts none.
+Only a `default` that was never created falls back to every enabled server. There is no
+command to delete a profile, and the cockpit shows profiles but cannot switch them.
 
 ## Trust
 
@@ -307,6 +312,6 @@ contains private account identifiers.
 | `blocked` in the `startup` column of `aura mcp status` | Manual command has no trust approval | Review command/source, then run `aura mcp trust <name>` if appropriate. |
 | `doctor <name>` says trust approval required | Server is blocked | Trust it or keep it blocked; Aura did not launch it. |
 | A server's tools are not in the per-turn manifest | Deferred: only memory's core holds an always-loaded slot | The model reaches them through `tool_search`; nothing to fix. |
-| A server's tools are missing entirely | Server disabled, blocked, outside the `default` profile, or its mount failed | Check `aura mcp status`, then `aura mcp doctor <name>`. |
+| A server's tools are missing entirely | Server disabled, blocked, outside the active profile, or its mount failed | Check `aura mcp status` and `aura mcp profile list`, then `aura mcp doctor <name>`. |
 | Mail/WhatsApp send tool unavailable | Bridge or account authorization | Check `aura mcp doctor --all`, then the cockpit's authorization for that server. |
 | Streamable HTTP auth fails | Missing bearer/header env | Configure `MCP_BEARER_TOKEN` or `MCP_HEADER_*` env entries for that server. |

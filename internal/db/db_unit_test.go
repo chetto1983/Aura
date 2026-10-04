@@ -377,8 +377,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0132 settles the assets the document processor left in 'processing' over a job that
 	// had succeeded. 0133 makes an ingestion job's events leave with it.
 	// 0134 persists owner-scoped message drafts and their one-send disposition.
-	if head != 134 {
-		t.Fatalf("MigrationHead=%d, want embedded head 134", head)
+	// 0135 adds aura.mcp_profile: profiles that exist without members, and the active one.
+	// 0136 retires the asset statuses searchable and embedding, and searchable_at.
+	if head != 136 {
+		t.Fatalf("MigrationHead=%d, want embedded head 136", head)
 	}
 }
 

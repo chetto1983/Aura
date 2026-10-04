@@ -21,9 +21,9 @@ import (
 // custom event each channel renders its own way (D-06). The substrate never names
 // any channel — SendFile is delivery-mechanism unaware.
 //
-// It is Deferred (path/caption schema + an inline example, the deferred-tool rule)
-// and NON-Mutating (it reads a file and describes a delivery — no host state
-// changes); the channel owns the actual delivery.
+// It is always visible — delivering a result is the last step of most requests
+// (always_active_test.go) — and NON-Mutating (it reads a file and describes a
+// delivery — no host state changes); the channel owns the actual delivery.
 type SendFile struct {
 	// Router is the per-identity box routing seam and the only source of a deliverable file: the
 	// requested path is a BOX path under /workspace, CopyArtifactsOut-staged to a host-readable

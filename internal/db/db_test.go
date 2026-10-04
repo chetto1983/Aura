@@ -14,7 +14,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/chetto1983/aura/internal/dbtest"
 	"os"
 	"slices"
 	"strings"
@@ -24,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"go.uber.org/goleak"
+
+	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 // seededOperatorIdentity is the `local` operator seeded by migration 0004.
@@ -128,37 +129,10 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, db)
 	}
 
-	admin, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
-	if err != nil {
-		t.Fatalf("open admin pool: %v", err)
-	}
-	defer admin.Close()
-	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
-		t.Fatalf("pre-drop fresh db: %v", err)
-	}
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
-		t.Fatalf("create fresh db: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
-	})
-
 	// aura_migrate needs CREATE on the fresh DB + its public schema for the
 	// golang-migrate schema_migrations tracker (Postgres 17+ default-revokes CREATE
-	// on public from non-owners; mirrors EnsureRoles' grants on the primary DB). The
-	// public-schema grant must run on a connection INTO the fresh DB, not the admin
-	// pool (which is connected to `aura`).
-	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+freshDB+" TO aura_migrate"); err != nil {
-		t.Fatalf("grant create on fresh db: %v", err)
-	}
-	freshAdmin, err := Open(ctx, &Config{URL: dsn("aura", freshDB)})
-	if err != nil {
-		t.Fatalf("open fresh-db admin pool: %v", err)
-	}
-	defer freshAdmin.Close()
-	if _, err := freshAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
-		t.Fatalf("grant create on public schema of fresh db: %v", err)
-	}
+	// on public from non-owners; mirrors EnsureRoles' grants on the primary DB).
+	dbtest.DrillDatabase(t, dsn("aura", "aura"), freshDB)
 
 	migrateURL := dsn("aura_migrate", freshDB)
 

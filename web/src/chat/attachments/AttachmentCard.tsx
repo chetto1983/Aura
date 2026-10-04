@@ -119,8 +119,6 @@ function statusText(status: Asset['status'], t: ReturnType<typeof useTranslation
       return t('chat.attachments.refused');
     case 'accepted':
     case 'processing':
-    case 'searchable':
-    case 'embedding':
     case 'complete':
       return '';
     // A vanishing asset is not one being worked on. Saying "processing" while the bytes

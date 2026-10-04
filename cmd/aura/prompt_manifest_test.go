@@ -1,12 +1,53 @@
 package main
 
 import (
+	"encoding/json"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
+
+// ambiguousToolName lists tools whose names are also ordinary English words the
+// prompt uses as nouns — "never edit a skill by writing files there", "a task that
+// splits into independent subtasks". A substring check cannot tell those from a
+// tool reference, and widening it to word boundaries would not help: the words are
+// genuinely the same. They are exempted HERE, visibly, rather than by loosening the
+// rule for every tool.
+//
+// The exemption is safe in the direction that matters. What the check exists to stop
+// is the prompt TEACHING a deferred tool — "call skill_manage action=install", "shell_exec
+// is a full terminal" — and any such instruction names other tools, verbs or
+// arguments alongside, which the rest of the check still catches.
+var ambiguousToolName = map[string]bool{"skill": true, "task": true}
+
+// promptTag matches an angle-bracket tag such as <memory_context> or
+// <tool_output source="swarm" ...>: a tag is a delimiter the prompt explains, not a
+// tool, so it is removed before the prompt's code names are collected.
+var promptTag = regexp.MustCompile(`</?[a-z_]+[^>]*>`)
+
+// codeName matches a word the prompt can only mean as a code identifier: lowercase
+// words joined by underscores.
+var codeName = regexp.MustCompile(`\b[a-z]+(?:_[a-z]+)+\b`)
+
+// manifestSpecs is every tool the daemon can put in front of the model.
+//
+// document_open and document_search register only when a live pool exists
+// (buildBaseRegistryWithHandles), so buildRegistry — which passes a nil store — does
+// not contain them. They are the deployment's whole point, so they are added here: their
+// Spec is a pure function of the value, exactly as in TestOnlyTheWorkingSetIsAlwaysActive.
+func manifestSpecs() []tools.Spec {
+	var specs []tools.Spec
+	for _, tool := range buildRegistry().All() {
+		specs = append(specs, tool.Spec())
+	}
+	for _, tool := range []tools.Tool{&tools.DocumentOpen{}, &tools.DocumentSearch{}} {
+		specs = append(specs, tool.Spec())
+	}
+	return specs
+}
 
 // TestPromptNamesOnlyLoadedTools enforces the one rule that governs what may be
 // written in the system prompt: a tool may be named there if and only if it is
@@ -27,70 +68,52 @@ import (
 // The failure is asymmetric, which is why the test is one-directional. Un-deferring
 // a tool and forgetting to teach it costs a search round trip. Teaching one that is
 // not in the manifest sends her looking for it somewhere else entirely.
-// ambiguousToolName lists tools whose names are also ordinary English words the
-// prompt uses as nouns — "never edit a skill by writing files there", "a task that
-// splits into independent subtasks". A substring check cannot tell those from a
-// tool reference, and widening it to word boundaries would not help: the words are
-// genuinely the same. They are exempted HERE, visibly, rather than by loosening the
-// rule for every tool.
-//
-// The exemption is safe in the direction that matters. What the check exists to stop
-// is the prompt TEACHING a deferred tool — "call skill_manage action=install", "shell_exec
-// is a full terminal" — and any such instruction names other tools, verbs or
-// arguments alongside, which the rest of the check still catches.
-var ambiguousToolName = map[string]bool{"skill": true, "task": true}
-
 func TestPromptNamesOnlyLoadedTools(t *testing.T) {
-	registry := buildRegistry()
 	prompt := agent.SystemPrompt
-
-	check := func(name string, isDeferred bool) {
-		if !isDeferred || ambiguousToolName[name] {
-			return
-		}
-		if strings.Contains(prompt, name) {
-			t.Errorf("the prompt names %q, which is DEFERRED — the model is being taught a tool that is not in its manifest", name)
-		}
-	}
-
 	var deferred, loaded int
-	for _, entry := range registry.Render() {
-		if entry.Deferred {
-			deferred++
-		} else {
+	for _, spec := range manifestSpecs() {
+		if !spec.Deferred {
 			loaded++
+			continue
 		}
-		check(entry.Name, entry.Deferred)
-	}
-
-	// document_open and document_search register only when a live pool exists
-	// (buildBaseRegistryWithHandles), so buildRegistry — which passes a nil store —
-	// does not contain them and the loop above cannot see them. They are the
-	// deployment's whole point, so checking them is not optional: their Spec is a
-	// pure function of the value, exactly as in TestOnlyTheWorkingSetIsAlwaysActive.
-	// (document_index was removed with the hand-built pipeline: the bucket is the
-	// source of truth now, so putting a file there IS the indexing action.)
-	for _, tool := range []tools.Tool{&tools.DocumentOpen{}, &tools.DocumentSearch{}} {
-		spec := tool.Spec()
-		check(spec.Name, spec.Deferred)
+		deferred++
+		if !ambiguousToolName[spec.Name] && strings.Contains(prompt, spec.Name) {
+			t.Errorf("the prompt names %q, which is DEFERRED — the model is being taught a tool that is not in its manifest", spec.Name)
+		}
 	}
 	if deferred == 0 || loaded == 0 {
 		t.Fatalf("registry looks wrong: %d loaded, %d deferred — the check would pass vacuously", loaded, deferred)
 	}
+}
 
-	// Anthropic's guidance for this pattern is to keep the three to five most-used
-	// tools loaded so the model can act without searching first. Aura had zero that
-	// do any work; ask_user, read_tool_output, text_response and tool_search only
-	// ask, page, reply and search. At least one capability that DOES something must
-	// be in the manifest, or every substantive turn opens with a search again.
-	working := 0
-	for _, name := range []string{"shell_exec", "fs_read", "document_search", "document_open"} {
-		if tool, ok := registry.Get(name); ok && !tool.Spec().Deferred {
-			working++
+// TestPromptCodeNamesExist closes the hole the check above leaves: it only looks for
+// the names the registry HAS, so a name that matches no tool at all passes it. That is
+// how fs_read survived in the prompt from 2026-08-07, when read_file replaced it, to
+// 2026-10-03, when a captured live request showed the model told to call a tool absent
+// from its 19-tool manifest. Every code name the prompt uses outside a tag must be a
+// registered tool or an argument one of them declares.
+func TestPromptCodeNamesExist(t *testing.T) {
+	known := map[string]bool{}
+	for _, spec := range manifestSpecs() {
+		known[spec.Name] = true
+		var schema struct {
+			Properties map[string]json.RawMessage `json:"properties"`
+		}
+		if err := json.Unmarshal(spec.Parameters, &schema); err != nil {
+			t.Fatalf("%s parameters: %v", spec.Name, err)
+		}
+		for arg := range schema.Properties {
+			known[arg] = true
 		}
 	}
-	if working == 0 {
-		t.Error("no working capability is loaded: the manifest can only ask, page, reply and search, " +
-			"so every substantive turn must open with a tool_search round trip")
+	prose := promptTag.ReplaceAllString(agent.SystemPrompt, "")
+	names := codeName.FindAllString(prose, -1)
+	if len(names) == 0 {
+		t.Fatal("no code names found in the prompt — the check would pass vacuously")
+	}
+	for _, name := range names {
+		if !known[name] {
+			t.Errorf("the prompt names %q, which is neither a registered tool nor a declared argument", name)
+		}
 	}
 }

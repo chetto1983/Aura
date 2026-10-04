@@ -124,8 +124,7 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 		if err != nil {
 			t.Fatalf("poll asset: %v", err)
 		}
-		if current.Status == assets.StatusComplete ||
-			current.Status == assets.StatusSearchable || current.Status == assets.StatusFailed {
+		if current.Status == assets.StatusComplete || current.Status == assets.StatusFailed {
 			asset = current
 			break
 		}

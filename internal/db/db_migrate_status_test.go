@@ -137,22 +137,7 @@ func TestStatus_MissingTableReturnsEmpty(t *testing.T) {
 		return fmt.Sprintf("postgres://aura:%s@%s:%s/%s?sslmode=disable", pwd, host, port, db)
 	}
 
-	admin, err := Open(ctx, &Config{URL: dsn("aura")})
-	if err != nil {
-		t.Fatalf("open admin pool: %v", err)
-	}
-	defer admin.Close()
-
-	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
-		t.Fatalf("pre-drop fresh db: %v", err)
-	}
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
-		t.Fatalf("create fresh db: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
-	})
-
+	dbtest.DrillDatabase(t, dsn("aura"), freshDB)
 	fresh, err := Open(ctx, &Config{URL: dsn(freshDB)})
 	if err != nil {
 		t.Fatalf("open fresh pool: %v", err)

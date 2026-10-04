@@ -8,6 +8,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 func TestMigration0040RoundTrip(t *testing.T) {
@@ -28,27 +30,12 @@ func TestMigration0040RoundTrip(t *testing.T) {
 	dsn := func(role, database string) string {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, database)
 	}
-	admin, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer admin.Close()
-	_, _ = admin.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)") })
-	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+name+" TO aura_migrate"); err != nil {
-		t.Fatal(err)
-	}
+	dbtest.DrillDatabase(t, dsn("aura", "aura"), name)
 	dbAdmin, err := Open(ctx, &Config{URL: dsn("aura", name)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer dbAdmin.Close()
-	if _, err := dbAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
-		t.Fatal(err)
-	}
 	migrateURL := dsn("aura_migrate", name)
 	if _, err := Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("up: %v", err)

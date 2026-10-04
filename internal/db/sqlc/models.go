@@ -60,7 +60,6 @@ type AuraAssets struct {
 	UploadedAt         pgtype.Timestamptz `json:"uploaded_at"`
 	AcceptedAt         pgtype.Timestamptz `json:"accepted_at"`
 	ProcessedAt        pgtype.Timestamptz `json:"processed_at"`
-	SearchableAt       pgtype.Timestamptz `json:"searchable_at"`
 	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
@@ -450,6 +449,13 @@ type AuraMcpAudit struct {
 	Action          string             `json:"action"`
 	ServerName      string             `json:"server_name"`
 	Reason          pgtype.Text        `json:"reason"`
+}
+
+// MCP profiles that exist on their own, and the single active one (migration 0135). Membership stays on aura.mcp_server.profiles. Deployment-scoped like aura.mcp_server.
+type AuraMcpProfile struct {
+	Name      string             `json:"name"`
+	Active    bool               `json:"active"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
 // The MCP server registry (migration 0101), previously one root-owned JSON file. config is the ManagedServer as jsonb minus env; env_enc is AES-256-GCM ciphertext over its KEY=VALUE list (KEK derived from AURA_AUTHULA_SECRET, the same trust boundary as aura.identity_mcp_oauth). Deployment-scoped on purpose, NOT per identity: which servers exist is configuration every operator and the daemon itself must see, unlike aura.identity_mcp_oauth, where a row identifies one person. created_by is audit, never a visibility predicate.

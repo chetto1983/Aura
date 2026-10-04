@@ -13,7 +13,7 @@ import (
 // the output budget was exhausted (the 203-turn truncation disaster, 2026-06-14). The
 // arguments are intentionally unterminated — dispatching them yields invalid JSON.
 func truncatedToolTurn() agenttest.FakeTurn {
-	c := agenttest.MakeToolCall("c1", "fs_write", `{"path":"/tmp/chart.py","content":"import matplotlib`)
+	c := agenttest.MakeToolCall("c1", "write_file", `{"path":"/tmp/chart.py","content":"import matplotlib`)
 	return agenttest.FakeTurn{Chunks: []llm.Chunk{{ToolCall: &c}, {FinishReason: "length"}}}
 }
 

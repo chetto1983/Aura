@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/chetto1983/aura/internal/dbtest"
 )
 
 func TestMigrate0093FreshUpDownUp(t *testing.T) {
@@ -262,30 +264,11 @@ func fresh0093Database(t *testing.T, ctx context.Context, name string) (*pgxpool
 	dsn := func(role, database string) string {
 		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, database)
 	}
-	root, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
-	if err != nil {
-		t.Fatalf("open root database: %v", err)
-	}
-	if _, err := root.Exec(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
-		t.Fatalf("drop stale database: %v", err)
-	}
-	if _, err := root.Exec(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatalf("create database: %v", err)
-	}
-	t.Cleanup(func() {
-		_, _ = root.Exec(context.Background(), "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)")
-		root.Close()
-	})
-	if _, err := root.Exec(ctx, "GRANT CREATE ON DATABASE "+name+" TO aura_migrate"); err != nil {
-		t.Fatalf("grant database create: %v", err)
-	}
+	dbtest.DrillDatabase(t, dsn("aura", "aura"), name)
 	admin, err := Open(ctx, &Config{URL: dsn("aura", name)})
 	if err != nil {
 		t.Fatalf("open fresh database: %v", err)
 	}
 	t.Cleanup(admin.Close)
-	if _, err := admin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
-		t.Fatalf("grant public schema create: %v", err)
-	}
 	return admin, dsn("aura_migrate", name), dsn("aura_app", name)
 }

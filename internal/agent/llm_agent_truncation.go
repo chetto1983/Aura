@@ -16,7 +16,7 @@ const maxTruncatedToolTurns = 2
 
 // truncatedToolNudge steers the model off the doomed retry path when its tool-call
 // arguments were cut mid-JSON by the output budget.
-const truncatedToolNudge = "Your previous tool call was cut off mid-argument because it exceeded the output budget. Do NOT retry the same oversized call. Either write large content to a file in small successive pieces (short fs_write/fs_edit chunks, appending), or, if you already have enough to answer, give the user your final answer now."
+const truncatedToolNudge = "Your previous tool call was cut off mid-argument because it exceeded the output budget. Do NOT retry the same oversized call. Either build large content as a file in small successive pieces (write_file for the first piece, then patch to extend it), or, if you already have enough to answer, give the user your final answer now."
 
 // loopDirective is what the loop does with a turn a classifier found malformed: a
 // truncated tool call here, a tool call leaked as text in llm_agent_leaked_call.go.

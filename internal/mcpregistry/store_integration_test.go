@@ -146,4 +146,81 @@ func TestStoreWrapsDatabaseErrors(t *testing.T) {
 	if err := store.Remove(ctx, "closed"); err == nil || !strings.Contains(err.Error(), "mcpregistry: remove") {
 		t.Fatalf("Remove error = %v", err)
 	}
+	if err := store.SaveProfiles(ctx, mcp.ManagedConfig{}); err == nil || !strings.Contains(err.Error(), "mcpregistry: prune profiles") {
+		t.Fatalf("SaveProfiles error = %v", err)
+	}
+}
+
+// Before 0135 a profile existed only while a server belonged to it, and nothing stored which
+// one was active: measured 2026-10-04, `aura mcp profile create` and `profile use` answered
+// ok, wrote an audit row each, and changed nothing. SaveProfiles mirrors the whole table, so
+// the test works on the live registry's own state and puts it back afterwards.
+func TestSaveProfilesKeepsEmptyProfilesAndTheActiveOne(t *testing.T) {
+	pool := registryPool(t)
+	store := liveRegistryStore(t, pool)
+	ctx := context.Background()
+	original, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := store.SaveProfiles(context.Background(), original); err != nil {
+			t.Errorf("restore profiles: %v", err)
+		}
+	})
+
+	suffix := uuid.NewString()
+	empty, active := "empty-"+suffix, "active-"+suffix
+	doc := original
+	doc.Profiles = map[string]mcp.ManagedProfile{empty: {}, " " + active + " ": {}}
+	for name, profile := range original.Profiles {
+		doc.Profiles[name] = profile
+	}
+	doc.ActiveProfile = active
+	if err := store.SaveProfiles(ctx, doc); err != nil {
+		t.Fatalf("SaveProfiles: %v", err)
+	}
+	got, err := store.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if _, ok := got.Profiles[empty]; !ok {
+		t.Fatalf("empty profile %q did not survive the save: %v", empty, got.Profiles)
+	}
+	if got.ActiveProfileName() != active {
+		t.Fatalf("active profile = %q, want %q", got.ActiveProfileName(), active)
+	}
+	// An existing profile with no servers mounts none; only an undefined one falls back.
+	if names := got.ProfileServerNames(""); len(names) != 0 {
+		t.Fatalf("empty active profile selects %v, want nothing", names)
+	}
+
+	doc.ActiveProfile = empty
+	if err := store.SaveProfiles(ctx, doc); err != nil {
+		t.Fatalf("switch active: %v", err)
+	}
+	var activeRows int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM aura.mcp_profile WHERE active`).Scan(&activeRows); err != nil {
+		t.Fatalf("count active: %v", err)
+	}
+	if got, err = store.List(ctx); err != nil {
+		t.Fatalf("List after switch: %v", err)
+	}
+	if got.ActiveProfileName() != empty || activeRows != 1 {
+		t.Fatalf("after switch active = %q with %d active rows, want %q and 1", got.ActiveProfileName(), activeRows, empty)
+	}
+	if _, err := pool.Exec(ctx, `INSERT INTO aura.mcp_profile (name, active) VALUES ($1, true)`, "second-active-"+suffix); err == nil {
+		t.Fatal("the table admitted a second active profile")
+	}
+
+	delete(doc.Profiles, " "+active+" ")
+	if err := store.SaveProfiles(ctx, doc); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if got, err = store.List(ctx); err != nil {
+		t.Fatalf("List after prune: %v", err)
+	}
+	if _, ok := got.Profiles[active]; ok {
+		t.Fatalf("profile %q survived its removal from the document", active)
+	}
 }
