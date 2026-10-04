@@ -93,6 +93,9 @@ const mutationTests = [
   'src/videoStudio/__tests__/videoflow_exportAudio.test.ts',
   // Conversation search: the snippet that shows where a word matched (prd.md §7).
   'src/conversations/__tests__/SearchPanel.test.tsx',
+  // A search hit opens its thread on the matched turn, at the seq every caller agrees on.
+  'src/chat/__tests__/messageSeq.test.ts',
+  'src/chat/__tests__/ExternalStoreChat_viewport.test.tsx',
 ] as const;
 
 export default defineConfig({

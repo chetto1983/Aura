@@ -582,6 +582,38 @@ roles would avoid that if a measurement shows it matters. Still searched althoug
 hides them: the context envelope Aura wraps around a user turn sent with pinned knowledge or
 attachments, and worker reports (assistant turns keyed `<uuid>:terminal`).
 
+A search hit opens its thread on the match (2026-10-04). Measured on the local stack: in a
+twelve-turn conversation with a word in its second message, clicking the hit opened the
+thread at the bottom, with the matched message 3,645 px above the screen. The panel passed
+the hit's seq, but the AppShell dropped it. assistant-ui keeps a thread at the bottom: it
+jumps there when the history loads and follows every content resize
+(`useThreadViewportAutoScroll`, 0.15.23), and it has no scroll-to-message API.
+
+A thread opened from a hit now turns that off: `autoScroll`, the initialize jump and the
+thread-switch jump. It finds the message carrying the seq, through the same `backendSeq`
+mapping as the branch edit and the compaction marker. It centres that message, or aligns its
+top when it is taller than the pane, and rings it for 2.4 s. The next run start hands the
+viewport back to the library.
+
+The viewport is remounted for every hit. An empty thread leaves the library owing a jump to
+the bottom: it settles that only when a scroll reaches the bottom with content overflowing,
+and it takes the jump on the next content resize whatever `autoScroll` says. Without the
+remount, `e2e/search-open-at-match.spec.ts` lost that race in two runs out of three on
+desktop Chrome. With it, the spec passed 22 of 22 runs on desktop and mobile Chrome,
+including runs with four parallel workers.
+
+Verified the same day on the local stack:
+- the matched message lands in view (scrollTop 323 instead of 4162);
+- a second click on the same hit, after scrolling away, returns there;
+- a new message hands the view back to the bottom;
+- an ordinary open still lands on the last message;
+- a 1,230 px message opens at its top.
+
+What this does not show: the `msg-N` ids are positions in the repaired history, not the
+stored seq. They matched the stored seq on all seven conversations of the local database, but
+a history the repair rewrote (orphan tool results) would shift them, and the branch edit and
+the compaction marker with them. Not verified on WebKit or iOS.
+
 This does not establish:
 - ranking quality across many real conversations: the measurement used one message and a
   local database of test conversations;

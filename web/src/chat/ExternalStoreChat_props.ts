@@ -19,5 +19,14 @@ export interface ExternalStoreChatProps {
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: (nonce: number) => void;
   readonly onRequestDraftPrompt?: (text: string) => void;
-  /** 37D: threads AppShell's startNewConversation to the composer's new-chat quick action. */
+  /** Open the thread on this turn instead of at the bottom: a search hit. */
+  readonly openAt?: ThreadOpenAt | undefined;
+}
+
+/** A turn to open a thread on. Each search click makes a new one with a new nonce, so opening
+ * the same hit twice scrolls twice. */
+export interface ThreadOpenAt {
+  readonly threadId: string;
+  readonly seq: number;
+  readonly nonce: number;
 }
