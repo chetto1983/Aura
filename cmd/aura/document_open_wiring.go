@@ -83,35 +83,40 @@ func (o identityObjectOpener) resolve(
 	return store, bucket, nil
 }
 
-// OpenObject is ReadObject narrowed to what the document opener needs: the bytes and the
-// media type the store recorded. It delegates rather than repeating the resolve and the
-// GET, so the two cannot come to disagree about which bucket a key belongs to.
+// OpenObject hands the document opener the bytes and the media type the store recorded.
 func (o identityObjectOpener) OpenObject(
 	ctx context.Context,
 	identityID, key string,
 ) (io.ReadCloser, string, error) {
-	body, attrs, err := o.ReadObject(ctx, identityID, key)
+	store, bucket, err := o.resolve(ctx, identityID, key)
+	if err != nil {
+		return nil, "", err
+	}
+	body, attrs, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
 	if err != nil {
 		return nil, "", err
 	}
 	return body, attrs.MIMEType, nil
 }
 
-// ReadObject is OpenObject plus what the store knows about the bytes, which the file
-// manager needs to render a file inline instead of only offering it as a download.
-func (o identityObjectOpener) ReadObject(
+// OpenSeekable is what the file manager's direct route reads: what the store knows about the
+// object, which it needs to render a file inline instead of only offering it as a download, and
+// bytes it can serve from any offset, which Range requests need. The SAME resolve as OpenObject,
+// so the two cannot come to disagree about which bucket a key belongs to.
+func (o identityObjectOpener) OpenSeekable(
 	ctx context.Context,
 	identityID, key string,
-) (io.ReadCloser, agui.FileAttrs, error) {
+) (*objectstore.SeekableObject, agui.FileAttrs, error) {
 	store, bucket, err := o.resolve(ctx, identityID, key)
 	if err != nil {
 		return nil, agui.FileAttrs{}, err
 	}
-	body, attrs, err := store.Get(ctx, objectstore.ObjectRef{Bucket: bucket, Key: key})
+	object, err := objectstore.OpenSeekableObject(ctx, store, objectstore.ObjectRef{Bucket: bucket, Key: key})
 	if err != nil {
 		return nil, agui.FileAttrs{}, err
 	}
-	return body, agui.FileAttrs{
+	attrs := object.Attrs()
+	return object, agui.FileAttrs{
 		MIMEType:  attrs.MIMEType,
 		SizeBytes: attrs.SizeBytes,
 		// The object's metadata, not the index: it is already in this response, it is right

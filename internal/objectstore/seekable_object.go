@@ -20,6 +20,7 @@ type SeekableObject struct {
 	store Store
 	ref   ObjectRef
 	size  int64
+	attrs Attrs
 
 	offset int64
 	body   io.ReadCloser
@@ -35,7 +36,15 @@ func OpenSeekableObject(ctx context.Context, store Store, ref ObjectRef) (*Seeka
 	if err != nil {
 		return nil, err
 	}
-	return newSeekableObject(ctx, store, ref, attrs.SizeBytes), nil
+	object := newSeekableObject(ctx, store, ref, attrs.SizeBytes)
+	object.attrs = attrs
+	return object, nil
+}
+
+// Attrs is what that Head reported -- type, size, metadata -- so a caller that has to label a
+// response does not pay a second round trip to the store for it.
+func (o *SeekableObject) Attrs() Attrs {
+	return o.attrs
 }
 
 func newSeekableObject(ctx context.Context, store Store, ref ObjectRef, size int64) *SeekableObject {

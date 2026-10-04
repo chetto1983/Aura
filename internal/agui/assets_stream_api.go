@@ -60,23 +60,43 @@ func mediaStreamType(w http.ResponseWriter, mimeType string) (string, bool) {
 	return "", false
 }
 
-// serveMediaStream answers one stream request over an already-headed object. net/http.ServeContent
-// owns the Range rules — 206 with Content-Range, 416 with bytes */size, suffix and open-ended
-// ranges, If-Range, HEAD. Content-Type is set before it runs because ServeContent otherwise
-// guesses from the name or sniffs the bytes.
 func serveMediaStream(w http.ResponseWriter, r *http.Request, body *objectstore.SeekableObject, contentType, fileName, assetID string) {
+	serveObject(w, r, body, objectResponse{
+		contentType: contentType,
+		disposition: inlineContentDisposition(fileName),
+		fileName:    fileName,
+		failure:     "agui: media stream read failed",
+		logArgs:     []any{"asset_id", assetID},
+	})
+}
+
+// objectResponse is how one stored object is labelled on the wire, and named in the one log
+// line a failed read gets.
+type objectResponse struct {
+	contentType string
+	disposition string
+	fileName    string
+	failure     string
+	logArgs     []any
+}
+
+// serveObject answers one request over an already-headed object. net/http.ServeContent owns the
+// Range rules — 206 with Content-Range, 416 with bytes */size, suffix and open-ended ranges,
+// If-Range, HEAD. Content-Type is set before it runs because ServeContent otherwise guesses from
+// the name or sniffs the bytes.
+func serveObject(w http.ResponseWriter, r *http.Request, body *objectstore.SeekableObject, resp objectResponse) {
 	// Media elements do not need multipart ranges; each part would reopen the object.
 	if strings.Contains(r.Header.Get("Range"), ",") {
 		r.Header.Del("Range")
 	}
 	h := w.Header()
-	h.Set("Content-Type", contentType)
+	h.Set("Content-Type", resp.contentType)
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Disposition", inlineContentDisposition(fileName))
-	http.ServeContent(w, r, fileName, time.Time{}, body)
+	h.Set("Content-Disposition", resp.disposition)
+	http.ServeContent(w, r, resp.fileName, time.Time{}, body)
 	// ServeContent drops a copy error once the status line is out. A cancelled request is the
 	// client leaving (a seek aborts the previous request), not a store fault.
 	if err := body.Err(); err != nil && r.Context().Err() == nil {
-		slog.Warn("agui: media stream read failed", "asset_id", assetID, "err", err)
+		slog.Warn(resp.failure, append(resp.logArgs, "err", err)...)
 	}
 }
