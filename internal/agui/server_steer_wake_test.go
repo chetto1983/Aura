@@ -86,7 +86,7 @@ func (r *steerWakeTestRunner) recorded() []steerWakeCall {
 	return append([]steerWakeCall(nil), r.calls...)
 }
 
-func ownerCtx() context.Context {
+func wakeOwnerCtx() context.Context {
 	return identityctx.WithIdentityID(context.Background(), localIdentityID)
 }
 
@@ -144,7 +144,7 @@ func TestSteerWakeIsADiscoverableRun(t *testing.T) {
 	r := &steerWakeTestRunner{release: make(chan struct{})}
 	s, srv := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 
-	done := wakeAsync(ownerCtx(), s)
+	done := wakeAsync(wakeOwnerCtx(), s)
 	sess := liveWakeRun(t, s)
 	if got := s.runs.coordinatorStatus(localIdentityID, wakeConv); got != (coordinatorRunStatus{RunID: sess.RunID, Status: "running"}) {
 		t.Fatalf("coordinator frame = %+v, want the wake's run announced as running", got)
@@ -185,7 +185,7 @@ func TestSteerWakeQueuesBehindTheTurnInProgress(t *testing.T) {
 	s, _ := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 	r.locked.Store(true)
 
-	done := wakeAsync(ownerCtx(), s)
+	done := wakeAsync(wakeOwnerCtx(), s)
 	time.Sleep(30 * time.Millisecond)
 	if _, live := s.runs.LiveForThread(localIdentityID, wakeConv); live || len(r.recorded()) != 0 {
 		t.Fatal("the wake started while another turn held the conversation")
@@ -203,7 +203,7 @@ func TestSteerWakeCancelledWhileWaitingStartsNothing(t *testing.T) {
 	r := &steerWakeTestRunner{}
 	s, _ := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 	r.locked.Store(true)
-	ctx, cancel := context.WithCancel(ownerCtx())
+	ctx, cancel := context.WithCancel(wakeOwnerCtx())
 
 	done := wakeAsync(ctx, s)
 	cancel()
@@ -226,7 +226,7 @@ func TestSteerWakeReportsTheTurnError(t *testing.T) {
 	r := &steerWakeTestRunner{release: make(chan struct{}), turnErr: failure}
 	s, _ := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 
-	done := wakeAsync(ownerCtx(), s)
+	done := wakeAsync(wakeOwnerCtx(), s)
 	sess := liveWakeRun(t, s)
 	close(r.release)
 	if errs := awaitWake(t, done); len(errs) != 1 || !errors.Is(errs[0], failure) {
@@ -245,7 +245,7 @@ func TestSteerWakeCanBeStopped(t *testing.T) {
 	r := &steerWakeTestRunner{release: make(chan struct{})}
 	s, srv := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 
-	done := wakeAsync(ownerCtx(), s)
+	done := wakeAsync(wakeOwnerCtx(), s)
 	sess := liveWakeRun(t, s)
 	resp, err := http.Post(srv.URL+"/agent/runs/"+sess.RunID+"/cancel", "application/json", nil)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestSteerWakeRunsUnobservedWhenTheRegistryIsFull(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 
-	errs, events := drainWake(s.WakeWithSteer(ownerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "done"))
+	errs, events := drainWake(s.WakeWithSteer(wakeOwnerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "done"))
 	if len(errs) != 0 || events == 0 {
 		t.Fatalf("wake errs=%v events=%d, want the turn run anyway and its events handed back", errs, events)
 	}
@@ -319,15 +319,15 @@ func TestSteerWakeRefusesWhatItCannotRoute(t *testing.T) {
 	s, _ := newDetachTestServer(t, r, knownWakeConv(), ServerConfig{})
 	for name, wake := range map[string]iter.Seq2[*agent.Event, error]{
 		"no owner":             s.WakeWithSteer(context.Background(), wakeConv, acceptingPusher{}, steer.SourceShell, "x"),
-		"invalid conversation": s.WakeWithSteer(ownerCtx(), "conv-1", acceptingPusher{}, steer.SourceShell, "x"),
-		"unknown conversation": s.WakeWithSteer(ownerCtx(), "38383838-3838-3838-3838-383838383838", acceptingPusher{}, steer.SourceShell, "x"),
+		"invalid conversation": s.WakeWithSteer(wakeOwnerCtx(), "conv-1", acceptingPusher{}, steer.SourceShell, "x"),
+		"unknown conversation": s.WakeWithSteer(wakeOwnerCtx(), "38383838-3838-3838-3838-383838383838", acceptingPusher{}, steer.SourceShell, "x"),
 	} {
 		if errs, _ := drainWake(wake); len(errs) != 1 {
 			t.Errorf("%s: wake = %v, want one refusal", name, errs)
 		}
 	}
 	r.lockErr = errors.New("lock unavailable")
-	if errs, _ := drainWake(s.WakeWithSteer(ownerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "x")); len(errs) != 1 || !errors.Is(errs[0], r.lockErr) {
+	if errs, _ := drainWake(s.WakeWithSteer(wakeOwnerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "x")); len(errs) != 1 || !errors.Is(errs[0], r.lockErr) {
 		t.Errorf("lock failure: wake = %v", errs)
 	}
 	if calls := r.recorded(); len(calls) != 0 {
@@ -335,7 +335,7 @@ func TestSteerWakeRefusesWhatItCannotRoute(t *testing.T) {
 	}
 
 	plain, _ := newDetachTestServer(t, &detachLockRunner{}, knownWakeConv(), ServerConfig{})
-	if errs, _ := drainWake(plain.WakeWithSteer(ownerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "x")); len(errs) != 1 {
+	if errs, _ := drainWake(plain.WakeWithSteer(wakeOwnerCtx(), wakeConv, acceptingPusher{}, steer.SourceShell, "x")); len(errs) != 1 {
 		t.Fatalf("a runner that cannot wake: wake = %v, want one refusal", errs)
 	}
 }
