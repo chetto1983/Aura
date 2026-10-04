@@ -39,9 +39,10 @@ func TestMergeStudioGraphKeepsEachRecordOnce(t *testing.T) {
 		Edges:    []arcadedb.StudioEdge{studioEdge("#5:0", "#1:0", "#1:1"), studioEdge("#5:1", "#1:1", "#1:0")},
 	}
 	mergeStudioGraph(&graph, arcadedb.StudioGraph{
-		Vertices: studioVertices("Person", "", "#1:1", "#1:2"),
+		Vertices: studioVertices("Person", "", "#1:1", "#1:2", "#1:2"),
 		Edges: []arcadedb.StudioEdge{
-			studioEdge("", "#1:0", "#1:2"), studioEdge("#5:1", "#1:1", "#1:0"), studioEdge("#5:2", "#1:1", "#1:2"),
+			studioEdge("", "#1:0", "#1:2"), studioEdge("#5:1", "#1:1", "#1:0"),
+			studioEdge("#5:2", "#1:1", "#1:2"), studioEdge("#5:2", "#1:1", "#1:2"),
 		},
 	})
 	if got := studioVertexIDs(graph.Vertices); got != "#1:0,#1:1,#1:2" {
