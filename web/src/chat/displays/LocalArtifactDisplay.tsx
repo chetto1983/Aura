@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { lazy, Suspense } from 'react';
-import { AlertTriangle, Download, File } from 'lucide-react';
+import { lazy, Suspense, useState } from 'react';
+import { AlertTriangle, Download, Eye, File } from 'lucide-react';
 import { EditMediaButton } from '../../mediaEdit/EditMediaButton';
 import { formatSize, previewKind } from '../artifacts/artifactMeta';
+import { PreviewModal } from '../artifacts/PreviewModal';
 import { useAssetSource } from '../artifacts/renderers/assetSourceContext';
 import { PreviewLoading } from '../artifacts/renderers/PreviewStatus';
 import type { DisplayArtifact } from './types';
@@ -96,7 +97,12 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
           </span>
         </span>
         {assetId ? (
-          <DownloadLink assetId={assetId} filename={filename} />
+          <span className="flex flex-wrap items-center gap-2">
+            {kind !== 'download' ? (
+              <OpenInCockpit assetId={assetId} filename={filename} mimeType={mimeType} />
+            ) : null}
+            <DownloadLink assetId={assetId} filename={filename} />
+          </span>
         ) : (
           <span
             role="note"
@@ -131,5 +137,43 @@ function DownloadLink({
       <Download aria-hidden="true" className="size-4 shrink-0" />
       {t('display.artifact.download')}
     </a>
+  );
+}
+
+/** Opens a PDF, document, spreadsheet or text file in the cockpit's own preview. Its only
+ *  action used to be the download link, and on an iPad's home-screen app that link left the
+ *  cockpit for iOS's file page with no way back (prd.md §3). */
+function OpenInCockpit({
+  assetId,
+  filename,
+  mimeType,
+}: {
+  readonly assetId: string;
+  readonly filename: string;
+  readonly mimeType: string;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+        }}
+        aria-label={t('display.artifact.openAria', { filename })}
+        data-required-touch-target
+        className="group inline-flex min-h-[44px] min-w-[44px] w-fit max-w-full shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-accent bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <Eye aria-hidden="true" className="size-4 shrink-0" />
+        {t('display.artifact.open')}
+      </button>
+      <PreviewModal
+        active={open ? { id: assetId, file_name: filename, mime_type: mimeType } : undefined}
+        onClose={() => {
+          setOpen(false);
+        }}
+      />
+    </>
   );
 }

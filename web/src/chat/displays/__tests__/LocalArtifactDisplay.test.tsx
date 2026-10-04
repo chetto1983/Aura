@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { OpenEditorContext } from '../../../mediaEdit/mediaEditorContext';
 import { LocalArtifactDisplay } from '../LocalArtifactDisplay';
@@ -11,6 +11,10 @@ import type { DisplayArtifact, DisplayPayload } from '../types';
 // Delivered images and MP4/WebM clips preview inline (spec section 5); SVG never does.
 
 const HOST_PATH = '/run/out/report.csv';
+
+// The preview renderers are lazy chunks that fetch bytes; the card test only needs to know
+// which one the modal mounts.
+vi.mock('../../artifacts/renderers/PdfPreview', () => ({ default: () => <div data-testid="r-pdf" /> }));
 
 function payload(artifact: DisplayArtifact): DisplayPayload {
   return { type: 'local_artifact', tool_call_id: 'call-1', artifact };
@@ -242,6 +246,50 @@ describe('LocalArtifactDisplay', () => {
       expect(container.querySelector('img')).toBeNull();
       expect(screen.getByText('Delivery unavailable')).toBeTruthy();
       expect(fetchMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // A PDF's only action used to be the download link; on an iPad's home-screen app that link
+  // left the cockpit for iOS's file page with no way back (prd.md §3).
+  describe('opening a delivered document in the cockpit', () => {
+    it('opens a PDF in the preview instead of leaving the page', async () => {
+      render(
+        <LocalArtifactDisplay
+          payload={payload({ filename: 'Appunti.pdf', mime_type: 'application/pdf', asset_id: 'pdf-1' })}
+        />,
+      );
+      expect(screen.getByRole('link', { name: 'Download Appunti.pdf' }).getAttribute('href')).toBe(
+        '/api/assets/pdf-1/download',
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Open Appunti.pdf' }));
+      expect(await screen.findByTestId('r-pdf')).toBeTruthy();
+      expect(screen.getByRole('dialog')).toBeTruthy();
+    });
+
+    it('closes the preview and keeps the card', async () => {
+      render(
+        <LocalArtifactDisplay payload={payload({ filename: 'Appunti.pdf', asset_id: 'pdf-1' })} />,
+      );
+      fireEvent.click(screen.getByRole('button', { name: 'Open Appunti.pdf' }));
+      await screen.findByTestId('r-pdf');
+      fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).toBeNull();
+      });
+      expect(screen.getByRole('button', { name: 'Open Appunti.pdf' })).toBeTruthy();
+    });
+
+    it('offers no preview for a kind the cockpit cannot show', () => {
+      render(
+        <LocalArtifactDisplay payload={payload({ filename: 'bundle.zip', asset_id: 'zip-1' })} />,
+      );
+      expect(screen.queryByRole('button', { name: /^Open / })).toBeNull();
+      expect(screen.getByRole('link', { name: 'Download bundle.zip' })).toBeTruthy();
+    });
+
+    it('offers no preview for an undelivered file', () => {
+      render(<LocalArtifactDisplay payload={payload({ filename: 'Appunti.pdf' })} />);
+      expect(screen.queryByRole('button', { name: /^Open / })).toBeNull();
     });
   });
 
