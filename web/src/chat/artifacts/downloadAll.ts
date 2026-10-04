@@ -1,4 +1,5 @@
 import type { Asset } from '../attachments/types';
+import type { SaveLink } from './useSaveFile';
 
 // downloadAll — the "Scarica tutto" control (D-13/WEBART-06). A sequential,
 // throttled loop of same-origin `<a download>` clicks: each accepted asset is
@@ -48,6 +49,18 @@ export async function downloadLinks(
   }
 }
 
+/** The accepted assets as the files "Scarica tutto" saves: the same list whether the loop
+ *  below downloads them or iOS's home-screen app hands them to one share sheet. */
+export function assetLinks(assets: readonly Asset[]): SaveLink[] {
+  return assets
+    .filter((a) => a.status === 'accepted')
+    .map((a) => ({
+      href: `/api/assets/${encodeURIComponent(a.id)}/download`,
+      fileName: a.file_name,
+      mimeType: a.mime_type,
+    }));
+}
+
 /** Sequentially download every accepted asset, reporting `(done, total)` progress.
  *  Total counts only accepted rows; no delay follows the final click. */
 export function downloadAll(
@@ -55,11 +68,5 @@ export function downloadAll(
   onProgress: (done: number, total: number) => void,
   opts?: DownloadAllOptions,
 ): Promise<void> {
-  const links = assets
-    .filter((a) => a.status === 'accepted')
-    .map((a) => ({
-      href: `/api/assets/${encodeURIComponent(a.id)}/download`,
-      fileName: a.file_name,
-    }));
-  return downloadLinks(links, onProgress, opts);
+  return downloadLinks(assetLinks(assets), onProgress, opts);
 }

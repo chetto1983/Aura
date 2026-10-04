@@ -61,9 +61,9 @@ export function parseDates(entries: readonly IEntity[]): IEntity[] {
 /**
  * The link behind opening or downloading a file.
  *
- * Opening renders in a new tab. That is safe because the response carries a sandbox
- * Content-Security-Policy: the document lands in an opaque origin with no scripts and no
- * same-origin access, so user-supplied bytes cannot reach the cockpit's session.
+ * Opening renders in a new tab. That is safe because the server renders inline only the types
+ * that run no script (inlineSafeMIME in internal/agui/files_api.go) and serves every other one
+ * as an attachment, so user-supplied bytes cannot reach the cockpit's session.
  */
 export function directURL(id: string, download: boolean): string {
   const query = `id=${encodeURIComponent(id)}${download ? '&download=true' : ''}`;
@@ -71,8 +71,8 @@ export function directURL(id: string, download: boolean): string {
 }
 
 /**
- * Where the cockpit's preview reads a file manager object from: the direct route, inline. The
- * route has no Range sibling, so a clip streams from the same URL; and there is no render
+ * Where the cockpit's preview reads a file manager object from: the direct route, inline. That
+ * route answers Range requests itself, so a clip streams from the same URL; there is no render
  * route and no editing, so those optional capabilities are left out.
  */
 export const FILE_MANAGER_SOURCE: AssetSource = {

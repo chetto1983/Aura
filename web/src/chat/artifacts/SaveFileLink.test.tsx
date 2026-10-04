@@ -1,39 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import i18n from '../../i18n/i18n';
 import { SaveFileLink } from './SaveFileLink';
+import { sameLinks, useShareFiles, type SaveLink } from './useSaveFile';
+import {
+  emulateHomeScreen,
+  leaveHomeScreen,
+  sharedFiles,
+  type HomeScreenSheet,
+} from '@/test/iosHomeScreen';
 
 // SaveFileLink in and out of iOS's home-screen app. Outside it the link must download exactly
 // as it did; inside it the bytes go to the share sheet, with a second tap when the tap's
 // activation lapsed during the fetch (webkit.org/blog/13862).
 
 const HREF = '/api/assets/a1/download';
-const share = vi.fn<(data: ShareData) => Promise<void>>();
 const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<unknown>>();
-let activation = { isActive: true };
-let canShare = true;
-
-function define(name: string, value: unknown): void {
-  Object.defineProperty(navigator, name, { value, configurable: true });
-}
+let sheet: HomeScreenSheet;
 
 function homeScreen(): void {
-  define('standalone', true);
+  sheet = emulateHomeScreen();
   // The probe must describe the real file: iOS decides by its type whether the sheet takes it.
-  define('canShare', (data: ShareData) => {
-    const probe = data.files?.[0];
-    return (
-      canShare &&
-      probe instanceof File &&
-      probe.name === 'Appunti.pdf' &&
-      probe.type === 'application/pdf'
-    );
-  });
-  define('share', share);
-  Object.defineProperty(navigator, 'userActivation', {
-    get: () => activation,
-    configurable: true,
-  });
+  sheet.accepts = ([probe]) =>
+    probe instanceof File && probe.name === 'Appunti.pdf' && probe.type === 'application/pdf';
 }
 
 function pdfResponse(): Promise<unknown> {
@@ -72,25 +61,20 @@ function tap(target: HTMLElement): boolean {
 }
 
 function sharedFile(call = 0): File {
-  const file = share.mock.calls[call]?.[0].files?.[0];
+  const file = sharedFiles(sheet, call)[0];
   if (file === undefined) throw new Error(`share call ${String(call)} carried no file`);
   return file;
 }
 
 beforeEach(async () => {
   await act(() => i18n.changeLanguage('en'));
-  activation = { isActive: true };
-  canShare = true;
-  share.mockReset().mockResolvedValue(undefined);
   fetchMock.mockReset().mockImplementation(pdfResponse);
   vi.stubGlobal('fetch', fetchMock);
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  for (const name of ['standalone', 'canShare', 'share', 'userActivation']) {
-    Reflect.deleteProperty(navigator, name);
-  }
+  leaveHomeScreen();
 });
 
 describe('SaveFileLink', () => {
@@ -108,7 +92,7 @@ describe('SaveFileLink', () => {
     expect(tap(anchor)).toBe(true);
 
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(1);
+      expect(sheet.share).toHaveBeenCalledTimes(1);
     });
     expect(fetchMock).toHaveBeenCalledWith(HREF, { credentials: 'same-origin' });
     // The card's media type, not the download route's octet-stream: the sheet offers what
@@ -138,36 +122,36 @@ describe('SaveFileLink', () => {
     });
     expect(anchor.getAttribute('aria-busy')).toBe('true');
     // A second tap while fetching does not start a second fetch.
-    tap(anchor);
+    expect(tap(anchor)).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     answer(await pdfResponse());
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(1);
+      expect(sheet.share).toHaveBeenCalledTimes(1);
     });
   });
 
   it('asks for a second tap when the activation lapsed during the fetch', async () => {
     homeScreen();
-    activation = { isActive: false };
+    sheet.activation.isActive = false;
     const anchor = link();
     tap(anchor);
 
     await waitFor(() => {
       expect(anchor.getAttribute('aria-label')).toBe('Save');
     });
-    expect(share).not.toHaveBeenCalled();
+    expect(sheet.share).not.toHaveBeenCalled();
 
     expect(tap(anchor)).toBe(true);
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(1);
+      expect(sheet.share).toHaveBeenCalledTimes(1);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('keeps the bytes for the next tap when the sheet refuses a lapsed activation', async () => {
     homeScreen();
-    share.mockRejectedValueOnce(new DOMException('no activation', 'NotAllowedError'));
+    sheet.share.mockRejectedValueOnce(new DOMException('no activation', 'NotAllowedError'));
     const anchor = link();
     tap(anchor);
 
@@ -176,7 +160,7 @@ describe('SaveFileLink', () => {
     });
     tap(anchor);
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(2);
+      expect(sheet.share).toHaveBeenCalledTimes(2);
     });
     expect(sharedFile(1).name).toBe('Appunti.pdf');
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -184,12 +168,12 @@ describe('SaveFileLink', () => {
 
   it('treats closing the sheet as done, not as a failure', async () => {
     homeScreen();
-    share.mockRejectedValueOnce(new DOMException('closed', 'AbortError'));
+    sheet.share.mockRejectedValueOnce(new DOMException('closed', 'AbortError'));
     const anchor = link();
     tap(anchor);
 
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(1);
+      expect(sheet.share).toHaveBeenCalledTimes(1);
     });
     await waitFor(() => {
       expect(anchor.getAttribute('aria-label')).toBe('Download Appunti.pdf');
@@ -217,14 +201,14 @@ describe('SaveFileLink', () => {
     });
     tap(anchor);
     await waitFor(() => {
-      expect(share).toHaveBeenCalledTimes(1);
+      expect(sheet.share).toHaveBeenCalledTimes(1);
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('reports a share error that is neither a close nor a lapsed tap', async () => {
     homeScreen();
-    share.mockRejectedValueOnce(new TypeError('unsupported'));
+    sheet.share.mockRejectedValueOnce(new TypeError('unsupported'));
     const anchor = link();
     tap(anchor);
 
@@ -245,7 +229,7 @@ describe('SaveFileLink', () => {
   });
 
   it('downloads as before on a home-screen app whose browser has no share sheet', () => {
-    define('standalone', true);
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
     expect(tap(link())).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -259,14 +243,14 @@ describe('SaveFileLink', () => {
     await waitFor(() => {
       expect(anchor.getAttribute('aria-label')).toBe('Save');
     });
-    expect(share).not.toHaveBeenCalled();
+    expect(sheet.share).not.toHaveBeenCalled();
   });
 
   // The preview modal keeps one link and changes its file: a "Save" left by the previous file
   // must not share that file's bytes under the new one.
   it('forgets a state that belonged to another file', async () => {
     homeScreen();
-    activation = { isActive: false };
+    sheet.activation.isActive = false;
     const { rerender } = render(
       <SaveFileLink
         href={HREF}
@@ -295,13 +279,44 @@ describe('SaveFileLink', () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenLastCalledWith(other, { credentials: 'same-origin' });
     });
-    expect(share).not.toHaveBeenCalled();
+    expect(sheet.share).not.toHaveBeenCalled();
   });
 
   it('downloads as before when the sheet cannot take this file', () => {
     homeScreen();
-    canShare = false;
+    sheet.accepts = () => false;
     expect(tap(link())).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+function linkTo(href: string): SaveLink {
+  return { href, fileName: href.slice(href.lastIndexOf('/') + 1), mimeType: '' };
+}
+
+describe('sameLinks', () => {
+  const a = linkTo('/a'),
+    b = linkTo('/b'),
+    c = linkTo('/c');
+
+  it('is true only for the same files in the same order', () => {
+    expect(sameLinks([a, b], [linkTo('/a'), linkTo('/b')])).toBe(true);
+    expect(sameLinks([a, b], [b, a])).toBe(false);
+    expect(sameLinks([a, b], [a, c])).toBe(false);
+  });
+
+  it('is false when one list is a prefix of the other', () => {
+    expect(sameLinks([a], [a, b])).toBe(false);
+    expect(sameLinks([a, b], [a])).toBe(false);
+    expect(sameLinks([], [a])).toBe(false);
+  });
+});
+
+describe('useShareFiles', () => {
+  it('takes nothing when there is nothing to save, even in the home-screen app', () => {
+    homeScreen();
+    const { result } = renderHook(() => useShareFiles());
+    expect(result.current.save([])).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });

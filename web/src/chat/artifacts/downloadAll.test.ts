@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockInstance } from 'vitest';
 import type { Asset, AssetStatus } from '../attachments/types';
-import { downloadAll } from './downloadAll';
+import { assetLinks, downloadAll } from './downloadAll';
 
 // downloadAll — the sequential, throttled "Scarica tutto" loop (D-13/WEBART-06).
 // Pure DOM logic driven with fake timers + a spy on HTMLAnchorElement.click, so the
@@ -142,5 +142,14 @@ describe('downloadAll', () => {
     expect(href).not.toMatch(/object_key|object_bucket/);
     expect(href).not.toMatch(/^[a-z]+:\/\//i); // no absolute scheme (http/https/file)
     expect(href).not.toMatch(/\/run\/|[A-Za-z]:\\/); // no container/host path
+  });
+
+  // The same list iOS's home-screen app hands to one share sheet: accepted rows only, each
+  // with the media type the sheet decides by.
+  it('lists the accepted assets with their names and media types for the share sheet', () => {
+    const report = { ...asset('id-1', 'report.pdf'), mime_type: 'application/pdf' };
+    expect(assetLinks([report, asset('id-2', 'draft.txt', 'processing')])).toEqual([
+      { href: '/api/assets/id-1/download', fileName: 'report.pdf', mimeType: 'application/pdf' },
+    ]);
   });
 });

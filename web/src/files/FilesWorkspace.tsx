@@ -22,6 +22,8 @@ import { createFileSelection } from './fileSelection';
 import { filesWords } from './filesLocale';
 import { PreviewModal, type PreviewTarget } from '@/chat/artifacts/PreviewModal';
 import { AssetSourceContext } from '@/chat/artifacts/renderers/assetSourceContext';
+import { SaveFilesBar } from '@/chat/artifacts/SaveFileLink';
+import { useShareFiles } from '@/chat/artifacts/useSaveFile';
 import { isIOSHomeScreenApp } from '@/lib/installedApp';
 import { useThemeMode } from '@/theme/useThemeMode';
 
@@ -55,10 +57,25 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
     return true;
   }, []);
 
+  // Several files at once: iOS's home-screen app hands them to one share sheet, a browser
+  // downloads each. shareFiles is stable, so the selection below is still built once.
+  const { held: saving, save: shareFiles } = useShareFiles();
+  const saveSelected = useCallback(
+    (files: readonly IParsedEntity[]) => {
+      const links = files.map((file) => ({
+        href: directURL(file.id, true),
+        fileName: file.name,
+        mimeType: '',
+      }));
+      if (!shareFiles(links)) void saveFiles(files.map((file) => file.id));
+    },
+    [shareFiles],
+  );
+
   // One provider for the component's lifetime: it is an event-bus link, and rebuilding it
   // per render would re-register handlers on every keystroke.
   const provider = useMemo(() => createFileManagerProvider(), []);
-  const selection = useMemo(() => createFileSelection(saveFiles), []);
+  const selection = useMemo(() => createFileSelection(saveSelected), [saveSelected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -100,10 +117,10 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
       // call. This one line replaces a handler per verb.
       api.setNext(provider);
       selection.attach(api);
-      // Open renders in a tab, download saves. The backend distinguishes the two and makes
-      // inline safe with a sandbox CSP rather than by refusing to render at all. iOS's
-      // home-screen app gets neither: a tab or a download leaves it for a page with no way
-      // back, so both show the cockpit's own preview, whose save goes through the share sheet.
+      // Open renders in a tab, download saves. The backend distinguishes the two and renders
+      // inline only the types that run no script (inlineSafeMIME). iOS's home-screen app gets
+      // neither: a tab or a download leaves it for a page with no way back, so both show the
+      // cockpit's own preview, whose save goes through the share sheet.
       api.on('open-file', ({ id }: { id: string }) => {
         const file = api.getFile(id);
         if (onOpenFile !== undefined && file !== null) {
@@ -142,7 +159,10 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
   const Theme = useThemeMode() === 'light' ? Willow : WillowDark;
 
   return (
-    <section aria-label={t('files.title')} className="flex h-full min-h-0 min-w-0 flex-col bg-bg">
+    <section
+      aria-label={t('files.title')}
+      className="relative flex h-full min-h-0 min-w-0 flex-col bg-bg"
+    >
       {/* Only on mobile, where the nav button has nowhere else to live. On desktop the
           widget's own toolbar is the header, so a second one would just repeat the mode
           tab that opened this surface. */}
@@ -178,6 +198,12 @@ export default function FilesWorkspace({ mobileMenu, onOpenFile }: FilesWorkspac
           </Locale>
         </Theme>
       </div>
+      <SaveFilesBar
+        held={saving}
+        onSave={() => {
+          shareFiles(saving.links);
+        }}
+      />
       <AssetSourceContext.Provider value={FILE_MANAGER_SOURCE}>
         <PreviewModal
           active={preview}
