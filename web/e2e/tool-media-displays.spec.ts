@@ -7,6 +7,7 @@ const CONV_ID = '77777777-7777-7777-7777-777777777777';
 const image = readFileSync(resolve(process.cwd(), 'e2e/fixtures/media-edit/photo.png'));
 const video = readFileSync(resolve(process.cwd(), 'e2e/fixtures/media-edit/clip.mp4'));
 const audio = readFileSync(resolve(process.cwd(), 'e2e/fixtures/video-studio/audio/music.wav'));
+const pdf = readFileSync(resolve(process.cwd(), 'e2e/fixtures/documents/Appunti.pdf'));
 
 function artifactCall(id: string, filename: string, mimeType: string) {
   return {
@@ -29,6 +30,7 @@ function conversationSnapshot(): string {
     [artifactCall('video-1', 'clip.mp4', 'video/mp4')],
     [artifactCall('audio-1', 'recording.wav', 'audio/wav')],
     [artifactCall('image-fail', 'broken.png', 'image/png')],
+    [artifactCall('pdf-1', 'Appunti.pdf', 'application/pdf')],
   ];
   const messages: Record<string, unknown>[] = [];
   groups.forEach((calls, index) => {
@@ -176,6 +178,35 @@ test('trusted images group while audio, video and failed previews keep asset con
   await expect(gallery).toBeVisible();
   await expect(videoElement).not.toHaveAttribute('autoplay');
   await expect(audioElement).not.toHaveAttribute('autoplay');
+});
+
+// A delivered PDF's only action used to be the download link, and on an iPad's home-screen
+// app that link left the cockpit for iOS's file page with no way back (prd.md §3). Apri
+// opens the cockpit's own preview: the page stays where it is and the bytes arrive as a blob.
+test('a delivered PDF opens in the cockpit preview without leaving the page', async ({ page }) => {
+  await installConversationRoutes(page);
+  let pdfFetches = 0;
+  await page.route('**/api/assets/pdf-1/download', async (route) => {
+    pdfFetches += 1;
+    await route.fulfill({ status: 200, contentType: 'application/octet-stream', body: pdf });
+  });
+  await gotoAuthenticated(page, `/c/${CONV_ID}`);
+  const conversationURL = page.url();
+
+  await expect(page.getByRole('link', { name: 'Download Appunti.pdf' })).toHaveAttribute(
+    'href',
+    '/api/assets/pdf-1/download',
+  );
+  await page.getByRole('button', { name: 'Open Appunti.pdf' }).click();
+  const preview = page.getByRole('dialog', { name: 'Appunti.pdf' });
+  await expect(preview).toBeVisible();
+  await expect(preview.locator('iframe[src^="blob:"]')).toHaveCount(1);
+  expect(pdfFetches).toBeGreaterThan(0);
+  expect(page.url()).toBe(conversationURL);
+
+  await page.keyboard.press('Escape');
+  await expect(preview).toHaveCount(0);
+  expect(page.url()).toBe(conversationURL);
 });
 
 test('public share audio seeks on its token-scoped stream without a login', async ({ page }) => {
