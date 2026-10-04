@@ -64,7 +64,7 @@ func (d AuthDeps) refuseSession(w http.ResponseWriter, r *http.Request, reason s
 // status code instead of an HTML login page it cannot use.
 func (d AuthDeps) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	if wantsHTML(r) {
-		http.Redirect(w, r, d.loginTarget(r), http.StatusFound)
+		http.Redirect(w, r, d.loginTarget(r), http.StatusFound) //nolint:gosec // always the same-origin login path; the request URI only rides in next, query-escaped, and the SPA re-checks it with safeReturnPath.
 		return
 	}
 	w.Header().Set("WWW-Authenticate", sessionChallenge)
