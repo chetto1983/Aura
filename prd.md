@@ -226,6 +226,30 @@ This observation proves a replay presentation defect, not the process's final ex
 Deliverables are sent through the channel's artifact mechanism; a path alone is not
 delivery. Partial outcomes identify unfinished work and the applicable limit.
 
+The system prompt describes the manifest the model actually receives. A live request
+captured on 2026-10-03 ("What do you remember about my sister?") contradicted itself in
+three places:
+
+| Prompt said | The same request carried |
+|---|---|
+| `<memory_context>` is "a bounded current index"; "when that block answers the current request, answer directly from it: do not call tool_search or open deep memory recall" | `<memory_context>`: "You have 1 facts across 2 entities … The content is NOT in this context" (the pointer that replaced the preload on 2026-09-03) |
+| Loaded: `shell_exec`, `fs_read`, `document_search`, `document_open`, `ask_user`, `read_tool_output`, `text_response`; memory tools "are deferred" | 19 loaded tools: `read_file`, `write_file`, `patch`, `search_files`, `send_file`, `skill`, `shell_poll`, `shell_kill` and four memory core tools among them; no `fs_read` |
+| Deferred families: filesystem write/edit/glob/grep, delivery, background shell, documents "index a file you made" | none of these was deferred; the index/describe tools were deleted on 2026-08-07, and nothing in the roster indexes a file |
+
+`fs_read`, `fs_write`, `fs_edit`, `fs_grep` and `fs_glob` were replaced by `read_file`, `write_file`,
+`patch` and `search_files` on 2026-08-07, but `shell_exec`'s description and the
+truncated-call nudge still sent the model to the old names. The guard that keeps the prompt
+honest only checked the deferred names it found there, so a name matching no tool at all
+passed. The prompt now lists the always-loaded set that `TestOnlyTheWorkingSetIsAlwaysActive`
+pins, names only the deferred families that exist, and says memory content is not in
+context; a `<memory_recall>` block, when the preload attaches one, may still be answered
+from directly. Every snake_case word the prompt uses outside a tag must name a
+registered tool or a declared argument.
+
+What this does not show: how often a model followed the stale instruction. The
+2026-10-03 turn was answered through a bridge by the same assistant that wrote this
+change, which is not independent evidence of model behavior.
+
 ## 5. Approvals and durable grants
 
 Approvals are host-issued and bound to identity, operation and effective arguments.
