@@ -182,8 +182,8 @@ func TestDigestAndHooksHandleErrorsFallbacksAndUnicode(t *testing.T) {
 		t.Fatalf("digestHookInbound predicate = %q", got)
 	}
 	long := strings.Repeat("è", digestHookRunes+5)
-	got := truncateRunes(long+", ", digestHookRunes)
+	got := TruncateRunes(long+", ", digestHookRunes)
 	if !strings.HasSuffix(got, "…") || len([]rune(got)) != digestHookRunes+1 {
-		t.Fatalf("truncateRunes = %q (%d runes)", got, len([]rune(got)))
+		t.Fatalf("TruncateRunes = %q (%d runes)", got, len([]rune(got)))
 	}
 }

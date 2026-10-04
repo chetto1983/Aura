@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import cytoscape, { type Core, type EventObjectNode, type Layouts } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import { useTranslation } from 'react-i18next';
-import { ARCADE_GRAPH_STYLE, buildArcadeElements } from './ArcadeGraphCanvas_data';
+import { ARCADE_GRAPH_STYLE, buildArcadeElements, canvasChange } from './ArcadeGraphCanvas_data';
 import type { ClientEdge, ClientNode } from './types';
 
 cytoscape.use(fcose);
@@ -27,11 +27,87 @@ function applyPinnedPath(cy: Core, pinnedPath: ReadonlySet<string>): void {
   });
 }
 
+const LAYOUT_SPACING = {
+  padding: 14,
+  nodeSeparation: 50,
+  idealEdgeLength: 75,
+  nodeRepulsion: 7000,
+};
+
+// A new read replaces the canvas: every node is placed afresh.
+function replaceGraph(
+  cy: Core,
+  elements: cytoscape.ElementDefinition[],
+  animate: boolean,
+): Layouts | undefined {
+  cy.startBatch();
+  cy.elements().remove();
+  cy.add(elements);
+  cy.endBatch();
+  if (!elements.some((element) => element.group === 'nodes')) return undefined;
+  const layout = cy.layout({
+    name: 'fcose',
+    quality: 'default',
+    randomize: true,
+    animate,
+    animationDuration: animate ? 500 : 0,
+    fit: true,
+    packComponents: true,
+    tile: true,
+    tilingPaddingHorizontal: 16,
+    tilingPaddingVertical: 16,
+    ...LAYOUT_SPACING,
+  } as cytoscape.LayoutOptions);
+  layout.run();
+  return layout;
+}
+
+// An expansion grows the canvas: the nodes already on it stay where the reader left them
+// (fCoSE's fixedNodeConstraint, which needs randomize false and quality "proof"), and the new
+// ones start at the expanded node and settle around it.
+function growGraph(
+  cy: Core,
+  fresh: cytoscape.ElementDefinition[],
+  anchorId: string | undefined,
+  animate: boolean,
+): Layouts {
+  const anchor = anchorId === undefined ? cy.collection() : cy.getElementById(anchorId);
+  const box = cy.nodes().boundingBox();
+  const origin = anchor.nonempty()
+    ? { ...anchor.position() }
+    : { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+  const fixedNodeConstraint = cy
+    .nodes()
+    .map((node) => ({ nodeId: node.id(), position: { ...node.position() } }));
+  cy.add(
+    fresh.map((element) =>
+      element.group === 'nodes' ? { ...element, position: { ...origin } } : element,
+    ),
+  );
+  const layout = cy.layout({
+    name: 'fcose',
+    quality: 'proof',
+    randomize: false,
+    animate,
+    animationDuration: animate ? 500 : 0,
+    fit: false,
+    fixedNodeConstraint,
+    ...LAYOUT_SPACING,
+  } as cytoscape.LayoutOptions);
+  layout.run();
+  if (anchor.nonempty()) cy.animate({ center: { eles: anchor } }, { duration: animate ? 300 : 0 });
+  return layout;
+}
+
 export interface ArcadeGraphCanvasProps {
   readonly nodes: readonly ClientNode[];
   readonly edges: readonly ClientEdge[];
   readonly pinnedPath: ReadonlySet<string>;
   readonly onNodeClick: (nodeId: string) => void;
+  /** Double-click expands a node, as in ArcadeDB Studio. */
+  readonly onNodeDoubleClick: (nodeId: string) => void;
+  /** The node the last expansion grew from: new nodes start there and the view centres on it. */
+  readonly focusId: string | undefined;
 }
 
 /** Read-only renderer using the same Cytoscape + fCoSE stack as ArcadeDB Studio. */
@@ -40,12 +116,16 @@ export function ArcadeGraphCanvas({
   edges,
   pinnedPath,
   onNodeClick,
+  onNodeDoubleClick,
+  focusId,
 }: ArcadeGraphCanvasProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const cytoscapeRef = useRef<Core | undefined>(undefined);
   const layoutRef = useRef<Layouts | undefined>(undefined);
   const clickRef = useRef(onNodeClick);
+  const doubleClickRef = useRef(onNodeDoubleClick);
+  const focusRef = useRef(focusId);
   const [renderFailed, setRenderFailed] = useState(false);
   const reducedMotion = usePrefersReducedMotion();
 
@@ -56,7 +136,9 @@ export function ArcadeGraphCanvas({
 
   useEffect(() => {
     clickRef.current = onNodeClick;
-  }, [onNodeClick]);
+    doubleClickRef.current = onNodeDoubleClick;
+    focusRef.current = focusId;
+  }, [onNodeClick, onNodeDoubleClick, focusId]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -74,6 +156,9 @@ export function ArcadeGraphCanvas({
       cytoscapeRef.current = cy;
       cy.on('tap', 'node', (event: EventObjectNode) => {
         clickRef.current(event.target.id());
+      });
+      cy.on('dbltap', 'node', (event: EventObjectNode) => {
+        doubleClickRef.current(event.target.id());
       });
 
       const observer = new ResizeObserver(() => {
@@ -106,31 +191,18 @@ export function ArcadeGraphCanvas({
     const cy = cytoscapeRef.current;
     if (cy === undefined) return;
 
+    const elements = buildArcadeElements(nodes, edges);
+    const change = canvasChange(
+      cy.nodes().map((node) => node.id()),
+      new Set(cy.elements().map((element) => element.id())),
+      elements,
+    );
+    if (change.kind === 'keep') return;
     layoutRef.current?.stop();
-    cy.startBatch();
-    cy.elements().remove();
-    cy.add(buildArcadeElements(nodes, edges));
-    cy.endBatch();
-
-    if (nodes.length === 0) return;
-    const layout = cy.layout({
-      name: 'fcose',
-      quality: 'default',
-      randomize: true,
-      animate: !reducedMotion,
-      animationDuration: reducedMotion ? 0 : 500,
-      fit: true,
-      padding: 14,
-      nodeSeparation: 50,
-      idealEdgeLength: 75,
-      nodeRepulsion: 7000,
-      packComponents: true,
-      tile: true,
-      tilingPaddingHorizontal: 16,
-      tilingPaddingVertical: 16,
-    } as cytoscape.LayoutOptions);
-    layoutRef.current = layout;
-    layout.run();
+    layoutRef.current =
+      change.kind === 'grow'
+        ? growGraph(cy, change.fresh, focusRef.current, !reducedMotion)
+        : replaceGraph(cy, elements, !reducedMotion);
   }, [nodes, edges, reducedMotion]);
 
   useEffect(() => {

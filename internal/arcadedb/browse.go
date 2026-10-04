@@ -188,9 +188,9 @@ func digestHook(row map[string]any) string {
 	predicate := strings.TrimSpace(rowString(row, "predicate"))
 	object := strings.TrimSpace(rowString(row, "object"))
 	if predicate != "" && object != "" {
-		return truncateRunes(predicate+" "+object, digestHookRunes)
+		return TruncateRunes(predicate+" "+object, digestHookRunes)
 	}
-	return truncateRunes(rowString(row, "statement"), digestHookRunes)
+	return TruncateRunes(rowString(row, "statement"), digestHookRunes)
 }
 
 // digestHookInbound renders the same fact from the object's side. The arrow is
@@ -200,12 +200,13 @@ func digestHookInbound(row map[string]any) string {
 	predicate := strings.TrimSpace(rowString(row, "predicate"))
 	subject := strings.TrimSpace(rowString(row, "subject"))
 	if predicate != "" && subject != "" {
-		return truncateRunes("← "+predicate+" "+subject, digestHookRunes)
+		return TruncateRunes("← "+predicate+" "+subject, digestHookRunes)
 	}
-	return truncateRunes(rowString(row, "statement"), digestHookRunes)
+	return TruncateRunes(rowString(row, "statement"), digestHookRunes)
 }
 
-func truncateRunes(text string, limit int) string {
+// TruncateRunes collapses whitespace and cuts text to limit runes, marking a cut with "…".
+func TruncateRunes(text string, limit int) string {
 	text = strings.Join(strings.Fields(text), " ")
 	if utf8.RuneCountInString(text) <= limit {
 		return text

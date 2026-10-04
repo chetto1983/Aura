@@ -97,6 +97,31 @@ export function buildArcadeElements(
   return elements;
 }
 
+export type CanvasChange =
+  | { readonly kind: 'replace' }
+  | { readonly kind: 'grow'; readonly fresh: cytoscape.ElementDefinition[] }
+  | { readonly kind: 'keep' };
+
+/** How the canvas takes a new graph. When every node it shows is still there, the graph only
+ * grew (an expansion) or did not change (a re-render): the drawn nodes keep their places and
+ * only the new elements are added. Anything else is a new read, laid out afresh. */
+export function canvasChange(
+  shownNodeIds: readonly string[],
+  shownIds: ReadonlySet<string>,
+  elements: readonly cytoscape.ElementDefinition[],
+): CanvasChange {
+  const nextNodeIds = new Set(
+    elements
+      .filter((element) => element.group === 'nodes')
+      .map((element) => String(element.data.id)),
+  );
+  if (shownNodeIds.length === 0 || !shownNodeIds.every((id) => nextNodeIds.has(id))) {
+    return { kind: 'replace' };
+  }
+  const fresh = elements.filter((element) => !shownIds.has(String(element.data.id)));
+  return fresh.length === 0 ? { kind: 'keep' } : { kind: 'grow', fresh };
+}
+
 /** Studio's graph stylesheet adapted to Aura's dark tokens. */
 export const ARCADE_GRAPH_STYLE: cytoscape.StylesheetJson = [
   {

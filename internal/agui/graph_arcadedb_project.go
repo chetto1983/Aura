@@ -9,7 +9,7 @@ import (
 // mergeStudioGraph mirrors ArcadeDB Studio's cumulative graph behavior: records
 // already drawn keep their place and a repeated RID is ignored.
 func mergeStudioGraph(dst *arcadedb.StudioGraph, src arcadedb.StudioGraph) {
-	vertices := make(map[string]struct{}, len(dst.Vertices)+len(src.Vertices))
+	vertices := make(map[string]struct{})
 	for _, vertex := range dst.Vertices {
 		vertices[vertex.RID] = struct{}{}
 	}
@@ -23,7 +23,7 @@ func mergeStudioGraph(dst *arcadedb.StudioGraph, src arcadedb.StudioGraph) {
 		vertices[vertex.RID] = struct{}{}
 		dst.Vertices = append(dst.Vertices, vertex)
 	}
-	edges := make(map[string]struct{}, len(dst.Edges)+len(src.Edges))
+	edges := make(map[string]struct{})
 	for _, edge := range dst.Edges {
 		edges[edge.RID] = struct{}{}
 	}
@@ -106,26 +106,25 @@ func projectStudioGraph(
 }
 
 func displayGraphProperties(properties map[string]any) map[string]any {
-	if len(properties) == 0 {
-		return nil
-	}
 	out := make(map[string]any, len(properties))
 	for key, value := range properties {
-		if strings.EqualFold(key, "embedding") {
-			continue
+		if !strings.EqualFold(key, "embedding") {
+			out[key] = value
 		}
-		out[key] = value
-	}
-	if len(out) == 0 {
-		return nil
 	}
 	return out
 }
 
+// graphCaptionRunes bounds a caption read from a text body: a passage's whole text is not a
+// name.
+const graphCaptionRunes = 80
+
+// graphCaption names a vertex by the first property that says what it is. file_name and
+// text name the two document types, which have neither name nor title.
 func graphCaption(properties map[string]any, fallback string) string {
-	for _, key := range []string{"name", "title"} {
+	for _, key := range []string{"name", "title", "file_name", "text"} {
 		if caption := propertyString(properties, key); caption != "" {
-			return caption
+			return arcadedb.TruncateRunes(caption, graphCaptionRunes)
 		}
 	}
 	return fallback
@@ -137,9 +136,6 @@ func propertyString(properties map[string]any, key string) string {
 }
 
 func stringSet(values []string) map[string]struct{} {
-	if len(values) == 0 {
-		return nil
-	}
 	out := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		out[value] = struct{}{}
@@ -157,11 +153,12 @@ func setAllows(set map[string]struct{}, value string) bool {
 
 // countAllowedVertices counts the accumulated vertices a caller's label selection would
 // actually keep. It is the budget the overview spends: vertices the projection is about to
-// discard must not close the window on the ones it would have kept.
+// discard must not close the window on the ones it would have kept. mergeStudioGraph has
+// already dropped the vertices without a RID.
 func countAllowedVertices(vertices []arcadedb.StudioVertex, allowed map[string]struct{}) int {
 	n := 0
 	for _, vertex := range vertices {
-		if vertex.RID != "" && setAllows(allowed, vertex.Type) {
+		if setAllows(allowed, vertex.Type) {
 			n++
 		}
 	}

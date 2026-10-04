@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { installGraphShellRoutes } from './support/graphRoutes';
 
 // graph.spec.ts — the Phase 27 Graph Explorer E2E. It proves the operator can open the Frame-06
 // workspace (the live 'graph' surface), the Sigma WebGL canvas renders in a REAL browser (the
@@ -42,37 +43,7 @@ const SCHEMA = {
 };
 
 async function installGraphRoutes(page: Page) {
-  await page.route('**/api/conversations*', (route) => {
-    if (route.request().url().includes(`/api/conversations/${CONV_ID}`)) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: CONV_ID,
-          title: 'Graph thread',
-          status: 'active',
-          total_input_tokens: 0,
-          total_output_tokens: 0,
-          total_cached_tokens: 0,
-          total_cost_usd: 0,
-        }),
-      });
-    }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-  });
-  await page.route('**/api/conversations/*/rot-events', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  );
-  await page.route('**/api/approvals', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  );
-  await page.route('**/threads/*/messages', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages: [] }),
-    }),
-  );
+  await installGraphShellRoutes(page, CONV_ID);
   await page.route('**/api/graph/schema', (route) =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SCHEMA) }),
   );

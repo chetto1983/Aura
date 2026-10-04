@@ -1,15 +1,27 @@
-import { Suspense, lazy, useCallback, useEffect, useReducer, useRef, useState } from 'react';
-import { CheckCircle2, Database, Network, X } from 'lucide-react';
+import {
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
+import { X } from 'lucide-react';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { fetchGraphSchema, postGraphQuery } from './graphApi';
 import {
   initialIntentState,
   intentReducer,
   mergeGraphResults,
+  neighbourhood,
   rowsToClientGraph,
   toClientIntent,
   type IntentState,
 } from './graphIntent';
+import { EvidenceReadinessBoard } from './EvidenceReadinessBoard';
 import { GraphControls } from './GraphControls';
 import { NodeInspector } from './NodeInspector';
 import { PathStrip } from './PathStrip';
@@ -63,99 +75,30 @@ function isCapped(result: GraphResult): boolean {
   return result.truncated === true;
 }
 
-function EvidenceReadinessBoard({
-  schema,
-  onRefresh,
-}: {
-  readonly schema: GraphSchema | undefined;
-  readonly onRefresh: () => void;
-}) {
-  const { t } = useTranslation();
-  const labels = schema?.labels ?? [];
-  const relTypes = schema?.rel_types ?? [];
-  const visibleLabels = labels.slice(0, 6);
-  const visibleRelTypes = relTypes.slice(0, 5);
-  const hiddenLabelCount = Math.max(0, labels.length - visibleLabels.length);
-  const hiddenRelTypeCount = Math.max(0, relTypes.length - visibleRelTypes.length);
+// An expansion is reported where it happened, on the canvas, and never replaces it: a failed
+// expansion leaves the graph the reader already has.
+type Expansion =
+  | { readonly nodeId: string; readonly state: 'running' }
+  | { readonly nodeId: string; readonly state: 'failed' }
+  | {
+      readonly nodeId: string;
+      readonly state: 'done';
+      readonly added: number;
+      readonly neighbours: number;
+    };
 
-  return (
-    <section
-      aria-label={t('graph.empty.readinessAria')}
-      className="flex h-full min-h-0 items-center justify-center overflow-y-auto p-4 text-left sm:p-6"
-    >
-      <div className="grid w-full max-w-5xl gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <div className="min-w-0">
-          <div className="mb-4 flex flex-wrap items-center gap-2">
-            <Badge variant="success" className="gap-1.5">
-              <CheckCircle2 aria-hidden="true" />
-              {t('graph.empty.schemaOnline')}
-            </Badge>
-            <Badge variant="secondary">
-              {t('graph.empty.nodeTypeCount', { count: labels.length })}
-            </Badge>
-            <Badge variant="secondary">
-              {t('graph.empty.connectionTypeCount', { count: relTypes.length })}
-            </Badge>
-          </div>
-          <h2 className="font-display text-[22px] font-semibold text-text">
-            {t('graph.empty.heading')}
-          </h2>
-          <p className="mt-2 max-w-2xl text-[15px] leading-relaxed text-text-muted">
-            {t('graph.empty.body')}
-          </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Button type="button" onClick={onRefresh} className="min-w-0">
-              <span className="block min-w-0 overflow-wrap-anywhere">
-                {t('graph.cta.refreshMemory')}
-              </span>
-            </Button>
-          </div>
-        </div>
-
-        <div className="grid min-w-0 content-start gap-3">
-          <div className="rounded-lg border border-border bg-surface/80 p-3">
-            <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold uppercase text-text-muted">
-              <Database aria-hidden="true" className="size-4 text-accent-text" />
-              {t('graph.empty.nodeTypes')}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {visibleLabels.map((label) => (
-                <Badge
-                  key={label}
-                  variant="secondary"
-                  className="max-w-full overflow-wrap-anywhere"
-                >
-                  {label}
-                </Badge>
-              ))}
-              {hiddenLabelCount > 0 ? <Badge variant="secondary">+{hiddenLabelCount}</Badge> : null}
-            </div>
-          </div>
-
-          <div className="rounded-lg border border-border bg-surface/80 p-3">
-            <div className="mb-3 flex items-center gap-2 text-[13px] font-semibold uppercase text-text-muted">
-              <Network aria-hidden="true" className="size-4 text-accent-text" />
-              {t('graph.empty.connectionTypes')}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {visibleRelTypes.map((relType) => (
-                <Badge
-                  key={relType}
-                  variant="secondary"
-                  className="max-w-full overflow-wrap-anywhere"
-                >
-                  {relType}
-                </Badge>
-              ))}
-              {hiddenRelTypeCount > 0 ? (
-                <Badge variant="secondary">+{hiddenRelTypeCount}</Badge>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
+function expansionNotice(t: TFunction, expansion: Expansion): string {
+  switch (expansion.state) {
+    case 'running':
+      return t('graph.expand.running');
+    case 'failed':
+      return t('graph.expand.failed');
+    case 'done':
+      if (expansion.added > 0) return t('graph.expand.added', { count: expansion.added });
+      if (expansion.neighbours > 0)
+        return t('graph.expand.allShown', { count: expansion.neighbours });
+      return t('graph.expand.none');
+  }
 }
 
 export default function GraphExplorer() {
@@ -164,6 +107,7 @@ export default function GraphExplorer() {
   const [view, setView] = useState<ViewState>(INITIAL_VIEW);
   const [selected, setSelected] = useState<GraphNode | undefined>(undefined);
   const [pinnedPath, setPinnedPath] = useState<ReadonlySet<string>>(new Set());
+  const [expansion, setExpansion] = useState<Expansion | undefined>(undefined);
   // Mobile-only: the control pane is a bottom sheet (canvas stays dominant). On lg it is
   // the permanent left column and this flag is inert.
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -193,30 +137,20 @@ export default function GraphExplorer() {
   }, []);
 
   const runIntent = useCallback(
-    async (state: IntentState, append = false) => {
+    async (state: IntentState) => {
       setView((prev) => ({ ...prev, status: 'loading' }));
+      setExpansion(undefined);
       try {
         const result = await postGraphQuery(toClientIntent(state));
         if (resultIsEmpty(result)) {
-          if (append) {
-            setView((prev) => ({
-              ...prev,
-              status: prev.result === undefined ? 'empty' : 'populated',
-            }));
-            return;
-          }
           await loadSchemaOverview();
           return;
         }
-        setView((prev) => {
-          const nextResult =
-            append && prev.result !== undefined ? mergeGraphResults(prev.result, result) : result;
-          return {
-            status: 'populated',
-            result: nextResult,
-            schema: nextResult.schema,
-            capped: isCapped(nextResult),
-          };
+        setView({
+          status: 'populated',
+          result,
+          schema: result.schema,
+          capped: isCapped(result),
         });
       } catch (err) {
         if (isAuthError(err)) {
@@ -262,16 +196,44 @@ export default function GraphExplorer() {
   );
 
   const retry = useCallback(() => {
-    void runIntent(intent, intent.op === 'expand');
+    void runIntent(intent);
   }, [intent, runIntent]);
 
+  // An expansion adds the node's neighbours to the graph on screen and marks the whole
+  // neighbourhood, so it shows something even when every neighbour was already there. One
+  // runs at a time: a second merged into the same graph would drop the first one's nodes.
   const expandNode = useCallback(
-    (node: GraphNode) => {
+    async (node: GraphNode) => {
+      const current = view.result;
+      if (current === undefined || expansion?.state === 'running') return;
       const next = intentReducer(intent, { kind: 'expand', nodeId: node.id });
       dispatch({ kind: 'expand', nodeId: node.id });
-      void runIntent(next, true);
+      setExpansion({ nodeId: node.id, state: 'running' });
+      try {
+        const merged = mergeGraphResults(current, await postGraphQuery(toClientIntent(next)));
+        const around = neighbourhood(merged, node.id);
+        setView({
+          status: 'populated',
+          result: merged,
+          schema: merged.schema,
+          capped: isCapped(merged),
+        });
+        setPinnedPath(around);
+        setExpansion({
+          nodeId: node.id,
+          state: 'done',
+          added: merged.nodes.length - current.nodes.length,
+          neighbours: around.size - 1,
+        });
+      } catch (err) {
+        if (isAuthError(err)) {
+          setView((prev) => ({ ...prev, status: 'error-auth' }));
+          return;
+        }
+        setExpansion({ nodeId: node.id, state: 'failed' });
+      }
     },
-    [intent, runIntent],
+    [expansion, intent, view.result],
   );
 
   // Selecting a node (canvas click OR node-list Enter/tap — the non-hover access path, D-03)
@@ -288,18 +250,17 @@ export default function GraphExplorer() {
   // The canvas accents this set and dims the rest; the path strip mirrors it.
   const pinPath = useCallback(
     (node: GraphNode) => {
-      const path = new Set<string>([node.id]);
-      for (const edge of view.result?.edges ?? []) {
-        if (edge.source === node.id) path.add(edge.target);
-        if (edge.target === node.id) path.add(edge.source);
-      }
-      setPinnedPath(path);
+      if (view.result !== undefined) setPinnedPath(neighbourhood(view.result, node.id));
     },
     [view.result],
   );
 
-  const clientGraph =
-    view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] };
+  // Memoised: a fresh graph object on every render made the canvas lay itself out again, so
+  // selecting a node reshuffled every node on screen (prd.md §9).
+  const clientGraph = useMemo(
+    () => (view.result !== undefined ? rowsToClientGraph(view.result) : { nodes: [], edges: [] }),
+    [view.result],
+  );
   const inspectorOpen = selected !== undefined;
 
   const controlPanel = (
@@ -371,13 +332,20 @@ export default function GraphExplorer() {
             const node = view.result?.nodes.find((n) => n.id === id);
             if (node !== undefined) selectNode(node);
           }}
+          onNodeDoubleClick={(id) => {
+            const node = view.result?.nodes.find((n) => n.id === id);
+            if (node !== undefined) void expandNode(node);
+          }}
+          focusId={expansion?.nodeId}
         />
-        {view.capped ? (
+        {expansion !== undefined || view.capped ? (
           <p
             role="status"
             className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border bg-surface-2/90 px-3 py-1 text-[13px] text-text-muted shadow-lg backdrop-blur"
           >
-            {t('graph.cap.notice', { count: clientGraph.nodes.length })}
+            {expansion !== undefined
+              ? expansionNotice(t, expansion)
+              : t('graph.cap.notice', { count: clientGraph.nodes.length })}
           </p>
         ) : null}
       </Suspense>
@@ -488,7 +456,9 @@ export default function GraphExplorer() {
           <NodeInspector
             node={selected}
             query={view.result?.query ?? ''}
-            onExpand={expandNode}
+            onExpand={(node) => {
+              void expandNode(node);
+            }}
             onPinPath={pinPath}
             onClose={closeInspector}
           />
