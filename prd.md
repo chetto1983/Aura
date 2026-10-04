@@ -1440,6 +1440,39 @@ Background shell completion returns to its conversation without indefinite manua
 polling. Cancellation targets the process group with bounded cleanup and visible
 failures. Reuse supported subprocess/runtime mechanisms before building alternatives.
 
+A woken turn is a run an open cockpit can see (2026-10-04). Measured on the local stack
+with a scripted model: a tool call moved to the background woke its conversation 45 s
+later, and a tab that had stayed open on that conversation still showed nothing of the
+woken turn 10 s after it finished; a reload showed it. Polled every second through the
+wake, `GET /api/conversations/{id}` never carried a `live_run_id`, and the conversation
+stream (`/api/conversations/{id}/swarm/events`) announced only the first turn's run,
+`running` then `finished`. The background-completion dispatcher drove the woken turn
+through the runner alone, so the turn was in neither place a tab looks for a run it did
+not start. Shell and video wakes go through the same dispatcher. A coordinator's
+continuation after its workers report never had the gap: `ResumePendingSteer` starts it
+as a detached run. A wake now starts the same way. It waits for the conversation, registers
+a run, and lets the runner push and answer under the lock it already holds, so the steer
+is still pushed only once the lock is held. A wake that finds the run registry full runs
+unobserved, as every wake did before, rather than not at all; so does every wake with
+`AURA_AGUI_RUN_DETACH` off, which builds no registry.
+
+Verified the same day with the committed `background-shell-completion-real.spec.ts`, its
+prompt answered by a scripted model instead of a real one. Before the change the wake ran
+and answered, and the open tab still showed no answer after 90 s; after it the tab showed
+the answer with no reload and no request of its own. A probe that held the woken turn open
+for 4 s saw `live_run_id` name the wake's run throughout, saw the tab attach through
+`GET /agent/runs/{id}/events`, and found the turn rendered once, exactly as after a reload.
+The first measurement, repeated (a tool call moved to the background, woken 45 s later),
+showed the woken turn in the open tab once, with no reload. The cockpit needed no change:
+the coordinator frame, the conversation refetch and the reload-attach it reacts to were
+already there for the coordinator's continuation.
+
+This does not establish:
+- a real model's woken turn: only the scripted one ran;
+- a video wake in the cockpit: only shell and tool-call wakes ran, and a video wake reaches
+  the same host through the same dispatcher;
+- the full-registry fallback on a live stack: it is unit-tested only.
+
 Web search uses the configured service. Fetch enforces URL/redirect limits, SSRF
 protection, MIME handling, response caps and readable extraction, including supported
 non-HTML. Documents, pages, attachments and delegated output remain untrusted data.
