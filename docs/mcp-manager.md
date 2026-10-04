@@ -1,27 +1,16 @@
 # Aura MCP Manager
 
 Aura's MCP manager keeps third-party tools useful without making every local command
-available to the model by accident. It stores MCP servers in a managed config, groups
-them into profiles, records trust, runs status/doctor checks, supports Streamable
-HTTP, and blocks risky tools before they enter the runtime registry.
+available to the model by accident. It keeps MCP servers in one registry, records trust,
+runs status/doctor checks, supports Streamable HTTP, and classifies every tool so a
+destructive call waits for the operator's approval.
 
-## Config Location
+## Where servers are stored
 
-By default Aura reads and writes:
-
-```bash
-~/.aura/mcp/servers.json
-```
-
-For tests or isolated runs, set:
-
-```bash
-AURA_MCP_CONFIG=/path/to/servers.json
-```
-
-The file uses the familiar `mcpServers` shape plus Aura metadata: `profiles`,
-`trust`, `runtime`, `toolPolicy`, and `riskLabels`. Env values may contain local
-placeholders, but exported profiles redact secrets.
+Every MCP server lives in one Postgres table, `aura.mcp_server` (migration 0101), next to
+the MCP audit trail and the per-identity OAuth grants. Every `aura mcp` verb, the daemon's
+mount and the cockpit read and write that table, and each change is audited. It replaced a
+JSON file that was read in two places and written in one (`cmd/aura/mcp_registry.go`).
 
 ## Recipes
 
@@ -40,29 +29,35 @@ aura mcp install whatsapp
 aura mcp install browser
 ```
 
-Built-in recipes are marked as `trusted_recipe` and include policy metadata.
+Built-in recipes are marked as `trusted_recipe`; their tools are classified from the
+recipe's own table (see Tool risk).
 
 | Recipe | Purpose | Notes |
 |---|---|---|
 | memory | Aura's ArcadeDB memory (`cmd/arcadedb-mcp`) over streamable-HTTP | On by default everywhere. |
 | browser | agent-browser's MCP server, run in each identity's sandbox box | On by default in the appliance. Logins stay in that identity's box; see Runtime. |
-| Calendar | PIM sidecar (forked calendar-mcp) — mail + calendar + contacts over streamable-HTTP | OAuth accounts connected via the sidecar's token-gated admin API (cockpit-driven); subsumes the retired standalone mail recipe. |
-| WhatsApp | WhatsApp bridge | Requires a paired account and bridge process. |
+| Calendar | PIM sidecar (forked calendar-mcp) — mail + calendar + contacts over streamable-HTTP | On by default in the appliance. OAuth accounts connected via the sidecar's token-gated admin API (cockpit-driven); subsumes the retired standalone mail recipe. |
+| WhatsApp | WhatsApp bridge | On by default in the appliance. Requires a paired account. |
+
+"On by default in the appliance" applies only inside the Aura container; an explicit
+`aura mcp disable <name>` still wins (`internal/mcp/manager/runtimeset.go`).
 
 ## Profiles
 
-Profiles decide which configured servers are active for a run.
+A profile is a group of servers. Membership is stored on each server's row:
 
 ```bash
 aura mcp profile list
-aura mcp profile create work
 aura mcp profile add work calendar
 aura mcp profile remove work calendar
-aura mcp profile use work
 ```
 
-If a profile exists with no servers, it mounts none. If a named profile is missing,
-Aura falls back to enabled managed servers.
+Aura mounts the servers of the `default` profile, or every enabled server when no server
+belongs to `default`; a server installed from the cockpit joins `default`.
+
+Known defect: `aura mcp profile create` and `aura mcp profile use` answer `ok` but persist
+nothing. A profile exists only while a server belongs to it, and the active profile is
+always `default`.
 
 ## Trust
 
@@ -105,7 +100,7 @@ A stdio server runs in one of two places, named by `runtime.kind`:
 
 | Kind | Where it runs |
 |---|---|
-| `local` (default) | A child process of Aura, launched as declared. |
+| `local` (default) | A child process of Aura. `aura mcp add` first prepares the server's environment, rewrites the launch to absolute paths inside it, and stores the server only after a successful handshake (amendment #211). |
 | `box` | Inside the calling identity's sandbox box, one process per identity, reached over an exec's stdin and stdout. |
 
 ```json
@@ -156,8 +151,9 @@ A box server:
 - takes no secrets: everything in a box is readable by the agent's own shell, so a
   secret-shaped `env` entry is refused at write time;
 - writes its stderr to `/tmp/aura-mcp-<name>.log` in the box;
-- is never started on the Aura host. `aura mcp doctor` has no box to run it in and reports it
-  as not probed.
+- is never started on the Aura host. `aura mcp doctor <name>` has no box to run it in and
+  fails with "this server runs in the sandbox box, and this caller has no sandbox";
+  `aura mcp status` lists it as not probed.
 
 When the box is suspended for idleness the session ends and the next call starts the server
 again. The `docker` and `docker_gateway` kinds were retired by amendment #209.
@@ -171,13 +167,15 @@ aura mcp status
 aura mcp status --json
 ```
 
-Run non-secret checks for every server:
+Run non-secret checks for every server. Each prints
+`<name>: <startup> trust=<trust> runtime=<runtime>`, then a runtime check and, for the
+calendar and WhatsApp recipes, a sidecar or bridge line:
 
 ```bash
 aura mcp doctor --all
 ```
 
-Run a single-server startup and tool-list check:
+Run a single-server startup and tool-list check, which prints `ok: <name> started; N tools`:
 
 ```bash
 aura mcp doctor calendar
@@ -192,41 +190,26 @@ aura mcp logs calendar
 `logs` currently exposes the CLI surface and points operators at doctor output; Aura
 does not write MCP log tails to git.
 
-## Tool Risk Policy
+## Tool risk
 
-`aura mcp tools <name>` lists live advertised tools with risk labels and whether each
-tool is mounted or blocked:
+`aura mcp tools <name>` lists the tools a server advertises, one per line with its
+description (`--json` prints the full tool objects):
 
 ```bash
 aura mcp tools calendar
 ```
 
-Risk labels include:
+There is no per-tool allow or deny list. Instead every tool is classified when it is
+bridged (`internal/agent/mcptools/bridge_risk.go`):
 
-- `read`
-- `write`
-- `network`
-- `filesystem`
-- `destructive`
-- `private_data`
-- `external_send`
-- `unknown`
+- a built-in recipe's tools come from the recipe's own table: read, mutate or destructive;
+- any other tool from its MCP annotations: `readOnlyHint` makes it a read, and
+  `destructiveHint` decides whether a write is destructive;
+- a tool with no annotations, or a write without `destructiveHint`, is treated as
+  destructive.
 
-Managed policy supports:
-
-```json
-{
-  "toolPolicy": {
-    "allow": ["send_email", "fetch_emails", "search_emails", "get_thread"],
-    "deny": ["delete_mailbox"],
-    "denyRisk": ["destructive", "unknown"]
-  },
-  "riskLabels": ["private_data", "external_send"]
-}
-```
-
-Aura denies `destructive` and `unknown` risk by default in managed policy decisions.
-Blocked tools never enter the agent registry.
+The approval gate grades each call from that classification (`internal/gateway/classify.go`):
+a destructive call stops the turn until the operator approves it.
 
 ## Connecting calendar/email accounts (OAuth)
 
@@ -252,7 +235,8 @@ Accounts linked before a change keep the client they were linked with.
   `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite` and `Contacts.ReadWrite`, and
   **Allow public client flows: Yes**. The admin enters its tenant and client ID; there is no secret.
 - `POST /admin/auth/{accountId}/start` returns a user code + the `microsoft.com/devicelogin` URL.
-- The member enters the code there; the cockpit polls `/admin/auth/{accountId}/status`.
+- The member enters the code there; the cockpit polls
+  `GET /api/connect/pim/accounts/{id}/auth/status`, which Aura forwards to the sidecar.
 
 **Google (web redirect through a shared relay)** — one redirect URI for every install:
 
@@ -301,16 +285,17 @@ server accepts no API key.
 
 ## Live Checks
 
-Automated tests use fake stdio servers and `httptest`; they do not run Docker, npx,
-uv, WSL, or public network services.
+Unit tests use fake stdio servers and `httptest`. CI also runs live tiers: the
+`whatsapp_integration` and `calendar_integration` tiers against the published `:latest`
+sidecar images, and the `docker_integration` tier against a built sandbox image for box
+servers.
 
-Operator-only live checks:
+Operator checks:
 
 | Check | Command | Expected |
 |---|---|---|
 | WhatsApp bridge | `aura mcp doctor whatsapp` | REST bridge reachable; connected-state reported when endpoint exists. |
-| Calendar PIM sidecar | `aura mcp doctor calendar` | `http endpoint configured` + `pim sidecar: accounts managed via admin API at <url>`. |
-| Docker runtime | `aura mcp status` plus a local Docker smoke | Docker metadata visible; actual launch depends on local daemon. |
+| Calendar PIM sidecar | `aura mcp doctor --all` | `calendar pim sidecar: accounts managed via admin API at <url>`; `aura mcp doctor calendar` prints `ok: calendar started; 1 tool`. |
 
 Do not commit credentials, phone numbers, access tokens, or live doctor output that
 contains private account identifiers.
@@ -319,9 +304,9 @@ contains private account identifiers.
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| `startup=blocked` | Manual command has no trust approval | Review command/source, then run `aura mcp trust <name>` if appropriate. |
+| `blocked` in the `startup` column of `aura mcp status` | Manual command has no trust approval | Review command/source, then run `aura mcp trust <name>` if appropriate. |
 | `doctor <name>` says trust approval required | Server is blocked | Trust it or keep it blocked; Aura did not launch it. |
-| Tool missing from registry | Not in allowlist or blocked by risk | Run `aura mcp tools <name>` and inspect the block reason. |
-| Mail/WhatsApp send tool unavailable | Recipe policy or bridge/auth issue | Check `aura mcp tools`, then `aura mcp doctor --all`. |
-| Docker server has no mounts | Default least-privilege runtime | Add explicit read-only `runtime.mounts` entries. |
+| A server's tools are not in the per-turn manifest | Deferred: only memory's core holds an always-loaded slot | The model reaches them through `tool_search`; nothing to fix. |
+| A server's tools are missing entirely | Server disabled, blocked, outside the `default` profile, or its mount failed | Check `aura mcp status`, then `aura mcp doctor <name>`. |
+| Mail/WhatsApp send tool unavailable | Bridge or account authorization | Check `aura mcp doctor --all`, then the cockpit's authorization for that server. |
 | Streamable HTTP auth fails | Missing bearer/header env | Configure `MCP_BEARER_TOKEN` or `MCP_HEADER_*` env entries for that server. |

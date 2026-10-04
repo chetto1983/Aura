@@ -1,9 +1,10 @@
 # Aura Asset Pipeline
 
-The asset pipeline lets operators attach documents, images, and audio to Aura
+The asset pipeline lets operators attach documents, images, audio and video to Aura
 from the web cockpit or Telegram. Aura stores the original file in an
-S3-compatible object store, tracks lifecycle state in Postgres, and sends the
-processed result to the existing document, OCR, or speech-to-text processors.
+S3-compatible object store, tracks lifecycle state in Postgres, and hands each
+modality to its processor: the ingest sidecar indexes documents, the vision route
+summarizes images, and speech-to-text transcribes audio.
 
 Use this guide when you configure local development, bring up Garage, or debug an
 asset that is stuck in the UI.
@@ -23,14 +24,15 @@ private Docker hostname in a browser presign is a failure, not a reason to disab
   backend is Garage/S3. `filesystem-dev` is available for local backend tests.
 - Postgres stores `aura.assets` and `aura.asset_events`.
 - Garage stores the original object bytes.
-- MarkItDown indexes document assets through the existing document ingestion
-  path.
-- The image processor calls the configured OCR/vision endpoint.
+- Documents are indexed by the ingest sidecar (CocoIndex with Apache Tika), which
+  reconciles the identity's bucket into ArcadeDB. The asset's own document step only
+  names the object the way the index names it (`internal/assets/document_processor.go`).
+- The image processor calls the configured vision endpoint.
 - The audio processor calls the configured STT endpoint.
 
-The agent runner stays text-only. When a user sends attachments, Aura validates
-the asset ids, builds a protected context block on the backend, and prepends that
-block to the user message.
+When a user sends attachments, Aura validates the asset ids and builds a protected
+context block on the backend, prepended to the user message. Images and video also
+reach the model as native content parts (`internal/assets/turn_media_loader.go`).
 
 ## Required Environment
 
@@ -40,21 +42,25 @@ Object storage:
 | --- | --- | --- |
 | `AURA_OBJECTSTORE_BACKEND` | Storage backend: `garage`, `s3`, `filesystem-dev`, or `fake` | `garage` |
 | `AURA_OBJECTSTORE_ENDPOINT` | Internal S3-compatible endpoint used by Aura | `http://127.0.0.1:3900` locally, `http://garage:3900` in Compose |
-| `AURA_OBJECTSTORE_PUBLIC_ENDPOINT` | Optional host rewrite for browser-visible presigned URLs | empty |
+| `AURA_OBJECTSTORE_PUBLIC_ENDPOINT` | Host rewrite for browser-visible presigned URLs; behind a proxy the request's own origin wins | `http://127.0.0.1:3900` in Compose |
 | `AURA_OBJECTSTORE_REGION` | S3 signing region | `garage` |
 | `AURA_OBJECTSTORE_BUCKET` | Bucket for original asset objects | `aura-assets` |
-| `AURA_OBJECTSTORE_ACCESS_KEY` | S3 access key | `GK000000000000000000000000` in `.env.example` |
-| `AURA_OBJECTSTORE_SECRET_KEY` | S3 secret key | 32-byte hex dev value in `.env.example` |
+| `AURA_OBJECTSTORE_ACCESS_KEY` | S3 access key | empty in `.env.example`; `install.sh` generates it |
+| `AURA_OBJECTSTORE_SECRET_KEY` | S3 secret key | empty in `.env.example`; `install.sh` generates it |
 | `AURA_OBJECTSTORE_PATH_STYLE` | Use path-style S3 URLs, required by Garage defaults | `true` |
-| `GARAGE_RPC_SECRET` | 32-byte hex RPC secret used by the Garage node | deterministic dev value in `.env.example` |
+| `GARAGE_RPC_SECRET` | 32-byte hex RPC secret used by the Garage node | empty in `.env.example`; `install.sh` generates it |
+
+The compiled fallbacks for the access and secret key are development values only; a strict
+deployment profile refuses them (`internal/config/config_validate.go`).
 
 Asset limits:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `AURA_ASSET_MAX_DOCUMENT_BYTES` | Maximum PDF/XLSX/XLSM/DOCX size | `104857600` |
+| `AURA_ASSET_MAX_DOCUMENT_BYTES` | Maximum document size (pdf, docx, pptx, xlsx, xlsm, html, htm, csv, md, markdown, txt, json, xml, epub) | `104857600` |
 | `AURA_ASSET_MAX_IMAGE_BYTES` | Maximum image size | `26214400` |
 | `AURA_ASSET_MAX_AUDIO_BYTES` | Maximum audio size | `104857600` |
+| `AURA_ASSET_MAX_VIDEO_BYTES` | Maximum video size (mp4, webm) | read at boot from the cockpit's Settings |
 | `AURA_ASSET_PRESIGN_TTL_SEC` | Presigned upload URL lifetime | `600` |
 | `AURA_ASSET_PROCESSING_CONCURRENCY` | Asset worker width knob | `2` |
 
@@ -100,14 +106,10 @@ $env:AURA_OBJECTSTORE_ENDPOINT='file:///C:/tmp/aura-assets'
 Do not use `filesystem-dev` for browser upload smoke tests. Its presigned URL is
 a local `file://` URL, while the web upload flow expects an HTTP(S) endpoint.
 
-When Aura runs inside Docker and the browser runs on the host, set:
-
-```powershell
-$env:AURA_OBJECTSTORE_PUBLIC_ENDPOINT='http://127.0.0.1:3900'
-```
-
-Without that rewrite, Aura may sign URLs for `http://garage:3900`, which is
-valid inside Compose but not resolvable by a host browser.
+When Aura runs inside Docker and the browser runs on the host, presigned URLs must not
+name `http://garage:3900`, which resolves only inside Compose. Compose already sets
+`AURA_OBJECTSTORE_PUBLIC_ENDPOINT=http://127.0.0.1:3900`; behind a proxy the browser
+request's own origin is used instead (`internal/agui/assets_api.go`).
 
 ## Web Upload Flow
 
@@ -115,8 +117,9 @@ valid inside Compose but not resolvable by a host browser.
    size, thread id, and modality hint.
 2. Aura creates an asset row and returns a presigned upload URL plus
    `required_headers`.
-3. The browser uploads the file with those exact headers. Garage signatures
-   include `Content-Type` and `Content-Length`, so clients must send both.
+3. The browser uploads the file with those exact headers. The signature covers
+   `Content-Type` and the `x-amz-meta-*` headers, so a client that drops one fails with
+   a signature mismatch.
 4. The cockpit calls `POST /api/assets/{id}/finalize`.
 5. Aura verifies the object, applies size/type limits, marks the asset
    `accepted`, and starts processing.
@@ -178,18 +181,15 @@ header with `AURA_ASSET_SMOKE_COOKIE`.
 `failed`:
 
 - The object was missing when Aura finalized the asset.
-- MarkItDown, OCR, or STT returned an error.
+- The vision route or STT returned an error.
 - The object store credentials, bucket, or endpoint are wrong.
-
-`searchable`:
-
-- Document text is indexed and ready for `document_search`.
-- Dense embeddings may still be running in the background.
 
 `complete`:
 
-- Processing finished for images or audio.
-- For documents, this also means the enhancement phase finished.
+- Processing finished for images, audio or video.
+- For documents it means the object was named; it does not mean the document is
+  searchable yet. The ingest sidecar indexes it on its own schedule, and whether it is
+  searchable is answered by ArcadeDB, not by the asset status.
 
 If browser uploads fail before finalize, inspect the presigned response and the
 actual PUT request. The PUT must use the returned `upload_url`, method, and every

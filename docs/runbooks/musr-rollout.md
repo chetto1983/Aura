@@ -10,13 +10,13 @@ refuses to provision a second one.
 > Both are gone: the graph the documents plane lived in was deleted, ownership is a column
 > now, and there is nothing to backfill. The command that version told operators to run,
 > `aura documents backfill`, never existed at all — `aura docs` takes
-> ingest/search/status/list.
+> ingest/search/open/mcp.
 
 ## What is already scoped, whatever the flag says
 
 | Plane | How |
 |---|---|
-| Documents | `SearchDigests` / `SetDigest` filter on the identity in SQL; `pgUUID` rejects an empty or malformed one before a statement runs, so an unresolved principal returns nothing rather than everything. |
+| Documents | The index lives in the identity's own ArcadeDB database, reached through the per-identity tenant resolver, so the server refuses another identity's passages at the door; ingestion jobs are scoped by RLS on `aura.ingestion_jobs`. |
 | Conversations, turns, approvals | The `*ForIdentity` stores, with the migration-`0032` RLS policies as the kernel backstop (`db.WithIdentityTx`). |
 | Shared links | Owner column plus RLS (`0041`), with a deliberate public-share carve-out for token resolution. |
 | Long-term memory | One ArcadeDB database and one derived credential per identity; the server refuses cross-tenant access at the door. Created just-in-time on first use. |

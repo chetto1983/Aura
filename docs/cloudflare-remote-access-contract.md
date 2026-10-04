@@ -1,8 +1,11 @@
 # Cloudflare remote access control-plane contract
 
-Status: official-document contract and controlled fixture tests, 2026-09-20.
-**Live account measurement is OPEN until Task 6.** No Cloudflare credential was available
-for Task 1. Fixtures are synthetic; they are not captured live account responses.
+Status: official-document contract and controlled fixture tests, 2026-09-20. This is the
+Task 1 record; the code has moved since. A live posture read was measured on 2026-09-22 and
+changed how ownership is checked (below), and `scripts/cloudflare_tunnel_live_e2e.sh` now
+drives a live run. For current status see [Cloudflare remote access](cloudflare-remote-access.md).
+When Task 1 was written no Cloudflare credential was available; its fixtures are synthetic,
+not captured live account responses.
 
 ## Inventory and reuse
 
@@ -49,7 +52,7 @@ than 1,000 pages. The posture list is a non-paginated endpoint.
 | CNAME | `/zones/{zone}/dns_records` | DNS Write; proxied CNAME to `{tunnel}.cfargotunnel.com`, TTL 1, Aura ownership comment. |
 | One-time PIN | `/accounts/{account}/access/identity_providers` | Access: Organizations, Identity Providers, and Groups Write; wire type is `onetimepin`, config `{}`. Reuse an existing provider of that type. |
 | Access application/policy | `/accounts/{account}/access/apps`, `.../{app}/policies` | Access: Apps and Policies Write; self-hosted app restricts allowed IdPs; policy includes explicit individual emails and requires OTP provider. |
-| Enrolled-client posture | `/accounts/{account}/devices/posture` | Zero Trust Write; create type `gateway` with Aura ownership description. Require its ID with `device_posture.integration_uid` in the email policy. |
+| Enrolled-client posture | `/accounts/{account}/devices/posture` | Zero Trust Write; create type `gateway` with an Aura-owned name (ownership was first a description; since the 2026-09-22 live read it is the name). Require its ID with `device_posture.integration_uid` in the email policy. |
 
 Sources read before implementation:
 [token verification](https://developers.cloudflare.com/api/resources/user/subresources/tokens/methods/verify/),
@@ -75,7 +78,7 @@ checks enrollment and traffic through the configured organization's Gateway.
 [Require WARP](https://developers.cloudflare.com/cloudflare-one/reusable-components/posture-checks/client-checks/require-warp/)
 also admits the consumer client, which does not satisfy the spec's enrolled-client acceptance.
 The orchestration ruling therefore selects `EnsureGatewayPosture` and `GatewayPostureID`.
-The planned SQL column `warp_posture_id` stores that Gateway ID and has a clarifying comment.
+The SQL column `warp_posture_id` (migration 0130) stores that Gateway ID and has a clarifying comment.
 The historical fixture filename `posture-warp.json` describes the hostname purpose; its
 wire type is correctly `gateway`.
 
@@ -95,8 +98,8 @@ Secrets use `settings.Store` under `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_TUNNEL
 They are encrypted at rest and skipped by `settings.OverlayEnv`.
 
 `EnsureCNAME` refuses an existing hostname unless both its persisted ID and ownership
-comment match. `EnsureGatewayPosture` validates the persisted ID, type and ownership
-description. Deleting DNS/posture checks ownership again. Raw application, policy and tunnel
+comment match. `EnsureGatewayPosture` validates the persisted ID, type and ownership name
+(`internal/cloudflareapi/access.go`). Deleting DNS/posture checks ownership again. Raw application, policy and tunnel
 methods are transport primitives: Task 2 must verify persisted ID plus its resource-specific
 ownership name before updating/deleting them, serialize reconciliation per generation, and
 commit each returned ID before the next operation. It must not infer ownership from a name
@@ -121,6 +124,6 @@ Do not enable shell tracing in the calling shell. The probe disables inherited t
 passes the bearer header through curl stdin, suppresses raw curl/jq errors and prints
 only structural summaries. It fails closed on HTTP failures and unsuccessful envelopes.
 
-Still open: real envelope and pagination observations, account permission refusal codes,
+Still open when Task 1 closed: real envelope and pagination observations, account permission refusal codes,
 least-privilege write permission measurements, token rotation, zero-trust organization
 configuration and full Ubuntu-appliance acceptance. No Task 1 result closes those gates.

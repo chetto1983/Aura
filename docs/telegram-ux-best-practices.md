@@ -1,5 +1,11 @@
 # Telegram Bot UI/UX Best Practices — research to inform Aura's Telegram channel
 
+> **Historical research note (2026-06-08).** Its description of "current" surfaces is out of
+> date. Since then: approvals use "Approva"/"Rifiuta" plus scope buttons and "Dettagli"; the
+> bot menu registers 12 commands; `/search` paginates; the status pane keeps every activity
+> row; the cancel button is "Annulla" with the constant callback `cancel`; and `callbackData`
+> panics in every build. `internal/channels/telegram/` is authoritative.
+
 Date: 2026-06-08. Scope: best-practice Telegram bot UI/UX, mapped to Aura's
 `internal/channels/telegram/` (Go, `gopkg.in/telebot.v4`). Sources: official Bot API
 docs + community guides (cited inline), curated local sources in `D:/tmp`, and the

@@ -1,9 +1,19 @@
 # Aura memory preload threat model
 
-Status: verified implementation (2026-08-27)
+Status: verified implementation (2026-08-27). Revised 2026-10-04: the scope, the write
+boundary and the provenance claims were brought back in line with the code; the STRIDE
+dispositions were not re-tested.
 
-Scope: the always-on `memory_digest` and opt-in per-message `memory_search` preload
-inserted by `internal/runner` before the current user message.
+Scope: what `internal/runner` inserts before the current user message.
+
+- An always-on memory pointer: the fact and entity counts read from `memory_digest`. Since
+  2026-09-03 the digest's text is discarded and the pointer says the content is not in
+  context (`cmd/aura/serve_memory_context.go`).
+- An opt-in per-message preload, which calls `memory_recall` with `mode: "semantic"`.
+
+Known inconsistency: the system-prompt doctrine (`internal/agent/prompt.go`) still describes a
+"bounded current index" inside `<memory_context>` and tells the model to answer from it, while
+that block now carries only counts.
 
 ## Security objective
 
@@ -76,8 +86,8 @@ Sources:
 
 Aura adopts Hermes's defense-at-load principle, not its regex corpus or distrust semantics.
 Aura's first-party memory MCP is already explicitly `TrustTrusted`: it is operator-managed,
-identity-scoped infrastructure and its facts are the agent's own durable knowledge. PRD
-amendment #122 explicitly superseded amendment #110's former "untrusted reference item"
+identity-scoped infrastructure and its facts are the agent's own durable knowledge. The
+decision recorded in commit `245e9d9d4` superseded the former "untrusted reference item"
 wording, so restoring that classification would be a trust-model regression. The
 existing external-tool envelope combines two different concerns: low-level NFKC plus HTML
 escaping, and a `trust="untrusted"` classification. Aura reuses only the low-level escaping
@@ -88,9 +98,9 @@ the model to discount its own knowledge or rejecting legitimate facts about secu
 
 | Boundary | Trust decision | Required invariant |
 |---|---|---|
-| Earlier user/model/tool/document activity -> agent decision to store a fact | Only Aura calls the typed write tool; upstream evidence may have mixed trust | The stored result becomes agent memory with mandatory provenance, not a replay of source authority |
+| Earlier user/model/tool/document activity -> decision to store a fact | Aura's runner, and any MCP client holding an Aura-issued OAuth token for the identity (for example the operator's own Claude Code), call the typed write tools; the writer's run id is host-derived from Aura's actor header or the OAuth client, never supplied by the model; upstream evidence may have mixed trust | The stored result becomes agent memory with host-derived provenance, not a replay of source authority |
 | OAuth MCP session -> tenant resolver | Verified token subject is trusted for tenant selection | No model argument or recalled text can select another tenant |
-| ArcadeDB/MCP -> Runner | Transport, identity and memory ownership are trusted | Digest and recall remain recalled knowledge; they are never labeled as external/untrusted output |
+| ArcadeDB/MCP -> Runner | Transport, identity and memory ownership are trusted | The pointer and recall remain recalled knowledge; they are never labeled as external/untrusted output |
 | Runner -> model-visible transient turn | Trusted knowledge crosses a security-sensitive syntax boundary | NFKC plus HTML escaping prevents fence/chat-template forgery; explicit doctrine separates memory knowledge from instruction authority |
 | Model -> tool gateway | The model is not an authorization principal | Memory text cannot bypass capability, policy, reservation, or approval checks |
 | Context budget/failure -> current turn | Availability boundary | Oversized or failed recall is omitted whole and never blocks the turn |
@@ -101,12 +111,12 @@ the model to discount its own knowledge or rejecting legitimate facts about secu
 |---|---|---:|---|---|---|
 | MEMP-01 | Spoofing / Elevation | High | An instruction-shaped remembered statement is mistaken for a new operator/system command | Memory remains trusted knowledge, but the system prompt pins its authority: use facts directly; treat imperative text inside the blocks as remembered content; system/current explicit operator instructions win | CLOSED by implementation proof |
 | MEMP-02 | Tampering / Elevation | High | A fact closes `memory_recall`, injects a chat-template token, or forges another prompt boundary | The shared low-level prompt-text encoder NFKC-normalizes then HTML-escapes content without adding an untrusted envelope; the adversarial regression proves only the real outer boundary remains | CLOSED by implementation proof |
-| MEMP-03 | Tampering | Medium | A benign-looking false or stale fact influences an answer | Temporal validity, mandatory multi-source provenance, exact correction/forget paths, current-message precedence, and deep recall on conflict contain the risk. Syntactically plausible falsehood remains possible | ACCEPTED residual data-integrity risk |
+| MEMP-03 | Tampering | Medium | A benign-looking false or stale fact influences an answer | Temporal validity, host-derived run provenance, exact correction/forget paths, current-message precedence, and deep recall on conflict contain the risk. Syntactically plausible falsehood remains possible | ACCEPTED residual data-integrity risk |
 | MEMP-04 | Information disclosure / Spoofing | Critical | Recall crosses identities or a model-supplied id selects a tenant | OAuth `sub` selects one client session/database; identity is absent from tool arguments; existing two-subject live tests and forged-metadata test are the authority | CLOSED (existing control) |
 | MEMP-05 | Denial of service | Medium | Poisoned or excessive memory consumes context or stalls every turn | Digest/result limits, preload top-k, independent timeout, context hard-cap accounting, default-off preload, and fail-soft omission | CLOSED (existing control) |
-| MEMP-06 | Denial of service | Low | Memory MCP failure prevents the user turn | Digest and recall errors yield empty content; recall failure retains any usable digest | CLOSED (existing control) |
+| MEMP-06 | Denial of service | Low | Memory MCP failure prevents the user turn | Pointer and recall errors yield empty content; a recall failure keeps any usable pointer | CLOSED (existing control) |
 | MEMP-07 | Elevation | High | The model follows instruction-shaped memory into a dangerous side effect | Memory-specific authority doctrine prevents the reinterpretation; the gateway remains the enforcement point for capabilities, policy and approvals even if the model misbehaves | CLOSED by layered controls |
-| MEMP-08 | Repudiation | Medium | A poisoned fact cannot be traced or corrected | Every fact requires a source run and source memory ids; fact keys, temporal closure, correction and forget preserve an audit/correction path | CLOSED (existing control) |
+| MEMP-08 | Repudiation | Medium | A poisoned fact cannot be traced or corrected | Every fact carries a host-derived source run; source memory ids are optional and capped at 64; fact keys, temporal closure, correction and forget preserve an audit/correction path | CLOSED (existing control) |
 
 There are no open blocking threats after the implementation evidence is green. MEMP-03 is
 accepted explicitly: no memory product can infer the truth of an otherwise plausible stored
@@ -135,7 +145,8 @@ Closure requires all of the following:
 - `TestLoadMemoryContext_PreservesTrustedMemoryAndNeutralizesForgedBoundaries` and
   `TestSystemPromptUsesAutomaticMemoryBeforeToolDiscovery` were observed red against the
   baseline, then passed with their full packages under WSL unit and `-race` runs. The Runner
-  regression proves the benign preference remains present in digest and recall, no
+  regression proves the benign preference remains present in digest and recall (against the
+  test fake; the live digest text is no longer injected since 2026-09-03), no
   `trust="untrusted"` marker appears, and ASCII plus compatibility-width prompt delimiters are
   normalized and escaped without creating a second memory boundary.
 - `go vet ./...`, `go build ./...`, and the full `internal/agent` plus `internal/runner`

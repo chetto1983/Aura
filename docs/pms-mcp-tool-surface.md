@@ -1,5 +1,8 @@
 # PMS MCP — superficie dei tool
 
+> **Documento storico (bozza del 2026-08-22).** I riferimenti a `.planning/phases/46-…` puntano a
+> file cancellati in `5bff1faa4`, e i numeri di riga nel codice citato sono cambiati da allora.
+
 **Stato:** bozza di progetto, **non misurata**. Derivata da `Le_Camille_PMS_Aura_Specifica_v1.md`
 (§5 flusso, §7 import, §8 motore commerciale, §11 disponibilità, §12 margine) e dai vincoli letti
 nel codice Aura il 2026-08-22.

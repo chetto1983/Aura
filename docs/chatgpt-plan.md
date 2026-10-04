@@ -17,7 +17,7 @@ pulsante di accesso per concedere il permesso. **Ricollega ChatGPT** recupera un
 sessione scaduta. **Scollega ChatGPT** cancella i token locali e tenta la revoca
 remota; se questa fallisce, controlla anche le connessioni nelle impostazioni ChatGPT.
 
-Se il browser blocca la finestra, usa **Apri finestra di accesso**. Chiuderla annulla
+Se il browser blocca la finestra, usa **Apri l’accesso a ChatGPT**. Chiuderla annulla
 quel tentativo senza scollegare un account già attivo. Un accesso scade dopo dieci
 minuti; puoi riprovare dallo stesso pulsante. Le credenziali digitate nel browser
 non passano attraverso il modello.
