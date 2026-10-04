@@ -461,6 +461,28 @@ func TestBackgroundCompletionWakeCarriesARootOperation(t *testing.T) {
 	}
 }
 
+// TestBackgroundCompletionDispatcherHandsWakesToItsHost: once serve binds the AG-UI server,
+// every wake runs there as a run an open cockpit can attach to, never on the bare runner.
+func TestBackgroundCompletionDispatcherHandsWakesToItsHost(t *testing.T) {
+	bare := &fakeBackgroundCompletionRunner{}
+	host := &fakeBackgroundCompletionRunner{started: make(chan struct{}, 1)}
+	dispatcher := newBackgroundCompletionDispatcher(context.Background(), bare, acceptingSteerPusher{})
+	dispatcher.hostWakes(host)
+
+	dispatcher.NotifyShell(shellDone("sh-1", "exited:0"))
+	waitStarted(t, host.started, "hosted wake")
+	stopDispatcher(t, dispatcher)
+	if wakes := host.recorded(); len(wakes) != 1 || wakes[0].owner != testWakeOwner || wakes[0].source != steer.SourceShell {
+		t.Fatalf("host wakes = %+v, want the shell completion", wakes)
+	}
+	if wakes := bare.recorded(); len(wakes) != 0 {
+		t.Fatalf("the bare runner woke the conversation %d time(s) after a host was bound", len(wakes))
+	}
+
+	var absent *backgroundCompletionDispatcher
+	absent.hostWakes(host)
+}
+
 func TestBackgroundCompletionWakeRefusesAnOwnerThatIsNotAnIdentity(t *testing.T) {
 	run := &fakeBackgroundCompletionRunner{}
 	dispatcher := newBackgroundCompletionDispatcher(context.Background(), run, acceptingSteerPusher{})

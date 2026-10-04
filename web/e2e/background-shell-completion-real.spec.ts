@@ -214,8 +214,16 @@ test.describe('real background-shell completion hook', () => {
       expect(initialTools).not.toContain('shell_poll');
       expect(shellExecArgs(frames)?.background).toBe(true);
 
+      // The woken turn reaches the tab that stayed open, with no reload and no request of the
+      // tab's own: it runs as a detached run the tab discovers and attaches to (prd.md §12).
+      await expect(page.getByText(completionToken, { exact: true })).toBeVisible({
+        timeout: 90_000,
+      });
+
       const snapshot = await waitForCompletionTurn(page, conversationId, completionToken);
       const messages = snapshot.messages ?? [];
+      // The notice reaches the model, never the transcript: it is Aura's, not the operator's
+      // (steer.IsRuntimeSource).
       const completionNotices = messages.filter(
         (message) =>
           message.role === 'user' &&
@@ -231,7 +239,7 @@ test.describe('real background-shell completion hook', () => {
       );
 
       expect(snapshot.type).toBe('MESSAGES_SNAPSHOT');
-      expect(completionNotices).toHaveLength(1);
+      expect(completionNotices).toHaveLength(0);
       expect(pollCalls).toHaveLength(1);
       expect(completionAnswers).toHaveLength(1);
       expect(browserRunRequests).toBe(1);

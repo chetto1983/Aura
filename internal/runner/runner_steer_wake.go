@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -41,12 +40,12 @@ func (r *Runner) WakeWithSteer(
 		}
 		lockedCtx := scopedCtx
 		if !threadLockHeld(scopedCtx) {
-			mu := r.lockForThread(scopedCtx, convID)
-			if !lockWakeThread(scopedCtx, mu) {
-				yield(nil, scopedCtx.Err())
+			unlock, err := r.LockThread(scopedCtx, convID)
+			if err != nil {
+				yield(nil, err)
 				return
 			}
-			defer mu.Unlock()
+			defer unlock()
 			lockedCtx = WithThreadLockHeld(scopedCtx)
 		}
 		if err := lockedCtx.Err(); err != nil {
@@ -66,22 +65,25 @@ func (r *Runner) WakeWithSteer(
 	}
 }
 
-// lockWakeThread is the cancellation-aware counterpart to runTurn's ordinary
-// blocking lock. Runtime wakes must drain cleanly on daemon shutdown even when a
-// foreground turn still owns the conversation mutex.
-func lockWakeThread(ctx context.Context, mu *sync.Mutex) bool {
+// LockThread waits for the conversation's run lock until ctx ends: the wake's
+// counterpart to TryLockThread, which an operator's run uses to answer 409 instead.
+// A wake queues behind the turn in progress, and still drains cleanly on daemon
+// shutdown while a foreground turn owns the lock. A host that registers the wake as
+// a run (agui) takes the lock here and hands WakeWithSteer the ctx that says so.
+func (r *Runner) LockThread(ctx context.Context, convID string) (func(), error) {
+	mu := r.lockForThread(ctx, convID)
 	if mu.TryLock() {
-		return true
+		return mu.Unlock, nil
 	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return false
+			return nil, ctx.Err()
 		case <-ticker.C:
 			if mu.TryLock() {
-				return true
+				return mu.Unlock, nil
 			}
 		}
 	}
