@@ -188,7 +188,9 @@ func (v *ArcadeGraphView) expand(
 	}
 	result := projectStudioGraph(graph, in, schema, nodeCap, edgeCap)
 	result.Query = statement
-	result.Truncated = result.Truncated || len(graph.Edges) >= edgeCap || len(graph.Vertices) >= nodeCap
+	// A read that filled a cap may have stopped short. The projection only cuts a read that
+	// went past one, so its own flag adds nothing here.
+	result.Truncated = len(graph.Edges) >= edgeCap || len(graph.Vertices) >= nodeCap
 	return result, nil
 }
 
@@ -276,7 +278,7 @@ func projectArcadeSchema(in arcadedb.Schema) GraphSchema {
 		Labels:   make([]string, 0, len(in.Vertices)),
 		RelTypes: make([]string, 0, len(in.Edges)),
 	}
-	counts := make(map[string]int, len(in.Vertices)+len(in.Edges)+len(in.Documents))
+	counts := make(map[string]int)
 	keys := make(map[string]struct{})
 	for _, group := range [][]arcadedb.SchemaType{in.Vertices, in.Edges, in.Documents} {
 		for _, entry := range group {
@@ -293,16 +295,11 @@ func projectArcadeSchema(in arcadedb.Schema) GraphSchema {
 		out.RelTypes = append(out.RelTypes, edge.Name)
 	}
 	out.PropertyKeys = sortedSet(keys)
-	if len(counts) > 0 {
-		out.Counts = counts
-	}
+	out.Counts = counts
 	return out
 }
 
 func sortedSet(set map[string]struct{}) []string {
-	if len(set) == 0 {
-		return nil
-	}
 	out := make([]string, 0, len(set))
 	for member := range set {
 		out = append(out, member)
