@@ -520,6 +520,56 @@ is filtered. Share links keep the redacted snapshot (ADR 0039). That measurement
 redacted projection cannot explain what a run did; it does not bound the dump's size for a
 very long conversation.
 
+Conversation search finds a word inside a message (2026-10-04). Measured on the local
+stack: one realistic 430-character Italian message was sent through the cockpit, then
+`GET /api/conversations/search` was asked eleven times:
+- single words (`fattura`, `commercialista`, `Giulia`, `tagliando`);
+- two- and three-word phrases;
+- the unaccented `lunedi`, the plural `fatture` and the typo `fatura`;
+- the message's own first sentence.
+
+Not one search found it. The query was pg_trgm's `content % $1`, and `similarity` compares
+the query with the whole message, so the score falls as the message grows: 0.025 to 0.082
+for the words and phrases, 0.226 for the copied sentence, all under the 0.3 threshold. A
+message could only be found by a query about as long as the message itself.
+
+On the same text the alternatives scored:
+- `word_similarity`, which compares the query with the best-matching extent of the message
+  (operator `<%`, threshold 0.6): all eleven queries match;
+- a `simple` tsvector over `aura.searchable_text`: nine match, but not the plural and not
+  the typo.
+
+Twenty-one words absent from the message scored at most 0.6 under `word_similarity`, and
+the operator is a strict "greater than" (pgtrgm documentation), so none would match. A
+prefix typed so far (`fatt`, 0.8) matches, which suits a box that searches as you type.
+
+The search therefore uses `$1 <% content`, ordered by `word_similarity` and then by
+recency. No migration is needed: the existing `gin_trgm_ops` index carries `%>`
+(strategy 7), and the planner turns `$1 <% content` into that index condition. Telegram's
+`/search` and the CLI run the same query and gain the same behaviour.
+
+A turn over the 64 KiB cap stays unsearchable: its text lives in a sidecar file and the
+column is NULL. Before this change that cost nothing, because a body that long could never
+reach the old threshold. Now it is a real gap, bounded by the cap.
+
+Verified the same day on the rebuilt stack: the same eleven searches all find the message.
+Searching `Giulia` also returned this deployment's older conversations about her birthday,
+which the old query had never surfaced.
+
+Finding a word anywhere in a message exposed a second fault. The panel showed each hit from
+its first character, in two lines of about thirty characters, so `fattura` was found but not
+visible. The snippet now starts a few words before the first literal occurrence, cut at a
+word boundary, and a fuzzy match (a typo, a plural) still shows the start. `aura chat search`
+and Telegram's `/search` already cut theirs around the match.
+
+This does not establish:
+- ranking quality across many real conversations: the measurement used one message and a
+  local database of test conversations;
+- that tool turns stay out of results: they are searched like any turn, so a hit can show a
+  tool's JSON (seen for `Giulia`), as before;
+- speed on a large database: the index condition was read from `EXPLAIN` on 31 rows, not
+  timed.
+
 ## 8. Long-term memory: facts and provenance
 
 The production memory is Aura's Go MCP service over ArcadeDB. Other projects are
