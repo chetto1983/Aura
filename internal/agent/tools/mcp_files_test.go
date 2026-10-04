@@ -21,10 +21,18 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
-// mcpTurnCtx is a context the way LlmAgent.Run leaves it: a request id and a cleanup.
+// mcpTurnCtx is a context the way LlmAgent.Run and runTool leave it for one call: a
+// request id, a cleanup and the call's own id.
 func mcpTurnCtx(t *testing.T) (context.Context, *TurnCleanup) {
 	t.Helper()
-	return WithTurnCleanup(WithRequestID(t.Context(), "req-1"))
+	ctx, cleanup := WithTurnCleanup(WithRequestID(t.Context(), "req-1"))
+	return mcpCallCtx(t, ctx, "call-1"), cleanup
+}
+
+// mcpCallCtx is turn's context for another call of the same turn.
+func mcpCallCtx(t *testing.T, turn context.Context, callID string) context.Context {
+	t.Helper()
+	return WithToolCallContext(turn, "sess-1", callID, t.TempDir(), 30000)
 }
 
 func hexSum(b []byte) string {
@@ -63,8 +71,8 @@ func TestMCPFileSinkWritesEachFileWhereTheTurnRemovesIt(t *testing.T) {
 	})
 
 	want := []mcp.FileOutcome{
-		{Path: "/workspace/mcp-files/req-1/aura-pim/Fattura settembre è.pdf", Name: "Fattura settembre è.pdf", MIMEType: "application/pdf", SizeBytes: 8, SHA256: hexSum(pdf)},
-		{Path: "/workspace/mcp-files/req-1/aura-pim/file.png", Name: "file.png", MIMEType: "image/png", SizeBytes: 4, SHA256: hexSum(png)},
+		{Path: "/workspace/mcp-files/req-1-call-1/aura-pim/Fattura settembre è.pdf", Name: "Fattura settembre è.pdf", MIMEType: "application/pdf", SizeBytes: 8, SHA256: hexSum(pdf)},
+		{Path: "/workspace/mcp-files/req-1-call-1/aura-pim/file.png", Name: "file.png", MIMEType: "image/png", SizeBytes: 4, SHA256: hexSum(png)},
 	}
 	if !reflect.DeepEqual(out, want) {
 		t.Fatalf("outcomes = %+v\nwant %+v", out, want)
@@ -75,22 +83,22 @@ func TestMCPFileSinkWritesEachFileWhereTheTurnRemovesIt(t *testing.T) {
 	if err := cleanup.Run(context.Background()); err != nil {
 		t.Fatalf("cleanup: %v", err)
 	}
-	if last := be.execs[len(be.execs)-1].Command; last != "rm -rf -- '/workspace/mcp-files/req-1'" {
+	if last := be.execs[len(be.execs)-1].Command; last != "rm -rf -- '/workspace/mcp-files/req-1-call-1'" {
 		t.Fatalf("turn cleanup ran %q", last)
 	}
 }
 
 // An unclean exit (an updater restart, an OOM kill) skips the turn's own removal, and nothing
-// else removes a turn directory, so the exec that lists a call's directory first sweeps the
-// stale ones. The turn's own directory is never swept, however long the turn has run.
-func TestMCPFileSinkSweepsTheTurnDirectoriesAnUncleanExitLeftBehind(t *testing.T) {
+// else removes a call directory, so the exec that lists a call's directory first sweeps the
+// stale ones. The call's own directory is never swept, however long the call has run.
+func TestMCPFileSinkSweepsTheCallDirectoriesAnUncleanExitLeftBehind(t *testing.T) {
 	be := &fakeBox{}
 	ctx, _ := mcpTurnCtx(t)
 
 	(&MCPFileSink{Router: routerWith(be)}).Materialize(ctx, "aura-pim", []mcp.FilePart{{Name: "a.txt", Data: []byte("x")}})
 
-	want := "find '/workspace/mcp-files' -mindepth 1 -maxdepth 1 -type d -mmin +1440 ! -path '/workspace/mcp-files/req-1' -exec rm -rf -- {} + 2>/dev/null; " +
-		"ls -1A -- '/workspace/mcp-files/req-1/aura-pim' 2>/dev/null"
+	want := "find '/workspace/mcp-files' -mindepth 1 -maxdepth 1 -type d -mmin +1440 ! -path '/workspace/mcp-files/req-1-call-1' -exec rm -rf -- {} + 2>/dev/null; " +
+		"ls -1A -- '/workspace/mcp-files/req-1-call-1/aura-pim' 2>/dev/null"
 	if len(be.execs) == 0 || be.execs[0].Command != want {
 		t.Fatalf("the listing exec = %v\nwant [%q]", be.execs, want)
 	}
@@ -115,29 +123,32 @@ func TestMCPFileSinkNeverOverwritesAFileOfTheSameName(t *testing.T) {
 	if want := []string{"report-3.pdf", "image001.png", "image001-2.png"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("names = %v, want %v", got, want)
 	}
-	dir := "/workspace/mcp-files/req-1/aura-pim/"
+	dir := "/workspace/mcp-files/req-1-call-1/aura-pim/"
 	wantWritten := map[string]string{dir + "report-3.pdf": "a", dir + "image001.png": "b", dir + "image001-2.png": "c"}
 	if !reflect.DeepEqual(be.written, wantWritten) {
 		t.Fatalf("written = %v, want %v", be.written, wantWritten)
 	}
 }
 
+// executeBatch runs the calls of one assistant message on parallel workers. Each call writes
+// into a directory of its own, so no lock is needed for two of them to keep the same name.
 func TestMCPFileSinkConcurrentCallsOfATurnNeverShareAName(t *testing.T) {
 	const calls = 8
 	be := &fakeBox{}
 	be.respond = func(cmd string) usersandbox.ExecResult {
 		res := be.listWritten(cmd)
-		// The listing-to-write window a second call of the turn can land in: without the
-		// sink's lock all eight calls are inside it at once.
+		// The listing-to-write window a second call of the turn can land in: all eight
+		// calls are inside it at once.
 		time.Sleep(5 * time.Millisecond)
 		return res
 	}
-	ctx, _ := mcpTurnCtx(t)
+	turn, _ := mcpTurnCtx(t)
 	sink := &MCPFileSink{Router: routerWith(be)}
 
 	outcomes := make([]mcp.FileOutcome, calls)
 	var wg sync.WaitGroup
 	for i := range calls {
+		ctx := mcpCallCtx(t, turn, fmt.Sprintf("call-%d", i))
 		wg.Go(func() {
 			part := mcp.FilePart{Name: "image001.png", MIMEType: "image/png", Data: fmt.Appendf(nil, "attachment %d", i)}
 			outcomes[i] = sink.Materialize(ctx, "aura-pim", []mcp.FilePart{part})[0]
@@ -233,7 +244,7 @@ func TestMCPFileSinkRefusesAFileOverTheCapAndKeepsTheRest(t *testing.T) {
 	if out[0].NotMaterialized != "26214401 bytes exceeds the 26214400-byte file cap" || out[0].Path != "" {
 		t.Fatalf("oversized outcome = %+v", out[0])
 	}
-	if out[1].Path != "/workspace/mcp-files/req-1/s/small.txt" {
+	if out[1].Path != "/workspace/mcp-files/req-1-call-1/s/small.txt" {
 		t.Fatalf("the small file must still be written: %+v", out[1])
 	}
 }
@@ -253,7 +264,7 @@ func TestMCPFileSinkDoesNotCountAFileItRefusedAloneTowardTheCallCap(t *testing.T
 	if out[0].NotMaterialized != mcp.FileCapExceeded(mcp.MaxCallFileBytes+1) || out[0].Path != "" {
 		t.Fatalf("oversized outcome = %+v", out[0])
 	}
-	if out[1].Path != "/workspace/mcp-files/req-1/s/small.txt" {
+	if out[1].Path != "/workspace/mcp-files/req-1-call-1/s/small.txt" {
 		t.Fatalf("the small file must still be written, not refused for the call cap: %+v", out[1])
 	}
 }
@@ -280,7 +291,10 @@ func TestMCPFileSinkRefusesACallOverTheCapWithoutTouchingTheBox(t *testing.T) {
 func TestMCPFileSinkWithoutATurnWritesNothing(t *testing.T) {
 	be := &fakeBox{}
 	sink := &MCPFileSink{Router: routerWith(be)}
-	for _, ctx := range []context.Context{t.Context(), WithRequestID(t.Context(), "req-1")} {
+	// A turn's cleanup and request id are not enough: only the call's own id names the
+	// directory its cleanup removes.
+	callless, _ := WithTurnCleanup(WithRequestID(t.Context(), "req-1"))
+	for _, ctx := range []context.Context{t.Context(), WithRequestID(t.Context(), "req-1"), callless} {
 		out := sink.Materialize(ctx, "s", []mcp.FilePart{{Name: "a.txt", Data: []byte("x")}})
 		if out[0].NotMaterialized != "no agent turn owns the file" {
 			t.Fatalf("outcome = %+v", out[0])
@@ -351,7 +365,7 @@ func TestMCPFileSinkKeepsTheTurnDirectoryRegisteredWhenTheListingFails(t *testin
 		t.Fatalf("outcome = %+v", out[0])
 	}
 	err := cleanup.Run(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "remove /workspace/mcp-files/req-1: exec down") {
+	if err == nil || !strings.Contains(err.Error(), "remove /workspace/mcp-files/req-1-call-1: exec down") {
 		t.Fatalf("cleanup error = %v, want the removal to be attempted and to say why it failed", err)
 	}
 }
@@ -365,7 +379,7 @@ func TestMCPFileSinkRemovesAPartialFileAndSaysTheWriteFailed(t *testing.T) {
 	if !strings.HasPrefix(out[0].NotMaterialized, "write failed: ") || !strings.Contains(out[0].NotMaterialized, "disk full") {
 		t.Fatalf("outcome = %+v", out[0])
 	}
-	if last := be.execs[len(be.execs)-1].Command; last != "rm -f -- '/workspace/mcp-files/req-1/s/a.pdf'" {
+	if last := be.execs[len(be.execs)-1].Command; last != "rm -f -- '/workspace/mcp-files/req-1-call-1/s/a.pdf'" {
 		t.Fatalf("partial file not removed; last exec %q", last)
 	}
 }
@@ -393,7 +407,7 @@ func TestMCPFileSinkCleanupReportsAFailedRemoval(t *testing.T) {
 
 	err := cleanup.Run(context.Background())
 
-	if err == nil || !strings.Contains(err.Error(), "/workspace/mcp-files/req-1") || !strings.Contains(err.Error(), "busy") {
+	if err == nil || !strings.Contains(err.Error(), "/workspace/mcp-files/req-1-call-1") || !strings.Contains(err.Error(), "busy") {
 		t.Fatalf("cleanup error = %v, want the directory and the box's reason", err)
 	}
 }

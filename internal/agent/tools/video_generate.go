@@ -66,11 +66,13 @@ type videoGenerateArgs struct {
 
 func (g *VideoGenerate) Spec() Spec {
 	return Spec{
-		Name:                "video_generate",
-		Summary:             "Generate a video or animate an image; collect a completed video job.",
-		Description:         videoGenerateDescription,
-		Parameters:          json.RawMessage(videoGenerateParameters),
-		Deferred:            true,
+		Name:        "video_generate",
+		Summary:     "Generate a video or animate an image; collect a completed video job.",
+		Description: videoGenerateDescription,
+		Parameters:  json.RawMessage(videoGenerateParameters),
+		Deferred:    true,
+		// It detaches to the video watcher after its own inline wait, which an admin sets.
+		Foreground:          true,
 		Mutating:            true,
 		OperationScope:      OperationScopeAgent,
 		OperationNormalizer: OperationNormalizerCanonical,

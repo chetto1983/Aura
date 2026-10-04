@@ -86,6 +86,11 @@ import (
 // The `all` sweep below also gained plugin_pack, skill_manage, shell_poll, shell_kill and
 // swarm_status. They were absent, so a tool outside the list could go non-deferred without this
 // budget test -- the one place the set is supposed to live -- ever seeing it.
+//
+// 2026-10-04: tool_poll joins on the same argument as shell_poll. A tool call that outlives its
+// window is moved to the background (background_calls.go), and both its result and the wake that
+// follows tell the model to call tool_poll with the task id. Measured with TestMeasureToolWeight:
+// 177 tokens against a 5,641-token default manifest of 15 tools.
 func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 	t.Parallel()
 	want := []string{
@@ -93,7 +98,7 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 		"read_tool_output", "search_files", "send_file", "shell_exec",
 		"shell_kill", "shell_poll",
 		"skill",
-		"text_response", "tool_search", "write_file",
+		"text_response", "tool_poll", "tool_search", "write_file",
 	}
 
 	// Every tool the daemon can register, constructed the cheap way (no wiring): Spec() is
@@ -103,7 +108,7 @@ func TestOnlyTheWorkingSetIsAlwaysActive(t *testing.T) {
 		&SearchFiles{}, &ReadFile{}, &WriteFile{}, &ReadToolOutput{}, &SendFile{},
 		&ShellExec{}, &ShellPoll{}, &ShellKill{},
 		&SkillTool{}, &SkillManageTool{}, &SwarmSpawn{}, &SwarmStatus{}, &TaskTool{},
-		&TextResponse{}, &TodoTool{}, &ToolSearch{}, &VideoGenerate{}, &WebFetch{}, &WebSearch{},
+		&TextResponse{}, &TodoTool{}, &ToolPoll{}, &ToolSearch{}, &VideoGenerate{}, &WebFetch{}, &WebSearch{},
 	}
 
 	var got []string

@@ -128,7 +128,7 @@ export const settingsEn = {
     },
     tokens: {
       heading: 'Token and turn budget',
-      body: 'Tune the response cap, context window, compaction trigger and per-turn step limit Aura uses when running a turn.',
+      body: 'Tune the response cap, context window, compaction trigger, per-turn step limit and how long a tool call may hold the turn.',
     },
     help: {
       maxTokens: 'Per-request cap on the answer sent to the provider (max_tokens).',
@@ -145,6 +145,10 @@ export const settingsEn = {
         'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
       loopMaxWallclock:
         'Seconds one turn may run, tools included, before Aura wraps up (default 300).',
+      loopBackgroundAfter:
+        'Seconds a tool call may hold the turn. A call still running is not stopped: it moves to the background and Aura picks the conversation up when it finishes (default 60).',
+      loopBackgroundMax:
+        'Seconds a tool call moved to the background may run before Aura stops it (default 1800).',
     },
     backends: {
       heading: 'Sidecar and cloud backends',
@@ -172,6 +176,8 @@ export const settingsEn = {
       compactionTrigger: 'Compact history at % of window',
       loopMaxSteps: 'Max steps per turn',
       loopMaxWallclock: 'Max seconds per turn',
+      loopBackgroundAfter: 'Background a tool call after (seconds)',
+      loopBackgroundMax: 'Max seconds for a background tool call',
       embedBaseUrl: 'Embedding base URL',
       embedCloudBaseUrl: 'Embedding cloud base URL',
       embedModel: 'Embedding model',
@@ -330,7 +336,7 @@ export const settingsIt = {
     },
     tokens: {
       heading: 'Budget token e turni',
-      body: 'Regola limite risposta, finestra contesto, soglia di compattazione e numero massimo di passi per turno.',
+      body: 'Regola limite risposta, finestra contesto, soglia di compattazione, numero massimo di passi per turno e per quanto una chiamata a uno strumento può tenere il turno.',
     },
     help: {
       maxTokens: 'Tetto per richiesta sulla risposta inviato al provider (max_tokens).',
@@ -347,6 +353,10 @@ export const settingsIt = {
         'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
       loopMaxWallclock:
         'Secondi che un turno può durare, strumenti inclusi, prima che Aura concluda (default 300).',
+      loopBackgroundAfter:
+        'Secondi per cui una chiamata a uno strumento può tenere il turno. Se è ancora in corso non viene fermata: passa in background e Aura riprende la conversazione quando finisce (default 60).',
+      loopBackgroundMax:
+        'Secondi che una chiamata passata in background può durare prima che Aura la fermi (default 1800).',
     },
     backends: {
       heading: 'Sidecar e backend cloud',
@@ -374,6 +384,8 @@ export const settingsIt = {
       compactionTrigger: 'Comprimi la cronologia al % della finestra',
       loopMaxSteps: 'Passi massimi per turno',
       loopMaxWallclock: 'Secondi massimi per turno',
+      loopBackgroundAfter: 'Strumento in background dopo (secondi)',
+      loopBackgroundMax: 'Secondi massimi di uno strumento in background',
       embedBaseUrl: 'URL base embedding',
       embedCloudBaseUrl: 'URL base cloud embedding',
       embedModel: 'Modello embedding',

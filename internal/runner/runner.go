@@ -128,6 +128,9 @@ type Runner struct {
 	// concrete *steer.PostgresStore is first boxed into this interface: the
 	// composition root, cmd/aura/chat_boot.go).
 	steer agent.SteerInbox
+	// backgroundCalls receives the tool calls that outlive their window in this runner's
+	// turns (Deps.BackgroundCalls); nil keeps every call in its turn.
+	backgroundCalls *tools.BackgroundCalls
 
 	// threadLocks + sessions are the two per-conversation in-memory maps, BOTH keyed by
 	// the composite (identity, session) sessionKey (D-23, runner_session.go): threadLocks
@@ -422,6 +425,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		MessageDrafts:     r.messageDrafts,
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
 		Steer:             r.steer,
+		BackgroundCalls:   r.backgroundCalls,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

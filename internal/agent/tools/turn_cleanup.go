@@ -9,12 +9,12 @@ import (
 )
 
 // TurnCleanup collects what a turn leaves in the box and must remove when the turn
-// ends: today, the directory MCP files are materialized into (MCPFileSink).
-// LlmAgent.Run installs one per run and drains it from its outermost defer, so a
-// normal end, an ask_user pause, an error and a panic all reach it. Every swarm
-// worker is its own Run, so each gets its own. Agents that share a request ID, as
-// workflow.ParallelAgent children do, share one turn directory, and the first drain
-// removes it; nothing in production builds a ParallelAgent today.
+// ends: today, the directories MCP files are materialized into, one per call
+// (MCPFileSink). LlmAgent.Run installs one per run and drains it from its outermost
+// defer, so a normal end, an ask_user pause, an error and a panic all reach it. Every
+// swarm worker is its own Run, so each gets its own. A tool call gets one of its own
+// too (BackgroundCalls): it joins the turn's when the call settles in its turn, and the
+// turn that reads the result when the call moved to the background.
 type TurnCleanup struct {
 	mu    sync.Mutex
 	keys  map[string]struct{}

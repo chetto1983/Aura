@@ -315,3 +315,4 @@ contains private account identifiers.
 | A server's tools are missing entirely | Server disabled, blocked, outside the active profile, or its mount failed | Check `aura mcp status` and `aura mcp profile list`, then `aura mcp doctor <name>`. |
 | Mail/WhatsApp send tool unavailable | Bridge or account authorization | Check `aura mcp doctor --all`, then the cockpit's authorization for that server. |
 | Streamable HTTP auth fails | Missing bearer/header env | Configure `MCP_BEARER_TOKEN` or `MCP_HEADER_*` env entries for that server. |
+| A tool answers `{"status":"in_progress","task_id":...}` | The call outlived its window (60 s by default) and moved to the background | Nothing: Aura resumes the conversation when it finishes and the model reads the result with `tool_poll`. The window and the 30-minute ceiling are in the cockpit's turn-budget settings (prd.md §15). |

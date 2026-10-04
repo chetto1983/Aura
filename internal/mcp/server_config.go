@@ -10,10 +10,9 @@ import "time"
 // ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).
 // Env entries ("KEY=value") are explicit operator-declared child environment.
 type ServerConfig struct {
-	Command     string        `json:"command"`
-	Args        []string      `json:"args,omitempty"`
-	Env         []string      `json:"env,omitempty"`
-	CallTimeout time.Duration `json:"-"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+	Env     []string `json:"env,omitempty"`
 	// Box runs the server in the calling identity's sandbox box instead of on the host
 	// (RuntimeKindBox). It comes from the registry's runtime kind, never from this JSON.
 	Box bool `json:"-"`

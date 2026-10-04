@@ -62,6 +62,12 @@ type Spec struct {
 	// It is runtime-only. The gateway saturates it upward to Mutating so a
 	// contradictory descriptor cannot bypass the approval path.
 	Destructive bool
+	// Foreground marks a tool whose call must finish inside the turn that made it: the
+	// agent loop never moves it to the background (BackgroundCalls). A tool with its own
+	// way to outlive a turn sets it -- shell_exec promotes itself at its own cap,
+	// video_generate detaches to its watcher, swarm_spawn delegates -- and so does
+	// tool_poll. Runtime-only, never wire-encoded.
+	Foreground bool
 	// Multiplexed marks a tool that fronts several sub-actions behind one
 	// `action`-style discriminator (skill/task/swarm_spawn). It is a descriptor
 	// HINT for the policy gateway, NOT policy itself: the gateway's boot-guard uses

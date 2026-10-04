@@ -173,7 +173,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 	var res tools.ToolResult
 	var err error
 	for attempt := 0; ; attempt++ {
-		res, err = tool.Execute(ctx, args)
+		res, err = a.executeTool(ctx, tool, args)
 		if err == nil || mutating || attempt >= maxToolRetries || ctx.Err() != nil || !isTransientToolErr(err) {
 			if !operationAcquired {
 				return res, err

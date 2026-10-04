@@ -37,8 +37,9 @@ import (
 
 // hotLLMProfileKeys are the rows the wired reloader publishes into the runtime
 // snapshot on every write: the route, its token limits, the compaction trigger,
-// the API key and the agent-loop budget (amendments #184, #185, #188). Every
-// other allow-listed key is boot-bound and reports itself as such.
+// the API key and the agent-loop budget (amendments #184, #185, #188), the tool-call
+// background window and ceiling with it (prd.md §15). Every other allow-listed key is
+// boot-bound and reports itself as such.
 var hotLLMProfileKeys = map[string]struct{}{
 	"AURA_LLM_PROVIDER":                       {},
 	"AURA_LLM_BASE_URL":                       {},
@@ -50,6 +51,8 @@ var hotLLMProfileKeys = map[string]struct{}{
 	"OPENROUTER_API_KEY":                      {},
 	"AURA_LOOP_MAX_STEPS":                     {},
 	"AURA_LOOP_MAX_WALLCLOCK_SEC":             {},
+	"AURA_LOOP_BACKGROUND_AFTER_SEC":          {},
+	"AURA_LOOP_BACKGROUND_MAX_SEC":            {},
 }
 
 // Application state of one setting row, reported per item so the cockpit can say

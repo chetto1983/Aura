@@ -261,21 +261,39 @@ func (r *recordingHookSetter) SetCompletionHook(hook tools.BackgroundShellComple
 	r.hook = hook
 }
 
-// TestServeCompletionDispatcherIsTheShellCompletionHook proves the installed hook is the
-// dispatcher's shell entry: a completion handed to the hook wakes its conversation under the
-// shell source.
+type recordingCallHookSetter struct {
+	hook tools.BackgroundCallCompletionHook
+}
+
+func (r *recordingCallHookSetter) SetCompletionHook(hook tools.BackgroundCallCompletionHook) {
+	r.hook = hook
+}
+
+// TestServeCompletionDispatcherIsTheShellCompletionHook proves the installed hooks are the
+// dispatcher's shell and tool entries: a completion handed to either wakes its conversation
+// under its own source.
 func TestServeCompletionDispatcherIsTheShellCompletionHook(t *testing.T) {
 	run := &fakeBackgroundCompletionRunner{}
-	shells := &recordingHookSetter{}
-	dispatcher := installBackgroundCompletions(context.Background(), run, acceptingSteerPusher{}, shells)
-	if shells.hook == nil {
-		t.Fatal("no completion hook was installed on the background shells")
+	shells, calls := &recordingHookSetter{}, &recordingCallHookSetter{}
+	dispatcher := installBackgroundCompletions(context.Background(), run, acceptingSteerPusher{}, shells, calls)
+	if shells.hook == nil || calls.hook == nil {
+		t.Fatalf("hooks installed: shells %v, tool calls %v; want both", shells.hook != nil, calls.hook != nil)
 	}
 	shells.hook(shellDone("sh-hooked", "exited:0"))
-	wakes := run.waitForWakes(t, 1)
+	run.waitForWakes(t, 1)
+	calls.hook(tools.BackgroundCallCompletion{
+		TaskID: "task-hooked", OwnerID: testWakeOwner, SessionID: "conv-1", Tool: "eleven__compose_music",
+		Status: tools.BackgroundCallCompleted, Duration: 95 * time.Second,
+	})
+	wakes := run.waitForWakes(t, 2)
 	stopDispatcher(t, dispatcher)
 	if wakes[0].source != steer.SourceShell || wakes[0].owner != testWakeOwner || !strings.Contains(wakes[0].text, "Background shell sh-hooked ") {
 		t.Fatalf("wake = %+v, want the hooked shell completion delivered under the shell source", wakes[0])
+	}
+	if wakes[1].source != steer.SourceTool || wakes[1].owner != testWakeOwner ||
+		!strings.Contains(wakes[1].text, "Background tool call task-hooked (eleven__compose_music) finished with status completed after 95000 ms.") ||
+		!strings.Contains(wakes[1].text, "call tool_poll exactly once") {
+		t.Fatalf("wake = %+v, want the hooked tool completion delivered under the tool source", wakes[1])
 	}
 
 	chat := &chatEnv{

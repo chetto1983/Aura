@@ -162,6 +162,10 @@ type Deps struct {
 	// is off: buildAgent's r.steer stays nil and the per-turn agent's drain is a
 	// total no-op, exactly like a nil gateway means Allow.
 	Steer agent.SteerInbox
+	// BackgroundCalls is the process-wide registry a tool call still running after its
+	// window moves to (prd.md §15). Only interactive turns get it: their conversation is
+	// what the completion wakes. nil keeps every call in its turn.
+	BackgroundCalls *tools.BackgroundCalls
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -248,6 +252,7 @@ func New(d Deps) *Runner {
 		shareRevoker:              d.ShareRevoker,
 		resumeCommitter:           d.ResumeCommitter,
 		steer:                     d.Steer,
+		backgroundCalls:           d.BackgroundCalls,
 		// stopDone starts nil: the first waitWorkers arms the wg-drain waiter, and each
 		// clean drain resets it to nil so a later Stop re-arms (WR-02).
 	}

@@ -171,6 +171,50 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 	}
 }
 
+// The background window and ceiling ride the same profile (prd.md §15). A save is refused
+// when the pair it leaves would fail every turn's budget, whichever half it changed.
+func TestPrimaryLLMRouteReloaderResolvesTheBackgroundWindowAndCeiling(t *testing.T) {
+	t.Setenv("AURA_LOOP_BACKGROUND_AFTER_SEC", "")
+	t.Setenv("AURA_LOOP_BACKGROUND_MAX_SEC", "")
+	fallback := validFallbackLLMConfig()
+	r := &primaryLLMRouteReloader{fallback: fallback, runtime: llm.NewRuntime(nil, fallback)}
+	got, err := r.resolve(map[string]string{
+		"AURA_LOOP_BACKGROUND_AFTER_SEC": "90",
+		"AURA_LOOP_BACKGROUND_MAX_SEC":   "3600",
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LoopBackgroundAfterSec != 90 || got.LoopBackgroundMaxSec != 3600 {
+		t.Fatalf("resolved = %d/%d, want 90/3600", got.LoopBackgroundAfterSec, got.LoopBackgroundMaxSec)
+	}
+	r.runtime.Replace(nil, got)
+	for key, want := range map[string]string{"AURA_LOOP_BACKGROUND_AFTER_SEC": "90", "AURA_LOOP_BACKGROUND_MAX_SEC": "3600"} {
+		if v, ok := r.EffectiveValue(key); !ok || v != want {
+			t.Fatalf("effective %s = (%q,%v), want %q", key, v, ok, want)
+		}
+	}
+
+	for name, overrides := range map[string]map[string]string{
+		"a window past the default ceiling": {"AURA_LOOP_BACKGROUND_AFTER_SEC": "2000"},
+		"a ceiling under the window":        {"AURA_LOOP_BACKGROUND_AFTER_SEC": "120", "AURA_LOOP_BACKGROUND_MAX_SEC": "60"},
+		"a zero window":                     {"AURA_LOOP_BACKGROUND_AFTER_SEC": "0"},
+	} {
+		if _, err := r.resolve(overrides, nil); err == nil {
+			t.Fatalf("%s accepted: %v", name, overrides)
+		}
+	}
+
+	reverted, err := r.resolve(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.runtime.Replace(nil, reverted)
+	if _, ok := r.EffectiveValue("AURA_LOOP_BACKGROUND_MAX_SEC"); ok || reverted.LoopBackgroundMaxSec != 0 {
+		t.Fatal("an unpinned ceiling must fall through to the process env, not report 0")
+	}
+}
+
 func TestPrimaryLLMRouteReloaderApplyPublishesRuntimeSnapshot(t *testing.T) {
 	srv := localProfileServer(t)
 	oldClient := &settingsRuntimeClient{route: "old"}

@@ -102,12 +102,14 @@ func MarkSteer(m steer.Message) (marked, envelope string) {
 }
 
 // runtimeSteerEnvelopes names the echo envelope of each source Aura itself generates: a
-// delegated worker's report, a background shell's exit and a detached video job's outcome.
-// Its keys are exactly the sources steer.IsRuntimeSource accepts.
+// delegated worker's report, a background shell's exit, a detached video job's outcome
+// and a backgrounded tool call's. Its keys are exactly the sources steer.IsRuntimeSource
+// accepts.
 var runtimeSteerEnvelopes = map[string]string{
 	steer.SourceWorker: "worker_report",
 	steer.SourceShell:  "background_shell",
 	steer.SourceMedia:  "background_media",
+	steer.SourceTool:   "background_tool",
 }
 
 // drainSteer delivers whatever is queued for this conversation into the
