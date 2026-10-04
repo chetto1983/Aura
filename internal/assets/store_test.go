@@ -475,3 +475,48 @@ func TestStoreListRecentPagesNewestFirst(t *testing.T) {
 		}
 	}
 }
+
+// Rearm is the store half of replacing a library file: the row keeps its id and key, goes back
+// to presigned, takes the new declaration and forgets everything about the old bytes. A row
+// already marked deleting is not re-armed: the delete owns its object.
+func TestStoreRearmPreparesTheRowForTheReplacingUpload(t *testing.T) {
+	pool := migratedAssetPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	store := NewStore(pool)
+	created, err := store.Create(ctx, CreateRequest{
+		IdentityID: localIdentityID, SourceKind: SourceWeb, Scope: ScopeLibrary, Modality: ModalityDocument,
+		FileName: "Report.pdf", MIMEType: "application/pdf", DeclaredSizeBytes: 40,
+		ObjectBucket: "asset-test", ObjectKey: fmt.Sprintf("assets/%d/rearm/report.pdf", time.Now().UnixNano()),
+		Metadata: map[string]any{},
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() { retireAsset(t, store, created.ID, localIdentityID) })
+	if _, err := store.MarkUploaded(ctx, created.ID, localIdentityID, 40, "etag-old"); err != nil {
+		t.Fatalf("MarkUploaded: %v", err)
+	}
+	if _, err := store.MarkAccepted(ctx, created.ID, localIdentityID, 40, "hash-old", "application/pdf"); err != nil {
+		t.Fatalf("MarkAccepted: %v", err)
+	}
+
+	rearmed, err := store.Rearm(ctx, created.ID, localIdentityID, CreateRequest{
+		FileName: "report.pdf", MIMEType: "application/pdf", Modality: ModalityDocument, DeclaredSizeBytes: 90,
+	})
+	if err != nil {
+		t.Fatalf("Rearm: %v", err)
+	}
+	if rearmed.ID != created.ID || rearmed.ObjectKey != created.ObjectKey || rearmed.Status != StatusPresigned ||
+		rearmed.FileName != "report.pdf" || rearmed.DeclaredSizeBytes != 90 || rearmed.SizeBytes != 0 ||
+		rearmed.ContentHash != "" || rearmed.ObjectETag != "" || !rearmed.AcceptedAt.IsZero() || !rearmed.UploadedAt.IsZero() {
+		t.Fatalf("re-armed row = %#v", rearmed)
+	}
+
+	if _, err := store.Delete(ctx, created.ID, localIdentityID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := store.Rearm(ctx, created.ID, localIdentityID, CreateRequest{FileName: "report.pdf"}); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("Rearm of a deleting row = %v, want pgx.ErrNoRows", err)
+	}
+}

@@ -125,6 +125,31 @@ WHERE id = $1
   AND deleted_at IS NULL
 RETURNING *;
 
+-- name: RearmAssetForUpload :one
+-- A library upload onto a name the library already holds replaces that file: the key is the
+-- name's (libraryObjectID), so the row holding it goes back to presigned with the new upload's
+-- name, type and declared size, and finalize checks the new bytes against the new declaration.
+UPDATE aura.assets
+SET status = 'presigned',
+    file_name = sqlc.arg(file_name),
+    mime_type = sqlc.arg(mime_type),
+    modality = sqlc.arg(modality),
+    declared_size_bytes = sqlc.arg(declared_size_bytes),
+    size_bytes = 0,
+    object_etag = '',
+    content_hash = '',
+    error_code = '',
+    error_message = '',
+    uploaded_at = NULL,
+    accepted_at = NULL,
+    processed_at = NULL,
+    completed_at = NULL,
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+  AND identity_id = sqlc.arg(identity_id)
+  AND deleted_at IS NULL
+RETURNING *;
+
 -- name: AdoptAssetIntoThread :one
 -- Claim an asset that was presigned before its conversation existed.
 --

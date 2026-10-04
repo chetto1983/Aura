@@ -232,6 +232,23 @@ func (s *Store) Promote(ctx context.Context, id, identityID string) (Asset, erro
 		})
 }
 
+// Rearm sends a library row back to presigned for an upload that replaces its file. See
+// RearmAssetForUpload: the row keeps its id and object key, and takes the new upload's name,
+// type and declared size.
+func (s *Store) Rearm(ctx context.Context, id, identityID string, req CreateRequest) (Asset, error) {
+	return s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.RearmAssetForUpload(ctx, sqlc.RearmAssetForUploadParams{
+				ID:                pgID,
+				IdentityID:        pgIdentityID,
+				FileName:          req.FileName,
+				MimeType:          req.MIMEType,
+				Modality:          string(req.Modality),
+				DeclaredSizeBytes: req.DeclaredSizeBytes,
+			})
+		})
+}
+
 // AdoptIntoThread claims an asset that was presigned before its conversation existed.
 // See AdoptAssetIntoThread: only a row with no thread yet is touched, so this can never
 // move an attachment between conversations.

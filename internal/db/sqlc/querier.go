@@ -625,6 +625,10 @@ type Querier interface {
 	// cheap owner-only probe (conversationOwner) only when execrows is 0 -- never a second
 	// round trip on the (overwhelmingly common) success path.
 	PushSteerRow(ctx context.Context, arg PushSteerRowParams) (int64, error)
+	// A library upload onto a name the library already holds replaces that file: the key is the
+	// name's (libraryObjectID), so the row holding it goes back to presigned with the new upload's
+	// name, type and declared size, and finalize checks the new bytes against the new declaration.
+	RearmAssetForUpload(ctx context.Context, arg RearmAssetForUploadParams) (AuraAssets, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and

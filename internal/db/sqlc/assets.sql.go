@@ -833,6 +833,86 @@ func (q *Queries) PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToL
 	return i, err
 }
 
+const rearmAssetForUpload = `-- name: RearmAssetForUpload :one
+UPDATE aura.assets
+SET status = 'presigned',
+    file_name = $1,
+    mime_type = $2,
+    modality = $3,
+    declared_size_bytes = $4,
+    size_bytes = 0,
+    object_etag = '',
+    content_hash = '',
+    error_code = '',
+    error_message = '',
+    uploaded_at = NULL,
+    accepted_at = NULL,
+    processed_at = NULL,
+    completed_at = NULL,
+    updated_at = now()
+WHERE id = $5
+  AND identity_id = $6
+  AND deleted_at IS NULL
+RETURNING id, identity_id, source_kind, source_ref, thread_id, scope, modality, status, file_name, mime_type, declared_size_bytes, size_bytes, content_hash, object_bucket, object_key, object_etag, document_id, summary, metadata, error_code, error_message, created_at, uploaded_at, accepted_at, processed_at, completed_at, deleted_at, updated_at, pipeline_generation, tool_call_id
+`
+
+type RearmAssetForUploadParams struct {
+	FileName          string      `json:"file_name"`
+	MimeType          string      `json:"mime_type"`
+	Modality          string      `json:"modality"`
+	DeclaredSizeBytes int64       `json:"declared_size_bytes"`
+	ID                pgtype.UUID `json:"id"`
+	IdentityID        pgtype.UUID `json:"identity_id"`
+}
+
+// A library upload onto a name the library already holds replaces that file: the key is the
+// name's (libraryObjectID), so the row holding it goes back to presigned with the new upload's
+// name, type and declared size, and finalize checks the new bytes against the new declaration.
+func (q *Queries) RearmAssetForUpload(ctx context.Context, arg RearmAssetForUploadParams) (AuraAssets, error) {
+	row := q.db.QueryRow(ctx, rearmAssetForUpload,
+		arg.FileName,
+		arg.MimeType,
+		arg.Modality,
+		arg.DeclaredSizeBytes,
+		arg.ID,
+		arg.IdentityID,
+	)
+	var i AuraAssets
+	err := row.Scan(
+		&i.ID,
+		&i.IdentityID,
+		&i.SourceKind,
+		&i.SourceRef,
+		&i.ThreadID,
+		&i.Scope,
+		&i.Modality,
+		&i.Status,
+		&i.FileName,
+		&i.MimeType,
+		&i.DeclaredSizeBytes,
+		&i.SizeBytes,
+		&i.ContentHash,
+		&i.ObjectBucket,
+		&i.ObjectKey,
+		&i.ObjectEtag,
+		&i.DocumentID,
+		&i.Summary,
+		&i.Metadata,
+		&i.ErrorCode,
+		&i.ErrorMessage,
+		&i.CreatedAt,
+		&i.UploadedAt,
+		&i.AcceptedAt,
+		&i.ProcessedAt,
+		&i.CompletedAt,
+		&i.DeletedAt,
+		&i.UpdatedAt,
+		&i.PipelineGeneration,
+		&i.ToolCallID,
+	)
+	return i, err
+}
+
 const relocateAsset = `-- name: RelocateAsset :exec
 UPDATE aura.assets
 SET object_key = $1,
