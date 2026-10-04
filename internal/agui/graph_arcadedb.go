@@ -106,6 +106,9 @@ func (v *ArcadeGraphView) overview(
 	if err != nil {
 		return GraphResult{}, err
 	}
+	if len(in.Labels) == 0 {
+		vertexTypes = memoryVertexTypes(vertexTypes)
+	}
 
 	raw := arcadedb.StudioGraph{Vertices: []arcadedb.StudioVertex{}, Edges: []arcadedb.StudioEdge{}}
 	statements := make([]string, 0, len(edgeTypes)+len(vertexTypes))
@@ -218,6 +221,19 @@ func selectedSchemaTypes(available []arcadedb.SchemaType, selected []string) ([]
 		return nil, errors.New("graphview: filter is absent from ArcadeDB schema")
 	}
 	return out, nil
+}
+
+// memoryVertexTypes drops the indexed-document types from an unfiltered overview. Passages
+// link to nothing, and read in type order they took the free node slots ahead of Person and
+// the reasoning types (prd.md §9). Their chips still select them.
+func memoryVertexTypes(types []arcadedb.SchemaType) []arcadedb.SchemaType {
+	out := make([]arcadedb.SchemaType, 0, len(types))
+	for _, entry := range types {
+		if !arcadedb.IsDocumentVertexType(entry.Name) {
+			out = append(out, entry)
+		}
+	}
+	return out
 }
 
 func selectTypeStatement(typeName string, limit int) (string, error) {

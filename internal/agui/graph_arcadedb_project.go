@@ -122,10 +122,16 @@ func displayGraphProperties(properties map[string]any) map[string]any {
 	return out
 }
 
+// graphCaptionRunes bounds a caption read from a text body: a passage's whole text is not a
+// name.
+const graphCaptionRunes = 80
+
+// graphCaption names a vertex by the first property that says what it is. file_name and
+// text name the two document types, which have neither name nor title.
 func graphCaption(properties map[string]any, fallback string) string {
-	for _, key := range []string{"name", "title"} {
+	for _, key := range []string{"name", "title", "file_name", "text"} {
 		if caption := propertyString(properties, key); caption != "" {
-			return caption
+			return arcadedb.TruncateRunes(caption, graphCaptionRunes)
 		}
 	}
 	return fallback

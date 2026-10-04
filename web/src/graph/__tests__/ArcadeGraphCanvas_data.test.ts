@@ -3,6 +3,7 @@ import {
   ARCADE_GRAPH_STYLE,
   ARCADE_LABEL_MAX_LENGTH,
   buildArcadeElements,
+  canvasChange,
   compactCanvasLabel,
   contrastTextColor,
   studioCaption,
@@ -150,5 +151,40 @@ describe('ArcadeDB Studio graph projection', () => {
         style: { 'border-color': '#FFFFFF', 'border-width': 4 },
       },
     ]);
+  });
+});
+
+describe('canvasChange', () => {
+  const elements = buildArcadeElements(NODES, EDGES);
+
+  it('lays out a first graph afresh', () => {
+    expect(canvasChange([], new Set(), elements)).toEqual({ kind: 'replace' });
+  });
+
+  // A filter or a refresh that drops a drawn node is a new read, not a growth.
+  it('lays out afresh when a drawn node is gone', () => {
+    expect(canvasChange(['n1', 'gone'], new Set(['n1', 'gone']), elements)).toEqual({
+      kind: 'replace',
+    });
+  });
+
+  // Only nodes count: an id drawn as a node that comes back as an edge's is a node gone.
+  it('lays out afresh when a drawn node id comes back only as an edge', () => {
+    expect(canvasChange(['n1', 'e1'], new Set(['n1', 'e1']), elements)).toEqual({
+      kind: 'replace',
+    });
+  });
+
+  it('keeps the canvas when the graph is the same', () => {
+    const ids = elements.map((element) => String(element.data.id));
+    expect(canvasChange(['n1', 'n2'], new Set(ids), elements)).toEqual({ kind: 'keep' });
+  });
+
+  it('grows by the elements not drawn yet', () => {
+    const change = canvasChange(['n1'], new Set(['n1']), elements);
+    expect(change.kind).toBe('grow');
+    expect(
+      change.kind === 'grow' ? change.fresh.map((element) => String(element.data.id)) : [],
+    ).toEqual(elements.slice(1).map((element) => String(element.data.id)));
   });
 });

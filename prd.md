@@ -648,6 +648,37 @@ The graph preflight counts all records loaded by native algorithms, including te
 records. `AURA_MEMORY_GRAPH_MAX_RECORDS` defaults to 10,000; engine memory guards and
 client deadlines still apply. Partial output is marked or refused.
 
+The cockpit's Graph page grows the graph in place (2026-10-04). Measured on the local stack
+with 75 nodes drawn:
+- selecting a node moved all 75 of them. The page built a new graph object on every render,
+  and the canvas laid every node out again from random positions;
+- expanding Giulia returned her one neighbour, which was already drawn. The page swapped the
+  canvas for a loading line, laid everything out again, and showed nothing new.
+
+Expanding now keeps the drawn nodes where they are (fCoSE's `fixedNodeConstraint`) and starts
+the new ones at the expanded node. It marks the node's neighbourhood and says what it found:
+how many neighbours are new, that all of them are already shown, or that the node has no
+connections. A double click on a node expands it, as in ArcadeDB Studio.
+
+Verified on the same stack:
+- a selection, and an expansion that adds nothing, moved none of the 75 nodes;
+- double-clicking a conversation added 4 turns 152–352 px from it, against a median of
+  980 px for the other nodes, and moved none of the 75.
+
+Indexed documents are left out of the unfiltered overview, by the operator's choice. The
+overview reads edges first. Then, below the node cap, it reads each vertex type in
+alphabetical order. Passage and IndexedDocument have no edges, so on a memory with few links
+they took the free slots ahead of Person and the reasoning types. Their chips still select
+them, and they are now named by their file name and the start of their text instead of
+their type.
+
+What this does not show: on this stack the conversation turns filled the 75 slots before the
+alphabetical pass reached Passage. The reported case is therefore reproduced by a unit test,
+not by this database. The 12 passages measured here were written with services/ingest's own
+schema DDL and plain inserts, not by its pipeline: this stack's identity is a system
+identity, which the ingest supervisor does not serve. Not measured on WebKit, iOS, or a touch
+double-tap.
+
 ## 10. Memory authority, capture and reasoning
 
 Memory is trusted identity-scoped knowledge under the current product policy. Its

@@ -22,6 +22,13 @@ const (
 	defaultDocumentQueryRunes    = 2_048
 )
 
+// IsDocumentVertexType reports whether a vertex type holds indexed documents rather than
+// memory: services/ingest writes the passages and their document cards, and no edge links
+// either to the memory graph.
+func IsDocumentVertexType(name string) bool {
+	return name == documentPassageType || name == IndexedDocumentType
+}
+
 // CharacterSpan locates a passage in the extracted text.
 type CharacterSpan struct {
 	Start int64

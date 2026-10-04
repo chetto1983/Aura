@@ -310,6 +310,17 @@ export function mergeGraphResults(current: GraphResult, incoming: GraphResult): 
   };
 }
 
+/** The node and every node one edge away from it: what "pin path" accents, and what an
+ * expansion marks so its neighbours are visible even when all of them were already shown. */
+export function neighbourhood(result: GraphResult, nodeId: string): ReadonlySet<string> {
+  const ids = new Set<string>([nodeId]);
+  for (const edge of result.edges) {
+    if (edge.source === nodeId) ids.add(edge.target);
+    if (edge.target === nodeId) ids.add(edge.source);
+  }
+  return ids;
+}
+
 /**
  * nodeDisplayName is the ONE place a node becomes human-readable text, shared by the canvas,
  * the evidence list and the inspector. The server projects a caption from whichever property

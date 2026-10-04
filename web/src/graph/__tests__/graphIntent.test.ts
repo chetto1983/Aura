@@ -12,6 +12,7 @@ import {
   intentReducer,
   labelFamilyColor,
   mergeGraphResults,
+  neighbourhood,
   nodeDisplayName,
   rowsToClientGraph,
   toClientIntent,
@@ -363,5 +364,31 @@ describe('graphApi credentialed wrappers (same-origin; non-200 throws)', () => {
       vi.fn(() => Promise.resolve(new Response('unauthorized', { status: 401 }))),
     );
     await expect(fetchGraphSchema()).rejects.toThrow('HTTP 401');
+  });
+});
+
+describe('neighbourhood', () => {
+  const result: GraphResult = {
+    nodes: [
+      { id: 'a', caption: 'A', labels: ['Entity'] },
+      { id: 'b', caption: 'B', labels: ['Entity'] },
+      { id: 'c', caption: 'C', labels: ['Entity'] },
+      { id: 'd', caption: 'D', labels: ['Entity'] },
+    ],
+    edges: [
+      { id: 'e1', source: 'a', target: 'b', rel_type: 'FACT' },
+      { id: 'e2', source: 'c', target: 'a', rel_type: 'FACT' },
+      { id: 'e3', source: 'c', target: 'd', rel_type: 'FACT' },
+    ],
+    schema: { labels: ['Entity'], rel_types: ['FACT'] },
+    query: '',
+  };
+
+  it('is the node and every node one edge away, in either direction', () => {
+    expect([...neighbourhood(result, 'a')].sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('is the node alone when nothing connects to it', () => {
+    expect([...neighbourhood(result, 'z')]).toEqual(['z']);
   });
 });

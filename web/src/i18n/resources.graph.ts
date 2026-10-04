@@ -65,7 +65,16 @@ export const graphEn = {
       resize: 'Resize the filters column',
     },
     cap: {
-      notice: 'Showing the top {{count}} — expand a node to go deeper',
+      notice: 'Showing the top {{count}} — double-click a node to expand it',
+    },
+    expand: {
+      running: 'Expanding…',
+      added_one: '{{count}} new neighbor added',
+      added_other: '{{count}} new neighbors added',
+      allShown_one: 'Its only neighbor is already on the graph',
+      allShown_other: 'All {{count}} neighbors are already on the graph',
+      none: 'This node has no connections',
+      failed: 'Could not expand this node',
     },
   },
 } as const;
@@ -131,7 +140,16 @@ export const graphIt = {
       resize: 'Ridimensiona la colonna filtri',
     },
     cap: {
-      notice: 'Mostro i primi {{count}} — espandi un nodo per approfondire',
+      notice: 'Mostro i primi {{count}} — doppio clic su un nodo per espanderlo',
+    },
+    expand: {
+      running: 'Espansione…',
+      added_one: '{{count}} nuovo vicino aggiunto',
+      added_other: '{{count}} nuovi vicini aggiunti',
+      allShown_one: 'Il suo unico vicino è già nel grafo',
+      allShown_other: 'Tutti i {{count}} vicini sono già nel grafo',
+      none: 'Questo nodo non ha collegamenti',
+      failed: 'Impossibile espandere questo nodo',
     },
   },
 } as const;

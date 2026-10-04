@@ -12,8 +12,15 @@ const mocks = vi.hoisted(() => {
   };
   edge.removeClass.mockReturnValue(edge);
   edge.addClass.mockReturnValue(edge);
+  // What the canvas currently draws: node ids, and every element id.
+  const shown = { nodes: [] as string[], elements: [] as string[] };
   const collection = {
     length: 2,
+    map: vi.fn(<T,>(callback: (item: { id: () => string }) => T): T[] =>
+      shown.elements.map((id) => callback({ id: () => id })),
+    ),
+    nonempty: vi.fn(() => true),
+    position: vi.fn(() => ({ x: 40, y: 50 })),
     remove: vi.fn(),
     removeClass: vi.fn(),
     addClass: vi.fn(),
@@ -23,6 +30,20 @@ const mocks = vi.hoisted(() => {
   };
   collection.removeClass.mockReturnValue(collection);
   collection.addClass.mockReturnValue(collection);
+  const nodeList = {
+    length: 2,
+    map: vi.fn(
+      <T,>(
+        callback: (item: { id: () => string; position: () => { x: number; y: number } }) => T,
+      ): T[] =>
+        shown.nodes.map((id) => callback({ id: () => id, position: () => ({ x: 1, y: 2 }) })),
+    ),
+    boundingBox: vi.fn(() => ({ x1: 0, x2: 100, y1: 0, y2: 60 })),
+    removeClass: vi.fn(),
+    addClass: vi.fn(),
+  };
+  nodeList.removeClass.mockReturnValue(nodeList);
+  nodeList.addClass.mockReturnValue(nodeList);
   const layout = { run: vi.fn(), stop: vi.fn() };
   const core = {
     on: vi.fn(),
@@ -34,13 +55,15 @@ const mocks = vi.hoisted(() => {
     add: vi.fn<(elements: readonly unknown[]) => void>(),
     layout: vi.fn(() => layout),
     elements: vi.fn(() => collection),
-    nodes: vi.fn(() => collection),
+    nodes: vi.fn(() => nodeList),
+    animate: vi.fn(),
+    collection: vi.fn(() => ({ ...collection, nonempty: () => false })),
     edges: vi.fn(() => collection),
     getElementById: vi.fn(() => collection),
   };
   const factory = vi.fn<(options: Record<string, unknown>) => typeof core>(() => core);
   const use = vi.fn();
-  return { collection, core, edge, factory, layout, use };
+  return { collection, core, edge, factory, layout, nodeList, shown, use };
 });
 
 vi.mock('cytoscape', () => ({
@@ -72,6 +95,9 @@ const EDGES: readonly ClientEdge[] = [
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.collection.length = 2;
+  mocks.nodeList.length = 2;
+  mocks.shown.nodes = [];
+  mocks.shown.elements = [];
   ResizeObserverStub.instances = [];
   vi.unstubAllGlobals();
   vi.stubGlobal('ResizeObserver', ResizeObserverStub);
@@ -85,6 +111,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set()}
         onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
 
@@ -107,6 +135,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set()}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
     const tapHandler = mocks.core.on.mock.calls[0]?.[2] as
@@ -120,6 +150,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set(['n1', 'n2'])}
         onNodeClick={onNodeClick}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
     expect(mocks.collection.addClass).toHaveBeenCalledWith('dimmed');
@@ -138,6 +170,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set(['n1'])}
         onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
     expect(mocks.core.layout).toHaveBeenCalledWith(
@@ -147,7 +181,14 @@ describe('ArcadeGraphCanvas', () => {
 
     mocks.core.layout.mockClear();
     rerender(
-      <ArcadeGraphCanvas nodes={[]} edges={[]} pinnedPath={new Set()} onNodeClick={vi.fn()} />,
+      <ArcadeGraphCanvas
+        nodes={[]}
+        edges={[]}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
+      />,
     );
     expect(mocks.layout.stop).toHaveBeenCalled();
     expect(mocks.core.layout).not.toHaveBeenCalled();
@@ -160,6 +201,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set()}
         onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
     const observer = ResizeObserverStub.instances[0];
@@ -167,7 +210,7 @@ describe('ArcadeGraphCanvas', () => {
     expect(mocks.core.resize).toHaveBeenCalled();
     expect(mocks.core.fit).toHaveBeenCalled();
 
-    mocks.collection.length = 0;
+    mocks.nodeList.length = 0;
     mocks.core.fit.mockClear();
     act(() => observer?.callback());
     expect(mocks.core.fit).not.toHaveBeenCalled();
@@ -191,6 +234,8 @@ describe('ArcadeGraphCanvas', () => {
         edges={EDGES}
         pinnedPath={new Set()}
         onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
       />,
     );
     act(() => {
@@ -201,5 +246,112 @@ describe('ArcadeGraphCanvas', () => {
 
     warning.mockRestore();
     vi.useRealTimers();
+  });
+  it('routes a double click on a node to the expand callback', () => {
+    const onNodeDoubleClick = vi.fn();
+    render(
+      <ArcadeGraphCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={onNodeDoubleClick}
+        focusId={undefined}
+      />,
+    );
+    const registration = mocks.core.on.mock.calls.find((call) => call[0] === 'dbltap');
+    const handler = registration?.[2] as
+      ((event: { target: { id: () => string } }) => void) | undefined;
+    act(() => handler?.({ target: { id: () => 'n2' } }));
+    expect(onNodeDoubleClick).toHaveBeenCalledWith('n2');
+  });
+
+  // An expansion keeps every node where the reader left it and adds only what is new, laid out
+  // around the expanded node.
+  it('grows the graph from the expanded node, keeping the drawn nodes fixed', () => {
+    const { rerender } = render(
+      <ArcadeGraphCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
+      />,
+    );
+    mocks.shown.nodes = ['n1', 'n2'];
+    mocks.shown.elements = ['n1', 'n2', 'e1'];
+    mocks.core.add.mockClear();
+    mocks.core.layout.mockClear();
+    mocks.collection.remove.mockClear();
+    const grown: readonly ClientNode[] = [
+      ...NODES,
+      { id: 'n3', caption: 'Giulia', color: '#7FC9C3', size: 6, labels: ['Person'] },
+    ];
+    rerender(
+      <ArcadeGraphCanvas
+        nodes={grown}
+        edges={[
+          ...EDGES,
+          { id: 'e2', source: 'n1', target: 'n3', label: 'FACT', color: '#FDD663' },
+        ]}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId="n1"
+      />,
+    );
+    const added = mocks.core.add.mock.calls[0]?.[0] as {
+      data: { id: string };
+      position?: unknown;
+    }[];
+    expect(added.map((element) => element.data.id)).toEqual(['n3', 'e2']);
+    expect(added[0]?.position).toEqual({ x: 40, y: 50 });
+    expect(mocks.collection.remove).not.toHaveBeenCalled();
+    expect(mocks.core.layout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        randomize: false,
+        quality: 'proof',
+        fit: false,
+        fixedNodeConstraint: [
+          { nodeId: 'n1', position: { x: 1, y: 2 } },
+          { nodeId: 'n2', position: { x: 1, y: 2 } },
+        ],
+      }),
+    );
+    expect(mocks.core.animate).toHaveBeenCalledWith(
+      expect.objectContaining({ center: expect.anything() as unknown }),
+      expect.anything(),
+    );
+  });
+
+  // Selecting a node re-renders the page with the same graph; that must not move anything.
+  it('leaves the canvas alone when the graph has not changed', () => {
+    const { rerender } = render(
+      <ArcadeGraphCanvas
+        nodes={NODES}
+        edges={EDGES}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
+      />,
+    );
+    mocks.shown.nodes = ['n1', 'n2'];
+    mocks.shown.elements = ['n1', 'n2', 'e1'];
+    mocks.core.add.mockClear();
+    mocks.core.layout.mockClear();
+    rerender(
+      <ArcadeGraphCanvas
+        nodes={[...NODES]}
+        edges={[...EDGES]}
+        pinnedPath={new Set()}
+        onNodeClick={vi.fn()}
+        onNodeDoubleClick={vi.fn()}
+        focusId={undefined}
+      />,
+    );
+    expect(mocks.core.add).not.toHaveBeenCalled();
+    expect(mocks.core.layout).not.toHaveBeenCalled();
   });
 });

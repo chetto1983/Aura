@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { installGraphShellRoutes } from './support/graphRoutes';
 
 // graph-a11y.spec.ts — the Phase 27 accessibility + auth-resilience E2E. It runs axe against the
 // live Graph Explorer surface (0 serious/critical WCAG-AA violations), asserts the non-hover
@@ -54,40 +55,6 @@ declare global {
   }
 }
 
-async function installBaseRoutes(page: Page) {
-  await page.route('**/api/conversations*', (route) => {
-    if (route.request().url().includes(`/api/conversations/${CONV_ID}`)) {
-      return route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          id: CONV_ID,
-          title: 'Graph thread',
-          status: 'active',
-          total_input_tokens: 0,
-          total_output_tokens: 0,
-          total_cached_tokens: 0,
-          total_cost_usd: 0,
-        }),
-      });
-    }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
-  });
-  await page.route('**/api/conversations/*/rot-events', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  );
-  await page.route('**/api/approvals', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
-  );
-  await page.route('**/threads/*/messages', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ type: 'MESSAGES_SNAPSHOT', messages: [] }),
-    }),
-  );
-}
-
 async function openGraphSurface(page: Page) {
   await gotoAuthenticated(page, `/c/${CONV_ID}`);
   await page.getByRole('button', { name: 'Graph', exact: true }).first().click();
@@ -105,7 +72,7 @@ async function runAxe(page: Page): Promise<AxeResult> {
 
 test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () => {
   test('the graph surface has no serious/critical WCAG-AA axe violations', async ({ page }) => {
-    await installBaseRoutes(page);
+    await installGraphShellRoutes(page, CONV_ID);
     await page.route('**/api/graph/schema', (route) =>
       route.fulfill({
         status: 200,
@@ -132,7 +99,7 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
   test('tap/keyboard opens the inspector (hover is never the only access path, D-03)', async ({
     page,
   }) => {
-    await installBaseRoutes(page);
+    await installGraphShellRoutes(page, CONV_ID);
     await page.route('**/api/graph/schema', (route) =>
       route.fulfill({
         status: 200,
@@ -164,7 +131,7 @@ test.describe('Phase 27 — Graph Explorer accessibility + auth resilience', () 
     // api/sessionExpiry.ts the auth gate's 401, the one carrying the session challenge, sends
     // the whole cockpit to the login page with the expiry notice and the way back (Authula
     // SPEC §4.8), so that is what the person sees.
-    await installBaseRoutes(page);
+    await installGraphShellRoutes(page, CONV_ID);
     await page.route('**/api/graph/schema', (route) =>
       route.fulfill({
         status: 200,
