@@ -157,7 +157,7 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 	}
 
 	result := Result{
-		Status:     StatusSearchable,
+		Status:     StatusComplete,
 		DocumentID: "doc-integration",
 		Summary:    "integration summary",
 		Metadata:   map[string]any{"origin": "integration", "stage": "result"},
@@ -165,18 +165,18 @@ func TestPostgresAssetStoreRoundTrip(t *testing.T) {
 	if _, err := store.SetResult(ctx, processing.ID, otherIdentityID, result); !errors.Is(err, pgx.ErrNoRows) {
 		t.Fatalf("SetResult wrong identity error = %v, want pgx.ErrNoRows", err)
 	}
-	searchable, err := store.SetResult(ctx, processing.ID, localIdentityID, result)
+	completed, err := store.SetResult(ctx, processing.ID, localIdentityID, result)
 	if err != nil {
 		t.Fatalf("SetResult: %v", err)
 	}
-	if searchable.Status != StatusSearchable || searchable.DocumentID != "doc-integration" || searchable.SearchableAt.IsZero() {
-		t.Fatalf("searchable asset = %#v", searchable)
+	if completed.Status != StatusComplete || completed.DocumentID != "doc-integration" || completed.CompletedAt.IsZero() {
+		t.Fatalf("completed asset = %#v", completed)
 	}
-	if searchable.Metadata["stage"] != "result" {
-		t.Fatalf("result metadata = %#v", searchable.Metadata)
+	if completed.Metadata["stage"] != "result" {
+		t.Fatalf("result metadata = %#v", completed.Metadata)
 	}
 
-	deleted, err := store.SetStatus(ctx, searchable.ID, localIdentityID, StatusDeleted, "", "")
+	deleted, err := store.SetStatus(ctx, completed.ID, localIdentityID, StatusDeleted, "", "")
 	if err != nil {
 		t.Fatalf("SetStatus deleted: %v", err)
 	}

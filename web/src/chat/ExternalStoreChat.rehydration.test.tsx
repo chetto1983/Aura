@@ -32,7 +32,7 @@ function uploadAsset(over: Partial<Asset> = {}): Asset {
   return {
     id: 'up-1',
     source_kind: 'web',
-    status: 'searchable',
+    status: 'complete',
     modality: 'document',
     file_name: 'upload.pdf',
     mime_type: 'application/pdf',

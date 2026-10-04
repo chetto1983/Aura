@@ -128,8 +128,6 @@ export function isReadyAsset(asset: Asset): boolean {
   switch (asset.status) {
     case 'accepted':
     case 'processing':
-    case 'searchable':
-    case 'embedding':
     case 'complete':
       return true;
     default:

@@ -156,7 +156,7 @@ func invokeLifecycleMethod(t *testing.T, store *Store, method, assetID, identity
 	case "SetStatus":
 		args = lifecycleArgs(t, target, []any{ctx, assetID, StatusFailed, "code-unit", "message-unit"}, []any{ctx, assetID, identityID, StatusFailed, "code-unit", "message-unit"})
 	case "SetResult":
-		result := Result{Status: StatusSearchable, DocumentID: "doc-unit", Summary: "summary-unit", Metadata: map[string]any{"source": "unit"}}
+		result := Result{Status: StatusComplete, DocumentID: "doc-unit", Summary: "summary-unit", Metadata: map[string]any{"source": "unit"}}
 		args = lifecycleArgs(t, target, []any{ctx, assetID, result}, []any{ctx, assetID, identityID, result})
 	default:
 		t.Fatalf("unknown lifecycle method %s", method)

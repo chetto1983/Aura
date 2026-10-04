@@ -12,7 +12,7 @@ import {
 
 const asset = {
   id: 'asset-1',
-  status: 'searchable',
+  status: 'complete',
   modality: 'document',
   file_name: 'manual.pdf',
   mime_type: 'application/pdf',

@@ -60,7 +60,6 @@ type AuraAssets struct {
 	UploadedAt         pgtype.Timestamptz `json:"uploaded_at"`
 	AcceptedAt         pgtype.Timestamptz `json:"accepted_at"`
 	ProcessedAt        pgtype.Timestamptz `json:"processed_at"`
-	SearchableAt       pgtype.Timestamptz `json:"searchable_at"`
 	CompletedAt        pgtype.Timestamptz `json:"completed_at"`
 	DeletedAt          pgtype.Timestamptz `json:"deleted_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`

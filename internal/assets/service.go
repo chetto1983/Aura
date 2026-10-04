@@ -305,7 +305,7 @@ func (s *Service) ProcessAccepted(ctx context.Context, identityID, assetID strin
 			return Asset{}, err
 		}
 		return s.processAsset(ctx, asset)
-	case StatusSearchable, StatusComplete:
+	case StatusComplete:
 		return asset, nil
 	default:
 		return Asset{}, fmt.Errorf("asset %s is %s, not accepted for processing", asset.ID, asset.Status)

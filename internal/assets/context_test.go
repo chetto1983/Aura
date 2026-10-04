@@ -13,12 +13,12 @@ import (
 // to add.
 func TestBuildTurnContextComposesAttachmentAndCatalogChannelAgnostic(t *testing.T) {
 	store := newFakeAssetStore()
-	store.assets["att"] = Asset{ID: "att", IdentityID: "u1", ThreadID: "t1", Status: StatusSearchable, DocumentID: "doc-att", FileName: "attached.pdf"}
-	store.assets["other"] = Asset{ID: "other", IdentityID: "u1", ThreadID: "t1", Status: StatusSearchable, DocumentID: "doc-other", FileName: "other.pdf", Summary: "servo specs"}
-	store.assets["library"] = Asset{ID: "library", IdentityID: "u1", Scope: ScopeLibrary, Status: StatusSearchable, DocumentID: "doc-library", FileName: "library.pdf", Summary: "robot course"}
+	store.assets["att"] = Asset{ID: "att", IdentityID: "u1", ThreadID: "t1", Status: StatusComplete, DocumentID: "doc-att", FileName: "attached.pdf"}
+	store.assets["other"] = Asset{ID: "other", IdentityID: "u1", ThreadID: "t1", Status: StatusComplete, DocumentID: "doc-other", FileName: "other.pdf", Summary: "servo specs"}
+	store.assets["library"] = Asset{ID: "library", IdentityID: "u1", Scope: ScopeLibrary, Status: StatusComplete, DocumentID: "doc-library", FileName: "library.pdf", Summary: "robot course"}
 	store.assets["nope"] = Asset{ID: "nope", IdentityID: "u1", ThreadID: "t1", Status: StatusComplete, DocumentID: ""}
-	store.assets["xthread"] = Asset{ID: "xthread", IdentityID: "u1", ThreadID: "t2", Status: StatusSearchable, DocumentID: "doc-x", FileName: "x.pdf"}
-	store.assets["other-user-library"] = Asset{ID: "other-user-library", IdentityID: "u2", Scope: ScopeLibrary, Status: StatusSearchable, DocumentID: "doc-u2", FileName: "u2.pdf"}
+	store.assets["xthread"] = Asset{ID: "xthread", IdentityID: "u1", ThreadID: "t2", Status: StatusComplete, DocumentID: "doc-x", FileName: "x.pdf"}
+	store.assets["other-user-library"] = Asset{ID: "other-user-library", IdentityID: "u2", Scope: ScopeLibrary, Status: StatusComplete, DocumentID: "doc-u2", FileName: "u2.pdf"}
 	// A DocumentScope that holds everything: this test is about composition and thread/identity
 	// scoping, not about which documents the index has. The catalog now asks the index instead
 	// of reading the status column, so without one it would advertise nothing.
@@ -69,7 +69,7 @@ func TestBuildAttachmentBlockGuidesDocumentSearchAndSanitizesLines(t *testing.T)
 		ID:           "asset-1",
 		FileName:     "bad\nname.pdf",
 		Modality:     ModalityDocument,
-		Status:       StatusSearchable,
+		Status:       StatusComplete,
 		DocumentID:   "doc-1",
 		Summary:      "first line\nsecond line",
 		ErrorMessage: "warning\r\ncontinued",
@@ -103,10 +103,10 @@ func TestWithAttachmentBlockReturnsOriginalTextWhenNoAssets(t *testing.T) {
 
 func TestBuildKnowledgeCatalogListsSearchableDocsExcludingAttached(t *testing.T) {
 	items := []Asset{
-		{ID: "a1", FileName: "manual.pdf", Status: StatusSearchable, DocumentID: "doc-1", Summary: "G220 servo drive datasheet"},
-		{ID: "a2", FileName: "draft.docx", Status: StatusComplete, DocumentID: ""},           // not searchable -> excluded
-		{ID: "a3", FileName: "attached.xlsx", Status: StatusSearchable, DocumentID: "doc-3"}, // attached this turn -> excluded
-		{ID: "a4", FileName: "photo.png", Status: StatusSearchable, DocumentID: "doc-4", Summary: "control panel"},
+		{ID: "a1", FileName: "manual.pdf", Status: StatusComplete, DocumentID: "doc-1", Summary: "G220 servo drive datasheet"},
+		{ID: "a2", FileName: "draft.docx", Status: StatusComplete, DocumentID: ""},         // not searchable -> excluded
+		{ID: "a3", FileName: "attached.xlsx", Status: StatusComplete, DocumentID: "doc-3"}, // attached this turn -> excluded
+		{ID: "a4", FileName: "photo.png", Status: StatusComplete, DocumentID: "doc-4", Summary: "control panel"},
 	}
 	// Every id is indexed here: this test is about exclusion and rendering, not about which
 	// documents the index holds -- context_indexed_test.go owns that.
@@ -129,7 +129,7 @@ func TestBuildKnowledgeCatalogEmptyWhenNothingSearchable(t *testing.T) {
 		t.Fatalf("empty input catalog = %q, want empty", got)
 	}
 	// Both lack a document id, so neither can be advertised however the index answers.
-	items := []Asset{{ID: "a1", Status: StatusComplete}, {ID: "a2", Status: StatusSearchable, DocumentID: ""}}
+	items := []Asset{{ID: "a1", Status: StatusComplete}, {ID: "a2", Status: StatusComplete, DocumentID: ""}}
 	if got := BuildKnowledgeCatalog(items, nil, allIndexed); got != "" {
 		t.Fatalf("no-searchable catalog = %q, want empty", got)
 	}

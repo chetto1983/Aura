@@ -69,7 +69,7 @@ func TestDocumentProcessorIDDoesNotDependOnTheChannel(t *testing.T) {
 	}
 }
 
-// StatusComplete, not StatusSearchable: naming the object is all the asset pipeline does, so
+// StatusComplete, not the retired "searchable": naming the object is all the asset pipeline does, so
 // its part is done, but nothing here produced a passage. Whether the document is searchable is
 // ArcadeDB's answer, asked by BuildKnowledgeCatalog's isIndexed. StatusProcessing was never
 // left by anything -- the sidecar writes no Postgres row -- so every document stayed in it.

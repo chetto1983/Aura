@@ -4,20 +4,18 @@ export type AssetStatus =
   | 'uploaded'
   | 'accepted'
   | 'processing'
-  | 'searchable'
-  | 'embedding'
   | 'complete'
   | 'failed'
   | 'refused'
   | 'deleted'
   | 'canceled'
-  // Written by the retention sweeper (internal/retention/store.go), not by the upload
-  // pipeline -- which is why they were missing here: the union only listed what the
-  // upload path produces, so a swept asset fell through every switch to the default and
-  // a vanishing file reported itself as still processing.
-  | 'deleting'
-  | 'indexed'
-  | 'recovered';
+  // Written by the delete path and its idle sweep (internal/assets/delete_sweep.go), not by
+  // the upload pipeline -- which is why it was missing here: the union only listed what the
+  // upload path produces, so a swept asset fell through every switch to the default and a
+  // vanishing file reported itself as still processing. The union is the aura.assets CHECK
+  // (migration 0136), no more: 'indexed' and 'recovered' sat here, and the CHECK never
+  // admitted either.
+  | 'deleting';
 
 // 'video' is what the server assigns to an .mp4/.webm upload (internal/assets/limits.go
 // InferModality) even when the browser hinted 'unknown'.

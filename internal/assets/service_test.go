@@ -29,7 +29,7 @@ func TestServiceFinalizeMarksAcceptedAndEnqueuesProcessing(t *testing.T) {
 	svc.ProcessingJobs = queue
 	processor := &recordingProcessor{
 		called: make(chan Asset, 1),
-		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed", Metadata: map[string]any{"k": "v"}},
+		result: Result{Status: StatusComplete, DocumentID: "doc-1", Summary: "indexed", Metadata: map[string]any{"k": "v"}},
 	}
 	svc.Processors.Document = processor
 
@@ -92,7 +92,7 @@ func TestServiceRetryEnqueuesProcessingWithoutStartingProcessor(t *testing.T) {
 	svc.ProcessingJobs = queue
 	processor := &recordingProcessor{
 		called: make(chan Asset, 1),
-		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed"},
+		result: Result{Status: StatusComplete, DocumentID: "doc-1", Summary: "indexed"},
 	}
 	svc.Processors.Document = processor
 	asset, err := store.Create(context.Background(), CreateRequest{
@@ -140,7 +140,7 @@ func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
 	})
 	processor := &recordingProcessor{
 		called: make(chan Asset, 1),
-		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "indexed"},
+		result: Result{Status: StatusComplete, DocumentID: "doc-1", Summary: "indexed"},
 	}
 	svc.Processors.Document = processor
 	asset, err := store.Create(context.Background(), CreateRequest{
@@ -168,7 +168,7 @@ func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if processed.Status != StatusSearchable || processed.DocumentID != "doc-1" || processed.Summary != "indexed" {
+	if processed.Status != StatusComplete || processed.DocumentID != "doc-1" || processed.Summary != "indexed" {
 		t.Fatalf("processed asset = %#v", processed)
 	}
 	select {
@@ -189,7 +189,7 @@ func TestServiceProcessAcceptedRearmsFailedAssetForDurableRetry(t *testing.T) {
 	})
 	processor := &recordingProcessor{
 		called: make(chan Asset, 1),
-		result: Result{Status: StatusSearchable, DocumentID: "doc-1", Summary: "recovered"},
+		result: Result{Status: StatusComplete, DocumentID: "doc-1", Summary: "recovered"},
 	}
 	svc.Processors.Document = processor
 	asset, err := store.Create(context.Background(), CreateRequest{
@@ -210,7 +210,7 @@ func TestServiceProcessAcceptedRearmsFailedAssetForDurableRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if processed.Status != StatusSearchable || processed.Summary != "recovered" {
+	if processed.Status != StatusComplete || processed.Summary != "recovered" {
 		t.Fatalf("processed retry = %#v", processed)
 	}
 	select {
@@ -477,8 +477,7 @@ func newerFirst(a, b Asset) bool {
 
 // The statuses ListRecentImageAssets accepts, kept beside the fake that has to agree with it.
 var usableAssetStatuses = map[Status]bool{
-	StatusAccepted: true, StatusProcessing: true, StatusSearchable: true,
-	StatusEmbedding: true, StatusComplete: true,
+	StatusAccepted: true, StatusProcessing: true, StatusComplete: true,
 }
 
 func (s *fakeAssetStore) MarkUploaded(_ context.Context, id, identityID string, size int64, etag string) (Asset, error) {

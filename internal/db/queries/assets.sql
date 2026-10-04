@@ -53,7 +53,7 @@ LIMIT $2;
 SELECT * FROM aura.assets
 WHERE assets.identity_id = sqlc.arg(identity_id)
   AND assets.modality = ANY(sqlc.arg(modalities)::text[])
-  AND assets.status IN ('accepted', 'processing', 'searchable', 'embedding', 'complete')
+  AND assets.status IN ('accepted', 'processing', 'complete')
   AND assets.deleted_at IS NULL
   AND (sqlc.narg(before_id)::uuid IS NULL OR (assets.created_at, assets.id) < (
       SELECT b.created_at, b.id FROM aura.assets b
@@ -92,8 +92,7 @@ SET status = $3,
     error_code = $4,
     error_message = $5,
     updated_at = now(),
-    processed_at = CASE WHEN $3 IN ('searchable', 'complete', 'failed', 'refused') THEN now() ELSE processed_at END,
-    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
+    processed_at = CASE WHEN $3 IN ('complete', 'failed', 'refused') THEN now() ELSE processed_at END,
     completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
     deleted_at = CASE WHEN $3 = 'deleted' THEN now() ELSE deleted_at END
 WHERE id = $1
@@ -110,7 +109,6 @@ SET status = $3,
     error_code = '',
     error_message = '',
     processed_at = now(),
-    searchable_at = CASE WHEN $3 = 'searchable' THEN now() ELSE searchable_at END,
     completed_at = CASE WHEN $3 = 'complete' THEN now() ELSE completed_at END,
     updated_at = now()
 WHERE id = $1
@@ -206,7 +204,7 @@ WHERE assets.id = $1
 -- name: ResetAssetForIngestionRetry :one
 UPDATE aura.assets
 SET status = 'accepted', error_code = '', error_message = '',
-    processed_at = NULL, searchable_at = NULL, completed_at = NULL, updated_at = now()
+    processed_at = NULL, completed_at = NULL, updated_at = now()
 WHERE id = sqlc.arg(id)
   AND identity_id = sqlc.arg(identity_id)
   AND status IN ('failed', 'refused', 'canceled')

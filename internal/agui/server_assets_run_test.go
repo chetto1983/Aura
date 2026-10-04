@@ -25,7 +25,7 @@ func TestServerRunPrependsAttachmentBlock(t *testing.T) {
 		ThreadID:   tid,
 		FileName:   "manual.pdf",
 		Modality:   assets.ModalityDocument,
-		Status:     assets.StatusSearchable,
+		Status:     assets.StatusComplete,
 		DocumentID: "doc-1",
 		Summary:    "indexed",
 	}}
@@ -191,7 +191,7 @@ func TestServerRunInjectsKnowledgeCatalogWithoutAttachment(t *testing.T) {
 		ThreadID:   tid,
 		FileName:   "g220.pdf",
 		Modality:   assets.ModalityDocument,
-		Status:     assets.StatusSearchable,
+		Status:     assets.StatusComplete,
 		DocumentID: "doc-7",
 		Summary:    "Servo Drive G220 datasheet",
 	}}}

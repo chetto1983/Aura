@@ -11,7 +11,7 @@ import { ExternalStoreChat } from '../ExternalStoreChat';
 // the real one — paste → composer.addAttachment → adapter → send → run envelope.
 const READY_ASSET = {
   id: 'asset-1',
-  status: 'searchable',
+  status: 'complete',
   modality: 'document',
   file_name: 'manual.pdf',
   mime_type: 'application/pdf',
@@ -145,7 +145,7 @@ describe('ExternalStoreChat attachments', () => {
             JSON.stringify([
               {
                 id: 'asset-replay',
-                status: 'searchable',
+                status: 'complete',
                 modality: 'document',
                 file_name: 'manual.pdf',
                 mime_type: 'application/pdf',

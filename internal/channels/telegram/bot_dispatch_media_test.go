@@ -82,7 +82,7 @@ func TestOnDocumentRoutesThroughAssetIngress(t *testing.T) {
 			IdentityID: profileAccount().IdentityID,
 			SourceKind: assetspkg.SourceTelegram,
 			Modality:   assetspkg.ModalityDocument,
-			Status:     assetspkg.StatusSearchable,
+			Status:     assetspkg.StatusComplete,
 			FileName:   "manual.pdf",
 			MIMEType:   "application/pdf",
 			DocumentID: "doc-1",

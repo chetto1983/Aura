@@ -26,7 +26,7 @@ vi.mock('../upload', async (importOriginal) => {
 function asset(overrides: Partial<Asset> = {}): Asset {
   return {
     id: 'asset-1',
-    status: 'searchable',
+    status: 'complete',
     modality: 'document',
     file_name: 'note.txt',
     mime_type: 'text/plain',
