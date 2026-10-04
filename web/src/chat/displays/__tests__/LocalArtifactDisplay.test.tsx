@@ -14,7 +14,9 @@ const HOST_PATH = '/run/out/report.csv';
 
 // The preview renderers are lazy chunks that fetch bytes; the card test only needs to know
 // which one the modal mounts.
-vi.mock('../../artifacts/renderers/PdfPreview', () => ({ default: () => <div data-testid="r-pdf" /> }));
+vi.mock('../../artifacts/renderers/PdfPreview', () => ({
+  default: () => <div data-testid="r-pdf" />,
+}));
 
 function payload(artifact: DisplayArtifact): DisplayPayload {
   return { type: 'local_artifact', tool_call_id: 'call-1', artifact };
@@ -255,7 +257,11 @@ describe('LocalArtifactDisplay', () => {
     it('opens a PDF in the preview instead of leaving the page', async () => {
       render(
         <LocalArtifactDisplay
-          payload={payload({ filename: 'Appunti.pdf', mime_type: 'application/pdf', asset_id: 'pdf-1' })}
+          payload={payload({
+            filename: 'Appunti.pdf',
+            mime_type: 'application/pdf',
+            asset_id: 'pdf-1',
+          })}
         />,
       );
       expect(screen.getByRole('link', { name: 'Download Appunti.pdf' }).getAttribute('href')).toBe(
