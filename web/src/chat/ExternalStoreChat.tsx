@@ -50,6 +50,7 @@ import { useStreamFolds } from './ExternalStoreChat_streams';
 import { useBranchEdits } from './ExternalStoreChat_branches';
 import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
 import { useSteerSend } from './ExternalStoreChat_steer';
+import { ThreadViewport } from './ExternalStoreChat_viewport';
 import { SteerNotice } from './SteerNotice';
 import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
@@ -75,6 +76,7 @@ export function ExternalStoreChat({
   draftPrompt,
   onDraftPromptConsumed,
   onRequestDraftPrompt = ignoreDraftPrompt,
+  openAt,
 }: ExternalStoreChatProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -489,7 +491,14 @@ export function ExternalStoreChat({
       <CollectedJobsContext.Provider value={collectedJobs}>
         <SourceExplorerProvider>
           <ThreadPrimitive.Root className="flex h-full min-h-0 flex-col overflow-hidden">
-            <ThreadPrimitive.Viewport className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4">
+            <ThreadViewport
+              className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4"
+              openAt={openAt?.threadId === threadId ? openAt : undefined}
+              messages={messages}
+              historyReady={
+                historyReadiness.threadId === threadId && historyReadiness.status === 'ready'
+              }
+            >
               <AuiIf condition={(s) => s.thread.isEmpty}>
                 <div className="grid h-full place-items-center py-8 text-center">
                   <div className="flex flex-col items-center gap-3 px-6">
@@ -528,7 +537,7 @@ export function ExternalStoreChat({
                   </>
                 )}
               </ThreadPrimitive.Messages>
-            </ThreadPrimitive.Viewport>
+            </ThreadViewport>
 
             {/* Running-status row: role="status" announces the active turn politely. */}
             {isRunning ? (

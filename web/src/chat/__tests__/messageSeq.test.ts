@@ -1,10 +1,10 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
 import { describe, expect, it } from 'vitest';
-import { backendSeqAt, compactionAnchorId } from '../messageSeq';
+import { backendSeqAt, compactionAnchorId, messageIdAtSeq } from '../messageSeq';
 
-// One mapping, two callers: a branch edit forks at a seq and the compaction marker is drawn
-// at one. An off-by-one between them would put the marker a turn away from the history it
-// describes — the kind of wrong nobody reports.
+// One mapping, three callers: a branch edit forks at a seq, the compaction marker is drawn at
+// one and a search hit opens the thread at one. An off-by-one between them would put the
+// marker a turn away from the history it describes — the kind of wrong nobody reports.
 
 function persisted(seq: number): ThreadMessageLike {
   return {
@@ -33,6 +33,18 @@ describe('backendSeqAt', () => {
   it('is 0 before the first message', () => {
     expect(backendSeqAt([persisted(1)], -1)).toBe(0);
   });
+
+  it('falls back to the visible position for metadata without a custom block', () => {
+    expect(backendSeqAt([{ ...fresh('a'), metadata: {} }], 0)).toBe(1);
+  });
+
+  // A seq is a positive integer the backend wrote; anything else is not one.
+  it.each([['7'], [Number.NaN], [Number.POSITIVE_INFINITY], [0], [-3]])(
+    'falls back to the visible position for a backendSeq of %s',
+    (backendSeq) => {
+      expect(backendSeqAt([{ ...fresh('a'), metadata: { custom: { backendSeq } } }], 0)).toBe(1);
+    },
+  );
 });
 
 describe('compactionAnchorId', () => {
@@ -40,6 +52,10 @@ describe('compactionAnchorId', () => {
 
   it('anchors on the last message the summary speaks for', () => {
     expect(compactionAnchorId(thread, 2)).toBe('msg-2');
+  });
+
+  it('anchors on the first message when the summary speaks for it alone', () => {
+    expect(compactionAnchorId(thread, 1)).toBe('msg-1');
   });
 
   it('anchors on the last message when the watermark covers everything', () => {
@@ -58,5 +74,24 @@ describe('compactionAnchorId', () => {
 
   it('draws no marker for an empty thread', () => {
     expect(compactionAnchorId([], 4)).toBeUndefined();
+  });
+});
+
+describe('messageIdAtSeq', () => {
+  it('finds the visible message behind a persisted seq', () => {
+    expect(messageIdAtSeq([persisted(1), persisted(2), persisted(3)], 2)).toBe('msg-2');
+  });
+
+  // A tool result folds into its assistant card, so its seq has no message of its own.
+  it('finds nothing for a seq no visible message carries', () => {
+    expect(messageIdAtSeq([persisted(1), persisted(2), persisted(4)], 3)).toBeUndefined();
+  });
+
+  it('agrees with backendSeqAt for a turn that is not persisted yet', () => {
+    expect(messageIdAtSeq([persisted(1), fresh('typed')], 2)).toBe('typed');
+  });
+
+  it('finds nothing in an empty thread', () => {
+    expect(messageIdAtSeq([], 1)).toBeUndefined();
   });
 });
