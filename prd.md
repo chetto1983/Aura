@@ -1964,6 +1964,57 @@ as the parent cockpit stream; ownership checks still precede SSE headers. Aggreg
 worker status carries no reasoning text. This does not change other channels or
 the independent reasoning-retention policy.
 
+A tool call that outlives its window moves to the background (2026-10-04). Measured through
+the real mount path (`MountServer` against a stdio server whose one tool waits as long as it
+is told, every timeout env unset): a 90 s call returned `context deadline exceeded` after
+60.04 s, the server saw its request cancelled after 60.043 s, and no request carried a
+progress token. That is `AURA_MCP_CALL_TIMEOUT_SEC`. A generation that takes longer -- the
+ElevenLabs hosted MCP is the case that asked -- is paid for and thrown away, and the model's
+only move is to call it again. The SDK offers nothing to defer to: go-sdk v1.8.0 implements
+no `tasks/*` method, so a call cannot be resumed anywhere; it can only be waited for.
+
+The runtime therefore does for every tool what `shell_exec` already does for a command
+(§12): a call still running after `AURA_LOOP_BACKGROUND_AFTER_SEC` (default 60) is not
+cancelled but moved to the background, and the model reads a task id and goes on. The call
+keeps the turn's values and loses its cancellation, bounded by
+`AURA_LOOP_BACKGROUND_MAX_SEC` (default 1800: LibreChat's 30 minutes, and the maximum the
+MCP lifecycle says a client should always enforce). Both are rows in `aura.settings`, set
+in the cockpit's turn-budget pane beside the steps and wallclock caps and live the same
+way: the Settings profile publishes them, and every turn's budget is built from them. A
+save whose ceiling is not above its window is refused, because every turn after it would
+fail to build its budget. When it settles, the existing
+background-completion dispatcher wakes the conversation -- a third source beside the shell
+and the video watcher -- and the model reads the result once with `tool_poll`, which also
+cancels a call no longer wanted. The wrapper sits where every agent tool call already
+crosses (`execTool`), so an MCP call and a built-in are treated alike. A tool whose own
+mechanism already answers this (`shell_exec`, `video_generate`, `swarm_spawn`) is declared
+foreground and never moved. An MCP call made outside the agent loop -- the tool pipe, a
+notification send -- keeps the 60 s bound: nothing there could collect a later result.
+
+LibreChat (`packages/api/src/agents/background.ts`, 2026-09-30) builds the same thing as a
+`run_in_background` argument the model sets per call. Aura promotes after the fact instead,
+because a call's length cannot be known before it runs: `shell_exec` had that argument
+before its own promotion landed, and across every recorded turn it was set in none of 28
+tool-call turns (2026-09-09, `internal/agent/tools/shell_bg_promote.go`). The rest follows
+LibreChat: an exclusion set, a poll tool, a 30-minute bound, and a call lost if the process
+dies.
+
+What a moved call keeps from its turn is decided, not inherited. The files an MCP result
+carries go to a directory of the call's own, removed when the turn that reads the result
+ends, or when a result nobody read expires, never when the turn that started the call ends.
+A form a server asks for after that turn has ended is cancelled at once, which the cockpit's
+asker already does for an ended run. The idempotency operation records the in-progress
+result, so replaying the same mutating call returns the task id instead of running it again.
+
+This does not establish:
+- anything about ElevenLabs: how long its tools take, whether they send progress, whether
+  audio comes back as a file or a link, or whether a cancelled generation is billed. Only
+  `agents_list` has been called (§13, 2026-09-23);
+- the model's reaction to the 60 s error, or to the task id: no real agent turn ran, because
+  the local stack's OpenRouter key had expired;
+- survival across a restart: an in-flight call dies with the process, as LibreChat's does;
+- a box-runtime stdio server outliving the suspension of its box.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
