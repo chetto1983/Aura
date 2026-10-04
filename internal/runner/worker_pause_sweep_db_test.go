@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -90,7 +91,13 @@ func parkWorkerPause(t *testing.T, pool *pgxpool.Pool, store *documents.Postgres
 		LeaseDuration: time.Minute, BatchSize: 10,
 	})
 	if err != nil || len(claimed) != 1 {
-		t.Fatalf("claim: %v (%d rows)", err, len(claimed))
+		// The database is shared by every package's db_integration tests, so an extra row
+		// is a job another test failed to clean up: its key and payload name that test.
+		var rows []string
+		for _, c := range claimed {
+			rows = append(rows, fmt.Sprintf("%s %v", c.IdempotencyKey, c.Payload))
+		}
+		t.Fatalf("claim: %v (%d rows: %s)", err, len(claimed), strings.Join(rows, "; "))
 	}
 	row := claimed[0]
 	token := uuid.Must(uuid.NewV7()).String()

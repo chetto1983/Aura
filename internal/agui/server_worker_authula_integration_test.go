@@ -99,7 +99,9 @@ func TestWorkerControlsWithRealAuthulaCookies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _, _ = pool.Exec(ownerCtx(), `DELETE FROM aura.ingestion_jobs WHERE id=$1`, queued.ID) })
+	t.Cleanup(func() {
+		seedAsOwner(t, pool, localIdentityID, `DELETE FROM aura.ingestion_jobs WHERE id=$1`, queued.ID)
+	})
 	validator := webauth.NewValidator(provider, linker)
 	server := httptest.NewTLSServer(RequireAuth(s.Mux(), AuthDeps{
 		SecretConfigured: true, Identities: storeChecker{store: identity.New(pool)},
