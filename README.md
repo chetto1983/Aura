@@ -117,7 +117,7 @@ that it is ahead.
 | **Long-term memory** | Temporal knowledge graph: facts with sources and validity windows, one ArcadeDB database per identity | Facts and notes the model can search and update | Memory with per-agent partitions |
 | **Scheduled work** | `task` tool (`at`, `every`, `cron`) running full agent jobs | Scheduled prompts | Scheduled Chats (beta) |
 | **Tool approval (HITL)** | Yes | Not documented | Yes (v0.8.8) |
-| **Messaging channels** | Telegram, WhatsApp, e-mail/calendar | Not documented | Not documented |
+| **Messaging channels** | Telegram for two-way chat; WhatsApp and e-mail send messages and deliver scheduled-job results, but you cannot chat with Aura through them | Not documented | Not documented |
 | **Video** | Generation plus a multi-track editor | Voice and video calls | Not documented |
 | **Single sign-on** | No: email/password (TOTP for enrolled accounts) | SSO/OIDC, LDAP, SCIM | OAuth2, SAML, LDAP |
 | **Community** | Small, one maintainer | Very large | Large |
