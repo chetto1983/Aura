@@ -3,6 +3,7 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/secret"
@@ -11,11 +12,9 @@ import (
 // envedit.go is the in-place MCP env-edit path (D-05 / MCPW-02). It is the WRITE half
 // of the secrets-never-leaked belt: the board projects env to key-only chips outbound
 // (envChips), and an operator edit submits the redacted ${KEY} placeholder for any value
-// it leaves untouched. SetServerEnv reuses the exact D-05 substrate already proven in
-// config.go — mergeEnvPreserveCredentials + isPlaceholderValue — so a submitted ${KEY}
-// for a stored secret preserves that secret (it is NEVER overwritten with the placeholder
-// text), while a real submitted value (or a cleared non-secret) takes effect. The path
-// lives in package manager so it can call those unexported helpers directly.
+// it leaves untouched. A submitted ${KEY} for a stored secret preserves that secret (it is
+// NEVER overwritten with the placeholder text), while a real submitted value (or a cleared
+// non-secret) takes effect.
 
 // ErrServerNotFound is the sentinel for an env-edit / mutation targeting a server name
 // absent from the registry. The handler maps it to a clean 404.
@@ -36,12 +35,7 @@ var ErrServerNotFound = errors.New("mcp server not found")
 // (isPlaceholderValue) is treated as UNCHANGED — the stored real secret is preserved and
 // is NEVER overwritten with the placeholder text. A real submitted secret VALUE overwrites
 // (rotation). A non-secret VALUE edits (or clears) in place. A key present only in the
-// existing Env (not re-submitted) is retained.
-//
-// This is stricter than the blanket-preserve mergeEnvPreserveCredentials (which keeps the
-// existing secret against ANY incoming override and so could never rotate): SetServerEnv
-// only preserves on the placeholder, so the cockpit's four-state edit (untouched vs
-// rotated) round-trips. cutEnv / isPlaceholderValue are the shared config.go substrate.
+// existing Env (not re-submitted) is removed (see mergeSubmittedEnv).
 func SetServerEnv(doc *mcp.ManagedConfig, name string, submitted []string) error {
 	if doc == nil || doc.MCPServers == nil {
 		return fmt.Errorf("%w: %q", ErrServerNotFound, name)
@@ -94,4 +88,16 @@ func mergeSubmittedEnv(existing, submitted []string) []string {
 		out = append(out, entry)
 	}
 	return out
+}
+
+func cutEnv(entry string) (key, value string, ok bool) {
+	key, value, ok = strings.Cut(entry, "=")
+	if !ok || strings.TrimSpace(key) == "" {
+		return "", "", false
+	}
+	return key, value, true
+}
+
+func isPlaceholderValue(key, value string) bool {
+	return value == "${"+key+"}" || value == ""
 }

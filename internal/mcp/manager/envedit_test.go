@@ -138,3 +138,33 @@ func TestSetServerEnvRemovesOmittedKey(t *testing.T) {
 		t.Fatalf("re-submitting the placeholder lost the stored secret: %q ok=%v", v, ok)
 	}
 }
+
+func TestCutEnvEdgeCases(t *testing.T) {
+	tests := []struct {
+		name      string
+		entry     string
+		wantKey   string
+		wantValue string
+		wantOK    bool
+	}{
+		{name: "simple", entry: "KEY=value", wantKey: "KEY", wantValue: "value", wantOK: true},
+		{name: "empty value", entry: "KEY=", wantKey: "KEY", wantValue: "", wantOK: true},
+		{name: "value with equals", entry: "KEY=a=b", wantKey: "KEY", wantValue: "a=b", wantOK: true},
+		{name: "no equals", entry: "BAREWORD", wantOK: false},
+		{name: "empty string", entry: "", wantOK: false},
+		{name: "blank key", entry: "=value", wantOK: false},
+		{name: "whitespace key", entry: "   =value", wantOK: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			key, value, ok := cutEnv(tt.entry)
+			if ok != tt.wantOK {
+				t.Fatalf("cutEnv(%q) ok = %v, want %v", tt.entry, ok, tt.wantOK)
+			}
+			if key != tt.wantKey || value != tt.wantValue {
+				t.Fatalf("cutEnv(%q) = (%q, %q), want (%q, %q)", tt.entry, key, value, tt.wantKey, tt.wantValue)
+			}
+		})
+	}
+}
