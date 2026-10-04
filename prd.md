@@ -1352,6 +1352,19 @@ The registry is Postgres-backed. Launch kinds are local stdio and Streamable HTT
 Retired Docker declarations fail with a useful migration message rather than falling
 through to an empty stdio command. The UI cannot display an unenforced network allowlist.
 
+Profiles and the active profile are registry state, not process state. Measured on
+2026-10-04 with the release binary against the local registry: `aura mcp profile create
+work` answered `ok` and wrote a `profile_create` audit row, and `profile list` did not show
+`work`; after `profile add work calendar`, `profile use work` answered `ok` and wrote a
+`profile_use` row, and the active profile stayed `default`. Membership lived on server
+rows (migration 0101), so a profile existed only while a server belonged to it, and
+nothing stored which one was active. The ledger therefore recorded two changes that never
+happened. A profile table now holds every profile and the single active one. A profile
+persists after its last server leaves, and an empty active profile mounts no registry
+server. Before, an empty `default` fell back to every enabled server, so removing the last
+member from `default` mounted everything else. There is still no command to delete a
+profile. This measures the CLI; the cockpit offers no profile switch.
+
 Session termination is observed through the SDK lifecycle rather than a duplicate
 liveness poller. Mount, call, elicitation and shutdown have finite configured bounds;
 negative call timeouts cannot request unlimited execution. The production elicitation
