@@ -64,6 +64,31 @@
   .aura-dot-pulse {
     animation: aura-dot-pulse 1200ms var(--motion-ease-in-out) infinite alternate;
   }
+
+  /* The search-hit ring holds, then fades before the attribute is removed. */
+  [data-search-hit] {
+    animation: aura-search-hit 2400ms var(--motion-ease-out) forwards;
+  }
+}
+
+/* The message a search hit opened the thread on (ExternalStoreChat_viewport.tsx), marked for
+   SEARCH_HIT_MARK_MS. Reduced motion keeps the ring still for that time. */
+[data-search-hit] {
+  border-radius: var(--radius-md);
+  outline: 2px solid var(--color-accent-text);
+  outline-offset: 6px;
+  scroll-margin-block: 12px;
+}
+
+@keyframes aura-search-hit {
+  0%,
+  60% {
+    outline-color: var(--color-accent-text);
+  }
+
+  to {
+    outline-color: transparent;
+  }
 }
 
 @keyframes aura-thinking-shimmer {

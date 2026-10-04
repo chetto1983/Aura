@@ -3,6 +3,7 @@
 package conversations
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -87,5 +88,36 @@ func TestSearchRanksTheBetterMatchThenTheNewer(t *testing.T) {
 	want := []string{newer, older, misspelt}
 	if strings.Join(order, ",") != strings.Join(want, ",") {
 		t.Fatalf("order = %v, want newer exact, older exact, then misspelt %v", order, want)
+	}
+}
+
+// TestSearchFindsOnlyTheTurnsTheThreadShows: the thread shows user and assistant turns as
+// messages, folds a tool result into the assistant's tool card and hides system turns, so
+// a word in all four is found in the first two only.
+func TestSearchFindsOnlyTheTurnsTheThreadShows(t *testing.T) {
+	s := newStore(t, migratedPool(t))
+	convID := newConversation(t, s)
+	marker := searchMarker()
+	turns := []AppendTurnParams{
+		{Role: llm.RoleSystem, Content: "Follow these skill instructions: " + marker},
+		{Role: llm.RoleUser, Content: longMessageWith(marker)},
+		{Role: llm.RoleAssistant, Content: "Ho segnato la fattura " + marker + " per lunedì."},
+		{Role: llm.RoleTool, ToolCallID: "call-1", Content: `{"task":"` + marker + `","status":"active"}`},
+	}
+	for i, turn := range turns {
+		turn.ConversationID, turn.Seq = convID, i+1
+		if err := s.AppendTurn(ownerCtx(), turn); err != nil {
+			t.Fatalf("AppendTurn %s: %v", turn.Role, err)
+		}
+	}
+
+	var seqs []int
+	for _, hit := range searchHits(t, s, marker) {
+		if hit.ConversationID == convID {
+			seqs = append(seqs, hit.Seq)
+		}
+	}
+	if got := fmt.Sprint(seqs); got != "[2 3]" && got != "[3 2]" {
+		t.Fatalf("hits in the conversation = %s, want the user (2) and assistant (3) turns only", got)
 	}
 }

@@ -24,14 +24,14 @@ import { Input } from '@/components/ui/input';
 // Each hit projects ConversationID + Seq + Content (the snippet); the store's
 // SearchResult carries no title, so we enrich the title from the already-cached
 // conversation list. Clicking a hit opens that thread at the match: it navigates
-// to /c/:conversationId (deep-link URL the operator can share) AND calls onOpen so
-// the AppShell binds the active thread + target seq for scroll-to-match.
+// to /c/:conversationId (deep-link URL the operator can share) AND calls onOpen,
+// with which the AppShell opens the thread on the matched turn (ThreadViewport).
 //
 // Snippets render as React text nodes (auto-escaped); the highlighted match is
 // composed from safe <mark> element wrapping, never raw HTML (T-25-15).
 
 export interface SearchPanelProps {
-  /** Open the matched thread (AppShell binds activeThreadId + scrolls to seq). */
+  /** Open the matched thread with the turn at `seq` in view. */
   readonly onOpen: (conversationId: string, seq: number) => void;
 }
 

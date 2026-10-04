@@ -407,12 +407,9 @@ func TestLiveE2E_SearchSimilarity(t *testing.T) {
 	defer cancel()
 	convID := h.newLiveConversation(t, ctx)
 
-	// Drive term-dominant user turns so the search term is a large fraction of each
-	// turn's content and clears the pg_trgm % threshold (a short term against
-	// sentence-length content scores below it — correct pg_trgm behavior, not a
-	// defect; the UAT spec records this). The user turns are persisted verbatim, so
-	// the term is guaranteed present regardless of what the model replies. The third
-	// turn is the most term-dominant, so it should rank highest by similarity.
+	// The user turns are persisted verbatim, so the term is present regardless of what
+	// the model replies, and word_similarity scores the word inside a sentence as high
+	// as the word alone (prd.md §7).
 	const term = "photosynthesis"
 	prompts := []string{
 		"Define photosynthesis briefly.",
@@ -442,24 +439,28 @@ func TestLiveE2E_SearchSimilarity(t *testing.T) {
 		}
 	}
 
-	// Ground truth #2: this conversation's term-dominant user turns are matched, and
-	// every hit for this conversation actually contains the term (no false hit).
+	// Ground truth #2: every user turn is matched. A model reply may match as well, also
+	// through a near spelling such as "photosynthetic": the search tolerates typos by
+	// design (prd.md §7), so a hit without the exact term is not a false hit.
 	var mine []SC4Hit
+	found := make(map[string]bool, len(prompts))
 	for _, r := range results {
 		if r.ConversationID != convID {
 			continue
 		}
-		if !strings.Contains(strings.ToLower(r.Content), term) {
-			t.Fatalf("SC#4: hit seq %d does not contain %q: %q", r.Seq, term, truncate(r.Content, 80))
+		for _, p := range prompts {
+			if strings.Contains(r.Content, p) {
+				found[p] = true
+			}
 		}
 		mine = append(mine, SC4Hit{Seq: r.Seq, Sim: r.Similarity, Content: r.Content})
 	}
-	if len(mine) == 0 {
-		t.Fatalf("SC#4: no matching turns for %q in this conversation — pg_trgm %% returned nothing for present term", term)
+	if len(found) != len(prompts) {
+		t.Fatalf("SC#4: %d of the %d user turns found for %q: %v", len(found), len(prompts), term, found)
 	}
 
-	// Ground truth #3: the most term-dominant turn (the 'photosynthesis photosynthesis'
-	// user turn) is present and ranks first among this conversation's hits (DESC).
+	// Ground truth #3: the top hit carries the term exactly. Each user turn scores 1.0,
+	// so a near spelling cannot outrank them.
 	top := mine[0]
 	for _, m := range mine[1:] {
 		if m.Sim > top.Sim {

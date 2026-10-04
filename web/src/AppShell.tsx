@@ -33,6 +33,7 @@ import { useLogoutSession } from './shell/useLogoutSession';
 import { useRunSignals } from './shell/useRunSignals';
 import { useSharePanel } from './shell/useSharePanel';
 import { ShareModal } from './chat/share/ShareModal';
+import type { ThreadOpenAt } from './chat/ExternalStoreChat_props';
 import { VoiceModeProvider } from './chat/voice/VoiceModeProvider';
 import { MediaEditorProvider } from './mediaEdit/MediaEditorProvider';
 import { SystemUpdateLayer } from './update/SystemUpdateLayer';
@@ -81,6 +82,8 @@ export function AppShell() {
   const showConversationNavigation = surface === 'chat';
   const createConversation = useCreateConversation();
   const [selectedId, setSelectedId] = useState(routeId ?? '');
+  const [openAt, setOpenAt] = useState<ThreadOpenAt>();
+  const searchHitNonce = useRef(0);
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -174,9 +177,16 @@ export function AppShell() {
   function selectThread(id: string) {
     setSurface('chat');
     setSelectedId(id);
+    setOpenAt(undefined);
     resetUsage();
     surfaces.closeNav();
     void navigate(`/c/${encodeURIComponent(id)}`);
+  }
+
+  function openSearchHit(id: string, seq: number) {
+    selectThread(id);
+    searchHitNonce.current += 1;
+    setOpenAt({ threadId: id, seq, nonce: searchHitNonce.current });
   }
 
   const ensureThread = useCallback(async () => {
@@ -272,11 +282,7 @@ export function AppShell() {
         <SquarePen data-icon="inline-start" aria-hidden="true" focusable="false" />
         {createConversation.isPending ? t('conversations.newPending') : t('conversations.new')}
       </Button>
-      <SearchPanel
-        onOpen={(id) => {
-          selectThread(id);
-        }}
-      />
+      <SearchPanel onOpen={openSearchHit} />
       <div className="min-h-0 flex-1 overflow-hidden">
         <ConversationSidebar
           activeId={activeThreadId}
@@ -321,12 +327,7 @@ export function AppShell() {
           <SquarePen aria-hidden="true" focusable="false" />
           {createConversation.isPending ? t('conversations.newPending') : t('conversations.new')}
         </Button>
-        <SearchPanel
-          onOpen={(id) => {
-            setSurface('chat');
-            selectThread(id);
-          }}
-        />
+        <SearchPanel onOpen={openSearchHit} />
         <div className="min-h-0 flex-1 overflow-hidden">
           <ConversationSidebar
             activeId={activeThreadId}
@@ -383,6 +384,7 @@ export function AppShell() {
                 draftPrompt={composerDraftPrompt}
                 onDraftPromptConsumed={consumeComposerDraft}
                 onRequestDraftPrompt={requestComposerDraft}
+                openAt={openAt}
               />
             )}
           </Suspense>

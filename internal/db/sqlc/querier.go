@@ -687,6 +687,9 @@ type Querier interface {
 	// compared it with the whole message and found almost nothing (prd.md §7, 2026-10-04).
 	// `<%` is strict "greater than" pg_trgm.word_similarity_threshold (0.6), and the planner
 	// answers it from the gin_trgm_ops index as `content %> query`.
+	// Only user and assistant turns: the thread never shows a tool turn as a message (its text
+	// is the result inside the assistant's tool card) nor a system turn, and tool output took
+	// half the hits (prd.md §7). The filter stays here, before the LIMIT.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07

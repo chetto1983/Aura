@@ -833,6 +833,7 @@ const searchConversationTurns = `-- name: SearchConversationTurns :many
 SELECT conversation_id, seq, content, word_similarity($1, content) AS sim
 FROM aura.conversation_turns
 WHERE $1 <% content
+  AND role IN ('user', 'assistant')
 ORDER BY sim DESC, created_at DESC
 LIMIT $2
 `
@@ -855,6 +856,9 @@ type SearchConversationTurnsRow struct {
 // compared it with the whole message and found almost nothing (prd.md §7, 2026-10-04).
 // `<%` is strict "greater than" pg_trgm.word_similarity_threshold (0.6), and the planner
 // answers it from the gin_trgm_ops index as `content %> query`.
+// Only user and assistant turns: the thread never shows a tool turn as a message (its text
+// is the result inside the assistant's tool card) nor a system turn, and tool output took
+// half the hits (prd.md §7). The filter stays here, before the LIMIT.
 func (q *Queries) SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error) {
 	rows, err := q.db.Query(ctx, searchConversationTurns, arg.Query, arg.MaxHits)
 	if err != nil {
