@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"errors"
 	"io"
 	"iter"
 	"net/http"
@@ -83,6 +84,72 @@ func TestCoordinatorWakeIsScopedDeferredAndResumable(t *testing.T) {
 	}
 	if started, err := s.ResumePendingSteer(ctx, localIdentityID, conv); err != nil || started {
 		t.Fatalf("consumed batch woke again: %v %v", started, err)
+	}
+	if _, live := s.runs.LiveForThread(localIdentityID, conv); live || r.locked.Load() {
+		t.Fatal("a continuation with nothing to deliver stayed live or kept the lock")
+	}
+}
+
+type identityLockRunner struct {
+	coordinatorWakeRunner
+	lockedAs string
+}
+
+func (r *identityLockRunner) TryLockThread(ctx context.Context, conv string) (func(), bool) {
+	r.lockedAs = identityctx.IdentityID(ctx)
+	return r.coordinatorWakeRunner.TryLockThread(ctx, conv)
+}
+
+// TestCoordinatorWakeLocksAsItsOwner: the delegation worker calls with a bare context, and the
+// lock it takes must be the owner's, the one the owner's own runs contend for.
+func TestCoordinatorWakeLocksAsItsOwner(t *testing.T) {
+	const conv = "23232323-2323-2323-2323-232323232323"
+	r := &identityLockRunner{}
+	s, _ := newDetachTestServer(t, r, &fakeConvStore{known: map[string]bool{conv: true}}, ServerConfig{})
+	if started, err := s.ResumePendingSteer(context.Background(), localIdentityID, conv); started || err != nil {
+		t.Fatalf("started=%v err=%v, want nothing to deliver", started, err)
+	}
+	if r.lockedAs != localIdentityID {
+		t.Fatalf("locked as %q, want the owner %q", r.lockedAs, localIdentityID)
+	}
+}
+
+type pendingOnlyRunner struct{ scriptedRunner }
+
+func (*pendingOnlyRunner) PreparePendingSteer(context.Context, string) (iter.Seq2[*agent.Event, error], bool, error) {
+	return nil, true, nil
+}
+
+func TestCoordinatorWakeRefusesWhatItCannotHost(t *testing.T) {
+	const conv = "22222222-2222-2222-2222-222222222222"
+	ctx := context.Background()
+	known := &fakeConvStore{known: map[string]bool{conv: true}}
+
+	if started, err := NewServer(&coordinatorWakeRunner{}, known, ServerConfig{}).ResumePendingSteer(ctx, localIdentityID, conv); started || err != nil {
+		t.Fatalf("without a run registry: started=%v err=%v, want a quiet no", started, err)
+	}
+	unlockable, _ := newDetachTestServer(t, &detachLockRunner{}, known, ServerConfig{})
+	if started, err := unlockable.ResumePendingSteer(ctx, localIdentityID, conv); started || err == nil {
+		t.Fatalf("a runner that cannot consume a pending steer: started=%v err=%v", started, err)
+	}
+	lockless, _ := newDetachTestServer(t, &pendingOnlyRunner{}, known, ServerConfig{})
+	if started, err := lockless.ResumePendingSteer(ctx, localIdentityID, conv); started || err == nil {
+		t.Fatalf("a runner without a conversation lock: started=%v err=%v", started, err)
+	}
+
+	r := &coordinatorWakeRunner{release: make(chan struct{})}
+	r.pending.Store(true)
+	full, _ := newDetachTestServer(t, r, known, ServerConfig{RunMaxLive: 1})
+	busy, err := full.runs.Start(runParams{runID: "run-busy", threadID: "other", identityID: localIdentityID, cancel: func() {}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busy.finish()
+	if started, err := full.ResumePendingSteer(ctx, localIdentityID, conv); started || !errors.Is(err, errRunRegistryFull) {
+		t.Fatalf("a full registry: started=%v err=%v, want errRunRegistryFull", started, err)
+	}
+	if r.locked.Load() || r.preparations.Load() != 0 || !r.pending.Load() {
+		t.Fatal("a refused continuation kept the lock or consumed the saved batch")
 	}
 }
 

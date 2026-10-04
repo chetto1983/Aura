@@ -6,7 +6,6 @@ import (
 	"iter"
 
 	"github.com/chetto1983/aura/internal/agent"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
 )
@@ -21,14 +20,8 @@ func (s *Server) ResumePendingSteer(ctx context.Context, owner, conv string) (bo
 	if s.runs == nil {
 		return false, nil
 	}
-	if _, err := uuid.Parse(owner); err != nil {
-		return false, fmt.Errorf("coordinator wake owner: %w", err)
-	}
-	if _, err := uuid.Parse(conv); err != nil {
-		return false, fmt.Errorf("coordinator wake conversation: %w", err)
-	}
-	ctx = identityctx.WithIdentityID(ctx, owner)
-	if _, err := s.conv.GetForIdentity(ctx, conv, owner); err != nil {
+	ctx, err := s.wakeRoute(ctx, owner, conv)
+	if err != nil {
 		return false, err
 	}
 	prepared, ok := s.run.(pendingSteerRunner)

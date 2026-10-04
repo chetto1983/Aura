@@ -106,15 +106,27 @@ func (d *backgroundCompletionDispatcher) NotifyMedia(completion mediagen.Complet
 	})
 }
 
+// hostWakes hands every later wake to host. The AG-UI server, which registers a wake as a run
+// an open cockpit can attach to, is built after the dispatcher: the video watcher needs
+// NotifyMedia first. Serve binds it before it accepts work; nil-safe without the steer rail.
+func (d *backgroundCompletionDispatcher) hostWakes(host backgroundCompletionWakeRunner) {
+	if d == nil {
+		return
+	}
+	d.mu.Lock()
+	d.run = host
+	d.mu.Unlock()
+}
+
 // enqueue fails closed on an ownerless or conversationless fact: without both values no
 // conversation can be proven as the target.
 func (d *backgroundCompletionDispatcher) enqueue(completion backgroundCompletion) {
-	if d == nil || d.run == nil || d.steer == nil || completion.OwnerID == "" || completion.ConversationID == "" {
+	if d == nil || d.steer == nil || completion.OwnerID == "" || completion.ConversationID == "" {
 		return
 	}
 	route := backgroundCompletionRoute{ownerID: completion.OwnerID, conversationID: completion.ConversationID}
 	d.mu.Lock()
-	if d.closed {
+	if d.closed || d.run == nil {
 		d.mu.Unlock()
 		return
 	}
@@ -140,6 +152,7 @@ func (d *backgroundCompletionDispatcher) drainRoute(route backgroundCompletionRo
 			d.mu.Unlock()
 			return
 		}
+		run := d.run
 		d.mu.Unlock()
 
 		source, text := group[0].Source, formatBackgroundCompletions(group)
@@ -150,7 +163,7 @@ func (d *backgroundCompletionDispatcher) drainRoute(route backgroundCompletionRo
 				"source", source, "completions", len(group), "err", err)
 			continue
 		}
-		for _, err := range d.run.WakeWithSteer(ctx, route.conversationID, d.steer, source, text) {
+		for _, err := range run.WakeWithSteer(ctx, route.conversationID, d.steer, source, text) {
 			if err != nil {
 				slog.Warn("aura serve: background completion wake failed",
 					"owner", route.ownerID, "conversation", route.conversationID,

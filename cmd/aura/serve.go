@@ -522,9 +522,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	// or nil chat.pool degrades every leg to a no-op rather than dereferencing —
 	// see newDelegationDelivery.
 	delegationDelivery := newDelegationDelivery(chat, store, reg)
+	// A runtime wake, like a coordinator's continuation, then runs as a detached run an open
+	// cockpit discovers and attaches to.
 	if runRegistry != nil && chat.steer != nil {
 		delegationDelivery.PendingResults = steerNudgeAdapter{store: chat.steer}
 		delegationDelivery.Resume = aguiServer.ResumePendingSteer
+		backgroundCompletions.hostWakes(aguiServer)
 	}
 	delegationWorker := newRuntimeDelegationWorker(chat, delegationDelivery, runRegistry)
 
