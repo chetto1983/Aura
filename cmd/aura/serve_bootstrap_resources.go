@@ -91,7 +91,7 @@ func (r bootstrapResources) provision(ctx context.Context, identityID string) {
 	}
 	if r.filesystem != nil {
 		if err := r.filesystem.ProvisionIdentityDirs(ctx, identityID); err != nil {
-			slog.Error("aura serve: bootstrap filesystem roots failed — this operator has no skills, mcp or pyscripts directory",
+			slog.Error("aura serve: bootstrap filesystem roots failed — this operator has no per-identity skills directory",
 				"err", err)
 		}
 	}

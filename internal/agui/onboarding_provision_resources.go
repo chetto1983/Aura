@@ -32,7 +32,8 @@ type ObjectStoreProvisioner interface {
 }
 
 // FilesystemProvisioner provisions and de-provisions the per-identity filesystem roots
-// (D-20/D-21): ~/.aura/mcp/{id}, $AURA_SKILLS_DIR/{id}, ~/.aura/pyscripts/{id}.
+// (D-20/D-21). One is left: $AURA_SKILLS_IDENTITY_DIR/{id} (#214). ~/.aura/mcp and
+// ~/.aura/pyscripts were retired by #207 (cmd/aura/serve_provisioning.go).
 // ProvisionIdentityDirs is idempotent (MkdirAll); DeprovisionIdentityDirs is RemoveAll
 // (idempotent). The adapter roots every path through the traversal guard so a crafted
 // identity cannot escape its provisioning dir.
