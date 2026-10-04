@@ -757,6 +757,19 @@ both statuses as ready. Migration 0132 settles the rows left behind, only those 
 an `asset_process` job that had succeeded. The 15 counted that morning were not checked
 against their jobs before most of them were deleted.
 
+**`searchable` and `embedding` are not asset statuses.** No code writes either to
+`aura.assets` since the in-process pipeline was deleted. The Go constants had no writer and
+`StatusEmbedding` had no reference at all, yet both values survived in the CHECK, in a
+`searchable_at` column, in the Studio's asset filter and in the cockpit's status union.
+Measured 2026-10-04: the local database held `accepted` 9, `complete` 29 and `presigned` 5,
+and no row in either status. The live deployment held 0 `searchable` on 2026-08-13, the
+last time it was counted. Migration 0136 drops both values and the column. It refuses to run
+while any row still holds either status rather than guess what that row should become. The
+cockpit's union also listed `indexed` and `recovered`, attributed to the retention sweeper;
+the CHECK has never admitted them, and nothing writes them. What this does not show: the
+state of appliances not measured here, which is why the migration checks instead of
+assuming.
+
 **Refused and failed uploads.** A `refused` or `failed` row records an outcome, not content.
 A refusal removes the bytes, and a failed row is retried within minutes by its job or once
 by hand from the chat chip. The same sweep therefore marks both `deleting` once untouched
