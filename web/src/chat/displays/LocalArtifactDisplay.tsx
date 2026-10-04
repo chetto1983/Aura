@@ -1,9 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { lazy, Suspense, useState } from 'react';
-import { AlertTriangle, Download, Eye, File } from 'lucide-react';
+import { AlertTriangle, Eye, File } from 'lucide-react';
 import { EditMediaButton } from '../../mediaEdit/EditMediaButton';
 import { formatSize, previewKind } from '../artifacts/artifactMeta';
 import { PreviewModal } from '../artifacts/PreviewModal';
+import { SaveFileLink } from '../artifacts/SaveFileLink';
 import { useAssetSource } from '../artifacts/renderers/assetSourceContext';
 import { PreviewLoading } from '../artifacts/renderers/PreviewStatus';
 import type { DisplayArtifact } from './types';
@@ -80,7 +81,7 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
                 compact
               />
             ) : null}
-            <DownloadLink assetId={assetId} filename={filename} />
+            <DownloadLink assetId={assetId} filename={filename} mimeType={mimeType} />
           </span>
         </figcaption>
       </figure>
@@ -101,7 +102,7 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
             {kind !== 'download' ? (
               <OpenInCockpit assetId={assetId} filename={filename} mimeType={mimeType} />
             ) : null}
-            <DownloadLink assetId={assetId} filename={filename} />
+            <DownloadLink assetId={assetId} filename={filename} mimeType={mimeType} />
           </span>
         ) : (
           <span
@@ -120,23 +121,24 @@ export function LocalArtifactDisplay({ payload }: LocalArtifactDisplayProps) {
 function DownloadLink({
   assetId,
   filename,
+  mimeType,
 }: {
   readonly assetId: string;
   readonly filename: string;
+  readonly mimeType: string;
 }) {
   const { t } = useTranslation();
   const { assetUrl } = useAssetSource();
   return (
-    <a
+    <SaveFileLink
       href={assetUrl(assetId)}
-      download={filename}
+      fileName={filename}
+      mimeType={mimeType}
+      label={t('display.artifact.download')}
       aria-label={t('display.artifact.downloadAria', { filename })}
       data-required-touch-target
       className="group inline-flex min-h-[44px] min-w-[44px] w-fit max-w-full shrink-0 items-center gap-2 rounded-[var(--radius-sm)] border border-accent/40 bg-surface-2 px-3 py-1.5 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-    >
-      <Download aria-hidden="true" className="size-4 shrink-0" />
-      {t('display.artifact.download')}
-    </a>
+    />
   );
 }
 

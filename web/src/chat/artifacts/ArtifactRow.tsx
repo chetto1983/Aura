@@ -1,7 +1,9 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Download } from 'lucide-react';
+import { AlertTriangle, type LucideIcon } from 'lucide-react';
 import type { Asset } from '../attachments/types';
 import { categoryIcon, categoryLabel, formatSize } from './artifactMeta';
+import { SaveIcon } from './SaveFileLink';
+import { useSaveFile, useSaveLabel } from './useSaveFile';
 
 // ArtifactRow (D-05/D-12/D-18): one agent deliverable in the "Artefatti" panel. It
 // mirrors LocalArtifactDisplay's two-state split — an ACCEPTED asset gets the 37A-
@@ -28,6 +30,9 @@ export function ArtifactRow({ asset, onPreview }: ArtifactRowProps) {
   const label = categoryLabel(asset.mime_type, asset.file_name, t);
   const size = formatSize(asset.size_bytes, t);
   const degraded = asset.status !== 'accepted';
+  const href = `/api/assets/${encodeURIComponent(asset.id)}/download`;
+  const save = useSaveFile(href, asset.file_name, asset.mime_type);
+  const saveLabel = useSaveLabel(save.state);
 
   return (
     <div
@@ -62,18 +67,25 @@ export function ArtifactRow({ asset, onPreview }: ArtifactRowProps) {
             </span>
           </button>
           <a
-            href={`/api/assets/${encodeURIComponent(asset.id)}/download`}
+            href={href}
             download={asset.file_name}
             onClick={(e) => {
               e.stopPropagation();
+              save.onClick(e);
             }}
-            aria-label={t('display.artifact.downloadAria', { filename: asset.file_name })}
+            aria-label={
+              saveLabel ?? t('display.artifact.downloadAria', { filename: asset.file_name })
+            }
+            aria-busy={save.state === 'preparing'}
             // Touch has no hover, so the download must be visible by default (mobile Drawer,
             // WEBART-05/06). On hover-capable pointers (desktop) it stays a clean hover-reveal:
             // opacity-0 applies ONLY under @media(hover:hover), then group-hover/focus reveals it.
             className="grid size-8 shrink-0 place-items-center rounded-full border border-transparent text-text-faint opacity-100 transition-all [@media(hover:hover)]:opacity-0 hover:border-accent hover:bg-surface hover:text-accent-text focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent group-hover/row:opacity-100"
           >
-            <Download className="size-4 transition-transform group-hover/row:translate-y-px" />
+            <SaveIcon
+              state={save.state}
+              className="size-4 transition-transform group-hover/row:translate-y-px"
+            />
           </a>
         </>
       )}
@@ -82,7 +94,7 @@ export function ArtifactRow({ asset, onPreview }: ArtifactRowProps) {
 }
 
 /** The category glyph in a rounded tile — the row's visual anchor. */
-function IconTile({ Icon, degraded }: { Icon: typeof Download; degraded: boolean }) {
+function IconTile({ Icon, degraded }: { Icon: LucideIcon; degraded: boolean }) {
   return (
     <span
       className={

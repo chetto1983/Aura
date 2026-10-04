@@ -1,6 +1,7 @@
 import type { IEntity } from '@svar-ui/react-filemanager';
 import { RestDataProvider } from '@svar-ui/filemanager-data-provider';
 import { downloadLinks } from '@/chat/artifacts/downloadAll';
+import type { AssetSource } from '@/chat/artifacts/renderers/assetSourceContext';
 
 /**
  * The mount the file manager talks to. It implements the component's own REST dialect --
@@ -68,6 +69,17 @@ export function directURL(id: string, download: boolean): string {
   const query = `id=${encodeURIComponent(id)}${download ? '&download=true' : ''}`;
   return `${fileManagerBase}/direct?${query}`;
 }
+
+/**
+ * Where the cockpit's preview reads a file manager object from: the direct route, inline. The
+ * route has no Range sibling, so a clip streams from the same URL; and there is no render
+ * route and no editing, so those optional capabilities are left out.
+ */
+export const FILE_MANAGER_SOURCE: AssetSource = {
+  assetUrl: (id) => directURL(id, false),
+  streamUrl: (id) => directURL(id, false),
+  credentials: 'same-origin',
+};
 
 /**
  * Saves files through the cockpit's one multi-download loop -- the one "Download all" uses,

@@ -1,9 +1,10 @@
 import { Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, FileDown } from 'lucide-react';
+import { FileDown } from 'lucide-react';
 import { EditMediaButton } from '../../mediaEdit/EditMediaButton';
 import type { Asset } from '../attachments/types';
 import { previewKind } from './artifactMeta';
+import { SaveFileLink } from './SaveFileLink';
 import { PreviewLoading, type RendererProps } from './renderers/PreviewStatus';
 import { PreviewByKind } from './renderers/previewDispatch';
 import { useAssetSource } from './renderers/assetSourceContext';
@@ -59,14 +60,13 @@ function DownloadCard({ active }: { active: PreviewTarget }) {
         </p>
         <p className="text-[13px] text-text-muted">{t('artifacts.preview.unsupported')}</p>
       </div>
-      <a
+      <SaveFileLink
         href={assetUrl(active.id)}
-        download={active.file_name}
+        fileName={active.file_name}
+        mimeType={active.mime_type}
+        label={t('artifacts.preview.downloadFallback')}
         className="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-surface px-4 py-2 text-sm font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        <Download className="size-4" />
-        {t('artifacts.preview.downloadFallback')}
-      </a>
+      />
     </div>
   );
 }
@@ -101,15 +101,14 @@ export function PreviewModal({ active, onClose }: PreviewModalProps) {
                   onOpen={onClose}
                 />
               ) : null}
-              <a
+              <SaveFileLink
                 href={assetUrl(active.id)}
-                download={active.file_name}
+                fileName={active.file_name}
+                mimeType={active.mime_type}
+                label={t('artifacts.preview.downloadFallback')}
                 aria-label={t('artifacts.preview.download', { name: active.file_name })}
                 className="inline-flex h-9 items-center gap-2 rounded-full border border-border bg-surface px-3.5 text-[13px] font-medium text-accent-text transition-colors hover:border-accent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              >
-                <Download className="size-4" />
-                {t('artifacts.preview.downloadFallback')}
-              </a>
+              />
             </div>
             <DialogDescription className="sr-only">
               {t('artifacts.preview.description', { name: active.file_name })}

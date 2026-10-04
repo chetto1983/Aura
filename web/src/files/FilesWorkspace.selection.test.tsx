@@ -169,6 +169,31 @@ describe('FilesWorkspace selection', () => {
     });
   });
 
+  // A download navigates iOS's home-screen app to a file page with no way back (prd.md §3):
+  // the file opens in the cockpit's preview, whose save goes through the share sheet.
+  it('opens the preview instead of downloading in the iOS home-screen app', async () => {
+    Object.defineProperty(navigator, 'standalone', { value: true, configurable: true });
+    const read = vi.fn(() => Promise.resolve({ ok: true, status: 200, text: () => 'bravo' }));
+    vi.stubGlobal('fetch', read);
+    try {
+      const { container } = await mount();
+      fireEvent.click(moreOf(container, '/bravo.txt'));
+      await chooseFromMenu('Download');
+
+      await screen.findByRole('dialog', { name: 'bravo.txt' });
+      await waitFor(() => {
+        expect(read).toHaveBeenCalledWith('/api/filemanager/direct?id=%2Fbravo.txt', {
+          credentials: 'same-origin',
+          signal: expect.any(AbortSignal) as AbortSignal,
+        });
+      });
+      expect(saved).toEqual([]);
+    } finally {
+      vi.unstubAllGlobals();
+      Reflect.deleteProperty(navigator, 'standalone');
+    }
+  });
+
   it('goes back to single selection once nothing is selected', async () => {
     const { container } = await mount();
     fireEvent.click(moreOf(container, '/alpha.txt'));

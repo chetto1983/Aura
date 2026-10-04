@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { emulateIOSHomeScreen, sharedFiles } from './iosHomeScreen';
 
 const CONV_ID = '77777777-7777-7777-7777-777777777777';
 const image = readFileSync(resolve(process.cwd(), 'e2e/fixtures/media-edit/photo.png'));
@@ -207,6 +208,37 @@ test('a delivered PDF opens in the cockpit preview without leaving the page', as
   await page.keyboard.press('Escape');
   await expect(preview).toHaveCount(0);
   expect(page.url()).toBe(conversationURL);
+});
+
+// On iOS's home-screen app the same card's download would navigate to the file page with no
+// way back. There the link hands the PDF to the share sheet, and the page never moves. A tap
+// whose activation lapsed during the fetch leaves a "Save" for a second one.
+test('a delivered PDF saves through the share sheet in the iOS home-screen app', async ({
+  page,
+}) => {
+  await emulateIOSHomeScreen(page);
+  await installConversationRoutes(page);
+  await page.route('**/api/assets/pdf-1/download', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/octet-stream', body: pdf }),
+  );
+  const downloads: string[] = [];
+  page.on('download', (download) => downloads.push(download.suggestedFilename()));
+  await gotoAuthenticated(page, `/c/${CONV_ID}`);
+  const conversationURL = page.url();
+
+  await page.getByRole('link', { name: 'Download Appunti.pdf' }).click();
+  const save = page.getByRole('link', { name: 'Save' });
+  await expect
+    .poll(async () => (await sharedFiles(page)).length > 0 || (await save.count()) > 0)
+    .toBe(true);
+  if ((await sharedFiles(page)).length === 0) await save.click();
+
+  await expect
+    .poll(() => sharedFiles(page))
+    .toEqual([{ name: 'Appunti.pdf', type: 'application/pdf', size: pdf.length }]);
+  expect(downloads).toEqual([]);
+  expect(page.url()).toBe(conversationURL);
+  await expect(page.getByRole('link', { name: 'Download Appunti.pdf' })).toBeVisible();
 });
 
 test('public share audio seeks on its token-scoped stream without a login', async ({ page }) => {
