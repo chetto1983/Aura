@@ -49,6 +49,16 @@ function openRunStream(runId: string): Response {
   return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
 }
 
+/** A run that starts and finishes at once. */
+function finishedRunStream(runId: string): Response {
+  const frame = (type: string, id: string) =>
+    `event: ${type}\nid: ${id}\ndata: ${JSON.stringify({ type, threadId: 'conv-1', runId })}\n\n`;
+  return new Response(frame('RUN_STARTED', '1') + frame('RUN_FINISHED', '2'), {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
 /** A clean, immediately-closed SSE response — the shape of a normal /agent/run reply the test
  *  never needs to fold (only that it was, or was not, called). */
 function closedSSEResponse(): Response {
@@ -74,6 +84,15 @@ function sendPrompt(text: string): void {
 function typeAndClickRedirect(text: string): void {
   fireEvent.change(screen.getByPlaceholderText('Ask Aura'), { target: { value: text } });
   fireEvent.click(screen.getByRole('button', { name: 'Redirect the current turn' }));
+}
+
+/** The text as a message on the page, not as the composer's own value. */
+function threadText(text: string): HTMLElement | null {
+  return screen.queryByText(text, { ignore: 'script, style, textarea' });
+}
+
+function composerValue(): string {
+  return screen.getByPlaceholderText<HTMLTextAreaElement>('Ask Aura').value;
 }
 
 describe('ExternalStoreChat — D-10 composer contract (component level)', () => {
@@ -129,7 +148,7 @@ describe('ExternalStoreChat — D-10 composer contract (component level)', () =>
     expect(screen.queryByRole('button', { name: 'Redirect the current turn' })).toBeNull();
   });
 
-  it('rolls back the optimistic steer message on a 400 refusal and shows the refusal text', async () => {
+  it('rolls back the optimistic steer message on a 400 refusal, shows the refusal text and returns the text to the composer', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
       if (url === '/agent/run') return Promise.resolve(openRunStream('run-7'));
@@ -154,11 +173,12 @@ describe('ExternalStoreChat — D-10 composer contract (component level)', () =>
       expect(
         screen.getByText("That message couldn't be redirected — try a shorter one."),
       ).toBeTruthy();
-      expect(screen.queryByText('a refused redirect')).toBeNull();
+      expect(threadText('a refused redirect')).toBeNull();
+      expect(composerValue()).toBe('a refused redirect');
     });
   });
 
-  it('rolls back the optimistic steer message on a 429 refusal and shows the refusal text', async () => {
+  it('rolls back the optimistic steer message on a 429 refusal, shows the refusal text and returns the text to the composer', async () => {
     const fetchMock = vi.fn((url: string) => {
       if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
       if (url === '/agent/run') return Promise.resolve(openRunStream('run-7'));
@@ -179,27 +199,127 @@ describe('ExternalStoreChat — D-10 composer contract (component level)', () =>
       expect(
         screen.getByText('Aura already has a redirect queued. Wait a moment and try again.'),
       ).toBeTruthy();
-      expect(screen.queryByText('another refused redirect')).toBeNull();
+      expect(threadText('another refused redirect')).toBeNull();
+      expect(composerValue()).toBe('another refused redirect');
+    });
+  });
+
+  // Task #30: the server answers 410 to a steer that reaches a run after it ended. The run stream
+  // here never closes, so the text goes out while this tab still shows the old run as running.
+  it('sends a redirect that reached its run after the run ended as the next turn', async () => {
+    const runBodies: string[] = [];
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+      if (url === '/agent/run') {
+        runBodies.push(typeof init?.body === 'string' ? init.body : '');
+        return Promise.resolve(
+          runBodies.length === 1 ? openRunStream('run-7') : finishedRunStream('run-8'),
+        );
+      }
+      if (url === '/agent/runs/run-7/steer') {
+        return Promise.resolve(
+          new Response('run has ended: message was not queued; send it as a normal turn', {
+            status: 410,
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('first message to open the run');
+    await screen.findByRole('button', { name: 'Redirect the current turn' });
+
+    typeAndClickRedirect('too late to redirect');
+
+    await waitFor(() => {
+      expect(runBodies).toHaveLength(2);
+    });
+    expect(runBodies[1]).toContain('too late to redirect');
+    expect(fetchMock.mock.calls.filter(([u]) => u.endsWith('/steer'))).toHaveLength(1);
+    expect(
+      await screen.findByText('Delivered as a new message once the previous turn ended.'),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The turn already finished/)).toBeNull();
+    expect(threadText('too late to redirect')).toBeTruthy();
+  });
+
+  // The run's POST is still in flight, so the redirect control shows before RUN_STARTED has
+  // given this tab an id. A new turn now would collide with the run and be overwritten.
+  it('gives a redirect sent before the run has an id back to the composer', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+      if (url === '/agent/run') return new Promise<Response>(() => undefined);
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('first message, still being posted');
+    await screen.findByRole('button', { name: 'Redirect the current turn' });
+
+    typeAndClickRedirect('too early to redirect');
+
+    await waitFor(() => {
+      expect(composerValue()).toBe('too early to redirect');
+    });
+    expect(
+      screen.getByText("Aura can't take a redirect yet — try again in a moment."),
+    ).toBeTruthy();
+    expect(threadText('too early to redirect')).toBeNull();
+    expect(fetchMock.mock.calls.filter(([u]) => u === '/agent/run')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([u]) => u.endsWith('/steer'))).toBe(false);
+  });
+
+  it('keeps what was typed while a refused redirect was in flight, after the returned text', async () => {
+    let refuse: (response: Response) => void = () => undefined;
+    const fetchMock = vi.fn((url: string) => {
+      if (url.startsWith('/threads/')) return Promise.resolve(messagesSnapshotResponse());
+      if (url === '/agent/run') return Promise.resolve(openRunStream('run-7'));
+      if (url === '/agent/runs/run-7/steer') {
+        return new Promise<Response>((resolve) => {
+          refuse = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse([]));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderChat(<ExternalStoreChat threadId="conv-1" />);
+    sendPrompt('first message to open the run');
+    await screen.findByRole('button', { name: 'Redirect the current turn' });
+
+    typeAndClickRedirect('a refused redirect');
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([u]) => u.endsWith('/steer'))).toBe(true);
+    });
+    fireEvent.change(screen.getByPlaceholderText('Ask Aura'), {
+      target: { value: 'and this too' },
+    });
+    refuse(new Response('too long', { status: 400 }));
+
+    await waitFor(() => {
+      expect(composerValue()).toBe('a refused redirect\nand this too');
     });
   });
 });
 
 describe('useSteerSend', () => {
-  function fixture(initialRunId: string | null = 'run-7') {
-    const messages: unknown[] = [];
+  function fixture(
+    initialRunId: string | null = 'run-7',
+    liveRunId?: string,
+    running = initialRunId !== null,
+  ) {
+    const messages: unknown[] = [{ id: 'earlier' }];
     const setMessages = vi.fn((update: unknown) => {
       const fn = update as (prev: unknown[]) => unknown[];
       messages.splice(0, messages.length, ...(typeof fn === 'function' ? fn(messages) : fn));
     });
     const activeRunIdRef = { current: initialRunId };
+    const isRunningRef = { current: running };
     const rendered = renderHook(() =>
-      useSteerSend({
-        threadId: 'conv-1',
-        liveRunId: undefined,
-        activeRunIdRef,
-        isRunning: initialRunId !== null,
-        setMessages,
-      }),
+      useSteerSend({ threadId: 'conv-1', liveRunId, activeRunIdRef, isRunningRef, setMessages }),
     );
     return { rendered, messages, setMessages, activeRunIdRef };
   }
@@ -208,14 +328,144 @@ describe('useSteerSend', () => {
     vi.unstubAllGlobals();
   });
 
-  it('available is false with no resolvable run id', () => {
-    const { rendered } = fixture(null);
-    expect(rendered.result.current.available).toBe(false);
-  });
-
-  it('trySend returns false (not handled) with no resolvable run id', async () => {
+  it('trySend returns false (not handled) with no live run', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
     const { rendered } = fixture(null);
     await expect(rendered.result.current.trySend('hi')).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a run this tab started but has no id for yet takes no steer and gives the text back', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { rendered, messages } = fixture(null, undefined, true);
+
+    await expect(rendered.result.current.trySend('too early')).resolves.toBe(true);
+    rendered.rerender();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(messages).toEqual([{ id: 'earlier' }]);
+    expect(rendered.result.current.refusal).toMatchObject({
+      message: "Aura can't take a redirect yet — try again in a moment.",
+      draft: 'too early',
+    });
+  });
+
+  it.each([
+    ['the run this tab drives', 'run-7', undefined],
+    ['a cached live_run_id', null, 'run-old'],
+  ])(
+    'a 410 from %s leaves the text to the caller as a turn, and that run is never steered again',
+    async (_, activeRunId, liveRunId) => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(new Response('run has ended', { status: 410 })),
+      );
+      vi.stubGlobal('fetch', fetchMock);
+      const { rendered, messages } = fixture(activeRunId, liveRunId);
+
+      await expect(rendered.result.current.trySend('too late')).resolves.toBe(false);
+      rendered.rerender();
+      expect(messages).toEqual([{ id: 'earlier' }]);
+      expect(rendered.result.current.notice?.kind).toBe('autoDelivered');
+      expect(rendered.result.current.refusal).toBeUndefined();
+
+      await expect(rendered.result.current.trySend('again')).resolves.toBe(false);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    [429, 'Aura already has a redirect queued. Wait a moment and try again.'],
+    [500, "Couldn't redirect the turn. Try again."],
+  ])('a %i refusal is handled here and carries the text back', async (status, message) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response('refused', { status }))),
+    );
+    const { rendered, messages } = fixture('run-7');
+
+    await expect(rendered.result.current.trySend('later please')).resolves.toBe(true);
+    rendered.rerender();
+    expect(messages).toEqual([{ id: 'earlier' }]);
+    expect(rendered.result.current.refusal).toMatchObject({ message, draft: 'later please' });
+  });
+
+  it('an empty run id is no run to steer', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const { rendered } = fixture('', '');
+    await expect(rendered.result.current.trySend('hi')).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a new steer clears the refusal of the last one, and each notice has its own id', async () => {
+    const statuses = [429, 202, 202, 410, 410];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(null, { status: statuses.shift() ?? 500 }))),
+    );
+    const { rendered, activeRunIdRef } = fixture('run-7');
+
+    await rendered.result.current.trySend('refused');
+    rendered.rerender();
+    expect(rendered.result.current.refusal).toBeDefined();
+
+    const notices: (string | undefined)[] = [];
+    for (const [runId, text] of [
+      ['run-7', 'first'],
+      ['run-7', 'second'],
+      ['run-8', 'late'],
+      ['run-9', 'later'],
+    ]) {
+      activeRunIdRef.current = runId ?? null;
+      await rendered.result.current.trySend(text ?? '');
+      rendered.rerender();
+      expect(rendered.result.current.refusal).toBeUndefined();
+      notices.push(rendered.result.current.notice?.id);
+    }
+    expect(new Set(notices).size).toBe(4);
+  });
+
+  it('a steer another channel sent with the same text still shows its notice', () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>(() => undefined)),
+    );
+    const { rendered } = fixture('run-7');
+    void rendered.result.current.trySend('same words');
+
+    rendered.result.current.onFrame({
+      conversation_id: 'conv-1',
+      round: 1,
+      steers: [
+        { id: 'tg-1', source: 'telegram', text: 'same words', delivery: 'tool_result_append' },
+      ],
+    });
+    rendered.rerender();
+    expect(rendered.result.current.notice).toEqual({ id: 'tg-1', kind: 'redirected' });
+  });
+
+  it('onFrame follows the thread the hook is rendered for', () => {
+    const rendered = renderHook(
+      ({ threadId }: { threadId: string }) =>
+        useSteerSend({
+          threadId,
+          liveRunId: undefined,
+          activeRunIdRef: { current: 'run-7' },
+          isRunningRef: { current: true },
+          setMessages: vi.fn(),
+        }),
+      { initialProps: { threadId: 'conv-1' } },
+    );
+    rendered.rerender({ threadId: 'conv-2' });
+
+    rendered.result.current.onFrame({
+      conversation_id: 'conv-2',
+      round: 1,
+      steers: [{ id: 'steer-9', source: 'cockpit', text: 'hi', delivery: 'tool_result_append' }],
+    });
+    rendered.rerender({ threadId: 'conv-2' });
+    expect(rendered.result.current.notice).toEqual({ id: 'steer-9', kind: 'redirected' });
   });
 
   it('onFrame renders one notice when this tab both sent and observes its own echo (dedup by pending text, then by id)', async () => {
@@ -280,7 +530,7 @@ describe('useSteerSend', () => {
     expect(rendered.result.current.notice).toEqual({ id: 'steer-3', kind: 'autoDelivered' });
   });
 
-  it.each(['swarm', 'shell', 'media'])(
+  it.each(['swarm', 'shell', 'media', 'tool'])(
     'onFrame shows no notice for Aura’s own %s fact, which the operator never sent',
     (source) => {
       const { rendered } = fixture('run-7');

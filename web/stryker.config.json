@@ -82,7 +82,8 @@
     "src/videoStudio/videoflow_media.ts",
     "src/conversations/searchHighlight.ts",
     "src/chat/messageSeq.ts",
-    "src/chat/ExternalStoreChat_viewport.tsx"
+    "src/chat/ExternalStoreChat_viewport.tsx",
+    "src/chat/ExternalStoreChat_steer.ts"
   ],
   "thresholds": { "high": 85, "low": 70, "break": 70 },
   "dryRunTimeoutMinutes": 10,

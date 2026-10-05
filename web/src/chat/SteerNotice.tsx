@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import type { SteerNoticeView } from './ExternalStoreChat_steer';
+import type { SteerNoticeView, SteerRefusalView } from './ExternalStoreChat_steer';
 
 // SteerNotice — the D-10 visible echo that a submit redirected the live turn instead of doing
 // nothing. Follows CompactionMarker's placement idea (a thread-level status line, not a
@@ -10,7 +10,7 @@ import type { SteerNoticeView } from './ExternalStoreChat_steer';
 
 export interface SteerNoticeProps {
   readonly notice: SteerNoticeView | undefined;
-  readonly refusal: string | undefined;
+  readonly refusal: SteerRefusalView | undefined;
 }
 
 export function SteerNotice({ notice, refusal }: SteerNoticeProps) {
@@ -19,7 +19,7 @@ export function SteerNotice({ notice, refusal }: SteerNoticeProps) {
   if (refusal !== undefined) {
     return (
       <p role="status" className="px-3 py-1 text-[0.75rem] text-warning sm:px-4">
-        {refusal}
+        {refusal.message}
       </p>
     );
   }

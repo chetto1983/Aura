@@ -96,6 +96,8 @@ const mutationTests = [
   // A search hit opens its thread on the matched turn, at the seq every caller agrees on.
   'src/chat/__tests__/messageSeq.test.ts',
   'src/chat/__tests__/ExternalStoreChat_viewport.test.tsx',
+  // A refused steer never drops the operator's text (prd.md §7).
+  'src/chat/ExternalStoreChat_steer.test.tsx',
 ] as const;
 
 export default defineConfig({

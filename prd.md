@@ -562,6 +562,14 @@ visible. The snippet now starts a few words before the first literal occurrence,
 word boundary, and a fuzzy match (a typo, a plural) still shows the start. `aura chat search`
 and Telegram's `/search` already cut theirs around the match.
 
+This does not establish:
+- ranking quality across many real conversations: the measurement used one message and a
+  local database of test conversations;
+- that a hit never shows a tool's JSON: tool turns were searched like any turn (seen for
+  `Giulia`) until the next amendment left them out;
+- speed on a large database: the index condition was read from `EXPLAIN` on 31 rows, not
+  timed.
+
 Search reads only the turns the thread shows as messages (2026-10-04). Measured on the
 local database, 31 turns: six words returned 41 hits, 20 of them in `tool` turns, and all
 five hits for `task` were tool turns (a skill's instructions, a scheduled task's
@@ -614,13 +622,39 @@ stored seq. They matched the stored seq on all seven conversations of the local 
 a history the repair rewrote (orphan tool results) would shift them, and the branch edit and
 the compaction marker with them. Not verified on WebKit or iOS.
 
-This does not establish:
-- ranking quality across many real conversations: the measurement used one message and a
-  local database of test conversations;
-- that tool turns stay out of results: they are searched like any turn, so a hit can show a
-  tool's JSON (seen for `Giulia`), as before;
-- speed on a large database: the index condition was read from `EXPLAIN` on 31 rows, not
-  timed.
+A steer the cockpit cannot deliver keeps its text (2026-10-05). The composer empties on
+submit, and a refused steer only removed its optimistic message, so its text was gone.
+Measured on the local stack, with the browser holding requests the way a slow uplink would:
+- A steer that reached its run after the run ended was answered `410 run has ended: message
+  was not queued; send it as a normal turn`, up to 70 s after the end. The cockpit dropped all
+  7 while telling the operator to send it as a normal message.
+- The redirect control appears as soon as this tab starts a run, before `RUN_STARTED` gives
+  it the run's id. With the run's POST held 3 s, all 3 redirects sent in that window were
+  dropped without a request. Sending one as a new turn instead, as a first version of this
+  fix did, collided with the run: 409, and the message was gone from the thread, with no
+  error shown.
+
+The cockpit now:
+- sends a steer refused with 410 as the next turn, as the steering design's §4.2 has the
+  client do, under the notice the server's own auto-delivery uses, and never steers at that
+  run again;
+- gives the text of any other refusal (400, 429, any other failure) back to the composer,
+  ahead of anything typed since;
+- gives the text back with "Aura can't take a redirect yet" when this tab's run has no id:
+  while it starts, and through a resume or a re-run, which never report one.
+
+Verified the same day on the rebuilt stack, nothing lost:
+- 4 of 4 steers refused 410 went out as the next turn, the steer held 0 to 10 s past the
+  run's end;
+- 3 of 3 redirects sent before the run had an id came back to the composer;
+- 5 of 5 redirects to a live run were accepted, and 8 back-to-back sends all arrived.
+
+What this does not show: how wide either window is on a real network. Locally a run's id
+arrived about 60 ms after its POST answered, and 25 timed sends without held requests hit
+neither window. A 410 that arrives while this tab still streams the ended run starts the next
+turn beside that stream's last frames; a component test covers it, the live stack did not. A
+resume or a re-run still cannot be redirected at all. The first suspect, a cached
+`live_run_id` outliving its run, did not appear in 8 rounds.
 
 ## 8. Long-term memory: facts and provenance
 
