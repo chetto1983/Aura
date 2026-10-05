@@ -2355,19 +2355,27 @@ A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an oper
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
 promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
 loaded the scheduler. It loaded the WhatsApp tools and searched the contacts for the operator's
-name, then sent the text at once with `send_message` to a contact it picked. The `task` summary,
-the only text the model sees of a deferred tool and the only text its search ranks, offered
-"reminders ... later" but never said a reminder is delivered on WhatsApp, Telegram or email. The
-WhatsApp tool's summary matched every word of the request. Measured on the search: for five
-reminders that name a channel, `send_message` outranked `task` four times. The summary now
-says a reminder or message is sent to the operator later on WhatsApp, Telegram or email, and
-`task` ranks first for all five. The description adds that such a reminder is a task with
-`notify` set to that channel, never sent now with a messaging tool, and never addressed by
-looking up the operator's contact.
+name, then sent the text at once with `send_message` to a contact it picked.
+
+The first fix rewrote the `task` summary and description, and it was not enough. The `task`
+summary had offered "reminders ... later" but never said a reminder is delivered on WhatsApp,
+Telegram or email, and on the tool search `send_message` outranked `task` for four of five
+reminders that name a channel. The summary now says a reminder or message is sent to the operator
+later on WhatsApp, Telegram or email, and `task` ranks first for all five. The description adds
+that such a reminder is a task with `notify` set to that channel, never sent now with a messaging
+tool, and never addressed by looking up the operator's contact. Probed on the VM at `efdc895c0`
+(13:08 UTC) with the same request for 2 minutes: the model again loaded the WhatsApp tools
+straight from the roster with `select:`, searched the contacts and drafted an immediate send.
+The `<deferred_tools>` roster carries tool names only, so a summary feeds the search ranking and
+nothing else. The only text that says what a deferred family covers before the model picks one
+is the family line in the system prompt, and the scheduling line read "background tasks and
+reminders". It now says that a reminder or message the operator wants at a later time is scheduled
+and delivered then, even when the request names WhatsApp, Telegram or email. The connected
+accounts line says those tools send now.
 
 This does not establish:
-- what the model chooses: the search ranking is lexical, and the model chose from the roster
-  without searching. The VM probe must repeat the request;
+- what the model chooses with the new family lines: the VM probe must repeat the request
+  several times;
 - whether the WhatsApp server's own description, which does not say it sends immediately, also
   needs changing.
 
