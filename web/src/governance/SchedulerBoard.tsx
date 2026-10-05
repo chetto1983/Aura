@@ -14,7 +14,7 @@ import {
   useCancelTask,
   useRunTask,
 } from './useSchedulerMutations';
-import { fetchSchedulerTasks, isUserManageableKind, type SchedulerTask } from './governanceApi';
+import { fetchSchedulerTasks, type SchedulerTask } from './governanceApi';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
@@ -23,8 +23,9 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 // the kind, the schedule + next fire as first-class monospace literals, and the operator
 // verbs (approve / run / edit / delete) as a compact 44px icon rail on the trailing edge — a
 // dense-list pattern that keeps the body wide enough for the schedule literal to stay readable
-// in the ~300px master panel. System-seeded sweeps are read-only (a SYSTEM
-// tag, no verbs). Selecting a row opens its run history. The signature is the LED status
+// in the ~300px master panel. The server leaves system-seeded sweeps out of the list and marks
+// the database backup non-cancellable, so its row has no Delete. Selecting a row opens its run
+// history. The signature is the LED status
 // system + the tabular next-fire; everything else stays quiet.
 
 // scheduleText renders the schedule as a monospace literal: the cron string, the every-N
@@ -114,7 +115,6 @@ export function SchedulerBoard() {
       <ul aria-label={t('governance.sections.scheduler')} className="flex flex-col">
         {rows.map((task) => {
           const isSelected = selected === task.ID;
-          const manageable = isUserManageableKind(task.Kind);
           return (
             <li
               key={task.ID}
@@ -146,16 +146,11 @@ export function SchedulerBoard() {
                       ? t('governance.scheduler.awaiting')
                       : task.Status}
                   </span>
-                  {!manageable && (
-                    <span className="rounded-sm border border-border px-1.5 py-px font-mono text-[10px] uppercase tracking-wider text-text-faint">
-                      {t('governance.scheduler.system')}
-                    </span>
-                  )}
                 </span>
                 {/* The sentence the operator dictated, on the row itself. Without it the list
                     said only "reminder" and the text was unreadable until the task fired —
                     reported 2026-09-07. Rendered only when the payload carries one, so a
-                    system task with an internal payload shows nothing rather than a blob. */}
+                    backup, which carries none, shows nothing rather than a blob. */}
                 {payloadText(task.Payload) !== '' && (
                   <span className="line-clamp-1 w-full break-words text-[13px] text-text-muted">
                     {payloadText(task.Payload)}
@@ -181,63 +176,63 @@ export function SchedulerBoard() {
                   is never squeezed to a zero-width span; the destructive Delete is last and
                   confirm-gated. An always-visible rail (not a hover-reveal) avoids the reflow that
                   makes a row's own click target move out from under a tap on a touch viewport. */}
-              {manageable && (
-                <div className="flex items-center gap-0.5 justify-self-end">
-                  {task.Status === 'pending_approval' && (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="default"
-                      aria-label={
-                        approve.isPending
-                          ? t('governance.scheduler.actions.approving')
-                          : t('governance.scheduler.actions.approve')
-                      }
-                      disabled={approve.isPending}
-                      onClick={() => {
-                        approve.mutate(task.ID);
-                      }}
-                    >
-                      {approve.isPending ? (
-                        <Spinner />
-                      ) : (
-                        <Check data-icon aria-hidden="true" className="size-4" />
-                      )}
-                    </Button>
-                  )}
-                  {task.Status === 'active' && (
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      aria-label={
-                        run.isPending
-                          ? t('governance.scheduler.actions.running')
-                          : t('governance.scheduler.actions.run')
-                      }
-                      disabled={run.isPending}
-                      onClick={() => {
-                        run.mutate(task.ID);
-                      }}
-                    >
-                      {run.isPending ? (
-                        <Spinner />
-                      ) : (
-                        <Play data-icon aria-hidden="true" className="size-4" />
-                      )}
-                    </Button>
-                  )}
+              <div className="flex items-center gap-0.5 justify-self-end">
+                {task.Status === 'pending_approval' && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="default"
+                    aria-label={
+                      approve.isPending
+                        ? t('governance.scheduler.actions.approving')
+                        : t('governance.scheduler.actions.approve')
+                    }
+                    disabled={approve.isPending}
+                    onClick={() => {
+                      approve.mutate(task.ID);
+                    }}
+                  >
+                    {approve.isPending ? (
+                      <Spinner />
+                    ) : (
+                      <Check data-icon aria-hidden="true" className="size-4" />
+                    )}
+                  </Button>
+                )}
+                {task.Status === 'active' && (
                   <Button
                     type="button"
                     size="icon"
                     variant="ghost"
-                    aria-label={t('governance.scheduler.actions.edit')}
+                    aria-label={
+                      run.isPending
+                        ? t('governance.scheduler.actions.running')
+                        : t('governance.scheduler.actions.run')
+                    }
+                    disabled={run.isPending}
                     onClick={() => {
-                      setEditing(task);
+                      run.mutate(task.ID);
                     }}
                   >
-                    <Pencil data-icon aria-hidden="true" className="size-4" />
+                    {run.isPending ? (
+                      <Spinner />
+                    ) : (
+                      <Play data-icon aria-hidden="true" className="size-4" />
+                    )}
                   </Button>
+                )}
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label={t('governance.scheduler.actions.edit')}
+                  onClick={() => {
+                    setEditing(task);
+                  }}
+                >
+                  <Pencil data-icon aria-hidden="true" className="size-4" />
+                </Button>
+                {task.Cancellable && (
                   <Button
                     type="button"
                     size="icon"
@@ -250,8 +245,8 @@ export function SchedulerBoard() {
                   >
                     <Trash2 data-icon aria-hidden="true" className="size-4" />
                   </Button>
-                </div>
-              )}
+                )}
+              </div>
             </li>
           );
         })}

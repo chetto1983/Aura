@@ -88,15 +88,11 @@ func (s *Store) ListRunsForTask(ctx context.Context, taskID string, limit, offse
 	if err != nil {
 		return nil, fmt.Errorf("list runs for task: %w", err)
 	}
-	lim := int32(defaultRunHistoryLimit)
-	if limit > 0 && limit <= math.MaxInt32 {
-		lim = int32(limit)
-	}
-	var off int32
-	if offset > 0 && offset <= math.MaxInt32 {
-		off = int32(offset)
-	}
-	rows, err := s.q.ListRunsForTask(ctx, sqlc.ListRunsForTaskParams{TaskID: tu, Limit: lim, Offset: off})
+	rows, err := s.q.ListRunsForTask(ctx, sqlc.ListRunsForTaskParams{
+		TaskID: tu,
+		Limit:  positiveInt32(limit, defaultRunHistoryLimit),
+		Offset: positiveInt32(offset, 0),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list runs for task %q: %w", taskID, err)
 	}
@@ -118,11 +114,7 @@ func (s *Store) ListRunsForTask(ctx context.Context, taskID string, limit, offse
 // LIMIT (a Postgres error), so any out-of-range input is floored to 1 rather than
 // silently misbehaving (WR-02).
 func (s *Store) DueTasks(ctx context.Context, limit int) ([]Task, error) {
-	var lim int32 = 1
-	if limit > 0 && limit <= math.MaxInt32 {
-		lim = int32(limit)
-	}
-	rows, err := s.q.DueTasks(ctx, lim)
+	rows, err := s.q.DueTasks(ctx, positiveInt32(limit, 1))
 	if err != nil {
 		return nil, fmt.Errorf("due tasks: %w", err)
 	}
@@ -264,23 +256,12 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 // SweepDueNotifications selects a bounded batch of due/retryable notifications in
 // a real transaction so FOR UPDATE SKIP LOCKED has effect across concurrent ticks.
 func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit int) ([]PendingNotification, error) {
-	// Convert inside the proven-safe branch so each int32 narrowing is guarded at the
-	// conversion site (CodeQL go/incorrect-integer-conversion, mirroring DueTasks); a
-	// non-positive or overflowing bound floors to 1 rather than wrapping negative.
-	var attempts int32 = 1
-	if attemptBound > 0 && attemptBound <= math.MaxInt32 {
-		attempts = int32(attemptBound)
-	}
-	var lim int32 = 1
-	if limit > 0 && limit <= math.MaxInt32 {
-		lim = int32(limit)
-	}
 	var rows []sqlc.SweepDueNotificationsRow
 	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		var err error
 		rows, err = q.SweepDueNotifications(ctx, sqlc.SweepDueNotificationsParams{
-			Attempts: attempts,
-			Limit:    lim,
+			Attempts: positiveInt32(attemptBound, 1),
+			Limit:    positiveInt32(limit, 1),
 		})
 		return err
 	})
@@ -292,6 +273,27 @@ func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit i
 		out = append(out, pendingNotificationFromSweepRow(r))
 	}
 	return out, nil
+}
+
+// DeleteSettledOneShots deletes every fired one-shot task with nothing left to do -- no run
+// still running, no notification still owed one of attemptBound retries -- together with its
+// runs and notification rows, and returns how many tasks it removed.
+func (s *Store) DeleteSettledOneShots(ctx context.Context, attemptBound int) (int64, error) {
+	n, err := s.q.DeleteSettledOneShots(ctx, positiveInt32(attemptBound, 1))
+	if err != nil {
+		return 0, fmt.Errorf("delete settled one-shot tasks: %w", err)
+	}
+	return n, nil
+}
+
+// positiveInt32 narrows a positive bound for an int4 query parameter, and returns fallback
+// for a non-positive or overflowing one rather than wrapping negative. The conversion sits
+// inside the proven range, where CodeQL's go/incorrect-integer-conversion accepts it.
+func positiveInt32(v int, fallback int32) int32 {
+	if v > 0 && v <= math.MaxInt32 {
+		return int32(v)
+	}
+	return fallback
 }
 
 // MarkNotificationDelivered records a successful sweep delivery.
@@ -321,8 +323,8 @@ func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) 
 }
 
 // MarkUnknownRecovery transitions a stale run to unknown_recovery (D-02 audit row):
-// it stays in agent_job_runs forever (no DELETE grant) as the repudiation trail for
-// a run whose worker died mid-flight.
+// the daemon has no DELETE grant on agent_job_runs, so it stays as the repudiation trail
+// for a run whose worker died mid-flight until its task is deleted (a settled one-shot).
 func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
 	u, err := db.ParseUUID("uuid", runID)
 	if err != nil {

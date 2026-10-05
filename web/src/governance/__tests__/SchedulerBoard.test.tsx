@@ -19,14 +19,11 @@ const editSchedulerTask = vi.fn<(id: string, req: unknown) => Promise<void>>(() 
   Promise.resolve(),
 );
 
-const MANAGEABLE = new Set(['reminder', 'agent_job', 'backup_postgres']);
-
 vi.mock('../governanceApi', () => ({
   fetchSchedulerTasks: (...a: unknown[]) =>
     fetchSchedulerTasks(...a) as Promise<readonly SchedulerTask[]>,
   fetchSchedulerRuns: (...a: unknown[]) =>
     fetchSchedulerRuns(...a) as Promise<readonly SchedulerRun[]>,
-  isUserManageableKind: (kind: string) => MANAGEABLE.has(kind),
   approveSchedulerTask: (id: string) => approveSchedulerTask(id),
   runSchedulerTask: (id: string) => runSchedulerTask(id),
   cancelSchedulerTask: (id: string) => cancelSchedulerTask(id),
@@ -52,6 +49,7 @@ const TASKS: SchedulerTask[] = [
     NotifyRoute: 'telegram',
     CreatedAt: '2026-06-01T09:00:00Z',
     UpdatedAt: '2026-06-01T09:00:00Z',
+    Cancellable: true,
   },
 ];
 
@@ -320,24 +318,25 @@ describe('SchedulerBoard (GOV-03)', () => {
     });
   });
 
-  it('a system-seeded task is read-only: a SYSTEM tag, no operator verbs', async () => {
-    const sys: SchedulerTask = {
+  it('a non-cancellable task (the database backup) keeps Run now and Edit but offers no Delete', async () => {
+    const backup: SchedulerTask = {
       ...baseTask(),
-      ID: 'sys',
-      Kind: 'identity_purge',
+      ID: 'backup',
+      Kind: 'backup_postgres',
       Status: 'active',
+      Cancellable: false,
     };
-    fetchSchedulerTasks.mockResolvedValue([sys]);
+    fetchSchedulerTasks.mockResolvedValue([backup]);
 
     render(<SchedulerBoard />, {
       wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
     });
 
     await waitFor(() => {
-      expect(screen.getByText('identity_purge')).toBeTruthy();
+      expect(screen.getByText('backup_postgres')).toBeTruthy();
     });
-    expect(screen.getByText('System')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Run now' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Run now' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
   });
 

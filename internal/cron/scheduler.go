@@ -299,7 +299,22 @@ func (s *Scheduler) tick(ctx context.Context) error {
 			return fmt.Errorf("tick sweep approval reminders: %w", err)
 		}
 	}
+	s.deleteSettledOneShots(ctx)
 	return nil
+}
+
+// deleteSettledOneShots removes the one-shot tasks that fired and have nothing left to do,
+// after this tick's notification sweep has settled what it could. It is housekeeping: a
+// failure is a WARN and never costs the tick its readiness mark.
+func (s *Scheduler) deleteSettledOneShots(ctx context.Context) {
+	n, err := s.store.DeleteSettledOneShots(ctx, pendingNotificationAttemptBound())
+	if err != nil {
+		slog.Warn("scheduler: delete settled one-shot tasks failed", "err", err)
+		return
+	}
+	if n > 0 {
+		slog.Info("scheduler: deleted settled one-shot tasks", "count", n)
+	}
 }
 
 func (s *Scheduler) markTick() {
@@ -406,7 +421,8 @@ func admittedJobContext(ctx context.Context) context.Context {
 
 // reschedule advances a skipped/overdue task's next_run_at to its next fire so the
 // loop does not re-pick it every tick (D-04). A one-shot `at` task with no further
-// fire goes to next_run_at zero (UpdateNextRunAt nulls it), retiring it.
+// fire goes to next_run_at zero (UpdateNextRunAt nulls it); once it has run and settled,
+// deleteSettledOneShots removes it.
 func (s *Scheduler) reschedule(ctx context.Context, task Task) {
 	next, err := NextRunAt(specFromTask(task), s.Now().UTC())
 	if err != nil {

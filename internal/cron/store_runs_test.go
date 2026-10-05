@@ -33,7 +33,7 @@ func seedTaskWithRuns(t *testing.T, ctx context.Context, s *Store, now time.Time
 	t.Cleanup(func() { cleanupTask(t, s.pool, task.ID) })
 
 	ids := make([]string, 0, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		run, err := s.InsertRun(ctx, task.ID, 8)
 		if err != nil {
 			t.Fatalf("InsertRun %d: %v", i, err)

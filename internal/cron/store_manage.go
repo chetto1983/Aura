@@ -3,8 +3,9 @@ package cron
 // store_manage.go holds the cockpit scheduler-management reads/writes (GOV-03 write):
 // the active+pending board list and the approve / run-now / reschedule verbs the
 // governance API exposes. They are thin sqlc wrappers (the :execrows queries return
-// rows-affected so a miss maps to ErrTaskNotFound); the system-kind guard lives in the
-// handler (IsUserManageableKind), never here — a store method mutates by id + status only.
+// rows-affected so a miss maps to ErrTaskNotFound). The board read leaves system sweeps
+// out; the write guard lives in the handler (IsUserManageableKind, IsCancellableKind) —
+// a store method mutates by id + status only.
 
 import (
 	"context"
@@ -16,10 +17,9 @@ import (
 )
 
 // IsUserManageableKind reports whether a task kind is operator-managed (reminder,
-// agent_job, backups) rather than a system-seeded sweep (identity_purge, sandbox_reap,
-// skill_ttl_sweep, share_expiry_sweep). The cockpit write handlers refuse to
-// approve/run/edit/cancel a system sweep: those are seeded on a fixed cadence and must
-// never be operator-mutated.
+// agent_job, the database backup) rather than one of the system-seeded sweeps. The cockpit
+// write handlers refuse to approve/run/edit/cancel a system sweep: those are seeded on a
+// fixed cadence and must never be operator-mutated.
 func IsUserManageableKind(k TaskKind) bool {
 	switch k {
 	case KindReminder, KindAgentJob, KindBackupPostgres:
@@ -29,8 +29,16 @@ func IsUserManageableKind(k TaskKind) bool {
 	}
 }
 
-// ListManageableTasks returns active + pending_approval tasks (the cockpit board), so a
-// gated task can be approved on-screen alongside the running ones.
+// IsCancellableKind reports whether an operator or the agent may cancel a task of this
+// kind: an operator-managed one other than the database backup, which the operator decided
+// on 2026-10-05 must never be stopped from the cockpit or the agent.
+func IsCancellableKind(k TaskKind) bool {
+	return IsUserManageableKind(k) && k != KindBackupPostgres
+}
+
+// ListManageableTasks returns the active + pending_approval tasks of operator-managed kinds
+// (the cockpit board), so a gated task can be approved on-screen alongside the running ones.
+// System sweeps are left out: the board has nothing to offer for them.
 func (s *Store) ListManageableTasks(ctx context.Context) ([]Task, error) {
 	rows, err := s.q.ListManageableTasks(ctx)
 	if err != nil {
@@ -38,7 +46,9 @@ func (s *Store) ListManageableTasks(ctx context.Context) ([]Task, error) {
 	}
 	out := make([]Task, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, taskFromRow(r))
+		if task := taskFromRow(r); IsUserManageableKind(task.Kind) {
+			out = append(out, task)
+		}
 	}
 	return out, nil
 }

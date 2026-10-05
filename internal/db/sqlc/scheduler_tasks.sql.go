@@ -107,6 +107,35 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 	return i, err
 }
 
+const deleteSettledOneShots = `-- name: DeleteSettledOneShots :execrows
+DELETE FROM aura.scheduler_tasks AS t
+WHERE t.schedule_kind = 'at'
+    AND t.status = 'active'
+    AND t.next_run_at IS NULL
+    AND EXISTS (SELECT 1 FROM aura.agent_job_runs AS r WHERE r.task_id = t.id)
+    AND NOT EXISTS (
+        SELECT 1 FROM aura.agent_job_runs AS r
+        WHERE r.task_id = t.id AND r.status = 'running')
+    AND NOT EXISTS (
+        SELECT 1 FROM aura.pending_notifications AS n
+        JOIN aura.agent_job_runs AS r ON r.id = n.run_id
+        WHERE r.task_id = t.id
+            AND (n.status = 'pending' OR (n.status = 'failed' AND n.attempts < $1)))
+`
+
+// A one-shot task that fired keeps status 'active' with its next fire cleared. Once nothing
+// is left for it to do -- no run still running, no notification still owed a retry (one is
+// owed while pending, or failed under the attempt bound $1) -- it is deleted, and ON DELETE
+// CASCADE takes its runs and notification rows with it (0009, 0013): the operator's decision
+// of 2026-10-05. A one-shot that never ran keeps its row; the board flags it unschedulable.
+func (q *Queries) DeleteSettledOneShots(ctx context.Context, attempts int32) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteSettledOneShots, attempts)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,

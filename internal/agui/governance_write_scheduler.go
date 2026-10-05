@@ -4,7 +4,8 @@ package agui
 // seam: the operator management verbs for a scheduled task — approve a gated task, run it
 // now, cancel it, or reschedule/re-payload it. Every handler nil-checks the provider (503
 // when unwired), resolves the task, enforces the system-kind guard (a system-seeded sweep is
-// never operator-mutable → 403), makes ONE provider call, and projects JSON. The parent-mux
+// never operator-mutable → 403, and the database backup is never cancellable → 403), makes
+// ONE provider call, and projects JSON. The parent-mux
 // mount behind RequireCapability(governance.write) is cmd/aura/serve_webui.go's job; every
 // wire error passes through sanitizeErr. There is no business logic here — schedule grammar
 // validation reuses the shipped cron engine (ParseSchedule + FirstFire), exactly like the
@@ -93,10 +94,15 @@ func (s *Server) handleSchedulerRun(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSchedulerCancel serves DELETE /api/governance/scheduler/{id}: soft-cancels a task
-// (status='cancelled'). Cancelling a manageable task is idempotent.
+// (status='cancelled'). Cancelling a manageable task is idempotent; the database backup is
+// never cancellable (403).
 func (s *Server) handleSchedulerCancel(w http.ResponseWriter, r *http.Request) {
-	_, id, ok := s.schedulerMutable(w, r)
+	task, id, ok := s.schedulerMutable(w, r)
 	if !ok {
+		return
+	}
+	if !cron.IsCancellableKind(task.Kind) {
+		writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "the database backup cannot be cancelled"})
 		return
 	}
 	if err := s.governance.Scheduler.CancelTask(r.Context(), id); err != nil {

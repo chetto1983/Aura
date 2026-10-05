@@ -29,6 +29,7 @@ import (
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -131,8 +132,8 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 	}, nil
 }
 
-// ListScheduledTasks returns active + pending_approval tasks (the LLM-facing list,
-// mirroring the CLI taskList query).
+// ListScheduledTasks returns the identity's active + pending_approval tasks of
+// operator-managed kinds (the LLM-facing list, the same rows the cockpit board shows).
 func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.ScheduledTask, error) {
 	identityID, err := taskIdentity(ctx)
 	if err != nil {
@@ -157,6 +158,11 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next, &payload, &t.NotifyRoute); err != nil {
 			return nil, fmt.Errorf("scan scheduled task: %w", err)
 		}
+		// Enrolment hands the system sweeps to the operator's identity, so this owner-scoped
+		// list held them too (measured 2026-10-05). The agent sees what the board shows.
+		if !cron.IsUserManageableKind(cron.TaskKind(t.Kind)) {
+			continue
+		}
 		if next != nil {
 			t.NextRunAt = *next
 		}
@@ -169,23 +175,34 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 	return out, nil
 }
 
-// CancelScheduledTask soft-cancels only inside the identity carried by the tool call.
+// CancelScheduledTask soft-cancels only inside the identity carried by the tool call, and
+// only a kind the operator may cancel: never a system sweep or the database backup, which
+// enrolment can hand to the operator's identity.
 func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) error {
 	identityID, err := taskIdentity(ctx)
 	if err != nil {
 		return err
 	}
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE aura.scheduler_tasks
-		SET status = 'cancelled', updated_at = now()
+	var kind string
+	err = s.pool.QueryRow(ctx, `
+		SELECT kind FROM aura.scheduler_tasks
 		WHERE id = $1::uuid
 		  AND identity_id = $2
-		  AND status IN ('active', 'pending_approval')`, id, identityID)
+		  AND status IN ('active', 'pending_approval')`, id, identityID).Scan(&kind)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("task %s is not active or not owned by this identity", id)
+	}
 	if err != nil {
 		return fmt.Errorf("cancel task %s: %w", id, err)
 	}
-	if tag.RowsAffected() == 0 {
-		return fmt.Errorf("task %s is not active or not owned by this identity", id)
+	if !cron.IsCancellableKind(cron.TaskKind(kind)) {
+		return fmt.Errorf("task %s is a %s task, which cannot be cancelled", id, kind)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE aura.scheduler_tasks
+		SET status = 'cancelled', updated_at = now()
+		WHERE id = $1::uuid AND identity_id = $2`, id, identityID); err != nil {
+		return fmt.Errorf("cancel task %s: %w", id, err)
 	}
 	return nil
 }

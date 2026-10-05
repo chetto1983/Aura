@@ -168,6 +168,37 @@ func TestSchedulerCancel(t *testing.T) {
 	}
 }
 
+// The database backup may be run or edited but never cancelled: 403 before the store is touched.
+func TestSchedulerCancelBackupForbidden(t *testing.T) {
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindBackupPostgres, Status: "active"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodDelete, "/api/governance/scheduler/"+schedTaskID)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+	if board.cancelledID != "" {
+		t.Fatal("the database backup must not reach CancelTask")
+	}
+}
+
+// The row tells the board where to offer Delete, so the backup rule is not mirrored client-side.
+func TestSchedulerRowsMarkTheBackupNotCancellable(t *testing.T) {
+	rows := schedulerRowsFor(t, []cron.Task{
+		{ID: "r1", Kind: cron.KindReminder, Status: "active"},
+		{ID: "b1", Kind: cron.KindBackupPostgres, Status: "active"},
+	})
+	want := map[string]bool{"r1": true, "b1": false}
+	if len(rows) != len(want) {
+		t.Fatalf("want %d rows, got %d", len(want), len(rows))
+	}
+	for _, row := range rows {
+		id, _ := row["ID"].(string)
+		if got, ok := row["Cancellable"].(bool); !ok || got != want[id] {
+			t.Errorf("row %s Cancellable = %v, want %v", id, row["Cancellable"], want[id])
+		}
+	}
+}
+
 func TestSchedulerEditValid(t *testing.T) {
 	board := &scriptedSchedulerBoard{getTask: cron.Task{
 		Kind: cron.KindReminder, Status: "active", Payload: []byte(`{"text":"keep me"}`),

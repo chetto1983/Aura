@@ -21,7 +21,6 @@ export const schedulerEn = {
     summary: 'Summary',
   },
   countLabel: '{{count}} scheduled',
-  system: 'System',
   awaiting: 'Awaiting approval',
   actions: {
     approve: 'Approve',
@@ -83,7 +82,6 @@ export const schedulerIt = {
     summary: 'Riepilogo',
   },
   countLabel: '{{count}} pianificate',
-  system: 'Sistema',
   awaiting: 'In attesa di approvazione',
   actions: {
     approve: 'Approva',

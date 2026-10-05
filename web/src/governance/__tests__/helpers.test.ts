@@ -68,6 +68,7 @@ describe('scheduleText (scheduler row schedule cell)', () => {
       NotifyRoute: '',
       CreatedAt: '',
       UpdatedAt: '',
+      Cancellable: true,
       ...over,
     };
   }

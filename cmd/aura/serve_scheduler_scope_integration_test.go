@@ -67,22 +67,34 @@ func schedulerScopePool(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-// seedSchedulerTask inserts one task owned by owner and removes it when the test ends.
-func seedSchedulerTask(t *testing.T, pool *pgxpool.Pool, owner, payload string) {
+// seedSchedulerTask inserts one active task of kind owned by owner, removes it when the test
+// ends, and returns its id.
+func seedSchedulerTask(t *testing.T, pool *pgxpool.Pool, owner, kind, payload string) string {
 	t.Helper()
 	ctx := context.Background()
 	id := uuid.NewString()
 	_, err := pool.Exec(ctx, `
 		INSERT INTO aura.scheduler_tasks
 			(id, identity_id, kind, schedule_kind, status, payload, next_run_at, run_at, notify_route, tz)
-		VALUES ($1::uuid, $2, 'reminder', 'at', 'active', $3::jsonb, now() + interval '1 day',
-		        now() + interval '1 day', 'none', 'Europe/Rome')`, id, owner, payload)
+		VALUES ($1::uuid, $2, $3, 'at', 'active', $4::jsonb, now() + interval '1 day',
+		        now() + interval '1 day', 'none', 'Europe/Rome')`, id, owner, kind, payload)
 	if err != nil {
-		t.Fatalf("seed task for %s: %v", owner, err)
+		t.Fatalf("seed %s task for %s: %v", kind, owner, err)
 	}
 	t.Cleanup(func() {
 		_, _ = pool.Exec(context.Background(), `DELETE FROM aura.scheduler_tasks WHERE id = $1::uuid`, id)
 	})
+	return id
+}
+
+func schedulerTaskStatus(t *testing.T, pool *pgxpool.Pool, id string) string {
+	t.Helper()
+	var status string
+	if err := pool.QueryRow(context.Background(),
+		`SELECT status FROM aura.scheduler_tasks WHERE id = $1::uuid`, id).Scan(&status); err != nil {
+		t.Fatalf("read status of %s: %v", id, err)
+	}
+	return status
 }
 
 // TestListScheduledTasksRunsAndStaysInsideTheIdentity is both halves at once: the query has to
@@ -93,8 +105,8 @@ func TestListScheduledTasksRunsAndStaysInsideTheIdentity(t *testing.T) {
 
 	mine := uuid.NewString()
 	theirs := uuid.NewString()
-	seedSchedulerTask(t, pool, mine, `{"text":"mine"}`)
-	seedSchedulerTask(t, pool, theirs, `{"text":"theirs"}`)
+	seedSchedulerTask(t, pool, mine, "reminder", `{"text":"mine"}`)
+	seedSchedulerTask(t, pool, theirs, "reminder", `{"text":"theirs"}`)
 
 	ctx := identityctx.WithIdentityID(context.Background(), mine)
 	got, err := store.ListScheduledTasks(ctx)
@@ -111,5 +123,52 @@ func TestListScheduledTasksRunsAndStaysInsideTheIdentity(t *testing.T) {
 	// formatting instead of the scoping.
 	if !strings.Contains(got[0].Payload, "mine") || strings.Contains(got[0].Payload, "theirs") {
 		t.Fatalf("returned another identity's task: %+v", got[0])
+	}
+}
+
+// Enrolment hands the system sweeps and the database backup to the operator's identity, so the
+// owner scope alone let the agent list the sweeps and cancel the backup (measured 2026-10-05).
+// The agent sees what the board shows, and cancels only what the board would.
+func TestAgentTaskListAndCancelLeaveSystemTasksAlone(t *testing.T) {
+	pool := schedulerScopePool(t)
+	store := &cronTaskStore{pool: pool}
+
+	owner := uuid.NewString()
+	reminder := seedSchedulerTask(t, pool, owner, "reminder", `{"text":"mine"}`)
+	backup := seedSchedulerTask(t, pool, owner, "backup_postgres", `{}`)
+	sweep := seedSchedulerTask(t, pool, owner, "identity_purge", `{}`)
+	ctx := identityctx.WithIdentityID(context.Background(), owner)
+
+	got, err := store.ListScheduledTasks(ctx)
+	if err != nil {
+		t.Fatalf("ListScheduledTasks: %v", err)
+	}
+	listed := map[string]bool{}
+	for _, task := range got {
+		listed[task.ID] = true
+	}
+	if len(got) != 2 || !listed[reminder] || !listed[backup] || listed[sweep] {
+		t.Fatalf("list = %+v, want the reminder and the backup, not the sweep", got)
+	}
+
+	for _, id := range []string{backup, sweep} {
+		err := store.CancelScheduledTask(ctx, id)
+		if err == nil || !strings.Contains(err.Error(), "cannot be cancelled") {
+			t.Errorf("cancel %s err = %v, want a refusal", id, err)
+		}
+		if status := schedulerTaskStatus(t, pool, id); status != "active" {
+			t.Errorf("refused task %s is now %s", id, status)
+		}
+	}
+
+	stranger := identityctx.WithIdentityID(context.Background(), uuid.NewString())
+	if err := store.CancelScheduledTask(stranger, reminder); err == nil || !strings.Contains(err.Error(), "not owned") {
+		t.Errorf("another identity's cancel err = %v, want not owned", err)
+	}
+	if err := store.CancelScheduledTask(ctx, reminder); err != nil {
+		t.Fatalf("cancel own reminder: %v", err)
+	}
+	if status := schedulerTaskStatus(t, pool, reminder); status != "cancelled" {
+		t.Fatalf("own reminder is %s after cancel, want cancelled", status)
 	}
 }

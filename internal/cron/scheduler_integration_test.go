@@ -73,6 +73,23 @@ func (d *recordingDispatcher) Dispatch(ctx context.Context, task Task, c *Claim)
 	return nil
 }
 
+// The tick deletes a one-shot that fired and has nothing left to deliver.
+func TestSchedulerTickDeletesSettledOneShot(t *testing.T) {
+	pool := migratedPool(t)
+	store := New(pool)
+	s := NewScheduler(pool, store, SchedulerConfig{MaxConcurrent: 1, TickInterval: time.Second})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	id, _ := fireOneShot(t, ctx, store, "completed")
+	if err := s.tick(ctx); err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	if !taskGone(t, ctx, store, id) {
+		t.Fatalf("settled one-shot %s survived the tick", id)
+	}
+}
+
 func TestSchedulerTickDispatchesDueTask(t *testing.T) {
 	now := time.Now().UTC()
 	pool := migratedPool(t)
@@ -238,7 +255,7 @@ func TestSchedulerTickBoundedByMaxConcurrent(t *testing.T) {
 
 	// Seed more due tasks than the cap; DueTasks(LIMIT=cap) bounds the batch so the
 	// tick never holds more than `cap` conns at once (Pitfall 2).
-	for i := 0; i < cap+2; i++ {
+	for range cap + 2 {
 		seedDueTask(t, s, now)
 	}
 	if err := s.tick(ctx); err != nil {

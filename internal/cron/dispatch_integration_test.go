@@ -225,7 +225,7 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 	}
 
 	attemptBound := pendingNotificationAttemptBound()
-	for i := 0; i < attemptBound; i++ {
+	for i := range attemptBound {
 		if err := d.sweepNotifications(ctx); err != nil {
 			t.Fatalf("sweepNotifications #%d: %v", i+1, err)
 		}

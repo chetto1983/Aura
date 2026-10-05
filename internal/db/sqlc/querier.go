@@ -162,6 +162,12 @@ type Querier interface {
 	DeleteMCPProfilesExcept(ctx context.Context, keep []string) error
 	DeleteMCPServer(ctx context.Context, name string) (int64, error)
 	DeleteSetting(ctx context.Context, key string) error
+	// A one-shot task that fired keeps status 'active' with its next fire cleared. Once nothing
+	// is left for it to do -- no run still running, no notification still owed a retry (one is
+	// owed while pending, or failed under the attempt bound $1) -- it is deleted, and ON DELETE
+	// CASCADE takes its runs and notification rows with it (0009, 0013): the operator's decision
+	// of 2026-10-05. A one-shot that never ran keeps its row; the board flags it unschedulable.
+	DeleteSettledOneShots(ctx context.Context, attempts int32) (int64, error)
 	// execrows, not exec: a caller that reports "removed" without knowing whether a row existed
 	// cannot tell a real removal from a no-op on someone else's row that RLS filtered away.
 	DeleteSkillCatalog(ctx context.Context, arg DeleteSkillCatalogParams) (int64, error)

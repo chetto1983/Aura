@@ -104,6 +104,8 @@ export interface SchedulerTask {
   readonly CreatedAt: string;
   readonly UpdatedAt: string;
   readonly Payload?: unknown;
+  /** False for the database backup, which the operator may run or edit but never delete. */
+  readonly Cancellable: boolean;
 }
 
 /** One scheduler run-history row (GET /api/governance/scheduler/{id}/runs). */
@@ -269,20 +271,8 @@ export async function fetchSchedulerRuns(
 // === GOV-03 scheduler write surface (approve / run / cancel / reschedule) ===
 // Owner verbs over a scheduled task, each behind RequireCapability(governance.write). A
 // non-200 THROWS `Error("HTTP <n>")` so the row surfaces a visible error, never a silent
-// no-op: 403 = a system-seeded sweep (not operator-mutable), 404 = gone, 409 = wrong status
+// no-op: 403 = a system-seeded sweep or a backup delete, 404 = gone, 409 = wrong status
 // (e.g. approve on an already-active task), 400 = an invalid reschedule grammar.
-
-/** The user-managed task kinds (mirror of cron.IsUserManageableKind): only these expose the
- * approve/run/edit/delete verbs — a system-seeded sweep is read-only in the cockpit. */
-export const USER_MANAGEABLE_KINDS: ReadonlySet<string> = new Set([
-  'reminder',
-  'agent_job',
-  'backup_postgres',
-]);
-
-export function isUserManageableKind(kind: string): boolean {
-  return USER_MANAGEABLE_KINDS.has(kind);
-}
 
 /** POST /api/governance/scheduler/{id}/approve — flip a pending_approval task to active. */
 export async function approveSchedulerTask(id: string): Promise<void> {
