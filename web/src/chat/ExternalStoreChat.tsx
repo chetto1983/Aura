@@ -123,7 +123,7 @@ export function ExternalStoreChat({
   const hydratedEffort = conversation?.ReasoningEffort;
   /** RS-07 §4.2: a set live_run_id means a detached run is in flight for this thread. */
   const liveRunId = conversation?.live_run_id;
-  const steer = useSteerSend({ threadId, liveRunId, activeRunIdRef, isRunning, setMessages });
+  const steer = useSteerSend({ threadId, liveRunId, activeRunIdRef, isRunningRef, setMessages });
   const elicitations = useThreadElicitations(threadId, isRunning, liveRunId);
   const { effort, setEffort } = useReasoningEffort(
     threadId,
@@ -559,7 +559,7 @@ export function ExternalStoreChat({
                 {t('chat.liveRun.hint')}
               </p>
             ) : null}
-            <SteerNotice notice={steer.notice} refusal={steer.refusalText} />
+            <SteerNotice notice={steer.notice} refusal={steer.refusal} />
 
             <ThreadApprovalCards
               approvals={threadApprovals.approvals}
@@ -575,8 +575,13 @@ export function ExternalStoreChat({
               onInputAvailable={setComposerInput}
               approvalLocked={threadApprovals.isPending || messageDrafts.isPending}
               sendBlocked={false} // D-10: a live run redirects (steerAvailable) instead of blocking.
-              steerAvailable={steer.available}
-              onSteerSubmit={(steerText) => void steer.trySend(steerText)}
+              steerAvailable
+              onSteerSubmit={(steerText) =>
+                void steer.trySend(steerText).then((steered) => {
+                  if (!steered) runtime.thread.append(steerText);
+                })
+              }
+              returnedDraft={steer.refusal}
               draftPrompt={draftPrompt}
               onDraftPromptConsumed={onDraftPromptConsumed}
               skills={skills}

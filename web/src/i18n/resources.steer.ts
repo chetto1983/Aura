@@ -16,6 +16,7 @@ export const chatSteerEn = {
     busy: 'Aura already has a redirect queued. Wait a moment and try again.',
     ended: 'The turn already finished — send this as a normal message.',
     failed: "Couldn't redirect the turn. Try again.",
+    notYet: "Aura can't take a redirect yet — try again in a moment.",
   },
 };
 
@@ -30,5 +31,6 @@ export const chatSteerIt = {
     busy: 'Aura ha già un reindirizzamento in coda. Attendi un momento e riprova.',
     ended: 'Il turno è già terminato — invia questo messaggio normalmente.',
     failed: 'Impossibile reindirizzare il turno. Riprova.',
+    notYet: 'Aura non può ancora ricevere un reindirizzamento — riprova tra un attimo.',
   },
 };

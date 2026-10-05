@@ -97,3 +97,25 @@ describe('Composer draft prompt ownership', () => {
     expect(h.addAttachment).not.toHaveBeenCalled();
   });
 });
+
+describe('Composer returned draft', () => {
+  it('puts a refused submit’s text back in an empty composer, once per id', () => {
+    const returned = { id: 'refusal-1', draft: 'check the invoice first' };
+    const { rerender } = render(<Composer returnedDraft={returned} />);
+    expect(h.setText).toHaveBeenCalledTimes(1);
+    expect(h.setText).toHaveBeenCalledWith('check the invoice first');
+
+    rerender(<Composer returnedDraft={{ ...returned }} />);
+    expect(h.setText).toHaveBeenCalledTimes(1);
+
+    rerender(<Composer returnedDraft={{ id: 'refusal-2', draft: 'and the receipt' }} />);
+    expect(h.setText).toHaveBeenCalledTimes(2);
+    expect(h.setText).toHaveBeenLastCalledWith('and the receipt');
+  });
+
+  it('keeps what the operator typed since, after the returned text', () => {
+    h.auiState.composer = { ...h.auiState.composer, text: 'and this too' };
+    render(<Composer returnedDraft={{ id: 'refusal-1', draft: 'check the invoice first' }} />);
+    expect(h.setText).toHaveBeenCalledWith('check the invoice first\nand this too');
+  });
+});

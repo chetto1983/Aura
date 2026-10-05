@@ -38,6 +38,8 @@ interface ComposerProps {
   readonly sendBlocked?: boolean;
   readonly steerAvailable?: boolean; // D-10: true while the live run for this thread is steerable.
   readonly onSteerSubmit?: (text: string) => void; // D-10: routes composer text as a steer.
+  /** Text a submit took from the composer and a refusal gave back, once per id. */
+  readonly returnedDraft?: ComposerReturnedDraft | undefined;
   readonly draftPrompt?: ComposerDraftPrompt | undefined;
   readonly onDraftPromptConsumed?: ((nonce: number) => void) | undefined;
   readonly skills?: readonly ComposerSkillRow[];
@@ -57,6 +59,11 @@ export interface ComposerDraftPrompt {
   readonly nonce: number;
 }
 
+export interface ComposerReturnedDraft {
+  readonly id: string;
+  readonly draft: string;
+}
+
 type DictationPhase = 'idle' | 'listening' | 'transcribing' | 'error';
 
 export function Composer({
@@ -66,6 +73,7 @@ export function Composer({
   sendBlocked = false,
   steerAvailable = false,
   onSteerSubmit,
+  returnedDraft,
   draftPrompt,
   onDraftPromptConsumed,
   skills,
@@ -83,6 +91,7 @@ export function Composer({
   const composerInputRef = inputRef ?? fallbackComposerInputRef;
   const previousApprovalLockedRef = useRef(approvalLocked);
   const appliedDraftNonce = useRef<number | undefined>(undefined);
+  const returnedDraftId = useRef<string | undefined>(undefined);
   const [captureGeneration, setCaptureGeneration] = useState({
     approvalLocked,
     epoch: 0,
@@ -184,6 +193,17 @@ export function Composer({
     composerInputRef.current?.focus();
     onDraftPromptConsumed?.(draftPrompt.nonce);
   }, [approvalLocked, aui, composerInputRef, draftPrompt, onDraftPromptConsumed]);
+
+  // Unlike a draft prompt, returned text was the operator's own: whatever they typed since stays,
+  // after it.
+  useEffect(() => {
+    if (returnedDraft === undefined || returnedDraft.id === returnedDraftId.current) return;
+    returnedDraftId.current = returnedDraft.id;
+    const typed = aui.composer.getState().text;
+    aui.composer.setText(
+      typed.trim().length === 0 ? returnedDraft.draft : `${returnedDraft.draft}\n${typed}`,
+    );
+  }, [aui, returnedDraft]);
 
   // Detect a dictation session ending. If the transcript was inserted (the composer text
   // grew via onSpeech), mark the turn dictated for auto-speak parity (D-07). If nothing was
