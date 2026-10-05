@@ -2269,11 +2269,19 @@ The task tool had refused the email route at schedule time with the missing-tool
 the model relayed it verbatim. `stdout` and `telegram` reached the conversation; `none` left
 nothing.
 
+The operator confirmed that the WhatsApp and Telegram messages of both probes reached the
+phone, so a message to one's own number does arrive. On revision `c57322064` (09:33 UTC)
+every route delivered once: the bridge logged a single `POST /api/send` and no retry row was
+written; the PIM logged `Email sent successfully` from the identity's one Google account to
+its sign-in address; Telegram and `stdout` reached the conversation; `none` left nothing.
+The task tool named both external recipients at schedule time, and the model repeated them.
+The operator confirmed that this probe's WhatsApp message, Telegram push and email arrived.
+
 This does not establish:
-- delivery to the phone of any of the four WhatsApp sends, or of the Telegram push;
-- an email actually sent through the PIM: no corrected image has run the route yet, and
-  whether this identity has a PIM account connected was not inspected;
-- which account the PIM picks when an identity connected several.
+- which account the PIM picks when an identity has connected several, or one whose domains
+  match the recipient;
+- delivery when the bridge or the PIM is down: only the retry rows of the first probe were
+  observed, and those failed for the identity defect fixed above.
 
 ## 16. Observability and operator experience
 
