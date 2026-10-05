@@ -2250,6 +2250,31 @@ This does not establish:
 - a schedule-time check for a route changed in the cockpit scheduler board, which still
   validates only the route name.
 
+The same probe on the corrected image (revision `c7f6c74c7`, 2026-10-05 09:02 UTC) moved
+both failures one step further. WhatsApp: the task tool named the paired number, and at fire
+time the bridge logged `POST /api/send` four times (09:02:43, 09:02:44, 09:03:13, 09:03:43),
+while the run recorded each send as failed with `tools.NewResult: missing tool-call context`.
+A bridged MCP tool builds its result through `tools.NewResult`, which refuses to run outside
+a tool call, so every delivered message was reported undelivered and retried. That success
+path had never run: until then the send had stopped earlier, at the empty recipient. The
+scheduler's self-send now runs under a tool-call context of its own, with a reserved session,
+as the tool pipe and the docs MCP already did. Email: the route resolved a tool named
+`send_email`, a name left over from the retired mail MCP. The PIM that replaced it
+multiplexes mail behind its `calendar` tool (`action: send_email`, `to` as a list; without an
+`accountId` it picks the sending account itself). A route now resolves its tool by the
+managed recipe the host mounted it from (`TrustedRecipeSource`/`TrustedRecipeTool`, as
+message drafts already did), never by a registered name. Email defaults to the address the
+identity signs in with: a user identity's name, which sign-in joins to the Authula email.
+The task tool had refused the email route at schedule time with the missing-tool reason, and
+the model relayed it verbatim. `stdout` and `telegram` reached the conversation; `none` left
+nothing.
+
+This does not establish:
+- delivery to the phone of any of the four WhatsApp sends, or of the Telegram push;
+- an email actually sent through the PIM: no corrected image has run the route yet, and
+  whether this identity has a PIM account connected was not inspected;
+- which account the PIM picks when an identity connected several.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
