@@ -2215,6 +2215,41 @@ This does not establish:
 - survival across a restart: an in-flight call dies with the process, as LibreChat's does;
 - a box-runtime stdio server outliving the suspension of its box.
 
+A reminder on an external route reached nobody (2026-10-05). An operator could not get
+reminders on WhatsApp. Reproduced on the lab VM through a real cockpit turn: the agent
+scheduled a reminder with `notify=whatsapp`, the run completed at fire time, and the MCP
+`send_message` answered `Recipient must be provided`. Nothing supplied a recipient: the task
+tool has no recipient argument, the dispatcher passes an empty one, and
+`AURA_SCHEDULER_NOTIFY_RECIPIENT` was unset. The three bounded retries then failed for a
+second reason, `remote MCP call requires an authenticated identity`: the sweep sent with the
+tick's context instead of the row's identity, so no retry of an MCP route could ever succeed,
+and its error overwrote the first one. Meanwhile the conversation received the reminder text
+as if it had been delivered, and the run ledger said `completed`. The same probe fired one
+reminder per remaining route: `email` failed at fire time with no mounted `send_email` tool,
+although the task tool had accepted it; `stdout` reached the conversation and the container
+log; `telegram` was recorded as delivered to the identity's linked account; `none` left
+nothing, in the conversation or anywhere else.
+
+WhatsApp therefore defaults to the account the identity linked in the cockpit. When
+`AURA_SCHEDULER_NOTIFY_RECIPIENT` is unset, the recipient is the number the bridge reports
+for that tenant (`GET /api/status`, its `jid` without the device suffix). The WhatsApp MCP
+has no tool that returns its own number, so the source is the bridge management REST that the
+cockpit's Connect panel already calls. The task tool resolves the destination before it
+persists: a route that cannot deliver for this identity now (no mounted send tool, no
+recipient, WhatsApp not linked) is refused with the reason, and an accepted route names its
+recipient, so the model has nothing to invent. A sweep sends under the row's identity. A push
+that fails is written into the origin conversation beside the outcome, never presented as a
+delivery.
+
+This does not establish:
+- that a message to one's own number notifies the phone: one such self-send through the
+  bridge returned `success:true` on 2026-10-05, and whether it rang was not observed;
+- Telegram delivery as seen on the device: only the database records it;
+- the operator's own appliance: its environment was not inspected, so the same cause there
+  is inferred, not measured;
+- a schedule-time check for a route changed in the cockpit scheduler board, which still
+  validates only the route name.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
