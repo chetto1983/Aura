@@ -246,6 +246,22 @@ the operation, including multiplexed verbs. Read retries are bounded; indetermin
 mutations are not blindly repeated. A crash after an external side effect but before
 durable recording remains a disclosed recovery window.
 
+An outbound message the operator approved is sent (2026-10-05). A WhatsApp `send_message` or
+a PIM `send_email` on the managed recipe parks as a draft the operator reviews in the chat
+before anything leaves (`70688c526`, 2026-09-28). Measured on the lab VM at `c57322064`:
+the operator approved a WhatsApp draft and nothing was sent. The draft went from dispatching to
+`uncertain` in 6 ms, the WhatsApp bridge received no call, the model was told delivery was
+uncertain and then told the operator the message had been sent. The send runs outside the model
+loop, under the operation of the resolve request (`POST /api/message-drafts/{id}/resolve`), and
+deriving a tool's child operation requires a model round, so it failed before policy and
+transport. The reviewed send is now its own single round; the draft's one-send claim still
+prevents a second dispatch. A unit test reproduces the resolve request's operation.
+
+This does not establish:
+- the send on the VM, which the next probe must show;
+- what the operator is told when a send fails before transport: such an error is still recorded
+  as uncertain and is not logged.
+
 A terminal answer cannot race runnable sibling tools. Rejected streamed drafts are
 explicitly discarded on every surface before another answer begins. A terminal-only
 answer must be visible, and an already-streamed answer must not be duplicated.
