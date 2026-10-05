@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -133,6 +134,10 @@ func (r *Runner) ResolveMessageDraft(ctx context.Context, draftID, action string
 			}
 			result, executeErr := agent.ExecuteReviewedMessage(ctx, tool, r.gateway, draft, r.runDir, r.previewCap)
 			status, code := reviewedMessageOutcome(executeErr)
+			if executeErr != nil {
+				slog.Warn("message review: send did not complete",
+					"draft_id", draft.ID, "status", status, "outcome", code, "detail", reviewedSendFailureDetail(executeErr))
+			}
 			// The HTTP request can disappear after the sidecar has sent. Preserve the
 			// disposition on a bounded detached context so retry never dispatches.
 			outcomeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
@@ -191,10 +196,21 @@ func reviewedMessageOutcome(err error) (messagedrafts.Status, string) {
 		return messagedrafts.StatusSent, "ok"
 	}
 	var callErr *mcp.ToolCallError
-	if errors.As(err, &callErr) && callErr.DeterministicNoEffect() {
+	if errors.Is(err, agent.ErrToolNotExecuted) || (errors.As(err, &callErr) && callErr.DeterministicNoEffect()) {
 		return messagedrafts.StatusFailed, "no_effect"
 	}
 	return messagedrafts.StatusUncertain, "unknown_effect"
+}
+
+// reviewedSendFailureDetail says why a reviewed send did not complete without logging the
+// message. A failure before dispatch comes from Aura's own operation and policy checks and
+// carries no message content; one from the transport or the server may echo the recipient
+// or the text, so only its type is logged.
+func reviewedSendFailureDetail(err error) string {
+	if errors.Is(err, agent.ErrToolNotExecuted) {
+		return err.Error()
+	}
+	return fmt.Sprintf("error type %T", err)
 }
 
 func reviewedMessageAnswer(status messagedrafts.Status) string {

@@ -96,6 +96,28 @@ func TestMessageDraftSendFailsClosedWithoutReview(t *testing.T) {
 	}
 }
 
+type failingTool struct{ spec tools.Spec }
+
+func (f failingTool) Spec() tools.Spec { return f.spec }
+func (failingTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	return tools.ToolResult{}, errors.New("transport failed after send")
+}
+
+// Only a failure that stopped the call before Execute is marked as not executed: that is the
+// difference between "the message was not sent" and "delivery is uncertain".
+func TestExecToolMarksOnlyFailuresBeforeExecute(t *testing.T) {
+	_, tool := reviewedWhatsAppClaim(t)
+	_, err := (&LlmAgent{}).execTool(t.Context(), tool, true, json.RawMessage(`{"recipient":"12345","message":"Hi"}`))
+	var denied *gateway.ErrDenied
+	if !errors.Is(err, ErrToolNotExecuted) || !errors.As(err, &denied) || tool.calls != 0 {
+		t.Fatalf("unreviewed send: err = %v, calls = %d; want a denial marked not executed", err, tool.calls)
+	}
+	_, err = (&LlmAgent{}).execTool(t.Context(), failingTool{spec: tools.Spec{Name: "read_thing"}}, false, json.RawMessage(`{}`))
+	if err == nil || errors.Is(err, ErrToolNotExecuted) {
+		t.Fatalf("failure inside Execute: err = %v; want it unmarked", err)
+	}
+}
+
 func TestMessageDraftHashedRegisteredNameStillMatches(t *testing.T) {
 	spec := tools.Spec{
 		Name:                "namespace_that_is_very_long_and_needs_truncate__c_0123456789ab",

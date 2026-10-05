@@ -47,6 +47,21 @@ func bookkeepingCtx(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(ctx), operationBookkeepingTimeout)
 }
 
+// ErrToolNotExecuted marks a failure that stopped a call before tool.Execute ran: the
+// operation derivation, the gateway's decision, a denial or a rejected operation. Such a
+// call had no effect, which a reviewed send must tell apart from a transport failure
+// after dispatch; before it could, an approved WhatsApp message that never left was
+// reported as uncertain (measured 2026-10-05). The wrapped error keeps its own message.
+var ErrToolNotExecuted = errors.New("tool was not executed")
+
+type notExecutedError struct{ err error }
+
+func (e notExecutedError) Error() string        { return e.err.Error() }
+func (e notExecutedError) Unwrap() error        { return e.err }
+func (e notExecutedError) Is(target error) bool { return target == ErrToolNotExecuted }
+
+func notExecuted(err error) error { return notExecutedError{err: err} }
+
 // toolRetryBaseDelay is the linear-backoff unit (attempt n waits (n+1)·base). A var,
 // not a const, so tests can shrink it without sleeping real backoff windows.
 var toolRetryBaseDelay = 200 * time.Millisecond
@@ -91,7 +106,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 		var err error
 		ctx, err = deriveToolOperationContext(ctx, spec, args)
 		if err != nil {
-			return tools.ToolResult{}, err
+			return tools.ToolResult{}, notExecuted(err)
 		}
 	}
 	operationAcquired := false
@@ -116,9 +131,9 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			if operationAcquired {
 				bctx, cancel := bookkeepingCtx(ctx)
 				defer cancel()
-				return tools.ToolResult{}, errors.Join(derr, a.gateway.MarkOperationIndeterminate(bctx))
+				return tools.ToolResult{}, notExecuted(errors.Join(derr, a.gateway.MarkOperationIndeterminate(bctx)))
 			}
-			return tools.ToolResult{}, derr
+			return tools.ToolResult{}, notExecuted(derr)
 		}
 		if operationAcquired {
 			claimedCtx, claimErr := idempotency.WithClaimToken(
@@ -126,7 +141,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 				verdict.OperationClaimToken,
 			)
 			if claimErr != nil {
-				return tools.ToolResult{}, claimErr
+				return tools.ToolResult{}, notExecuted(claimErr)
 			}
 			ctx = claimedCtx
 		}
@@ -135,7 +150,7 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			if verdict.OperationRejection != nil && verdict.OperationRejection.Preview != "" {
 				reason = verdict.OperationRejection.Preview
 			}
-			return tools.ToolResult{}, &gateway.ErrOperationRejected{Reason: reason}
+			return tools.ToolResult{}, notExecuted(&gateway.ErrOperationRejected{Reason: reason})
 		}
 		switch verdict.Decision {
 		case gateway.Deny:
@@ -143,9 +158,9 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 			if operationAcquired {
 				bctx, cancel := bookkeepingCtx(ctx)
 				defer cancel()
-				return tools.ToolResult{}, errors.Join(denied, a.gateway.MarkOperationIndeterminate(bctx))
+				return tools.ToolResult{}, notExecuted(errors.Join(denied, a.gateway.MarkOperationIndeterminate(bctx)))
 			}
-			return tools.ToolResult{}, denied
+			return tools.ToolResult{}, notExecuted(denied)
 		case gateway.Approve:
 			// The mutating action is WITHHELD: return the approval-required tool RESULT
 			// (no error, tool.Execute not called). runTool persists the real call+args +
