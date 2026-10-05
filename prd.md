@@ -271,8 +271,15 @@ UTC for a WhatsApp `list_chats` that found nothing, so that call stayed in the c
 result. An empty result is now sent as `(empty result)`; the model still sees the empty result.
 The translator's property test, which only ever drew non-empty results, now draws empty ones too.
 
-This does not establish:
-- the send, the refusal or the empty result on the VM, which the next probe must show.
+Measured on the VM at `efdc895c0` (2026-10-05):
+- The agent drafted the same immediate WhatsApp send, addressed to the operator's linked number
+  (checked by hash, never printed). Approved through the review API, the draft went to
+  `sent`/`ok` in 151 ms. The bridge logged `POST /api/send` at 13:09:26 UTC, the tool answer
+  read `"success": true`, and the operator confirmed the message arrived.
+- A `list_chats` with no match reached the stream as `(empty result)`, and no validation warning
+  was logged.
+
+This does not establish a pre-dispatch refusal on the VM: no live send was refused.
 
 A terminal answer cannot race runnable sibling tools. Rejected streamed drafts are
 explicitly discarded on every surface before another answer begins. A terminal-only
@@ -2347,9 +2354,16 @@ whose run was still running, one with a pending notification, one with a failed 
 still under the attempt bound, one that had not fired, a cancelled one-shot with a pending
 notification, a recurring task with no next fire, and a cancelled recurring task.
 
-This does not establish:
-- the same on the live appliance, which the next VM probe must show;
-- behaviour for a fired one-shot whose run never ended, which waits for orphan recovery.
+Measured on the lab VM at `efdc895c0`, then `174adbe23` (2026-10-05):
+- The 5 fired and 17 cancelled one-shots were gone, with their runs.
+- The cockpit board listed one row, the backup, with `Cancellable=false`, and its DELETE answered
+  403 "the database backup cannot be cancelled".
+- Three new reminders fired at 13:40:27, 13:41:27 and 13:41:57 UTC. Each was sent by the WhatsApp
+  bridge and recorded in its conversation, and the same tick logged
+  `deleted settled one-shot tasks count=1`. No `at` task was left.
+
+This does not establish behaviour for a fired one-shot whose run never ended, which waits for
+orphan recovery.
 
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
@@ -2373,9 +2387,14 @@ reminders". It now says that a reminder or message the operator wants at a later
 and delivered then, even when the request names WhatsApp, Telegram or email. The connected
 accounts line says those tools send now.
 
+Probed on the VM at `174adbe23` with the same request three times, each in a new conversation:
+all three scheduled a `reminder` with `notify=whatsapp` two minutes out, and all three were
+delivered and deleted (above). Every probe still looked for the operator's number first: two
+searched the WhatsApp contacts, two asked memory for it, and two tried to load the family name
+"scheduling" as a tool. The turns took 4 to 7 tool calls and 12.6 to 24.4 s.
+
 This does not establish:
-- what the model chooses with the new family lines: the VM probe must repeat the request
-  several times;
+- the choice on another model or with other phrasings;
 - whether the WhatsApp server's own description, which does not say it sends immediately, also
   needs changing.
 
