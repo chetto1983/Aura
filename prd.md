@@ -2283,6 +2283,33 @@ This does not establish:
 - delivery when the bridge or the PIM is down: only the retry rows of the first probe were
   observed, and those failed for the identity defect fixed above.
 
+A one-shot task that has fired is deleted (2026-10-05). Measured on the lab VM after the probes
+above: every fired `at` reminder stayed `status=active` with `next_run_at` NULL, because firing
+only clears the next fire. The cockpit board listed all of them as active, among eight system
+sweeps and the database backup, each with a delete verb except the sweeps. The operator decided
+that a fired one-shot, of any kind, is removed from the database together with its runs and
+notification rows: the existing `ON DELETE CASCADE` from tasks to runs to notifications,
+so the run ledger does not outlive the task. It is removed only once nothing is left for it to
+do: no run still running, and no notification still owed a retry. A notification is settled once
+delivered or past `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS`. The scheduler deletes such tasks on
+every tick, after the notification sweep. What happened stays in the conversation the task was
+scheduled from.
+
+The cockpit board lists only operator-managed kinds (reminder, agent_job, the database backup);
+the system sweeps no longer appear. The database backup cannot be cancelled: the board offers no
+delete verb for it and the API refuses one with 403. The same measurement showed the system
+sweeps owned by the operator's identity, which the enrolment hands every `local` row to, so the
+agent's identity-scoped `task list` showed them and its `cancel` could stop them. On that VM the
+backup had stayed `local`; where it was handed over too, the agent could have cancelled it. The
+agent's list therefore shows only operator-managed kinds, and its `cancel` refuses the system
+sweeps and the backup, by the same rule the board uses.
+
+This does not establish:
+- that the cascade succeeds under the application role, which has no `DELETE` on the run ledger:
+  Postgres runs referential actions as the referencing table's owner, which the integration test
+  and the next live probe must confirm;
+- behaviour for a fired one-shot whose run never ended, which waits for orphan recovery.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
