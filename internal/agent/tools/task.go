@@ -142,9 +142,10 @@ const taskParamsSchema = `{
 func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
-		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — reminders and agent_job wake-ups later, tomorrow, at a time, every N minutes or on a cron; list, cancel, or run one now.",
+		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — a reminder or message to send the operator later on WhatsApp, Telegram or email (in 10 minutes, tomorrow at 9), agent_job wake-ups, every N minutes or on a cron; list, cancel, or run one now.",
 		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
+			"A reminder or message the operator wants later on a channel (\"remind me on WhatsApp in 10 minutes\", \"email me tomorrow\", \"message me on Telegram in an hour\") is a reminder task with notify set to that channel: at fire time the scheduler delivers it to the operator's own WhatsApp, email or Telegram. Never send it now with a messaging tool, and never look up the operator's contact for it. " +
 			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),

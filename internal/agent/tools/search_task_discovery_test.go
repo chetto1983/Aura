@@ -33,3 +33,31 @@ func TestToolSearchFindsTaskForSchedulingQueries(t *testing.T) {
 		}
 	}
 }
+
+// Measured on the lab VM, 2026-10-05: asked for a WhatsApp reminder in 10 minutes, the model
+// loaded the WhatsApp tools, searched the contacts and sent the text at once with
+// send_message. A reminder named after a channel is still the scheduler's job: the task
+// delivers it there at fire time. The competing tool carries the WhatsApp server's own text.
+func TestToolSearchFindsTaskForChannelReminders(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&TaskTool{})
+	reg.Register(bm25Tool{name: "whatsapp__send_message", summary: "Send a WhatsApp message to a person or group. For group chats use the JID."})
+	reg.Register(bm25Tool{name: "pim__calendar", summary: "Calendar, email and contacts: list events, send an email, search contacts."})
+	ts := &ToolSearch{Registry: reg}
+	for _, q := range []string{
+		"remind me on WhatsApp in 10 minutes",
+		"WhatsApp reminder in 10 minutes",
+		"send me a WhatsApp message tomorrow at 9",
+		"email me a reminder tomorrow morning",
+		"message me on Telegram in an hour",
+	} {
+		matches, _, _ := ts.match(q, 3)
+		var names []string
+		for _, m := range matches {
+			names = append(names, m.Spec().Name)
+		}
+		if len(names) == 0 || names[0] != "task" {
+			t.Errorf("tool_search(%q) = %s, want task first", q, strings.Join(names, ","))
+		}
+	}
+}
