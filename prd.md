@@ -2304,10 +2304,16 @@ backup had stayed `local`; where it was handed over too, the agent could have ca
 agent's list therefore shows only operator-managed kinds, and its `cancel` refuses the system
 sweeps and the backup, by the same rule the board uses.
 
+The cascade works under the application role, which has no `DELETE` on the run ledger or the
+notification table (measured 2026-10-05, `TestDeleteSettledOneShots`, `aura_app` on a disposable
+Postgres 18.4 with all 111 migrations). One `DeleteSettledOneShots` removed a delivered one-shot
+and one whose notification had exhausted its retries, together with their runs and that
+notification. It kept a one-shot whose run was still running, one with a pending notification,
+one with a failed notification still under the attempt bound, one that had not fired, and a
+recurring task with no next fire.
+
 This does not establish:
-- that the cascade succeeds under the application role, which has no `DELETE` on the run ledger:
-  Postgres runs referential actions as the referencing table's owner, which the integration test
-  and the next live probe must confirm;
+- the same on the live appliance, which the next VM probe must show;
 - behaviour for a fired one-shot whose run never ended, which waits for orphan recovery.
 
 ## 16. Observability and operator experience
