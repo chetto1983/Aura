@@ -2295,6 +2295,12 @@ delivered or past `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS`. The scheduler deletes 
 every tick, after the notification sweep. What happened stays in the conversation the task was
 scheduled from.
 
+A cancelled one-shot is deleted by the same rule, fired or not. Measured on the lab VM before the
+fix shipped: 17 cancelled `at` reminders, the ones the operator had removed from the board
+(whose delete is a soft cancel), plus the 5 fired ones still active. Keeping only the fired
+ones would have left the cancelled rows in the database for good. Cancelled recurring tasks are
+not touched.
+
 The cockpit board lists only operator-managed kinds (reminder, agent_job, the database backup);
 the system sweeps no longer appear. The database backup cannot be cancelled: the board offers no
 delete verb for it and the API refuses one with 403. The same measurement showed the system
@@ -2306,11 +2312,12 @@ sweeps and the backup, by the same rule the board uses.
 
 The cascade works under the application role, which has no `DELETE` on the run ledger or the
 notification table (measured 2026-10-05, `TestDeleteSettledOneShots`, `aura_app` on a disposable
-Postgres 18.4 with all 111 migrations). One `DeleteSettledOneShots` removed a delivered one-shot
-and one whose notification had exhausted its retries, together with their runs and that
-notification. It kept a one-shot whose run was still running, one with a pending notification,
-one with a failed notification still under the attempt bound, one that had not fired, and a
-recurring task with no next fire.
+Postgres 18.4 with all 111 migrations). One `DeleteSettledOneShots` removed four one-shots: a
+delivered one, one whose notification had exhausted its retries, one cancelled after firing and
+one cancelled before firing, together with their runs and notifications. It kept a one-shot
+whose run was still running, one with a pending notification, one with a failed notification
+still under the attempt bound, one that had not fired, a cancelled one-shot with a pending
+notification, a recurring task with no next fire, and a cancelled recurring task.
 
 This does not establish:
 - the same on the live appliance, which the next VM probe must show;
