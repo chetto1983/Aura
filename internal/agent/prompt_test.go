@@ -174,6 +174,24 @@ func TestPrompt_FullToolSurfaceDoctrine(t *testing.T) {
 	}
 }
 
+// TestPrompt_ChannelReminderIsAScheduledJob: the deferred roster carries tool NAMES only,
+// so the family lines here are the only text that says what a deferred family covers
+// before the model picks one. Measured on the lab VM, 2026-10-05, twice: asked for a
+// WhatsApp reminder in a few minutes, the model loaded the WhatsApp tools straight from
+// the roster and sent the text at once. A reminder that names its channel is still a
+// scheduling job, and the messaging tools send now.
+func TestPrompt_ChannelReminderIsAScheduledJob(t *testing.T) {
+	for _, needle := range []string{
+		"a reminder or message the operator wants at a later time",
+		"even when the request names WhatsApp, Telegram or email",
+		"send now",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt no longer routes a channel reminder to scheduling: missing %q", needle)
+		}
+	}
+}
+
 // TestPrompt_ByteStable asserts two reads of the prompt are byte-identical — the
 // seed assertion for prefix stability across turns (Req#14). systemMessage() must
 // read no clock and take no per-turn input.

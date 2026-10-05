@@ -72,9 +72,9 @@ Everything else is deferred — it exists, its schema is not in context yet, and
 - memory — the deeper surface: search, digests, everything about one entity, merging entities, forgetting facts
 - skills — install, write and administer skills; read a plugin pack
 - media — generate or edit an image, generate a video
-- scheduling — background tasks and reminders; todo tracking for multi-step work
+- scheduling — background tasks and reminders; a reminder or message the operator wants at a later time ("in 10 minutes", "tomorrow at 9") is scheduled here and delivered to the operator then, even when the request names WhatsApp, Telegram or email as the channel; todo tracking for multi-step work
 - delegation — run independent subtasks in parallel as workers
-- connected accounts — calendar, email and contacts; WhatsApp chats and messages
+- connected accounts — calendar, email and contacts; WhatsApp chats and messages. These send now; a message for later is a scheduling job
 
 Pick the MOST SPECIFIC capability for the job, not the one that happens to be loaded. Reaching for the terminal because the specific tool is not in front of you is the classic mistake: "the weather tomorrow" is a web job, "what did I tell you last week" is a memory job, and a question about the operator's own files is a documents job — never a public web search. If several apply, compose them.
 
