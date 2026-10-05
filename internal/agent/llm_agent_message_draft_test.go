@@ -13,6 +13,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/gateway"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/messagedrafts"
@@ -106,7 +107,12 @@ func TestMessageDraftHashedRegisteredNameStillMatches(t *testing.T) {
 	}
 }
 
-func TestExecuteReviewedMessageDispatchesApprovedEdits(t *testing.T) {
+const reviewOwner = "11111111-1111-4111-8111-111111111111"
+
+// reviewedWhatsAppClaim builds the dispatching claim the review endpoint hands the agent
+// after the operator edited the recipient and the text, with the spy tool it targets.
+func reviewedWhatsAppClaim(t *testing.T) (messagedrafts.Draft, *draftSpyTool) {
+	t.Helper()
 	target := messagedrafts.Target{Recipe: "recipe:whatsapp", Tool: "send_message"}
 	original := json.RawMessage(`{"recipient":"12345","message":"Original"}`)
 	effective, err := messagedrafts.MergeApprovedArgs(target, original, json.RawMessage(`{"recipient":"67890","message":"Edited"}`))
@@ -123,18 +129,49 @@ func TestExecuteReviewedMessageDispatchesApprovedEdits(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(bound)
-	owner := "11111111-1111-4111-8111-111111111111"
 	claim := messagedrafts.Draft{
-		ID: "22222222-2222-4222-8222-222222222222", IdentityID: owner,
+		ID: "22222222-2222-4222-8222-222222222222", IdentityID: reviewOwner,
 		ConversationID: "thread-one", ToolCallID: "call-one", Target: target,
 		RegisteredToolName: "wa__send_message", Status: messagedrafts.StatusDispatching,
 		EffectiveArgs: effective, EffectiveFingerprint: hex.EncodeToString(sum[:]),
 	}
-	tool := &draftSpyTool{spec: tools.Spec{Name: claim.RegisteredToolName, TrustedRecipeSource: target.Recipe, TrustedRecipeTool: target.Tool, Mutating: true}}
-	if _, err := ExecuteReviewedMessage(identityctx.WithIdentityID(t.Context(), owner), tool, nil, claim, "", 0); err != nil {
+	// The operation metadata mcptools.applyMCPOperationMetadata gives every mutating MCP tool.
+	tool := &draftSpyTool{spec: tools.Spec{
+		Name: claim.RegisteredToolName, TrustedRecipeSource: target.Recipe, TrustedRecipeTool: target.Tool,
+		Mutating: true, OperationScope: tools.OperationScopeMCP,
+		OperationNormalizer: tools.OperationNormalizerCanonical, ReplayPolicy: tools.ReplayToolResult,
+	}}
+	return claim, tool
+}
+
+func TestExecuteReviewedMessageDispatchesApprovedEdits(t *testing.T) {
+	claim, tool := reviewedWhatsAppClaim(t)
+	if _, err := ExecuteReviewedMessage(identityctx.WithIdentityID(t.Context(), reviewOwner), tool, nil, claim, "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if tool.calls != 1 || !bytes.Equal(tool.args, effective) {
+	if tool.calls != 1 || !bytes.Equal(tool.args, claim.EffectiveArgs) {
+		t.Fatal("reviewed dispatch did not execute the exact edited arguments once")
+	}
+}
+
+// The cockpit resolves a review through POST /api/message-drafts/{id}/resolve, an HTTP
+// mutation whose operation rides the context into the send. Measured on the lab VM on
+// 2026-10-05: under that parent the approved send failed in 6 ms without reaching the
+// WhatsApp bridge, and the model was told delivery was uncertain.
+func TestExecuteReviewedMessageDispatchesUnderTheResolveOperation(t *testing.T) {
+	claim, tool := reviewedWhatsAppClaim(t)
+	ctx, err := idempotency.WithOperation(identityctx.WithIdentityID(t.Context(), reviewOwner), idempotency.Operation{
+		Key:         idempotency.OperationKey{IdentityID: reviewOwner, Scope: idempotency.ScopeHTTPMutation, Key: "resolve-key"},
+		Fingerprint: sha256.Sum256([]byte("resolve")),
+		ClaimToken:  1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ExecuteReviewedMessage(ctx, tool, nil, claim, "", 0); err != nil {
+		t.Fatalf("reviewed send under the resolve operation: %v", err)
+	}
+	if tool.calls != 1 || !bytes.Equal(tool.args, claim.EffectiveArgs) {
 		t.Fatal("reviewed dispatch did not execute the exact edited arguments once")
 	}
 }

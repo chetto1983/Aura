@@ -87,10 +87,16 @@ func safeMessageDraftError(err error) string {
 
 // ExecuteReviewedMessage re-enters the normal gateway PEP with the durable
 // one-send claim and the exact tool call that was parked before transport.
+//
+// It runs outside any model loop, under the resolve endpoint's HTTP operation, so the
+// dispatch is its own single model round: deriveToolOperationContext refuses to derive a
+// child operation without one. Before the round was declared here, every approved send
+// failed there, ahead of the gateway and the transport (measured on 2026-10-05).
 func ExecuteReviewedMessage(ctx context.Context, tool tools.Tool, policy *gateway.Gateway, claim messagedrafts.Draft, runDir string, previewCap int) (tools.ToolResult, error) {
 	ctx = tools.WithRequestID(ctx, claim.ID)
 	ctx = tools.WithToolCallContext(ctx, claim.ConversationID, claim.ToolCallID, runDir, previewCap)
 	ctx = gateway.WithReviewedMessageDraft(ctx, claim)
+	ctx = withModelRound(ctx, modelRound{ordinal: 1})
 	a := &LlmAgent{gateway: policy, ledgerConvID: claim.ConversationID}
 	return a.execTool(ctx, tool, true, claim.EffectiveArgs)
 }
