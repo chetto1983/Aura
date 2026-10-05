@@ -257,10 +257,22 @@ deriving a tool's child operation requires a model round, so it failed before po
 transport. The reviewed send is now its own single round; the draft's one-send claim still
 prevents a second dispatch. A unit test reproduces the resolve request's operation.
 
+A send that fails before it is dispatched is reported as not sent. Every failure that stops a
+call before the tool runs (the operation derivation, the gateway's decision, a denial, a
+rejected operation) is marked as not executed. A reviewed send so marked is recorded `failed`
+with `no_effect` and the model reads "message was not sent". Only a failure after dispatch stays
+`uncertain`. Either is logged with the draft id. The detail is the refusal reason when Aura
+refused, and only the error type otherwise, since a transport error may echo the recipient or the
+text.
+
+A tool result with no content still reaches the chat. AG-UI requires `TOOL_CALL_RESULT` content,
+and the run stream drops a frame that fails validation. The same VM turn logged it at 12:14:51
+UTC for a WhatsApp `list_chats` that found nothing, so that call stayed in the chat without its
+result. An empty result is now sent as `(empty result)`; the model still sees the empty result.
+The translator's property test, which only ever drew non-empty results, now draws empty ones too.
+
 This does not establish:
-- the send on the VM, which the next probe must show;
-- what the operator is told when a send fails before transport: such an error is still recorded
-  as uncertain and is not logged.
+- the send, the refusal or the empty result on the VM, which the next probe must show.
 
 A terminal answer cannot race runnable sibling tools. Rejected streamed drafts are
 explicitly discarded on every surface before another answer begins. A terminal-only
