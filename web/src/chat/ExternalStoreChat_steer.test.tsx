@@ -530,7 +530,7 @@ describe('useSteerSend', () => {
     expect(rendered.result.current.notice).toEqual({ id: 'steer-3', kind: 'autoDelivered' });
   });
 
-  it.each(['swarm', 'shell', 'media'])(
+  it.each(['swarm', 'shell', 'media', 'tool'])(
     'onFrame shows no notice for Aura’s own %s fact, which the operator never sent',
     (source) => {
       const { rendered } = fixture('run-7');
