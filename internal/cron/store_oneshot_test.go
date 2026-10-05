@@ -111,15 +111,30 @@ func TestDeleteSettledOneShots(t *testing.T) {
 		t.Fatalf("UpdateNextRunAt recurring: %v", err)
 	}
 
+	cancelledFired, _ := fireOneShot(t, ctx, s, "completed")
+	cancelledUnfired := makeOneShot(t, ctx, s)
+	cancelledOwing, cancelledOwingRun := fireOneShot(t, ctx, s, "completed")
+	owesNotification(t, ctx, s, cancelledOwingRun, "pending", 0)
+	cancelledRecurring, _ := seedTaskWithRuns(t, ctx, s, time.Now().UTC(), 0)
+	for _, id := range []string{cancelledFired, cancelledUnfired, cancelledOwing, cancelledRecurring} {
+		if err := s.CancelTask(ctx, id); err != nil {
+			t.Fatalf("CancelTask %s: %v", id, err)
+		}
+	}
+
 	n, err := s.DeleteSettledOneShots(ctx, bound)
 	if err != nil {
 		t.Fatalf("DeleteSettledOneShots: %v", err)
 	}
-	// At least, not exactly: the database is shared, and another fired one-shot may be settled.
-	if n < 2 {
-		t.Fatalf("deleted %d tasks, want at least the 2 settled ones", n)
+	settled := map[string]string{
+		"delivered": delivered, "exhausted retries": exhausted,
+		"cancelled after firing": cancelledFired, "cancelled before firing": cancelledUnfired,
 	}
-	for name, id := range map[string]string{"delivered": delivered, "exhausted retries": exhausted} {
+	// At least, not exactly: the database is shared, and another one-shot may be settled.
+	if n < int64(len(settled)) {
+		t.Fatalf("deleted %d tasks, want at least the %d settled ones", n, len(settled))
+	}
+	for name, id := range settled {
 		if !taskGone(t, ctx, s, id) {
 			t.Errorf("%s one-shot %s survived the delete", name, id)
 		}
@@ -133,6 +148,7 @@ func TestDeleteSettledOneShots(t *testing.T) {
 	kept := map[string]string{
 		"still running": running, "notification pending": pending, "retry still owed": retrying,
 		"not fired yet": unfired, "recurring": recurring,
+		"cancelled, notification pending": cancelledOwing, "cancelled recurring": cancelledRecurring,
 	}
 	for name, id := range kept {
 		if taskGone(t, ctx, s, id) {

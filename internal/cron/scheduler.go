@@ -303,8 +303,8 @@ func (s *Scheduler) tick(ctx context.Context) error {
 	return nil
 }
 
-// deleteSettledOneShots removes the one-shot tasks that fired and have nothing left to do,
-// after this tick's notification sweep has settled what it could. It is housekeeping: a
+// deleteSettledOneShots removes the one-shot tasks that fired or were cancelled and have
+// nothing left to do, after this tick's notification sweep has settled what it could. It is housekeeping: a
 // failure is a WARN and never costs the tick its readiness mark.
 func (s *Scheduler) deleteSettledOneShots(ctx context.Context) {
 	n, err := s.store.DeleteSettledOneShots(ctx, pendingNotificationAttemptBound())

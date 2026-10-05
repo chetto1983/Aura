@@ -47,16 +47,18 @@ SET next_run_at = $2, updated_at = now()
 WHERE id = $1;
 
 -- name: DeleteSettledOneShots :execrows
--- A one-shot task that fired keeps status 'active' with its next fire cleared. Once nothing
--- is left for it to do -- no run still running, no notification still owed a retry (one is
--- owed while pending, or failed under the attempt bound $1) -- it is deleted, and ON DELETE
--- CASCADE takes its runs and notification rows with it (0009, 0013): the operator's decision
--- of 2026-10-05. A one-shot that never ran keeps its row; the board flags it unschedulable.
+-- A one-shot task is finished once it fired (it keeps status 'active' with its next fire
+-- cleared) or was cancelled. Once nothing is left for it to do -- no run still running, no
+-- notification still owed a retry (one is owed while pending, or failed under the attempt
+-- bound $1) -- it is deleted, and ON DELETE CASCADE takes its runs and notification rows with
+-- it (0009, 0013): the operator's decision of 2026-10-05. An active one-shot that never ran
+-- keeps its row; the board flags it unschedulable.
 DELETE FROM aura.scheduler_tasks AS t
 WHERE t.schedule_kind = 'at'
-    AND t.status = 'active'
-    AND t.next_run_at IS NULL
-    AND EXISTS (SELECT 1 FROM aura.agent_job_runs AS r WHERE r.task_id = t.id)
+    AND (t.status = 'cancelled'
+        OR (t.status = 'active'
+            AND t.next_run_at IS NULL
+            AND EXISTS (SELECT 1 FROM aura.agent_job_runs AS r WHERE r.task_id = t.id)))
     AND NOT EXISTS (
         SELECT 1 FROM aura.agent_job_runs AS r
         WHERE r.task_id = t.id AND r.status = 'running')

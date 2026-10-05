@@ -275,9 +275,9 @@ func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit i
 	return out, nil
 }
 
-// DeleteSettledOneShots deletes every fired one-shot task with nothing left to do -- no run
-// still running, no notification still owed one of attemptBound retries -- together with its
-// runs and notification rows, and returns how many tasks it removed.
+// DeleteSettledOneShots deletes every one-shot task that fired or was cancelled and has nothing
+// left to do -- no run still running, no notification still owed one of attemptBound retries --
+// together with its runs and notification rows, and returns how many tasks it removed.
 func (s *Store) DeleteSettledOneShots(ctx context.Context, attemptBound int) (int64, error) {
 	n, err := s.q.DeleteSettledOneShots(ctx, positiveInt32(attemptBound, 1))
 	if err != nil {
