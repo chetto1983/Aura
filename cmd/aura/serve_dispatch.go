@@ -104,7 +104,7 @@ func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry, swe
 		hmap[kind] = handlerAdapter{inner: h}
 	}
 
-	notifier := newSchedulerNotifier(chat.cfg, chat.reg)
+	notifier := newSchedulerNotifier(chat.cfg, chat.reg, chat.pool)
 	quietScheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{})
 	return cron.NewDispatch(hmap, cron.DispatchDeps{
 		Store:          store,

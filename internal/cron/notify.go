@@ -1,8 +1,8 @@
 package cron
 
 // notify.go is the composite Notifier (D-19): scheduled-job output reaches the user
-// via the ALREADY-MOUNTED WhatsApp/mail MCP self-send, addressed to the configured
-// recipient or, for WhatsApp, to the account the task's identity paired. The task tool
+// via the ALREADY-MOUNTED WhatsApp / PIM-mail MCP self-send, addressed to the configured
+// recipient or to the task identity's own number or address. The task tool
 // asks the same Notifier where a route would deliver before it persists a task. On a
 // delivery failure it falls back to stdout AND reports notification-undelivered so
 // the dispatcher can bound-retry on a later tick (D-22), mirroring the Phase-9
@@ -11,8 +11,8 @@ package cron
 // consults the scheduler's Now-based DuringQuietHours predicate before delivering a
 // non-destructive notification.
 //
-// The MCP self-send tools (send_message/send_email) are resolved through a
-// cron-local SelfSendResolver interface, NOT a concrete *tools.Registry import: that
+// The MCP self-send tools (WhatsApp send_message, the PIM calendar tool) are resolved
+// through a cron-local SelfSendResolver interface, NOT a concrete *tools.Registry import: that
 // keeps package cron free of an internal/agent/tools import (tools/task.go already
 // imports cron — the reverse import would be a cycle). The composition root (cmd/aura,
 // which imports both) supplies a thin adapter over the mounted registry.
@@ -58,20 +58,31 @@ func ValidNotifyRoute(route string) bool {
 	}
 }
 
-// selfSendTools maps each external route to the bare name of its MCP self-send tool. MCP
-// tools are namespaced <server>__<tool> (mcptools/name.go); the resolver adapter matches
-// the bare suffix.
-var selfSendTools = map[NotifyRoute]string{
-	RouteWhatsApp: "send_message",
-	RouteEmail:    "send_email",
+// selfSendRoute names the MCP tool that carries an external route by the managed recipe
+// the host mounted it from (tools.Spec TrustedRecipeSource/TrustedRecipeTool), never by a
+// registered name, and builds that tool's arguments.
+type selfSendRoute struct {
+	recipe, tool string
+	args         func(recipient, text string) map[string]any
 }
 
-// SelfSendResolver resolves an MCP self-send tool by its bare name (send_message /
-// send_email) to an executable handle. It is the cron-local seam the composition
-// root adapts the mounted *tools.Registry onto (consumer-declared interface, the
-// 10-04 taskStore pattern), so package cron never imports internal/agent/tools.
+var selfSendRoutes = map[NotifyRoute]selfSendRoute{
+	RouteWhatsApp: {recipe: "recipe:whatsapp", tool: "send_message", args: func(recipient, text string) map[string]any {
+		return map[string]any{"recipient": recipient, "message": text}
+	}},
+	// The PIM multiplexes mail behind its one calendar tool. Without an accountId it picks
+	// the sending account itself: by the recipient's domain, else its first account.
+	RouteEmail: {recipe: "recipe:calendar", tool: "calendar", args: func(recipient, text string) map[string]any {
+		return map[string]any{"action": "send_email", "to": []string{recipient}, "subject": "Aura scheduled task", "body": text, "bodyFormat": "text"}
+	}},
+}
+
+// SelfSendResolver resolves the MCP tool mounted from a managed recipe to an executable
+// handle. It is the cron-local seam the composition root adapts the mounted
+// *tools.Registry onto (consumer-declared interface, the 10-04 taskStore pattern), so
+// package cron never imports internal/agent/tools.
 type SelfSendResolver interface {
-	Resolve(bareName string) (SelfSendTool, bool)
+	Resolve(recipe, tool string) (SelfSendTool, bool)
 }
 
 // SelfSendTool is one resolved MCP self-send tool. Send returns nil on a delivered
@@ -81,10 +92,10 @@ type SelfSendTool interface {
 	Send(ctx context.Context, args json.RawMessage) error
 }
 
-// WhatsAppAccounts reports the number of the WhatsApp account an identity paired in the
-// cockpit. internal/whatsappbridge.Client satisfies this cron-local seam.
-type WhatsAppAccounts interface {
-	LinkedNumber(ctx context.Context, identityID string) (string, error)
+// OwnAddresses names where an identity itself is reached on an external route: the
+// number of the WhatsApp account it paired in the cockpit, the address it signs in with.
+type OwnAddresses interface {
+	OwnAddress(ctx context.Context, route NotifyRoute, identityID string) (string, error)
 }
 
 // Notifier delivers a job's output text over an explicit route. It is the seam the
@@ -108,15 +119,15 @@ type Notifier interface {
 // external sends leave a diagnostic stdout copy but remain failed for bounded retry.
 type compositeNotifier struct {
 	resolver SelfSendResolver
-	whatsapp WhatsAppAccounts
+	own      OwnAddresses
 	out      io.Writer
 }
 
-// NewNotifier builds the composite Notifier over the self-send resolver and the paired
-// WhatsApp accounts. A nil resolver is valid for none/stdout and makes external routes
-// fail explicitly; nil accounts leave WhatsApp to AURA_SCHEDULER_NOTIFY_RECIPIENT.
-func NewNotifier(resolver SelfSendResolver, whatsapp WhatsAppAccounts) Notifier {
-	return &compositeNotifier{resolver: resolver, whatsapp: whatsapp, out: os.Stdout}
+// NewNotifier builds the composite Notifier over the self-send resolver and the
+// identities' own addresses. A nil resolver is valid for none/stdout and makes external
+// routes fail explicitly; nil addresses leave every route to AURA_SCHEDULER_NOTIFY_RECIPIENT.
+func NewNotifier(resolver SelfSendResolver, own OwnAddresses) Notifier {
+	return &compositeNotifier{resolver: resolver, own: own, out: os.Stdout}
 }
 
 // Notify accepts only an explicit route. RouteNone is intentionally silent; a failed
@@ -139,7 +150,7 @@ func (n *compositeNotifier) Notify(ctx context.Context, route NotifyRoute, text 
 }
 
 func (n *compositeNotifier) Destination(ctx context.Context, route NotifyRoute) (string, error) {
-	if _, ok := selfSendTools[route]; !ok {
+	if _, ok := selfSendRoutes[route]; !ok {
 		return "", nil
 	}
 	_, recipient, err := n.selfSend(ctx, route)
@@ -151,8 +162,9 @@ func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, t
 	if err != nil {
 		return err
 	}
-	if err := tool.Send(ctx, selfSendArgs(route, recipient, text)); err != nil {
-		return fmt.Errorf("%s send: %w", selfSendTools[route], err)
+	args, _ := json.Marshal(selfSendRoutes[route].args(recipient, text))
+	if err := tool.Send(ctx, args); err != nil {
+		return fmt.Errorf("%s send: %w", selfSendRoutes[route].tool, err)
 	}
 	return nil
 }
@@ -161,7 +173,7 @@ func (n *compositeNotifier) sendViaMCP(ctx context.Context, route NotifyRoute, t
 // missing tool (nil resolver or no matching MCP server mounted) or recipient is an error,
 // so the task tool can refuse the route and the dispatcher can record it undelivered.
 func (n *compositeNotifier) selfSend(ctx context.Context, route NotifyRoute) (SelfSendTool, string, error) {
-	bareName, ok := selfSendTools[route]
+	carrier, ok := selfSendRoutes[route]
 	if !ok {
 		// Telegram never had an MCP self-send; the Dispatch origin gate delivers it. Being
 		// here means that gate declined because no channel owns this identity or no
@@ -173,9 +185,9 @@ func (n *compositeNotifier) selfSend(ctx context.Context, route NotifyRoute) (Se
 	if n.resolver == nil {
 		return nil, "", fmt.Errorf("no MCP self-send resolver mounted for route %s", route)
 	}
-	tool, ok := n.resolver.Resolve(bareName)
+	tool, ok := n.resolver.Resolve(carrier.recipe, carrier.tool)
 	if !ok {
-		return nil, "", fmt.Errorf("no mounted MCP tool for route %s (want *%s)", route, bareName)
+		return nil, "", fmt.Errorf("no MCP tool mounted for route %s (want %s %s)", route, carrier.recipe, carrier.tool)
 	}
 	recipient, err := n.recipient(ctx, route)
 	if err != nil {
@@ -185,34 +197,21 @@ func (n *compositeNotifier) selfSend(ctx context.Context, route NotifyRoute) (Se
 }
 
 // recipient is AURA_SCHEDULER_NOTIFY_RECIPIENT when the deployment set one, and
-// otherwise, for WhatsApp, the number of the account the identity on ctx linked in the
-// cockpit. Measured 2026-10-05: with neither, every WhatsApp reminder was sent to an
-// empty recipient and refused. Email has no linked account to fall back on.
+// otherwise the identity's own address on the route. Measured 2026-10-05: with neither,
+// every WhatsApp reminder was sent to an empty recipient and refused.
 func (n *compositeNotifier) recipient(ctx context.Context, route NotifyRoute) (string, error) {
 	if configured := strings.TrimSpace(os.Getenv("AURA_SCHEDULER_NOTIFY_RECIPIENT")); configured != "" {
 		return configured, nil
 	}
 	identityID := identityctx.IdentityID(ctx)
-	if route != RouteWhatsApp || n.whatsapp == nil || identityID == "" {
+	if n.own == nil || identityID == "" {
 		return "", fmt.Errorf("no recipient for %s: set AURA_SCHEDULER_NOTIFY_RECIPIENT", route)
 	}
-	number, err := n.whatsapp.LinkedNumber(ctx, identityID)
+	address, err := n.own.OwnAddress(ctx, route, identityID)
 	if err != nil {
-		return "", fmt.Errorf("no recipient for whatsapp: %w; link WhatsApp in the cockpit or set AURA_SCHEDULER_NOTIFY_RECIPIENT", err)
+		return "", fmt.Errorf("no recipient for %s: %w (or set AURA_SCHEDULER_NOTIFY_RECIPIENT)", route, err)
 	}
-	return number, nil
-}
-
-// selfSendArgs is the argument JSON of the route's MCP tool, in the shapes of the
-// canonical WhatsApp/mail servers (recipient+message / to+subject+body); the upstream
-// schema validates them.
-func selfSendArgs(route NotifyRoute, recipient, text string) json.RawMessage {
-	args := map[string]string{"recipient": recipient, "message": text}
-	if route == RouteEmail {
-		args = map[string]string{"to": recipient, "subject": "Aura scheduled task", "body": text}
-	}
-	raw, _ := json.Marshal(args)
-	return raw
+	return address, nil
 }
 
 // stdout writes the notification to the fallback sink (a daemon nobody tails still

@@ -111,7 +111,7 @@ func TestBuildDeprovisionerWiresPurger(t *testing.T) {
 // prove the entry compiles into the live map without panicking.
 func TestBuildDispatchRegistersIdentityPurge(t *testing.T) {
 	chat := &chatEnv{
-		pool: nil, // buildDispatch is nil-pool-safe (newSkillWriter/newSelfSendResolver/buildDeprovisioner all nil-safe)
+		pool: nil, // buildDispatch is nil-pool-safe (newSkillWriter/newSchedulerNotifier/buildDeprovisioner all nil-safe)
 		cfg: &config.Config{
 			SkillsDir:         t.TempDir(),
 			SkillExportDir:    t.TempDir(),

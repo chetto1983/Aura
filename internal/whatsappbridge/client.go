@@ -21,7 +21,7 @@ import (
 var ErrNotConfigured = errors.New("whatsapp bridge not configured")
 
 // ErrNotLinked is returned when the identity has no paired WhatsApp account.
-var ErrNotLinked = errors.New("no WhatsApp account is linked for this identity")
+var ErrNotLinked = errors.New("no WhatsApp account is linked for this identity; link one from the cockpit")
 
 // requestTimeout bounds one round-trip to the sibling container, which answers in well
 // under a second; it keeps a hung sidecar from stalling a cockpit poll or a scheduler tick.
