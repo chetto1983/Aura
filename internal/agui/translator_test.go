@@ -469,7 +469,7 @@ func TestTranslatorProperty(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	rapid.Check(t, func(rt *rapid.T) {
 		n := rapid.IntRange(1, 20).Draw(rt, "n")
-		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview", "reasoning", "reasoningEmpty", "artifact"}
+		kinds := []string{"chunk", "empty", "tool", "toolEmpty", "state", "final", "preview", "previewEmpty", "reasoning", "reasoningEmpty", "artifact"}
 		in := make([]*agent.Event, 0, n)
 		for i := range n {
 			switch rapid.SampledFrom(kinds).Draw(rt, "kind") {
@@ -487,12 +487,18 @@ func TestTranslatorProperty(t *testing.T) {
 			case "tool":
 				id := "call-" + strconv.Itoa(i)
 				in = append(in, toolStart(id, "t", `{"a":1}`), toolEnd(id, "t", "p"))
+			case "toolEmpty":
+				// A tool that returned nothing, like a WhatsApp list_chats with no match.
+				id := "call-e" + strconv.Itoa(i)
+				in = append(in, toolStart(id, "t", `{"a":1}`), toolEnd(id, "t", ""))
 			case "state":
 				in = append(in, stateDelta(map[string]any{"cost_usd": 0.01}))
 			case "final":
 				in = append(in, finalChunk("done", "stop"))
 			case "preview":
 				in = append(in, toolResultPreview("call-p"+strconv.Itoa(i), "preview"))
+			case "previewEmpty":
+				in = append(in, toolResultPreview("call-pe"+strconv.Itoa(i), ""))
 			}
 		}
 		evs := collectRapid(rt, in)

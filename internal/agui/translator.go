@@ -62,6 +62,19 @@ const DiscardEventName = "aura.discard"
 // delta instead so it can render the live CoT.
 const redactedReasoningDelta = "[reasoning redacted]"
 
+// emptyToolResult stands in for a tool result that carried no content. AG-UI requires
+// TOOL_CALL_RESULT content, and a frame that fails validation is dropped on the wire, so
+// the call stayed in the chat without its result (measured 2026-10-05: a WhatsApp
+// list_chats that found nothing). The model still sees the empty result.
+const emptyToolResult = "(empty result)"
+
+func toolResultContent(preview string) string {
+	if preview == "" {
+		return emptyToolResult
+	}
+	return preview
+}
+
 // artifactEventName is the package-internal alias kept so the existing translator
 // body + its golden tests read unchanged after exporting the canonical name.
 const artifactEventName = ArtifactEventName
@@ -195,7 +208,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				if ev.LLMResponse != nil {
 					preview = ev.LLMResponse.Content
 				}
-				if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(callID), callID, preview), nil) {
+				if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(callID), callID, toolResultContent(preview)), nil) {
 					return
 				}
 				continue
@@ -456,7 +469,7 @@ func emitToolInvocation(yield func(events.Event, error) bool, idgen IDGenerator,
 		if !yield(events.NewToolCallEndEvent(ti.ToolCallID), nil) {
 			return false
 		}
-		if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(ti.ToolCallID), ti.ToolCallID, ti.ResultPreview), nil) {
+		if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(ti.ToolCallID), ti.ToolCallID, toolResultContent(ti.ResultPreview)), nil) {
 			return false
 		}
 	}
