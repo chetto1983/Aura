@@ -69,10 +69,11 @@ func originPreferring(route string) bool {
 //
 // On owns-but-failed it queues a NEW failed pending row (same-channel retry key,
 // keyed on task.IdentityID) and returns handled=true WITHOUT calling Notifier
-// (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route).
-func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool) {
+// (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route),
+// together with the channel's error so the conversation can say it was not delivered.
+func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool, undelivered error) {
 	if !d.originGate(task.IdentityID, task.OriginConversationID, task.NotifyRoute) {
-		return false
+		return false, nil
 	}
 	var delivered bool
 	var err error
@@ -88,9 +89,9 @@ func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text s
 		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", 0, err.Error()); perr != nil {
 			slog.Warn("persist failed origin-channel notification", "task", task.ID, "run", runID, "err", perr)
 		}
-		return true
+		return true, err
 	}
-	return delivered
+	return delivered, nil
 }
 
 // sweepOutcome is the disposition of a swept row routed through the origin channel.

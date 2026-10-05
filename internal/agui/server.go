@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/whatsappbridge"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/singleflight"
 )
@@ -197,10 +198,9 @@ type Server struct {
 	bootstrap     BootstrapService
 	passwordReset *PasswordResetService
 	idgen         IDGenerator
-	// WhatsApp tenant gateway base + private bridge bearer. The proxy injects the
-	// authenticated principal as X-Tenant-ID. Either empty value leaves routes at 503.
-	whatsappBridgeURL   string
-	whatsappBridgeToken string
+	// WhatsApp tenant gateway client. The proxy injects the authenticated principal as
+	// X-Tenant-ID; an unconfigured client leaves the routes at 503.
+	whatsappBridge whatsappbridge.Client
 	// calendarMCPURL/calendarMCPAuth wire the sidecar's OAuth-protected /admin REST API.
 	// The access token is resolved from the authenticated identity's existing MCP grant.
 	// calendarPublicURL is AURA_WEB_PUBLIC_URL: when set it pins where Google's answer

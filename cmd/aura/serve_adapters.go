@@ -32,19 +32,29 @@ import (
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
+	"github.com/chetto1983/aura/internal/whatsappbridge"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// newTaskTool builds the non-deferred `task` tool, injecting the live store only when
-// one is present. A nil ts leaves TaskTool.Store as a genuine nil interface (not an
-// interface wrapping a nil pointer), so the pool-free manifest path lists the tool's
-// Spec without a half-wired store that would panic on a nil-pointer method call.
-func newTaskTool(ts *cronTaskStore) *tools.TaskTool {
+// newTaskTool builds the deferred `task` tool, injecting the live store and the
+// scheduler notifier only when a store is present. A nil ts leaves TaskTool.Store as a
+// genuine nil interface (not an interface wrapping a nil pointer), so the pool-free
+// manifest path lists the tool's Spec without a half-wired store that would panic on a
+// nil-pointer method call.
+func newTaskTool(ts *cronTaskStore, notifier cron.Notifier) *tools.TaskTool {
 	t := &tools.TaskTool{AlertThreshold: scoring.Risky}
 	if ts != nil {
 		t.Store = ts
+		t.Destinations = notifier
 	}
 	return t
+}
+
+// newSchedulerNotifier is the notifier the scheduler delivers through and the `task`
+// tool checks a route against before persisting: MCP self-sends resolved on reg, and
+// WhatsApp addressed by default to the account each identity paired through the bridge.
+func newSchedulerNotifier(cfg *config.Config, reg *tools.Registry) cron.Notifier {
+	return cron.NewNotifier(newSelfSendResolver(reg), whatsappbridge.New(cfg.WhatsAppBridgeURL, cfg.WhatsAppBridgeToken))
 }
 
 // --- SelfSendResolver adapter (Notifier MCP self-send, D-19) ---

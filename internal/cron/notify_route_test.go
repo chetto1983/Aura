@@ -46,7 +46,7 @@ func TestOriginPreferringSplitsRouteIntent(t *testing.T) {
 func TestSendViaMCPRefusesTelegram(t *testing.T) {
 	t.Parallel()
 	n := &compositeNotifier{}
-	err := n.sendViaMCP(t.Context(), RouteTelegram, "someone", "text")
+	err := n.sendViaMCP(t.Context(), RouteTelegram, "text")
 	if err == nil {
 		t.Fatal("sendViaMCP(telegram) = nil, want an undelivered error")
 	}

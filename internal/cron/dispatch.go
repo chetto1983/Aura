@@ -189,7 +189,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 	if !ok {
 		err := fmt.Errorf("no handler for kind %q", task.Kind)
 		d.complete(ctx, task, c.RunID, "failed", "", err)
-		d.notify(ctx, task, c.RunID, "", err)
+		_ = d.notify(ctx, task, c.RunID, "", err)
 		return err
 	}
 
@@ -197,7 +197,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 	if maxDuration <= 0 {
 		err := fmt.Errorf("handler for kind %q has invalid max duration %s", task.Kind, maxDuration)
 		d.complete(ctx, task, c.RunID, "failed", "", err)
-		d.notify(ctx, task, c.RunID, "", err)
+		_ = d.notify(ctx, task, c.RunID, "", err)
 		return err
 	}
 	runCtx, cancel := context.WithTimeout(ctx, maxDuration)
@@ -210,8 +210,8 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 		status = "failed"
 	}
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
-	d.notify(ctx, task, c.RunID, summary, runErr)
-	d.recordToOrigin(ctx, task, summary, runErr)
+	undelivered := d.notify(ctx, task, c.RunID, summary, runErr)
+	d.recordToOrigin(ctx, task, summary, runErr, undelivered)
 	return runErr
 }
 
@@ -222,24 +222,7 @@ func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (co
 	if claim == nil {
 		return nil, errors.New("cron dispatch: nil claim")
 	}
-	identityID := task.IdentityID
-	// System scheduler rows may carry the "local" sentinel rather than a UUID (the column
-	// is text with DEFAULT 'local', and the boot seeders create their sweeps with no
-	// identity at all). The effect still retains task.IdentityID for delivery, while
-	// registry ownership maps that non-tenant sentinel to a durable owner. A valid tenant
-	// UUID is preserved exactly.
-	//
-	// That owner is the SERVICE identity, not the local seed. This is the same defect
-	// idempotency_http.go already fixed for the public mutations, in the same registry:
-	// idempotency_operations.identity_id is FK'd to aura.identities ON DELETE CASCADE, and
-	// serve_auth.go DELETES the local seed the moment an operator enrolls. Every boot after
-	// that re-seeds the system sweeps with the sentinel again, so this fallback wrote a
-	// foreign key to a row that no longer existed and the dispatch failed — for the
-	// scheduler's own system tasks, on every tick, forever. The service identity survives
-	// (migration 0049 seeds it kind=service) and carries no user capabilities.
-	if _, err := uuid.Parse(identityID); err != nil {
-		identityID = identityctx.CLIServiceIdentity
-	}
+	identityID := operationIdentity(task.IdentityID)
 	fingerprint, err := idempotency.FingerprintTyped(struct {
 		TaskID  string   `json:"task_id"`
 		RunID   string   `json:"run_id"`
@@ -264,6 +247,28 @@ func scheduledOperationContext(ctx context.Context, task Task, claim *Claim) (co
 		return nil, fmt.Errorf("cron dispatch operation: %w", err)
 	}
 	return operationCtx, nil
+}
+
+// operationIdentity is the identity a scheduled effect runs as, for the run and for every
+// retry of its notification. System scheduler rows may carry the "local" sentinel rather
+// than a UUID (the column is text with DEFAULT 'local', and the boot seeders create their
+// sweeps with no identity at all). The effect still retains task.IdentityID for delivery,
+// while registry ownership maps that non-tenant sentinel to a durable owner. A valid
+// tenant UUID is preserved exactly.
+//
+// That owner is the SERVICE identity, not the local seed. This is the same defect
+// idempotency_http.go already fixed for the public mutations, in the same registry:
+// idempotency_operations.identity_id is FK'd to aura.identities ON DELETE CASCADE, and
+// serve_auth.go DELETES the local seed the moment an operator enrolls. Every boot after
+// that re-seeds the system sweeps with the sentinel again, so this fallback wrote a
+// foreign key to a row that no longer existed and the dispatch failed — for the
+// scheduler's own system tasks, on every tick, forever. The service identity survives
+// (migration 0049 seeds it kind=service) and carries no user capabilities.
+func operationIdentity(identityID string) string {
+	if _, err := uuid.Parse(identityID); err != nil {
+		return identityctx.CLIServiceIdentity
+	}
+	return identityID
 }
 
 // completeRunTimeout bounds the terminal run-state write on the detached ctx (M-h): a
@@ -305,23 +310,24 @@ func (d *Dispatch) complete(ctx context.Context, task Task, runID, status, summa
 // RISKY/DESTRUCTIVE task rides the same route as an immediate alert (D-27). A
 // non-destructive, non-immediate notification inside quiet hours is deferred —
 // skipped this tick (D-23); a reminder still fires (its delivery IS the task, not an
-// advisory notification).
-func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string, runErr error) {
+// advisory notification). It returns the error of a push that failed now and was queued
+// for the bounded retry, and nil when the push was delivered, deferred or not wanted.
+func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string, runErr error) error {
 	if task.NotifyRoute == string(RouteNone) {
-		return
+		return nil
 	}
 	if d.deps.Notifier == nil {
-		return
+		return nil
 	}
 	// A transition-aware system probe returns an empty healthy summary so routine
 	// success stays on metrics/the run ledger only. It may also return a typed error
 	// for an outage already reported; keep the run failed without paging every tick.
 	if runErr == nil && strings.TrimSpace(summary) == "" {
-		return
+		return nil
 	}
 	var suppressor interface{ SuppressSchedulerNotification() bool }
 	if runErr != nil && errors.As(runErr, &suppressor) && suppressor.SuppressSchedulerNotification() {
-		return
+		return nil
 	}
 	tier := d.taskTier(task)
 	text := summary
@@ -339,21 +345,23 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 			slog.Warn("persist deferred scheduler notification", "task", task.ID, "run", runID, "err", err)
 		}
 		slog.Info("notification deferred to quiet-hours window end", "task", task.ID)
-		return
+		return nil
 	}
 	// Prefer the origin channel (R4/R7): a reminder set in a Telegram DM lands back
 	// in that DM. deliverToOrigin returns true when delivery is the channel's concern
 	// (delivered, or owns-but-failed-and-queued) — only fall through to the per-task
 	// route when the explicit route is not a channel projection.
-	if d.deliverToOrigin(ctx, task, runID, text) {
-		return
+	if handled, undelivered := d.deliverToOrigin(ctx, task, runID, text); handled {
+		return undelivered
 	}
-	if err := d.deps.Notifier.Notify(ctx, NotifyRoute(task.NotifyRoute), "", text); err != nil {
+	err := d.deps.Notifier.Notify(ctx, NotifyRoute(task.NotifyRoute), text)
+	if err != nil {
 		slog.Warn("dispatch notify undelivered (bound-retry on a later tick)", "task", task.ID, "err", err)
 		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", 0, err.Error()); perr != nil {
 			slog.Warn("persist failed scheduler notification", "task", task.ID, "run", runID, "err", perr)
 		}
 	}
+	return err
 }
 
 // deferred reports whether a non-destructive notification should defer for this task
@@ -371,9 +379,12 @@ func (d *Dispatch) deferred(task Task) bool {
 // live measurement that prompted this had the push succeed while the asking
 // conversation learned nothing.
 //
+// A push that failed is said so beside the outcome. Measured 2026-10-05: a WhatsApp
+// reminder that reached nobody appeared here as plain text, which read as delivered.
+//
 // Best-effort. The work already happened and is already on the run ledger, so a
 // failed write is a WARN and never a run failure.
-func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr error) {
+func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string, runErr, undelivered error) {
 	if task.NotifyRoute == string(RouteNone) || d.deps.ConversationRecorder == nil || task.OriginConversationID == "" {
 		return
 	}
@@ -383,6 +394,9 @@ func (d *Dispatch) recordToOrigin(ctx context.Context, task Task, summary string
 	}
 	if text == "" {
 		return
+	}
+	if undelivered != nil {
+		text += fmt.Sprintf("\n\nNot delivered via %s: %v", task.NotifyRoute, undelivered)
 	}
 	if err := d.deps.ConversationRecorder.AppendAssistantTurn(ctx, task.OriginConversationID, text); err != nil {
 		slog.Warn("cron: could not record the run outcome in its origin conversation",
@@ -452,11 +466,15 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 		return err
 	}
 	for _, n := range rows {
+		// The retry runs as the row's owner, as the first attempt did: the tick's own
+		// context carries no identity, and every MCP self-send refuses a call without one
+		// (measured 2026-10-05, all three WhatsApp retries).
+		rowCtx := identityctx.WithIdentityID(ctx, operationIdentity(n.IdentityID))
 		// Prefer the origin channel keyed on the ROW's identity snapshot (R6/Step 2):
 		// a quiet-hours-deferred / failed notification routes back to the channel it
 		// came from after the sweep, not the default route. The gate is the SAME one
 		// the live-task path uses (deliver.go originGate).
-		switch d.deliverSweptRow(ctx, n) {
+		switch d.deliverSweptRow(rowCtx, n) {
 		case sweepDelivered:
 			d.markSweptDelivered(ctx, n.ID)
 			continue
@@ -468,7 +486,7 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 		case sweepFallback:
 			// The explicit route is not a conversation projection; use its notifier.
 		}
-		if err := d.deps.Notifier.Notify(ctx, NotifyRoute(n.NotifyRoute), "", n.Body); err != nil {
+		if err := d.deps.Notifier.Notify(rowCtx, NotifyRoute(n.NotifyRoute), n.Body); err != nil {
 			d.markSweptFailed(ctx, n.ID, err.Error())
 			continue
 		}

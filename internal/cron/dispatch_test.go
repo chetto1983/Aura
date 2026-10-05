@@ -128,12 +128,13 @@ func (s *fakeNotificationStore) MarkNotificationFailed(_ context.Context, id, la
 	return nil
 }
 
-// captureNotifier records every delivery.
+// captureNotifier records every delivery and the identity it ran as.
 type captureNotifier struct {
-	routes []NotifyRoute
-	texts  []string
-	err    error
-	errs   []error
+	routes     []NotifyRoute
+	texts      []string
+	identities []string
+	err        error
+	errs       []error
 }
 
 type suppressedNotificationError struct{}
@@ -141,15 +142,20 @@ type suppressedNotificationError struct{}
 func (suppressedNotificationError) Error() string                       { return "still unhealthy" }
 func (suppressedNotificationError) SuppressSchedulerNotification() bool { return true }
 
-func (n *captureNotifier) Notify(_ context.Context, route NotifyRoute, _ string, text string) error {
+func (n *captureNotifier) Notify(ctx context.Context, route NotifyRoute, text string) error {
 	n.routes = append(n.routes, route)
 	n.texts = append(n.texts, text)
+	n.identities = append(n.identities, identityctx.IdentityID(ctx))
 	if len(n.errs) > 0 {
 		err := n.errs[0]
 		n.errs = n.errs[1:]
 		return err
 	}
 	return n.err
+}
+
+func (n *captureNotifier) Destination(context.Context, NotifyRoute) (string, error) {
+	return "", nil
 }
 
 func newDispatchFor(t *testing.T, h Handler, kind TaskKind, deps DispatchDeps) (*Dispatch, *Claim) {
@@ -435,6 +441,30 @@ func TestDispatchSweepNotificationsUsesRetryAttemptEnv(t *testing.T) {
 	}
 	if store.sweepAttemptBound != 5 {
 		t.Fatalf("sweep attempt bound = %d, want env override 5", store.sweepAttemptBound)
+	}
+}
+
+// TestDispatchSweepNotificationsSendAsTheRowOwner pins the retry defect measured on the
+// lab VM on 2026-10-05: the sweep sent with the tick's context, which carries no
+// identity, so every MCP self-send refused all three WhatsApp retries with "remote MCP
+// call requires an authenticated identity". A retry runs as the row's owner, mapped the
+// way the first attempt was (a non-tenant sentinel becomes the service identity).
+func TestDispatchSweepNotificationsSendAsTheRowOwner(t *testing.T) {
+	t.Parallel()
+	const tenant = "448ddbe1-96ea-405d-8219-4a3d52a425c0"
+	store := &fakeNotificationStore{sweepRows: []PendingNotification{
+		{ID: "n1", IdentityID: tenant, NotifyRoute: "whatsapp", Body: "drink water"},
+		{ID: "n2", IdentityID: "local", NotifyRoute: "email", Body: "system digest"},
+	}}
+	notif := &captureNotifier{}
+	d := NewDispatch(nil, DispatchDeps{Store: store, Notifier: notif})
+
+	if err := d.sweepNotifications(context.Background()); err != nil {
+		t.Fatalf("sweepNotifications: %v", err)
+	}
+	want := []string{tenant, identityctx.CLIServiceIdentity}
+	if !slices.Equal(notif.identities, want) {
+		t.Fatalf("retries ran as %q, want %q", notif.identities, want)
 	}
 }
 

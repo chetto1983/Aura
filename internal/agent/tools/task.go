@@ -26,17 +26,27 @@ import (
 // root enum 400s DeepSeek, which is OpenAI-compat) — per-action requirements live
 // in the field `description` strings.
 //
-// The live cron store is injected at registration (10-05) via the consumer-declared
-// taskStore seam below, so this package never imports internal/cron concretely.
+// The live cron store and the scheduler notifier are injected at registration (10-05)
+// through the consumer-declared taskStore and taskDestinations seams below.
 type TaskTool struct {
 	Store taskStore
 	// AlertThreshold is the risk tier at/above which a scheduled task fires an
 	// immediate alert (config owns AURA_RISK_ALERT_THRESHOLD; scoring takes it as
 	// an argument, never reads env). Empty defaults to Risky.
 	AlertThreshold scoring.RiskTier
+	// Destinations resolves, before a task is persisted, the recipient an external notify
+	// route would reach for the caller (the live scheduler Notifier). Nil skips the check,
+	// as on the pool-free manifest path.
+	Destinations taskDestinations
 
 	routerOnce sync.Once
 	router     *ActionRouter
+}
+
+// taskDestinations is the consumer-declared seam over the scheduler notifier's
+// schedule-time check; cron.Notifier satisfies it.
+type taskDestinations interface {
+	Destination(ctx context.Context, route cron.NotifyRoute) (string, error)
 }
 
 // ScheduledTask is the tool-local projection of a scheduler row the task tool
@@ -78,8 +88,7 @@ type CreateTaskInput struct {
 
 // taskStore is the consumer-declared seam the task tool dispatches against
 // (golang-structs-interfaces: the consumer owns the interface). The live
-// internal/cron store satisfies it through a thin adapter wired at registration
-// (10-05), keeping internal/agent/tools free of an internal/cron import.
+// internal/cron store satisfies it through a thin adapter wired at registration (10-05).
 type taskStore interface {
 	CreateScheduledTask(ctx context.Context, in CreateTaskInput) (ScheduledTask, error)
 	ListScheduledTasks(ctx context.Context) ([]ScheduledTask, error)
@@ -223,6 +232,14 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	if !cron.ValidNotifyRoute(a.Notify) {
 		return ToolResult{}, fmt.Errorf("task schedule: notify %q is not a delivery route (want none|whatsapp|email|stdout|telegram)", a.Notify)
 	}
+	// Measured 2026-10-05: a whatsapp reminder with no recipient was accepted here, fired
+	// and reached nobody, while the model promised it "on your work number". A route that
+	// cannot deliver is refused now, and an accepted one names whom it reaches.
+	recipient, err := t.destination(ctx, a.Notify)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("task schedule: notify=%s cannot deliver: %w. No task was created: tell the operator why, or ask which other notify route to use", a.Notify, err)
+	}
+	delivery := deliveryNote(a.Notify, recipient)
 
 	status := "active"
 	if scoring.GateRecommended(tier) {
@@ -270,15 +287,34 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	// turn (amendment #51 / D-40), so the tool cannot pause directly.
 	if status == "pending_approval" {
 		immediate := scoring.RequiresImmediateAlert(tier, t.alertThreshold())
-		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), immediate), nil
+		return scheduledApprovalRequiredResult(created.ID, a.Kind, spec.summary(), string(tier), delivery, immediate), nil
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=active)", created.ID, a.Kind, spec.summary(), tier)
 	if !next.IsZero() {
 		fmt.Fprintf(&b, "\nNext run at %s.", next.UTC().Format(time.RFC3339))
 	}
+	if delivery != "" {
+		b.WriteString("\n" + delivery)
+	}
 	s := b.String()
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
+}
+
+func (t *TaskTool) destination(ctx context.Context, route string) (string, error) {
+	if t.Destinations == nil {
+		return "", nil
+	}
+	return t.Destinations.Destination(ctx, cron.NotifyRoute(route))
+}
+
+// deliveryNote names the recipient an external route reaches, "" for a route that
+// addresses no one.
+func deliveryNote(route, recipient string) string {
+	if recipient == "" {
+		return ""
+	}
+	return fmt.Sprintf("Delivers via %s to %s.", route, recipient)
 }
 
 func taskNotifyChoiceRequiredResult() ToolResult {
@@ -313,7 +349,7 @@ func taskNotifyChoiceRequiredResult() ToolResult {
 // resume hook decodes; on accept the hook flips the task to active. The task_id +
 // authenticated origin conversation are the authorization (the hook owner-scopes the
 // UPDATE), so no question-match challenge is needed here.
-func scheduledApprovalRequiredResult(taskID, kind, summary, tier string, immediate bool) ToolResult {
+func scheduledApprovalRequiredResult(taskID, kind, summary, tier, delivery string, immediate bool) ToolResult {
 	// The human-facing question masks the UUID to its first 8 chars (kind + summary already
 	// identify the task) so the Sì/No prompt reads friendly instead of dumping a 36-char id;
 	// the full task_id stays in the machine-facing resume_context below (the resume hook keys
@@ -330,6 +366,9 @@ func scheduledApprovalRequiredResult(taskID, kind, summary, tier string, immedia
 	}
 	if immediate {
 		payload["immediate_alert"] = "true"
+	}
+	if delivery != "" {
+		payload["delivery"] = delivery
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {

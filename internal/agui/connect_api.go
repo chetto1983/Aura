@@ -2,22 +2,23 @@ package agui
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
-	"time"
 
 	"rsc.io/qr"
+
+	"github.com/chetto1983/aura/internal/whatsappbridge"
 )
 
 // connect_api.go is the cockpit "Connect" device-linking proxy (operator directive
 // 2026-06-21: "can't setup whatsapp"). It is the thin REST adapter the Governance MCP
 // detail's WhatsApp "Link device" section drives, forwarding to the aura-whatsapp bridge
-// management REST (chetto1983/whatsapp-mcp, host 8094 → container :8081). It mirrors
-// image_proxy.go's outbound-HTTP shape (bounded http.Client, strict response headers,
-// SanitizeString on every wire error) and governance_write_api.go's nil-check-503 +
-// JSON-passthrough posture.
+// management REST (chetto1983/whatsapp-mcp, host 8094 → container :8081) through the
+// bounded client in internal/whatsappbridge, which the scheduler shares. It mirrors
+// image_proxy.go's strict response headers and SanitizeString on every wire error, and
+// governance_write_api.go's nil-check-503 + JSON-passthrough posture.
 //
 // The three routes are operator WRITE-class actions (a logout drops the paired session, a
 // QR scan links a device), so the parent-mux mount (serve_webui.go) is behind
@@ -27,20 +28,10 @@ import (
 // gateway selects that tenant's isolated WhatsMeow runtime and store. Missing
 // configuration answers 503; bridge host/credentials never leak in an error response.
 
-// connectClientTimeout bounds one bridge round-trip. The bridge management REST is local
-// (a sibling container) and answers status/qr/logout in well under a second; 8s is generous
-// headroom while bounding a hung sidecar before it stalls the cockpit poll.
-const connectClientTimeout = 8 * time.Second
-
-// connectClient is the bounded outbound client for every bridge forward. A single shared
-// client reuses connections to the sibling sidecar across the 4s status poll.
-var connectClient = &http.Client{Timeout: connectClientTimeout}
-
 // SetWhatsAppBridge wires the WhatsApp management endpoint and its private bridge
 // bearer. This credential never authenticates the MCP resource server.
 func (s *Server) SetWhatsAppBridge(url, token string) {
-	s.whatsappBridgeURL = strings.TrimRight(strings.TrimSpace(url), "/")
-	s.whatsappBridgeToken = strings.TrimSpace(token)
+	s.whatsappBridge = whatsappbridge.New(url, token)
 }
 
 // registerConnectRoutes mounts the three WhatsApp connect routes on the supplied mux using
@@ -143,28 +134,20 @@ func (s *Server) forwardBridgeJSON(w http.ResponseWriter, r *http.Request, metho
 	_, _ = w.Write(body)
 }
 
-// dialBridge requires the endpoint + bridge bearer, resolves the authenticated
-// principal, and forwards both the bearer and X-Tenant-ID. The gateway never
-// accepts a caller-supplied tenant selector.
+// dialBridge resolves the authenticated principal and sends it as X-Tenant-ID through the
+// bridge client, which adds the private bearer. The gateway never accepts a
+// caller-supplied tenant selector.
 func (s *Server) dialBridge(w http.ResponseWriter, r *http.Request, method, path string) (*http.Response, bool) {
-	if s.whatsappBridgeURL == "" || s.whatsappBridgeToken == "" {
-		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "whatsapp connect not configured"})
-		return nil, false
-	}
 	identityID, ok := principalIdentityID(r)
 	if !ok {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		return nil, false
 	}
-	req, err := http.NewRequestWithContext(r.Context(), method, s.whatsappBridgeURL+path, nil)
-	if err != nil {
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": "whatsapp bridge request failed"})
+	resp, err := s.whatsappBridge.Do(r.Context(), method, path, identityID)
+	if errors.Is(err, whatsappbridge.ErrNotConfigured) {
+		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "whatsapp connect not configured"})
 		return nil, false
 	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+s.whatsappBridgeToken)
-	req.Header.Set("X-Tenant-ID", identityID)
-	resp, err := connectClient.Do(req)
 	if err != nil {
 		// The error embeds the bridge host/URL — SanitizeString collapses any DSN/userinfo/
 		// token; the generic message keeps it diagnosable without leaking the sidecar host.

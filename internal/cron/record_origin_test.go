@@ -111,6 +111,59 @@ func TestHousekeepingSweepsDoNotLandInAConversation(t *testing.T) {
 	}
 }
 
+// TestUndeliveredPushIsSaidInTheOriginConversation pins the defect measured on the lab
+// VM on 2026-10-05: a WhatsApp reminder whose send was refused still appeared in the
+// cockpit conversation as plain text, which read as delivered while nothing had arrived.
+// The failure may come from the route's notifier or from the origin channel itself.
+func TestUndeliveredPushIsSaidInTheOriginConversation(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		route   string
+		deps    DispatchDeps
+		wantTxt string
+	}{
+		{
+			name:    "notifier refuses",
+			route:   "whatsapp",
+			deps:    DispatchDeps{Notifier: &captureNotifier{err: errors.New("Recipient must be provided")}},
+			wantTxt: "drink water\n\nNot delivered via whatsapp: Recipient must be provided",
+		},
+		{
+			name:  "origin channel fails",
+			route: "stdout",
+			deps: DispatchDeps{Notifier: &captureNotifier{}, ChannelDeliverer: &scriptedDeliverer{byIdentity: map[string]struct {
+				delivered bool
+				err       error
+			}{"id-1": {err: errors.New("telegram down")}}}},
+			wantTxt: "drink water\n\nNot delivered via stdout: telegram down",
+		},
+		{
+			name:    "delivered",
+			route:   "whatsapp",
+			deps:    DispatchDeps{Notifier: &captureNotifier{}},
+			wantTxt: "drink water",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := &fakeConversationRecorder{}
+			deps := tc.deps
+			deps.Store = &fakeNotificationStore{}
+			deps.ConversationRecorder = recorder
+			d := NewDispatch(map[TaskKind]Handler{KindReminder: &fakeHandler{summary: "drink water"}}, deps)
+
+			task := Task{ID: "task-1", Kind: KindReminder, NotifyRoute: tc.route, IdentityID: "id-1", OriginConversationID: "conv-1"}
+			if err := d.Dispatch(context.Background(), task, &Claim{RunID: "run-1"}); err != nil {
+				t.Fatalf("an undelivered push must not fail the run: %v", err)
+			}
+			if len(recorder.appended) != 1 || recorder.appended[0].text != tc.wantTxt {
+				t.Fatalf("origin conversation got %+v, want one turn %q", recorder.appended, tc.wantTxt)
+			}
+		})
+	}
+}
+
 // TestOriginRecordingFailureDoesNotFailTheRun holds the recorder to the same
 // contract the ledger has: the work already happened, so a failure to write the
 // operator-facing copy is a WARN, never a run failure.
