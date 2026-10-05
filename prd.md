@@ -2351,6 +2351,26 @@ This does not establish:
 - the same on the live appliance, which the next VM probe must show;
 - behaviour for a fired one-shot whose run never ended, which waits for orphan recovery.
 
+A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
+appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
+promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
+loaded the scheduler. It loaded the WhatsApp tools and searched the contacts for the operator's
+name, then sent the text at once with `send_message` to a contact it picked. The `task` summary,
+the only text the model sees of a deferred tool and the only text its search ranks, offered
+"reminders ... later" but never said a reminder is delivered on WhatsApp, Telegram or email. The
+WhatsApp tool's summary matched every word of the request. Measured on the search: for five
+reminders that name a channel, `send_message` outranked `task` four times. The summary now
+says a reminder or message is sent to the operator later on WhatsApp, Telegram or email, and
+`task` ranks first for all five. The description adds that such a reminder is a task with
+`notify` set to that channel, never sent now with a messaging tool, and never addressed by
+looking up the operator's contact.
+
+This does not establish:
+- what the model chooses: the search ranking is lexical, and the model chose from the roster
+  without searching. The VM probe must repeat the request;
+- whether the WhatsApp server's own description, which does not say it sends immediately, also
+  needs changing.
+
 ## 16. Observability and operator experience
 
 Expose structured logs, traces, metrics, health and readiness. Process health does not
