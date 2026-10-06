@@ -627,11 +627,18 @@ services:
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
   arcadedb:
-    # Stable 26.9.1, pinned BY the multi-arch index DIGEST as well as the tag, so a
+    # Stable 26.10.1, pinned BY the multi-arch index DIGEST as well as the tag, so a
     # re-pushed tag cannot change the running engine between two `up` runs with no
     # commit to show for it.
     #
-    # Why 26.9.1 is the floor: internal/arcadedb/document_retrieval.go
+    # Why 26.10.1: it patches four advisories that reach 26.9.1, among them the critical
+    # GHSA-h2j4-28h8-cj5v (Gremlin scripting with no authorization check, remote code
+    # execution by ANY authenticated user). Every identity here authenticates as its own
+    # scoped user, so on 26.9.1 one tenant's credential was a path to the whole server.
+    # It also stops a `vector.neighbors` filter that matches nothing from silently
+    # searching without the filter (#8959).
+    #
+    # Why 26.9.1 was the floor before it: internal/arcadedb/document_retrieval.go
     # passes `groupBy` to vector.fuse, and before 26.9.1 a grouped vector search read
     # the HNSW graph ONLY — skipping the in-memory delta buffer that holds everything
     # written since the last rebuild. Freshly ingested passages were therefore
@@ -640,7 +647,7 @@ services:
     # §"Searching Vectors Not Yet in the Graph"). Ungrouped searches — which is what
     # memory recall in memory_vector.go issues — always scored the delta buffer and
     # were never affected.
-    image: arcadedata/arcadedb:26.9.1@sha256:02a1a74fcef3c9d91e680262ddb7fde05ff9cfb356b366e7faf8e41d80995a70
+    image: arcadedata/arcadedb:26.10.1@sha256:01506549bcb4a6d16af678ee43718850eba605430a3720a6b0398cb0470c710d
     container_name: aura-arcadedb
     restart: unless-stopped
     mem_limit: 3g
