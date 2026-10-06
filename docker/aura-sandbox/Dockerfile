@@ -160,18 +160,20 @@ COPY internal/skills/embed/web-artifacts-builder /opt/aura-skills/web-artifacts-
 
 # agent-browser — the measured authenticated browser (prd.md §12). The native daemon needs no
 # Node; it drives the Playwright Chromium above. Both the npm tarball and the extracted binary are
-# sha256-pinned (0.38.1, resolved 2026-09-26 against registry dist.integrity sha512-k58FCz0y…).
+# sha256-pinned (0.38.2, resolved 2026-10-06 against registry dist.integrity sha512-b/7hvo2R…).
+# 0.38.2 drains Chrome's stderr for the browser's lifetime: 0.38.1 stopped reading it after launch,
+# and Chrome freezes once its log fills the 64 KiB pipe (upstream #2003; prd.md §12).
 # /usr/local/bin/agent-browser is Aura's entry point, which supplies the per-identity state key,
 # the workspace-volume HOME and the short autosave the box lifecycle needs.
 ARG TARGETARCH
 RUN set -eu; \
     case "${TARGETARCH:-amd64}" in \
-        amd64) bin=agent-browser-linux-x64;   bin_sha=5100149a1903211c889de4e545bf36d90803740cea4f99aa22651649f9205ea1 ;; \
-        arm64) bin=agent-browser-linux-arm64; bin_sha=937b315ee0761e8a62f7950ddcfef9b3d3d8e8d5eb9c9d2bf9e23e5725664511 ;; \
+        amd64) bin=agent-browser-linux-x64;   bin_sha=a54b765192db774666f0513fa8b545a298753b6f29e73bcdf4a1e78f18e7c0e1 ;; \
+        arm64) bin=agent-browser-linux-arm64; bin_sha=690c02d952de8497bba4f8cc58b59acbf27dc27b346755869b518f4b411c7f40 ;; \
         *) echo "agent-browser: unsupported arch ${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    curl -fsSL -o /tmp/agent-browser.tgz https://registry.npmjs.org/agent-browser/-/agent-browser-0.38.1.tgz; \
-    echo "89a7df4761ff335e4dd5367e4cf04cecb9ba4e2cc130a0220f798d188414dc6c  /tmp/agent-browser.tgz" | sha256sum -c -; \
+    curl -fsSL -o /tmp/agent-browser.tgz https://registry.npmjs.org/agent-browser/-/agent-browser-0.38.2.tgz; \
+    echo "2bb1d6e4660b2a109c912c8bb552f727125dbcd681c6d1eefc1af573b4546c49  /tmp/agent-browser.tgz" | sha256sum -c -; \
     tar -xzf /tmp/agent-browser.tgz -C /tmp "package/bin/${bin}" package/LICENSE; \
     echo "${bin_sha}  /tmp/package/bin/${bin}" | sha256sum -c -; \
     install -D -m 0755 "/tmp/package/bin/${bin}" /usr/local/lib/agent-browser/agent-browser; \
