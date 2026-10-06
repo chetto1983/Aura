@@ -971,6 +971,26 @@ is not the graph's entity total. Conversation-only retrieval must not disappear 
 a renderer only supports facts; included anchors carry role/date and are labeled as
 something said, not promoted to asserted facts.
 
+Period recall reads the projected user/assistant turns in a half-open interval
+(`from` inclusive, `to` exclusive), supplied as RFC3339 instants with the user's
+timezone offset. `memory_recall(mode:period)` orders by occurrence, conversation
+and stable sequence, and returns bounded pages with the existing opaque cursor
+transport. `scroll` continues that interval without dropping or repeating its
+boundary turn. Identity ownership, source deletion and host-derived active-chat
+exclusions apply before pagination. No reasoning or fact-validity selector enters
+this read. The agent groups related chats when composing the answer, preserving
+distinct attempts, their outcomes and source references; the store never merges
+conversations because their wording is similar.
+
+Measured 2026-10-06 on VM 192.168.101.158, ArcadeDB 26.10.1: the operator's
+2026-10-05 Europe/Berlin interval contains 48 projected turns across 9 conversations.
+The exported agent run used `recent(limit:30)` (capped at 20 anchor rows), saw 6
+conversations and omitted the morning chats. The database's native parameterized
+date range and chronological ordering return all 48. This establishes the missing
+retrieval contract, not projection completeness against PostgreSQL, automatic topic
+clustering, or WhatsApp delivery. Full-day claims require exhausting the cursor;
+projection lag remains a limit of every memory read.
+
 ## 11. Documents and media
 
 Identity-bound originals live in Garage. The ingestion supervisor resolves existing
