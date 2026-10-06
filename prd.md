@@ -1012,17 +1012,19 @@ resolver, with the admin when present and otherwise the tenant credential, which
 
 Measured on VM 192.168.101.158 after the updater rolled out `b28f34af1` at 20:19 UTC:
 ArcadeDB 26.10.1, no floor refusal, conversation projection healthy. Before the change
-the graph reached 9 of 16 tool turns. Of three reminder turns driven through the cockpit
-on `gpt-5.6-sol`, the one that finished in a single run reached both of its tools
-(`tool_search`, `task`); the one paused by `ask_user` reached only the `task` run after
-the answer, because a paused run commits no trace; the one whose second model call hit
-`stream_open_deadline` at effort `low` (120 s) committed none.
+the graph reached 9 of 16 tool turns. Four reminder turns were then driven through the
+cockpit. On Gemma 4 31B over Ollama at effort `off` the turn exposed no reasoning, and its
+trace was stored with an empty summary, one step and both of its tools (`tool_search`,
+`task`). On `gpt-5.6-sol`, whose ChatGPT backend offers no `off` effort, every completed
+turn exposed reasoning: the turn that finished in a single run reached both of its tools;
+the one paused by `ask_user` reached only the `task` run after the answer, because a
+paused run commits no trace; the one whose second model call hit `stream_open_deadline`
+at effort `low` (120 s) committed none.
 
-What this does not show: the no-reasoning path on a live turn. Every completed turn on
-this route exposed reasoning and the ChatGPT backend offers no `off` effort, so that path
-rests on the live ArcadeDB test and the unit tests. Three turns on one route are not a
-coverage rate, and tool calls made before an `ask_user` pause or in a failed run remain
-outside the graph.
+What this does not show: four turns on two routes are not a coverage rate. Tool calls
+made before an `ask_user` pause or in a failed run remain outside the graph. The backfill
+pass had not yet run on the new trace, so its one-time set-aside rests on the live
+ArcadeDB test, not on the VM.
 
 ## 11. Documents and media
 
