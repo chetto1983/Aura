@@ -630,6 +630,33 @@ The web CI gate therefore runs its existing complete browser matrix through that
 HTTPS proxy. Production authentication and the deployment Compose remain unchanged.
 This establishes the login transport, not a passing full browser suite.
 
+A sign-in through the live view stopped on OpenAI's passkey challenge
+(`auth.openai.com/mfa-challenge`): the page asked for a passkey and "Try another method"
+did not respond. Measured 2026-10-06. A passkey request opens Chrome's own WebAuthn
+dialog, which the live view's page screencast never contains, and while it is up the page
+takes no DevTools input. In headless Chromium 141 on a cloud host, a click did not reach
+the page during a pending `navigator.credentials.get` and did without one, Escape did not
+dismiss the request, and a request with an 8 s timeout was still pending after 60 s.
+Headed Chromium under Xvfb drew the dialog ("Insert your security key") on the X display,
+outside the screencast, and dropped the click the same way, so a headed or "full" browser
+does not help. No browser in the box can use the person's passkey in any case: the box has
+no platform authenticator, no USB key and no Bluetooth for the phone's hybrid transport,
+and WebAuthn binds a credential to its origin, so the cockpit cannot relay one. With the
+DevTools `WebAuthn` domain enabled and `enableUI: false` on the tab there is no dialog:
+the request ends with `NotAllowedError` at its timeout and the click arrives. The login
+helper therefore enables that domain on its tab before opening OpenAI and holds the
+DevTools connection until the login ends; losing that connection ends the login with an
+error. On the box image (Chrome for Testing 151, agent-browser 0.38.1), with a local TLS
+fixture of the challenge page served as `auth.openai.com`, a click relayed as the cockpit
+sends it produced no callback before this change and the callback 25 ms after it; the
+start-up to the loaded page stayed at about 1.1 s. `TestChatGPTLoginSurvivesPasskeyChallenge`
+repeats this in the `docker_integration` tier and fails on the previous helper. Not shown:
+OpenAI's real page reacting to the unanswered request, which the fixture only imitates; an
+account under OpenAI's Advanced Account Security, which allows only passkeys and security
+keys and so cannot sign in through any remote browser; tabs or popups opened after
+navigation, which the helper does not cover; and agent sessions opened through the MCP
+bridge, whose live views keep the freeze.
+
 ## 7. Conversations, compaction and steering
 
 Conversation writes and aggregates are atomic and owner-scoped. Branch history,
