@@ -28,10 +28,10 @@ type schemaNode struct {
 }
 
 // searchDocument flattens a tool spec into the one whitespace-joined string the
-// scorer indexes: the name (weighted), the Summary, and the argument names. Both
-// the raw Name and its underscore→space form are pushed so a query "fetch web"
-// matches a tool named web_fetch (D-02 leverage point). On a malformed Parameters
-// payload it degrades to name+Summary — never panics.
+// scorer indexes: the name (weighted), the Summary, the retrievalKeywords for that
+// name, and the argument names. Both the raw Name and its underscore→space form are
+// pushed so a query "fetch web" matches a tool named web_fetch (D-02 leverage point).
+// On a malformed Parameters payload it degrades to name+Summary+keywords — never panics.
 //
 // The long Description is deliberately NOT indexed. It is written to be read at
 // USE time, so it carries routing advice about neighbouring tools, and a retriever
@@ -41,17 +41,6 @@ type schemaNode struct {
 // document and the usage document are different documents; this is the retrieval
 // one, and Description still ships verbatim once a tool is loaded.
 func searchDocument(s Spec) string {
-	return buildSearchDocument(s, s.Summary)
-}
-
-// nameFieldWeight repeats the name field so it outweighs the schema. BM25 has no
-// notion of fields, and repetition is how a flat index expresses one: measured,
-// "list files matching a glob pattern" ranked fs_grep over fs_glob because fs_grep
-// takes `glob` and `pattern` as arguments while fs_glob merely IS the glob tool. A
-// tool named for the capability is the answer to a query naming that capability.
-const nameFieldWeight = 3
-
-func buildSearchDocument(s Spec, capability string) string {
 	var parts []string
 	push := func(p string) {
 		if p = strings.TrimSpace(p); p != "" {
@@ -62,13 +51,23 @@ func buildSearchDocument(s Spec, capability string) string {
 		push(s.Name)
 		push(strings.ReplaceAll(s.Name, "_", " "))
 	}
-	push(capability)
+	push(s.Summary)
+	for _, k := range retrievalKeywords[s.Name] {
+		push(k)
+	}
 	var node schemaNode
 	if err := json.Unmarshal(s.Parameters, &node); err == nil {
 		appendSchema(node, push)
 	}
 	return strings.Join(parts, " ")
 }
+
+// nameFieldWeight repeats the name field so it outweighs the schema. BM25 has no
+// notion of fields, and repetition is how a flat index expresses one: measured,
+// "list files matching a glob pattern" ranked fs_grep over fs_glob because fs_grep
+// takes `glob` and `pattern` as arguments while fs_glob merely IS the glob tool. A
+// tool named for the capability is the answer to a query naming that capability.
+const nameFieldWeight = 3
 
 // appendSchema recursively pushes every property NAME (D-02) — and nothing else.
 // Argument PROSE is excluded for the same reason the tool Description is: it is

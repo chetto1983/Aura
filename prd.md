@@ -357,6 +357,55 @@ What this does not show: how often a model followed the stale instruction. The
 2026-10-03 turn was answered through a bridge by the same assistant that wrote this
 change, which is not independent evidence of model behavior.
 
+Deferred-tool discovery stays lexical (in-process BM25 over name, summary and argument
+names), measured 2026-10-06. That day the stack ran `aura chat` against a synthetic
+OpenAI-compatible endpoint answered by Claude acting as the model under the real system
+prompt, roster and sandbox. Following the harness, the model loaded tools by `select:` (every
+call hit, every loaded tool was used) and reached for free text only when no roster name
+fitted. Two free-text queries failed. "Look up the current price of something online"
+loaded `current_time`. An Italian reminder request ranked nothing, and the no-match reply
+then pointed to installing a skill — its list even named "recurring workflows", which is
+`task`. Anthropic's own tool search uses the same ranker and gives the same remedy: keywords
+in the words users describe tasks with, and a system-prompt list of tool categories.
+
+So `retrievalKeywords` (`internal/agent/tools/search_keywords.go`) adds English and Italian
+task vocabulary, keyed by name and limited to tools Aura owns (built-ins and `memory__*`).
+It enters only the retrieval document. The no-match reply now sends the model to the
+`<deferred_tools>` names and `select:` before `find-skills-aura`. Scored by
+`TestMeasureRetrievalKeywords` (`-tags measure`), on the dumped corpus of 85 tools, with
+the keywords off and on:
+
+| Set | Without | With |
+|---|---|---|
+| Gate, production failures (26), top-1 | 26 | 26 |
+| Held-out, same author (24), top-1 / recall@5 | 6 / 14 | 12 / 19 |
+| Blind English (30), top-1 / recall@5 | 12 / 17 | 18 / 23 |
+| Blind Italian (30), top-1 / recall@5 | 3 / 3 | 19 / 19 |
+| Negatives (58) left with an empty ranking | 35 | 35 |
+
+The blind set (`testdata/blind_eval_2026-10-06.json`) was written by a separate agent from
+names and summaries alone, after the keywords were fixed and before they were scored.
+Negatives are a family's queries scored without that family, plus requests no tool
+serves. A score threshold that would let the ranker abstain was measured and rejected:
+no cut separates them, and 0.2 IDF-weighted coverage already drops a production gate
+query. On the stack the Italian request now loads `task` first and the reminder is
+scheduled. A request that still ranks nothing gets the new reply, and the model recovers
+through the roster with `select:skill_manage`.
+
+`scripts/tool_search_usage.sql` reads the same evidence from `aura.tool_invocations` in
+production: discovery by mode and outcome, which loaded tool the turn then used, and the
+ranked queries themselves. A turn there ends at the next `role='user'` row. An `ask_user`
+pause resumes under a new `request_id`, and scoping by `request_id` scored such searches
+as unused.
+
+What this does not show:
+- how often production models write free text at all; that is the report's first number;
+- the Italian vocabulary's reach beyond these 30 queries;
+- discovery of third-party MCP tools (`calendar`, `whatsapp`, `linear`), which get no
+  keywords and still miss paraphrases;
+- abstention: a query for an unmounted family still returns its nearest lexical neighbour.
+The blind set is spent once anyone tunes the keywords against its misses.
+
 ## 5. Approvals and durable grants
 
 Approvals are host-issued and bound to identity, operation and effective arguments.

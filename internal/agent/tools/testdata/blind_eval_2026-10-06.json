@@ -1,0 +1,490 @@
+{
+ "cases": [
+  {
+   "query": "what day is it today",
+   "lang": "en",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "get today's date and clock",
+   "lang": "en",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "che ore sono adesso",
+   "lang": "it",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "che giorno è oggi",
+   "lang": "it",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "remind me later at a specific hour",
+   "lang": "en",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "run a job every morning on a schedule",
+   "lang": "en",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "ricordami domani alle 9 di chiamare il dentista",
+   "lang": "it",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "ogni lunedì mandami un promemoria",
+   "lang": "it",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "keep a checklist of steps for this job",
+   "lang": "en",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "track progress on a multi-step plan",
+   "lang": "en",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "fammi una lista delle cose da fare per il trasloco",
+   "lang": "it",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "segna i passaggi e spunta quelli completati",
+   "lang": "it",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "look up recent news online",
+   "lang": "en",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "find information on the internet",
+   "lang": "en",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "cerca su internet le ultime notizie sullo sciopero dei treni",
+   "lang": "it",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "trovami online recensioni di questo ristorante",
+   "lang": "it",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "read the contents of this url",
+   "lang": "en",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "download a page and convert to text",
+   "lang": "en",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "leggi questo link e riassumimi l'articolo",
+   "lang": "it",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "apri questa pagina e dimmi cosa c'è scritto",
+   "lang": "it",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "delegate several unrelated jobs to parallel helpers",
+   "lang": "en",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "split work across multiple sub-agents at once",
+   "lang": "en",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "fai queste tre cose contemporaneamente",
+   "lang": "it",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "dividi il lavoro tra più assistenti in parallelo",
+   "lang": "it",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "install or remove a capability from the shared library",
+   "lang": "en",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "edit an existing skill definition",
+   "lang": "en",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "aggiungi una nuova abilità all'assistente",
+   "lang": "it",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "elimina una competenza che non serve più",
+   "lang": "it",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "inspect a bundle of skills and connectors together",
+   "lang": "en",
+   "gold": [
+    "plugin_pack"
+   ]
+  },
+  {
+   "query": "load an extension package with its commands",
+   "lang": "en",
+   "gold": [
+    "plugin_pack"
+   ]
+  },
+  {
+   "query": "mostrami cosa contiene questo pacchetto di estensioni",
+   "lang": "it",
+   "gold": [
+    "plugin_pack"
+   ]
+  },
+  {
+   "query": "quali comandi e connettori include questo plugin",
+   "lang": "it",
+   "gold": [
+    "plugin_pack"
+   ]
+  },
+  {
+   "query": "check output of a command running in background",
+   "lang": "en",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "see what a long-running process printed so far",
+   "lang": "en",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "fammi vedere a che punto è il comando che hai lanciato",
+   "lang": "it",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "leggi l'output del processo in esecuzione",
+   "lang": "it",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "stop a background process",
+   "lang": "en",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "cancel a running terminal command",
+   "lang": "en",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "ferma quel comando che sta girando",
+   "lang": "it",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "interrompi il processo in background, ci mette troppo",
+   "lang": "it",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "what do I know about this person from before",
+   "lang": "en",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "look up a stored fact about the user",
+   "lang": "en",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "ti ricordi come si chiama mia sorella?",
+   "lang": "it",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "cosa ti avevo detto del mio lavoro il mese scorso",
+   "lang": "it",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "save this information for later conversations",
+   "lang": "en",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "remember that the user changed job",
+   "lang": "en",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "ricordati che sono allergico alle noci",
+   "lang": "it",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "tieni a mente che mi sono trasferito a Torino",
+   "lang": "it",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "what meetings do I have tomorrow",
+   "lang": "en",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "send an email to my colleague",
+   "lang": "en",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "fissa un appuntamento giovedì pomeriggio in agenda",
+   "lang": "it",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "controlla la mia posta e dimmi se è arrivata la fattura",
+   "lang": "it",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "text my friend on whatsapp",
+   "lang": "en",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "send a chat message to a group",
+   "lang": "en",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "scrivi a Marco su whatsapp che arrivo tardi",
+   "lang": "it",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "manda un messaggio al gruppo della famiglia",
+   "lang": "it",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "show recent whatsapp conversations content",
+   "lang": "en",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  },
+  {
+   "query": "read the latest chat messages from a contact",
+   "lang": "en",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  },
+  {
+   "query": "cosa mi ha scritto Giulia su whatsapp?",
+   "lang": "it",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  },
+  {
+   "query": "fammi vedere gli ultimi messaggi ricevuti nella chat del calcetto",
+   "lang": "it",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  }
+ ],
+ "out_of_scope": [
+  {
+   "query": "order a pizza for delivery",
+   "lang": "en"
+  },
+  {
+   "query": "turn off the living room lights",
+   "lang": "en"
+  },
+  {
+   "query": "play some jazz music",
+   "lang": "en"
+  },
+  {
+   "query": "transfer money to my savings account",
+   "lang": "en"
+  },
+  {
+   "query": "book a taxi to the airport",
+   "lang": "en"
+  },
+  {
+   "query": "generate an image of a sunset",
+   "lang": "en"
+  },
+  {
+   "query": "set the thermostat to 21 degrees",
+   "lang": "en"
+  },
+  {
+   "query": "make a phone call to my mom",
+   "lang": "en"
+  },
+  {
+   "query": "ordina del sushi a domicilio",
+   "lang": "it"
+  },
+  {
+   "query": "accendi il riscaldamento in casa",
+   "lang": "it"
+  },
+  {
+   "query": "metti una canzone di Vasco Rossi",
+   "lang": "it"
+  },
+  {
+   "query": "paga la bolletta della luce",
+   "lang": "it"
+  },
+  {
+   "query": "prenotami un volo per Londra",
+   "lang": "it"
+  },
+  {
+   "query": "compra delle azioni Enel",
+   "lang": "it"
+  },
+  {
+   "query": "stampa questo documento sulla stampante",
+   "lang": "it"
+  },
+  {
+   "query": "chiama mio fratello al telefono",
+   "lang": "it"
+  }
+ ]
+}

@@ -105,16 +105,23 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 	"you are about to take."
 
 // noMatchOrientation is the fixed no-result reply (amendment #49, retargeted #52/D-41).
-// A failed tool_search is usually a capability gap; the find-skills-aura skill is the
-// designed path for packaged capabilities, so the model is pointed there explicitly
-// instead of being left to improvise ad-hoc code. It loads on demand (prd.md §14,
-// 2026-10-03), so the reply names the call that loads it.
+//
+// An empty ranking is NOT proof the capability is missing: a lexical ranker misses every
+// phrasing that shares no word with the tool. Measured 2026-10-06 on the live stack, an
+// Italian reminder request (TestRetrievalKeywordsRecoverLiveStackMisses) ranked nothing
+// while `task` was listed in the roster, and this reply then sent the model to install a skill — its old list even
+// named "recurring workflows", which IS task. So the roster comes first: the model reads
+// the deferred names and loads by select:. Only when none fits is it a capability gap,
+// and the find-skills-aura skill is the designed path for that, loaded on demand
+// (prd.md §14, 2026-10-03), so the reply names the call that loads it.
 //
 // This is the CAPABILITY-GAP path (no tool matched the query) — distinct from the
 // NAMING path (a select: named a tool that is not registered), which reports the bad
 // name and the closest registered ones.
 const noMatchOrientation = "no matching tools. " +
-	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
+	"Keyword matching misses phrasings that share no word with a tool, so read the tool names in <deferred_tools> first: " +
+	"if one fits, load it with tool_search 'select:<name>'. " +
+	"Only if none fits is the capability missing. If it is a packaged task family (spreadsheets, documents, file formats, integrations), " +
 	"load the find-skills-aura skill (skill action=use name=find-skills-aura): it teaches how to discover and install skills from the open ecosystem — " +
 	"installable skills ship tested instructions and bundled scripts that beat ad-hoc code."
 
