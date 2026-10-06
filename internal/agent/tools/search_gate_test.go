@@ -280,6 +280,48 @@ func TestToolSearchGate_PartialSelectLoadsAndReports(t *testing.T) {
 	}
 }
 
+// The system prompt's family labels read as names: on 2026-10-05, 4 of the 11 select:
+// calls on the lab VM carried "scheduling", and three of them cost a second search
+// before `task` loaded. A select: entry that shares no token with any registered name
+// is a capability word, so its best match loads in its place.
+func TestToolSearchGate_SelectCapabilityWordLoadsBestMatch(t *testing.T) {
+	ts, ctx := newGateSearch(t)
+	res, err := ts.Execute(ctx, []byte(`{"query":"select:whatsapp__send_message,scheduling"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	var got []string
+	if res.Meta != nil {
+		got, _ = (*res.Meta)[MetaActivatedTools].([]string)
+	}
+	if want := []string{"whatsapp__send_message", "task"}; !slices.Equal(got, want) {
+		t.Errorf("loaded %v, want %v", got, want)
+	}
+	if !strings.Contains(res.Preview, `"scheduling" is not a registered tool`) {
+		t.Errorf("reply does not say the label is not a tool: %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "## task") {
+		t.Errorf("reply does not render the stand-in's schema: %q", res.Preview)
+	}
+}
+
+// A stand-in already named in the same select: loads once.
+func TestToolSearchGate_SelectCapabilityWordDoesNotDuplicate(t *testing.T) {
+	ts, ctx := newGateSearch(t)
+	if got := gateSearch(t, ts, ctx, "select:task,scheduling,reminder"); !slices.Equal(got, []string{"task"}) {
+		t.Errorf("loaded %v, want [task] once", got)
+	}
+}
+
+// A misspelled name keeps the naming answer: it shares tokens with the tool it meant,
+// and loading a ranked guess in its place would hide the spelling error.
+func TestToolSearchGate_MisspelledSelectLoadsNothing(t *testing.T) {
+	ts, ctx := newGateSearch(t)
+	if got := gateSearch(t, ts, ctx, "select:memory__memory_upsert_fcat"); len(got) != 0 {
+		t.Errorf("misspelled name loaded %v, want nothing", got)
+	}
+}
+
 // The model routinely writes the names it already read off the tool_search
 // description as a bare phrase. Those are names, not a ranking query: resolve them
 // all, uncapped, instead of returning the top-5 of a similarity ranking.

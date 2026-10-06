@@ -170,7 +170,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		if len(unknown) > 0 {
 			// NAMING error, not a capability gap: the tools the model asked for do
 			// not exist under those names. Say which, and what does exist.
-			return NewResult(ctx, ts.unknownNameReport(unknown))
+			return NewResult(ctx, unknownNameReport(unknown))
 		}
 		// Orientation tail (amendment #49): the no-result moment IS the capability
 		// gap — route the model into the skills system instead of ad-hoc code. The
@@ -184,7 +184,7 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	// several full specs overflow the preview cap and page out to the sidecar, so a
 	// report appended after them is the part the model never reads.
 	if len(unknown) > 0 {
-		b.WriteString(ts.unknownNameReport(unknown))
+		b.WriteString(unknownNameReport(unknown))
 		b.WriteString("\n")
 	}
 	// Naming a tool and describing a capability are different questions, so they get
@@ -280,21 +280,55 @@ func RenderSpec(s Spec) string {
 // bare phrase whose every token is a registered tool name — the model reads the
 // full name list off this tool's own description, so it routinely writes the four
 // names it wants as free text and must get those four tools, not a top-5 ranking.
-// Names it got wrong come back as `unknown`, never silently dropped.
+// Names it got wrong come back as `unknown`, never silently dropped; explainUnknown
+// says what each one was taken for.
 //
 // Layer 2 is the BM25 ranking over deferred tools, capped to limit. There is no
 // layer 3, and no error: discovery is in-process, so the only two outcomes are
 // tools and an empty result, and an empty result is a capability gap.
-func (ts *ToolSearch) match(q string, limit int) (matches []Tool, unknown []string, byName bool) {
+func (ts *ToolSearch) match(q string, limit int) (matches []Tool, unknown []unknownName, byName bool) {
 	if sel, ok := strings.CutPrefix(q, "select:"); ok {
 		found, missing := ts.resolveNames(strings.Split(sel, ","))
-		return found, missing, true
+		found, unknown = ts.explainUnknown(found, missing)
+		return found, unknown, true
 	}
 	if names, ok := ts.asNameList(q); ok {
-		found, missing := ts.resolveNames(names)
-		return found, missing, true
+		found, _ := ts.resolveNames(names)
+		return found, nil, true
 	}
 	return ts.rankFreeText(q, limit), nil, false
+}
+
+// unknownName is a select: entry that names no registered tool, with what the reply
+// offers instead: the registered names it resembles, or the tool loaded in its place.
+type unknownName struct {
+	name    string
+	near    []string
+	standIn string
+}
+
+// explainUnknown decides what each unregistered select: entry was meant to be. One that
+// shares a token with a registered name is a misspelling: the reply names the closest
+// ones and loads nothing, so the spelling error stays visible. One that shares none is
+// a capability word — the system prompt's family labels read as names, and on
+// 2026-10-05 4 of the 11 select: calls on the lab VM carried "scheduling", three of
+// them paying a second search before `task` loaded. Its best ranked match loads in its
+// place; suggesting it instead would still cost that second call.
+func (ts *ToolSearch) explainUnknown(found []Tool, missing []string) ([]Tool, []unknownName) {
+	unknown := make([]unknownName, 0, len(missing))
+	for _, n := range missing {
+		u := unknownName{name: n, near: ts.nearestNames(n)}
+		if len(u.near) == 0 {
+			if best := ts.rankFreeText(n, 1); len(best) > 0 {
+				u.standIn = best[0].Spec().Name
+				if !slices.ContainsFunc(found, func(t Tool) bool { return t.Spec().Name == u.standIn }) {
+					found = append(found, best[0])
+				}
+			}
+		}
+		unknown = append(unknown, u)
+	}
+	return found, unknown
 }
 
 // asNameList reports whether every token of a free-text query is a registered tool
@@ -332,16 +366,19 @@ func (ts *ToolSearch) resolveNames(names []string) (found []Tool, unknown []stri
 	return found, unknown
 }
 
-// unknownNameReport explains that a requested name is not registered and offers the
-// registered names closest to it. A misspelled name is a naming error the model can
-// fix on the next call; routing it to the skills-install orientation instead is
-// wrong advice, and it was given in production for two tools that existed.
-func (ts *ToolSearch) unknownNameReport(unknown []string) string {
+// unknownNameReport explains that a requested name is not registered, and what was done
+// instead. A misspelled name is a naming error the model can fix on the next call;
+// routing it to the skills-install orientation instead is wrong advice, and it was given
+// in production for two tools that existed.
+func unknownNameReport(unknown []unknownName) string {
 	var b strings.Builder
-	for _, n := range unknown {
-		fmt.Fprintf(&b, "%q is not a registered tool.", n)
-		if near := ts.nearestNames(n); len(near) > 0 {
-			fmt.Fprintf(&b, " Closest registered names: %s.", strings.Join(near, ", "))
+	for _, u := range unknown {
+		fmt.Fprintf(&b, "%q is not a registered tool.", u.name)
+		switch {
+		case u.standIn != "":
+			fmt.Fprintf(&b, " Read as a capability it matches %s, loaded below.", u.standIn)
+		case len(u.near) > 0:
+			fmt.Fprintf(&b, " Closest registered names: %s.", strings.Join(u.near, ", "))
 		}
 		b.WriteString("\n")
 	}
