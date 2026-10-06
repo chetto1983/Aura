@@ -1795,6 +1795,18 @@ Google may end it for other reasons; a stale lock whose pid now belongs to anoth
 a profile's caches grow; and what `restore`, which the tool schema still offers, does on top of a
 profile.
 
+**agent-browser 0.38.2 keeps reading Chrome's stderr, measured 2026-10-06.** 0.38.1 pipes
+Chrome's stderr and stops reading it once the browser is up; upstream #2003 reports Chrome
+freezing when a log line meets the full 64 KiB pipe. In the box image under 0.38.1, that pipe held
+5.4 KB unread after launch and 8.3 KB after five navigations, mostly TLS handshake failures and
+D-Bus errors. Under 0.38.2 the same sequence left it at 0. The image now pins 0.38.2: the tarball
+matched the registry's sha512 integrity, and the tarball and both binaries are sha256-pinned. The
+image contract and the whole `docker_integration` tier pass on it. Not shown: a browser actually
+frozen by a full pipe, which no run here reached, nor whether that freeze is what an operator saw
+as an unresponsive live view. The release's other changes (auth vault controls, chat mode, Kernel,
+Browser Use) were not exercised, and its `/dev/shm` detection changes nothing here: 0.38.1 already
+passes `--disable-dev-shm-usage` to a browser running as root, as the box's does.
+
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
 resources to the same `/skills/<name>/` path used by the sandbox; a catalog entry
