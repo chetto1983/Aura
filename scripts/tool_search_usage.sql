@@ -20,9 +20,12 @@
 -- A bare name list naming only always-loaded tools activates nothing and so reads as
 -- ranked; the ranked share is therefore an upper bound.
 --
--- Follow-through is scoped to the same request_id (one user turn) and counts the
--- first later call of any loaded tool; its 1-based position in activated_tools is
--- the rank the ranker gave it.
+-- Follow-through counts the first later call of any loaded tool within the same turn,
+-- and its 1-based position in activated_tools is the rank the ranker gave it. A turn
+-- ends at the conversation's next role='user' row in aura.conversation_turns, NOT at a
+-- request_id boundary: an ask_user pause resumes under a NEW request_id (measured
+-- 2026-10-06), while the operator's answer is stored as role='tool', so scoping by
+-- request_id scored every search followed by a question as "none used".
 
 \if :{?days}
 \else
@@ -31,7 +34,7 @@
 
 CREATE TEMP VIEW tool_search_calls AS
 WITH raw AS (
-    SELECT id, conversation_id, request_id, ts, seq, status, result_preview,
+    SELECT id, conversation_id, ts, seq, status, result_preview,
            CASE WHEN pg_input_is_valid(args_raw, 'jsonb')
                 THEN btrim(args_raw::jsonb ->> 'query') END AS query,
            CASE WHEN jsonb_typeof(meta -> 'activated_tools') = 'array'
@@ -61,25 +64,32 @@ SELECT raw.*,
 FROM raw;
 
 CREATE TEMP VIEW ranked_follow_through AS
+WITH turns AS (
+    SELECT s.*,
+           coalesce((SELECT min(u.created_at) FROM aura.conversation_turns u
+                     WHERE u.conversation_id = s.conversation_id AND u.role = 'user'
+                       AND u.created_at > s.ts), 'infinity') AS turn_end
+    FROM tool_search_calls s
+    WHERE s.mode = 'ranked' AND s.outcome = 'loaded'
+)
 SELECT s.*, used.tool_name AS used_tool,
        array_position(s.loaded, used.tool_name) AS used_rank,
        EXISTS (
            SELECT 1 FROM aura.tool_invocations r
-           WHERE r.conversation_id = s.conversation_id AND r.request_id = s.request_id
+           WHERE r.conversation_id = s.conversation_id AND r.ts < s.turn_end
              AND r.tool_name = 'tool_search' AND r.event_kind = 'end'
              AND (r.ts, r.seq) > (s.ts, s.seq)
              AND (used.ts IS NULL OR (r.ts, r.seq) < (used.ts, used.seq))
        ) AS searched_again_first
-FROM tool_search_calls s
+FROM turns s
 LEFT JOIN LATERAL (
     SELECT t.tool_name, t.ts, t.seq FROM aura.tool_invocations t
-    WHERE t.conversation_id = s.conversation_id AND t.request_id = s.request_id
+    WHERE t.conversation_id = s.conversation_id AND t.ts < s.turn_end
       AND t.event_kind = 'end' AND t.tool_name = ANY (s.loaded)
       AND (t.ts, t.seq) > (s.ts, s.seq)
     ORDER BY t.ts, t.seq
     LIMIT 1
-) used ON true
-WHERE s.mode = 'ranked' AND s.outcome = 'loaded';
+) used ON true;
 
 \echo '== 1. Discovery calls by mode and outcome (last' :days 'days)'
 SELECT mode, outcome, count(*) AS calls,
