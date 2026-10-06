@@ -1,6 +1,7 @@
 package runner
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -193,5 +194,40 @@ func TestReasoningTraceBuilderRejectsForeignRunsAndRepeatedCalls(t *testing.T) {
 	}
 	if trace.TraceID != runID.String() || trace.ProviderSummary != "" || len(calls) != 1 || calls[0].CallID != "call-1" {
 		t.Fatalf("trace = %#v, want run %s with call-1 once and no foreign text", trace, runID)
+	}
+}
+
+// A turn that never exposes reasoning keeps all its calls in the step the first tool
+// opened; past the per-step cap the next call opens another step instead of being lost.
+func TestReasoningGraphToolOnlyTurnSpillsPastTheStepCapIntoANewStep(t *testing.T) {
+	r, _ := newReasoningTestRunner(t, 65536, false)
+	order := []string{}
+	sink := &recordingReasoningGraphSink{order: &order}
+	r.reasoningGraphSink = sink
+	ctx := identityctx.WithIdentityID(t.Context(), uuid.NewString())
+	tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+
+	var events []*agent.Event
+	for i := range reasoningGraphMaxToolsPerStep + 1 {
+		events = append(events, reasoningGraphToolEvents(runID, t0.Add(time.Duration(i)*time.Second),
+			fmt.Sprintf("call-%d", i), "task", `{"action":"list"}`, "ok", "tasks", nil)...)
+	}
+	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(time.Minute), "Fatto."))
+	persistReasoningGraphEvents(t, r, ctx, tr, events...)
+
+	if len(sink.traces) != 1 {
+		t.Fatalf("traces = %#v", sink.traces)
+	}
+	trace := sink.traces[0]
+	if trace.ProviderSummary != "" || len(trace.Steps) != 2 {
+		t.Fatalf("trace = %#v, want two steps and no summary", trace)
+	}
+	first, second := trace.Steps[0], trace.Steps[1]
+	if len(first.ToolCalls) != reasoningGraphMaxToolsPerStep || len(second.ToolCalls) != 1 ||
+		first.ProviderSummary != "" || second.ProviderSummary != "" || second.CreatedAt.IsZero() {
+		t.Fatalf("steps hold %d and %d calls, want %d and 1, both summary-less",
+			len(first.ToolCalls), len(second.ToolCalls), reasoningGraphMaxToolsPerStep)
 	}
 }

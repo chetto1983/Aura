@@ -184,8 +184,15 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		return
 	}
 	b.start(ev)
-	if len(b.steps) == 0 {
-		b.steps = append(b.steps, reasoningStepBuilder{createdAt: b.createdAt})
+	// A turn that never exposes reasoning keeps every call in one step, so a full step
+	// spills into a new one rather than losing calls the step budget still has room for.
+	if len(b.steps) == 0 || (len(b.steps[len(b.steps)-1].tools) == reasoningGraphMaxToolsPerStep &&
+		len(b.steps) < reasoningGraphMaxSteps) {
+		createdAt := ev.Timestamp.UTC()
+		if createdAt.IsZero() {
+			createdAt = b.createdAt
+		}
+		b.steps = append(b.steps, reasoningStepBuilder{createdAt: createdAt})
 	}
 	step := &b.steps[len(b.steps)-1]
 	if len(step.tools) == reasoningGraphMaxToolsPerStep {

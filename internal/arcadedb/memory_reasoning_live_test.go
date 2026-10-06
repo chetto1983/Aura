@@ -476,4 +476,13 @@ func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
 	if first.embedded != 0 || first.refused != 1 || second.refused != 0 {
 		t.Fatalf("passes = %+v then %+v, want the empty trace set aside once", first, second)
 	}
+
+	got, found, err := client.GetReasoningTrace(ctx, trace.IdentityID, trace.TraceID)
+	if err != nil || !found {
+		t.Fatalf("GetReasoningTrace(tool-only) = found %v, err %v", found, err)
+	}
+	if got.ProviderSummary != "" || len(got.Steps) != 1 ||
+		len(got.Steps[0].ToolCalls) != 1 || got.Steps[0].ToolCalls[0].ToolName != "shell_exec" {
+		t.Fatalf("read back = %#v, want the empty summary and the one shell_exec call", got)
+	}
 }

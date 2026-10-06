@@ -471,7 +471,12 @@ func reasoningTraceFromRow(row map[string]any) (ReasoningTrace, error) {
 		Status: ReasoningStatus(rowString(row, "status")), CreatedAt: createdAt,
 		TerminalAt: terminalAt, ExpiresAt: expiresAt,
 	}
-	return normalizeReasoningTrace(trace)
+	// Only the identity is checkable here: a header alone cannot tell a tool-only trace's
+	// empty summary from a missing one. The full normalization runs once the body is attached.
+	if err := validateReasoningIdentity(trace); err != nil {
+		return ReasoningTrace{}, err
+	}
+	return trace, nil
 }
 
 func reasoningStepsFromRows(rows []map[string]any, identityID, traceID string) ([]ReasoningStep, error) {
