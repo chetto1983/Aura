@@ -406,6 +406,29 @@ What this does not show:
 - abstention: a query for an unmounted family still returns its nearest lexical neighbour.
 The blind set is spent once anyone tunes the keywords against its misses.
 
+The report's first run on real data, 2026-10-06, on the lab VM's tenant as the table owner:
+14 `tool_search` calls in 9 conversations, all on 2026-10-05. 11 were `select:` and 3 free
+text, and all three loaded `task` first, the tool the turn then used. The ranker did not miss.
+`select:` did: 4 of the 11 carried `scheduling`, the label the system prompt gives the
+scheduling family (`internal/agent/prompt.go`), as if it were a tool name. The reply said it
+was not registered and suggested nothing, because no name shares a token with it. Three of
+the four then paid a second search before `task` loaded. Conversation `01a10c4a` sent the
+same `select:whatsapp__send_message,scheduling` on two consecutive messages.
+
+So an unregistered `select:` entry that shares no token with any registered name is read as
+a capability word. Its best BM25 match loads in its place, and the reply says so. Suggesting
+the match without loading it would not have helped: in all three cases the model's next call
+already found `task` on its own, so that second call was the whole cost. An entry that does
+share a token is a misspelling and keeps the old answer: the closest names, and nothing
+loaded, so the spelling error stays visible.
+
+What this does not show:
+- 14 calls from one day of the operator's own reminder and WhatsApp tests are not a traffic
+  distribution, and the ledger holds no rows before 2026-10-05;
+- the calls predate the keywords above, which reached the VM with `8631afc7c` on 2026-10-06;
+- a family label that shares a token with a tool name (`web`, `memory`) still gets
+  suggestions only.
+
 ## 5. Approvals and durable grants
 
 Approvals are host-issued and bound to identity, operation and effective arguments.
