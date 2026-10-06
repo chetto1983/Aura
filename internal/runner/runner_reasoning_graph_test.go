@@ -314,8 +314,9 @@ func TestReasoningGraphDiscardKeepsExecutedToolsAndDropsReasoning(t *testing.T) 
 		`{"subject":"Accepted","object":"Final"}`, "ok", "stored", nil)
 	discard := &agent.Event{RequestID: runID, Timestamp: t0.Add(2 * time.Second)}
 	discard.Actions.DiscardStreamed = true
-	events := []*agent.Event{reasoningGraphEvent(runID, t0, "repudiated attempt")}
+	events := []*agent.Event{reasoningGraphEvent(runID, t0, "first round reasoning")}
 	events = append(events, oldTool...)
+	events = append(events, reasoningGraphEvent(runID, t0.Add(1500*time.Millisecond), "discarded prose"))
 	events = append(events, discard, reasoningGraphEvent(runID, t0.Add(3*time.Second), "accepted attempt"))
 	events = append(events, newTool...)
 	events = append(events, reasoningGraphFinalEvent(runID, t0.Add(5*time.Second), "answer"))
@@ -335,6 +336,35 @@ func TestReasoningGraphDiscardKeepsExecutedToolsAndDropsReasoning(t *testing.T) 
 	}
 	if second.ProviderSummary != "accepted attempt" || len(second.ToolCalls) != 1 || second.ToolCalls[0].CallID != "call-new" {
 		t.Fatalf("second step = %#v", second)
+	}
+}
+
+// A discard before any tool ran leaves nothing to keep: the trace starts over with the retry,
+// dated by it rather than by the discarded attempt.
+func TestReasoningGraphDiscardBeforeAnyToolStartsTheTraceOver(t *testing.T) {
+	r, _ := newReasoningTestRunner(t, 65536, true)
+	order := []string{}
+	sink := &recordingReasoningGraphSink{order: &order}
+	r.reasoningGraphSink = sink
+	ctx := identityctx.WithIdentityID(t.Context(), uuid.NewString())
+	tr := &turnTracker{convID: newConvID(t), llmRuntime: r.llmSnapshot(ctx)}
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+
+	discard := &agent.Event{RequestID: runID, Timestamp: t0.Add(time.Second)}
+	discard.Actions.DiscardStreamed = true
+	persistReasoningGraphEvents(t, r, ctx, tr,
+		reasoningGraphEvent(runID, t0, "discarded prose"),
+		discard,
+		reasoningGraphEvent(runID, t0.Add(2*time.Second), "accepted attempt"),
+		reasoningGraphFinalEvent(runID, t0.Add(3*time.Second), "answer"))
+
+	if len(sink.traces) != 1 {
+		t.Fatalf("trace count = %d", len(sink.traces))
+	}
+	got := sink.traces[0]
+	if got.ProviderSummary != "accepted attempt" || len(got.Steps) != 1 || !got.CreatedAt.Equal(t0.Add(2*time.Second)) {
+		t.Fatalf("trace = %#v, want only the retry's reasoning, dated by the retry", got)
 	}
 }
 

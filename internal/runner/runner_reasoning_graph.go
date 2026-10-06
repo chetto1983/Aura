@@ -42,7 +42,8 @@ type ReasoningDeletionStore interface {
 	DeleteReasoningBySource(context.Context, arcadedb.ReasoningDeleteSelector) (int, error)
 }
 
-// ReasoningTraceBuilder accumulates one authorized provider-visible attempt.
+// ReasoningTraceBuilder accumulates one turn's trace: the reasoning of its accepted attempt and
+// every tool call the turn ran, across discarded rounds.
 type ReasoningTraceBuilder struct {
 	runID     uuid.UUID
 	summary   strings.Builder

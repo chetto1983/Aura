@@ -129,6 +129,15 @@ func TestMemoryPassLiveLeavesNothingTheGateCannotClear(t *testing.T) {
 	if tally.embedded != 0 || tally.blank != 2 || tally.refused != 0 {
 		t.Fatalf("tally = %+v, want the two empty facts set aside and the expired trace untouched", tally)
 	}
+	report, err := client.SpaceReport(ctx, trace.IdentityID, "es1-route-b", "es1-docs")
+	if err != nil {
+		t.Fatalf("SpaceReport: %v", err)
+	}
+	for _, typed := range report.Families[0].Types {
+		if typed.Type == factEdgeType && (typed.NoVector != 2 || typed.Rejected != 0) {
+			t.Fatalf("FACT tally = %+v, want the NULL and blank statements without a vector and none rejected", typed)
+		}
+	}
 	if open, err := onB.memoryDenseOpen(ctx, "es1-route-b"); err != nil || !open {
 		t.Fatalf("after the pass: open=%v err=%v, want open", open, err)
 	}

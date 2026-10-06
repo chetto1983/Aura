@@ -28,8 +28,7 @@ type tenantHTTPRecorder struct {
 	blockSchema     <-chan struct{}
 	schemaStarted   chan<- struct{}
 	existsFails     bool
-	version         string // what GET /api/v1/server answers; "" answers the floor itself
-	versionCalls    int
+	version         string   // what GET /api/v1/server answers; "" answers the floor itself
 	versionUsers    []string // the Basic-auth user of each GET /api/v1/server
 }
 
@@ -84,7 +83,6 @@ func (r *tenantHTTPRecorder) serveHTTP(w http.ResponseWriter, request *http.Requ
 	}
 	if request.URL.Path == "/api/v1/server" && request.Method == http.MethodGet {
 		r.mu.Lock()
-		r.versionCalls++
 		user, _, _ := request.BasicAuth()
 		r.versionUsers = append(r.versionUsers, user)
 		answer := r.version
@@ -135,7 +133,7 @@ func (r *tenantHTTPRecorder) counts() (int, int) {
 func (r *tenantHTTPRecorder) versionReads() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.versionCalls
+	return len(r.versionUsers)
 }
 
 func (r *tenantHTTPRecorder) versionReaders() []string {

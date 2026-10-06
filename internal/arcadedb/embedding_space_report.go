@@ -122,7 +122,8 @@ func (c *Client) familyState(ctx context.Context, family string, types []memoryS
 			{&tally.InSpace, from + "embedding IS NOT NULL AND embed_space = :space" + t.live},
 			{&tally.OtherSpace, vectorsOutside(t.name, t.live)},
 			{&tally.NoVector, from + "embedding IS NULL" + t.live},
-			{&tally.Rejected, from + "embedding IS NULL AND embed_space = :space AND " + t.source + ".trim() <> ''" + t.live},
+			{&tally.Rejected, from + "embedding IS NULL AND embed_space = :space AND " + t.source + " IS NOT NULL AND " +
+				t.source + ".trim() <> ''" + t.live},
 		} {
 			n, _, err := c.countRows(ctx, count.statement, params, t.name)
 			if err != nil {
