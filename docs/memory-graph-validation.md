@@ -93,8 +93,10 @@ On the installed 26.9.1-SNAPSHOT engine, using test-owned disposable databases:
 2. `graphSummary('FACT','Entity')` omits the Object subtype. The implementation
    supplies the exact set of types found in the polymorphic Entity inventory.
 3. `graphSummary.isolatedNodes` counts zero outgoing degree. A connected sink is
-   included. The API exposes this as `zero_out_degree`; its `isolated_nodes` is
-   computed by counting native BOTH-degree zeros.
+   included. 26.10.1 changed it to count true isolates (ArcadeData/arcadedb#9151),
+   and the live tier failed on the upgrade the same day, 2026-10-06. Both
+   `zero_out_degree` and `isolated_nodes` are therefore counted from native
+   degree(BOTH)'s per-node out and total degree, never read from graphSummary.
 4. Three SQL shortestPath probes failed to parse, including quoted function name
    and HTTP limit=-1. That route was stopped. The documented Cypher shortestPath
    pattern with explicit hop bounds works, including Object endpoints.

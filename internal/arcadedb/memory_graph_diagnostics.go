@@ -12,7 +12,8 @@ type MemoryGraphDiagnosticsRequest struct {
 	Limit int `json:"limit,omitempty" jsonschema:"maximum node details returned, 1 to 100; default 20"`
 }
 
-// MemoryGraphDiagnostics distinguishes native zero-out-degree counts from isolates.
+// MemoryGraphDiagnostics distinguishes zero-out-degree nodes, connected sinks included,
+// from isolates.
 type MemoryGraphDiagnostics struct {
 	Semantics      string            `json:"semantics"`
 	Relations      string            `json:"relations"`
@@ -44,7 +45,7 @@ func (c *Client) MemoryGraphDiagnostics(ctx context.Context, request MemoryGraph
 		return out, err
 	}
 	params := map[string]any{"relations": relations, "labels": memoryGraphLabels(nodes)}
-	rows, err := c.Read(ctx, "CALL algo.graphSummary($relations,$labels) YIELD nodeCount,edgeCount,isolatedNodes RETURN nodeCount,edgeCount,isolatedNodes", params)
+	rows, err := c.Read(ctx, "CALL algo.graphSummary($relations,$labels) YIELD nodeCount,edgeCount RETURN nodeCount,edgeCount", params)
 	if err != nil {
 		return out, err
 	}
@@ -52,9 +53,10 @@ func (c *Client) MemoryGraphDiagnostics(ctx context.Context, request MemoryGraph
 		return out, fmt.Errorf("native graph summary does not cover the entity snapshot")
 	}
 	out.NodeCount, out.EdgeCount = intField(rows[0]["nodeCount"]), intField(rows[0]["edgeCount"])
-	// Verified on the installed engine: this native field counts zero OUT-degree,
-	// so a connected sink qualifies. Actual isolates come from degree(BOTH).
-	out.ZeroOutDegree = intField(rows[0]["isolatedNodes"])
+	// Both counts come from algo.degree, not from graphSummary's isolatedNodes: up to 26.9.1
+	// that field counted zero OUT-degree, so a connected sink qualified, and 26.10.1 fixed
+	// it to count true isolates (ArcadeData/arcadedb#9151). Reading it made this report's
+	// meaning depend on the engine release.
 	index := make(map[string]int, len(nodes))
 	for i, node := range nodes {
 		index[node.RID] = i
@@ -99,6 +101,9 @@ func (c *Client) MemoryGraphDiagnostics(ctx context.Context, request MemoryGraph
 		out.CoreHistogram[fmt.Sprint(node.CoreNumber)]++
 		if node.Degree == 0 {
 			out.IsolatedNodes++
+		}
+		if node.OutDegree == 0 {
+			out.ZeroOutDegree++
 		}
 	}
 	if degreeSum != 2*out.EdgeCount {
