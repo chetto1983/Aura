@@ -184,7 +184,7 @@ func TestMemoryRecallModeContract(t *testing.T) {
 			}
 			got = append(got, text)
 		}
-		want := []string{"semantic", "recent", "open", "scroll", "reasoning"}
+		want := []string{"semantic", "recent", "period", "open", "scroll", "reasoning"}
 		if !slices.Equal(got, want) {
 			t.Fatalf("mode enum = %v, want %v", got, want)
 		}

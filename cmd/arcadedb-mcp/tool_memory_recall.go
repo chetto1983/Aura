@@ -54,17 +54,19 @@ const memoryRecallActiveOwnershipStatement = "SELECT identity_id, conversation_i
 
 // MemoryRecallInput is the additive public contract for the single memory read.
 type MemoryRecallInput struct {
-	Mode           string `json:"mode,omitempty" jsonschema:"semantic (default), recent, open, scroll, or reserved reasoning"`
+	Mode           string `json:"mode,omitempty" jsonschema:"semantic (default), recent, period, open, scroll, or reasoning"`
 	Query          string `json:"query,omitempty" jsonschema:"what to recall in natural language; used by semantic mode"`
 	Entity         string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal in semantic mode"`
 	Predicate      string `json:"predicate,omitempty" jsonschema:"optional relation filter used with entity"`
 	ConversationID string `json:"conversation_id,omitempty" jsonschema:"stable conversation id used by open and scroll"`
 	AnchorSeq      int    `json:"anchor_seq,omitempty" jsonschema:"stable turn sequence used by open and scroll"`
-	Cursor         string `json:"cursor,omitempty" jsonschema:"opaque cursor returned by an earlier open or scroll call"`
+	Cursor         string `json:"cursor,omitempty" jsonschema:"opaque cursor from period, open, or scroll; continue with mode scroll and cursor alone"`
 	Direction      string `json:"direction,omitempty" jsonschema:"before or after the stable anchor"`
 	TraceID        string `json:"trace_id,omitempty" jsonschema:"exact reasoning trace id; used only by explicit reasoning mode"`
 	Limit          int    `json:"limit,omitempty" jsonschema:"bounded number of evidence records or conversation turns"`
 	AsOf           string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return facts valid then rather than now"`
+	From           string `json:"from,omitempty" jsonschema:"period mode: inclusive RFC3339 start, with the user's timezone offset"`
+	To             string `json:"to,omitempty" jsonschema:"period mode: exclusive RFC3339 end, with the user's timezone offset"`
 }
 
 // MemoryConversationTurn is one authoritative projected turn in a bounded window.
@@ -168,21 +170,21 @@ func addMemoryRecallTool(server *mcp.Server, tenants *tenants) {
 		panic(fmt.Sprintf("memory_recall input schema: %v", err))
 	}
 	inputSchema.Properties["mode"].Enum = []any{
-		"semantic", "recent", "open", "scroll", "reasoning",
+		"semantic", "recent", "period", "open", "scroll", "reasoning",
 	}
 	inputSchema.Properties["direction"].Enum = []any{"before", "after"}
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "memory_recall",
 		Title:       "Recall memory",
 		InputSchema: inputSchema,
-		Description: "The single deep-read operation for Aura memory. Choose the mode from the question: " +
-			"use recent when it asks what happened before rather than about a topic -- what you two have " +
-			"discussed, what you remember of the user, anything that means look back; the default semantic " +
-			"mode matches wording and will miss those, answering that it recalls nothing. Use semantic with " +
-			"query for a topic, or entity for a name you know; a query also returns the `entities` it " +
-			"reached with their facts, so you get the connected view without knowing a name. Use open and " +
-			"scroll with conversation_id to page one conversation. Reasoning opens traces with their steps " +
-			"and tool calls; no other mode includes them. Weak evidence abstains explicitly.",
+		Description: "The deep read for Aura memory. To look back at what you discussed, use recent for " +
+			"orientation; semantic wording search can miss past conversations. For yesterday, a day or range, " +
+			"use period with from/to RFC3339 local-midnight boundaries (from inclusive, to exclusive). " +
+			"It reads chronological projected turns across chats. Follow next_cursor with scroll and cursor " +
+			"alone until absent before claiming the whole period. Group related chats in your answer, " +
+			"preserving distinct attempts and sources. Semantic uses query for a topic or entity for an exact " +
+			"name, and returns reached entities with facts. Open reads one conversation at anchor_seq; scroll " +
+			"continues. Reasoning alone reads traces and tool calls. Weak evidence abstains.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, memoryRecallHandler(tenants))
 }
@@ -204,18 +206,29 @@ func memoryRecallHandler(tenants *tenants) mcp.ToolHandlerFor[MemoryRecallInput,
 			}
 			return nil, output, nil
 		}
+		if (in.Mode == "period" || in.Mode == "scroll") && in.TraceID != "" {
+			return nil, MemoryRecallOutput{}, fmt.Errorf("memory_recall: trace_id requires reasoning mode")
+		}
 		excludedConversations, err := memoryRecallActiveConversationIDs(ctx, req, identity, client)
 		if err != nil {
 			return nil, MemoryRecallOutput{}, err
 		}
-		_ = excludedConversations
 		asOf, err := parseOptionalTime(in.AsOf, "as_of")
+		if err != nil {
+			return nil, MemoryRecallOutput{}, err
+		}
+		from, err := parseOptionalTime(in.From, "from")
+		if err != nil {
+			return nil, MemoryRecallOutput{}, err
+		}
+		to, err := parseOptionalTime(in.To, "to")
 		if err != nil {
 			return nil, MemoryRecallOutput{}, err
 		}
 		result, err := client.RecallMemory(ctx, arcadedb.RecallRequest{
 			IdentityID: identity, Mode: arcadedb.RecallMode(in.Mode), Query: in.Query,
 			Entity: in.Entity, Predicate: in.Predicate, AsOf: asOf,
+			From: from, To: to,
 			ConversationID: in.ConversationID, AnchorSeq: in.AnchorSeq,
 			Cursor: in.Cursor, Direction: arcadedb.RecallDirection(in.Direction), Limit: in.Limit,
 			ExcludeConversationIDs: excludedConversations,
@@ -239,7 +252,7 @@ func memoryReasoningRecall(
 		return MemoryRecallOutput{}, fmt.Errorf("reasoning mode requires exactly one of query or trace_id")
 	}
 	if in.Entity != "" || in.Predicate != "" || in.ConversationID != "" || in.AnchorSeq != 0 ||
-		in.Cursor != "" || in.Direction != "" || in.AsOf != "" {
+		in.Cursor != "" || in.Direction != "" || in.AsOf != "" || in.From != "" || in.To != "" {
 		return MemoryRecallOutput{}, fmt.Errorf("reasoning mode rejects ordinary recall selectors")
 	}
 	var traces []arcadedb.ReasoningTrace

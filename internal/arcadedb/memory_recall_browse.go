@@ -120,6 +120,12 @@ func (c *Client) recallScroll(ctx context.Context, request RecallRequest) (Recal
 	if strings.TrimSpace(request.IdentityID) != cursor.IdentityID {
 		return RecallResult{}, fmt.Errorf("arcadedb: recall cursor identity mismatch")
 	}
+	if cursor.Mode == RecallModePeriod {
+		return c.recallPeriodScroll(ctx, request, cursor)
+	}
+	if !request.From.IsZero() || !request.To.IsZero() {
+		return RecallResult{}, fmt.Errorf("arcadedb: conversation cursor rejects from/to")
+	}
 	// Omission is not a mismatch. The cursor already carries the conversation, the
 	// anchor, the direction and the page size, and the tool calls it opaque -- so
 	// `scroll` with nothing but the cursor is the natural call, and it used to fail
@@ -343,6 +349,12 @@ func ensureRecallCursorEOF(decoder *json.Decoder) error {
 }
 
 func (cursor RecallCursor) validate() error {
+	if cursor.Mode == RecallModePeriod {
+		return cursor.validatePeriod()
+	}
+	if cursor.Mode != "" || cursor.From != "" || cursor.To != "" || cursor.AfterMillis != 0 {
+		return fmt.Errorf("arcadedb: conversation cursor rejects period fields")
+	}
 	switch {
 	case cursor.Version != recallCursorVersion:
 		return fmt.Errorf("arcadedb: recall cursor version %d is unsupported", cursor.Version)

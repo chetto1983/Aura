@@ -1357,7 +1357,7 @@
       "idempotentHint": false,
       "readOnlyHint": true
     },
-    "description": "The single deep-read operation for Aura memory. Choose the mode from the question: use recent when it asks what happened before rather than about a topic -- what you two have discussed, what you remember of the user, anything that means look back; the default semantic mode matches wording and will miss those, answering that it recalls nothing. Use semantic with query for a topic, or entity for a name you know; a query also returns the `entities` it reached with their facts, so you get the connected view without knowing a name. Use open and scroll with conversation_id to page one conversation. Reasoning opens traces with their steps and tool calls; no other mode includes them. Weak evidence abstains explicitly.",
+    "description": "The deep read for Aura memory. To look back at what you discussed, use recent for orientation; semantic wording search can miss past conversations. For yesterday, a day or range, use period with from/to RFC3339 local-midnight boundaries (from inclusive, to exclusive). It reads chronological projected turns across chats. Follow next_cursor with scroll and cursor alone until absent before claiming the whole period. Group related chats in your answer, preserving distinct attempts and sources. Semantic uses query for a topic or entity for an exact name, and returns reached entities with facts. Open reads one conversation at anchor_seq; scroll continues. Reasoning alone reads traces and tool calls. Weak evidence abstains.",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1374,7 +1374,7 @@
           "type": "string"
         },
         "cursor": {
-          "description": "opaque cursor returned by an earlier open or scroll call",
+          "description": "opaque cursor from period, open, or scroll; continue with mode scroll and cursor alone",
           "type": "string"
         },
         "direction": {
@@ -1389,15 +1389,20 @@
           "description": "exact entity name when known; selects graph traversal in semantic mode",
           "type": "string"
         },
+        "from": {
+          "description": "period mode: inclusive RFC3339 start, with the user's timezone offset",
+          "type": "string"
+        },
         "limit": {
           "description": "bounded number of evidence records or conversation turns",
           "type": "integer"
         },
         "mode": {
-          "description": "semantic (default), recent, open, scroll, or reserved reasoning",
+          "description": "semantic (default), recent, period, open, scroll, or reasoning",
           "enum": [
             "semantic",
             "recent",
+            "period",
             "open",
             "scroll",
             "reasoning"
@@ -1410,6 +1415,10 @@
         },
         "query": {
           "description": "what to recall in natural language; used by semantic mode",
+          "type": "string"
+        },
+        "to": {
+          "description": "period mode: exclusive RFC3339 end, with the user's timezone offset",
           "type": "string"
         },
         "trace_id": {

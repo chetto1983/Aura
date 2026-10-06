@@ -237,7 +237,7 @@ window before choosing a correction operation.
 
 Facts are what the memory CONCLUDED. `memory_recall` reaches the record underneath — the
 turns that were actually exchanged, and the reasoning behind them. It is one tool, and
-`mode` is the whole decision. The modes are `semantic`, `recent`, `open`, `scroll` and
+`mode` is the whole decision. The modes are `semantic`, `recent`, `period`, `open`, `scroll` and
 `reasoning`; anything else is rejected before the call runs.
 
 This is the most under-used tool in the surface, and the two halves below are why: a
@@ -266,22 +266,39 @@ the record was one call away is the same failure as inventing a fact.
 - **`semantic`** with `entity` — a name you already know. `entity` is a PARAMETER, not a
   mode: passing it switches to graph traversal, the same addressing `memory_facts_about`
   does. `predicate` narrows it further. (Asking for `mode: entity` is rejected — that is
-  not one of the five.)
+  not one of the six.)
 - **`as_of`** on either — what was true THEN rather than now.
 
 ### Conversations: reading a discussion instead of sampling it
 
+- **`period`** — a day or date range: "what did we discuss yesterday", "last week".
+  Pass `from` (inclusive) and `to` (exclusive) as RFC3339 instants with the user's
+  timezone offset. Use the turn's current date and timezone to resolve relative days.
+  For 5 October in Europe/Berlin:
+  `{"mode":"period","from":"2026-10-05T00:00:00+02:00","to":"2026-10-06T00:00:00+02:00","limit":100}`.
+  Convert each boundary separately when a period crosses a daylight-saving change.
+  This reads projected user/assistant turns across all chats in the interval, not
+  just recent windows. Follow every `next_cursor` with `scroll` until absent before
+  claiming a complete period. Dates here select when something was SAID; `as_of`
+  selects when a fact was TRUE and does not filter conversations.
+  Read the collected chats together and group related topics in the answer. Summarize
+  repeated wording once, but retain distinct attempts, corrections and outcomes with
+  their source references. Similar reminders can be separate tests; never erase that
+  distinction or present an assistant's delivery claim as verified external delivery.
+  This is the projected record: projection lag or source deletion can leave gaps.
 - **`recent`** — when the question is about *before* rather than about a topic. "What were
   we doing", "what do you remember about me", "where did we leave it". Reach for this the
   moment a question looks backward, because the default mode will not find it: `semantic`
   matches wording, and a question about the past rarely shares wording with the past. It
-  answers "I recall nothing" and sounds authoritative doing it.
+  answers "I recall nothing" and sounds authoritative doing it. This is an orientation
+  sample; for a specified day or range use `period`.
 - **`open`** with a `conversation_id` and an `anchor_seq` — a window of turns FORWARD from
   that anchor, the anchor included. This is the entry point; `limit` sizes the window.
-- **`scroll`** — continues where `open` stopped.
+- **`scroll`** — continues where `period` or `open` stopped.
 
   **Hand the `next_cursor` straight back.** It carries the conversation, the anchor, the
-  direction and the page size, so `mode: scroll` with nothing but `cursor` is the whole
+  direction and the page size (or the period and chronological checkpoint), so
+  `mode: scroll` with nothing but `cursor` is the whole
   call. You may repeat those fields, but a value that CONTRADICTS the cursor is refused
   rather than silently preferred.
 
