@@ -372,7 +372,7 @@ func TestPassSetsAsideARowWithNoTextToEmbed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reembedType: %v", err)
 	}
-	if tally != (passTally{embedded: 1, refused: 2}) {
+	if tally != (passTally{embedded: 1, blank: 2}) {
 		t.Fatalf("tally = %+v, want 1 embedded and the 2 empty rows set aside", tally)
 	}
 	for _, row := range rows[factEdgeType][:2] {

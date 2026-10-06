@@ -64,11 +64,12 @@ func bindStoredRow(params map[string]any, n string, row selectedRow, vector stor
 	}
 }
 
-// passTally counts what a pass changed: vectors written, records the model refused, and
-// rows the store would not take, the first of them named with its cause.
+// passTally counts what a pass changed: vectors written, records the model refused, rows with
+// no text to embed, and rows the store would not take, the first of them named with its cause.
 type passTally struct {
 	embedded    int
 	refused     int
+	blank       int
 	failed      int
 	firstFailed string
 	failCause   error
@@ -77,6 +78,7 @@ type passTally struct {
 func (p *passTally) add(other passTally) {
 	p.embedded += other.embedded
 	p.refused += other.refused
+	p.blank += other.blank
 	p.failed += other.failed
 	if p.firstFailed == "" {
 		p.firstFailed, p.failCause = other.firstFailed, other.failCause
@@ -146,13 +148,15 @@ func (c *Client) reembedType(ctx context.Context, t memorySpaceType, batch, roun
 		}
 		// A row with no text can never be embedded; left holding an old vector it would keep
 		// the gate closed for good, and nothing would say why. It is set aside like a record
-		// the model refused.
+		// the model refused, and counted apart: nothing was refused.
 		if len(empty) > 0 {
 			aside := make([]storedVector, len(empty))
 			for i := range aside {
 				aside[i] = storedVector{space: space.ID}
 			}
-			tally.add(c.storeVectors(ctx, t, empty, aside))
+			set := c.storeVectors(ctx, t, empty, aside)
+			set.blank, set.refused = set.refused, 0
+			tally.add(set)
 		}
 		// A row the store will not take is behind the cursor and named in the tally, so one
 		// poisoned row cannot end every run at the same place. A page's worth of them is a

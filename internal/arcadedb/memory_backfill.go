@@ -96,7 +96,7 @@ func (b *TenantBackfill) EmbedMissing(ctx context.Context, _ time.Time) (int, er
 		func(ctx context.Context, client *Client, database string) (int, error) {
 			tally, err := client.WithEmbedder(b.embedder).reembedMemory(ctx)
 			if tally.refused > 0 {
-				slog.Warn("memory re-embed: records set aside, refused by the embedding model or with no text",
+				slog.Warn("memory re-embed: records set aside, refused by the embedding model",
 					"database", database, "refused", tally.refused)
 			}
 			if tally.failed > 0 {

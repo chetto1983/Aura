@@ -126,7 +126,7 @@ func TestMemoryPassLiveLeavesNothingTheGateCannotClear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reembedMemory: %v", err)
 	}
-	if tally.embedded != 0 || tally.refused != 2 {
+	if tally.embedded != 0 || tally.blank != 2 || tally.refused != 0 {
 		t.Fatalf("tally = %+v, want the two empty facts set aside and the expired trace untouched", tally)
 	}
 	if open, err := onB.memoryDenseOpen(ctx, "es1-route-b"); err != nil || !open {

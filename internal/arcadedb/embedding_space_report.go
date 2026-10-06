@@ -21,7 +21,8 @@ type TypeTally struct {
 	OtherSpace int    `json:"other_space"`
 	NoVector   int    `json:"no_vector"`
 	// Rejected rows have no vector and carry this space's stamp: the model refused their text,
-	// and the pass will not ask it again (spec §5).
+	// and the pass will not ask it again. A row with no text to refuse, a tool-only trace for
+	// one, is set aside the same way and counts in NoVector alone (spec §5).
 	Rejected int `json:"rejected"`
 }
 
@@ -121,7 +122,7 @@ func (c *Client) familyState(ctx context.Context, family string, types []memoryS
 			{&tally.InSpace, from + "embedding IS NOT NULL AND embed_space = :space" + t.live},
 			{&tally.OtherSpace, vectorsOutside(t.name, t.live)},
 			{&tally.NoVector, from + "embedding IS NULL" + t.live},
-			{&tally.Rejected, from + "embedding IS NULL AND embed_space = :space" + t.live},
+			{&tally.Rejected, from + "embedding IS NULL AND embed_space = :space AND " + t.source + ".trim() <> ''" + t.live},
 		} {
 			n, _, err := c.countRows(ctx, count.statement, params, t.name)
 			if err != nil {

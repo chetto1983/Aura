@@ -473,7 +473,7 @@ func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second pass: %v", err)
 	}
-	if first.embedded != 0 || first.refused != 1 || second.refused != 0 {
+	if first.embedded != 0 || first.blank != 1 || first.refused != 0 || second.blank != 0 {
 		t.Fatalf("passes = %+v then %+v, want the empty trace set aside once", first, second)
 	}
 
@@ -484,5 +484,43 @@ func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
 	if got.ProviderSummary != "" || len(got.Steps) != 1 ||
 		len(got.Steps[0].ToolCalls) != 1 || got.Steps[0].ToolCalls[0].ToolName != "shell_exec" {
 		t.Fatalf("read back = %#v, want the empty summary and the one shell_exec call", got)
+	}
+}
+
+// The report's Rejected means the model refused the text. A tool-only trace is set aside with
+// the same stamp and no vector but holds no text to refuse, so it stays in NoVector alone.
+func TestSpaceReportLive_OnlyRefusedTextCountsAsRejected(t *testing.T) {
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	toolOnly := freshReasoningTrace()
+	toolOnly.TraceID = "trace-tool-only"
+	toolOnly.ProviderSummary = ""
+	toolOnly.Steps[0].ProviderSummary = ""
+	refused := freshReasoningTrace()
+	refused.TraceID = "trace-refused"
+	refused.ProviderSummary = "RefusedSummary: the model will not take this text."
+	for _, trace := range []ReasoningTrace{toolOnly, refused} {
+		if err := client.WithEmbedder(constantEmbedder{value: 1, space: "es1-route-a"}).UpsertReasoningTrace(ctx, trace); err != nil {
+			t.Fatalf("UpsertReasoningTrace(%s): %v", trace.TraceID, err)
+		}
+	}
+
+	routeB := &refusingEmbedder{refuse: []string{refused.ProviderSummary}, status: http.StatusBadRequest, space: "es1-route-b"}
+	tally, err := client.WithEmbedder(routeB).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("reembedMemory: %v", err)
+	}
+	if tally.blank != 1 || tally.refused != 1 {
+		t.Fatalf("tally = %+v, want one blank and one refused row", tally)
+	}
+
+	report, err := client.SpaceReport(ctx, toolOnly.IdentityID, "es1-route-b", "es1-docs")
+	if err != nil {
+		t.Fatalf("SpaceReport: %v", err)
+	}
+	for _, typed := range report.Families[0].Types {
+		if typed.Type == reasoningTraceType && (typed.NoVector != 2 || typed.Rejected != 1) {
+			t.Fatalf("ReasoningTrace tally = %+v, want 2 without a vector and only the refused one rejected", typed)
+		}
 	}
 }
