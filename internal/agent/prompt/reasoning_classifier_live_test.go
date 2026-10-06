@@ -167,7 +167,7 @@ var liveCorpus = []tierCase{
 	one("converti questo CSV in JSON", "high"),
 	either("controlla la mia agenda di domani", "none", "low"),
 
-	// --- the lab VM's real traffic, 2026-10-02..06, verbatim and typos included, labelled
+	// --- the lab VM's real traffic, 2026-10-02..06, as typed bar two spelling fixes, labelled
 	// before any classifier saw them. Under the centroid seven of these went to `high`:
 	// scheduling one reminder reasoned for 10-21 s (prd.md §6). Exact repeats and the bare
 	// "ciao" the greeting allowlist answers are left out.

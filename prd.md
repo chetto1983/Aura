@@ -505,6 +505,25 @@ What this does not show:
 - that one neighbour inside the bound is the right rule beyond paraphrases; the bound is what
   kept the gate whole, and every bound from 0.10 to 0.30 gave the same scores here.
 
+A teacher for that memory was measured the same day. The candidate is the router prompt Aura
+already has, `ReasoningRouterSystemPrompt`. It was sent through Aura's own client on the
+route the daemon resolves from `aura.settings`, run inside the VM's `aura` container. That day
+the route was `ollama` with `gemma4:31b-cloud`.
+
+- It scored 55 of 58 on the gate, sent no hard turn to `none`, took 515 ms at the median and
+  used about 121 tokens a call.
+- Its three misses were the scheduler tests, which it sent to `high`. The nearest-neighbour
+  classifier gets those right with its widest margins (0.13-0.15).
+- The classifier's own four misses all had margins under 0.06, and the teacher got each of
+  them right. No prompt was wrong for both.
+- Asking the teacher only when the margin is under 0.075 scored 58 of 58, with the teacher
+  on 18 of the 58 turns. Under 0.03 it scored 56, with 5 calls.
+
+What this does not show:
+- the threshold was chosen on the same gate it was scored on;
+- one route and one model; a weaker model is a weaker teacher;
+- how many production turns would call the teacher: the 58 are not traffic proportions.
+
 Image and video generation, cloud speech-to-text and text-to-speech, cloud embeddings
 and every cloud model picker run on OpenRouter whatever the chat route is. Generation
 spends the identity's own OpenRouter key and never the services key; speech and
