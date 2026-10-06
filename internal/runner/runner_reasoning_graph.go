@@ -120,6 +120,19 @@ func (b *ReasoningTraceBuilder) Reset() {
 	b.seenCalls = nil
 }
 
+// start opens the trace on an attempt's first observed event, reasoning or tool, so a turn
+// that exposed no reasoning still records what it ran.
+func (b *ReasoningTraceBuilder) start(ev *agent.Event) {
+	if b.runID != uuid.Nil {
+		return
+	}
+	b.runID = ev.RequestID
+	b.createdAt = ev.Timestamp.UTC()
+	if b.createdAt.IsZero() {
+		b.createdAt = time.Now().UTC()
+	}
+}
+
 // ObserveReasoning accepts only the provider-visible reasoning event shape that
 // the runner's authorization gate has already approved.
 func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
@@ -129,13 +142,7 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 	if b.runID != uuid.Nil && b.runID != ev.RequestID {
 		return
 	}
-	if b.runID == uuid.Nil {
-		b.runID = ev.RequestID
-		b.createdAt = ev.Timestamp.UTC()
-		if b.createdAt.IsZero() {
-			b.createdAt = time.Now().UTC()
-		}
-	}
+	b.start(ev)
 	kept := b.appendReasoning(ev.LLMResponse.Reasoning)
 	if kept == "" {
 		return
@@ -155,11 +162,16 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 	step.summary.WriteString(kept)
 }
 
-// ObserveToolInvocation joins one structured runtime tool event to the active trace.
+// ObserveToolInvocation joins one structured runtime tool event to the active trace. The
+// attempt's first valid tool event opens the trace when no reasoning did: measured
+// 2026-10-06, the graph reached 9 of the lab VM's 16 tool turns, because a turn with no
+// exposed reasoning had nothing to open it. Once open, another attempt's events are foreign.
 func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
-	if ev == nil || ev.RequestID == uuid.Nil || b.runID == uuid.Nil || ev.RequestID != b.runID ||
-		ev.Actions.ToolInvocation == nil || ev.Actions.ToolInvocation.Event != agent.ToolInvocationEnd ||
-		len(b.steps) == 0 {
+	if ev == nil || ev.RequestID == uuid.Nil || ev.Actions.ToolInvocation == nil ||
+		ev.Actions.ToolInvocation.Event != agent.ToolInvocationEnd {
+		return
+	}
+	if b.runID != uuid.Nil && ev.RequestID != b.runID {
 		return
 	}
 	ti := ev.Actions.ToolInvocation
@@ -168,11 +180,12 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 	if !ok || strings.TrimSpace(ti.ToolName) == "" || strings.TrimSpace(ti.ToolCallID) == "" {
 		return
 	}
-	if b.seenCalls == nil {
-		b.seenCalls = make(map[string]struct{})
-	}
 	if _, duplicate := b.seenCalls[ti.ToolCallID]; duplicate {
 		return
+	}
+	b.start(ev)
+	if len(b.steps) == 0 {
+		b.steps = append(b.steps, reasoningStepBuilder{createdAt: b.createdAt})
 	}
 	step := &b.steps[len(b.steps)-1]
 	if len(step.tools) == reasoningGraphMaxToolsPerStep {
@@ -195,6 +208,9 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		tool.EntityRefs = reasoningEntityRefs(ti.Arguments, policy.entityArgFields)
 	}
 	step.tools = append(step.tools, tool)
+	if b.seenCalls == nil {
+		b.seenCalls = make(map[string]struct{})
+	}
 	b.seenCalls[ti.ToolCallID] = struct{}{}
 	b.afterTool = true
 }
@@ -217,14 +233,15 @@ func (b *ReasoningTraceBuilder) appendReasoning(delta string) string {
 }
 
 // CommitSourceTurn finalizes one successful trace against an already-committed
-// authoritative assistant turn.
+// authoritative assistant turn. A step needs reasoning or a tool call; a trace needs one
+// such step.
 func (b *ReasoningTraceBuilder) CommitSourceTurn(
 	identityID, conversationID string,
 	turnSeq int,
 	terminalAt time.Time,
 ) (arcadedb.ReasoningTrace, bool) {
 	summary := strings.TrimSpace(b.summary.String())
-	if b.runID == uuid.Nil || summary == "" || strings.TrimSpace(identityID) == "" ||
+	if b.runID == uuid.Nil || strings.TrimSpace(identityID) == "" ||
 		strings.TrimSpace(conversationID) == "" || turnSeq <= 0 {
 		return arcadedb.ReasoningTrace{}, false
 	}
@@ -235,7 +252,7 @@ func (b *ReasoningTraceBuilder) CommitSourceTurn(
 	sourceRef := reasoningSourceRef(conversationID, turnSeq)
 	for _, pending := range b.steps {
 		stepSummary := strings.TrimSpace(pending.summary.String())
-		if stepSummary == "" {
+		if stepSummary == "" && len(pending.tools) == 0 {
 			continue
 		}
 		tools := append([]arcadedb.ReasoningToolCall(nil), pending.tools...)

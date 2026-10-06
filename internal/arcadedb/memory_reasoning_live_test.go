@@ -436,3 +436,44 @@ func TestReasoningGraphLive_GrowthEvidence(t *testing.T) {
 	t.Logf("REASONING_GROWTH_EVIDENCE database_bytes=%d record_bytes=%d vertices=%d edges=%d index_entries=%d",
 		delta.databaseBytes, delta.recordBytes, delta.vertices, delta.edges, delta.indexEntries)
 }
+
+// A tool-only trace must survive the real engine: provider_summary is MANDATORY in the
+// schema, and "" has to count as present. The embedding pass then sets the empty summary
+// aside once, with a space stamp and no vector, instead of retrying it on every run.
+func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	route := constantEmbedder{value: 1, space: "es1-tool-only"}
+	trace := freshReasoningTrace()
+	trace.TraceID = "trace-tool-only"
+	trace.ProviderSummary = ""
+	trace.Steps[0].ProviderSummary = ""
+	if err := client.WithEmbedder(route).UpsertReasoningTrace(ctx, trace); err != nil {
+		t.Fatalf("UpsertReasoningTrace(tool-only): %v", err)
+	}
+
+	rows, err := client.Query(ctx,
+		"SELECT provider_summary, out('HAS_STEP').out('INVOKED').tool_name AS tools FROM ReasoningTrace WHERE trace_id = :trace_id",
+		map[string]any{"trace_id": trace.TraceID})
+	if err != nil {
+		t.Fatalf("read back the trace: %v", err)
+	}
+	if len(rows) != 1 || rowString(rows[0], "provider_summary") != "" {
+		t.Fatalf("stored trace = %#v, want one row with an empty summary", rows)
+	}
+	if tools := rowStrings(rows[0], "tools"); len(tools) != 1 || tools[0] != "shell_exec" {
+		t.Fatalf("stored tools = %#v, want the one call", rows[0]["tools"])
+	}
+
+	first, err := client.WithEmbedder(route).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	second, err := client.WithEmbedder(route).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if first.embedded != 0 || first.refused != 1 || second.refused != 0 {
+		t.Fatalf("passes = %+v then %+v, want the empty trace set aside once", first, second)
+	}
+}

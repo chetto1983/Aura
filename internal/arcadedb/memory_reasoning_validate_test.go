@@ -18,6 +18,28 @@ func TestNormalizeReasoningTraceRejectsAMalformedTrace(t *testing.T) {
 		mutate func(*ReasoningTrace)
 		reason string
 	}{
+		"summary-less step without tool calls": {
+			func(trace *ReasoningTrace) {
+				trace.Steps[0].ProviderSummary = ""
+				trace.Steps[0].ToolCalls = nil
+			},
+			"step provider_summary must be non-empty",
+		},
+		"summary-less trace without tool calls": {
+			func(trace *ReasoningTrace) {
+				trace.ProviderSummary = ""
+				trace.Steps[0].ToolCalls = nil
+			},
+			"provider_summary must be non-empty",
+		},
+		"tool-only trace with an unsupported tool status": {
+			func(trace *ReasoningTrace) {
+				trace.ProviderSummary = ""
+				trace.Steps[0].ProviderSummary = ""
+				trace.Steps[0].ToolCalls[0].Status = "maybe"
+			},
+			"unsupported reasoning tool status",
+		},
 		"absent identity": {
 			func(trace *ReasoningTrace) { trace.IdentityID = "" },
 			"identity_id must be non-empty",
@@ -248,5 +270,25 @@ func TestValidateReasoningTextEnforcesItsRuneCeiling(t *testing.T) {
 	}
 	if err := validateReasoningText("entity_ref", "deployment-a", 64); err != nil {
 		t.Fatalf("validateReasoningText rejected a canonical value: %v", err)
+	}
+}
+
+// A turn that exposed no reasoning but ran tools is stored with empty summaries; nothing
+// is synthesized in their place.
+func TestNormalizeReasoningTraceAcceptsATurnThatOnlyRanTools(t *testing.T) {
+	t.Parallel()
+	trace := validReasoningTrace()
+	trace.ProviderSummary = ""
+	trace.Steps[0].ProviderSummary = ""
+
+	normalized, err := normalizeReasoningTrace(trace)
+	if err != nil {
+		t.Fatalf("normalizeReasoningTrace refused a tool-only trace: %v", err)
+	}
+	if normalized.ProviderSummary != "" || normalized.Steps[0].ProviderSummary != "" {
+		t.Fatalf("summaries = %q / %q, want both empty", normalized.ProviderSummary, normalized.Steps[0].ProviderSummary)
+	}
+	if len(normalized.Steps[0].ToolCalls) != 1 {
+		t.Fatalf("tool calls = %#v", normalized.Steps[0].ToolCalls)
 	}
 }
