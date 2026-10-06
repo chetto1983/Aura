@@ -1,7 +1,11 @@
 # `aura-video-mcp`: Aura's video editing tools (sub-project 2 of 3)
 
-Date: 2026-09-30. Status: design approved in brainstorming, section by section. This text is
-awaiting review.
+Date: 2026-09-30. Revised: 2026-10-06 after the applicability review. The original design
+and the operator's 2026-10-02 amendments are recorded below. The current text consolidates
+those decisions and the implementation requirements from
+[Plan B's applicability corrections](../plans/2026-10-02-aura-video-mcp-plan-b.md#applicability-corrections-2026-10-06).
+The affected code and shared schemas still need the listed regressions and a fresh run;
+this revision is not an implementation, a PRD amendment or approval of Plan B's open limits.
 
 ## Why
 
@@ -29,17 +33,18 @@ It proposes the acceptance chain this design adopts:
 | Question | Decision |
 |---|---|
 | What must pass end to end | **Both, chat first.** Primary: from chat or Telegram, "make me a video with these clips and this music, lower the music under the voice". Aura builds a Studio project, renders it on the server, and delivers a downloadable card; the project also opens in the Studio. Secondary: the same tools edit an existing project. |
-| How a render waits | **Background job**, the `video_generate` pattern: the tool returns straight away with a progress card, and Aura wakes the conversation when the MP4 is ready. Cancellable. *Superseded 2026-10-02: no wake; see §"Amended 2026-10-02".* |
+| How a render waits | **Background job**, cancellable. As amended 2026-10-02, start returns a job id and a later status call delivers the film; there is no wake or progress card. |
 | Sources | **The identity's library assets only.** The sidecar never downloads an arbitrary URL. |
 | Tool scope | **Full Studio parity**, ducking (speech detection) and noise reduction included. |
-| Telegram | **As today**: native video up to 50 MB, above that "⚠️ Il video è disponibile nel cockpit." (`internal/channels/telegram/artifact.go:33,143-149`). *Amended 2026-10-02: on this path a film reaches Telegram only under the bridge's 25 MiB cap.* |
+| Telegram | On this MCP path, native video up to the bridge's **25 MiB** per-file cap; larger films are reached through the library and Studio (amended 2026-10-02). |
 | Architecture | **A central sidecar**, a Node container, MCP-over-HTTP with Aura's OAuth. Not an MCP in each identity's box. |
 | Studio export bugs the spikes found | **Fixed in this sub-project**: the sidecar renders with the same export page. |
-| Who owns a render job | **Aura**, for its own conversations (native tools, job row, watcher, wake). The sidecar is the engine. *Superseded 2026-10-02: the sidecar owns every job; see §"Amended 2026-10-02".* |
+| Who owns a render job | **The sidecar owns every job**, Aura's and external clients' alike (amended 2026-10-02). |
 | E2E | **Aura's own Instagram Reels.** Claude mounts the MCP in Claude Code as `claude@aura.local` and makes them; Aura makes one from chat and from Telegram too. |
-| Render in the MCP | **Yes, for external clients too.** Aura hides the MCP's render tools from its model and keeps its native wrapper. *Superseded 2026-10-02: nothing hidden, no native wrapper.* |
-| Project versions | **Every version kept**, as the Studio does today. Saved projects are left out of document indexing. |
+| Render in the MCP | **Yes, for all clients.** Aura sees the ordinary render tools; there is no hidden set or native wrapper (amended 2026-10-02). |
+| Project versions | **Every saved version kept**, as the Studio does today. Saved projects are left out of document indexing. |
 | Music in the reels | **Synthetic**, generated procedurally, like the Plan A spikes. |
+| Compose network | **Default network with egress and a direct loopback publish**, chosen on 2026-10-02 and recorded in `e9d379e28`; the page and proxy still enforce an allowlist. |
 
 ## Amended 2026-10-02: the sidecar mounts as a normal MCP
 
@@ -72,8 +77,13 @@ model sees them exactly as an external client does, so every client has one deli
      90-minute job token.
    - The upload URL does not bridge the gap: a presign lasts 600 s (`AURA_ASSET_PRESIGN_TTL_SEC`).
    - A render that finishes after its token expired must not be lost. The checked film is kept for a
-     bounded time, which the plan fixes, and the identity's next tool call saves it. A film nobody
-     claims in time is discarded, and the failure says why.
+     bounded time, provisionally 15 minutes after check completion (Plan B Q1), and the identity's
+     next tool call supplies a bearer. Every authenticated request obtains the freshest bearer at
+     dispatch: finalize cannot reuse the token taken before a potentially ten-minute PUT.
+   - All credential waits share one deadline. A missing bearer pauses upload without discarding
+     checked scratch; a new token resumes the same presigned asset, subject to verified finalize
+     replay semantics. No claim in time discards unsaved scratch, and status identifies any assets
+     already accepted before the deadline (see §Jobs and delivery).
 3. **A film reaches the chat only under the bridge's cap.** The bridge writes a file a tool result
    carries into the turn's workspace, up to 25 MiB per file and 50 MiB per call
    (`internal/mcp/file.go:20-22`).
@@ -130,11 +140,10 @@ The output check verifies each of these properties on the delivered file (§Jobs
 
 A Node 24 project in the repository, published as `ghcr.io/chetto1983/aura-video-mcp` (amd64). The
 image holds Node, Playwright's **Chrome Headless Shell** (pinned by the Playwright version) and
-Debian's ffmpeg/ffprobe. On arm64 it answers `unsupported platform` until an S1.1 run there
-measures otherwise. *Amended 2026-10-02, the operator: "arm64 non supportato". The image is
-published for amd64 only, and the sidecar carries no arm64 branch, no `unsupported platform`
-answer and no architecture check. The two cannot coexist: an amd64 image on an arm64 host runs
-emulated and reports `x64`, so such a check would never fire (Plan B, Q4).*
+Debian's ffmpeg/ffprobe. The operator decided on 2026-10-02: *"arm64 non supportato"*
+(`391a3c014`). Publish amd64 only, with no arm64 branch, `unsupported platform` answer or
+architecture check. An emulated amd64 image reports `x64`, so such a check would not establish
+host support (Plan B Q4).
 
 1. **MCP server** over streamable HTTP (`@modelcontextprotocol/sdk`).
    - It verifies Aura's bearer the way `cmd/arcadedb-mcp/auth.go` does: issuer, audience (the
@@ -158,8 +167,9 @@ emulated and reports `x64`, so such a check would never fire (Plan B, Q4).*
      `STALL_MS = 120_000`, `ServerRenderer.js:940`).
 4. **Media proxy.**
    - Every request from the page is routed through Node (`page.route`).
-   - It is allowed only to the signed URLs the internal API returned for this job, and each source is
-     fetched once and cached for the job.
+   - It is allowed only to the signed URLs the internal API returned for this job. Plan B Q6
+     provisionally streams each source once per analysis/render pass, without a tmpfs cache:
+     cached bytes would count against the same measured memory limit as the browser.
    - Any non-2xx answer or network error **fails the job with the source's name**.
 5. **Output check** (ffprobe plus sampled decoding), before anything is saved:
    - the duration is within one frame of the project's;
@@ -171,14 +181,13 @@ emulated and reports `x64`, so such a check would never fire (Plan B, Q4).*
 
 ### Aura's side (Go)
 
-*Amended 2026-10-02 (§"Amended 2026-10-02"): only the recipe, the Compose service and the internal
-API remain. The hidden tool set, render jobs, native tools and completion route below are gone.*
+As amended 2026-10-02, only the recipe, the Compose service and the internal API remain.
+Plan C implements this side; there is no render-jobs table, watcher, native tool or completion route.
 
 - **Recipe** `video` in `internal/mcp/manager/catalog.go`, next to `calendar` and `whatsapp`:
   streamable HTTP, trusted recipe, tools deferred.
-  - The recipe declares a **hidden tool set**, `video_render_start`, `video_render_status` and
-    `video_render_cancel`, which the bridge does not register. The bridge has no such field today
-    (`bridge_policy.go`); it is added.
+  - The bridge exposes `video_render_start`, `video_render_status` and `video_render_cancel`
+    normally, with the same tools and delivery path as an external MCP client.
   - The URL helper follows `PIMSidecarBaseURL()`: Compose DNS in a container, the loopback publish
     otherwise.
 - **Compose service** `aura-video-mcp`, built on `aura-pim-mcp`'s block:
@@ -188,48 +197,34 @@ API remain. The hidden tool set, render jobs, native tools and completion route 
   - the loopback port publish;
   - the OAuth metadata address.
 
-  It sits on the internal network with no internet egress. Chromium's memory limit comes from S2
-  (1,549 MiB peak at 60 s): the plan measures a 10-minute film before fixing the container limit.
-  *Amended 2026-10-02:* no egress and the loopback publish cannot both hold for one container. On
-  Docker 29.8.1, a container on an `internal: true` network alone has no egress, but its published
-  port answers nothing on the host; adding an ordinary network brings the port back, and the
-  internet with it (Plan B, Q7). The operator chose the publish: *"e chi se ne frega"*. The service
-  sits on the default network with a direct loopback publish, as `aura-pim-mcp` does, and has
-  internet egress.
+  The service sits on the default Compose network with a direct loopback publish and internet
+  egress, as `aura-pim-mcp` does. The operator chose this in `e9d379e28`: *"e chi se ne frega"*.
+  No internal `aura-video` network or Caddy relay is added. On the measured Docker 29.8.1 setup,
+  an internal-only network blocked both egress and host access through the published port;
+  that observation is not a claim about every engine (Plan B Q7).
+  The proposed 6 GiB memory limit comes from Plan B's dated ten-minute measurement and remains
+  Q3's recommendation; the page and proxy allowlists apply regardless of container egress.
 - **Internal API** `/internal/video/…` (§Security), and the Caddyfile answers 404 on that prefix.
-- **Render jobs**: the new package `internal/renderjobs`:
-  - a store (table `aura.render_jobs`; the migration takes the next free number when it lands, per
-    CLAUDE.md);
-  - a sidecar client;
-  - a watcher shaped like `internal/mediagen/watcher.go`, resuming from the table on boot.
-- **Native tools** `video_render` and `video_render_cancel` (`internal/agent/tools/`, deferred).
-- **Completion**: a third route in `cmd/aura/background_completion.go`, next to shell and media
-  (`NotifyMedia`, :89).
 - **Project indexing (M1 of the audio spec).** A Studio project file is named `<slug>.aura-video.json`,
-  and the ingest skips that suffix, so it never becomes a RAG document. Any other `.json` the operator
-  uploads is still indexed. The suffix keeps the `.json` extension the upload allowlist accepts
-  (`internal/assets/limits.go`). The cockpit's `projectFileName` writes the same suffix; this is the
-  one change to how the Studio saves. Projects saved before the change stay indexed until they are
-  saved again.
-  *Superseded 2026-10-01 (Plan A; recorded in prd.md §12 "Saved Studio projects and the document
-  index"):* the ingest cannot skip a project by its name, because its matcher and its audit see only
-  the object key, so the key keeps the suffix whole; and a project saved before the change is not
-  fixed by saving it again, because every save is a new asset: the daemon is to move it once, at boot.
+  and its object key preserves that suffix so ingest can exclude it from RAG. Any other `.json`
+  remains subject to normal indexing. Plan A's shipped ruling (2026-10-01, prd.md §12
+  "Saved Studio projects and the document index") owns the one-time boot handling of old
+  projects; saving another version does not change an earlier asset. Plan B reuses it.
 
 ## Tools
 
-The rule: an **edit is pure and fast** (Node, well under a second, far inside Aura's 60 s MCP call
-timeout, `internal/agent/mcptools/timeout.go:13`). **Everything heavy runs in a job.**
+The command application is pure and fast in Node. Asset probing, TTS and saving involve I/O;
+an edit adding many sources can exceed Aura's 60 s MCP call timeout
+(`internal/agent/mcptools/timeout.go:13`). Plan C measures those cases and adds sources in
+bounded batches. Rendering and analyses run in a job.
 
-| Tool (MCP unless noted) | Input | Output |
+| Tool (all MCP) | Input | Output |
 |---|---|---|
 | `video_project_create` | name, format (`16:9`, `9:16`, `1:1` or width × height), optional clips and sounds by asset id | version 1 saved; the timeline summary; the project asset id |
 | `video_project_open` | project asset id | the timeline summary: item ids, start and end, source, volume, fades, ducking, transitions, overlays, and which analyses are still missing |
-| `video_project_edit` | project asset id; a list of operations | **all or nothing.** A new version, one `before => after` line per operation (`volume: 1 => 0.3`), the new timeline summary and asset id |
+| `video_project_edit` | project asset id; a list of operations | **Project version all or nothing.** A new version, one `before => after` line per operation (`volume: 1 => 0.3`), the new timeline summary and asset id; any already synthesized speech asset is reported on refusal |
 | `video_project_list` | — | the identity's projects, latest version of each |
-| `video_render_start` / `_status` / `_cancel` | project asset id, quality `1080p` or `720p` / job id / job id | job id; state, queue position, progress; at the end the asset id and a signed download link valid for 2 hours. **Hidden from Aura's model.** |
-| `video_render` (**native**, Aura) | project asset id, quality | job id and a progress card; the turn ends |
-| `video_render_cancel` (**native**, Aura) | job id | cancelled or already finished |
+| `video_render_start` / `_status` / `_cancel` | project asset id, quality `1080p` or `720p` / job id / job id | job id; state, queue position, progress; success has the film asset id and a signed download link valid for 2 hours. Failed/cancelled status also identifies any assets already accepted during upload |
 
 **Operations** are exactly the Studio's commands, named after them:
 - clips: `add_clip`, `trim_clip`, `split_at`, `remove_range`, `move_clip`, `set_muted`,
@@ -245,62 +240,98 @@ timeout, `internal/agent/mcptools/timeout.go:13`). **Everything heavy runs in a 
 Adding a source probes it with ffprobe for duration, size and whether it has audio. HEVC is refused:
 "HEVC is not supported by the renderer: convert the clip to H.264 first".
 
-**Refusals.** Every operation is checked before anything changes. A refused list leaves the project
-untouched and returns a result (not a tool failure) naming the operation, the reason and what would
-be accepted, e.g. `trim_clip c3: start 12 s is past the clip's 8 s`.
+**Refusals.** A refused operation list leaves the project version untouched and returns a result
+(not a tool failure) naming the operation, the reason and what would be accepted, e.g.
+`trim_clip c3: start 12 s is past the clip's 8 s`. `add_speech` can already have synthesized an
+audio asset before a later operation refuses: the response names that retained asset. Project
+atomicity does not imply rollback of a TTS asset.
 
 **Analyses.** Turning ducking on, or `denoise: true`, only records the choice. The job computes what
 is missing before rendering:
 - the speech windows of the sources ducking has not heard;
 - the cleaned copies that do not exist yet.
 
-It saves them as a new version, the way the Studio records an automatic analysis
-(`History.annotate`, plan C ruling). A later render reuses what is saved.
+The job computes them in scratch and renders with them. Only after the film passes its output
+check does it save cleaned copies and a new analysis version, the way the Studio records an
+automatic analysis (`recordAnalysis`, Plan A ruling). A later render reuses what was saved.
 
 ## Jobs and delivery
 
-*Amended 2026-10-02 (§"Amended 2026-10-02"): every client, Aura included, submits through
-`video_render_start` under its own token. Supervision (3), the wake and the card (4) and the native
-cancel (5) are gone; delivery is the status call's.*
+Every client, Aura included, uses the same ordinary MCP tools under its own bearer. The
+sidecar owns the queue and jobs; delivery is the status call's. The following requirements
+include the four regressions from Plan B's 2026-10-05 applicability review.
 
 1. **Start.**
-   - From Aura, `video_render` writes the row (identity, conversation, project, quality, status
-     `queued`).
-   - It issues a short-lived token (90 min) for that identity and the sidecar audience, and submits
-     the job to the sidecar.
-   - From an external MCP client, `video_render_start` submits it directly under the caller's token.
+   - `video_render_start` reads the project and resolves its actual playback and missing-analysis
+     dependencies before queuing. Signed source links last two hours; compute needs no bearer.
+   - Dependencies come from timeline clips/audio, image overlays and analyses of sources that are
+     actually used. Originals needed for analysis are included even when a cleaned stream plays;
+     unused sources and unselected cleaned copies do not block a render. A missing used dependency
+     refuses start, naming it. A source deleted after start can fail through the object store.
+   - Start returns the job id immediately, with instructions to tell the user it started and ask
+     for status on a later turn. No job token, native wrapper, progress card or conversation wake.
 2. **Execution.** The queue position is reported. Then, in order:
-   1. the missing analyses, saved as a new version;
+   1. the missing analyses, held in scratch and recorded in the in-memory project;
    2. the compile in Node;
    3. the render in the page;
    4. ffmpeg (AAC, faststart, no edit list);
    5. the output check;
-   6. the upload.
+   6. the upload: cleaned copies, then the analysis version with real asset ids, then the checked
+      film and its public download link.
 
    Progress runs from 0 to 1 across these steps.
-3. **Supervision** (Aura's jobs only).
-   - The watcher polls the sidecar's status and resumes after an Aura restart.
-   - A job the sidecar no longer knows (a sidecar restart) fails with "the renderer restarted". There
-     is no silent retry.
-   - Jobs expire after **60 minutes**. S2 measured about 1.9× real time on the lab VM, and the mini-PC
-     is slower.
+3. **Bounds and credentials.**
+   - The sidecar has a 120 s stall watchdog and a 60-minute age limit, queue time included.
+     Credential waiting pauses those clocks; it has its own single deadline, provisionally
+     15 minutes after check completion (Plan B Q1). Repeated waits do not extend that deadline.
+   - Every authenticated request obtains the current caller bearer just before dispatch. In
+     particular, finalize after a potentially ten-minute signed PUT and public resolve after film
+     acceptance must not reuse a bearer captured before upload. The PUT itself uses only the signed
+     URL and required headers, with no Aura Authorization header.
+   - Keep checked scratch and the current upload's asset id/PUT outcome during credential waits.
+     A refresh resumes that upload; it does not presign and upload a duplicate. Retrying finalize
+     requires Plan C to verify replay semantics, including a response lost after acceptance.
+   - The deadline also bounds upload/link recovery and its requests; respect both the remaining
+     time and signed PUT expiry. A rejected credential waits for a different verified caller
+     bearer, rather than retrying that same token in a loop.
+   - Finished status is retained for two hours. Another identity's job, an absent/expired job and
+     every job after a sidecar restart answer `unknown`; there is no silent render retry.
 4. **Delivery.**
-   - **Web:** the card becomes the video, with an authenticated download and "open in the Studio".
-   - **Telegram:** as today.
-   - **The conversation is woken** with "render finished: 58 s, 1080p, 47 MB, asset …", or the failure
-     and its reason.
-5. **Cancellation.** The native tool, the card's button or `video_render_cancel` stops the queued or
-   running job and destroys its browser.
+   - `video_render_status` reports the job. Success requires an accepted checked film and a usable
+     signed public link valid for two hours.
+   - Up to 25 MiB, success also carries `aura-video://film/<assetId>` as a `resource_link`. The
+     bridge reads it under the caller's bearer into the turn's workspace for `send_file`, on web
+     and Telegram. Larger films are reached through the library/Studio, named in the response.
+   - If obtaining the public link fails after acceptance, recover the link for that same film
+     within the deadline. On final failure, identify the saved film; never render or upload it
+     again merely to obtain its link. No conversation is woken automatically.
+5. **Cancellation.** `video_render_cancel` stops a queued or running job. The runner checks its
+   signal before credential acquisition and every write, and propagates it through HTTP, signed
+   PUT, browser and transcode operations alongside their timeouts. Cancel after the first accepted
+   copy must not start the project or film upload. A request already in flight may have committed:
+   report the known or uncertain outcome instead of implying rollback. SIGTERM uses the same path;
+   active-upload shutdown must be measured against the Compose stop grace.
+6. **Save guarantees and recovery.** No output of a render enters the library before its film
+   passes the output check. The subsequent saves are separate operations, with no rollback API.
+   Record each accepted asset and expose that record in failed/cancelled status, including copies,
+   versions and films; keep uncertain outcomes explicit. If the deadline expires before any save,
+   nothing was accepted and the scratch is discarded. If it expires after a save, identify what
+   remains in the library. A null success result does not imply that nothing was saved. Plan B
+   Tasks 14 and 18 must amend the shared status schema and its tests together before execution.
 
 **Limits of this version:**
 
 | Limit | Value | Reason |
 |---|---|---|
-| Film length | **10 minutes** | Memory was measured only at 60 s; the plan measures 10 minutes before fixing it. |
-| Resolution | 1080p or 720p, at most 1920 px wide | Instagram's cap; 720p halves the file. |
+| Film length | **10 minutes proposed**, 6 GiB container limit proposed | Plan B Task 13 records a 5,769 MiB peak with its real sources; Q3 remains open and source size matters. |
+| Resolution | 1080p or 720p, at most 1920 px wide | Instagram's cap; measured file size depends on bitrate and duration. |
 | Frame rate | the project's; 23–60 accepted | Instagram's range. |
-| Video bitrate | chosen per resolution **after measuring it on real clips** in the plan | the Studio's default is about 12 Mbps (49.9 MB per synthetic minute); Instagram's cap is 25 Mbps |
+| Video bitrate | **6 Mbps at 1080p / 3 Mbps at 720p proposed** | Plan B Task 11 records its 2026-10-02 real-footage sweep; replacement footage needs a fresh run, not reuse of those scores. |
 | Concurrency | 1 job | S2 used 1.4–2.8 of 4 cores; two at once was not measured. |
+
+Plan B Q1, Q2, Q3, Q5 and Q6 remain provisional. Its dated measurements support the
+recommendations but do not close those questions. Q4 (amd64 only) and Q7 (direct publish
+with egress) are operator decisions. The documentation revision does not record new PRD caps.
 
 ## Security and the internal API
 
@@ -312,18 +343,27 @@ cancel (5) are gone; delivery is the status call's.*
 - **Internal API**, reachable only from the docker network: Caddy answers 404 on `/internal/video/`.
   Every call carries the bearer, and Aura checks its audience and identity. It has four operations:
   - `resolve`: asset ids → signed GET links on the internal object-store endpoint, valid 2 hours.
-    It answers only for assets the identity owns and that are complete; anything else is "not
-    found", which does not reveal whether it exists.
+    Under Plan B Q5's provisional interpretation, upload-finished means status `accepted`,
+    `processing` or `complete`, owned by the caller and not deleted. Everything else is "not
+    found", without revealing whether it exists. `searchable` and `embedding` were removed by
+    migration `0136_assets_drop_searchable.up.sql`; an unfinalized `uploaded` row is not eligible.
   - `presign` + `finalize`: a new asset through `assets.Service` (`handleAssetPresign`'s path, a new
-    source kind for the sidecar).
+    source kind `video_mcp` for the sidecar). Plan C adds `assets.SourceVideoMCP` and widens the
+    database `assets_source_kind_check`, which currently admits `web`, `telegram`, `cli` and
+    `agent` (`0035_assets_source_kind_agent.up.sql`). Choose the next free migration number when
+    landing. Finalize verifies both ownership and this source kind; foreign assets answer 404.
+    Q2 provisionally raises this handler's video limit to 300,000,000 bytes; source kind alone
+    does not change `assets.Service`'s configured limits. Prove other upload paths retain their
+    limits (50 MiB default for video) and define/test repeat-finalize semantics before retries.
   - `tts`: Aura's TTS (`internal/multimodal/tts.go`), saved as an audio asset.
   - `projects`: the identity's saved projects.
 - **Inside the sidecar:**
   - it runs as a non-root user on a read-only filesystem;
-  - scratch space is a tmpfs, emptied after every job;
+  - scratch space is a tmpfs, retained during bounded credential/link recovery and emptied when
+    the job finally ends; cleanup does not delete accepted library assets;
   - the page reaches only its own origin and the proxy, and the proxy only the job's allowlist;
-  - there is no internet egress. *Superseded 2026-10-02: the container has egress (see the Compose
-    service); the page's allowlist above is what keeps a render off the network.*
+  - the container has internet egress by the operator's Q7 decision. The page/proxy allowlists
+    restrict rendering; the isolated synthetic CI tier can still run with `--network none`.
 - **Gateway.** No approval gate: edits add versions, and render and cancel create or stop jobs;
   nothing is destroyed. Under the current policy only destructive actions reach the gate.
   *Amended 2026-10-02:* this holds only if each write tool says so. The bridge grades a tool with
@@ -350,8 +390,15 @@ Each fix has a failing test first:
 
 **Gate 2.**
 - **Sidecar (vitest):**
-  - every operation and its refusal, atomicity, `before => after` lines;
-  - the queue, cancellation and the stall watchdog;
+  - every operation and its refusal, project-version atomicity and retained TTS assets,
+    `before => after` lines;
+  - the queue, cancellation between writes/during PUT, the stall watchdog and bounded SIGTERM;
+  - bearer expiry during PUT, refresh before finalize/public resolve, a single claim deadline,
+    scratch retention during recovery and no duplicate upload;
+  - public-link failure and later-upload failure after earlier assets were accepted, with those
+    ids retained in failed/cancelled status and no false "nothing saved" claim;
+  - playback/analysis dependencies, including deleted unused sources, selected cleaned copies,
+    used overlays/audio and missing originals needed for analysis;
   - the proxy refusing anything off its allowlist;
   - the output check on fixtures that are black, silent, too short, missing a stream, or AAC-less;
   - token verification against fake published keys;
@@ -359,14 +406,11 @@ Each fix has a failing test first:
 - **Sidecar integration in CI:** a real render in the image (headless shell + ffmpeg) on synthetic
   fixtures, asserting H.264 High, AAC 48 kHz stereo, faststart, no edit list, 1080×1920 at 30 fps and
   the duration. Under `$CI` it fails if anything is missing; it never skips.
-- **Aura (Go)** *(amended 2026-10-02: the internal API and the recipe only; the store, watcher,
-  native tools, completion route and hidden tool set are gone)*:
-  - the internal API: audience, identity, "not found" semantics;
-  - the `render_jobs` store (db_integration);
-  - the watcher against a fake sidecar;
-  - the native tools;
-  - the completion route;
-  - the bridge's hidden tool set;
+- **Aura (Go)**, the internal API and recipe:
+  - audience, identity, "not found" semantics and accepted/processing/complete eligibility;
+  - the source-kind migration, owned finalize and measured repeat-finalize behaviour;
+  - the video-specific upload ceiling without widening other paths;
+  - recipe/default-on/first-party grant and strict egress policy integration;
   - race + goleak, coverage ≥ 85 %.
 - **Mutation in CI only.** The critical files join the gate: the proxy's allowlist, the output check,
   and the internal API's authentication.
@@ -424,16 +468,20 @@ called (no `video_generate`) unless the operator asks.
 
 - Anything on arm64, which is not supported (amended 2026-10-02), or render times on the mini-PC's
   CPU. S2's seconds are the lab VM's.
-- Camera footage and 4K: the spikes used test patterns.
+- The original spikes used test patterns; Plan B's 2026-10-02 harness subsequently measured its
+  stated camera/screen clips. It does not establish limits for arbitrary camera/4K footage.
+  The original camera input is now missing; repeat measurements require explicit existing
+  input paths, hashes and a fresh output directory (Plan B Task 11).
 - Two renders at once.
 - Whether the Opus → AAC transcode changes loudness. The E2E measures it; the spikes did not.
 - Sub-project 3 (the panel), which reuses these tools and is designed separately.
 
 ## For review
 
-- The internal API uses the sidecar's own bearer, whose audience is the sidecar. It is the narrowest
-  credential that carries the identity. The alternative, a storage key in the sidecar, would bypass
-  asset ownership, and was rejected.
-- Hiding the MCP's render tools from Aura's model, rather than teaching the bridge to track jobs,
-  keeps one delivery path per client. *Superseded 2026-10-02: nothing is hidden, and Aura uses the
-  MCP's render tools like any client (§"Amended 2026-10-02").*
+- The internal API uses the caller's bearer, whose audience includes the sidecar. No bearer is
+  minted for a job and no storage key bypasses ownership. Freshness is checked per authenticated
+  request, not once for an upload that may outlive the credential.
+- Aura and external clients use one visible MCP tool surface and status-based delivery.
+- The 2026-10-05 applicability review found four missing regressions despite the original
+  260 green tests. Plan B's correction checklist is required; historical coverage/typecheck
+  evidence does not prove the revised implementation, Docker rendering or current-stack E2E.
