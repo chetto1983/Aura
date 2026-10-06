@@ -8,8 +8,9 @@ import (
 )
 
 // TenantClients resolves one identity to one server-enforced ArcadeDB boundary.
-// The admin client is used only for cold provisioning; returned clients always
-// authenticate with the credential scoped to their single database.
+// The admin client provisions cold tenants, answers Existing's existence check and reads
+// the server version; returned clients always authenticate with the credential scoped to
+// their single database.
 type TenantClients struct {
 	base        Config
 	embedder    DenseEmbedder

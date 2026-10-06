@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -29,6 +30,7 @@ type tenantHTTPRecorder struct {
 	existsFails     bool
 	version         string // what GET /api/v1/server answers; "" answers the floor itself
 	versionCalls    int
+	versionUsers    []string // the Basic-auth user of each GET /api/v1/server
 }
 
 func newTenantHTTPRecorder(t *testing.T) *tenantHTTPRecorder {
@@ -83,6 +85,8 @@ func (r *tenantHTTPRecorder) serveHTTP(w http.ResponseWriter, request *http.Requ
 	if request.URL.Path == "/api/v1/server" && request.Method == http.MethodGet {
 		r.mu.Lock()
 		r.versionCalls++
+		user, _, _ := request.BasicAuth()
+		r.versionUsers = append(r.versionUsers, user)
 		answer := r.version
 		r.mu.Unlock()
 		if answer == "" {
@@ -132,6 +136,12 @@ func (r *tenantHTTPRecorder) versionReads() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.versionCalls
+}
+
+func (r *tenantHTTPRecorder) versionReaders() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.versionUsers)
 }
 
 func (r *tenantHTTPRecorder) config(database, user, password string) Config {
@@ -375,20 +385,53 @@ func TestTenantClientsRefuseAServerBelowTheFloor(t *testing.T) {
 	}
 }
 
-// The floor is read once per resolver, not once per identity or per call.
+// The floor is read once per resolver, not once per identity or per call, and by the one
+// credential that can answer: the admin's when there is one (an unprovisioned tenant's own
+// bind would be refused and counted against it), the tenant's own otherwise.
 func TestTenantClientsVerifyTheServerOnce(t *testing.T) {
-	recorder := newTenantHTTPRecorder(t)
-	admin, err := New(recorder.config("admin", "root", "root-password"))
-	if err != nil {
-		t.Fatalf("admin client: %v", err)
+	identities := []string{resolverIdentity, "10000000-0000-0000-0000-000000000002", resolverIdentity}
+	firstDatabase, _ := DatabaseFor(resolverIdentity)
+	cases := map[string]struct {
+		admin      bool
+		version    string
+		wantReader string
+		wantRefuse bool
+	}{
+		"with an admin":                {admin: true, wantReader: "root"},
+		"without an admin":             {wantReader: TenantUserFor(firstDatabase)},
+		"without an admin below floor": {version: "26.9.1", wantReader: TenantUserFor(firstDatabase), wantRefuse: true},
 	}
-	resolver := NewTenantClients(recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials())
-	for _, identity := range []string{resolverIdentity, "10000000-0000-0000-0000-000000000002", resolverIdentity} {
-		if _, err := resolver.For(t.Context(), identity); err != nil {
-			t.Fatalf("For(%s): %v", identity, err)
-		}
-	}
-	if reads := recorder.versionReads(); reads != 1 {
-		t.Fatalf("version reads = %d, want one per resolver", reads)
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			recorder := newTenantHTTPRecorder(t)
+			recorder.version = tc.version
+			var admin *Client
+			if tc.admin {
+				var err error
+				if admin, err = New(recorder.config("admin", "root", "root-password")); err != nil {
+					t.Fatalf("admin client: %v", err)
+				}
+			} else {
+				for _, identity := range identities {
+					database, _ := DatabaseFor(identity)
+					recorder.provisioned[database] = true
+				}
+			}
+			resolver := NewTenantClients(recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials())
+			if tc.wantRefuse {
+				if _, err := resolver.For(t.Context(), resolverIdentity); err == nil || !strings.Contains(err.Error(), "26.10.1") {
+					t.Fatalf("For on %s = %v, want the version floor refusal", tc.version, err)
+				}
+			} else {
+				for _, identity := range identities {
+					if _, err := resolver.For(t.Context(), identity); err != nil {
+						t.Fatalf("For(%s): %v", identity, err)
+					}
+				}
+			}
+			if readers := recorder.versionReaders(); !slices.Equal(readers, []string{tc.wantReader}) {
+				t.Fatalf("version read by %q, want exactly one read by %q", readers, tc.wantReader)
+			}
+		})
 	}
 }
