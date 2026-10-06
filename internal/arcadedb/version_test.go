@@ -28,28 +28,30 @@ func TestParseVersionHandlesWhatTheServerActuallyReports(t *testing.T) {
 	}
 }
 
-// The comparison decides whether per-identity memory is safe to run at all, so
-// the boundary is worth pinning exactly: 26.4.2 is the FIRST patched release.
-func TestVersionComparisonAtTheCVEBoundary(t *testing.T) {
+// The floor decides whether per-identity memory is safe to run at all, so its boundary is
+// pinned exactly: 26.4.2 closed CVE-2026-44221, and 26.10.1 stopped treating a vector
+// filter that matches nothing as no filter (ArcadeData/arcadedb#8959), which turn recall's
+// space and label filters rely on.
+func TestVersionComparisonAtTheFloor(t *testing.T) {
 	t.Parallel()
-	affected := []string{"26.4.1", "26.3.9", "25.12.0", "1.0.0"}
-	patched := []string{"26.4.2", "26.4.3", "26.7.3", "27.0.0"}
-	for _, raw := range affected {
+	below := []string{"26.10.0", "26.9.1", "26.4.2", "26.4.1", "25.12.0", "1.0.0"}
+	atOrAbove := []string{"26.10.1", "26.10.2", "26.11.0", "27.0.0"}
+	for _, raw := range below {
 		v, err := parseVersion(raw)
 		if err != nil {
 			t.Fatalf("parseVersion(%q): %v", raw, err)
 		}
 		if !v.Less(minSecureVersion) {
-			t.Errorf("%s should be treated as affected by CVE-2026-44221", raw)
+			t.Errorf("%s is below the floor but was accepted", raw)
 		}
 	}
-	for _, raw := range patched {
+	for _, raw := range atOrAbove {
 		v, err := parseVersion(raw)
 		if err != nil {
 			t.Fatalf("parseVersion(%q): %v", raw, err)
 		}
 		if v.Less(minSecureVersion) {
-			t.Errorf("%s is patched but was treated as affected", raw)
+			t.Errorf("%s meets the floor but was refused", raw)
 		}
 	}
 }

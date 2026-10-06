@@ -83,7 +83,8 @@ func TestServerVersionAndSecurityBoundary(t *testing.T) {
 		body    string
 		wantErr bool
 	}{
-		{name: "patched", status: http.StatusOK, body: `{"version":"26.7.3 (build x)"}`},
+		{name: "patched", status: http.StatusOK, body: `{"version":"26.10.1 (build x)"}`},
+		{name: "below the floor", status: http.StatusOK, body: `{"version":"26.9.1"}`, wantErr: true},
 		{name: "affected", status: http.StatusOK, body: `{"version":"26.4.1"}`, wantErr: true},
 		{name: "unreadable", status: http.StatusOK, body: `{"version":"unknown"}`, wantErr: true},
 		{name: "malformed body", status: http.StatusOK, body: `{"version":`, wantErr: true},

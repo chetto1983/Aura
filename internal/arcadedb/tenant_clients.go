@@ -19,6 +19,7 @@ type TenantClients struct {
 	mu       sync.Mutex
 	clients  map[string]*Client
 	inflight map[string]chan struct{}
+	verified bool // the server cleared minSecureVersion; a refusal is re-checked on the next call
 }
 
 // NewTenantClients builds a resolver without performing I/O. A nil admin means
@@ -40,7 +41,8 @@ func NewTenantClients(
 }
 
 // For returns the client for one identity, provisioning its database, scoped
-// credential, and memory schema on the first successful call.
+// credential, and memory schema on the first successful call. The first call of a
+// resolver also refuses a server older than minSecureVersion.
 func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, error) {
 	database, err := DatabaseFor(identityID)
 	if err != nil {
@@ -90,6 +92,9 @@ func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, er
 	if err != nil {
 		return nil, fmt.Errorf("memory for %s: %w", identityID, err)
 	}
+	if err := t.verifyServer(ctx, client); err != nil {
+		return nil, fmt.Errorf("memory for %s: %w", identityID, err)
+	}
 	if err := client.EnsureMemorySchema(ctx); err != nil {
 		if t.admin == nil {
 			return nil, fmt.Errorf("memory for %s: %w", identityID, err)
@@ -106,6 +111,31 @@ func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, er
 	t.clients[database] = client
 	t.mu.Unlock()
 	return client, nil
+}
+
+// verifyServer refuses an ArcadeDB older than minSecureVersion before the first tenant
+// client is handed out, and remembers a pass. It runs here rather than at boot so that a
+// slow ArcadeDB start is a retried read, not a failed boot. The admin reads the version
+// when there is one; otherwise the tenant's own credential does, which
+// TestTenantCredentialReadsTheServerVersionLive measured to be allowed.
+func (t *TenantClients) verifyServer(ctx context.Context, tenant *Client) error {
+	t.mu.Lock()
+	verified := t.verified
+	t.mu.Unlock()
+	if verified {
+		return nil
+	}
+	server := tenant
+	if t.admin != nil {
+		server = t.admin
+	}
+	if err := server.VerifySecureVersion(ctx); err != nil {
+		return err
+	}
+	t.mu.Lock()
+	t.verified = true
+	t.mu.Unlock()
+	return nil
 }
 
 // Existing returns the identity's client when its memory database is already there, and
