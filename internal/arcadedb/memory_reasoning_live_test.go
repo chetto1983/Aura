@@ -436,3 +436,91 @@ func TestReasoningGraphLive_GrowthEvidence(t *testing.T) {
 	t.Logf("REASONING_GROWTH_EVIDENCE database_bytes=%d record_bytes=%d vertices=%d edges=%d index_entries=%d",
 		delta.databaseBytes, delta.recordBytes, delta.vertices, delta.edges, delta.indexEntries)
 }
+
+// A tool-only trace must survive the real engine: provider_summary is MANDATORY in the
+// schema, and "" has to count as present. The embedding pass then sets the empty summary
+// aside once, with a space stamp and no vector, instead of retrying it on every run.
+func TestReasoningGraphLive_ToolOnlyTraceIsStoredAndSetAsideOnce(t *testing.T) {
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	route := constantEmbedder{value: 1, space: "es1-tool-only"}
+	trace := freshReasoningTrace()
+	trace.TraceID = "trace-tool-only"
+	trace.ProviderSummary = ""
+	trace.Steps[0].ProviderSummary = ""
+	if err := client.WithEmbedder(route).UpsertReasoningTrace(ctx, trace); err != nil {
+		t.Fatalf("UpsertReasoningTrace(tool-only): %v", err)
+	}
+
+	rows, err := client.Query(ctx,
+		"SELECT provider_summary, out('HAS_STEP').out('INVOKED').tool_name AS tools FROM ReasoningTrace WHERE trace_id = :trace_id",
+		map[string]any{"trace_id": trace.TraceID})
+	if err != nil {
+		t.Fatalf("read back the trace: %v", err)
+	}
+	if len(rows) != 1 || rowString(rows[0], "provider_summary") != "" {
+		t.Fatalf("stored trace = %#v, want one row with an empty summary", rows)
+	}
+	if tools := rowStrings(rows[0], "tools"); len(tools) != 1 || tools[0] != "shell_exec" {
+		t.Fatalf("stored tools = %#v, want the one call", rows[0]["tools"])
+	}
+
+	first, err := client.WithEmbedder(route).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("first pass: %v", err)
+	}
+	second, err := client.WithEmbedder(route).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("second pass: %v", err)
+	}
+	if first.embedded != 0 || first.blank != 1 || first.refused != 0 || second.blank != 0 {
+		t.Fatalf("passes = %+v then %+v, want the empty trace set aside once", first, second)
+	}
+
+	got, found, err := client.GetReasoningTrace(ctx, trace.IdentityID, trace.TraceID)
+	if err != nil || !found {
+		t.Fatalf("GetReasoningTrace(tool-only) = found %v, err %v", found, err)
+	}
+	if got.ProviderSummary != "" || len(got.Steps) != 1 ||
+		len(got.Steps[0].ToolCalls) != 1 || got.Steps[0].ToolCalls[0].ToolName != "shell_exec" {
+		t.Fatalf("read back = %#v, want the empty summary and the one shell_exec call", got)
+	}
+}
+
+// The report's Rejected means the model refused the text. A tool-only trace is set aside with
+// the same stamp and no vector but holds no text to refuse, so it stays in NoVector alone.
+func TestSpaceReportLive_OnlyRefusedTextCountsAsRejected(t *testing.T) {
+	client := disposableMemoryClient(t)
+	ctx := context.Background()
+	toolOnly := freshReasoningTrace()
+	toolOnly.TraceID = "trace-tool-only"
+	toolOnly.ProviderSummary = ""
+	toolOnly.Steps[0].ProviderSummary = ""
+	refused := freshReasoningTrace()
+	refused.TraceID = "trace-refused"
+	refused.ProviderSummary = "RefusedSummary: the model will not take this text."
+	for _, trace := range []ReasoningTrace{toolOnly, refused} {
+		if err := client.WithEmbedder(constantEmbedder{value: 1, space: "es1-route-a"}).UpsertReasoningTrace(ctx, trace); err != nil {
+			t.Fatalf("UpsertReasoningTrace(%s): %v", trace.TraceID, err)
+		}
+	}
+
+	routeB := &refusingEmbedder{refuse: []string{refused.ProviderSummary}, status: http.StatusBadRequest, space: "es1-route-b"}
+	tally, err := client.WithEmbedder(routeB).reembedMemory(ctx)
+	if err != nil {
+		t.Fatalf("reembedMemory: %v", err)
+	}
+	if tally.blank != 1 || tally.refused != 1 {
+		t.Fatalf("tally = %+v, want one blank and one refused row", tally)
+	}
+
+	report, err := client.SpaceReport(ctx, toolOnly.IdentityID, "es1-route-b", "es1-docs")
+	if err != nil {
+		t.Fatalf("SpaceReport: %v", err)
+	}
+	for _, typed := range report.Families[0].Types {
+		if typed.Type == reasoningTraceType && (typed.NoVector != 2 || typed.Rejected != 1) {
+			t.Fatalf("ReasoningTrace tally = %+v, want 2 without a vector and only the refused one rejected", typed)
+		}
+	}
+}

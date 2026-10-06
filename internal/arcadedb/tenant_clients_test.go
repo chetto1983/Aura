@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -27,6 +28,8 @@ type tenantHTTPRecorder struct {
 	blockSchema     <-chan struct{}
 	schemaStarted   chan<- struct{}
 	existsFails     bool
+	version         string   // what GET /api/v1/server answers; "" answers the floor itself
+	versionUsers    []string // the Basic-auth user of each GET /api/v1/server
 }
 
 func newTenantHTTPRecorder(t *testing.T) *tenantHTTPRecorder {
@@ -78,6 +81,18 @@ func (r *tenantHTTPRecorder) serveHTTP(w http.ResponseWriter, request *http.Requ
 		_ = json.NewEncoder(w).Encode(map[string]bool{"result": exists})
 		return
 	}
+	if request.URL.Path == "/api/v1/server" && request.Method == http.MethodGet {
+		r.mu.Lock()
+		user, _, _ := request.BasicAuth()
+		r.versionUsers = append(r.versionUsers, user)
+		answer := r.version
+		r.mu.Unlock()
+		if answer == "" {
+			answer = "26.10.1 (build test)"
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"version": answer})
+		return
+	}
 	if request.URL.Path != "/api/v1/server" {
 		http.NotFound(w, request)
 		return
@@ -113,6 +128,18 @@ func (r *tenantHTTPRecorder) counts() (int, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.databaseCalls, r.userCalls
+}
+
+func (r *tenantHTTPRecorder) versionReads() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.versionUsers)
+}
+
+func (r *tenantHTTPRecorder) versionReaders() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.versionUsers)
 }
 
 func (r *tenantHTTPRecorder) config(database, user, password string) Config {
@@ -322,5 +349,87 @@ func TestTenantAlreadyExistsClassification(t *testing.T) {
 	}
 	if tenantAlreadyExists(nil) || tenantAlreadyExists(errors.New("permission denied")) {
 		t.Fatal("unrelated error recognized as already-exists")
+	}
+}
+
+// A server below the floor is refused before anything is provisioned on it, and the refusal
+// is not cached: an upgraded server is accepted without a restart.
+func TestTenantClientsRefuseAServerBelowTheFloor(t *testing.T) {
+	recorder := newTenantHTTPRecorder(t)
+	recorder.version = "26.9.1"
+	admin, err := New(recorder.config("admin", "root", "root-password"))
+	if err != nil {
+		t.Fatalf("admin client: %v", err)
+	}
+	resolver := NewTenantClients(recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials())
+
+	for range 2 {
+		if _, err := resolver.For(t.Context(), resolverIdentity); err == nil || !strings.Contains(err.Error(), "26.10.1") {
+			t.Fatalf("For on 26.9.1 = %v, want the version floor refusal", err)
+		}
+	}
+	if databases, users := recorder.counts(); databases != 0 || users != 0 {
+		t.Fatalf("a refused server got %d databases and %d users", databases, users)
+	}
+	if reads := recorder.versionReads(); reads != 2 {
+		t.Fatalf("version reads = %d, want the refusal re-checked on every call", reads)
+	}
+
+	recorder.mu.Lock()
+	recorder.version = "26.10.1"
+	recorder.mu.Unlock()
+	if _, err := resolver.For(t.Context(), resolverIdentity); err != nil {
+		t.Fatalf("For after the upgrade: %v", err)
+	}
+}
+
+// The floor is read once per resolver, not once per identity or per call, and by the one
+// credential that can answer: the admin's when there is one (an unprovisioned tenant's own
+// bind would be refused and counted against it), the tenant's own otherwise.
+func TestTenantClientsVerifyTheServerOnce(t *testing.T) {
+	identities := []string{resolverIdentity, "10000000-0000-0000-0000-000000000002", resolverIdentity}
+	firstDatabase, _ := DatabaseFor(resolverIdentity)
+	cases := map[string]struct {
+		admin      bool
+		version    string
+		wantReader string
+		wantRefuse bool
+	}{
+		"with an admin":                {admin: true, wantReader: "root"},
+		"without an admin":             {wantReader: TenantUserFor(firstDatabase)},
+		"without an admin below floor": {version: "26.9.1", wantReader: TenantUserFor(firstDatabase), wantRefuse: true},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			recorder := newTenantHTTPRecorder(t)
+			recorder.version = tc.version
+			var admin *Client
+			if tc.admin {
+				var err error
+				if admin, err = New(recorder.config("admin", "root", "root-password")); err != nil {
+					t.Fatalf("admin client: %v", err)
+				}
+			} else {
+				for _, identity := range identities {
+					database, _ := DatabaseFor(identity)
+					recorder.provisioned[database] = true
+				}
+			}
+			resolver := NewTenantClients(recorder.config("template", "shared", "shared-password"), admin, nil, resolverCredentials())
+			if tc.wantRefuse {
+				if _, err := resolver.For(t.Context(), resolverIdentity); err == nil || !strings.Contains(err.Error(), "26.10.1") {
+					t.Fatalf("For on %s = %v, want the version floor refusal", tc.version, err)
+				}
+			} else {
+				for _, identity := range identities {
+					if _, err := resolver.For(t.Context(), identity); err != nil {
+						t.Fatalf("For(%s): %v", identity, err)
+					}
+				}
+			}
+			if readers := recorder.versionReaders(); !slices.Equal(readers, []string{tc.wantReader}) {
+				t.Fatalf("version read by %q, want exactly one read by %q", readers, tc.wantReader)
+			}
+		})
 	}
 }

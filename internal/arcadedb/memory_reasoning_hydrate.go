@@ -18,10 +18,10 @@ package arcadedb
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
-// hydrateReasoningBodies attaches steps and tool calls to traces, in place.
+// hydrateReasoningBodies attaches steps and tool calls to traces, in place, and
+// validates each complete trace the way GetReasoningTrace does.
 //
 // A trace whose body fails to load is not silently returned bare: the reader
 // cannot tell an empty trace from an unread one, and a header presented as a
@@ -31,18 +31,14 @@ func (c *Client) hydrateReasoningBodies(
 	identityID string,
 	traces []ReasoningTrace,
 ) ([]ReasoningTrace, error) {
+	if len(traces) == 0 {
+		return traces, nil
+	}
 	ids := make([]string, 0, len(traces))
 	at := make(map[string]int, len(traces))
 	for index, trace := range traces {
-		id := strings.TrimSpace(trace.TraceID)
-		if id == "" {
-			continue
-		}
-		ids = append(ids, id)
-		at[id] = index
-	}
-	if len(ids) == 0 {
-		return traces, nil
+		ids = append(ids, trace.TraceID)
+		at[trace.TraceID] = index
 	}
 	params := map[string]any{"identity_id": identityID, "trace_ids": ids}
 	stepRows, err := c.Query(ctx, listReasoningStepsStatement, params)
@@ -62,6 +58,11 @@ func (c *Client) hydrateReasoningBodies(
 		if err := attachReasoningTools(&traces[index], rowsForTrace(toolRows, id)); err != nil {
 			return nil, err
 		}
+		normalized, err := normalizeReasoningTrace(traces[index])
+		if err != nil {
+			return nil, fmt.Errorf("arcadedb: invalid stored reasoning trace: %w", err)
+		}
+		traces[index] = normalized
 	}
 	return traces, nil
 }

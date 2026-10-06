@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -14,7 +15,7 @@ func normalizeReasoningTrace(trace ReasoningTrace) (ReasoningTrace, error) {
 	if err := validateReasoningIdentity(trace); err != nil {
 		return ReasoningTrace{}, err
 	}
-	summary, err := normalizeReasoningEvidence("provider_summary", trace.ProviderSummary, reasoningSummaryRunes)
+	summary, err := normalizeReasoningSummary("provider_summary", trace.ProviderSummary, traceHasToolCalls(trace))
 	if err != nil {
 		return ReasoningTrace{}, err
 	}
@@ -31,8 +32,8 @@ func normalizeReasoningTrace(trace ReasoningTrace) (ReasoningTrace, error) {
 		if step.CreatedAt.IsZero() {
 			return ReasoningTrace{}, fmt.Errorf("arcadedb: reasoning step %d created_at must be set", step.Index)
 		}
-		step.ProviderSummary, err = normalizeReasoningEvidence(
-			"step provider_summary", step.ProviderSummary, reasoningSummaryRunes)
+		step.ProviderSummary, err = normalizeReasoningSummary(
+			"step provider_summary", step.ProviderSummary, len(step.ToolCalls) > 0)
 		if err != nil {
 			return ReasoningTrace{}, err
 		}
@@ -65,6 +66,21 @@ func normalizeReasoningTrace(trace ReasoningTrace) (ReasoningTrace, error) {
 	}
 	trace.Steps = steps
 	return trace, nil
+}
+
+// normalizeReasoningSummary normalizes a provider summary. An empty one is accepted only
+// where tool calls stand in for it: a turn that exposed no reasoning still records what it
+// ran, and no reasoning text is synthesized for it. validateReasoningText stays strict for
+// everything else.
+func normalizeReasoningSummary(name, value string, hasToolCalls bool) (string, error) {
+	if value == "" && hasToolCalls {
+		return "", nil
+	}
+	return normalizeReasoningEvidence(name, value, reasoningSummaryRunes)
+}
+
+func traceHasToolCalls(trace ReasoningTrace) bool {
+	return slices.ContainsFunc(trace.Steps, func(step ReasoningStep) bool { return len(step.ToolCalls) > 0 })
 }
 
 func validateReasoningIdentity(trace ReasoningTrace) error {

@@ -159,8 +159,7 @@ func (c *Client) CredentialAccepted(ctx context.Context) (bool, error) {
 	}
 }
 
-// minSecureVersion is the first ArcadeDB release that authorizes a database
-// created at runtime.
+// minSecureVersion is the oldest ArcadeDB release Aura's memory is safe on.
 //
 // CVE-2026-44221 (CVSS 9.0, fixed in 26.4.2) was two defects: an uninitialized
 // fileAccessMap treated as permissive, and — the one that matters here —
@@ -170,9 +169,14 @@ func (c *Client) CredentialAccepted(ctx context.Context) (bool, error) {
 // refusing a credential scoped elsewhere. On an affected version it would not
 // refuse, and nothing would say so.
 //
+// 26.10.1 raised the floor on 2026-10-06. Before it, a vector.neighbors filter that
+// matched nothing was treated as no filter (ArcadeData/arcadedb#8959), so turn recall
+// would rank another embedding space's vectors, or unlabelled turns, the moment an
+// identity had none matching. It also closes GHSA-h2j4-28h8-cj5v.
+//
 // So the pin in compose.yaml is not enough: a downgrade must be a refusal, not a
 // silent loss of isolation.
-var minSecureVersion = [3]int{26, 4, 2}
+var minSecureVersion = [3]int{26, 10, 1}
 
 // ServerVersion reports the running server's version string.
 func (c *Client) ServerVersion(ctx context.Context) (string, error) {
@@ -193,7 +197,7 @@ func (c *Client) ServerVersion(ctx context.Context) (string, error) {
 	return decoded.Version, nil
 }
 
-// VerifySecureVersion refuses a server old enough to have CVE-2026-44221.
+// VerifySecureVersion refuses a server older than minSecureVersion.
 func (c *Client) VerifySecureVersion(ctx context.Context) error {
 	raw, err := c.ServerVersion(ctx)
 	if err != nil {
@@ -205,9 +209,9 @@ func (c *Client) VerifySecureVersion(ctx context.Context) error {
 	}
 	if version.Less(minSecureVersion) {
 		return fmt.Errorf(
-			"arcadedb %s is affected by CVE-2026-44221: a database created at runtime is "+
-				"left unauthorized, which is exactly what per-identity memory relies on. "+
-				"Upgrade to %d.%d.%d or later",
+			"arcadedb %s is older than %d.%d.%d, the oldest release Aura's memory is safe on: "+
+				"before 26.4.2 a database created at runtime is left unauthorized (CVE-2026-44221), "+
+				"and before 26.10.1 a vector filter matching nothing ranks every vector (#8959)",
 			raw, minSecureVersion[0], minSecureVersion[1], minSecureVersion[2])
 	}
 	return nil

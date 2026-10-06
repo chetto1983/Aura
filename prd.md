@@ -1018,6 +1018,14 @@ retrieval contract, not projection completeness against PostgreSQL, automatic to
 clustering, or WhatsApp delivery. Full-day claims require exhausting the cursor;
 projection lag remains a limit of every memory read.
 
+Verified after deployment on the same VM, 2026-10-06: the unchanged yesterday
+question, run by `gpt-5.6-sol`, used `period` for the local 5 October day and returned
+all 48 unique source references in 9 chats, exactly matching the native query,
+without a next cursor. The answer recovered morning topics, preserved distinct
+attempts and explicitly separated stored messages from external delivery proof.
+The real-agent acceptance rubric passed 10/10; scope and reproduction are recorded
+in [the appliance verification](docs/verification/2026-10-06-memory-period.md).
+
 ## 11. Documents and media
 
 Identity-bound originals live in Garage. The ingestion supervisor resolves existing

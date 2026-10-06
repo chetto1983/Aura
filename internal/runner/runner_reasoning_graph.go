@@ -42,7 +42,8 @@ type ReasoningDeletionStore interface {
 	DeleteReasoningBySource(context.Context, arcadedb.ReasoningDeleteSelector) (int, error)
 }
 
-// ReasoningTraceBuilder accumulates one authorized provider-visible attempt.
+// ReasoningTraceBuilder accumulates one turn's trace: the reasoning of its accepted attempt and
+// every tool call the turn ran, across discarded rounds.
 type ReasoningTraceBuilder struct {
 	runID     uuid.UUID
 	summary   strings.Builder
@@ -109,7 +110,31 @@ func lookupReasoningToolPolicy(name string) reasoningToolPolicy {
 	return reasoningToolPolicy{}
 }
 
-// Reset discards every event from a repudiated provider attempt.
+// DiscardReasoning repudiates the reasoning streamed so far and keeps the tools. A discard
+// withdraws only the current round's prose and fires before that round runs a tool, so every
+// call seen so far belongs to an earlier, accepted round: it ran, and conversation_turns and
+// the tool ledger keep it. A step left with no tool is dropped; the next reasoning event
+// opens a new step, as it does after any tool.
+func (b *ReasoningTraceBuilder) DiscardReasoning() {
+	kept := b.steps[:0]
+	for i := range b.steps {
+		if len(b.steps[i].tools) == 0 {
+			continue
+		}
+		b.steps[i].summary.Reset()
+		kept = append(kept, b.steps[i])
+	}
+	if len(kept) == 0 {
+		b.Reset()
+		return
+	}
+	b.steps = kept
+	b.summary.Reset()
+	b.runes = 0
+	b.afterTool = true
+}
+
+// Reset empties the builder, as after a commit.
 func (b *ReasoningTraceBuilder) Reset() {
 	b.runID = uuid.Nil
 	b.summary.Reset()
@@ -118,6 +143,19 @@ func (b *ReasoningTraceBuilder) Reset() {
 	b.steps = nil
 	b.afterTool = false
 	b.seenCalls = nil
+}
+
+// start opens the trace on an attempt's first observed event, reasoning or tool, so a turn
+// that exposed no reasoning still records what it ran.
+func (b *ReasoningTraceBuilder) start(ev *agent.Event) {
+	if b.runID != uuid.Nil {
+		return
+	}
+	b.runID = ev.RequestID
+	b.createdAt = ev.Timestamp.UTC()
+	if b.createdAt.IsZero() {
+		b.createdAt = time.Now().UTC()
+	}
 }
 
 // ObserveReasoning accepts only the provider-visible reasoning event shape that
@@ -129,13 +167,7 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 	if b.runID != uuid.Nil && b.runID != ev.RequestID {
 		return
 	}
-	if b.runID == uuid.Nil {
-		b.runID = ev.RequestID
-		b.createdAt = ev.Timestamp.UTC()
-		if b.createdAt.IsZero() {
-			b.createdAt = time.Now().UTC()
-		}
-	}
+	b.start(ev)
 	kept := b.appendReasoning(ev.LLMResponse.Reasoning)
 	if kept == "" {
 		return
@@ -155,11 +187,16 @@ func (b *ReasoningTraceBuilder) ObserveReasoning(ev *agent.Event) {
 	step.summary.WriteString(kept)
 }
 
-// ObserveToolInvocation joins one structured runtime tool event to the active trace.
+// ObserveToolInvocation joins one structured runtime tool event to the active trace. The
+// attempt's first valid tool event opens the trace when no reasoning did: measured
+// 2026-10-06, the graph reached 9 of the lab VM's 16 tool turns, because a turn with no
+// exposed reasoning had nothing to open it. Once open, another attempt's events are foreign.
 func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
-	if ev == nil || ev.RequestID == uuid.Nil || b.runID == uuid.Nil || ev.RequestID != b.runID ||
-		ev.Actions.ToolInvocation == nil || ev.Actions.ToolInvocation.Event != agent.ToolInvocationEnd ||
-		len(b.steps) == 0 {
+	if ev == nil || ev.RequestID == uuid.Nil || ev.Actions.ToolInvocation == nil ||
+		ev.Actions.ToolInvocation.Event != agent.ToolInvocationEnd {
+		return
+	}
+	if b.runID != uuid.Nil && ev.RequestID != b.runID {
 		return
 	}
 	ti := ev.Actions.ToolInvocation
@@ -168,11 +205,19 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 	if !ok || strings.TrimSpace(ti.ToolName) == "" || strings.TrimSpace(ti.ToolCallID) == "" {
 		return
 	}
-	if b.seenCalls == nil {
-		b.seenCalls = make(map[string]struct{})
-	}
 	if _, duplicate := b.seenCalls[ti.ToolCallID]; duplicate {
 		return
+	}
+	b.start(ev)
+	// A turn that never exposes reasoning keeps every call in one step, so a full step
+	// spills into a new one rather than losing calls the step budget still has room for.
+	if len(b.steps) == 0 || (len(b.steps[len(b.steps)-1].tools) == reasoningGraphMaxToolsPerStep &&
+		len(b.steps) < reasoningGraphMaxSteps) {
+		createdAt := ev.Timestamp.UTC()
+		if createdAt.IsZero() {
+			createdAt = b.createdAt
+		}
+		b.steps = append(b.steps, reasoningStepBuilder{createdAt: createdAt})
 	}
 	step := &b.steps[len(b.steps)-1]
 	if len(step.tools) == reasoningGraphMaxToolsPerStep {
@@ -195,6 +240,9 @@ func (b *ReasoningTraceBuilder) ObserveToolInvocation(ev *agent.Event) {
 		tool.EntityRefs = reasoningEntityRefs(ti.Arguments, policy.entityArgFields)
 	}
 	step.tools = append(step.tools, tool)
+	if b.seenCalls == nil {
+		b.seenCalls = make(map[string]struct{})
+	}
 	b.seenCalls[ti.ToolCallID] = struct{}{}
 	b.afterTool = true
 }
@@ -217,14 +265,15 @@ func (b *ReasoningTraceBuilder) appendReasoning(delta string) string {
 }
 
 // CommitSourceTurn finalizes one successful trace against an already-committed
-// authoritative assistant turn.
+// authoritative assistant turn. A step needs reasoning or a tool call; a trace needs one
+// such step.
 func (b *ReasoningTraceBuilder) CommitSourceTurn(
 	identityID, conversationID string,
 	turnSeq int,
 	terminalAt time.Time,
 ) (arcadedb.ReasoningTrace, bool) {
 	summary := strings.TrimSpace(b.summary.String())
-	if b.runID == uuid.Nil || summary == "" || strings.TrimSpace(identityID) == "" ||
+	if b.runID == uuid.Nil || strings.TrimSpace(identityID) == "" ||
 		strings.TrimSpace(conversationID) == "" || turnSeq <= 0 {
 		return arcadedb.ReasoningTrace{}, false
 	}
@@ -235,7 +284,7 @@ func (b *ReasoningTraceBuilder) CommitSourceTurn(
 	sourceRef := reasoningSourceRef(conversationID, turnSeq)
 	for _, pending := range b.steps {
 		stepSummary := strings.TrimSpace(pending.summary.String())
-		if stepSummary == "" {
+		if stepSummary == "" && len(pending.tools) == 0 {
 			continue
 		}
 		tools := append([]arcadedb.ReasoningToolCall(nil), pending.tools...)

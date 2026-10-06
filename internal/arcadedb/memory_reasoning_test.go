@@ -404,7 +404,11 @@ func TestReasoningTerminalExpiry(t *testing.T) {
 			`"conversation_id":"conversation-a","turn_seq":7,"provider_summary":"Deployment check.",` +
 			`"status":"succeeded","created_at":"2026-09-01T00:00:00Z",` +
 			`"terminal_at":"` + terminal.Format(time.RFC3339) + `","expires_at":"` + expiresAt.Format(time.RFC3339) + `"}]}`
-		client, rec := recordingClient(t, traceRow)
+		stepRow := `{"result":[{"identity_id":"identity-a","trace_id":"trace-a","step_index":1,` +
+			`"provider_summary":"Deployment check.","created_at":"2026-09-01T00:00:00Z"}]}`
+		// lexical search, then the set-shaped step and tool reads: hydration now validates the
+		// whole trace, so the step read must return a step rather than the header again.
+		client, rec := recordingClient(t, traceRow, stepRow, `{"result":[]}`)
 		found, err := client.SearchReasoningTraces(context.Background(), "identity-a", "deployment", 1)
 		got := found.Traces
 		if err != nil || len(got) != 1 {
@@ -478,5 +482,48 @@ func TestUpsertReasoningTraceStoresItsVectorWithTheSpace(t *testing.T) {
 	}
 	if _, _, cleared := findRecordedStatement(rec, "REMOVE embedding"); cleared {
 		t.Fatal("a second statement clears the vector; the upsert sets both columns itself")
+	}
+}
+
+// Search now validates each trace body as GetReasoningTrace does: a header with no summary
+// whose only step holds neither a summary nor a tool is not a trace, and is an error rather
+// than an audit record that says nothing.
+func TestSearchReasoningTracesRefusesAnInvalidStoredBody(t *testing.T) {
+	traceRow := `{"result":[{"@rid":"#40:0","identity_id":"identity-a","trace_id":"trace-1",` +
+		`"source_ref":"postgres://aura/conversations/c1/turns/7","conversation_id":"c1","turn_seq":7,` +
+		`"provider_summary":"","status":"succeeded","created_at":"2026-09-03T10:00:00Z"}]}`
+	stepRow := `{"result":[{"identity_id":"identity-a","trace_id":"trace-1","step_index":1,` +
+		`"provider_summary":"","created_at":"2026-09-03T10:00:00Z"}]}`
+	client, _ := recordingClient(t, traceRow, stepRow, `{"result":[]}`)
+
+	_, err := client.SearchReasoningTraces(t.Context(), "identity-a", "operator", 5)
+	if err == nil || !strings.Contains(err.Error(), "invalid stored reasoning trace") {
+		t.Fatalf("SearchReasoningTraces = %v, want the invalid stored reasoning trace refusal", err)
+	}
+}
+
+// A stored tool-only trace has an empty summary and, before its body is attached, no steps:
+// the header alone cannot prove a summary is missing, so only the identity is checked here.
+func TestReasoningTraceFromRowChecksOnlyWhatTheHeaderProves(t *testing.T) {
+	t.Parallel()
+	row := func(traceID string) map[string]any {
+		return map[string]any{
+			"identity_id": "identity-a", "trace_id": traceID, "conversation_id": "conversation-a",
+			"source_ref": "postgres://aura/conversations/conversation-a/turns/7", "turn_seq": 7,
+			"provider_summary": "", "status": "succeeded",
+			"created_at": "2026-09-01T00:00:00Z", "terminal_at": "2026-09-01T00:01:00Z",
+			"expires_at": "2026-10-01T00:00:00Z",
+		}
+	}
+
+	trace, err := reasoningTraceFromRow(row("trace-tool-only"))
+	if err != nil {
+		t.Fatalf("reasoningTraceFromRow refused a tool-only header: %v", err)
+	}
+	if trace.TraceID != "trace-tool-only" || trace.ProviderSummary != "" {
+		t.Fatalf("trace = %#v", trace)
+	}
+	if _, err := reasoningTraceFromRow(row("")); err == nil {
+		t.Fatal("reasoningTraceFromRow accepted a row without trace_id")
 	}
 }
