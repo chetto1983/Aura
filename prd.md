@@ -466,6 +466,45 @@ not leak into another provider's requests. Adaptive and manual reasoning use the
 selected provider's capabilities and effort classes. Keyless local endpoints must
 not require fabricated OpenRouter credentials. Unknown billing remains unknown.
 
+The adaptive tier is the nearest neighbours' tier, not the nearest centroid's. Measured
+2026-10-06 against the lab VM's EmbeddingGemma sidecar, on the 45-prompt live gate and on the
+15 self-contained user prompts of the VM's own traffic (2026-10-02..06), labelled before any
+result was seen. Under the shipped centroid the VM prompts scored 8 of 15, and all seven misses
+went the expensive way: reminders and scheduler requests landed on `high` and reasoned for
+10-21 s. Scores are gate / VM:
+
+| Bank and rule | Gate (45) | VM (15) |
+|---|---|---|
+| 30 shipped anchors, centroid | 43 | 8 |
+| anchors + 40 coverage seeds, centroid | 39 (2 hard turns `none`) | 14 |
+| anchors, mean of the 3 nearest per tier | 42 | 10 |
+| anchors + coverage, 3 nearest per tier | 42 | 14 |
+| anchors, 3 nearest, plus a memory of judged turns read within cosine distance 0.30 | 42 after learning | 13, learning in order |
+| the same memory with no distance bound | 39 after learning (3 hard turns `none`) | 15 |
+
+The coverage seeds fill the gap the anchors visibly had: every `low` seed was a web lookup,
+so small direct tool use (reminders, messages, calendar, timers) sat far from every tier. A
+separate agent wrote them from the tier definitions without reading the repository, but its
+brief was shaped by the VM's misses (it asked for "test" and "prova" in a non-programming
+sense) and quoted two gate prompts as examples, so the 14 is an optimistic number and fresh
+traffic is the real check. The memory rows were read with ArcadeDB's own
+`vector.neighbors` (`filter`, `maxDistance`; `groupBy` for the per-tier rows) in 3 ms at the
+median on the VM.
+
+The shipped classifier scores the 3 nearest exemplars over the anchors and these seeds,
+in process, so the gate still needs only the embedding sidecar. Against the same sidecar it
+reproduces the probe exactly: 54 of 58 on the live gate grown by the 13 distinct VM prompts,
+where the centroid scored 49. Its floors are 91/91 by the gate's own rule, measured minus one
+case.
+
+What this does not show:
+- 15 prompts from one operator in five days; four are near repeats of an earlier one;
+- where a production memory gets its labels. The memory above learned the labeller's tiers.
+  The composer's explicit effort, the only human label Aura records, was set in 0 of the VM's
+  13 conversations, so a memory fed by it alone would stay empty;
+- that one neighbour inside the bound is the right rule beyond paraphrases; the bound is what
+  kept the gate whole, and every bound from 0.10 to 0.30 gave the same scores here.
+
 Image and video generation, cloud speech-to-text and text-to-speech, cloud embeddings
 and every cloud model picker run on OpenRouter whatever the chat route is. Generation
 spends the identity's own OpenRouter key and never the services key; speech and
