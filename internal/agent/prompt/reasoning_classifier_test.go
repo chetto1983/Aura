@@ -10,10 +10,11 @@ import (
 	"time"
 )
 
-// fakeEmbedder maps each text to a 3-dim one-hot by keyword so the per-tier
-// centroids land on orthogonal axes (none=[1,0,0], low=[0,1,0], high=[0,0,1]).
-// The keywords match the real package defs/seeds, so the test is robust to their
-// exact wording. failFirst lets a test force a transient build failure.
+// fakeEmbedder maps each text to a 3-dim one-hot by keyword so each tier's
+// exemplars land on its own axis (none=[1,0,0], low=[0,1,0], high=[0,0,1]).
+// The keywords cover every real package def/seed: one seed left on another tier's
+// axis ties that tier's nearest exemplars with the right one's. failUntil lets a
+// test force a transient build failure.
 type fakeEmbedder struct {
 	mu        sync.Mutex
 	calls     int
@@ -50,10 +51,12 @@ func vecFor(text string) []float64 {
 	}
 	switch {
 	case hasAny("script", "debug", "schema", "dimostra", "rifattor", "scraping", "python", "codice", "progetta",
-		"ottimizza", "algoritmo", "stack trace", "pipeline", "build"):
+		"ottimizza", "algoritmo", "stack trace", "pipeline", "build", "foglio", "confronta", "righe", "file",
+		"preventiv", "excel", "budget", "fatture", "piano", "registro"):
 		return []float64{0, 0, 1} // high
 	case hasAny("meteo", "tempo", "notizie", "bitcoin", "farmacia", "ristorante", "prezzo", "orari", "cerca", "costa",
-		"treno", "partita", "traffico", "autostrada"):
+		"treno", "partita", "traffico", "autostrada", "ricordami", "promemoria", "whatsapp", "telegram", "mail",
+		"agenda", "calendario", "timer", "avvisami", "notifica", "appuntamento", "libero"):
 		return []float64{0, 1, 0} // low
 	default:
 		return []float64{1, 0, 0} // none

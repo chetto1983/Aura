@@ -5,16 +5,14 @@ import (
 	"testing"
 )
 
-// TestReasoningClassifier_EquivalenceGoldenVerdicts pins the migrated
-// (semindex.Classifier-backed) classifier's tier verdicts to a golden
-// (input → ReasoningTier) table over the curated seeds, proving the structural
-// migration changed no observable classification behavior. It uses the
-// synthetic one-hot vecFor/fakeEmbedder doubles (deterministic, no sidecar,
-// free in CI) so the per-tier centroids land on orthogonal axes exactly as the
-// pre-migration anchor build did. A drift in the centroid/cosine/margin math
-// (e.g. a regression in the shared semindex core) flips a verdict and fails
-// here. This is the behavior-preservation proof, NOT an accuracy gate — the
-// live accuracy raise is Plan 04.
+// TestReasoningClassifier_EquivalenceGoldenVerdicts pins the semindex.Classifier-
+// backed classifier's tier verdicts to a golden (input → ReasoningTier) table over
+// the curated seeds. It uses the synthetic one-hot vecFor/fakeEmbedder doubles
+// (deterministic, no sidecar, free in CI) so each tier's exemplars land on their own
+// axis. A drift in the nearest-exemplar/cosine/margin math (e.g. a regression in
+// the shared semindex core) flips a verdict and fails here. This is the
+// behavior-preservation proof, NOT an accuracy gate — that is the live corpus in
+// reasoning_classifier_live_test.go.
 func TestReasoningClassifier_EquivalenceGoldenVerdicts(t *testing.T) {
 	t.Parallel()
 	c := NewReasoningClassifier(&fakeEmbedder{})
@@ -46,7 +44,7 @@ func TestReasoningClassifier_EquivalenceGoldenVerdicts(t *testing.T) {
 				t.Fatalf("Classify(%q) returned not-usable; want %q,true", tc.input, tc.want)
 			}
 			if got != tc.want {
-				t.Errorf("Classify(%q) = %q; want %q (verdict drift — semindex centroid math regressed)", tc.input, got, tc.want)
+				t.Errorf("Classify(%q) = %q; want %q (verdict drift — semindex nearest-exemplar math regressed)", tc.input, got, tc.want)
 			}
 		})
 	}

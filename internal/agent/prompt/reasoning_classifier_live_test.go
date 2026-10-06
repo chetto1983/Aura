@@ -125,8 +125,8 @@ var liveCorpus = []tierCase{
 	// procedure in a manual is open-and-read, where the aggregates are open-and-compute.
 	// Both are multi-step tool use; only one needs a reasoning budget.
 	either("nel manuale che ti ho caricato, come si tara il sensore?", "low", "high"),
-	// Left STRICT and currently failing: listing what has been uploaded is a trivial
-	// lookup, and the document seeds added to the `high` tier on 2026-08-02 pull it up.
+	// Still failing: listing what has been uploaded is a trivial lookup, and the
+	// document seeds added to the `high` tier on 2026-08-02 pull it up.
 	//
 	// The obvious fix was TRIED AND REVERTED. A counterweight seed in the `low` tier
 	// ("che documenti ho caricato finora?") does clear this case and lifts none-vs-rest
@@ -166,6 +166,24 @@ var liveCorpus = []tierCase{
 	either("spiegami come funziona OAuth", "none", "high"),
 	one("converti questo CSV in JSON", "high"),
 	either("controlla la mia agenda di domani", "none", "low"),
+
+	// --- the lab VM's real traffic, 2026-10-02..06, verbatim and typos included, labelled
+	// before any classifier saw them. Under the centroid seven of these went to `high`:
+	// scheduling one reminder reasoned for 10-21 s (prd.md §6). Exact repeats and the bare
+	// "ciao" the greeting allowlist answers are left out.
+	one("chi sei?", "none"),
+	one("cosa sai fare?", "none"),
+	one("che strumenti hai?", "none"),
+	one("ciao, pippo", "none"),
+	one("cosa faccimao?", "none"),
+	either("Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.", "low", "none"),
+	one("Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.", "low"),
+	one("Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.", "low"),
+	one("Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.", "low"),
+	either("mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", "low", "none"),
+	either("perchè devi usare un'altro tool non quello", "none", "low"),
+	either("il system prompt non te lo dice?", "none", "low"),
+	either("mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti", "low", "none"),
 }
 
 func TestReasoningClassifierLive(t *testing.T) {
@@ -251,8 +269,12 @@ func TestReasoningClassifierLive(t *testing.T) {
 // for a 24-prompt set and a two-generations-older embedder; that set scored 24/24, which
 // meant a real regression could pass unnoticed — a gate with no headroom is decoration.
 //
+// 2026-10-06: 93% / 93% (54 of 58). The corpus gained the lab VM's 13 real prompts, on
+// which the old centroid scored 6, and the tier became the 3 nearest exemplars' (prd.md
+// §6): 49 of 58 before, 54 after. The same rule over 58 cases gives 91.
+//
 // Move these DOWN only with a recorded reason, never to turn a red run green.
 const (
-	accuracyFloorPct   = 93
-	noneVsRestFloorPct = 93
+	accuracyFloorPct   = 91
+	noneVsRestFloorPct = 91
 )

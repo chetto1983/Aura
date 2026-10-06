@@ -2,16 +2,16 @@ package semindex
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 )
 
-// Classifier is the Centroid-mode wrapper (D-01): it folds each group's
-// exemplars into a per-group mean (centroid) and answers a query with the
-// argmax label plus the top-2 Margin. It holds the Embedder seam and one
-// sync.RWMutex; the math stays in the lock-free core. Mirrors the reasoning
-// classifier's anchor bank (reasoning_classifier.go:95-209) — same Centroid
-// mode, made label-generic. Margin lives on this result ONLY, never on Ranker.
+// Classifier is a labelled exemplar bank (D-01) answering a query with the argmax
+// label plus the top-2 Margin. A group is scored either by its centroid (RankVecs,
+// GroupCosine) or by its exemplars nearest to the query (RankNearest). It holds the
+// Embedder seam and one sync.RWMutex; the math stays in the lock-free core. Margin
+// lives on this result ONLY, never on Ranker.
 type Classifier struct {
 	embed Embedder
 
@@ -70,24 +70,47 @@ func (c *Classifier) RankVecs(vec []float64) Verdict {
 	}
 	c.mu.Lock() // write lock: may memoize centroids
 	defer c.mu.Unlock()
-	if len(c.groups) == 0 {
-		return Verdict{}
-	}
 	q := l2normalize(vec)
-	labels := make([]string, 0, len(c.groups))
-	for label := range c.groups {
-		labels = append(labels, label)
-	}
-	sort.Strings(labels) // deterministic argmax tie-break
-	best, bestScore := "", -2.0
-	scores := make([]float64, 0, len(labels))
-	for _, label := range labels {
+	return c.argmax(func(label string) float64 {
 		cen := c.centroids[label]
 		if cen == nil {
 			cen = centroid(c.groups[label])
 			c.centroids[label] = cen
 		}
-		s := cosine(q, cen)
+		return cosine(q, cen)
+	})
+}
+
+// RankNearest scores each group by the mean cosine of its k exemplars nearest to the
+// query and returns the argmax Verdict. A group that spans several intents has its
+// centroid between them and far from each, so a query matching one of those intents
+// loses to any compact group nearby; its nearest exemplars do not move. A group with
+// fewer than k exemplars is scored over all of them.
+func (c *Classifier) RankNearest(vec []float64, k int) Verdict {
+	if c == nil || k < 1 {
+		return Verdict{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	q := l2normalize(vec)
+	return c.argmax(func(label string) float64 { return meanNearest(q, c.groups[label], k) })
+}
+
+// argmax applies score to every group in label order, so a tie goes to the first label.
+// The caller holds c.mu.
+func (c *Classifier) argmax(score func(label string) float64) Verdict {
+	if len(c.groups) == 0 {
+		return Verdict{}
+	}
+	labels := make([]string, 0, len(c.groups))
+	for label := range c.groups {
+		labels = append(labels, label)
+	}
+	sort.Strings(labels)
+	best, bestScore := "", -2.0
+	scores := make([]float64, 0, len(labels))
+	for _, label := range labels {
+		s := score(label)
 		scores = append(scores, s)
 		if s > bestScore {
 			best, bestScore = label, s
@@ -97,6 +120,20 @@ func (c *Classifier) RankVecs(vec []float64) Verdict {
 		return Verdict{}
 	}
 	return Verdict{Label: best, Score: bestScore, Margin: margin(scores), Ok: true}
+}
+
+func meanNearest(q []float64, exemplars [][]float64, k int) float64 {
+	sims := make([]float64, len(exemplars))
+	for i, e := range exemplars {
+		sims[i] = cosine(q, e)
+	}
+	slices.Sort(sims)
+	nearest := sims[max(0, len(sims)-k):]
+	var sum float64
+	for _, s := range nearest {
+		sum += s
+	}
+	return sum / float64(len(nearest))
 }
 
 // GroupCosine returns the cosine of a query vector to ONE named group's centroid

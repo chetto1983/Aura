@@ -29,10 +29,15 @@ var reasoningTierDefs = map[ReasoningTier]string{
 // reasoningTierSeeds are the curated few-shot exemplars (spike-052 variant B:
 // 90% accuracy / 92% none-vs-rest). They are prototypes the embedding model
 // interpolates between, NOT an enumeration. Each tier carries one exemplar per
-// recurring intent shape on the live Italian corpus (stable facts + arithmetic +
-// transforms for none; the full set of changes-over-time lookups for low; the
-// full code/proof/design/analysis spread for high) so the per-tier centroid sits
-// at the semantic center of its tier rather than leaning toward one sub-intent.
+// recurring intent shape (stable facts + arithmetic + transforms for none; the
+// changes-over-time lookups and small direct tool use for low; the
+// code/proof/design/analysis spread for high), because a turn takes the tier of
+// its nearest exemplars and an intent with no exemplar has no near neighbour.
+//
+// The tool-use, memory and everyday-computation exemplars were added 2026-10-06
+// (prd.md §6): every `low` seed was a web lookup, so the reminders and messages of
+// the lab VM's real traffic sat far from every tier and went to `high`, reasoning
+// 10-21 s to schedule one task.
 var reasoningTierSeeds = map[ReasoningTier][]string{
 	ReasoningTierNone: {
 		"ciao",
@@ -43,6 +48,14 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"qual e la capitale dell'Italia?",
 		"quanto fa 7 per 8?",
 		"a presto, buona giornata",
+		"ricordati che mia figlia è allergica alle arachidi",
+		"come si chiama il mio medico di base?",
+		"grazie mille, perfetto così",
+		"ok ricevuto, ottimo",
+		"segnati che il mio compleanno è il 14 marzo",
+		"ti ricordi che targa ha la mia macchina?",
+		"ma tu che modello sei?",
+		"parli anche inglese?",
 	},
 	ReasoningTierLow: {
 		"che tempo fa a Torino domani?",
@@ -53,6 +66,30 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"quando parte il prossimo treno per Milano?",
 		"come e finita la partita di ieri?",
 		"c'e traffico in autostrada adesso?",
+		"ricordami tra 10 minuti di togliere la pasta dal fuoco",
+		"domani alle 8 ricordami di chiamare il dentista",
+		"ogni lunedì alle 9 ricordami di mettere fuori il bidone della carta",
+		"mandami un messaggio di prova su Telegram",
+		"scrivi a Marco su WhatsApp che arrivo tra un quarto d'ora",
+		"manda una mail a Giulia: la riunione è spostata a giovedì",
+		"cosa ho in agenda venerdì pomeriggio?",
+		"aggiungi al calendario cena da mia madre sabato alle 20",
+		"quali promemoria ho programmato?",
+		"cancella il promemoria della palestra",
+		"metti un timer di 25 minuti",
+		"mandami su Telegram il pdf della bolletta che ti ho caricato ieri",
+		"fai un test, scrivimi ciao su WhatsApp",
+		"alle 18 manda un whatsapp a Sara con scritto buon compleanno!",
+		"ogni mattina alle 7:30 mandami il meteo su Telegram",
+		"giovedì mattina sono libero o ho già qualcosa?",
+		"sposta l'appuntamento dal commercialista a martedì alle 15",
+		"disattiva il riepilogo mattutino delle notizie",
+		"prova a mandarmi una notifica, voglio vedere se arriva sul telefono",
+		"il primo di ogni mese ricordami di pagare l'affitto",
+		"manda per email il contratto firmato all'avvocato Rossi",
+		"tra un'ora avvisami di passare in lavanderia",
+		"facciamo un test dei promemoria: avvisami tra 2 minuti",
+		"rispondi a Chiara su Telegram che per domani va bene",
 	},
 	ReasoningTierHigh: {
 		"scrivi uno script python per fare scraping di un sito con gestione errori",
@@ -75,8 +112,20 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"somma tutti gli importi del foglio di calcolo e dimmi il totale",
 		"confronta due documenti e dimmi dove non tornano",
 		"quante righe del file rispettano questa condizione",
+		"nel foglio delle spese che ti ho caricato quanto ho speso in ristoranti a settembre?",
+		"confronta i due preventivi del tetto voce per voce e dimmi quale conviene davvero",
+		"nell'excel delle bollette di quanto è aumentato in media il gas rispetto all'anno scorso?",
+		"nel file clienti trova chi non ordina da più di sei mesi e raggruppali per città",
+		"organizzami 5 giorni in Puglia con 800 euro di budget, tappe e spostamenti compresi",
+		"controlla se le fatture del pdf tornano con i movimenti della banca e segnami le differenze",
+		"ho tre turni diversi e due figli da accompagnare a scuola e sport, fammi un piano settimanale senza sovrapposizioni",
+		"dal registro presenze calcola le ore di straordinario di ogni dipendente ad agosto",
 	},
 }
+
+// tierNeighbours is how many of a tier's exemplars nearest to the turn score that tier.
+// Three, as measured on 2026-10-06 (prd.md §6).
+const tierNeighbours = 3
 
 // classifierTierOrder fixes the build order so anchors are added per tier in a
 // stable sequence (none < low < high) regardless of map iteration.
@@ -94,18 +143,22 @@ var trivialGreetings = map[string]struct{}{
 	"a dopo": {}, "thanks": {}, "thank you": {}, "a presto!": {},
 }
 
-// ReasoningClassifier maps a user turn to a reasoning tier by semantic proximity
-// to the per-tier anchor centroids, using Aura's local embedding sidecar.
-// It replaces the per-turn LLM "router" round-trip (the adaptive-reasoning
-// latency root cause) with a single ~10ms local embed + cosine argmax. The
-// centroid/cosine/margin math lives in semindex.Classifier (Centroid mode); this
-// type owns only the tier policy (defs/seeds, greeting pre-filter, soft fallback).
+// ReasoningClassifier maps a user turn to the reasoning tier of its nearest anchors,
+// using Aura's local embedding sidecar. It replaces the per-turn LLM "router"
+// round-trip (the adaptive-reasoning latency root cause) with a single ~10ms local
+// embed. The nearest-exemplar math lives in semindex.Classifier; this type owns only
+// the tier policy (defs/seeds, greeting pre-filter, soft fallback).
+//
+// A centroid used to score each tier, and lost every turn whose intent the tier held
+// as one exemplar among many. Scoring the 3 nearest exemplars instead, with the
+// tool-use seeds above, moved the lab VM's real traffic from 8 to 14 of 15
+// (prd.md §6, measured 2026-10-06).
 type ReasoningClassifier struct {
 	embed Embedder
 
 	mu    sync.Mutex
 	build singleflight.Group
-	cls   *semindex.Classifier // per-tier centroid bank; built lazily once
+	cls   *semindex.Classifier // per-tier exemplar bank; built lazily once
 	built bool                 // false => the next Classify rebuilds the bank
 }
 
@@ -139,8 +192,7 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 	if err != nil || len(vecs) != 1 || len(vecs[0]) == 0 {
 		return "", false
 	}
-	v := semindex.Normalize(vecs[0])
-	verdict := cls.RankVecs(v)
+	verdict := cls.RankNearest(vecs[0], tierNeighbours)
 	tier := ReasoningTier(verdict.Label)
 	if !verdict.Ok || !tier.Valid() {
 		return "", false
@@ -148,10 +200,9 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 	return tier, true
 }
 
-// ensureAnchors builds the per-tier centroid bank once (def + seeds, folded by
-// semindex.Classifier into the per-group mean of L2-normalized embeddings). A
-// build failure is NOT cached: the next call retries, so a transiently-down
-// sidecar self-heals (mirror of the semindex build-failure-not-cached rule).
+// ensureAnchors builds the per-tier exemplar bank once (def + seeds). A build failure
+// is NOT cached: the next call retries, so a transiently-down sidecar self-heals
+// (mirror of the semindex build-failure-not-cached rule).
 //
 // The publish is unconditional, and that is the whole invalidation story: the anchors are
 // static, nothing ever marks the bank stale, and singleflight already serialises builds on

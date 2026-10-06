@@ -24,10 +24,6 @@ func l2normalize(v []float64) []float64 {
 	return out
 }
 
-// Normalize exposes L2-normalization for consumers that retain the normalized
-// query vector without duplicating the core math. RankVecs normalizes internally.
-func Normalize(v []float64) []float64 { return l2normalize(v) }
-
 // cosine assumes both inputs are already L2-normalized (anchors and the query
 // both are), so it is a plain dot product. On a length mismatch it returns the
 // -2.0 "impossible cosine" sentinel — load-bearing for the no-best fallback
