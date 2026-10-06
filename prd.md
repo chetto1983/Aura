@@ -999,6 +999,31 @@ attempts and explicitly separated stored messages from external delivery proof.
 The real-agent acceptance rubric passed 10/10; scope and reproduction are recorded
 in [the appliance verification](docs/verification/2026-10-06-memory-period.md).
 
+Tool-only reasoning traces and the ArcadeDB floor, 2026-10-06 (`799880d07`..`7838d194b`).
+The first valid terminal tool event opens a reasoning trace, so a turn that exposes no
+reasoning still records the tools it ran. An empty provider summary is accepted only
+where tool calls stand in for it; no reasoning text is synthesized. A discarded round
+drops its reasoning and keeps the calls earlier rounds executed, and a set-aside
+tool-only trace is not counted as rejected by the embedding report. `TenantClients.For`
+refuses an ArcadeDB older than 26.10.1 before it provisions or returns the first tenant
+client (ArcadeData/arcadedb#8959, GHSA-h2j4-28h8-cj5v). It reads the version once per
+resolver, with the admin when present and otherwise the tenant credential, which
+26.10.1 allows (measured live); a refusal is retried on the next call.
+
+Measured on VM 192.168.101.158 after the updater rolled out `b28f34af1` at 20:19 UTC:
+ArcadeDB 26.10.1, no floor refusal, conversation projection healthy. Before the change
+the graph reached 9 of 16 tool turns. Of three reminder turns driven through the cockpit
+on `gpt-5.6-sol`, the one that finished in a single run reached both of its tools
+(`tool_search`, `task`); the one paused by `ask_user` reached only the `task` run after
+the answer, because a paused run commits no trace; the one whose second model call hit
+`stream_open_deadline` at effort `low` (120 s) committed none.
+
+What this does not show: the no-reasoning path on a live turn. Every completed turn on
+this route exposed reasoning and the ChatGPT backend offers no `off` effort, so that path
+rests on the live ArcadeDB test and the unit tests. Three turns on one route are not a
+coverage rate, and tool calls made before an `ask_user` pause or in a failed run remain
+outside the graph.
+
 ## 11. Documents and media
 
 Identity-bound originals live in Garage. The ingestion supervisor resolves existing
