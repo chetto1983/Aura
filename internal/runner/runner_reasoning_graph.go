@@ -109,7 +109,31 @@ func lookupReasoningToolPolicy(name string) reasoningToolPolicy {
 	return reasoningToolPolicy{}
 }
 
-// Reset discards every event from a repudiated provider attempt.
+// DiscardReasoning repudiates the reasoning streamed so far and keeps the tools. A discard
+// withdraws only the current round's prose and fires before that round runs a tool, so every
+// call seen so far belongs to an earlier, accepted round: it ran, and conversation_turns and
+// the tool ledger keep it. A step left with no tool is dropped; the next reasoning event
+// opens a new step, as it does after any tool.
+func (b *ReasoningTraceBuilder) DiscardReasoning() {
+	kept := b.steps[:0]
+	for i := range b.steps {
+		if len(b.steps[i].tools) == 0 {
+			continue
+		}
+		b.steps[i].summary.Reset()
+		kept = append(kept, b.steps[i])
+	}
+	if len(kept) == 0 {
+		b.Reset()
+		return
+	}
+	b.steps = kept
+	b.summary.Reset()
+	b.runes = 0
+	b.afterTool = true
+}
+
+// Reset empties the builder, as after a commit.
 func (b *ReasoningTraceBuilder) Reset() {
 	b.runID = uuid.Nil
 	b.summary.Reset()

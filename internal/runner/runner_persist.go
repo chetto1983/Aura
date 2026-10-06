@@ -108,10 +108,11 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	// B-12 repudiation: a mid-stream retry repudiates everything already streamed —
 	// the accumulated CoT included — so the persisted reasoning mirrors what the
 	// consumer actually rendered (the retry over a blank slate), never failed-attempt
-	// deltas joined with their replay.
+	// deltas joined with their replay. The graph drops the reasoning too but keeps the
+	// tools: they ran in earlier rounds and stay in the turns and the tool ledger.
 	if ev.Actions.DiscardStreamed {
 		tr.resetReasoning()
-		tr.reasoningGraph.Reset()
+		tr.reasoningGraph.DiscardReasoning()
 	}
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)

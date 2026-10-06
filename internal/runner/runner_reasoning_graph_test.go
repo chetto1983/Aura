@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -295,7 +296,9 @@ func TestReasoningGraphToolMetadata(t *testing.T) {
 	}
 }
 
-func TestReasoningGraphRetryDiscard(t *testing.T) {
+// A discard repudiates the round's streamed prose, never a tool an earlier round ran: the
+// "Repudiated" upsert really executed and was stored, so the graph keeps it, in order.
+func TestReasoningGraphDiscardKeepsExecutedToolsAndDropsReasoning(t *testing.T) {
 	r, _ := newReasoningTestRunner(t, 65536, true)
 	order := []string{}
 	sink := &recordingReasoningGraphSink{order: &order}
@@ -322,12 +325,16 @@ func TestReasoningGraphRetryDiscard(t *testing.T) {
 		t.Fatalf("trace count = %d", len(sink.traces))
 	}
 	got := sink.traces[0]
-	if got.ProviderSummary != "accepted attempt" || len(got.Steps) != 1 || len(got.Steps[0].ToolCalls) != 1 {
-		t.Fatalf("post-retry trace = %#v", got)
+	if got.ProviderSummary != "accepted attempt" || len(got.Steps) != 2 {
+		t.Fatalf("post-retry trace = %#v, want the accepted reasoning and two steps", got)
 	}
-	tool := got.Steps[0].ToolCalls[0]
-	if tool.CallID != "call-new" || strings.Contains(strings.Join(tool.EntityRefs, ","), "Repudiated") {
-		t.Fatalf("post-retry tool = %#v", tool)
+	first, second := got.Steps[0], got.Steps[1]
+	if first.ProviderSummary != "" || len(first.ToolCalls) != 1 || first.ToolCalls[0].CallID != "call-old" ||
+		!slices.Contains(first.ToolCalls[0].EntityRefs, "Repudiated") {
+		t.Fatalf("first step = %#v, want the executed call-old without the repudiated text", first)
+	}
+	if second.ProviderSummary != "accepted attempt" || len(second.ToolCalls) != 1 || second.ToolCalls[0].CallID != "call-new" {
+		t.Fatalf("second step = %#v", second)
 	}
 }
 

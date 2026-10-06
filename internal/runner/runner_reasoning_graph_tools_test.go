@@ -140,9 +140,9 @@ func TestReasoningGraphRecordsAHiddenReasoningTurnByItsTools(t *testing.T) {
 	}
 }
 
-// A discarded provider attempt takes its tools with it, even when no reasoning opened the
-// trace.
-func TestReasoningGraphDiscardDropsAToolOnlyAttempt(t *testing.T) {
+// A discard fires before the discarded round runs a tool, so a call seen before it ran in an
+// earlier round and survives, ahead of the call that follows.
+func TestReasoningGraphDiscardKeepsAToolOnlyTurnsEarlierCall(t *testing.T) {
 	r, _ := newReasoningTestRunner(t, 65536, true)
 	order := []string{}
 	sink := &recordingReasoningGraphSink{order: &order}
@@ -164,8 +164,35 @@ func TestReasoningGraphDiscardDropsAToolOnlyAttempt(t *testing.T) {
 	if len(sink.traces) != 1 || len(sink.traces[0].Steps) != 1 {
 		t.Fatalf("traces = %#v", sink.traces)
 	}
-	if calls := sink.traces[0].Steps[0].ToolCalls; len(calls) != 1 || calls[0].CallID != "call-new" {
-		t.Fatalf("tool calls = %#v, want only the accepted attempt's call", calls)
+	calls := sink.traces[0].Steps[0].ToolCalls
+	if len(calls) != 2 || calls[0].CallID != "call-old" || calls[1].CallID != "call-new" {
+		t.Fatalf("tool calls = %#v, want call-old then call-new", calls)
+	}
+}
+
+// Past the step budget the next call is dropped rather than opening a 65th step, which
+// normalizeReasoningTrace would refuse along with the whole trace.
+func TestReasoningTraceBuilderCapsAToolOnlyTurnAtTheStepBudget(t *testing.T) {
+	var b ReasoningTraceBuilder
+	runID := uuid.Must(uuid.NewV7())
+	t0 := time.Date(2026, 10, 6, 9, 0, 0, 0, time.UTC)
+	total := reasoningGraphMaxSteps*reasoningGraphMaxToolsPerStep + 1
+	for i := range total {
+		b.ObserveToolInvocation(reasoningGraphToolEvents(runID, t0.Add(time.Duration(i)*time.Second),
+			fmt.Sprintf("call-%d", i), "task", `{"action":"list"}`, "ok", "tasks", nil)[1])
+	}
+
+	trace, ok := b.CommitSourceTurn(uuid.NewString(), uuid.NewString(), 2, t0.Add(time.Hour))
+	if !ok {
+		t.Fatal("the capped tool-only trace was not committed")
+	}
+	calls := 0
+	for _, step := range trace.Steps {
+		calls += len(step.ToolCalls)
+	}
+	if len(trace.Steps) != reasoningGraphMaxSteps || calls != total-1 {
+		t.Fatalf("trace holds %d steps and %d calls, want %d and %d",
+			len(trace.Steps), calls, reasoningGraphMaxSteps, total-1)
 	}
 }
 
