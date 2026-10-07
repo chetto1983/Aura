@@ -1661,16 +1661,15 @@ jobs:
   go-mutation:
     name: Go mutation (${{ matrix.group }})
     runs-on: ubuntu-latest
-    # Groups balanced on cold durations in seconds (runs 36405162541 / 36412624433):
-    # elicitation_route 533.8 / 534.6 alone sets the floor, since one scope cannot be split;
-    # media_clamp 359.6 / 366.8 and media_watcher 79.8 / 81.9 share internal/mediagen's
-    # compiled test dependencies; gateway 97.1, pausable 72.8, sandbox 22.1,
-    # identity_isolation 5.4 and profile_validation 3.2 sum to 200.6. The best two groups
-    # would put 640 s on one runner; a fourth runner could not go under 534 s. Each timeout
-    # is at least 2.7 times its group's cold total, for runner variance and setup.
-    # turn_reading (internal/agent/llm_agent_turn_reading.go) joins the boundaries group
-    # unmeasured; its timeout of 60 is a ceiling for the first run and is replaced by the
-    # measured value (with re-balancing if it exceeds elicitation_route's floor).
+    # Groups balanced on cold durations in seconds (runs 36405162541 / 36412624433, and
+    # 37607768849 for turn_reading): turn_reading 1012.9 alone sets the floor, since one
+    # scope cannot be split; elicitation_route 533.8 / 534.6 rides with gateway 97.1,
+    # pausable 72.8, sandbox 22.1, identity_isolation 5.4 and profile_validation 3.2
+    # (735.2 together); media_clamp 359.6 / 366.8 and media_watcher 79.8 / 81.9 share
+    # internal/mediagen's compiled test dependencies. With three runners nothing can go
+    # under turn_reading's 1013 s. Each timeout is at least 2.7 times its group's cold
+    # total, for runner variance and setup. turn_reading was measured before the background
+    # teacher removed its teacher branches, so its timeout is a ceiling for the current file.
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -1683,15 +1682,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - group: elicitation
-            scopes: elicitation_route
-            timeout: 25
+          - group: turn-reading
+            scopes: turn_reading
+            timeout: 46
+          - group: elicitation-boundaries
+            scopes: elicitation_route gateway pausable sandbox identity_isolation profile_validation
+            timeout: 34
           - group: media
             scopes: media_clamp media_watcher
             timeout: 20
-          - group: boundaries
-            scopes: gateway pausable sandbox identity_isolation profile_validation turn_reading
-            timeout: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -1741,8 +1740,8 @@ jobs:
     # the measurement that is missing and fails closed.
     if: ${{ !cancelled() }}
     timeout-minutes: 10
-    # REL-02: this is deliberately unconditional. The ten independently-scored
-    # boundaries — eight Go files, the frontend aggregate and the media frontend on its own
+    # REL-02: this is deliberately unconditional. The eleven independently-scored
+    # boundaries — nine Go files, the frontend aggregate and the media frontend on its own
     # denominator — publish one candidate-bound report on every run; no strong scope can
     # average away a weak one and a Go-only change cannot reuse stale web evidence.
     # A Go scope is re-measured only when its input closure changed (2026-09-28): the result
