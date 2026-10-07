@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/jackc/pgx/v5"
 )
@@ -44,5 +45,37 @@ func TestTurnWritesTheDecisionToTheRealUserRow(t *testing.T) {
 	if rows != 1 || role != "user" || content != text || effort != nil || requested != "high" ||
 		source != agent.EffortSourceUser || key != agent.TurnContextKey(nil, "") {
 		t.Fatalf("rows %d: role %q content %q effort %v requested %q source %q key %q", rows, role, content, effort, requested, source, key)
+	}
+}
+
+// The background teacher's label reaches the real row through the caller-identity
+// transaction, so the worker's detached context must still carry the turn's identity: under
+// RLS a context without it would match no row, and the write would succeed doing nothing.
+func TestTeacherLabelLandsOnTheRealUserRow(t *testing.T) {
+	pool := migratedRunnerPool(t)
+	teacher := &routerTeacher{answer: `{"tier":"none"}`,
+		turns: agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "Ecco il riassunto.")))}
+	r, convStore, _ := newIntegrationRunner(t, pool, teacher)
+	r.runtime.Replace(r.runtime.Snapshot().Client, mandatoryRoute())
+	r.classifier = prompt.NewReasoningClassifier(uniformEmbedder{})
+	r.turnDecisions = convStore
+	convID := newIntegrationConversation(t, pool, convStore)
+
+	if _, err := drain(r.Turn(ownerCtx(), convID, new("riassumi il rapporto trimestrale"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if err := r.Stop(ownerCtx(), convID); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	var effort, requested, source string
+	asOwner(t, pool, localIdentityID, func(tx pgx.Tx) error {
+		return tx.QueryRow(ownerCtx(),
+			`SELECT reasoning_effort, reasoning_effort_requested, reasoning_effort_source
+			   FROM aura.conversation_turns WHERE conversation_id = $1 AND role = 'user'`,
+			convID).Scan(&effort, &requested, &source)
+	})
+	// Seeds decided high and sent it; the teacher's none is clamped to low on this route.
+	if effort != "high" || requested != "low" || source != agent.EffortSourceTeacher {
+		t.Fatalf("user row: effort %q requested %q source %q; want high sent, labelled low by the teacher", effort, requested, source)
 	}
 }
