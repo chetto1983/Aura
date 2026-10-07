@@ -27,6 +27,9 @@ const (
 	// (fetcher_text.go): nothing was extracted or summarised, so the model is reading
 	// third-party bytes exactly as the origin sent them.
 	WarningRawContent = "raw_content"
+	// WarningTruncated marks content cut at the fetch cap: a PDF's text can outgrow
+	// the body it was deflated in.
+	WarningTruncated = "truncated"
 )
 
 // Stable, non-sensitive reason strings. Reasons name a CLASS of block, never a
@@ -45,6 +48,10 @@ const (
 	// peer reset in 0.15s, the retry loop and the transport burned the whole
 	// 10s deadline, and the cause was discarded. See defaultWebUserAgent.
 	ReasonPeerResetStream = "peer_reset_stream"
+	// The PDF lane's extraction failures (fetcher_pdf.go).
+	ReasonNoPDFText      = "pdf_without_text"
+	ReasonUnreadablePDF  = "unreadable_pdf"
+	ReasonNoPDFExtractor = "pdf_extractor_missing"
 )
 
 // WebError is the ONLY error shape the model ever sees. It is deliberately flat

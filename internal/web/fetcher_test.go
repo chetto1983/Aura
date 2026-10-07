@@ -156,8 +156,8 @@ func TestFetch_ContentGate(t *testing.T) {
 
 	t.Run("unsupported_content_type", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-			w.Header().Set("Content-Type", "application/pdf")
-			_, _ = w.Write([]byte("%PDF-1.4 ..."))
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write([]byte("PK\x03\x04 ..."))
 		}))
 		defer srv.Close()
 		_, port := hostPort(t, srv.URL)

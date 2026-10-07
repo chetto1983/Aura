@@ -29,8 +29,8 @@ import (
 
 // allowedTextContentTypes is the readable non-HTML allowlist. Every entry is a type
 // whose bytes ARE the content, so serving them verbatim is the honest rendering; a
-// type needing a decoder (pdf, docx, images) is deliberately absent — that is the
-// document pipeline's job, not this one's.
+// type needing a decoder is deliberately absent. A PDF has a lane of its own
+// (fetcher_pdf.go); docx and images remain the document pipeline's job.
 var allowedTextContentTypes = map[string]struct{}{
 	"application/json":          {},
 	"application/xml":           {},
@@ -79,6 +79,7 @@ const (
 	kindUnsupported contentKind = iota
 	kindHTML
 	kindText
+	kindPDF
 )
 
 // classifyContentType maps a Content-Type header to its lane. The media type is
@@ -93,6 +94,9 @@ func classifyContentType(ct string) (media string, kind contentKind) {
 	}
 	if _, ok := allowedTextContentTypes[media]; ok {
 		return media, kindText
+	}
+	if media == "application/pdf" {
+		return media, kindPDF
 	}
 	if hasSuffixTopLevelType(media) {
 		for _, suffix := range textStructuredSuffixes {

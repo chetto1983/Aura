@@ -41,9 +41,12 @@ func TestClassifyContentType(t *testing.T) {
 		{"problem json", "application/problem+json", "application/problem+json", kindText},
 		{"vendor xml suffix", "application/vnd.custom+xml", "application/vnd.custom+xml", kindText},
 
-		// Binary and undeclared stay out: a type needing a decoder belongs to the
-		// document pipeline, and an absent header must not let the origin choose.
-		{"pdf", "application/pdf", "application/pdf", kindUnsupported},
+		// A PDF has its own lane: pdftotext reads it (fetcher_pdf.go).
+		{"pdf", "application/pdf", "application/pdf", kindPDF},
+		{"pdf with params", "application/PDF; qs=0.001", "application/pdf", kindPDF},
+
+		// Other binary and undeclared types stay out: a type needing a decoder belongs
+		// to the document pipeline, and an absent header must not let the origin choose.
 		{"octet stream", "application/octet-stream", "application/octet-stream", kindUnsupported},
 		{"png", "image/png", "image/png", kindUnsupported},
 		{"svg", "image/svg+xml", "image/svg+xml", kindUnsupported},

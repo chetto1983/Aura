@@ -86,7 +86,7 @@ func (c *Client) Fetch(ctx context.Context, convID, rawURL string) (Page, error)
 		return Page{}, err
 	}
 
-	page, err := renderPage(gated, finalURL)
+	page, err := c.renderPage(ctx, gated, finalURL)
 	if err != nil {
 		return Page{}, err
 	}
@@ -96,12 +96,16 @@ func (c *Client) Fetch(ctx context.Context, convID, rawURL string) (Page, error)
 
 // renderPage turns a gated body into a Page along the lane its Content-Type chose.
 // HTML goes through readability→markdown; readable non-HTML is fenced verbatim
-// (fetcher_text.go). A text body yields no Title and no Links: inventing either would
-// mean parsing bytes this lane exists precisely NOT to parse.
-func renderPage(gated gatedBody, finalURL *url.URL) (Page, error) {
-	if gated.kind == kindText {
+// (fetcher_text.go); a PDF is read by pdftotext (fetcher_pdf.go). A text or PDF body
+// yields no Title and no Links: inventing either would mean guessing at structure the
+// lane does not parse.
+func (c *Client) renderPage(ctx context.Context, gated gatedBody, finalURL *url.URL) (Page, error) {
+	switch gated.kind {
+	case kindText:
 		md, warning := renderText(gated.data, gated.media)
 		return Page{URL: finalURL.String(), ContentMD: md, Warning: warning}, nil
+	case kindPDF:
+		return renderPDF(ctx, gated.data, finalURL, c.cfg.WebFetchMaxBodyBytes)
 	}
 	title, md, links, warning, err := ExtractMarkdown(gated.data, finalURL)
 	if err != nil {
@@ -217,7 +221,7 @@ func gateAndRead(resp *http.Response, capBytes int) (gatedBody, error) {
 	}
 	media, kind := classifyContentType(resp.Header.Get("Content-Type"))
 	if kind == kindUnsupported {
-		return gatedBody{}, &WebError{Code: CodeUnsupportedContent, Message: "only HTML and readable text content is supported"}
+		return gatedBody{}, &WebError{Code: CodeUnsupportedContent, Message: "only HTML, PDF and readable text content is supported"}
 	}
 	limited := io.LimitReader(resp.Body, int64(capBytes)+1)
 	body, err := io.ReadAll(limited)

@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/pdftext"
 )
 
 // minimalPDF is a hand-written one-page PDF whose only content is the text
@@ -31,13 +33,13 @@ func minimalPDF(text string) string {
 // (the CI workflows install poppler-utils for exactly this).
 func requireExtractor(t *testing.T) {
 	t.Helper()
-	if _, err := exec.LookPath(pdfTextTool); err == nil {
+	if _, err := exec.LookPath(pdftext.Tool); err == nil {
 		return
 	}
 	if strings.TrimSpace(os.Getenv("CI")) != "" {
-		t.Fatalf("%s is not installed and $CI is set: the extraction path would run nowhere", pdfTextTool)
+		t.Fatalf("%s is not installed and $CI is set: the extraction path would run nowhere", pdftext.Tool)
 	}
-	t.Skipf("%s is not installed", pdfTextTool)
+	t.Skipf("%s is not installed", pdftext.Tool)
 }
 
 // hideExtractor points PATH at an empty directory so exec.LookPath fails. It is
@@ -214,7 +216,7 @@ func TestPDFUnreadReasonNamesTheCause(t *testing.T) {
 	}{
 		{"no error at all", nil, "probably a scan"},
 		{"binary missing", exec.ErrNotFound, "No PDF text extractor is installed"},
-		{"wrapped binary missing", &exec.Error{Name: pdfTextTool, Err: exec.ErrNotFound}, "No PDF text extractor is installed"},
+		{"wrapped binary missing", &exec.Error{Name: pdftext.Tool, Err: exec.ErrNotFound}, "No PDF text extractor is installed"},
 		{"not an exit at all", errors.New("boom"), "could not be run"},
 	} {
 		if got := pdfUnreadReason(tc.err); !strings.Contains(got, tc.want) {

@@ -3,30 +3,21 @@ package filecard
 import (
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"os/exec"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/pdftext"
 )
 
-// Reading a PDF's words is a PDF engine's job, and the runtime image already
-// carries one: poppler's pdftotext, installed in the SAME container as ingest
-// (docker/aura/Dockerfile — "poppler-utils = pdftoppm/pdftotext"), so this is a
-// subprocess and not a service call. It resolves the ToUnicode CMaps that turn a
-// Type0/CID font's glyph indices back into characters, which is the one step the
-// card could never take for itself and the reason the Normattiva decrees used to
-// card as nothing but a file name, a size and a page count.
-//
-// Where the binary is absent — a developer host, a runner without poppler-utils
-// — the card degrades to metadata and says so, which is what every PDF card did
-// before this.
-const pdfTextTool = "pdftotext"
+// A PDF's words come from poppler through internal/pdftext. That is the one step the
+// card could never take for itself, and the reason the Normattiva decrees used to card
+// as nothing but a file name, a size and a page count. Where the binary is absent — a
+// developer host, a runner without poppler-utils — the card degrades to metadata and
+// says so, which is what every PDF card did before this.
 
 const (
 	// pdfTextPages bounds the pages read. Measured on the reference corpus'
@@ -60,62 +51,12 @@ const (
 )
 
 // pdfExtractText returns the text of the first pdfTextPages pages and reports
-// whether the byte cap cut it short. It never panics on a bad file and it never
-// blocks past pdfTextTimeout; every other failure comes back as an error for the
-// caller to state in the card.
+// whether the byte cap cut it short. Build takes no context — it is a plain call on
+// the ingest path — so the deadline is set here rather than inherited.
 func pdfExtractText(path string) (text string, bytesCapped bool, err error) {
-	tool, err := exec.LookPath(pdfTextTool)
-	if err != nil {
-		return "", false, fmt.Errorf("%s is not installed: %w", pdfTextTool, err)
-	}
-	// An absolute path can never be mistaken for an option: poppler's argument
-	// parser has no "--" terminator, so a file named "-layout.pdf" would be one.
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", false, fmt.Errorf("resolve %s: %w", path, err)
-	}
-	// Build takes no context — it is a plain call on the ingest path — so the
-	// deadline is set here rather than inherited.
 	ctx, cancel := context.WithTimeout(context.Background(), pdfTextTimeout)
 	defer cancel()
-
-	//nolint:gosec // G204: `tool` is LookPath of a package constant and every other
-	// argument is a literal but the path, which is the file ingest is already reading
-	// and is made absolute above so it cannot be parsed as an option.
-	cmd := exec.CommandContext(ctx, tool,
-		"-q", "-enc", "UTF-8", "-eol", "unix", "-nopgbrk",
-		"-f", "1", "-l", strconv.Itoa(pdfTextPages),
-		absolute, "-")
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", false, fmt.Errorf("%s: %w", pdfTextTool, err)
-	}
-	if err := cmd.Start(); err != nil {
-		return "", false, fmt.Errorf("%s: %w", pdfTextTool, err)
-	}
-	body, readErr := io.ReadAll(io.LimitReader(stdout, maxTextChars+1))
-	bytesCapped = len(body) > maxTextChars
-	if bytesCapped {
-		body = body[:maxTextChars]
-		// Nothing will read the rest, and an extractor writing into a pipe that
-		// nobody drains would sit there until the deadline.
-		cancel()
-	}
-	waitErr := cmd.Wait()
-	// Text OR an error, never both. A run that ended badly produced output nobody
-	// can vouch for, and a card that quotes it while calling itself complete is
-	// exactly the degraded-card-that-looks-whole this package refuses to write.
-	// The byte cap is not a bad ending: it is this function killing a run whose
-	// output it already has all it wants of.
-	switch {
-	case bytesCapped:
-		return string(body), true, nil
-	case readErr != nil:
-		return "", false, fmt.Errorf("read %s output: %w", pdfTextTool, readErr)
-	case waitErr != nil:
-		return "", false, fmt.Errorf("%s: %w", pdfTextTool, waitErr)
-	}
-	return string(body), false, nil
+	return pdftext.Extract(ctx, path, pdfTextPages, maxTextChars)
 }
 
 // pdfUnreadReason turns an extraction failure into the sentence the card prints.
@@ -208,5 +149,5 @@ func termTokens(text string) []string {
 // the cards say so one at a time while nothing says so once.
 func logExtractFailure(fileName string, err error) {
 	slog.Warn("filecard: a PDF's text could not be extracted at ingest",
-		"file_name", fileName, "tool", pdfTextTool, "err", err)
+		"file_name", fileName, "tool", pdftext.Tool, "err", err)
 }
