@@ -28,6 +28,19 @@ Every turn is read three ways, in conversation order, on the production path (`r
    per trial, into which every earlier turn of the trial was projected with the decision the
    recall arm made, exactly as the runner persists it.
 
+Since the amendment of 2026-10-07 the teacher answers in the background and never decides the
+turn it is asked about. A turn's reading asks for it (`AskTeacher`) when its seed margin is below
+`teacherMargin`. The replay then asks `AskTeacher` once, on the eval's client and model,
+bounded by the runner's default teacher timeout (30 s), whenever either arm asked. One answer
+serves both arms, which read the same text with the same classifier.
+
+- In time order, a successful answer becomes the recall arm's label for that turn before the
+  next turn is read. Its source is `teacher`, its requested effort is the tier's effort clamped
+  by the route, and its applied effort is the one the turn sent. A failed answer leaves the
+  seeds decision as it was, as on a real row.
+- The **seeds + teacher** arm therefore measures two things: the turn's own seeds decision, and
+  how often the background teacher would have labelled it.
+
 The context key of a turn is `TurnContextKey` of its conversation's earlier turns (each
 answered by a placeholder assistant message); a turn with an attachment has none, and a turn
 with no earlier turn is standalone.
@@ -36,8 +49,11 @@ with no earlier turn is standalone.
 
 Per split and arm: accuracy (decided effort in the accepted set) with its 95% Wilson interval;
 hard→none count; the decided-effort × accepted-set table. For the recall arm also: decision
-sources, teacher share, teacher outcomes, memory precision (memory decisions in the accepted
-set), recall latency p50/p95, and whole-reading latency p50/p95.
+sources, memory precision (memory decisions in the accepted set), recall latency p50/p95, and
+whole-reading latency p50/p95. For the background teacher: the readings on which each arm asked,
+how many the seeds + teacher arm would have had labelled, how many labels the recall arm
+learned, the outcomes, and the teacher's latency p50/p95. Each reading's row records its
+teacher outcome.
 
 ## Release criterion
 
@@ -47,7 +63,7 @@ Everything else is reported, not gated.
 
 ## Running
 
-Paid: every uncertain turn asks the teacher, in two arms. Run only with the operator's OK.
+Paid: every uncertain turn asks the teacher once. Run only with the operator's OK.
 Calibration may be run as often as needed. The final split runs once per frozen set and
 constants; a changed constant (`teacherMargin`, `recallRadius`) needs a fresh calibration run
 before the final.

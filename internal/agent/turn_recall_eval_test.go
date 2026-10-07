@@ -1,7 +1,8 @@
 //go:build turn_recall_eval
 
 // The frozen turn-recall evaluation (docs/verification/turn-recall-frozen-eval.md). Paid:
-// every uncertain turn asks the configured teacher. Run only with the operator's OK.
+// every uncertain turn asks the configured teacher once, as the runner's background worker
+// does. Run only with the operator's OK.
 package agent
 
 import (
@@ -33,24 +34,32 @@ type evalEnv struct {
 	classifier *prompt.ReasoningClassifier
 }
 
+// evalArm is one arm's decision for a reading; ask is whether it asked the background teacher.
 type evalArm struct {
 	effort llm.ReasoningEffort
 	source string
+	ask    bool
 }
 
+// evalRecord is one reading. teacher is the background teacher's outcome, "" when neither
+// arm asked it.
 type evalRecord struct {
-	trial          int
-	split          string
-	turn           evalTurn
-	seeds          evalArm
-	baseline       evalArm
-	recall         evalArm
-	recallMiss     string
-	teacher        string
-	labelDistance  float64
-	recallDuration time.Duration
-	reading        time.Duration
+	trial           int
+	split           string
+	turn            evalTurn
+	seeds           evalArm
+	baseline        evalArm
+	recall          evalArm
+	recallMiss      string
+	teacher         string
+	teacherDuration time.Duration
+	labelDistance   float64
+	recallDuration  time.Duration
+	reading         time.Duration
 }
+
+// evalTeacherTimeout is the runner's defaultTeacherTimeout, which this package cannot import.
+const evalTeacherTimeout = 30 * time.Second
 
 func (r evalRecord) gateRow() evalGateRow {
 	return evalGateRow{
@@ -96,6 +105,16 @@ func (e evalEnv) agent(history []llm.Message, reading TurnReading) *LlmAgent {
 		Client: e.client, LLM: e.cfg, Registry: tools.NewRegistry(), SessionID: "turn-recall-eval",
 		UserTurns: history, Classifier: e.classifier, TurnReading: reading,
 	})
+}
+
+// teach asks the teacher as the runner's background worker does: the turn's client and
+// model, the typed text, and the worker's bound.
+func (e evalEnv) teach(user string) (prompt.ReasoningTier, string, time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), evalTeacherTimeout)
+	defer cancel()
+	started := time.Now()
+	tier, outcome := AskTeacher(ctx, e.client, e.cfg.Model, user)
+	return tier, outcome, time.Since(started)
 }
 
 // evalMemory is one trial's identity memory: a fresh database, dropped at the end.
@@ -208,8 +227,8 @@ func replayTrial(t *testing.T, env evalEnv, set evalSet, split string, trial int
 
 			record := evalRecord{
 				trial: trial, split: conv.Split, turn: turn,
-				baseline:   evalArm{effort: baseline.EffortRequested, source: baseline.EffortSource},
-				recall:     evalArm{effort: decision.EffortRequested, source: decision.EffortSource},
+				baseline:   evalArm{effort: baseline.EffortRequested, source: baseline.EffortSource, ask: baseline.AskTeacher},
+				recall:     evalArm{effort: decision.EffortRequested, source: decision.EffortSource, ask: decision.AskTeacher},
 				recallMiss: read.recallMiss, labelDistance: read.label.Distance,
 				recallDuration: read.recallDuration, reading: reading,
 			}
@@ -218,8 +237,20 @@ func replayTrial(t *testing.T, env evalEnv, set evalSet, split string, trial int
 			} else if baseline.EffortSource == EffortSourceGreeting {
 				record.seeds = evalArm{effort: baseline.EffortRequested, source: EffortSourceGreeting}
 			}
+			// The background teacher, in time order: a successful answer is written as this
+			// turn's label before the next turn is read, as the runner's worker writes it, and
+			// a failure leaves the decision as it was. One answer serves both arms, which read
+			// the same text with the same classifier.
+			learned := decision
+			if baseline.AskTeacher || decision.AskTeacher {
+				tier, outcome, took := env.teach(turn.Text)
+				record.teacher, record.teacherDuration = outcome, took
+				if decision.AskTeacher && outcome == TeacherSuccess {
+					learned.EffortSource, learned.EffortRequested = EffortSourceTeacher, env.cfg.ClampReasoningEffort(tier.Effort())
+				}
+			}
 			records = append(records, record)
-			learn(t, memory, identity, convID, seq, turn.Text, key, decision)
+			learn(t, memory, identity, convID, seq, turn.Text, key, learned)
 			prior = append(history, llm.Message{Role: llm.RoleAssistant, Content: "(answered)"})
 		}
 	}
@@ -291,6 +322,10 @@ func renderEvalReport(model, split string, trials int, records []evalRecord) str
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Turn recall frozen evaluation — %s, split %s, %d trial(s)\n\n", model, split, trials)
 	fmt.Fprintf(&b, "Generated %s by TestTurnRecallFrozenEval.\n\n", time.Now().UTC().Format(time.RFC3339))
+	b.WriteString("The teacher answers in the background (spec amendment 2026-10-07): it never decides the turn it " +
+		"is asked about. The seeds + teacher arm is therefore the turn's seeds decision with memory empty, and the " +
+		"background teacher line says how often that arm would have had the turn labelled. The recall arm's memory " +
+		"holds every earlier turn with its decision, upgraded to the teacher's label when the teacher answered.\n\n")
 	arms := []struct {
 		name string
 		pick func(evalRecord) evalArm
@@ -332,12 +367,27 @@ func renderEvalReport(model, split string, trials int, records []evalRecord) str
 func evalRecallDetail(records []evalRecord) string {
 	sources, outcomes, table, misses := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	memoryHits, memoryCorrect := 0, 0
-	var recallTimes, readingTimes []time.Duration
+	baselineAsked, baselineLabelled, recallAsked, recallLearned := 0, 0, 0, 0
+	var recallTimes, readingTimes, teacherTimes []time.Duration
 	for _, record := range records {
 		sources[record.recall.source]++
 		misses[missLabel(record.recallMiss)]++
 		if record.teacher != "" {
-			outcomes[string(record.teacher)]++
+			outcomes[record.teacher]++
+			teacherTimes = append(teacherTimes, record.teacherDuration)
+		}
+		answered := record.teacher == TeacherSuccess
+		if record.baseline.ask {
+			baselineAsked++
+			if answered {
+				baselineLabelled++
+			}
+		}
+		if record.recall.ask {
+			recallAsked++
+			if answered {
+				recallLearned++
+			}
 		}
 		table[string(record.recall.effort)+" × "+strings.Join(record.turn.Accepted, "|")]++
 		if record.recall.source == EffortSourceMemory {
@@ -350,8 +400,11 @@ func evalRecallDetail(records []evalRecord) string {
 		readingTimes = append(readingTimes, record.reading)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Recall arm sources: %v. Teacher share: %d/%d. Teacher outcomes: %v.\n\n",
-		sources, sources[EffortSourceTeacher], len(records), outcomes)
+	fmt.Fprintf(&b, "Recall arm sources: %v.\n\n", sources)
+	fmt.Fprintf(&b, "Background teacher: the seeds + teacher arm asked on %d/%d readings and would have had %d labelled; "+
+		"the recall arm asked on %d and learned %d labels. Outcomes: %v. Teacher latency p50 %v, p95 %v.\n\n",
+		baselineAsked, len(records), baselineLabelled, recallAsked, recallLearned, outcomes,
+		percentile(teacherTimes, 0.5), percentile(teacherTimes, 0.95))
 	fmt.Fprintf(&b, "Recall miss reasons: %v.\n\n", misses)
 	fmt.Fprintf(&b, "Memory precision: %d/%d. Recall latency p50 %v, p95 %v. Whole reading p50 %v, p95 %v.\n\n",
 		memoryCorrect, memoryHits, percentile(recallTimes, 0.5), percentile(recallTimes, 0.95),
@@ -365,15 +418,18 @@ func evalRecallDetail(records []evalRecord) string {
 	for _, key := range keys {
 		fmt.Fprintf(&b, "| %s | %d |\n", key, table[key])
 	}
-	b.WriteString("\n| Trial | Turn | Seeds | Seeds + teacher | Recall (source) | Miss | Label distance |\n|---|---|---|---|---|---|---|\n")
+	b.WriteString("\n| Trial | Turn | Seeds | Seeds + teacher | Recall (source) | Miss | Label distance | Teacher |\n|---|---|---|---|---|---|---|---|\n")
 	for _, record := range records {
-		distance := "—"
+		distance, teacher := "—", "—"
 		if record.recall.source == EffortSourceMemory {
 			distance = fmt.Sprintf("%.3f", record.labelDistance)
 		}
-		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s (%s) | %s | %s |\n", record.trial, record.turn.ID,
+		if record.teacher != "" {
+			teacher = record.teacher
+		}
+		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s (%s) | %s | %s | %s |\n", record.trial, record.turn.ID,
 			record.seeds.effort, record.baseline.effort, record.recall.effort, record.recall.source,
-			missLabel(record.recallMiss), distance)
+			missLabel(record.recallMiss), distance, teacher)
 	}
 	return b.String()
 }
