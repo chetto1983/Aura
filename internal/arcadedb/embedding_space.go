@@ -217,11 +217,27 @@ func (q denseQuery) bind(params map[string]any) {
 // denseQueryVector is the dense leg's entry for every memory read: the embedded query, or
 // none and the reason the read must be lexical. The gate is asked before the query is
 // embedded, so a closed gate costs no embedding request.
+func (c *Client) denseQueryVector(ctx context.Context, query string) (denseQuery, string) {
+	return c.embedChecked(ctx, taskQueryPrefix, query, func(space string) string {
+		open, err := c.memoryDenseOpen(ctx, space)
+		if err != nil {
+			return reasonSpaceCheckFailed
+		}
+		if !open {
+			return reasonEmbeddingSpaceMismatch
+		}
+		return ""
+	})
+}
+
+// embedChecked embeds text under prefix and names the space its vector is in, or returns the
+// reason it could not. admit, when set, may refuse the space before an embedding request is
+// spent.
 //
-// The space is read again once the query is embedded. For a write, reading it first is the
+// The space is read again once the vector is back. For a write, reading it first is the
 // safe order (embedStored); for a read it is not: a model swapped in between would rank a
 // new model's vector against a corpus checked in the old space.
-func (c *Client) denseQueryVector(ctx context.Context, query string) (denseQuery, string) {
+func (c *Client) embedChecked(ctx context.Context, prefix, text string, admit func(space string) string) (denseQuery, string) {
 	if c == nil || c.embedder == nil {
 		return denseQuery{}, reasonEmbedderNotConfigured
 	}
@@ -229,14 +245,12 @@ func (c *Client) denseQueryVector(ctx context.Context, query string) (denseQuery
 	if err != nil {
 		return denseQuery{}, reasonEmbeddingFailed
 	}
-	open, err := c.memoryDenseOpen(ctx, space.ID)
-	if err != nil {
-		return denseQuery{}, reasonSpaceCheckFailed
+	if admit != nil {
+		if reason := admit(space.ID); reason != "" {
+			return denseQuery{}, reason
+		}
 	}
-	if !open {
-		return denseQuery{}, reasonEmbeddingSpaceMismatch
-	}
-	vectors, err := c.embedder.Embed(ctx, withTask(taskQueryPrefix, []string{query}))
+	vectors, err := c.embedder.Embed(ctx, withTask(prefix, []string{text}))
 	if err != nil {
 		return denseQuery{}, reasonEmbeddingFailed
 	}
