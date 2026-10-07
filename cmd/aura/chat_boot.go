@@ -521,6 +521,7 @@ func assembleChatEnv(
 		BackgroundCalls: toolHandles.BackgroundCalls,
 	}
 	wireChatReasoningMemory(&deps, reasoningMemory)
+	wireChatTurnRecall(&deps, memoryClients, convStore)
 	run := runner.New(deps)
 	if err := run.ValidateCompactionConfig(); err != nil {
 		return nil, fmt.Errorf("chat boot: %w", err)

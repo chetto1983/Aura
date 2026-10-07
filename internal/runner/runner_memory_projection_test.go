@@ -382,6 +382,15 @@ func (s *postCommitConversationStore) AppendTurn(ctx context.Context, p conversa
 	return nil
 }
 
+func (s *postCommitConversationStore) AppendTurnSeq(ctx context.Context, p conversations.AppendTurnParams) (int, error) {
+	seq, err := s.fakeConvStore.AppendTurnSeq(ctx, p)
+	if err != nil {
+		return 0, err
+	}
+	s.source.record(ctx, p)
+	return seq, nil
+}
+
 func (s *postCommitConversationStore) AppendAssistantTurnWithCacheMetric(
 	ctx context.Context,
 	p conversations.AppendTurnParams,
@@ -417,10 +426,10 @@ func newPostCommitProjectionHarness(t *testing.T) (*Runner, *postCommitConversat
 func TestConversationProjectionPostCommit(t *testing.T) {
 	r, _, source, sink, ctx := newPostCommitProjectionHarness(t)
 	convID := newConvID(t)
-	if err := r.appendUserTurn(ctx, convID, "first committed turn"); err != nil {
+	if _, err := r.appendUserTurn(ctx, convID, "first committed turn"); err != nil {
 		t.Fatalf("append first user turn: %v", err)
 	}
-	if err := r.appendUserTurn(ctx, convID, "second committed turn"); err != nil {
+	if _, err := r.appendUserTurn(ctx, convID, "second committed turn"); err != nil {
 		t.Fatalf("append second user turn: %v", err)
 	}
 	if err := r.persistAssistantAnswer(ctx, &turnTracker{convID: convID}, &agent.Event{
@@ -483,7 +492,7 @@ func TestConversationProjectionFailSoft(t *testing.T) {
 	r, store, source, sink, ctx := newPostCommitProjectionHarness(t)
 	convID := newConvID(t)
 	sink.failApply = conversationProjectionAttempts
-	if err := r.appendUserTurn(ctx, convID, "durable despite graph failure"); err != nil {
+	if _, err := r.appendUserTurn(ctx, convID, "durable despite graph failure"); err != nil {
 		t.Fatalf("committed source turn failed because graph failed: %v", err)
 	}
 	flushCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -501,7 +510,7 @@ func TestConversationProjectionFailSoft(t *testing.T) {
 	failedProjector := NewConversationProjector(failedSource, newReconciliationProjectionSink(), 1)
 	t.Cleanup(func() { _ = failedProjector.Close(context.Background()) })
 	failedRunner := &Runner{Conv: failedStore, conversationProjector: failedProjector}
-	if err := failedRunner.appendUserTurn(ctx, convID, "must not project"); err == nil {
+	if _, err := failedRunner.appendUserTurn(ctx, convID, "must not project"); err == nil {
 		t.Fatal("failed PostgreSQL append unexpectedly succeeded")
 	}
 	if err := failedProjector.Flush(flushCtx); err != nil {

@@ -109,3 +109,26 @@ func wireChatReasoningMemory(deps *runner.Deps, memory *chatReasoningMemory) {
 	deps.ReasoningGraphSink = memory.writer
 	deps.ReasoningDeletion = memory.writer
 }
+
+// tenantTurnRecall reads an identity's past turns through Existing: an identity that has
+// never written memory has nothing to recall, and a read must not provision a database.
+type tenantTurnRecall struct {
+	clients *arcadedb.TenantClients
+}
+
+func (s tenantTurnRecall) RecallTurns(ctx context.Context, request arcadedb.TurnRecallRequest) (arcadedb.TurnRecall, error) {
+	client, ok, err := s.clients.Existing(ctx, request.IdentityID)
+	if err != nil || !ok {
+		return arcadedb.TurnRecall{}, err
+	}
+	return client.RecallTurns(ctx, request)
+}
+
+// wireChatTurnRecall gives every dispatched turn its decision sink and, when memory is
+// configured, its recall.
+func wireChatTurnRecall(deps *runner.Deps, clients *arcadedb.TenantClients, decisions runner.TurnDecisionStore) {
+	deps.TurnDecisions = decisions
+	if clients != nil {
+		deps.TurnRecall = tenantTurnRecall{clients: clients}
+	}
+}

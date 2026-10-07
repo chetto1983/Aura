@@ -88,6 +88,16 @@ func (f *steerE2EConvStore) AppendTurn(_ context.Context, p conversations.Append
 	return nil
 }
 
+func (f *steerE2EConvStore) AppendTurnSeq(_ context.Context, p conversations.AppendTurnParams) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if p.Seq <= 0 {
+		p.Seq = len(f.turns[p.ConversationID]) + 1
+	}
+	f.appendLocked(p)
+	return p.Seq, nil
+}
+
 func (f *steerE2EConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, _ sqlc.InsertCacheMetricParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

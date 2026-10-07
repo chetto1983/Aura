@@ -172,6 +172,16 @@ func (f *fakeConvStore) AppendTurn(_ context.Context, p conversations.AppendTurn
 	return f.appendTurnLocked(p)
 }
 
+func (f *fakeConvStore) AppendTurnSeq(_ context.Context, p conversations.AppendTurnParams) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	p = f.assignTurnSeqLocked(p)
+	if err := f.appendTurnLocked(p); err != nil {
+		return 0, err
+	}
+	return p.Seq, nil
+}
+
 func (f *fakeConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

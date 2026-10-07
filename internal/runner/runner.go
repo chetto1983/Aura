@@ -66,6 +66,8 @@ type Runner struct {
 	memoryCaptures        *MemoryCaptureQueue
 	reasoningGraphSink    ReasoningGraphSink
 	reasoningDeletion     ReasoningDeletionStore
+	turnDecisions         TurnDecisionStore
+	turnRecall            TurnRecallStore
 	resumeCommitter       ResumeCommitter // cross-store HITL-durability seam (D-03/D-05); split fallback when unset
 	messageDrafts         *messagedrafts.Store
 
@@ -236,11 +238,14 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		ctx = tools.WithRequestID(ctx, requestID.String())
 
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
+		userTurnSeq := 0
 		if input.visibleUserMsg != nil {
-			if err := r.appendUserTurn(ctx, convID, *input.visibleUserMsg); err != nil {
+			seq, err := r.appendUserTurn(ctx, convID, *input.visibleUserMsg)
+			if err != nil {
 				yield(nil, err)
 				return
 			}
+			userTurnSeq = seq
 			if answer, ok := fastReplyFor(*input.visibleUserMsg); ok {
 				r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(*input.visibleUserMsg))
 				ev := fastReplyEvent(convID, requestID, answer)
@@ -270,8 +275,11 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		}
 		agentHistory := currentRoundModelHistory(history, input.visibleUserMsg, input.modelUserMsg)
 
+		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime, userTurnSeq: userTurnSeq}
+		turn := readTurnContext(history, input, cfg, assets.TurnAttachments(ctx))
+		tr.contextKey = turn.key
 		la, ic, cancelAgent, err := r.buildAgent(
-			ctx, convID, requestID, agentHistory,
+			ctx, convID, requestID, agentHistory, r.turnReading(ctx, tr, turn),
 		)
 		if err != nil {
 			r.persistAutoTitle(ctx, convID, conversations.FallbackTitle(input.titleSource()))
@@ -293,7 +301,6 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 		// them as ONE assistant turn (CR-02). The flush is deferred to round end
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
-		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime}
 		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
 		// — the message the injected RoleTool answers attach to on resume. It MUST run
 		// even when the consumer stops iterating ON the pause Event: the AG-UI translator
@@ -368,18 +375,20 @@ func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) 
 }
 
 // appendUserTurn persists the user message as the next turn, together with whatever was
-// attached to it (migration 0116). The ids ride the context because the HTTP layer is
-// where they are known and validated, and this is where the turn that owns them is
-// written; a request that attached nothing carries none and the column stays NULL.
-func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) error {
-	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+// attached to it (migration 0116), and returns the seq the store gave it: the turn's effort
+// decision is written back to exactly that row. The ids ride the context because the HTTP
+// layer is where they are known and validated; a request that attached nothing carries none
+// and the column stays NULL.
+func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) (int, error) {
+	seq, err := r.Conv.AppendTurnSeq(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
 		AttachmentIDs: assets.TurnAttachments(ctx),
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return 0, err
 	}
 	r.offerConversationProjection(ctx)
-	return nil
+	return seq, nil
 }
 
 // buildAgent constructs a FRESH LlmAgent seeded with the rehydrated history
@@ -388,8 +397,9 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 // prepends its own byte-stable system message (AM-01: LoadHistory is the Store's,
 // not the agent's). When the loaded history already carries a leading system turn
 // (a persisted seq=1), it is dropped here so the agent's own system message is not
-// duplicated.
-func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
+// duplicated. reading binds the dispatched user turn to memory and to its decision
+// sink (runner_turn_recall.go); the zero value is a run without a dispatched turn.
+func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.UUID, history []llm.Message, reading agent.TurnReading) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
 	runtime := r.llmSnapshot(ctx)
 	bud, err := agent.NewBudget(agent.BudgetOptionsFromConfig(runtime.Config))
 	if err != nil {
@@ -426,6 +436,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, requestID uuid.U
 		ReasoningOverride: reasoningEffort, // 37E fixed effort; "" => auto (adaptive path)
 		Steer:             r.steer,
 		BackgroundCalls:   r.backgroundCalls,
+		TurnReading:       reading,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

@@ -56,6 +56,12 @@ type Deps struct {
 	ReasoningGraphSink ReasoningGraphSink
 	// ReasoningDeletion removes the complete derived graph during source deletion.
 	ReasoningDeletion ReasoningDeletionStore
+	// TurnDecisions persists how each dispatched user turn's effort was decided (migration
+	// 0137). nil leaves the decision in the turn's log line only.
+	TurnDecisions TurnDecisionStore
+	// TurnRecall reads the identity's past turns for the effort decision and the tool
+	// preload. nil reads every turn from seeds and the teacher alone.
+	TurnRecall TurnRecallStore
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
 	// and pause exposure each commit in ONE db.WithTx; nil => New defaults to the
@@ -224,6 +230,8 @@ func New(d Deps) *Runner {
 		conversationProjector:     d.ConversationProjector,
 		reasoningGraphSink:        d.ReasoningGraphSink,
 		reasoningDeletion:         d.ReasoningDeletion,
+		turnDecisions:             d.TurnDecisions,
+		turnRecall:                d.TurnRecall,
 		runtime:                   runtime,
 		identityLLM:               d.IdentityLLM,
 		registry:                  d.Registry,

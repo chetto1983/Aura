@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
@@ -22,7 +23,7 @@ func TestRunnerBudgetFollowsRuntimeLoopProfile(t *testing.T) {
 		LoopMaxSteps: 3, LoopMaxWallclockSec: 7,
 	})
 
-	_, ic, cancel, err := r.buildAgent(context.Background(), newConvID(t), uuid.New(), nil)
+	_, ic, cancel, err := r.buildAgent(context.Background(), newConvID(t), uuid.New(), nil, agent.TurnReading{})
 	if err != nil {
 		t.Fatal(err)
 	}
