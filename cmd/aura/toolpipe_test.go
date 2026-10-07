@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
@@ -84,6 +85,14 @@ func (*toolPipeTaskStore) CancelScheduledTask(context.Context, string) error {
 
 func (*toolPipeTaskStore) RunScheduledTaskNow(context.Context, string) error {
 	return nil
+}
+
+func (*toolPipeTaskStore) PauseScheduledTask(context.Context, string) error {
+	return nil
+}
+
+func (*toolPipeTaskStore) ResumeScheduledTask(context.Context, string) (time.Time, error) {
+	return time.Time{}, nil
 }
 
 func TestRunToolPipeCommandUsesRuntimeAndCloses(t *testing.T) {

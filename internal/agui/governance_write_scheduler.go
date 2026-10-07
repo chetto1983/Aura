@@ -2,9 +2,10 @@ package agui
 
 // governance_write_scheduler.go is the GOV-03 write adapter over the SchedulerBoardProvider
 // seam: the operator management verbs for a scheduled task — approve a gated task, run it
-// now, cancel it, or reschedule/re-payload it. Every handler nil-checks the provider (503
-// when unwired), resolves the task, enforces the system-kind guard (a system-seeded sweep is
-// never operator-mutable → 403, and the database backup is never cancellable → 403), makes
+// now, pause or resume it, cancel it, or reschedule/re-payload it. Every handler nil-checks the
+// provider (503 when unwired), resolves the task, enforces the system-kind guard (a system-seeded
+// sweep is never operator-mutable → 403, and the database backup is never paused or cancelled
+// → 403), makes
 // ONE provider call, and projects JSON. The parent-mux
 // mount behind RequireCapability(governance.write) is cmd/aura/serve_webui.go's job; every
 // wire error passes through sanitizeErr. There is no business logic here — schedule grammar
@@ -27,11 +28,13 @@ const schedulerEditBodyCap = 8 << 10
 
 // registerGovernanceSchedulerWriteRoutes mounts the GOV-03 write verbs on the supplied mux
 // using Go 1.22 method-pattern routing — SPECIFIC method+path siblings under the /api/
-// carve-out. The {id}/approve and {id}/run action routes are more specific than the {id}
-// cancel/edit routes, so longest-pattern precedence keeps them distinct.
+// carve-out. The {id}/approve, {id}/run, {id}/pause and {id}/resume action routes are more
+// specific than the {id} cancel/edit routes, so longest-pattern precedence keeps them distinct.
 func (s *Server) registerGovernanceSchedulerWriteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/governance/scheduler/{id}/approve", s.handleSchedulerApprove)
 	mux.HandleFunc("POST /api/governance/scheduler/{id}/run", s.handleSchedulerRun)
+	mux.HandleFunc("POST /api/governance/scheduler/{id}/pause", s.handleSchedulerPause)
+	mux.HandleFunc("POST /api/governance/scheduler/{id}/resume", s.handleSchedulerResume)
 	mux.HandleFunc("DELETE /api/governance/scheduler/{id}", s.handleSchedulerCancel)
 	mux.HandleFunc("PATCH /api/governance/scheduler/{id}", s.handleSchedulerEdit)
 }
@@ -91,6 +94,43 @@ func (s *Server) handleSchedulerRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "queued"})
+}
+
+// handleSchedulerPause serves POST /api/governance/scheduler/{id}/pause: stops an active task
+// from firing until it is resumed. The database backup is never paused (403).
+func (s *Server) handleSchedulerPause(w http.ResponseWriter, r *http.Request) {
+	task, id, ok := s.schedulerMutable(w, r)
+	if !ok {
+		return
+	}
+	if !cron.IsPausableKind(task.Kind) {
+		writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "the database backup cannot be paused"})
+		return
+	}
+	if err := s.governance.Scheduler.PauseTask(r.Context(), id); err != nil {
+		s.writeSchedulerMutateErr(w, err, "task is not active")
+		return
+	}
+	writeJSON(w, map[string]string{"status": "paused"})
+}
+
+// handleSchedulerResume serves POST /api/governance/scheduler/{id}/resume: reactivates a paused
+// task at its next fire from now. A one-shot whose time has passed cannot resume → 409.
+func (s *Server) handleSchedulerResume(w http.ResponseWriter, r *http.Request) {
+	_, id, ok := s.schedulerMutable(w, r)
+	if !ok {
+		return
+	}
+	next, err := s.governance.Scheduler.ResumeTask(r.Context(), id, time.Now())
+	if errors.Is(err, cron.ErrResumePastOneShot) {
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": cron.ErrResumePastOneShot.Error()})
+		return
+	}
+	if err != nil {
+		s.writeSchedulerMutateErr(w, err, "task is not paused")
+		return
+	}
+	writeJSON(w, map[string]string{"status": "active", "next_run_at": next.UTC().Format(time.RFC3339)})
 }
 
 // handleSchedulerCancel serves DELETE /api/governance/scheduler/{id}: soft-cancels a task

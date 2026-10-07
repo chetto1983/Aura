@@ -3,6 +3,7 @@ package agui
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/identity"
@@ -50,7 +51,11 @@ func (fakeSchedulerBoard) GetTask(context.Context, string) (cron.Task, error) {
 }
 func (fakeSchedulerBoard) ApproveTask(context.Context, string) error { return nil }
 func (fakeSchedulerBoard) RunTaskNow(context.Context, string) error  { return nil }
-func (fakeSchedulerBoard) CancelTask(context.Context, string) error  { return nil }
+func (fakeSchedulerBoard) PauseTask(context.Context, string) error   { return nil }
+func (fakeSchedulerBoard) ResumeTask(context.Context, string, time.Time) (time.Time, error) {
+	return time.Time{}, nil
+}
+func (fakeSchedulerBoard) CancelTask(context.Context, string) error { return nil }
 func (fakeSchedulerBoard) UpdateTask(context.Context, string, cron.UpdateTaskParams) error {
 	return nil
 }

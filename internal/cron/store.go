@@ -111,6 +111,10 @@ type Task struct {
 	OriginConversationID string
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	// PausedReason is PausedByOperator or PausedByFailures while Status is "paused", else "".
+	PausedReason string
+	// ConsecutiveFailures counts failed runs since the last success.
+	ConsecutiveFailures int
 }
 
 // Run is the domain projection of aura.agent_job_runs.
@@ -348,6 +352,8 @@ func taskFromRow(r sqlc.AuraSchedulerTasks) Task {
 		OriginConversationID: uuidString(r.OriginConversationID),
 		CreatedAt:            r.CreatedAt.Time,
 		UpdatedAt:            r.UpdatedAt.Time,
+		PausedReason:         r.PausedReason.String,
+		ConsecutiveFailures:  int(r.ConsecutiveFailures),
 	}
 }
 

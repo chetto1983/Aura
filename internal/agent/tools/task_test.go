@@ -21,6 +21,11 @@ type fakeTaskStore struct {
 	cancelErr error
 	ranNow    string
 	runNowErr error
+	paused    string
+	pauseErr  error
+	resumed   string
+	resumeAt  time.Time
+	resumeErr error
 }
 
 func (f *fakeTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInput) (ScheduledTask, error) {
@@ -44,6 +49,14 @@ func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error 
 func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error {
 	f.ranNow = id
 	return f.runNowErr
+}
+func (f *fakeTaskStore) PauseScheduledTask(_ context.Context, id string) error {
+	f.paused = id
+	return f.pauseErr
+}
+func (f *fakeTaskStore) ResumeScheduledTask(_ context.Context, id string) (time.Time, error) {
+	f.resumed = id
+	return f.resumeAt, f.resumeErr
 }
 
 // TestTaskSchema is the load-bearing D-10 gate (nanobot regression #3113): the
@@ -87,7 +100,7 @@ func TestTaskSchema(t *testing.T) {
 	if err := json.Unmarshal(props["action"], &action); err != nil {
 		t.Fatalf("action property is not an object: %v", err)
 	}
-	wantActions := []string{"schedule", "list", "cancel", "run_now"}
+	wantActions := []string{"schedule", "list", "cancel", "run_now", "pause", "resume"}
 	if len(action.Enum) != len(wantActions) {
 		t.Fatalf("action enum = %v, want %v", action.Enum, wantActions)
 	}

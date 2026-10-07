@@ -30,10 +30,12 @@ func (q *Queries) ApproveTaskRow(ctx context.Context, id pgtype.UUID) (int64, er
 
 const cancelTask = `-- name: CancelTask :exec
 UPDATE aura.scheduler_tasks
-SET status = 'cancelled', updated_at = now()
+SET status = 'cancelled', paused_reason = NULL, updated_at = now()
 WHERE id = $1
 `
 
+// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
+// reason to the paused status).
 func (q *Queries) CancelTask(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, cancelTask, id)
 	return err
@@ -47,7 +49,7 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 `
 
 type CreateTaskParams struct {
@@ -103,6 +105,8 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ApprovalRemindedAt,
+		&i.ConsecutiveFailures,
+		&i.PausedReason,
 	)
 	return i, err
 }
@@ -141,7 +145,7 @@ func (q *Queries) DeleteSettledOneShots(ctx context.Context, attempts int32) (in
 const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -179,6 +183,8 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -193,7 +199,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE id = $1
 `
@@ -219,6 +225,8 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.ApprovalRemindedAt,
+		&i.ConsecutiveFailures,
+		&i.PausedReason,
 	)
 	return i, err
 }
@@ -226,7 +234,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 const listActiveTasks = `-- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -259,6 +267,8 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -273,7 +283,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 const listDuePendingApprovalReminders = `-- name: ListDuePendingApprovalReminders :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -325,6 +335,8 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -339,15 +351,16 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
-WHERE status IN ('active', 'pending_approval')
+WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC
 `
 
-// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
-// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
-// non-null next_run_at too — it is the first fire computed at schedule time).
+// The cockpit scheduler board (GOV-03 write): active, pending_approval and paused tasks, so
+// an operator can approve a gated task or resume a paused one on-screen. Ordered by next fire
+// (pending rows have a non-null next_run_at too — it is the first fire computed at schedule
+// time).
 func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error) {
 	rows, err := q.db.Query(ctx, listManageableTasks)
 	if err != nil {
@@ -375,6 +388,8 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.ApprovalRemindedAt,
+			&i.ConsecutiveFailures,
+			&i.PausedReason,
 		); err != nil {
 			return nil, err
 		}
@@ -397,6 +412,83 @@ WHERE id = $1
 func (q *Queries) MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, markApprovalReminded, id)
 	return err
+}
+
+const pauseTaskRow = `-- name: PauseTaskRow :execrows
+UPDATE aura.scheduler_tasks
+SET status = 'paused', paused_reason = 'operator', updated_at = now()
+WHERE id = $1 AND status = 'active'
+`
+
+// The operator pause: an active task stops firing until resumed. Returns rows affected so a
+// task that is not active (pending, already paused, cancelled, absent) maps to a miss.
+func (q *Queries) PauseTaskRow(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, pauseTaskRow, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const recordTaskRunOutcome = `-- name: RecordTaskRunOutcome :one
+UPDATE aura.scheduler_tasks
+SET consecutive_failures = CASE WHEN $1::boolean THEN 0 ELSE consecutive_failures + 1 END,
+    status = CASE
+        WHEN NOT $1::boolean AND $2::integer > 0
+            AND consecutive_failures + 1 >= $2::integer AND status = 'active'
+        THEN 'paused' ELSE status END,
+    paused_reason = CASE
+        WHEN NOT $1::boolean AND $2::integer > 0
+            AND consecutive_failures + 1 >= $2::integer AND status = 'active'
+        THEN 'failures' ELSE paused_reason END,
+    updated_at = now()
+WHERE id = $3
+RETURNING status, consecutive_failures, paused_reason
+`
+
+type RecordTaskRunOutcomeParams struct {
+	Succeeded  bool        `json:"succeeded"`
+	PauseAfter int32       `json:"pause_after"`
+	ID         pgtype.UUID `json:"id"`
+}
+
+type RecordTaskRunOutcomeRow struct {
+	Status              string      `json:"status"`
+	ConsecutiveFailures int32       `json:"consecutive_failures"`
+	PausedReason        pgtype.Text `json:"paused_reason"`
+}
+
+// One finished run's effect on its task, in one statement: a success resets the failure count;
+// a failure increments it and, when the caller's pause_after is positive and the new count
+// reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
+// row as it was before the update, so consecutive_failures + 1 is the new count.
+func (q *Queries) RecordTaskRunOutcome(ctx context.Context, arg RecordTaskRunOutcomeParams) (RecordTaskRunOutcomeRow, error) {
+	row := q.db.QueryRow(ctx, recordTaskRunOutcome, arg.Succeeded, arg.PauseAfter, arg.ID)
+	var i RecordTaskRunOutcomeRow
+	err := row.Scan(&i.Status, &i.ConsecutiveFailures, &i.PausedReason)
+	return i, err
+}
+
+const resumeTaskRow = `-- name: ResumeTaskRow :execrows
+UPDATE aura.scheduler_tasks
+SET status = 'active', paused_reason = NULL, consecutive_failures = 0, next_run_at = $2,
+    updated_at = now()
+WHERE id = $1 AND status = 'paused'
+`
+
+type ResumeTaskRowParams struct {
+	ID        pgtype.UUID        `json:"id"`
+	NextRunAt pgtype.Timestamptz `json:"next_run_at"`
+}
+
+// Reactivate a paused task at the next fire the caller computed from now, clearing the
+// failure count that may have paused it. Returns rows affected (a non-paused task misses).
+func (q *Queries) ResumeTaskRow(ctx context.Context, arg ResumeTaskRowParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resumeTaskRow, arg.ID, arg.NextRunAt)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const runTaskNowRow = `-- name: RunTaskNowRow :execrows
@@ -435,7 +527,7 @@ const updateTaskScheduleRow = `-- name: UpdateTaskScheduleRow :execrows
 UPDATE aura.scheduler_tasks
 SET schedule_kind = $2, cron_expr = $3, every_minutes = $4, run_at = $5, tz = $6,
     payload = $7, notify_route = $8, next_run_at = $9, updated_at = now()
-WHERE id = $1 AND status IN ('active', 'pending_approval')
+WHERE id = $1 AND status IN ('active', 'pending_approval', 'paused')
 `
 
 type UpdateTaskScheduleRowParams struct {
@@ -451,8 +543,9 @@ type UpdateTaskScheduleRowParams struct {
 }
 
 // Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
-// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
-// a cancelled/completed task is not silently revived. Returns rows affected.
+// payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
+// so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
+// rows affected.
 func (q *Queries) UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateTaskScheduleRow,
 		arg.ID,

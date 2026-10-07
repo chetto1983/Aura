@@ -381,8 +381,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0136 retires the asset statuses searchable and embedding, and searchable_at.
 	// 0137 records on a user turn how its reasoning effort was decided (turn recall: context key,
 	// effort, requested effort, source, route, policy, origin).
-	if head != 137 {
-		t.Fatalf("MigrationHead=%d, want embedded head 137", head)
+	// 0138 adds the scheduler task pause: consecutive_failures and paused_reason.
+	if head != 138 {
+		t.Fatalf("MigrationHead=%d, want embedded head 138", head)
 	}
 }
 

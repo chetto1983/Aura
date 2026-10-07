@@ -10,7 +10,7 @@ aura doctor | config <sub>    environment diagnostics / effective configuration
 aura agent dry-run            drive a mock LoopAgent through the Budget tree
 aura tools                    print the tool manifest
 aura task <sub>               operator parity with the model-facing `task` tool:
-                              schedule | list | cancel | run_now | approve | runs | doctor
+                              schedule | list | cancel | run_now | pause | resume | approve | runs | doctor
 aura mcp <sub>                managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
 aura memory <sub>             ArcadeDB memory administration
 aura identity <sub>           identities, capability grants, operator break-glass recovery

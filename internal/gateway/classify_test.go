@@ -89,6 +89,8 @@ func TestClassifyTable(t *testing.T) {
 		{"task/list", task, mustArgs(t, map[string]string{"action": "list"}), scoring.Safe},
 		{"task/cancel", task, mustArgs(t, map[string]string{"action": "cancel", "task_id": "1"}), scoring.Normal},
 		{"task/run_now", task, mustArgs(t, map[string]string{"action": "run_now", "task_id": "1"}), scoring.Risky},
+		{"task/pause", task, mustArgs(t, map[string]string{"action": "pause", "task_id": "1"}), scoring.Normal},
+		{"task/resume", task, mustArgs(t, map[string]string{"action": "resume", "task_id": "1"}), scoring.Risky},
 		// task schedule scored via ComputeTaskTier
 		{"task/schedule/reminder", task, mustArgs(t, map[string]string{"action": "schedule", "kind": "reminder"}), scoring.Safe},
 		{"task/schedule/nokind", task, mustArgs(t, map[string]string{"action": "schedule"}), scoring.Normal},

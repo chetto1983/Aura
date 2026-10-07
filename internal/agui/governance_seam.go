@@ -2,6 +2,7 @@ package agui
 
 import (
 	"context"
+	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -92,8 +93,9 @@ type SkillsBoardProvider interface {
 }
 
 // SchedulerBoardProvider is the scheduler-governance surface (GOV-03): the manageable
-// task list (active + pending_approval), a paginated newest-first run history per task,
-// and the operator management verbs (approve / run-now / cancel / reschedule). GetTask is
+// task list (active + pending_approval + paused), a paginated newest-first run history per
+// task, and the operator management verbs (approve / run-now / pause / resume / cancel /
+// reschedule). GetTask is
 // the pre-mutation read the write handlers use to enforce the system-kind guard
 // (IsUserManageableKind) before any state change. cron.Store satisfies the whole surface.
 type SchedulerBoardProvider interface {
@@ -102,6 +104,8 @@ type SchedulerBoardProvider interface {
 	GetTask(ctx context.Context, id string) (cron.Task, error)
 	ApproveTask(ctx context.Context, id string) error
 	RunTaskNow(ctx context.Context, id string) error
+	PauseTask(ctx context.Context, id string) error
+	ResumeTask(ctx context.Context, id string, now time.Time) (time.Time, error)
 	CancelTask(ctx context.Context, id string) error
 	UpdateTask(ctx context.Context, id string, p cron.UpdateTaskParams) error
 }
