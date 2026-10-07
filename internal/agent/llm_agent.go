@@ -214,7 +214,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			return
 		}
 		var turnEffort llm.ReasoningEffort
-		var turnRead bool
+		var turnDecided bool
 		var modelRoundOrdinal modelRoundOrdinal
 		var retryRequest *llm.Request
 		var retryRound modelRound
@@ -265,6 +265,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
+			// The turn is read once, before its first request (readTurn): a fixed composer
+			// effort still reads memory for tools; buildRequest applies the override, else
+			// the decided effort. It runs ahead of the round's budget and call deadline so the
+			// preloaded tools leave the roster and the read does not spend the call's timeout.
+			if !turnDecided {
+				decision, _ := a.readTurn(ic.Ctx)
+				turnEffort, turnDecided = decision.EffortRequested, true
+				if a.turnReading.OnDecision != nil {
+					a.turnReading.OnDecision(decision)
+				}
+			}
+
 			// 2. Per-call span + bounded call ctx (D-19 total timeout on the ctx).
 			// The recovery turn severs an expired ic.Ctx deadline first (fix-plan 1.1,
 			// see the recoveryTurn comment above); every other turn is byte-identical
@@ -280,21 +292,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// roundBudget assembles the per-round prompt.Budget (llm_agent_round.go);
 			// its doc comment carries the cache-prefix rationale.
 			budget := a.roundBudget(ic)
-			// The turn is read once, before its first request (readTurn): a fixed composer
-			// effort still reads memory for tools; buildRequest applies the override, else
-			// the decided effort.
 			var req llm.Request
 			var modelRound modelRound
 			if transportRetry {
 				req = *retryRequest
 				modelRound = retryRound
 				retryRequest = nil
-			} else if !turnRead {
-				decision, _ := a.readTurn(ic.Ctx)
-				turnEffort, turnRead = decision.EffortRequested, true
-				if a.turnReading.OnDecision != nil {
-					a.turnReading.OnDecision(decision)
-				}
 			}
 			if !transportRetry {
 				modelRound = modelRoundOrdinal.next(ic.RequestID)

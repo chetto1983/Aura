@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -395,6 +396,11 @@ func TestRunPreloadsBeforeTheFirstRequestAndReportsTheDecisionOnce(t *testing.T)
 	}
 	if !slices.Contains(names, "weather_lookup") {
 		t.Fatalf("round-1 tools = %v, want the preloaded weather_lookup", names)
+	}
+	for _, m := range client.requests[0].Messages {
+		if strings.Contains(m.Content, "weather_lookup") {
+			t.Fatalf("a round-1 %s message lists weather_lookup, which round 1 already holds", m.Role)
+		}
 	}
 	if len(order) < 2 || order[0] != "decision" || order[1] != "request" {
 		t.Fatalf("order = %v, want the decision reported before the first request", order)
