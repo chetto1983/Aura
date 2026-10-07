@@ -216,15 +216,30 @@ func TestWriteDumpTurnNamesTheDecision(t *testing.T) {
 			OriginRef: "postgres://aura/conversations/c/turns/1",
 		},
 	}, map[string]string{})
-	want := "\neffort: `low` (requested `low`) · source `memory` · from `postgres://aura/conversations/c/turns/1`" +
+	want := "\ndecision: effort `low` · requested `low` · source `memory` · from `postgres://aura/conversations/c/turns/1`" +
 		" · route `route1:bb` · policy `policy1:cc` · context `ctx1:aa`\n"
 	if !strings.Contains(b.String(), want) {
 		t.Fatalf("dump turn does not name the decision:\n%s", b.String())
 	}
 
 	b.Reset()
+	writeDumpTurn(&b, DumpTurn{
+		Seq: 3, Role: llm.RoleUser, Content: "manda un messaggio a Luca", BranchID: uuid.Nil.String(), ParentSeq: 2,
+		CreatedAt: time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC),
+		Decision:  TurnDecision{ContextKey: "ctx1:dd"},
+	}, map[string]string{})
+	if !strings.Contains(b.String(), "\ndecision: context `ctx1:dd`\n") {
+		t.Fatalf("a context-only decision is not rendered alone:\n%s", b.String())
+	}
+	var decision strings.Builder
+	writeTurnDecision(&decision, TurnDecision{ContextKey: "ctx1:dd"})
+	if strings.Contains(decision.String(), "``") {
+		t.Fatalf("an empty field printed as an empty code span: %q", decision.String())
+	}
+
+	b.Reset()
 	writeDumpTurn(&b, DumpTurn{Seq: 4, Role: llm.RoleAssistant, Content: "Sereno.", BranchID: uuid.Nil.String(), ParentSeq: 3}, map[string]string{})
-	if strings.Contains(b.String(), "effort:") {
+	if strings.Contains(b.String(), "decision:") {
 		t.Fatalf("a turn with no decision names one:\n%s", b.String())
 	}
 }

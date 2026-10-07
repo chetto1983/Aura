@@ -192,15 +192,21 @@ func longestBacktickRun(text string) int {
 	return longest
 }
 
-// writeTurnDecision names how the turn's effort was decided (migration 0137), and nothing for
-// a turn that recorded no decision.
+// writeTurnDecision names how the turn's effort was decided (migration 0137). Only the fields
+// the turn recorded appear: an empty field would print as an empty code span, and NULL must
+// stay distinguishable from the explicit effort `none`. A turn with no decision writes nothing.
 func writeTurnDecision(b *strings.Builder, d TurnDecision) {
-	if d == (TurnDecision{}) {
+	var parts []string
+	for _, f := range []struct{ label, value string }{
+		{"effort", d.Effort}, {"requested", d.EffortRequested}, {"source", d.EffortSource},
+		{"from", d.OriginRef}, {"route", d.RouteKey}, {"policy", d.PolicyVersion}, {"context", d.ContextKey},
+	} {
+		if f.value != "" {
+			parts = append(parts, f.label+" `"+f.value+"`")
+		}
+	}
+	if len(parts) == 0 {
 		return
 	}
-	fmt.Fprintf(b, "\neffort: `%s` (requested `%s`) · source `%s`", d.Effort, d.EffortRequested, d.EffortSource)
-	if d.OriginRef != "" {
-		fmt.Fprintf(b, " · from `%s`", d.OriginRef)
-	}
-	fmt.Fprintf(b, " · route `%s` · policy `%s` · context `%s`\n", d.RouteKey, d.PolicyVersion, d.ContextKey)
+	fmt.Fprintf(b, "\ndecision: %s\n", strings.Join(parts, " · "))
 }
