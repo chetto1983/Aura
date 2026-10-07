@@ -1,0 +1,124 @@
+{
+  "frozen_on": "2026-10-07",
+  "rubric": {
+    "none": "answerable from general knowledge or the conversation without tools or deliberation: greetings, thanks, acknowledgements, stable facts, one-step arithmetic, short translations",
+    "low": "one direct lookup or tool action whose answer needs no planning: weather, news, prices, a reminder, a calendar read, a message, a simple explanation",
+    "high": "multi-step work where under-reasoning returns a confident wrong answer: proofs, debugging, design, data analysis, refactoring, plans with constraints"
+  },
+  "conversations": [
+    {"id": "cal-weather-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-weather-1.1", "family": "weather", "text": "domani a Bra piove?", "accepted": ["low"]}]},
+    {"id": "cal-weather-2", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-weather-2.1", "family": "weather", "text": "mi dici le previsioni per sabato a Mondovì?", "accepted": ["low"]}]},
+    {"id": "cal-weather-3", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-weather-3.1", "family": "weather", "text": "what's the forecast for Turin this weekend?", "accepted": ["low"]}]},
+
+    {"id": "cal-script-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-script-1.1", "family": "photo-rename-script", "text": "mi serve uno script bash che rinomini le foto della cartella in base alla data di scatto", "accepted": ["low", "high"]}]},
+    {"id": "cal-script-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-script-2.1", "family": "photo-rename-script", "text": "write a bash script that renames every photo in a folder by the date it was taken", "accepted": ["low", "high"]}]},
+    {"id": "cal-script-3", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-script-3.1", "family": "photo-rename-script", "text": "fammi uno script che rinomini le immagini usando la data EXIF", "accepted": ["low", "high"]}]},
+
+    {"id": "cal-fact-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-fact-1.1", "family": "stable-fact", "text": "qual è la capitale dell'Australia?", "accepted": ["none", "low"]}]},
+    {"id": "cal-fact-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-fact-2.1", "family": "stable-fact", "text": "what's the capital of Australia?", "accepted": ["none", "low"]}]},
+    {"id": "cal-fact-3", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-fact-3.1", "family": "stable-fact", "text": "come si chiama la capitale australiana?", "accepted": ["none", "low"]}]},
+
+    {"id": "cal-reminder-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-reminder-1.1", "family": "reminder", "text": "ricordami di ritirare la giacca in tintoria venerdì alle 18", "accepted": ["low", "none"]}]},
+    {"id": "cal-reminder-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-reminder-2.1", "family": "reminder", "text": "remind me to pick up my jacket from the dry cleaner on Friday at 6pm", "accepted": ["low", "none"]}]},
+    {"id": "cal-reminder-3", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-reminder-3.1", "family": "reminder", "text": "venerdì alle sei fammi ricordare la giacca in tintoria", "accepted": ["low", "none"]}]},
+
+    {"id": "cal-translate-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-translate-1.1", "family": "translation", "text": "traduci in inglese: il treno è in ritardo di dieci minuti", "accepted": ["none", "low"]}]},
+    {"id": "cal-translate-2", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-translate-2.1", "family": "translation", "text": "come si dice in inglese 'il treno ha dieci minuti di ritardo'?", "accepted": ["none", "low"]}]},
+
+    {"id": "cal-percent-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-percent-1.1", "family": "percentage", "text": "quanto fa il 17% di 2350?", "accepted": ["none", "low"]}]},
+    {"id": "cal-percent-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-percent-2.1", "family": "percentage", "text": "what is 17 percent of 2350?", "accepted": ["none", "low"]}]},
+
+    {"id": "cal-greeting-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-greeting-1.1", "family": "greeting", "text": "buonasera a tutti!", "accepted": ["none"]}]},
+    {"id": "cal-greeting-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-greeting-2.1", "family": "greeting", "text": "hey there!", "accepted": ["none"]}]},
+
+    {"id": "cal-thanks-1", "split": "calibration", "lang": "it", "turns": [
+      {"id": "cal-thanks-1.1", "family": "restaurant", "text": "trovami una trattoria vegetariana a Cuneo per stasera", "accepted": ["low"]},
+      {"id": "cal-thanks-1.2", "family": "thanks-after-task", "text": "grazie, perfetto", "accepted": ["none", "low"]}]},
+    {"id": "cal-thanks-2", "split": "calibration", "lang": "en", "turns": [
+      {"id": "cal-thanks-2.1", "family": "restaurant", "text": "find me a vegetarian place in Turin for tonight", "accepted": ["low"]},
+      {"id": "cal-thanks-2.2", "family": "thanks-after-task", "text": "thanks, that's great", "accepted": ["none", "low"]}]},
+
+    {"id": "fin-proof-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-proof-1.1", "family": "irrationality-proof", "text": "dimostra che la radice quadrata di 2 è irrazionale", "accepted": ["high"]}]},
+    {"id": "fin-proof-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-proof-2.1", "family": "irrationality-proof", "text": "prove that the square root of 2 is irrational", "accepted": ["high"]}]},
+    {"id": "fin-proof-3", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-proof-3.1", "family": "irrationality-proof", "text": "fammi vedere perché √2 non può essere scritta come frazione", "accepted": ["high"]}]},
+
+    {"id": "fin-sales-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-sales-1.1", "family": "sales-analysis", "text": "ho un CSV con le vendite mensili di tre negozi: come capisco se il calo di marzo è stagionale o un problema vero?", "accepted": ["high"]}]},
+    {"id": "fin-sales-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-sales-2.1", "family": "sales-analysis", "text": "I have monthly sales for three shops in a CSV: how do I tell whether the March drop is seasonal or a real problem?", "accepted": ["high"]}]},
+
+    {"id": "fin-docker-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-docker-1.1", "family": "docker-137", "text": "il mio container docker si chiude con codice 137 ogni notte verso le 3, come scopro perché?", "accepted": ["high"]}]},
+    {"id": "fin-docker-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-docker-2.1", "family": "docker-137", "text": "my docker container keeps exiting with code 137 under load, how do I find the cause?", "accepted": ["high"]}]},
+
+    {"id": "fin-schema-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-schema-1.1", "family": "booking-schema", "text": "progetta le tabelle per un gestionale di prenotazioni dei campi da tennis con abbonamenti e penali per le disdette", "accepted": ["high"]}]},
+    {"id": "fin-schema-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-schema-2.1", "family": "booking-schema", "text": "design the tables for a tennis court booking system with memberships and late-cancellation fees", "accepted": ["high"]}]},
+
+    {"id": "fin-refactor-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-refactor-1.1", "family": "nested-if-refactor", "text": "questa funzione Go ha tre livelli di if annidati e ripete la gestione degli errori: rifattorizzala senza cambiarne il comportamento e dimmi quali test scriveresti", "accepted": ["high"]}]},
+    {"id": "fin-refactor-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-refactor-2.1", "family": "nested-if-refactor", "text": "this Go function nests three levels of ifs and repeats its error handling: refactor it without changing behaviour and tell me which tests you'd write", "accepted": ["high"]}]},
+
+    {"id": "fin-negation-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-negation-1.1", "family": "negated-depth", "text": "non voglio una spiegazione lunga: il 2028 è bisestile?", "accepted": ["none", "low"]}]},
+    {"id": "fin-compound-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-compound-1.1", "family": "conditional-plan", "text": "guarda il meteo di domenica a Cuneo e se non piove segnami in calendario la gita in bici", "accepted": ["low", "high"]}]},
+    {"id": "fin-nocap-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-nocap-1.1", "family": "missing-capability", "text": "prenotami un volo per Lisbona per martedì mattina", "accepted": ["low", "none"]}]},
+    {"id": "fin-attach-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-attach-1.1", "family": "attached-pdf-merge", "text": "unisci questi due PDF in un unico file", "accepted": ["low", "none"], "attachment": true}]},
+
+    {"id": "fin-news-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-news-1.1", "family": "strike-news", "text": "cosa si sa dello sciopero dei treni di venerdì?", "accepted": ["low"]}]},
+    {"id": "fin-news-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-news-2.1", "family": "strike-news", "text": "what's the latest on Friday's rail strike?", "accepted": ["low"]}]},
+    {"id": "fin-price-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-price-1.1", "family": "fuel-price", "text": "quanto costa oggi un litro di gasolio in Piemonte?", "accepted": ["low"]}]},
+    {"id": "fin-calendar-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-calendar-1.1", "family": "agenda-read", "text": "ho impegni mercoledì mattina?", "accepted": ["low", "none"]}]},
+    {"id": "fin-message-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-message-1.1", "family": "send-message", "text": "scrivi a Giulia su Telegram che la cena è confermata per le nove", "accepted": ["low", "none"]}]},
+    {"id": "fin-schedule-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-schedule-1.1", "family": "weekly-schedule", "text": "ogni domenica sera alle 21 mandami l'elenco della spesa della settimana", "accepted": ["low"]}]},
+
+    {"id": "fin-tcp-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-tcp-1.1", "family": "tcp-udp", "text": "spiegami la differenza tra TCP e UDP con un esempio concreto", "accepted": ["low", "high"]}]},
+    {"id": "fin-tcp-2", "split": "final", "lang": "en", "turns": [
+      {"id": "fin-tcp-2.1", "family": "tcp-udp", "text": "explain the difference between TCP and UDP with a concrete example", "accepted": ["low", "high"]}]},
+
+    {"id": "fin-sheet-1", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-sheet-1.1", "family": "file-reference", "text": "ieri ti ho caricato il file spese_2026.xlsx", "accepted": ["none", "low"]},
+      {"id": "fin-sheet-1.2", "family": "chart-from-file", "text": "fammi un grafico delle spese per categoria da quel file", "accepted": ["low", "high"]}]},
+
+    {"id": "fin-ok-code", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-ok-code.1", "family": "ok-setup-code", "text": "riscrivi questa funzione Go aggiungendo la gestione degli errori e i test", "accepted": ["high"]},
+      {"id": "fin-ok-code.2", "family": "ok-ack", "text": "ok", "accepted": ["high"]}]},
+    {"id": "fin-ok-thanks", "split": "final", "lang": "it", "turns": [
+      {"id": "fin-ok-thanks.1", "family": "ok-setup-thanks", "text": "grazie per l'aiuto di oggi, mi hai risolto la giornata", "accepted": ["none"]},
+      {"id": "fin-ok-thanks.2", "family": "ok-ack", "text": "ok", "accepted": ["none"]}]}
+  ]
+}
