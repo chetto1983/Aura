@@ -61,6 +61,34 @@ func (s *Store) RecordTurnDecision(ctx context.Context, conversationID string, s
 	})
 }
 
+// RecordTeacherLabel upgrades a user turn's seeds or fallback decision to the background
+// teacher's label: requested becomes reasoning_effort_requested, and the source becomes
+// teacher. Like SetTitleIfNull it is conditional and idempotent: a row already labelled,
+// decided by the user or by memory, without a decision, or deleted is left alone, and that
+// is not an error.
+func (s *Store) RecordTeacherLabel(ctx context.Context, conversationID string, seq int, requested string) error {
+	id, err := db.ParseUUID("conversation_id", conversationID)
+	if err != nil {
+		return fmt.Errorf("record teacher label: %w", err)
+	}
+	if seq <= 0 {
+		return fmt.Errorf("record teacher label %s: seq %d: %w", conversationID, seq, ErrTurnDecisionTarget)
+	}
+	if requested == "" {
+		return fmt.Errorf("record teacher label %s seq %d: no requested effort", conversationID, seq)
+	}
+	return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		if _, err := q.RecordConversationTurnTeacherLabel(ctx, sqlc.RecordConversationTurnTeacherLabelParams{
+			ReasoningEffortRequested: optionalText(requested),
+			ConversationID:           id,
+			Seq:                      int32(seq),
+		}); err != nil {
+			return fmt.Errorf("record teacher label %s seq %d: %w", conversationID, seq, err)
+		}
+		return nil
+	})
+}
+
 func turnDecisionFromColumns(key, effort, requested, source, route, policy, origin pgtype.Text) TurnDecision {
 	return TurnDecision{
 		ContextKey: key.String, Effort: effort.String, EffortRequested: requested.String,

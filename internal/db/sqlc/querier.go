@@ -642,6 +642,12 @@ type Querier interface {
 	// "newest user turn", and RLS scopes it to the caller's identity. role = 'user' makes a
 	// wrong seq a zero-row update rather than a label on an assistant turn.
 	RecordConversationTurnDecision(ctx context.Context, arg RecordConversationTurnDecisionParams) (int64, error)
+	// Turn recall, amendment 2026-10-07: the background teacher's answer upgrades a recorded
+	// seeds or fallback decision to a reusable teacher label. reasoning_effort keeps the effort
+	// the turn actually sent. Only those two sources are upgraded, so a row the user decided,
+	// one memory decided, one already labelled, or one with no decision is never overwritten;
+	// a repeat is a zero-row update, as SetConversationTitleIfNull's is.
+	RecordConversationTurnTeacherLabel(ctx context.Context, arg RecordConversationTurnTeacherLabelParams) (int64, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and

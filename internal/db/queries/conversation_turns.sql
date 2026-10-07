@@ -241,6 +241,20 @@ WHERE conversation_id = sqlc.arg(conversation_id)
   AND seq = sqlc.arg(seq)
   AND role = 'user';
 
+-- name: RecordConversationTurnTeacherLabel :execrows
+-- Turn recall, amendment 2026-10-07: the background teacher's answer upgrades a recorded
+-- seeds or fallback decision to a reusable teacher label. reasoning_effort keeps the effort
+-- the turn actually sent. Only those two sources are upgraded, so a row the user decided,
+-- one memory decided, one already labelled, or one with no decision is never overwritten;
+-- a repeat is a zero-row update, as SetConversationTitleIfNull's is.
+UPDATE aura.conversation_turns
+SET reasoning_effort_requested = sqlc.arg(reasoning_effort_requested),
+    reasoning_effort_source = 'teacher'
+WHERE conversation_id = sqlc.arg(conversation_id)
+  AND seq = sqlc.arg(seq)
+  AND role = 'user'
+  AND reasoning_effort_source IN ('seeds', 'fallback');
+
 -- name: GetTurnPointers :one
 -- D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the
 -- diverging turn's parent_seq (the new sibling chains off the SAME parent so it replaces

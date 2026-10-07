@@ -110,6 +110,74 @@ func TestRecordTurnDecisionRefusesAnAssistantRowAndAnUnknownSource(t *testing.T)
 	}
 }
 
+// The background teacher upgrades only a decision memory may not reuse: seeds or fallback.
+// The effort the turn sent is kept, every other row is left as it was, and a repeat is a
+// no-op (spec, "Amendment 2026-10-07").
+func TestRecordTeacherLabelUpgradesOnlyASeedsOrFallbackDecision(t *testing.T) {
+	s := newStore(t, migratedPool(t))
+	convID := newConversation(t, s)
+	decided := func(source string) (int, TurnDecision) {
+		t.Helper()
+		seq := appendSeq(t, s, convID, llm.RoleUser, "deciso da "+source)
+		appendSeq(t, s, convID, llm.RoleAssistant, "Fatto.")
+		if source == "" {
+			return seq, TurnDecision{}
+		}
+		d := TurnDecision{ContextKey: "ctx1:aa", Effort: "low", EffortRequested: "low", EffortSource: source,
+			RouteKey: "route1:bb", PolicyVersion: "policy1:cc"}
+		if source == "memory" {
+			d.OriginRef = "postgres://aura/conversations/past/turns/1"
+		}
+		if err := s.RecordTurnDecision(ownerCtx(), convID, seq, d); err != nil {
+			t.Fatalf("RecordTurnDecision %s: %v", source, err)
+		}
+		return seq, d
+	}
+
+	for _, source := range []string{"seeds", "fallback"} {
+		seq, d := decided(source)
+		if err := s.RecordTeacherLabel(ownerCtx(), convID, seq, "high"); err != nil {
+			t.Fatalf("RecordTeacherLabel on %s: %v", source, err)
+		}
+		want := d
+		want.EffortRequested, want.EffortSource = "high", "teacher"
+		if got, _ := storedDecision(t, s, convID, seq); got != want {
+			t.Fatalf("%s row after the label = %+v, want %+v (the effort sent stays low)", source, got, want)
+		}
+		if err := s.RecordTeacherLabel(ownerCtx(), convID, seq, "none"); err != nil {
+			t.Fatalf("second RecordTeacherLabel on %s: %v", source, err)
+		}
+		if got, _ := storedDecision(t, s, convID, seq); got != want {
+			t.Fatalf("%s row after a second label = %+v, want the first label kept", source, got)
+		}
+	}
+
+	for _, source := range []string{"user", "memory", ""} {
+		seq, d := decided(source)
+		if err := s.RecordTeacherLabel(ownerCtx(), convID, seq, "high"); err != nil {
+			t.Fatalf("RecordTeacherLabel on %q: %v, want a quiet no-op", source, err)
+		}
+		if got, _ := storedDecision(t, s, convID, seq); got != d {
+			t.Fatalf("%q row = %+v, want it untouched %+v", source, got, d)
+		}
+	}
+}
+
+func TestRecordTeacherLabelRefusesAnInvalidAddress(t *testing.T) {
+	s := newStore(t, migratedPool(t))
+	convID := newConversation(t, s)
+	seq := appendSeq(t, s, convID, llm.RoleUser, "ciao")
+	for name, call := range map[string]func() error{
+		"bad id":    func() error { return s.RecordTeacherLabel(ownerCtx(), "not-a-uuid", seq, "high") },
+		"seq 0":     func() error { return s.RecordTeacherLabel(ownerCtx(), convID, 0, "high") },
+		"no effort": func() error { return s.RecordTeacherLabel(ownerCtx(), convID, seq, "") },
+	} {
+		if err := call(); err == nil {
+			t.Errorf("%s: RecordTeacherLabel succeeded, want a validation error", name)
+		}
+	}
+}
+
 func TestProjectionAndDumpCarryTheDecision(t *testing.T) {
 	s := newStore(t, migratedPool(t))
 	convID := newConversation(t, s)

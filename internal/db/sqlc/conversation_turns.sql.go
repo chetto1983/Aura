@@ -894,6 +894,35 @@ func (q *Queries) RecordConversationTurnDecision(ctx context.Context, arg Record
 	return result.RowsAffected(), nil
 }
 
+const recordConversationTurnTeacherLabel = `-- name: RecordConversationTurnTeacherLabel :execrows
+UPDATE aura.conversation_turns
+SET reasoning_effort_requested = $1,
+    reasoning_effort_source = 'teacher'
+WHERE conversation_id = $2
+  AND seq = $3
+  AND role = 'user'
+  AND reasoning_effort_source IN ('seeds', 'fallback')
+`
+
+type RecordConversationTurnTeacherLabelParams struct {
+	ReasoningEffortRequested pgtype.Text `json:"reasoning_effort_requested"`
+	ConversationID           pgtype.UUID `json:"conversation_id"`
+	Seq                      int32       `json:"seq"`
+}
+
+// Turn recall, amendment 2026-10-07: the background teacher's answer upgrades a recorded
+// seeds or fallback decision to a reusable teacher label. reasoning_effort keeps the effort
+// the turn actually sent. Only those two sources are upgraded, so a row the user decided,
+// one memory decided, one already labelled, or one with no decision is never overwritten;
+// a repeat is a zero-row update, as SetConversationTitleIfNull's is.
+func (q *Queries) RecordConversationTurnTeacherLabel(ctx context.Context, arg RecordConversationTurnTeacherLabelParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConversationTurnTeacherLabel, arg.ReasoningEffortRequested, arg.ConversationID, arg.Seq)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const searchConversationTurns = `-- name: SearchConversationTurns :many
 SELECT conversation_id, seq, content, word_similarity($1, content) AS sim
 FROM aura.conversation_turns
