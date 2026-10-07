@@ -1903,6 +1903,42 @@ Web search uses the configured service. Fetch enforces URL/redirect limits, SSRF
 protection, MIME handling, response caps and readable extraction, including supported
 non-HTML. Documents, pages, attachments and delegated output remain untrusted data.
 
+A real conversation on the lab VM (2026-10-07, "Caratteristiche motore Siemens
+1FK22064AF001MA0", gpt-5.6-sol) answered a part-number question from search snippets
+because three of its four fetches failed. Each failure was then reproduced from the VM's
+own egress with a Go client built like the hardened transport (custom dialer,
+HTTP/2 forced), two requests per variant:
+- SiePortal (Akamai) and PARTcommunity (Cloudflare) answered 403 to the pinned
+  `Chrome/120` User-Agent. A current `Chrome/154` UA alone still drew 403, and so did the
+  browser header set (`Accept`, `Accept-Language`, `Sec-Fetch-*`,
+  `Upgrade-Insecure-Requests`) alone. Both together drew 200 on 2 of 2. The
+  PARTcommunity page then carried the specification. SiePortal returned a 31,526 B
+  JavaScript shell with no specification in it, so no fetch without a browser can read it.
+- The RS datasheet answered 200 `application/pdf` (168,726 B) to every variant and died
+  at the MIME allowlist. The `pdftotext` already in the aura image read it in 34 ms
+  (1 page), including weight, inertia, maximum speed and currents the answer lacked.
+- Wikipedia, br-automation.com, reddit.com and a distributor page kept answering 200
+  under the new header set.
+- `aura.tool_invocations` recorded all three failures as `status='ok'` with no error,
+  because web errors travel inline to the model, so the ledger could not count them.
+- The answer cited `[3]` twice for claims its snippet does not make. `[3]` was the
+  SiePortal page that had refused the fetch, and the source list gave no sign of that.
+
+Fetch therefore sends the current UA with the browser header set. A `application/pdf`
+response is read through `pdftotext` under the same body cap and deadline. A page whose
+markup is all script and no readable text answers `javascript_required`, so the model
+knows a browser is needed. A source whose fetch failed is listed as not read. An inline
+web error is recorded as `status='error'` with its sanitized code. SearXNG is pinned
+from `ghcr.io`, and the updater removes the superseded tag of the same image whatever
+registry served it.
+
+This does not establish:
+- that the header set survives a WAF policy change: each answer is that day's policy;
+- PDF extraction beyond text: a scanned PDF still yields no text without OCR;
+- the gpt-5.6-sol latency: 53 of the turn's 62 s were model time, 46 s of it reasoning
+  clamped from `none` to `low` because the plan catalogue offers no lower effort. No change
+  is made there.
+
 ## 13. MCP integrations
 
 The bridge uses the official MCP SDK and namespaced registration. Curation of Aura-owned
