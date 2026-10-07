@@ -49,6 +49,9 @@ const (
 	// peer reset in 0.15s, the retry loop and the transport burned the whole
 	// 10s deadline, and the cause was discarded. See defaultWebUserAgent.
 	ReasonPeerResetStream = "peer_reset_stream"
+	// ReasonBotChallenge is a refusal that is a bot check rather than a denial
+	// (Cloudflare's cf-mitigated: challenge): a browser can pass it, a fetch never will.
+	ReasonBotChallenge = "bot_challenge"
 	// The PDF lane's extraction failures (fetcher_pdf.go).
 	ReasonNoPDFText      = "pdf_without_text"
 	ReasonUnreadablePDF  = "unreadable_pdf"

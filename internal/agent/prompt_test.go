@@ -192,6 +192,22 @@ func TestPrompt_ChannelReminderIsAScheduledJob(t *testing.T) {
 	}
 }
 
+// TestPrompt_TheBrowserReadsWhatAFetchCannot: on 2026-10-07 a Siemens part-number turn
+// answered from snippets after SiePortal served a JavaScript shell and PARTcommunity a
+// bot check, while the mounted browser MCP read both pages, and no browser call had ever
+// been made: the families named no browser. A visible human check is the operator's.
+func TestPrompt_TheBrowserReadsWhatAFetchCannot(t *testing.T) {
+	for _, needle := range []string{
+		"a real browser",
+		"needs JavaScript, answers with a bot check, or refuses the fetch",
+		"ask the operator to complete it in the browser's live view",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("the web family no longer routes an unreadable page to the browser: missing %q", needle)
+		}
+	}
+}
+
 // TestPrompt_ByteStable asserts two reads of the prompt are byte-identical — the
 // seed assertion for prefix stability across turns (Req#14). systemMessage() must
 // read no clock and take no per-turn input.

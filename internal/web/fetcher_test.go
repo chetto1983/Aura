@@ -219,6 +219,41 @@ func TestFetch_SendsTheBrowserNavigationHeaders(t *testing.T) {
 	}
 }
 
+// The 403 PARTcommunity gave the original conversation's request shape on 2026-10-07:
+// Cloudflare's managed challenge, marked by cf-mitigated. A browser can pass it and a
+// fetch never will, so the model must hear which of the two refusals it got.
+func TestFetch_ACloudflareChallengeIsNamed(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		w.Header().Set("Cf-Mitigated", "challenge")
+		w.Header().Set("Server", "cloudflare")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title></head><body></body></html>`))
+	}))
+	defer srv.Close()
+	_, port := hostPort(t, srv.URL)
+	c := fetchClient(t, map[string][]netip.Addr{"cad.test": {publicIP}})
+	_, err := c.Fetch(context.Background(), "c", "http://cad.test:"+port+"/model")
+	assertWebErr(t, err, CodeHTTPError, ReasonBotChallenge)
+	if we, _ := AsWebError(err); we.StatusCode != http.StatusForbidden || !strings.Contains(we.Message, "browser") {
+		t.Errorf("status = %d, message = %q, want 403 and a pointer to a browser", we.StatusCode, we.Message)
+	}
+}
+
+// Akamai's "Access Denied" carries no challenge marker: it stays a plain refusal.
+func TestFetch_APlainRefusalStaysAPlainRefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte("<HTML><HEAD><TITLE>Access Denied</TITLE></HEAD></HTML>"))
+	}))
+	defer srv.Close()
+	_, port := hostPort(t, srv.URL)
+	c := fetchClient(t, map[string][]netip.Addr{"portal.test": {publicIP}})
+	_, err := c.Fetch(context.Background(), "c", "http://portal.test:"+port+"/detail")
+	assertWebErr(t, err, CodeHTTPError, "")
+}
+
 func TestFetch_LowContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

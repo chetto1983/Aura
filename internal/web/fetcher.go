@@ -217,6 +217,10 @@ func gateAndRead(resp *http.Response, capBytes int) (gatedBody, error) {
 		return gatedBody{}, errRetryable
 	}
 	if resp.StatusCode/100 != 2 {
+		if strings.EqualFold(strings.TrimSpace(resp.Header.Get("Cf-Mitigated")), "challenge") {
+			return gatedBody{}, &WebError{Code: CodeHTTPError, Reason: ReasonBotChallenge, StatusCode: resp.StatusCode,
+				Message: "the site answered with a bot check a fetch cannot pass; open the page in a browser"}
+		}
 		return gatedBody{}, &WebError{Code: CodeHTTPError, Message: "non-success status", StatusCode: resp.StatusCode}
 	}
 	media, kind := classifyContentType(resp.Header.Get("Content-Type"))
