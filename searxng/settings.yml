@@ -7,6 +7,8 @@
 #   https://docs.searxng.org/admin/settings/settings_search.html
 #   https://docs.searxng.org/admin/settings/settings_server.html
 # verified against the pinned image entrypoint (Granian binds :8080) 2026-06-02.
+# Re-verified 2026-10-07 on ghcr.io/searxng/searxng:2026.10.4-d48c4b555: boots with
+# these overrides and no warning, and answers format=json with 200.
 use_default_settings:
   engines:
     remove:

@@ -258,20 +258,24 @@ echo "ok: keys no compose file reads any more are removed from .env, and nothing
 # A pin change leaves the previous image TAGGED, so `docker image prune` never reclaims it and
 # every llama.cpp bump would leave hundreds of MB behind. Same-repository images that no
 # compose pin names are removed; one a container still uses is refused by docker and kept.
+# The SearXNG pin moved from Docker Hub to ghcr.io (2026-10-07): the Docker Hub tags it
+# supersedes are the same image under another registry and must go too.
 declare -A local_image_ids=(
   ["ghcr.io/ggml-org/llama.cpp:server-vulkan-b10951"]=sha256:llama-new
   ["ghcr.io/ggml-org/llama.cpp:server-vulkan"]=sha256:llama-old
   ["ghcr.io/ggml-org/llama.cpp:server-cuda-b10884"]=sha256:llama-in-use
-  ["searxng/searxng:2026.9.13-d4ce87c23"]=sha256:searx-new
+  ["ghcr.io/searxng/searxng:2026.10.4-d48c4b555"]=sha256:searx-new
+  ["searxng/searxng:2026.9.13-d4ce87c23"]=sha256:searx-hub
   ["searxng/searxng:2026.7.26-b060c780d"]=sha256:searx-old
   ["hwdsl2/whisper-server:latest"]=sha256:whisper
+  ["ghcr.io/hwdsl2/other-whisper:latest"]=sha256:other-whisper
   ["ghcr.io/chetto1983/aura:edge"]=sha256:aura
   ["ghcr.io/chetto1983/aura-sandbox:edge"]=sha256:box
   ["<none>:<none>"]=sha256:dangling
 )
 compose_images=(
   ghcr.io/ggml-org/llama.cpp:server-vulkan-b10951
-  searxng/searxng:2026.9.13-d4ce87c23
+  ghcr.io/searxng/searxng:2026.10.4-d48c4b555
   hwdsl2/whisper-server:latest@sha256:whisper
   ghcr.io/chetto1983/aura:edge
 )
@@ -300,7 +304,7 @@ docker() {
 : >"$calls"
 remove_superseded_images >"$fixture/images.out" || fail "a refused removal failed the tick"
 removed="$(sed -n 's/^docker rmi //p' "$calls" | LC_ALL=C sort | tr '\n' ' ')"
-[[ "$removed" == "ghcr.io/ggml-org/llama.cpp:server-cuda-b10884 ghcr.io/ggml-org/llama.cpp:server-vulkan searxng/searxng:2026.7.26-b060c780d " ]] ||
+[[ "$removed" == "ghcr.io/ggml-org/llama.cpp:server-cuda-b10884 ghcr.io/ggml-org/llama.cpp:server-vulkan searxng/searxng:2026.7.26-b060c780d searxng/searxng:2026.9.13-d4ce87c23 " ]] ||
   fail "removal attempts were: $removed"
 grep -q 'server-vulkan superseded' "$fixture/images.out" || fail "a removed image was not reported"
 ! grep -q 'server-cuda-b10884 superseded' "$fixture/images.out" || fail "an image docker refused was reported as removed"

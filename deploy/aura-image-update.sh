@@ -214,16 +214,24 @@ ensure_cloudflared_edge_env() {
   done
 }
 
-# repository[:tag][@digest] -> repository, keeping a registry port (host:5000/name) intact.
+# [registry/]path[:tag][@digest] -> path. The registry host (a first component with a
+# dot, a port or "localhost") and Docker Hub's implicit library/ are dropped, so a pin
+# that moved registry -- searxng/searxng to ghcr.io/searxng/searxng on 2026-10-07 --
+# still supersedes the image it replaced.
 image_repository() {
-  local ref="${1%%@*}"
+  local ref="${1%%@*}" first
   [[ "${ref##*/}" != *:* ]] || ref="${ref%:*}"
-  printf '%s' "${ref}"
+  first="${ref%%/*}"
+  if [[ "${ref}" == */* && ( "${first}" == *.* || "${first}" == *:* || "${first}" == localhost ) ]]; then
+    ref="${ref#*/}"
+  fi
+  printf '%s' "${ref#library/}"
 }
 
 # A changed pin leaves the previous image TAGGED, and `docker image prune` only reclaims
 # untagged ones, so every llama.cpp or SearXNG bump would leave hundreds of MB on the disk.
-# An image is removed when compose still uses its repository but no pin names it any more.
+# An image is removed when compose still uses its repository, on whatever registry, but no
+# pin names it any more.
 # Images outside compose (the per-user sandbox boxes) are never considered, and docker itself
 # refuses to remove one a container still uses.
 remove_superseded_images() {
