@@ -1668,6 +1668,9 @@ jobs:
     # identity_isolation 5.4 and profile_validation 3.2 sum to 200.6. The best two groups
     # would put 640 s on one runner; a fourth runner could not go under 534 s. Each timeout
     # is at least 2.7 times its group's cold total, for runner variance and setup.
+    # turn_reading (internal/agent/llm_agent_turn_reading.go) joins the boundaries group
+    # unmeasured; its timeout of 60 is a ceiling for the first run and is replaced by the
+    # measured value (with re-balancing if it exceeds elicitation_route's floor).
     #
     # This is not the concurrency the Stryker job warns against: every scope still runs
     # alone — one go-mutesting, one `go test` per mutant at a time — on a runner of its own,
@@ -1687,8 +1690,8 @@ jobs:
             scopes: media_clamp media_watcher
             timeout: 20
           - group: boundaries
-            scopes: gateway pausable sandbox identity_isolation profile_validation
-            timeout: 12
+            scopes: gateway pausable sandbox identity_isolation profile_validation turn_reading
+            timeout: 60
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
