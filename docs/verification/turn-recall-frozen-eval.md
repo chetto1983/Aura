@@ -39,6 +39,9 @@ serves both arms, which read the same text with the same classifier.
   the clamp (as migration 0137 defines the column; a reuse clamps it again), and its applied
   effort is the one the turn sent. A failed answer leaves the seeds decision as it was, as on a
   real row.
+- What this does not show: the replay writes a teacher label before the next turn is read, but
+  production reaches memory only at the next reconcile tick (about a minute). Recall-arm memory
+  hits are therefore an upper bound for follow-ups sent sooner than that.
 - The **seeds + teacher** arm therefore measures two things: the turn's own seeds decision, and
   how often the background teacher would have labelled it.
 

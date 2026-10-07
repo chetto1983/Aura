@@ -326,7 +326,10 @@ func renderEvalReport(model, split string, trials int, records []evalRecord) str
 	b.WriteString("The teacher answers in the background (spec amendment 2026-10-07): it never decides the turn it " +
 		"is asked about. The seeds + teacher arm is therefore the turn's seeds decision with memory empty, and the " +
 		"background teacher line says how often that arm would have had the turn labelled. The recall arm's memory " +
-		"holds every earlier turn with its decision, upgraded to the teacher's label when the teacher answered.\n\n")
+		"holds every earlier turn with its decision, upgraded to the teacher's label when the teacher answered.\n\n" +
+		"What this does not show: the replay writes a teacher label before the next turn is read, but production " +
+		"reaches memory only at the next reconcile tick (about a minute). Recall-arm memory hits are therefore an " +
+		"upper bound for follow-ups sent sooner than that.\n\n")
 	arms := []struct {
 		name string
 		pick func(evalRecord) evalArm
