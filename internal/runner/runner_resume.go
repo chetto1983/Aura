@@ -355,7 +355,7 @@ func (r *Runner) resumeClaim(token string, pending askuser.Pending, resp Respons
 
 // Stop terminates the conversation lifecycle (D-A1-06 / Req#11): it auto-resolves
 // every orphan pending (zero unresolved rows after), drains every accepted
-// memory capture through the current watermark, and joins the auto-title WaitGroup
+// memory capture through the current watermark, and joins the auto-title and teacher WaitGroup
 // with bounded waits so a hung worker cannot wedge shutdown (goleak-clean, D-A5-01).
 func (r *Runner) Stop(ctx context.Context, convID string) error {
 	resolveErr := r.injectCancelledAnswers(ctx, convID)
@@ -370,17 +370,17 @@ func (r *Runner) Stop(ctx context.Context, convID string) error {
 	if !r.waitWorkers(r.stopTimeout) {
 		// The drain timed out — surface it, but the auto-resolve already ran.
 		if resolveErr != nil && captureErr != nil {
-			return fmt.Errorf("stop %s: auto-resolve: %v; memory capture drain: %v; title workers did not drain in %s",
+			return fmt.Errorf("stop %s: auto-resolve: %v; memory capture drain: %v; background workers did not drain in %s",
 				convID, resolveErr, captureErr, r.stopTimeout)
 		}
 		if resolveErr != nil {
-			return fmt.Errorf("stop %s: auto-resolve: %w (and title workers did not drain in %s)", convID, resolveErr, r.stopTimeout)
+			return fmt.Errorf("stop %s: auto-resolve: %w (and background workers did not drain in %s)", convID, resolveErr, r.stopTimeout)
 		}
 		if captureErr != nil {
-			return fmt.Errorf("stop %s: memory capture drain: %w (and title workers did not drain in %s)",
+			return fmt.Errorf("stop %s: memory capture drain: %w (and background workers did not drain in %s)",
 				convID, captureErr, r.stopTimeout)
 		}
-		return fmt.Errorf("stop %s: title workers did not drain within %s", convID, r.stopTimeout)
+		return fmt.Errorf("stop %s: background workers did not drain within %s", convID, r.stopTimeout)
 	}
 	if resolveErr != nil && captureErr != nil {
 		return fmt.Errorf("stop %s: auto-resolve: %v; memory capture drain: %v", convID, resolveErr, captureErr)
@@ -414,13 +414,13 @@ func (r *Runner) evictSessionToolState(convID string) {
 	r.gateway.EvictSession(convID) // nil-Gateway-safe; the ledger is outside the registry
 }
 
-// waitWorkers blocks until the auto-title WaitGroup drains or the timeout elapses,
+// waitWorkers blocks until the worker WaitGroup drains or the timeout elapses,
 // returning true on a clean drain. The wg-drain waiter is (re)armed under stopMu: while a
-// title worker is still running, stopDone stays non-nil so repeated Stop reuses the SAME
+// worker is still running, stopDone stays non-nil so repeated Stop reuses the SAME
 // waiter — a hung worker leaves exactly ONE blocked waiter regardless of how many times
 // Stop is called (D-14/LOOP-11/F-045: the old per-call `go wg.Wait()` leaked one waiter
 // per Stop). On a clean drain the waiter resets stopDone to nil, so a Stop that runs AFTER
-// a title worker was spawned post-drain re-arms a fresh waiter and actually joins it
+// a worker was spawned post-drain re-arms a fresh waiter and actually joins it
 // (WR-02: the pre-fix one-shot sync.Once closed stopDone permanently, so every later Stop
 // read the already-closed channel and returned "drained" while a new worker was in flight).
 //

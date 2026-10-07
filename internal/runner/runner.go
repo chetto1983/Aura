@@ -143,10 +143,10 @@ type Runner struct {
 	sessions    sync.Map       // sessionKey -> context.CancelFunc (in-flight turn)
 	wg          sync.WaitGroup // tracks the auto-title and teacher workers (D-A5-01); Stop joins it (goleak-clean)
 	// stopMu guards (re)arming the SINGLE wg-drain waiter that closes stopDone. While a
-	// title worker runs, stopDone stays non-nil so repeated Stop reuses ONE waiter — a hung
+	// worker runs, stopDone stays non-nil so repeated Stop reuses ONE waiter — a hung
 	// worker leaves exactly one blocked waiter no matter how often Stop is called
 	// (D-14/LOOP-11/F-045). On a clean drain the waiter resets stopDone to nil so a LATER
-	// Stop re-arms a fresh waiter and actually joins a title worker spawned after that drain
+	// Stop re-arms a fresh waiter and actually joins a worker spawned after that drain
 	// (WR-02: the pre-fix one-shot sync.Once closed stopDone permanently, so every later
 	// Stop returned "drained" while a post-drain worker was still in flight).
 	stopMu   sync.Mutex
