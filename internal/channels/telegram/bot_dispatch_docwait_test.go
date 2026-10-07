@@ -59,6 +59,9 @@ func TestOnDocumentWaitsForTheIndexAndReportsStatus(t *testing.T) {
 	if got := rt.attachmentsSnapshot(); !slices.Equal(got[0], []string{"asset-doc"}) {
 		t.Fatalf("the document turn handed the runner attachments %q, want [asset-doc]", got)
 	}
+	if turn := rt.turnsSnapshot()[0]; turn.Visible != defaultAttachmentTurnText || !strings.Contains(turn.Model, "document_id: doc-1") {
+		t.Fatalf("document turn = %+v, want the sent text persisted and the attachment block sent to the model", turn)
+	}
 	joined := strings.Join(bot.sentTexts(), "\n")
 	if !strings.Contains(joined, "Ho ricevuto manual.pdf") {
 		t.Fatalf("the operator must be told the document arrived, sent=%q", joined)

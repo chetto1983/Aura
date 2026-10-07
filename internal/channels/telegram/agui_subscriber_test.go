@@ -93,7 +93,7 @@ func TestHandleTurnSubscribesThreeBeforeRun(t *testing.T) {
 	})
 
 	userMsg := "hello"
-	tg.handleTurn(context.Background(), nil, 909, &userMsg, false)
+	tg.handleTurn(context.Background(), nil, 909, &TurnMessage{Visible: userMsg, Model: userMsg}, false)
 
 	for name, c := range map[string]*recordingConsumer{"status": status, "content": content, "artifact": artifact} {
 		seen := c.seen()
@@ -180,7 +180,7 @@ func TestHandleTurnArtifactReachesSendDocument(t *testing.T) {
 	})
 
 	userMsg := "dammi il report"
-	tg.handleTurn(context.Background(), bot, 1212, &userMsg, false)
+	tg.handleTurn(context.Background(), bot, 1212, &TurnMessage{Visible: userMsg, Model: userMsg}, false)
 
 	docs := bot.sentDocs()
 	if len(docs) != 1 {
@@ -214,7 +214,7 @@ func TestHandleTurnTTSOutSpeaksWhenInboundVoice(t *testing.T) {
 	tg.buildDispatch() // build t.tts (Start would; the test drives handleTurn directly)
 
 	userMsg := "(voice transcript)"
-	tg.handleTurn(context.Background(), bot, 1313, &userMsg, true) // inboundWasVoice=true
+	tg.handleTurn(context.Background(), bot, 1313, &TurnMessage{Visible: userMsg, Model: userMsg}, true) // inboundWasVoice=true
 
 	voices := bot.sentVoices()
 	if len(voices) != 1 {
@@ -243,7 +243,7 @@ func TestHandleTurnNoTTSWhenTextInbound(t *testing.T) {
 	tg.buildDispatch()
 
 	userMsg := "ciao"
-	tg.handleTurn(context.Background(), bot, 1414, &userMsg, false) // inboundWasVoice=false
+	tg.handleTurn(context.Background(), bot, 1414, &TurnMessage{Visible: userMsg, Model: userMsg}, false) // inboundWasVoice=false
 
 	if got := len(bot.sentVoices()); got != 0 {
 		t.Errorf("a text-inbound turn (no voice mode) must NOT speak, got %d voice notes", got)
@@ -273,7 +273,7 @@ func TestHandleTurnTTSSkippedOnCancelledCtx(t *testing.T) {
 	cancel() // cancelled before the turn drives — speakIfNeeded must no-op
 
 	userMsg := "(voice)"
-	tg.handleTurn(ctx, bot, 1515, &userMsg, true)
+	tg.handleTurn(ctx, bot, 1515, &TurnMessage{Visible: userMsg, Model: userMsg}, true)
 
 	if got := len(bot.sentVoices()); got != 0 {
 		t.Errorf("a cancelled turn must NOT speak, got %d voice notes", got)
@@ -303,7 +303,7 @@ func TestHandleTurnRendersPendingPauseAsKeyboard(t *testing.T) {
 	})
 
 	userMsg := "elimina tutti i miei dati"
-	tg.handleTurn(context.Background(), bot, 42, &userMsg, false)
+	tg.handleTurn(context.Background(), bot, 42, &TurnMessage{Visible: userMsg, Model: userMsg}, false)
 
 	var keyboards int
 	for _, s := range bot.recorded() {

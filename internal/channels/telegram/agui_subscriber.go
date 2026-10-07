@@ -43,7 +43,7 @@ type finalTexter interface {
 
 // handleTurn drives ONE turn through the per-turn fanout wiring (research §2):
 //
-//	Translate(convID, runID, idgen, runner.Turn(...))  → an AG-UI events.Event stream
+//	Translate(convID, runID, idgen, deps.Turn(...))  → an AG-UI events.Event stream
 //	NewFanout(translated)
 //	statusCh   := fo.Subscribe()  // status pane (msg #1)
 //	contentCh  := fo.Subscribe()  // content     (msg #2)
@@ -55,22 +55,22 @@ type finalTexter interface {
 // double-Run). A fresh Fanout is built per turn — never one at channel start. The
 // fanout supports N subscribers, so the artifact consumer is just a third channel.
 //
-// userMsg is the inbound user message for a fresh turn; nil drives a CONTINUATION
-// turn (runner.Turn(ctx, convID, nil)) — the resume path after a HITL pause
-// resolves, so the resumed answer renders through the SAME per-turn fanout as a
-// normal message (plan 13-10: a tap/reply resumes the loop AND the user sees it).
+// msg is the inbound user message for a fresh turn; nil drives a CONTINUATION
+// turn — the resume path after a HITL pause resolves, so the resumed answer
+// renders through the SAME per-turn fanout as a normal message (plan 13-10: a
+// tap/reply resumes the loop AND the user sees it).
 //
 // inboundWasVoice flags the echo-modality TTS-out: after the content render
 // completes, when ShouldSpeak (voice-mode pref OR the inbound was a voice note) the
 // final answer is synthesized to a voice note. The TTS-out runs AFTER the text
 // render (it never blocks it) and is ctx-cancel-aware.
-func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, userMsg *string, inboundWasVoice bool) {
+func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, msg *TurnMessage, inboundWasVoice bool) {
 	idgen := agui.NewIDGenerator()
 	runID := uuid.NewString()
 
 	// false: Telegram shows the "💭 Ragionamento" row, never the text (operator, 2026-09-23),
 	// so the translator redacts it before any consumer sees it. The cockpit keeps its own.
-	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg), false)
+	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), msg), false)
 	fo := agui.NewFanout(translated)
 	statusCh := fo.Subscribe()   // → status pane
 	contentCh := fo.Subscribe()  // → renderer

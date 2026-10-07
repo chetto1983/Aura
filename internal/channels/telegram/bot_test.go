@@ -48,7 +48,7 @@ func (r *recordingConsumer) seen() []events.EventType {
 // syntheticTurn returns a turnDriver yielding a fixed *agent.Event stream so the
 // real Translate→Fanout path runs without a live Runner/DB.
 func syntheticTurn(evs []*agent.Event) turnDriver {
-	return func(_ context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+	return func(_ context.Context, _ string, _ *TurnMessage) iter.Seq2[*agent.Event, error] {
 		return func(yield func(*agent.Event, error) bool) {
 			for _, e := range evs {
 				if !yield(e, nil) {
@@ -97,7 +97,7 @@ func TestHandleTurnFanoutDistributesToBothConsumers(t *testing.T) {
 	})
 
 	userMsg := "hello"
-	tg.handleTurn(context.Background(), nil, 4242, &userMsg, false)
+	tg.handleTurn(context.Background(), nil, 4242, &TurnMessage{Visible: userMsg, Model: userMsg}, false)
 
 	// Both subscribers must have seen the lifecycle frames the producer guarantees.
 	for name, c := range map[string]*recordingConsumer{"status": status, "content": content} {

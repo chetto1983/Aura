@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -32,24 +33,36 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 // catalog) once, then drives the turn. Text handlers call runTurn (nil attachments);
 // the asset handler passes the just-ingested asset so its attachment block and the
 // catalog of the thread's other docs are composed by the SAME shared seam the AG-UI
-// gateway uses — no per-channel duplication.
+// gateway uses — no per-channel duplication. As in the web chat, the composed text
+// reaches the model for this round only and the conversation keeps what was sent:
+// a stored message carrying the catalog would embed near every other one that does.
 func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, chatID int64, text string, attachments []assets.Asset, inboundWasVoice bool) {
-	// rawText is captured BEFORE composeTurnContext reassigns text below. A steer
-	// must carry the operator's raw words, never the attachment block / knowledge
-	// catalog composeTurnContext adds (T-52-33) — that treatment is for a fresh
-	// turn only.
-	rawText := text
-	composedText := t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
+	msg := &TurnMessage{
+		Visible: sentText(text, attachments),
+		Model:   t.composeTurnContext(daemonCtx, c, chatID, attachments, text),
+	}
 	attachmentIDs := assetIDs(attachments)
 	daemonCtx = assets.WithTurnAttachments(t.withTurnMediaProjection(daemonCtx, chatID, attachments), attachmentIDs)
 	sender := t.sender(c)
 	to := c.Recipient()
 	messageID := 0
-	if msg := c.Message(); msg != nil {
-		messageID = msg.ID
+	if inbound := c.Message(); inbound != nil {
+		messageID = inbound.ID
 	}
-	t.startTurn(daemonCtx, sender, to, chatID, messageID, &composedText, inboundWasVoice,
-		t.onBusyRedirect(c, chatID, rawText, composedText, attachmentIDs, inboundWasVoice))
+	t.startTurn(daemonCtx, sender, to, chatID, messageID, msg, inboundWasVoice,
+		t.onBusyRedirect(c, chatID, *msg, attachmentIDs, inboundWasVoice))
+}
+
+// sentText is the message as the conversation records it: what the operator typed, or
+// for a voice note its transcript. An audio asset is never in the knowledge catalog, so
+// no later round could read what was said any other way.
+func sentText(text string, attachments []assets.Asset) string {
+	for _, attachment := range attachments {
+		if attachment.Modality == assets.ModalityAudio && strings.TrimSpace(attachment.Summary) != "" {
+			return attachment.Summary
+		}
+	}
+	return text
 }
 
 // assetIDs lists the attachments the way the runner reads them off the turn's context
@@ -68,18 +81,20 @@ func assetIDs(attachments []assets.Asset) []string {
 // attachments) redirects the running turn (D-03), an attachment is HELD in the
 // per-chat pending slot and delivered when the live turn ends (D-05,
 // bot_dispatch_queue.go). An unwired inbox (the composition root's explicit
-// rollback) keeps today's turnBusyMessage for both.
-func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText, composedText string, attachmentIDs []string, inboundWasVoice bool) func() {
+// rollback) keeps today's turnBusyMessage for both. A steer carries the
+// operator's words, never the attachment block / knowledge catalog
+// composeTurnContext adds (T-52-33) — that treatment is for a fresh turn only.
+func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, msg TurnMessage, attachmentIDs []string, inboundWasVoice bool) func() {
 	return func() {
 		if t.deps.Steer == nil {
 			t.reply(c, turnBusyMessage)
 			return
 		}
 		if len(attachmentIDs) > 0 {
-			t.enqueueBusyTurn(c, chatID, composedText, attachmentIDs, inboundWasVoice)
+			t.enqueueBusyTurn(c, chatID, msg, attachmentIDs, inboundWasVoice)
 			return
 		}
-		t.steerBusyTurn(c, chatID, rawText)
+		t.steerBusyTurn(c, chatID, msg.Visible)
 	}
 }
 
@@ -108,7 +123,7 @@ func (t *Telegram) startTurn(
 	to tele.Recipient,
 	chatID int64,
 	messageID int,
-	text *string,
+	msg *TurnMessage,
 	inboundWasVoice bool,
 	onBusy func(),
 ) {
@@ -155,18 +170,13 @@ func (t *Telegram) startTurn(
 	// handler to fire the cancel). Capture the stable bot + recipient before spawning
 	// (the tele.Context is recycled once the handler returns). The goroutine is
 	// tracked by t.wg so Stop drains it (goleak-clean).
-	var userMsg *string
-	if text != nil {
-		msg := *text
-		userMsg = &msg
-	}
 	t.wg.Go(func() {
 		defer cancel()
 		defer t.cmds.unregisterTurn(chatID)
 		// No chat-action pulse here: the status pane owns it for the whole turn
 		// (media_action.go) so "typing…" can become "sending video…" while a generation
 		// runs. A second pulse would overwrite that on its own tick.
-		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
+		t.handleTurn(turnCtx, sender, chatID, msg, inboundWasVoice)
 		// deliverPendingTurn runs BEFORE the deferred unregisterTurn above (defers
 		// fire in reverse order strictly at return, and this call sits before the
 		// function returns) — so a media message queued while THIS turn was live is

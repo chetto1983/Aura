@@ -25,7 +25,7 @@ import (
 // every invocation so a test can assert a steer never starts a SECOND turn.
 func blockingTurnDriver(started chan struct{}, calls *atomic.Int32) turnDriver {
 	var once sync.Once
-	return func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, _ string, _ *TurnMessage) iter.Seq2[*agent.Event, error] {
 		calls.Add(1)
 		return func(_ func(*agent.Event, error) bool) {
 			once.Do(func() { close(started) })
@@ -236,7 +236,7 @@ func TestTelegramConvIDIsTheInboxKey(t *testing.T) {
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Steer = inbox
-		d.Turn = func(ctx context.Context, conv string, _ *string) iter.Seq2[*agent.Event, error] {
+		d.Turn = func(ctx context.Context, conv string, _ *TurnMessage) iter.Seq2[*agent.Event, error] {
 			mu.Lock()
 			drivenConvID = conv
 			mu.Unlock()

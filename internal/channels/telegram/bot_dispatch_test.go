@@ -170,28 +170,26 @@ func (r *trackingReadCloser) Close() error {
 	return nil
 }
 
-// recordingTurn is a turnDriver that records every userMsg it was driven with so a
-// media test can assert the transcript/description/markdown reached the turn, and the
-// attachment ids its context carried to the runner. It yields the lifecycle frames the
-// fanout guarantees (an empty event stream still produces RUN_STARTED/RUN_FINISHED) so
-// handleTurn terminates cleanly.
+// recordingTurn is a turnDriver that records every message it was driven with so a
+// media test can assert the transcript/description/markdown reached the turn, what the
+// runner would persist, and the attachment ids its context carried to the runner. It
+// yields the lifecycle frames the fanout guarantees (an empty event stream still
+// produces RUN_STARTED/RUN_FINISHED) so handleTurn terminates cleanly.
 type recordingTurn struct {
 	mu          sync.Mutex
-	msgs        []string
+	turns       []TurnMessage
 	attachments [][]string
-	calls       int
 }
 
 func (r *recordingTurn) driver() turnDriver {
-	return func(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
-		r.mu.Lock()
-		r.calls++
-		r.attachments = append(r.attachments, assetspkg.TurnAttachments(ctx))
-		if userMsg != nil {
-			r.msgs = append(r.msgs, *userMsg)
-		} else {
-			r.msgs = append(r.msgs, "<resume>")
+	return func(ctx context.Context, _ string, msg *TurnMessage) iter.Seq2[*agent.Event, error] {
+		turn := TurnMessage{Visible: "<resume>", Model: "<resume>"}
+		if msg != nil {
+			turn = *msg
 		}
+		r.mu.Lock()
+		r.turns = append(r.turns, turn)
+		r.attachments = append(r.attachments, assetspkg.TurnAttachments(ctx))
 		r.mu.Unlock()
 		return func(yield func(*agent.Event, error) bool) {
 			yield(textEvent("ok"), nil)
@@ -199,12 +197,20 @@ func (r *recordingTurn) driver() turnDriver {
 	}
 }
 
+// snapshot reports how many turns ran and what each one sent the model.
 func (r *recordingTurn) snapshot() (calls int, msgs []string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]string, len(r.msgs))
-	copy(out, r.msgs)
-	return r.calls, out
+	for _, turn := range r.turns {
+		msgs = append(msgs, turn.Model)
+	}
+	return len(r.turns), msgs
+}
+
+func (r *recordingTurn) turnsSnapshot() []TurnMessage {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.turns)
 }
 
 func (r *recordingTurn) attachmentsSnapshot() [][]string {
@@ -328,7 +334,7 @@ func TestOnTextCancelInterruptsRunningTurn(t *testing.T) {
 	tg := dispatchChannel(t, rt, func(d *Deps) {
 		d.Cost = &fakeCost{}
 		d.Search = &fakeSearch{}
-		d.Turn = func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+		d.Turn = func(ctx context.Context, _ string, _ *TurnMessage) iter.Seq2[*agent.Event, error] {
 			return func(_ func(*agent.Event, error) bool) {
 				once.Do(func() { close(started) })
 				<-ctx.Done() // block until /cancel fires the turn ctx

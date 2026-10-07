@@ -14,15 +14,15 @@ import (
 	"github.com/chetto1983/aura/internal/steer/steertest"
 )
 
-// gatedCall records one turnDriver invocation: the composed userMsg it was
-// driven with, and a per-call gate the test closes to let THAT specific
-// invocation return. A single shared channel cannot do this because the media
-// queue's delivered turn re-invokes the driver from WITHIN the same startTurn
-// goroutine — the test needs to control each hop independently to prove the
-// chain cap (TestQueueChainIsBounded).
+// gatedCall records one turnDriver invocation: the message it was driven with,
+// and a per-call gate the test closes to let THAT specific invocation return. A
+// single shared channel cannot do this because the media queue's delivered turn
+// re-invokes the driver from WITHIN the same startTurn goroutine — the test
+// needs to control each hop independently to prove the chain cap
+// (TestQueueChainIsBounded).
 type gatedCall struct {
 	gate        chan struct{}
-	userMsg     string
+	msg         TurnMessage
 	attachments []string
 }
 
@@ -31,11 +31,11 @@ type gatedCall struct {
 // gatedCall the test reads to control that invocation precisely.
 func gatedTurnDriver(calls *atomic.Int32) (turnDriver, chan gatedCall) {
 	ch := make(chan gatedCall, 8)
-	driver := func(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
+	driver := func(ctx context.Context, _ string, msg *TurnMessage) iter.Seq2[*agent.Event, error] {
 		calls.Add(1)
 		call := gatedCall{gate: make(chan struct{}), attachments: assetspkg.TurnAttachments(ctx)}
-		if userMsg != nil {
-			call.userMsg = *userMsg
+		if msg != nil {
+			call.msg = *msg
 		}
 		ch <- call
 		return func(_ func(*agent.Event, error) bool) {
@@ -134,8 +134,8 @@ func TestQueuedTurnDeliveredAfterLiveTurnEnds(t *testing.T) {
 	if got := calls.Load(); got != 2 {
 		t.Fatalf("the queued message must drive exactly one more turn, got %d calls", got)
 	}
-	if hop2.userMsg != attachmentText {
-		t.Fatalf("delivered turn userMsg = %q, want the queued composed text %q", hop2.userMsg, attachmentText)
+	if hop2.msg.Model != attachmentText {
+		t.Fatalf("delivered turn model message = %q, want the queued composed text %q", hop2.msg.Model, attachmentText)
 	}
 	if hop1.attachments != nil || !slices.Equal(hop2.attachments, []string{"a1"}) {
 		t.Fatalf("attachments handed to the runner: live %q, queued %q; want none, then [a1]", hop1.attachments, hop2.attachments)
@@ -236,7 +236,7 @@ func TestQueueChainIsBounded(t *testing.T) {
 		t.Fatalf("the chain must be capped at ONE auto-delivery hop, got %d calls (a third would be unbounded recursion)", got)
 	}
 	pending, ok := tg.takePendingTurns(24)
-	if !ok || len(pending) != 1 || pending[0].text != "secondo allegato" {
+	if !ok || len(pending) != 1 || pending[0].msg.Visible != "secondo allegato" {
 		t.Fatalf("the message queued during the delivered turn must remain queued for the NEXT turn, got %v ok=%v", pending, ok)
 	}
 }
@@ -302,7 +302,7 @@ func TestStopIsGoleakCleanWithOutstandingPendingSlot(t *testing.T) {
 	time.Sleep(20 * time.Millisecond)
 
 	tg.pendingMu.Lock()
-	tg.pendingTurns = map[int64][]pendingTurn{123: {{text: "allegato mai consegnato"}}}
+	tg.pendingTurns = map[int64][]pendingTurn{123: {{msg: TurnMessage{Visible: "allegato mai consegnato", Model: "allegato mai consegnato"}}}}
 	tg.pendingMu.Unlock()
 
 	if err := tg.Stop(context.Background()); err != nil {

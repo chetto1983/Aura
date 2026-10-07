@@ -241,6 +241,7 @@ func (b *failingFileBot) File(*tele.File) (io.ReadCloser, error) {
 
 type recordingAssetIngress struct {
 	bot               *dispatchBot
+	catalog           string
 	asset             assetspkg.Asset
 	err               error
 	waitErr           error
@@ -276,10 +277,11 @@ func (r *recordingAssetIngress) GetForIdentity(_ context.Context, assetID, ident
 }
 
 // BuildTurnContext mirrors the real Service seam for the no-store unit harness: it
-// composes this turn's attachment block (the catalog needs a store, absent here), so the
-// attachment context still reaches the turn exactly as the production path renders it.
+// composes the given catalog (the real one needs a store, absent here) and this turn's
+// attachment block, so the context reaches the turn exactly as the production path
+// renders it.
 func (r *recordingAssetIngress) BuildTurnContext(_ context.Context, _, _ string, attachments []assetspkg.Asset, userText string) string {
-	return assetspkg.WithContextBlocks(userText, assetspkg.BuildAttachmentBlock(attachments))
+	return assetspkg.WithContextBlocks(userText, r.catalog, assetspkg.BuildAttachmentBlock(attachments))
 }
 
 // OpenForIdentity mirrors the real Service seam: it re-checks ownership and streams

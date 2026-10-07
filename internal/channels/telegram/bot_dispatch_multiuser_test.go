@@ -49,10 +49,10 @@ type identityCapturingTurn struct {
 }
 
 func (r *identityCapturingTurn) driver() turnDriver {
-	return func(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, _ string, turn *TurnMessage) iter.Seq2[*agent.Event, error] {
 		msg := "<resume>"
-		if userMsg != nil {
-			msg = *userMsg
+		if turn != nil {
+			msg = turn.Visible
 		}
 		r.mu.Lock()
 		r.got = append(r.got, capturedTurn{identity: identityctx.IdentityID(ctx), msg: msg})

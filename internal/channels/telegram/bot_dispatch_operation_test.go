@@ -19,7 +19,7 @@ type operationCapturingTurn struct {
 }
 
 func (r *operationCapturingTurn) driver() turnDriver {
-	return func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, _ string, _ *TurnMessage) iter.Seq2[*agent.Event, error] {
 		op, _ := idempotency.OperationFromContext(ctx)
 		r.mu.Lock()
 		r.got = append(r.got, op)

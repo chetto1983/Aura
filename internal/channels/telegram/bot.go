@@ -42,12 +42,23 @@ type SteerPusher interface {
 var _ channels.Channel = (*Telegram)(nil)
 
 // turnDriver is the per-turn loop seam: it yields the agent's *agent.Event stream
-// for one round over a conversation. *runner.Runner.Turn satisfies it. Declaring
-// it consumer-side (not importing *runner.Runner directly) keeps the telegram
+// for one round over a conversation; a nil msg drives a continuation turn. The
+// composition root binds it to the runner (cmd/aura ensuringTurn). Declaring it
+// consumer-side (not importing *runner.Runner directly) keeps the telegram
 // package free of a runner import in the hot path AND lets unit tests inject a
 // synthetic event stream through the real Translate→Fanout path without a live
 // Runner/DB (the bot is exercised Offline).
-type turnDriver func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
+type turnDriver func(ctx context.Context, convID string, msg *TurnMessage) iter.Seq2[*agent.Event, error]
+
+// TurnMessage is one dispatched user message, split the way the web chat splits it
+// (runner.TurnWithModelUserMessage). Visible is what the operator sent, or a voice note's
+// transcript: the runner persists it, so later rounds and turn recall read it. Model is
+// what the model receives this round: Visible with the knowledge catalog and the
+// attachment block composed in front, or Visible itself when nothing was composed.
+type TurnMessage struct {
+	Visible string
+	Model   string
+}
 
 type assetIngress interface {
 	IngestTelegramFile(ctx context.Context, req assets.TelegramIngestRequest) (assets.Asset, error)
@@ -82,7 +93,7 @@ type botSender interface {
 // channel from starting). IDGen is injectable so tests pin deterministic AG-UI
 // ids; nil → the production uuid generator.
 type Deps struct {
-	// Turn is the per-turn loop driver (runner.Runner.Turn). Required for live
+	// Turn is the per-turn loop driver (the runner's turn). Required for live
 	// turns; a nil Turn means the channel can start (poll) but a message handler
 	// would have nothing to drive — wired by the composition root.
 	Turn turnDriver

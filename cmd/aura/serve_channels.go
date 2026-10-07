@@ -191,15 +191,6 @@ func clampInt64ToInt(v int64) int {
 	}
 }
 
-// ensuringTurn wraps Runner.Turn so the first inbound message for a chat lazily
-// creates its conversation row before the loop appends to it. Telegram keys a
-// stable conversation id off the chat id (a deterministic UUIDv5) and has no
-// explicit "new conversation" step like the CLI REPL, so without this the first
-// AppendTurn FK-fails. EnsureConversation is idempotent, so every later turn pays
-// only a cheap existence Get. A create failure is yielded on the turn's error
-// channel, which the translator emits as a RUN_ERROR; the Telegram renderer now
-// surfaces that sanitized reason to the user (renderer.go RunErrorEvent case),
-// exactly as any other Turn error.
 // telegramClearAdapter routes the Telegram /clear hard-delete through the runner's single
 // conversation-delete lifecycle (MUSR-05 / D-22) instead of a raw store delete, so /clear
 // tears down the same live session state (pending pauses, session tools, background jobs) the
@@ -216,14 +207,31 @@ func (a telegramClearAdapter) Delete(ctx context.Context, convID string) error {
 	return err
 }
 
-func ensuringTurn(run *runner.Runner) func(context.Context, string, *string) iter.Seq2[*agent.Event, error] {
-	return func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
+// ensuringTurn binds Telegram's turn driver to the runner. The first inbound message
+// for a chat lazily creates its conversation row before the loop appends to it.
+// Telegram keys a stable conversation id off the chat id (a deterministic UUIDv5) and
+// has no explicit "new conversation" step like the CLI REPL, so without this the first
+// AppendTurn FK-fails. EnsureConversation is idempotent, so every later turn pays only
+// a cheap existence Get. A create failure is yielded on the turn's error channel, which
+// the translator emits as a RUN_ERROR; the Telegram renderer now surfaces that
+// sanitized reason to the user (renderer.go RunErrorEvent case), exactly as any other
+// Turn error.
+//
+// A message persists what was sent and sends the composed text to the model for this
+// round only, as the web chat does; with nothing composed the two are equal and
+// TurnWithModelUserMessage is a plain turn. A nil message is a continuation.
+func ensuringTurn(run *runner.Runner) func(context.Context, string, *telegram.TurnMessage) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, convID string, msg *telegram.TurnMessage) iter.Seq2[*agent.Event, error] {
+		turn := run.Turn(ctx, convID, nil)
+		if msg != nil {
+			turn = run.TurnWithModelUserMessage(ctx, convID, msg.Visible, msg.Model)
+		}
 		return func(yield func(*agent.Event, error) bool) {
 			if err := run.EnsureConversation(ctx, convID); err != nil {
 				yield(nil, err)
 				return
 			}
-			run.Turn(ctx, convID, userMsg)(yield)
+			turn(yield)
 		}
 	}
 }
