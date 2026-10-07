@@ -3,7 +3,6 @@ package agent_test
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -17,20 +16,6 @@ type failingReasoningEmbedder struct{}
 
 func (failingReasoningEmbedder) Embed(context.Context, []string) ([][]float64, error) {
 	return nil, errors.New("embedding sidecar unavailable")
-}
-
-// uniformReasoningEmbedder embeds every text as the same vector and counts its calls. Every
-// seed tier then scores alike, and the classifier's verdict is the first tier in label
-// order, high, at margin 0.
-type uniformReasoningEmbedder struct{ calls atomic.Int64 }
-
-func (e *uniformReasoningEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
-	e.calls.Add(1)
-	vecs := make([][]float64, len(texts))
-	for i := range vecs {
-		vecs[i] = []float64{1, 0, 0}
-	}
-	return vecs, nil
 }
 
 func adaptiveAgent(t *testing.T, fc llm.Client, user string, embedder prompt.Embedder, reading agent.TurnReading) *agent.LlmAgent {

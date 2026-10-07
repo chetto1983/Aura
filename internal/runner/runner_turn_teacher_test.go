@@ -16,19 +16,6 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// uniformEmbedder embeds every text as the same vector, so every seed tier scores alike and
-// the classifier's verdict has margin 0: below teacherMargin, a seeds decision that asks
-// the teacher.
-type uniformEmbedder struct{}
-
-func (uniformEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
-	vecs := make([][]float64, len(texts))
-	for i := range vecs {
-		vecs[i] = []float64{1, 0, 0}
-	}
-	return vecs, nil
-}
-
 // routerTeacher answers the teacher's router requests and sends every other request to the
 // turn's own scripted client. With release set it answers only once release is closed, and
 // it reports the context it then sees.
@@ -112,8 +99,8 @@ func mandatoryRoute() llm.Config {
 	return cfg
 }
 
-// teacherRunner runs turns whose seed verdict is uncertain, so each dispatched turn without
-// a composer effort is decided by seeds and asks the teacher.
+// teacherRunner runs turns whose seed verdict is uncertain (agenttest.UniformEmbedder), so
+// each dispatched turn without a composer effort is decided by seeds and asks the teacher.
 func teacherRunner(t *testing.T, teacher *routerTeacher, turns ...agenttest.FakeTurn) (*Runner, *recordingDecisionStore) {
 	t.Helper()
 	teacher.turns = agenttest.TitleClient{
@@ -121,7 +108,7 @@ func teacherRunner(t *testing.T, teacher *routerTeacher, turns ...agenttest.Fake
 		Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Test conversation title")),
 	}
 	r, _, _ := newTestRunnerCfg(t, teacher, mandatoryRoute())
-	r.classifier = prompt.NewReasoningClassifier(uniformEmbedder{})
+	r.classifier = prompt.NewReasoningClassifier(&agenttest.UniformEmbedder{})
 	decisions := &recordingDecisionStore{}
 	r.turnDecisions = decisions
 	return r, decisions

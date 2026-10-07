@@ -57,7 +57,7 @@ func TestTeacherLabelLandsOnTheRealUserRow(t *testing.T) {
 		turns: agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("call-1", "Ecco il riassunto.")))}
 	r, convStore, _ := newIntegrationRunner(t, pool, teacher)
 	r.runtime.Replace(r.runtime.Snapshot().Client, mandatoryRoute())
-	r.classifier = prompt.NewReasoningClassifier(uniformEmbedder{})
+	r.classifier = prompt.NewReasoningClassifier(&agenttest.UniformEmbedder{})
 	r.turnDecisions = convStore
 	convID := newIntegrationConversation(t, pool, convStore)
 

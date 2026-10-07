@@ -25,7 +25,7 @@ func TestReasoningOverride(t *testing.T) {
 		fc := agenttest.NewFakeClient(
 			agenttest.TextChunks("stop", "done"),
 		)
-		embedder := &uniformReasoningEmbedder{}
+		embedder := &agenttest.UniformEmbedder{}
 		a := agent.NewLlmAgent(agent.LlmAgentConfig{
 			Client:            fc,
 			LLM:               llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096},
@@ -41,7 +41,7 @@ func TestReasoningOverride(t *testing.T) {
 		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 			t.Fatalf("Run errored: %v", err)
 		}
-		if calls := embedder.calls.Load(); calls != 0 || fc.CallCount() != 1 {
+		if calls := embedder.Calls(); calls != 0 || fc.CallCount() != 1 {
 			t.Fatalf("embedding calls = %d, client calls = %d; a fixed override must skip the classifier", calls, fc.CallCount())
 		}
 		main := fc.Requests[0]
@@ -93,7 +93,7 @@ func TestReasoningOverride(t *testing.T) {
 		fc := agenttest.NewFakeClient(
 			agenttest.TextChunks("stop", "risposta"),
 		)
-		embedder := &uniformReasoningEmbedder{}
+		embedder := &agenttest.UniformEmbedder{}
 		a := agent.NewLlmAgent(agent.LlmAgentConfig{
 			Client:     fc,
 			LLM:        llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096},
@@ -109,7 +109,7 @@ func TestReasoningOverride(t *testing.T) {
 		if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(25)}))); err != nil {
 			t.Fatalf("Run errored: %v", err)
 		}
-		if calls := embedder.calls.Load(); calls == 0 || fc.CallCount() != 1 {
+		if calls := embedder.Calls(); calls == 0 || fc.CallCount() != 1 {
 			t.Fatalf("embedding calls = %d, client calls = %d; auto must run the classifier and send only the main request", calls, fc.CallCount())
 		}
 		main := fc.Requests[0]
