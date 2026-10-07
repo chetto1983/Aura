@@ -64,7 +64,7 @@ func newFakeOpenRouter(t *testing.T, generated []byte, opts ...providerOption) *
 	for _, opt := range opts {
 		opt(f, generated)
 	}
-	f.server = httptest.NewServer(http.HandlerFunc(f.serve))
+	f.server = httptest.NewTLSServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.server.Close)
 	return f
 }

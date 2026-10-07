@@ -343,7 +343,7 @@ func TestStream_429NoRetry(t *testing.T) {
 func TestRequestBody(t *testing.T) {
 	var gotBody []byte
 	var gotAuth, gotReferer, gotTitle string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		gotAuth = r.Header.Get("Authorization")
 		gotReferer = r.Header.Get("HTTP-Referer")
@@ -353,16 +353,18 @@ func TestRequestBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg := testConfig("http://openrouter.ai/api/v1")
+	cfg := testConfig("https://openrouter.ai/api/v1")
 	cfg.Provider = "openrouter"
 	c := New(cfg)
 	targetAddress := srv.Listener.Addr().String()
-	c.httpClient.Transport = &http.Transport{
-		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, targetAddress)
-		},
-		DisableKeepAlives: true,
+	transport := srv.Client().Transport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, targetAddress)
 	}
+	transport.DisableKeepAlives = true
+	// The request names openrouter.ai, which the test certificate does not cover.
+	transport.TLSClientConfig.ServerName = srv.Certificate().DNSNames[0]
+	c.httpClient.Transport = transport
 	ch, err := c.Stream(context.Background(), llm.Request{
 		Model: "deepseek/deepseek-v4-flash:exacto", Temperature: 0.7, MaxTokens: 4096,
 		SessionID: "conv-123",

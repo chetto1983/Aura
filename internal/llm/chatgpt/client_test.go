@@ -25,13 +25,15 @@ func (s tokenSource) AccessToken(context.Context) (string, error) { return s.tok
 
 func fixtureClient(t *testing.T, handler http.HandlerFunc) *Client {
 	t.Helper()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		handler(w, r)
 	}))
 	t.Cleanup(server.Close)
 	client := server.Client()
-	client.Transport = &http.Transport{DisableKeepAlives: true}
+	transport := client.Transport.(*http.Transport).Clone()
+	transport.DisableKeepAlives = true
+	client.Transport = transport
 	t.Cleanup(client.CloseIdleConnections)
 	return newClient(llm.Config{ShowReasoning: true}, tokenSource{token: "oauth-test-token"}, client, server.URL+"/v1")
 }

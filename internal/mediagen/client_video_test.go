@@ -14,7 +14,7 @@ import (
 
 func TestSubmitVideoSendsJSONAndAcceptsWhitespace(t *testing.T) {
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
 		if r.Method != "POST" || r.URL.Path != "/videos" ||
 			!strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
@@ -47,7 +47,7 @@ func TestSubmitVideoSendsJSONAndAcceptsWhitespace(t *testing.T) {
 
 func TestSubmitVideoSendsFrameAndInputReferencesAndOmitsUnsetFields(t *testing.T) {
 	var body map[string]any
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
@@ -123,7 +123,7 @@ func TestSubmitVideoNeverResendsAfterFailureOrLostResponse(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			respond := tc.respond
 			var posts atomic.Int32
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method == http.MethodPost {
 					posts.Add(1)
 				}
@@ -163,7 +163,7 @@ func TestGetVideoTerminalStatuses(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path != "/videos/job-abc123" {
 					t.Errorf("path = %s", r.URL.Path)
 				}
@@ -193,7 +193,7 @@ func TestGetVideoTerminalStatuses(t *testing.T) {
 }
 
 func TestGetVideoExplicitZeroCostIsNotNil(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"v1","status":"completed","usage":{"cost":0}}`)
 	}))
@@ -209,7 +209,7 @@ func TestGetVideoExplicitZeroCostIsNotNil(t *testing.T) {
 }
 
 func TestGetVideoIgnoresUnsignedURLs(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"v1","status":"completed","unsigned_urls":["http://attacker.example/steal?auth=please"]}`)
 	}))
@@ -223,7 +223,7 @@ func TestGetVideoIgnoresUnsignedURLs(t *testing.T) {
 
 func TestGetVideoRejectsInvalidProviderID(t *testing.T) {
 	var requests int
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests++
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -250,7 +250,7 @@ func TestGetVideoClassifiesProviderErrors(t *testing.T) {
 		{http.StatusNotFound, `{"error":{"code":404,"message":"Resource not found"}}`, "job_failed"},
 	}
 	for _, tc := range cases {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(tc.status)
 			_, _ = io.WriteString(w, tc.body)
@@ -265,7 +265,7 @@ func TestGetVideoClassifiesProviderErrors(t *testing.T) {
 }
 
 func TestGetVideoMalformedJSON(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"v1",`)
 	}))
@@ -280,7 +280,7 @@ func TestGetVideoMalformedJSON(t *testing.T) {
 func TestDownloadVideoReadsContentFromTheContentEndpointOnly(t *testing.T) {
 	content := []byte("fake mp4 bytes")
 	var requestedPath, requestedQuery string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestedPath = r.URL.Path
 		requestedQuery = r.URL.RawQuery
 		if got := r.Header.Get("Authorization"); got != "Bearer k" {
@@ -307,7 +307,7 @@ func TestDownloadVideoReadsContentFromTheContentEndpointOnly(t *testing.T) {
 }
 
 func TestDownloadVideoBoundsContentToMaxBytes(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 		_, _ = w.Write([]byte("0123456789"))
 	}))
@@ -323,7 +323,7 @@ func TestDownloadVideoBoundsContentToMaxBytes(t *testing.T) {
 // ends: a download that read before checking Content-Length would block instead of refusing.
 func TestDownloadVideoRefusesADeclaredOversizeBeforeReading(t *testing.T) {
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Content-Length", "1048576")
 		w.WriteHeader(http.StatusOK)
@@ -345,7 +345,7 @@ func TestDownloadVideoRefusesADeclaredOversizeBeforeReading(t *testing.T) {
 
 func TestDownloadVideoRefusesAnInvalidLimitWithoutARequest(t *testing.T) {
 	var requests atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
 	defer srv.Close()
 	for _, limit := range []int64{0, -1, 1<<63 - 1} {
 		if _, err := NewClient(srv.Client(), 1<<20).DownloadVideo(context.Background(), srv.URL, "k", "job1", limit); ErrorCode(err) != "too_large" {
@@ -358,7 +358,7 @@ func TestDownloadVideoRefusesAnInvalidLimitWithoutARequest(t *testing.T) {
 }
 
 func TestDownloadVideoPropagatesTruncatedContent(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.Header().Set("Content-Length", "100")
 		_, _ = w.Write([]byte("short"))
@@ -371,7 +371,7 @@ func TestDownloadVideoPropagatesTruncatedContent(t *testing.T) {
 }
 
 func TestDownloadVideoClosesBodyOnErrorStatus(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = io.WriteString(w, `{"error":{"code":500,"message":"Internal Server Error"}}`)
@@ -392,7 +392,7 @@ func TestDownloadVideoRejectsInvalidProviderID(t *testing.T) {
 
 func TestVideoClientRejectsCrossOriginRedirect(t *testing.T) {
 	var otherOriginHitWithAuth bool
-	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			otherOriginHitWithAuth = true
 		}
@@ -401,7 +401,7 @@ func TestVideoClientRejectsCrossOriginRedirect(t *testing.T) {
 	}))
 	defer other.Close()
 
-	main := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	main := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, other.URL+"/videos/job1/content", http.StatusFound)
 	}))
 	defer main.Close()
@@ -419,7 +419,7 @@ func TestVideoClientRejectsCrossOriginRedirect(t *testing.T) {
 func TestVideoClientAllowsSameOriginRedirect(t *testing.T) {
 	content := []byte("redirected content")
 	var finalHitWithAuth bool
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/videos/job1/content" {
 			http.Redirect(w, r, "/videos/job1/content-final", http.StatusFound)
 			return
@@ -454,7 +454,7 @@ func TestVideoClientRejectsSameHostSubdomainRedirect(t *testing.T) {
 	// redirecting to a Host that differs only by a subdomain label, proving
 	// the check compares URL.Host (not just scheme+IP) before following.
 	var subdomainHitWithAuth bool
-	sub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	sub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
 			subdomainHitWithAuth = true
 		}
@@ -462,7 +462,7 @@ func TestVideoClientRejectsSameHostSubdomainRedirect(t *testing.T) {
 	}))
 	defer sub.Close()
 
-	main := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	main := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Redirect to a syntactically different host:port than main.URL, the
 		// same shape a subdomain hop would take (scheme identical, host
 		// different), which is what CheckRedirect must catch.
