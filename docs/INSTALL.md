@@ -180,8 +180,8 @@ restore commands and the recovery scope.
 ## WhatsApp MCP
 
 The `whatsapp` service is part of the default stack, mounted through Aura's MCP
-catalog. It uses an unofficial whatsmeow-based client, so it carries WhatsApp Terms
-of Service and account-ban risk. First pairing is headless:
+catalog. It uses an unofficial whatsmeow-based client, so it carries
+WhatsApp Terms of Service and account-ban risk. First pairing is headless:
 
 ```bash
 docker compose logs -f whatsapp
