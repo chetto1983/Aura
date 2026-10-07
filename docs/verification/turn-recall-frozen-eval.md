@@ -83,3 +83,5 @@ before the final.
 
 | Date | Split | Model | Trials | Report | Criterion |
 |---|---|---|---|---|---|
+| 2026-10-07 | calibration | gemma4:31b-cloud (Ollama on the operator's workstation, bridged to WSL through a throwaway socat container) | 3 | `turn-recall-eval-2026-10-07-calibration.md` | not gated (calibration). All three arms scored 60/66 (Wilson 0.816–0.958) with 0 hard→none. Memory decided 3 of 66 readings, all in the translate family, and all 3 were correct. The teacher answered 24/24 (p50 0.40 s, p95 2.2 s). Recall latency was p50 30 ms, p95 56 ms. A 1-trial probe run earlier the same day gave the same picture: 20/22, memory 1/22. |
+| 2026-10-07 | final | — | — | not run | **Postponed.** In calibration, memory fires once per trial. The final split has fewer same-language paraphrase pairs with uncertain seeds, so the memory-never-ran gate would most likely fail for lack of opportunity rather than a defect, and that would spend the set's single final run. Fixing this needs a revised, newly dated set with more same-language uncertain pairs. The set is never edited in place. |

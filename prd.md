@@ -524,6 +524,70 @@ What this does not show:
 - one route and one model; a weaker model is a weaker teacher;
 - how many production turns would call the teacher: the 58 are not traffic proportions.
 
+Turn recall shipped 2026-10-07 (plan 2, `1bb3c0630`..`05ccf5906`; spec amended
+`2952f7a5d`/`9b4d58eee`). The turn is read once, before its first request, against the
+typed message, never the catalog-composed one. The first matching row decides:
+
+| Situation | Effort | Source | Teacher |
+|---|---|---|---|
+| the composer set an effort | that effort | `user` | — |
+| standalone greeting | `none` | `greeting` | — |
+| a compatible `user`, then `teacher`, label within cosine 0.10 | its requested effort, clamped now | `memory` | — |
+| seed margin ≥ 0.075 | the seed tier | `seeds` | — |
+| seed margin < 0.075 | the seed tier | `seeds` | asked in the background |
+| no classifier | static `low` | `fallback` | asked in the background |
+
+Remembered tools of the nearest compatible tool turn (at most 3) are loaded before round 1.
+
+**The teacher no longer blocks the turn.** It used to run synchronously within 2 s. On the
+lab VM (image `2882a46bf`, `gpt-5.6-sol`) none of 6 attempts answered inside that bound.
+Every attempt ended at 2001–2003 ms, which is where the bound cuts in, so the timeout and
+not the answers was the limit. The route's own time to first token is 1.8–2.5 s. A failed
+teacher labels nothing, so memory never learned.
+
+Since the amendment, the runner asks the teacher after the turn's decision is written. It
+uses the auto-title worker pattern: `wg.Go`, a detached context, a 30 s bound and the
+breaker. The same code path runs for every provider, and a successful answer upgrades the
+recorded decision to a reusable `teacher` label.
+
+Measured after rollout (image `d633f8b9d`, `docs/verification/turn-recall-vm-e2e-2026-10-07.md`):
+
+- **Teacher latency.** On `gpt-5.6-sol` it took 6.8 s and 8.3 s, 2 answers out of 2. On
+  `gemma4:31b-cloud` via Ollama it took 0.4 s, and every attempt answered.
+- **End-to-end checks.** All passed on both routes:
+  - a paraphrase B was decided by `memory`, with its origin on turn A, at 0.0738;
+  - deleting A's conversation made the label disappear;
+  - another context did not reuse it;
+  - a label learned on one route was not reused after the operator switched routes.
+- **Warm/cold workload** (5 fresh families, Ollama):
+  - memory decided 3 of the 5 warm turns; in W1 and W3 the preload removed `tool_search`
+    entirely, saving about 18k tokens (−33%) each;
+  - median completion was 11.9 s cold and 11.0 s warm, and no warm turn missed an
+    outcome its cold pair met;
+  - the slowest-turn gate failed on one pair, W4: an unanswerable price question whose warm
+    turn browsed for 80.8 s against 25.8 s cold. Repeating W4 three times, each from a clean
+    slate, gave warm 22.7 / 11.4 / 23.7 s against cold 19.9 / 46.6 / 15.1 s. Every warm
+    turn was decided by `memory`, and none called `tool_search`. Warm used 23% fewer tokens
+    in total. So the 80.8 s did not reproduce. Single pairs still go either way: r3's warm
+    turn was slower than its cold one and used 62% more tokens. The depth of a search on a
+    question with no answer varies more from run to run than memory changes it.
+- **Frozen evaluation, calibration split** (51-turn set, 3 trials, `gemma4:31b-cloud`):
+  - all three arms scored 60/66, with 0 hard→none;
+  - memory decided 3/66 readings, all of them correctly;
+  - the teacher answered 24/24 (p50 0.40 s, p95 2.2 s), and recall took 30 ms at the median.
+  - The final split was not run: memory fires only once per trial in calibration, so the
+    memory-never-ran gate would fail for lack of opportunity. The set needs more
+    same-language uncertain pairs, in a new dated file.
+
+What this does not show:
+- a production label rate: one operator, about 30 measured turns on two routes;
+- the 0.10 radius beyond paraphrases. Pairs measured 0.037–0.100, and two of five fell outside;
+- cost: both routes report no per-token cost, so cost is unknown, not zero;
+- the final-split release criterion, which is still unrun;
+- preload fit across models. It replays the recalled turn's tools, not the current model's
+  preferences: gemma was handed `web_fetch` from a gpt turn, and still searched for
+  `web_search`. That carries over to plan 3, "intelligent tools".
+
 Image and video generation, cloud speech-to-text and text-to-speech, cloud embeddings
 and every cloud model picker run on OpenRouter whatever the chat route is. Generation
 spends the identity's own OpenRouter key and never the services key; speech and
@@ -1052,6 +1116,40 @@ What this does not show: four turns on two routes are not a coverage rate. Tool 
 made before an `ask_user` pause or in a failed run remain outside the graph. The backfill
 pass had not yet run on the new trace, so its one-time set-aside rests on the live
 ArcadeDB test, not on the VM.
+
+Turn recall memory, 2026-10-07 (plan 2, `1bb3c0630`..`05ccf5906`).
+
+- **Postgres row.** Each user turn records how its effort was decided on its own
+  `aura.conversation_turns` row (migration 0137). The columns are the context key, the effort
+  sent, the effort requested before the clamp, the source, the route key, the policy version
+  and the origin of a reused label.
+- **ArcadeDB vertex.** The projection carries the same seven fields to `ConversationTurn`
+  as `recall_context_key`, `effort`, `effort_requested`, `effort_source`, `effort_route_key`,
+  `effort_policy_version` and `effort_origin_ref`. A NOTUNIQUE index covers the context key.
+  `ConversationTurn` gains these projected fields and nothing else, so the "memory only" scope
+  of 2026-07-31 holds.
+- **Three recall pools.** `RecallTurns` reads user labels, teacher labels and tool turns. Each
+  pool filters on the context key, the route and the policy before top-k, never after, so
+  closer incompatible rows cannot crowd out a compatible one. The tool pool is not route
+  filtered, because tools do not depend on the model.
+- **What counts as a label.** Only `user` and `teacher` decisions are reusable labels. A turn
+  decided by `memory`, `seeds`, `greeting` or `fallback` copies or guesses, and never teaches.
+- **Teacher labels.** The background teacher upgrades a recorded `seeds` or `fallback`
+  decision to `teacher` through a conditional write. Its periodic reconciliation replays from
+  the start, so the upgrade reaches `ConversationTurn` without a new projection path.
+
+Measured on VM 192.168.101.158 (`docs/verification/turn-recall-vm-e2e-2026-10-07.md`):
+- **Labels reached the graph:** 15 s and 55 s after the teacher answered.
+- **Deletes reached recall:** a deleted conversation left recall within 65–68 s on three
+  deletions.
+- **Origins were readable from Postgres:** a reused label's origin pointed at the right user
+  turn, on `gpt-5.6-sol` and on `gemma4:31b-cloud`.
+
+What this does not show:
+- the lag under load: one identity, a handful of turns at a time;
+- whether the 0.10 radius is right beyond paraphrases. Paraphrase pairs measured 0.037–0.100
+  apart, and two of five warm/cold pairs fell outside the radius;
+- the set-read `LIMIT` truncation parked in plan 1, which is unchanged.
 
 ## 11. Documents and media
 
