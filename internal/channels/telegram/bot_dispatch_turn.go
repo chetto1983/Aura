@@ -135,8 +135,8 @@ func (t *Telegram) startTurn(
 	// identity so every downstream store/tool/sidecar isolates to THEM (never the
 	// local admin or a sibling user, T-36-11-I2). startTurn is the SINGLE choke point
 	// every inbound-turn spawn passes through — a fresh message (runTurnWithAssets),
-	// the async document-convert callback (bot_dispatch.go), and a HITL-resume
-	// continuation (bot_dispatch_hitl.go) — so scoping here holds for all of them
+	// an indexed document once its conversion finishes (bot_dispatch_docwait.go), and a
+	// HITL-resume continuation (bot_dispatch_hitl.go) — so scoping here holds for all of them
 	// without per-path duplication.
 	//
 	// FAIL CLOSED (HI-03): if the id does not resolve, DROP the turn rather than run it
