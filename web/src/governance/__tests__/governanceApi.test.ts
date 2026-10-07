@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  approveSchedulerTask,
+  cancelSchedulerTask,
+  editSchedulerTask,
   fetchMcpServers,
   fetchSchedulerRuns,
   fetchSchedulerTasks,
+  pauseSchedulerTask,
+  resumeSchedulerTask,
+  runSchedulerTask,
   fetchSkills,
   fetchSkillsAudit,
   probeMcpServer,
@@ -168,6 +174,33 @@ describe('governanceApi same-origin throwing fetch', () => {
     expect(rows).toHaveLength(1);
     const [url] = fetchMock.mock.calls[0] as unknown as [string];
     expect(url).toBe('/api/governance/scheduler/task-1/runs?limit=25&offset=50');
+  });
+
+  it.each([
+    [
+      'approve',
+      'POST',
+      '/api/governance/scheduler/a%20b/approve',
+      () => approveSchedulerTask('a b'),
+    ],
+    ['run', 'POST', '/api/governance/scheduler/a%20b/run', () => runSchedulerTask('a b')],
+    ['pause', 'POST', '/api/governance/scheduler/a%20b/pause', () => pauseSchedulerTask('a b')],
+    ['resume', 'POST', '/api/governance/scheduler/a%20b/resume', () => resumeSchedulerTask('a b')],
+    ['cancel', 'DELETE', '/api/governance/scheduler/a%20b', () => cancelSchedulerTask('a b')],
+    [
+      'edit',
+      'PATCH',
+      '/api/governance/scheduler/a%20b',
+      () => editSchedulerTask('a b', { schedule_kind: 'every', every_minutes: 5 }),
+    ],
+  ] as const)('the %s verb sends %s to %s', async (_verb, method, path, call) => {
+    const fetchMock = okJSON({});
+    vi.stubGlobal('fetch', fetchMock);
+
+    await call();
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(path);
+    expect(init.method).toBe(method);
   });
 
   it('returns [] when skills/audit/tasks/runs bodies omit their arrays', async () => {

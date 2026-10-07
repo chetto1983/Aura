@@ -104,8 +104,14 @@ export interface SchedulerTask {
   readonly CreatedAt: string;
   readonly UpdatedAt: string;
   readonly Payload?: unknown;
-  /** False for the database backup, which the operator may run or edit but never delete. */
+  /** False for the database backup, which the operator may run or edit but never stop:
+   * neither delete nor pause. */
   readonly Cancellable: boolean;
+  /** Why a paused task stopped: 'operator', or 'failures' when the scheduler paused it after
+   * repeated failed runs. Absent unless Status is 'paused'. */
+  readonly PausedReason?: string;
+  /** Failed runs in a row since the last success; the count that triggered a 'failures' pause. */
+  readonly ConsecutiveFailures: number;
 }
 
 /** One scheduler run-history row (GET /api/governance/scheduler/{id}/runs). */
@@ -268,11 +274,11 @@ export async function fetchSchedulerRuns(
   return body.runs ?? [];
 }
 
-// === GOV-03 scheduler write surface (approve / run / cancel / reschedule) ===
+// === GOV-03 scheduler write surface (approve / run / pause / resume / cancel / reschedule) ===
 // Owner verbs over a scheduled task, each behind RequireCapability(governance.write). A
 // non-200 THROWS `Error("HTTP <n>")` so the row surfaces a visible error, never a silent
-// no-op: 403 = a system-seeded sweep or a backup delete, 404 = gone, 409 = wrong status
-// (e.g. approve on an already-active task), 400 = an invalid reschedule grammar.
+// no-op: 403 = a system-seeded sweep, or a backup delete or pause, 404 = gone, 409 = wrong
+// status (e.g. approve on an already-active task), 400 = an invalid reschedule grammar.
 
 /** POST /api/governance/scheduler/{id}/approve — flip a pending_approval task to active. */
 export async function approveSchedulerTask(id: string): Promise<void> {
@@ -282,6 +288,17 @@ export async function approveSchedulerTask(id: string): Promise<void> {
 /** POST /api/governance/scheduler/{id}/run — run an active task now (next fire → now). */
 export async function runSchedulerTask(id: string): Promise<void> {
   await postJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}/run`);
+}
+
+/** POST /api/governance/scheduler/{id}/pause — stop an active task from firing until resumed. */
+export async function pauseSchedulerTask(id: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}/pause`);
+}
+
+/** POST /api/governance/scheduler/{id}/resume — reactivate a paused task; its next fire is
+ * recomputed from now, so missed windows are not replayed. */
+export async function resumeSchedulerTask(id: string): Promise<void> {
+  await postJSON<unknown>(`${GOV_SCHEDULER_PATH}/${encodeURIComponent(id)}/resume`);
 }
 
 /** DELETE /api/governance/scheduler/{id} — cancel a task (soft, status='cancelled'). */
