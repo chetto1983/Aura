@@ -79,6 +79,17 @@ It adds temporary fixture data to the relevant stores and cleans up that data.
 The ArcadeDB leg proves scheduler discovery and native restore for a newly-created
 database; the Garage leg proves fixture recovery rather than a fleet-wide backup.
 
+## Manual Postgres restore
+
+Take a fresh backup before restoring over a live database, then restore the chosen
+dump into the running Postgres service:
+
+```bash
+docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  pg_restore -U "${POSTGRES_USER:-aura}" -d "${POSTGRES_DB:-aura}" \
+  --clean --if-exists --no-owner --no-acl /backups/postgres-YYYYMMDDTHHMMSSZ.dump
+```
+
 ## Restore an existing memory archive for inspection
 
 Use ArcadeDB's root-only server API to restore into a **new database name**. The

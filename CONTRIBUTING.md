@@ -8,11 +8,14 @@ implementing it. Keep the rationale and the limits of the measurement together.
 
 ## Prerequisites
 
-- **Go** — the version in [`go.mod`](go.mod) (currently 1.26.x).
+- **Go** — the version in [`go.mod`](go.mod) (currently 1.27.x).
 - **Docker** — for the Postgres + ArcadeDB + embedding-sidecar stack (`compose.yaml`).
-- A POSIX shell. **WSL** is the recommended dev environment on Windows — it runs
-  the entire gate natively (gcc + make + CGO + the container stack via
-  `127.0.0.1`). See `CLAUDE.md` §Quality tooling & gates for the cross-env matrix.
+- A POSIX shell. Linux is the supported source-build and quality-gate runtime.
+  **WSL** is the recommended dev environment on Windows — it runs the entire gate
+  natively (gcc + make + CGO + the container stack via `127.0.0.1`). See `CLAUDE.md`
+  §Quality tooling & gates for the cross-env matrix. The native Windows Go binary is
+  not a release target because Windows ACLs are not represented by POSIX `FileMode`
+  bits; Docker Desktop remains supported for running the shipped Linux Compose appliance.
 
 ## One-time setup
 
@@ -20,6 +23,24 @@ implementing it. Keep the rationale and the limits of the measurement together.
 make tools         # installs golangci-lint, govulncheck, dupl, lefthook, ...
 lefthook install   # wires the pre-commit / pre-push git hooks
 cp .env.example .env && $EDITOR .env   # set POSTGRES_PASSWORD / ARCADEDB_PASSWORD
+```
+
+## Source build
+
+```bash
+make db-migrate memory-up
+go run ./cmd/aura version
+go run ./cmd/aura agent dry-run --request-id auto
+```
+
+To run a local source build in the Compose stack instead of a published image, build
+the image and point `.env` at it. The image builds `web/` in its own stage; the
+committed `internal/webui/dist` only feeds a host `go build` and is refreshed from
+that stage, never from a host `vite build`:
+
+```bash
+docker build -f docker/aura/Dockerfile -t aura:local .
+# then in .env:  AURA_IMAGE=aura:local
 ```
 
 ## The quality gate
@@ -38,6 +59,15 @@ web or sqlc gates on push**. `golangci-lint` runs at commit. The quality ledger 
 updated when a measurement changes; there is no prose-freshness gate. See
 [`lefthook.yml`](lefthook.yml) for the executable hook configuration.
 Do not bypass a failing check to publish an unverified change.
+
+| Target | Does |
+|--------|------|
+| `make tools` | install the quality toolchain |
+| `make lint` / `make vet` | lint and `go vet` |
+| `make vuln` | `govulncheck` supply-chain scan |
+| `make test-race` | `go test -race ./...` |
+| `make coverage` | owned-surface coverage floor |
+| `make restore-drill` | four-plane restore drill (Postgres, sidecars, Garage, ArcadeDB) |
 
 Discipline that reviewers check (full list in `CLAUDE.md`):
 
