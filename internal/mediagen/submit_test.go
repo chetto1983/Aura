@@ -23,7 +23,7 @@ type fakeSubmitProvider struct {
 
 func newFakeSubmitProvider(t *testing.T, p *fakeSubmitProvider) *fakeSubmitProvider {
 	t.Helper()
-	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			respondJSON(w, http.StatusOK, p.catalog)
 			return

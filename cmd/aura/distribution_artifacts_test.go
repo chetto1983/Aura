@@ -132,11 +132,11 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	root := repoRootForTest(t)
 	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
 	readme := readProjectFile(t, root, "README.md")
+	install := readProjectFile(t, root, "docs/INSTALL.md")
+	backup := readProjectFile(t, root, "docs/BACKUP-RESTORE.md")
 
-	// Three planes: Postgres, the sidecar home volume and the object store. ArcadeDB
-	// has no restore drill — memory lives in one database per identity and nothing
-	// dumps them — so this contract deliberately claims no graph plane rather than
-	// claiming one that does not run.
+	// The drill covers four planes; this contract pins its Postgres, sidecar-volume
+	// and object-store legs.
 	for _, want := range []string{
 		"pg_restore",
 		"dr_compose_volume_name aura-home",
@@ -157,14 +157,21 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 		"docker compose pull",
 		"docker compose up -d",
 		"aura-migrate",
-		"pg_restore",
 		"WhatsApp Terms of Service",
 		"Scan the QR code",
 		"tls internal",
 		"no Docker socket",
 	} {
-		if !strings.Contains(readme, want) {
-			t.Fatalf("README.md missing %q", want)
+		if !strings.Contains(install, want) {
+			t.Fatalf("docs/INSTALL.md missing %q", want)
+		}
+	}
+	if !strings.Contains(backup, "pg_restore") {
+		t.Fatal("docs/BACKUP-RESTORE.md missing the pg_restore command")
+	}
+	for _, want := range []string{"docs/INSTALL.md", "docs/BACKUP-RESTORE.md"} {
+		if !strings.Contains(readme, "("+want+")") {
+			t.Fatalf("README.md must link %s", want)
 		}
 	}
 	if strings.Index(readme, "## Quick Start") > strings.Index(readme, "## Development") {

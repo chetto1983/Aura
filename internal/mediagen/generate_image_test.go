@@ -25,7 +25,7 @@ type fakeImageProvider struct {
 
 func newFakeImageProvider(t *testing.T, p *fakeImageProvider) *fakeImageProvider {
 	t.Helper()
-	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
 			if p.catalogStatus != 0 {
 				respondJSON(w, p.catalogStatus, `{"error":"unavailable"}`)

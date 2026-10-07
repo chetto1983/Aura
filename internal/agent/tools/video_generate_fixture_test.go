@@ -89,7 +89,7 @@ func newFakeVideoProvider(t *testing.T, events *timeline, opts ...videoProviderO
 	for _, opt := range opts {
 		opt(p)
 	}
-	p.server = httptest.NewServer(http.HandlerFunc(p.serve))
+	p.server = httptest.NewTLSServer(http.HandlerFunc(p.serve))
 	t.Cleanup(p.server.Close)
 	return p
 }

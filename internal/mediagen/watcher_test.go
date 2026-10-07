@@ -353,7 +353,7 @@ type providerHandler func(n int32, w http.ResponseWriter, r *http.Request)
 func newFakeProvider(t *testing.T, poll, download providerHandler) *fakeProvider {
 	t.Helper()
 	p := &fakeProvider{}
-	p.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	p.Server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p.mu.Lock()
 		p.requests = append(p.requests, r.Method+" "+r.URL.Path+" "+r.Header.Get("Authorization"))
 		p.mu.Unlock()

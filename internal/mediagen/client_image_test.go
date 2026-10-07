@@ -84,7 +84,7 @@ func TestGenerateImageSendsAspectRatioAndReferencesAndIgnoresAmbientCredentials(
 	png := tinyPNG(t)
 	encoded := base64.StdEncoding.EncodeToString(png)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"image/png"}],"usage":{"prompt_tokens":0,"completion_tokens":10,"total_tokens":10,"cost":0.04}}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -148,7 +148,7 @@ func TestGenerateImageDecodesEachSupportedFormat(t *testing.T) {
 				mediaTypeField = `,"media_type":"` + tc.mediaType + `"`
 			}
 			server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `"` + mediaTypeField + `}]}`}
-			srv := httptest.NewServer(server.handler(t))
+			srv := httptest.NewTLSServer(server.handler(t))
 			defer srv.Close()
 
 			client := NewClient(srv.Client(), 1<<20)
@@ -174,7 +174,7 @@ func TestGenerateImageExplicitZeroCostIsNotNil(t *testing.T) {
 	png := tinyPNG(t)
 	encoded := base64.StdEncoding.EncodeToString(png)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"image/png"}],"usage":{"cost":0}}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -191,7 +191,7 @@ func TestGenerateImageRejectsContradictoryMediaType(t *testing.T) {
 	jpeg := tinyJPEG(t)
 	encoded := base64.StdEncoding.EncodeToString(jpeg)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"image/png"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -205,7 +205,7 @@ func TestGenerateImageAcceptsDeclaredSVGWithoutSniffing(t *testing.T) {
 	svg := []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`)
 	encoded := base64.StdEncoding.EncodeToString(svg)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"image/svg+xml"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -222,7 +222,7 @@ func TestGenerateImageRejectsUnrecognizedMediaType(t *testing.T) {
 	garbage := []byte("not an image at all")
 	encoded := base64.StdEncoding.EncodeToString(garbage)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -241,7 +241,7 @@ func TestGenerateImageRejectsEmptyOutput(t *testing.T) {
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
 			server := &imageGenServer{body: body}
-			srv := httptest.NewServer(server.handler(t))
+			srv := httptest.NewTLSServer(server.handler(t))
 			defer srv.Close()
 
 			client := NewClient(srv.Client(), 1<<20)
@@ -260,7 +260,7 @@ func TestGenerateImageRejectsEmptyOutput(t *testing.T) {
 // read leaves the charge unknown, and the one POST is never repeated.
 func TestGenerateImageLostResponseIsAnUnknownOutcome(t *testing.T) {
 	var posts atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		posts.Add(1)
 		_, _ = io.Copy(io.Discard, r.Body)
 		conn, _, err := http.NewResponseController(w).Hijack()
@@ -288,7 +288,7 @@ func TestGenerateImageLostResponseIsAnUnknownOutcome(t *testing.T) {
 
 func TestGenerateImageRejectsMalformedBase64(t *testing.T) {
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"not-valid-base64!!"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
@@ -302,7 +302,7 @@ func TestGenerateImageRejectsOversizedOutput(t *testing.T) {
 	png := tinyPNG(t)
 	encoded := base64.StdEncoding.EncodeToString(png)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"image/png"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 4)
@@ -314,7 +314,7 @@ func TestGenerateImageRejectsOversizedOutput(t *testing.T) {
 
 func TestGenerateImageInvalidByteLimit(t *testing.T) {
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"AA=="}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	for _, limit := range []int64{0, -1} {
@@ -342,7 +342,7 @@ func TestGenerateImageClassifiesProviderErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			server := &imageGenServer{status: tc.status, body: tc.body}
-			srv := httptest.NewServer(server.handler(t))
+			srv := httptest.NewTLSServer(server.handler(t))
 			defer srv.Close()
 
 			client := NewClient(srv.Client(), 1<<20)
@@ -361,7 +361,7 @@ func TestGenerateImageRejectsANonImageTypeEvenWhenTheBytesMatchIt(t *testing.T) 
 	clip := []byte("\x00\x00\x00\x18ftypisom\x00\x00\x02\x00isommp41\x00\x00\x00\x08free")
 	encoded := base64.StdEncoding.EncodeToString(clip)
 	server := &imageGenServer{body: `{"created":1,"data":[{"b64_json":"` + encoded + `","media_type":"video/mp4"}]}`}
-	srv := httptest.NewServer(server.handler(t))
+	srv := httptest.NewTLSServer(server.handler(t))
 	defer srv.Close()
 
 	client := NewClient(srv.Client(), 1<<20)
