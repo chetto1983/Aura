@@ -3,10 +3,12 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/llm/openai_compat"
 )
 
 // ctxRecordingConv proves the write outlives the context that killed the round. The shared
@@ -117,11 +119,19 @@ func TestRecordInterruptedRoundIsInertWithoutATracker(t *testing.T) {
 func TestRecordInterruptedRoundNamesTheReasonWithoutTheUpstreamText(t *testing.T) {
 	overloaded := errors.New(`received error while streaming: {"type":"service_unavailable_error",` +
 		`"code":"server_is_overloaded","message":"Our servers are currently overloaded."}`)
+	// A 429 without Retry-After and a refused key carry none of the words the text reading
+	// looks for, so only their status code can classify them.
+	rateLimited := fmt.Errorf("stream open: %w", &openai_compat.HTTPError{
+		StatusCode: 429, Body: `{"error":{"message":"Rate limit reached for requests"}}`})
+	badKey := fmt.Errorf("stream open: %w", &openai_compat.HTTPError{
+		StatusCode: 401, Body: `{"error":{"message":"Incorrect API key provided"}}`})
 	for name, test := range map[string]struct {
 		cause  error
 		reason string
 	}{
 		"overloaded provider": {cause: overloaded, reason: "the model provider was unavailable or overloaded"},
+		"rate limited":        {cause: rateLimited, reason: "the model provider was unavailable or overloaded"},
+		"key refused":         {cause: badKey, reason: "the model provider refused the request"},
 		"canceled":            {cause: context.Canceled, reason: "the run was stopped"},
 		"deadline":            {cause: context.DeadlineExceeded, reason: "the model did not answer in time"},
 		"unclassified":        {cause: errors.New("boom"), reason: "an internal error stopped it"},
@@ -139,7 +149,8 @@ func TestRecordInterruptedRoundNamesTheReasonWithoutTheUpstreamText(t *testing.T
 			if len(turns) != 1 || turns[0].Content != want {
 				t.Fatalf("turn = %#v, want %q", turns, want)
 			}
-			for _, leaked := range []string{"server_is_overloaded", "Our servers", "service_unavailable_error"} {
+			for _, leaked := range []string{"server_is_overloaded", "Our servers", "service_unavailable_error",
+				"Rate limit reached", "Incorrect API key"} {
 				if strings.Contains(turns[0].Content, leaked) {
 					t.Fatalf("the turn leaks upstream text %q: %s", leaked, turns[0].Content)
 				}

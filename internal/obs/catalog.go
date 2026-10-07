@@ -1,6 +1,7 @@
 package obs
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -374,10 +375,23 @@ func ClassifyError(value string) string {
 	}
 }
 
-// ErrorClass classifies err without returning its raw message.
+// classifiedError is an error that knows its own class, as a provider's HTTP status does.
+type classifiedError interface {
+	error
+	ErrorClass() string
+}
+
+// ErrorClass classifies err without returning its raw message. An error in the chain that
+// answers its own class wins: a 429 or a refused key carries no word ClassifyError reads, and
+// the provider writes that prose freely. An empty answer falls back to reading the message.
 func ErrorClass(err error) string {
 	if err == nil {
 		return "none"
+	}
+	if typed, ok := errors.AsType[classifiedError](err); ok {
+		if class := typed.ErrorClass(); class != "" {
+			return class
+		}
 	}
 	return ClassifyError(err.Error())
 }

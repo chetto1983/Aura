@@ -52,6 +52,26 @@ func adaptSDKError(err error) error {
 	return result
 }
 
+// ErrorClass maps the status to obs's error vocabulary (obs.ErrorClass asks for it), so a 429
+// without Retry-After or a refused key is classified by what the provider answered rather than
+// by the words of its message. A status outside the error ranges answers "".
+func (e *HTTPError) ErrorClass() string {
+	switch {
+	case e.StatusCode == http.StatusRequestTimeout:
+		return "timeout"
+	case e.StatusCode == http.StatusTooManyRequests || e.StatusCode >= 500:
+		return "unavailable"
+	case e.StatusCode == http.StatusUnauthorized || e.StatusCode == http.StatusForbidden:
+		return "permission"
+	case e.StatusCode == http.StatusConflict:
+		return "conflict"
+	case e.StatusCode >= 400:
+		return "invalid"
+	default:
+		return ""
+	}
+}
+
 // Error renders the status, the provider's own explanation, and (on 429) the
 // retry-after hint.
 //

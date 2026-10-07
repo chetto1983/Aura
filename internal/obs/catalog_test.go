@@ -1,6 +1,8 @@
 package obs
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -123,4 +125,26 @@ func FuzzCatalogNormalizersRemainFinite(f *testing.F) {
 			t.Fatalf("ClassifyTool(%q) produced non-finite %q", value, got)
 		}
 	})
+}
+
+// classedError answers its own class, the way a typed provider error does.
+type classedError struct{ class, text string }
+
+func (e classedError) Error() string      { return e.text }
+func (e classedError) ErrorClass() string { return e.class }
+
+// TestErrorClassAsksTheErrorBeforeReadingIt: a typed answer anywhere in the chain wins over
+// the text, and an empty answer falls back to reading the text.
+func TestErrorClassAsksTheErrorBeforeReadingIt(t *testing.T) {
+	typed := fmt.Errorf("stream open: %w", classedError{class: "unavailable", text: "llm: provider returned HTTP 429"})
+	if got := ErrorClass(typed); got != "unavailable" {
+		t.Errorf("typed class = %q, want unavailable", got)
+	}
+	silent := fmt.Errorf("stream open: %w", classedError{text: "permission denied"})
+	if got := ErrorClass(silent); got != "permission" {
+		t.Errorf("an empty typed class must fall back to the text: got %q, want permission", got)
+	}
+	if got := ErrorClass(errors.New("llm: provider returned HTTP 429")); got != ValueOther {
+		t.Errorf("control: the bare text reads as %q, want %q", got, ValueOther)
+	}
 }

@@ -70,3 +70,28 @@ func TestNewHTTPError_RetryAfter(t *testing.T) {
 		t.Error("errors.As(*HTTPError) failed — caller cannot classify the wire error")
 	}
 }
+
+// TestHTTPErrorClassFollowsTheStatus: the status code, not the provider's prose, decides the
+// class. A 429 without Retry-After or a refused key names none of the words obs.ClassifyError
+// reads, and used to surface as an internal error.
+func TestHTTPErrorClassFollowsTheStatus(t *testing.T) {
+	for status, want := range map[int]string{
+		http.StatusRequestTimeout:      "timeout",
+		http.StatusTooManyRequests:     "unavailable",
+		http.StatusInternalServerError: "unavailable",
+		http.StatusBadGateway:          "unavailable",
+		http.StatusServiceUnavailable:  "unavailable",
+		529:                            "unavailable",
+		http.StatusUnauthorized:        "permission",
+		http.StatusForbidden:           "permission",
+		http.StatusConflict:            "conflict",
+		http.StatusBadRequest:          "invalid",
+		http.StatusNotFound:            "invalid",
+		http.StatusUnprocessableEntity: "invalid",
+		http.StatusFound:               "",
+	} {
+		if got := (&HTTPError{StatusCode: status}).ErrorClass(); got != want {
+			t.Errorf("HTTP %d: ErrorClass() = %q, want %q", status, got, want)
+		}
+	}
+}
