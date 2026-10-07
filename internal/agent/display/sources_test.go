@@ -87,3 +87,55 @@ func TestRenderSourceListFormat(t *testing.T) {
 		t.Fatalf("rendered list has a trailing newline")
 	}
 }
+
+// On 2026-10-07 an answer cited [3] twice for claims its snippet never made: [3] was a
+// SiePortal page whose fetch had answered 403, and the list gave no sign of it. A
+// failed fetch now marks the source, so the model knows it holds only a snippet.
+func TestRenderSourceListMarksASourceWhoseFetchFailed(t *testing.T) {
+	reg := NewRegistry()
+	reg.Add(KindWebResult, "SiePortal", "https://sieportal.test/detail", "16 documents", false)
+	reg.Add(KindWebResult, "Datasheet", "https://rs.test/a.pdf", "", false)
+	failFetch(t, reg, "https://sieportal.test/detail", `{"error":"http_error","message":"non-success status","status_code":403}`)
+	failFetch(t, reg, "https://rs.test/a.pdf", `{"error":"extraction_failed","reason":"pdf_without_text","message":"scan"}`)
+
+	want := "[1] SiePortal — https://sieportal.test/detail (not read: http_error status 403; only its search snippet was seen)\n" +
+		"[2] Datasheet — https://rs.test/a.pdf (not read: extraction_failed (pdf_without_text); only its search snippet was seen)"
+	if got := reg.RenderSourceList(); got != want {
+		t.Fatalf("RenderSourceList =\n%q\nwant\n%q", got, want)
+	}
+	if got := reg.Sources()[0].Unread; got != "http_error status 403" {
+		t.Errorf("Sources()[0].Unread = %q, want the failure for the source explorer too", got)
+	}
+}
+
+func TestAFailedFetchOfAnUnlistedURLAddsNoSource(t *testing.T) {
+	reg := NewRegistry()
+	failFetch(t, reg, "https://guessed.test/page", `{"error":"http_error","status_code":404}`)
+	if got := reg.RenderSourceList(); got != "" {
+		t.Errorf("a URL nobody listed became source %q", got)
+	}
+}
+
+func TestALaterSuccessfulFetchClearsTheMark(t *testing.T) {
+	reg := NewRegistry()
+	reg.Add(KindWebResult, "Page", "https://p.test/a", "", false)
+	failFetch(t, reg, "https://p.test/a", `{"error":"timeout","message":"fetch timed out"}`)
+	page := `{"title":"Page","url":"https://p.test/a","content_md":"read at last","links":null}`
+	if _, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c2", ToolName: "web_fetch",
+		Arguments: `{"url":"https://p.test/a"}`, ResultPreview: page}, reg); !ok {
+		t.Fatal("the successful fetch was not recognized")
+	}
+	if got := reg.RenderSourceList(); got != "[1] Page — https://p.test/a" {
+		t.Errorf("RenderSourceList = %q, want the mark gone", got)
+	}
+}
+
+// A failed fetch keeps its raw card: only the registry learns from it.
+func failFetch(t *testing.T, reg *Registry, url, preview string) {
+	t.Helper()
+	args := `{"url":"` + url + `"}`
+	if _, ok := NormalizeToolPreview(PreviewInput{ToolCallID: "c", ToolName: "web_fetch",
+		Arguments: args, ResultPreview: preview}, reg); ok {
+		t.Fatalf("a failed fetch rendered a typed payload")
+	}
+}

@@ -135,6 +135,11 @@ func TestStaticCitationConventionInSystemPrompt(t *testing.T) {
 	if !strings.Contains(agent.SystemPrompt, "Cite your sources") {
 		t.Fatalf("system prompt missing the citation directive headline")
 	}
+	// The list marks a source whose fetch failed "(not read: …)"; on 2026-10-07 the
+	// model cited such a source for claims its snippet never made.
+	if !strings.Contains(agent.SystemPrompt, "marked \"not read\"") {
+		t.Fatalf("system prompt does not say what a not-read source may back")
+	}
 	// The volatile numbered list shape ("[1] ... — url") must NOT be baked into the
 	// static prompt — only the convention. A url-bearing source line in messages[0]
 	// would poison the cached prefix.

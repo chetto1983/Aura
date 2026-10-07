@@ -54,6 +54,15 @@ func (r *Registry) Add(srcType Kind, title, rawURL, snippet string, cited bool) 
 	return refID
 }
 
+// markFetch records how a fetch of rawURL ended on the source the registry already
+// lists for it: failure says why it was not read, "" that it was. A URL nobody
+// listed is not added — a failed fetch backs no claim.
+func (r *Registry) markFetch(rawURL, failure string) {
+	if idx, ok := r.byURL[normalizeURL(rawURL)]; ok {
+		r.items[idx].Unread = failure
+	}
+}
+
 // Sources returns the accumulated registry entries in stable Index order (a copy
 // so the caller cannot mutate the registry's backing slice).
 func (r *Registry) Sources() []Source {
@@ -77,7 +86,11 @@ func (r *Registry) RenderSourceList() string {
 		if title == "" {
 			title = s.URL
 		}
-		fmt.Fprintf(&b, "[%d] %s — %s\n", s.Index, title, s.URL)
+		fmt.Fprintf(&b, "[%d] %s — %s", s.Index, title, s.URL)
+		if s.Unread != "" {
+			fmt.Fprintf(&b, " (not read: %s; only its search snippet was seen)", s.Unread)
+		}
+		b.WriteByte('\n')
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

@@ -163,4 +163,7 @@ type Source struct {
 	Snippet    string  `json:"snippet,omitempty"`
 	Confidence float64 `json:"confidence,omitempty"`
 	Cited      bool    `json:"cited"`
+	// Unread names why a fetch of this source failed; the model then holds only
+	// its search snippet. Empty for a source that was read or never fetched.
+	Unread string `json:"unread,omitempty"`
 }

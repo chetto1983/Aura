@@ -34,10 +34,15 @@ type PreviewInput struct {
 //   - legacy shell_exec / sandbox_exec → CodeInput
 //
 // Every other tool, an empty preview, an inline {error,…} preview, or malformed JSON
-// returns (Payload{}, false) so the caller keeps the raw escaped card (D-FALLBACK) and
-// the registry is untouched — replay D-FALLBACK == live D-FALLBACK.
+// returns (Payload{}, false) so the caller keeps the raw escaped card (D-FALLBACK).
+// The registry is untouched by all of them but one: a failed web_fetch marks the
+// source it was reading as not read. Replay passes the same Arguments and preview, so
+// replay D-FALLBACK == live D-FALLBACK still holds.
 func NormalizeToolPreview(in PreviewInput, reg *Registry) (Payload, bool) {
 	if in.ResultPreview == "" || reg == nil {
+		return Payload{}, false
+	}
+	if in.ToolName == "web_fetch" && markFailedFetch(in, reg) {
 		return Payload{}, false
 	}
 	if in.TrustedMCP != nil && in.ToolName != "" {

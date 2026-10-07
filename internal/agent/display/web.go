@@ -1,6 +1,7 @@
 package display
 
 import (
+	"encoding/json"
 	"net/url"
 	"strings"
 
@@ -45,6 +46,7 @@ func normalizeWebSearch(toolCallID string, results []web.Result, reg *Registry) 
 // shows in the Source Explorer.
 func normalizeWebFetch(toolCallID string, page web.Page, reg *Registry) (Payload, bool) {
 	reg.Add(KindDocument, page.Title, page.URL, "", false)
+	reg.markFetch(page.URL, "")
 	return Payload{
 		Type:       KindDocument,
 		ToolCallID: toolCallID,
@@ -56,6 +58,28 @@ func normalizeWebFetch(toolCallID string, page web.Page, reg *Registry) (Payload
 		},
 		Sources: reg.Sources(),
 	}, true
+}
+
+// markFailedFetch marks the source a failed web_fetch was reading, when its preview is
+// the inline {error,reason,status_code} object. It reports whether it was one, so the
+// caller keeps the raw card for it.
+func markFailedFetch(in PreviewInput, reg *Registry) bool {
+	var failure struct {
+		Error      string `json:"error"`
+		Reason     string `json:"reason"`
+		StatusCode int    `json:"status_code"`
+	}
+	if json.Unmarshal([]byte(in.ResultPreview), &failure) != nil || failure.Error == "" {
+		return false
+	}
+	var args struct {
+		URL string `json:"url"`
+	}
+	if json.Unmarshal([]byte(in.Arguments), &args) == nil {
+		we := web.WebError{Code: failure.Error, Reason: failure.Reason, StatusCode: failure.StatusCode}
+		reg.markFetch(args.URL, we.Error())
+	}
+	return true
 }
 
 // hostOf returns the lower-cased host of rawURL, or "" when it cannot be parsed
