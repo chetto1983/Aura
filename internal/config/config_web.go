@@ -30,8 +30,12 @@ import (
 // This is not evasion of a paywall, a login, or a robots policy: it is declaring a
 // shape the server is willing to serve. Aura still honours its SSRF guards,
 // redirect revalidation, size caps and Content-Type allowlist unchanged.
-const defaultWebUserAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 " +
-	"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+//
+// The version ages into a bot signal of its own. On 2026-10-07 Akamai (SiePortal)
+// refused Chrome/120 whatever headers came with it, and served this Chrome/154 only
+// together with the browser navigation headers web_fetch sends (prd.md §12).
+const defaultWebUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+	"(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36"
 
 // applyWebDefaults fills the web_search/web_fetch knobs. SEARXNG_URL has an empty
 // default on purpose (D-05): missing is fail-closed at call time, never a boot error.

@@ -437,6 +437,11 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	if !strings.Contains(cfg.WebUserAgent, "Mozilla/") {
 		t.Errorf("WebUserAgent default must present as a browser, got %q", cfg.WebUserAgent)
 	}
+	// A browser version two years old is itself a bot signal: on 2026-10-07 Akamai
+	// refused Chrome/120 whatever the headers, and served Chrome/154 with them.
+	if !strings.Contains(cfg.WebUserAgent, "Chrome/154.") {
+		t.Errorf("WebUserAgent default must be the measured current Chrome, got %q", cfg.WebUserAgent)
+	}
 
 	// Load() with a placeholder LLM key must also load the web fields without error.
 	full, err := Load()

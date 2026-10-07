@@ -184,6 +184,41 @@ func TestFetch_ContentGate(t *testing.T) {
 	})
 }
 
+// Measured 2026-10-07 from the lab VM with a Go client shaped like this transport:
+// SiePortal (Akamai) and PARTcommunity (Cloudflare) answered 403 to a current UA alone
+// AND to the browser header set alone, and 200 only to both together. Dropping any of
+// these headers reopens that 403.
+func TestFetch_SendsTheBrowserNavigationHeaders(t *testing.T) {
+	got := make(chan http.Header, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got <- r.Header.Clone()
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(richHTML))
+	}))
+	defer srv.Close()
+	_, port := hostPort(t, srv.URL)
+	c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+	if _, err := c.Fetch(context.Background(), "c", "http://page.test:"+port+"/p"); err != nil {
+		t.Fatalf("Fetch: %v", err)
+	}
+	h := <-got
+	want := map[string]string{
+		"User-Agent":                "Aura/test web",
+		"Accept":                    "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+		"Accept-Language":           "en-US,en;q=0.9",
+		"Sec-Fetch-Dest":            "document",
+		"Sec-Fetch-Mode":            "navigate",
+		"Sec-Fetch-Site":            "none",
+		"Sec-Fetch-User":            "?1",
+		"Upgrade-Insecure-Requests": "1",
+	}
+	for name, value := range want {
+		if h.Get(name) != value {
+			t.Errorf("%s = %q, want %q", name, h.Get(name), value)
+		}
+	}
+}
+
 func TestFetch_LowContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")

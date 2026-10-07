@@ -140,7 +140,7 @@ func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) (g
 		if err != nil {
 			return gatedBody{}, nil, err
 		}
-		req.Header.Set("User-Agent", c.userAgent())
+		c.setNavigationHeaders(req.Header)
 
 		resp, err := c.transport.client.Do(req)
 		if err != nil {
@@ -165,6 +165,20 @@ func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) (g
 		return gated, current, nil
 	}
 	return gatedBody{}, nil, &WebError{Code: CodeHTTPError, Reason: "too_many_redirects", Message: "redirect limit exceeded"}
+}
+
+// setNavigationHeaders makes a fetch look like what it is, a top-level page
+// navigation. Measured 2026-10-07 (prd.md §12): Akamai and Cloudflare refused a
+// current UA alone and these headers alone, and served the two together.
+func (c *Client) setNavigationHeaders(h http.Header) {
+	h.Set("User-Agent", c.userAgent())
+	h.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	h.Set("Accept-Language", "en-US,en;q=0.9")
+	h.Set("Sec-Fetch-Dest", "document")
+	h.Set("Sec-Fetch-Mode", "navigate")
+	h.Set("Sec-Fetch-Site", "none")
+	h.Set("Sec-Fetch-User", "?1")
+	h.Set("Upgrade-Insecure-Requests", "1")
 }
 
 // resolveRedirect reads the Location header, resolves it against the current URL,
