@@ -17,15 +17,17 @@ import (
 )
 
 // routerTeacher answers the teacher's router requests and sends every other request to the
-// turn's own scripted client. With release set it answers only once release is closed, and
-// it reports the context it then sees.
+// turn's own scripted client. With release set it answers only once unblock is called or its
+// context ends, and it reports the context it then sees. teacherRunner unblocks it at cleanup,
+// so a test that fails before unblocking leaves no worker behind.
 type routerTeacher struct {
-	turns   llm.Client
-	answer  string
-	hang    bool
-	release chan struct{}
-	started chan struct{}
-	once    sync.Once
+	turns       llm.Client
+	answer      string
+	hang        bool
+	release     chan struct{}
+	started     chan struct{}
+	startOnce   sync.Once
+	releaseOnce sync.Once
 
 	mu       sync.Mutex
 	requests []llm.Request
@@ -39,10 +41,13 @@ func (c *routerTeacher) Stream(ctx context.Context, req llm.Request) (<-chan llm
 	c.requests = append(c.requests, req)
 	c.mu.Unlock()
 	if c.started != nil {
-		c.once.Do(func() { close(c.started) })
+		c.startOnce.Do(func() { close(c.started) })
 	}
 	if c.release != nil {
-		<-c.release
+		select {
+		case <-c.release:
+		case <-ctx.Done():
+		}
 	}
 	if c.hang {
 		<-ctx.Done()
@@ -55,6 +60,10 @@ func (c *routerTeacher) Stream(ctx context.Context, req llm.Request) (<-chan llm
 	ch <- llm.Chunk{FinishReason: "stop"}
 	close(ch)
 	return ch, nil
+}
+
+func (c *routerTeacher) unblock() {
+	c.releaseOnce.Do(func() { close(c.release) })
 }
 
 func (c *routerTeacher) snapshot() []llm.Request {
@@ -104,6 +113,9 @@ func mandatoryRoute() llm.Config {
 // each dispatched turn without a composer effort is decided by seeds and asks the teacher.
 func teacherRunner(t *testing.T, teacher *routerTeacher, turns ...agenttest.FakeTurn) (*Runner, *recordingDecisionStore) {
 	t.Helper()
+	if teacher.release != nil {
+		t.Cleanup(teacher.unblock)
+	}
 	teacher.turns = agenttest.TitleClient{
 		Main:  agenttest.NewFakeClient(turns...),
 		Title: agenttest.NewFakeClient(agenttest.TextChunks("stop", "Test conversation title")),
@@ -150,7 +162,7 @@ func TestUncertainTurnIsLabelledByTheTeacherAfterItsDecision(t *testing.T) {
 		t.Fatalf("Stop returned (%v) while the teacher was still answering; it must join the worker", err)
 	case <-time.After(100 * time.Millisecond):
 	}
-	close(teacher.release)
+	teacher.unblock()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
@@ -189,7 +201,7 @@ func TestCancellingAFinishedTurnDoesNotCancelItsTeacher(t *testing.T) {
 	}
 	awaitTeacher(t, teacher)
 	cancel()
-	close(teacher.release)
+	teacher.unblock()
 	stopRunner(t, r, convID)
 	if labels, _ := decisions.labelSnapshot(); len(labels) != 1 || labels[0].requested != "high" {
 		t.Fatalf("labels = %+v, want the teacher's high despite the cancelled turn", labels)
@@ -236,24 +248,28 @@ func TestNoTeacherWorkerWithoutAWrittenDecisionThatAsks(t *testing.T) {
 }
 
 // A teacher that gives no tier labels nothing, and a label that cannot be written is one
-// warning; the turn's decision stands either way.
+// warning; the turn's decision stands either way. Only the timeout row shortens the
+// teacher's bound: on a slow runner a short bound would turn the other rows into timeouts.
 func TestTeacherWithoutAWrittenLabelLeavesTheDecision(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		teacher  *routerTeacher
+		bound    time.Duration
 		labelErr error
 		outcome  string
 		labels   int
 		warning  bool
 	}{
-		{name: "timeout", teacher: &routerTeacher{hang: true}, outcome: agent.TeacherTimeout},
+		{name: "timeout", teacher: &routerTeacher{hang: true}, bound: 50 * time.Millisecond, outcome: agent.TeacherTimeout},
 		{name: "invalid answer", teacher: &routerTeacher{answer: "probabilmente alto"}, outcome: agent.TeacherInvalid},
 		{name: "failed label write", teacher: &routerTeacher{answer: `{"tier":"low"}`}, labelErr: errFake, outcome: agent.TeacherSuccess, labels: 1, warning: true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			logs := captureLogs(t)
 			r, decisions := teacherRunner(t, test.teacher, agenttest.ToolCallTurn(textResponseCall("call-1", "Fatto.")))
-			r.teacherTimeout = 50 * time.Millisecond
+			if test.bound > 0 {
+				r.teacherTimeout = test.bound
+			}
 			decisions.labelErr = test.labelErr
 			convID := newConvID(t)
 			mustCreate(t, r, convID)

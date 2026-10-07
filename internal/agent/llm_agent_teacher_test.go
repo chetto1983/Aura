@@ -42,45 +42,46 @@ func (c *teacherClient) Stream(ctx context.Context, _ llm.Request) (<-chan llm.C
 	return ch, nil
 }
 
-// teacherBound stands in for the runner's teacher timeout: AskTeacher takes its bound from
-// the caller's context.
-func teacherBound(t *testing.T) context.Context {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	t.Cleanup(cancel)
-	return ctx
-}
-
 // Every attempt is counted with its outcome, whatever the caller then does with it (spec,
-// "Teacher usage").
+// "Teacher usage"). AskTeacher takes its bound from the caller's context: only the timeout
+// rows get one, started when the row runs, so a slow runner cannot turn the others into
+// timeouts.
 func TestAskTeacherNamesEveryOutcomeAndCountsIt(t *testing.T) {
 	recorded, reader := newTestAgentMetrics(t)
 	previous := metrics
 	metrics = recorded
 	t.Cleanup(func() { metrics = previous })
 
-	canceled, cancel := context.WithCancel(context.Background())
-	cancel()
 	cases := []struct {
-		name    string
-		ctx     context.Context
-		client  llm.Client
-		tier    prompt.ReasoningTier
-		outcome string
+		name     string
+		bound    time.Duration
+		canceled bool
+		client   llm.Client
+		tier     prompt.ReasoningTier
+		outcome  string
 	}{
-		{name: "success", ctx: teacherBound(t), client: &teacherClient{text: `{"tier":"high"}`}, tier: prompt.ReasoningTierHigh, outcome: TeacherSuccess},
-		{name: "invalid", ctx: teacherBound(t), client: &teacherClient{text: "probably high"}, outcome: TeacherInvalid},
-		{name: "error", ctx: teacherBound(t), client: &teacherClient{openErr: errors.New("401 unauthorized")}, outcome: TeacherError},
-		{name: "no client", ctx: teacherBound(t), outcome: TeacherError},
-		{name: "timeout", ctx: teacherBound(t), client: &teacherClient{hang: true}, outcome: TeacherTimeout},
-		{name: "silent deadline", ctx: teacherBound(t), client: &teacherClient{silentDeadline: true}, outcome: TeacherTimeout},
-		{name: "canceled", ctx: canceled, client: &teacherClient{hang: true}, outcome: TeacherCanceled},
+		{name: "success", client: &teacherClient{text: `{"tier":"high"}`}, tier: prompt.ReasoningTierHigh, outcome: TeacherSuccess},
+		{name: "invalid", client: &teacherClient{text: "probably high"}, outcome: TeacherInvalid},
+		{name: "error", client: &teacherClient{openErr: errors.New("401 unauthorized")}, outcome: TeacherError},
+		{name: "no client", outcome: TeacherError},
+		{name: "timeout", bound: 50 * time.Millisecond, client: &teacherClient{hang: true}, outcome: TeacherTimeout},
+		{name: "silent deadline", bound: 50 * time.Millisecond, client: &teacherClient{silentDeadline: true}, outcome: TeacherTimeout},
+		{name: "canceled", canceled: true, client: &teacherClient{hang: true}, outcome: TeacherCanceled},
 	}
 	want := map[string]int64{}
 	for _, test := range cases {
 		want[test.outcome]++
 		t.Run(test.name, func(t *testing.T) {
-			tier, outcome := AskTeacher(test.ctx, test.client, "m", "che tempo fa domani a Cuneo?")
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if test.bound > 0 {
+				ctx, cancel = context.WithTimeout(ctx, test.bound)
+				defer cancel()
+			}
+			if test.canceled {
+				cancel()
+			}
+			tier, outcome := AskTeacher(ctx, test.client, "m", "che tempo fa domani a Cuneo?")
 			if tier != test.tier || outcome != test.outcome {
 				t.Fatalf("AskTeacher = %q, %q; want %q, %q", tier, outcome, test.tier, test.outcome)
 			}
@@ -110,7 +111,7 @@ func TestAskTeacherNamesEveryOutcomeAndCountsIt(t *testing.T) {
 // tools and no reasoning.
 func TestAskTeacherSendsTheToolFreeRouterRequest(t *testing.T) {
 	client := &readingClient{}
-	AskTeacher(teacherBound(t), client, "route-model", "che tempo fa domani a Cuneo?")
+	AskTeacher(context.Background(), client, "route-model", "che tempo fa domani a Cuneo?")
 	if len(client.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(client.requests))
 	}
