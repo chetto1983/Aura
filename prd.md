@@ -1946,6 +1946,36 @@ This does not establish:
   clamped from `none` to `low` because the plan catalogue offers no lower effort. No change
   is made there.
 
+The same day, after about 45 minutes without probes from the VM, the refusals were
+measured again with the same Go client:
+- PARTcommunity served the new UA with the header set on 8 of 8 requests 20 s apart, and the
+  old UA with the header set on 2 of 2. The 4 of 10 above came from probing one address
+  for minutes.
+- The original conversation's request shape, the old UA without the header set, drew
+  403 on 2 of 2 with `cf-mitigated: challenge` and Cloudflare's "Just a moment..." page:
+  a managed challenge, not a block.
+- SiePortal's 403 to the old UA is Akamai's plain "Access Denied" page, with no challenge
+  in it.
+- agent-browser, run from the sandbox image with Aura's entry point (automation flag off,
+  the image's Chrome UA), opened both pages from the same address without a challenge.
+  SiePortal rendered in 21 s to 3,730 characters carrying 12 Nm, 2.85 kW and 1.72 kW;
+  PARTcommunity in 16 s to 7,092 characters carrying 9.1 Nm, 12 Nm, 2.85 kW and 1.72 kW.
+- The system prompt's deferred families named no browser, and no browser tool appears in
+  `aura.tool_invocations`, although the browser MCP was mounted with 29 tools.
+
+So a fetch refused with `cf-mitigated: challenge` answers `http_error` with reason
+`bot_challenge`. The web family line names the browser as the way to read a page that a
+fetch cannot: one that needs JavaScript, answers with a bot check, or refuses the fetch.
+It also tells the model to ask the operator to complete a visible human check in the
+browser's live view, never to solve one itself. The handoff follows OpenBot's
+`agent-computer/src/challenge.ts`, which detects the challenge and hands control to a
+person.
+
+This does not establish:
+- that the model switches to the browser: steering is a prompt line until a live turn
+  shows it;
+- a challenge inside the browser: none appeared, so the handoff path ran nowhere.
+
 ## 13. MCP integrations
 
 The bridge uses the official MCP SDK and namespaced registration. Curation of Aura-owned
