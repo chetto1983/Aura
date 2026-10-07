@@ -280,7 +280,8 @@ func TestReadTurnSeedsAndTeacherFollowTheMargin(t *testing.T) {
 		{name: "static low when the embedding fails", classifier: &fakeClassifier{ok: false}, source: EffortSourceFallback, effort: llm.ReasoningEffortLow},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			a, client := newReadingAgent(t, readingSetup{classifier: test.classifier, teacher: test.teacher})
+			dispatched := TurnReading{SourceRef: "postgres://aura/conversations/now/turns/1"}
+			a, client := newReadingAgent(t, readingSetup{classifier: test.classifier, teacher: test.teacher, reading: dispatched})
 			decision, _ := a.readTurn(context.Background())
 			if decision.EffortSource != test.source || decision.EffortRequested != test.effort {
 				t.Fatalf("decision = %+v, want %s/%s", decision, test.source, test.effort)
@@ -289,6 +290,28 @@ func TestReadTurnSeedsAndTeacherFollowTheMargin(t *testing.T) {
 				t.Fatalf("teacher asked %d times, want %d", len(client.requests), test.asked)
 			}
 		})
+	}
+}
+
+// A resumed, headless or sub-agent run has no dispatched user turn: its decision lands on no
+// row and teaches nothing, so it keeps the seed verdict rather than pay the teacher, as it
+// did before turn recall. Only with no classifier at all does it still ask the teacher.
+func TestReadTurnWithoutADispatchedTurnKeepsTheSeedVerdict(t *testing.T) {
+	uncertain := &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierHigh, Margin: 0.01}, ok: true}
+	a, client := newReadingAgent(t, readingSetup{classifier: uncertain, teacher: []string{`{"tier":"none"}`}})
+	if decision, read := a.readTurn(context.Background()); decision.EffortSource != EffortSourceSeeds ||
+		decision.EffortRequested != llm.ReasoningEffortHigh || len(client.requests) != 0 || read.teacher != "" {
+		t.Fatalf("decision = %+v after %d teacher requests, want the seed verdict and no teacher", decision, len(client.requests))
+	}
+
+	b, teacher := newReadingAgent(t, readingSetup{teacher: []string{`{"tier":"low"}`}})
+	if decision, _ := b.readTurn(context.Background()); decision.EffortSource != EffortSourceTeacher || len(teacher.requests) != 1 {
+		t.Fatalf("decision = %+v after %d teacher requests, want the teacher when no classifier is wired", decision, len(teacher.requests))
+	}
+
+	fixed, _ := newReadingAgent(t, readingSetup{classifier: uncertain, override: llm.ReasoningEffortLow})
+	if decision, _ := fixed.readTurn(context.Background()); decision.EffortSource != EffortSourceUser || decision.EffortRequested != llm.ReasoningEffortLow {
+		t.Fatalf("decision = %+v, want the composer's low", decision)
 	}
 }
 

@@ -49,6 +49,8 @@ type turnRead struct {
 //
 //	composer effort > standalone greeting > compatible label (user, then teacher) >
 //	seeds with margin >= teacherMargin > teacher > seeds; static low when nothing answers.
+//
+// A run with no dispatched user turn takes the seed verdict at any margin.
 func (a *LlmAgent) readTurn(ctx context.Context) (TurnDecision, turnRead) {
 	// The typed message, not the one the model receives: memory stores what was typed, the
 	// seed gates were measured on it, and a knowledge catalog composed in front of it is
@@ -124,7 +126,9 @@ func (a *LlmAgent) decideAdaptive(ctx context.Context, user string, recall TurnR
 		return
 	}
 	read.seedTier, read.seedMargin, read.seedOK = verdict.Tier, verdict.Margin, true
-	if verdict.Margin >= teacherMargin {
+	// A run with no dispatched user turn (resumed, headless, sub-agent) writes its decision
+	// on no row, so a paid teacher answer would teach nothing: it keeps the seed verdict.
+	if verdict.Margin >= teacherMargin || a.turnReading.SourceRef == "" {
 		d.decide(a.cfg, verdict.Tier.Effort(), EffortSourceSeeds)
 		return
 	}

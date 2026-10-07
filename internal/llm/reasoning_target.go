@@ -28,7 +28,7 @@ const (
 )
 
 // String names the target for logs. Without it an operator reading
-// "adaptive reasoning: tier applied target=3" has to go count iota constants to learn
+// "adaptive reasoning: effort applied target=3" has to go count iota constants to learn
 // which backend answered — the value appears in exactly the lines someone reads when
 // they are trying to find out whether reasoning reached their model at all.
 func (k ReasoningTargetKind) String() string {

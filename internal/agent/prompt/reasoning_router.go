@@ -5,8 +5,8 @@ import (
 	"strings"
 )
 
-// ReasoningRouterSystemPrompt classifies a turn into a reasoning tier when the
-// embedding classifier is unavailable.
+// ReasoningRouterSystemPrompt is the teacher's prompt: it classifies a turn into a
+// reasoning tier when the seed bank is uncertain about it or unavailable.
 const ReasoningRouterSystemPrompt = "Classify the latest user request into one reasoning tier for the next assistant turn. Reply only JSON: {\"tier\":\"none\"|\"low\"|\"high\"}. none=greeting/simple stable fact/direct short transform. low=current web/news/weather/prices/schedules/lookups or small tool use. high=coding/debugging/design/proofs/scraping/multi-step analysis."
 
 // ParseReasoningRouterTier extracts the tier from a router-LLM reply, tolerating

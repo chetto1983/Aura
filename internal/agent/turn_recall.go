@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -65,8 +66,9 @@ type TurnRecall struct {
 }
 
 // TurnReading is what the runner hands one dispatched user turn so the agent can read it
-// against the identity's past turns. The zero value reads the turn from seeds and the
-// teacher alone, which is what a resumed run, a branch re-run and a headless agent get.
+// against the identity's past turns. The zero value is what a resumed run, a branch re-run,
+// a headless and a sub-agent run get: no memory, and the seed bank's verdict whatever its
+// margin, with the teacher asked only when no classifier is wired.
 type TurnReading struct {
 	Recaller TurnRecaller
 	// Text is the message as typed, without the context blocks the model receives with it.
@@ -85,7 +87,8 @@ type TurnReading struct {
 
 // TurnDecision is how the turn's effort was decided, as the runner persists it on the user
 // turn (migration 0137). Effort is what is sent after the clamp, EffortRequested the
-// decision before it; both are empty when this route takes no effort.
+// decision before it. A composer's explicit effort is always requested, even on a route
+// that takes no effort and so sends none; without one, such a route leaves both empty.
 type TurnDecision struct {
 	Effort          llm.ReasoningEffort
 	EffortRequested llm.ReasoningEffort
@@ -134,13 +137,15 @@ func TurnContextKey(prior []llm.Message, currentBlocks string) string {
 }
 
 // routeKey names the route an effort is decided for: the backend and its endpoint, the
-// model, and the efforts the model publishes. A label from another route is never reused.
+// model, and the set of efforts the model publishes, sorted so a catalogue refresh that
+// reorders them does not retire every label. A label from another route is never reused.
 // The API key, headers, sampling, and any userinfo or query in the base URL stay out.
 func routeKey(cfg llm.Config) string {
 	efforts := make([]string, len(cfg.SupportedReasoningEfforts))
 	for index, effort := range cfg.SupportedReasoningEfforts {
 		efforts[index] = string(effort)
 	}
+	slices.Sort(efforts)
 	return "route1:" + digest(
 		llm.ReasoningTarget(cfg.Provider, cfg.BaseURL).String(), cfg.Provider, endpointIdentity(cfg.BaseURL),
 		cfg.Model, strings.Join(efforts, ","), strconv.FormatBool(cfg.ReasoningMandatory),
@@ -158,15 +163,13 @@ func endpointIdentity(baseURL string) string {
 // turnPolicyVersion versions everything a label is decided under: the seed bank, its tier
 // mapping, the greeting allowlist and the teacher prompt (prompt.ReasoningPolicyFingerprint),
 // and the selection rules of readTurn. A label decided under another version is never reused.
-var turnPolicyVersion = policyVersion()
+var turnPolicyVersion = policyVersion(prompt.ReasoningPolicyFingerprint(), teacherMargin)
 
 // selectionRules names readTurn's precedence; change it with the table.
 const selectionRules = "composer>greeting>label(user>teacher)>seeds(margin)>teacher>seeds|fallback"
 
-func policyVersion() string {
-	return "policy1:" + digest(
-		prompt.ReasoningPolicyFingerprint(), selectionRules, strconv.FormatFloat(teacherMargin, 'g', -1, 64),
-	)
+func policyVersion(fingerprint string, margin float64) string {
+	return "policy1:" + digest(fingerprint, selectionRules, strconv.FormatFloat(margin, 'g', -1, 64))
 }
 
 func digest(parts ...string) string {

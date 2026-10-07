@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -163,6 +164,29 @@ func TestReasoningPolicyFingerprintIsStable(t *testing.T) {
 	first, second := ReasoningPolicyFingerprint(), ReasoningPolicyFingerprint()
 	if first != second || len(first) != 64 {
 		t.Fatalf("fingerprints %q and %q, want one stable sha256 hex", first, second)
+	}
+}
+
+// The turn reading folds the fingerprint into its policy version, so a change to any seed or
+// to the greeting allowlist must move it. Not parallel: it edits package state and puts it
+// back before any parallel test runs.
+func TestReasoningPolicyFingerprintFollowsTheSeedsAndTheGreetings(t *testing.T) {
+	base := ReasoningPolicyFingerprint()
+
+	seeds := reasoningTierSeeds[ReasoningTierHigh]
+	reasoningTierSeeds[ReasoningTierHigh] = append(slices.Clone(seeds), "progetta lo schema del database con le migrazioni")
+	withSeed := ReasoningPolicyFingerprint()
+	reasoningTierSeeds[ReasoningTierHigh] = seeds
+
+	trivialGreetings["ciao a tutti"] = struct{}{}
+	withGreeting := ReasoningPolicyFingerprint()
+	delete(trivialGreetings, "ciao a tutti")
+
+	if withSeed == base || withGreeting == base {
+		t.Fatalf("fingerprint unmoved: seed %t, greeting %t", withSeed == base, withGreeting == base)
+	}
+	if ReasoningPolicyFingerprint() != base {
+		t.Fatal("the seed bank or the allowlist was not restored")
 	}
 }
 

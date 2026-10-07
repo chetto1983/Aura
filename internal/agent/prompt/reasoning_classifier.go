@@ -136,10 +136,10 @@ const tierNeighbours = 3
 // stable sequence (none < low < high) regardless of map iteration.
 var classifierTierOrder = []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh}
 
-// trivialGreetings is the conservative pre-filter allowlist: an exact normalized
-// match routes straight to the None tier with NO embedding round-trip. Only
-// unambiguous greetings/acks live here — anything else falls through to the
-// embedding classifier, so the pre-filter can never mislabel a real request.
+// trivialGreetings is the conservative allowlist IsTrivialGreeting matches after
+// normalization. The turn reading decides a standalone message that matches as none,
+// with no embedding and no recall; Classify never consults it. Only unambiguous
+// greetings/acks live here, so a real request is never taken for one.
 var trivialGreetings = map[string]struct{}{
 	"ciao": {}, "ciao ciao": {}, "salve": {}, "buongiorno": {}, "buonasera": {},
 	"buonanotte": {}, "ehi": {}, "hey": {}, "grazie": {}, "grazie mille": {},

@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -82,8 +83,31 @@ func TestRouteKeyNamesTheRouteWithoutItsCredentials(t *testing.T) {
 	}
 }
 
-func TestTurnPolicyVersionFollowsTheSeedPolicy(t *testing.T) {
-	if turnPolicyVersion != policyVersion() || !strings.HasPrefix(turnPolicyVersion, "policy1:") {
-		t.Fatalf("turnPolicyVersion = %q", turnPolicyVersion)
+// A catalogue refresh can list the same efforts in another order; the route is the same.
+func TestRouteKeyIgnoresTheOrderOfTheEfforts(t *testing.T) {
+	cfg := llm.Config{Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", Model: "z-ai/glm-5.3-flash",
+		SupportedReasoningEfforts: []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortMedium, llm.ReasoningEffortHigh}}
+	reordered := cfg
+	reordered.SupportedReasoningEfforts = []llm.ReasoningEffort{llm.ReasoningEffortHigh, llm.ReasoningEffortLow, llm.ReasoningEffortMedium}
+	if routeKey(cfg) != routeKey(reordered) {
+		t.Fatal("the same efforts in another order moved the route key")
+	}
+	if reordered.SupportedReasoningEfforts[0] != llm.ReasoningEffortHigh {
+		t.Fatal("routeKey reordered the configuration's own efforts")
+	}
+}
+
+// The policy version is what retires every label when the decision policy changes, so each
+// input must move it. prompt's fingerprint test covers the seeds, greetings and prompt.
+func TestTurnPolicyVersionChangesWithEachInput(t *testing.T) {
+	fingerprint := prompt.ReasoningPolicyFingerprint()
+	if turnPolicyVersion != policyVersion(fingerprint, teacherMargin) || !strings.HasPrefix(turnPolicyVersion, "policy1:") {
+		t.Fatalf("turnPolicyVersion = %q, want the version of the live fingerprint and margin", turnPolicyVersion)
+	}
+	if policyVersion(fingerprint, teacherMargin+0.005) == turnPolicyVersion {
+		t.Error("a different teacher margin kept the policy version")
+	}
+	if policyVersion(strings.Repeat("0", len(fingerprint)), teacherMargin) == turnPolicyVersion {
+		t.Error("a different seed policy kept the policy version")
 	}
 }

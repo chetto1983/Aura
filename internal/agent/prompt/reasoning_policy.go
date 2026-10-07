@@ -118,8 +118,8 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 // IsOpenRouterReasoningTarget reports whether provider/baseURL is the OpenRouter
 // reasoning projection. It delegates to the neutral llm.ReasoningTarget classifier
 // (landed by 37E-02) so OpenRouter recognition has a single source of truth; the
-// result is byte-identical to the historical inline string check, so the ADAPTIVE-path
-// callers (ApplyAdaptiveEffort, adaptiveReasoningTier) are unchanged (D-04).
+// result is byte-identical to the historical inline string check (D-04). The adaptive
+// path itself (ApplyAdaptiveEffort, the turn reading) gates on IsReasoningTarget.
 func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 	return llm.ReasoningTarget(provider, baseURL) == llm.ReasoningTargetOpenRouter
 }
