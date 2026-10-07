@@ -55,6 +55,7 @@ type agentMetrics struct {
 	spanIDEntropyFailuresTotal metric.Int64Counter
 	prefixDriftTotal           metric.Int64Counter
 	teacherAttemptsTotal       metric.Int64Counter
+	turnDecisionsTotal         metric.Int64Counter
 }
 
 var metrics = newAgentMetrics(otel.Meter(agentMeterName), true)
@@ -116,6 +117,7 @@ func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 		spanIDEntropyFailuresTotal: mustInt64Counter(meter, obs.AgentSpanIDEntropyFailuresID),
 		prefixDriftTotal:           mustInt64Counter(meter, obs.AgentPrefixDriftID),
 		teacherAttemptsTotal:       mustInt64Counter(meter, obs.AgentTeacherAttemptsID),
+		turnDecisionsTotal:         mustInt64Counter(meter, obs.AgentTurnDecisionsID),
 	}
 }
 
@@ -275,4 +277,14 @@ func newExpvarMap(name string, publish bool) *expvar.Map {
 	m := new(expvar.Map)
 	m.Init()
 	return m
+}
+
+func recordTurnDecision(source string) { metrics.recordTurnDecision(source) }
+
+func (m *agentMetrics) recordTurnDecision(source string) {
+	if source == "" {
+		source = "undecided"
+	}
+	label := obs.NormalizeAttribute(obs.AttributeOutcome, source)
+	m.turnDecisionsTotal.Add(context.Background(), 1, metric.WithAttributes(boundedAttr(obs.AttributeOutcome, label)))
 }

@@ -30,51 +30,6 @@ func resolveClassifier(cfg LlmAgentConfig) tierClassifier {
 	return nil
 }
 
-// adaptiveReasoningTier classifies the CONVERSATION, so it gates on the generalized
-// IsReasoningTarget — the same predicate ApplyAdaptiveEffort and ApplyFixedReasoning
-// use. It was OpenRouter-only, upstream of the identical restriction in
-// ApplyAdaptiveEffort: on every other backend the tier was never even COMPUTED, so
-// lifting the downstream gate alone changed nothing. Measured live on Ollama 0.33.2 with
-// gemma4:31b-cloud, 2026-08-31 — with only the downstream gate widened, a turn produced
-// no tier decision at all.
-func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningTier, bool) {
-	if !a.cfg.AdaptiveReasoning || !prompt.IsReasoningTarget(a.cfg.Provider, a.cfg.BaseURL) {
-		return "", false
-	}
-	user := prompt.LastGenuineUserContent(a.history)
-	if strings.TrimSpace(user) == "" {
-		return prompt.ReasoningTierLow, true
-	}
-
-	// Fast path: the local embedding classifier (embedding sidecar, ~10ms) replaces
-	// the per-turn LLM router round-trip. On any embed failure it returns false;
-	// when a classifier is wired, degrade to static low reasoning instead of
-	// spending a second network call every turn.
-	if a.classifier != nil {
-		if prompt.IsTrivialGreeting(user) {
-			return prompt.ReasoningTierNone, true
-		}
-		if verdict, ok := a.classifier.Classify(ctx, user); ok {
-			reasoningtrace.Record("adaptive_reasoning_classifier_decision", map[string]any{
-				"thread_id": a.sessionID,
-				"tier":      verdict.Tier,
-				"margin":    verdict.Margin,
-				"source":    "embedding",
-			})
-			return verdict.Tier, true
-		}
-		reasoningtrace.Record("adaptive_reasoning_classifier_miss", map[string]any{
-			"thread_id": a.sessionID,
-			"fallback":  "static_low",
-		})
-		return prompt.ReasoningTierLow, true
-	}
-	if tier, outcome := a.askTeacher(ctx, user); outcome == teacherSuccess {
-		return tier, true
-	}
-	return prompt.ReasoningTierLow, true
-}
-
 // teacherOutcome is how one synchronous teacher attempt ended.
 type teacherOutcome string
 

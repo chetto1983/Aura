@@ -18,7 +18,7 @@ package llm
 // traffic that should have been cheapest. google/gemini-3.8-flash is the same shape with
 // a different set (["high","medium","low"]).
 //
-// ApplyAdaptiveReasoning's own doc comment claimed a tier it sets "is still bounded" by
+// ApplyAdaptiveEffort's own doc comment claimed a tier it sets "is still bounded" by
 // the capability source. It was not: AllowedEfforts was consumed only by the cockpit —
 // the effort dropdown and the validator for an EXPLICIT user choice — and nothing on the
 // request path ever consulted it. This file is that missing bound, placed where both the
@@ -35,6 +35,12 @@ import "slices"
 var reasoningLadder = []ReasoningEffort{
 	ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium,
 	ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax,
+}
+
+// Known reports whether e is on the ladder: an effort read back from storage that is not is
+// a miss, never a guess.
+func (e ReasoningEffort) Known() bool {
+	return slices.Contains(reasoningLadder, e)
 }
 
 // reasoningEffortTokens pulls the advertised effort strings out of the catalogue entry.

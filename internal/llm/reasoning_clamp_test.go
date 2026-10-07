@@ -54,3 +54,16 @@ func TestClampAdvertisedEffortsDropsUnknownTokens(t *testing.T) {
 		t.Fatalf("efforts = %v, want [high low] with the unknown and the duplicate dropped", got)
 	}
 }
+
+func TestReasoningEffortKnownIsTheLadder(t *testing.T) {
+	for _, effort := range []ReasoningEffort{ReasoningEffortNone, ReasoningEffortLow, ReasoningEffortMedium, ReasoningEffortHigh, ReasoningEffortXHigh, ReasoningEffortMax} {
+		if !effort.Known() {
+			t.Errorf("%q.Known() = false", effort)
+		}
+	}
+	for _, effort := range []ReasoningEffort{"", "turbo", ReasoningEffortMinimal} {
+		if effort.Known() {
+			t.Errorf("%q.Known() = true", effort)
+		}
+	}
+}

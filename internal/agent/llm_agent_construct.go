@@ -57,6 +57,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		breaker:           resolveBreaker(cfg),
 		classifier:        resolveClassifier(cfg),
 		reasoningOverride: cfg.ReasoningOverride,
+		turnReading:       cfg.TurnReading,
 		sources:           display.NewRegistry(),
 		background:        cfg.BackgroundCalls,
 	}
@@ -150,4 +151,8 @@ type LlmAgentConfig struct {
 	// out of the turn (prd.md §15). Only the interactive runner sets it: its turns belong
 	// to a conversation the completion can wake. Nil keeps every call in its turn.
 	BackgroundCalls *tools.BackgroundCalls
+	// TurnReading is what the runner hands a dispatched user turn: the identity's memory, the
+	// turn's context key and source, and where its effort decision goes. The zero value reads
+	// the turn from seeds and the teacher alone.
+	TurnReading TurnReading
 }

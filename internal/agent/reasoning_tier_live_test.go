@@ -2,7 +2,8 @@
 
 // Live validation of the SHIPPED agent wiring: a real LlmAgent with the granite
 // embedder wired resolves its reasoning tier through the embedding classifier
-// (adaptiveReasoningTier) WITHOUT calling the LLM router. Proves the production
+// (readTurn) without a teacher answer: the client refuses every router request, so an
+// uncertain verdict keeps the seed bank's tier. Proves the production
 // path — not a spike harness — uses the local classifier on the OpenRouter gate.
 //
 //	go test -tags reasoning_live -run TestAdaptiveReasoningTierLive ./internal/agent/
@@ -10,6 +11,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"testing"
@@ -42,9 +44,8 @@ func TestAdaptiveReasoningTierLive(t *testing.T) {
 		Dimensions: config.DefaultEmbedDimensions,
 	}
 	defer embedder.Client.CloseIdleConnections() // goleak: drain keep-alive conns
-	// Client is nil on purpose: a classifier hit must short-circuit BEFORE the LLM
-	// router, so the agent must never dereference the client on these turns.
 	a := NewLlmAgent(LlmAgentConfig{
+		Client:   refusingTeacher{},
 		Registry: tools.NewRegistry(),
 		LLM: llm.Config{
 			Model:             "deepseek/deepseek-v4-flash",
@@ -55,6 +56,8 @@ func TestAdaptiveReasoningTierLive(t *testing.T) {
 			TotalTimeoutSec:   30,
 		},
 		Embedder: embedder,
+		// Each case is the first message of a fresh conversation, as production dispatches it.
+		TurnReading: TurnReading{Standalone: true},
 	})
 
 	cases := []struct {
@@ -66,16 +69,24 @@ func TestAdaptiveReasoningTierLive(t *testing.T) {
 		{"debugga questo segmentation fault nel mio codice C", prompt.ReasoningTierHigh},
 	}
 	for _, tc := range cases {
-		a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: tc.prompt})
-		tier, ok := a.adaptiveReasoningTier(context.Background())
-		if !ok {
-			t.Errorf("adaptiveReasoningTier(%q) not ok — classifier path failed live", tc.prompt)
+		a.history = []llm.Message{{Role: llm.RoleSystem, Content: SystemPrompt}, {Role: llm.RoleUser, Content: tc.prompt}}
+		decision, read := a.readTurn(context.Background())
+		if decision.EffortSource != EffortSourceSeeds && decision.EffortSource != EffortSourceGreeting {
+			t.Errorf("readTurn(%q) source = %q, want seeds or greeting (classifier path failed live)", tc.prompt, decision.EffortSource)
 			continue
 		}
-		if tier != tc.want {
-			t.Errorf("adaptiveReasoningTier(%q) = %q, want %q", tc.prompt, tier, tc.want)
-		} else {
-			t.Logf("ok: %q -> %s (via embedding classifier, no LLM router)", tc.prompt, tier)
+		if decision.EffortRequested != tc.want.Effort() {
+			t.Errorf("readTurn(%q) = %q, want %q", tc.prompt, decision.EffortRequested, tc.want.Effort())
+			continue
 		}
+		t.Logf("ok: %q -> %s via %s (margin %.3f, teacher %q)", tc.prompt, decision.EffortRequested, decision.EffortSource, read.seedMargin, read.teacher)
 	}
+}
+
+// refusingTeacher answers no router request, so an uncertain turn keeps its seed verdict and
+// this test still measures the seed bank alone.
+type refusingTeacher struct{}
+
+func (refusingTeacher) Stream(context.Context, llm.Request) (<-chan llm.Chunk, error) {
+	return nil, errors.New("no teacher in the seed-bank live test")
 }

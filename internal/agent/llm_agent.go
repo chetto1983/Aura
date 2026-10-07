@@ -135,10 +135,13 @@ type LlmAgent struct {
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
 	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
-	// Run loop SKIPS adaptiveReasoningTier and forces req.Reasoning through
+	// Run loop SKIPS the adaptive decision and forces req.Reasoning through
 	// BuildWithReasoningOverride on a reasoning target (OpenRouter OR llama.cpp, D-08);
 	// empty is "auto" — today's adaptive path runs byte-identical (D-04, zero regression).
 	reasoningOverride llm.ReasoningEffort
+
+	// turnReading carries the dispatched turn's memory binding and decision sink (readTurn).
+	turnReading TurnReading
 
 	// sources is the per-run URL-keyed source registry (D-05): web_search/web_fetch
 	// results accumulate into it across the turn so the model sees ONE numbered
@@ -210,8 +213,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			yield(nil, err)
 			return
 		}
-		var adaptiveEffort llm.ReasoningEffort
-		var adaptiveEffortSet bool
+		var turnEffort llm.ReasoningEffort
+		var turnRead bool
 		var modelRoundOrdinal modelRoundOrdinal
 		var retryRequest *llm.Request
 		var retryRound modelRound
@@ -277,20 +280,21 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// roundBudget assembles the per-round prompt.Budget (llm_agent_round.go);
 			// its doc comment carries the cache-prefix rationale.
 			budget := a.roundBudget(ic)
-			// A FIXED per-turn override (37E) bypasses the adaptive classifier entirely
-			// (D-04/D-08): skip the reasoning-router round-trip so buildRequest can force
-			// the selected effort. Auto (empty override) runs the classifier UNCHANGED.
+			// The turn is read once, before its first request (readTurn): a fixed composer
+			// effort still reads memory for tools; buildRequest applies the override, else
+			// the decided effort.
 			var req llm.Request
 			var modelRound modelRound
 			if transportRetry {
 				req = *retryRequest
 				modelRound = retryRound
 				retryRequest = nil
-			} else if a.reasoningOverride == "" && !adaptiveEffortSet {
-				if tier, ok := a.adaptiveReasoningTier(ic.Ctx); ok {
-					adaptiveEffort = tier.Effort()
+			} else if !turnRead {
+				decision, _ := a.readTurn(ic.Ctx)
+				turnEffort, turnRead = decision.EffortRequested, true
+				if a.turnReading.OnDecision != nil {
+					a.turnReading.OnDecision(decision)
 				}
-				adaptiveEffortSet = true
 			}
 			if !transportRetry {
 				modelRound = modelRoundOrdinal.next(ic.RequestID)
@@ -306,7 +310,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			var hookResult *ModelHookResult
 			if !transportRetry {
 				prepared, err := a.prepareReasoningRequest(
-					spanCtx, budget, modelRound, adaptiveEffort,
+					spanCtx, budget, modelRound, turnEffort,
 				)
 				if err != nil {
 					span.End()
