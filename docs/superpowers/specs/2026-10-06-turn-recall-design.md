@@ -34,7 +34,8 @@ Stated by the operator:
   `cfg.ClampReasoningEffort`, and this feature has no mapping table of its own.
 - **Provider-agnostic, configured from the database.** Every LLM call uses the turn's own client on
   the route resolved from `aura.settings`. Nothing reads `.env`.
-- **The teacher is the existing router prompt, asked synchronously and only on uncertain turns.**
+- **The teacher is the existing router prompt, asked only on uncertain turns. Since the 2026-10-07
+  amendment it runs in the background and labels later turns; the current turn never waits for it.**
 
 Design requirements to validate:
 
@@ -403,7 +404,7 @@ the already-required operator decision is made on the concrete measured report b
 | `preloadMax` | 3 | Observed maximum in the small VM sample; validate schema-token cost and unused preloads |
 | `recallTimeout` | 500 ms | Proposed total recall budget; historical SQL-only 7 ms does not validate it |
 | `denseSearchTimeout` | 500 ms | Proposed dense build/query wait budget; cold-build feasibility unmeasured |
-| teacher timeout | `reasoningRouterTimeout` (at most 2 s) | existing |
+| teacher timeout | `defaultTeacherTimeout` 30 s, background (amendment 2026-10-07; was a synchronous `reasoningRouterTimeout` of at most 2 s, measured too short) | candidate; the VM rerun measures the unbounded teacher latency |
 
 ## Observability
 
@@ -585,8 +586,9 @@ turn, and it still is not one. Here it only teaches memory.
   client and route, and it drains the stream.
 - **What a successful answer writes.** A conditional, idempotent update, in the style of
   `SetTitleIfNull`, upgrades the recorded decision to a teacher label. `reasoning_effort_requested`
-  becomes the teacher tier's effort, clamped by the route, and `reasoning_effort_source` becomes
-  `teacher`. `reasoning_effort` still records the effort the turn actually sent. Only a user row whose
+  becomes the teacher tier's effort before the clamp, as the column defines it, and
+  `reasoning_effort_source` becomes `teacher`. `reasoning_effort` still records the effort the turn
+  actually sent. Only a user row whose
   recorded source is `seeds` or `fallback` is upgraded. A failed round records no decision, so it
   never starts a worker and never gets a label. The projection carries the label to
   `ConversationTurn` on the next reconciliation.

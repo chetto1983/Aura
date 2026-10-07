@@ -5538,7 +5538,7 @@ In `recordTurnDecision`, once a decision whose `AskTeacher` is true has been wri
        // …
    })
    ```
-4. On `success`, compute `effort := runtime.Config.ClampReasoningEffort(tier.Effort())`. Then call `r.turnDecisions.RecordTeacherLabel(ctx, tr.convID, tr.userTurnSeq, string(effort))` under a short `WithoutCancel` persistence timeout, as `persistAutoTitle` does. A failed write logs one warning.
+4. On `success`, call `r.turnDecisions.RecordTeacherLabel(ctx, tr.convID, tr.userTurnSeq, string(tier.Effort()))` under a short `WithoutCancel` persistence timeout, as `persistAutoTitle` does: the label stores the tier's effort before the clamp, as migration 0137 defines `reasoning_effort_requested`, and a reuse clamps it again. A failed write logs one warning. (Amended 2026-10-07: an earlier revision clamped here.)
 5. Log once:
    ```go
    slog.Info("adaptive reasoning: teacher label", "thread_id", …, "source_ref", reasoningSourceRef(tr.convID, tr.userTurnSeq), "outcome", outcome, "tier", tier, "effort", effort, "teacher_ms", …)
@@ -5548,7 +5548,7 @@ In `recordTurnDecision`, once a decision whose `AskTeacher` is true has been wri
 `Deps.TeacherTimeout` defaults to `defaultTeacherTimeout` (30 s), exactly as `TitleTimeout` does. The tracker keeps the typed text from the reading (the final-fix `Text`).
 
 Write these tests first and show them failing:
-- a `seeds` decision with `AskTeacher` starts one worker, which records the clamped label after the decision write. `Stop` joins it, and goleak stays clean;
+- a `seeds` decision with `AskTeacher` starts one worker, which records the unclamped label after the decision write. `Stop` joins it, and goleak stays clean;
 - a failed round, an `AskTeacher=false` decision, an open breaker and a failed decision write start no worker;
 - a teacher timeout or an invalid answer records nothing;
 - cancelling a finished turn's context does not cancel the worker.
@@ -5556,7 +5556,7 @@ Write these tests first and show them failing:
 - [ ] **Step 4: The frozen replay follows the background teacher**
 
 In `turn_recall_eval_test.go`, when `readTurn` returns a decision with `AskTeacher`, call `agent.AskTeacher` with the eval's client, bounded by the same 30 s default.
-- A successful answer becomes the label that `learn` writes before the next turn is read: source `teacher`, requested = the clamped tier effort.
+- A successful answer becomes the label that `learn` writes before the next turn is read: source `teacher`, requested = the tier effort before the clamp.
 - A failure writes the seeds/fallback decision unchanged, as on a real row.
 
 Keep the three arms' names and the gate. The seeds+teacher arm now measures two things: the current turn's seeds decision, and how often the background teacher would have labelled. Say so in the report and in `docs/verification/turn-recall-frozen-eval.md`, and record each reading's teacher outcome in the report.
