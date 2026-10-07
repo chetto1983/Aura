@@ -2,22 +2,43 @@ package runner
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/redact"
 )
 
-// interruptedRoundMarker is what a person reads where the answer should have been.
+// interruptedRoundFormat is what a person reads where the answer should have been.
 //
 // Bracketed and machine-recognisable, in the shape readToolOutputPointer already uses for
-// text this system generated, rather than prose pretending to be the assistant. It carries
-// NO error detail on purpose: a conversation turn is exported, shared and shown, and an
-// upstream error string is the wrong thing to put somewhere that durable. The cause goes to
-// the log, where an operator can read it and a reader of the conversation cannot.
-const interruptedRoundMarker = "[run interrupted before it produced an answer; " +
+// text this system generated, rather than prose pretending to be the assistant. It names the
+// reason from a fixed vocabulary (interruptionReason) and never the upstream error text: a
+// conversation turn is exported, shared and shown, and an upstream error string is the wrong
+// thing to put somewhere that durable. The raw error goes to the log, where an operator can
+// read it and a reader of the conversation cannot.
+const interruptedRoundFormat = "[run interrupted before it produced an answer: %s; " +
 	"the question above is unanswered — send it again to retry]"
+
+// interruptionReason maps the bounded error class to a phrase a person can act on.
+func interruptionReason(cause error) string {
+	switch obs.ErrorClass(cause) {
+	case "canceled":
+		return "the run was stopped"
+	case "timeout":
+		return "the model did not answer in time"
+	case "unavailable":
+		return "the model provider was unavailable or overloaded"
+	case "permission":
+		return "the model provider refused the request"
+	case "invalid":
+		return "the model provider rejected the request"
+	default:
+		return "an internal error stopped it"
+	}
+}
 
 // recordInterruptedRound writes the turn that a killed round never got to write.
 //
@@ -51,6 +72,6 @@ func (r *Runner) recordInterruptedRound(ctx context.Context, tr *turnTracker, ro
 	return r.Conv.AppendTurn(context.WithoutCancel(ctx), conversations.AppendTurnParams{
 		ConversationID: tr.convID,
 		Role:           llm.RoleAssistant,
-		Content:        interruptedRoundMarker,
+		Content:        fmt.Sprintf(interruptedRoundFormat, interruptionReason(cause)),
 	})
 }

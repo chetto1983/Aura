@@ -111,3 +111,39 @@ func TestRecordInterruptedRoundIsInertWithoutATracker(t *testing.T) {
 		t.Fatalf("appended %d turns without a round to attribute them to", conv.appended)
 	}
 }
+
+// The operator saw the marker on the VM and could not tell why. The reason comes from a
+// fixed vocabulary keyed on the error class; the upstream text must never reach the turn.
+func TestRecordInterruptedRoundNamesTheReasonWithoutTheUpstreamText(t *testing.T) {
+	overloaded := errors.New(`received error while streaming: {"type":"service_unavailable_error",` +
+		`"code":"server_is_overloaded","message":"Our servers are currently overloaded."}`)
+	for name, test := range map[string]struct {
+		cause  error
+		reason string
+	}{
+		"overloaded provider": {cause: overloaded, reason: "the model provider was unavailable or overloaded"},
+		"canceled":            {cause: context.Canceled, reason: "the run was stopped"},
+		"deadline":            {cause: context.DeadlineExceeded, reason: "the model did not answer in time"},
+		"unclassified":        {cause: errors.New("boom"), reason: "an internal error stopped it"},
+		"refused":             {cause: errors.New("401 unauthorized"), reason: "the model provider refused the request"},
+		"rejected":            {cause: errors.New("invalid request body"), reason: "the model provider rejected the request"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			runner, conv, tracker := interruptedFixture(t)
+			if err := runner.recordInterruptedRound(context.Background(), tracker, test.cause); err != nil {
+				t.Fatal(err)
+			}
+			want := "[run interrupted before it produced an answer: " + test.reason +
+				"; the question above is unanswered — send it again to retry]"
+			turns := conv.turns["conv-1"]
+			if len(turns) != 1 || turns[0].Content != want {
+				t.Fatalf("turn = %#v, want %q", turns, want)
+			}
+			for _, leaked := range []string{"server_is_overloaded", "Our servers", "service_unavailable_error"} {
+				if strings.Contains(turns[0].Content, leaked) {
+					t.Fatalf("the turn leaks upstream text %q: %s", leaked, turns[0].Content)
+				}
+			}
+		})
+	}
+}
