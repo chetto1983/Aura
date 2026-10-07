@@ -121,7 +121,7 @@ func (b Budget) block() string {
 // hint message is appended to a COPY of history (the caller's slice and
 // messages[0] are never mutated — KV-cache poisoning guard, D-04/D-05). The
 // provider branch runs last. Adaptive reasoning is applied only by
-// BuildWithReasoningTier, after a caller has produced a tier outside the pure
+// BuildWithAdaptiveEffort, after a caller has produced a tier outside the pure
 // builder. cache_control remains a no-op unless provider == "anthropic".
 //
 // activated is the per-run set of deferred tool names tool_search has promoted
@@ -132,19 +132,19 @@ func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provid
 	return req
 }
 
-// BuildWithReasoningTier assembles a request and applies the caller-provided
-// adaptive reasoning tier before provider-specific cache-control handling. activated
-// is the per-run set of tool_search-promoted deferred tool names (nil hides all).
-func (b *PromptBuilder) BuildWithReasoningTier(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, tier ReasoningTier, activated map[string]struct{}) llm.Request {
+// BuildWithAdaptiveEffort assembles a request and applies the turn's decided effort before
+// provider-specific cache-control handling. activated is the per-run set of
+// tool_search-promoted (or preloaded) deferred tool names (nil hides all).
+func (b *PromptBuilder) BuildWithAdaptiveEffort(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, effort llm.ReasoningEffort, activated map[string]struct{}) llm.Request {
 	req := b.buildBase(history, reg, cfg, budget, activated)
-	ApplyAdaptiveReasoning(&req, provider, cfg, tier)
+	ApplyAdaptiveEffort(&req, provider, cfg, effort)
 	injectCacheControl(&req, provider)
 	return req
 }
 
 // BuildWithReasoningOverride assembles a request and forces a caller-selected FIXED
 // reasoning effort before provider-specific cache-control handling — the symmetric
-// sibling of BuildWithReasoningTier for the per-turn web-Composer override (D-02/D-04).
+// sibling of BuildWithAdaptiveEffort for the per-turn web-Composer override (D-02/D-04).
 // A fixed effort BYPASSES the adaptive classifier (ApplyFixedReasoning gates on the
 // generalized OpenRouter-or-llama.cpp target, D-08); an empty effort is the "auto"
 // sentinel that leaves the request byte-identical to a plain Build (D-04 zero regression).

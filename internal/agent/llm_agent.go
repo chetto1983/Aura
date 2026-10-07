@@ -130,9 +130,8 @@ type LlmAgent struct {
 	breaker *llm.Breaker
 
 	// classifier is the local embedding-based reasoning-tier router (nil when no
-	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
-	// the per-turn LLM router round-trip; the LLM router remains the fallback.
-	classifier *prompt.ReasoningClassifier
+	// embedder is wired). When present, the turn reading uses its verdict; the teacher covers turns it is unsure of.
+	classifier tierClassifier
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),
 	// threaded from runner.WithReasoningOverride via LlmAgentConfig. When non-empty the
@@ -211,9 +210,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			yield(nil, err)
 			return
 		}
-		var adaptiveTier prompt.ReasoningTier
-		var adaptiveTierSet bool
-		var adaptiveTierOK bool
+		var adaptiveEffort llm.ReasoningEffort
+		var adaptiveEffortSet bool
 		var modelRoundOrdinal modelRoundOrdinal
 		var retryRequest *llm.Request
 		var retryRound modelRound
@@ -288,9 +286,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				req = *retryRequest
 				modelRound = retryRound
 				retryRequest = nil
-			} else if a.reasoningOverride == "" && !adaptiveTierSet {
-				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
-				adaptiveTierSet = true
+			} else if a.reasoningOverride == "" && !adaptiveEffortSet {
+				if tier, ok := a.adaptiveReasoningTier(ic.Ctx); ok {
+					adaptiveEffort = tier.Effort()
+				}
+				adaptiveEffortSet = true
 			}
 			if !transportRetry {
 				modelRound = modelRoundOrdinal.next(ic.RequestID)
@@ -306,7 +306,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			var hookResult *ModelHookResult
 			if !transportRetry {
 				prepared, err := a.prepareReasoningRequest(
-					spanCtx, budget, modelRound, adaptiveTier, adaptiveTierOK,
+					spanCtx, budget, modelRound, adaptiveEffort,
 				)
 				if err != nil {
 					span.End()
@@ -528,20 +528,19 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 }
 
 // buildRequest selects the single per-turn request builder: the adaptive
-// reasoning-tier variant when a tier was resolved this run, the plain builder
-// otherwise. Exactly one builder runs — the discarded Build() (a wasted
+// variant when an effort was decided this run, the plain builder otherwise. Exactly one builder runs — the discarded Build() (a wasted
 // RenderToolDefs() per turn, QUAL-02/T7) is gone — and the chosen request is
 // byte-identical to the old branch's chosen request (D-01 parity).
-func (a *LlmAgent) buildRequest(budget prompt.Budget, tier prompt.ReasoningTier, tierOK bool) llm.Request {
+func (a *LlmAgent) buildRequest(budget prompt.Budget, effort llm.ReasoningEffort) llm.Request {
 	// Fixed per-turn override (37E): force the selected effort and bypass the adaptive
-	// tier/plain selector. ApplyFixedReasoning gates on the generalized reasoning target
+	// decision. ApplyFixedReasoning gates on the generalized reasoning target
 	// (OpenRouter OR llama.cpp, D-08); off-target it no-ops, so a non-reasoning backend
 	// simply gets a plain build with the override inert.
 	if a.reasoningOverride != "" {
 		return a.builder.BuildWithReasoningOverride(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.reasoningOverride, a.activated)
 	}
-	if tierOK {
-		return a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier, a.activated)
+	if effort != "" {
+		return a.builder.BuildWithAdaptiveEffort(a.history, a.registry, a.cfg.Provider, a.cfg, budget, effort, a.activated)
 	}
 	return a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.activated)
 }

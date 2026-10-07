@@ -50,7 +50,7 @@ func TestIsReasoningTarget(t *testing.T) {
 // TestApplyFixedReasoning covers the fixed per-turn override projection (D-04/D-08/
 // D-10): a fixed effort forces req.Reasoning on ANY reasoning target (OpenRouter OR
 // llama.cpp), no-ops off-target, derives exclude from cfg.ShowReasoning byte-identically
-// to ReasoningTier.reasoning(), and is orthogonal to cfg.AdaptiveReasoning.
+// to ApplyAdaptiveEffort, and is orthogonal to cfg.AdaptiveReasoning.
 func TestApplyFixedReasoning(t *testing.T) {
 	t.Parallel()
 
@@ -127,7 +127,7 @@ func TestApplyFixedReasoning(t *testing.T) {
 		}
 	})
 
-	// exclude is byte-identical to ReasoningTier.reasoning() — the D-10 parity gate.
+	// exclude is byte-identical to ApplyAdaptiveEffort — the D-10 parity gate.
 	t.Run("exclude_parity_with_tier_reasoning", func(t *testing.T) {
 		t.Parallel()
 		for _, show := range []bool{true, false} {
@@ -135,7 +135,10 @@ func TestApplyFixedReasoning(t *testing.T) {
 			cfg.ShowReasoning = show
 			req := &llm.Request{}
 			ApplyFixedReasoning(req, "openrouter", cfg, llm.ReasoningEffortHigh)
-			wantExclude := ReasoningTierHigh.reasoning(show).Exclude
+			cfg.AdaptiveReasoning = true
+			adaptive := &llm.Request{}
+			ApplyAdaptiveEffort(adaptive, "openrouter", cfg, ReasoningTierHigh.Effort())
+			wantExclude := adaptive.Reasoning.Exclude
 			if req.Reasoning.Exclude == nil || wantExclude == nil || *req.Reasoning.Exclude != *wantExclude {
 				t.Fatalf("ShowReasoning=%v: Exclude = %v, want tier-parity %v", show, req.Reasoning.Exclude, wantExclude)
 			}
@@ -240,7 +243,7 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 			}
 			before, _ := json.Marshal(hist[0])
 
-			req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tc.tier, nil)
+			req := b.BuildWithAdaptiveEffort(hist, reg, "openrouter", cfg, Budget{}, tc.tier.Effort(), nil)
 
 			after, _ := json.Marshal(req.Messages[0])
 			if string(before) != string(after) {
@@ -281,7 +284,7 @@ func TestAdaptiveReasoningNeverTouchesMaxTokens(t *testing.T) {
 			if withTools {
 				req.Tools = []llm.ToolDef{{}}
 			}
-			ApplyAdaptiveReasoning(req, cfg.Provider, cfg, tier)
+			ApplyAdaptiveEffort(req, cfg.Provider, cfg, tier.Effort())
 			if req.MaxTokens != cfg.MaxTokens {
 				t.Fatalf("tier %q tools=%v: MaxTokens = %d, want unchanged %d", tier, withTools, req.MaxTokens, cfg.MaxTokens)
 			}
@@ -305,7 +308,7 @@ func TestAdaptiveReasoningShowReasoningUnexcludes(t *testing.T) {
 		{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
 	}
 	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
-		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier, nil)
+		req := b.BuildWithAdaptiveEffort(hist, reg, "openrouter", cfg, Budget{}, tier.Effort(), nil)
 		if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude {
 			t.Fatalf("tier %q with ShowReasoning: Exclude = %v, want false (stream the CoT)", tier, req.Reasoning.Exclude)
 		}
@@ -323,10 +326,10 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		t.Parallel()
 		cfg := cfg
 		cfg.MaxTokens = 1000
-		req := b.BuildWithReasoningTier([]llm.Message{
+		req := b.BuildWithAdaptiveEffort([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh.Effort(), nil)
 		if req.MaxTokens != 1000 {
 			t.Fatalf("MaxTokens = %d, want configured cap 1000", req.MaxTokens)
 		}
@@ -356,7 +359,7 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		cfg := cfg
 		cfg.AdaptiveReasoning = false
 		hist := seedHistory()
-		got := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
+		got := b.BuildWithAdaptiveEffort(hist, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh.Effort(), nil)
 		want := b.Build(hist, reg, "openrouter", cfg, Budget{}, nil)
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("disabled adaptive reasoning drifted request:\n got=%+v\nwant=%+v", got, want)
@@ -365,10 +368,10 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 
 	t.Run("non_openrouter_leaves_reasoning_empty", func(t *testing.T) {
 		t.Parallel()
-		req := b.BuildWithReasoningTier([]llm.Message{
+		req := b.BuildWithAdaptiveEffort([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "anthropic", cfg, Budget{}, ReasoningTierHigh, nil)
+		}, reg, "anthropic", cfg, Budget{}, ReasoningTierHigh.Effort(), nil)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("non-openrouter request carried reasoning: %+v", req.Reasoning)
 		}
@@ -381,10 +384,10 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		t.Parallel()
 		cfg := cfg
 		cfg.BaseURL = "http://127.0.0.1:8080/v1"
-		req := b.BuildWithReasoningTier([]llm.Message{
+		req := b.BuildWithAdaptiveEffort([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh, nil)
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh.Effort(), nil)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("local endpoint request carried reasoning: %+v", req.Reasoning)
 		}
@@ -430,4 +433,33 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 			t.Fatalf("LastGenuineUserContent = %q", got)
 		}
 	})
+}
+
+func TestReasoningTierEffortIsTheOneMapping(t *testing.T) {
+	for tier, want := range map[ReasoningTier]llm.ReasoningEffort{
+		ReasoningTierNone: llm.ReasoningEffortNone, ReasoningTierLow: llm.ReasoningEffortLow,
+		ReasoningTierHigh: llm.ReasoningEffortHigh, ReasoningTier("bogus"): "",
+	} {
+		if got := tier.Effort(); got != want {
+			t.Errorf("%q.Effort() = %q, want %q", tier, got, want)
+		}
+	}
+}
+
+func TestApplyAdaptiveEffortClampsAndSkipsAnEmptyEffort(t *testing.T) {
+	cfg := llm.Config{
+		Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", AdaptiveReasoning: true,
+		SupportedReasoningEfforts: []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortHigh},
+		ReasoningMandatory:        true,
+	}
+	req := &llm.Request{}
+	ApplyAdaptiveEffort(req, cfg.Provider, cfg, llm.ReasoningEffortNone)
+	if req.Reasoning.Effort != llm.ReasoningEffortLow || req.Reasoning.Exclude == nil || !*req.Reasoning.Exclude {
+		t.Fatalf("reasoning = %+v, want none clamped to low on a mandatory model, CoT excluded", req.Reasoning)
+	}
+	untouched := &llm.Request{}
+	ApplyAdaptiveEffort(untouched, cfg.Provider, cfg, "")
+	if untouched.Reasoning != (llm.ReasoningConfig{}) {
+		t.Fatalf("an empty effort set reasoning %+v", untouched.Reasoning)
+	}
 }

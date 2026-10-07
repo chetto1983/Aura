@@ -39,12 +39,12 @@ func TestReasoningClassifier_EquivalenceGoldenVerdicts(t *testing.T) {
 	for _, tc := range golden {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got, ok := c.Classify(context.Background(), tc.input)
+			verdict, ok := c.Classify(context.Background(), tc.input)
 			if !ok {
 				t.Fatalf("Classify(%q) returned not-usable; want %q,true", tc.input, tc.want)
 			}
-			if got != tc.want {
-				t.Errorf("Classify(%q) = %q; want %q (verdict drift — semindex nearest-exemplar math regressed)", tc.input, got, tc.want)
+			if verdict.Tier != tc.want {
+				t.Errorf("Classify(%q) = %q; want %q (verdict drift — semindex nearest-exemplar math regressed)", tc.input, verdict.Tier, tc.want)
 			}
 		})
 	}

@@ -70,6 +70,7 @@ const (
 	AgentSpanExportFailuresID    InstrumentID = "agent_span_export_failures"
 	AgentSpanIDEntropyFailuresID InstrumentID = "agent_span_id_entropy_failures"
 	AgentPrefixDriftID           InstrumentID = "agent_prefix_drift"
+	AgentTeacherAttemptsID       InstrumentID = "agent_teacher_attempts"
 	AgentLLMCallsID              InstrumentID = "agent_llm_calls"
 	AgentPauseTransitionsID      InstrumentID = "agent_pause_transitions"
 	RunnerResumeCallsID          InstrumentID = "runner_resume_calls"
@@ -126,6 +127,7 @@ var descriptors = []Descriptor{
 	count(AgentSpanExportFailuresID, "aura.agent.span.export.failures", "aura_agent_span_export_failures_total", nil, "Total OpenTelemetry span export failures."),
 	count(AgentSpanIDEntropyFailuresID, "aura.agent.span.id.entropy.failures", "aura_agent_span_id_entropy_failures_total", nil, "Total recovered span identifier entropy failures."),
 	count(AgentPrefixDriftID, "aura.agent.prefix.drift", "aura_agent_prefix_drift_total", nil, "Total cache-stable message prefix drift events."),
+	count(AgentTeacherAttemptsID, "aura.agent.teacher.attempt", "aura_agent_teacher_attempt_total", []AttributeKey{AttributeOutcome}, "Total synchronous reasoning-teacher attempts by outcome."),
 	count(AgentLLMCallsID, "aura.agent.llm.call", "aura_agent_llm_call_total", []AttributeKey{AttributeOutcome, AttributeErrorClass}, "Total completed LLM call boundaries."),
 	count(AgentPauseTransitionsID, "aura.agent.pause.transition", "aura_agent_pause_transition_total", []AttributeKey{AttributeOperation, AttributeState, AttributeOutcome}, "Total pause lifecycle transitions."),
 	count(RunnerResumeCallsID, "aura.runner.resume", "aura_runner_resume_total", []AttributeKey{AttributeOperation, AttributeOutcome, AttributeErrorClass}, "Total runner resume boundaries."),
@@ -274,7 +276,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 		"success", "error", "canceled", "timeout", "paused", "content_stop", "text_response", "max_steps", "budget_exhausted",
 		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_call_leaked", "tool_terminal", "denied",
 		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open",
-		"succeeded", "dead_letter", "retry_scheduled", ValueOther,
+		"succeeded", "dead_letter", "retry_scheduled", "invalid", ValueOther,
 	),
 	AttributeErrorClass: finiteSet("none", "canceled", "timeout", "unavailable", "invalid", "conflict", "permission", "panic", "internal", ValueOther),
 	AttributeState:      finiteSet("starting", "running", "ready", "degraded", "draining", "stopped", "pending", "in_progress", "completed", "failed", "indeterminate", "expired", ValueOther),

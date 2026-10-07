@@ -3,6 +3,7 @@ package prompt
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -77,9 +78,9 @@ func TestReasoningClassifier_RoutesByProximity(t *testing.T) {
 		{"qual e la capitale dell'Italia", ReasoningTierNone},
 	}
 	for _, tc := range cases {
-		got, ok := c.Classify(context.Background(), tc.prompt)
-		if !ok || got != tc.want {
-			t.Errorf("Classify(%q) = %q,%v; want %q,true", tc.prompt, got, ok, tc.want)
+		verdict, ok := c.Classify(context.Background(), tc.prompt)
+		if !ok || verdict.Tier != tc.want {
+			t.Errorf("Classify(%q) = %q,%v; want %q,true", tc.prompt, verdict.Tier, ok, tc.want)
 		}
 	}
 }
@@ -115,26 +116,61 @@ func TestReasoningClassifier_AnchorBankIsBuiltOnceAndReused(t *testing.T) {
 	}
 }
 
-func TestReasoningClassifier_GreetingPrefilterSkipsEmbed(t *testing.T) {
+// The allowlist moved out of Classify: whether "ok" is a greeting depends on what came before
+// it, which only the caller knows (spec 2026-10-06, "The greeting fast path").
+func TestIsTrivialGreeting(t *testing.T) {
+	t.Parallel()
+	for _, greeting := range []string{"ciao", "Buonasera!", "  Grazie mille ", "ok perfetto", "a presto!"} {
+		if !IsTrivialGreeting(greeting) {
+			t.Errorf("IsTrivialGreeting(%q) = false, want true", greeting)
+		}
+	}
+	for _, request := range []string{"", "   ", "ciao, che tempo fa domani?", "debugga lo script"} {
+		if IsTrivialGreeting(request) {
+			t.Errorf("IsTrivialGreeting(%q) = true, want false", request)
+		}
+	}
+}
+
+func TestReasoningClassifierReportsTheMargin(t *testing.T) {
+	t.Parallel()
+	c := NewReasoningClassifier(&fakeEmbedder{})
+	verdict, ok := c.Classify(context.Background(), "debugga il mio script python")
+	if !ok || verdict.Tier != ReasoningTierHigh {
+		t.Fatalf("Classify = %+v,%v; want high", verdict, ok)
+	}
+	// fakeEmbedder puts every high exemplar on one axis and the others off it, so the high
+	// tier scores 1 and the runner-up 0.
+	if math.Abs(verdict.Margin-1) > 1e-9 {
+		t.Fatalf("margin = %v, want 1", verdict.Margin)
+	}
+}
+
+func TestClassifyNoLongerShortCircuitsGreetings(t *testing.T) {
 	t.Parallel()
 	f := &fakeEmbedder{}
 	c := NewReasoningClassifier(f)
-	for _, g := range []string{"ciao", "Buonasera!", "  Grazie mille ", "ok perfetto", "a presto!"} {
-		got, ok := c.Classify(context.Background(), g)
-		if !ok || got != ReasoningTierNone {
-			t.Errorf("greeting %q = %q,%v; want none,true", g, got, ok)
-		}
+	if _, ok := c.Classify(context.Background(), "ciao"); !ok {
+		t.Fatal("Classify(ciao) failed")
 	}
-	if f.calls != 0 {
-		t.Errorf("greeting pre-filter hit the embedder %d times; want 0 (no round-trip)", f.calls)
+	if f.calls == 0 {
+		t.Fatal("Classify answered a greeting without embedding it; the allowlist belongs to the caller now")
+	}
+}
+
+func TestReasoningPolicyFingerprintIsStable(t *testing.T) {
+	t.Parallel()
+	first, second := ReasoningPolicyFingerprint(), ReasoningPolicyFingerprint()
+	if first != second || len(first) != 64 {
+		t.Fatalf("fingerprints %q and %q, want one stable sha256 hex", first, second)
 	}
 }
 
 func TestReasoningClassifier_QueryEmbedFailureFallsBack(t *testing.T) {
 	t.Parallel()
 	c := NewReasoningClassifier(&fakeEmbedder{failQuery: true})
-	if got, ok := c.Classify(context.Background(), "debugga il mio script"); ok {
-		t.Errorf("query embed failure should yield (_,false); got %q,%v", got, ok)
+	if verdict, ok := c.Classify(context.Background(), "debugga il mio script"); ok {
+		t.Errorf("query embed failure should yield (_,false); got %q,%v", verdict.Tier, ok)
 	}
 }
 
@@ -188,9 +224,9 @@ func TestReasoningClassifier_ConcurrentColdStartSingleFlightsAnchorBuild(t *test
 	errs := make(chan string, callers)
 	for range callers {
 		go func() {
-			got, ok := c.Classify(context.Background(), "debugga lo script")
-			if !ok || got != ReasoningTierHigh {
-				errs <- string(got)
+			verdict, ok := c.Classify(context.Background(), "debugga lo script")
+			if !ok || verdict.Tier != ReasoningTierHigh {
+				errs <- string(verdict.Tier)
 				return
 			}
 			errs <- ""

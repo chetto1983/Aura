@@ -102,7 +102,7 @@ func TestBuildRequestHidesDeferredUntilPromoted(t *testing.T) {
 	a := promoteAgent(t)
 	budget := prompt.Budget{}
 
-	before := a.buildRequest(budget, prompt.ReasoningTierNone, false)
+	before := a.buildRequest(budget, "")
 	if toolPresent(before.Tools, "web_search") {
 		t.Fatal("web_search must be HIDDEN from req.Tools before tool_search loads its schema")
 	}
@@ -112,7 +112,7 @@ func TestBuildRequestHidesDeferredUntilPromoted(t *testing.T) {
 
 	a.promoteFromMeta(&tools.ToolResultMeta{tools.MetaActivatedTools: []string{"web_search"}})
 
-	after := a.buildRequest(budget, prompt.ReasoningTierNone, false)
+	after := a.buildRequest(budget, "")
 	def, ok := toolDef(after.Tools, "web_search")
 	if !ok {
 		t.Fatal("web_search must be PRESENT in req.Tools once promoted")

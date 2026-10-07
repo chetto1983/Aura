@@ -54,6 +54,7 @@ type agentMetrics struct {
 	costUSDTotal               metric.Float64Counter
 	spanIDEntropyFailuresTotal metric.Int64Counter
 	prefixDriftTotal           metric.Int64Counter
+	teacherAttemptsTotal       metric.Int64Counter
 }
 
 var metrics = newAgentMetrics(otel.Meter(agentMeterName), true)
@@ -114,12 +115,20 @@ func newAgentMetrics(meter metric.Meter, publishExpvar bool) *agentMetrics {
 		costUSDTotal:               mustFloat64Counter(meter, obs.AgentCostUSDID),
 		spanIDEntropyFailuresTotal: mustInt64Counter(meter, obs.AgentSpanIDEntropyFailuresID),
 		prefixDriftTotal:           mustInt64Counter(meter, obs.AgentPrefixDriftID),
+		teacherAttemptsTotal:       mustInt64Counter(meter, obs.AgentTeacherAttemptsID),
 	}
 }
 
 func recordPrefixDrift() {
 	metrics.legacy.prefixDriftTotal.Add(1)
 	metrics.prefixDriftTotal.Add(context.Background(), 1)
+}
+
+func recordTeacherAttempt(outcome string) { metrics.recordTeacherAttempt(outcome) }
+
+func (m *agentMetrics) recordTeacherAttempt(outcome string) {
+	label := obs.NormalizeAttribute(obs.AttributeOutcome, outcome)
+	m.teacherAttemptsTotal.Add(context.Background(), 1, metric.WithAttributes(boundedAttr(obs.AttributeOutcome, label)))
 }
 
 func recordBudgetConsumeStep() {

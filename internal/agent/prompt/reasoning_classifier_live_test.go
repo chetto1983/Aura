@@ -202,7 +202,12 @@ func TestReasoningClassifierLive(t *testing.T) {
 	correct, noneVsRest, usable := 0, 0, 0
 	confusion := map[string]int{}
 	for _, tc := range liveCorpus {
-		tier, ok := c.Classify(context.Background(), tc.prompt)
+		tier, ok := prompt.ReasoningTierNone, true
+		if !prompt.IsTrivialGreeting(tc.prompt) {
+			var verdict prompt.ReasoningVerdict
+			verdict, ok = c.Classify(context.Background(), tc.prompt)
+			tier = verdict.Tier
+		}
 		if !ok {
 			t.Errorf("Classify(%q) returned not-usable against the live sidecar", tc.prompt)
 			continue

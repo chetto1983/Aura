@@ -170,7 +170,7 @@ func TestParseReasoningRouterTier_SynonymsNormalize(t *testing.T) {
 
 // TestReasoningTierValid_RejectsUnknown closes the Valid() default arm: only the
 // three canonical tiers are valid, and the empty/garbage sentinels are not. This
-// is the predicate ApplyAdaptiveReasoning and Classify gate on, so a false
+// is the predicate ApplyAdaptiveEffort and Classify gate on, so a false
 // positive here would let a bogus tier reach the wire request.
 func TestReasoningTierValid_RejectsUnknown(t *testing.T) {
 	t.Parallel()

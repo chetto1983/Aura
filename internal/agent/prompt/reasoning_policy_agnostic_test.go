@@ -34,7 +34,7 @@ func TestAdaptiveReasoningReachesEveryRecognizedBackend(t *testing.T) {
 			t.Parallel()
 			cfg := llm.Config{Provider: test.provider, BaseURL: test.baseURL, AdaptiveReasoning: true}
 			req := &llm.Request{}
-			ApplyAdaptiveReasoning(req, cfg.Provider, cfg, ReasoningTierHigh)
+			ApplyAdaptiveEffort(req, cfg.Provider, cfg, ReasoningTierHigh.Effort())
 			if req.Reasoning.Effort != llm.ReasoningEffortHigh {
 				t.Fatalf("effort = %q, want %q — the tier the oracle chose must reach this backend",
 					req.Reasoning.Effort, llm.ReasoningEffortHigh)
@@ -49,7 +49,7 @@ func TestAdaptiveReasoningStaysOffAnUnrecognizedBackend(t *testing.T) {
 	t.Parallel()
 	cfg := llm.Config{Provider: "vllm", BaseURL: "http://dgx:8000/v1", AdaptiveReasoning: true}
 	req := &llm.Request{}
-	ApplyAdaptiveReasoning(req, cfg.Provider, cfg, ReasoningTierHigh)
+	ApplyAdaptiveEffort(req, cfg.Provider, cfg, ReasoningTierHigh.Effort())
 	if !req.Reasoning.Empty() {
 		t.Fatalf("reasoning = %+v, want untouched on a backend with no translation", req.Reasoning)
 	}
@@ -60,7 +60,7 @@ func TestAdaptiveReasoningRespectsTheOperatorSwitch(t *testing.T) {
 	t.Parallel()
 	cfg := llm.Config{Provider: "ollama", BaseURL: "http://127.0.0.1:11434/v1", AdaptiveReasoning: false}
 	req := &llm.Request{}
-	ApplyAdaptiveReasoning(req, cfg.Provider, cfg, ReasoningTierHigh)
+	ApplyAdaptiveEffort(req, cfg.Provider, cfg, ReasoningTierHigh.Effort())
 	if !req.Reasoning.Empty() {
 		t.Fatalf("reasoning = %+v, want untouched when AURA_LLM_ADAPTIVE_REASONING is off", req.Reasoning)
 	}

@@ -6,12 +6,12 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// TestApplyAdaptiveReasoningLeavesConfiguredMaxTokens proves the router passes the
+// TestApplyAdaptiveEffortLeavesConfiguredMaxTokens proves the router passes the
 // operator's configured max_tokens through UNCHANGED end-to-end: adaptive reasoning sets
 // only the reasoning effort, so a tight cfg.MaxTokens survives on the wire at every tier
 // — it is never raised to a per-tier default nor lowered to a per-tier ceiling (the
 // 2026-06-14 contract; the old ceiling truncated tool-call arguments).
-func TestApplyAdaptiveReasoningLeavesConfiguredMaxTokens(t *testing.T) {
+func TestApplyAdaptiveEffortLeavesConfiguredMaxTokens(t *testing.T) {
 	t.Parallel()
 	b := NewPromptBuilder()
 	reg := testRegistry()
@@ -24,7 +24,7 @@ func TestApplyAdaptiveReasoningLeavesConfiguredMaxTokens(t *testing.T) {
 		{Role: llm.RoleUser, Content: "che tempo fa domani a Caraglio?"},
 	}
 	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
-		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier, nil)
+		req := b.BuildWithAdaptiveEffort(hist, reg, "openrouter", cfg, Budget{}, tier.Effort(), nil)
 		if req.MaxTokens != 900 {
 			t.Fatalf("tier %q with a 900 cap: MaxTokens = %d, want the configured 900 unchanged", tier, req.MaxTokens)
 		}

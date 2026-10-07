@@ -16,17 +16,15 @@ type PreparedReasoningRequest struct {
 	HookResult *ModelHookResult
 }
 
-// prepareReasoningRequest builds the model request for one round at the tier the
-// adaptive reasoning classifier picked (llm_agent_reasoning.go), then runs the
-// BeforeModel hooks over it.
+// prepareReasoningRequest builds the model request for one round at the turn's decided
+// effort, then runs the BeforeModel hooks over it.
 func (a *LlmAgent) prepareReasoningRequest(
 	ctx context.Context,
 	budget prompt.Budget,
 	round modelRound,
-	tier prompt.ReasoningTier,
-	tierSet bool,
+	effort llm.ReasoningEffort,
 ) (PreparedReasoningRequest, error) {
-	request := a.buildRequest(budget, tier, tierSet)
+	request := a.buildRequest(budget, effort)
 	request.SessionID = a.sessionID
 	withTurnMedia(ctx, &request)
 	hookResult, err := a.transformModelRequest(ctx, &request, round.requestID)

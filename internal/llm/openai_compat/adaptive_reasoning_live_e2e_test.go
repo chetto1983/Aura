@@ -136,7 +136,7 @@ func TestLiveReasoning_NoneTierOffSwitch(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "Rispondi in italiano. Mantieni la risposta finale breve."},
 		{Role: llm.RoleUser, Content: "ciao"},
 	}
-	req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierNone, nil)
+	req := builder.BuildWithAdaptiveEffort(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierNone.Effort(), nil)
 
 	res := streamLive(t, cfg, req, 60*time.Second)
 	if res.reasoningChars != 0 {
@@ -160,7 +160,7 @@ func TestLiveReasoning_HighTierNoStarvation(t *testing.T) {
 		{Role: llm.RoleSystem, Content: "Rispondi in italiano. Mantieni la risposta finale breve."},
 		{Role: llm.RoleUser, Content: hardReasoningPrompt},
 	}
-	req := builder.BuildWithReasoningTier(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierHigh, nil)
+	req := builder.BuildWithAdaptiveEffort(history, reg, cfg.Provider, cfg, prompt.Budget{}, prompt.ReasoningTierHigh.Effort(), nil)
 	if req.MaxTokens != 4096 {
 		t.Fatalf("precondition: HIGH tier projected max_tokens=%d, want 4096 (the starvation-risk default)", req.MaxTokens)
 	}

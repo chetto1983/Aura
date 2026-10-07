@@ -32,7 +32,7 @@ func (t ReasoningTier) Valid() bool {
 	}
 }
 
-// ApplyAdaptiveReasoning applies a precomputed tier to the main request. It sets ONLY
+// ApplyAdaptiveEffort applies a decided effort to the main request. It sets ONLY
 // the reasoning EFFORT (off/low/high) — it NEVER touches max_tokens: capping the output
 // budget by tier truncated tool-call arguments mid-JSON (the 203-turn disaster,
 // 2026-06-14), so the operator-configured cfg.MaxTokens is left untouched. It never
@@ -65,38 +65,42 @@ func (t ReasoningTier) Valid() bool {
 // -- measured 2026-09-03 on z-ai/glm-5.3-flash and google/gemini-3.8-flash. cfg carries
 // the model's published set (resolved at every model change) and ClampReasoningEffort
 // substitutes the nearest accepted effort; a model that published nothing is left alone.
-func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, tier ReasoningTier) {
+func ApplyAdaptiveEffort(req *llm.Request, provider string, cfg llm.Config, effort llm.ReasoningEffort) {
 	if !cfg.AdaptiveReasoning {
 		return
 	}
-	if !IsReasoningTarget(provider, cfg.BaseURL) || !tier.Valid() {
+	if !IsReasoningTarget(provider, cfg.BaseURL) || effort == "" {
 		// SAY SO. The adaptive path logged nothing at all, so a backend it silently
 		// skipped was indistinguishable from a model that had chosen not to think — which
 		// is exactly how it went unnoticed on Ollama that adaptive reasoning had never
 		// once been applied.
 		slog.Debug("adaptive reasoning: not applied",
-			"target", redact.Line(llm.ReasoningTarget(provider, cfg.BaseURL).String()), "tier", string(tier))
+			"target", redact.Line(llm.ReasoningTarget(provider, cfg.BaseURL).String()), "effort", string(effort))
 		return
 	}
-	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
-	wanted := req.Reasoning.Effort
-	req.Reasoning.Effort = cfg.ClampReasoningEffort(wanted)
-	slog.Info("adaptive reasoning: tier applied",
+	// exclude is the inverse of showReasoning (cfg.ShowReasoning / AURA_SHOW_REASONING):
+	// exclude:true (default) withholds the reasoning text — verified live to yield ZERO
+	// reasoning deltas in the stream, so the consumer surfaces (CLI 💭, Telegram live
+	// window) see nothing; exclude:false streams the real CoT for display. The reasoning
+	// tokens are generated and billed either way (exclude only gates the text), so
+	// surfacing reasoning costs only the bandwidth of the deltas, not extra tokens.
+	req.Reasoning = llm.ReasoningConfig{Effort: cfg.ClampReasoningEffort(effort), Exclude: new(!cfg.ShowReasoning)}
+	slog.Info("adaptive reasoning: effort applied",
 		"target", redact.Line(llm.ReasoningTarget(provider, cfg.BaseURL).String()),
-		"tier", string(tier), "effort", string(req.Reasoning.Effort),
+		"effort", string(req.Reasoning.Effort),
 		// Name the substitution when one happened: an effort that silently differs from
-		// the tier is the kind of thing that has to be readable in a log, not inferred.
-		"requested", string(wanted), "clamped", wanted != req.Reasoning.Effort)
+		// the decision is the kind of thing that has to be readable in a log, not inferred.
+		"requested", string(effort), "clamped", effort != req.Reasoning.Effort)
 }
 
 // ApplyFixedReasoning forces a per-turn reasoning EFFORT chosen by the user (the web
 // Composer selector, D-02) onto the main request, BYPASSING the adaptive classifier.
-// Unlike ApplyAdaptiveReasoning it is orthogonal to cfg.AdaptiveReasoning — an explicit
+// Unlike ApplyAdaptiveEffort it is orthogonal to cfg.AdaptiveReasoning — an explicit
 // selection must fire even when adaptive tiering is off — and it gates on the GENERALIZED
 // IsReasoningTarget, so a fixed effort reaches every supported reasoning backend
 // (D-08). An empty effort is the "auto" sentinel: a no-op that leaves the adaptive/plain
 // path byte-identical (D-04, zero regression). exclude is derived from cfg.ShowReasoning
-// EXACTLY as ReasoningTier.reasoning() does — the selector controls effort, never CoT
+// EXACTLY as ApplyAdaptiveEffort does — the selector controls effort, never CoT
 // visibility (D-10). Like the adaptive path it never touches MaxTokens (the 2026-06-14
 // contract: capping the output budget by tier truncated tool-call arguments mid-JSON).
 func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effort llm.ReasoningEffort) {
@@ -115,7 +119,7 @@ func ApplyFixedReasoning(req *llm.Request, provider string, cfg llm.Config, effo
 // reasoning projection. It delegates to the neutral llm.ReasoningTarget classifier
 // (landed by 37E-02) so OpenRouter recognition has a single source of truth; the
 // result is byte-identical to the historical inline string check, so the ADAPTIVE-path
-// callers (ApplyAdaptiveReasoning, adaptiveReasoningTier) are unchanged (D-04).
+// callers (ApplyAdaptiveEffort, adaptiveReasoningTier) are unchanged (D-04).
 func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 	return llm.ReasoningTarget(provider, baseURL) == llm.ReasoningTargetOpenRouter
 }
@@ -123,7 +127,7 @@ func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 // IsReasoningTarget reports whether provider/baseURL is ANY recognized reasoning
 // backend (D-08). BOTH the fixed per-turn effort override and the adaptive path gate on
 // it: the adaptive path was OpenRouter-only until 2026-08-31, which left the classifier
-// choosing a tier that no other backend ever received (see ApplyAdaptiveReasoning).
+// choosing a tier that no other backend ever received (see ApplyAdaptiveEffort).
 func IsReasoningTarget(provider, baseURL string) bool {
 	switch llm.ReasoningTarget(provider, baseURL) {
 	case llm.ReasoningTargetOpenRouter, llm.ReasoningTargetLlamaCpp, llm.ReasoningTargetOllama, llm.ReasoningTargetChatGPT:
@@ -133,7 +137,8 @@ func IsReasoningTarget(provider, baseURL string) bool {
 	}
 }
 
-// reasoning maps a tier to the OpenRouter reasoning object. Verified live against
+// Effort maps a tier to the effort it asks for — the one tier→effort mapping (spec
+// 2026-10-06: a tier becomes an effort only here). Verified live against
 // DeepSeek-V4 Flash on 2026-06-11 (scripts/deepseek_reasoning_probe.py + controls;
 // regression-guarded by adaptive_reasoning_live_e2e_test.go):
 //
@@ -147,24 +152,20 @@ func IsReasoningTarget(provider, baseURL string) bool {
 //   - exclude:true redacts the chain-of-thought from the wire but does NOT cap it; and
 //     max_tokens bounds only the VISIBLE answer (probe: reasoning ran to ~8351 tokens
 //     past a 4096 cap and still answered cleanly). Because that ceiling truncates the
-//     visible output — including tool-call arguments — the tier NEVER sets it; the
+//     visible output — including tool-call arguments — the effort NEVER sets it; the
 //     output budget stays at the operator's cfg.MaxTokens (the 2026-06-14 fix).
 //
-// exclude is the inverse of showReasoning (cfg.ShowReasoning / AURA_SHOW_REASONING):
-// exclude:true (default) withholds the reasoning text — verified live to yield ZERO
-// reasoning deltas in the stream, so the consumer surfaces (CLI 💭, Telegram live
-// window) see nothing; exclude:false streams the real CoT for display. The reasoning
-// tokens are generated and billed either way (exclude only gates the text), so
-// surfacing reasoning costs only the bandwidth of the deltas, not extra tokens.
-func (t ReasoningTier) reasoning(showReasoning bool) llm.ReasoningConfig {
-	exclude := new(!showReasoning)
+// An invalid tier maps to "", which ApplyAdaptiveEffort treats as "no effort decided".
+func (t ReasoningTier) Effort() llm.ReasoningEffort {
 	switch t {
 	case ReasoningTierHigh:
-		return llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: exclude}
+		return llm.ReasoningEffortHigh
 	case ReasoningTierLow:
-		return llm.ReasoningConfig{Effort: llm.ReasoningEffortLow, Exclude: exclude}
+		return llm.ReasoningEffortLow
+	case ReasoningTierNone:
+		return llm.ReasoningEffortNone
 	default:
-		return llm.ReasoningConfig{Effort: llm.ReasoningEffortNone, Exclude: exclude}
+		return ""
 	}
 }
 

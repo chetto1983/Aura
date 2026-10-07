@@ -2,6 +2,11 @@ package prompt
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"maps"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -143,11 +148,19 @@ var trivialGreetings = map[string]struct{}{
 	"a dopo": {}, "thanks": {}, "thank you": {}, "a presto!": {},
 }
 
+// ReasoningVerdict is the tier of a turn's nearest exemplars and by how much its score led
+// the runner-up's. A small margin is an uncertain verdict: the turn sits between tiers, and
+// the turn reading asks the teacher below teacherMargin (internal/agent).
+type ReasoningVerdict struct {
+	Tier   ReasoningTier
+	Margin float64
+}
+
 // ReasoningClassifier maps a user turn to the reasoning tier of its nearest anchors,
 // using Aura's local embedding sidecar. It replaces the per-turn LLM "router"
 // round-trip (the adaptive-reasoning latency root cause) with a single ~10ms local
 // embed. The nearest-exemplar math lives in semindex.Classifier; this type owns only
-// the tier policy (defs/seeds, greeting pre-filter, soft fallback).
+// the tier policy (defs/seeds, the greeting allowlist, soft fallback).
 //
 // A centroid used to score each tier, and lost every turn whose intent the tier held
 // as one exemplar among many. Scoring the 3 nearest exemplars instead, with the
@@ -171,33 +184,67 @@ func NewReasoningClassifier(embed Embedder) *ReasoningClassifier {
 	return &ReasoningClassifier{embed: embed}
 }
 
-// Classify returns the reasoning tier for userText and true when it produced a
-// usable verdict. It returns ("", false) on any embedding failure so the caller
-// can fall back conservatively; the embedding path is an optimization, never a
-// hard dependency. The greeting pre-filter answers without any embed call.
-func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (ReasoningTier, bool) {
+// Classify returns the reasoning tier of userText's nearest exemplars, with its margin, and
+// true when it produced a usable verdict. It returns false on any embedding failure so the
+// caller can fall back conservatively; the embedding path is an optimization, never a hard
+// dependency. Greetings are the caller's (IsTrivialGreeting): only it knows whether the turn
+// stands alone.
+func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (ReasoningVerdict, bool) {
 	if c == nil {
-		return "", false
-	}
-	if g := normalizeForGreeting(userText); g != "" {
-		if _, ok := trivialGreetings[g]; ok {
-			return ReasoningTierNone, true
-		}
+		return ReasoningVerdict{}, false
 	}
 	cls, err := c.ensureAnchors(ctx)
 	if err != nil {
-		return "", false
+		return ReasoningVerdict{}, false
 	}
 	vecs, err := c.embed.Embed(ctx, []string{userText})
 	if err != nil || len(vecs) != 1 || len(vecs[0]) == 0 {
-		return "", false
+		return ReasoningVerdict{}, false
 	}
 	verdict := cls.RankNearest(vecs[0], tierNeighbours)
 	tier := ReasoningTier(verdict.Label)
 	if !verdict.Ok || !tier.Valid() {
-		return "", false
+		return ReasoningVerdict{}, false
 	}
-	return tier, true
+	return ReasoningVerdict{Tier: tier, Margin: verdict.Margin}, true
+}
+
+// IsTrivialGreeting reports whether text, normalized, is an exact entry of the greeting
+// allowlist. It says nothing about context: "ok" after an action request acknowledges that
+// request, and the caller must not treat it as a greeting.
+func IsTrivialGreeting(text string) bool {
+	normalized := normalizeForGreeting(text)
+	if normalized == "" {
+		return false
+	}
+	_, ok := trivialGreetings[normalized]
+	return ok
+}
+
+// ReasoningPolicyFingerprint digests every input the seed bank and the teacher decide from:
+// the neighbour count, each tier's definition, seeds and effort, the greeting allowlist and
+// the router prompt. The turn reading folds it into its policy version, so a label decided
+// under different seeds or a different prompt is never reused.
+func ReasoningPolicyFingerprint() string {
+	h := sha256.New()
+	write := func(part string) {
+		h.Write([]byte(part))
+		h.Write([]byte{0})
+	}
+	write(strconv.Itoa(tierNeighbours))
+	for _, tier := range classifierTierOrder {
+		write(string(tier))
+		write(string(tier.Effort()))
+		write(reasoningTierDefs[tier])
+		for _, seed := range reasoningTierSeeds[tier] {
+			write(seed)
+		}
+	}
+	for _, greeting := range slices.Sorted(maps.Keys(trivialGreetings)) {
+		write(greeting)
+	}
+	write(ReasoningRouterSystemPrompt)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // ensureAnchors builds the per-tier exemplar bank once (def + seeds). A build failure

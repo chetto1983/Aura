@@ -31,7 +31,7 @@ func newBuildReqAgent(t *testing.T, cfg llm.Config) *LlmAgent {
 
 // TestBuildRequest_BranchParity pins the post-refactor invariant: buildRequest
 // runs EXACTLY ONE builder per branch and its output is byte-identical to the
-// corresponding old chosen request — BuildWithReasoningTier when adaptiveTierOK,
+// corresponding old chosen request — BuildWithAdaptiveEffort when an effort was decided,
 // Build otherwise. The discarded Build() (a wasted RenderToolDefs() per turn,
 // QUAL-02/T7) is eliminated without changing the emitted request.
 func TestBuildRequest_BranchParity(t *testing.T) {
@@ -52,20 +52,20 @@ func TestBuildRequest_BranchParity(t *testing.T) {
 		Remaining: 9,
 		Workspace: a.workspace,
 	}
-	tier := prompt.ReasoningTierHigh
+	effort := prompt.ReasoningTierHigh.Effort()
 
-	// adaptiveTierOK == true → must equal BuildWithReasoningTier output.
-	gotTier := a.buildRequest(budget, tier, true)
-	wantTier := a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, tier, a.activated)
+	// A decided effort → must equal BuildWithAdaptiveEffort output.
+	gotTier := a.buildRequest(budget, effort)
+	wantTier := a.builder.BuildWithAdaptiveEffort(a.history, a.registry, a.cfg.Provider, a.cfg, budget, effort, a.activated)
 	if !reflect.DeepEqual(gotTier, wantTier) {
-		t.Fatalf("tierOK branch: buildRequest != BuildWithReasoningTier\n got=%+v\nwant=%+v", gotTier, wantTier)
+		t.Fatalf("effort branch: buildRequest != BuildWithAdaptiveEffort\n got=%+v\nwant=%+v", gotTier, wantTier)
 	}
 
-	// adaptiveTierOK == false → must equal plain Build output.
-	gotPlain := a.buildRequest(budget, tier, false)
+	// No effort → must equal plain Build output.
+	gotPlain := a.buildRequest(budget, "")
 	wantPlain := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget, a.activated)
 	if !reflect.DeepEqual(gotPlain, wantPlain) {
-		t.Fatalf("non-tier branch: buildRequest != Build\n got=%+v\nwant=%+v", gotPlain, wantPlain)
+		t.Fatalf("no-effort branch: buildRequest != Build\n got=%+v\nwant=%+v", gotPlain, wantPlain)
 	}
 
 	// Guard against a trivially-passing test: with adaptive reasoning ON the two

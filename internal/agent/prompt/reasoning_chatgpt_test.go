@@ -31,7 +31,7 @@ func TestChatGPTAdaptiveEffortHonorsMandatoryModel(t *testing.T) {
 		{ReasoningTierNone, llm.ReasoningEffortLow}, {ReasoningTierLow, llm.ReasoningEffortLow}, {ReasoningTierHigh, llm.ReasoningEffortHigh},
 	} {
 		req := llm.Request{}
-		ApplyAdaptiveReasoning(&req, cfg.Provider, cfg, tc.tier)
+		ApplyAdaptiveEffort(&req, cfg.Provider, cfg, tc.tier.Effort())
 		if req.Reasoning.Effort != tc.want || req.Reasoning.Exclude == nil || *req.Reasoning.Exclude {
 			t.Fatalf("tier %q produced %#v", tc.tier, req.Reasoning)
 		}
