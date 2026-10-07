@@ -67,8 +67,8 @@ type TurnRecall struct {
 
 // TurnReading is what the runner hands one dispatched user turn so the agent can read it
 // against the identity's past turns. The zero value is what a resumed run, a branch re-run,
-// a headless and a sub-agent run get: no memory, and the seed bank's verdict whatever its
-// margin, with the teacher asked only when no classifier is wired.
+// a headless and a sub-agent run get: no memory, the seed bank's verdict whatever its
+// margin, and never the teacher, since such a run has no row to label.
 type TurnReading struct {
 	Recaller TurnRecaller
 	// Text is the message as typed, without the context blocks the model receives with it.
@@ -96,6 +96,9 @@ type TurnDecision struct {
 	RouteKey        string
 	PolicyVersion   string
 	OriginRef       string
+	// AskTeacher asks the runner to have the teacher label this turn in the background, once
+	// the decision is written. It is never persisted: the label it may become is.
+	AskTeacher bool
 }
 
 // contextKeyFormat versions the encoding below. It is part of every key, so a change of

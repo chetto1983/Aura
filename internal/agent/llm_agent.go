@@ -130,7 +130,8 @@ type LlmAgent struct {
 	breaker *llm.Breaker
 
 	// classifier is the local embedding-based reasoning-tier router (nil when no
-	// embedder is wired). When present, the turn reading uses its verdict; the teacher covers turns it is unsure of.
+	// embedder is wired). When present, the turn reading uses its verdict; the teacher labels
+	// in the background the dispatched turns it is unsure of.
 	classifier tierClassifier
 
 	// reasoningOverride is the FIXED per-turn effort selected in the web Composer (37E),

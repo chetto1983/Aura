@@ -46,7 +46,7 @@ type evalRecord struct {
 	baseline       evalArm
 	recall         evalArm
 	recallMiss     string
-	teacher        teacherOutcome
+	teacher        string
 	labelDistance  float64
 	recallDuration time.Duration
 	reading        time.Duration
@@ -210,8 +210,7 @@ func replayTrial(t *testing.T, env evalEnv, set evalSet, split string, trial int
 				trial: trial, split: conv.Split, turn: turn,
 				baseline:   evalArm{effort: baseline.EffortRequested, source: baseline.EffortSource},
 				recall:     evalArm{effort: decision.EffortRequested, source: decision.EffortSource},
-				recallMiss: read.recallMiss,
-				teacher:    read.teacher, labelDistance: read.label.Distance,
+				recallMiss: read.recallMiss, labelDistance: read.label.Distance,
 				recallDuration: read.recallDuration, reading: reading,
 			}
 			if baseRead.seedOK {

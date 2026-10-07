@@ -2,9 +2,9 @@
 
 // Live validation of the SHIPPED agent wiring: a real LlmAgent with the granite
 // embedder wired resolves its reasoning tier through the embedding classifier
-// (readTurn) without a teacher answer: the client refuses every router request, so an
-// uncertain verdict keeps the seed bank's tier. Proves the production
-// path — not a spike harness — uses the local classifier on the OpenRouter gate.
+// (readTurn). readTurn never asks the teacher (the runner does, in the background), and
+// the client refuses every request all the same. Proves the production path — not a spike
+// harness — uses the local classifier on the OpenRouter gate.
 //
 //	go test -tags reasoning_live -run TestAdaptiveReasoningTierLive ./internal/agent/
 package agent
@@ -79,12 +79,11 @@ func TestAdaptiveReasoningTierLive(t *testing.T) {
 			t.Errorf("readTurn(%q) = %q, want %q", tc.prompt, decision.EffortRequested, tc.want.Effort())
 			continue
 		}
-		t.Logf("ok: %q -> %s via %s (margin %.3f, teacher %q)", tc.prompt, decision.EffortRequested, decision.EffortSource, read.seedMargin, read.teacher)
+		t.Logf("ok: %q -> %s via %s (margin %.3f, ask teacher %v)", tc.prompt, decision.EffortRequested, decision.EffortSource, read.seedMargin, decision.AskTeacher)
 	}
 }
 
-// refusingTeacher answers no router request, so an uncertain turn keeps its seed verdict and
-// this test still measures the seed bank alone.
+// refusingTeacher answers no request, so this test measures the seed bank alone.
 type refusingTeacher struct{}
 
 func (refusingTeacher) Stream(context.Context, llm.Request) (<-chan llm.Chunk, error) {

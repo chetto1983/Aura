@@ -175,13 +175,13 @@ func TestLiveReasoning_HighTierNoStarvation(t *testing.T) {
 }
 
 // C3: the tier router's reasoning:{enabled:false} suppresses reasoning while still
-// emitting the JSON classification — the off-switch the teacher, asked on uncertain turns,
+// emitting the JSON classification — the off-switch the background teacher, asked on uncertain turns,
 // relies on.
 func TestLiveReasoning_RouterEnabledFalseOffSwitch(t *testing.T) {
 	requireLiveLLM(t)
 	cfg := liveCfg()
 	disabled := false
-	// Mirrors the hand-built router request of internal/agent's askTeacher.
+	// Mirrors the hand-built router request of internal/agent.AskTeacher.
 	req := llm.Request{
 		Model: cfg.Model,
 		Messages: []llm.Message{

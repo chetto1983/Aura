@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
-	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -42,17 +42,17 @@ func (c *teacherClient) Stream(ctx context.Context, _ llm.Request) (<-chan llm.C
 	return ch, nil
 }
 
-func teacherAgent(client llm.Client) *LlmAgent {
-	return NewLlmAgent(LlmAgentConfig{
-		Client:    client,
-		LLM:       llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 1},
-		Registry:  tools.NewRegistry(),
-		SessionID: "teacher-session",
-	})
+// teacherBound stands in for the runner's teacher timeout: AskTeacher takes its bound from
+// the caller's context.
+func teacherBound(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	t.Cleanup(cancel)
+	return ctx
 }
 
-// Every attempt is counted with its outcome, whatever the caller then decides (spec,
-// "Teacher usage"): a timeout followed by a seed decision is still a teacher attempt.
+// Every attempt is counted with its outcome, whatever the caller then does with it (spec,
+// "Teacher usage").
 func TestAskTeacherNamesEveryOutcomeAndCountsIt(t *testing.T) {
 	recorded, reader := newTestAgentMetrics(t)
 	previous := metrics
@@ -61,23 +61,28 @@ func TestAskTeacherNamesEveryOutcomeAndCountsIt(t *testing.T) {
 
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
-	for _, test := range []struct {
+	cases := []struct {
 		name    string
 		ctx     context.Context
-		client  *teacherClient
+		client  llm.Client
 		tier    prompt.ReasoningTier
-		outcome teacherOutcome
+		outcome string
 	}{
-		{name: "success", ctx: context.Background(), client: &teacherClient{text: `{"tier":"high"}`}, tier: prompt.ReasoningTierHigh, outcome: teacherSuccess},
-		{name: "invalid", ctx: context.Background(), client: &teacherClient{text: "probably high"}, outcome: teacherInvalid},
-		{name: "error", ctx: context.Background(), client: &teacherClient{openErr: errors.New("401 unauthorized")}, outcome: teacherError},
-		{name: "timeout", ctx: context.Background(), client: &teacherClient{hang: true}, outcome: teacherTimeout},
-		{name: "canceled", ctx: canceled, client: &teacherClient{hang: true}, outcome: teacherCanceled},
-	} {
+		{name: "success", ctx: teacherBound(t), client: &teacherClient{text: `{"tier":"high"}`}, tier: prompt.ReasoningTierHigh, outcome: TeacherSuccess},
+		{name: "invalid", ctx: teacherBound(t), client: &teacherClient{text: "probably high"}, outcome: TeacherInvalid},
+		{name: "error", ctx: teacherBound(t), client: &teacherClient{openErr: errors.New("401 unauthorized")}, outcome: TeacherError},
+		{name: "no client", ctx: teacherBound(t), outcome: TeacherError},
+		{name: "timeout", ctx: teacherBound(t), client: &teacherClient{hang: true}, outcome: TeacherTimeout},
+		{name: "silent deadline", ctx: teacherBound(t), client: &teacherClient{silentDeadline: true}, outcome: TeacherTimeout},
+		{name: "canceled", ctx: canceled, client: &teacherClient{hang: true}, outcome: TeacherCanceled},
+	}
+	want := map[string]int64{}
+	for _, test := range cases {
+		want[test.outcome]++
 		t.Run(test.name, func(t *testing.T) {
-			tier, outcome := teacherAgent(test.client).askTeacher(test.ctx, "che tempo fa domani a Cuneo?")
+			tier, outcome := AskTeacher(test.ctx, test.client, "m", "che tempo fa domani a Cuneo?")
 			if tier != test.tier || outcome != test.outcome {
-				t.Fatalf("askTeacher = %q, %q; want %q, %q", tier, outcome, test.tier, test.outcome)
+				t.Fatalf("AskTeacher = %q, %q; want %q, %q", tier, outcome, test.tier, test.outcome)
 			}
 		})
 	}
@@ -88,30 +93,31 @@ func TestAskTeacherNamesEveryOutcomeAndCountsIt(t *testing.T) {
 	}
 	seen := map[string]int64{}
 	for _, point := range sum.DataPoints {
-		for _, outcome := range []string{"success", "invalid", "error", "timeout", "canceled"} {
+		for outcome := range want {
 			if hasOTelLabel(point.Attributes.ToSlice(), "outcome", outcome) {
 				seen[outcome] += point.Value
 			}
 		}
 	}
-	for _, outcome := range []string{"success", "invalid", "error", "timeout", "canceled"} {
-		if seen[outcome] != 1 {
-			t.Errorf("teacher attempts with outcome %s = %d, want 1 (all: %v)", outcome, seen[outcome], seen)
+	for outcome, count := range want {
+		if seen[outcome] != count {
+			t.Errorf("teacher attempts with outcome %s = %d, want %d (all: %v)", outcome, seen[outcome], count, seen)
 		}
 	}
 }
 
-func TestAskTeacherCountsAStreamTheDeadlineClosedSilentlyAsATimeout(t *testing.T) {
-	recorded, reader := newTestAgentMetrics(t)
-	previous := metrics
-	metrics = recorded
-	t.Cleanup(func() { metrics = previous })
-
-	if tier, outcome := teacherAgent(&teacherClient{silentDeadline: true}).askTeacher(context.Background(), "che tempo fa domani a Cuneo?"); tier != "" || outcome != teacherTimeout {
-		t.Fatalf("askTeacher = %q, %q; want no tier and %q", tier, outcome, teacherTimeout)
+// The teacher is the router prompt over the typed message, on the caller's model, with no
+// tools and no reasoning.
+func TestAskTeacherSendsTheToolFreeRouterRequest(t *testing.T) {
+	client := &readingClient{}
+	AskTeacher(teacherBound(t), client, "route-model", "che tempo fa domani a Cuneo?")
+	if len(client.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(client.requests))
 	}
-	sum, ok := findOTelMetric(t, reader, "aura.agent.teacher.attempt").Data.(metricdata.Sum[int64])
-	if !ok || len(sum.DataPoints) != 1 || !hasOTelLabel(sum.DataPoints[0].Attributes.ToSlice(), "outcome", "timeout") || sum.DataPoints[0].Value != 1 {
-		t.Fatalf("teacher attempts = %+v, want one timeout", sum.DataPoints)
+	req := client.requests[0]
+	if req.Model != "route-model" || req.ToolChoice != "none" || len(req.Tools) != 0 || req.MaxTokens != 32 ||
+		req.Reasoning.Enabled == nil || *req.Reasoning.Enabled || len(req.Messages) != 2 ||
+		req.Messages[0].Content != prompt.ReasoningRouterSystemPrompt || req.Messages[1].Content != "che tempo fa domani a Cuneo?" {
+		t.Fatalf("teacher request = %+v, want the tool-free router request over the typed message", req)
 	}
 }

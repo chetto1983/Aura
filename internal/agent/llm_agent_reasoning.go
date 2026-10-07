@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
@@ -30,52 +29,52 @@ func resolveClassifier(cfg LlmAgentConfig) tierClassifier {
 	return nil
 }
 
-// teacherOutcome is how one synchronous teacher attempt ended.
-type teacherOutcome string
-
+// The outcomes AskTeacher returns and counts.
 const (
-	teacherSuccess  teacherOutcome = "success"
-	teacherTimeout  teacherOutcome = "timeout"
-	teacherInvalid  teacherOutcome = "invalid"
-	teacherError    teacherOutcome = "error"
-	teacherCanceled teacherOutcome = "canceled"
+	TeacherSuccess  = "success"
+	TeacherTimeout  = "timeout"
+	TeacherInvalid  = "invalid"
+	TeacherError    = "error"
+	TeacherCanceled = "canceled"
 )
 
-// askTeacher asks the router prompt once, synchronously, for the tier of user's request: the
-// teacher of the turn-recall spec, on the turn's own client and route, bounded by
-// reasoningRouterTimeout. Every attempt is counted with its outcome.
-func (a *LlmAgent) askTeacher(ctx context.Context, user string) (tier prompt.ReasoningTier, outcome teacherOutcome) {
-	defer func() { recordTeacherAttempt(string(outcome)) }()
-	routeCtx, cancel := context.WithTimeout(ctx, a.reasoningRouterTimeout())
-	defer cancel()
-	routeCtx, llmEnd := llmCallBoundary.Start(routeCtx)
+// AskTeacher asks the router prompt once for the tier of user's request: the teacher of the
+// turn-recall spec. The runner asks it in the background, on the turn's own client and
+// model, once the turn's decision is written, so its answer labels the turn for later ones
+// and never decides this one. ctx carries the bound. Like conversations.GenerateTitle it
+// drains the stream. Every attempt is counted with its outcome.
+func AskTeacher(ctx context.Context, client llm.Client, model, user string) (tier prompt.ReasoningTier, outcome string) {
+	defer func() { recordTeacherAttempt(outcome) }()
+	ctx, llmEnd := llmCallBoundary.Start(ctx)
 	var boundaryErr error
 	defer llmEnd.PanicSafe(&boundaryErr)
 	enabled := false
 	req := llm.Request{
-		Model:       a.cfg.Model,
+		Model:       model,
 		Messages:    []llm.Message{{Role: llm.RoleSystem, Content: prompt.ReasoningRouterSystemPrompt}, {Role: llm.RoleUser, Content: user}},
 		Temperature: 0,
 		MaxTokens:   32,
 		Reasoning:   llm.ReasoningConfig{Enabled: &enabled},
-		SessionID:   a.sessionID,
 		ToolChoice:  "none",
 	}
 	reasoningtrace.Record("adaptive_reasoning_router_request", map[string]any{
-		"thread_id":  a.sessionID,
 		"model":      req.Model,
 		"max_tokens": req.MaxTokens,
 		"reasoning":  req.Reasoning,
 		"user":       user,
 	})
 
-	fail := func(kind string, err error) (prompt.ReasoningTier, teacherOutcome) {
+	fail := func(kind string, err error) (prompt.ReasoningTier, string) {
 		boundaryErr = err
 		recordLLMError(llmErrorKind(kind, err))
 		reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": err.Error()})
-		return "", teacherFailure(routeCtx, err)
+		return "", teacherFailure(ctx, err)
 	}
-	ch, err := a.streamWithOpenRetry(routeCtx, req, "adaptive_reasoning_router")
+	if client == nil {
+		return fail("reasoning_router_open", errors.New("nil client"))
+	}
+	recordLLMStreamOpen()
+	ch, err := client.Stream(ctx, req)
 	if err != nil {
 		return fail("reasoning_router_open", err)
 	}
@@ -91,39 +90,27 @@ func (a *LlmAgent) askTeacher(ctx context.Context, user string) (tier prompt.Rea
 	}
 	// A provider can close the stream at the deadline with no error and no text (measured
 	// on the lab VM, 2026-10-07: attempts ending at 2001 ms read as invalid answers).
-	if err := routeCtx.Err(); err != nil {
+	if err := ctx.Err(); err != nil {
 		return fail("reasoning_router_stream", err)
 	}
 	raw := strings.TrimSpace(b.String())
 	tier = prompt.ParseReasoningRouterTier(raw)
 	if !tier.Valid() {
 		reasoningtrace.Record("adaptive_reasoning_router_invalid", map[string]any{"raw": raw})
-		return "", teacherInvalid
+		return "", TeacherInvalid
 	}
 	reasoningtrace.Record("adaptive_reasoning_router_decision", map[string]any{"raw": raw, "tier": tier})
-	return tier, teacherSuccess
+	return tier, TeacherSuccess
 }
 
-// teacherFailure names why the teacher gave no answer: its own deadline, the turn's
+// teacherFailure names why the teacher gave no answer: the caller's deadline, its
 // cancellation, or anything else.
-func teacherFailure(ctx context.Context, err error) teacherOutcome {
+func teacherFailure(ctx context.Context, err error) string {
 	switch {
 	case errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return teacherTimeout
+		return TeacherTimeout
 	case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
-		return teacherCanceled
+		return TeacherCanceled
 	}
-	return teacherError
-}
-
-func (a *LlmAgent) reasoningRouterTimeout() time.Duration {
-	const maxReasoningRouterTimeout = 2 * time.Second
-	total := time.Duration(a.cfg.TotalTimeoutSec) * time.Second
-	if total <= 0 {
-		return maxReasoningRouterTimeout
-	}
-	if total < maxReasoningRouterTimeout {
-		return total
-	}
-	return maxReasoningRouterTimeout
+	return TeacherError
 }

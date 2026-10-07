@@ -153,6 +153,6 @@ type LlmAgentConfig struct {
 	BackgroundCalls *tools.BackgroundCalls
 	// TurnReading is what the runner hands a dispatched user turn: the identity's memory, the
 	// turn's context key and source, and where its effort decision goes. The zero value reads
-	// the turn from seeds and the teacher alone.
+	// the turn from seeds alone.
 	TurnReading TurnReading
 }

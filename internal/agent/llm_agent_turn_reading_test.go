@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"slices"
 	"strings"
@@ -31,9 +30,8 @@ func (c *fakeClassifier) Classify(_ context.Context, text string) (prompt.Reason
 	return c.verdict, c.ok
 }
 
-// readingClient answers each Stream with the next scripted text; "" fails to open.
+// readingClient records each request and answers it with plain text.
 type readingClient struct {
-	answers   []string
 	requests  []llm.Request
 	onRequest func()
 }
@@ -43,15 +41,8 @@ func (c *readingClient) Stream(_ context.Context, req llm.Request) (<-chan llm.C
 		c.onRequest()
 	}
 	c.requests = append(c.requests, req)
-	answer := "Fatto."
-	if index := len(c.requests) - 1; index < len(c.answers) {
-		answer = c.answers[index]
-	}
-	if answer == "" {
-		return nil, errors.New("teacher unavailable")
-	}
 	ch := make(chan llm.Chunk, 2)
-	ch <- llm.Chunk{Text: answer}
+	ch <- llm.Chunk{Text: "Fatto."}
 	ch <- llm.Chunk{FinishReason: "stop"}
 	close(ch)
 	return ch, nil
@@ -91,14 +82,13 @@ type readingSetup struct {
 	text       string
 	override   llm.ReasoningEffort
 	classifier tierClassifier
-	teacher    []string
 	reading    TurnReading
 	cfg        func(*llm.Config)
 }
 
 func newReadingAgent(t *testing.T, setup readingSetup) (*LlmAgent, *readingClient) {
 	t.Helper()
-	client := &readingClient{answers: setup.teacher}
+	client := &readingClient{}
 	cfg := llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1",
 		TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096}
 	if setup.cfg != nil {
@@ -186,8 +176,7 @@ func TestReadTurnDecidesFromTheTypedMessage(t *testing.T) {
 	recaller := &fakeRecaller{}
 	reading := memoryReading(recaller)
 	reading.Text = typed
-	a, client := newReadingAgent(t, readingSetup{text: composedCatalog + typed, classifier: classifier,
-		teacher: []string{`{"tier":"high"}`}, reading: reading})
+	a, _ := newReadingAgent(t, readingSetup{text: composedCatalog + typed, classifier: classifier, reading: reading})
 
 	a.readTurn(context.Background())
 	if !slices.Equal(classifier.texts, []string{typed}) {
@@ -195,9 +184,6 @@ func TestReadTurnDecidesFromTheTypedMessage(t *testing.T) {
 	}
 	if len(recaller.requests) != 1 || recaller.requests[0].Text != typed {
 		t.Fatalf("recall requests = %+v, want one reading the typed text", recaller.requests)
-	}
-	if len(client.requests) != 1 || client.requests[0].Messages[1].Content != typed {
-		t.Fatalf("teacher requests = %+v, want one asking about the typed text", client.requests)
 	}
 }
 
@@ -264,71 +250,59 @@ func TestReadTurnReclampsALabelAndRefusesAnUnknownEffort(t *testing.T) {
 	}
 }
 
-func TestReadTurnSeedsAndTeacherFollowTheMargin(t *testing.T) {
+// The turn never waits for the teacher (spec, "Amendment 2026-10-07"): readTurn decides from
+// what it has, and asks for a background label only when the seeds are uncertain or absent
+// and a dispatched user row exists to carry it. Resumed, headless and sub-agent runs have
+// no such row.
+func TestReadTurnAsksTheTeacherOnlyForAnUncertainDispatchedTurn(t *testing.T) {
+	dispatched := TurnReading{SourceRef: "postgres://aura/conversations/now/turns/1"}
+	uncertain := func() *fakeClassifier {
+		return &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierLow, Margin: 0.05}, ok: true}
+	}
+	labelled := memoryReading(&fakeRecaller{recall: TurnRecall{UserLabels: []RecalledTurn{recalledLabel(EffortSourceUser, "high", 0.02)}}})
+	greeting := dispatched
+	greeting.Standalone = true
 	for _, test := range []struct {
-		name       string
-		classifier *fakeClassifier
-		teacher    []string
-		source     string
-		effort     llm.ReasoningEffort
-		asked      int
+		name   string
+		setup  readingSetup
+		source string
+		effort llm.ReasoningEffort
+		ask    bool
 	}{
-		{name: "seeds above the margin", classifier: &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierHigh, Margin: 0.075}, ok: true}, source: EffortSourceSeeds, effort: llm.ReasoningEffortHigh},
-		{name: "teacher below the margin", classifier: &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierLow, Margin: 0.05}, ok: true}, teacher: []string{`{"tier":"high"}`}, source: EffortSourceTeacher, effort: llm.ReasoningEffortHigh, asked: 1},
-		{name: "seeds when the teacher fails", classifier: &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierLow, Margin: 0.05}, ok: true}, teacher: []string{""}, source: EffortSourceSeeds, effort: llm.ReasoningEffortLow, asked: 1},
-		{name: "seeds when the teacher answers nonsense", classifier: &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierNone, Margin: 0.01}, ok: true}, teacher: []string{"maybe"}, source: EffortSourceSeeds, effort: llm.ReasoningEffortNone, asked: 1},
-		{name: "static low when the embedding fails", classifier: &fakeClassifier{ok: false}, source: EffortSourceFallback, effort: llm.ReasoningEffortLow},
+		{name: "seeds below the margin", setup: readingSetup{classifier: uncertain(), reading: dispatched},
+			source: EffortSourceSeeds, effort: llm.ReasoningEffortLow, ask: true},
+		{name: "no classifier", setup: readingSetup{reading: dispatched},
+			source: EffortSourceFallback, effort: llm.ReasoningEffortLow, ask: true},
+		{name: "seeds at the margin", setup: readingSetup{reading: dispatched,
+			classifier: &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierHigh, Margin: teacherMargin}, ok: true}},
+			source: EffortSourceSeeds, effort: llm.ReasoningEffortHigh},
+		{name: "the embedding fails", setup: readingSetup{classifier: &fakeClassifier{ok: false}, reading: dispatched},
+			source: EffortSourceFallback, effort: llm.ReasoningEffortLow},
+		{name: "an empty message", setup: readingSetup{text: "   ", classifier: uncertain(), reading: dispatched},
+			source: EffortSourceFallback, effort: llm.ReasoningEffortLow},
+		{name: "a reused label", setup: readingSetup{classifier: uncertain(), reading: labelled},
+			source: EffortSourceMemory, effort: llm.ReasoningEffortHigh},
+		{name: "a greeting", setup: readingSetup{text: "Buongiorno!", classifier: uncertain(), reading: greeting},
+			source: EffortSourceGreeting, effort: llm.ReasoningEffortNone},
+		{name: "a composer effort", setup: readingSetup{override: llm.ReasoningEffortHigh, classifier: uncertain(), reading: dispatched},
+			source: EffortSourceUser, effort: llm.ReasoningEffortHigh},
+		{name: "a route without effort", setup: readingSetup{classifier: uncertain(), reading: dispatched,
+			cfg: func(c *llm.Config) { c.AdaptiveReasoning = false }}},
+		{name: "no dispatched turn, seeds below the margin", setup: readingSetup{classifier: uncertain()},
+			source: EffortSourceSeeds, effort: llm.ReasoningEffortLow},
+		{name: "no dispatched turn, no classifier", setup: readingSetup{},
+			source: EffortSourceFallback, effort: llm.ReasoningEffortLow},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			dispatched := TurnReading{SourceRef: "postgres://aura/conversations/now/turns/1"}
-			a, client := newReadingAgent(t, readingSetup{classifier: test.classifier, teacher: test.teacher, reading: dispatched})
+			a, client := newReadingAgent(t, test.setup)
 			decision, _ := a.readTurn(context.Background())
-			if decision.EffortSource != test.source || decision.EffortRequested != test.effort {
-				t.Fatalf("decision = %+v, want %s/%s", decision, test.source, test.effort)
+			if decision.EffortSource != test.source || decision.EffortRequested != test.effort || decision.AskTeacher != test.ask {
+				t.Fatalf("decision = %+v, want %q/%q with AskTeacher %v", decision, test.source, test.effort, test.ask)
 			}
-			if len(client.requests) != test.asked {
-				t.Fatalf("teacher asked %d times, want %d", len(client.requests), test.asked)
+			if len(client.requests) != 0 {
+				t.Fatalf("readTurn sent %d LLM requests, want none: the teacher runs in the background", len(client.requests))
 			}
 		})
-	}
-}
-
-// A resumed, headless or sub-agent run has no dispatched user turn: its decision lands on no
-// row and teaches nothing, so it keeps the seed verdict rather than pay the teacher, as it
-// did before turn recall. Only with no classifier at all does it still ask the teacher.
-func TestReadTurnWithoutADispatchedTurnKeepsTheSeedVerdict(t *testing.T) {
-	uncertain := &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierHigh, Margin: 0.01}, ok: true}
-	a, client := newReadingAgent(t, readingSetup{classifier: uncertain, teacher: []string{`{"tier":"none"}`}})
-	if decision, read := a.readTurn(context.Background()); decision.EffortSource != EffortSourceSeeds ||
-		decision.EffortRequested != llm.ReasoningEffortHigh || len(client.requests) != 0 || read.teacher != "" {
-		t.Fatalf("decision = %+v after %d teacher requests, want the seed verdict and no teacher", decision, len(client.requests))
-	}
-
-	b, teacher := newReadingAgent(t, readingSetup{teacher: []string{`{"tier":"low"}`}})
-	if decision, _ := b.readTurn(context.Background()); decision.EffortSource != EffortSourceTeacher || len(teacher.requests) != 1 {
-		t.Fatalf("decision = %+v after %d teacher requests, want the teacher when no classifier is wired", decision, len(teacher.requests))
-	}
-
-	fixed, _ := newReadingAgent(t, readingSetup{classifier: uncertain, override: llm.ReasoningEffortLow})
-	if decision, _ := fixed.readTurn(context.Background()); decision.EffortSource != EffortSourceUser || decision.EffortRequested != llm.ReasoningEffortLow {
-		t.Fatalf("decision = %+v, want the composer's low", decision)
-	}
-}
-
-func TestReadTurnWithoutAClassifierUsesTheSameTeacher(t *testing.T) {
-	a, client := newReadingAgent(t, readingSetup{teacher: []string{`{"tier":"none"}`}})
-	if decision, read := a.readTurn(context.Background()); decision.EffortSource != EffortSourceTeacher ||
-		decision.EffortRequested != llm.ReasoningEffortNone || read.teacher != teacherSuccess {
-		t.Fatalf("decision = %+v (teacher %q), want teacher/none", decision, read.teacher)
-	}
-	if client.requests[0].ToolChoice != "none" || len(client.requests[0].Tools) != 0 {
-		t.Fatal("the teacher request is not the tool-free router request")
-	}
-
-	b, _ := newReadingAgent(t, readingSetup{teacher: []string{""}})
-	if decision, read := b.readTurn(context.Background()); decision.EffortSource != EffortSourceFallback ||
-		decision.EffortRequested != llm.ReasoningEffortLow || read.teacher != teacherError {
-		t.Fatalf("decision = %+v (teacher %q), want fallback/low with the failure recorded", decision, read.teacher)
 	}
 }
 
@@ -488,6 +462,22 @@ func TestTurnReadLogShowsTheOriginsVerbatim(t *testing.T) {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("turn-read log lacks %q:\n%s", want, logs.String())
 		}
+	}
+}
+
+// The turn-read line says whether a background label was asked for; the teacher's own
+// answer is logged by the runner's worker, so it has no keys here.
+func TestTurnReadLogSaysWhetherTheTeacherIsAsked(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	classifier := &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierLow, Margin: 0.01}, ok: true}
+	a, _ := newReadingAgent(t, readingSetup{classifier: classifier, reading: TurnReading{SourceRef: "postgres://aura/conversations/now/turns/1"}})
+	a.readTurn(context.Background())
+	if line := logs.String(); !strings.Contains(line, "ask_teacher=true") || strings.Contains(line, "teacher_tier=") || strings.Contains(line, "teacher_ms=") {
+		t.Fatalf("turn-read log = %s, want ask_teacher=true and no teacher answer keys", line)
 	}
 }
 
