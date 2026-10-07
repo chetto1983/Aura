@@ -1,9 +1,11 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"testing"
@@ -444,6 +446,25 @@ func TestRunPreloadsBeforeTheFirstRequestAndReportsTheDecisionOnce(t *testing.T)
 	}
 	if len(order) < 2 || order[0] != "decision" || order[1] != "request" {
 		t.Fatalf("order = %v, want the decision reported before the first request", order)
+	}
+}
+
+// The VM checks compare the logged origins with the turns they expect to be recalled.
+func TestTurnReadLogShowsTheOriginsVerbatim(t *testing.T) {
+	var logs bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	label := recalledLabel(EffortSourceTeacher, "high", 0.04)
+	tool := RecalledTurn{Distance: 0.02, SourceRef: "postgres://aura/conversations/past-tool/turns/3", Tools: []string{"web_search"}}
+	recaller := &fakeRecaller{recall: TurnRecall{TeacherLabels: []RecalledTurn{label}, ToolTurns: []RecalledTurn{tool}}}
+	a, _ := newReadingAgent(t, readingSetup{reading: memoryReading(recaller)})
+	a.readTurn(context.Background())
+	for _, want := range []string{"label_origin=" + label.SourceRef, "tool_turn_origin=" + tool.SourceRef} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("turn-read log lacks %q:\n%s", want, logs.String())
+		}
 	}
 }
 

@@ -69,25 +69,30 @@ func (a *LlmAgent) askTeacher(ctx context.Context, user string) (tier prompt.Rea
 		"user":       user,
 	})
 
-	ch, err := a.streamWithOpenRetry(routeCtx, req, "adaptive_reasoning_router")
-	if err != nil {
+	fail := func(kind string, err error) (prompt.ReasoningTier, teacherOutcome) {
 		boundaryErr = err
-		recordLLMError(llmErrorKind("reasoning_router_open", err))
+		recordLLMError(llmErrorKind(kind, err))
 		reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": err.Error()})
 		return "", teacherFailure(routeCtx, err)
+	}
+	ch, err := a.streamWithOpenRetry(routeCtx, req, "adaptive_reasoning_router")
+	if err != nil {
+		return fail("reasoning_router_open", err)
 	}
 	var b strings.Builder
 	for c := range ch {
 		if c.Err != nil {
-			boundaryErr = c.Err
-			recordLLMError(llmErrorKind("reasoning_router_stream", c.Err))
-			reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": c.Err.Error()})
-			return "", teacherFailure(routeCtx, c.Err)
+			return fail("reasoning_router_stream", c.Err)
 		}
 		if c.Usage != nil {
 			recordUsage(*c.Usage)
 		}
 		b.WriteString(c.Text)
+	}
+	// A provider can close the stream at the deadline with no error and no text (measured
+	// on the lab VM, 2026-10-07: attempts ending at 2001 ms read as invalid answers).
+	if err := routeCtx.Err(); err != nil {
+		return fail("reasoning_router_stream", err)
 	}
 	raw := strings.TrimSpace(b.String())
 	tier = prompt.ParseReasoningRouterTier(raw)
