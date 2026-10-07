@@ -168,8 +168,9 @@ func endpointIdentity(baseURL string) string {
 // and the selection rules of readTurn. A label decided under another version is never reused.
 var turnPolicyVersion = policyVersion(prompt.ReasoningPolicyFingerprint(), teacherMargin)
 
-// selectionRules names readTurn's precedence; change it with the table.
-const selectionRules = "composer>greeting>label(user>teacher)>seeds(margin)>teacher>seeds|fallback"
+// selectionRules names readTurn's precedence; change it with the table. Since the amendment
+// of 2026-10-07 the teacher decides no turn: below the margin it labels in the background.
+const selectionRules = "composer>greeting>label(user>teacher)>seeds(margin)|fallback;teacher=background"
 
 func policyVersion(fingerprint string, margin float64) string {
 	return "policy1:" + digest(fingerprint, selectionRules, strconv.FormatFloat(margin, 'g', -1, 64))
