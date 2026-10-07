@@ -1911,9 +1911,14 @@ HTTP/2 forced), two requests per variant:
 - SiePortal (Akamai) and PARTcommunity (Cloudflare) answered 403 to the pinned
   `Chrome/120` User-Agent. A current `Chrome/154` UA alone still drew 403, and so did the
   browser header set (`Accept`, `Accept-Language`, `Sec-Fetch-*`,
-  `Upgrade-Insecure-Requests`) alone. Both together drew 200 on 2 of 2. The
-  PARTcommunity page then carried the specification. SiePortal returned a 31,526 B
-  JavaScript shell with no specification in it, so no fetch without a browser can read it.
+  `Upgrade-Insecure-Requests`) alone. Both together drew 200 on 2 of 2 at first. Two
+  later series of 10 per site showed how far that holds. The old UA drew 403 on all 20
+  requests. SiePortal served the new UA and headers 10 of 10. The first series drew 18
+  of 20 across both sites; in the second, PARTcommunity drew only 4 of 10. Cloudflare
+  scores the client, and repeated probing from one address lowers the score. The
+  PARTcommunity page, when served, carried the specification. SiePortal returned a
+  31,526 B JavaScript shell with no specification in it, so no fetch without a browser
+  can read it.
 - The RS datasheet answered 200 `application/pdf` (168,726 B) to every variant and died
   at the MIME allowlist. The `pdftotext` already in the aura image read it in 34 ms
   (1 page), including weight, inertia, maximum speed and currents the answer lacked.
@@ -1934,6 +1939,8 @@ registry served it.
 
 This does not establish:
 - that the header set survives a WAF policy change: each answer is that day's policy;
+- a dependable read behind Cloudflare: the header set raises the odds and does not
+  guarantee a 200;
 - PDF extraction beyond text: a scanned PDF still yields no text without OCR;
 - the gpt-5.6-sol latency: 53 of the turn's 62 s were model time, 46 s of it reasoning
   clamped from `none` to `low` because the plan catalogue offers no lower effort. No change
