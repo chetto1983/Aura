@@ -1,0 +1,1282 @@
+{
+ "encoder_boot_s": 110.080646276474,
+ "effort": {
+  "A1": {
+   "plain": {
+    "accuracy": "29/58",
+    "none_vs_rest": "30/58",
+    "vm_traffic": "10/13",
+    "hard_to_none": 15,
+    "confusion": {
+     "low->none": 13,
+     "high->none": 15,
+     "high->low": 1
+    },
+    "misses": [
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "scrivi una funzione Go che inverte una stringa",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "debugga questo nil pointer dereference",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "progetta lo schema di un database per prenotazioni",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "ottimizza questo algoritmo O(n^2)",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "scrivi uno scraper con rate limiting",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "analizza questo stack trace e trova la causa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "crea una pipeline CI con build e test",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "dimostra che radice di 2 e irrazionale",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "quanti clienti ho a Torino nel file Clienti.xlsx?",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "somma gli imponibili di tutte le fatture del 2025",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "confronta il preventivo con la fattura e dimmi cosa non torna",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "nel manuale che ti ho caricato, come si tara il sensore?",
+      "accept": [
+       "low",
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "write a Python script that retries with exponential backoff",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "this goroutine leaks, find out why",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "ciao! senti, mi scrivi una query SQL che raggruppa per mese?",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "grazie, e poi debugga questo test che fallisce a intermittenza",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "converti questo CSV in JSON",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "29/58",
+    "none_vs_rest": "30/58",
+    "vm_traffic": "10/13",
+    "hard_to_none": 15,
+    "confusion": {
+     "low->none": 13,
+     "high->none": 15,
+     "high->low": 1
+    },
+    "misses": [
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "scrivi una funzione Go che inverte una stringa",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "debugga questo nil pointer dereference",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "progetta lo schema di un database per prenotazioni",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "ottimizza questo algoritmo O(n^2)",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "scrivi uno scraper con rate limiting",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "analizza questo stack trace e trova la causa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "crea una pipeline CI con build e test",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "dimostra che radice di 2 e irrazionale",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "quanti clienti ho a Torino nel file Clienti.xlsx?",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "somma gli imponibili di tutte le fatture del 2025",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "confronta il preventivo con la fattura e dimmi cosa non torna",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "nel manuale che ti ho caricato, come si tara il sensore?",
+      "accept": [
+       "low",
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "write a Python script that retries with exponential backoff",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "this goroutine leaks, find out why",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "ciao! senti, mi scrivi una query SQL che raggruppa per mese?",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "grazie, e poi debugga questo test che fallisce a intermittenza",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "converti questo CSV in JSON",
+      "accept": [
+       "high"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "none"
+     }
+    ]
+   },
+   "latency_ms_p50": 80.53261300000258,
+   "latency_ms_max": 93.73516499999823,
+   "predictions": [
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "low",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "low",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none",
+    "none"
+   ],
+   "confidence": [
+    0.9148417768486752,
+    0.8821556889833645,
+    0.9616565936134014,
+    0.7398123395962126,
+    0.7104783371101825,
+    0.5936874855415283,
+    0.9113156068978202,
+    0.8566780665093282,
+    0.619199904571819,
+    0.41644403041178457,
+    0.8398897435316192,
+    0.7263369125172829,
+    0.82221881126655,
+    0.5678916027395032,
+    0.6604905308727234,
+    0.31252051588083796,
+    0.37015109260649814,
+    0.09097161524277875,
+    0.40680912053965446,
+    0.09226701689817562,
+    0.3297091812862394,
+    0.09270651337492303,
+    0.32118194989358473,
+    0.43638542843707,
+    0.24310365852418603,
+    0.5790970662678763,
+    0.6244497268599288,
+    0.5137155169394823,
+    0.20593612797102318,
+    0.5951437360783558,
+    0.781805206408276,
+    0.6091079925573155,
+    0.933288286171442,
+    0.6666568026276739,
+    0.36268281616162223,
+    0.4021644706127786,
+    0.07445938234519084,
+    0.16659922128636784,
+    0.48623021096490787,
+    0.34886660996257673,
+    0.6722929637369339,
+    0.5912017608479049,
+    0.43308116628265525,
+    0.23159906956163456,
+    0.575554701332889,
+    0.8604255992501962,
+    0.7786143796445136,
+    0.7420243072802309,
+    0.9194417323168456,
+    0.8209188802675131,
+    0.8456150457853553,
+    0.6147129744602373,
+    0.7617580618013704,
+    0.6268097604484787,
+    0.7587464162072397,
+    0.5224581249793913,
+    0.7557904424011647,
+    0.7405797235204454
+   ]
+  },
+  "A2": {
+   "plain": {
+    "accuracy": "18/58",
+    "none_vs_rest": "31/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 23,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "19/58",
+    "none_vs_rest": "32/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 22,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "latency_ms_p50": 79.88049899999794,
+   "latency_ms_max": 82.07533500001318,
+   "predictions": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "confidence": [
+    0.8934329117524578,
+    0.8887562907298353,
+    0.870707370750147,
+    0.9133052518039183,
+    0.8999646882739109,
+    0.9149146980490318,
+    0.8957902690429536,
+    0.8767571270874,
+    0.9104677848033633,
+    0.9371500458671655,
+    0.9173745235101478,
+    0.9284930295832426,
+    0.9040301676829661,
+    0.9148402605353946,
+    0.9338788881005942,
+    0.8977842567164425,
+    0.9643725323087978,
+    0.9809136914815942,
+    0.9653737945314016,
+    0.9674532215422824,
+    0.9623466575785837,
+    0.9828717489447203,
+    0.9621699708946785,
+    0.9493910404121855,
+    0.9395574996786026,
+    0.9628279241546588,
+    0.9518744288257484,
+    0.9491624274289111,
+    0.9493687551648932,
+    0.9064344369084324,
+    0.8993961666943125,
+    0.9151648801798263,
+    0.8686685835298851,
+    0.9178308615560193,
+    0.9025313394134913,
+    0.9578617421619862,
+    0.963098471231323,
+    0.9801255525222513,
+    0.9541108442300511,
+    0.9779093353966964,
+    0.9284868443574795,
+    0.9300316401749761,
+    0.9624033196668581,
+    0.9713983726345037,
+    0.9348101576914182,
+    0.8793329786830467,
+    0.8738495778385291,
+    0.8976801897503431,
+    0.9188719226268225,
+    0.9049820118282296,
+    0.9406621683697706,
+    0.9650684819846183,
+    0.9690433865343169,
+    0.95550637940131,
+    0.9146166277472861,
+    0.9466174619209702,
+    0.9138801973828532,
+    0.9153438374194907
+   ]
+  }
+ }
+}

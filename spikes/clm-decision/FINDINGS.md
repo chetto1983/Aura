@@ -33,6 +33,23 @@ Every head variant predicts **`high` for all 58 prompts**. E2-raw predicts `low`
 model does not separate reasoning tiers at all: an effort tier is a judgement about the request,
 not an action, which is what CLM's state-action training covers.
 
+### Stage 1b — framed as the assistant's intent and actions (registered before its run, run once)
+
+The operator asked whether CLM had been given the intent of what to do. Stage 1b states it ("You are
+Aura… decide how much you need to think") and makes each option an action ("Reply right away…",
+"Look up… or use a tool…", "Think it through step by step…"). The options were rewritten from the
+same definitions, with nothing added. The registration is in README.md.
+
+| Variant | Accuracy | none-vs-rest | VM traffic (13) | hard → none | Distribution |
+|---|---|---|---|---|---|
+| A1: intent and actions, English | 29/58 | 30/58 | 10/13 | **15** | none 56, low 2 |
+| A2: intent and actions, Italian | 18/58 | 31/58 | 0/13 | 0 | high 58 |
+
+The framing moves the constant answer from `high` to `none` and does not make CLM discriminate.
+A1 sends "write a Python script that retries with exponential backoff" and "this goroutine leaks,
+find out why" to `none`; its 29/58 comes from the gate's many easy prompts, not from separation.
+Fifteen hard tasks sent to `none` is the failure direction the release rule forbids outright.
+
 ## Tools (85 deferred tools; top-1 / recall@5)
 
 | Variant | Gate (26) | Held-out (24) | Blind EN (30) | Blind IT (30) |
@@ -59,14 +76,16 @@ per turn; stage 2 would have had to measure a small encoder there.
 - **One checkpoint.** The card announces a CLM-35B for October; this measures v0.1-8B only.
 - **Regression sets, already inspected.** A win here would only have justified a frozen independent set;
   a loss this wide does not depend on that.
-- **The question phrasings are the router's own and were fixed before the run.** Other phrasings could
-  score differently, but trying them against these sets would tune on the test.
+- **Two phrasings were tried, both registered before running**: the router's own classification
+  question (stage 1) and an intent with actions (stage 1b). Each only changes which option wins every
+  time. Further phrasings on these sets would tune on the test.
 
 ## Cost and cleanup
 
-Three Modal runs on one L4, including the first 16 GB model download, cached in the Modal volume
+Five Modal runs on one L4, including the first 16 GB model download, cached in the Modal volume
 `aura-clm-cache`. The Modal token and the Hugging Face token (Modal secret `aura-clm-hf`) were provided
 for this spike and are to be revoked by the operator.
 
-Reproduce: `modal run spikes/clm-decision/modal_clm.py` (stage 1, writes `results/stage1.json`) and
+Reproduce: `modal run spikes/clm-decision/modal_clm.py` (stage 1, writes `results/stage1.json`),
+`modal run spikes/clm-decision/modal_clm.py::framing` (stage 1b, writes `results/stage1b.json`) and
 `modal run spikes/clm-decision/modal_clm.py::setup_check`.

@@ -65,3 +65,24 @@ the gate. These sets are regression data, already inspected, so a win here is a 
 frozen independent set, not a release result.
 
 Run: `modal run spikes/clm-decision/modal_clm.py` (writes `results/stage1.json`).
+
+## Stage 1b — the effort question framed as an intent and actions (registered before its run)
+
+Stage 1 asked CLM to classify the request, with category descriptions as options. CLM is trained
+on state → the action taken, so the operator asked whether it was given the intent of what to do.
+Registered 2026-10-07, after stage 1 and before this run. It runs once, and its variants are not
+iterated on these sets.
+
+The state is the user message. The question states the assistant's intent. Each option is the
+action the assistant takes, rewritten from `reasoningTierDefs` and the router descriptions with
+nothing added.
+
+| Id | Question | Options |
+|---|---|---|
+| A1 (EN) | "You are Aura, a personal assistant. Before you reply to this message, decide how much you need to think." | none: "Reply right away, briefly: a greeting, a thank-you, a stable fact you already know, a small calculation or a short translation." · low: "Look up current information that changes over time (weather, news, prices, opening hours, timetables, traffic, sports results) or use a tool for a small task, then reply." · high: "Think it through step by step before replying: write or debug code, design a schema or system, prove something, optimise an algorithm, scrape, or analyse in several steps." |
+| A2 (IT) | "Sei Aura, un'assistente personale. Prima di rispondere a questo messaggio, decidi quanto devi ragionare." | none: "Rispondi subito e in breve: un saluto, un ringraziamento, un fatto stabile che conosci già, un piccolo calcolo o una traduzione breve." · low: "Cerca un'informazione corrente che cambia nel tempo (meteo, notizie, prezzi, orari di apertura, orari dei mezzi, traffico, risultati sportivi) oppure usa uno strumento per un compito piccolo, poi rispondi." · high: "Ragiona passo per passo prima di rispondere: scrivi o correggi codice, progetta uno schema o un sistema, dimostra qualcosa, ottimizza un algoritmo, fai scraping o analizza in più passaggi." |
+
+Same metrics and decision rule as stage 1. A win here would be measured on an already-inspected set,
+so it would justify a fresh frozen set, not a conclusion.
+
+Run: `modal run spikes/clm-decision/modal_clm.py::framing` (writes `results/stage1b.json`).

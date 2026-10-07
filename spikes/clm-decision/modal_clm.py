@@ -4,6 +4,7 @@
 
 The variants and metrics are pre-registered in README.md; change them there first.
 """
+import contextlib
 import json
 import math
 import statistics
@@ -98,11 +99,7 @@ def effort(engine):
             seed_options[f"{t}:{j}"], seed_tier[f"{t}:{j}"] = text, t
 
     def by_criteria(criteria, model):
-        preds, conf, lat = [], [], []
-        for c in cases:
-            a, ms = choice(engine, c["prompt"], criteria, EFFORT_QUESTION, model)
-            preds.append(a["choice"]); conf.append(a["confidence"]); lat.append(ms)
-        return preds, conf, lat
+        return criteria_run(engine, cases, criteria, EFFORT_QUESTION, model)
 
     def by_seeds():
         preds, lat = [], []
@@ -117,13 +114,49 @@ def effort(engine):
 
     runs = {"E1": by_criteria(defs, "clm-latest"), "E2": by_criteria(ROUTER_CRITERIA, "clm-latest"),
             "E3": by_seeds(), "E1-raw": by_criteria(defs, "clm-raw"), "E2-raw": by_criteria(ROUTER_CRITERIA, "clm-raw")}
-    out = {}
-    for name, (preds, conf, lat) in runs.items():
-        greeted = ["none" if normalize_greeting(c["prompt"]) in GREETINGS else p for c, p in zip(cases, preds)]
-        out[name] = {"plain": score_effort(cases, preds), "greeting_fast_path": score_effort(cases, greeted),
-                     "latency_ms_p50": statistics.median(lat[1:]), "latency_ms_max": max(lat[1:]),
-                     "predictions": preds, "confidence": conf}
-    return out
+    return {name: effort_report(cases, *run) for name, run in runs.items()}
+
+
+def criteria_run(engine, cases, criteria, question, model):
+    preds, conf, lat = [], [], []
+    for c in cases:
+        a, ms = choice(engine, c["prompt"], criteria, question, model)
+        preds.append(a["choice"]); conf.append(a["confidence"]); lat.append(ms)
+    return preds, conf, lat
+
+
+def effort_report(cases, preds, conf, lat):
+    greeted = ["none" if normalize_greeting(c["prompt"]) in GREETINGS else p for c, p in zip(cases, preds)]
+    return {"plain": score_effort(cases, preds), "greeting_fast_path": score_effort(cases, greeted),
+            "latency_ms_p50": statistics.median(lat[1:]), "latency_ms_max": max(lat[1:]),
+            "predictions": preds, "confidence": conf}
+
+
+# Stage 1b, registered in README.md before its run.
+FRAMINGS = {
+    "A1": ("You are Aura, a personal assistant. Before you reply to this message, decide how much you need to think.", {
+        "none": "Reply right away, briefly: a greeting, a thank-you, a stable fact you already know, "
+                "a small calculation or a short translation.",
+        "low": "Look up current information that changes over time (weather, news, prices, opening hours, "
+               "timetables, traffic, sports results) or use a tool for a small task, then reply.",
+        "high": "Think it through step by step before replying: write or debug code, design a schema or system, "
+                "prove something, optimise an algorithm, scrape, or analyse in several steps.",
+    }),
+    "A2": ("Sei Aura, un'assistente personale. Prima di rispondere a questo messaggio, decidi quanto devi ragionare.", {
+        "none": "Rispondi subito e in breve: un saluto, un ringraziamento, un fatto stabile che conosci già, "
+                "un piccolo calcolo o una traduzione breve.",
+        "low": "Cerca un'informazione corrente che cambia nel tempo (meteo, notizie, prezzi, orari di apertura, "
+               "orari dei mezzi, traffico, risultati sportivi) oppure usa uno strumento per un compito piccolo, poi rispondi.",
+        "high": "Ragiona passo per passo prima di rispondere: scrivi o correggi codice, progetta uno schema o un sistema, "
+                "dimostra qualcosa, ottimizza un algoritmo, fai scraping o analizza in più passaggi.",
+    }),
+}
+
+
+def framing_effort(engine):
+    cases = json.loads(Path("/data/effort_gate.json").read_text())
+    return {name: effort_report(cases, *criteria_run(engine, cases, options, question, "clm-latest"))
+            for name, (question, options) in FRAMINGS.items()}
 
 
 def rank_tools(engine, query, names, texts, model):
@@ -183,9 +216,9 @@ def wait_for_encoder(server, deadline_s=1500):
     raise TimeoutError("vllm did not come up")
 
 
-@app.function(image=image, gpu="L4", volumes={"/cache": cache}, timeout=3600,
-              secrets=[modal.Secret.from_name("aura-clm-hf")])
-def stage1():
+@contextlib.contextmanager
+def clm_engine():
+    """vLLM serving Qwen3-8B with last-token pooling, as CLM's serve_qwen3_8b.sh does, and the reference head."""
     server = subprocess.Popen([
         "vllm", "serve", "Qwen/Qwen3-8B", "--served-model-name", "qwen3-8b", "--runner", "pooling",
         "--enforce-eager", "--enable-prefix-caching", "--max-model-len", "2048",
@@ -193,34 +226,39 @@ def stage1():
     ])
     try:
         boot_s = wait_for_encoder(server)
-        cache.commit()
         from clm import Engine
         from clm.heads import download
 
         engine = Engine(emb_url=EMB_URL, emb_model="qwen3-8b", checkpoint=download())
         cache.commit()
-        return {"encoder_boot_s": boot_s, "sanity": sanity(engine), "effort": effort(engine), "tools": tools(engine)}
+        yield engine, boot_s
     finally:
         server.terminate()
 
 
-@app.function(image=image, gpu="L4", volumes={"/cache": cache}, timeout=1800,
-              secrets=[modal.Secret.from_name("aura-clm-hf")])
+GPU_FUNCTION = dict(image=image, gpu="L4", volumes={"/cache": cache}, timeout=3600,
+                    secrets=[modal.Secret.from_name("aura-clm-hf")])
+
+
+@app.function(**GPU_FUNCTION)
+def stage1():
+    with clm_engine() as (engine, boot_s):
+        return {"encoder_boot_s": boot_s, "sanity": sanity(engine), "effort": effort(engine), "tools": tools(engine)}
+
+
+@app.function(**GPU_FUNCTION)
+def stage1b():
+    with clm_engine() as (engine, boot_s):
+        return {"encoder_boot_s": boot_s, "effort": framing_effort(engine)}
+
+
+@app.function(**GPU_FUNCTION)
 def check():
     """Setup validity only: the model card's rank example, and raw text vs CLM's training token recipe."""
-    server = subprocess.Popen([
-        "vllm", "serve", "Qwen/Qwen3-8B", "--served-model-name", "qwen3-8b", "--runner", "pooling",
-        "--enforce-eager", "--enable-prefix-caching", "--max-model-len", "2048",
-        "--gpu-memory-utilization", "0.90", "--port", "8090",
-    ])
-    try:
-        wait_for_encoder(server)
+    with clm_engine() as (engine, _):
         import numpy as np
-        from clm import Engine
-        from clm.heads import download
         from transformers import AutoTokenizer
 
-        engine = Engine(emb_url=EMB_URL, emb_model="qwen3-8b", checkpoint=download())
         tides = engine.rank("What causes tides on Earth?",
                             ["The Moon's gravitational pull.", "Photosynthesis in plants.", "Because the Earth is round."])
         tok = AutoTokenizer.from_pretrained("Qwen/Qwen3-8B")
@@ -230,8 +268,6 @@ def check():
         recipe = _embed({"model": "qwen3-8b", "input": ids})
         cos = [float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))) for a, b in zip(raw, recipe)]
         return {"tides": tides, "raw_vs_recipe_cosine": cos, "sanity": sanity(engine)}
-    finally:
-        server.terminate()
 
 
 def _embed(body):
@@ -247,15 +283,30 @@ def setup_check():
     print(json.dumps(check.remote(), indent=1, ensure_ascii=False))
 
 
-@app.local_entrypoint()
-def main():
-    out = stage1.remote()
+def save(name, out):
     results = HERE / "results"
     results.mkdir(exist_ok=True)
-    (results / "stage1.json").write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
-    print("sanity", out["sanity"])
+    (results / f"{name}.json").write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+
+
+def print_effort(out):
     for name, run in out["effort"].items():
         print(name, {k: run["plain"][k] for k in ("accuracy", "none_vs_rest", "vm_traffic", "hard_to_none")},
               "greeting:", run["greeting_fast_path"]["accuracy"], f'p50 {run["latency_ms_p50"]:.1f} ms')
+
+
+@app.local_entrypoint()
+def framing():
+    out = stage1b.remote()
+    save("stage1b", out)
+    print_effort(out)
+
+
+@app.local_entrypoint()
+def main():
+    out = stage1.remote()
+    save("stage1", out)
+    print("sanity", out["sanity"])
+    print_effort(out)
     for name, run in out["tools"].items():
         print(name, {s: (r["top1"], r["recall5"]) for s, r in run.items()})
