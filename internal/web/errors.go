@@ -17,6 +17,7 @@ const (
 	CodeTimeout            = "timeout"
 	CodeHTTPError          = "http_error"
 	CodeExtractionFailed   = "extraction_failed"
+	CodeJavaScriptRequired = "javascript_required"
 )
 
 // Model-visible Page.Warning values — a soft downgrade, never an error channel.

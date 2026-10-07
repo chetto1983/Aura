@@ -58,6 +58,7 @@ func (e *WebFetch) Spec() Spec {
 			"Only http and https URLs to public hosts are allowed — private, loopback, and cloud-metadata targets are blocked, and a redirect to a blocked target is rejected. " +
 			"A large page is truncated in the preview with a tool_call_id you can page through with read_tool_output. " +
 			"A block, an unsupported scheme, an oversized body, a timeout, or an extraction failure come back as a small {error,reason,message} object you should read and adapt to — they are not tool failures. " +
+			"error=javascript_required means the page only renders in a browser: fetching it again cannot help, so open it with a browser tool if you have one, or use another source. " +
 			"Example: {\"url\":\"https://en.wikipedia.org/wiki/Knowledge_graph\"}.",
 		Parameters: params,
 		Deferred:   true,

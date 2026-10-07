@@ -48,8 +48,17 @@ var wikiBoilerplateRe = regexp.MustCompile(`(?im)^\s*From Wikipedia, the free en
 // bypassed (the self-fetching readability entry point is forbidden, T-07-22).
 // pageURL anchors relative link resolution (D-19). title is art.Title() only (no
 // byline/excerpt/site/time, D-18). Readable text shorter than lowContentRunes
-// returns markdown with warning=WarningLowContent and a nil error (D-22).
+// returns markdown with warning=WarningLowContent and a nil error (D-22), unless the
+// page is a JavaScript shell with nothing to read: that is javascript_required.
 func ExtractMarkdown(body []byte, pageURL *url.URL) (title, markdown string, links []string, warning string, err error) {
+	title, markdown, links, warning, err = extractReadable(body, pageURL)
+	if err == nil && warning == WarningLowContent && isJavaScriptShell(body) {
+		return "", "", nil, "", errJavaScriptRequired()
+	}
+	return title, markdown, links, warning, err
+}
+
+func extractReadable(body []byte, pageURL *url.URL) (title, markdown string, links []string, warning string, err error) {
 	art, perr := readability.FromReader(bytes.NewReader(body), pageURL)
 	if perr != nil {
 		return "", "", nil, "", &WebError{Code: CodeExtractionFailed, Message: "could not extract readable content"}
