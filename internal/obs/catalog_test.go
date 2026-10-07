@@ -23,7 +23,7 @@ agent_cost_usd|aura.agent.cost.usd|aura_agent_cost_usd_total|counter|1||Total re
 agent_span_export_failures|aura.agent.span.export.failures|aura_agent_span_export_failures_total|counter|1||Total OpenTelemetry span export failures.|
 agent_span_id_entropy_failures|aura.agent.span.id.entropy.failures|aura_agent_span_id_entropy_failures_total|counter|1||Total recovered span identifier entropy failures.|
 agent_prefix_drift|aura.agent.prefix.drift|aura_agent_prefix_drift_total|counter|1||Total cache-stable message prefix drift events.|
-agent_teacher_attempts|aura.agent.teacher.attempt|aura_agent_teacher_attempt_total|counter|1|outcome|Total synchronous reasoning-teacher attempts by outcome.|
+agent_teacher_attempts|aura.agent.teacher.attempt|aura_agent_teacher_attempt_total|counter|1|outcome|Total background reasoning-teacher attempts by outcome.|
 agent_turn_decisions|aura.agent.turn.decision|aura_agent_turn_decision_total|counter|1|outcome|Total turn effort decisions by source.|
 agent_llm_calls|aura.agent.llm.call|aura_agent_llm_call_total|counter|1|outcome,error_class|Total completed LLM call boundaries.|
 agent_pause_transitions|aura.agent.pause.transition|aura_agent_pause_transition_total|counter|1|operation,state,outcome|Total pause lifecycle transitions.|

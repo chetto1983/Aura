@@ -128,7 +128,7 @@ var descriptors = []Descriptor{
 	count(AgentSpanExportFailuresID, "aura.agent.span.export.failures", "aura_agent_span_export_failures_total", nil, "Total OpenTelemetry span export failures."),
 	count(AgentSpanIDEntropyFailuresID, "aura.agent.span.id.entropy.failures", "aura_agent_span_id_entropy_failures_total", nil, "Total recovered span identifier entropy failures."),
 	count(AgentPrefixDriftID, "aura.agent.prefix.drift", "aura_agent_prefix_drift_total", nil, "Total cache-stable message prefix drift events."),
-	count(AgentTeacherAttemptsID, "aura.agent.teacher.attempt", "aura_agent_teacher_attempt_total", []AttributeKey{AttributeOutcome}, "Total synchronous reasoning-teacher attempts by outcome."),
+	count(AgentTeacherAttemptsID, "aura.agent.teacher.attempt", "aura_agent_teacher_attempt_total", []AttributeKey{AttributeOutcome}, "Total background reasoning-teacher attempts by outcome."),
 	count(AgentTurnDecisionsID, "aura.agent.turn.decision", "aura_agent_turn_decision_total", []AttributeKey{AttributeOutcome}, "Total turn effort decisions by source."),
 	count(AgentLLMCallsID, "aura.agent.llm.call", "aura_agent_llm_call_total", []AttributeKey{AttributeOutcome, AttributeErrorClass}, "Total completed LLM call boundaries."),
 	count(AgentPauseTransitionsID, "aura.agent.pause.transition", "aura_agent_pause_transition_total", []AttributeKey{AttributeOperation, AttributeState, AttributeOutcome}, "Total pause lifecycle transitions."),
