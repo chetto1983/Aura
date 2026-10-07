@@ -379,8 +379,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0134 persists owner-scoped message drafts and their one-send disposition.
 	// 0135 adds aura.mcp_profile: profiles that exist without members, and the active one.
 	// 0136 retires the asset statuses searchable and embedding, and searchable_at.
-	if head != 136 {
-		t.Fatalf("MigrationHead=%d, want embedded head 136", head)
+	// 0137 records on a user turn how its reasoning effort was decided (turn recall: context key,
+	// effort, requested effort, source, route, policy, origin).
+	if head != 137 {
+		t.Fatalf("MigrationHead=%d, want embedded head 137", head)
 	}
 }
 
