@@ -38,6 +38,7 @@ type DumpTurn struct {
 	CachedTokens        int
 	ContextTokens       int
 	CreatedAt           time.Time
+	Decision            TurnDecision
 }
 
 // DumpCompaction is one branch's durable summary of its earlier turns.
@@ -119,6 +120,9 @@ func dumpTurnFromRow(r sqlc.ListTurnDumpRow) DumpTurn {
 		CachedTokens:        int(r.CachedTokens),
 		ContextTokens:       int(r.ContextTokens),
 		CreatedAt:           r.CreatedAt.Time.UTC(),
+		Decision: turnDecisionFromColumns(r.RecallContextKey, r.ReasoningEffort, r.ReasoningEffortRequested,
+			r.ReasoningEffortSource, r.ReasoningEffortRouteKey, r.ReasoningEffortPolicyVersion,
+			r.ReasoningEffortOriginRef),
 	}
 }
 

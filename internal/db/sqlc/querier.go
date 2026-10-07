@@ -636,6 +636,12 @@ type Querier interface {
 	// name's (libraryObjectID), so the row holding it goes back to presigned with the new upload's
 	// name, type and declared size, and finalize checks the new bytes against the new declaration.
 	RearmAssetForUpload(ctx context.Context, arg RearmAssetForUploadParams) (AuraAssets, error)
+	// Turn recall (migration 0137): one user row's decision provenance, all seven fields in one
+	// statement so a retried write never leaves half of one decision beside half of another.
+	// The row is addressed by the seq the runner kept when it appended the user turn, never by
+	// "newest user turn", and RLS scopes it to the caller's identity. role = 'user' makes a
+	// wrong seq a zero-row update rather than a label on an assistant turn.
+	RecordConversationTurnDecision(ctx context.Context, arg RecordConversationTurnDecisionParams) (int64, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and

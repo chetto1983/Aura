@@ -73,6 +73,14 @@ type AppendTurnParams struct {
 }
 
 // AppendTurn writes one turn AND folds its token/cost delta into the conversation
+// aggregates in a SINGLE db.WithCallerIdentityTx transaction (SC-2) — see AppendTurnSeq,
+// which it is, without the seq.
+func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
+	_, err := s.AppendTurnSeq(ctx, p)
+	return err
+}
+
+// AppendTurnSeq writes one turn AND folds its token/cost delta into the conversation
 // aggregates in a SINGLE db.WithCallerIdentityTx transaction (SC-2): a failure between the turn
 // INSERT and the aggregates UPDATE rolls the whole thing back, leaving no partial
 // turn. When Seq <= 0, the Store row-locks the parent conversation and allocates
@@ -81,11 +89,16 @@ type AppendTurnParams struct {
 // is not part of the DB atomicity); cleanupSidecarOnTxError removes a just-spilled
 // file when the tx rolls back (M-04), and a boot scan reconciles any leftover. The
 // row then stores content=NULL + content_sidecar_path.
-func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
+//
+// It returns the seq the turn was stored at. The runner keeps the seq of the user turn it
+// dispatches, so that turn's decision (migration 0137) is written to exactly that row. A
+// delivery-keyed append that was already delivered stores nothing and still returns the seq
+// it would have used; nothing writes a decision on a delivery-keyed turn.
+func (s *Store) AppendTurnSeq(ctx context.Context, p AppendTurnParams) (int, error) {
 	if p.Seq > 0 {
 		turn, agg, err := s.appendTurnWrites(p)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if err := cleanupSidecarOnTxError(
 			func() error {
@@ -95,9 +108,9 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 			},
 			func() string { return turn.ContentSidecarPath.String },
 		); err != nil {
-			return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+			return 0, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 		}
-		return nil
+		return p.Seq, nil
 	}
 
 	// Seq is allocated inside the tx, so the sidecar (keyed by seq) is spilled there
@@ -121,9 +134,9 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 		},
 		func() string { return spilledPath },
 	); err != nil {
-		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+		return 0, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
-	return nil
+	return p.Seq, nil
 }
 
 // AppendTurnTx is the no-spill, tx-inner half of AppendTurn, EXPORTED so the 34-06

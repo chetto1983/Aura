@@ -551,30 +551,39 @@ func (q *Queries) ListSpilledSeqsForConversation(ctx context.Context, conversati
 const listTurnDump = `-- name: ListTurnDump :many
 SELECT seq, role, content, content_sidecar_path, tool_call_id, tool_calls,
        reasoning, reasoning_duration_ms, branch_id, parent_seq, attachment_ids,
-       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at
+       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at,
+       recall_context_key, reasoning_effort, reasoning_effort_requested, reasoning_effort_source,
+       reasoning_effort_route_key, reasoning_effort_policy_version, reasoning_effort_origin_ref
 FROM aura.conversation_turns
 WHERE conversation_id = $1
 ORDER BY seq ASC
 `
 
 type ListTurnDumpRow struct {
-	Seq                 int32              `json:"seq"`
-	Role                string             `json:"role"`
-	Content             pgtype.Text        `json:"content"`
-	ContentSidecarPath  pgtype.Text        `json:"content_sidecar_path"`
-	ToolCallID          pgtype.Text        `json:"tool_call_id"`
-	ToolCalls           []byte             `json:"tool_calls"`
-	Reasoning           pgtype.Text        `json:"reasoning"`
-	ReasoningDurationMs pgtype.Int8        `json:"reasoning_duration_ms"`
-	BranchID            pgtype.UUID        `json:"branch_id"`
-	ParentSeq           pgtype.Int4        `json:"parent_seq"`
-	AttachmentIds       []pgtype.UUID      `json:"attachment_ids"`
-	DeliveryKey         pgtype.Text        `json:"delivery_key"`
-	InputTokens         int32              `json:"input_tokens"`
-	OutputTokens        int32              `json:"output_tokens"`
-	CachedTokens        int32              `json:"cached_tokens"`
-	ContextTokens       int32              `json:"context_tokens"`
-	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	Seq                          int32              `json:"seq"`
+	Role                         string             `json:"role"`
+	Content                      pgtype.Text        `json:"content"`
+	ContentSidecarPath           pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID                   pgtype.Text        `json:"tool_call_id"`
+	ToolCalls                    []byte             `json:"tool_calls"`
+	Reasoning                    pgtype.Text        `json:"reasoning"`
+	ReasoningDurationMs          pgtype.Int8        `json:"reasoning_duration_ms"`
+	BranchID                     pgtype.UUID        `json:"branch_id"`
+	ParentSeq                    pgtype.Int4        `json:"parent_seq"`
+	AttachmentIds                []pgtype.UUID      `json:"attachment_ids"`
+	DeliveryKey                  pgtype.Text        `json:"delivery_key"`
+	InputTokens                  int32              `json:"input_tokens"`
+	OutputTokens                 int32              `json:"output_tokens"`
+	CachedTokens                 int32              `json:"cached_tokens"`
+	ContextTokens                int32              `json:"context_tokens"`
+	CreatedAt                    pgtype.Timestamptz `json:"created_at"`
+	RecallContextKey             pgtype.Text        `json:"recall_context_key"`
+	ReasoningEffort              pgtype.Text        `json:"reasoning_effort"`
+	ReasoningEffortRequested     pgtype.Text        `json:"reasoning_effort_requested"`
+	ReasoningEffortSource        pgtype.Text        `json:"reasoning_effort_source"`
+	ReasoningEffortRouteKey      pgtype.Text        `json:"reasoning_effort_route_key"`
+	ReasoningEffortPolicyVersion pgtype.Text        `json:"reasoning_effort_policy_version"`
+	ReasoningEffortOriginRef     pgtype.Text        `json:"reasoning_effort_origin_ref"`
 }
 
 // The owner's raw export (prd.md §7): every persisted column of every turn, all branches,
@@ -608,6 +617,13 @@ func (q *Queries) ListTurnDump(ctx context.Context, conversationID pgtype.UUID) 
 			&i.CachedTokens,
 			&i.ContextTokens,
 			&i.CreatedAt,
+			&i.RecallContextKey,
+			&i.ReasoningEffort,
+			&i.ReasoningEffortRequested,
+			&i.ReasoningEffortSource,
+			&i.ReasoningEffortRouteKey,
+			&i.ReasoningEffortPolicyVersion,
+			&i.ReasoningEffortOriginRef,
 		); err != nil {
 			return nil, err
 		}
@@ -827,6 +843,55 @@ func (q *Queries) NextConversationTurnSeq(ctx context.Context, conversationID pg
 	var seq int32
 	err := row.Scan(&seq)
 	return seq, err
+}
+
+const recordConversationTurnDecision = `-- name: RecordConversationTurnDecision :execrows
+UPDATE aura.conversation_turns
+SET recall_context_key              = $1,
+    reasoning_effort                = $2,
+    reasoning_effort_requested      = $3,
+    reasoning_effort_source         = $4,
+    reasoning_effort_route_key      = $5,
+    reasoning_effort_policy_version = $6,
+    reasoning_effort_origin_ref     = $7
+WHERE conversation_id = $8
+  AND seq = $9
+  AND role = 'user'
+`
+
+type RecordConversationTurnDecisionParams struct {
+	RecallContextKey             pgtype.Text `json:"recall_context_key"`
+	ReasoningEffort              pgtype.Text `json:"reasoning_effort"`
+	ReasoningEffortRequested     pgtype.Text `json:"reasoning_effort_requested"`
+	ReasoningEffortSource        pgtype.Text `json:"reasoning_effort_source"`
+	ReasoningEffortRouteKey      pgtype.Text `json:"reasoning_effort_route_key"`
+	ReasoningEffortPolicyVersion pgtype.Text `json:"reasoning_effort_policy_version"`
+	ReasoningEffortOriginRef     pgtype.Text `json:"reasoning_effort_origin_ref"`
+	ConversationID               pgtype.UUID `json:"conversation_id"`
+	Seq                          int32       `json:"seq"`
+}
+
+// Turn recall (migration 0137): one user row's decision provenance, all seven fields in one
+// statement so a retried write never leaves half of one decision beside half of another.
+// The row is addressed by the seq the runner kept when it appended the user turn, never by
+// "newest user turn", and RLS scopes it to the caller's identity. role = 'user' makes a
+// wrong seq a zero-row update rather than a label on an assistant turn.
+func (q *Queries) RecordConversationTurnDecision(ctx context.Context, arg RecordConversationTurnDecisionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, recordConversationTurnDecision,
+		arg.RecallContextKey,
+		arg.ReasoningEffort,
+		arg.ReasoningEffortRequested,
+		arg.ReasoningEffortSource,
+		arg.ReasoningEffortRouteKey,
+		arg.ReasoningEffortPolicyVersion,
+		arg.ReasoningEffortOriginRef,
+		arg.ConversationID,
+		arg.Seq,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const searchConversationTurns = `-- name: SearchConversationTurns :many

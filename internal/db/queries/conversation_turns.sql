@@ -109,7 +109,9 @@ ORDER BY seq ASC;
 -- tool result of an interrupted run is exactly what a debugging owner needs to see.
 SELECT seq, role, content, content_sidecar_path, tool_call_id, tool_calls,
        reasoning, reasoning_duration_ms, branch_id, parent_seq, attachment_ids,
-       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at
+       delivery_key, input_tokens, output_tokens, cached_tokens, context_tokens, created_at,
+       recall_context_key, reasoning_effort, reasoning_effort_requested, reasoning_effort_source,
+       reasoning_effort_route_key, reasoning_effort_policy_version, reasoning_effort_origin_ref
 FROM aura.conversation_turns
 WHERE conversation_id = $1
 ORDER BY seq ASC;
@@ -220,6 +222,24 @@ ORDER BY path.depth ASC;
 UPDATE aura.conversation_turns
 SET branch_id = $3, parent_seq = $4
 WHERE conversation_id = $1 AND seq = $2;
+
+-- name: RecordConversationTurnDecision :execrows
+-- Turn recall (migration 0137): one user row's decision provenance, all seven fields in one
+-- statement so a retried write never leaves half of one decision beside half of another.
+-- The row is addressed by the seq the runner kept when it appended the user turn, never by
+-- "newest user turn", and RLS scopes it to the caller's identity. role = 'user' makes a
+-- wrong seq a zero-row update rather than a label on an assistant turn.
+UPDATE aura.conversation_turns
+SET recall_context_key              = sqlc.narg(recall_context_key),
+    reasoning_effort                = sqlc.narg(reasoning_effort),
+    reasoning_effort_requested      = sqlc.narg(reasoning_effort_requested),
+    reasoning_effort_source         = sqlc.narg(reasoning_effort_source),
+    reasoning_effort_route_key      = sqlc.narg(reasoning_effort_route_key),
+    reasoning_effort_policy_version = sqlc.narg(reasoning_effort_policy_version),
+    reasoning_effort_origin_ref     = sqlc.narg(reasoning_effort_origin_ref)
+WHERE conversation_id = sqlc.arg(conversation_id)
+  AND seq = sqlc.arg(seq)
+  AND role = 'user';
 
 -- name: GetTurnPointers :one
 -- D-09 (CHAT-05): a turn's own branch/parent pointers, used by the fork path to read the

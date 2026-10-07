@@ -1,0 +1,9 @@
+ALTER TABLE aura.conversation_turns
+    DROP CONSTRAINT conversation_turns_reasoning_effort_source_check,
+    DROP COLUMN reasoning_effort_origin_ref,
+    DROP COLUMN reasoning_effort_policy_version,
+    DROP COLUMN reasoning_effort_route_key,
+    DROP COLUMN reasoning_effort_source,
+    DROP COLUMN reasoning_effort_requested,
+    DROP COLUMN reasoning_effort,
+    DROP COLUMN recall_context_key;

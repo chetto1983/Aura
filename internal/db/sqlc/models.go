@@ -208,6 +208,17 @@ type AuraConversationTurns struct {
 	// Window occupancy of the round's final call (llm.Usage.ContextTokens). 0 = not recorded; input_tokens is the bill, not this.
 	ContextTokens int32         `json:"context_tokens"`
 	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
+	// Digest of what the model read before this user message (turn recall). NULL = not eligible for recall.
+	RecallContextKey pgtype.Text `json:"recall_context_key"`
+	// Effort sent on the first accepted main request, after the clamp. NULL = no effort field.
+	ReasoningEffort pgtype.Text `json:"reasoning_effort"`
+	// Effort the decision asked for, before the clamp. A reused label is clamped again, never inferred from reasoning_effort.
+	ReasoningEffortRequested pgtype.Text `json:"reasoning_effort_requested"`
+	// user, teacher, memory, seeds, greeting or fallback. Only user and teacher rows are reusable labels.
+	ReasoningEffortSource        pgtype.Text `json:"reasoning_effort_source"`
+	ReasoningEffortRouteKey      pgtype.Text `json:"reasoning_effort_route_key"`
+	ReasoningEffortPolicyVersion pgtype.Text `json:"reasoning_effort_policy_version"`
+	ReasoningEffortOriginRef     pgtype.Text `json:"reasoning_effort_origin_ref"`
 }
 
 // Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.

@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/secret"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const (
@@ -36,6 +37,9 @@ type ProjectionTurn struct {
 	ContentHash    string
 	OccurredAt     time.Time
 	SourceRef      string
+	// Decision is the turn's routing metadata (migration 0137): how its effort was decided
+	// and under which context, route and policy. Never reasoning text.
+	Decision TurnDecision
 }
 
 // ProjectionTombstone is an authoritative soft-deletion marker. Hard-deleted
@@ -75,7 +79,10 @@ func (s *Store) ListProjectionTurns(
 	err = db.WithIdentityTxRaw(ctx, s.pool, identityID, func(tx pgx.Tx) error {
 		rows, queryErr := tx.Query(ctx, `
 SELECT c.identity_id::text, t.conversation_id::text, t.seq, t.role,
-       COALESCE(t.content, ''), COALESCE(t.content_sidecar_path, ''), t.created_at
+       COALESCE(t.content, ''), COALESCE(t.content_sidecar_path, ''), t.created_at,
+       t.recall_context_key, t.reasoning_effort, t.reasoning_effort_requested,
+       t.reasoning_effort_source, t.reasoning_effort_route_key,
+       t.reasoning_effort_policy_version, t.reasoning_effort_origin_ref
   FROM aura.conversation_turns AS t
   JOIN aura.conversations AS c ON c.id = t.conversation_id
  WHERE c.identity_id = $1
@@ -96,7 +103,9 @@ SELECT c.identity_id::text, t.conversation_id::text, t.seq, t.role,
 			var identity, conversationID, role, content, sidecarPath string
 			var seq int
 			var occurredAt time.Time
-			if scanErr := rows.Scan(&identity, &conversationID, &seq, &role, &content, &sidecarPath, &occurredAt); scanErr != nil {
+			var key, effort, requested, source, route, policy, origin pgtype.Text
+			if scanErr := rows.Scan(&identity, &conversationID, &seq, &role, &content, &sidecarPath, &occurredAt,
+				&key, &effort, &requested, &source, &route, &policy, &origin); scanErr != nil {
 				return fmt.Errorf("scan projection turn: %w", scanErr)
 			}
 			next = ProjectionCursor{ConversationID: conversationID, Seq: seq}
@@ -120,6 +129,7 @@ SELECT c.identity_id::text, t.conversation_id::text, t.seq, t.role,
 				ContentHash:    projectionContentHash(content),
 				OccurredAt:     occurredAt.UTC(),
 				SourceRef:      projectionSourceRef(conversationID, seq),
+				Decision:       turnDecisionFromColumns(key, effort, requested, source, route, policy, origin),
 			})
 		}
 		return rows.Err()

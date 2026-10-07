@@ -69,6 +69,7 @@ func writeDumpTurn(b *strings.Builder, t DumpTurn, callNames map[string]string) 
 	if len(t.AttachmentIDs) > 0 {
 		fmt.Fprintf(b, "\nattachments: `%s`\n", strings.Join(t.AttachmentIDs, "`, `"))
 	}
+	writeTurnDecision(b, t.Decision)
 	if t.Reasoning != "" {
 		b.WriteString("\n**reasoning**")
 		if t.ReasoningDurationMS > 0 {
@@ -189,4 +190,17 @@ func longestBacktickRun(text string) int {
 		longest = max(longest, current)
 	}
 	return longest
+}
+
+// writeTurnDecision names how the turn's effort was decided (migration 0137), and nothing for
+// a turn that recorded no decision.
+func writeTurnDecision(b *strings.Builder, d TurnDecision) {
+	if d == (TurnDecision{}) {
+		return
+	}
+	fmt.Fprintf(b, "\neffort: `%s` (requested `%s`) · source `%s`", d.Effort, d.EffortRequested, d.EffortSource)
+	if d.OriginRef != "" {
+		fmt.Fprintf(b, " · from `%s`", d.OriginRef)
+	}
+	fmt.Fprintf(b, " · route `%s` · policy `%s` · context `%s`\n", d.RouteKey, d.PolicyVersion, d.ContextKey)
 }

@@ -204,3 +204,27 @@ func TestDumpMarkdownMasksConfiguredSecrets(t *testing.T) {
 		t.Errorf("want the secret masked in both the arguments and the reasoning:\n%s", md)
 	}
 }
+
+func TestWriteDumpTurnNamesTheDecision(t *testing.T) {
+	var b strings.Builder
+	writeDumpTurn(&b, DumpTurn{
+		Seq: 3, Role: llm.RoleUser, Content: "che tempo fa?", BranchID: uuid.Nil.String(), ParentSeq: 2,
+		CreatedAt: time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC),
+		Decision: TurnDecision{
+			ContextKey: "ctx1:aa", Effort: "low", EffortRequested: "low", EffortSource: "memory",
+			RouteKey: "route1:bb", PolicyVersion: "policy1:cc",
+			OriginRef: "postgres://aura/conversations/c/turns/1",
+		},
+	}, map[string]string{})
+	want := "\neffort: `low` (requested `low`) · source `memory` · from `postgres://aura/conversations/c/turns/1`" +
+		" · route `route1:bb` · policy `policy1:cc` · context `ctx1:aa`\n"
+	if !strings.Contains(b.String(), want) {
+		t.Fatalf("dump turn does not name the decision:\n%s", b.String())
+	}
+
+	b.Reset()
+	writeDumpTurn(&b, DumpTurn{Seq: 4, Role: llm.RoleAssistant, Content: "Sereno.", BranchID: uuid.Nil.String(), ParentSeq: 3}, map[string]string{})
+	if strings.Contains(b.String(), "effort:") {
+		t.Fatalf("a turn with no decision names one:\n%s", b.String())
+	}
+}
