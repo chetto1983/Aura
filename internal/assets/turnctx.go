@@ -2,8 +2,9 @@ package assets
 
 // The attachment ids of the turn being served, carried to the writer that records them.
 //
-// The HTTP layer knows them (the run envelope lists them beside the message) and validates
-// them; the runner is what appends the user turn and therefore what can persist the link.
+// The ingress knows them (the web chat's run envelope lists them beside the message, and
+// Telegram ingests them itself); the runner is what appends the user turn and therefore
+// what can persist the link, and what keeps an attachment turn out of turn recall.
 // Nothing between the two has a reason to know, so this rides the context the same way the
 // content projection already does rather than widening five signatures on its way through.
 //
@@ -29,9 +30,8 @@ func WithTurnAttachments(ctx context.Context, ids []string) context.Context {
 	return context.WithValue(ctx, turnAttachmentsKey{}, held)
 }
 
-// TurnAttachments reports the ids recorded for this turn, or nil when the request carried
-// none. nil is the honest answer for every non-HTTP caller — a scheduled delivery, a
-// Telegram turn, a delegation — none of which attach assets through this path.
+// TurnAttachments reports the ids recorded for this turn, or nil when the turn carried
+// none: a text message, a scheduled delivery, a delegation.
 func TurnAttachments(ctx context.Context) []string {
 	ids, _ := ctx.Value(turnAttachmentsKey{}).([]string)
 	return ids

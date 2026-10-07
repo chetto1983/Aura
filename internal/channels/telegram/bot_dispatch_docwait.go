@@ -53,8 +53,10 @@ func (t *Telegram) startDocumentTurnWhenIndexed(daemonCtx context.Context, c tel
 		// Composed AFTER indexing on purpose: the attachment block's retrieval line and
 		// the thread catalog now describe a document that document_search can really find.
 		composed := t.deps.Assets.BuildTurnContext(daemonCtx, asset.IdentityID, convID(chatID), []assets.Asset{asset}, text)
-		t.startTurn(daemonCtx, sender, to, chatID, messageID, &composed, false, func() {
-			if t.enqueuePendingTurn(chatID, composed, false) {
+		attachmentIDs := []string{asset.ID}
+		turnCtx := assets.WithTurnAttachments(daemonCtx, attachmentIDs)
+		t.startTurn(turnCtx, sender, to, chatID, messageID, &composed, false, func() {
+			if t.enqueuePendingTurn(chatID, composed, attachmentIDs, false) {
 				t.sendPlain(sender, chatID, turnQueuedForNextTurnMessage)
 				return
 			}

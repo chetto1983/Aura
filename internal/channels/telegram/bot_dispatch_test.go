@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"iter"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
+	assetspkg "github.com/chetto1983/aura/internal/assets"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -169,19 +171,22 @@ func (r *trackingReadCloser) Close() error {
 }
 
 // recordingTurn is a turnDriver that records every userMsg it was driven with so a
-// media test can assert the transcript/description/markdown reached the turn. It
-// yields the lifecycle frames the fanout guarantees (an empty event stream still
-// produces RUN_STARTED/RUN_FINISHED) so handleTurn terminates cleanly.
+// media test can assert the transcript/description/markdown reached the turn, and the
+// attachment ids its context carried to the runner. It yields the lifecycle frames the
+// fanout guarantees (an empty event stream still produces RUN_STARTED/RUN_FINISHED) so
+// handleTurn terminates cleanly.
 type recordingTurn struct {
-	mu    sync.Mutex
-	msgs  []string
-	calls int
+	mu          sync.Mutex
+	msgs        []string
+	attachments [][]string
+	calls       int
 }
 
 func (r *recordingTurn) driver() turnDriver {
-	return func(_ context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
 		r.mu.Lock()
 		r.calls++
+		r.attachments = append(r.attachments, assetspkg.TurnAttachments(ctx))
 		if userMsg != nil {
 			r.msgs = append(r.msgs, *userMsg)
 		} else {
@@ -200,6 +205,12 @@ func (r *recordingTurn) snapshot() (calls int, msgs []string) {
 	out := make([]string, len(r.msgs))
 	copy(out, r.msgs)
 	return r.calls, out
+}
+
+func (r *recordingTurn) attachmentsSnapshot() [][]string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.attachments)
 }
 
 // recordingFactory returns a consumerFactory whose consumers drain-and-discard, so

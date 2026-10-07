@@ -40,7 +40,8 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 	// turn only.
 	rawText := text
 	composedText := t.composeTurnContext(daemonCtx, c, chatID, attachments, text)
-	daemonCtx = t.withTurnMediaProjection(daemonCtx, chatID, attachments)
+	attachmentIDs := assetIDs(attachments)
+	daemonCtx = assets.WithTurnAttachments(t.withTurnMediaProjection(daemonCtx, chatID, attachments), attachmentIDs)
 	sender := t.sender(c)
 	to := c.Recipient()
 	messageID := 0
@@ -48,7 +49,18 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 		messageID = msg.ID
 	}
 	t.startTurn(daemonCtx, sender, to, chatID, messageID, &composedText, inboundWasVoice,
-		t.onBusyRedirect(c, chatID, rawText, composedText, len(attachments) > 0, inboundWasVoice))
+		t.onBusyRedirect(c, chatID, rawText, composedText, attachmentIDs, inboundWasVoice))
+}
+
+// assetIDs lists the attachments the way the runner reads them off the turn's context
+// (assets.WithTurnAttachments), as the web chat hands them over: it records them on the
+// user row, and a turn that carries any is never a reusable effort label.
+func assetIDs(attachments []assets.Asset) []string {
+	ids := make([]string, 0, len(attachments))
+	for _, attachment := range attachments {
+		ids = append(ids, attachment.ID)
+	}
+	return ids
 }
 
 // onBusyRedirect builds startTurn's onBusy callback for a chat where registerTurn
@@ -57,14 +69,14 @@ func (t *Telegram) runTurnWithAssets(daemonCtx context.Context, c tele.Context, 
 // per-chat pending slot and delivered when the live turn ends (D-05,
 // bot_dispatch_queue.go). An unwired inbox (the composition root's explicit
 // rollback) keeps today's turnBusyMessage for both.
-func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText, composedText string, hasAttachments, inboundWasVoice bool) func() {
+func (t *Telegram) onBusyRedirect(c tele.Context, chatID int64, rawText, composedText string, attachmentIDs []string, inboundWasVoice bool) func() {
 	return func() {
 		if t.deps.Steer == nil {
 			t.reply(c, turnBusyMessage)
 			return
 		}
-		if hasAttachments {
-			t.enqueueBusyTurn(c, chatID, composedText, inboundWasVoice)
+		if len(attachmentIDs) > 0 {
+			t.enqueueBusyTurn(c, chatID, composedText, attachmentIDs, inboundWasVoice)
 			return
 		}
 		t.steerBusyTurn(c, chatID, rawText)

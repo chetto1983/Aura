@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -65,6 +66,53 @@ func TestOnVoiceRoutesThroughAssetIngressWhenConfigured(t *testing.T) {
 	}
 	if assetIngress.readsBeforeIngest[0] != 0 {
 		t.Fatalf("handler read Telegram stream before asset ingress: reads=%d", assetIngress.readsBeforeIngest[0])
+	}
+}
+
+// The runner reads a turn's attachments off the context, as the web chat hands them over:
+// it records them on the user row (migration 0116) and keeps the turn out of recall, whose
+// labels must never be reused for a different attached file.
+func TestAttachmentTurnHandsItsAttachmentIDsToTheRunner(t *testing.T) {
+	t.Parallel()
+	rt := &recordingTurn{}
+	assetIngress := &recordingAssetIngress{asset: assetspkg.Asset{
+		ID: "asset-photo", IdentityID: profileAccount().IdentityID, SourceKind: assetspkg.SourceTelegram,
+		Modality: assetspkg.ModalityImage, Status: assetspkg.StatusComplete, FileName: "scontrino.jpg",
+	}}
+	tg := dispatchChannel(t, rt, func(d *Deps) { d.Assets = assetIngress })
+	image := []byte("\xff\xd8\xff jpeg")
+	bot := &dispatchBot{ogg: image}
+	assetIngress.bot = bot
+	msg := chatMsg(12)
+	msg.Photo = &tele.Photo{FileID: "photo-file", FileSize: int64(len(image))}
+	msg.Caption = "quanto ho speso?"
+	if err := tg.onPhoto(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onPhoto: %v", err)
+	}
+	tg.wg.Wait()
+
+	if got := rt.attachmentsSnapshot(); len(got) != 1 || !slices.Equal(got[0], []string{"asset-photo"}) {
+		t.Fatalf("attachments handed to the runner = %q, want [[asset-photo]]", got)
+	}
+}
+
+func TestTextTurnHandsNoAttachmentIDsToTheRunner(t *testing.T) {
+	t.Parallel()
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+		d.Assets = &recordingAssetIngress{}
+	})
+	msg := chatMsg(13)
+	msg.Text = "che ore sono a Tokyo?"
+	if err := tg.onText(context.Background())(msgContext(&dispatchBot{}, msg)); err != nil {
+		t.Fatalf("onText: %v", err)
+	}
+	tg.wg.Wait()
+
+	if got := rt.attachmentsSnapshot(); len(got) != 1 || got[0] != nil {
+		t.Fatalf("attachments handed to the runner = %q, want one turn with none", got)
 	}
 }
 

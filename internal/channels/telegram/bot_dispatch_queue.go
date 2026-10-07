@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/assets"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -46,12 +47,13 @@ const (
 )
 
 // pendingTurn holds what a queued media turn needs and nothing more: the
-// ALREADY-COMPOSED text and inboundWasVoice (the echo-modality TTS-out path).
-// composeTurnContext already ran on the handler goroutine while the tele.Context
-// was live, so the composition is never repeated at delivery — this deliberately
-// does NOT hold a tele.Context, which is recycled once the handler returns.
+// ALREADY-COMPOSED text, its attachment ids and inboundWasVoice (the echo-modality
+// TTS-out path). composeTurnContext already ran on the handler goroutine while the
+// tele.Context was live, so the composition is never repeated at delivery — this
+// deliberately does NOT hold a tele.Context, which is recycled once the handler returns.
 type pendingTurn struct {
 	text            string
+	attachmentIDs   []string
 	inboundWasVoice bool
 	arrived         time.Time
 }
@@ -59,8 +61,8 @@ type pendingTurn struct {
 // enqueueBusyTurn stores a media message's already-composed text in chatID's
 // pending slot and tells the operator it will run after the current request.
 // Past mediaQueueMaxPerChat it refuses instead of enqueueing.
-func (t *Telegram) enqueueBusyTurn(c tele.Context, chatID int64, composedText string, inboundWasVoice bool) {
-	if !t.enqueuePendingTurn(chatID, composedText, inboundWasVoice) {
+func (t *Telegram) enqueueBusyTurn(c tele.Context, chatID int64, composedText string, attachmentIDs []string, inboundWasVoice bool) {
+	if !t.enqueuePendingTurn(chatID, composedText, attachmentIDs, inboundWasVoice) {
 		t.reply(c, turnQueueFullMessage)
 		return
 	}
@@ -71,7 +73,7 @@ func (t *Telegram) enqueueBusyTurn(c tele.Context, chatID int64, composedText st
 // turn (bot_dispatch_docwait.go) hits busy AFTER the tele.Context was recycled, so
 // the notice goes out via sendPlain there. Returns false when the chat's slot is
 // already at mediaQueueMaxPerChat.
-func (t *Telegram) enqueuePendingTurn(chatID int64, composedText string, inboundWasVoice bool) bool {
+func (t *Telegram) enqueuePendingTurn(chatID int64, composedText string, attachmentIDs []string, inboundWasVoice bool) bool {
 	t.pendingMu.Lock()
 	defer t.pendingMu.Unlock()
 	if len(t.pendingTurns[chatID]) >= mediaQueueMaxPerChat {
@@ -82,6 +84,7 @@ func (t *Telegram) enqueuePendingTurn(chatID int64, composedText string, inbound
 	}
 	t.pendingTurns[chatID] = append(t.pendingTurns[chatID], pendingTurn{
 		text:            composedText,
+		attachmentIDs:   attachmentIDs,
 		inboundWasVoice: inboundWasVoice,
 		arrived:         time.Now(),
 	})
@@ -121,19 +124,23 @@ func (t *Telegram) deliverPendingTurn(turnCtx context.Context, sender botSender,
 		if !ok {
 			return
 		}
-		text := joinQueuedTurns(msgs)
-		t.handleTurn(turnCtx, sender, chatID, &text, msgs[0].inboundWasVoice)
+		text, attachmentIDs := joinQueuedTurns(msgs)
+		// turnCtx is the live turn's, so it can carry that turn's attachments; a queued turn
+		// always has its own, which replace them.
+		t.handleTurn(assets.WithTurnAttachments(turnCtx, attachmentIDs), sender, chatID, &text, msgs[0].inboundWasVoice)
 	}
 }
 
-// joinQueuedTurns joins N queued messages' already-composed text, FIFO, into the
-// SINGLE turn deliverPendingTurn drives — never N separate follow-on turns.
-func joinQueuedTurns(msgs []pendingTurn) string {
+// joinQueuedTurns joins N queued messages' already-composed text and attachment ids,
+// FIFO, into the SINGLE turn deliverPendingTurn drives — never N separate follow-on turns.
+func joinQueuedTurns(msgs []pendingTurn) (string, []string) {
 	texts := make([]string, 0, len(msgs))
+	var attachmentIDs []string
 	for _, m := range msgs {
 		texts = append(texts, m.text)
+		attachmentIDs = append(attachmentIDs, m.attachmentIDs...)
 	}
-	return strings.Join(texts, "\n\n")
+	return strings.Join(texts, "\n\n"), attachmentIDs
 }
 
 // sendPlain sends text via sender directly (no tele.Context — the caller runs

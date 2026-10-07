@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"iter"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,8 +21,9 @@ import (
 // goroutine — the test needs to control each hop independently to prove the
 // chain cap (TestQueueChainIsBounded).
 type gatedCall struct {
-	gate    chan struct{}
-	userMsg string
+	gate        chan struct{}
+	userMsg     string
+	attachments []string
 }
 
 // gatedTurnDriver returns a turnDriver whose every invocation blocks on its OWN
@@ -31,7 +33,7 @@ func gatedTurnDriver(calls *atomic.Int32) (turnDriver, chan gatedCall) {
 	ch := make(chan gatedCall, 8)
 	driver := func(ctx context.Context, _ string, userMsg *string) iter.Seq2[*agent.Event, error] {
 		calls.Add(1)
-		call := gatedCall{gate: make(chan struct{})}
+		call := gatedCall{gate: make(chan struct{}), attachments: assetspkg.TurnAttachments(ctx)}
 		if userMsg != nil {
 			call.userMsg = *userMsg
 		}
@@ -134,6 +136,9 @@ func TestQueuedTurnDeliveredAfterLiveTurnEnds(t *testing.T) {
 	}
 	if hop2.userMsg != attachmentText {
 		t.Fatalf("delivered turn userMsg = %q, want the queued composed text %q", hop2.userMsg, attachmentText)
+	}
+	if hop1.attachments != nil || !slices.Equal(hop2.attachments, []string{"a1"}) {
+		t.Fatalf("attachments handed to the runner: live %q, queued %q; want none, then [a1]", hop1.attachments, hop2.attachments)
 	}
 }
 

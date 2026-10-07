@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -54,6 +55,9 @@ func TestOnDocumentWaitsForTheIndexAndReportsStatus(t *testing.T) {
 	calls, _ := rt.snapshot()
 	if calls != 1 {
 		t.Fatalf("an indexed document must drive exactly 1 turn, got %d", calls)
+	}
+	if got := rt.attachmentsSnapshot(); !slices.Equal(got[0], []string{"asset-doc"}) {
+		t.Fatalf("the document turn handed the runner attachments %q, want [asset-doc]", got)
 	}
 	joined := strings.Join(bot.sentTexts(), "\n")
 	if !strings.Contains(joined, "Ho ricevuto manual.pdf") {

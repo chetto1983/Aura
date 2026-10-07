@@ -376,9 +376,9 @@ func (r *Runner) scopeContextToConversation(ctx context.Context, convID string) 
 
 // appendUserTurn persists the user message as the next turn, together with whatever was
 // attached to it (migration 0116), and returns the seq the store gave it: the turn's effort
-// decision is written back to exactly that row. The ids ride the context because the HTTP
-// layer is where they are known and validated; a request that attached nothing carries none
-// and the column stays NULL.
+// decision is written back to exactly that row. The ids ride the context because the
+// ingress (the web chat, Telegram) is where they are known and validated; a turn that
+// attached nothing carries none and the column stays NULL.
 func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) (int, error) {
 	seq, err := r.Conv.AppendTurnSeq(ctx, conversations.AppendTurnParams{
 		ConversationID: convID, Role: llm.RoleUser, Content: content,
