@@ -30,6 +30,36 @@ type ConversationTurnProjection struct {
 	ContentHash    string
 	OccurredAt     time.Time
 	SourceRef      string
+	Decision       TurnDecision
+}
+
+// TurnDecision is the routing metadata a user turn carries into the graph (spec 2026-10-06,
+// "Persisting what was learned"): how its effort was decided and under which context, route
+// and policy. Strings only and never reasoning text. Postgres is authoritative; a replay
+// rewrites every field, so a rebuild keeps the provenance and a field cleared there is
+// cleared here.
+//
+// conversations.TurnDecision declares the same fields in the same order: the projector
+// converts one into the other, so a field added here must be added there too.
+type TurnDecision struct {
+	ContextKey      string
+	Effort          string
+	EffortRequested string
+	EffortSource    string
+	RouteKey        string
+	PolicyVersion   string
+	OriginRef       string
+}
+
+// bind sets every routing parameter, to NULL where the decision has nothing.
+func (d TurnDecision) bind(params map[string]any) {
+	params["recall_context_key"] = nullableString(d.ContextKey)
+	params["effort"] = nullableString(d.Effort)
+	params["effort_requested"] = nullableString(d.EffortRequested)
+	params["effort_source"] = nullableString(d.EffortSource)
+	params["effort_route_key"] = nullableString(d.RouteKey)
+	params["effort_policy_version"] = nullableString(d.PolicyVersion)
+	params["effort_origin_ref"] = nullableString(d.OriginRef)
 }
 
 // ConversationProjection batches authoritative turns under their graph parent.
@@ -75,6 +105,15 @@ func conversationSchemaStatements() []string {
 		"CREATE PROPERTY " + conversationTurnType + ".source_ref IF NOT EXISTS STRING",
 		"CREATE PROPERTY " + conversationTurnType + ".deleted_at IF NOT EXISTS DATETIME",
 		"CREATE PROPERTY " + conversationTurnType + ".embedding IF NOT EXISTS ARRAY_OF_FLOATS",
+		"CREATE PROPERTY " + conversationTurnType + ".recall_context_key IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort_requested IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort_source IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort_route_key IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort_policy_version IF NOT EXISTS STRING",
+		"CREATE PROPERTY " + conversationTurnType + ".effort_origin_ref IF NOT EXISTS STRING",
+		// Every recall pool starts from the turns that share the reader's prior context.
+		"CREATE INDEX IF NOT EXISTS ON " + conversationTurnType + " (recall_context_key) NOTUNIQUE",
 		"CREATE INDEX IF NOT EXISTS ON " + conversationTurnType + " (identity_id, conversation_id, turn_seq) UNIQUE",
 		"CREATE INDEX IF NOT EXISTS ON " + conversationTurnType + " (content) FULL_TEXT " +
 			"METADATA {analyzer:'org.apache.lucene.analysis.en.EnglishAnalyzer'}",
@@ -99,7 +138,10 @@ const upsertConversationTurnStatement = "UPDATE " + conversationTurnType +
 	" SET identity_id = :identity_id, conversation_id = :conversation_id," +
 	" turn_seq = :turn_seq, role = :role, content = :content," +
 	" content_hash = :content_hash, occurred_at = :occurred_at," +
-	" source_ref = :source_ref, deleted_at = NULL"
+	" source_ref = :source_ref, deleted_at = NULL," +
+	" recall_context_key = :recall_context_key, effort = :effort, effort_requested = :effort_requested," +
+	" effort_source = :effort_source, effort_route_key = :effort_route_key," +
+	" effort_policy_version = :effort_policy_version, effort_origin_ref = :effort_origin_ref"
 
 const upsertConversationTurnWhere = " UPSERT RETURN AFTER WHERE identity_id = :identity_id" +
 	" AND conversation_id = :conversation_id AND turn_seq = :turn_seq"
@@ -161,6 +203,7 @@ func (c *Client) ApplyConversationProjection(ctx context.Context, projection Con
 			"occurred_at":  turn.OccurredAt.UTC().Format(time.RFC3339Nano),
 			"source_ref":   turn.SourceRef,
 		}
+		turn.Decision.bind(turnParams)
 		statement := upsertConversationTurnStatement
 		if vector, changed := vectors[index]; changed {
 			statement += vector.replaceClause(turnParams)

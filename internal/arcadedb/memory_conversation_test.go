@@ -26,6 +26,8 @@ func TestConversationSchemaStatements(t *testing.T) {
 		"identity_id", "conversation_id", "turn_seq", "role", "content",
 		"content_hash", "occurred_at", "source_ref", "deleted_at", "embedding",
 		"FULL_TEXT", "LSM_VECTOR", "embed_space", "NULL_STRATEGY INDEX",
+		"recall_context_key", "effort", "effort_requested", "effort_source",
+		"effort_route_key", "effort_policy_version", "effort_origin_ref",
 	} {
 		if !strings.Contains(joined, required) {
 			t.Errorf("conversation schema missing %q", required)
@@ -299,5 +301,73 @@ func TestConversationProjectionEmbedsItsChangedTurnsInOneRequest(t *testing.T) {
 	}
 	if len(embedder.calls) != 1 || len(embedder.calls[0]) != 3 {
 		t.Fatalf("embedder calls = %v, want one request carrying the three turns", embedder.calls)
+	}
+}
+
+func decisionProjection(decision TurnDecision) ConversationProjection {
+	at := time.Date(2026, 10, 7, 9, 0, 0, 0, time.UTC)
+	return ConversationProjection{
+		IdentityID: "identity-a", ConversationID: "conversation-1",
+		Turns: []ConversationTurnProjection{
+			{
+				IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1, Role: "user",
+				Content: "che tempo fa domani?", ContentHash: conversationContentHash("che tempo fa domani?"),
+				OccurredAt: at, SourceRef: "postgres://aura/conversations/conversation-1/turns/1", Decision: decision,
+			},
+			{
+				IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 2, Role: "assistant",
+				Content: "Sereno.", ContentHash: conversationContentHash("Sereno."),
+				OccurredAt: at, SourceRef: "postgres://aura/conversations/conversation-1/turns/2",
+			},
+		},
+	}
+}
+
+var turnDecisionProperties = []string{
+	"recall_context_key", "effort", "effort_requested", "effort_source",
+	"effort_route_key", "effort_policy_version", "effort_origin_ref",
+}
+
+// The routing properties are written on every replay, so a decision that reached Postgres
+// after the turn was first projected lands on the next reconciliation, and one Postgres
+// cleared is cleared here too (spec, "The projection").
+func TestConversationProjectionWritesTheTurnDecision(t *testing.T) {
+	client, rec := recordingClient(t, `{"result":[]}`)
+	decision := TurnDecision{
+		ContextKey: "ctx1:aa", Effort: "low", EffortRequested: "low", EffortSource: "teacher",
+		RouteKey: "route1:bb", PolicyVersion: "policy1:cc",
+	}
+	if err := client.ApplyConversationProjection(context.Background(), decisionProjection(decision)); err != nil {
+		t.Fatalf("ApplyConversationProjection: %v", err)
+	}
+	upserts := map[int]map[string]any{}
+	for index, statement := range rec.statements {
+		if !strings.HasPrefix(statement, "UPDATE "+conversationTurnType+" ") {
+			continue
+		}
+		for _, property := range turnDecisionProperties {
+			if !strings.Contains(statement, property+" = :"+property) {
+				t.Fatalf("turn upsert does not set %s:\n%s", property, statement)
+			}
+		}
+		seq, _ := rec.params[index]["turn_seq"].(float64)
+		upserts[int(seq)] = rec.params[index]
+	}
+	user, assistant := upserts[1], upserts[2]
+	if user == nil || assistant == nil {
+		t.Fatalf("turn upserts by seq = %v, want seq 1 and 2", upserts)
+	}
+	for property, want := range map[string]any{
+		"recall_context_key": "ctx1:aa", "effort": "low", "effort_requested": "low", "effort_source": "teacher",
+		"effort_route_key": "route1:bb", "effort_policy_version": "policy1:cc", "effort_origin_ref": nil,
+	} {
+		if got, ok := user[property]; !ok || got != want {
+			t.Errorf("user turn %s = %v (bound %v), want %v", property, got, ok, want)
+		}
+	}
+	for _, property := range turnDecisionProperties {
+		if got, ok := assistant[property]; !ok || got != nil {
+			t.Errorf("assistant turn %s = %v (bound %v), want an explicit NULL", property, got, ok)
+		}
 	}
 }

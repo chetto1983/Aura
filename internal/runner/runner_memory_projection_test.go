@@ -517,3 +517,27 @@ func TestConversationProjectionFailSoft(t *testing.T) {
 		t.Fatal("successful source append never reached the projector")
 	}
 }
+
+func TestConversationProjectorCarriesTheTurnDecision(t *testing.T) {
+	decision := conversations.TurnDecision{
+		ContextKey: "ctx1:aa", Effort: "high", EffortRequested: "high", EffortSource: "seeds",
+		RouteKey: "route1:bb", PolicyVersion: "policy1:cc",
+	}
+	content := "scrivi uno script che ruota i log"
+	sum := sha256.Sum256([]byte(content))
+	source := &reconciliationProjectionSource{turns: []conversations.ProjectionTurn{{
+		IdentityID: "identity-a", ConversationID: "conversation-1", Seq: 1, Role: "user",
+		Content: content, ContentHash: hex.EncodeToString(sum[:]), OccurredAt: time.Now().UTC(),
+		SourceRef: "postgres://aura/conversations/conversation-1/turns/1", Decision: decision,
+	}}}
+	sink := newReconciliationProjectionSink()
+	projector := NewConversationProjector(source, sink, 16)
+	t.Cleanup(func() { _ = projector.Close(context.Background()) })
+
+	if _, err := projector.ProjectPage(context.Background(), "identity-a", conversations.ProjectionCursor{}); err != nil {
+		t.Fatalf("ProjectPage: %v", err)
+	}
+	if got := sink.turns["identity-a/conversation-1/1"].Decision; got != arcadedb.TurnDecision(decision) {
+		t.Fatalf("projected decision = %+v, want %+v", got, decision)
+	}
+}

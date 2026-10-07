@@ -149,6 +149,7 @@ func (p *ConversationProjector) applyTurns(
 			IdentityID: turn.IdentityID, ConversationID: turn.ConversationID,
 			Seq: turn.Seq, Role: turn.Role, Content: turn.Content,
 			ContentHash: turn.ContentHash, OccurredAt: turn.OccurredAt, SourceRef: turn.SourceRef,
+			Decision: arcadedb.TurnDecision(turn.Decision),
 		})
 	}
 	for _, projection := range projections {
