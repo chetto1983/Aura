@@ -602,6 +602,26 @@ turn, and it still is not one. Here it only teaches memory.
 - **End to end.** Turn A is decided by `seeds`, and its teacher label appears on its row and then on
   `ConversationTurn`. Paraphrase B is decided by `memory`, with `label_origin` set to A's turn.
 
+## Amendment 2026-10-07 — the `tool_search` dense leg is not built
+
+**Measured.** On the lab VM from 2026-10-05 to 2026-10-07, the models made 47 `tool_search` calls.
+44 used `select:` by name and 3 used free text, and none of them got a no-match reply
+(`docs/verification/turn-recall-vm-e2e-2026-10-07.md`, "Plan 3 scoping"). The dense leg changes
+only free-text ranking, so it could have changed at most 3 of those 47 searches, and BM25 answered
+all three. The cost these turns did pay is the loading round: 39 of 52 tool-using requests spent a
+round on `tool_search`, mostly for `web_search`, `web_fetch` and `task`. That cost belongs to the
+tool preload, not to ranking.
+
+**What the measurement does not show.** Everyday use. It covers three days of mostly scripted
+end-to-end turns, and the preload hit rate was not read.
+
+**Decision (operator, 2026-10-07).**
+- The dense leg section above is not implemented, and plan 3 is not written.
+- Read the same report again on the appliance after one to two weeks of real use, and add the
+  preload hit rate: how many turns called a preloaded tool without a `tool_search` round.
+- Reopen the dense leg only if free-text searches or no-match replies become a measurable share.
+- Reopen the preload only if its hit rate leaves the loading round in most tool-using turns.
+
 ## Primary sources checked on 2026-10-06
 
 - [ArcadeDB vector functions](https://docs.arcadedb.com/arcadedb/reference/extended-functions/vector):

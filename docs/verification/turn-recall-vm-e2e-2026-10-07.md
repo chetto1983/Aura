@@ -214,3 +214,32 @@ Around r2, the cockpit's sign-in rate limit (30 per window) refused the driver's
 - **Single pairs still went either way.** r1's warm turn was slower than its cold turn, and r3's warm turn was both slower and costlier.
 - **The answers did not change.** Every cold and warm answer concluded that no single public monthly price exists.
 - **What this does not show:** four samples of one question do not tell model variance apart from memory's effect. They show that this pair's regression is not systematic, and nothing more.
+
+## Plan 3 scoping — how `tool_search` is used (read-only, 2026-10-07)
+
+Read from `aura.tool_invocations` (end events) on the lab VM. The window runs from 2026-10-05 to
+2026-10-07: 69 user turns, 52 requests that called a tool, two models (`gpt-5.6-sol` and
+`gemma4:31b-cloud`).
+
+| Measure | Value |
+|---|---|
+| `tool_search` calls | 47: 44 `select:` by name, 3 free text |
+| Free-text queries | "scheduling reminder", "scheduling reminders", "scheduling, reminder, schedule, task, todo" |
+| No-match replies | 0 |
+| `unknown tool` errors / dispatch-gate refusals | 0 / 0 |
+| Unregistered names in a `select:` | 6, every one of them "scheduling" |
+| Requests that paid a `tool_search` round | 39 of 52 |
+| Requests with 2 or more `tool_search` calls | 7, and 1 of them with 3 or more |
+| Most frequent `select:` | `web_search,web_fetch` 13, `web_search` 6, `task` 5, `web_fetch` 3 |
+
+- **Free-text ranking almost never runs.** The models load tools by name from the deferred roster.
+  BM25 answered every free-text query, so a dense leg could change at most 3 of 47 searches here.
+- **The "scheduling" naming error no longer costs a round.** Four of the six occurrences (10-05)
+  were followed by another search. The two since the stand-in shipped (10-06) loaded `task` in the
+  same reply.
+- **The measured cost is the loading round itself.** It is paid in 39 of 52 tool-using requests,
+  mostly for the same three tools. That round is what the turn-recall preload is meant to remove.
+- **Repeats come from loading in two batches**, for example `web_search` and then `web_fetch`, or
+  browser open/snapshot and then click/wait. They do not come from ranking misses.
+- **What this does not show:** everyday use. The window holds three days, mostly scripted E2E
+  turns that lean towards web and scheduling. The preload hit rate was not read.
