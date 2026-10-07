@@ -35,9 +35,10 @@ bounded by the runner's default teacher timeout (30 s), whenever either arm aske
 serves both arms, which read the same text with the same classifier.
 
 - In time order, a successful answer becomes the recall arm's label for that turn before the
-  next turn is read. Its source is `teacher`, its requested effort is the tier's effort clamped
-  by the route, and its applied effort is the one the turn sent. A failed answer leaves the
-  seeds decision as it was, as on a real row.
+  next turn is read. Its source is `teacher`, its requested effort is the tier's effort before
+  the clamp (as migration 0137 defines the column; a reuse clamps it again), and its applied
+  effort is the one the turn sent. A failed answer leaves the seeds decision as it was, as on a
+  real row.
 - The **seeds + teacher** arm therefore measures two things: the turn's own seeds decision, and
   how often the background teacher would have labelled it.
 

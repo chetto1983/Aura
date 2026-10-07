@@ -239,14 +239,15 @@ func replayTrial(t *testing.T, env evalEnv, set evalSet, split string, trial int
 			}
 			// The background teacher, in time order: a successful answer is written as this
 			// turn's label before the next turn is read, as the runner's worker writes it, and
-			// a failure leaves the decision as it was. One answer serves both arms, which read
-			// the same text with the same classifier.
+			// a failure leaves the decision as it was. The label is the tier's effort before
+			// the clamp, as the runner stores it; reuse clamps it again. One answer serves both
+			// arms, which read the same text with the same classifier.
 			learned := decision
 			if baseline.AskTeacher || decision.AskTeacher {
 				tier, outcome, took := env.teach(turn.Text)
 				record.teacher, record.teacherDuration = outcome, took
 				if decision.AskTeacher && outcome == TeacherSuccess {
-					learned.EffortSource, learned.EffortRequested = EffortSourceTeacher, env.cfg.ClampReasoningEffort(tier.Effort())
+					learned.EffortSource, learned.EffortRequested = EffortSourceTeacher, tier.Effort()
 				}
 			}
 			records = append(records, record)

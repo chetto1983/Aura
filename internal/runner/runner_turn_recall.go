@@ -186,24 +186,28 @@ func (r *Runner) maybeTeachTurn(turnCtx context.Context, tr *turnTracker) {
 		started := time.Now()
 		tier, outcome := agent.AskTeacher(ctx, runtime.Client, runtime.Config.Model, text)
 		elapsed := time.Since(started)
-		var effort llm.ReasoningEffort
+		// The label stores the tier's effort before the clamp, as migration 0137 defines
+		// reasoning_effort_requested; a reuse clamps it again. effort is what that reuse
+		// would send on this route, logged only.
+		var requested, effort llm.ReasoningEffort
 		if outcome == agent.TeacherSuccess {
-			effort = runtime.Config.ClampReasoningEffort(tier.Effort())
-			r.persistTeacherLabel(turnCtx, convID, seq, effort)
+			requested = tier.Effort()
+			effort = runtime.Config.ClampReasoningEffort(requested)
+			r.persistTeacherLabel(turnCtx, convID, seq, requested)
 		}
 		// The source ref bypasses redact.Line, as on the turn-read line: it names a turn
 		// and carries no credential, and redact.Line blanks every postgres:// string.
 		slog.Info("adaptive reasoning: teacher label",
 			"thread_id", redact.Line(convID), "source_ref", reasoningSourceRef(convID, seq),
-			"outcome", outcome, "tier", string(tier), "effort", string(effort),
-			"teacher_ms", elapsed.Milliseconds())
+			"outcome", outcome, "tier", string(tier), "requested", string(requested),
+			"effort", string(effort), "teacher_ms", elapsed.Milliseconds())
 	})
 }
 
-func (r *Runner) persistTeacherLabel(turnCtx context.Context, convID string, seq int, effort llm.ReasoningEffort) {
+func (r *Runner) persistTeacherLabel(turnCtx context.Context, convID string, seq int, requested llm.ReasoningEffort) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(turnCtx), backgroundWriteTimeout)
 	defer cancel()
-	if err := r.turnDecisions.RecordTeacherLabel(ctx, convID, seq, string(effort)); err != nil {
+	if err := r.turnDecisions.RecordTeacherLabel(ctx, convID, seq, string(requested)); err != nil {
 		slog.Warn("adaptive reasoning: teacher label write failed",
 			"conv", redact.Line(convID), "seq", seq, "err", redact.Line(err.Error()))
 	}

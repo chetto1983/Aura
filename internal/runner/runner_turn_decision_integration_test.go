@@ -74,8 +74,9 @@ func TestTeacherLabelLandsOnTheRealUserRow(t *testing.T) {
 			   FROM aura.conversation_turns WHERE conversation_id = $1 AND role = 'user'`,
 			convID).Scan(&effort, &requested, &source)
 	})
-	// Seeds decided high and sent it; the teacher's none is clamped to low on this route.
-	if effort != "high" || requested != "low" || source != agent.EffortSourceTeacher {
-		t.Fatalf("user row: effort %q requested %q source %q; want high sent, labelled low by the teacher", effort, requested, source)
+	// Seeds decided high and sent it. The label stores the teacher's none before the clamp,
+	// as the column defines it; on this route a reuse would send it as low.
+	if effort != "high" || requested != "none" || source != agent.EffortSourceTeacher {
+		t.Fatalf("user row: effort %q requested %q source %q; want high sent, labelled none by the teacher", effort, requested, source)
 	}
 }

@@ -90,8 +90,9 @@ func captureLogs(t *testing.T) *lockedBuffer {
 	return logs
 }
 
-// mandatoryRoute takes low and high only, and cannot turn reasoning off: a teacher none is
-// sent, and labelled, as low.
+// mandatoryRoute takes low and high only, and cannot turn reasoning off, so the clamp turns
+// a teacher none into low. The label must store none, the effort before the clamp
+// (migration 0137); a reuse clamps it again. A label stored as low means something clamped.
 func mandatoryRoute() llm.Config {
 	cfg := reasoningRoute()
 	cfg.SupportedReasoningEfforts = []llm.ReasoningEffort{llm.ReasoningEffortLow, llm.ReasoningEffortHigh}
@@ -160,15 +161,15 @@ func TestUncertainTurnIsLabelledByTheTeacherAfterItsDecision(t *testing.T) {
 	}
 	seq := records[0].seq
 	labels, writes := decisions.labelSnapshot()
-	if !slices.Equal(labels, []recordedLabel{{convID: convID, seq: seq, requested: "low"}}) || !slices.Equal(writes, []string{"decision", "label"}) {
-		t.Fatalf("labels %+v after writes %v; want the clamped low on the decided row, after its decision", labels, writes)
+	if !slices.Equal(labels, []recordedLabel{{convID: convID, seq: seq, requested: "none"}}) || !slices.Equal(writes, []string{"decision", "label"}) {
+		t.Fatalf("labels %+v after writes %v; want the teacher's none, before the clamp, on the decided row after its decision", labels, writes)
 	}
 	requests := teacher.snapshot()
 	if len(requests) != 1 || requests[0].Messages[1].Content != typed || requests[0].Model != mandatoryRoute().Model {
 		t.Fatalf("teacher requests = %+v, want one on the turn's model about the typed text", requests)
 	}
 	for _, want := range []string{`msg="adaptive reasoning: teacher label"`, "source_ref=" + reasoningSourceRef(convID, seq),
-		"outcome=success", "tier=none", "effort=low"} {
+		"outcome=success", "tier=none", "requested=none", "effort=low"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("logs lack %q:\n%s", want, logs.String())
 		}
