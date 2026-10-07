@@ -1981,10 +1981,15 @@ Live on the lab VM at `2882a46bf`, the same day, with the same question and mode
 - Asked to read the RS datasheet by URL, a second turn fetched the PDF in 622 ms and
   answered 8.9 kg, 15.1 kg·cm² and 5,800 rpm, as the datasheet states.
 - The turn still took 63 s and billed 134,436 input tokens, 11,136 of them cached.
+- A third turn asked what the SiePortal page says. web_fetch answered
+  `javascript_required`, and the model loaded the `browser-aura` skill and the browser
+  tools. It opened the page in 4.5 s, read it, closed the browser, and answered from the
+  rendered page: the product data, the 8.9 kg net weight, the packaging size, "Active
+  Product" and the order-status notice. The turn ran from 10:26:50 to 10:28:05.
 
 This does not establish:
-- that the model switches to the browser: the live turn found its data without one, so
-  steering is still a prompt line;
+- the bot-check route: no live turn met `bot_challenge`, so the switch was seen only from
+  `javascript_required`;
 - a challenge inside the browser: none appeared, so the handoff path ran nowhere.
 
 ## 13. MCP integrations
