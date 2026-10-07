@@ -1971,9 +1971,20 @@ browser's live view, never to solve one itself. The handoff follows OpenBot's
 `agent-computer/src/challenge.ts`, which detects the challenge and hands control to a
 person.
 
+Live on the lab VM at `2882a46bf`, the same day, with the same question and model:
+- The turn read SiePortal as `javascript_required` (324 ms) and Siemens Industry Support
+  as a page (964 ms). The ledger recorded its two failed fetches as `status='error'` with
+  `javascript_required` and `http_error status 403`.
+- Every citation was backed. `[1]`, the SiePortal page listed as not read, was cited only
+  for "active product", which its snippet states. The 5,800 rpm maximum speed, missing
+  from the first answer, was cited to a snippet that states it.
+- Asked to read the RS datasheet by URL, a second turn fetched the PDF in 622 ms and
+  answered 8.9 kg, 15.1 kg·cm² and 5,800 rpm, as the datasheet states.
+- The turn still took 63 s and billed 134,436 input tokens, 11,136 of them cached.
+
 This does not establish:
-- that the model switches to the browser: steering is a prompt line until a live turn
-  shows it;
+- that the model switches to the browser: the live turn found its data without one, so
+  steering is still a prompt line;
 - a challenge inside the browser: none appeared, so the handoff path ran nowhere.
 
 ## 13. MCP integrations
