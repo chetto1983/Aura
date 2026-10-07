@@ -43,6 +43,56 @@ func TestWithout(t *testing.T) {
 	}
 }
 
+// TestWithoutRebindsToolSearch asserts a derived registry searches only what it can
+// dispatch. Copying the parent's tool_search kept it bound to the parent, so a swarm
+// worker whose registry withheld swarm_spawn could still load its schema, call it, and
+// lose the round to "unknown tool".
+func TestWithoutRebindsToolSearch(t *testing.T) {
+	parent := NewRegistry()
+	parentSearch := &ToolSearch{Registry: parent}
+	parent.Register(parentSearch)
+	parent.Register(searchableTool{name: "swarm_spawn", summary: "run parallel subtasks as workers"})
+	parent.Register(searchableTool{name: "web_search", summary: "look things up online"})
+	ctx := ctxWith(t, "sess-w", "call-w")
+	preview := func(ts Tool, query string) string {
+		t.Helper()
+		res, err := ts.Execute(ctx, []byte(`{"query":"`+query+`"}`))
+		if err != nil {
+			t.Fatalf("tool_search %q: %v", query, err)
+		}
+		return res.Preview
+	}
+
+	child := Without(parent, "swarm_spawn")
+	childSearch, ok := child.Get(toolSearchName)
+	if !ok {
+		t.Fatal("derived registry must keep a tool_search")
+	}
+	if got := preview(childSearch, "select:swarm_spawn"); !strings.Contains(got, `"swarm_spawn" is not a registered tool`) ||
+		strings.Contains(got, "full description of swarm_spawn") {
+		t.Errorf("derived tool_search loaded a withheld tool's schema: %q", got)
+	}
+	if got := preview(parentSearch, "parallel subtasks workers"); !strings.Contains(got, "swarm_spawn") {
+		t.Fatalf("control: the parent's free-text search must find swarm_spawn, got %q", got)
+	}
+	if got := preview(childSearch, "parallel subtasks workers"); strings.Contains(got, "swarm_spawn") {
+		t.Errorf("derived free-text search offered a withheld tool: %q", got)
+	}
+	if got := preview(childSearch, "select:web_search"); !strings.Contains(got, "full description of web_search") {
+		t.Errorf("derived tool_search must still load the tools it holds: %q", got)
+	}
+
+	if got, _ := parent.Get(toolSearchName); got != Tool(parentSearch) {
+		t.Error("the parent must keep its own tool_search instance")
+	}
+	if got := preview(parentSearch, "select:swarm_spawn"); !strings.Contains(got, "full description of swarm_spawn") {
+		t.Errorf("the parent's tool_search must still load swarm_spawn: %q", got)
+	}
+	if _, ok := Without(parent, toolSearchName).Get(toolSearchName); ok {
+		t.Error("naming tool_search must drop it, not rebind it")
+	}
+}
+
 // TestRegisterDistinctNamesSucceeds asserts the normal path: registering tools
 // with distinct names keeps every one of them.
 func TestRegisterDistinctNamesSucceeds(t *testing.T) {

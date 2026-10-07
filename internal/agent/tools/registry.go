@@ -8,6 +8,11 @@ package tools
 //
 // Promoted out of internal/swarm so internal/cron can consume it without importing
 // internal/swarm (D-24 forbids that import; OQ2 carve-out).
+//
+// The parent's tool_search is replaced by one bound to the derived registry: the copied
+// instance would keep searching the parent, offering schemas of tools this registry cannot
+// dispatch. Its index builds on first search, so it also sees tools registered after
+// Without returns (workerRegistry re-adds swarm_spawn when depth allows).
 func Without(parent *Registry, names ...string) *Registry {
 	drop := make(map[string]struct{}, len(names))
 	for _, n := range names {
@@ -17,6 +22,9 @@ func Without(parent *Registry, names ...string) *Registry {
 	for _, t := range parent.All() {
 		if _, skip := drop[t.Spec().Name]; skip {
 			continue
+		}
+		if _, isSearch := t.(*ToolSearch); isSearch {
+			t = &ToolSearch{Registry: out}
 		}
 		out.Register(t)
 	}
