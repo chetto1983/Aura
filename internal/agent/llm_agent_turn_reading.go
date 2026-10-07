@@ -50,7 +50,13 @@ type turnRead struct {
 //	composer effort > standalone greeting > compatible label (user, then teacher) >
 //	seeds with margin >= teacherMargin > teacher > seeds; static low when nothing answers.
 func (a *LlmAgent) readTurn(ctx context.Context) (TurnDecision, turnRead) {
-	user := prompt.LastGenuineUserContent(a.history)
+	// The typed message, not the one the model receives: memory stores what was typed, the
+	// seed gates were measured on it, and a knowledge catalog composed in front of it is
+	// background that would dominate every embedding of the request.
+	user := a.turnReading.Text
+	if user == "" {
+		user = prompt.LastGenuineUserContent(a.history)
+	}
 	decision := TurnDecision{RouteKey: routeKey(a.cfg), PolicyVersion: turnPolicyVersion}
 	var read turnRead
 	target := prompt.IsReasoningTarget(a.cfg.Provider, a.cfg.BaseURL)

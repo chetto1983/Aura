@@ -273,6 +273,48 @@ func TestTurnBindsTheIdentitysMemoryAndPreloadsItsTools(t *testing.T) {
 	}
 }
 
+// catalogBlocks is what the cockpit composes before the typed message when the identity has
+// an indexed document (assets.BuildTurnContext). Memory stores only what was typed.
+const catalogBlocks = "<knowledge_base trust=\"operator_pinned_context\">\n- [1] document_id=d1 filename=a.pdf\n</knowledge_base>\n\nUser message:\n"
+
+func TestRecallReadsTheTypedMessageNotTheComposedOne(t *testing.T) {
+	r, _, _, _ := decisionRunner(t, reasoningRoute(), agenttest.ToolCallTurn(textResponseCall("call-1", "fatto")))
+	recall := &recordingRecallStore{}
+	r.turnRecall = recall
+	convID := newConvID(t)
+	mustCreate(t, r, convID)
+	ctx := WithReasoningOverride(context.Background(), llm.ReasoningEffortLow)
+	const typed = "riassumi il manuale in tre punti"
+	if _, err := drain(r.TurnWithModelUserMessage(ctx, convID, typed, catalogBlocks+typed)); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if requests := recall.snapshot(); len(requests) != 1 || requests[0].Text != typed {
+		t.Fatalf("recall requests = %+v, want one reading the typed %q", requests, typed)
+	}
+}
+
+// "ciao" itself never reaches the agent (the runner's fast path answers it), so the greeting
+// here is another one on the allowlist. The second scripted answer lets a misread greeting
+// ask the teacher and still finish its turn.
+func TestAGreetingComposedWithTheCatalogTakesTheGreetingPath(t *testing.T) {
+	r, _, client, decisions := decisionRunner(t, reasoningRoute(),
+		agenttest.ToolCallTurn(textResponseCall("call-1", "Buonanotte!")),
+		agenttest.ToolCallTurn(textResponseCall("call-2", "Buonanotte!")))
+	convID := newConvID(t)
+	mustCreate(t, r, convID)
+	const typed = "buonanotte"
+	if _, err := drain(r.TurnWithModelUserMessage(context.Background(), convID, typed, catalogBlocks+typed)); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	records := decisions.snapshot()
+	if len(records) != 1 || records[0].decision.EffortSource != agent.EffortSourceGreeting {
+		t.Fatalf("decisions = %+v, want the greeting path", records)
+	}
+	if len(client.Requests) != 1 {
+		t.Fatalf("%d requests, want only the answer: a greeting asks no teacher", len(client.Requests))
+	}
+}
+
 func TestReadTurnContextKeysWhatTheModelReadsBeforeTheMessage(t *testing.T) {
 	visible := "che tempo fa domani a Cuneo?"
 	always := "<skills>meteo: usa weather_lookup</skills>"
@@ -307,8 +349,8 @@ func TestReadTurnContextKeysWhatTheModelReadsBeforeTheMessage(t *testing.T) {
 		t.Fatalf("catalog blocks are not in the key: %+v", withBlocks)
 	}
 
-	if readTurnContext(history, turnInput{visibleUserMsg: &visible}, cfg, []string{"attachment-1"}).key != "" {
-		t.Fatal("a turn with attachments got a context key")
+	if attached := readTurnContext(history, turnInput{visibleUserMsg: &visible}, cfg, []string{"attachment-1"}); attached.key != "" || attached.text != visible {
+		t.Fatalf("turn context with attachments = %+v, want no key and the typed text", attached)
 	}
 	rewritten := "in breve: " + visible + " (rispondi in una riga)"
 	if readTurnContext(history, turnInput{visibleUserMsg: &visible, modelUserMsg: &rewritten}, cfg, nil).key != "" {

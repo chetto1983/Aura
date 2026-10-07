@@ -26,8 +26,10 @@ type TurnRecallStore interface {
 	RecallTurns(ctx context.Context, request arcadedb.TurnRecallRequest) (arcadedb.TurnRecall, error)
 }
 
-// turnContext is what the dispatched message's reading needs from the loaded history.
+// turnContext is what the dispatched message's reading needs: the typed text, and from the
+// loaded history its context key and whether anything conversational precedes it.
 type turnContext struct {
+	text       string
 	key        string
 	standalone bool
 }
@@ -39,10 +41,14 @@ type turnContext struct {
 // its own. A message with attachments, or whose model text does not end with what was
 // typed, gets no key: its input is not versioned, so it is never a reusable label.
 func readTurnContext(history []llm.Message, input turnInput, cfg conversations.ContextConfig, attachments []string) turnContext {
-	if input.visibleUserMsg == nil || len(attachments) > 0 {
+	if input.visibleUserMsg == nil {
 		return turnContext{}
 	}
 	visible := *input.visibleUserMsg
+	turn := turnContext{text: visible}
+	if len(attachments) > 0 {
+		return turn
+	}
 	current := -1
 	for index, message := range slices.Backward(history) {
 		if message.Role == llm.RoleUser && message.Content == visible {
@@ -51,13 +57,13 @@ func readTurnContext(history []llm.Message, input turnInput, cfg conversations.C
 		}
 	}
 	if current < 0 {
-		return turnContext{}
+		return turn
 	}
 	blocks := ""
 	if input.modelUserMsg != nil {
 		prefix, ok := strings.CutSuffix(*input.modelUserMsg, visible)
 		if !ok {
-			return turnContext{}
+			return turn
 		}
 		blocks = prefix
 	}
@@ -78,7 +84,8 @@ func readTurnContext(history []llm.Message, input turnInput, cfg conversations.C
 			prior = append(prior, message)
 		}
 	}
-	return turnContext{key: agent.TurnContextKey(prior, blocks), standalone: standalone}
+	turn.key, turn.standalone = agent.TurnContextKey(prior, blocks), standalone
+	return turn
 }
 
 // turnReading binds the dispatched user turn to the identity's memory and to the tracker
@@ -89,6 +96,7 @@ func (r *Runner) turnReading(ctx context.Context, tr *turnTracker, turn turnCont
 		return agent.TurnReading{}
 	}
 	reading := agent.TurnReading{
+		Text:       turn.text,
 		ContextKey: turn.key,
 		SourceRef:  reasoningSourceRef(tr.convID, tr.userTurnSeq),
 		Standalone: turn.standalone,

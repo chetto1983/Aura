@@ -20,10 +20,12 @@ type fakeClassifier struct {
 	verdict prompt.ReasoningVerdict
 	ok      bool
 	calls   int
+	texts   []string
 }
 
-func (c *fakeClassifier) Classify(context.Context, string) (prompt.ReasoningVerdict, bool) {
+func (c *fakeClassifier) Classify(_ context.Context, text string) (prompt.ReasoningVerdict, bool) {
 	c.calls++
+	c.texts = append(c.texts, text)
 	return c.verdict, c.ok
 }
 
@@ -168,6 +170,44 @@ func TestReadTurnStandaloneGreetingSkipsMemoryAndEmbedding(t *testing.T) {
 	fixed, _ := newReadingAgent(t, readingSetup{text: "Buongiorno!", override: llm.ReasoningEffortLow, reading: reading})
 	if decision, _ := fixed.readTurn(context.Background()); decision.EffortSource != EffortSourceUser || decision.EffortRequested != llm.ReasoningEffortLow {
 		t.Fatalf("decision = %+v, want the composer's choice to beat the greeting path", decision)
+	}
+}
+
+// composedCatalog is what the cockpit puts before the typed message when the identity has an
+// indexed document (assets.BuildTurnContext). Memory stores the typed text, and the seed
+// gates were measured on typed text.
+const composedCatalog = "<knowledge_base trust=\"operator_pinned_context\">\n- [1] document_id=d1 filename=a.pdf\n</knowledge_base>\n\nUser message:\n"
+
+func TestReadTurnDecidesFromTheTypedMessage(t *testing.T) {
+	const typed = "che tempo fa domani a Cuneo?"
+	classifier := &fakeClassifier{verdict: prompt.ReasoningVerdict{Tier: prompt.ReasoningTierLow, Margin: 0.01}, ok: true}
+	recaller := &fakeRecaller{}
+	reading := memoryReading(recaller)
+	reading.Text = typed
+	a, client := newReadingAgent(t, readingSetup{text: composedCatalog + typed, classifier: classifier,
+		teacher: []string{`{"tier":"high"}`}, reading: reading})
+
+	a.readTurn(context.Background())
+	if !slices.Equal(classifier.texts, []string{typed}) {
+		t.Fatalf("the classifier read %q, want the typed %q", classifier.texts, typed)
+	}
+	if len(recaller.requests) != 1 || recaller.requests[0].Text != typed {
+		t.Fatalf("recall requests = %+v, want one reading the typed text", recaller.requests)
+	}
+	if len(client.requests) != 1 || client.requests[0].Messages[1].Content != typed {
+		t.Fatalf("teacher requests = %+v, want one asking about the typed text", client.requests)
+	}
+}
+
+func TestReadTurnTypedGreetingTakesTheGreetingPath(t *testing.T) {
+	recaller := &fakeRecaller{}
+	classifier := &fakeClassifier{ok: true}
+	reading := memoryReading(recaller)
+	reading.Text, reading.Standalone = "ciao", true
+	a, _ := newReadingAgent(t, readingSetup{text: composedCatalog + "ciao", classifier: classifier, reading: reading})
+	decision, _ := a.readTurn(context.Background())
+	if decision.EffortSource != EffortSourceGreeting || len(recaller.requests) != 0 || classifier.calls != 0 {
+		t.Fatalf("decision = %+v after %d recalls and %d embeddings, want the greeting path", decision, len(recaller.requests), classifier.calls)
 	}
 }
 

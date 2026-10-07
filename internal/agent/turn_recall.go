@@ -69,6 +69,8 @@ type TurnRecall struct {
 // teacher alone, which is what a resumed run, a branch re-run and a headless agent get.
 type TurnReading struct {
 	Recaller TurnRecaller
+	// Text is the message as typed, without the context blocks the model receives with it.
+	Text string
 	// ContextKey is TurnContextKey of what the model reads before this message; "" makes the
 	// turn ineligible for recall (an unversioned input, or no dispatched message).
 	ContextKey string
