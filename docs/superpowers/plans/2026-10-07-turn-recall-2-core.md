@@ -5436,3 +5436,140 @@ In `prd.md` §6 (adaptive reasoning), record: the decision table as shipped (`co
 Commit `docs(prd): record the turn recall measurements` with `prd.md` and `docs/verification/turn-recall-vm-e2e-<date>.md`, push with the Step 3 recipe, and confirm CI green on that SHA (Step 4). Update the memory file `project_turn_recall_plans.md`: plan 2 shipped, with its SHAs; plan 3 next.
 
 ---
+
+### Task 9 (addendum 2026-10-07): The teacher labels in the background
+
+Added after two things happened. The first VM pass measured no teacher answer within the 2 s synchronous bound (0 of 6), and the operator then chose a background teacher that is provider-agnostic. The binding text is the spec's "Amendment 2026-10-07". This task lands after the final-review fix round, and it builds on that round's code, not on the snapshots in Tasks 4–6. That round put the typed text in `TurnReading`, counted the teacher's silent deadline as `timeout`, logged origins verbatim, and made runs with no dispatched turn decide from seeds.
+
+**The pattern is the auto-title worker; do not invent another one.** Mirror each of these:
+- `Runner.maybeAutoTitle` / `persistAutoTitle` (`internal/runner/runner_resume.go`);
+- `conversations.GenerateTitle` (`internal/conversations/title.go`);
+- `Conversations.SetTitleIfNull`;
+- `Deps.TitleTimeout` / `defaultTitleTimeout` (`internal/runner/runner_deps.go`);
+- the `r.wg` join in `Stop`.
+
+**Files:**
+- Modify the agent files. The decision gains `AskTeacher`, the synchronous teacher leaves `readTurn`, and the teacher becomes an exported standalone function:
+  - `internal/agent/llm_agent_turn_reading.go`
+  - `internal/agent/llm_agent_reasoning.go`
+  - `internal/agent/turn_recall.go`
+- Modify the conversations layer (`RecordTeacherLabel`):
+  - the queries file that holds `RecordConversationTurnDecision` under `internal/db/queries/`, plus regenerated sqlc;
+  - `internal/conversations/store_turn_decision.go`.
+- Modify the runner:
+  - `internal/runner/runner_turn_recall.go`. Add a new `runner_turn_teacher.go` if it would pass 600 lines.
+  - `internal/runner/runner_deps.go`: `Deps.TeacherTimeout` and `defaultTeacherTimeout = 30 * time.Second`.
+  - every `TurnDecisionStore` fake.
+- Modify the eval (arms and procedure only; the dataset and its digest do not change):
+  - `internal/agent/turn_recall_eval_test.go` and its report file;
+  - `docs/verification/turn-recall-frozen-eval.md`.
+- Tests:
+  - `internal/agent/llm_agent_turn_reading_test.go`
+  - `internal/agent/llm_agent_teacher_test.go`
+  - the `RecordTurnDecision` store tests (db_integration, recipe P)
+  - `internal/runner/runner_turn_recall_test.go`
+
+**Interfaces (produced):**
+- `agent.TurnDecision.AskTeacher bool`.
+- `func agent.AskTeacher(ctx context.Context, client llm.Client, model, user string) (prompt.ReasoningTier, string)`. It returns the tier and one outcome (`success`, `timeout`, `invalid`, `error`, `canceled`), and counts the attempt.
+- `func (s *conversations.Store) RecordTeacherLabel(ctx context.Context, conversationID string, seq int, requested string) error`.
+- `runner.TurnDecisionStore` gains `RecordTeacherLabel`.
+- `runner.Deps.TeacherTimeout time.Duration`.
+
+- [ ] **Step 1: The decision asks instead of waiting (agent)**
+
+`readTurn` no longer calls the teacher. In `decideAdaptive`, every path that called `a.teach` now decides from what it already has, and sets `AskTeacher`:
+- **Classifier verdict below `teacherMargin`:** the seed tier's effort, source `seeds`, `AskTeacher = true`.
+- **No classifier configured:** static `low`, source `fallback`, `AskTeacher = true`.
+- **Everything else leaves `AskTeacher = false`:** the raw embed failing (`Classify` not ok), an empty message, a label reuse, a confident verdict, a greeting, a composer effort, and a non-adaptive route.
+
+`AskTeacher` is set only when `a.turnReading.SourceRef != ""`, which is when there is a row to label.
+
+Remove what becomes dead: `a.teach`, the teacher fields and durations of `turnRead`, and the teacher keys of the "turn read" log line. That line gains `ask_teacher`.
+
+Move the request body of `askTeacher` into the exported `AskTeacher(ctx, client, model, user)`. It keeps the router prompt, the request, the trace records, the stream drain, the `routeCtx.Err()` timeout rule and the attempt counter. It takes its bound from the caller's context, so drop `reasoningRouterTimeout` if nothing else uses it.
+
+Write these tests first and show them failing:
+- a sub-margin verdict decides `seeds` with `AskTeacher` true, and makes no LLM call;
+- a confident verdict, a label reuse, a greeting and a composer effort each leave it false;
+- no classifier gives `fallback` plus `AskTeacher`;
+- an empty `SourceRef` never sets it;
+- `AskTeacher` returns each outcome against the existing fake clients. Keep the `TestTeacher…` cases, now calling the function.
+
+- [ ] **Step 2: The conditional label write (conversations)**
+
+Add the query next to `RecordConversationTurnDecision`:
+
+```sql
+-- name: RecordConversationTurnTeacherLabel :execrows
+UPDATE aura.conversation_turns
+SET reasoning_effort_requested = sqlc.arg(reasoning_effort_requested),
+    reasoning_effort_source = 'teacher'
+WHERE conversation_id = sqlc.arg(conversation_id)
+  AND seq = sqlc.arg(seq)
+  AND role = 'user'
+  AND reasoning_effort_source IN ('seeds', 'fallback');
+```
+
+Regenerate sqlc the way the repo does; read the Makefile for the target.
+
+`RecordTeacherLabel` behaves like this:
+- It validates like `RecordTurnDecision`: a UUID, seq > 0, and a non-empty requested effort.
+- It runs in `db.WithCallerIdentityTx`.
+- It returns nil when no row matched. Like `SetTitleIfNull`, a row that is already labelled, decided by the user, or deleted is not an error.
+
+Add a db_integration test on recipe P:
+- a `seeds` row is upgraded and keeps its `reasoning_effort`;
+- a `user`, `memory` or NULL-source row is left untouched;
+- a second call is a no-op.
+
+- [ ] **Step 3: The runner worker (runner)**
+
+In `recordTurnDecision`, once a decision whose `AskTeacher` is true has been written successfully, call `r.maybeTeachTurn(ctx, tr)`. It works in this order:
+1. Return early if the breaker is open (`r.breaker != nil && r.breaker.Allow() != nil`) or the tracker has no typed text.
+2. Take `runtime := r.trackerLLMSnapshot(tr)`, which is the turn's own client and route.
+3. Start the worker with `r.wg.Go`:
+   ```go
+   r.wg.Go(func() {
+       ctx := context.WithoutCancel(turnCtx)
+       ctx, cancel := context.WithTimeout(ctx, r.teacherTimeout)
+       defer cancel()
+       tier, outcome := agent.AskTeacher(ctx, runtime.Client, runtime.Config.Model, text)
+       // …
+   })
+   ```
+4. On `success`, compute `effort := runtime.Config.ClampReasoningEffort(tier.Effort())`. Then call `r.turnDecisions.RecordTeacherLabel(ctx, tr.convID, tr.userTurnSeq, string(effort))` under a short `WithoutCancel` persistence timeout, as `persistAutoTitle` does. A failed write logs one warning.
+5. Log once:
+   ```go
+   slog.Info("adaptive reasoning: teacher label", "thread_id", …, "source_ref", reasoningSourceRef(tr.convID, tr.userTurnSeq), "outcome", outcome, "tier", tier, "effort", effort, "teacher_ms", …)
+   ```
+   The source ref is logged verbatim, as in the turn-read line.
+
+`Deps.TeacherTimeout` defaults to `defaultTeacherTimeout` (30 s), exactly as `TitleTimeout` does. The tracker keeps the typed text from the reading (the final-fix `Text`).
+
+Write these tests first and show them failing:
+- a `seeds` decision with `AskTeacher` starts one worker, which records the clamped label after the decision write. `Stop` joins it, and goleak stays clean;
+- a failed round, an `AskTeacher=false` decision, an open breaker and a failed decision write start no worker;
+- a teacher timeout or an invalid answer records nothing;
+- cancelling a finished turn's context does not cancel the worker.
+
+- [ ] **Step 4: The frozen replay follows the background teacher**
+
+In `turn_recall_eval_test.go`, when `readTurn` returns a decision with `AskTeacher`, call `agent.AskTeacher` with the eval's client, bounded by the same 30 s default.
+- A successful answer becomes the label that `learn` writes before the next turn is read: source `teacher`, requested = the clamped tier effort.
+- A failure writes the seeds/fallback decision unchanged, as on a real row.
+
+Keep the three arms' names and the gate. The seeds+teacher arm now measures two things: the current turn's seeds decision, and how often the background teacher would have labelled. Say so in the report and in `docs/verification/turn-recall-frozen-eval.md`, and record each reading's teacher outcome in the report.
+
+Run the untagged eval tests and `go vet -tags turn_recall_eval ./internal/agent/`. Do not run the paid test.
+
+- [ ] **Step 5: Verify and commit**
+
+1. Run the changed tests.
+2. Run `W 'time go test -race -count=1 ./internal/agent/ ./internal/agent/prompt/ ./internal/runner/ ./internal/conversations/'`, and recipe P for the db_integration test.
+3. Grep for the tests that pin `TurnDecisionStore` implementers, the turn-read log keys, the `turnRead` fields and the teacher metric, and run them.
+4. Commit in atomic pieces: agent; conversations + sqlc; runner; eval.
+
+Do not push. Pushing, CI and the VM rerun belong to the controller: Task 8 Steps 3–9, rerun with this task included.
+
+---

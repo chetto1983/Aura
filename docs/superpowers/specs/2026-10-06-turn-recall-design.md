@@ -541,6 +541,65 @@ The static corrections in this revision do not amend the PRD with unmeasured cla
 revised query, independent quality results, provenance schema and latency/cost evidence there
 after the required live measurement, following CLAUDE.md.
 
+## Amendment 2026-10-07 — the teacher labels in the background, on every route
+
+**Measured.** On the lab VM, image `2882a46bf`, route `chatgpt` / `gpt-5.6-sol`, no teacher attempt
+answered within its synchronous 2 s bound: 0 of 6, all ending at 2001–2003 ms
+(`docs/verification/turn-recall-vm-e2e-2026-10-07.md`). That route's time to first token alone is
+1.8–2.5 s. The cause is not specific to the route. A synchronous teacher has to fit the slowest model
+the operator might choose inside a budget that every uncertain turn pays before its first token, and
+Aura is multi-provider, so no single bound works for all of them. When the teacher misses that
+bound, it labels nothing, and memory never learns an effort label.
+
+**What the measurement does not show.** How long the teacher takes once it is unbounded, on this
+route or on any other. Whether its tiers on this route agree with those measured elsewhere. Both are
+measured in the rerun.
+
+**Decision (operator, 2026-10-07): provider-agnostic, one code path and one constant for every
+route.** The current turn never waits for the teacher. The teacher runs in the background and its
+answer becomes a reusable label for later turns. This replaces "asked synchronously" in the
+decisions above, the teacher rows of the effort table, and the "background-only teacher" entry under
+Rejected alternatives. That entry rejected the background teacher as a correction of the current
+turn, and it still is not one. Here it only teaches memory.
+
+| Situation | Effort applied | Source persisted | Teacher |
+|---|---|---|---|
+| The composer set a fixed effort | that effort | `user` | not asked |
+| A standalone greeting matches the allowlist | `none` | `greeting` | not asked |
+| A compatible neighbour has a complete `user` or `teacher` label | its requested effort, clamped now | `memory` | not asked |
+| Seed margin ≥ 0.075 | the seed tier's effort | `seeds` | not asked |
+| Seed margin < 0.075 | the seed tier's effort | `seeds` | asked in the background |
+| No classifier configured | static `low` | `fallback` | asked in the background |
+| The raw embed failed | static `low` | `fallback` | not asked, as before |
+
+- **Who asks.** Only a turn that has a dispatched user row (`SourceRef`), adaptive reasoning on a
+  reasoning target, and no fixed composer effort. Resumed, headless and sub-agent runs have no row
+  to label, so they never ask.
+- **How: the auto-title pattern, not a new mechanism.** The runner owns the worker, the same way it
+  owns `maybeAutoTitle`. The worker starts through `r.wg.Go` once the turn's decision has been
+  written at the round's first durable stop, so its upgrade always lands after that write and never
+  races it. It gets its own bounded context (`context.WithoutCancel` plus a teacher timeout, 30 s
+  default, a candidate), so a finished turn cannot cancel it, and `Stop` joins it. It skips when the
+  circuit breaker is open. The LLM call is a standalone domain function, like
+  `conversations.GenerateTitle`: the same router prompt and request as before, on the turn's own
+  client and route, and it drains the stream.
+- **What a successful answer writes.** A conditional, idempotent update, in the style of
+  `SetTitleIfNull`, upgrades the recorded decision to a teacher label. `reasoning_effort_requested`
+  becomes the teacher tier's effort, clamped by the route, and `reasoning_effort_source` becomes
+  `teacher`. `reasoning_effort` still records the effort the turn actually sent. Only a user row whose
+  recorded source is `seeds` or `fallback` is upgraded. A failed round records no decision, so it
+  never starts a worker and never gets a label. The projection carries the label to
+  `ConversationTurn` on the next reconciliation.
+- **Failures** (timeout, invalid answer, error) write nothing. They are counted as before, and a
+  deadline that ends the stream with no text counts as a `timeout`.
+- **Telemetry.** The decision is counted when it is made (`seeds` or `fallback`). The teacher has its
+  own log line, `adaptive reasoning: teacher label`, giving thread, source ref, outcome, tier, effort
+  and duration.
+- **Evaluation.** The frozen replay keeps its arms. In time order, a background answer becomes a
+  label before the next turn is read. The gate is unchanged: no memory-added hard→none.
+- **End to end.** Turn A is decided by `seeds`, and its teacher label appears on its row and then on
+  `ConversationTurn`. Paraphrase B is decided by `memory`, with `label_origin` set to A's turn.
+
 ## Primary sources checked on 2026-10-06
 
 - [ArcadeDB vector functions](https://docs.arcadedb.com/arcadedb/reference/extended-functions/vector):
