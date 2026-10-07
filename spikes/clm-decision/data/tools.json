@@ -1,0 +1,1223 @@
+{
+ "blind": {
+  "cases": [
+   {
+    "query": "what day is it today",
+    "lang": "en",
+    "gold": [
+     "current_time"
+    ]
+   },
+   {
+    "query": "get today's date and clock",
+    "lang": "en",
+    "gold": [
+     "current_time"
+    ]
+   },
+   {
+    "query": "che ore sono adesso",
+    "lang": "it",
+    "gold": [
+     "current_time"
+    ]
+   },
+   {
+    "query": "che giorno è oggi",
+    "lang": "it",
+    "gold": [
+     "current_time"
+    ]
+   },
+   {
+    "query": "remind me later at a specific hour",
+    "lang": "en",
+    "gold": [
+     "task"
+    ]
+   },
+   {
+    "query": "run a job every morning on a schedule",
+    "lang": "en",
+    "gold": [
+     "task"
+    ]
+   },
+   {
+    "query": "ricordami domani alle 9 di chiamare il dentista",
+    "lang": "it",
+    "gold": [
+     "task"
+    ]
+   },
+   {
+    "query": "ogni lunedì mandami un promemoria",
+    "lang": "it",
+    "gold": [
+     "task"
+    ]
+   },
+   {
+    "query": "keep a checklist of steps for this job",
+    "lang": "en",
+    "gold": [
+     "todo_write"
+    ]
+   },
+   {
+    "query": "track progress on a multi-step plan",
+    "lang": "en",
+    "gold": [
+     "todo_write"
+    ]
+   },
+   {
+    "query": "fammi una lista delle cose da fare per il trasloco",
+    "lang": "it",
+    "gold": [
+     "todo_write"
+    ]
+   },
+   {
+    "query": "segna i passaggi e spunta quelli completati",
+    "lang": "it",
+    "gold": [
+     "todo_write"
+    ]
+   },
+   {
+    "query": "look up recent news online",
+    "lang": "en",
+    "gold": [
+     "web_search"
+    ]
+   },
+   {
+    "query": "find information on the internet",
+    "lang": "en",
+    "gold": [
+     "web_search"
+    ]
+   },
+   {
+    "query": "cerca su internet le ultime notizie sullo sciopero dei treni",
+    "lang": "it",
+    "gold": [
+     "web_search"
+    ]
+   },
+   {
+    "query": "trovami online recensioni di questo ristorante",
+    "lang": "it",
+    "gold": [
+     "web_search"
+    ]
+   },
+   {
+    "query": "read the contents of this url",
+    "lang": "en",
+    "gold": [
+     "web_fetch"
+    ]
+   },
+   {
+    "query": "download a page and convert to text",
+    "lang": "en",
+    "gold": [
+     "web_fetch"
+    ]
+   },
+   {
+    "query": "leggi questo link e riassumimi l'articolo",
+    "lang": "it",
+    "gold": [
+     "web_fetch"
+    ]
+   },
+   {
+    "query": "apri questa pagina e dimmi cosa c'è scritto",
+    "lang": "it",
+    "gold": [
+     "web_fetch"
+    ]
+   },
+   {
+    "query": "delegate several unrelated jobs to parallel helpers",
+    "lang": "en",
+    "gold": [
+     "swarm_spawn"
+    ]
+   },
+   {
+    "query": "split work across multiple sub-agents at once",
+    "lang": "en",
+    "gold": [
+     "swarm_spawn"
+    ]
+   },
+   {
+    "query": "fai queste tre cose contemporaneamente",
+    "lang": "it",
+    "gold": [
+     "swarm_spawn"
+    ]
+   },
+   {
+    "query": "dividi il lavoro tra più assistenti in parallelo",
+    "lang": "it",
+    "gold": [
+     "swarm_spawn"
+    ]
+   },
+   {
+    "query": "install or remove a capability from the shared library",
+    "lang": "en",
+    "gold": [
+     "skill_manage"
+    ]
+   },
+   {
+    "query": "edit an existing skill definition",
+    "lang": "en",
+    "gold": [
+     "skill_manage"
+    ]
+   },
+   {
+    "query": "aggiungi una nuova abilità all'assistente",
+    "lang": "it",
+    "gold": [
+     "skill_manage"
+    ]
+   },
+   {
+    "query": "elimina una competenza che non serve più",
+    "lang": "it",
+    "gold": [
+     "skill_manage"
+    ]
+   },
+   {
+    "query": "inspect a bundle of skills and connectors together",
+    "lang": "en",
+    "gold": [
+     "plugin_pack"
+    ]
+   },
+   {
+    "query": "load an extension package with its commands",
+    "lang": "en",
+    "gold": [
+     "plugin_pack"
+    ]
+   },
+   {
+    "query": "mostrami cosa contiene questo pacchetto di estensioni",
+    "lang": "it",
+    "gold": [
+     "plugin_pack"
+    ]
+   },
+   {
+    "query": "quali comandi e connettori include questo plugin",
+    "lang": "it",
+    "gold": [
+     "plugin_pack"
+    ]
+   },
+   {
+    "query": "check output of a command running in background",
+    "lang": "en",
+    "gold": [
+     "shell_poll"
+    ]
+   },
+   {
+    "query": "see what a long-running process printed so far",
+    "lang": "en",
+    "gold": [
+     "shell_poll"
+    ]
+   },
+   {
+    "query": "fammi vedere a che punto è il comando che hai lanciato",
+    "lang": "it",
+    "gold": [
+     "shell_poll"
+    ]
+   },
+   {
+    "query": "leggi l'output del processo in esecuzione",
+    "lang": "it",
+    "gold": [
+     "shell_poll"
+    ]
+   },
+   {
+    "query": "stop a background process",
+    "lang": "en",
+    "gold": [
+     "shell_kill"
+    ]
+   },
+   {
+    "query": "cancel a running terminal command",
+    "lang": "en",
+    "gold": [
+     "shell_kill"
+    ]
+   },
+   {
+    "query": "ferma quel comando che sta girando",
+    "lang": "it",
+    "gold": [
+     "shell_kill"
+    ]
+   },
+   {
+    "query": "interrompi il processo in background, ci mette troppo",
+    "lang": "it",
+    "gold": [
+     "shell_kill"
+    ]
+   },
+   {
+    "query": "what do I know about this person from before",
+    "lang": "en",
+    "gold": [
+     "memory__memory_recall"
+    ]
+   },
+   {
+    "query": "look up a stored fact about the user",
+    "lang": "en",
+    "gold": [
+     "memory__memory_recall"
+    ]
+   },
+   {
+    "query": "ti ricordi come si chiama mia sorella?",
+    "lang": "it",
+    "gold": [
+     "memory__memory_recall"
+    ]
+   },
+   {
+    "query": "cosa ti avevo detto del mio lavoro il mese scorso",
+    "lang": "it",
+    "gold": [
+     "memory__memory_recall"
+    ]
+   },
+   {
+    "query": "save this information for later conversations",
+    "lang": "en",
+    "gold": [
+     "memory__memory_upsert_fact"
+    ]
+   },
+   {
+    "query": "remember that the user changed job",
+    "lang": "en",
+    "gold": [
+     "memory__memory_upsert_fact"
+    ]
+   },
+   {
+    "query": "ricordati che sono allergico alle noci",
+    "lang": "it",
+    "gold": [
+     "memory__memory_upsert_fact"
+    ]
+   },
+   {
+    "query": "tieni a mente che mi sono trasferito a Torino",
+    "lang": "it",
+    "gold": [
+     "memory__memory_upsert_fact"
+    ]
+   },
+   {
+    "query": "what meetings do I have tomorrow",
+    "lang": "en",
+    "gold": [
+     "calendar__calendar"
+    ]
+   },
+   {
+    "query": "send an email to my colleague",
+    "lang": "en",
+    "gold": [
+     "calendar__calendar"
+    ]
+   },
+   {
+    "query": "fissa un appuntamento giovedì pomeriggio in agenda",
+    "lang": "it",
+    "gold": [
+     "calendar__calendar"
+    ]
+   },
+   {
+    "query": "controlla la mia posta e dimmi se è arrivata la fattura",
+    "lang": "it",
+    "gold": [
+     "calendar__calendar"
+    ]
+   },
+   {
+    "query": "text my friend on whatsapp",
+    "lang": "en",
+    "gold": [
+     "whatsapp__send_message"
+    ]
+   },
+   {
+    "query": "send a chat message to a group",
+    "lang": "en",
+    "gold": [
+     "whatsapp__send_message"
+    ]
+   },
+   {
+    "query": "scrivi a Marco su whatsapp che arrivo tardi",
+    "lang": "it",
+    "gold": [
+     "whatsapp__send_message"
+    ]
+   },
+   {
+    "query": "manda un messaggio al gruppo della famiglia",
+    "lang": "it",
+    "gold": [
+     "whatsapp__send_message"
+    ]
+   },
+   {
+    "query": "show recent whatsapp conversations content",
+    "lang": "en",
+    "gold": [
+     "whatsapp__list_messages"
+    ]
+   },
+   {
+    "query": "read the latest chat messages from a contact",
+    "lang": "en",
+    "gold": [
+     "whatsapp__list_messages"
+    ]
+   },
+   {
+    "query": "cosa mi ha scritto Giulia su whatsapp?",
+    "lang": "it",
+    "gold": [
+     "whatsapp__list_messages"
+    ]
+   },
+   {
+    "query": "fammi vedere gli ultimi messaggi ricevuti nella chat del calcetto",
+    "lang": "it",
+    "gold": [
+     "whatsapp__list_messages"
+    ]
+   }
+  ],
+  "out_of_scope": [
+   {
+    "query": "order a pizza for delivery",
+    "lang": "en"
+   },
+   {
+    "query": "turn off the living room lights",
+    "lang": "en"
+   },
+   {
+    "query": "play some jazz music",
+    "lang": "en"
+   },
+   {
+    "query": "transfer money to my savings account",
+    "lang": "en"
+   },
+   {
+    "query": "book a taxi to the airport",
+    "lang": "en"
+   },
+   {
+    "query": "generate an image of a sunset",
+    "lang": "en"
+   },
+   {
+    "query": "set the thermostat to 21 degrees",
+    "lang": "en"
+   },
+   {
+    "query": "make a phone call to my mom",
+    "lang": "en"
+   },
+   {
+    "query": "ordina del sushi a domicilio",
+    "lang": "it"
+   },
+   {
+    "query": "accendi il riscaldamento in casa",
+    "lang": "it"
+   },
+   {
+    "query": "metti una canzone di Vasco Rossi",
+    "lang": "it"
+   },
+   {
+    "query": "paga la bolletta della luce",
+    "lang": "it"
+   },
+   {
+    "query": "prenotami un volo per Londra",
+    "lang": "it"
+   },
+   {
+    "query": "compra delle azioni Enel",
+    "lang": "it"
+   },
+   {
+    "query": "stampa questo documento sulla stampante",
+    "lang": "it"
+   },
+   {
+    "query": "chiama mio fratello al telefono",
+    "lang": "it"
+   }
+  ]
+ },
+ "gate": [
+  {
+   "query": "search the current web for prices or news",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "download the contents of a web page",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "web search for B\u0026R 8LSA35.DB030S300-3 specifications",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "kill a background process",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "poll a still-running background command",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "what time is it",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "schedule a recurring task",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "scheduling",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "scheduler",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "wake me up later",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "periodic check",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "timer",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "run this again tomorrow morning",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "keep a todo list of the current work",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "run subtasks in parallel with worker agents",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "read a knowledge-work plugin pack and its connectors",
+   "gold": [
+    "plugin_pack"
+   ]
+  },
+  {
+   "query": "install or author a new skill",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "recall a deeper or historical fact from memory",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "remember a fact about the user",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "create a calendar event",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "create or update a Linear issue",
+   "gold": [
+    "linear__save_issue"
+   ]
+  },
+  {
+   "query": "list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage",
+   "gold": [
+    "linear__list_issues"
+   ]
+  },
+  {
+   "query": "create or update a comment on a Linear issue",
+   "gold": [
+    "linear__save_comment"
+   ]
+  },
+  {
+   "query": "projects in the user's Linear workspace",
+   "gold": [
+    "linear__list_projects"
+   ]
+  },
+  {
+   "query": "send a whatsapp message",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "get WhatsApp messages with optional surrounding context",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  }
+ ],
+ "heldout": [
+  {
+   "query": "what does the clock say right now",
+   "gold": [
+    "current_time"
+   ]
+  },
+  {
+   "query": "stop the job I started earlier",
+   "gold": [
+    "shell_kill"
+   ]
+  },
+  {
+   "query": "has my long build finished yet",
+   "gold": [
+    "shell_poll"
+   ]
+  },
+  {
+   "query": "look this up online",
+   "gold": [
+    "web_search"
+   ]
+  },
+  {
+   "query": "grab the text of that page",
+   "gold": [
+    "web_fetch"
+   ]
+  },
+  {
+   "query": "split this across several helpers working at once",
+   "gold": [
+    "swarm_spawn"
+   ]
+  },
+  {
+   "query": "note down the steps still to do",
+   "gold": [
+    "todo_write"
+   ]
+  },
+  {
+   "query": "teach yourself a new capability",
+   "gold": [
+    "skill_manage"
+   ]
+  },
+  {
+   "query": "do this again every morning",
+   "gold": [
+    "task"
+   ]
+  },
+  {
+   "query": "what do you already know about me",
+   "gold": [
+    "memory__memory_recall"
+   ]
+  },
+  {
+   "query": "store that my dog is called Argo",
+   "gold": [
+    "memory__memory_upsert_fact"
+   ]
+  },
+  {
+   "query": "book a meeting for next Tuesday",
+   "gold": [
+    "calendar__calendar"
+   ]
+  },
+  {
+   "query": "drop Marco a line on WhatsApp",
+   "gold": [
+    "whatsapp__send_message"
+   ]
+  },
+  {
+   "query": "what did we say to each other last week",
+   "gold": [
+    "whatsapp__list_messages"
+   ]
+  },
+  {
+   "query": "details of one specific project",
+   "gold": [
+    "linear__get_project"
+   ]
+  },
+  {
+   "query": "which projects exist in the workspace",
+   "gold": [
+    "linear__list_projects"
+   ]
+  },
+  {
+   "query": "open a new ticket",
+   "gold": [
+    "linear__save_issue"
+   ]
+  },
+  {
+   "query": "which teams are there",
+   "gold": [
+    "linear__list_teams"
+   ]
+  },
+  {
+   "query": "details for a single person",
+   "gold": [
+    "linear__get_user"
+   ]
+  },
+  {
+   "query": "everyone in the workspace",
+   "gold": [
+    "linear__list_users"
+   ]
+  },
+  {
+   "query": "what statuses can an issue be in",
+   "gold": [
+    "linear__list_issue_statuses"
+   ]
+  },
+  {
+   "query": "write a reply under an issue",
+   "gold": [
+    "linear__save_comment"
+   ]
+  },
+  {
+   "query": "remove an attached file",
+   "gold": [
+    "linear__delete_attachment"
+   ]
+  },
+  {
+   "query": "which cycles does this team run",
+   "gold": [
+    "linear__list_cycles"
+   ]
+  }
+ ],
+ "tools": [
+  {
+   "name": "calendar__calendar",
+   "summary": "Unified access to email, calendar, and contacts across Microsoft 365, Google Workspace/Gmail, Outlook.com, and IMAP/SMTP mailboxes. Exactly one action per call, selected via the required `action` argument: Required args: action.",
+   "document": "calendar__calendar calendar  calendar calendar__calendar calendar  calendar calendar__calendar calendar  calendar Unified access to email, calendar, and contacts across Microsoft 365, Google Workspace/Gmail, Outlook.com, and IMAP/SMTP mailboxes. Exactly one action per call, selected via the required `action` argument: Required args: action. accountId action attachmentId attachments attachmentId base64Content contentType name attendees body bodyFormat calendarId cc comment companyName contactId count countPerAccount destination displayName email emailId end endDate eventId fromDate givenName htmlBody includeBodyPreview isRead items accountId emailId jobTitle location maxSamplesPerCluster method mode name notes phone query response start startDate subject surname textBody timeZone to toDate topics unreadOnly"
+  },
+  {
+   "name": "current_time",
+   "summary": "Get the current date and time as an RFC-3339 string.",
+   "document": "current_time current time current_time current time current_time current time Get the current date and time as an RFC-3339 string. clock hour date today now ora ore orario data oggi adesso timezone"
+  },
+  {
+   "name": "linear__create_attachment",
+   "summary": "Deprecated fallback for tiny files only. Accepts base64 file content, verifies SHA-256 checksum, and uploads it through the MCP worker. Required args: issue, base64Content, filename, contentType, sha256.",
+   "document": "linear__create_attachment linear  create attachment linear__create_attachment linear  create attachment linear__create_attachment linear  create attachment Deprecated fallback for tiny files only. Accepts base64 file content, verifies SHA-256 checksum, and uploads it through the MCP worker. Required args: issue, base64Content, filename, contentType, sha256. base64Content contentType filename issue sha256 size subtitle title"
+  },
+  {
+   "name": "linear__create_attachment_from_upload",
+   "summary": "Link an already-uploaded Linear assetUrl to an existing issue as an attachment. Required args: issue, assetUrl.",
+   "document": "linear__create_attachment_from_upload linear  create attachment from upload linear__create_attachment_from_upload linear  create attachment from upload linear__create_attachment_from_upload linear  create attachment from upload Link an already-uploaded Linear assetUrl to an existing issue as an attachment. Required args: issue, assetUrl. assetUrl issue subtitle title"
+  },
+  {
+   "name": "linear__create_issue_label",
+   "summary": "Create a new Linear issue label Required args: name.",
+   "document": "linear__create_issue_label linear  create issue label linear__create_issue_label linear  create issue label linear__create_issue_label linear  create issue label Create a new Linear issue label Required args: name. color description isGroup name parent teamId"
+  },
+  {
+   "name": "linear__delete_attachment",
+   "summary": "Delete an attachment by ID Required args: id.",
+   "document": "linear__delete_attachment linear  delete attachment linear__delete_attachment linear  delete attachment linear__delete_attachment linear  delete attachment Delete an attachment by ID Required args: id. id"
+  },
+  {
+   "name": "linear__delete_comment",
+   "summary": "Delete a Linear comment. Inline description comments (those with non-null `quotedText`) anchor a mark in the editor, so their root cannot be deleted — delete the replies individually or resolve the thread instead. Required args: id.",
+   "document": "linear__delete_comment linear  delete comment linear__delete_comment linear  delete comment linear__delete_comment linear  delete comment Delete a Linear comment. Inline description comments (those with non-null `quotedText`) anchor a mark in the editor, so their root cannot be deleted — delete the replies individually or resolve the thread instead. Required args: id. id"
+  },
+  {
+   "name": "linear__delete_diff_comment",
+   "summary": "Delete a comment or persisted draft from a Linear diff",
+   "document": "linear__delete_diff_comment linear  delete diff comment linear__delete_diff_comment linear  delete diff comment linear__delete_diff_comment linear  delete diff comment Delete a comment or persisted draft from a Linear diff commentId draftId"
+  },
+  {
+   "name": "linear__delete_status_update",
+   "summary": "Delete (archive) a project or initiative status update. Required args: type, id.",
+   "document": "linear__delete_status_update linear  delete status update linear__delete_status_update linear  delete status update linear__delete_status_update linear  delete status update Delete (archive) a project or initiative status update. Required args: type, id. id type"
+  },
+  {
+   "name": "linear__extract_images",
+   "summary": "Extract and fetch images from markdown content. Use this to view screenshots, diagrams, or other images embedded in Linear issues, comments, or documents. Pass the markdown content (e.g., issue description) and receive the images as viewable data. Required args: markdown.",
+   "document": "linear__extract_images linear  extract images linear__extract_images linear  extract images linear__extract_images linear  extract images Extract and fetch images from markdown content. Use this to view screenshots, diagrams, or other images embedded in Linear issues, comments, or documents. Pass the markdown content (e.g., issue description) and receive the images as viewable data. Required args: markdown. markdown"
+  },
+  {
+   "name": "linear__get_agent_skill",
+   "summary": "Retrieve a Linear Agent skill by ID, including its full markdown instructions. Required args: id.",
+   "document": "linear__get_agent_skill linear  get agent skill linear__get_agent_skill linear  get agent skill linear__get_agent_skill linear  get agent skill Retrieve a Linear Agent skill by ID, including its full markdown instructions. Required args: id. id"
+  },
+  {
+   "name": "linear__get_attachment",
+   "summary": "Retrieve an attachment's content by ID. Required args: id.",
+   "document": "linear__get_attachment linear  get attachment linear__get_attachment linear  get attachment linear__get_attachment linear  get attachment Retrieve an attachment's content by ID. Required args: id. id"
+  },
+  {
+   "name": "linear__get_diff",
+   "summary": "Exact lookup for a Linear diff. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs. Required args: urlOrId.",
+   "document": "linear__get_diff linear  get diff linear__get_diff linear  get diff linear__get_diff linear  get diff Exact lookup for a Linear diff. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs. Required args: urlOrId. urlOrId"
+  },
+  {
+   "name": "linear__get_diff_threads",
+   "summary": "Exact lookup for diff threads and the authenticated user's drafts. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs. Required args: urlOrId.",
+   "document": "linear__get_diff_threads linear  get diff threads linear__get_diff_threads linear  get diff threads linear__get_diff_threads linear  get diff threads Exact lookup for diff threads and the authenticated user's drafts. Use with review URLs, GitHub PR URLs, Linear full identifiers, UUIDs, or slugs. Required args: urlOrId. orderBy resolved threadId urlOrId"
+  },
+  {
+   "name": "linear__get_document",
+   "summary": "Retrieve a Linear document by ID or slug Required args: id.",
+   "document": "linear__get_document linear  get document linear__get_document linear  get document linear__get_document linear  get document Retrieve a Linear document by ID or slug Required args: id. id"
+  },
+  {
+   "name": "linear__get_issue",
+   "summary": "Retrieve detailed information about an issue by ID, including attachments, git branch name, and active Triage Intelligence suggestions when the issue is in triage Required args: id.",
+   "document": "linear__get_issue linear  get issue linear__get_issue linear  get issue linear__get_issue linear  get issue Retrieve detailed information about an issue by ID, including attachments, git branch name, and active Triage Intelligence suggestions when the issue is in triage Required args: id. id includeCustomerNeeds includeRelations includeReleases"
+  },
+  {
+   "name": "linear__get_issue_status",
+   "summary": "Retrieve detailed information about an issue status in Linear by name or ID Required args: id, name, team.",
+   "document": "linear__get_issue_status linear  get issue status linear__get_issue_status linear  get issue status linear__get_issue_status linear  get issue status Retrieve detailed information about an issue status in Linear by name or ID Required args: id, name, team. id name team"
+  },
+  {
+   "name": "linear__get_milestone",
+   "summary": "Retrieve details of a specific milestone by ID or name Required args: project, query.",
+   "document": "linear__get_milestone linear  get milestone linear__get_milestone linear  get milestone linear__get_milestone linear  get milestone Retrieve details of a specific milestone by ID or name Required args: project, query. project query"
+  },
+  {
+   "name": "linear__get_project",
+   "summary": "Retrieve details of a specific project in Linear Required args: query.",
+   "document": "linear__get_project linear  get project linear__get_project linear  get project linear__get_project linear  get project Retrieve details of a specific project in Linear Required args: query. includeMembers includeMilestones includeResources query"
+  },
+  {
+   "name": "linear__get_release",
+   "summary": "Retrieve details of a release by ID or slug. Required args: id.",
+   "document": "linear__get_release linear  get release linear__get_release linear  get release linear__get_release linear  get release Retrieve details of a release by ID or slug. Required args: id. id includeReleaseNotes"
+  },
+  {
+   "name": "linear__get_release_note",
+   "summary": "Retrieve release notes by ID or slug, including markdown content. Required args: id.",
+   "document": "linear__get_release_note linear  get release note linear__get_release_note linear  get release note linear__get_release_note linear  get release note Retrieve release notes by ID or slug, including markdown content. Required args: id. id includeReleases"
+  },
+  {
+   "name": "linear__get_status_updates",
+   "summary": "List or get project/initiative status updates. Pass `id` to get a specific update, or filter to list. Required args: type.",
+   "document": "linear__get_status_updates linear  get status updates linear__get_status_updates linear  get status updates linear__get_status_updates linear  get status updates List or get project/initiative status updates. Pass `id` to get a specific update, or filter to list. Required args: type. createdAt cursor id includeArchived initiative limit orderBy project type updatedAt user"
+  },
+  {
+   "name": "linear__get_team",
+   "summary": "Retrieve details of a specific Linear team Required args: query.",
+   "document": "linear__get_team linear  get team linear__get_team linear  get team linear__get_team linear  get team Retrieve details of a specific Linear team Required args: query. query"
+  },
+  {
+   "name": "linear__get_user",
+   "summary": "Retrieve details of a specific Linear user Required args: query.",
+   "document": "linear__get_user linear  get user linear__get_user linear  get user linear__get_user linear  get user Retrieve details of a specific Linear user Required args: query. query"
+  },
+  {
+   "name": "linear__get_workspace",
+   "summary": "Retrieve the connected Linear workspace",
+   "document": "linear__get_workspace linear  get workspace linear__get_workspace linear  get workspace linear__get_workspace linear  get workspace Retrieve the connected Linear workspace"
+  },
+  {
+   "name": "linear__list_agent_skills",
+   "summary": "List Linear Agent skills available to the authenticated user.",
+   "document": "linear__list_agent_skills linear  list agent skills linear__list_agent_skills linear  list agent skills linear__list_agent_skills linear  list agent skills List Linear Agent skills available to the authenticated user. cursor limit orderBy"
+  },
+  {
+   "name": "linear__list_comments",
+   "summary": "List comments on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. Provide exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId`. For issues, projects, and initiatives this returns both top-level discussion threads and inline description comments. Inline (anchored) comments carry a non-null `quotedText` set to the snippet of description text they reference. Returned comments include `author` and nullable `onBehalfOf`; when set, `onBehalfOf` identifies the user the agent author acted for.",
+   "document": "linear__list_comments linear  list comments linear__list_comments linear  list comments linear__list_comments linear  list comments List comments on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. Provide exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId`. For issues, projects, and initiatives this returns both top-level discussion threads and inline description comments. Inline (anchored) comments carry a non-null `quotedText` set to the snippet of description text they reference. Returned comments include `author` and nullable `onBehalfOf`; when set, `onBehalfOf` identifies the user the agent author acted for. cursor documentId initiativeId issueId limit milestoneId orderBy projectId statusUpdateId statusUpdateType"
+  },
+  {
+   "name": "linear__list_cycles",
+   "summary": "Retrieve cycles for a specific Linear team Required args: teamId.",
+   "document": "linear__list_cycles linear  list cycles linear__list_cycles linear  list cycles linear__list_cycles linear  list cycles Retrieve cycles for a specific Linear team Required args: teamId. teamId type"
+  },
+  {
+   "name": "linear__list_diffs",
+   "summary": "List Linear diff pull requests visible to the authenticated user",
+   "document": "linear__list_diffs linear  list diffs linear__list_diffs linear  list diffs linear__list_diffs linear  list diffs List Linear diff pull requests visible to the authenticated user author cursor limit orderBy owner query repo reviewState reviewer status"
+  },
+  {
+   "name": "linear__list_documents",
+   "summary": "List documents in the user's Linear workspace",
+   "document": "linear__list_documents linear  list documents linear__list_documents linear  list documents linear__list_documents linear  list documents List documents in the user's Linear workspace createdAt creatorId cursor fields includeArchived initiativeId limit orderBy projectId query teamId updatedAt"
+  },
+  {
+   "name": "linear__list_issue_labels",
+   "summary": "List available issue labels in a Linear workspace or team",
+   "document": "linear__list_issue_labels linear  list issue labels linear__list_issue_labels linear  list issue labels linear__list_issue_labels linear  list issue labels List available issue labels in a Linear workspace or team cursor limit name orderBy team"
+  },
+  {
+   "name": "linear__list_issue_statuses",
+   "summary": "List available issue statuses in a Linear team Required args: team.",
+   "document": "linear__list_issue_statuses linear  list issue statuses linear__list_issue_statuses linear  list issue statuses linear__list_issue_statuses linear  list issue statuses List available issue statuses in a Linear team Required args: team. team"
+  },
+  {
+   "name": "linear__list_issues",
+   "summary": "List issues in the user's Linear workspace, including active Triage Intelligence suggestions for issues in triage. For my issues, use \"me\" as the assignee. Use \"null\" for no assignee.",
+   "document": "linear__list_issues linear  list issues linear__list_issues linear  list issues linear__list_issues linear  list issues List issues in the user's Linear workspace, including active Triage Intelligence suggestions for issues in triage. For my issues, use \"me\" as the assignee. Use \"null\" for no assignee. assignee createdAt cursor cycle delegate fields includeArchived label limit orderBy parentId priority project query release state team updatedAt"
+  },
+  {
+   "name": "linear__list_milestones",
+   "summary": "List all milestones in a Linear project Required args: project.",
+   "document": "linear__list_milestones linear  list milestones linear__list_milestones linear  list milestones linear__list_milestones linear  list milestones List all milestones in a Linear project Required args: project. project"
+  },
+  {
+   "name": "linear__list_project_labels",
+   "summary": "List available project labels in the Linear workspace",
+   "document": "linear__list_project_labels linear  list project labels linear__list_project_labels linear  list project labels linear__list_project_labels linear  list project labels List available project labels in the Linear workspace cursor limit name orderBy"
+  },
+  {
+   "name": "linear__list_projects",
+   "summary": "List projects in the user's Linear workspace",
+   "document": "linear__list_projects linear  list projects linear__list_projects linear  list projects linear__list_projects linear  list projects List projects in the user's Linear workspace createdAt cursor fields includeArchived includeMembers includeMilestones initiative label limit member orderBy query state team updatedAt"
+  },
+  {
+   "name": "linear__list_release_notes",
+   "summary": "List release notes in the workspace, optionally filtered by pipeline or covered release.",
+   "document": "linear__list_release_notes linear  list release notes linear__list_release_notes linear  list release notes linear__list_release_notes linear  list release notes List release notes in the workspace, optionally filtered by pipeline or covered release. createdAt cursor includeArchived includeContent includeReleases limit orderBy pipeline query release updatedAt"
+  },
+  {
+   "name": "linear__list_release_pipelines",
+   "summary": "List release pipelines in the workspace.",
+   "document": "linear__list_release_pipelines linear  list release pipelines linear__list_release_pipelines linear  list release pipelines linear__list_release_pipelines linear  list release pipelines List release pipelines in the workspace. createdAt cursor includeArchived includeStages includeTeams isProduction limit orderBy query team type updatedAt"
+  },
+  {
+   "name": "linear__list_releases",
+   "summary": "List releases in the workspace, with optional filtering by pipeline, stage, version, and text.",
+   "document": "linear__list_releases linear  list releases linear__list_releases linear  list releases linear__list_releases linear  list releases List releases in the workspace, with optional filtering by pipeline, stage, version, and text. createdAt cursor hasReleaseNotes includeArchived includeReleaseNotes limit orderBy pipeline query stage stageType updatedAt version"
+  },
+  {
+   "name": "linear__list_teams",
+   "summary": "List teams in the user's Linear workspace",
+   "document": "linear__list_teams linear  list teams linear__list_teams linear  list teams linear__list_teams linear  list teams List teams in the user's Linear workspace createdAt cursor includeArchived limit orderBy query updatedAt"
+  },
+  {
+   "name": "linear__list_users",
+   "summary": "Retrieve users in the Linear workspace",
+   "document": "linear__list_users linear  list users linear__list_users linear  list users linear__list_users linear  list users Retrieve users in the Linear workspace cursor limit orderBy query team"
+  },
+  {
+   "name": "linear__merge_diff",
+   "summary": "Merge a Linear diff or add it to the repository's merge queue Required args: urlOrId.",
+   "document": "linear__merge_diff linear  merge diff linear__merge_diff linear  merge diff linear__merge_diff linear  merge diff Merge a Linear diff or add it to the repository's merge queue Required args: urlOrId. mergeMethod urlOrId"
+  },
+  {
+   "name": "linear__prepare_attachment_upload",
+   "summary": "Prepare a direct Linear file upload for an existing issue. Required args: issue, filename, contentType, size.",
+   "document": "linear__prepare_attachment_upload linear  prepare attachment upload linear__prepare_attachment_upload linear  prepare attachment upload linear__prepare_attachment_upload linear  prepare attachment upload Prepare a direct Linear file upload for an existing issue. Required args: issue, filename, contentType, size. contentType filename issue size subtitle title"
+  },
+  {
+   "name": "linear__resolve_diff_thread",
+   "summary": "Resolve or reopen a top-level comment thread on a Linear diff Required args: threadId.",
+   "document": "linear__resolve_diff_thread linear  resolve diff thread linear__resolve_diff_thread linear  resolve diff thread linear__resolve_diff_thread linear  resolve diff thread Resolve or reopen a top-level comment thread on a Linear diff Required args: threadId. resolved threadId"
+  },
+  {
+   "name": "linear__save_comment",
+   "summary": "Create or update a comment on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. If `id` is provided, updates the existing comment; otherwise creates a new one. To start a new thread, pass `body` and exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId` — comments on issues/projects/initiatives become top-level discussion threads; comments on documents/milestones become description comments. A status update holds a single thread, so a comment on an update that already has one is added to it as a reply. To reply to an existing thread, pass `parentId` and `body`; the reply inherits the parent's thread type, so no enti [summary truncated] Required args: body.",
+   "document": "linear__save_comment linear  save comment linear__save_comment linear  save comment linear__save_comment linear  save comment Create or update a comment on a Linear issue, project, initiative, document, project milestone, or project/initiative status update. If `id` is provided, updates the existing comment; otherwise creates a new one. To start a new thread, pass `body` and exactly one of `issueId`, `projectId`, `initiativeId`, `documentId`, `milestoneId`, or `statusUpdateId` — comments on issues/projects/initiatives become top-level discussion threads; comments on documents/milestones become description comments. A status update holds a single thread, so a comment on an update that already has one is added to it as a reply. To reply to an existing thread, pass `parentId` and `body`; the reply inherits the parent's thread type, so no enti [summary truncated] Required args: body. body documentId id initiativeId issueId milestoneId parentId projectId statusUpdateId statusUpdateType"
+  },
+  {
+   "name": "linear__save_diff_comment",
+   "summary": "Create, reply to, or edit a comment or persisted draft on a Linear diff. Set draft to true to save without submitting. Provide draftId to edit or submit a persisted draft, and commentId only to edit a submitted comment. Submitting an inline draft reuses its saved anchor; submitting a reply draft requires parentId again. Required args: body.",
+   "document": "linear__save_diff_comment linear  save diff comment linear__save_diff_comment linear  save diff comment linear__save_diff_comment linear  save diff comment Create, reply to, or edit a comment or persisted draft on a Linear diff. Set draft to true to save without submitting. Provide draftId to edit or submit a persisted draft, and commentId only to edit a submitted comment. Submitting an inline draft reuses its saved anchor; submitting a reply draft requires parentId again. Required args: body. anchor anchorContent body commentId draft draftId parentId urlOrId"
+  },
+  {
+   "name": "linear__save_document",
+   "summary": "Create or update a Linear document. If `id` is provided, updates the existing document; otherwise creates a new one. When creating, `title` is required and exactly one parent (`project`, `issue`, `initiative`, `cycle`, or `team`) must be specified. On update, passing a parent reparents the document. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+   "document": "linear__save_document linear  save document linear__save_document linear  save document linear__save_document linear  save document Create or update a Linear document. If `id` is provided, updates the existing document; otherwise creates a new one. When creating, `title` is required and exactly one parent (`project`, `issue`, `initiative`, `cycle`, or `team`) must be specified. On update, passing a parent reparents the document. To change parts of the content without resending all of it, pass `patch` instead of `content`. color content cycle icon id initiative issue patch project team title"
+  },
+  {
+   "name": "linear__save_issue",
+   "summary": "Create or update a Linear issue. If `id` is provided, updates the existing issue; otherwise creates a new one. When creating, `title` and `team` are required. Note: use `assignee` (not `assigneeId`) to set the assignee — it accepts a user ID, name, email, or \"me\".",
+   "document": "linear__save_issue linear  save issue linear__save_issue linear  save issue linear__save_issue linear  save issue Create or update a Linear issue. If `id` is provided, updates the existing issue; otherwise creates a new one. When creating, `title` and `team` are required. Note: use `assignee` (not `assigneeId`) to set the assignee — it accepts a user ID, name, email, or \"me\". addReleases assignee blockedBy blocks cycle delegate description dueDate duplicateOf estimate id labels links title url milestone parentId patch priority project relatedTo removeBlockedBy removeBlocks removeRelatedTo removeReleases setReleases slaBreachesAt slaType state team title"
+  },
+  {
+   "name": "linear__save_milestone",
+   "summary": "Create or update a milestone in a Linear project. If `id` is provided, updates the existing milestone; otherwise creates a new one. When creating, `name` is required. Required args: project.",
+   "document": "linear__save_milestone linear  save milestone linear__save_milestone linear  save milestone linear__save_milestone linear  save milestone Create or update a milestone in a Linear project. If `id` is provided, updates the existing milestone; otherwise creates a new one. When creating, `name` is required. Required args: project. description id name project targetDate"
+  },
+  {
+   "name": "linear__save_project",
+   "summary": "Create or update a Linear project. If `id` is provided, updates the existing project; otherwise creates a new one. When creating, `name` and at least one team (via `addTeams` or `setTeams`) are required. To change parts of the description without resending all of it, pass `patch` instead of `description`.",
+   "document": "linear__save_project linear  save project linear__save_project linear  save project linear__save_project linear  save project Create or update a Linear project. If `id` is provided, updates the existing project; otherwise creates a new one. When creating, `name` and at least one team (via `addTeams` or `setTeams`) are required. To change parts of the description without resending all of it, pass `patch` instead of `description`. addInitiatives addTeams color description icon id labels lead links title url name patch priority removeInitiatives removeTeams setInitiatives setTeams startDate startDateResolution state summary targetDate targetDateResolution"
+  },
+  {
+   "name": "linear__save_release",
+   "summary": "Create or update a release. If `id` is provided, updates the existing release; otherwise creates a new one. When creating, `name` and `pipeline` are required. Release status is modeled as the release pipeline stage.",
+   "document": "linear__save_release linear  save release linear__save_release linear  save release linear__save_release linear  save release Create or update a release. If `id` is provided, updates the existing release; otherwise creates a new one. When creating, `name` and `pipeline` are required. Release status is modeled as the release pipeline stage. commitSha completedAt createdAt description id name pipeline stage startDate startedAt targetDate version"
+  },
+  {
+   "name": "linear__save_release_note",
+   "summary": "Create or update release notes. If `id` is provided, updates the existing release notes; otherwise creates a new one. When creating, `pipeline` and either `releases` or a release range are required. To change parts of the content without resending all of it, pass `patch` instead of `content`.",
+   "document": "linear__save_release_note linear  save release note linear__save_release_note linear  save release note linear__save_release_note linear  save release note Create or update release notes. If `id` is provided, updates the existing release notes; otherwise creates a new one. When creating, `pipeline` and either `releases` or a release range are required. To change parts of the content without resending all of it, pass `patch` instead of `content`. content id patch pipeline rangeFromRelease rangeToRelease releases title"
+  },
+  {
+   "name": "linear__save_status_update",
+   "summary": "Create or update a project/initiative status update. Omit `id` to create, provide `id` to update. Required args: type.",
+   "document": "linear__save_status_update linear  save status update linear__save_status_update linear  save status update linear__save_status_update linear  save status update Create or update a project/initiative status update. Omit `id` to create, provide `id` to update. Required args: type. body health id initiative isDiffHidden project type"
+  },
+  {
+   "name": "linear__search_documentation",
+   "summary": "Search Linear's documentation to learn about features and usage Required args: query.",
+   "document": "linear__search_documentation linear  search documentation linear__search_documentation linear  search documentation linear__search_documentation linear  search documentation Search Linear's documentation to learn about features and usage Required args: query. page query"
+  },
+  {
+   "name": "linear__share_issue",
+   "summary": "Share an issue with a workspace user who cannot otherwise access it. Use this tool only when the user explicitly asks to share the issue. Required args: issue, user.",
+   "document": "linear__share_issue linear  share issue linear__share_issue linear  share issue linear__share_issue linear  share issue Share an issue with a workspace user who cannot otherwise access it. Use this tool only when the user explicitly asks to share the issue. Required args: issue, user. issue user"
+  },
+  {
+   "name": "linear__submit_diff_review",
+   "summary": "Approve a Linear diff, request changes, or submit a review comment Required args: urlOrId, decision.",
+   "document": "linear__submit_diff_review linear  submit diff review linear__submit_diff_review linear  submit diff review linear__submit_diff_review linear  submit diff review Approve a Linear diff, request changes, or submit a review comment Required args: urlOrId, decision. body decision urlOrId"
+  },
+  {
+   "name": "linear__unshare_issue",
+   "summary": "Remove a workspace user's shared access to an issue. Use this tool only when the user explicitly asks to stop sharing the issue. Required args: issue, user.",
+   "document": "linear__unshare_issue linear  unshare issue linear__unshare_issue linear  unshare issue linear__unshare_issue linear  unshare issue Remove a workspace user's shared access to an issue. Use this tool only when the user explicitly asks to stop sharing the issue. Required args: issue, user. issue user"
+  },
+  {
+   "name": "memory__memory_forget",
+   "summary": "Detach a source's support or remove matching facts and orphaned entities. A source-scoped call keeps facts that still have another source. Use this for what was never true -- a probe, a bad extraction, a run written under the wrong identity. For something that STOPPED being true, use memory_upsert_fact with supersedes instead: that closes the fact's window and keeps the past answerable, where this destroys it. Pass dry_run first to see the size of what you are about to remove.",
+   "document": "memory__memory_forget memory  memory forget memory__memory_forget memory  memory forget memory__memory_forget memory  memory forget Detach a source's support or remove matching facts and orphaned entities. A source-scoped call keeps facts that still have another source. Use this for what was never true -- a probe, a bad extraction, a run written under the wrong identity. For something that STOPPED being true, use memory_upsert_fact with supersedes instead: that closes the fact's window and keeps the past answerable, where this destroys it. Pass dry_run first to see the size of what you are about to remove. forget erase dimentica dimenticati cancella dry_run entity keep_orphan_entities object predicate source memory_ids run_id subject"
+  },
+  {
+   "name": "memory__memory_merge_entities",
+   "summary": "Fold one entity's facts onto another and remove it, for when the same thing was recorded under two names. Prefer this over memory_forget for a duplicate: forgetting destroys the facts only the duplicate knew. If the target does not exist yet this is a rename. Required args: source, target.",
+   "document": "memory__memory_merge_entities memory  memory merge entities memory__memory_merge_entities memory  memory merge entities memory__memory_merge_entities memory  memory merge entities Fold one entity's facts onto another and remove it, for when the same thing was recorded under two names. Prefer this over memory_forget for a duplicate: forgetting destroys the facts only the duplicate knew. If the target does not exist yet this is a rename. Required args: source, target. source target"
+  },
+  {
+   "name": "memory__memory_recall",
+   "summary": "The single deep-read operation for Aura memory. Current profile facts are already supplied in conversation context; call this only for a fact outside that bounded index or for a historical as_of question. Give entity when its exact name is known; otherwise give query. Returns explicit abstention instead of an approximate unrelated fact.",
+   "document": "memory__memory_recall memory  memory recall memory__memory_recall memory  memory recall memory__memory_recall memory  memory recall The single deep-read operation for Aura memory. Current profile facts are already supplied in conversation context; call this only for a fact outside that bounded index or for a historical as_of question. Give entity when its exact name is known; otherwise give query. Returns explicit abstention instead of an approximate unrelated fact. remember recall know previously said ricordi sai detto memoria as_of entity limit predicate query"
+  },
+  {
+   "name": "memory__memory_upsert_fact",
+   "summary": "Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable. To correct a fact precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it, supersedes:true resolves the subject+predicate match itself: exactly one candidate closes; zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and candidates carries the previews (each with its own fact_key) to retry with supersedes_fact_key. Required args: subject, predicate, object, statement, source.",
+   "document": "memory__memory_upsert_fact memory  memory upsert fact memory__memory_upsert_fact memory  memory upsert fact memory__memory_upsert_fact memory  memory upsert fact Store one fact as a bitemporal edge between two entities. A fact is never overwritten: when it is superseded its validity window is closed, so both what is true now and what was true then stay answerable. To correct a fact precisely, set supersedes_fact_key to the fact_key a prior recall returned. Without it, supersedes:true resolves the subject+predicate match itself: exactly one candidate closes; zero or more than one candidate REFUSES -- the call still succeeds, refused is true, and candidates carries the previews (each with its own fact_key) to retry with supersedes_fact_key. Required args: subject, predicate, object, statement, source. remember save note store preference memorize segna segnati salva ricordati preferenza memorizza annota object object_kind predicate source memory_ids run_id statement subject subject_kind supersedes supersedes_fact_key valid_from valid_to"
+  },
+  {
+   "name": "plugin_pack",
+   "summary": "Read a knowledge-work plugin pack — its skills, connectors and commands — as one unit.",
+   "document": "plugin_pack plugin pack plugin_pack plugin pack plugin_pack plugin pack Read a knowledge-work plugin pack — its skills, connectors and commands — as one unit. plugin bundle connector pacchetto action ref"
+  },
+  {
+   "name": "shell_kill",
+   "summary": "Terminate a background shell_exec job.",
+   "document": "shell_kill shell kill shell_kill shell kill shell_kill shell kill Terminate a background shell_exec job. stop kill abort terminate interrompi ferma blocca shell_id"
+  },
+  {
+   "name": "shell_poll",
+   "summary": "Read new output from a background shell_exec job.",
+   "document": "shell_poll shell poll shell_poll shell poll shell_poll shell poll Read new output from a background shell_exec job. output finished done running build log finito terminato completato filter shell_id"
+  },
+  {
+   "name": "skill_manage",
+   "summary": "Administer the deployment-wide skills library.",
+   "document": "skill_manage skill manage skill_manage skill manage skill_manage skill manage Administer the deployment-wide skills library. install capability learn teach extension installa impara insegna capacita competenza action always body code description language name source"
+  },
+  {
+   "name": "swarm_spawn",
+   "summary": "Run 2 or more independent subtasks in parallel as worker agents and collect their reports. Whenever the user asks for multiple unrelated things in one request, call this instead of doing them one by one. Call shape: {\"goals\":[\"\u003ccomplete brief for subtask 1\u003e\",\"\u003ccomplete brief for subtask 2\u003e\"]}.",
+   "document": "swarm_spawn swarm spawn swarm_spawn swarm spawn swarm_spawn swarm spawn Run 2 or more independent subtasks in parallel as worker agents and collect their reports. Whenever the user asks for multiple unrelated things in one request, call this instead of doing them one by one. Call shape: {\"goals\":[\"\u003ccomplete brief for subtask 1\u003e\",\"\u003ccomplete brief for subtask 2\u003e\"]}. parallel simultaneously concurrently helper delegate split parallelo contemporaneamente dividi delega goals"
+  },
+  {
+   "name": "task",
+   "summary": "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — reminders and agent_job wake-ups later, tomorrow, at a time, every N minutes or on a cron; list, cancel, or run one now.",
+   "document": "task task task task task task Your scheduler and timer (scheduling): schedule future, periodic or recurring work — reminders and agent_job wake-ups later, tomorrow, at a time, every N minutes or on a cron; list, cancel, or run one now. reminder remind alarm later tomorrow recurring daily weekly morning ricordami ricordarmi promemoria sveglia domani programma programmare pianifica ogni settimana mattina sera action at cron every_minutes kind notify payload schedule_kind step_budget task_id tz"
+  },
+  {
+   "name": "todo_write",
+   "summary": "Track multi-step work as a todo list (replace the full list each call).",
+   "document": "todo_write todo write todo_write todo write todo_write todo write Track multi-step work as a todo list (replace the full list each call). checklist step plan progress track passi piano elenco attivita todos activeForm content status"
+  },
+  {
+   "name": "web_fetch",
+   "summary": "Fetch a public web page and return it as readable markdown.",
+   "document": "web_fetch web fetch web_fetch web fetch web_fetch web fetch Fetch a public web page and return it as readable markdown. page website url link article download scarica pagina sito articolo url"
+  },
+  {
+   "name": "web_search",
+   "summary": "Search the public web via the configured SearXNG instance.",
+   "document": "web_search web search web_search web search web_search web search Search the public web via the configured SearXNG instance. internet online google lookup latest price weather cerca cercare ricerca notizie prezzo meteo previsioni category domains include_metadata language max_results query time_range"
+  },
+  {
+   "name": "whatsapp__download_media",
+   "summary": "Download media from a WhatsApp message and get the local file path. Required args: message_id, chat_jid.",
+   "document": "whatsapp__download_media whatsapp  download media whatsapp__download_media whatsapp  download media whatsapp__download_media whatsapp  download media Download media from a WhatsApp message and get the local file path. Required args: message_id, chat_jid. chat_jid message_id"
+  },
+  {
+   "name": "whatsapp__get_chat",
+   "summary": "Get WhatsApp chat metadata by JID. Required args: chat_jid.",
+   "document": "whatsapp__get_chat whatsapp  get chat whatsapp__get_chat whatsapp  get chat whatsapp__get_chat whatsapp  get chat Get WhatsApp chat metadata by JID. Required args: chat_jid. chat_jid include_last_message"
+  },
+  {
+   "name": "whatsapp__get_contact",
+   "summary": "Look up a WhatsApp contact by phone number, LID, or full JID.",
+   "document": "whatsapp__get_contact whatsapp  get contact whatsapp__get_contact whatsapp  get contact whatsapp__get_contact whatsapp  get contact Look up a WhatsApp contact by phone number, LID, or full JID. identifier phone phone_number"
+  },
+  {
+   "name": "whatsapp__get_contact_chats",
+   "summary": "Get all WhatsApp chats involving the contact. Required args: jid.",
+   "document": "whatsapp__get_contact_chats whatsapp  get contact chats whatsapp__get_contact_chats whatsapp  get contact chats whatsapp__get_contact_chats whatsapp  get contact chats Get all WhatsApp chats involving the contact. Required args: jid. jid limit page"
+  },
+  {
+   "name": "whatsapp__get_direct_chat_by_contact",
+   "summary": "Get WhatsApp chat metadata by sender phone number. Required args: sender_phone_number.",
+   "document": "whatsapp__get_direct_chat_by_contact whatsapp  get direct chat by contact whatsapp__get_direct_chat_by_contact whatsapp  get direct chat by contact whatsapp__get_direct_chat_by_contact whatsapp  get direct chat by contact Get WhatsApp chat metadata by sender phone number. Required args: sender_phone_number. sender_phone_number"
+  },
+  {
+   "name": "whatsapp__get_last_interaction",
+   "summary": "Get most recent WhatsApp message involving the contact. Required args: jid.",
+   "document": "whatsapp__get_last_interaction whatsapp  get last interaction whatsapp__get_last_interaction whatsapp  get last interaction whatsapp__get_last_interaction whatsapp  get last interaction Get most recent WhatsApp message involving the contact. Required args: jid. jid"
+  },
+  {
+   "name": "whatsapp__get_media_data",
+   "summary": "Return a message's image as a data: URL, for a rendered view to display. Required args: message_id, chat_jid.",
+   "document": "whatsapp__get_media_data whatsapp  get media data whatsapp__get_media_data whatsapp  get media data whatsapp__get_media_data whatsapp  get media data Return a message's image as a data: URL, for a rendered view to display. Required args: message_id, chat_jid. chat_jid message_id"
+  },
+  {
+   "name": "whatsapp__get_message_context",
+   "summary": "Get context around a specific WhatsApp message. Required args: message_id.",
+   "document": "whatsapp__get_message_context whatsapp  get message context whatsapp__get_message_context whatsapp  get message context whatsapp__get_message_context whatsapp  get message context Get context around a specific WhatsApp message. Required args: message_id. after before message_id"
+  },
+  {
+   "name": "whatsapp__list_chats",
+   "summary": "Get WhatsApp chats matching specified criteria.",
+   "document": "whatsapp__list_chats whatsapp  list chats whatsapp__list_chats whatsapp  list chats whatsapp__list_chats whatsapp  list chats Get WhatsApp chats matching specified criteria. include_last_message limit page query sort_by"
+  },
+  {
+   "name": "whatsapp__list_messages",
+   "summary": "Get WhatsApp messages matching specified criteria with optional context.",
+   "document": "whatsapp__list_messages whatsapp  list messages whatsapp__list_messages whatsapp  list messages whatsapp__list_messages whatsapp  list messages Get WhatsApp messages matching specified criteria with optional context. after before chat_jid context_after context_before include_context limit page query sender_phone_number sort_by"
+  },
+  {
+   "name": "whatsapp__search_contacts",
+   "summary": "Search WhatsApp contacts by name or phone number. Required args: query.",
+   "document": "whatsapp__search_contacts whatsapp  search contacts whatsapp__search_contacts whatsapp  search contacts whatsapp__search_contacts whatsapp  search contacts Search WhatsApp contacts by name or phone number. Required args: query. query"
+  },
+  {
+   "name": "whatsapp__send_audio_message",
+   "summary": "Send any audio file as a WhatsApp audio message to the specified recipient. For group messages use the JID. If it errors due to ffmpeg not being installed, use send_file instead. Required args: recipient, media_path.",
+   "document": "whatsapp__send_audio_message whatsapp  send audio message whatsapp__send_audio_message whatsapp  send audio message whatsapp__send_audio_message whatsapp  send audio message Send any audio file as a WhatsApp audio message to the specified recipient. For group messages use the JID. If it errors due to ffmpeg not being installed, use send_file instead. Required args: recipient, media_path. media_path recipient"
+  },
+  {
+   "name": "whatsapp__send_file",
+   "summary": "Send a file such as a picture, raw audio, video or document via WhatsApp to the specified recipient. For group messages use the JID. Required args: recipient, media_path.",
+   "document": "whatsapp__send_file whatsapp  send file whatsapp__send_file whatsapp  send file whatsapp__send_file whatsapp  send file Send a file such as a picture, raw audio, video or document via WhatsApp to the specified recipient. For group messages use the JID. Required args: recipient, media_path. media_path recipient"
+  },
+  {
+   "name": "whatsapp__send_message",
+   "summary": "Send a WhatsApp message to a person or group. For group chats use the JID. Required args: recipient, message.",
+   "document": "whatsapp__send_message whatsapp  send message whatsapp__send_message whatsapp  send message whatsapp__send_message whatsapp  send message Send a WhatsApp message to a person or group. For group chats use the JID. Required args: recipient, message. message quoted_content quoted_message_id quoted_sender_jid recipient"
+  },
+  {
+   "name": "whatsapp__send_reaction",
+   "summary": "Send (or remove) a reaction to a WhatsApp message. Required args: recipient, message_id, emoji.",
+   "document": "whatsapp__send_reaction whatsapp  send reaction whatsapp__send_reaction whatsapp  send reaction whatsapp__send_reaction whatsapp  send reaction Send (or remove) a reaction to a WhatsApp message. Required args: recipient, message_id, emoji. emoji from_me message_id recipient sender_jid"
+  }
+ ]
+}

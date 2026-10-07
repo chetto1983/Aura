@@ -1,0 +1,361 @@
+[
+ {
+  "prompt": "buongiorno!",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "grazie mille per l'aiuto",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "come ti chiami?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "qual e la capitale dell'Italia?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "quanto fa 9 per 6?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "traduci 'cane' in francese",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "a presto, buona giornata",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "ok perfetto grazie",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "che tempo fa domani a Cuneo?",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "cerca le ultime notizie di oggi",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "prezzo del bitcoin adesso",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "a che ora apre la posta?",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "trova un ristorante aperto stasera",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "quando parte il prossimo treno per Torino?",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "risultati delle partite di ieri",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "che traffico c'e sulla A6 ora?",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "scrivi una funzione Go che inverte una stringa",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "debugga questo nil pointer dereference",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "progetta lo schema di un database per prenotazioni",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "ottimizza questo algoritmo O(n^2)",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "scrivi uno scraper con rate limiting",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "analizza questo stack trace e trova la causa",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "crea una pipeline CI con build e test",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "dimostra che radice di 2 e irrazionale",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "quanti clienti ho a Torino nel file Clienti.xlsx?",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "somma gli imponibili di tutte le fatture del 2025",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "confronta il preventivo con la fattura e dimmi cosa non torna",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "nel manuale che ti ho caricato, come si tara il sensore?",
+  "accept": [
+   "low",
+   "high"
+  ]
+ },
+ {
+  "prompt": "che documenti ho caricato?",
+  "accept": [
+   "none",
+   "low"
+  ]
+ },
+ {
+  "prompt": "ricordati che il mio socio si chiama Andrea",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "come si chiama mia moglie?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "cosa ti avevo detto sul progetto Rossi?",
+  "accept": [
+   "none",
+   "low"
+  ]
+ },
+ {
+  "prompt": "hi there, thanks!",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "what is the capital of Portugal?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "what's the weather in Lisbon tomorrow?",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "find the latest news about the port strike",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "write a Python script that retries with exponential backoff",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "this goroutine leaks, find out why",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "ciao! senti, mi scrivi una query SQL che raggruppa per mese?",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "grazie, e poi debugga questo test che fallisce a intermittenza",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+  "accept": [
+   "low",
+   "none"
+  ]
+ },
+ {
+  "prompt": "riassumi questo testo in tre righe",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "spiegami come funziona OAuth",
+  "accept": [
+   "none",
+   "high"
+  ]
+ },
+ {
+  "prompt": "converti questo CSV in JSON",
+  "accept": [
+   "high"
+  ]
+ },
+ {
+  "prompt": "controlla la mia agenda di domani",
+  "accept": [
+   "none",
+   "low"
+  ]
+ },
+ {
+  "prompt": "chi sei?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "cosa sai fare?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "che strumenti hai?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "ciao, pippo",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "cosa faccimao?",
+  "accept": [
+   "none"
+  ]
+ },
+ {
+  "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+  "accept": [
+   "low",
+   "none"
+  ]
+ },
+ {
+  "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione \u003cnome destinazione\u003e.",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione \u003cnome destinazione\u003e.",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione \u003cnome destinazione\u003e.",
+  "accept": [
+   "low"
+  ]
+ },
+ {
+  "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+  "accept": [
+   "low",
+   "none"
+  ]
+ },
+ {
+  "prompt": "perchè devi usare un'altro tool non quello",
+  "accept": [
+   "none",
+   "low"
+  ]
+ },
+ {
+  "prompt": "il system prompt non te lo dice?",
+  "accept": [
+   "none",
+   "low"
+  ]
+ },
+ {
+  "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+  "accept": [
+   "low",
+   "none"
+  ]
+ }
+]

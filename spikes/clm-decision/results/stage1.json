@@ -1,0 +1,6333 @@
+{
+ "encoder_boot_s": 200.10973596572876,
+ "sanity": {
+  "got": {
+   "urgency": 0.8437659078815158,
+   "department": 0.9892758105309648,
+   "frustration": 1.999977572386091
+  },
+  "expected": {
+   "urgency": 0.41022,
+   "department": 0.93878,
+   "frustration": 1.98386
+  },
+  "max_abs_delta": 0.43354590788151587
+ },
+ "effort": {
+  "E1": {
+   "plain": {
+    "accuracy": "18/58",
+    "none_vs_rest": "31/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 23,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "19/58",
+    "none_vs_rest": "32/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 22,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "latency_ms_p50": 80.44862799999919,
+   "latency_ms_max": 84.6974780000096,
+   "predictions": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "confidence": [
+    0.9755632653281233,
+    0.9846384971213703,
+    0.9942917380596131,
+    0.9847440336940058,
+    0.9970132283057139,
+    0.9964548337611455,
+    0.9929458221730003,
+    0.9877203353536882,
+    0.9862206277076128,
+    0.9421899255999596,
+    0.9917751077498475,
+    0.9948504803126256,
+    0.9924789018619404,
+    0.996021697160266,
+    0.973922052059736,
+    0.9850317865021325,
+    0.9984737465097424,
+    0.9982804184239458,
+    0.9926416712248296,
+    0.9945484376767035,
+    0.9948776647951936,
+    0.9978956475770135,
+    0.9980071504146459,
+    0.9940446658983633,
+    0.9974015488048597,
+    0.987478007999673,
+    0.9887326240547741,
+    0.997668980229826,
+    0.9936028636569657,
+    0.9941092416276656,
+    0.9963204988910473,
+    0.9886383384010273,
+    0.9930101635286107,
+    0.9966065576647023,
+    0.9835426262520605,
+    0.9863408554964627,
+    0.9987655115994966,
+    0.9990143878033828,
+    0.9987708208585939,
+    0.9902011266882669,
+    0.9962282228353687,
+    0.9895481683329814,
+    0.9954403898347554,
+    0.9954570252566026,
+    0.9871092211128062,
+    0.9861686871917378,
+    0.9944988056627708,
+    0.9667592198062062,
+    0.9909031067805112,
+    0.9903381427536349,
+    0.9993372487821526,
+    0.9943069574384037,
+    0.9955755883823559,
+    0.9951530556159597,
+    0.9992796932285176,
+    0.9926670355702768,
+    0.9902988267147103,
+    0.9992880159633352
+   ]
+  },
+  "E2": {
+   "plain": {
+    "accuracy": "18/58",
+    "none_vs_rest": "31/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 23,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "19/58",
+    "none_vs_rest": "32/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 22,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "latency_ms_p50": 0.5729519999988497,
+   "latency_ms_max": 0.6974039999931847,
+   "predictions": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "confidence": [
+    0.9984455973751408,
+    0.9996371369578821,
+    0.9996104192991111,
+    0.9997778528932492,
+    0.9998385442077129,
+    0.9998128299159703,
+    0.9995558617237178,
+    0.9997615460941298,
+    0.9993246483986925,
+    0.9963598105434173,
+    0.9996506535035228,
+    0.9998401450174134,
+    0.9981465235684289,
+    0.9997041515214126,
+    0.9997203896254105,
+    0.9996168520638475,
+    0.9999353102847106,
+    0.9996630298160855,
+    0.999953160344701,
+    0.9954256828531967,
+    0.9998471286611902,
+    0.9997510396379927,
+    0.9999275984302706,
+    0.9998452906109216,
+    0.9999217632300641,
+    0.9998938873670762,
+    0.9987089323054691,
+    0.9998794852919214,
+    0.9996208054058107,
+    0.9994983287472625,
+    0.9997123118161202,
+    0.9998330056292045,
+    0.9998849644898489,
+    0.9996610685766668,
+    0.9995471357844071,
+    0.9994764061269423,
+    0.9988868276837488,
+    0.9998670635570003,
+    0.9581659955211856,
+    0.999303361558185,
+    0.9990799572610474,
+    0.9990803426821716,
+    0.9999142727818701,
+    0.9978559938275867,
+    0.9993825712318616,
+    0.999733926367124,
+    0.9999630414720243,
+    0.9997445233360648,
+    0.9996804860765539,
+    0.9998498589610831,
+    0.9993528648414948,
+    0.9998558598903249,
+    0.9992986063057224,
+    0.9998469618166196,
+    0.9998465825010149,
+    0.9999231723144005,
+    0.9998723356977172,
+    0.9997896135036536
+   ]
+  },
+  "E3": {
+   "plain": {
+    "accuracy": "18/58",
+    "none_vs_rest": "31/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 23,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "19/58",
+    "none_vs_rest": "32/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 22,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "latency_ms_p50": 0.7927399999800855,
+   "latency_ms_max": 1.009882000005291,
+   "predictions": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "confidence": null
+  },
+  "E1-raw": {
+   "plain": {
+    "accuracy": "18/58",
+    "none_vs_rest": "31/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 23,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "19/58",
+    "none_vs_rest": "32/58",
+    "vm_traffic": "0/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->high": 22,
+     "low->high": 17
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che tempo fa domani a Cuneo?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cerca le ultime notizie di oggi",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "prezzo del bitcoin adesso",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "a che ora apre la posta?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "trova un ristorante aperto stasera",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "quando parte il prossimo treno per Torino?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "risultati delle partite di ieri",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che traffico c'e sulla A6 ora?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che documenti ho caricato?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa ti avevo detto sul progetto Rossi?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "what's the weather in Lisbon tomorrow?",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "find the latest news about the port strike",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "dimmi che ore sono e poi cerca un volo per Madrid",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "controlla la mia agenda di domani",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Ricordami tra 2 minuti di bere un bicchiere di acqua. Mandami il promemoria su WhatsApp.",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea quattro promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: none, email, stdout, telegram. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Riprova: crea i quattro promemoria tra 3 minuti, uno per ciascuna destinazione di notifica (none, email, stdout, telegram), testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "Test delle destinazioni dello scheduler: crea cinque promemoria che scattino tra 3 minuti, uno per ciascuna destinazione di notifica: whatsapp, email, stdout, telegram, none. Testo: Test destinazione <nome destinazione>.",
+      "accept": [
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "perchè devi usare un'altro tool non quello",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "il system prompt non te lo dice?",
+      "accept": [
+       "none",
+       "low"
+      ],
+      "pred": "high"
+     },
+     {
+      "prompt": "mandami un promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 2 minuti",
+      "accept": [
+       "low",
+       "none"
+      ],
+      "pred": "high"
+     }
+    ]
+   },
+   "latency_ms_p50": 0.43500900000026377,
+   "latency_ms_max": 0.48343599999611797,
+   "predictions": [
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high",
+    "high"
+   ],
+   "confidence": [
+    0.7939681479496707,
+    0.7904136951137877,
+    0.849185284565082,
+    0.7806882058171238,
+    0.8000671128828084,
+    0.7835212585049963,
+    0.7920539493163893,
+    0.8336139248934873,
+    0.7949819935543648,
+    0.7599654867682756,
+    0.8344471645450035,
+    0.8348518308646398,
+    0.7633917131895329,
+    0.7941451130400727,
+    0.8256548283419195,
+    0.8197617579340449,
+    0.8348109945169508,
+    0.8593365466453003,
+    0.8255787792751044,
+    0.8926082566128895,
+    0.8674862109768746,
+    0.8536652910511207,
+    0.8182559600544622,
+    0.7646773378996983,
+    0.8451431683752905,
+    0.7907214718593646,
+    0.7691159622099616,
+    0.8230456875384242,
+    0.8158948438372864,
+    0.8361632973698668,
+    0.8106751797639533,
+    0.8046263669884502,
+    0.8627434669579609,
+    0.8555742728959379,
+    0.8658302316633475,
+    0.8642704561678105,
+    0.9141431705947956,
+    0.8636135718071672,
+    0.8032707874060411,
+    0.8272628956580269,
+    0.7709442496254351,
+    0.8989578629004112,
+    0.8447135747522068,
+    0.8707616610822062,
+    0.7901854643542939,
+    0.8398368260512117,
+    0.8553180711816624,
+    0.8371486349079345,
+    0.8168998218410882,
+    0.8122915762371157,
+    0.8254706560809517,
+    0.8265517726527847,
+    0.8458246323814682,
+    0.8348699106313686,
+    0.8261830660668953,
+    0.7939230493268254,
+    0.8778844246791987,
+    0.8178927248315517
+   ]
+  },
+  "E2-raw": {
+   "plain": {
+    "accuracy": "23/58",
+    "none_vs_rest": "39/58",
+    "vm_traffic": "8/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->low": 19,
+     "high->low": 16
+    },
+    "misses": [
+     {
+      "prompt": "buongiorno!",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "scrivi una funzione Go che inverte una stringa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "debugga questo nil pointer dereference",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "progetta lo schema di un database per prenotazioni",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ottimizza questo algoritmo O(n^2)",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "scrivi uno scraper con rate limiting",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "analizza questo stack trace e trova la causa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "crea una pipeline CI con build e test",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "dimostra che radice di 2 e irrazionale",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "quanti clienti ho a Torino nel file Clienti.xlsx?",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "somma gli imponibili di tutte le fatture del 2025",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "confronta il preventivo con la fattura e dimmi cosa non torna",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "write a Python script that retries with exponential backoff",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "this goroutine leaks, find out why",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ciao! senti, mi scrivi una query SQL che raggruppa per mese?",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "grazie, e poi debugga questo test che fallisce a intermittenza",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "spiegami come funziona OAuth",
+      "accept": [
+       "none",
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "converti questo CSV in JSON",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     }
+    ]
+   },
+   "greeting_fast_path": {
+    "accuracy": "24/58",
+    "none_vs_rest": "40/58",
+    "vm_traffic": "8/13",
+    "hard_to_none": 0,
+    "confusion": {
+     "none->low": 18,
+     "high->low": 16
+    },
+    "misses": [
+     {
+      "prompt": "grazie mille per l'aiuto",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "come ti chiami?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "qual e la capitale dell'Italia?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "quanto fa 9 per 6?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "traduci 'cane' in francese",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "a presto, buona giornata",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ok perfetto grazie",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "scrivi una funzione Go che inverte una stringa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "debugga questo nil pointer dereference",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "progetta lo schema di un database per prenotazioni",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ottimizza questo algoritmo O(n^2)",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "scrivi uno scraper con rate limiting",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "analizza questo stack trace e trova la causa",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "crea una pipeline CI con build e test",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "dimostra che radice di 2 e irrazionale",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "quanti clienti ho a Torino nel file Clienti.xlsx?",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "somma gli imponibili di tutte le fatture del 2025",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "confronta il preventivo con la fattura e dimmi cosa non torna",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ricordati che il mio socio si chiama Andrea",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "come si chiama mia moglie?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "hi there, thanks!",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "what is the capital of Portugal?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "write a Python script that retries with exponential backoff",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "this goroutine leaks, find out why",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ciao! senti, mi scrivi una query SQL che raggruppa per mese?",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "grazie, e poi debugga questo test che fallisce a intermittenza",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "riassumi questo testo in tre righe",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "spiegami come funziona OAuth",
+      "accept": [
+       "none",
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "converti questo CSV in JSON",
+      "accept": [
+       "high"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "chi sei?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "cosa sai fare?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "che strumenti hai?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "ciao, pippo",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     },
+     {
+      "prompt": "cosa faccimao?",
+      "accept": [
+       "none"
+      ],
+      "pred": "low"
+     }
+    ]
+   },
+   "latency_ms_p50": 0.2876949999972567,
+   "latency_ms_max": 0.3266610000025594,
+   "predictions": [
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low",
+    "low"
+   ],
+   "confidence": [
+    0.7907011407706468,
+    0.7584410323127603,
+    0.8026660550949354,
+    0.7694474845202186,
+    0.8168404501340114,
+    0.8235707613591063,
+    0.7687508521146282,
+    0.8033839698858727,
+    0.8037624483348833,
+    0.7897660199228281,
+    0.8165582054774937,
+    0.8101289479644609,
+    0.7896748955440126,
+    0.8126671123248443,
+    0.8168687906188218,
+    0.830749216682902,
+    0.8350256713848198,
+    0.8102659222132423,
+    0.8160324947936589,
+    0.8102374620301268,
+    0.8305197208956979,
+    0.8081681701324634,
+    0.8159054840115165,
+    0.7972146108555009,
+    0.8108580756126381,
+    0.7827041186657681,
+    0.7811007731529165,
+    0.7992042100327177,
+    0.7701399407231871,
+    0.8274442559727362,
+    0.7921274801392477,
+    0.7956015306098324,
+    0.7933319019266165,
+    0.8096637842054635,
+    0.8083282940589094,
+    0.7808705986006697,
+    0.8304688580337668,
+    0.7192717180075217,
+    0.7753012253477337,
+    0.7936608468007924,
+    0.8066697776211851,
+    0.852670259102262,
+    0.8215944340670435,
+    0.80398288855852,
+    0.7971238422323397,
+    0.7618135674948816,
+    0.792248398703873,
+    0.8097131358478098,
+    0.74938245369811,
+    0.7792140656409863,
+    0.8200864864283904,
+    0.8201413102092915,
+    0.8182257965192344,
+    0.8203762464205837,
+    0.7929395137322044,
+    0.8170858903247387,
+    0.8098074726681063,
+    0.7841611134581441
+   ]
+  }
+ },
+ "tools": {
+  "T-A": {
+   "gate": {
+    "top1": "11/26",
+    "recall3": "17/26",
+    "recall5": "19/26",
+    "latency_ms_p50": 74.58927000001836,
+    "misses": [
+     {
+      "query": "web search for B&R 8LSA35.DB030S300-3 specifications",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__get_workspace",
+       "web_search",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "poll a still-running background command",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "skill_manage",
+       "shell_poll"
+      ]
+     },
+     {
+      "query": "what time is it",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "task",
+       "whatsapp__search_contacts",
+       "web_search"
+      ]
+     },
+     {
+      "query": "scheduling",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "swarm_spawn",
+       "task",
+       "linear__list_agent_skills"
+      ]
+     },
+     {
+      "query": "timer",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__get_milestone",
+       "task"
+      ]
+     },
+     {
+      "query": "keep a todo list of the current work",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__save_document",
+       "task",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "read a knowledge-work plugin pack and its connectors",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__save_release_note",
+       "linear__search_documentation",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "remember a fact about the user",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "whatsapp__list_chats",
+       "linear__search_documentation",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "create a calendar event",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "web_search",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "create or update a Linear issue",
+      "gold": [
+       "linear__save_issue"
+      ],
+      "top3": [
+       "linear__save_document",
+       "linear__create_attachment_from_upload",
+       "linear__list_milestones"
+      ]
+     },
+     {
+      "query": "list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage",
+      "gold": [
+       "linear__list_issues"
+      ],
+      "top3": [
+       "linear__get_team",
+       "linear__get_project",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "create or update a comment on a Linear issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__save_document",
+       "linear__create_attachment_from_upload",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "projects in the user's Linear workspace",
+      "gold": [
+       "linear__list_projects"
+      ],
+      "top3": [
+       "linear__save_document",
+       "linear__search_documentation",
+       "linear__get_workspace"
+      ]
+     },
+     {
+      "query": "send a whatsapp message",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "whatsapp__download_media",
+       "whatsapp__get_contact_chats"
+      ]
+     },
+     {
+      "query": "get WhatsApp messages with optional surrounding context",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__download_media",
+       "whatsapp__list_messages",
+       "whatsapp__get_message_context"
+      ]
+     }
+    ]
+   },
+   "heldout": {
+    "top1": "5/24",
+    "recall3": "8/24",
+    "recall5": "9/24",
+    "latency_ms_p50": 74.51758099998074,
+    "misses": [
+     {
+      "query": "what does the clock say right now",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "task",
+       "web_search",
+       "current_time"
+      ]
+     },
+     {
+      "query": "stop the job I started earlier",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "task",
+       "shell_kill",
+       "linear__delete_status_update"
+      ]
+     },
+     {
+      "query": "has my long build finished yet",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "task",
+       "linear__search_documentation",
+       "linear__list_agent_skills"
+      ]
+     },
+     {
+      "query": "split this across several helpers working at once",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "swarm_spawn",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "note down the steps still to do",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__list_agent_skills",
+       "task"
+      ]
+     },
+     {
+      "query": "what do you already know about me",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__save_document",
+       "linear__save_issue",
+       "linear__list_agent_skills"
+      ]
+     },
+     {
+      "query": "store that my dog is called Argo",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "web_search",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "book a meeting for next Tuesday",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "web_search",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "drop Marco a line on WhatsApp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "whatsapp__get_contact_chats",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "what did we say to each other last week",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "memory__memory_recall",
+       "whatsapp__get_contact_chats"
+      ]
+     },
+     {
+      "query": "details of one specific project",
+      "gold": [
+       "linear__get_project"
+      ],
+      "top3": [
+       "linear__save_document",
+       "linear__search_documentation",
+       "swarm_spawn"
+      ]
+     },
+     {
+      "query": "which projects exist in the workspace",
+      "gold": [
+       "linear__list_projects"
+      ],
+      "top3": [
+       "skill_manage",
+       "swarm_spawn",
+       "linear__get_project"
+      ]
+     },
+     {
+      "query": "which teams are there",
+      "gold": [
+       "linear__list_teams"
+      ],
+      "top3": [
+       "linear__get_team",
+       "web_search",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "details for a single person",
+      "gold": [
+       "linear__get_user"
+      ],
+      "top3": [
+       "web_search",
+       "linear__search_documentation",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "everyone in the workspace",
+      "gold": [
+       "linear__list_users"
+      ],
+      "top3": [
+       "swarm_spawn",
+       "linear__save_document",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "what statuses can an issue be in",
+      "gold": [
+       "linear__list_issue_statuses"
+      ],
+      "top3": [
+       "linear__save_issue",
+       "linear__list_release_pipelines",
+       "linear__list_release_notes"
+      ]
+     },
+     {
+      "query": "write a reply under an issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__save_issue",
+       "linear__save_document",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "remove an attached file",
+      "gold": [
+       "linear__delete_attachment"
+      ],
+      "top3": [
+       "linear__get_release_note",
+       "skill_manage",
+       "linear__get_release"
+      ]
+     },
+     {
+      "query": "which cycles does this team run",
+      "gold": [
+       "linear__list_cycles"
+      ],
+      "top3": [
+       "web_search",
+       "linear__list_agent_skills",
+       "linear__get_team"
+      ]
+     }
+    ]
+   },
+   "blind_en": {
+    "top1": "15/30",
+    "recall3": "16/30",
+    "recall5": "18/30",
+    "latency_ms_p50": 74.86567599997329,
+    "misses": [
+     {
+      "query": "what day is it today",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "task",
+       "memory__memory_recall",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "get today's date and clock",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "task",
+       "web_search",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "keep a checklist of steps for this job",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "web_search",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "inspect a bundle of skills and connectors together",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "skill_manage",
+       "linear__save_document",
+       "swarm_spawn"
+      ]
+     },
+     {
+      "query": "load an extension package with its commands",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "skill_manage",
+       "linear__search_documentation",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "what do I know about this person from before",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__list_agent_skills",
+       "linear__save_document"
+      ]
+     },
+     {
+      "query": "look up a stored fact about the user",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__list_agent_skills",
+       "linear__get_user",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "save this information for later conversations",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__save_document",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "remember that the user changed job",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "skill_manage",
+       "linear__list_agent_skills"
+      ]
+     },
+     {
+      "query": "what meetings do I have tomorrow",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "web_search",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "send an email to my colleague",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__merge_diff",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "text my friend on whatsapp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "todo_write",
+       "whatsapp__download_media",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "send a chat message to a group",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__get_contact_chats",
+       "whatsapp__list_chats",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "show recent whatsapp conversations content",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__download_media",
+       "whatsapp__get_contact_chats",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "read the latest chat messages from a contact",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__list_chats",
+       "whatsapp__get_contact_chats",
+       "whatsapp__get_message_context"
+      ]
+     }
+    ]
+   },
+   "blind_it": {
+    "top1": "10/30",
+    "recall3": "15/30",
+    "recall5": "17/30",
+    "latency_ms_p50": 79.72840800002245,
+    "misses": [
+     {
+      "query": "che ore sono adesso",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "task",
+       "current_time",
+       "linear__list_agent_skills"
+      ]
+     },
+     {
+      "query": "che giorno è oggi",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "linear__list_agent_skills",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "fammi una lista delle cose da fare per il trasloco",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__save_document",
+       "skill_manage",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "segna i passaggi e spunta quelli completati",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "linear__get_milestone",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "fai queste tre cose contemporaneamente",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "swarm_spawn",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "aggiungi una nuova abilità all'assistente",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "swarm_spawn",
+       "skill_manage",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "mostrami cosa contiene questo pacchetto di estensioni",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "skill_manage",
+       "plugin_pack",
+       "task"
+      ]
+     },
+     {
+      "query": "quali comandi e connettori include questo plugin",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "skill_manage",
+       "plugin_pack",
+       "linear__search_documentation"
+      ]
+     },
+     {
+      "query": "fammi vedere a che punto è il comando che hai lanciato",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "skill_manage",
+       "linear__list_agent_skills",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "leggi l'output del processo in esecuzione",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "skill_manage",
+       "plugin_pack",
+       "linear__get_workspace"
+      ]
+     },
+     {
+      "query": "ferma quel comando che sta girando",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__save_document",
+       "skill_manage",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "cosa ti avevo detto del mio lavoro il mese scorso",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__list_agent_skills",
+       "web_search",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "ricordati che sono allergico alle noci",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "skill_manage",
+       "linear__search_documentation",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "tieni a mente che mi sono trasferito a Torino",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "task",
+       "skill_manage"
+      ]
+     },
+     {
+      "query": "fissa un appuntamento giovedì pomeriggio in agenda",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "todo_write",
+       "web_search"
+      ]
+     },
+     {
+      "query": "controlla la mia posta e dimmi se è arrivata la fattura",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "skill_manage",
+       "todo_write",
+       "whatsapp__get_contact_chats"
+      ]
+     },
+     {
+      "query": "scrivi a Marco su whatsapp che arrivo tardi",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "linear__search_documentation",
+       "whatsapp__search_contacts",
+       "swarm_spawn"
+      ]
+     },
+     {
+      "query": "manda un messaggio al gruppo della famiglia",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "whatsapp__list_chats"
+      ]
+     },
+     {
+      "query": "cosa mi ha scritto Giulia su whatsapp?",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "web_fetch",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "fammi vedere gli ultimi messaggi ricevuti nella chat del calcetto",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "skill_manage",
+       "linear__get_milestone",
+       "web_search"
+      ]
+     }
+    ]
+   }
+  },
+  "T-B": {
+   "gate": {
+    "top1": "17/26",
+    "recall3": "18/26",
+    "recall5": "20/26",
+    "latency_ms_p50": 0.8500859999855948,
+    "misses": [
+     {
+      "query": "poll a still-running background command",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "web_fetch",
+       "todo_write",
+       "linear__list_releases"
+      ]
+     },
+     {
+      "query": "recall a deeper or historical fact from memory",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__get_message_context"
+      ]
+     },
+     {
+      "query": "remember a fact about the user",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "todo_write",
+       "linear__list_documents",
+       "whatsapp__send_reaction"
+      ]
+     },
+     {
+      "query": "create a calendar event",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "calendar__calendar",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "create or update a Linear issue",
+      "gold": [
+       "linear__save_issue"
+      ],
+      "top3": [
+       "linear__list_issue_labels",
+       "linear__list_teams",
+       "linear__list_projects"
+      ]
+     },
+     {
+      "query": "list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage",
+      "gold": [
+       "linear__list_issues"
+      ],
+      "top3": [
+       "linear__list_issue_labels",
+       "linear__list_teams",
+       "linear__list_documents"
+      ]
+     },
+     {
+      "query": "create or update a comment on a Linear issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__list_issue_labels",
+       "linear__list_projects",
+       "linear__list_project_labels"
+      ]
+     },
+     {
+      "query": "send a whatsapp message",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__list_chats",
+       "whatsapp__list_messages",
+       "whatsapp__send_reaction"
+      ]
+     },
+     {
+      "query": "get WhatsApp messages with optional surrounding context",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__get_message_context",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     }
+    ]
+   },
+   "heldout": {
+    "top1": "4/24",
+    "recall3": "8/24",
+    "recall5": "11/24",
+    "latency_ms_p50": 0.8296419999851423,
+    "misses": [
+     {
+      "query": "stop the job I started earlier",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "task",
+       "todo_write",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "has my long build finished yet",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__get_workspace",
+       "whatsapp__get_message_context",
+       "linear__list_projects"
+      ]
+     },
+     {
+      "query": "look this up online",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "web_fetch",
+       "web_search",
+       "linear__list_documents"
+      ]
+     },
+     {
+      "query": "split this across several helpers working at once",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "plugin_pack",
+       "todo_write",
+       "swarm_spawn"
+      ]
+     },
+     {
+      "query": "note down the steps still to do",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "task",
+       "linear__delete_diff_comment",
+       "linear__list_documents"
+      ]
+     },
+     {
+      "query": "teach yourself a new capability",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "plugin_pack",
+       "skill_manage",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "what do you already know about me",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__get_user",
+       "linear__get_team"
+      ]
+     },
+     {
+      "query": "store that my dog is called Argo",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__list_documents",
+       "linear__list_projects",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "drop Marco a line on WhatsApp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__search_contacts",
+       "whatsapp__list_chats"
+      ]
+     },
+     {
+      "query": "what did we say to each other last week",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__get_media_data",
+       "whatsapp__get_message_context"
+      ]
+     },
+     {
+      "query": "details of one specific project",
+      "gold": [
+       "linear__get_project"
+      ],
+      "top3": [
+       "linear__list_documents",
+       "linear__get_workspace",
+       "linear__list_projects"
+      ]
+     },
+     {
+      "query": "which projects exist in the workspace",
+      "gold": [
+       "linear__list_projects"
+      ],
+      "top3": [
+       "linear__get_workspace",
+       "web_search",
+       "linear__list_release_notes"
+      ]
+     },
+     {
+      "query": "open a new ticket",
+      "gold": [
+       "linear__save_issue"
+      ],
+      "top3": [
+       "linear__list_teams",
+       "linear__list_projects",
+       "linear__list_diffs"
+      ]
+     },
+     {
+      "query": "which teams are there",
+      "gold": [
+       "linear__list_teams"
+      ],
+      "top3": [
+       "linear__get_team",
+       "linear__get_user",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "details for a single person",
+      "gold": [
+       "linear__get_user"
+      ],
+      "top3": [
+       "linear__list_teams",
+       "linear__list_projects",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "everyone in the workspace",
+      "gold": [
+       "linear__list_users"
+      ],
+      "top3": [
+       "linear__list_teams",
+       "linear__list_projects",
+       "linear__list_users"
+      ]
+     },
+     {
+      "query": "what statuses can an issue be in",
+      "gold": [
+       "linear__list_issue_statuses"
+      ],
+      "top3": [
+       "linear__list_issue_labels",
+       "linear__list_teams",
+       "linear__list_projects"
+      ]
+     },
+     {
+      "query": "write a reply under an issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__delete_diff_comment",
+       "linear__get_workspace",
+       "linear__list_issue_labels"
+      ]
+     },
+     {
+      "query": "remove an attached file",
+      "gold": [
+       "linear__delete_attachment"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__get_message_context",
+       "linear__delete_diff_comment"
+      ]
+     },
+     {
+      "query": "which cycles does this team run",
+      "gold": [
+       "linear__list_cycles"
+      ],
+      "top3": [
+       "linear__get_user",
+       "linear__get_milestone",
+       "linear__get_team"
+      ]
+     }
+    ]
+   },
+   "blind_en": {
+    "top1": "14/30",
+    "recall3": "18/30",
+    "recall5": "19/30",
+    "latency_ms_p50": 0.8421990000044843,
+    "misses": [
+     {
+      "query": "keep a checklist of steps for this job",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__list_projects",
+       "linear__list_documents",
+       "linear__list_teams"
+      ]
+     },
+     {
+      "query": "delegate several unrelated jobs to parallel helpers",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "plugin_pack",
+       "swarm_spawn",
+       "linear__list_teams"
+      ]
+     },
+     {
+      "query": "check output of a command running in background",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "todo_write",
+       "task",
+       "linear__list_release_notes"
+      ]
+     },
+     {
+      "query": "see what a long-running process printed so far",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__list_release_notes",
+       "web_fetch",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "stop a background process",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "task",
+       "shell_kill",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "cancel a running terminal command",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "task",
+       "shell_kill",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "what do I know about this person from before",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__get_milestone",
+       "linear__get_issue_status",
+       "linear__get_team"
+      ]
+     },
+     {
+      "query": "look up a stored fact about the user",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "whatsapp__get_message_context",
+       "linear__get_user",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "save this information for later conversations",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__list_documents",
+       "linear__list_projects",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "remember that the user changed job",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "task",
+       "todo_write",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "what meetings do I have tomorrow",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "whatsapp__get_message_context",
+       "linear__list_documents"
+      ]
+     },
+     {
+      "query": "send an email to my colleague",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "todo_write",
+       "whatsapp__send_reaction",
+       "calendar__calendar"
+      ]
+     },
+     {
+      "query": "text my friend on whatsapp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__send_file",
+       "whatsapp__send_reaction",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "send a chat message to a group",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__get_media_data",
+       "whatsapp__send_file"
+      ]
+     },
+     {
+      "query": "show recent whatsapp conversations content",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__send_file",
+       "whatsapp__download_media",
+       "whatsapp__list_chats"
+      ]
+     },
+     {
+      "query": "read the latest chat messages from a contact",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__get_media_data",
+       "whatsapp__get_message_context"
+      ]
+     }
+    ]
+   },
+   "blind_it": {
+    "top1": "3/30",
+    "recall3": "9/30",
+    "recall5": "10/30",
+    "latency_ms_p50": 0.839915999989671,
+    "misses": [
+     {
+      "query": "che ore sono adesso",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__search_contacts",
+       "whatsapp__get_message_context"
+      ]
+     },
+     {
+      "query": "che giorno è oggi",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "whatsapp__get_message_context",
+       "linear__get_user"
+      ]
+     },
+     {
+      "query": "ogni lunedì mandami un promemoria",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "todo_write",
+       "task",
+       "calendar__calendar"
+      ]
+     },
+     {
+      "query": "fammi una lista delle cose da fare per il trasloco",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__list_projects",
+       "linear__list_documents",
+       "linear__list_teams"
+      ]
+     },
+     {
+      "query": "segna i passaggi e spunta quelli completati",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "linear__get_milestone",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "trovami online recensioni di questo ristorante",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__search_contacts",
+       "whatsapp__send_reaction"
+      ]
+     },
+     {
+      "query": "apri questa pagina e dimmi cosa c'è scritto",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "web_search",
+       "web_fetch",
+       "linear__list_documents"
+      ]
+     },
+     {
+      "query": "fai queste tre cose contemporaneamente",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__list_documents",
+       "linear__list_projects",
+       "plugin_pack"
+      ]
+     },
+     {
+      "query": "dividi il lavoro tra più assistenti in parallelo",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "todo_write",
+       "plugin_pack",
+       "linear__get_workspace"
+      ]
+     },
+     {
+      "query": "aggiungi una nuova abilità all'assistente",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__get_user",
+       "linear__list_projects",
+       "linear__get_team"
+      ]
+     },
+     {
+      "query": "elimina una competenza che non serve più",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "calendar__calendar",
+       "skill_manage",
+       "linear__delete_status_update"
+      ]
+     },
+     {
+      "query": "mostrami cosa contiene questo pacchetto di estensioni",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__list_projects",
+       "linear__list_documents",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "quali comandi e connettori include questo plugin",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__get_project",
+       "linear__get_milestone",
+       "linear__get_team"
+      ]
+     },
+     {
+      "query": "fammi vedere a che punto è il comando che hai lanciato",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "whatsapp__send_file",
+       "whatsapp__send_message",
+       "whatsapp__send_reaction"
+      ]
+     },
+     {
+      "query": "leggi l'output del processo in esecuzione",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__get_milestone",
+       "web_search",
+       "whatsapp__get_message_context"
+      ]
+     },
+     {
+      "query": "ferma quel comando che sta girando",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__send_file",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "interrompi il processo in background, ci mette troppo",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "task",
+       "todo_write",
+       "web_search"
+      ]
+     },
+     {
+      "query": "ti ricordi come si chiama mia sorella?",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__search_contacts",
+       "linear__get_document"
+      ]
+     },
+     {
+      "query": "cosa ti avevo detto del mio lavoro il mese scorso",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__get_document",
+       "linear__get_user",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "ricordati che sono allergico alle noci",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "whatsapp__search_contacts",
+       "linear__get_document"
+      ]
+     },
+     {
+      "query": "tieni a mente che mi sono trasferito a Torino",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__list_documents",
+       "linear__get_document",
+       "linear__list_teams"
+      ]
+     },
+     {
+      "query": "fissa un appuntamento giovedì pomeriggio in agenda",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "task",
+       "calendar__calendar",
+       "todo_write"
+      ]
+     },
+     {
+      "query": "controlla la mia posta e dimmi se è arrivata la fattura",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "linear__submit_diff_review",
+       "calendar__calendar"
+      ]
+     },
+     {
+      "query": "scrivi a Marco su whatsapp che arrivo tardi",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "linear__get_document",
+       "whatsapp__search_contacts"
+      ]
+     },
+     {
+      "query": "manda un messaggio al gruppo della famiglia",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "whatsapp__send_message"
+      ]
+     },
+     {
+      "query": "cosa mi ha scritto Giulia su whatsapp?",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__search_contacts",
+       "web_fetch",
+       "whatsapp__get_message_context"
+      ]
+     },
+     {
+      "query": "fammi vedere gli ultimi messaggi ricevuti nella chat del calcetto",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__send_reaction",
+       "linear__list_projects",
+       "linear__submit_diff_review"
+      ]
+     }
+    ]
+   }
+  },
+  "T-A-raw": {
+   "gate": {
+    "top1": "0/26",
+    "recall3": "0/26",
+    "recall5": "0/26",
+    "latency_ms_p50": 0.6711009999946782,
+    "misses": [
+     {
+      "query": "search the current web for prices or news",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "download the contents of a web page",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "web search for B&R 8LSA35.DB030S300-3 specifications",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "kill a background process",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "poll a still-running background command",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "what time is it",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "schedule a recurring task",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "scheduling",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_workspace"
+      ]
+     },
+     {
+      "query": "scheduler",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "wake me up later",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "whatsapp__download_media",
+       "linear__share_issue",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "periodic check",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "timer",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "run this again tomorrow morning",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "keep a todo list of the current work",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "run subtasks in parallel with worker agents",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "read a knowledge-work plugin pack and its connectors",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "install or author a new skill",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "recall a deeper or historical fact from memory",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "remember a fact about the user",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "create a calendar event",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "create or update a Linear issue",
+      "gold": [
+       "linear__save_issue"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "list issues in the user's Linear workspace including active Triage Intelligence suggestions for issues in triage",
+      "gold": [
+       "linear__list_issues"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "create or update a comment on a Linear issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__submit_diff_review",
+       "linear__get_issue_status",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "projects in the user's Linear workspace",
+      "gold": [
+       "linear__list_projects"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "send a whatsapp message",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__download_media",
+       "whatsapp__get_media_data",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "get WhatsApp messages with optional surrounding context",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__share_issue"
+      ]
+     }
+    ]
+   },
+   "heldout": {
+    "top1": "0/24",
+    "recall3": "0/24",
+    "recall5": "0/24",
+    "latency_ms_p50": 0.6636729999911495,
+    "misses": [
+     {
+      "query": "what does the clock say right now",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "stop the job I started earlier",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "has my long build finished yet",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "look this up online",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "grab the text of that page",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "linear__share_issue",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "split this across several helpers working at once",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "note down the steps still to do",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "teach yourself a new capability",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "do this again every morning",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "what do you already know about me",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "store that my dog is called Argo",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "book a meeting for next Tuesday",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "drop Marco a line on WhatsApp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "what did we say to each other last week",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "memory__memory_merge_entities"
+      ]
+     },
+     {
+      "query": "details of one specific project",
+      "gold": [
+       "linear__get_project"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "which projects exist in the workspace",
+      "gold": [
+       "linear__list_projects"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "open a new ticket",
+      "gold": [
+       "linear__save_issue"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "which teams are there",
+      "gold": [
+       "linear__list_teams"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "details for a single person",
+      "gold": [
+       "linear__get_user"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "everyone in the workspace",
+      "gold": [
+       "linear__list_users"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "what statuses can an issue be in",
+      "gold": [
+       "linear__list_issue_statuses"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "write a reply under an issue",
+      "gold": [
+       "linear__save_comment"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "remove an attached file",
+      "gold": [
+       "linear__delete_attachment"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__unshare_issue",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "which cycles does this team run",
+      "gold": [
+       "linear__list_cycles"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "linear__get_milestone"
+      ]
+     }
+    ]
+   },
+   "blind_en": {
+    "top1": "0/30",
+    "recall3": "0/30",
+    "recall5": "0/30",
+    "latency_ms_p50": 0.6629490000022997,
+    "misses": [
+     {
+      "query": "what day is it today",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__download_media",
+       "whatsapp__get_media_data",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "get today's date and clock",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "linear__get_issue_status",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "remind me later at a specific hour",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__save_release_note",
+       "linear__submit_diff_review"
+      ]
+     },
+     {
+      "query": "run a job every morning on a schedule",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "keep a checklist of steps for this job",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__get_milestone"
+      ]
+     },
+     {
+      "query": "track progress on a multi-step plan",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "look up recent news online",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "find information on the internet",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "read the contents of this url",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "download a page and convert to text",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "delegate several unrelated jobs to parallel helpers",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "split work across multiple sub-agents at once",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "install or remove a capability from the shared library",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__save_release_note",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "edit an existing skill definition",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__save_release_note",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "inspect a bundle of skills and connectors together",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "load an extension package with its commands",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "check output of a command running in background",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "see what a long-running process printed so far",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__save_release_note",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "stop a background process",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "cancel a running terminal command",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__save_release_note",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "what do I know about this person from before",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "memory__memory_merge_entities"
+      ]
+     },
+     {
+      "query": "look up a stored fact about the user",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "save this information for later conversations",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "remember that the user changed job",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "what meetings do I have tomorrow",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__get_issue_status",
+       "linear__share_issue",
+       "linear__save_release_note"
+      ]
+     },
+     {
+      "query": "send an email to my colleague",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "text my friend on whatsapp",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "send a chat message to a group",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "show recent whatsapp conversations content",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "read the latest chat messages from a contact",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__save_release_note"
+      ]
+     }
+    ]
+   },
+   "blind_it": {
+    "top1": "0/30",
+    "recall3": "0/30",
+    "recall5": "2/30",
+    "latency_ms_p50": 0.6694240000229001,
+    "misses": [
+     {
+      "query": "che ore sono adesso",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "web_fetch"
+      ]
+     },
+     {
+      "query": "che giorno è oggi",
+      "gold": [
+       "current_time"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "ricordami domani alle 9 di chiamare il dentista",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "ogni lunedì mandami un promemoria",
+      "gold": [
+       "task"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "fammi una lista delle cose da fare per il trasloco",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "web_fetch",
+       "linear__submit_diff_review",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "segna i passaggi e spunta quelli completati",
+      "gold": [
+       "todo_write"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "cerca su internet le ultime notizie sullo sciopero dei treni",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "trovami online recensioni di questo ristorante",
+      "gold": [
+       "web_search"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "leggi questo link e riassumimi l'articolo",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "apri questa pagina e dimmi cosa c'è scritto",
+      "gold": [
+       "web_fetch"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "fai queste tre cose contemporaneamente",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "dividi il lavoro tra più assistenti in parallelo",
+      "gold": [
+       "swarm_spawn"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__get_issue_status",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "aggiungi una nuova abilità all'assistente",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__submit_diff_review",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "elimina una competenza che non serve più",
+      "gold": [
+       "skill_manage"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "web_fetch",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "mostrami cosa contiene questo pacchetto di estensioni",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "linear__share_issue"
+      ]
+     },
+     {
+      "query": "quali comandi e connettori include questo plugin",
+      "gold": [
+       "plugin_pack"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__unshare_issue",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "fammi vedere a che punto è il comando che hai lanciato",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__unshare_issue",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "leggi l'output del processo in esecuzione",
+      "gold": [
+       "shell_poll"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "ferma quel comando che sta girando",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "web_fetch",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "interrompi il processo in background, ci mette troppo",
+      "gold": [
+       "shell_kill"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__unshare_issue",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "ti ricordi come si chiama mia sorella?",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "cosa ti avevo detto del mio lavoro il mese scorso",
+      "gold": [
+       "memory__memory_recall"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "ricordati che sono allergico alle noci",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "linear__unshare_issue"
+      ]
+     },
+     {
+      "query": "tieni a mente che mi sono trasferito a Torino",
+      "gold": [
+       "memory__memory_upsert_fact"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "linear__unshare_issue",
+       "linear__get_issue_status"
+      ]
+     },
+     {
+      "query": "fissa un appuntamento giovedì pomeriggio in agenda",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     },
+     {
+      "query": "controlla la mia posta e dimmi se è arrivata la fattura",
+      "gold": [
+       "calendar__calendar"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "scrivi a Marco su whatsapp che arrivo tardi",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "whatsapp__get_media_data",
+       "whatsapp__download_media",
+       "web_fetch"
+      ]
+     },
+     {
+      "query": "manda un messaggio al gruppo della famiglia",
+      "gold": [
+       "whatsapp__send_message"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "cosa mi ha scritto Giulia su whatsapp?",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "web_fetch",
+       "whatsapp__get_media_data",
+       "whatsapp__download_media"
+      ]
+     },
+     {
+      "query": "fammi vedere gli ultimi messaggi ricevuti nella chat del calcetto",
+      "gold": [
+       "whatsapp__list_messages"
+      ],
+      "top3": [
+       "linear__share_issue",
+       "whatsapp__download_media",
+       "whatsapp__get_media_data"
+      ]
+     }
+    ]
+   }
+  }
+ }
+}

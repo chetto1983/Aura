@@ -1,0 +1,11 @@
+{
+ "measured": "2026-10-07, TestReasoningClassifierLive against the local aura-llama-embed (EmbeddingGemma-300M, 768d)",
+ "accuracy": "54/58",
+ "none_vs_rest": "54/58",
+ "misses": [
+  {"prompt": "a che ora apre la posta?", "accept": ["low"], "pred": "none"},
+  {"prompt": "nel manuale che ti ho caricato, come si tara il sensore?", "accept": ["low", "high"], "pred": "none"},
+  {"prompt": "che documenti ho caricato?", "accept": ["none", "low"], "pred": "high"},
+  {"prompt": "perchè devi usare un'altro tool non quello", "accept": ["none", "low"], "pred": "high"}
+ ]
+}
