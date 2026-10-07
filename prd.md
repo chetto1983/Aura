@@ -2840,8 +2840,25 @@ The appliance installer and updater enforce `single_user_hardened` with
 `AURA_MUSR_ISOLATION=true` on a single-node appliance, including upgrades whose
 configuration omits those keys or still selects a development profile. An explicit
 `server_production` profile remains unchanged and retains its separate durability
-and runtime prerequisites. Bare development Compose invocations keep their opt-in
-profile. Measured 2026-09-14: the running appliance had neither key in `.env` and
+and runtime prerequisites.
+
+An unset or unrecognised `AURA_PROFILE` is `single_user_hardened` everywhere: in the
+binary and in bare Compose, not only on an installed appliance. `dev` is an explicit
+opt-in. Development harnesses that boot the daemon on sample credentials state it
+themselves: the web E2E and the AG-UI smoke. Measured 2026-10-07 on a local Compose
+Postgres 18.4, with the default flipped and no profile set:
+- The unit suite is green except tests that relied on the old default: 2 tests of the
+  profile contract itself and 8 `cmd/aura` tests that mount a loopback MCP fixture,
+  which the strict egress policy blocks as SSRF by design.
+- The `db_integration` tier for `db`, `cron`, `agui` and `documents` is green, and so is
+  the race tier for `conversations` and `runner`.
+- `aura serve` refused to boot in the AG-UI smoke and under the web E2E environment.
+  `aura config validate` named four fatal violations: the sample object-store access
+  and secret keys, the empty Garage RPC secret, and the missing embedding revision.
+This does not measure the full Playwright E2E, the MUSR E2E, the memory, ingest or
+sandbox tiers, or a live appliance under the new default.
+
+Measured 2026-09-14: the running appliance had neither key in `.env` and
 therefore ran as `dev`; the installer's existing-file path never filled the pair,
 and the updater did not migrate it. Config validation of that appliance under
 `single_user_hardened` returned no violations. This does not establish multi-node

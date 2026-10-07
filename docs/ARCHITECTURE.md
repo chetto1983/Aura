@@ -79,7 +79,7 @@ also identity-aware. Administrative shared resources are distinct from an ordina
 user's resources.
 
 `AURA_PROFILE` selects `dev`, `local_trusted`, `single_user_hardened`, or
-`server_production`. Strictness and sandbox routing depend on configuration and the
+`server_production`; unset or unrecognised, it is `single_user_hardened`. Strictness and sandbox routing depend on configuration and the
 host. The enforcing Docker/gVisor path requires native Linux. Do not equate Docker
 Desktop with that boundary or describe a default installation as universally hardened.
 
