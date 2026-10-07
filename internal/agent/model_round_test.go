@@ -128,10 +128,11 @@ func TestPrimaryModelRoundRetriesReuseIdentity(t *testing.T) {
 	}
 }
 
-func TestReasoningRouterDoesNotConsumePrimaryModelRound(t *testing.T) {
+// The adaptive decision sends nothing before the turn's first primary round: the teacher
+// runs in the background, outside the agent's rounds (spec amendment 2026-10-07).
+func TestAdaptiveReasoningSendsThePrimaryRoundFirst(t *testing.T) {
 	requestID := uuid.Must(uuid.NewV7())
 	client := &modelRoundCaptureClient{turns: []modelRoundTurn{
-		modelRoundTextTurn("stop", "low"),
 		modelRoundTextTurn("stop", "done"),
 	}}
 	runModelRoundAgent(t, client, requestID, llm.Config{
@@ -140,14 +141,8 @@ func TestReasoningRouterDoesNotConsumePrimaryModelRound(t *testing.T) {
 	}, 2)
 
 	rounds, present := client.snapshot()
-	if len(rounds) != 2 {
-		t.Fatalf("calls = %d, want router plus primary", len(rounds))
-	}
-	if present[0] {
-		t.Fatalf("reasoning router consumed primary round %+v", rounds[0])
-	}
-	if !present[1] || rounds[1].requestID != requestID || rounds[1].ordinal != 1 {
-		t.Fatalf("primary round = %+v present=%v, want request %s ordinal 1", rounds[1], present[1], requestID)
+	if len(rounds) != 1 || !present[0] || rounds[0].requestID != requestID || rounds[0].ordinal != 1 {
+		t.Fatalf("rounds = %+v present=%v, want only the primary round, request %s ordinal 1", rounds, present, requestID)
 	}
 }
 
