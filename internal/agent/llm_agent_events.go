@@ -123,14 +123,18 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 	ev.Actions.StateDelta = map[string]any{"tool_call_id": run.ToolCallID}
 	startedAt := run.StartedAt.UTC()
 	endedAt := run.EndedAt.UTC()
-	status := "ok"
-	if run.Result.Meta != nil && (*run.Result.Meta)["cancelled"] == true {
+	resultMeta := toolResultMetaMap(run.Result.Meta)
+	status, errText := "ok", run.Err
+	if resultMeta["cancelled"] == true {
 		status = "canceled"
 	}
-	if run.Err != "" {
+	// A failure handed to the model inline is still a failure to the ledger.
+	if inline, ok := resultMeta[tools.MetaToolError].(string); ok && errText == "" {
+		errText = inline
+	}
+	if errText != "" {
 		status = "error"
 	}
-	resultMeta := toolResultMetaMap(run.Result.Meta)
 	if _, trusted := resultMeta["aura_display_source"]; trusted {
 		stampDisplayPreviewDigest(resultMeta, run.Preview)
 	} else if _, view := resultMeta["mcp_view"]; view {
@@ -146,7 +150,7 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		EndedAt:           &endedAt,
 		DurationMS:        run.EndedAt.Sub(run.StartedAt).Milliseconds(),
 		Status:            status,
-		Error:             run.Err,
+		Error:             errText,
 		ResultPreview:     rawPreview,
 		PreviewBytes:      len(rawPreview),
 		ResultBytes:       run.Result.Bytes,

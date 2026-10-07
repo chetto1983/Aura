@@ -114,6 +114,7 @@ func TestWeb_SanitizedInlineError(t *testing.T) {
 			t.Fatalf("a sanitized web block must be an inline ToolResult, not a Go error: %v", err)
 		}
 		assertSanitized(t, res.Preview)
+		assertInlineFailure(t, res, "blocked_url (private_or_metadata_target)")
 	})
 
 	t.Run("web_search", func(t *testing.T) {
@@ -125,7 +126,18 @@ func TestWeb_SanitizedInlineError(t *testing.T) {
 			t.Fatalf("a sanitized unavailable must be an inline ToolResult, not a Go error: %v", err)
 		}
 		assertSanitized(t, res.Preview)
+		assertInlineFailure(t, res, "web_search_unavailable (searxng_unreachable)")
 	})
+}
+
+// assertInlineFailure checks the model-invisible marker the audit ledger reads: the
+// model gets the error inline to adapt to it, and the ledger must still count it as a
+// failure (on 2026-10-07 three failed fetches were recorded as status=ok).
+func assertInlineFailure(t *testing.T, res ToolResult, want string) {
+	t.Helper()
+	if res.Meta == nil || (*res.Meta)[MetaToolError] != want {
+		t.Fatalf("Meta[%s] = %v, want %q", MetaToolError, res.Meta, want)
+	}
 }
 
 // assertSanitized verifies the inline error JSON exposes only {error,reason,

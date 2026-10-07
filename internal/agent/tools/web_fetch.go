@@ -119,5 +119,10 @@ func webErrorResult(ctx context.Context, err error) (ToolResult, error) {
 	if mErr != nil {
 		return ToolResult{}, fmt.Errorf("web tool: marshal sanitized error: %w", mErr)
 	}
-	return NewResult(ctx, string(b))
+	res, err := NewResult(ctx, string(b))
+	if err != nil {
+		return ToolResult{}, err
+	}
+	res.Meta = &ToolResultMeta{MetaToolError: we.Error()}
+	return res, nil
 }

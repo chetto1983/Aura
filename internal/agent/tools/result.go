@@ -34,6 +34,10 @@ const (
 	// MetaDurableArtifact is the structured, model-invisible evidence emitted
 	// only after an allowlisted filesystem tool persists a real artifact.
 	MetaDurableArtifact = "durable_artifact"
+	// MetaToolError names a failure the tool returned INLINE for the model to adapt
+	// to (web_search/web_fetch's {error,…} object). The model reads the preview; the
+	// audit ledger reads this, so the failure is not recorded as status=ok.
+	MetaToolError = "tool_error"
 )
 
 // AcceptedFactEvidence is the closed structured projection of one successful
