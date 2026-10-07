@@ -184,3 +184,8 @@ func digest(parts ...string) string {
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }
+
+// LoggableSourceRef is a source ref as a log line carries it. The production log handler
+// blanks every string beginning with postgres:// as a DSN, and a ref names a conversation
+// and a turn with no credential, so the scheme is dropped rather than the redaction weakened.
+func LoggableSourceRef(ref string) string { return strings.TrimPrefix(ref, "postgres://") }

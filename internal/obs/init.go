@@ -96,7 +96,7 @@ func InitRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 	}
 
 	logger := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
-		ReplaceAttr: redactAttr,
+		ReplaceAttr: RedactAttr,
 	})).With("service", service, "version", version)
 	slog.SetDefault(logger)
 
@@ -140,7 +140,9 @@ func InitRuntime(ctx context.Context, cfg Config) (*Runtime, error) {
 	}, nil
 }
 
-func redactAttr(groups []string, a slog.Attr) slog.Attr {
+// RedactAttr is the production log handler's ReplaceAttr, exported so tests can capture
+// through the same redaction the daemon applies.
+func RedactAttr(groups []string, a slog.Attr) slog.Attr {
 	_ = groups
 	a.Value = redactValue(a.Value)
 	return a

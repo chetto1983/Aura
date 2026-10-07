@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 )
 
 // routerTeacher answers the teacher's router requests and sends every other request to the
@@ -94,7 +96,7 @@ func captureLogs(t *testing.T) *lockedBuffer {
 	t.Helper()
 	logs := &lockedBuffer{}
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{ReplaceAttr: obs.RedactAttr})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 	return logs
 }
@@ -180,11 +182,14 @@ func TestUncertainTurnIsLabelledByTheTeacherAfterItsDecision(t *testing.T) {
 	if len(requests) != 1 || requests[0].Messages[1].Content != typed || requests[0].Model != mandatoryRoute().Model {
 		t.Fatalf("teacher requests = %+v, want one on the turn's model about the typed text", requests)
 	}
-	for _, want := range []string{`msg="adaptive reasoning: teacher label"`, "source_ref=" + reasoningSourceRef(convID, seq),
+	for _, want := range []string{`msg="adaptive reasoning: teacher label"`, "source_ref=aura/conversations/" + convID + "/turns/" + strconv.Itoa(seq),
 		"outcome=success", "tier=none", "requested=none", "effort=low"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("logs lack %q:\n%s", want, logs.String())
 		}
+	}
+	if strings.Contains(logs.String(), "[REDACTED]") {
+		t.Fatalf("the production handler blanked part of the teacher-label line:\n%s", logs.String())
 	}
 }
 

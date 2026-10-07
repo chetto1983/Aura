@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
@@ -446,21 +447,39 @@ func TestRunPreloadsBeforeTheFirstRequestAndReportsTheDecisionOnce(t *testing.T)
 	}
 }
 
-// The VM checks compare the logged origins with the turns they expect to be recalled.
-func TestTurnReadLogShowsTheOriginsVerbatim(t *testing.T) {
+// The VM checks compare the logged origins with the turns they expect to be recalled. The
+// production handler blanks every postgres:// string as a DSN, so the origins are logged
+// without their scheme and this test captures through the production options.
+func TestTurnReadLogShowsTheOriginsSurvivingRedaction(t *testing.T) {
 	var logs bytes.Buffer
 	previous := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{ReplaceAttr: obs.RedactAttr})))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
 	label := recalledLabel(EffortSourceTeacher, "high", 0.04)
+	label.SourceRef = "postgres://aura/conversations/past-label/turns/2"
 	tool := RecalledTurn{Distance: 0.02, SourceRef: "postgres://aura/conversations/past-tool/turns/3", Tools: []string{"web_search"}}
 	recaller := &fakeRecaller{recall: TurnRecall{TeacherLabels: []RecalledTurn{label}, ToolTurns: []RecalledTurn{tool}}}
 	a, _ := newReadingAgent(t, readingSetup{reading: memoryReading(recaller)})
 	a.readTurn(context.Background())
-	for _, want := range []string{"label_origin=" + label.SourceRef, "tool_turn_origin=" + tool.SourceRef} {
+	for _, want := range []string{"label_origin=aura/conversations/past-label/turns/2", "tool_turn_origin=aura/conversations/past-tool/turns/3"} {
 		if !strings.Contains(logs.String(), want) {
 			t.Fatalf("turn-read log lacks %q:\n%s", want, logs.String())
+		}
+	}
+	if strings.Contains(logs.String(), "[REDACTED]") {
+		t.Fatalf("the production handler blanked part of the turn-read line:\n%s", logs.String())
+	}
+}
+
+func TestLoggableSourceRefDropsOnlyTheScheme(t *testing.T) {
+	for ref, want := range map[string]string{
+		"postgres://aura/conversations/c/turns/1": "aura/conversations/c/turns/1",
+		"aura/conversations/c/turns/1":            "aura/conversations/c/turns/1",
+		"":                                        "",
+	} {
+		if got := LoggableSourceRef(ref); got != want {
+			t.Fatalf("LoggableSourceRef(%q) = %q, want %q", ref, got, want)
 		}
 	}
 }

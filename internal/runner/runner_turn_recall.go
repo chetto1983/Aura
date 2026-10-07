@@ -195,10 +195,10 @@ func (r *Runner) maybeTeachTurn(turnCtx context.Context, tr *turnTracker) {
 			effort = runtime.Config.ClampReasoningEffort(requested)
 			r.persistTeacherLabel(turnCtx, convID, seq, requested)
 		}
-		// The source ref bypasses redact.Line, as on the turn-read line: it names a turn
-		// and carries no credential, and redact.Line blanks every postgres:// string.
+		// The ref is logged without its scheme, as on the turn-read line: the production
+		// handler blanks every postgres:// string as a DSN.
 		slog.Info("adaptive reasoning: teacher label",
-			"thread_id", redact.Line(convID), "source_ref", reasoningSourceRef(convID, seq),
+			"thread_id", redact.Line(convID), "source_ref", agent.LoggableSourceRef(reasoningSourceRef(convID, seq)),
 			"outcome", outcome, "tier", string(tier), "requested", string(requested),
 			"effort", string(effort), "teacher_ms", elapsed.Milliseconds())
 	})

@@ -221,15 +221,15 @@ func (a *LlmAgent) deferredToolNames() []string {
 
 // logTurnRead is the one line per turn the spec's Observability section names. The label and
 // the tool turn can be different past turns, so each has its own origin and distance.
-// The origins bypass redact.Line, which blanks every postgres:// string as a DSN: a source
-// ref names a conversation and a turn and carries no credential.
+// The origins go through LoggableSourceRef: the production handler blanks every postgres://
+// string as a DSN, and a source ref names a conversation and a turn, not a credential.
 func (a *LlmAgent) logTurnRead(d TurnDecision, read turnRead) {
 	slog.Info("adaptive reasoning: turn read",
 		"thread_id", redact.Line(a.sessionID),
 		"source", d.EffortSource, "requested", string(d.EffortRequested), "effort", string(d.Effort),
 		"seed_tier", string(read.seedTier), "seed_margin", read.seedMargin, "ask_teacher", d.AskTeacher,
-		"label_origin", read.label.SourceRef, "label_distance", read.label.Distance,
-		"tool_turn_origin", read.toolTurn.SourceRef, "tool_turn_distance", read.toolTurn.Distance,
+		"label_origin", LoggableSourceRef(read.label.SourceRef), "label_distance", read.label.Distance,
+		"tool_turn_origin", LoggableSourceRef(read.toolTurn.SourceRef), "tool_turn_distance", read.toolTurn.Distance,
 		"recall_miss", read.recallMiss, "recall_ms", read.recallDuration.Milliseconds(),
 		"seed_ms", read.seedDuration.Milliseconds(),
 		"preloaded", read.preloaded, "route", d.RouteKey, "policy", d.PolicyVersion)
