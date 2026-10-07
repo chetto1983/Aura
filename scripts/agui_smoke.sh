@@ -157,7 +157,9 @@ go run ./scripts/agui_db_seed.go seed "${TID}" "${LOCAL_IDENTITY}" "${USER_PROMP
 # --- start the daemon ---------------------------------------------------------
 SERVE_LOG="${WORK}/serve.log"
 echo "==> starting aura serve (bind ${BIND})"
-"${BIN}" serve >"${SERVE_LOG}" 2>&1 &
+# Sample object-store credentials and no pinned embedding revision: the strict default
+# profile refuses to boot on them, so this smoke runs the dev posture unless told otherwise.
+AURA_PROFILE="${AURA_PROFILE:-dev}" "${BIN}" serve >"${SERVE_LOG}" 2>&1 &
 SERVE_PID=$!
 if [[ "${WINDOWS_BASH}" -eq 1 ]]; then
   disown "${SERVE_PID}" 2>/dev/null || true

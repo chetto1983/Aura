@@ -39,6 +39,9 @@ for (const key of SERVE_ENV_KEYS) {
     serveEnv[key] = value;
   }
 }
+// The E2E stack uses sample Garage credentials, which the strict default profile rejects at
+// boot, so the served daemon runs the dev posture unless the environment chooses one.
+serveEnv.AURA_PROFILE = process.env.AURA_PROFILE ?? 'dev';
 
 // SERVE_ORIGIN is the loopback origin `aura serve` listens on. It is the AG-UI
 // gateway default (config.go: AGUIBind = envDefault("AURA_AGUI_BIND",

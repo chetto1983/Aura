@@ -162,6 +162,7 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 }
 
 func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
 	withMemoryMCPRegistry(t)
