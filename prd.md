@@ -2421,6 +2421,20 @@ Agent jobs use the common runtime and one model/budget snapshot. Claims and noti
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
 
+An operator can pause an active reminder or agent job and resume it, from the cockpit, the
+CLI and the `task` tool. A paused task never fires. Resuming recomputes the next fire from
+the resume time, so missed windows are not replayed; a one-shot whose time has passed must
+be edited instead. The scheduler also pauses a task by itself after
+`AURA_SCHEDULER_PAUSE_AFTER_FAILURES` failed runs in a row (default 3, `0` disables it). It
+says so in that run's failure notification, and the cockpit shows the count. A success
+resets the count. The database backup and system sweeps are never paused, matching the rule
+that they are never cancelled. Measured 2026-10-07 by reading the code, not on a running
+stack: `paused` existed only in the `scheduler_tasks` status constraint (migration 0009) and
+no code wrote it. Dispatch recorded and notified every failure but never changed the task,
+so a job whose credential had expired failed and notified on every occurrence until someone
+cancelled it. This does not cover the in-flight `unknown_recovery` run, which recovery still
+re-fires.
+
 Mounted-MCP probe 104Y on 2026-09-08 executed three independent random-token commands
 through a coordinator and two grandchildren, with correct IDs and ancestry. The parent
 turn ended at13:16:47 UTC with an explicitly partial table; the coordinator report arrived
