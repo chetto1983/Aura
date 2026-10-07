@@ -33,10 +33,6 @@ type evalEnv struct {
 	classifier *prompt.ReasoningClassifier
 }
 
-func (t evalTurn) accepts(effort llm.ReasoningEffort) bool {
-	return slices.Contains(t.Accepted, string(effort))
-}
-
 type evalArm struct {
 	effort llm.ReasoningEffort
 	source string
@@ -49,10 +45,22 @@ type evalRecord struct {
 	seeds          evalArm
 	baseline       evalArm
 	recall         evalArm
+	recallMiss     string
 	teacher        teacherOutcome
 	labelDistance  float64
 	recallDuration time.Duration
 	reading        time.Duration
+}
+
+func (r evalRecord) gateRow() evalGateRow {
+	return evalGateRow{
+		trial: r.trial, split: r.split, turnID: r.turn.ID, recallMiss: r.recallMiss,
+		recallSource: r.recall.source, baselineSource: r.baseline.source,
+	}
+}
+
+func (t evalTurn) accepts(effort llm.ReasoningEffort) bool {
+	return slices.Contains(t.Accepted, string(effort))
 }
 
 func requireEvalEnv(t *testing.T, key string) string {
@@ -200,9 +208,10 @@ func replayTrial(t *testing.T, env evalEnv, set evalSet, split string, trial int
 
 			record := evalRecord{
 				trial: trial, split: conv.Split, turn: turn,
-				baseline: evalArm{effort: baseline.EffortRequested, source: baseline.EffortSource},
-				recall:   evalArm{effort: decision.EffortRequested, source: decision.EffortSource},
-				teacher:  read.teacher, labelDistance: read.label.Distance,
+				baseline:   evalArm{effort: baseline.EffortRequested, source: baseline.EffortSource},
+				recall:     evalArm{effort: decision.EffortRequested, source: decision.EffortSource},
+				recallMiss: read.recallMiss,
+				teacher:    read.teacher, labelDistance: read.label.Distance,
 				recallDuration: read.recallDuration, reading: reading,
 			}
 			if baseRead.seedOK {
@@ -236,19 +245,33 @@ func TestTurnRecallFrozenEval(t *testing.T) {
 		}
 		trials = parsed
 	}
+	// The report is rendered at cleanup so a failure in a late trial still leaves the paid
+	// evidence of the earlier ones.
 	var records []evalRecord
+	t.Cleanup(func() {
+		if len(records) == 0 {
+			return
+		}
+		report := renderEvalReport(env.cfg.Model, split, trials, records)
+		if path := os.Getenv("TURN_EVAL_REPORT"); path != "" {
+			if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
+				t.Errorf("write the report: %v", err)
+			}
+		}
+		t.Log("\n" + report)
+	})
 	for trial := 1; trial <= trials; trial++ {
 		records = append(records, replayTrial(t, env, set, split, trial)...)
 	}
-	report := renderEvalReport(env.cfg.Model, split, trials, records)
-	if path := os.Getenv("TURN_EVAL_REPORT"); path != "" {
-		if err := os.WriteFile(path, []byte(report), 0o644); err != nil {
-			t.Fatalf("write the report: %v", err)
-		}
-	}
-	t.Log("\n" + report)
 	for _, violation := range memoryHardToNone(records) {
 		t.Errorf("memory added a hard→none: trial %d, %s %q", violation.trial, violation.turn.ID, violation.turn.Text)
+	}
+	rows := make([]evalGateRow, len(records))
+	for index, record := range records {
+		rows[index] = record.gateRow()
+	}
+	for _, failure := range evalGateFailures(rows, split != "calibration") {
+		t.Errorf("the run does not exercise memory: %s", failure)
 	}
 }
 
@@ -308,11 +331,12 @@ func renderEvalReport(model, split string, trials int, records []evalRecord) str
 }
 
 func evalRecallDetail(records []evalRecord) string {
-	sources, outcomes, table := map[string]int{}, map[string]int{}, map[string]int{}
+	sources, outcomes, table, misses := map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 	memoryHits, memoryCorrect := 0, 0
 	var recallTimes, readingTimes []time.Duration
 	for _, record := range records {
 		sources[record.recall.source]++
+		misses[missLabel(record.recallMiss)]++
 		if record.teacher != "" {
 			outcomes[string(record.teacher)]++
 		}
@@ -329,6 +353,7 @@ func evalRecallDetail(records []evalRecord) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Recall arm sources: %v. Teacher share: %d/%d. Teacher outcomes: %v.\n\n",
 		sources, sources[EffortSourceTeacher], len(records), outcomes)
+	fmt.Fprintf(&b, "Recall miss reasons: %v.\n\n", misses)
 	fmt.Fprintf(&b, "Memory precision: %d/%d. Recall latency p50 %v, p95 %v. Whole reading p50 %v, p95 %v.\n\n",
 		memoryCorrect, memoryHits, percentile(recallTimes, 0.5), percentile(recallTimes, 0.95),
 		percentile(readingTimes, 0.5), percentile(readingTimes, 0.95))
@@ -341,10 +366,23 @@ func evalRecallDetail(records []evalRecord) string {
 	for _, key := range keys {
 		fmt.Fprintf(&b, "| %s | %d |\n", key, table[key])
 	}
-	b.WriteString("\n| Trial | Turn | Seeds | Seeds + teacher | Recall (source) | Label distance |\n|---|---|---|---|---|---|\n")
+	b.WriteString("\n| Trial | Turn | Seeds | Seeds + teacher | Recall (source) | Miss | Label distance |\n|---|---|---|---|---|---|---|\n")
 	for _, record := range records {
-		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s (%s) | %.3f |\n", record.trial, record.turn.ID,
-			record.seeds.effort, record.baseline.effort, record.recall.effort, record.recall.source, record.labelDistance)
+		distance := "—"
+		if record.recall.source == EffortSourceMemory {
+			distance = fmt.Sprintf("%.3f", record.labelDistance)
+		}
+		fmt.Fprintf(&b, "| %d | %s | %s | %s | %s (%s) | %s | %s |\n", record.trial, record.turn.ID,
+			record.seeds.effort, record.baseline.effort, record.recall.effort, record.recall.source,
+			missLabel(record.recallMiss), distance)
 	}
 	return b.String()
+}
+
+// missLabel names the empty miss: memory answered with a label.
+func missLabel(miss string) string {
+	if miss == "" {
+		return "label"
+	}
+	return miss
 }
