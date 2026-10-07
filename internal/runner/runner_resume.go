@@ -61,7 +61,7 @@ func (r *Runner) persistAutoTitle(turnCtx context.Context, convID, title string)
 		return
 	}
 	// A provider timeout must not cancel the fallback's persistence.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(turnCtx), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(turnCtx), backgroundWriteTimeout)
 	defer cancel()
 	if err := r.Conv.SetTitleIfNull(ctx, convID, title); err != nil {
 		slog.Warn("runner: auto-title persistence failed")

@@ -26,6 +26,15 @@ import (
 // outlives the turn ctx (WithoutCancel) but is never unbounded.
 const defaultTitleTimeout = 30 * time.Second
 
+// defaultTeacherTimeout bounds the background teacher the same way, one value for every
+// route (turn recall, amendment 2026-10-07). It is a candidate: how long the teacher takes
+// unbounded has not been measured yet.
+const defaultTeacherTimeout = 30 * time.Second
+
+// backgroundWriteTimeout bounds a background worker's write of its result. The write is
+// detached from the worker's LLM bound, so a provider timeout cannot cancel it.
+const backgroundWriteTimeout = 5 * time.Second
+
 // defaultStopTimeout bounds the Runner.Stop wg.Wait() drain so a hung title worker
 // cannot wedge shutdown forever.
 const defaultStopTimeout = 10 * time.Second
@@ -60,7 +69,7 @@ type Deps struct {
 	// 0137). nil leaves the decision in the turn's log line only.
 	TurnDecisions TurnDecisionStore
 	// TurnRecall reads the identity's past turns for the effort decision and the tool
-	// preload. nil reads every turn from seeds and the teacher alone.
+	// preload. nil reads every turn from seeds alone.
 	TurnRecall TurnRecallStore
 	// ResumeCommitter is the cross-store HITL-durability seam (D-03/D-05). The
 	// composition root injects a pool-owning *PoolResumeCommitter so single/batch resume
@@ -107,6 +116,7 @@ type Deps struct {
 	MemoryPreloadEnabled bool
 	Workspace            string // shell workspace announced per turn (#52/D-41); "" → the process cwd
 	TitleTimeout         time.Duration
+	TeacherTimeout       time.Duration
 	StopTimeout          time.Duration
 	// ReasoningPersistMaxRunes caps the display-only CoT accumulated per turn and
 	// persisted onto conversation_turns.reasoning (amendment #91 / fix-plan 1.12,
@@ -126,8 +136,8 @@ type Deps struct {
 	AlwaysBlock func(context.Context) string
 	ResumeHook  ResumeHook
 	// Embedder wires the local embedding-based reasoning-tier classifier into
-	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
-	// falls back to the LLM router. The composition root passes
+	// each per-turn agent. nil => an adaptive turn is decided static low, and a dispatched
+	// one is labelled by the background teacher. The composition root passes
 	// the daemon's document query route (embeddings.Route over config.EmbedRoute, key read live).
 	Embedder prompt.Embedder
 	// HookManager is the optional agent extension surface. nil keeps the agent's
@@ -185,6 +195,10 @@ func New(d Deps) *Runner {
 	if titleTimeout <= 0 {
 		titleTimeout = defaultTitleTimeout
 	}
+	teacherTimeout := d.TeacherTimeout
+	if teacherTimeout <= 0 {
+		teacherTimeout = defaultTeacherTimeout
+	}
 	stopTimeout := d.StopTimeout
 	if stopTimeout <= 0 {
 		stopTimeout = defaultStopTimeout
@@ -212,8 +226,8 @@ func New(d Deps) *Runner {
 	classifier := prompt.NewReasoningClassifier(d.Embedder)
 	// Wire the SAME embedder into the tool_search ranker (08.2-03): free-text
 	// tool_search ranks deferred tools by embedding cosine, so the embed sidecar is a
-	// HARD dependency for tool_search (Req-6). The reasoning classifier keeps its SOFT
-	// LLM-router fallback (risk #9) — the hard-dep is tool_search-only. A non-fatal
+	// HARD dependency for tool_search (Req-6). The reasoning classifier keeps a SOFT
+	// static-low fallback (risk #9) — the hard-dep is tool_search-only. A non-fatal
 	// boot health-check logs an unreachable sidecar but never fails boot, so an
 	// MCP-free `aura chat` is not coupled to embed availability (Open-Q #2).
 	r := &Runner{
@@ -248,6 +262,7 @@ func New(d Deps) *Runner {
 		reasoningPersistMaxRunes:  d.ReasoningPersistMaxRunes,
 		gatewayOwnsToolStarts:     d.Gateway.OwnsToolStartRows(),
 		titleTimeout:              titleTimeout,
+		teacherTimeout:            teacherTimeout,
 		stopTimeout:               stopTimeout,
 		resumeHook:                d.ResumeHook,
 		hookManager:               d.HookManager,

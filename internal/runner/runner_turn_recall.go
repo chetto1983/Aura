@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/arcadedb"
@@ -14,10 +15,11 @@ import (
 	"github.com/chetto1983/aura/internal/redact"
 )
 
-// TurnDecisionStore persists how a user turn's effort was decided (migration 0137).
-// *conversations.Store satisfies it.
+// TurnDecisionStore persists how a user turn's effort was decided (migration 0137), and the
+// background teacher's label that may later replace a guess. *conversations.Store satisfies it.
 type TurnDecisionStore interface {
 	RecordTurnDecision(ctx context.Context, conversationID string, seq int, d conversations.TurnDecision) error
+	RecordTeacherLabel(ctx context.Context, conversationID string, seq int, requested string) error
 }
 
 // TurnRecallStore reads an identity's past turns; the composition root binds the tenant
@@ -140,7 +142,8 @@ func agentRecalledTurns(turns []arcadedb.RecalledTurn) []agent.RecalledTurn {
 
 // recordTurnDecision writes the turn's decision onto its user row once, when the round
 // reaches a durable stop (its answer or its pause). The answer is already committed and the
-// decision is provenance, so a failed write is a warning, never a failed turn.
+// decision is provenance, so a failed write is a warning, never a failed turn. A written
+// decision that asks the teacher then starts its worker.
 func (r *Runner) recordTurnDecision(ctx context.Context, tr *turnTracker) {
 	if r.turnDecisions == nil || tr.userTurnSeq <= 0 || tr.decisionRecorded {
 		return
@@ -158,5 +161,50 @@ func (r *Runner) recordTurnDecision(ctx context.Context, tr *turnTracker) {
 	if err := r.turnDecisions.RecordTurnDecision(ctx, tr.convID, tr.userTurnSeq, decision); err != nil {
 		slog.Warn("turn decision write failed; the turn is unaffected",
 			"conv", redact.Line(tr.convID), "seq", tr.userTurnSeq, "err", redact.Line(err.Error()))
+		return
+	}
+	if tr.decision != nil && tr.decision.AskTeacher {
+		r.maybeTeachTurn(ctx, tr)
+	}
+}
+
+// maybeTeachTurn asks the teacher to label a turn whose decision asked for it, without the
+// turn waiting (spec 2026-10-06, "Amendment 2026-10-07"). It follows maybeAutoTitle: the
+// turn's own client and route, a bounded context the finished turn cannot cancel, and the
+// WaitGroup Stop joins. It starts only after the decision is written, so the label always
+// lands after it.
+func (r *Runner) maybeTeachTurn(turnCtx context.Context, tr *turnTracker) {
+	if (r.breaker != nil && r.breaker.Allow() != nil) || tr.userText == "" {
+		return
+	}
+	runtime := r.trackerLLMSnapshot(tr)
+	convID, seq, text := tr.convID, tr.userTurnSeq, tr.userText
+	r.wg.Go(func() {
+		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
+		ctx, cancel := context.WithTimeout(ctx, r.teacherTimeout)
+		defer cancel()
+		started := time.Now()
+		tier, outcome := agent.AskTeacher(ctx, runtime.Client, runtime.Config.Model, text)
+		elapsed := time.Since(started)
+		var effort llm.ReasoningEffort
+		if outcome == agent.TeacherSuccess {
+			effort = runtime.Config.ClampReasoningEffort(tier.Effort())
+			r.persistTeacherLabel(turnCtx, convID, seq, effort)
+		}
+		// The source ref bypasses redact.Line, as on the turn-read line: it names a turn
+		// and carries no credential, and redact.Line blanks every postgres:// string.
+		slog.Info("adaptive reasoning: teacher label",
+			"thread_id", redact.Line(convID), "source_ref", reasoningSourceRef(convID, seq),
+			"outcome", outcome, "tier", string(tier), "effort", string(effort),
+			"teacher_ms", elapsed.Milliseconds())
+	})
+}
+
+func (r *Runner) persistTeacherLabel(turnCtx context.Context, convID string, seq int, effort llm.ReasoningEffort) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(turnCtx), backgroundWriteTimeout)
+	defer cancel()
+	if err := r.turnDecisions.RecordTeacherLabel(ctx, convID, seq, string(effort)); err != nil {
+		slog.Warn("adaptive reasoning: teacher label write failed",
+			"conv", redact.Line(convID), "seq", seq, "err", redact.Line(err.Error()))
 	}
 }

@@ -101,10 +101,11 @@ type Runner struct {
 	// gateway.OwnsToolStartRows for why a second writer of that row breaks GATE-03/04.
 	gatewayOwnsToolStarts bool
 
-	titleTimeout time.Duration
-	titleFlights sync.Map
-	stopTimeout  time.Duration
-	resumeHook   ResumeHook
+	titleTimeout   time.Duration
+	titleFlights   sync.Map
+	teacherTimeout time.Duration
+	stopTimeout    time.Duration
+	resumeHook     ResumeHook
 
 	hookManager *agent.HookManager // optional per-turn LlmAgent hooks
 	// verificationStore is the process-wide evidence ledger (pool-owning); nil disables
@@ -115,7 +116,7 @@ type Runner struct {
 	// nothing is ever a project, so the gate could only ever say nothing.
 	verificationDetector ProjectDetectorSource
 	alwaysBlock          func(context.Context) string // renders the messages[1] always-block per turn for the turn's identity (D-07, #214); nil → empty
-	classifier           *prompt.ReasoningClassifier  // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	classifier           *prompt.ReasoningClassifier  // SHARED reasoning-tier classifier (anchors built once); nil → static low
 	gateway              *gateway.Gateway             // Phase-35 policy PEP injected into every per-turn agent; nil → Allow no-op
 	shareRevoker         ShareRevoker                 // D-15 consumer-declared seam (runner_delete.go step 4.5); nil → step 4.5 is a silent skip
 	// steer is the shared process-wide mid-turn steer inbox injected via
@@ -140,7 +141,7 @@ type Runner struct {
 	// ctx-cancel so the delete lifecycle can abort exactly the owner's in-flight turn.
 	threadLocks sync.Map       // sessionKey -> *sync.Mutex
 	sessions    sync.Map       // sessionKey -> context.CancelFunc (in-flight turn)
-	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
+	wg          sync.WaitGroup // tracks the auto-title and teacher workers (D-A5-01); Stop joins it (goleak-clean)
 	// stopMu guards (re)arming the SINGLE wg-drain waiter that closes stopDone. While a
 	// title worker runs, stopDone stays non-nil so repeated Stop reuses ONE waiter — a hung
 	// worker leaves exactly one blocked waiter no matter how often Stop is called
@@ -277,7 +278,7 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, input turnInput)
 
 		tr := &turnTracker{convID: convID, llmRuntime: turnRuntime, userTurnSeq: userTurnSeq}
 		turn := readTurnContext(history, input, cfg, assets.TurnAttachments(ctx))
-		tr.contextKey = turn.key
+		tr.contextKey, tr.userText = turn.key, turn.text
 		la, ic, cancelAgent, err := r.buildAgent(
 			ctx, convID, requestID, agentHistory, r.turnReading(ctx, tr, turn),
 		)

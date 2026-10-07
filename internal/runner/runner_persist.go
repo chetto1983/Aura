@@ -51,9 +51,11 @@ type turnTracker struct {
 	llmRuntime llm.RuntimeSnapshot
 	// userTurnSeq is the seq of the user row this run dispatched, 0 for a resumed run or a
 	// branch re-run; contextKey and decision are that turn's reading, written back to the
-	// row once (recordTurnDecision).
+	// row once (recordTurnDecision). userText is the message as typed, which the background
+	// teacher reads (maybeTeachTurn).
 	userTurnSeq      int
 	contextKey       string
+	userText         string
 	decision         *agent.TurnDecision
 	decisionRecorded bool
 	// answered records that the round's assistant answer reached the store. A round ends

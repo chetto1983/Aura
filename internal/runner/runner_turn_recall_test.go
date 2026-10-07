@@ -22,23 +22,54 @@ type recordedDecision struct {
 	decision conversations.TurnDecision
 }
 
+type recordedLabel struct {
+	convID    string
+	seq       int
+	requested string
+}
+
+// recordingDecisionStore records decisions and teacher labels, and in writes the order in
+// which they arrived. onDecision runs after a decision is recorded.
 type recordingDecisionStore struct {
-	mu      sync.Mutex
-	records []recordedDecision
-	err     error
+	mu         sync.Mutex
+	records    []recordedDecision
+	labels     []recordedLabel
+	writes     []string
+	err        error
+	labelErr   error
+	onDecision func()
 }
 
 func (s *recordingDecisionStore) RecordTurnDecision(_ context.Context, convID string, seq int, d conversations.TurnDecision) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.records = append(s.records, recordedDecision{convID: convID, seq: seq, decision: d})
-	return s.err
+	s.writes = append(s.writes, "decision")
+	err, onDecision := s.err, s.onDecision
+	s.mu.Unlock()
+	if onDecision != nil {
+		onDecision()
+	}
+	return err
+}
+
+func (s *recordingDecisionStore) RecordTeacherLabel(_ context.Context, convID string, seq int, requested string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.labels = append(s.labels, recordedLabel{convID: convID, seq: seq, requested: requested})
+	s.writes = append(s.writes, "label")
+	return s.labelErr
 }
 
 func (s *recordingDecisionStore) snapshot() []recordedDecision {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return slices.Clone(s.records)
+}
+
+func (s *recordingDecisionStore) labelSnapshot() ([]recordedLabel, []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.labels), slices.Clone(s.writes)
 }
 
 type recordingRecallStore struct {
@@ -294,18 +325,18 @@ func TestRecallReadsTheTypedMessageNotTheComposedOne(t *testing.T) {
 }
 
 // "ciao" itself never reaches the agent (the runner's fast path answers it), so the greeting
-// here is another one on the allowlist. The second scripted answer lets a misread greeting
-// ask the teacher and still finish its turn.
+// here is another one on the allowlist. Stop joins any background teacher a misread greeting
+// would have started, so its request would be counted.
 func TestAGreetingComposedWithTheCatalogTakesTheGreetingPath(t *testing.T) {
 	r, _, client, decisions := decisionRunner(t, reasoningRoute(),
-		agenttest.ToolCallTurn(textResponseCall("call-1", "Buonanotte!")),
-		agenttest.ToolCallTurn(textResponseCall("call-2", "Buonanotte!")))
+		agenttest.ToolCallTurn(textResponseCall("call-1", "Buonanotte!")))
 	convID := newConvID(t)
 	mustCreate(t, r, convID)
 	const typed = "buonanotte"
 	if _, err := drain(r.TurnWithModelUserMessage(context.Background(), convID, typed, catalogBlocks+typed)); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
+	stopRunner(t, r, convID)
 	records := decisions.snapshot()
 	if len(records) != 1 || records[0].decision.EffortSource != agent.EffortSourceGreeting {
 		t.Fatalf("decisions = %+v, want the greeting path", records)
