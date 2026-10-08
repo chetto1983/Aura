@@ -1,0 +1,44 @@
+name: Mirror whisper-server
+
+# compose.yaml's aura-stt cannot pin hwdsl2/whisper-server on Docker Hub: upstream publishes only
+# :latest and Hub collects each superseded manifest within hours, which broke CI and fresh
+# installs four times by 2026-10-08. This copies :latest to GHCR under a dated tag that stays
+# pullable, and Dependabot proposes each new tag (see scripts/mirror_whisper_server.sh).
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 */6 * * *"
+  push:
+    branches: [master]
+    paths:
+      - ".github/workflows/mirror-whisper-server.yml"
+      - "scripts/mirror_whisper_server.sh"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: mirror-whisper-server
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    name: Copy :latest to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Log in to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
+        run: printf '%s' "$GITHUB_TOKEN" | skopeo login ghcr.io --username "$ACTOR" --password-stdin
+
+      - name: Mirror
+        env:
+          DEST_REPO: ghcr.io/${{ github.repository_owner }}/aura-whisper-server
+        run: bash scripts/mirror_whisper_server.sh | tee -a "$GITHUB_STEP_SUMMARY"
