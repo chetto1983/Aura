@@ -109,9 +109,10 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
 # The release text is the tag's CHANGELOG.md section (scripts/release_notes.py, passed
-# by release.yml as --release-notes), not a generated commit list.
-changelog:
-  disable: true
+# by release.yml as --release-notes), not a generated commit list. That flag already
+# skips changelog generation; `changelog: disable: true` must stay out, because it also
+# drops the --release-notes file (goreleaser.com/customization/publish/changelog) and
+# published v1.1.0 with an empty body on 2026-10-08.
 
 release:
   github:
