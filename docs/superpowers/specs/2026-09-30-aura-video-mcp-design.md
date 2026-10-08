@@ -77,7 +77,7 @@ model sees them exactly as an external client does, so every client has one deli
      90-minute job token.
    - The upload URL does not bridge the gap: a presign lasts 600 s (`AURA_ASSET_PRESIGN_TTL_SEC`).
    - A render that finishes after its token expired must not be lost. The checked film is kept for a
-     bounded time, provisionally 15 minutes after check completion (Plan B Q1), and the identity's
+     bounded time, 15 minutes after check completion (Plan B Q1, decided 2026-10-08), and the identity's
      next tool call supplies a bearer. Every authenticated request obtains the freshest bearer at
      dispatch: finalize cannot reuse the token taken before a potentially ten-minute PUT.
    - All credential waits share one deadline. A missing bearer pauses upload without discarding
@@ -168,7 +168,7 @@ host support (Plan B Q4).
 4. **Media proxy.**
    - Every request from the page is routed through Node (`page.route`).
    - It is allowed only to the signed URLs the internal API returned for this job. Plan B Q6
-     provisionally streams each source once per analysis/render pass, without a tmpfs cache:
+     (decided 2026-10-08) streams each source once per analysis/render pass, without a tmpfs cache:
      cached bytes would count against the same measured memory limit as the browser.
    - Any non-2xx answer or network error **fails the job with the source's name**.
 5. **Output check** (ffprobe plus sampled decoding), before anything is saved:
@@ -202,8 +202,8 @@ Plan C implements this side; there is no render-jobs table, watcher, native tool
   No internal `aura-video` network or Caddy relay is added. On the measured Docker 29.8.1 setup,
   an internal-only network blocked both egress and host access through the published port;
   that observation is not a claim about every engine (Plan B Q7).
-  The proposed 6 GiB memory limit comes from Plan B's dated ten-minute measurement and remains
-  Q3's recommendation; the page and proxy allowlists apply regardless of container egress.
+  The 6 GiB memory limit comes from Plan B's dated ten-minute measurement (Q3, decided
+  2026-10-08); the page and proxy allowlists apply regardless of container egress.
 - **Internal API** `/internal/video/…` (§Security), and the Caddyfile answers 404 on that prefix.
 - **Project indexing (M1 of the audio spec).** A Studio project file is named `<slug>.aura-video.json`,
   and its object key preserves that suffix so ingest can exclude it from RAG. Any other `.json`
@@ -282,8 +282,8 @@ include the four regressions from Plan B's 2026-10-05 applicability review.
    Progress runs from 0 to 1 across these steps.
 3. **Bounds and credentials.**
    - The sidecar has a 120 s stall watchdog and a 60-minute age limit, queue time included.
-     Credential waiting pauses those clocks; it has its own single deadline, provisionally
-     15 minutes after check completion (Plan B Q1). Repeated waits do not extend that deadline.
+     Credential waiting pauses those clocks; it has its own single deadline, 15 minutes after
+     check completion (Plan B Q1, decided 2026-10-08). Repeated waits do not extend that deadline.
    - Every authenticated request obtains the current caller bearer just before dispatch. In
      particular, finalize after a potentially ten-minute signed PUT and public resolve after film
      acceptance must not reuse a bearer captured before upload. The PUT itself uses only the signed
@@ -323,15 +323,15 @@ include the four regressions from Plan B's 2026-10-05 applicability review.
 
 | Limit | Value | Reason |
 |---|---|---|
-| Film length | **10 minutes proposed**, 6 GiB container limit proposed | Plan B Task 13 records a 5,769 MiB peak with its real sources; Q3 remains open and source size matters. |
+| Film length | **10 minutes**, 6 GiB container limit (Q3, decided 2026-10-08) | Plan B Task 13 records a 5,769 MiB peak with its real sources; source size matters. |
 | Resolution | 1080p or 720p, at most 1920 px wide | Instagram's cap; measured file size depends on bitrate and duration. |
 | Frame rate | the project's; 23–60 accepted | Instagram's range. |
 | Video bitrate | **6 Mbps at 1080p / 3 Mbps at 720p proposed** | Plan B Task 11 records its 2026-10-02 real-footage sweep; replacement footage needs a fresh run, not reuse of those scores. |
 | Concurrency | 1 job | S2 used 1.4–2.8 of 4 cores; two at once was not measured. |
 
-Plan B Q1, Q2, Q3, Q5 and Q6 remain provisional. Its dated measurements support the
-recommendations but do not close those questions. Q4 (amd64 only) and Q7 (direct publish
-with egress) are operator decisions. The documentation revision does not record new PRD caps.
+On 2026-10-08 the operator accepted Plan B's recommendation for Q1, Q2, Q3, Q5 and Q6. Q4
+(amd64 only) and Q7 (direct publish with egress) were decided earlier. The bitrate row stays
+proposed until Task 11 measures it, and the PRD records each cap with the task that measures it.
 
 ## Security and the internal API
 
@@ -343,7 +343,7 @@ with egress) are operator decisions. The documentation revision does not record 
 - **Internal API**, reachable only from the docker network: Caddy answers 404 on `/internal/video/`.
   Every call carries the bearer, and Aura checks its audience and identity. It has four operations:
   - `resolve`: asset ids → signed GET links on the internal object-store endpoint, valid 2 hours.
-    Under Plan B Q5's provisional interpretation, upload-finished means status `accepted`,
+    Under Plan B Q5 (decided 2026-10-08), upload-finished means status `accepted`,
     `processing` or `complete`, owned by the caller and not deleted. Everything else is "not
     found", without revealing whether it exists. `searchable` and `embedding` were removed by
     migration `0136_assets_drop_searchable.up.sql`; an unfinalized `uploaded` row is not eligible.
@@ -352,7 +352,7 @@ with egress) are operator decisions. The documentation revision does not record 
     database `assets_source_kind_check`, which currently admits `web`, `telegram`, `cli` and
     `agent` (`0035_assets_source_kind_agent.up.sql`). Choose the next free migration number when
     landing. Finalize verifies both ownership and this source kind; foreign assets answer 404.
-    Q2 provisionally raises this handler's video limit to 300,000,000 bytes; source kind alone
+    Q2 (decided 2026-10-08) raises this handler's video limit to 300,000,000 bytes; source kind alone
     does not change `assets.Service`'s configured limits. Prove other upload paths retain their
     limits (50 MiB default for video) and define/test repeat-finalize semantics before retries.
   - `tts`: Aura's TTS (`internal/multimodal/tts.go`), saved as an audio asset.

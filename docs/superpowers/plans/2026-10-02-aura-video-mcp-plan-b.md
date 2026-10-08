@@ -8,8 +8,9 @@
 §Applicability corrections below supersede the affected 2026-10-02 code blocks, interfaces,
 test expectations and recorded outputs. Tasks 2, 3, 14, 17 and 18 must implement and test
 those corrections before their original blocks can be used. The corrections are requirements
-for implementation, not newly tested service code. Q1, Q2, Q3, Q5 and Q6 remain provisional;
-Q4 and Q7 are already decided. This documentation update does not close Gate 1 or amend the PRD.
+for implementation, not newly tested service code. On 2026-10-08 the operator accepted the
+recommendation for Q1, Q2, Q3, Q5 and Q6 (§Decided with the operator); Q4 and Q7 were already
+decided. The PRD still records each cap with the task that measures it.
 
 **Original provenance, 2026-10-02.** Every original source and test file below was written and run in a scratch clone of `master`, moved last to `391a3c014`, master's head when that version of the plan was finished. A generator copied the scratch files byte for byte into the original document. This revised document changes contracts and execution requirements; that byte-for-byte and test claim applies only to the original version. Of the files the original plan edited by hand, master changed under it only `prd.md` (new §12 paragraphs; the anchor line is re-read in Task 11) and the spec (three commits, below). `internal/webui/dist`, which Task 10 regenerates, was rebuilt in between too.
 
@@ -95,10 +96,11 @@ The evidence base is `spikes/video-mcp-render/FINDINGS.md` (S1.1–S4) plus the 
 - **The sidecar mounts as a normal MCP.** 2026-10-02, the operator: *"si monta come un normale MCP"*; recorded in the spec by `698d37234`.
 - **Q4, arm64: not supported.** 2026-10-02, the operator: *"arm64 non supportato"*; recorded in the spec by `391a3c014` (§Architecture, "The sidecar"). The image is published for linux/amd64 only. The sidecar carries no arm64 branch: no architecture check, no `unsupported platform` answer, no platform stage in the Dockerfile, no second platform in the publish, and no test of any of these.
 - **Q7, direct loopback publish with egress.** Recorded in the spec by `e9d379e28`, the operator: *"e chi se ne frega"*. Use the default Compose network and publish the service's own port on loopback, as `aura-pim-mcp` does. No internal `aura-video` network or Caddy relay is required. Caddy still returns 404 on `/internal/video/`.
+- **Q1, Q2, Q3, Q5, Q6: the recommendation, option (a), for each.** 2026-10-08, the operator chose "Tutte le raccomandazioni" over reviewing them one by one: a checked film waits 15 minutes holding the queue's slot (Q1); `presign` gives the `video_mcp` source kind a 300,000,000-byte video ceiling (Q2); films up to 10 minutes under `mem_limit: 6g` with swap off (Q3); `resolve` treats `accepted`, `processing` and `complete` as having bytes (Q5); sources stream from their signed URLs with no tmpfs cache (Q6).
 
 ## Questions for the operator
 
-Q1, Q2, Q3, Q5 and Q6 are written on their recommendations, provisionally. A different answer changes the named tasks and their contracts. Editing these documents does not constitute an operator decision on those numbers or options. Q4 and Q7 are recorded above as decided.
+All seven are decided (§Decided with the operator). Each question's facts and options stay below as the record of what the decision rested on.
 
 **Q1. How long a checked film waits for its caller.** The amendment decides the behaviour and leaves this number to the plan: "The checked film is kept for a bounded time, which the plan fixes, and the identity's next tool call saves it. A film nobody claims in time is discarded, and the failure says why."
 - The facts:
@@ -111,7 +113,7 @@ Q1, Q2, Q3, Q5 and Q6 are written on their recommendations, provisionally. A dif
   - `video_render_start` loads the project and resolves every asset it plays, with the start call's own token (Task 18). The links last two hours, and a job reads only within its first 60 minutes. A played asset the library no longer holds refuses the start, naming it.
   - What the job makes stays in its scratch until the last step. The cleaned copies are played to the page from there under a local id (Task 16), the speech windows stay in memory, and the checked film waits there. The browser's own film is deleted after the transcode.
   - The last step makes every write: the cleaned copies, then the analyses version with their ids, then the film and its link. Each authenticated HTTP request obtains the freshest bearer at dispatch, including `finalize` after the potentially ten-minute PUT and the public `resolve` after it. A minute's margin bounds a short authenticated request; it does not authorize reuse across a PUT (correction R1).
-  - When none is fresh, the job waits for the caller's next call, with the stall watchdog and the age limit stopped only during that wait (Task 14). All credential waits share one deadline, provisionally check completion plus `CLAIM_MS`; a later wait never starts another 15-minute allowance.
+  - When none is fresh, the job waits for the caller's next call, with the stall watchdog and the age limit stopped only during that wait (Task 14). All credential waits share one deadline, check completion plus `CLAIM_MS`; a later wait never starts another 15-minute allowance.
   - If the claim expires before any write, the checked film is discarded and the failure says why, with no accepted copy, version or film. If writes have already been accepted, the failure lists their asset ids; it must not say that nothing was saved (correction R3). Scratch cleanup waits until recovery succeeds, cancellation arrives or the deadline expires.
   - In practice, a film that renders within the 5 to 15 minutes the start call's token has left is saved at once. A longer one is saved by any call its caller makes within 15 minutes of its check, an "is it ready?" turn included.
 - The claim deadline also bounds upload/link recovery: request timeouts must not run past its remaining time or the signed PUT's expiry. Cancellation or deadline expiry stops waiting and in-flight requests. A rejected credential cannot be retried in a loop; wait for a different verified caller bearer and retry only where commit/replay semantics are established.
@@ -10415,7 +10417,7 @@ The steps of spec §Jobs 2, in order, each reported to the queue:
    3. the film, as a new video asset, and a `resolve` of it for the two-hour download link.
 
 The rules the job keeps:
-- Each authenticated request selects the freshest caller bearer at dispatch, including finalize after PUT and public resolve after film acceptance. Credential acquisition checks cancellation on both the immediate and waiting paths. All waits use the time remaining to one deadline, fixed at output-check completion plus `CLAIM_MS` (provisionally 15 minutes, Q1). `controls.waitFor` stops the stall watchdog and age limit only while waiting for credentials (Task 14). The job keeps the queue's slot meanwhile, so a held film never shares the memory limit with another render (Task 13: it costs its own bytes, as shmem).
+- Each authenticated request selects the freshest caller bearer at dispatch, including finalize after PUT and public resolve after film acceptance. Credential acquisition checks cancellation on both the immediate and waiting paths. All waits use the time remaining to one deadline, fixed at output-check completion plus `CLAIM_MS` (15 minutes, Q1). `controls.waitFor` stops the stall watchdog and age limit only while waiting for credentials (Task 14). The job keeps the queue's slot meanwhile, so a held film never shares the memory limit with another render (Task 13: it costs its own bytes, as shmem).
 - Every byte the page reads comes through the job's own origin (Task 16).
 - Scratch is retained while credential refresh or link recovery is pending within the claim deadline. It is emptied when the job succeeds, finally fails, is cancelled or expires; deleting scratch does not roll back accepted library assets.
 - Each failure is one sentence that names what failed:
@@ -14819,7 +14821,7 @@ Base URL: `AURA_VIDEO_MCP_INTERNAL_API_URL`, default `http://aura:9080/internal/
 
 The full schemas and one example per outcome are `services/video-mcp/contract/internal-api.json` (§8). Every request carries `Authorization: Bearer <token>`. Every error body is `{"error": "<a sentence>"}`. A missing or refused bearer is 401.
 
-"Has bytes" (`x-bytes-exist`) means status `accepted`, `processing` or `complete` (Q5's provisional upload-finished interpretation). `searchable` and `embedding` were removed by migration `0136_assets_drop_searchable.up.sql`; `uploaded` is excluded until finalized.
+"Has bytes" (`x-bytes-exist`) means status `accepted`, `processing` or `complete` (Q5: upload finished). `searchable` and `embedding` were removed by migration `0136_assets_drop_searchable.up.sql`; `uploaded` is excluded until finalized.
 
 | Operation | Method and path | Request | 200 | Errors |
 |---|---|---|---|---|
@@ -14850,7 +14852,7 @@ What each operation must do:
 - **`tts`** is `internal/multimodal/tts.go`'s speech, saved as an audio asset of the identity, accepted as media.
 - **`projects`** lists every asset of the identity whose object key ends in `objectstore.StudioProjectSuffix` (`.aura-video.json`) and that has bytes. A pre-Plan-A project the boot re-key left on a plain `.json` key is not listed (`StudioProjectRekey`, which Plan B does not change).
 
-When the sidecar writes: every write a job makes, the cleaned copies, the analyses version and the film, comes after the output check. Each authenticated request obtains a current caller bearer, including finalize after PUT and public resolve after acceptance. Credential waits share one deadline, provisionally 15 minutes after check completion (Q1/R1). API calls and the signed PUT honour job cancellation and their own timeouts. Accepted writes are retained in failure/cancellation status (R3); there is no rollback operation. A burst of `presign`, `finalize` and `resolve` calls at the end of a render is normal.
+When the sidecar writes: every write a job makes, the cleaned copies, the analyses version and the film, comes after the output check. Each authenticated request obtains a current caller bearer, including finalize after PUT and public resolve after acceptance. Credential waits share one deadline, 15 minutes after check completion (Q1/R1). API calls and the signed PUT honour job cancellation and their own timeouts. Accepted writes are retained in failure/cancellation status (R3); there is no rollback operation. A burst of `presign`, `finalize` and `resolve` calls at the end of a render is normal.
 
 ### 5. The MCP surface
 
