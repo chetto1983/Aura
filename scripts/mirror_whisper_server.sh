@@ -41,20 +41,26 @@ main() {
   dest="docker://${DEST_REPO}:${tag}"
 
   if skopeo inspect --raw "${dest}" >/dev/null 2>&1; then
+    require_digest "${dest}" "${digest}" "${tag}"
     echo "mirror: ${DEST_REPO}:${tag} already holds ${SRC_REPO}@${digest}"
     return 0
   fi
 
   skopeo copy --all --preserve-digests --retry-times 3 --src-no-creds \
     "docker://docker.io/${SRC_REPO}@${digest}" "${dest}"
+  require_digest "${dest}" "${digest}" "${tag}"
+  echo "mirror: ${DEST_REPO}:${tag}@${digest}"
+}
 
-  local copied
-  copied="$(manifest_digest "${dest}")"
-  if [[ "${copied}" != "${digest}" ]]; then
-    echo "mirror: ${DEST_REPO}:${tag} is ${copied}, expected ${digest}" >&2
+# A dated tag must hold the upstream digest it is named after, whether this run wrote it or
+# an earlier one did: anything else is a tag someone moved, and compose would pin the wrong image.
+require_digest() {
+  local actual
+  actual="$(manifest_digest "$1")"
+  if [[ "${actual}" != "$2" ]]; then
+    echo "mirror: ${DEST_REPO}:$3 is ${actual}, expected $2" >&2
     exit 1
   fi
-  echo "mirror: ${DEST_REPO}:${tag}@${digest}"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

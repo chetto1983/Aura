@@ -51,6 +51,11 @@ out="$(run)" || fail "second run failed"
 case "$out" in *"already holds"*) ;; *) fail "second run copied again: $out" ;; esac
 [ "$(grep -c '^copy' "$work/registry/calls")" -eq 1 ] || fail "an existing tag was copied twice"
 
+printf '%s' '{"moved":true}' >"$work/registry/ghcr.io_owner_aura-whisper-server_2026.10.08.1056"
+if run 2>/dev/null; then
+  fail "an existing tag holding another digest passed"
+fi
+
 rm -f "$work/registry/"*
 if SKOPEO_COPY_BODY='{"tampered":true}' run 2>/dev/null; then
   fail "a copy with another digest passed"

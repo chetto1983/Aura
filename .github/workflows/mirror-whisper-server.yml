@@ -17,7 +17,6 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: mirror-whisper-server
@@ -28,9 +27,14 @@ jobs:
     name: Copy :latest to GHCR
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Log in to GHCR
         env:
