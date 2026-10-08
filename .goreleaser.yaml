@@ -91,17 +91,10 @@ dockers_v2:
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
 
+# The release text is the tag's CHANGELOG.md section (scripts/release_notes.py, passed
+# by release.yml as --release-notes), not a generated commit list.
 changelog:
-  sort: asc
-  use: github
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^style:"
-      - "^ci:"
-      - "merge conflict"
+  disable: true
 
 release:
   github:

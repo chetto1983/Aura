@@ -1,12 +1,12 @@
 # Changelog
 
-Notable changes to Aura, newest first. The commit-level list for each tag is on its
-[GitHub release](https://github.com/chetto1983/Aura/releases).
+Notable changes to Aura, newest first. Each section is also the text of its
+[GitHub release](https://github.com/chetto1983/Aura/releases); the full history is in git.
 
-## Unreleased — changes since v1.0.2-rc1
+## v1.1.0 — 2026-10-08
 
-About 1,700 commits since the previous prerelease (2026-08-30). Aura is now a multi-user
-appliance: every person has their own identity, memory, sandbox, skills and model key.
+About 1,700 commits since the previous prerelease, v1.0.2-rc1 of 2026-08-30. Aura is now a
+multi-user appliance: every person has their own identity, memory, sandbox, skills and model key.
 
 ### Upgrading from v1.0.2-rc1
 

@@ -196,6 +196,7 @@ evidence-contracts:
 		scripts/observability_evidence_test.py \
 		scripts/production_load_chaos_test.py \
 		scripts/release_check_run_gate_test.py \
+		scripts/release_notes_test.py \
 		scripts/release_readiness_gate_test.py \
 		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
