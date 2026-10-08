@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/goccy/go-yaml"
 )
 
 // Release-surface contracts: what an operator downloads and runs (installer, systemd unit,
@@ -86,6 +88,71 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	} {
 		if !strings.Contains(unit, want) {
 			t.Fatalf("deploy/aura.service missing %q:\n%s", want, unit)
+		}
+	}
+}
+
+// The release image is built from a temporary context holding only `extra_files`
+// (goreleaser.com/customization/package/dockers_v2: "the context does not contain the source
+// files"), while publish-aura-edge.yml builds the same Dockerfile from the whole checkout.
+// A path missing from the list therefore passes every master push and fails only the tagged
+// release: v1.1.0's first cut (2026-10-08, run 37765883644) died after 11 minutes on
+// "cannot open /src/scripts/payload_manifest.txt".
+func TestReleaseImageContextHoldsEverythingTheDockerfileReads(t *testing.T) {
+	root := repoRootForTest(t)
+	var releaser struct {
+		Dockers []struct {
+			Dockerfile string   `yaml:"dockerfile"`
+			ExtraFiles []string `yaml:"extra_files"`
+		} `yaml:"dockers_v2"`
+	}
+	if err := yaml.Unmarshal([]byte(readProjectFile(t, root, ".goreleaser.yaml")), &releaser); err != nil {
+		t.Fatalf("parse .goreleaser.yaml: %v", err)
+	}
+	if len(releaser.Dockers) != 1 {
+		t.Fatalf(".goreleaser.yaml dockers_v2 entries = %d, want 1", len(releaser.Dockers))
+	}
+	image := releaser.Dockers[0]
+	for _, entry := range image.ExtraFiles {
+		if _, err := os.Stat(filepath.Join(root, entry)); err != nil {
+			t.Errorf("extra_files entry %q does not exist: %v", entry, err)
+		}
+	}
+	inContext := func(rel string) bool {
+		rel = strings.TrimSuffix(rel, "/")
+		for _, entry := range image.ExtraFiles {
+			if rel == entry || strings.HasPrefix(rel, entry+"/") {
+				return true
+			}
+		}
+		return false
+	}
+
+	dockerfile := readProjectFile(t, root, image.Dockerfile)
+	needed := []string{}
+	for line := range strings.SplitSeq(dockerfile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "COPY" || strings.HasPrefix(fields[1], "--from=") {
+			continue
+		}
+		needed = append(needed, fields[1:len(fields)-1]...)
+	}
+	// The payload stage bind-mounts the whole context and copies the manifest's file list.
+	const manifest = "scripts/payload_manifest.txt"
+	if !strings.Contains(dockerfile, "/src/"+manifest) {
+		t.Fatalf("%s no longer reads %s; update this contract", image.Dockerfile, manifest)
+	}
+	needed = append(needed, manifest)
+	for line := range strings.SplitSeq(strings.TrimSpace(readProjectFile(t, root, manifest)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			t.Fatalf("%s line %q is not `<sha256> <path>`", manifest, line)
+		}
+		needed = append(needed, fields[1])
+	}
+	for _, rel := range needed {
+		if !inContext(rel) {
+			t.Errorf("release image context lacks %s: add it (or its directory) to extra_files", rel)
 		}
 	}
 }

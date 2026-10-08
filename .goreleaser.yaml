@@ -72,9 +72,12 @@ dockers_v2:
       # across releases (the runner env is exposed by ghaction-github-runtime).
       - "--cache-from=type=gha"
       - "--cache-to=type=gha,mode=max"
-    # The Dockerfile builds from source and copies docker/aura/aura-garage-bootstrap.sh
-    # into the image (2026-08-30, v1.0.2-rc1 first cut: the context lacked docker/aura
-    # and buildx failed with "not found" after 10 minutes of building).
+    # The context is a temporary directory holding only these paths, while
+    # publish-aura-edge.yml builds the same Dockerfile from the whole checkout, so a
+    # missing one fails only the tagged release: docker/aura on v1.0.2-rc1 (2026-08-30),
+    # the payload stage's scripts/payload_manifest.txt and its files on v1.1.0
+    # (2026-10-08). TestReleaseImageContextHoldsEverythingTheDockerfileReads checks the
+    # list against the Dockerfile's COPY sources and the payload manifest.
     extra_files:
       - go.mod
       - go.sum
@@ -82,6 +85,16 @@ dockers_v2:
       - internal
       - web
       - docker/aura
+      - docker/arcadedb
+      - docker/garage
+      - caddy
+      - compose.yaml
+      - compose.cpu.yaml
+      - compose.vulkan.yaml
+      - deploy
+      - observability
+      - scripts
+      - searxng
     labels:
       org.opencontainers.image.title: Aura
       org.opencontainers.image.source: https://github.com/chetto1983/Aura
