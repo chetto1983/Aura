@@ -79,7 +79,7 @@ restore timings are not service-level recovery commitments.
 
 ## Distribution and evidence
 
-As checked on 2026-10-03, `v1.0.2-rc1` is the latest tagged prerelease; `edge` tracks
+As checked on 2026-10-08, `v1.1.0` is the latest tagged release; `edge` tracks
 master. Check [Releases](https://github.com/chetto1983/Aura/releases) for current tags.
 Tagged publication requires the release evidence bundle. CI, image publication,
 local deployment and release approval are distinct results.

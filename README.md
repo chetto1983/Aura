@@ -92,7 +92,7 @@ Observability      obs · agent/panicobs · reasoningtrace · toolinvocations ·
 | **Cockpit** | React SPA embedded in the binary, served behind Caddy and the Authula sign-in |
 | **Tests** | Unit, property, race, leak, mutation, live integration, and browser tests; owned-surface coverage **≥85%** |
 | **CI** | build/vet/lint · CodeQL · `-race` + goleak · db/ArcadeDB/embed integration · MUSR two-identity E2E · web lint/test/mutation/Playwright · critical mutation ≥70% killed |
-| **Distribution** | Docker Compose appliance; `edge` tracks master, `v1.0.2-rc1` is the latest tagged prerelease (checked 2026-10-03) |
+| **Distribution** | Docker Compose appliance; `edge` tracks master, `v1.1.0` is the latest tagged release (checked 2026-10-08) |
 
 ## Project structure
 

@@ -24,7 +24,7 @@ proxy that allows the box lifecycle verbs.
 `Release` workflow on a `v*` tag, and only after the exact-SHA *Production Readiness*
 check passed for that commit ([release-readiness.md](release-readiness.md)). Check the
 [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
-(`v1.0.2-rc1` is the latest) and use it as `vX.Y.Z` below. Independently of releases,
+(`v1.1.0` is the latest) and use it as `vX.Y.Z` below. Independently of releases,
 every master push publishes the moving `ghcr.io/chetto1983/aura:edge` image (plus an
 immutable `master-<sha>` tag), the continuous-delivery channel a default install tracks.
 
