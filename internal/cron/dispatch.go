@@ -79,6 +79,13 @@ type PendingNotificationStore interface {
 
 var _ PendingNotificationStore = (*Store)(nil)
 
+// RunOutcomeRecorder applies a finished run to its task: the failure count and the auto-pause.
+type RunOutcomeRecorder interface {
+	RecordRunOutcome(ctx context.Context, taskID string, succeeded bool, pauseAfter int) (RunOutcome, error)
+}
+
+var _ RunOutcomeRecorder = (*Store)(nil)
+
 // DispatchDeps carries the run lifecycle collaborators: the store (run completion),
 // the Notifier (delivery), the alert threshold, and the quiet-hours predicate.
 type DispatchDeps struct {
@@ -119,6 +126,12 @@ type DispatchDeps struct {
 	// on the task all along (origin_conversation_id) and only the approval-pause path
 	// read it. LibreChat's rule (D-00): the conversation IS the channel.
 	ConversationRecorder ConversationRecorder
+	// OutcomeRecorder counts failed runs and pauses a task after
+	// AURA_SCHEDULER_PAUSE_AFTER_FAILURES of them. Nil → defaulted from Store in NewDispatch
+	// when the concrete *Store is supplied; still nil means no counting and no auto-pause.
+	OutcomeRecorder RunOutcomeRecorder
+	// PauseAfterFailures overrides AURA_SCHEDULER_PAUSE_AFTER_FAILURES when non-nil (tests).
+	PauseAfterFailures *int
 }
 
 // ConversationRecorder appends a finished run's outcome to the conversation the task
@@ -167,6 +180,15 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 			deps.ApprovalReminderStore = store
 		}
 	}
+	if deps.OutcomeRecorder == nil {
+		if store, ok := deps.Store.(RunOutcomeRecorder); ok {
+			deps.OutcomeRecorder = store
+		}
+	}
+	if deps.PauseAfterFailures == nil {
+		n := pauseAfterFailures()
+		deps.PauseAfterFailures = &n
+	}
 	return &Dispatch{deps: deps, handlers: handlers}
 }
 
@@ -210,9 +232,31 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 		status = "failed"
 	}
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
-	undelivered := d.notify(ctx, task, c.RunID, summary, runErr)
-	d.recordToOrigin(ctx, task, summary, runErr, undelivered)
+	reported := d.recordOutcome(ctx, task, runErr)
+	undelivered := d.notify(ctx, task, c.RunID, summary, reported)
+	d.recordToOrigin(ctx, task, summary, reported, undelivered)
 	return runErr
+}
+
+// recordOutcome applies the run to its task's failure count and returns the error to report.
+// When this failure paused the task, the report says so, so the operator learns why it stopped
+// firing from the same notification that told them it failed. The run ledger keeps the raw
+// error (complete ran first). A task the operator may not stop is never counted or paused.
+func (d *Dispatch) recordOutcome(ctx context.Context, task Task, runErr error) error {
+	if d.deps.OutcomeRecorder == nil || !IsPausableKind(task.Kind) {
+		return runErr
+	}
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), completeRunTimeout)
+	defer cancel()
+	outcome, err := d.deps.OutcomeRecorder.RecordRunOutcome(writeCtx, task.ID, runErr == nil, *d.deps.PauseAfterFailures)
+	if err != nil {
+		slog.Warn("dispatch record run outcome", "task", task.ID, "err", err)
+		return runErr
+	}
+	if !outcome.PausedNow {
+		return runErr
+	}
+	return fmt.Errorf("%w; paused after %d failed runs in a row, resume it to run again", runErr, outcome.ConsecutiveFailures)
 }
 
 // scheduledOperationContext derives identity from the durable task row and the

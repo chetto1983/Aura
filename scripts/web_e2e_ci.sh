@@ -41,7 +41,10 @@ openssl req -x509 -newkey rsa:2048 -noenc \
 # Keep Playwright's web cwd and inherited CI exports/HOME for the same MCP configuration.
 # The proxy rewrites Origin to the http hop, so without the public URL MCP OAuth would
 # authorize and call back on http://127.0.0.1:9080, where the HTTPS session never arrives.
-AURA_WEB_PUBLIC_URL="$tls_origin" ../aura serve --only=cli > "$runtime_dir/serve.log" 2>&1 &
+# The E2E stack runs on sample Garage credentials and no pinned embedding revision, which
+# the strict default profile rejects at boot; this harness is the dev posture by design.
+AURA_PROFILE="${AURA_PROFILE:-dev}" AURA_WEB_PUBLIC_URL="$tls_origin" \
+  ../aura serve --only=cli > "$runtime_dir/serve.log" 2>&1 &
 serve_pid=$!
 PROXY_TLS_KEY="$runtime_dir/tls.key" PROXY_TLS_CERT="$runtime_dir/tls.crt" \
   PROXY_TARGET_PORT="$target_port" PROXY_LISTEN_PORT="$proxy_port" \

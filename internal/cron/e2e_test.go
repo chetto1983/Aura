@@ -101,6 +101,12 @@ func (s *e2eStore) ListScheduledTasks(context.Context) ([]tools.ScheduledTask, e
 func (s *e2eStore) CancelScheduledTask(ctx context.Context, id string) error {
 	return s.store.CancelTask(ctx, id)
 }
+func (s *e2eStore) PauseScheduledTask(ctx context.Context, id string) error {
+	return s.store.PauseTask(ctx, id)
+}
+func (s *e2eStore) ResumeScheduledTask(ctx context.Context, id string) (time.Time, error) {
+	return s.store.ResumeTask(ctx, id, time.Now())
+}
 func (s *e2eStore) RunScheduledTaskNow(context.Context, string) error  { return nil }
 func (s *e2eStore) ApproveScheduledTask(context.Context, string) error { return nil }
 

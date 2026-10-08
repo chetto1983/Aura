@@ -140,9 +140,13 @@ type schedulerTaskRow struct {
 	CreatedAt    time.Time         `json:"CreatedAt"`
 	UpdatedAt    time.Time         `json:"UpdatedAt"`
 	Payload      json.RawMessage   `json:"Payload,omitempty"`
-	// Cancellable tells the board whether to offer delete, so the rule that keeps the
+	// Cancellable tells the board whether to offer delete and pause, so the rule that keeps the
 	// database backup (cron.IsCancellableKind) is stated once, here, not mirrored in TS.
 	Cancellable bool `json:"Cancellable"`
+	// PausedReason is "operator" or "failures" on a paused task, absent otherwise.
+	PausedReason string `json:"PausedReason,omitempty"`
+	// ConsecutiveFailures is how many runs failed since the last success.
+	ConsecutiveFailures int `json:"ConsecutiveFailures"`
 }
 
 // schedulerRunRow is the safe run-history projection. It omits PausedStateToken while
@@ -528,6 +532,9 @@ func schedulerTaskRows(tasks []cron.Task) []schedulerTaskRow {
 			UpdatedAt:    task.UpdatedAt,
 			Payload:      schedulerPayload(task.Payload),
 			Cancellable:  cron.IsCancellableKind(task.Kind),
+
+			PausedReason:        task.PausedReason,
+			ConsecutiveFailures: task.ConsecutiveFailures,
 		})
 	}
 	return out

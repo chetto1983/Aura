@@ -8,12 +8,12 @@ import "strings"
 
 // RuntimeProfile is the runtime deployment posture (D-01) read from AURA_PROFILE.
 // It selects config-validation strictness and composition-root runtime posture,
-// including MCP egress enforcement. Unset → dev (D-03).
+// including MCP egress enforcement. Unset → DefaultProfile.
 type RuntimeProfile string
 
 const (
-	// ProfileDev is the default full-host posture (AURA_PROFILE unset → dev, D-03):
-	// the loudest, most permissive tier, preserving today's behavior unchanged.
+	// ProfileDev is the full-host development posture: the most permissive tier, which
+	// accepts sample credentials and loopback MCP targets. It is only ever explicit.
 	ProfileDev RuntimeProfile = "dev"
 	// ProfileLocalTrusted is a trusted single-machine deployment — lenient like dev.
 	ProfileLocalTrusted RuntimeProfile = "local_trusted"
@@ -23,9 +23,15 @@ const (
 	ProfileServerProduction RuntimeProfile = "server_production"
 )
 
+// DefaultProfile is the posture of an unset or unrecognised AURA_PROFILE. It used to be
+// dev (D-03), which let a deployment that never set the key run with sample credentials
+// accepted and the sandbox router off; the appliance only escaped it because its
+// installer writes the key (scripts/appliance_posture.sh). A missing key now fails toward
+// the strict tier, whose violations name every unmet requirement at boot.
+const DefaultProfile = ProfileSingleUserHardened
+
 // ParseProfile maps AURA_PROFILE to a RuntimeProfile. It is total: any unknown or
-// empty value resolves to ProfileDev (D-03) — never panics, never errors, and never
-// silently selects a stricter tier the operator did not intend. Surrounding
+// empty value resolves to DefaultProfile, never panics and never errors. Surrounding
 // whitespace is trimmed before the match.
 func ParseProfile(s string) RuntimeProfile {
 	switch RuntimeProfile(strings.TrimSpace(s)) {
@@ -35,9 +41,10 @@ func ParseProfile(s string) RuntimeProfile {
 		return ProfileSingleUserHardened
 	case ProfileServerProduction:
 		return ProfileServerProduction
-	default:
-		// dev plus any unknown/empty value (D-03).
+	case ProfileDev:
 		return ProfileDev
+	default:
+		return DefaultProfile
 	}
 }
 

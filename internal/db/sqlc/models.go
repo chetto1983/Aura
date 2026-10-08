@@ -687,6 +687,8 @@ type AuraSchedulerTasks struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 	ApprovalRemindedAt   pgtype.Timestamptz `json:"approval_reminded_at"`
+	ConsecutiveFailures  int32              `json:"consecutive_failures"`
+	PausedReason         pgtype.Text        `json:"paused_reason"`
 }
 
 // Cockpit-editable runtime override layer for model-backend knobs (Settings page). MUTABLE (aura_app full DML). Overlaid onto the environment at boot by internal/settings (DB wins); applied on restart. is_secret rows are redacted in API GET responses.

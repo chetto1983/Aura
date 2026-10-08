@@ -308,6 +308,7 @@ func TestDoctorChecksIncludesMCPServers(t *testing.T) {
 // TestDoctorProbeMCPServersReachable proves a reachable, enabled HTTP MCP server
 // passes with an aggregated "N/N reachable" detail.
 func TestDoctorProbeMCPServersReachable(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
@@ -327,6 +328,7 @@ func TestDoctorProbeMCPServersReachable(t *testing.T) {
 }
 
 func TestDoctorProbeMCPServersUsesResolvedRuntimeConfig(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
@@ -372,6 +374,7 @@ func TestDoctorProbeMCPServersUnreachableNamesServer(t *testing.T) {
 // aggregated detail stays "1/1" even though three OTHER servers are configured and
 // would each fail if actually probed (dead command / unreachable URL).
 func TestDoctorProbeMCPServersSkipsDisabledBlockedStdio(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()

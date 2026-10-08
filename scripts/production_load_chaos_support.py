@@ -594,6 +594,10 @@ def daemon_env(
             "AURA_AUTHULA_DATABASE_URL": "",
             "AURA_AUTHULA_OPERATOR_IDENTITY": "",
             "OPENROUTER_API_KEY": "ci-load-chaos-no-network",
+            # The CI stack runs on sample Garage credentials, which the strict default
+            # profile rejects at boot (exit 71), so this harness is the dev posture unless
+            # the caller names another profile -- the same rule as agui_smoke.sh.
+            "AURA_PROFILE": os.environ.get("AURA_PROFILE") or "dev",
         }
     )
     return env

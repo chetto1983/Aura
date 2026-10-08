@@ -2421,6 +2421,20 @@ Agent jobs use the common runtime and one model/budget snapshot. Claims and noti
 intent preserve their transaction boundary. Delivery retry does not rerun completed
 model/tool work. Multi-goal enqueue is atomic for the identity.
 
+An operator can pause an active reminder or agent job and resume it, from the cockpit, the
+CLI and the `task` tool. A paused task never fires. Resuming recomputes the next fire from
+the resume time, so missed windows are not replayed; a one-shot whose time has passed must
+be edited instead. The scheduler also pauses a task by itself after
+`AURA_SCHEDULER_PAUSE_AFTER_FAILURES` failed runs in a row (default 3, `0` disables it). It
+says so in that run's failure notification, and the cockpit shows the count. A success
+resets the count. The database backup and system sweeps are never paused, matching the rule
+that they are never cancelled. Measured 2026-10-07 by reading the code, not on a running
+stack: `paused` existed only in the `scheduler_tasks` status constraint (migration 0009) and
+no code wrote it. Dispatch recorded and notified every failure but never changed the task,
+so a job whose credential had expired failed and notified on every occurrence until someone
+cancelled it. This does not cover the in-flight `unknown_recovery` run, which recovery still
+re-fires.
+
 Mounted-MCP probe 104Y on 2026-09-08 executed three independent random-token commands
 through a coordinator and two grandchildren, with correct IDs and ancestry. The parent
 turn ended at13:16:47 UTC with an explicitly partial table; the coordinator report arrived
@@ -2840,8 +2854,33 @@ The appliance installer and updater enforce `single_user_hardened` with
 `AURA_MUSR_ISOLATION=true` on a single-node appliance, including upgrades whose
 configuration omits those keys or still selects a development profile. An explicit
 `server_production` profile remains unchanged and retains its separate durability
-and runtime prerequisites. Bare development Compose invocations keep their opt-in
-profile. Measured 2026-09-14: the running appliance had neither key in `.env` and
+and runtime prerequisites.
+
+An unset or unrecognised `AURA_PROFILE` is `single_user_hardened` everywhere: in the
+binary and in bare Compose, not only on an installed appliance. `dev` is an explicit
+opt-in. Development harnesses that boot the daemon on sample credentials state it
+themselves: the web E2E and the AG-UI smoke. Measured 2026-10-07 on a local Compose
+Postgres 18.4, with the default flipped and no profile set:
+- The unit suite is green except tests that relied on the old default: 2 tests of the
+  profile contract itself and 8 `cmd/aura` tests that mount a loopback MCP fixture,
+  which the strict egress policy blocks as SSRF by design.
+- The `db_integration` tier for `db`, `cron`, `agui` and `documents` is green, and so is
+  the race tier for `conversations` and `runner`.
+- `aura serve` refused to boot in the AG-UI smoke and under the web E2E environment.
+  `aura config validate` named four fatal violations: the sample object-store access
+  and secret keys, the empty Garage RPC secret, and the missing embedding revision.
+This does not measure the full Playwright E2E, the MUSR E2E, the memory, ingest or
+sandbox tiers, or a live appliance under the new default.
+
+Measured 2026-10-08 on the CI of the pull request that shipped the default: the MUSR job's
+load and chaos harness started `aura serve` without a profile, and it exited 71 on the same
+sample object-store keys. On the next push the Agent Memory job, whose `compose up
+arcadedb-mcp` starts the aura container, restart-looped on the same keys for ten minutes.
+That harness and that job now state `dev`, and so does the Production Readiness workflow,
+whose `memory-up` and rollback rehearsal start the aura container on sample keys too. The rehearsal was not run under the new default; its pin follows from the
+identical credentials and the identical boot check, not from a measured failure.
+
+Measured 2026-09-14: the running appliance had neither key in `.env` and
 therefore ran as `dev`; the installer's existing-file path never filled the pair,
 and the updater did not migrate it. Config validation of that appliance under
 `single_user_hardened` returned no violations. This does not establish multi-node

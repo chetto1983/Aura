@@ -69,6 +69,7 @@ describe('scheduleText (scheduler row schedule cell)', () => {
       CreatedAt: '',
       UpdatedAt: '',
       Cancellable: true,
+      ConsecutiveFailures: 0,
       ...over,
     };
   }

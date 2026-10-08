@@ -57,11 +57,14 @@ type ScheduledTask struct {
 	ID           string
 	Kind         string
 	ScheduleKind string
-	Status       string // active | pending_approval | cancelled | ...
+	Status       string // active | pending_approval | paused | cancelled | ...
 	NextRunAt    time.Time
 	RiskTier     string
 	Payload      string
 	NotifyRoute  string
+	// PausedReason is "operator" or "failures" while Status is "paused".
+	PausedReason        string
+	ConsecutiveFailures int
 }
 
 // CreateTaskInput carries a resolved, validated task the tool asks the store to
@@ -94,6 +97,8 @@ type taskStore interface {
 	ListScheduledTasks(ctx context.Context) ([]ScheduledTask, error)
 	CancelScheduledTask(ctx context.Context, id string) error
 	RunScheduledTaskNow(ctx context.Context, id string) error
+	PauseScheduledTask(ctx context.Context, id string) error
+	ResumeScheduledTask(ctx context.Context, id string) (time.Time, error)
 }
 
 // taskArgs is the wire shape of the task tool arguments. Only `action` is
@@ -122,7 +127,7 @@ type taskArgs struct {
 const taskParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now"], "description": "The scheduler operation: schedule (create a task), list (show active + awaiting-approval tasks), cancel (stop a task by id), run_now (fire a task immediately by id)."},
+    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now", "pause", "resume"], "description": "The scheduler operation: schedule (create a task), list (show active, paused and awaiting-approval tasks), cancel (stop a task for good by id), run_now (fire a task immediately by id), pause (stop an active task from firing until resumed, by id), resume (reactivate a paused task from now, by id)."},
     "schedule_kind": {"type": "string", "enum": ["at", "every", "cron"], "description": "Required when action=schedule. at=one-shot at a fixed instant; every=fixed interval in minutes; cron=a cron expression evaluated in the task timezone."},
     "cron": {"type": "string", "description": "Required when action=schedule and schedule_kind=cron. A standard 5-field cron expression, e.g. '30 9 * * 1-5'."},
     "at": {"type": "string", "description": "Required when action=schedule and schedule_kind=at. An RFC-3339 instant, e.g. '2030-01-01T09:30:00Z'."},
@@ -132,7 +137,7 @@ const taskParamsSchema = `{
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
     "notify": {"type": "string", "enum": ["none", "whatsapp", "email", "stdout", "telegram"], "description": "Required when action=schedule. Where the task output is delivered. If the operator did not choose, call ask_user(kind=choice) before scheduling. An omitted value persists nothing and returns the same choice directive. none keeps the outcome only in the run ledger; telegram is an intentional push to the bound Telegram chat; whatsapp/email are explicit external self-sends; stdout means the owning conversation when present or literal CLI/system output."},
-    "task_id": {"type": "string", "description": "Required when action=cancel or run_now. The id of the target task."}
+    "task_id": {"type": "string", "description": "Required when action=cancel, run_now, pause or resume. The id of the target task."}
   },
   "required": ["action"]
 }`
@@ -142,8 +147,9 @@ const taskParamsSchema = `{
 func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
-		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — a reminder or message to send the operator later on WhatsApp, Telegram or email (in 10 minutes, tomorrow at 9), agent_job wake-ups, every N minutes or on a cron; list, cancel, or run one now.",
-		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
+		Summary: "Your scheduler and timer (scheduling): schedule future, periodic or recurring work — a reminder or message to send the operator later on WhatsApp, Telegram or email (in 10 minutes, tomorrow at 9), agent_job wake-ups, every N minutes or on a cron; list, pause, resume, cancel, or run one now.",
+		Description: "Aura's scheduler, timer and scheduling wake-up: manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres); action=list shows active, paused and awaiting-approval tasks; action=cancel/run_now/pause/resume operate on a task_id. " +
+			"The scheduler pauses a task by itself after repeated failed runs; list marks it, and it should be resumed only once the cause is fixed. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder, something later or tomorrow), or when you need to wake up later to check on something, schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
 			"A reminder or message the operator wants later on a channel (\"remind me on WhatsApp in 10 minutes\", \"email me tomorrow\", \"message me on Telegram in an hour\") is a reminder task with notify set to that channel: at fire time the scheduler delivers it to the operator's own WhatsApp, email or Telegram. Never send it now with a messaging tool, and never look up the operator's contact for it. " +
 			"For action=schedule always honor an explicit notify choice. If the operator did not specify one, call ask_user(kind=choice) before scheduling. An omitted notify persists nothing and returns a delivery_choice_required guard directive. " +
@@ -190,6 +196,8 @@ func (t *TaskTool) actionRouter() *ActionRouter {
 			"list":     t.actionList,
 			"cancel":   t.actionCancel,
 			"run_now":  t.actionRunNow,
+			"pause":    t.actionPause,
+			"resume":   t.actionResume,
 		})
 	})
 	return t.router
@@ -451,7 +459,7 @@ func (t *TaskTool) actionList(ctx context.Context, _ json.RawMessage) (ToolResul
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
 }
 
-// renderTaskList formats active + pending tasks, flagging awaiting-approval rows
+// renderTaskList formats active, paused and pending tasks, flagging awaiting-approval and paused rows
 // and showing each task's next fire (Claude's discretion format, D-14/D-17).
 func renderTaskList(rows []ScheduledTask) string {
 	if len(rows) == 0 {
@@ -463,6 +471,8 @@ func renderTaskList(rows []ScheduledTask) string {
 		flag := ""
 		if r.Status == "pending_approval" {
 			flag = " [awaiting approval]"
+		} else if r.Status == "paused" {
+			flag = pausedFlag(r)
 		} else if r.Status == "active" && r.NextRunAt.IsZero() {
 			// An active task with no next fire can never be selected by the tick
 			// (DueTasks filters next_run_at <= now) — surface it so the model/operator

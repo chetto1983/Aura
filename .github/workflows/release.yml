@@ -22,7 +22,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0   # goreleaser needs full history for the changelog
+          fetch-depth: 0   # goreleaser resolves the version from the tags
 
       - name: Require exact-candidate production readiness
         env:
@@ -60,11 +60,15 @@ jobs:
       - name: Install Syft for release SBOMs
         uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
 
+      - name: Release notes from CHANGELOG.md
+        # Written outside the checkout: goreleaser refuses a dirty tree.
+        run: python3 scripts/release_notes.py "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           distribution: goreleaser
           version: v2.17.1
-          args: release --clean
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

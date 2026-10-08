@@ -3,11 +3,14 @@ import {
   approveSchedulerTask,
   cancelSchedulerTask,
   editSchedulerTask,
+  pauseSchedulerTask,
+  resumeSchedulerTask,
   runSchedulerTask,
   type SchedulerEditRequest,
 } from './governanceApi';
 
-// useSchedulerMutations holds the GOV-03 write hooks (approve / run / cancel / edit). Each
+// useSchedulerMutations holds the GOV-03 write hooks (approve / run / pause / resume / cancel /
+// edit). Each
 // mirrors the conversations-store mutation shape: a single fetch mutationFn that THROWS
 // `Error("HTTP <n>")` on a non-200 (so the row surfaces a visible error, never a silent
 // no-op), and an onSuccess that invalidates the board query so the list re-reads. The
@@ -33,6 +36,19 @@ export function useApproveTask() {
 export function useRunTask() {
   const invalidate = useInvalidateScheduler();
   return useMutation({ mutationFn: (id: string) => runSchedulerTask(id), onSuccess: invalidate });
+}
+
+export function usePauseTask() {
+  const invalidate = useInvalidateScheduler();
+  return useMutation({ mutationFn: (id: string) => pauseSchedulerTask(id), onSuccess: invalidate });
+}
+
+export function useResumeTask() {
+  const invalidate = useInvalidateScheduler();
+  return useMutation({
+    mutationFn: (id: string) => resumeSchedulerTask(id),
+    onSuccess: invalidate,
+  });
 }
 
 export function useCancelTask() {

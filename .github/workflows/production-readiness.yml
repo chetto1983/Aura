@@ -22,6 +22,10 @@ permissions:
   packages: read
 
 env:
+  # The readiness stack runs on the sample credentials below, which the strict default
+  # profile rejects at boot (exit 71). memory-up and the rollback rehearsal start the aura
+  # container, so they run the dev posture, as they did while dev was the Compose default.
+  AURA_PROFILE: dev
   AURA_ACCESS_TOKEN: readiness-not-a-secret
   OPENROUTER_API_KEY: readiness-degraded-no-network
   AURA_WEB_TRUST_PROXY: "true"

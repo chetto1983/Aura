@@ -98,6 +98,7 @@ jobs:
             scripts/observability_evidence_test.py \
             scripts/production_load_chaos_test.py \
             scripts/release_check_run_gate_test.py \
+            scripts/release_notes_test.py \
             scripts/release_readiness_gate_test.py \
             scripts/rollback_rehearsal_test.py \
             scripts/security_evidence_test.py
@@ -764,6 +765,11 @@ jobs:
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
       AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
       AURA_EMBED_NGL: "0"
+      # arcadedb-mcp depends_on aura, so `compose up arcadedb-mcp` starts the daemon on
+      # this workflow's sample object-store keys, which the strict default profile rejects:
+      # measured 2026-10-08 on PR #132, aura restart-looped for ten minutes and the job
+      # failed. The memory gate measures the sidecar, so the daemon runs the dev posture.
+      AURA_PROFILE: dev
       # AURA_ARCADEDB_MCP_IMAGE is deliberately NOT pinned here. This job reaches the
       # sidecar through `docker compose up`, and compose.yaml's arcadedb-mcp service
       # carries a `build:` stanza -- so compose builds it and then tries to tag the result

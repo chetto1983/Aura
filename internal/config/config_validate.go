@@ -50,7 +50,7 @@ type Violation struct {
 }
 
 // Validate is the profile-aware boot fail-fast: it resolves the active runtime
-// profile (c.Profile, default dev — D-03), runs the full ValidateProfile aggregation,
+// profile (c.Profile, default DefaultProfile), runs the full ValidateProfile aggregation,
 // and joins every Fatal violation into a single config:-prefixed error so a
 // misconfigured deploy errors at boot NAMING every unmet requirement at once instead of
 // a late, cryptic DB auth failure or a silently degraded graph (O-04, criterion #1).
@@ -62,7 +62,7 @@ type Violation struct {
 func (c *Config) Validate() error {
 	p := c.Profile
 	if p == "" {
-		p = ProfileDev
+		p = DefaultProfile
 	}
 	var msgs []string
 	for _, v := range c.ValidateProfile(p) {

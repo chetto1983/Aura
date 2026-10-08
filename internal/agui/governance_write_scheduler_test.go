@@ -2,10 +2,12 @@ package agui
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
 )
@@ -32,8 +34,13 @@ type scriptedSchedulerBoard struct {
 	runErr      error
 	cancelErr   error
 	updateErr   error
+	pauseErr    error
+	resumeErr   error
+	resumeNext  time.Time
 	approvedID  string
 	ranID       string
+	pausedID    string
+	resumedID   string
 	cancelledID string
 	updatedID   string
 	updated     cron.UpdateTaskParams
@@ -55,6 +62,16 @@ func (b *scriptedSchedulerBoard) ApproveTask(_ context.Context, id string) error
 func (b *scriptedSchedulerBoard) RunTaskNow(_ context.Context, id string) error {
 	b.ranID = id
 	return b.runErr
+}
+
+func (b *scriptedSchedulerBoard) PauseTask(_ context.Context, id string) error {
+	b.pausedID = id
+	return b.pauseErr
+}
+
+func (b *scriptedSchedulerBoard) ResumeTask(_ context.Context, id string, _ time.Time) (time.Time, error) {
+	b.resumedID = id
+	return b.resumeNext, b.resumeErr
 }
 
 func (b *scriptedSchedulerBoard) CancelTask(_ context.Context, id string) error {
@@ -253,5 +270,95 @@ func TestSchedulerMutateUnwired(t *testing.T) {
 	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/approve")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+func TestSchedulerPauseActiveTask(t *testing.T) {
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindAgentJob, Status: "active"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/pause")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"paused"`) {
+		t.Fatalf("pause = %d %s, want 200 paused", rec.Code, rec.Body.String())
+	}
+	if board.pausedID != schedTaskID {
+		t.Fatalf("PauseTask id = %q, want %q", board.pausedID, schedTaskID)
+	}
+}
+
+func TestSchedulerPauseRefusesTheBackup(t *testing.T) {
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindBackupPostgres, Status: "active"}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/pause")
+	if rec.Code != http.StatusForbidden || board.pausedID != "" {
+		t.Fatalf("pause backup = %d (store reached: %q), want 403 and no store call", rec.Code, board.pausedID)
+	}
+}
+
+func TestSchedulerPauseAndResumeRefuseASystemSweep(t *testing.T) {
+	for _, verb := range []string{"pause", "resume"} {
+		board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.TaskKind("retention_sweep"), Status: "active"}}
+		s := govServer(GovernanceProviders{Scheduler: board})
+		rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/"+verb)
+		if rec.Code != http.StatusForbidden || board.pausedID != "" || board.resumedID != "" {
+			t.Fatalf("%s system sweep = %d, want 403 and no store call", verb, rec.Code)
+		}
+	}
+}
+
+func TestSchedulerPauseOfATaskThatIsNotActiveConflicts(t *testing.T) {
+	board := &scriptedSchedulerBoard{
+		getTask:  cron.Task{Kind: cron.KindReminder, Status: "paused"},
+		pauseErr: fmt.Errorf("pause: %w", cron.ErrTaskNotFound),
+	}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/pause")
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "not active") {
+		t.Fatalf("pause of a paused task = %d %s, want 409 not active", rec.Code, rec.Body.String())
+	}
+}
+
+func TestSchedulerResumeReportsTheNextFire(t *testing.T) {
+	next := time.Date(2030, 1, 2, 9, 30, 0, 0, time.UTC)
+	board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindReminder, Status: "paused"}, resumeNext: next}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/resume")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "2030-01-02T09:30:00Z") {
+		t.Fatalf("resume = %d %s, want 200 with the next fire", rec.Code, rec.Body.String())
+	}
+	if board.resumedID != schedTaskID {
+		t.Fatalf("ResumeTask id = %q, want %q", board.resumedID, schedTaskID)
+	}
+}
+
+func TestSchedulerResumeConflicts(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"not paused", fmt.Errorf("resume: %w", cron.ErrTaskNotFound), "not paused"},
+		{"one-shot in the past", fmt.Errorf("resume: %w", cron.ErrResumePastOneShot), "edit it to a new time"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			board := &scriptedSchedulerBoard{getTask: cron.Task{Kind: cron.KindReminder, Status: "paused"}, resumeErr: tc.err}
+			s := govServer(GovernanceProviders{Scheduler: board})
+			rec := doGov(t, s, http.MethodPost, "/api/governance/scheduler/"+schedTaskID+"/resume")
+			if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("resume = %d %s, want 409 containing %q", rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestSchedulerBoardCarriesWhyATaskIsPaused(t *testing.T) {
+	board := &scriptedSchedulerBoard{tasks: []cron.Task{{
+		ID: schedTaskID, Kind: cron.KindAgentJob, Status: "paused",
+		PausedReason: cron.PausedByFailures, ConsecutiveFailures: 3,
+	}}}
+	s := govServer(GovernanceProviders{Scheduler: board})
+	rec := doGov(t, s, http.MethodGet, "/api/governance/scheduler")
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"PausedReason":"failures"`) || !strings.Contains(body, `"ConsecutiveFailures":3`) {
+		t.Fatalf("board = %d %s, want the pause reason and the failure count", rec.Code, body)
 	}
 }

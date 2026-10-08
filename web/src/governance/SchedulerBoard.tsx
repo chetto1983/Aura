@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Check, Pencil, Play, Trash2 } from 'lucide-react';
+import { Check, CirclePlay, Pause, Pencil, Play, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Spinner } from '../components/Spinner';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
@@ -12,6 +13,8 @@ import {
   SCHEDULER_QUERY_KEY,
   useApproveTask,
   useCancelTask,
+  usePauseTask,
+  useResumeTask,
   useRunTask,
 } from './useSchedulerMutations';
 import { fetchSchedulerTasks, type SchedulerTask } from './governanceApi';
@@ -19,12 +22,13 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
 // SchedulerBoard (GOV-03) is the mission-control scheduler: a dense, monospace task strip
-// where each row is a channel — a status LED (green=active, amber pulsing=awaiting approval),
-// the kind, the schedule + next fire as first-class monospace literals, and the operator
-// verbs (approve / run / edit / delete) as a compact 44px icon rail on the trailing edge — a
+// where each row is a channel — a status LED (green=active, amber pulsing=awaiting approval,
+// steady amber=paused), the kind, the schedule + next fire as first-class monospace literals,
+// and the operator verbs (approve / run / pause / resume / edit / delete) as a compact 44px icon
+// rail on the trailing edge — a
 // dense-list pattern that keeps the body wide enough for the schedule literal to stay readable
 // in the ~300px master panel. The server leaves system-seeded sweeps out of the list and marks
-// the database backup non-cancellable, so its row has no Delete. Selecting a row opens its run
+// the database backup non-cancellable, so its row has no Delete and no Pause. Selecting a row opens its run
 // history. The signature is the LED status
 // system + the tabular next-fire; everything else stays quiet.
 
@@ -49,17 +53,30 @@ function formatFire(raw: string, dash: string): string {
 }
 
 // ledClass + chipClass map a status to its control-panel color: active is a steady green,
-// awaiting-approval an amber that pulses for attention, anything else a muted dot.
+// awaiting-approval an amber that pulses for attention, paused a steady amber, anything else a
+// muted dot.
 function ledClass(status: string): string {
   if (status === 'active') return 'bg-success';
   if (status === 'pending_approval') return 'bg-warning animate-pulse';
+  if (status === 'paused') return 'bg-warning';
   return 'bg-text-muted';
 }
 
 function chipClass(status: string): string {
   if (status === 'active') return 'text-success border-success/40';
-  if (status === 'pending_approval') return 'text-warning border-warning/40';
+  if (status === 'pending_approval' || status === 'paused') return 'text-warning border-warning/40';
   return 'text-text-muted border-border';
+}
+
+// statusLabel names the row's state; a task the scheduler paused says how many failed runs
+// stopped it, so the operator knows to look at the run history before resuming.
+function statusLabel(task: SchedulerTask, t: TFunction): string {
+  if (task.Status === 'pending_approval') return t('governance.scheduler.awaiting');
+  if (task.Status !== 'paused') return task.Status;
+  if (task.PausedReason === 'failures') {
+    return t('governance.scheduler.pausedAfterFailures', { count: task.ConsecutiveFailures });
+  }
+  return t('governance.scheduler.paused');
 }
 
 export function SchedulerBoard() {
@@ -72,6 +89,8 @@ export function SchedulerBoard() {
 
   const approve = useApproveTask();
   const run = useRunTask();
+  const pause = usePauseTask();
+  const resume = useResumeTask();
   const cancel = useCancelTask();
 
   const tasks = useQuery({
@@ -142,9 +161,7 @@ export function SchedulerBoard() {
                   <span
                     className={`rounded-sm border px-1.5 py-px font-mono text-[10px] uppercase tracking-wider ${chipClass(task.Status)}`}
                   >
-                    {task.Status === 'pending_approval'
-                      ? t('governance.scheduler.awaiting')
-                      : task.Status}
+                    {statusLabel(task, t)}
                   </span>
                 </span>
                 {/* The sentence the operator dictated, on the row itself. Without it the list
@@ -218,6 +235,50 @@ export function SchedulerBoard() {
                       <Spinner />
                     ) : (
                       <Play data-icon aria-hidden="true" className="size-4" />
+                    )}
+                  </Button>
+                )}
+                {task.Cancellable && task.Status === 'active' && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={
+                      pause.isPending
+                        ? t('governance.scheduler.actions.pausing')
+                        : t('governance.scheduler.actions.pause')
+                    }
+                    disabled={pause.isPending}
+                    onClick={() => {
+                      pause.mutate(task.ID);
+                    }}
+                  >
+                    {pause.isPending ? (
+                      <Spinner />
+                    ) : (
+                      <Pause data-icon aria-hidden="true" className="size-4" />
+                    )}
+                  </Button>
+                )}
+                {task.Cancellable && task.Status === 'paused' && (
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    aria-label={
+                      resume.isPending
+                        ? t('governance.scheduler.actions.resuming')
+                        : t('governance.scheduler.actions.resume')
+                    }
+                    disabled={resume.isPending}
+                    onClick={() => {
+                      resume.mutate(task.ID);
+                    }}
+                  >
+                    {resume.isPending ? (
+                      <Spinner />
+                    ) : (
+                      <CirclePlay data-icon aria-hidden="true" className="size-4" />
                     )}
                   </Button>
                 )}

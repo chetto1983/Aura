@@ -208,6 +208,8 @@ services:
       AURA_SCHEDULER_TICK_SECONDS: ${AURA_SCHEDULER_TICK_SECONDS:-30}
       AURA_SCHEDULER_MAX_CONCURRENT_RUNS: ${AURA_SCHEDULER_MAX_CONCURRENT_RUNS:-4}
       AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS: ${AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS:-3}
+      # Failed runs in a row after which a reminder or agent job pauses itself; 0 disables it.
+      AURA_SCHEDULER_PAUSE_AFTER_FAILURES: ${AURA_SCHEDULER_PAUSE_AFTER_FAILURES:-3}
       # On-channel scheduled-task approval sweep (fix-plan 1.7 / Amendment #92). REMINDER_SEC<=0
       # hard-disables the backstop; GRACE_SEC delays the sweep's mint so the in-turn model relay
       # wins the fast path (no mint mid-model-turn → no duplicate prompt).
@@ -247,7 +249,7 @@ services:
       # service did. So `AURA_PROFILE=single_user_hardened` put the daemon straight into a
       # restart loop ("inter-node RPC secret must be set under single_user_hardened") on a
       # stack whose .env had the secret all along. Invisible until now for the same reason
-      # AURA_PROFILE itself was: under the dev default the gate never runs.
+      # AURA_PROFILE itself was: under the old dev default the gate never ran.
       GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}
       AURA_ASSET_MAX_DOCUMENT_BYTES: ${AURA_ASSET_MAX_DOCUMENT_BYTES:-104857600}
       AURA_ASSET_MAX_IMAGE_BYTES: ${AURA_ASSET_MAX_IMAGE_BYTES:-26214400}
@@ -309,11 +311,11 @@ services:
       # `dev` default no matter what the operator put in .env — buildSandboxRouter is
       # Strict()-gated, so the box, the egress floor and the routed file tools were all
       # inert on the appliance while the two image knobs above sat there suggesting otherwise.
-      # Bare Compose defaults to dev; appliance installs and updates enforce
-      # AURA_PROFILE=single_user_hardened in .env — and must have
-      # AURA_SANDBOX_IMAGE built/pullable first, because a strict host with no box image
-      # fails CLOSED (every routed tool denies) rather than silently running on the host.
-      AURA_PROFILE: ${AURA_PROFILE:-dev}
+      # Bare Compose, like the binary, defaults to single_user_hardened; appliance installs
+      # and updates also write it to .env. A strict host must have AURA_SANDBOX_IMAGE
+      # built/pullable first, because with no box image it fails CLOSED (every routed tool
+      # denies) rather than silently running on the host. AURA_PROFILE=dev is opt-in.
+      AURA_PROFILE: ${AURA_PROFILE:-single_user_hardened}
       # The remaining AURA_SANDBOX_* knobs, same reason: config reads them, compose never
       # passed them, so per-box caps and the idle-suspend TTL could not be tuned at all.
       # IDLE_TTL_SEC=0 means NEVER suspend — the single-user posture, where the box stays

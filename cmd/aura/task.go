@@ -1,4 +1,4 @@
-// task subcommand dispatcher for `aura task {schedule|list|cancel|run_now|approve|runs|doctor}`
+// task subcommand dispatcher for `aura task {schedule|list|cancel|run_now|pause|resume|approve|runs|doctor}`
 // (D-14 full triad CLI parity + D-17 doctor verb). Lives in package main alongside
 // cmd/aura/main.go's switch case "task". It mirrors runWeb/runWebDoctor: a hand-parsed
 // switch (no cobra — repo convention), config.LoadDB so no OPENROUTER_API_KEY is needed,
@@ -15,6 +15,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -31,7 +32,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const taskUsage = "usage: aura task {schedule|list|cancel|run_now|approve|runs|doctor}"
+const taskUsage = "usage: aura task {schedule|list|cancel|run_now|pause|resume|approve|runs|doctor}"
 
 func runTask(args []string) {
 	if len(args) < 1 {
@@ -50,6 +51,10 @@ func runTask(args []string) {
 		taskCancel(ctx, cfg, args[1:])
 	case "run_now":
 		taskRunNow(ctx, cfg, args[1:])
+	case "pause":
+		taskPause(ctx, cfg, args[1:])
+	case "resume":
+		taskResume(ctx, cfg, args[1:])
 	case "approve":
 		taskApprove(ctx, cfg, args[1:])
 	case "runs":
@@ -208,16 +213,16 @@ func triadToSpec(cronExpr, at string, every int) (string, time.Time) {
 	}
 }
 
-// taskList renders active + pending_approval tasks with next_run_at, flagging the
-// awaiting-approval rows (D-14/D-17 Claude's discretion format).
+// taskList renders active, paused and pending_approval tasks with next_run_at, flagging the
+// awaiting-approval and paused rows (D-14/D-17 Claude's discretion format).
 func taskList(ctx context.Context, cfg *config.Config) {
 	pool := openTaskPool(ctx, cfg)
 	defer pool.Close()
 
 	rows, err := pool.Query(ctx, `
-		SELECT id, kind, schedule_kind, status, next_run_at
+		SELECT id, kind, schedule_kind, status, next_run_at, COALESCE(paused_reason, ''), consecutive_failures
 		FROM aura.scheduler_tasks
-		WHERE status IN ('active', 'pending_approval')
+		WHERE status IN ('active', 'pending_approval', 'paused')
 		ORDER BY next_run_at ASC NULLS LAST, id ASC`)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura task list:", err)
@@ -229,15 +234,18 @@ func taskList(ctx context.Context, cfg *config.Config) {
 	_, _ = fmt.Fprintln(w, "ID\tKIND\tSCHEDULE\tSTATUS\tNEXT_RUN")
 	n := 0
 	for rows.Next() {
-		var id, kind, schedKind, status string
+		var id, kind, schedKind, status, pausedReason string
+		var failures int
 		var next *time.Time
-		if err := rows.Scan(&id, &kind, &schedKind, &status, &next); err != nil {
+		if err := rows.Scan(&id, &kind, &schedKind, &status, &next, &pausedReason, &failures); err != nil {
 			fmt.Fprintln(os.Stderr, "aura task list:", err)
 			os.Exit(exitInfra)
 		}
 		flag := status
 		if status == "pending_approval" {
 			flag = "pending_approval [awaiting approval]"
+		} else if status == "paused" && pausedReason == cron.PausedByFailures {
+			flag = fmt.Sprintf("paused [after %d failed runs]", failures)
 		} else if status == "active" && next == nil {
 			// An active task with no next fire can never be selected by the tick
 			// (DueTasks filters next_run_at <= now). Surface it so an operator can
@@ -285,10 +293,70 @@ func taskRunNow(ctx context.Context, cfg *config.Config, args []string) {
 		os.Exit(exitInfra)
 	}
 	if tag.RowsAffected() == 0 {
-		fmt.Fprintf(os.Stderr, "aura task run_now: %s is not an active task (pending_approval or cancelled tasks cannot be run)\n", id)
+		fmt.Fprintf(os.Stderr, "aura task run_now: %s is not an active task (pending_approval, paused or cancelled tasks cannot be run)\n", id)
 		os.Exit(exitUsage)
 	}
 	fmt.Printf("queued %s to run on the next tick\n", id)
+}
+
+// taskPause stops an active task from firing until `aura task resume`. The database backup
+// and system sweeps are never paused, the same rule as the cockpit and the agent.
+func taskPause(ctx context.Context, cfg *config.Config, args []string) {
+	id := requireID("pause", args)
+	pool := openTaskPool(ctx, cfg)
+	defer pool.Close()
+	store := cron.New(pool)
+	requirePausable(ctx, store, "pause", id)
+	if err := store.PauseTask(ctx, id); err != nil {
+		if errors.Is(err, cron.ErrTaskNotFound) {
+			fmt.Fprintf(os.Stderr, "aura task pause: %s is not active, so it cannot be paused\n", id)
+			os.Exit(exitUsage)
+		}
+		fmt.Fprintln(os.Stderr, "aura task pause:", err)
+		os.Exit(exitInfra)
+	}
+	fmt.Printf("paused %s\n", id)
+}
+
+// taskResume reactivates a paused task at its next fire from now, so the windows it missed
+// while paused are not replayed.
+func taskResume(ctx context.Context, cfg *config.Config, args []string) {
+	id := requireID("resume", args)
+	pool := openTaskPool(ctx, cfg)
+	defer pool.Close()
+	store := cron.New(pool)
+	requirePausable(ctx, store, "resume", id)
+	next, err := store.ResumeTask(ctx, id, time.Now())
+	if errors.Is(err, cron.ErrTaskNotFound) {
+		fmt.Fprintf(os.Stderr, "aura task resume: %s is not paused, so it cannot be resumed\n", id)
+		os.Exit(exitUsage)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura task resume:", err)
+		os.Exit(exitCodeFor(err))
+	}
+	fmt.Printf("resumed %s, next run %s\n", id, next.UTC().Format(time.RFC3339))
+}
+
+// requirePausable exits unless the task exists and is of a kind that may be paused.
+func requirePausable(ctx context.Context, store *cron.Store, verb, id string) {
+	task, err := store.GetTask(ctx, id)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aura task %s: %v\n", verb, err)
+		os.Exit(exitCodeFor(err))
+	}
+	if !cron.IsPausableKind(task.Kind) {
+		fmt.Fprintf(os.Stderr, "aura task %s: %s is a %s task, which cannot be paused\n", verb, id, task.Kind)
+		os.Exit(exitUsage)
+	}
+}
+
+// exitCodeFor maps a task-state miss to a usage error and anything else to an infra error.
+func exitCodeFor(err error) int {
+	if errors.Is(err, cron.ErrTaskNotFound) || errors.Is(err, cron.ErrResumePastOneShot) {
+		return exitUsage
+	}
+	return exitInfra
 }
 
 // taskApprove is the only transition out of pending_approval (T-10-13). It flips

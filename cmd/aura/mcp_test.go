@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -487,6 +488,7 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 }
 
 func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	withMemoryMCPRegistry(t)
 	server := newMCPHTTPTestServer(t)
 	defer server.Close()
@@ -512,6 +514,15 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 
 func containsString(values []string, want string) bool {
 	return slices.Contains(values, want)
+}
+
+// withLoopbackMCPEgress selects the dev profile for a test that mounts a loopback MCP
+// fixture. A strict profile, the default, blocks loopback MCP targets as SSRF, which is
+// what TestStrictRuntimeProfileOwnsManagedMCPEgress asserts; these tests exercise the
+// lenient posture that can reach the fixture.
+func withLoopbackMCPEgress(t *testing.T) {
+	t.Helper()
+	t.Setenv("AURA_PROFILE", string(config.ProfileDev))
 }
 
 func newMCPHTTPTestServer(t *testing.T) *httptest.Server {

@@ -132,7 +132,7 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 	}, nil
 }
 
-// ListScheduledTasks returns the identity's active + pending_approval tasks of
+// ListScheduledTasks returns the identity's active, paused and pending_approval tasks of
 // operator-managed kinds (the LLM-facing list, the same rows the cockpit board shows).
 func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.ScheduledTask, error) {
 	identityID, err := taskIdentity(ctx)
@@ -140,10 +140,11 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		return nil, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, kind, schedule_kind, status, next_run_at, payload, notify_route
+		SELECT id, kind, schedule_kind, status, next_run_at, payload, notify_route,
+		       COALESCE(paused_reason, ''), consecutive_failures
 		FROM aura.scheduler_tasks
 		WHERE identity_id = $1
-		  AND status IN ('active', 'pending_approval')
+		  AND status IN ('active', 'pending_approval', 'paused')
 		ORDER BY next_run_at ASC NULLS LAST, id ASC`, identityID)
 	if err != nil {
 		return nil, fmt.Errorf("list scheduled tasks: %w", err)
@@ -155,7 +156,8 @@ func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.Schedul
 		var t tools.ScheduledTask
 		var next *time.Time
 		var payload []byte
-		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next, &payload, &t.NotifyRoute); err != nil {
+		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next, &payload, &t.NotifyRoute,
+			&t.PausedReason, &t.ConsecutiveFailures); err != nil {
 			return nil, fmt.Errorf("scan scheduled task: %w", err)
 		}
 		// Enrolment hands the system sweeps to the operator's identity, so this owner-scoped
@@ -188,9 +190,9 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 		SELECT kind FROM aura.scheduler_tasks
 		WHERE id = $1::uuid
 		  AND identity_id = $2
-		  AND status IN ('active', 'pending_approval')`, id, identityID).Scan(&kind)
+		  AND status IN ('active', 'pending_approval', 'paused')`, id, identityID).Scan(&kind)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return fmt.Errorf("task %s is not active or not owned by this identity", id)
+		return fmt.Errorf("task %s is not active, paused or awaiting approval, or not owned by this identity", id)
 	}
 	if err != nil {
 		return fmt.Errorf("cancel task %s: %w", id, err)
@@ -200,7 +202,7 @@ func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) erro
 	}
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE aura.scheduler_tasks
-		SET status = 'cancelled', updated_at = now()
+		SET status = 'cancelled', paused_reason = NULL, updated_at = now()
 		WHERE id = $1::uuid AND identity_id = $2`, id, identityID); err != nil {
 		return fmt.Errorf("cancel task %s: %w", id, err)
 	}

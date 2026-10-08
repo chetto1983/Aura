@@ -116,11 +116,15 @@ func classifySkill(raw json.RawMessage) scoring.RiskTier {
 }
 
 // taskFixedTiers allow-lists the task actions with a FIXED tier: list (read) to Safe,
-// cancel to Normal, run_now to Risky (it fires a task immediately).
+// cancel and pause to Normal (they stop work), run_now to Risky (it fires a task
+// immediately), and resume to Risky: it re-arms work that someone stopped, an agent job
+// among it, so the model does not quietly undo an operator's pause.
 var taskFixedTiers = map[string]scoring.RiskTier{
 	"list":    scoring.Safe,
 	"cancel":  scoring.Normal,
+	"pause":   scoring.Normal,
 	"run_now": scoring.Risky,
+	"resume":  scoring.Risky,
 }
 
 // taskScoredActions are the task actions scored by scoring.ComputeTaskTier — only

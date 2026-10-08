@@ -57,6 +57,8 @@ type Querier interface {
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error)
 	BindMediaJobAssetDelivery(ctx context.Context, arg BindMediaJobAssetDeliveryParams) (int64, error)
+	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
+	// reason to the paused status).
 	CancelTask(ctx context.Context, id pgtype.UUID) error
 	// D-09 (CHAT-05): the leaf (deepest) seq of a conversation's canonical branch — the
 	// all-zero sentinel branch every pre-0017 turn is backfilled onto. For a non-branched
@@ -461,9 +463,10 @@ type Querier interface {
 	ListLLMProviderRoutes(ctx context.Context) ([]AuraLlmProviderRoutes, error)
 	ListMCPProfiles(ctx context.Context) ([]AuraMcpProfile, error)
 	ListMCPServers(ctx context.Context) ([]AuraMcpServer, error)
-	// The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
-	// operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
-	// non-null next_run_at too — it is the first fire computed at schedule time).
+	// The cockpit scheduler board (GOV-03 write): active, pending_approval and paused tasks, so
+	// an operator can approve a gated task or resume a paused one on-screen. Ordered by next fire
+	// (pending rows have a non-null next_run_at too — it is the first fire computed at schedule
+	// time).
 	ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	// One bounded leaf->root page. Go resumes from the last row's parent_seq, checks strict
 	// monotonicity/cycles, and stops only at the exact durable watermark or NULL root.
@@ -615,6 +618,9 @@ type Querier interface {
 	// sqlc.arg(payload) rather than a jsonb `||` merge. attempt_count is untouched
 	// deliberately -- a human being asked a question is not a failed attempt.
 	ParkIngestionJobAwaitingInput(ctx context.Context, arg ParkIngestionJobAwaitingInputParams) (int64, error)
+	// The operator pause: an active task stops firing until resumed. Returns rows affected so a
+	// task that is not active (pending, already paused, cancelled, absent) maps to a miss.
+	PauseTaskRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	PromoteAssetToLibrary(ctx context.Context, arg PromoteAssetToLibraryParams) (AuraAssets, error)
 	// The D-06/D-07/D-08 durable steer/delegation-result queue. Push and Drain satisfy a
 	// LOCKED interface contract (Push(conv, source, text string) error /
@@ -649,6 +655,11 @@ type Querier interface {
 	// a repeat is a zero-row update, as SetConversationTitleIfNull's is.
 	RecordConversationTurnTeacherLabel(ctx context.Context, arg RecordConversationTurnTeacherLabelParams) (int64, error)
 	RecordRetentionArtifactResult(ctx context.Context, arg RecordRetentionArtifactResultParams) (int64, error)
+	// One finished run's effect on its task, in one statement: a success resets the failure count;
+	// a failure increments it and, when the caller's pause_after is positive and the new count
+	// reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
+	// row as it was before the update, so consecutive_failures + 1 is the new count.
+	RecordTaskRunOutcome(ctx context.Context, arg RecordTaskRunOutcomeParams) (RecordTaskRunOutcomeRow, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and
 	// terminal operations are immutable replays of their original snapshot.
@@ -683,6 +694,9 @@ type Querier interface {
 	// that already un-parked the row, resolves zero rows.
 	ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
+	// Reactivate a paused task at the next fire the caller computed from now, clearing the
+	// failure count that may have paused it. Returns rows affected (a non-paused task misses).
+	ResumeTaskRow(ctx context.Context, arg ResumeTaskRowParams) (int64, error)
 	// Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
 	// has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
 	// lifetime. The outer conditions repeat the inner ones because Postgres re-checks only the
@@ -775,8 +789,9 @@ type Querier interface {
 	// client updates nothing instead of pairing the old ID with the new secret.
 	UpdatePIMProviderAppKeepSecret(ctx context.Context, arg UpdatePIMProviderAppKeepSecretParams) (int64, error)
 	// Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
-	// payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
-	// a cancelled/completed task is not silently revived. Returns rows affected.
+	// payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
+	// so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
+	// rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
 	// Writes the branch's summary, advancing the watermark.

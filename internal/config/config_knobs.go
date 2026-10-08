@@ -61,7 +61,7 @@ func knobRegistry() []KnobSpec {
 	return []KnobSpec{
 		// --- Tier A: profile selector + security/reliability gate knobs ---
 		{Name: "AURA_MCP_ENV_DIR", Kind: KindString, Default: ""},
-		{Name: "AURA_PROFILE", Kind: KindEnum, Default: string(ProfileDev), Enum: []string{
+		{Name: "AURA_PROFILE", Kind: KindEnum, Default: string(DefaultProfile), Enum: []string{
 			string(ProfileDev),
 			string(ProfileLocalTrusted),
 			string(ProfileSingleUserHardened),

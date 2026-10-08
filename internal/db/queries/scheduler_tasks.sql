@@ -6,19 +6,19 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at;
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason;
 
 -- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE id = $1;
 
 -- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -30,15 +30,17 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- is what makes each due task a singleton across concurrent workers.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
 LIMIT $1;
 
 -- name: CancelTask :exec
+-- A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
+-- reason to the paused status).
 UPDATE aura.scheduler_tasks
-SET status = 'cancelled', updated_at = now()
+SET status = 'cancelled', paused_reason = NULL, updated_at = now()
 WHERE id = $1;
 
 -- name: UpdateNextRunAt :exec
@@ -69,14 +71,15 @@ WHERE t.schedule_kind = 'at'
             AND (n.status = 'pending' OR (n.status = 'failed' AND n.attempts < $1)));
 
 -- name: ListManageableTasks :many
--- The cockpit scheduler board (GOV-03 write): active AND pending_approval tasks, so an
--- operator can approve a gated task on-screen. Ordered by next fire (pending rows have a
--- non-null next_run_at too — it is the first fire computed at schedule time).
+-- The cockpit scheduler board (GOV-03 write): active, pending_approval and paused tasks, so
+-- an operator can approve a gated task or resume a paused one on-screen. Ordered by next fire
+-- (pending rows have a non-null next_run_at too — it is the first fire computed at schedule
+-- time).
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
-WHERE status IN ('active', 'pending_approval')
+WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
 
 -- name: ListDuePendingApprovalReminders :many
@@ -93,7 +96,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- lock; a rare cross-instance double-nudge under HA is benign.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -125,9 +128,44 @@ WHERE id = $1 AND status = 'active';
 
 -- name: UpdateTaskScheduleRow :execrows
 -- Reschedule + re-payload a user task (the cockpit edit): rewrite the schedule grammar,
--- payload, notify route, and the recomputed first fire. Guarded to active/pending rows so
--- a cancelled/completed task is not silently revived. Returns rows affected.
+-- payload, notify route, and the recomputed first fire. Guarded to active/pending/paused rows
+-- so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
+-- rows affected.
 UPDATE aura.scheduler_tasks
 SET schedule_kind = $2, cron_expr = $3, every_minutes = $4, run_at = $5, tz = $6,
     payload = $7, notify_route = $8, next_run_at = $9, updated_at = now()
-WHERE id = $1 AND status IN ('active', 'pending_approval');
+WHERE id = $1 AND status IN ('active', 'pending_approval', 'paused');
+
+-- name: PauseTaskRow :execrows
+-- The operator pause: an active task stops firing until resumed. Returns rows affected so a
+-- task that is not active (pending, already paused, cancelled, absent) maps to a miss.
+UPDATE aura.scheduler_tasks
+SET status = 'paused', paused_reason = 'operator', updated_at = now()
+WHERE id = $1 AND status = 'active';
+
+-- name: ResumeTaskRow :execrows
+-- Reactivate a paused task at the next fire the caller computed from now, clearing the
+-- failure count that may have paused it. Returns rows affected (a non-paused task misses).
+UPDATE aura.scheduler_tasks
+SET status = 'active', paused_reason = NULL, consecutive_failures = 0, next_run_at = $2,
+    updated_at = now()
+WHERE id = $1 AND status = 'paused';
+
+-- name: RecordTaskRunOutcome :one
+-- One finished run's effect on its task, in one statement: a success resets the failure count;
+-- a failure increments it and, when the caller's pause_after is positive and the new count
+-- reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
+-- row as it was before the update, so consecutive_failures + 1 is the new count.
+UPDATE aura.scheduler_tasks
+SET consecutive_failures = CASE WHEN sqlc.arg(succeeded)::boolean THEN 0 ELSE consecutive_failures + 1 END,
+    status = CASE
+        WHEN NOT sqlc.arg(succeeded)::boolean AND sqlc.arg(pause_after)::integer > 0
+            AND consecutive_failures + 1 >= sqlc.arg(pause_after)::integer AND status = 'active'
+        THEN 'paused' ELSE status END,
+    paused_reason = CASE
+        WHEN NOT sqlc.arg(succeeded)::boolean AND sqlc.arg(pause_after)::integer > 0
+            AND consecutive_failures + 1 >= sqlc.arg(pause_after)::integer AND status = 'active'
+        THEN 'failures' ELSE paused_reason END,
+    updated_at = now()
+WHERE id = sqlc.arg(id)
+RETURNING status, consecutive_failures, paused_reason;

@@ -15,6 +15,8 @@ const fetchSchedulerRuns = vi.fn();
 const approveSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
 const runSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
 const cancelSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
+const pauseSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
+const resumeSchedulerTask = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
 const editSchedulerTask = vi.fn<(id: string, req: unknown) => Promise<void>>(() =>
   Promise.resolve(),
 );
@@ -27,6 +29,8 @@ vi.mock('../governanceApi', () => ({
   approveSchedulerTask: (id: string) => approveSchedulerTask(id),
   runSchedulerTask: (id: string) => runSchedulerTask(id),
   cancelSchedulerTask: (id: string) => cancelSchedulerTask(id),
+  pauseSchedulerTask: (id: string) => pauseSchedulerTask(id),
+  resumeSchedulerTask: (id: string) => resumeSchedulerTask(id),
   editSchedulerTask: (id: string, req: unknown) => editSchedulerTask(id, req),
 }));
 
@@ -50,6 +54,7 @@ const TASKS: SchedulerTask[] = [
     CreatedAt: '2026-06-01T09:00:00Z',
     UpdatedAt: '2026-06-01T09:00:00Z',
     Cancellable: true,
+    ConsecutiveFailures: 0,
   },
 ];
 
@@ -338,6 +343,73 @@ describe('SchedulerBoard (GOV-03)', () => {
     expect(screen.getByRole('button', { name: 'Run now' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('an active task offers Pause, not Resume, and clicking it calls the pause API', async () => {
+    fetchSchedulerTasks.mockResolvedValue(TASKS);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pause' }));
+    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
+    await waitFor(() => {
+      expect(pauseSchedulerTask).toHaveBeenCalledWith(TASK_ID);
+    });
+  });
+
+  it('a paused task offers Resume instead of Run now and Pause, and says it is paused', async () => {
+    fetchSchedulerTasks.mockResolvedValue([
+      { ...baseTask(), Status: 'paused', PausedReason: 'operator' },
+    ]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Resume' }));
+    expect(screen.getByText('Paused')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Run now' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+    await waitFor(() => {
+      expect(resumeSchedulerTask).toHaveBeenCalledWith(TASK_ID);
+    });
+  });
+
+  it('a task the scheduler paused says how many failed runs stopped it', async () => {
+    fetchSchedulerTasks.mockResolvedValue([
+      { ...baseTask(), Status: 'paused', PausedReason: 'failures', ConsecutiveFailures: 3 },
+    ]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    expect(await screen.findByText('Paused after 3 failed runs')).toBeTruthy();
+  });
+
+  it('the database backup cannot be paused or resumed', async () => {
+    fetchSchedulerTasks.mockResolvedValue([
+      { ...baseTask(), Kind: 'backup_postgres', Cancellable: false },
+      {
+        ...baseTask(),
+        ID: 'paused-backup',
+        Kind: 'backup_postgres',
+        Status: 'paused',
+        Cancellable: false,
+      },
+    ]);
+
+    render(<SchedulerBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText('backup_postgres')).toHaveLength(2);
+    });
+    expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Resume' })).toBeNull();
   });
 
   it('closing the run-history detail returns to the detail-empty state', async () => {

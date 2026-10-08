@@ -57,7 +57,7 @@ type Config struct {
 
 	// Phase 33 (Slice runtime-profiles) deployment posture. Selects the
 	// config-validation strictness tier and composition-root runtime posture.
-	Profile RuntimeProfile // AURA_PROFILE — runtime deployment profile, default dev (D-01/D-03)
+	Profile RuntimeProfile // AURA_PROFILE — runtime deployment profile, default DefaultProfile (D-01)
 
 	// Phase 4 (Slice 1.8) conversation + context-management tuning knobs.
 	// Non-fatal envutil.IntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).

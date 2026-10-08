@@ -186,6 +186,8 @@ func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
 	for _, want := range []string{
 		"OPENROUTER_API_KEY: readiness-degraded-no-network",
 		`AURA_WEB_TRUST_PROXY: "true"`,
+		// Its credentials are samples, which the strict default profile refuses at boot.
+		"AURA_PROFILE: dev",
 		"Candidate to previous to candidate rollback rehearsal",
 	} {
 		if !strings.Contains(workflow, want) {
@@ -257,10 +259,14 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 			t.Errorf(".env.example missing active assignment for %q, which compose requires", m[1])
 		}
 	}
-	// Appliance installs and upgrades enforce this posture; bare compose keeps its
-	// development fallbacks, so the template must state the appliance values.
+	// The strict profile is compose's own default now, so the template must not repeat it
+	// (env_example_test.go); the posture is pinned where it lives.
+	if !strings.Contains(compose, "AURA_PROFILE: ${AURA_PROFILE:-single_user_hardened}") {
+		t.Error("compose.yaml must default AURA_PROFILE to single_user_hardened")
+	}
+	// Appliance installs and upgrades enforce the rest of this posture; compose keeps
+	// development fallbacks for them, so the template must state the appliance values.
 	for _, want := range []string{
-		"AURA_PROFILE=single_user_hardened",
 		"AURA_MUSR_ISOLATION=true",
 		"AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge",
 		"COMPOSE_PROFILES=observability",

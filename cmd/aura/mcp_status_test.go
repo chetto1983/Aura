@@ -78,6 +78,7 @@ func TestWriteRuntimeCheckDeadHTTPEndpointReportsNotOK(t *testing.T) {
 // TestWriteRuntimeCheckReachableHTTPEndpointOK proves a live HTTP MCP endpoint
 // probes OK via mcp.ProbeServer (the stdio branch already did; this is the fix).
 func TestWriteRuntimeCheckReachableHTTPEndpointOK(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
 
@@ -130,6 +131,7 @@ func TestStrictRuntimeProfileOwnsManagedMCPEgress(t *testing.T) {
 // TestWriteRuntimeCheckZeroToolsHTTPEndpointOK proves a reachable HTTP server with
 // zero advertised tools still probes OK=true (ToolCount 0 is not a failure).
 func TestWriteRuntimeCheckZeroToolsHTTPEndpointOK(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	srv := newMCPHTTPTestServerWithTools(t, []map[string]any{})
 	defer srv.Close()
 
@@ -190,6 +192,7 @@ func withMCPProbeTimeout(t *testing.T, d time.Duration) {
 // a reachable HTTP server's probe column reports ok, a dead one reports a failure —
 // neither replaces the trust/runtime/profiles columns already there.
 func TestMCPStatusReflectsLiveHTTPProbe(t *testing.T) {
+	withLoopbackMCPEgress(t)
 	withMemoryMCPRegistry(t)
 	srv := newMCPHTTPTestServer(t)
 	defer srv.Close()
