@@ -41,6 +41,13 @@ DEPLOY_ARGS = [
 PREVIOUS_DATABASE = "aura_rollback_previous"
 RESTORE_DATABASE = "aura_rollback_restore"
 DUMP_PATH = "/tmp/aura-rollback-previous.dump"
+SIDECAR_CONTAINER = "aura-arcadedb-mcp"
+PROBLEM_LINE = re.compile(r'"level":"(WARN|ERROR)"|\b(WRN|ERR|WARN|ERROR|FATAL|panic)\b')
+LOG_TIMESTAMP = re.compile(r'"time":"[^"]*",?|^\S*\d{2}:\d{2}(:\d{2})?\S*\s*')
+
+
+def phase(message: str) -> None:
+    print(f"rollback-rehearsal: {message}", file=sys.stderr, flush=True)
 
 
 def compose_command(compose_file: pathlib.Path, args: list[str]) -> list[str]:
@@ -178,18 +185,34 @@ def container_health(container: str, repo: pathlib.Path) -> str:
     return completed.stdout.strip()
 
 
-def container_logs(container: str, repo: pathlib.Path) -> str:
+def log_lines(container: str, repo: pathlib.Path, tail: int = 0) -> list[str]:
+    command = ["docker", "logs", *(["--tail", str(tail)] if tail else []), container]
     completed = subprocess.run(
-        ["docker", "logs", "--tail", "120", container],
-        cwd=repo,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        check=False,
-        timeout=15,
+        command, cwd=repo, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        check=False, timeout=30,
     )
-    detail = completed.stdout.strip()
-    return detail[-4000:] if detail else "no container logs available"
+    return completed.stdout.splitlines()
+
+
+def container_logs(container: str, repo: pathlib.Path) -> str:
+    """Every distinct warning and error since boot, the tail, and the memory sidecar's tail.
+
+    A tail alone loses the boot: an MCP mount fails before the HTTP server listens, and the
+    readiness retries that follow push it out (2026-10-08, run 37759221702).
+    """
+    lines = log_lines(container, repo)
+    if not lines:
+        return "no container logs available"
+    problems: dict[str, str] = {}
+    for line in lines:
+        if PROBLEM_LINE.search(line):
+            problems.setdefault(LOG_TIMESTAMP.sub("", line), line)
+    sections = [
+        "-- distinct warnings and errors --", *list(problems.values())[-60:],
+        "-- tail --", *lines[-20:],
+        f"-- {SIDECAR_CONTAINER} tail --", *log_lines(SIDECAR_CONTAINER, repo, 40),
+    ]
+    return "\n".join(sections)[-12000:]
 
 
 def wait_deployment(
@@ -293,6 +316,7 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
     deploy = compose_command(args.compose_file, DEPLOY_ARGS)
 
     def serve(image: str, database: str = "") -> None:
+        phase(f"serve {image} on {database or 'the stack database'}")
         run_for_image(image, deploy, repo, database)
         wait_deployment(args.health_url, args.container, args.timeout_seconds, repo)
 
@@ -303,12 +327,14 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
 
         # The previous release first, on a database of its own making: the state an
         # operator upgrades from.
+        phase(f"migrate {PREVIOUS_DATABASE} with {args.previous_image}")
         recreate_database(args.compose_file, repo, PREVIOUS_DATABASE)
         run_for_image(args.previous_image, migrate, repo, PREVIOUS_DATABASE)
         previous_head = migration_head(
             run_for_image(args.previous_image, status, repo, PREVIOUS_DATABASE)
         )
         report["previous_migration_head"] = previous_head
+        phase(f"migration heads: previous {previous_head}, candidate {candidate_head}")
         if previous_head > candidate_head:
             raise ValueError(
                 f"previous image migrates to {previous_head}, past the candidate's {candidate_head}"
@@ -319,6 +345,7 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
         postgres(args.compose_file, repo,
                  ["pg_dump", "-U", user, "-Fc", "-d", PREVIOUS_DATABASE, "-f", DUMP_PATH])
 
+        phase(f"dumped {PREVIOUS_DATABASE}; upgrade it with {args.candidate_image}")
         run_for_image(args.candidate_image, migrate, repo, PREVIOUS_DATABASE)
         serve(args.candidate_image, PREVIOUS_DATABASE)
         report["upgrade_healthy"] = True
@@ -335,6 +362,7 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
                 "restore the pre-upgrade pg_dump into a new database, then POSTGRES_DB=<it> "
                 + swap_command
             )
+            phase(f"restore the dump into {RESTORE_DATABASE}")
             recreate_database(args.compose_file, repo, RESTORE_DATABASE)
             postgres(args.compose_file, repo,
                      ["pg_restore", "-U", user, "-d", RESTORE_DATABASE, "--exit-on-error", DUMP_PATH])

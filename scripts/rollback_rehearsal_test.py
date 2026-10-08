@@ -120,6 +120,29 @@ class RollbackRehearsalTest(unittest.TestCase):
         self.assertIn("past the candidate", str(error))
         self.assertEqual(deploys, [("aura:candidate", "")])
 
+    def test_container_logs_keep_the_boot_error_past_the_readiness_retries(self) -> None:
+        mount = '{"time":"2026-10-08T10:00:29Z","level":"WARN","msg":"mcp mount failed","err":"401"}'
+        probes = [
+            f'{{"time":"2026-10-08T10:{m:02d}:00Z","level":"WARN","msg":"agui: readiness probe failed"}}'
+            for m in range(1, 59)
+        ]
+        info = [f'{{"time":"2026-10-08T10:{m:02d}:30Z","level":"INFO","msg":"tick"}}' for m in range(300)]
+        outputs = {
+            "aura": "\n".join([mount, *probes, *info]),
+            "aura-arcadedb-mcp": "sidecar: token issuer not trusted",
+        }
+
+        def run(command: list[str], **_: object) -> mock.Mock:
+            return mock.Mock(returncode=0, stdout=outputs[command[-1]])
+
+        with mock.patch.object(rollback_rehearsal.subprocess, "run", side_effect=run):
+            detail = rollback_rehearsal.container_logs("aura", pathlib.Path("."))
+
+        self.assertIn('"msg":"mcp mount failed"', detail)
+        self.assertEqual(detail.count("agui: readiness probe failed"), 1)
+        self.assertIn("sidecar: token issuer not trusted", detail)
+        self.assertNotIn('"msg":"tick"', detail.split("-- tail --")[0])
+
     def test_postgres_passes_the_password_by_environment_never_argv(self) -> None:
         completed = mock.Mock(returncode=0, stdout="")
         with (
