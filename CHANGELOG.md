@@ -93,7 +93,7 @@ multi-user appliance: every person has their own identity, memory, sandbox, skil
 
 ### Install and operations
 
-- One-command installer: `npx create-aura`, local or on a remote host over SSH. It detects
+- One-command installer: `npx create-aura-appliance`, local or on a remote host over SSH. It detects
   CUDA, Vulkan or CPU for the embedding model.
 - The appliance can update itself from the edge channel, and asks an admin before it
   restarts into a new build.
