@@ -354,7 +354,7 @@ func TestRetiredMCPPythonRuntimeStaysOutAndCoverageIsReproducible(t *testing.T) 
 func TestArcadeDBMCPImageStaysGoOnly(t *testing.T) {
 	root := repoRootForTest(t)
 	dockerfile := readProjectFile(t, root, "docker/arcadedb-mcp/Dockerfile")
-	if !strings.Contains(dockerfile, "FROM alpine:3.22") {
+	if !regexp.MustCompile(`(?m)^FROM alpine:\d+\.\d+`).MatchString(dockerfile) {
 		t.Fatalf("ArcadeDB MCP runtime must stay on the minimal Alpine image:\n%s", dockerfile)
 	}
 	for _, banned := range []string{"FROM python:", "pip install", "spacy", "spacy_worker"} {
