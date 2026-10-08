@@ -2872,6 +2872,13 @@ Postgres 18.4, with the default flipped and no profile set:
 This does not measure the full Playwright E2E, the MUSR E2E, the memory, ingest or
 sandbox tiers, or a live appliance under the new default.
 
+Measured 2026-10-08 on the CI of the pull request that shipped the default: the MUSR job's
+load and chaos harness started `aura serve` without a profile, and it exited 71 on the same
+sample object-store keys. That harness now states `dev`, and so does the Production
+Readiness workflow, whose `memory-up` and rollback rehearsal start the aura container on
+sample keys too. The rehearsal was not run under the new default; its pin follows from the
+identical credentials and the identical boot check, not from a measured failure.
+
 Measured 2026-09-14: the running appliance had neither key in `.env` and
 therefore ran as `dev`; the installer's existing-file path never filled the pair,
 and the updater did not migrate it. Config validation of that appliance under
