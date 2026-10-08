@@ -11,7 +11,9 @@ multi-user appliance: every person has their own identity, memory, sandbox, skil
 ### Upgrading from v1.0.2-rc1
 
 - **Back up first.** The release adds 26 database migrations (0113 to 0138), applied when
-  Aura starts. See [Backup and restore](docs/BACKUP-RESTORE.md).
+  Aura starts. See [Backup and restore](docs/BACKUP-RESTORE.md). That backup is also the
+  way back: v1.0.2-rc1 refuses a database at the new schema, so rolling back means
+  restoring the pre-upgrade dump into a new database, not just changing the image.
 - **The model key and the Telegram token moved to the cockpit.** `compose.yaml` no longer
   passes `OPENROUTER_API_KEY`, `TELEGRAM_BOT_TOKEN` or `AURA_LLM_*` to Aura. An admin sets
   the route, the model, the OpenRouter management key and the bot token in the first-run

@@ -306,6 +306,35 @@ class ReleaseReadinessGateTest(unittest.TestCase):
         rollback = next(i for i in report["evidence"] if i["gate"] == "rollback")
         self.assertTrue(rollback["bootstrap"])
 
+    def test_restore_rollback_passes_and_names_both_heads(self) -> None:
+        evidence = valid_evidence()
+        restore = common(
+            passed=True,
+            previous_image_digest="sha256:" + "b" * 64,
+            candidate_image_digest="sha256:" + "c" * 64,
+            rollback_mode="restore",
+            rollback_command="restore the pre-upgrade pg_dump into a new database, then ...",
+            previous_migration_head=112,
+            candidate_migration_head=138,
+            config_started=True,
+            upgrade_healthy=True,
+            migrations_compatible=False,
+            restore_verified=True,
+            readiness_healthy=True,
+        )
+        evidence["rollback-report.json"] = restore
+        result = self.run_gate(evidence)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rollback = next(i for i in result.report["evidence"] if i["gate"] == "rollback")  # type: ignore[attr-defined]
+        self.assertEqual(
+            (rollback["rollback_mode"], rollback["previous_migration_head"], rollback["candidate_migration_head"]),
+            ("restore", 112, 138),
+        )
+        evidence["rollback-report.json"] = {**restore, "restore_verified": False}
+        result = self.run_gate(evidence)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("rollback: restore_verified is not true", result.stderr)
+
     def test_non_bootstrap_run_names_no_bootstrap_gate(self) -> None:
         result = self.run_gate(valid_evidence())
         self.assertEqual(result.returncode, 0, result.stderr)

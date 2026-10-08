@@ -47,7 +47,7 @@ rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundl
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |
 | disaster recovery | `dr-report.json` | Postgres, sidecars, Garage, and tenant-shaped ArcadeDB memory restored and checksum-verified |
 | observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
-| rollback | `rollback-report.json` | distinct image digests; previous config starts; migrations compatible; candidate restored healthy |
+| rollback | `rollback-report.json` | distinct image digests; the previous image serves its own new database; the candidate upgrades that database healthy; rollback healthy, by image swap when both migration heads match (migrations compatible) or by restoring the pre-upgrade dump into a new database when they differ (both heads recorded); candidate restored healthy |
 | audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |
 
 ## Operational checks
@@ -73,3 +73,10 @@ Stop a release when any required evidence is absent or non-terminal. Roll back a
 configuration first to the recorded digest. Database rollback is allowed only when the migration
 compatibility test explicitly permits it; otherwise restore into a new target and switch after
 verification. Never overwrite the last known-good backup during rollback.
+
+Every Aura binary starts only on a database at exactly its own migration head, so a release that
+adds migrations cannot be rolled back by changing the image alone: the previous image refuses the
+upgraded database (measured 2026-10-08, v1.0.2-rc1 against v1.1.0's schema 138). Take a `pg_dump`
+before upgrading; rolling back is restoring it into a new database and starting the previous image
+there with `POSTGRES_DB` pointing at it. The rehearsal exercises exactly that path for Postgres;
+ArcadeDB, Garage and sidecar state are covered by the disaster-recovery report, not by it.

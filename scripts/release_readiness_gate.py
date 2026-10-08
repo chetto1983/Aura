@@ -13,18 +13,11 @@ from typing import Any
 from critical_mutation_gate import MEDIA_SCOPE_IDS, REQUIRED_SCOPE_IDS
 from evidence_metadata import FULL_GIT_SHA
 from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+from release_readiness_errors import GateError, require
+from release_readiness_rollback import validate_rollback
 
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
-
-
-class GateError(RuntimeError):
-    pass
-
-
-def require(condition: bool, message: str) -> None:
-    if not condition:
-        raise GateError(message)
 
 
 def passing_checks(report: dict[str, Any], required: set[str], label: str) -> None:
@@ -414,43 +407,6 @@ def validate_observability(report: dict[str, Any]) -> dict[str, Any]:
         "observability",
     )
     return {}
-
-
-DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
-
-
-def validate_rollback(report: dict[str, Any]) -> dict[str, Any]:
-    require(report.get("passed") is True, "rollback: report did not pass")
-    previous = report.get("previous_image_digest")
-    candidate = report.get("candidate_image_digest")
-    if report.get("bootstrap") is True:
-        # First release: there is no approved image to roll back TO, so the rehearsal
-        # is undefined rather than skipped. Accept it only in the exact shape
-        # rollback_rehearsal.py --bootstrap writes -- no previous image, a real
-        # candidate digest, a stated reason -- and hand the marker back so run_gate
-        # records it. An exception nobody can read in the artifact is a hole.
-        require(previous is None, "rollback: bootstrap must carry no previous digest")
-        require(
-            isinstance(candidate, str) and DIGEST.fullmatch(candidate),
-            "rollback: candidate digest invalid",
-        )
-        reason = report.get("bootstrap_reason")
-        require(isinstance(reason, str) and reason.strip(), "rollback: bootstrap reason missing")
-        return {
-            "bootstrap": True,
-            "bootstrap_reason": reason,
-            "candidate_image_digest": candidate,
-        }
-    require(isinstance(previous, str) and DIGEST.fullmatch(previous), "rollback: previous digest invalid")
-    require(
-        isinstance(candidate, str) and DIGEST.fullmatch(candidate),
-        "rollback: candidate digest invalid",
-    )
-    require(previous != candidate, "rollback: previous and candidate digests are identical")
-    require(bool(report.get("rollback_command")), "rollback: command missing")
-    for field in ("config_started", "migrations_compatible", "readiness_healthy"):
-        require(report.get(field) is True, f"rollback: {field} is not true")
-    return {"previous_image_digest": previous, "candidate_image_digest": candidate}
 
 
 def validate_audit(report: dict[str, Any]) -> dict[str, Any]:

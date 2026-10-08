@@ -28,6 +28,7 @@ MIGRATION_STATUS_ARGS = [
     "-lc",
     "aura db status",
 ]
+MIGRATE_ARGS = ["run", "--rm", "--no-deps", "aura-migrate"]
 DEPLOY_ARGS = [
     "up",
     "-d",
@@ -35,10 +36,63 @@ DEPLOY_ARGS = [
     "--force-recreate",
     "aura",
 ]
+# Every service reads its database from ${POSTGRES_DB:-aura}, so a rehearsal database is
+# selected per command. Both names are constants: they reach SQL as identifiers.
+PREVIOUS_DATABASE = "aura_rollback_previous"
+RESTORE_DATABASE = "aura_rollback_restore"
+DUMP_PATH = "/tmp/aura-rollback-previous.dump"
 
 
 def compose_command(compose_file: pathlib.Path, args: list[str]) -> list[str]:
     return ["docker", "compose", "-f", str(compose_file.resolve()), *args]
+
+
+def migration_head(status_output: str) -> int:
+    """The single tracker row `aura db status` prints, refused when dirty or ambiguous."""
+    rows = [line.split() for line in status_output.splitlines()]
+    versions = [row for row in rows if len(row) == 2 and row[0].isdigit()]
+    if len(versions) != 1:
+        raise RuntimeError(f"aura db status: want one tracker row, got {status_output[-400:]!r}")
+    version, dirty = versions[0]
+    if dirty != "false":
+        raise RuntimeError(f"aura db status: version {version} is dirty")
+    return int(version)
+
+
+def postgres(compose_file: pathlib.Path, repo: pathlib.Path, args: list[str]) -> None:
+    # The bare -e takes PGPASSWORD from this process, so the password never sits in argv.
+    environment = os.environ.copy()
+    environment.setdefault("PGPASSWORD", os.environ.get("POSTGRES_PASSWORD", ""))
+    command = compose_command(compose_file, ["exec", "-T", "-e", "PGPASSWORD", "postgres", *args])
+    completed = subprocess.run(
+        command, cwd=repo, env=environment, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, check=False, timeout=600,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"postgres {args[0]} failed: {completed.stdout[-2000:]}")
+
+
+def psql(compose_file: pathlib.Path, repo: pathlib.Path, sql: str) -> None:
+    user = os.environ.get("POSTGRES_USER", "aura")
+    postgres(compose_file, repo, ["psql", "-v", "ON_ERROR_STOP=1", "-U", user, "-d", "postgres", "-c", sql])
+
+
+def recreate_database(compose_file: pathlib.Path, repo: pathlib.Path, name: str) -> None:
+    # CREATE DATABASE refuses a transaction block, so the two statements are two calls.
+    psql(compose_file, repo, f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+    psql(compose_file, repo, f'CREATE DATABASE "{name}" OWNER "{os.environ.get("POSTGRES_USER", "aura")}"')
+
+
+def drop_rehearsal_state(compose_file: pathlib.Path, repo: pathlib.Path) -> None:
+    for step in (
+        lambda: psql(compose_file, repo, f'DROP DATABASE IF EXISTS "{PREVIOUS_DATABASE}" WITH (FORCE)'),
+        lambda: psql(compose_file, repo, f'DROP DATABASE IF EXISTS "{RESTORE_DATABASE}" WITH (FORCE)'),
+        lambda: postgres(compose_file, repo, ["rm", "-f", DUMP_PATH]),
+    ):
+        try:
+            step()
+        except (RuntimeError, OSError, subprocess.SubprocessError) as exc:
+            print(f"rollback-rehearsal: cleanup: {exc}", file=sys.stderr)
 
 
 def image_digest(image: str, repo: pathlib.Path) -> str:
@@ -59,9 +113,13 @@ def image_digest(image: str, repo: pathlib.Path) -> str:
     return digest
 
 
-def run_for_image(image: str, command: list[str], repo: pathlib.Path) -> None:
+def run_for_image(
+    image: str, command: list[str], repo: pathlib.Path, database: str = ""
+) -> str:
     environment = os.environ.copy()
     environment["AURA_IMAGE"] = image
+    if database:
+        environment["POSTGRES_DB"] = database
     completed = subprocess.run(
         command,
         cwd=repo,
@@ -76,6 +134,7 @@ def run_for_image(image: str, command: list[str], repo: pathlib.Path) -> None:
         raise RuntimeError(
             f"{image}: {' '.join(command)} failed: {completed.stdout[-4000:]}"
         )
+    return completed.stdout
 
 
 def probe_endpoint(url: str) -> tuple[bool, str]:
@@ -204,6 +263,10 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
     candidate_digest = image_digest(args.candidate_image, repo)
     if previous_digest == candidate_digest:
         raise ValueError("rollback requires distinct previous and candidate images")
+    swap_command = (
+        f"AURA_IMAGE={args.previous_image} "
+        "docker compose up -d --no-deps --force-recreate aura"
+    )
     report: dict[str, Any] = {
         "schema_version": 1,
         "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -213,49 +276,82 @@ def run_rehearsal(args: argparse.Namespace) -> dict[str, Any]:
         "previous_image_digest": previous_digest,
         "candidate_image": args.candidate_image,
         "candidate_image_digest": candidate_digest,
-        "rollback_command": (
-            f"AURA_IMAGE={args.previous_image} "
-            "docker compose up -d --no-deps --force-recreate aura"
-        ),
+        "rollback_mode": None,
+        "rollback_command": swap_command,
+        "previous_migration_head": None,
+        "candidate_migration_head": None,
         "config_started": False,
+        "upgrade_healthy": False,
         "migrations_compatible": False,
+        "restore_verified": False,
         "readiness_healthy": False,
         "readiness_source": f"docker:{args.container}/.State.Health",
         "candidate_restored": False,
     }
-    migration_status = compose_command(args.compose_file, MIGRATION_STATUS_ARGS)
+    status = compose_command(args.compose_file, MIGRATION_STATUS_ARGS)
+    migrate = compose_command(args.compose_file, MIGRATE_ARGS)
     deploy = compose_command(args.compose_file, DEPLOY_ARGS)
+
+    def serve(image: str, database: str = "") -> None:
+        run_for_image(image, deploy, repo, database)
+        wait_deployment(args.health_url, args.container, args.timeout_seconds, repo)
+
     candidate_is_final = False
     try:
-        run_for_image(args.candidate_image, migration_status, repo)
-        run_for_image(args.candidate_image, deploy, repo)
-        wait_deployment(
-            args.health_url, args.container, args.timeout_seconds, repo
-        )
+        candidate_head = migration_head(run_for_image(args.candidate_image, status, repo))
+        report["candidate_migration_head"] = candidate_head
 
-        run_for_image(args.previous_image, migration_status, repo)
-        report["migrations_compatible"] = True
-        run_for_image(args.previous_image, deploy, repo)
-        report["config_started"] = True
-        wait_deployment(
-            args.health_url, args.container, args.timeout_seconds, repo
+        # The previous release first, on a database of its own making: the state an
+        # operator upgrades from.
+        recreate_database(args.compose_file, repo, PREVIOUS_DATABASE)
+        run_for_image(args.previous_image, migrate, repo, PREVIOUS_DATABASE)
+        previous_head = migration_head(
+            run_for_image(args.previous_image, status, repo, PREVIOUS_DATABASE)
         )
+        report["previous_migration_head"] = previous_head
+        if previous_head > candidate_head:
+            raise ValueError(
+                f"previous image migrates to {previous_head}, past the candidate's {candidate_head}"
+            )
+        serve(args.previous_image, PREVIOUS_DATABASE)
+        report["config_started"] = True
+        user = os.environ.get("POSTGRES_USER", "aura")
+        postgres(args.compose_file, repo,
+                 ["pg_dump", "-U", user, "-Fc", "-d", PREVIOUS_DATABASE, "-f", DUMP_PATH])
+
+        run_for_image(args.candidate_image, migrate, repo, PREVIOUS_DATABASE)
+        serve(args.candidate_image, PREVIOUS_DATABASE)
+        report["upgrade_healthy"] = True
+
+        # CheckMigrationHead admits only a binary's own head, so a previous image can
+        # return on the upgraded database only when the heads match.
+        if previous_head == candidate_head:
+            report["rollback_mode"] = "swap"
+            serve(args.previous_image, PREVIOUS_DATABASE)
+            report["migrations_compatible"] = True
+        else:
+            report["rollback_mode"] = "restore"
+            report["rollback_command"] = (
+                "restore the pre-upgrade pg_dump into a new database, then POSTGRES_DB=<it> "
+                + swap_command
+            )
+            recreate_database(args.compose_file, repo, RESTORE_DATABASE)
+            postgres(args.compose_file, repo,
+                     ["pg_restore", "-U", user, "-d", RESTORE_DATABASE, "--exit-on-error", DUMP_PATH])
+            serve(args.previous_image, RESTORE_DATABASE)
+            report["restore_verified"] = True
         report["readiness_healthy"] = True
 
-        run_for_image(args.candidate_image, migration_status, repo)
-        run_for_image(args.candidate_image, deploy, repo)
-        wait_deployment(
-            args.health_url, args.container, args.timeout_seconds, repo
-        )
+        serve(args.candidate_image)
         candidate_is_final = True
         report["candidate_restored"] = True
         report["passed"] = True
     finally:
-        if not candidate_is_final:
-            run_for_image(args.candidate_image, deploy, repo)
-            wait_deployment(
-                args.health_url, args.container, args.timeout_seconds, repo
-            )
+        try:
+            if not candidate_is_final:
+                serve(args.candidate_image)
+        finally:
+            drop_rehearsal_state(args.compose_file, repo)
     return report
 
 
@@ -296,7 +392,11 @@ def main() -> int:
     if args.bootstrap:
         print("rollback-rehearsal: BOOTSTRAP: first release, no previous image to roll back to")
     else:
-        print("rollback-rehearsal: PASS: previous image healthy and candidate restored")
+        print(
+            f"rollback-rehearsal: PASS ({report['rollback_mode']}): heads "
+            f"{report['previous_migration_head']} -> {report['candidate_migration_head']}, "
+            "upgrade and rollback healthy, candidate restored"
+        )
     return 0
 
 

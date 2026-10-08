@@ -100,6 +100,7 @@ jobs:
             scripts/release_check_run_gate_test.py \
             scripts/release_notes_test.py \
             scripts/release_readiness_gate_test.py \
+            scripts/release_readiness_rollback_test.py \
             scripts/rollback_rehearsal_test.py \
             scripts/security_evidence_test.py
           bash scripts/coverage_profile_gate_test.sh
