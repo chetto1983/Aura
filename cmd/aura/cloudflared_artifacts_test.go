@@ -1,6 +1,7 @@
 package main
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -31,7 +32,12 @@ func TestCloudflaredPackagingBoundary(t *testing.T) {
 		t.Fatal("Caddy cannot receive tunnel traffic")
 	}
 	dockerfile := readProjectFile(t, root, "docker/cloudflared/Dockerfile")
-	for _, required := range []string{"cloudflare/cloudflared:2026.8.3@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339", "USER 65532:65532", "CGO_ENABLED=0", "GOARCH=$TARGETARCH", "healthcheck"} {
+	// The upstream binary must be a dated release pinned by digest. Which release is
+	// Dependabot's to move, so the test asserts the pin's shape, not one version.
+	if !regexp.MustCompile(`(?m)^FROM cloudflare/cloudflared:\d{4}\.\d+\.\d+@sha256:[0-9a-f]{64}$`).MatchString(dockerfile) {
+		t.Error("image does not pin cloudflare/cloudflared to a release digest")
+	}
+	for _, required := range []string{"USER 65532:65532", "CGO_ENABLED=0", "GOARCH=$TARGETARCH", "healthcheck"} {
 		if !strings.Contains(dockerfile, required) {
 			t.Errorf("image lacks %s", required)
 		}

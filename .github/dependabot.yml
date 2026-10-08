@@ -74,3 +74,29 @@ updates:
       prefix: "build(deps)"
     allow:
       - dependency-name: "chetto1983/aura-whisper-server"
+
+  # Dockerfile base images. A digest-pinned FROM gets its digest refreshed when the tag moves,
+  # before Docker Hub can collect the superseded manifest. dxflrs/garage is left out: the aura
+  # image and compose.yaml must move it together (cmd/aura/container_artifacts_test.go).
+  - package-ecosystem: docker
+    directories:
+      - "/docker/aura"
+      - "/docker/aura-sandbox"
+      - "/docker/aura-egress"
+      - "/docker/aura-ingest"
+      - "/docker/arcadedb-mcp"
+      - "/docker/caddy"
+      - "/docker/cloudflared"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    ignore:
+      - dependency-name: "dxflrs/garage"
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      docker-base-images:
+        patterns: ["*"]

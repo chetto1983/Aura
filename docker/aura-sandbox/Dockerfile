@@ -13,10 +13,12 @@
 # has no shell → exit 127; read-only blocks self-extension; USER 65532 forces non-root).
 #
 # Digest-pinned (D-13) so the shared box image is reproducible. Both the debian base and
-# the astral uv image are @sha256-pinned. Resolved 2026-07-27 from the live registry:
-#   debian:bookworm-slim         -> sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+# the astral uv image are @sha256-pinned. Dependabot (.github/dependabot.yml) refreshes the
+# debian digest when bookworm-slim moves: Hub can collect a superseded, untagged manifest, as
+# it did four times to aura-stt's whisper-server pin. The uv pin is a COPY --from, which
+# Dependabot does not parse; resolved 2026-07-27:
 #   ghcr.io/astral-sh/uv:0.11.32 -> sha256:df4cae8f3a96d175e2e5f992e597550000edbe78fdc2594d5cd8de1a217f504c
-FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
 
 # --- heavy runtime layer (cache-stable: ordered FIRST so a later tweak re-runs only the
 # small trailing layers, never this ~apt/node/uv layer). D-13 bakes the common runtimes;
