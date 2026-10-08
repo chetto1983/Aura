@@ -8,7 +8,7 @@ services:
     # remove the structural device reservation here.
     # The same llama.cpp release compose.yaml pins, CPU variant: CI verifies the server the
     # fleet runs, not whatever the moving tag carried on the day.
-    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-v0.4.1}
+    image: ${AURA_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-v0.5.0}
     deploy: !reset null
     volumes:
       - ${AURA_CI_LLAMA_CACHE_DIR:?AURA_CI_LLAMA_CACHE_DIR required in CI}/llama.cpp:/root/.cache/llama.cpp

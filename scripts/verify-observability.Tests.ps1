@@ -144,7 +144,7 @@ try {
         $text = Get-Content -LiteralPath $path -Raw
         $mutated = [regex]::Replace(
             $text,
-            '(?m)^(    image: prom/prometheus:v3\.13\.1)@sha256:[0-9a-f]{64}\r?$',
+            '(?m)^(    image: prom/prometheus:v3\.13\.4)@sha256:[0-9a-f]{64}\r?$',
             '$1',
             1
         )

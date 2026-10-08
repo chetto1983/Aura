@@ -18,7 +18,7 @@ datasources:
       httpMethod: POST
       manageAlerts: false
       prometheusType: Prometheus
-      prometheusVersion: 3.13.1
+      prometheusVersion: 3.13.4
       timeInterval: 15s
       exemplarTraceIdDestinations:
         - name: trace_id

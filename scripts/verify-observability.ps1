@@ -312,9 +312,9 @@ $grafanaBlock = Get-ComposeServiceBlock $composeText 'grafana'
 # is never published, which is asserted below alongside the sidecar contracts.
 $auraBlock = Get-ComposeServiceBlock $composeText 'aura'
 $imageContracts = @(
-    @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.1' },
+    @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.4' },
     @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:2.9.4' },
-    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:12.3.9' }
+    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:12.4.12' }
 )
 foreach ($contract in $imageContracts) {
     $imageMatch = [regex]::Match($contract.Block, '(?m)^    image:\s+(?<image>\S+)\s*$')
