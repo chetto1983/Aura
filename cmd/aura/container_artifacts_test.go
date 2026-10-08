@@ -23,7 +23,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	for _, want := range []string{
 		"FROM golang:",
 		"FROM debian:bookworm-slim",
-		"FROM dxflrs/garage:v2.3.0 AS garagebin",
+		"FROM dxflrs/garage:v2.4.1 AS garagebin",
 		"postgresql-client-18",
 		"ghcr.io/astral-sh/uv:0.11.32",
 		// uv/uvx stay in the image — the agent reaches them from shell_exec — but nothing
@@ -113,7 +113,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"healthcheck:",
 		"curl -fsS --max-time 3 http://127.0.0.1:9080/readyz >/dev/null",
 		"garage:",
-		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}",
+		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.4.1}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"CALENDAR_MCP_OAuth__Resource: ${AURA_PIM_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8093,http://127.0.0.1:8093/,http://aura-pim-mcp:8080/,http://aura-pim-mcp:8080}",
 		"${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}",

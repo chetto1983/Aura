@@ -22,7 +22,7 @@ RUN npm run build
 
 # Keep in lockstep with the garage service pin in compose.yaml — the bootstrap
 # CLI talks native RPC to the server and Garage wants matched versions.
-FROM dxflrs/garage:v2.3.0 AS garagebin
+FROM dxflrs/garage:v2.4.1 AS garagebin
 
 # The appliance payload -- compose files, the updater and its units, sidecar config -- travels
 # INSIDE this image so an edge machine converges on it with no operator:
@@ -36,7 +36,7 @@ RUN --mount=type=bind,target=/src \
     install -m 0644 /src/scripts/payload_manifest.txt /payload/payload_manifest.txt; \
     cd /payload && sha256sum --check --quiet --strict payload_manifest.txt
 
-FROM golang:1.27.1-alpine AS build
+FROM golang:1.27.2-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git

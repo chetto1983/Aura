@@ -763,7 +763,7 @@ jobs:
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.5.0
       AURA_EMBED_NGL: "0"
       # arcadedb-mcp depends_on aura, so `compose up arcadedb-mcp` starts the daemon on
       # this workflow's sample object-store keys, which the strict default profile rejects:
@@ -916,7 +916,7 @@ jobs:
       POSTGRES_PASSWORD: ci-test-password
       COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.5.0
       AURA_EMBED_NGL: "0"
     steps:
       - name: Checkout
@@ -1024,7 +1024,7 @@ jobs:
       AURA_OBJECTSTORE_PATH_STYLE: "true"
       COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
       AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
-      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.5.0
       AURA_EMBED_NGL: "0"
       AURA_INGEST_E2E_SCOPE: reconcile
     steps:
@@ -1150,7 +1150,7 @@ jobs:
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       # CPU image and no GPU offload: the compose default is server-cuda with -ngl 99,
       # which cannot start on a GitHub runner. Same model, same weights, same vectors.
-      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.4.1
+      AURA_EMBED_IMAGE: ghcr.io/ggml-org/llama.cpp:server-v0.5.0
       AURA_EMBED_NGL: "0"
       POSTGRES_PASSWORD: ci-test-password
     steps:

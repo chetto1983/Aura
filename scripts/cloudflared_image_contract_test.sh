@@ -25,6 +25,9 @@ if docker inspect --format '{{json .Config.Env}}' "$name" | grep -Ei 'TOKEN=|SEC
 fi
 if docker exec "$name" /bin/sh -c true >/dev/null 2>&1; then echo 'FAIL: shell present' >&2; exit 1; fi
 if docker exec "$name" /bin/bash -c true >/dev/null 2>&1; then echo 'FAIL: bash present' >&2; exit 1; fi
-docker exec "$name" /usr/local/bin/cloudflared --version | grep -F '2026.8.3'
+# The release the Dockerfile pins, so a Dependabot bump needs no edit here.
+want="$(sed -nE 's|^FROM cloudflare/cloudflared:([0-9.]+)@sha256:.*|\1|p' "$(dirname "$0")/../docker/cloudflared/Dockerfile")"
+[ -n "$want" ] || { echo 'FAIL: docker/cloudflared/Dockerfile pins no cloudflared release' >&2; exit 1; }
+docker exec "$name" /usr/local/bin/cloudflared --version | grep -F "$want"
 [ -z "$(docker logs "$name" 2>&1)" ] || { echo 'FAIL: idle process emitted unexpected diagnostics' >&2; exit 1; }
 echo 'ok: idle distroless sidecar is non-root, healthy, shell-free and unpublished without credentials or network'

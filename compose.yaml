@@ -589,7 +589,7 @@ services:
   # service creates the local bucket/key/CORS before Aura starts; install.sh
   # generates the internal secrets consumed here.
   garage:
-    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.3.0}
+    image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.4.1}
     container_name: aura-garage
     restart: unless-stopped
     environment:
@@ -842,9 +842,9 @@ services:
     # AURA_EMBED_IMAGE in .env outranked this line and froze the build per machine (measured
     # 2026-09-14: the mini PC ran b10884 while b10951 was out). Change the pin here and in
     # both overlays together. The pin is a RELEASE tag, not a bNNNN CI build: upstream
-    # switched to semver and ships server-*-v0.4.1 for every variant we run. Same bytes as
-    # b10964 -- digest-checked 2026-09-21 -- so it moves forward from b10951, never back.
-    image: ghcr.io/ggml-org/llama.cpp:server-cuda-v0.4.1
+    # switched to semver and ships server-*-vX.Y.Z for every variant we run. v0.4.1 carried
+    # the same bytes as b10964 (digest-checked 2026-09-21); v0.5.0 keeps CUDA 12.8.1.
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0
     container_name: aura-llama-embed
     restart: unless-stopped
     environment:
@@ -1097,7 +1097,7 @@ services:
     # ghcr.io, not Docker Hub: same digest, no anonymous pull rate limit. The updater's
     # image cleanup compares repositories across registries, so the old Docker Hub tag
     # still goes (deploy/aura-image-update.sh image_repository).
-    image: ghcr.io/searxng/searxng:2026.10.4-d48c4b555
+    image: ghcr.io/searxng/searxng:2026.10.7-6671d89be
     container_name: aura-searxng
     restart: unless-stopped
     environment:
@@ -1198,7 +1198,7 @@ services:
   # Only reached when the operator-selected model does NOT advertise the image
   # modality; a vision-capable primary reads the image itself and this stays down.
   aura-ocr-vl:
-    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.4.1}
+    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0}
     container_name: aura-ocr-vl
     environment:
       LLAMA_ARG_HOST: 0.0.0.0
@@ -1346,7 +1346,7 @@ services:
   # Set the env only to OVERRIDE a model that states its own preference.
   aura-llm:
     profiles: [localllm]
-    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.4.1}
+    image: ${AURA_LLM_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda-v0.5.0}
     container_name: aura-llm
     restart: unless-stopped
     environment:
@@ -1486,7 +1486,7 @@ services:
   # before and a stronger one than the Docker socket this same container already
   # mounts (see the aura service).
   prometheus:
-    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    image: prom/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
     profiles: [observability]
     restart: unless-stopped
     depends_on:
@@ -1546,7 +1546,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:12.3.9@sha256:d4f671be4c5ff415ff9e9e8fd3439db00341ec537411fd8392646c9463d66a7f
+    image: grafana/grafana:12.4.12@sha256:83be3e511ede559bee80e2215bb1987cb1246075461cb961beb515b0341e7aea
     profiles: [observability]
     restart: unless-stopped
     depends_on:

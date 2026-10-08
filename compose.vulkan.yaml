@@ -6,7 +6,7 @@
 # compose.yaml's CUDA one and changes with it (see the comment there).
 services:
   aura-llama-embed:
-    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-v0.4.1
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan-v0.5.0
     deploy: !reset null
     devices:
       - /dev/dri:/dev/dri
