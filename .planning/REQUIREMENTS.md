@@ -28,8 +28,8 @@ they break — not writing them.
 - [ ] **REL-09**: `chaos-report.json` executes the DB, MCP, Garage and process-kill scenarios, degrades truthfully and recovers
 - [ ] **REL-10**: `dr-report.json` restores Postgres, sidecars, Garage and tenant-shaped ArcadeDB memory, checksum-verified
 - [ ] **REL-11**: `observability-report.json` passes negative fixtures, runtime smoke, live health and readiness, dashboards, alerts and runbooks
-- [ ] **REL-12**: `rollback-report.json` proves distinct image digests, previous config boots, migrations stay compatible and the candidate is restored healthy
-- [ ] **REL-13**: `make release-readiness` emits `release-readiness-report.json` accepting all twelve inputs, each bound to the exact candidate SHA and under 24 hours old
+- ~~**REL-12**: `rollback-report.json` proves distinct image digests, previous config boots, migrations stay compatible and the candidate is restored healthy~~ — dropped 2026-10-08 by the operator: the image-rollback rehearsal and its report left release readiness; going back is restoring the pre-upgrade backup (prd.md §17)
+- [ ] **REL-13**: `make release-readiness` emits `release-readiness-report.json` accepting all eleven inputs, each bound to the exact candidate SHA and under 24 hours old
 - [ ] **REL-14**: The `Production Readiness` GitHub workflow completes on the candidate branch and the tag-triggered `Release` workflow publishes against that exact commit
 
 ### Access Control (RBAC)
@@ -116,7 +116,7 @@ concurrent users, under attack, across a restart, and at the process and host le
 - [ ] **ISO-06**: A resource exhausted by one identity (loop budget, sandbox, tokens) does not deny service to another
 - [ ] **ISO-07**: No identity can reach the host from its sandbox: the Docker socket, the host filesystem outside its roots, and the environment of a launched stdio MCP server are all unreachable
 - [ ] **ISO-08**: Isolation survives a service restart — derived credentials and per-identity databases reattach to the right identity, never to another
-- [ ] **ISO-09**: Isolation survives an image rollback and a restore from backup, including tenant-shaped ArcadeDB memory
+- [ ] **ISO-09**: Isolation survives a restore from backup, including tenant-shaped ArcadeDB memory
 - [ ] **ISO-10**: Deprovisioning an identity removes its data from every plane, and leaves the other identities intact
 
 ### End-to-End Proof (E2E)
@@ -128,7 +128,7 @@ scenario. Unit tests are how we get there, never the evidence that we arrived.
 - [x] **E2E-01**: Two identities hold real conversations at the same time against one running stack, each doing useful work, and the run is scored ≥9.8
 - [x] **E2E-02**: A second identity is onboarded from zero to a useful conversation — memory database, object bucket, sandbox, skills root — with no manual step outside the documented path
 - [ ] **E2E-03**: The adversarial scenario runs as a scripted suite an operator can re-run, not a one-off session, and every attempt is refused
-- [ ] **E2E-04**: The full restart / rollback / restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards
+- [ ] **E2E-04**: The full restart / restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards
 - [ ] **E2E-05**: Every phase in this milestone lands with its own live end-to-end run recorded, and no phase closes on unit evidence alone
 
 ### Launch Documentation (DOC)
@@ -186,7 +186,7 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | REL-09 | Phase 4 | Pending |
 | REL-10 | Phase 5 | Pending |
 | REL-11 | Phase 4 | Pending |
-| REL-12 | Phase 5 | Pending |
+| REL-12 | — | Dropped |
 | REL-13 | Phase 7 | Pending |
 | REL-14 | Phase 7 | Pending |
 | RBAC-01 | Phase 2 | Complete |
@@ -242,14 +242,14 @@ Every v1 requirement maps to exactly one phase. Mapped during roadmap creation, 
 | Phase 2 | Two Roles and a Budget | 21 | REL-06, RBAC-01, RBAC-02, RBAC-03, RBAC-04, RBAC-05, RBAC-06, RBAC-07, RBAC-08, RBAC-09, RBAC-10, RBAC-11, CRED-01, CRED-02, CRED-03, CRED-04, CRED-05, CRED-06, CRED-07, CRED-08, CRED-09 |
 | Phase 3 | The Boundary Under Attack | 5 | REL-04, ISO-03, ISO-04, ISO-07, E2E-03 |
 | Phase 4 | Load, Chaos and Truthful Degradation | 4 | REL-08, REL-09, REL-11, ISO-06 |
-| Phase 5 | Restart, Rollback, Restore | 6 | REL-10, REL-12, ISO-08, ISO-09, ISO-10, E2E-04 |
+| Phase 5 | Restart, Rollback, Restore | 5 | REL-10, ISO-08, ISO-09, ISO-10, E2E-04 |
 | Phase 6 | A Stranger Can Install and Operate It | 8 | DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07, DOC-08 |
-| Phase 7 | One SHA, Twelve Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
+| Phase 7 | One SHA, Eleven Reports, One Window | 8 | REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05 |
 
 **Coverage:**
 
-- v1 requirements: 49 total
-- Mapped to phases: 49
+- v1 requirements: 48 active, REL-12 dropped 2026-10-08
+- Mapped to phases: 48
 - Unmapped: 0 ✓
 - Duplicated across phases: 0 ✓
 

@@ -21,7 +21,7 @@ arrived.
 
 The order is forced by one hard constraint and one soft one. The hard one:
 `scripts/release_readiness_gate.py` accepts only reports bound to the exact
-`git rev-parse HEAD` and under 24 hours old, so the twelve reports cannot be accumulated —
+`git rev-parse HEAD` and under 24 hours old, so the eleven reports cannot be accumulated —
 the last phase produces them together in one window and nothing may commit during it. The
 soft one: each drill is only meaningful once the state it operates on exists. Restoring an
 empty deployment proves nothing; measuring concurrency with one identity measures the wrong
@@ -41,9 +41,9 @@ numbering (45–54) is not carried forward.
 - [ ] **Phase 2: Two Roles and a Budget** - An admin adds and removes users and nobody else can, every user may do everything else, and what bounds a user is a per-identity OpenRouter cap the provider enforces
 - [ ] **Phase 3: The Boundary Under Attack** - A re-runnable adversarial suite plus a sandbox escape battery, every attempt refused and audited
 - [ ] **Phase 4: Load, Chaos and Truthful Degradation** - Produce load, chaos and observability evidence for the first time, with two identities active
-- [ ] **Phase 5: Restart, Rollback, Restore** - Prove isolation survives the operational lifecycle, producing the DR and rollback evidence in the same drill
+- [ ] **Phase 5: Restart, Rollback, Restore** - Prove isolation survives the operational lifecycle, producing the DR evidence in the same drill
 - [ ] **Phase 6: A Stranger Can Install and Operate It** - A clean-machine walkthrough driven only by the written docs, from clone to two working identities and back from a restore
-- [ ] **Phase 7: One SHA, Twelve Reports, One Window** - Freeze the candidate and produce all twelve reports together, then publish through the release workflows
+- [ ] **Phase 7: One SHA, Eleven Reports, One Window** - Freeze the candidate and produce all eleven reports together, then publish through the release workflows
 
 ## Phase Details
 
@@ -167,24 +167,24 @@ Plans:
 
 ### Phase 5: Restart, Rollback, Restore
 
-**Goal**: Both identities survive the operational lifecycle intact and still separated — and the disaster-recovery and rollback evidence falls out of the same drill.
+**Goal**: Both identities survive the operational lifecycle intact and still separated — and the disaster-recovery evidence falls out of the same drill.
 **Depends on**: Phase 4 — a restore is only meaningful against a deployment carrying real two-identity state (memory graphs, buckets, sandboxes, grants, roles), which phases 1–3 create and phase 4 exercises. Process-kill recovery in chaos is the cheap failure; restoring from backup is the expensive one, and doing it second means the cheap one has already flushed out the recovery bugs.
-**Requirements**: ISO-08, ISO-09, ISO-10, REL-10, REL-12, E2E-04
+**Requirements**: ISO-08, ISO-09, ISO-10, REL-10, E2E-04
 **Success Criteria** (what must be TRUE):
 
   1. Isolation survives a service restart: derived ArcadeDB credentials and per-identity databases reattach to the right identity, never to another. `internal/arcadedb/tenant.go` derives the password by HMAC over `AURA_ARCADEDB_TENANT_SECRET`, so a misbinding here is silent, not loud.
   2. `dr-report.json` is produced for the first time and passes: Postgres, sidecars, Garage and tenant-shaped ArcadeDB memory all restored and checksum-verified.
-  3. `rollback-report.json` is produced for the first time and passes: distinct image digests, the previous config boots, migrations stay compatible, and the candidate is restored healthy.
-  4. The full restart → rollback → restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards — each resumes a real conversation and sees only its own history and its own memory.
+  3. ~~`rollback-report.json` is produced for the first time and passes~~ — dropped 2026-10-08 by the operator: the image-rollback rehearsal and its report left release readiness; going back is restoring the pre-upgrade backup (prd.md §17).
+  4. The full restart → restore cycle runs with two provisioned identities and both are intact and correctly separated afterwards — each resumes a real conversation and sees only its own history and its own memory.
   5. Deprovisioning one identity removes its data from every plane — Postgres rows, ArcadeDB database and server user, Garage bucket, sandbox, skills root — and leaves the other identity untouched.
 
-**Closes on (live run)**: `make restore-drill` and `scripts/rollback_rehearsal.py` against the two-identity deployment, bracketed by real turns: a scored conversation as each identity before the drill, then daemon restart, image rollback to the previous digest, restore from backup, then the same two conversations again — asserting each identity recovers its own history and neither has acquired the other's. Deprovision closes the run.
+**Closes on (live run)**: `make restore-drill` against the two-identity deployment, bracketed by real turns: a scored conversation as each identity before the drill, then daemon restart, restore from backup, then the same two conversations again — asserting each identity recovers its own history and neither has acquired the other's. Deprovision closes the run.
 **Plans**: TBD
 
 ### Phase 6: A Stranger Can Install and Operate It
 
 **Goal**: Someone who has never read this codebase installs, secures, upgrades, backs up, restores and troubleshoots Aura from the written documents alone.
-**Depends on**: Phase 5 — DOC-02 documents the roles phase 2 created, DOC-04's steps must be the ones the DR gate in phase 5 actually exercised, and DOC-03's rollback path is phase 5's rehearsal. Written earlier, these document intentions rather than measured behaviour, which is the failure this milestone exists to stop.
+**Depends on**: Phase 5 — DOC-02 documents the roles phase 2 created, DOC-04's steps must be the ones the DR gate in phase 5 actually exercised, and DOC-03's rollback path is phase 5's restore. Written earlier, these document intentions rather than measured behaviour, which is the failure this milestone exists to stop.
 **Requirements**: DOC-01, DOC-02, DOC-03, DOC-04, DOC-05, DOC-06, DOC-07, DOC-08
 **Success Criteria** (what must be TRUE):
 
@@ -197,9 +197,9 @@ Plans:
 **Closes on (live run)**: a clean-machine walkthrough — a fresh host with nothing but the repository and the docs, driven only by what is written: clone, install, first conversation, enable isolation, provision a second identity, assign roles, upgrade, break the upgrade and roll back, back up, restore, and hold a real conversation as each identity afterwards. Every deviation from the text is a documentation defect; the walkthrough restarts after each fix. The prior parallel session already rewrote README, `docs/ARCHITECTURE.md`, `docs/CAPABILITIES.md`, `docs/TECHNICAL_OVERVIEW.md` and added `docs/BACKUP-RESTORE.md`, so DOC-01..DOC-05 start partly advanced — this phase verifies and completes them, it does not start from a blank page.
 **Plans**: TBD
 
-### Phase 7: One SHA, Twelve Reports, One Window
+### Phase 7: One SHA, Eleven Reports, One Window
 
-**Goal**: The candidate commit carries all twelve production-readiness reports, produced together, and the release workflows publish it.
+**Goal**: The candidate commit carries all eleven production-readiness reports, produced together, and the release workflows publish it.
 **Depends on**: Phase 6 — and this is the sequencing constraint that shapes the whole roadmap. `make release-readiness` accepts only reports bound to the exact `git rev-parse HEAD` and newer than 24 hours (`docs/release-readiness.md`), so every report an earlier phase produced is stale and SHA-mismatched the moment the next phase commits. Phases 2–5 prove each gate *can* pass and fix what it breaks; this phase produces them *together*, on a frozen tree, in one continuous window during which nothing may commit. It must be last because any commit after it invalidates the whole bundle.
 **Requirements**: REL-01, REL-02, REL-03, REL-05, REL-07, REL-13, REL-14, E2E-05
 **Success Criteria** (what must be TRUE):
@@ -207,10 +207,10 @@ Plans:
   1. `make evidence-contracts` passes on the candidate commit, so every report's shape is validated before its content is trusted.
   2. `security-report.json` is produced for the first time and passes: exact-SHA CodeQL for Go and JS, govulncheck, workflow pinning and strict-profile tests.
   3. `coverage-report.json` (≥85% statements on the owned surface with the `db_integration` tier, no empty or filtered tier), `agent-memory-eval-report.json` (all-tier MRS with ArcadeDB package coverage ≥85%) and `capability-eval.json` (every declared scenario executed and passed, zero skipped or missing) are all re-produced fresh on the candidate SHA — the copies on disk today are dated 2026-09-07, 2026-09-07 and 2026-08-24 and none of them survives this phase's freeze.
-  4. `make release-readiness` emits `release-readiness-report.json` accepting all twelve inputs, each bound to the exact candidate SHA and under 24 hours old, with the SHA-256 of every input recorded.
+  4. `make release-readiness` emits `release-readiness-report.json` accepting all eleven inputs, each bound to the exact candidate SHA and under 24 hours old, with the SHA-256 of every input recorded.
   5. The `Production Readiness` GitHub workflow completes on the candidate branch, the tag-triggered `Release` workflow publishes against that exact commit, and every phase in this milestone has its own live end-to-end run recorded in its phase directory — no phase closed on unit evidence alone.
 
-**Closes on (live run)**: one continuous window on a frozen tree. `make evidence-contracts`, then all twelve reports produced against the live stack in sequence — security, coverage, docker-coverage, agent-memory, mutation, capability, load, chaos, DR, observability, rollback, audit-closure — then `make release-readiness`, then the `Production Readiness` workflow on the candidate branch and the tag-triggered `Release`. The window is the run: if it takes longer than 24 hours, the earliest reports expire and it starts again.
+**Closes on (live run)**: one continuous window on a frozen tree. `make evidence-contracts`, then all eleven reports produced against the live stack in sequence — security, coverage, docker-coverage, agent-memory, mutation, capability, load, chaos, DR, observability, audit-closure — then `make release-readiness`, then the `Production Readiness` workflow on the candidate branch and the tag-triggered `Release`. The window is the run: if it takes longer than 24 hours, the earliest reports expire and it starts again.
 **Plans**: TBD
 
 ## Dependency Order
@@ -227,14 +227,14 @@ Strictly sequential, and each edge earns its place:
 | 2 → 3 | The attack suite must probe permission refusals as well as ownership scoping. Written first, it tests half the boundary and gets rewritten. |
 | 3 → 4 | Load that passes by leaking across identities is worse than load that fails. The boundary must hold before concurrency means anything. |
 | 4 → 5 | Restore needs real two-identity state to restore. Process-kill recovery (chaos) flushes out the cheap recovery bugs before the expensive drill. |
-| 5 → 6 | DOC-04 must document the steps the DR gate exercised, DOC-03 the rollback that was rehearsed, DOC-02 the roles that exist. Documenting intentions is the failure mode this milestone exists to end. |
-| 6 → 7 | **Hard constraint.** The twelve reports must share one SHA and one 24-hour window. Any commit after the window invalidates the bundle, so the window must come after the last commit — which is phase 6's documentation fixes. |
+| 5 → 6 | DOC-04 must document the steps the DR gate exercised, DOC-03 the restore that going back relies on, DOC-02 the roles that exist. Documenting intentions is the failure mode this milestone exists to end. |
+| 6 → 7 | **Hard constraint.** The eleven reports must share one SHA and one 24-hour window. Any commit after the window invalidates the bundle, so the window must come after the last commit — which is phase 6's documentation fixes. |
 
-**Why the twelve reports are not one phase.** Eight have never been run and are expected to
+**Why the eleven reports are not one phase.** Eight have never been run and are expected to
 break. Producing them for the first time inside the 24-hour window would mean fixing code
 during the window, which resets the SHA and voids everything produced so far. So phases 2–5
 each execute the reports their own work touches — mutation with RBAC, docker-coverage with
-the sandbox, load/chaos/observability with concurrency, DR/rollback with the lifecycle — and
+the sandbox, load/chaos/observability with concurrency, DR with the lifecycle — and
 close what they break. Phase 7 then re-runs everything on a frozen tree, where a failure is
 news rather than the expected case.
 
@@ -275,7 +275,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7
 | 4. Load, Chaos and Truthful Degradation | 0/TBD | Not started | - |
 | 5. Restart, Rollback, Restore | 0/TBD | Not started | - |
 | 6. A Stranger Can Install and Operate It | 0/TBD | Not started | - |
-| 7. One SHA, Twelve Reports, One Window | 0/TBD | Not started | - |
+| 7. One SHA, Eleven Reports, One Window | 0/TBD | Not started | - |
 
 ---
 *Roadmap created 2026-09-07 for milestone v1.1.0 Production Launch — Multi-Tenant.

@@ -51,9 +51,9 @@ phases, not many thin ones.
 | 2. Permissions Decide What a User May Do | Live permission matrix — five call sites × two identities, denials read back from the audit trail |
 | 3. The Boundary Under Attack | Adversarial suite + sandbox escape battery against the live two-identity stack |
 | 4. Load, Chaos and Truthful Degradation | `make load-chaos` + `make observability-evidence` with two identities active |
-| 5. Restart, Rollback, Restore | `make restore-drill` + `rollback_rehearsal.py`, bracketed by real turns per identity |
+| 5. Restart, Rollback, Restore | `make restore-drill`, bracketed by real turns per identity |
 | 6. A Stranger Can Install and Operate It | Clean-machine walkthrough driven only by the written docs |
-| 7. One SHA, Twelve Reports, One Window | Twelve reports on a frozen tree in one <24h window, then the release workflows |
+| 7. One SHA, Eleven Reports, One Window | Eleven reports on a frozen tree in one <24h window, then the release workflows |
 
 ## Performance Metrics
 

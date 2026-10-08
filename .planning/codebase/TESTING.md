@@ -237,10 +237,10 @@ harnesses under `scripts/`, each with its own `*_test.py` / `*_test.sh` contract
 run by `make evidence-contracts`:
 `audit_closure_gate`, `agent_memory_eval`, `capability_eval`,
 `critical_mutation_gate`, `observability_evidence`, `production_load_chaos`,
-`release_check_run_gate`, `release_readiness_gate`, `rollback_rehearsal`,
+`release_check_run_gate`, `release_readiness_gate`,
 `security_evidence`, plus `coverage_profile_gate`, `coverage_gate`,
 `docker_coverage_gate`, `restore_drill_name`.
-`make release-readiness` validates the twelve fresh reports against the current Git SHA.
+`make release-readiness` validates the eleven fresh reports against the current Git SHA.
 
 **Behaviour tier (`make agent-eval`, tag `agent_eval`)** — real turns against a real
 model, deliberately **not** in CI because each case costs money. Requires

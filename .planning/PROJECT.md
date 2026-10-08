@@ -48,12 +48,12 @@ was told, makes the rest worthless.
 <!-- Milestone v1.1.0 Production Launch — Multi-Tenant. See REQUIREMENTS.md for REQ-IDs. -->
 
 - [ ] A stranger to the codebase can install, upgrade, back up and recover Aura from written instructions
-- [ ] `make release-readiness` passes on the candidate commit — all twelve reports, same SHA, under 24h
+- [ ] `make release-readiness` passes on the candidate commit — all eleven reports, same SHA, under 24h
 - [ ] Permissions gate what a user may DO, from one explicit capability model with no wildcard
 - [ ] Two identities working at the same time cannot reach each other's data, under active attempt
 - [ ] One identity's turn cannot touch another's execution — the loop is separated, not just the rows
 - [ ] No identity can cross from its sandbox to the host that serves the others
-- [ ] Isolation survives restart, image rollback and restore from backup
+- [ ] Isolation survives restart and restore from backup
 - [ ] A second identity can be onboarded from zero to a useful conversation
 
 ### Out of Scope
@@ -158,8 +158,8 @@ genuinely isolated identities — proven by the executable gate this repo alread
 asserted by a checkbox.
 
 **Target features:**
-- Release gate green: all twelve `production-readiness` reports on the candidate SHA. Eight have
-  never been produced — security, docker-coverage, load, chaos, DR, observability, rollback, bundle
+- Release gate green: all eleven `production-readiness` reports on the candidate SHA. Seven had
+  never been produced — security, docker-coverage, load, chaos, DR, observability, bundle
 - Permissions extend Aura's existing capability model (`aura.capability_grants`,
   `RequireCapability`, cockpit admin panel) rather than adding a second engine beside it — and the
   bootstrap `*` wildcard is retired first, because a new capability under it ships granted
@@ -168,7 +168,7 @@ asserted by a checkbox.
 - Execution isolation: today one process serves every identity — one loop, one process memory
 - Host boundary: sandbox, Docker socket, host filesystem, stdio MCP servers launching binaries
 - Isolation proven under two concurrent users, active boundary-crossing attempts, and restart /
-  rollback / restore
+  restore
 - Launch documentation written for a self-hoster: install, upgrade, backup and restore, troubleshooting
 
 **Governing constraint:** every phase closes on a real end-to-end run against the live stack,

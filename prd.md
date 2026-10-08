@@ -2876,9 +2876,9 @@ Measured 2026-10-08 on the CI of the pull request that shipped the default: the 
 load and chaos harness started `aura serve` without a profile, and it exited 71 on the same
 sample object-store keys. On the next push the Agent Memory job, whose `compose up
 arcadedb-mcp` starts the aura container, restart-looped on the same keys for ten minutes.
-That harness and that job now state `dev`, and so does the Production Readiness workflow,
-whose `memory-up` and rollback rehearsal start the aura container on sample keys too. The rehearsal was not run under the new default; its pin follows from the
-identical credentials and the identical boot check, not from a measured failure.
+That harness and that job now state `dev`. The Production Readiness workflow stated it too
+while its rollback rehearsal started the aura container; that stack went with the rehearsal on
+2026-10-08 (§17). Its remaining strict-profile tests passed in an empty environment that day.
 
 Measured 2026-09-14: the running appliance had neither key in `.env` and
 therefore ran as `dev`; the installer's existing-file path never filled the pair,
@@ -2954,26 +2954,20 @@ and encryption/derivation secrets as well as databases. Volumes on one host do n
 host loss; off-host retention is an operational requirement. No atomic cross-service
 snapshot is promised.
 
-Rollback starts with the recorded application/configuration image. Database rollback
-requires compatibility evidence; otherwise restore separately and switch after validation.
-Never overwrite the last known-good backup during recovery.
+Going back to a previous release is restoring the pre-upgrade backup into a new database
+and starting the previous image on it. Never overwrite the last known-good backup during
+recovery.
 
-Measured 2026-10-08 on the first Production Readiness run with a previous image (run
-37754232583, candidate `b2dd1fb08`, previous v1.0.2-rc1): the candidate came up healthy,
-then the previous image refused the database the candidate had migrated, with
-`migration tracker incompatible: version=138 dirty=false want=112`. Every binary
-requires the tracker at exactly its own head (`CheckMigrationHead`), so swapping images
-on one database can pass only when both share a migration head. v1.0.2-rc1 itself had
-passed in bootstrap mode, with no previous image, so the swap had never been exercised.
-The rehearsal therefore starts from the previous release: a new database migrated and
-served by the previous image, a `pg_dump` of it, the candidate's migrations and boot on
-that database, then the rollback. When the heads match, the previous image returns on the
-same database; otherwise it starts on the dump restored into another new database. The
-candidate then returns on the stack's own database. A restore-mode report records both
-heads and passes the gate without migration compatibility. This rehearses the Postgres
-plane only: ArcadeDB, Garage and the sidecars stay as the candidate left them, and their
-restore is the disaster-recovery report's. The previous image runs under the candidate's
-compose file, not its own release's.
+Measured 2026-10-08: every binary requires the migration tracker at exactly its own head
+(`CheckMigrationHead`), so a previous image refuses a database a newer candidate migrated.
+On the first Production Readiness run with a previous image (run 37754232583, candidate
+`b2dd1fb08`, previous v1.0.2-rc1), v1.0.2-rc1 stopped with `migration tracker incompatible:
+version=138 dirty=false want=112`. A rehearsal that restored the dump instead (run
+37759221702) failed on v1.0.2-rc1's memory mount under the candidate's compose file; the
+cause was not isolated. The operator then removed the image-rollback rehearsal and its
+`rollback-report.json` from release readiness, which now requires eleven reports. What this
+leaves unproven: no release gate starts a previous image on restored data. The Postgres
+restore itself is the disaster-recovery report's restore drill.
 
 ## 18. Engineering and acceptance
 
@@ -3074,9 +3068,9 @@ not a preferred filename. Declined corpora cannot be downloaded by CI/builds; th
 corpus policy and replacement oracles are in ADR 0045. Restoring an unused statistical
 gate requires a consumer, permissible corpus and measured operating point.
 
-A tagged release requires twelve current reports at the exact full candidate SHA:
+A tagged release requires eleven current reports at the exact full candidate SHA:
 security, unit/database coverage, Docker coverage, agent memory, mutation, capability,
-load, chaos, disaster recovery, observability, rollback and audit closure. Evidence
+load, chaos, disaster recovery, observability and audit closure. Evidence
 older than 24 hours, missing reports and failed required gates block release. The
 readiness report hashes its inputs; checkboxes and historical scores do not replace it.
 
