@@ -186,6 +186,8 @@ func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
 	for _, want := range []string{
 		"OPENROUTER_API_KEY: readiness-degraded-no-network",
 		`AURA_WEB_TRUST_PROXY: "true"`,
+		// Its credentials are samples, which the strict default profile refuses at boot.
+		"AURA_PROFILE: dev",
 		"Candidate to previous to candidate rollback rehearsal",
 	} {
 		if !strings.Contains(workflow, want) {

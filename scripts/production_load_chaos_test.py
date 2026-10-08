@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import pathlib
 import re
 import unittest
@@ -15,7 +16,7 @@ from production_load_chaos import (
     validate_chaos_report,
     validate_load_report,
 )
-from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
+from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS, daemon_env
 
 
 def producer_shaped_chaos_report() -> dict:
@@ -208,6 +209,20 @@ class ToxiproxyConfigurationTest(unittest.TestCase):
         proxy = Toxiproxy(19091, "unit")
         ports = [proxy.control_port, *proxy.host_ports.values()]
         self.assertEqual(len(ports), len(set(ports)))
+
+
+class DaemonEnvironmentTest(unittest.TestCase):
+    def profile(self, environ: dict[str, str]) -> str:
+        with mock.patch.dict(os.environ, {"POSTGRES_PASSWORD": "pw", **environ}, clear=True):
+            env = daemon_env(pathlib.Path("/tmp/unit"), "aura", Toxiproxy(19091, "unit"), 12000)
+        return env["AURA_PROFILE"]
+
+    def test_daemon_runs_dev_unless_the_caller_names_a_profile(self):
+        self.assertEqual(self.profile({}), "dev")
+        self.assertEqual(self.profile({"AURA_PROFILE": ""}), "dev")
+        self.assertEqual(
+            self.profile({"AURA_PROFILE": "single_user_hardened"}), "single_user_hardened"
+        )
 
 
 class SandboxImageMaterializationTest(unittest.TestCase):
