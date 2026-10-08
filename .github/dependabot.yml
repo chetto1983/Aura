@@ -61,3 +61,16 @@ updates:
         update-types:
           - minor
           - patch
+
+  # Third-party images in compose.yaml. Only aura-stt's GHCR copy for now: the mirror workflow
+  # publishes a dated tag for each new hwdsl2/whisper-server:latest, and this proposes it. The
+  # other images are pinned by hand (llama.cpp must move in four files at once).
+  - package-ecosystem: docker-compose
+    directory: "/"
+    schedule:
+      interval: daily
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: "build(deps)"
+    allow:
+      - dependency-name: "chetto1983/aura-whisper-server"

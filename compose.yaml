@@ -1149,13 +1149,12 @@ services:
     # tops out lower, so the GPU image fails to start. To run STT on GPU after a
     # driver update: AURA_STT_IMAGE=hwdsl2/whisper-server:cuda STT_DEVICE=cuda
     # STT_COMPUTE_TYPE=int8_float16 + add the nvidia deploy block (see aura-ocr-vl).
-    # hwdsl2 publishes no version tags, so the pin is the digest :latest carried on 2026-10-08.
-    # The repo has a single tag, so a republish leaves the previous manifest untagged and Hub
-    # collects it: the 2026-09-14, 2026-09-21 and 2026-10-05 digests all went on to 404
-    # ("manifest unknown"); the last one was republished at 10:56 UTC on 2026-10-08 and gone
-    # before 18:56. Re-read the digest from
-    # hub.docker.com/v2/repositories/hwdsl2/whisper-server/tags when this pin stops resolving.
-    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest@sha256:c6c6311af66c2fda59645745628edbda1737c619dcd30ce7ea2c00e5e5a1d9d6}
+    # The image is our GHCR copy of hwdsl2/whisper-server:latest, never Docker Hub. hwdsl2
+    # publishes only :latest and Hub collects each superseded manifest within hours (on
+    # 2026-10-08 a republish at 10:56 UTC was gone before 18:56), so a Hub digest pin broke CI
+    # and every fresh install four times. .github/workflows/mirror-whisper-server.yml copies
+    # each new :latest to a dated tag with the same digest, and Dependabot proposes it here.
+    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.10.08.1056@sha256:c6c6311af66c2fda59645745628edbda1737c619dcd30ce7ea2c00e5e5a1d9d6}
     container_name: aura-stt
     restart: unless-stopped
     environment:
