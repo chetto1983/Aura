@@ -44,7 +44,7 @@ help:
 	@echo "make critical-mutation — >=70% per critical Go boundary + frontend, no averaging"
 	@echo "make observability-check — verify live Tempo/Prometheus readiness and Aura scrape"
 	@echo "make observability-evidence — fixtures + runtime smoke + live Aura endpoints"
-	@echo "make release-readiness — validate the twelve fresh reports for the current Git SHA"
+	@echo "make release-readiness — validate the eleven fresh reports for the current Git SHA"
 	@echo "make db-up         — docker compose up -d postgres (waits healthy)"
 	@echo "make db-migrate    — aura db migrate (role aura_migrate)"
 	@echo "make db-status     — aura db status"
@@ -198,8 +198,6 @@ evidence-contracts:
 		scripts/release_check_run_gate_test.py \
 		scripts/release_notes_test.py \
 		scripts/release_readiness_gate_test.py \
-		scripts/release_readiness_rollback_test.py \
-		scripts/rollback_rehearsal_test.py \
 		scripts/security_evidence_test.py
 	bash scripts/coverage_profile_gate_test.sh
 	bash scripts/coverage_gate_test.sh

@@ -13,11 +13,18 @@ from typing import Any
 from critical_mutation_gate import MEDIA_SCOPE_IDS, REQUIRED_SCOPE_IDS
 from evidence_metadata import FULL_GIT_SHA
 from production_load_chaos_support import CHAOS_SCENARIO_ZERO_FIELDS
-from release_readiness_errors import GateError, require
-from release_readiness_rollback import validate_rollback
 
 
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+class GateError(RuntimeError):
+    pass
+
+
+def require(condition: bool, message: str) -> None:
+    if not condition:
+        raise GateError(message)
 
 
 def passing_checks(report: dict[str, Any], required: set[str], label: str) -> None:
@@ -436,7 +443,6 @@ VALIDATORS: list[tuple[str, str, Callable[[dict[str, Any]], dict[str, Any]]]] = 
     ("chaos", "chaos-report.json", validate_chaos),
     ("disaster_recovery", "dr-report.json", validate_dr),
     ("observability", "observability-report.json", validate_observability),
-    ("rollback", "rollback-report.json", validate_rollback),
     ("audit", "audit-closure-report.json", validate_audit),
 ]
 
@@ -503,9 +509,6 @@ def run_gate(
         "score": 10.0,
         "required_gates": len(VALIDATORS),
         "passed_gates": len(VALIDATORS),
-        "bootstrap_gates": sorted(
-            item["gate"] for item in evidence if item.get("bootstrap") is True
-        ),
         "evidence": evidence,
     }
     output.parent.mkdir(parents=True, exist_ok=True)

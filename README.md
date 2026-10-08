@@ -143,7 +143,7 @@ and WhatsApp pairing: [docs/INSTALL.md](docs/INSTALL.md).
 | [docs/COMPARISON.md](docs/COMPARISON.md) | How Aura compares with Open WebUI and LibreChat |
 | [docs/CLI.md](docs/CLI.md) | CLI reference — every `aura` subcommand |
 | [docs/BACKUP-RESTORE.md](docs/BACKUP-RESTORE.md) | Backup schedules, restore drill, manual restore, recovery scope |
-| [docs/release-readiness.md](docs/release-readiness.md) | How a release is cut — the twelve-report exact-SHA gate, rollback rule, operational checks |
+| [docs/release-readiness.md](docs/release-readiness.md) | How a release is cut — the eleven-report exact-SHA gate, operational checks |
 | [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
 
 ## Development

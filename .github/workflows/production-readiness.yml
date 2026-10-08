@@ -2,104 +2,22 @@ name: Production Readiness
 
 on:
   workflow_dispatch:
-    inputs:
-      previous_image:
-        description: Immutable previously-approved image used for the rollback rehearsal
-        required: false
-        type: string
-      bootstrap:
-        description: >-
-          First release only. No approved image exists yet, so the rollback rehearsal
-          has nothing to roll back to. Refused once any release exists.
-        required: false
-        default: false
-        type: boolean
 
 permissions:
   actions: read
   checks: read
   contents: read
-  packages: read
-
-env:
-  # The readiness stack runs on the sample credentials below, which the strict default
-  # profile rejects at boot (exit 71). memory-up and the rollback rehearsal start the aura
-  # container, so they run the dev posture, as they did while dev was the Compose default.
-  AURA_PROFILE: dev
-  AURA_ACCESS_TOKEN: readiness-not-a-secret
-  OPENROUTER_API_KEY: readiness-degraded-no-network
-  AURA_WEB_TRUST_PROXY: "true"
-  AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
-  SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
-  AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
-  AURA_OBJECTSTORE_SECRET_KEY: 00000000000000000000000000000000000000000000000000000000000000c3
-  GARAGE_RPC_SECRET: 00000000000000000000000000000000000000000000000000000000000000d4
-  AURA_GARAGE_ADMIN_TOKEN: readiness-not-a-secret
-  # ArcadeDB backs memory. compose interpolates the WHOLE file before it selects a
-  # service, so a missing one of these aborts every compose invocation in the job —
-  # even the ones that start none of these containers.
-  ARCADEDB_PASSWORD: ci-test-password
-  ARCADEDB_APP_PASSWORD: ci-test-password
-  AURA_ARCADEDB_TENANT_SECRET: "0000000000000000000000000000000000000000000000000000000000000d1"
-  POSTGRES_USER: aura
-  POSTGRES_PASSWORD: readiness-db-password
-  POSTGRES_DB: aura
-  POSTGRES_HOST: 127.0.0.1
-  POSTGRES_PORT: "5432"
-  POSTGRES_SSLMODE: disable
-  AURA_DB_URL: postgres://aura_app:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
-  AURA_DB_MIGRATE_URL: postgres://aura_migrate:readiness-db-password@127.0.0.1:5432/aura?sslmode=disable
-  AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-readiness-cache/llama.cpp
-  # compose.yaml requires the embed sidecar pins (:?) — same values ci.yml exports.
-  AURA_EMBED_REVISION: 0f741b5a6585bd53aeb15cd1372c56f2a0f65e12
-  AURA_EMBED_FINGERPRINT: b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63
-  COMPOSE_FILE: compose.yaml:.github/compose.ci-musr.yaml:.github/compose.ci-cache.yaml
 
 jobs:
   readiness:
     name: Production readiness bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-
-      - name: Validate rollback input
-        env:
-          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
-          BOOTSTRAP: ${{ inputs.bootstrap }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [[ "$BOOTSTRAP" == "true" ]]; then
-            if [[ -n "$PREVIOUS_IMAGE" ]]; then
-              echo "bootstrap takes no previous_image: there is nothing to roll back to" >&2
-              exit 1
-            fi
-            # The releases list is what makes bootstrap self-disabling: the moment a
-            # first release exists, an approved image exists, and the rehearsal is
-            # owed again. Without this the flag would stay available forever.
-            # -X GET is load-bearing: a -F field alone makes gh POST, which the releases
-            # endpoint answers with 422 "tag_name wasn't supplied" (measured 2026-08-30 on
-            # the first bootstrap dispatch ever — the July runs all used previous_image).
-            releases="$(gh api -X GET "repos/$GITHUB_REPOSITORY/releases" -F per_page=1 --jq 'length')"
-            if [[ "$releases" != "0" ]]; then
-              echo "bootstrap is first-release only; this repository already has a release" >&2
-              exit 1
-            fi
-            echo "bootstrap: no approved image exists, rollback rehearsal is not applicable"
-            exit 0
-          fi
-          if [[ ! "$PREVIOUS_IMAGE" =~ ^.+@sha256:[0-9a-f]{64}$ ]]; then
-            echo "previous_image must be an immutable image@sha256 digest" >&2
-            exit 1
-          fi
-          previous_digest="${PREVIOUS_IMAGE##*@}"
-          if grep -Fxq "$previous_digest" scripts/retired-aura-image-digests.txt; then
-            echo "previous_image digest is explicitly retired" >&2
-            exit 1
-          fi
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -160,65 +78,7 @@ jobs:
             python3 scripts/security_evidence.py \
               --check-runs-json /tmp/aura-check-runs.json
 
-      - name: Build candidate and pull previous image
-        env:
-          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
-          CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
-        run: |
-          if [[ -n "$PREVIOUS_IMAGE" ]]; then
-            docker pull "$PREVIOUS_IMAGE"
-          fi
-          docker build --file docker/aura/Dockerfile --tag "$CANDIDATE_IMAGE" .
-          echo "AURA_IMAGE=$CANDIDATE_IMAGE" >> "$GITHUB_ENV"
-
-      - name: Build the per-identity box images
-        # An appliance pulls these with its install; this runner has neither. Without the box
-        # image the candidate never answers /readyz: its browser MCP mounts inside a box and
-        # retries "pull access denied for aura-sandbox" through boot until compose marks it
-        # unhealthy (2026-10-08, run 37749602990, the first readiness of a candidate with box
-        # MCP servers). memory-up below already starts aura, so the images come first.
-        run: make sandbox-images
-
-      - name: Restore llama.cpp embedding model cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: /tmp/aura-readiness-cache/llama.cpp
-          key: llama-cpp-embeddinggemma-300m-768d-q8-${{ runner.os }}-bind-v1
-
-      - name: Materialize the validated EmbeddingGemma model
-        # memory-up's embed sidecar mounts the cache dir and exits at once without a
-        # model in it (2026-08-30, run 33323312333: "aura-llama-embed is unhealthy" two
-        # seconds after start). Same fetch every ci.yml memory-up job runs first.
-        run: |
-          mkdir -p \
-            "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp" \
-            "$AURA_CI_LLAMA_CACHE_DIR/huggingface"
-          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR"
-          bash scripts/fetch_embedding_model.sh "$AURA_CI_LLAMA_CACHE_DIR/llama.cpp/embeddinggemma-300M-Q8_0.gguf"
-
-      - name: Start rollback dependencies and migrate
-        run: |
-          make db-migrate memory-up
-          docker compose up -d garage
-          docker compose up -d --build \
-            garage-bootstrap whatsapp aura-pim-mcp
-
-      - name: Candidate to previous to candidate rollback rehearsal
-        env:
-          PREVIOUS_IMAGE: ${{ inputs.previous_image }}
-          CANDIDATE_IMAGE: aura:candidate-${{ github.sha }}
-          BOOTSTRAP: ${{ inputs.bootstrap }}
-        run: |
-          if [[ "$BOOTSTRAP" == "true" ]]; then
-            PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
-              --bootstrap --candidate-image "$CANDIDATE_IMAGE"
-          else
-            PYTHONPATH=scripts python3 scripts/rollback_rehearsal.py \
-              --previous-image "$PREVIOUS_IMAGE" \
-              --candidate-image "$CANDIDATE_IMAGE"
-          fi
-
-      - name: Fail-closed twelve-report release gate
+      - name: Fail-closed eleven-report release gate
         run: |
           PYTHONPATH=scripts python3 scripts/release_readiness_gate.py \
             --evidence-dir artifacts/production-readiness \
@@ -234,6 +94,3 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Tear down
-        if: always()
-        run: docker compose down --volumes

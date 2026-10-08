@@ -12,15 +12,14 @@ make evidence-contracts
 make release-readiness
 ```
 
-`make release-readiness` accepts only the twelve canonical JSON reports in
+`make release-readiness` accepts only the eleven canonical JSON reports in
 `artifacts/production-readiness/`, all bound to the exact full `git rev-parse HEAD`, all newer
 than 24 hours. It emits `release-readiness-report.json` with the SHA-256 of every input so the
 approved bundle cannot be silently replaced.
 
 For a publishable candidate, run the GitHub Actions `Production Readiness` workflow on the
-candidate branch and supply the immutable previously-approved image. Its job downloads only
-successful CI artifacts for that exact SHA, verifies exact-SHA CodeQL, performs the live image
-rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundle. The tag-triggered
+candidate branch. Its job downloads only successful CI artifacts for that exact SHA, verifies
+exact-SHA CodeQL, runs the eleven-report gate, and uploads the immutable bundle. The tag-triggered
 `Release` workflow refuses to publish unless that exact commit has a successful
 `Production readiness bundle` check.
 
@@ -47,7 +46,6 @@ rollback rehearsal, runs the twelve-report gate, and uploads the immutable bundl
 | chaos | `chaos-report.json` | DB, MCP, Garage, and process-kill scenarios executed, degraded truthfully, recovered |
 | disaster recovery | `dr-report.json` | Postgres, sidecars, Garage, and tenant-shaped ArcadeDB memory restored and checksum-verified |
 | observability | `observability-report.json` | negative fixtures, runtime smoke, live health/readiness, dashboards, alerts, runbooks pass |
-| rollback | `rollback-report.json` | distinct image digests; the previous image serves its own new database; the candidate upgrades that database healthy; rollback healthy, by image swap when both migration heads match (migrations compatible) or by restoring the pre-upgrade dump into a new database when they differ (both heads recorded); candidate restored healthy |
 | audit | `audit-closure-report.json` | current-only register is empty; `release_ready:true`; zero `open` or `external_blocked` rows |
 
 ## Operational checks
@@ -63,20 +61,15 @@ by this gate, and local backup volumes still require an off-host recovery policy
 - [ ] Backup artifacts are outside the data volumes they protect.
 - [ ] Restore targets are disposable and distinct from live databases/volumes/buckets.
 - [ ] `/healthz`, `/readyz`, dashboards, alerts, and runbook links checked.
-- [ ] Rollback command, image digest, database compatibility, and responsible operator recorded.
+- [ ] Pre-upgrade `pg_dump` taken and stored outside the data volumes.
 - [ ] External connector blockers and accepted risks disclosed.
 - [ ] Current audit register is empty; historical scores are not reused as release evidence.
 
-## Rollback rule
+## Going back to a previous release
 
-Stop a release when any required evidence is absent or non-terminal. Roll back application and
-configuration first to the recorded digest. Database rollback is allowed only when the migration
-compatibility test explicitly permits it; otherwise restore into a new target and switch after
-verification. Never overwrite the last known-good backup during rollback.
-
-Every Aura binary starts only on a database at exactly its own migration head, so a release that
-adds migrations cannot be rolled back by changing the image alone: the previous image refuses the
-upgraded database (measured 2026-10-08, v1.0.2-rc1 against v1.1.0's schema 138). Take a `pg_dump`
-before upgrading; rolling back is restoring it into a new database and starting the previous image
-there with `POSTGRES_DB` pointing at it. The rehearsal exercises exactly that path for Postgres;
-ArcadeDB, Garage and sidecar state are covered by the disaster-recovery report, not by it.
+Stop a release when any required evidence is absent or non-terminal. Every Aura binary starts
+only on a database at exactly its own migration head, so a release that adds migrations cannot be
+undone by changing the image alone: the previous image refuses the upgraded database (measured
+2026-10-08, v1.0.2-rc1 against v1.1.0's schema 138). Going back is restoring the pre-upgrade
+`pg_dump` into a new database and starting the previous image there, following
+[Backup and restore](BACKUP-RESTORE.md). Never overwrite the last known-good backup while doing it.

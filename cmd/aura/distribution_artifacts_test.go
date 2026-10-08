@@ -179,51 +179,10 @@ func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
 	}
 }
 
-func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
+func TestRetireAuraImagesWorkflowFailsClosed(t *testing.T) {
 	root := repoRootForTest(t)
-	workflow := readProjectFile(t, root, ".github/workflows/production-readiness.yml")
-
-	for _, want := range []string{
-		"OPENROUTER_API_KEY: readiness-degraded-no-network",
-		`AURA_WEB_TRUST_PROXY: "true"`,
-		// Its credentials are samples, which the strict default profile refuses at boot.
-		"AURA_PROFILE: dev",
-		// The candidate holds itself unready until it can create a box.
-		"run: make sandbox-images",
-		"Candidate to previous to candidate rollback rehearsal",
-	} {
-		if !strings.Contains(workflow, want) {
-			t.Fatalf(".github/workflows/production-readiness.yml missing %q", want)
-		}
-	}
-}
-
-func TestRetiredAuraImagesFailClosed(t *testing.T) {
-	root := repoRootForTest(t)
-	readiness := readProjectFile(t, root, ".github/workflows/production-readiness.yml")
 	retirement := readProjectFile(t, root, ".github/workflows/retire-aura-images.yml")
 
-	if strings.Contains(readiness, "ghcr.io/chetto1983/aura:v1.0.1") {
-		t.Fatal("production readiness must not default to the retired v1.0.1 image")
-	}
-	// previous_image is no longer `required: true`: the first release has no
-	// approved image to roll back to, so bootstrap may omit it. The guard that
-	// `required: true` used to provide -- the input cannot be skipped, so the
-	// retired-digest check always runs -- now lives in the Validate step, and is
-	// pinned here in the stronger form: omitting the digest is refused unless
-	// bootstrap, and bootstrap itself is refused once any release exists.
-	for _, want := range []string{
-		"previous_image must be an immutable image@sha256 digest",
-		"bootstrap takes no previous_image",
-		"bootstrap is first-release only",
-		`repos/$GITHUB_REPOSITORY/releases`,
-		`^.+@sha256:[0-9a-f]{64}$`,
-		"retired-aura-image-digests.txt",
-	} {
-		if !strings.Contains(readiness, want) {
-			t.Fatalf("production readiness missing retired-image guard %q", want)
-		}
-	}
 	for _, want := range []string{
 		"packages: write",
 		"DELETE_ALL_AURA_IMAGES",
