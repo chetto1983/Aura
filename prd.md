@@ -2958,6 +2958,23 @@ Rollback starts with the recorded application/configuration image. Database roll
 requires compatibility evidence; otherwise restore separately and switch after validation.
 Never overwrite the last known-good backup during recovery.
 
+Measured 2026-10-08 on the first Production Readiness run with a previous image (run
+37754232583, candidate `b2dd1fb08`, previous v1.0.2-rc1): the candidate came up healthy,
+then the previous image refused the database the candidate had migrated, with
+`migration tracker incompatible: version=138 dirty=false want=112`. Every binary
+requires the tracker at exactly its own head (`CheckMigrationHead`), so swapping images
+on one database can pass only when both share a migration head. v1.0.2-rc1 itself had
+passed in bootstrap mode, with no previous image, so the swap had never been exercised.
+The rehearsal therefore starts from the previous release: a new database migrated and
+served by the previous image, a `pg_dump` of it, the candidate's migrations and boot on
+that database, then the rollback. When the heads match, the previous image returns on the
+same database; otherwise it starts on the dump restored into another new database. The
+candidate then returns on the stack's own database. A restore-mode report records both
+heads and passes the gate without migration compatibility. This rehearses the Postgres
+plane only: ArcadeDB, Garage and the sidecars stay as the candidate left them, and their
+restore is the disaster-recovery report's. The previous image runs under the candidate's
+compose file, not its own release's.
+
 ## 18. Engineering and acceptance
 
 Measure dependency behavior on a disposable live stack before changing architecture.
