@@ -2874,9 +2874,10 @@ sandbox tiers, or a live appliance under the new default.
 
 Measured 2026-10-08 on the CI of the pull request that shipped the default: the MUSR job's
 load and chaos harness started `aura serve` without a profile, and it exited 71 on the same
-sample object-store keys. That harness now states `dev`, and so does the Production
-Readiness workflow, whose `memory-up` and rollback rehearsal start the aura container on
-sample keys too. The rehearsal was not run under the new default; its pin follows from the
+sample object-store keys. On the next push the Agent Memory job, whose `compose up
+arcadedb-mcp` starts the aura container, restart-looped on the same keys for ten minutes.
+That harness and that job now state `dev`, and so does the Production Readiness workflow,
+whose `memory-up` and rollback rehearsal start the aura container on sample keys too. The rehearsal was not run under the new default; its pin follows from the
 identical credentials and the identical boot check, not from a measured failure.
 
 Measured 2026-09-14: the running appliance had neither key in `.env` and
