@@ -188,6 +188,8 @@ func TestProductionReadinessProvidesDaemonBootContract(t *testing.T) {
 		`AURA_WEB_TRUST_PROXY: "true"`,
 		// Its credentials are samples, which the strict default profile refuses at boot.
 		"AURA_PROFILE: dev",
+		// The candidate holds itself unready until it can create a box.
+		"run: make sandbox-images",
 		"Candidate to previous to candidate rollback rehearsal",
 	} {
 		if !strings.Contains(workflow, want) {

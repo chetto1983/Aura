@@ -171,6 +171,14 @@ jobs:
           docker build --file docker/aura/Dockerfile --tag "$CANDIDATE_IMAGE" .
           echo "AURA_IMAGE=$CANDIDATE_IMAGE" >> "$GITHUB_ENV"
 
+      - name: Build the per-identity box images
+        # An appliance pulls these with its install; this runner has neither. Without the box
+        # image the candidate never answers /readyz: its browser MCP mounts inside a box and
+        # retries "pull access denied for aura-sandbox" through boot until compose marks it
+        # unhealthy (2026-10-08, run 37749602990, the first readiness of a candidate with box
+        # MCP servers). memory-up below already starts aura, so the images come first.
+        run: make sandbox-images
+
       - name: Restore llama.cpp embedding model cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
