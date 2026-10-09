@@ -147,6 +147,8 @@ sync_payload ghcr.io/example/aura:edge >"$fixture/sync1.out"
 [[ "$UPDATER_CHANGED" == 1 ]] || fail "a new updater did not report UPDATER_CHANGED"
 cmp -s "$image_payload/payload_manifest.txt" "$INSTALL_DIR/payload_manifest.txt" || fail "the payload manifest was not installed beside it"
 [[ ! -e "$INSTALL_DIR/$APPLIED_MANIFEST" ]] || fail "a changed payload left the stack recorded as up to date"
+[[ "$(LC_ALL=C sort "$INSTALL_DIR/$PENDING_PAYLOAD" | tr '\n' ' ')" == "compose.yaml deploy/aura-image-update.sh observability/tempo/tempo.yml " ]] ||
+  fail "the changed paths were not recorded for the apply: $(cat "$INSTALL_DIR/$PENDING_PAYLOAD")"
 [[ "$(content "$INSTALL_DIR/compose.yaml")" == "compose v2" ]] || fail "compose.yaml was not replaced"
 [[ "$(content "$INSTALL_DIR/observability/tempo/tempo.yml")" == "tempo v1" ]] || fail "a payload file new to this host was not created"
 [[ "$(content "$INSTALL_DIR/deploy/aura-image-update.sh")" == "updater v2" ]] || fail "the /opt/aura updater copy was not replaced"
@@ -174,6 +176,7 @@ sync_payload ghcr.io/example/aura:edge >"$fixture/sync2.out"
 ! grep -q 'systemctl' "$calls" || fail "an identical payload reloaded systemd"
 [[ "$(backups)" == 1 ]] || fail "an identical payload wrote a backup"
 cmp -s "$INSTALL_DIR/payload_manifest.txt" "$INSTALL_DIR/$APPLIED_MANIFEST" || fail "an identical payload invalidated the applied record"
+[[ "$(wc -l <"$INSTALL_DIR/$PENDING_PAYLOAD")" == 3 ]] || fail "an identical payload recorded changed paths: $(cat "$INSTALL_DIR/$PENDING_PAYLOAD")"
 echo "ok: an identical payload changes nothing"
 
 write "$image_payload/compose.yaml" "compose v3"
@@ -309,3 +312,50 @@ removed="$(sed -n 's/^docker rmi //p' "$calls" | LC_ALL=C sort | tr '\n' ' ')"
 grep -q 'server-vulkan superseded' "$fixture/images.out" || fail "a removed image was not reported"
 ! grep -q 'server-cuda-b10884 superseded' "$fixture/images.out" || fail "an image docker refused was reported as removed"
 echo "ok: tagged images no pin names any more are removed, the rest are kept"
+
+# A service reads a bind-mounted payload file only when it starts, and `compose up` does not
+# recreate it for a changed file: the services mounting a changed path are restarted, a
+# directory mount covers the files under it, and nothing else is touched.
+readers="$fixture/readers"
+mkdir -p "$readers"
+docker() {
+  echo "docker $*" >>"$calls"
+  case "$*" in
+    'compose ps -q') printf '%s\n' garage-id prometheus-id aura-id ;;
+    'inspect --format '*)
+      echo "garage $INSTALL_DIR/docker/garage/garage.toml"
+      echo "prometheus $INSTALL_DIR/observability/prometheus/prometheus.yml $INSTALL_DIR/observability/prometheus/rules"
+      echo "aura $INSTALL_DIR/update"
+      ;;
+    'compose restart --no-deps '*) ;;
+    *) fail "unexpected docker $*" ;;
+  esac
+}
+wait_healthy() { echo "$1" >>"$readers/healthy"; }
+restarted() { sed -n 's/^docker compose restart --no-deps //p' "$calls"; }
+readers_case() { # <pending path>... | none, for no record at all
+  : >"$calls"
+  rm -f "$readers/healthy" "$PENDING_PAYLOAD"
+  [[ "$1" == none ]] || printf '%s\n' "$@" >"$PENDING_PAYLOAD"
+  restart_payload_readers >"$readers/out"
+}
+(
+  cd "$readers"
+  INSTALL_DIR="$readers"
+  printf '%s  %s\n' a compose.yaml b docker/garage/garage.toml c observability/prometheus/prometheus.yml >payload_manifest.txt
+
+  readers_case docker/garage/garage.toml compose.yaml docker/garage/garage.toml
+  [[ "$(restarted)" == garage ]] || fail "a changed garage.toml restarted: $(restarted)"
+  [[ "$(cat "$readers/healthy")" == garage ]] || fail "the restarted service was not awaited"
+  grep -q 'restarted garage, which mount' "$readers/out" || fail "the restart was not reported"
+
+  readers_case observability/prometheus/rules/aura-alerts.yml
+  [[ "$(restarted)" == prometheus ]] || fail "a file under a mounted directory restarted: $(restarted)"
+
+  readers_case observability/prometheus/rules-old/aura-alerts.yml compose.yaml deploy/aura.service
+  ! grep -q 'restart' "$calls" || fail "paths no service mounts restarted: $(restarted)"
+
+  readers_case none
+  [[ "$(restarted)" == "garage prometheus" ]] || fail "without a record, every payload reader was not restarted: $(restarted)"
+)
+echo "ok: services mounting a changed payload file are restarted, and only those"

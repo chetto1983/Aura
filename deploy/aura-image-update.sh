@@ -9,7 +9,8 @@
 #   2. replaces aura — it runs its own migrations before its healthcheck reports healthy, so
 #      health IS the bootstrap gate — and, when the payload changed, re-applies the whole stack
 #      exactly as aura.service does at boot, which is how a changed pin lands on Postgres,
-#      ArcadeDB or a model sidecar;
+#      ArcadeDB or a model sidecar, then restarts every service that mounts a changed payload
+#      file, which is how a changed garage.toml or Caddyfile reaches its service;
 #   3. refreshes the repo-built sidecars on their moving tags and the per-user sandbox boxes.
 # Third-party images never ride a moving tag here: they change when compose.yaml's pin does.
 #
@@ -36,6 +37,9 @@ set -Eeuo pipefail
 PAYLOAD_IMAGE_DIR=/usr/share/aura/payload
 # The manifest of the payload the running stack was last brought up with, under INSTALL_DIR.
 APPLIED_MANIFEST=payload_manifest.applied
+# The payload paths installed since then, one per line, under INSTALL_DIR: the services that
+# mount them are restarted once the stack is re-applied (restart_payload_readers).
+PENDING_PAYLOAD=payload_changes.pending
 # Keys an earlier installer wrote into .env that no compose file reads any more. The image
 # pins, the embedding model and the in-stack tracing endpoint moved into compose.yaml and its
 # overlays on 2026-09-14, where .env cannot outrank them and freeze a host on an old value.
@@ -106,7 +110,8 @@ install_payload_file() {
 # Changing a file also drops APPLIED_MANIFEST, the record of the payload the running stack was
 # last brought up with; main re-applies the stack until that record matches again. Deciding
 # on that state rather than on "this tick changed something" is what keeps a tick that dies
-# between installing and applying from leaving the stack behind forever.
+# between installing and applying from leaving the stack behind forever. For the same reason
+# the changed paths are appended to PENDING_PAYLOAD, which only a finished apply clears.
 sync_payload() {
   local image="$1" work container rel sum stamp backup unit
   local -a changed=()
@@ -152,6 +157,7 @@ sync_payload() {
       install_payload_file "${work}/${rel}" "${INSTALL_DIR}/${rel}"
       echo "payload: ${rel} updated."
     done
+    printf '%s\n' "${changed[@]}" >>"${INSTALL_DIR}/${PENDING_PAYLOAD}"
     rm -f "${INSTALL_DIR}/${APPLIED_MANIFEST}"
     # Only the payload this change replaced is kept: the edge channel updates many times a
     # day, and the older copies are recoverable from git anyway. A change that only added
@@ -258,6 +264,44 @@ remove_superseded_images() {
 # refresh detaches on purpose, which aura reattaches on that identity's next tool call.
 remove_orphan_volumes() {
   docker volume prune --force --filter label=com.docker.volume.anonymous
+}
+
+# A service reads a bind-mounted payload file when it starts. `compose up` recreates it only when
+# its image or compose configuration changed, and install gives the file a new inode the running
+# container never sees (measured 2026-10-09). So every running service that mounts a payload path
+# changed since the stack was last applied is restarted; one-shot services that have exited are
+# left alone. Without a record of those paths -- an updater older than PENDING_PAYLOAD installed
+# them -- every payload path counts as changed.
+restart_payload_readers() {
+  local svc sources src rel path
+  local -a paths=() ids=() services=()
+  local -A restart=()
+  if [[ -f "${PENDING_PAYLOAD}" ]]; then
+    mapfile -t paths < <(sort -u "${PENDING_PAYLOAD}")
+  else
+    mapfile -t paths < <(awk '{ print $2 }' payload_manifest.txt)
+  fi
+  mapfile -t ids < <(docker compose ps -q)
+  ((${#paths[@]} > 0 && ${#ids[@]} > 0)) || return 0
+  while read -r svc sources; do
+    for src in ${sources}; do
+      for rel in "${paths[@]}"; do
+        path="${INSTALL_DIR}/${rel}"
+        if [[ "${path}" == "${src}" || "${path}" == "${src}/"* ]]; then
+          restart["${svc}"]=1
+        fi
+      done
+    done
+  done < <(docker inspect --format \
+    '{{index .Config.Labels "com.docker.compose.service"}}{{range .Mounts}}{{if eq .Type "bind"}} {{.Source}}{{end}}{{end}}' \
+    "${ids[@]}")
+  ((${#restart[@]} > 0)) || return 0
+  mapfile -t services < <(printf '%s\n' "${!restart[@]}" | sort)
+  docker compose restart --no-deps "${services[@]}"
+  for svc in "${services[@]}"; do
+    wait_healthy "${svc}"
+  done
+  echo "payload: restarted ${services[*]}, which mount a changed payload file."
 }
 
 # MCP sidecars ride the same timer. A service whose container does not exist is
@@ -389,6 +433,8 @@ apply_update() {
   if [[ -f payload_manifest.txt ]] && ! cmp -s payload_manifest.txt "${APPLIED_MANIFEST}"; then
     docker compose up -d
     wait_healthy aura
+    restart_payload_readers
+    rm -f "${PENDING_PAYLOAD}"
     cp payload_manifest.txt "${APPLIED_MANIFEST}"
     echo "payload: the stack was brought up on the installed payload."
   fi
