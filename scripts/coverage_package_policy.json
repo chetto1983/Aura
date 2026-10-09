@@ -31,7 +31,7 @@
     "github.com/chetto1983/aura/internal/conversations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron": {"mode": "target"},
     "github.com/chetto1983/aura/internal/cron/handlers": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 283, "total_statements": 336},
+    "github.com/chetto1983/aura/internal/db": {"mode": "baseline", "covered_statements": 271, "total_statements": 324},
     "github.com/chetto1983/aura/internal/documents": {"mode": "target"},
     "github.com/chetto1983/aura/internal/documents/filecard": {"mode": "target"},
     "github.com/chetto1983/aura/internal/elicit": {"mode": "target"},
@@ -56,8 +56,8 @@
     "github.com/chetto1983/aura/internal/mediagen": {"mode": "target"},
     "github.com/chetto1983/aura/internal/messagedrafts": {"mode": "target"},
     "github.com/chetto1983/aura/internal/multimodal": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 462, "total_statements": 604},
-    "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 109, "total_statements": 139},
+    "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 436, "total_statements": 576},
+    "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 107, "total_statements": 137},
     "github.com/chetto1983/aura/internal/obs": {"mode": "target"},
     "github.com/chetto1983/aura/internal/onboarding": {"mode": "target"},
     "github.com/chetto1983/aura/internal/openrouterprovision": {"mode": "target"},
@@ -90,7 +90,7 @@
     "github.com/chetto1983/aura/internal/toolinvocations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "target"},
     "github.com/chetto1983/aura/internal/web": {"mode": "target"},
-    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 241, "total_statements": 414},
+    "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 220, "total_statements": 393},
     "github.com/chetto1983/aura/internal/webui": {"mode": "target"},
     "github.com/chetto1983/aura/internal/whatsappbridge": {"mode": "target"}
   }

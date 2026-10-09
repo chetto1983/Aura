@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -312,6 +313,34 @@ func TestRevokeConversationSharesNoShares(t *testing.T) {
 
 	if err := deps.svc.RevokeConversationShares(context.Background(), conv, owner); err != nil {
 		t.Fatalf("RevokeConversationShares(no shares): %v", err)
+	}
+}
+
+// TestShareReadFailuresAreReturnedAndChangeNothing proves that when the first read of the
+// expiry sweep or of the conversation-delete cascade fails, its error comes back wrapped with
+// what was being done, and no link is touched: the caller logs it and the next tick retries.
+func TestShareReadFailuresAreReturnedAndChangeNothing(t *testing.T) {
+	pool := migratedPool(t)
+	deps := newShareTestService(t, pool, true)
+	owner := seedIdentity(t, pool)
+	conv := seedConversation(t, pool, owner)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	expired, err := deps.svc.ExpireDue(ctx, time.Now())
+	if !errors.Is(err, context.Canceled) || expired != 0 {
+		t.Fatalf("ExpireDue(cancelled) = %d, %v; want 0 and context.Canceled", expired, err)
+	}
+	if !strings.Contains(err.Error(), "expire due shares") {
+		t.Fatalf("ExpireDue error %q does not say what failed", err)
+	}
+
+	err = deps.svc.RevokeConversationShares(ctx, conv, owner)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RevokeConversationShares(cancelled) = %v; want context.Canceled", err)
+	}
+	if !strings.Contains(err.Error(), "revoke conversation shares "+conv) {
+		t.Fatalf("RevokeConversationShares error %q does not name the conversation", err)
 	}
 }
 

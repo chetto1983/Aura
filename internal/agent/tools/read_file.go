@@ -425,8 +425,8 @@ func boxDir(p string) string {
 }
 
 func boxBase(p string) string {
-	if i := strings.LastIndexByte(p, '/'); i >= 0 {
-		return p[i+1:]
+	if _, base, ok := strings.CutLast(p, "/"); ok {
+		return base
 	}
 	return p
 }

@@ -37,7 +37,7 @@ Go package lists come from `bash scripts/go_packages.sh`, never a bare `./...`
 
 | Job | Local reproduction | Notes |
 |---|---|---|
-| Build + vet + lint + deadcode + file-size cap | `go vet`, `go build`, `golangci-lint run` (v2.13.2), `make file-size` | 600-LOC cap per file |
+| Build + vet + lint + deadcode + file-size cap | `go vet`, `go build`, `golangci-lint run` (v2.14.0), `make file-size` | 600-LOC cap per file |
 | Unit tests (race detector) | `go test -race -count=1 $(bash scripts/go_packages.sh)` | Includes the docs contract tests in `cmd/aura` |
 | Supply-chain vulnerability scan | `govulncheck $(bash scripts/go_packages.sh)` (CI pins v1.6.0) | Only findings in called code fail it |
 | sqlc generate is in sync | `sqlc generate` (v1.31.1), then `git diff internal/db/sqlc/` | Commit the generated diff, never hand-edit |

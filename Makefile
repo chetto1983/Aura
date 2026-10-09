@@ -63,7 +63,7 @@ help:
 # lefthook builds with GOEXPERIMENT=nojsonv2: its go-json-experiment dependency does not
 # compile against the encoding/json/v2 that Go 1.27 turns on.
 tools:
-	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/mibk/dupl@latest
