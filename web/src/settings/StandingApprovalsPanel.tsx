@@ -6,6 +6,7 @@ import {
   type ApprovalGrant,
 } from '../approvals/useApprovalGrants';
 import { Spinner } from '../components/Spinner';
+import { ToolPoliciesPanel } from './ToolPoliciesPanel';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 
@@ -67,6 +68,10 @@ export function StandingApprovalsPanel() {
           ))}
         </ul>
       ) : null}
+
+      <div className="border-t border-border pt-5">
+        <ToolPoliciesPanel />
+      </div>
     </section>
   );
 }
