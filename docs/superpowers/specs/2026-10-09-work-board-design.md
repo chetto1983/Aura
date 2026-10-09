@@ -43,6 +43,22 @@ Aura has the second kind of agent and no board.
   to `PUT /cards/:id/move`, `delete-card` to `DELETE /cards/:id`, `duplicate-card` to
   `POST /cards/:id/duplicate`, and loads with `GET /cards`. The documentation names no
   realtime channel, no header customisation and no id reconciliation after `POST`.
+- The widget's own samples (`svar-widgets/react-kanban`, `demos/cases`, read 2026-10-09 at the
+  operator's request, `docs.svar.dev/react/kanban/samples/#/base/willow`): columns are
+  `{id, label, cardLimit, addCard}` (the sample's `doing` has `cardLimit: 2`); a card carries
+  `label`, `description`, `column`, `cover`, `priority` 1..3, `progress` 0..1, `deadline` (a
+  `Date`), `tags`, `users`, and the counts `attachments`, `comments`, `tasks`; the `card` prop
+  is the set of booleans that says which of those sections a card shows. The editor is a
+  separate `Editor` component fed `items` (`text`, `textarea`, the stock `priorityItem` and
+  `progressItem`, `comments` with `users`, `tasks` as a checklist), placed as `modal` or
+  sidebar, with `autoSave` and a custom `bottomBar`; `getEditorItems(card)` derives the
+  default items from the `card` flags. `SaveToBackend` creates `new RestDataProvider(url)`
+  once, calls `api.setNext(provider)` in `init`, intercepts `add-card` to default a field,
+  and loads with `provider.getData()` in an effect; it shows no id reconciliation. `Locales`
+  wraps `Kanban` and `Editor` in `Locale` with the spread of `@svar-ui/core-locales` and
+  `@svar-ui/kanban-locales` (`it` exists in both). `Layout` exposes `render={{columnScroll,
+  fixedColumnWidth}}` and nothing for a phone. The other cases are `CardMenu`, `CardPopup`,
+  `Excel`, `Filter`, `GroupBy`, `Performance`, `Styling`, `Templates`, `Toolbar`, `Tooltip`.
 - The cockpit already hosts one SVAR widget the same way (`web/src/files/FilesWorkspace.tsx`):
   `Willow`/`WillowDark` picked from `useThemeMode`, `fonts={false}` so nothing preconnects
   to `cdn.svar.dev`, the self-hosted icon font in `web/src/styles/svar.css`, `Locale` words
@@ -110,7 +126,7 @@ CREATE TABLE aura.boards (
     id          uuid        PRIMARY KEY,
     identity_id uuid        NOT NULL REFERENCES aura.identities (id) ON DELETE CASCADE,
     name        text        NOT NULL,
-    columns     jsonb       NOT NULL,   -- [{id, label, limit}], order is the array order
+    columns     jsonb       NOT NULL,   -- [{id, label, cardLimit}], order is the array order
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
     UNIQUE (identity_id, name)
@@ -199,8 +215,11 @@ cookie as the file manager's mount:
 | columns | `PUT /api/board/columns` with the full array |
 
 The card on the wire is the widget's shape: `id`, `label`, `description`, `column`,
-`priority`, `tags`, `deadline` (ISO), plus `conversation_id`, `task_id`, `created_by`,
-`updated_by`, `updated_at` as custom fields the card template reads. The provider's
+`priority`, `tags`, `deadline` (ISO, parsed to a `Date` by the provider), plus
+`conversation_id`, `task_id`, `created_by`, `updated_by`, `updated_at` as custom fields the
+card template reads. The `card` flags turn on `priority`, `description`, `deadline` and
+`tags` and leave `cover`, `progress`, `users`, `attachments` and `comments` off: an
+identity's board has one user, and a cover image is an asset the board does not own. The provider's
 `update-card` is debounced 500 ms in the widget; the server treats a `PUT` of an unchanged
 row as a no-op. The id the server returns on `POST` replaces the widget's temporary id
 through `api.intercept("add-card")`: acceptance item 3 measures what the provider does on
@@ -214,8 +233,13 @@ A new mode `board` in `MODES` (`web/src/shell/modes.ts`), not admin, between `ch
 after `@/styles/svar.css`, `Locale` with `boardWords(lang)`, `RestDataProvider(boardBase)`
 set in `init` through `api.setNext`. `cardContent` renders the Aura card: label, priority
 glyph, tags, due date, and two small links, "discuss" (opens or starts the conversation)
-and the scheduler task's status chip when `task_id` is set. The column editor is the
-widget's own `update-column`. `useBoardWords.ts` holds the locale strings; keys in
+and the scheduler task's status chip when `task_id` is set. The editor is the widget's
+`Editor` with `items` of `text` (label, required), `textarea` (description), the stock
+`priorityItem`, a `tags` item and a `date` item for `deadline`, `placement="modal"`,
+`autoSave={false}` and a `bottomBar` whose delete goes through the cockpit's
+`ConfirmDialog` before `delete-card`, as the `Editor` sample does. The column editor is the
+widget's own `update-column`. `boardWords(lang)` spreads `@svar-ui/core-locales` and
+`@svar-ui/kanban-locales` for the language, as the `Locales` sample does. `useBoardWords.ts` holds the locale strings; keys in
 `resources.board.ts`, both languages. Mobile: the widget's `render` scroll mode, measured in
 acceptance item 1 before any custom layout.
 
@@ -295,6 +319,9 @@ mutation ≥70% on the critical files.
 4. A due date that passes: does the scheduler send a reminder for a card, through the
    existing `reminder` kind, or does the board only colour it? Proposed colour only in this
    release, since a card may name a task that already reminds.
+5. The editor's `comments` item gives a card its own thread for free. Is a card thread
+   between the operator and the agent wanted, or is "discuss" (a conversation) enough?
+   Proposed: "discuss" only; a second place to talk to the agent is a second history.
 
 ## Out of scope
 
