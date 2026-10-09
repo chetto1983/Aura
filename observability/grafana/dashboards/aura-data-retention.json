@@ -15,7 +15,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Retention failures over fifteen minutes. Alert: failures > 0 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "fieldConfig": {"defaults": {"links": [{"title": "Retention runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-data-retention.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0}, "id": 3,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "aura:retention_failure:increase15m", "legendFormat": "failures", "range": true, "refId": "A"}], "title": "Retention failures", "type": "stat"

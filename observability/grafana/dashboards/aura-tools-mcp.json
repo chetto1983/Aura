@@ -43,7 +43,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Idempotency conflicts over fifteen minutes. Alert: conflicts > 0 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 6, "x": 6, "y": 8}, "id": 6,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "aura:idempotency_conflict:increase15m", "legendFormat": "conflicts", "range": true, "refId": "A"}], "title": "Idempotency conflicts", "type": "stat"
@@ -57,7 +57,7 @@
     },
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Terminal indeterminate mutations over five minutes. Alert: indeterminate > 0 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "fieldConfig": {"defaults": {"links": [{"title": "Tools runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-llm-tools.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 6, "x": 18, "y": 8}, "id": 8,
       "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "aura:idempotency_indeterminate:increase5m", "legendFormat": "indeterminate", "range": true, "refId": "A"}], "title": "Idempotency indeterminate", "type": "stat"

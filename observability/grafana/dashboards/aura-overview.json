@@ -23,7 +23,7 @@
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
       "description": "Terminal listener failures over five minutes. Alert: failures > 0 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}, "id": 2,
       "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "aura:listener_failure:increase5m", "legendFormat": "failures", "range": true, "refId": "A"}],
@@ -41,7 +41,7 @@
     {
       "datasource": {"type": "prometheus", "uid": "aura-prometheus"},
       "description": "Durable resume failures over five minutes. Alert: failures > 0 for 5m.",
-      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 0}]}, "unit": "short"}, "overrides": []},
+      "fieldConfig": {"defaults": {"links": [{"title": "Readiness runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-readiness.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
       "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}, "id": 4,
       "options": {"colorMode": "background", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
       "targets": [{"editorMode": "code", "expr": "aura:resume_failure:increase5m", "legendFormat": "failures", "range": true, "refId": "A"}],

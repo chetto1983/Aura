@@ -188,12 +188,12 @@ $dashboardContracts = [ordered]@{
     'aura-data-retention.json' = 'aura-data-retention'
 }
 $expectedThresholds = @{
-    'aura-overview/1' = @(1); 'aura-overview/2' = @(0); 'aura-overview/3' = @(1)
-    'aura-overview/4' = @(0); 'aura-overview/6' = @(0.05); 'aura-overview/7' = @(50)
+    'aura-overview/1' = @(1); 'aura-overview/2' = @(1); 'aura-overview/3' = @(1)
+    'aura-overview/4' = @(1); 'aura-overview/6' = @(0.05); 'aura-overview/7' = @(50)
     'aura-agents/2' = @(14.4); 'aura-agents/3' = @(14.4)
     'aura-tools-mcp/2' = @(0.1); 'aura-tools-mcp/3' = @(0.1); 'aura-tools-mcp/4' = @(5)
-    'aura-tools-mcp/6' = @(0); 'aura-tools-mcp/7' = @(20); 'aura-tools-mcp/8' = @(0)
-    'aura-data-retention/3' = @(0); 'aura-data-retention/4' = @(100)
+    'aura-tools-mcp/6' = @(1); 'aura-tools-mcp/7' = @(20); 'aura-tools-mcp/8' = @(1)
+    'aura-data-retention/3' = @(1); 'aura-data-retention/4' = @(100)
     'aura-data-retention/5' = @(0.7, 0.8, 0.85); 'aura-data-retention/6' = @(1)
 }
 
