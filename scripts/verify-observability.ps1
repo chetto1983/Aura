@@ -313,8 +313,8 @@ $grafanaBlock = Get-ComposeServiceBlock $composeText 'grafana'
 $auraBlock = Get-ComposeServiceBlock $composeText 'aura'
 $imageContracts = @(
     @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.4' },
-    @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:2.9.4' },
-    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:12.4.12' }
+    @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:3.1.0' },
+    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:13.2.3' }
 )
 foreach ($contract in $imageContracts) {
     $imageMatch = [regex]::Match($contract.Block, '(?m)^    image:\s+(?<image>\S+)\s*$')

@@ -175,12 +175,12 @@ func deriveScheduledCreated(question, task string) (Presentation, bool) {
 		return Presentation{}, false
 	}
 	details := strings.TrimSuffix(tail, suffix)
-	idx := strings.LastIndex(details, ", risk=")
-	if idx < 0 {
+	schedule, risk, ok := strings.CutLast(details, ", risk=")
+	if !ok {
 		return Presentation{}, false
 	}
 	p := Presentation{Key: ScheduledKey, Params: map[string]string{
-		"task": task, "kind": kind, "schedule": details[:idx], "risk": details[idx+len(", risk="):],
+		"task": task, "kind": kind, "schedule": schedule, "risk": risk,
 	}}
 	return p, valid(p)
 }

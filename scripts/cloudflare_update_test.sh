@@ -40,6 +40,7 @@ case "$*" in
   'compose ps -q aura') echo aura-id ;;
   'compose ps -q aura-cloudflared') [[ ! -f "$CF_FIXTURE/started" ]] || echo cloudflared-id ;;
   'compose ps -q '* ) ;;
+  'compose ps -q') ;;
   'compose pull aura-cloudflared'|'compose up -d --no-deps aura-cloudflared') ;;
   inspect\ --format\ * )
     case "$3" in
@@ -69,6 +70,10 @@ grep -qx 'compose pull aura-cloudflared' "$fixture/calls"
 grep -qx 'compose up -d --no-deps aura-cloudflared' "$fixture/calls"
 grep -q 'healthy' "$fixture/output"
 grep -qx 'volume prune --force --filter label=com.docker.volume.anonymous' "$fixture/calls"
+# The applied stack clears the record of changed payload paths, only once it is applied.
+grep -qx 'compose ps -q' "$fixture/calls"
+[[ ! -e "$INSTALL_DIR/payload_changes.pending" ]]
+cmp "$INSTALL_DIR/payload_manifest.txt" "$INSTALL_DIR/payload_manifest.applied"
 [[ "$(stat -c '%a:%u:%g' "$INSTALL_DIR/.env")" == "$env_metadata" ]]
 grep -qx 'POSTGRES_PASSWORD=synthetic-preserve' "$INSTALL_DIR/.env"
 ! grep -q 'synthetic-preserve' "$fixture/output"

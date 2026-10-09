@@ -194,7 +194,7 @@ func TestSteerMarkerSitsOutsideToolOutputEnvelope(t *testing.T) {
 	}
 	content := agent.history[len(agent.history)-1].Content
 
-	if idx := strings.LastIndex(content, "</tool_output>"); idx < 0 {
+	if !strings.Contains(content, "</tool_output>") {
 		t.Fatal("fixture was not enveloped — test setup is wrong")
 	}
 	if strings.Index(content, steerMarkerOpen) <= strings.LastIndex(content, "</tool_output>") {

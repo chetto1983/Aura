@@ -145,6 +145,15 @@ func TestSink(t *testing.T) {
 		if err := directorySink.Write([]byte("record")); err == nil {
 			t.Fatal("Write to a directory succeeded")
 		}
+
+		readOnly, err := os.Open(parentFile)
+		if err != nil {
+			t.Fatalf("fixture Open: %v", err)
+		}
+		defer func() { _ = readOnly.Close() }()
+		if err := writeAll(readOnly, []byte("frame")); err == nil {
+			t.Fatal("a failed write was not returned")
+		}
 	})
 }
 

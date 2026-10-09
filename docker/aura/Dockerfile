@@ -177,7 +177,8 @@ COPY --from=payload /payload /usr/share/aura/payload
 COPY --from=build /out/aura /usr/local/bin/aura
 COPY --from=garagebin /garage /usr/local/bin/garage
 COPY docker/aura/aura-garage-bootstrap.sh /usr/local/bin/aura-garage-bootstrap.sh
-RUN chmod +x /usr/local/bin/aura-garage-bootstrap.sh
+COPY docker/aura/aura-tempo-blocks-repair.sh /usr/local/bin/aura-tempo-blocks-repair.sh
+RUN chmod +x /usr/local/bin/aura-garage-bootstrap.sh /usr/local/bin/aura-tempo-blocks-repair.sh
 
 ENTRYPOINT ["aura"]
 CMD ["serve"]

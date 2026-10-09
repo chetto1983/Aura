@@ -1,6 +1,12 @@
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
 db_engine = "sqlite"
+# One node, so no replica rebuilds what a power loss corrupts. Without metadata_fsync Garage runs
+# SQLite with synchronous=OFF, which can corrupt on power loss; with it, WAL with
+# synchronous=NORMAL, which never corrupts. data_fsync syncs each block before the write is
+# acknowledged. Neither cost anything measurable on the lab VM (prd.md §17, 2026-10-09).
+metadata_fsync = true
+data_fsync = true
 
 replication_factor = 1
 rpc_bind_addr = "[::]:3901"

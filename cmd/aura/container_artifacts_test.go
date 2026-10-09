@@ -32,6 +32,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"ENV AURA_IN_CONTAINER=1",
 		"COPY --from=garagebin /garage /usr/local/bin/garage",
 		"aura-garage-bootstrap.sh",
+		"COPY docker/aura/aura-tempo-blocks-repair.sh /usr/local/bin/aura-tempo-blocks-repair.sh",
 		"ENTRYPOINT [\"aura\"]",
 		"CMD [\"serve\"]",
 	} {
@@ -136,6 +137,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// `compose down` orphaned it on every stop and the next start downloaded the 1.6 GB
 		// model into a fresh one (measured on the lab VM, 2026-09-30).
 		"aura-stt-models:/var/lib/whisper",
+		// Tempo starts only after the blocks a power loss left unreadable are gone.
+		"entrypoint: [\"aura-tempo-blocks-repair.sh\"]",
+		"      tempo-blocks-repair:\n        condition: service_completed_successfully",
 		"driver: nvidia",
 		"capabilities: [gpu]",
 		"start_period: 300s",

@@ -2843,6 +2843,44 @@ Localized surfaces render user-facing labels themselves. Wire status and approva
 scope use stable machine codes, so translated labels or model-written wording cannot
 alter the authorization they represent.
 
+Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
+Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo
+3.1.0 and Grafana 13.2.3:
+- Tempo 3.1.0 refuses the 2.x config: `field ingester not found`, `field compactor not
+  found`. Retention moves to `backend_worker.compaction.block_retention`; 3.1.0 reported
+  336h for it on `/status/config`. Tempo 2.9.4 also accepts the new file under
+  `-config.verify`, so the running 2.9.4 stays healthy while the updater replaces the file.
+- On a copy of the lab VM's 2.2 GB Tempo volume, 3.1.0 returned traces that 2.9.4 had stored
+  on 23 September, 6 October and 7–8 October. It accepted new OTLP spans and found them by
+  ID and by TraceQL, using 86 MiB where 2.9.4 used 155 MiB. Within its first hour its
+  retention marked every block past the 14-day window for deletion: 21 before, none after.
+  It does not replay the 2.x ingester WAL, so traces not yet flushed when Tempo is replaced
+  are lost. It writes
+  vParquet5 blocks, and Tempo's migration guide states there is no downgrade from 3.0 to 2.x:
+  rolling back to an image older than this change also needs the Tempo volume removed.
+- A power loss can leave a block's `meta.json` or `meta.compacted.json` empty, because the
+  local backend writes it without fsync or rename, in 2.9.4 and 3.1.0 alike. One such file
+  aborts the poll of the whole tenant, so no stored trace is found and retention stops. On
+  the lab VM this held from 2026-10-07: 89 failed polls, three blocks with an empty meta,
+  21 blocks past the 14-day window. With those three removed from the copy, 3.1.0 polled
+  224 blocks without error. A running 3.1.0 needs no restart: with an empty meta added, its
+  poll failed and `tempodb_blocklist_tenant_index_errors_total` rose by 6 in 50 s; once that
+  block was gone, its next poll wrote the tenant index without error.
+  The `tempo-blocks-repair` service removes such blocks on every `compose up`, the one
+  aura.service runs at boot included, where Docker's restart policy may already have started
+  Tempo. It removes an empty meta written before the current boot. Otherwise it skips one
+  younger than ten minutes, which a running Tempo may still be writing. It logs a failure
+  and never returns one: a failed one-shot would fail the whole `up`, at boot and on every
+  update.
+- Grafana 13.2.3 started on a volume initialised by 12.3.9, and on one initialised by
+  12.4.12. Each time both datasources were healthy, and the four provisioned dashboards
+  and their folder migrated with none rejected. It used 249 MiB of its 384 MiB limit. None
+  of the removals in 13.0 touches Aura: the checks call `grafana --version`, not
+  `grafana-cli`, and look datasources up by UID.
+
+This does not measure Tempo under sustained load, a real power loss on an appliance, or the
+updater applying the change to an appliance.
+
 ## 17. Deployment, backup and recovery
 
 The appliance is Docker Compose. Installation validates target prerequisites, prepares
@@ -2938,6 +2976,40 @@ reprovisioned only on its first memory use. Separately, ArcadeDB logged 841 refu
 the six days before, from the memory backfill sweep probing identities without memory by
 binding as them; the sweep now asks the admin's `DatabaseExists`, as `TenantClients.Existing`
 already did, and a tenant walk without the admin pair is disabled rather than binding.
+
+A payload file a service mounts reaches that service only when the service is started again.
+Measured 2026-10-09:
+- Compose 5.5.1 recreated a service neither when a file it bind-mounts changed nor when a
+  top-level `configs:` file did.
+- On the lab VM, the updater's `install` gave the file a new inode, and the running container
+  kept reading the old content until `docker restart`.
+
+So until this change a payload change confined to such a file reached nothing until the next
+reboot. The files concerned are `garage.toml`, the Caddyfile, SearXNG's settings and limiter,
+Prometheus' config and rules, `tempo.yml`, Grafana's provisioning and dashboards, and
+ArcadeDB's `backup.json`. The updater now restarts, after the stack-wide `up`, every running
+service that bind-mounts a payload file changed since the stack was last applied. It keeps the
+changed paths until that apply succeeds. An appliance with no record of what changed (its last
+tick predates the record, or the record was lost) restarts every service mounting any payload
+file. One-shot services that have exited are not started.
+
+Garage keeps the object store's metadata in SQLite and its data in block files, on one node.
+With `metadata_fsync` off, its SQLite runs `synchronous=OFF` (Garage 2.4.1 `sqlite_adapter.rs`),
+which SQLite documents as corruptible on power loss. Garage's own documentation calls metadata
+corruption harmless only because other nodes rebuild it, and an appliance has none. With
+`metadata_fsync` on, SQLite runs WAL with `synchronous=NORMAL`, which never corrupts but may
+roll back the last commits. `data_fsync` syncs each block file before the write is
+acknowledged. Measured 2026-10-09 on the lab VM:
+- A throwaway Garage 2.4.1 on SQLite ran three passes of 200 4 KiB, 60 1 MiB and 15 16 MiB
+  PUTs, plus 400 4 KiB PUTs from 8 writers, with both options off, metadata only, and both on.
+- The medians stayed within the spread between passes of one setting: 4–7 ms, 9–15 ms and
+  77–105 ms. The 8 writers took 2.0–2.8 s in every setting.
+- The VM's disk does sync: `dd oflag=dsync` took 0.8 ms per 4 KiB write against 17 µs
+  buffered, with the device in write-through.
+- Aura had written 2 objects since that Garage was recreated, that morning.
+
+Both options are now on. This does not measure an appliance's own SSD, a real power loss, or
+Garage under sustained write load.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
