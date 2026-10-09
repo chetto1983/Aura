@@ -111,8 +111,8 @@ func TestBoardFirstUseAndCardLifecycle(t *testing.T) {
 	}
 	bb, _ := s.AddCard(ctx, id, NewCard{Label: "pay the invoice", Priority: 3}, SourceCockpit, ActorOperator)
 	c, _ := s.AddCard(ctx, id, NewCard{Column: "doing", Label: "draft the report"}, SourceBackground, ActorAgent)
-	if _, err := s.AddCard(ctx, id, NewCard{Column: "later", Label: "x"}, SourceCockpit, ActorOperator); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("unknown column = %v, want ErrInvalid", err)
+	if _, err := s.AddCard(ctx, id, NewCard{Column: "later", Label: "x"}, SourceCockpit, ActorOperator); !errors.Is(err, ErrUnknownColumn) || !errors.Is(err, ErrInvalid) {
+		t.Fatalf("unknown column = %v, want ErrUnknownColumn, an ErrInvalid", err)
 	}
 
 	label, desc := "call the supplier about the pump", "ask for the quote"
@@ -286,5 +286,55 @@ func TestBoardLinksAndCascade(t *testing.T) {
 	}
 	if cards, _ := s.Cards(ctx, id); len(cards) != 0 {
 		t.Fatalf("cards survived their identity: %+v", cards)
+	}
+}
+
+// The widget draws a duplicate just below its source and saves the editor's whole card; the
+// store must put the copy in the same slot and must not stamp an untouched save.
+func TestBoardDuplicateAndUntouchedSave(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	id := seedIdentity(t, pool)
+	ctx := context.Background()
+	conv := uuid.NewString()
+	if err := db.WithIdentityTxRaw(ctx, pool, id, func(tx pgx.Tx) error {
+		_, e := tx.Exec(ctx, `INSERT INTO aura.conversations (id, identity_id) VALUES ($1, $2)`, conv, id)
+		return e
+	}); err != nil {
+		t.Fatalf("seed conversation: %v", err)
+	}
+	due := time.Date(2026, 10, 12, 8, 0, 0, 0, time.UTC)
+	src, err := s.AddCard(ctx, id, NewCard{Label: "renew the domain", Description: "before Friday", Priority: 3,
+		Tags: []string{"ops"}, DueAt: &due, ConversationID: conv}, SourceChat, ActorAgent)
+	if err != nil {
+		t.Fatalf("AddCard: %v", err)
+	}
+	if _, err := s.AddCard(ctx, id, NewCard{Label: "below"}, SourceCockpit, ActorOperator); err != nil {
+		t.Fatalf("AddCard below: %v", err)
+	}
+
+	label := src.Label
+	same, err := s.UpdateCard(ctx, id, src.ID, CardPatch{Label: &label, Tags: &[]string{"ops"}}, ActorOperator)
+	if err != nil || same.UpdatedBy != ActorAgent || !same.UpdatedAt.Equal(src.UpdatedAt) {
+		t.Fatalf("untouched save = %+v, %v; want the agent's row as it was", same, err)
+	}
+
+	dup, err := s.DuplicateCard(ctx, id, src.ID)
+	if err != nil {
+		t.Fatalf("DuplicateCard: %v", err)
+	}
+	if dup.ID == src.ID || dup.Label != src.Label || dup.Description != src.Description || dup.Priority != 3 ||
+		len(dup.Tags) != 1 || dup.DueAt == nil || !dup.DueAt.Equal(due) {
+		t.Fatalf("duplicate = %+v; want the source's content", dup)
+	}
+	if dup.ConversationID != "" || dup.Source != SourceCockpit || dup.UpdatedBy != ActorOperator {
+		t.Fatalf("duplicate = %+v; want the operator's card with no links", dup)
+	}
+	cards, _ := s.Cards(ctx, id)
+	if got := labels(cards, "todo"); len(got) != 3 || got[0] != src.Label || got[1] != src.Label || got[2] != "below" {
+		t.Fatalf("todo after duplicate = %v; want the copy just below its source", got)
+	}
+	if _, err := s.DuplicateCard(ctx, id, uuid.NewString()); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("duplicate of a missing card = %v, want ErrNotFound", err)
 	}
 }

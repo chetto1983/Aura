@@ -16,6 +16,7 @@ import (
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/approvalgrants"
 	"github.com/chetto1983/aura/internal/approvalpolicies"
+	"github.com/chetto1983/aura/internal/board"
 	"github.com/chetto1983/aura/internal/chatgptplan"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/documents"
@@ -161,6 +162,8 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetApprovalGrantStore(approvalgrants.New(chat.pool))
 	// The per-identity ask/deny policies that narrow what the agent may do (prd.md §5).
 	aguiServer.SetApprovalPolicyStore(approvalpolicies.New(chat.pool))
+	// The work board the cockpit and the agent's `board` tool share (prd.md §16).
+	aguiServer.SetBoardStore(board.New(chat.pool))
 	// Wire the DISP-05/D-09 image-proxy fetcher: a fresh web.Client reusing the SAME
 	// SSRF-hardened transport web_search/web_fetch use (hostname blocklist → DNS-pin →
 	// classify → image content-type allowlist + size cap). Without this the

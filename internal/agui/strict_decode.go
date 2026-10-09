@@ -13,6 +13,10 @@ import (
 type decodeOpts struct {
 	maxBytes   int64
 	allowEmpty bool
+	// allowUnknown admits fields dst does not declare. Only for a widget that echoes its whole
+	// record back (the work board's SVAR provider sends id, source, ... on every save); the
+	// media-type gate and the trailing-data check still apply.
+	allowUnknown bool
 }
 
 // strictDecodeJSON is the single inbound JSON boundary for privileged routes.
@@ -36,7 +40,9 @@ func strictDecodeJSON(w http.ResponseWriter, r *http.Request, dst any, opts deco
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
 	dec := json.NewDecoder(r.Body)
-	dec.DisallowUnknownFields()
+	if !opts.allowUnknown {
+		dec.DisallowUnknownFields()
+	}
 
 	if err := dec.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) && opts.allowEmpty {

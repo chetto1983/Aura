@@ -304,11 +304,11 @@ func TestServeWebui(t *testing.T) {
 		}
 	})
 
-	// The file manager reads and writes JSON. A route missing from THIS mux does not 404
-	// cleanly — it falls through to the embedded SPA, which answers with an HTML shell, and
-	// the component reports "Unexpected non-whitespace character after JSON". That is what
-	// the live cockpit showed, so every verb the widget uses is asserted here.
-	t.Run("/api/filemanager -> AG-UI handler (never the SPA shell)", func(t *testing.T) {
+	// The file manager and the work board read and write JSON. A route missing from THIS mux
+	// does not 404 cleanly — it falls through to the embedded SPA, which answers with an HTML
+	// shell, and the component reports "Unexpected non-whitespace character after JSON". That
+	// is what the live cockpit showed, so every verb either widget uses is asserted here.
+	t.Run("/api/filemanager and /api/board -> AG-UI handler (never the SPA shell)", func(t *testing.T) {
 		for _, probe := range []struct{ method, route string }{
 			{http.MethodGet, "/api/filemanager/files"},
 			{http.MethodGet, "/api/filemanager/files/%2Fcontabilita"},
@@ -317,6 +317,17 @@ func TestServeWebui(t *testing.T) {
 			{http.MethodPost, "/api/filemanager/files/%2Fcontabilita"},
 			{http.MethodPut, "/api/filemanager/files"},
 			{http.MethodDelete, "/api/filemanager/files"},
+			{http.MethodGet, "/api/board"},
+			{http.MethodPut, "/api/board/columns"},
+			{http.MethodGet, "/api/board/cards"},
+			{http.MethodPost, "/api/board/cards"},
+			{http.MethodPut, "/api/board/cards/c1"},
+			{http.MethodPut, "/api/board/cards/c1/move"},
+			{http.MethodPost, "/api/board/cards/c1/duplicate"},
+			{http.MethodDelete, "/api/board/cards/c1"},
+			{http.MethodGet, "/api/board/views"},
+			{http.MethodPut, "/api/board/views"},
+			{http.MethodDelete, "/api/board/views/v1"},
 		} {
 			aguiHits = nil
 			req, err := http.NewRequest(probe.method, srv.URL+probe.route, strings.NewReader("{}"))

@@ -76,18 +76,5 @@ func (s *Store) SaveView(ctx context.Context, identityID, name string, filters j
 
 // DeleteView removes a view and reports whether one was removed.
 func (s *Store) DeleteView(ctx context.Context, identityID, viewID string) (bool, error) {
-	id, err := db.ParseUUID("view id", viewID)
-	if err != nil {
-		return false, fmt.Errorf("%w: %v", ErrNotFound, err)
-	}
-	var removed int64
-	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		var e error
-		removed, e = q.DeleteBoardView(ctx, id)
-		return e
-	})
-	if err != nil {
-		return false, fmt.Errorf("delete view: %w", err)
-	}
-	return removed > 0, nil
+	return s.remove(ctx, identityID, "view", viewID, (*sqlc.Queries).DeleteBoardView)
 }

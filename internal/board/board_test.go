@@ -22,6 +22,7 @@ func TestCleanFieldsAppliesTheTablesRules(t *testing.T) {
 	if strings.Join(got.tags, ",") != "ops,billing" {
 		t.Errorf("tags = %v, want trimmed and deduplicated", got.tags)
 	}
+	tooLong := map[string]bool{"long label": true, "long description": true, "long tag": true}
 	for name, call := range map[string]func() error{
 		"empty label":      func() error { _, e := cleanFields(" ", "", 2, nil); return e },
 		"long label":       func() error { _, e := cleanFields(strings.Repeat("x", MaxLabelRunes+1), "", 2, nil); return e },
@@ -37,8 +38,12 @@ func TestCleanFieldsAppliesTheTablesRules(t *testing.T) {
 			return e
 		},
 	} {
-		if err := call(); !errors.Is(err, ErrInvalid) {
+		err := call()
+		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s = %v, want ErrInvalid", name, err)
+		}
+		if errors.Is(err, ErrTooLong) != tooLong[name] {
+			t.Errorf("%s = %v, ErrTooLong should be %v", name, err, tooLong[name])
 		}
 	}
 	if _, err := cleanFields(strings.Repeat("é", MaxLabelRunes), "", 3, nil); err != nil {

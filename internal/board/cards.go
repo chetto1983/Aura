@@ -19,6 +19,8 @@ import (
 // Source is where a card came from; the table's CHECK holds the same three words.
 type Source string
 
+// The three sources: the operator on the board, the agent in a conversation, and the agent in
+// a scheduled job or a swarm worker.
 const (
 	SourceCockpit    Source = "cockpit"
 	SourceChat       Source = "chat"
@@ -28,6 +30,7 @@ const (
 // Actor is who touched a card last.
 type Actor string
 
+// The two hands that touch a card.
 const (
 	ActorOperator Actor = "operator"
 	ActorAgent    Actor = "agent"
@@ -202,6 +205,10 @@ func (s *Store) UpdateCard(ctx context.Context, identityID, cardID string, patch
 				return err
 			}
 		}
+		if unchanged(row, fields, due, task) {
+			card = current
+			return nil
+		}
 		updated, err := q.UpdateBoardCard(ctx, sqlc.UpdateBoardCardParams{
 			ID: row.ID, Label: fields.label, Description: fields.description, Priority: int16(fields.priority),
 			Tags: fields.tags, DueAt: due, TaskID: task, UpdatedBy: string(actor),
@@ -240,12 +247,9 @@ func (s *Store) MoveCard(ctx context.Context, identityID, cardID, column, before
 			return err
 		}
 		siblings = slices.DeleteFunc(siblings, func(c sqlc.AuraBoardCards) bool { return c.ID == row.ID })
-		position, ok := positionBefore(siblings, beforeID)
-		if !ok {
-			if err := renumber(ctx, q, siblings); err != nil {
-				return err
-			}
-			position, _ = positionBefore(siblings, beforeID)
+		position, err := slot(ctx, q, siblings, beforeID)
+		if err != nil {
+			return err
 		}
 		moved, err := q.MoveBoardCard(ctx, sqlc.MoveBoardCardParams{
 			ID: row.ID, ColumnID: column, Position: position, UpdatedBy: string(actor),
@@ -257,6 +261,63 @@ func (s *Store) MoveCard(ctx context.Context, identityID, cardID, column, before
 		return Card{}, fmt.Errorf("move card: %w", err)
 	}
 	return card, nil
+}
+
+// DuplicateCard copies a card's content just below it, where the widget draws the copy. It is
+// the cockpit's action, so the copy is the operator's new card: it keeps no conversation or
+// task link, which belong to the card the agent or a job made.
+func (s *Store) DuplicateCard(ctx context.Context, identityID, cardID string) (Card, error) {
+	var card Card
+	err := s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		row, err := getCard(ctx, q, cardID)
+		if err != nil {
+			return err
+		}
+		siblings, err := q.ListBoardColumnCards(ctx, sqlc.ListBoardColumnCardsParams{BoardID: row.BoardID, ColumnID: row.ColumnID})
+		if err != nil {
+			return err
+		}
+		next := ""
+		if i := slices.IndexFunc(siblings, func(c sqlc.AuraBoardCards) bool { return c.ID == row.ID }); i >= 0 && i+1 < len(siblings) {
+			next = siblings[i+1].ID.String()
+		}
+		position, err := slot(ctx, q, siblings, next)
+		if err != nil {
+			return err
+		}
+		inserted, err := q.InsertBoardCard(ctx, sqlc.InsertBoardCardParams{
+			BoardID: row.BoardID, IdentityID: row.IdentityID, ColumnID: row.ColumnID, Position: position,
+			Label: row.Label, Description: row.Description, Priority: row.Priority, Tags: row.Tags,
+			DueAt: row.DueAt, Source: string(SourceCockpit), UpdatedBy: string(ActorOperator),
+		})
+		card = cardFromRow(inserted)
+		return err
+	})
+	if err != nil {
+		return Card{}, fmt.Errorf("duplicate card: %w", err)
+	}
+	return card, nil
+}
+
+// slot is the position just before beforeID among siblings, renumbering the column first when
+// its neighbours are too close to fit a card between.
+func slot(ctx context.Context, q *sqlc.Queries, siblings []sqlc.AuraBoardCards, beforeID string) (float64, error) {
+	if position, ok := positionBefore(siblings, beforeID); ok {
+		return position, nil
+	}
+	if err := renumber(ctx, q, siblings); err != nil {
+		return 0, err
+	}
+	position, _ := positionBefore(siblings, beforeID)
+	return position, nil
+}
+
+// unchanged reports whether an update would write what the row already holds. The widget's
+// editor saves the whole card, so an untouched save must not stamp updated_by.
+func unchanged(row sqlc.AuraBoardCards, fields cleanCard, due pgtype.Timestamptz, task pgtype.UUID) bool {
+	sameDue := row.DueAt.Valid == due.Valid && (!due.Valid || row.DueAt.Time.Equal(due.Time))
+	return row.Label == fields.label && row.Description == fields.description &&
+		int(row.Priority) == fields.priority && slices.Equal(row.Tags, fields.tags) && sameDue && row.TaskID == task
 }
 
 // positionBefore is the position just before beforeID among siblings (ordered by position),
@@ -299,20 +360,7 @@ func renumber(ctx context.Context, q *sqlc.Queries, siblings []sqlc.AuraBoardCar
 
 // DeleteCard removes a card and reports whether one was removed.
 func (s *Store) DeleteCard(ctx context.Context, identityID, cardID string) (bool, error) {
-	id, err := db.ParseUUID("card id", cardID)
-	if err != nil {
-		return false, fmt.Errorf("%w: %v", ErrNotFound, err)
-	}
-	var removed int64
-	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
-		var e error
-		removed, e = q.DeleteBoardCard(ctx, id)
-		return e
-	})
-	if err != nil {
-		return false, fmt.Errorf("delete card: %w", err)
-	}
-	return removed > 0, nil
+	return s.remove(ctx, identityID, "card", cardID, (*sqlc.Queries).DeleteBoardCard)
 }
 
 // Search finds cards whose label or description contains query, or that carry it as a tag.
@@ -355,7 +403,7 @@ func columnError(b Board, column string) error {
 	for _, c := range b.Columns {
 		ids = append(ids, c.ID)
 	}
-	return fmt.Errorf("%w: column %q is not on the board; columns are: %s", ErrInvalid, column, strings.Join(ids, ", "))
+	return fmt.Errorf("%w: column %q is not on the board; columns are: %s", ErrUnknownColumn, column, strings.Join(ids, ", "))
 }
 
 type cleanCard struct {
@@ -366,11 +414,14 @@ type cleanCard struct {
 
 func cleanFields(label, description string, priority int, tags []string) (cleanCard, error) {
 	label, description = strings.TrimSpace(label), strings.TrimSpace(description)
-	if label == "" || utf8.RuneCountInString(label) > MaxLabelRunes {
-		return cleanCard{}, fmt.Errorf("%w: a label has 1 to %d characters", ErrInvalid, MaxLabelRunes)
+	if label == "" {
+		return cleanCard{}, fmt.Errorf("%w: a card needs a label", ErrInvalid)
+	}
+	if utf8.RuneCountInString(label) > MaxLabelRunes {
+		return cleanCard{}, fmt.Errorf("%w: a label has at most %d characters", ErrTooLong, MaxLabelRunes)
 	}
 	if utf8.RuneCountInString(description) > MaxDescriptionRunes {
-		return cleanCard{}, fmt.Errorf("%w: a description has at most %d characters", ErrInvalid, MaxDescriptionRunes)
+		return cleanCard{}, fmt.Errorf("%w: a description has at most %d characters", ErrTooLong, MaxDescriptionRunes)
 	}
 	if priority == 0 {
 		priority = 2
@@ -385,7 +436,7 @@ func cleanFields(label, description string, priority int, tags []string) (cleanC
 			continue
 		}
 		if utf8.RuneCountInString(t) > MaxTagRunes {
-			return cleanCard{}, fmt.Errorf("%w: a tag has at most %d characters", ErrInvalid, MaxTagRunes)
+			return cleanCard{}, fmt.Errorf("%w: a tag has at most %d characters", ErrTooLong, MaxTagRunes)
 		}
 		clean = append(clean, t)
 	}

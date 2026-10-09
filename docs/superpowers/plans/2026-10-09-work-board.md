@@ -27,6 +27,10 @@
 - **Seen ids are per conversation**, kept by the tool keyed like `TodoTool`; an id returned by `list`, `search` or `add` in this conversation may be updated, moved or deleted. A stricter per-turn reset adds nothing against invented ids and costs a `list` per turn.
 - **Search is `ILIKE` on label and description plus an exact tag match**, bounded to 32 rows. A personal board is small; a `tsvector` column is a later measurement.
 - **Priorities follow the widget**: 1 Low, 2 Medium, 3 High (`getPriorityOptions`).
+- **The provider does not reconcile a duplicate's id** (measured in `@svar-ui/kanban-store` 2.6.0): `duplicate-card` makes the copy's `tempID()` inside the store and never writes it back to the event, so `ActionQueue` sees only the source's real id and maps nothing; a later edit of the copy would wait forever in the queue for an id that never comes. The cockpit reloads the cards after a duplicate answers. The server puts the copy just below its source, where the widget draws it, with the source's content and no conversation or task link: the copy is the operator's card.
+- **Every board answer is JSON, errors included** (`{"error": code, "message"}`): the provider calls `res.json()` on every response, so a `text/plain` error would reject the queue instead of reaching the status check. Codes: `not_found` 404 (another identity's card too), `invalid_column` and `too_long` 400 (named kinds of `board.ErrInvalid`), `invalid` 400, `column_in_use` 409, `board_unavailable` 503.
+- **An untouched save writes nothing.** The editor saves the whole card; the store compares before writing, so opening and closing a card the agent made does not stamp it `operator`.
+- **No `board_cards_changed` counter.** The obs catalog allows six bounded dimensions (`operation`, `tool_class`, `transport`, `outcome`, `error_class`, `state`) and neither the action nor the actor is one of them. Both halves are already counted: the agent's calls by the gateway reservation, whose `Meta` carries the action, and the operator's writes by the idempotency reservation of each inventoried route. A dedicated counter is a later measurement, with the catalog change it needs.
 
 ## File structure
 
@@ -35,14 +39,14 @@
 | `internal/db/migrations/0141_work_board.{up,down}.sql`, `internal/db/queries/board.sql`, `internal/db/sqlc/`, `internal/db/migrate_0141_integration_test.go` | 1 |
 | `internal/board/{board.go,cards.go,views.go}` + unit and integration tests | 2 |
 | `internal/agent/tools/board.go`, `board_actions.go` + tests; `internal/gateway/classify.go` (`classifyBoard`) + test; `cmd/aura/main.go`, `serve_adapters.go` | 3 |
-| `internal/agui/board_api.go`, `board_views_api.go` + tests; `idempotency_http.go`; `cmd/aura/serve_webui*.go`, `serve_agui.go` | 4 |
+| `internal/agui/board_api.go`, `board_cards_api.go`, `board_views_api.go` + tests; `idempotency_http.go`; `cmd/aura/serve_webui*.go`, `serve_agui.go`; `internal/board` (`DuplicateCard`, the untouched save, the named error kinds) | 4 |
 | `web/src/board/*`, `web/src/shell/modes.ts`, `AppShell.tsx`, `resources.board.ts` + tests | 5 |
 | skill/prompt line, closing gates | 6 |
 
 ### Task 1: Tables — [x]
 ### Task 2: Store — [x]
 ### Task 3: Tool and classifier — [x]
-### Task 4: REST mount — [ ]
+### Task 4: REST mount — [x]
 ### Task 5: Cockpit mode — [ ]
 ### Task 6: Closing gates — [ ]
 - [ ] Lab-VM acceptance (spec, Testing, items 1-5): open.

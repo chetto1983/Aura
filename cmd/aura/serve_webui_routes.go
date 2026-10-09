@@ -356,6 +356,11 @@ const assetsSubtreeRoute = "/api/assets/"
 const fileManagerRoutePrefix = "/api/filemanager"
 const fileManagerSubtreeRoute = "/api/filemanager/"
 
+// The work board (internal/agui/board_api.go) mounts the same way and for the same reason:
+// the board is the principal's own, so RequireAuth from the whole-mux wrap is the whole gate.
+const boardRoutePrefix = "/api/board"
+const boardSubtreeRoute = "/api/board/"
+
 const (
 	assetsPresignRoute  = "POST /api/assets/presign"
 	assetsFinalizeRoute = "POST /api/assets/{id}/finalize"

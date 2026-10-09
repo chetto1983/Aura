@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -42,7 +43,18 @@ var (
 	ErrInvalid = errors.New("invalid board input")
 	// ErrColumnInUse refuses removing a column that still holds cards.
 	ErrColumnInUse = errors.New("column still has cards")
+	// ErrUnknownColumn is a column the board does not have. The cockpit names it apart
+	// (`invalid_column`); it is also ErrInvalid.
+	ErrUnknownColumn error = invalidKind("invalid column")
+	// ErrTooLong is a label, description or tag over its cap (`too_long`); also ErrInvalid.
+	ErrTooLong error = invalidKind("too long")
 )
+
+// invalidKind is a named kind of ErrInvalid.
+type invalidKind string
+
+func (k invalidKind) Error() string        { return string(k) }
+func (k invalidKind) Is(target error) bool { return target == ErrInvalid }
 
 // Column is the widget's ColumnConfig, stored as the board's jsonb array in display order.
 type Column struct {
@@ -86,6 +98,25 @@ type Store struct {
 // New builds a Store over an open pool.
 func New(pool *pgxpool.Pool) *Store {
 	return &Store{pool: pool, q: sqlc.New(pool)}
+}
+
+// remove deletes the row id names with del and reports whether one went. An id that does not
+// parse names nothing this identity can see.
+func (s *Store) remove(ctx context.Context, identityID, what, id string, del func(*sqlc.Queries, context.Context, pgtype.UUID) (int64, error)) (bool, error) {
+	row, err := db.ParseUUID(what+" id", id)
+	if err != nil {
+		return false, fmt.Errorf("%w: %v", ErrNotFound, err)
+	}
+	var removed int64
+	err = s.withIdentity(ctx, identityID, func(q *sqlc.Queries) error {
+		var e error
+		removed, e = del(q, ctx, row)
+		return e
+	})
+	if err != nil {
+		return false, fmt.Errorf("delete %s: %w", what, err)
+	}
+	return removed > 0, nil
 }
 
 func (s *Store) withIdentity(ctx context.Context, identityID string, fn func(*sqlc.Queries) error) error {

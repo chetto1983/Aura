@@ -136,8 +136,10 @@ type Server struct {
 	// approvalPolicies serves the per-identity ask/deny policies (prd.md §5, 2026-10-09).
 	// nil ⇒ the policy routes answer 503.
 	approvalPolicies approvalPolicyStore
-	assets           AssetService
-	ownerExports     ExportDestination
+	// board serves the work board (board_api.go); nil ⇒ its routes answer 503.
+	board        boardStore
+	assets       AssetService
+	ownerExports ExportDestination
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
@@ -434,6 +436,7 @@ func (s *Server) Mux() http.Handler {
 	// Colocated with its handler (mcp_views_api.go).
 	s.registerMCPViewRoutes(mux)
 	s.registerFileRoutes(mux)
+	s.registerBoardRoutes(mux)
 	// GRAPH-01 read-only graph-explorer routes (Phase 27 plan 27-02): GET /api/graph/schema
 	// + POST /api/graph/query. Colocated with their handlers; the parent-mux mount behind
 	// RequireAuth (no RequireCapability — read-only milestone) lives in

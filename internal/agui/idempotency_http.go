@@ -84,6 +84,16 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	// A replayed policy write answers its stored result instead of revoking a grant twice.
 	"PUT /api/approvals/policies":        httpMutationMeta("approval_policy_set"),
 	"POST /api/approvals/policies/clear": httpMutationMeta("approval_policy_clear"),
+	// The work board (board_api.go). A replayed add or duplicate answers its stored card
+	// instead of making a second one; the cockpit's fetch wrapper supplies the key.
+	"PUT /api/board/columns":               httpMutationMeta("board_columns_set"),
+	"POST /api/board/cards":                httpMutationMeta("board_card_add"),
+	"PUT /api/board/cards/{id}":            httpMutationMeta("board_card_update"),
+	"PUT /api/board/cards/{id}/move":       httpMutationMeta("board_card_move"),
+	"POST /api/board/cards/{id}/duplicate": httpMutationMeta("board_card_duplicate"),
+	"DELETE /api/board/cards/{id}":         httpMutationMeta("board_card_delete"),
+	"PUT /api/board/views":                 httpMutationMeta("board_view_save"),
+	"DELETE /api/board/views/{id}":         httpMutationMeta("board_view_delete"),
 	// A replayed restart answers its stored 202 instead of stopping the daemon again.
 	"POST /api/admin/restart": httpMutationMeta("daemon_restart"),
 	// A replayed decision answers its stored 202 instead of writing a second request with
