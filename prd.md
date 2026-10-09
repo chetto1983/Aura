@@ -2977,6 +2977,40 @@ the six days before, from the memory backfill sweep probing identities without m
 binding as them; the sweep now asks the admin's `DatabaseExists`, as `TenantClients.Existing`
 already did, and a tenant walk without the admin pair is disabled rather than binding.
 
+A payload file a service mounts reaches that service only when the service is started again.
+Measured 2026-10-09:
+- Compose 5.5.1 recreated a service neither when a file it bind-mounts changed nor when a
+  top-level `configs:` file did.
+- On the lab VM, the updater's `install` gave the file a new inode, and the running container
+  kept reading the old content until `docker restart`.
+
+So until this change a payload change confined to such a file reached nothing until the next
+reboot. The files concerned are `garage.toml`, the Caddyfile, SearXNG's settings and limiter,
+Prometheus' config and rules, `tempo.yml`, Grafana's provisioning and dashboards, and
+ArcadeDB's `backup.json`. The updater now restarts, after the stack-wide `up`, every running
+service that bind-mounts a payload file changed since the stack was last applied. It keeps the
+changed paths until that apply succeeds. An appliance with no record of what changed (its last
+tick predates the record, or the record was lost) restarts every service mounting any payload
+file. One-shot services that have exited are not started.
+
+Garage keeps the object store's metadata in SQLite and its data in block files, on one node.
+With `metadata_fsync` off, its SQLite runs `synchronous=OFF` (Garage 2.4.1 `sqlite_adapter.rs`),
+which SQLite documents as corruptible on power loss. Garage's own documentation calls metadata
+corruption harmless only because other nodes rebuild it, and an appliance has none. With
+`metadata_fsync` on, SQLite runs WAL with `synchronous=NORMAL`, which never corrupts but may
+roll back the last commits. `data_fsync` syncs each block file before the write is
+acknowledged. Measured 2026-10-09 on the lab VM:
+- A throwaway Garage 2.4.1 on SQLite ran three passes of 200 4 KiB, 60 1 MiB and 15 16 MiB
+  PUTs, plus 400 4 KiB PUTs from 8 writers, with both options off, metadata only, and both on.
+- The medians stayed within the spread between passes of one setting: 4–7 ms, 9–15 ms and
+  77–105 ms. The 8 writers took 2.0–2.8 s in every setting.
+- The VM's disk does sync: `dd oflag=dsync` took 0.8 ms per 4 KiB write against 17 µs
+  buffered, with the device in write-through.
+- Aura had written 2 objects since that Garage was recreated, that morning.
+
+Both options are now on. This does not measure an appliance's own SSD, a real power loss, or
+Garage under sustained write load.
+
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
 new identities, and backs up every 60 minutes to a separate volume. Retention is
