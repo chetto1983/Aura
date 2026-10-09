@@ -3030,6 +3030,42 @@ Localized surfaces render user-facing labels themselves. Wire status and approva
 scope use stable machine codes, so translated labels or model-written wording cannot
 alter the authorization they represent.
 
+**A work board for the identity and its agent, decided 2026-10-09 at `1c872a1`.** Read against
+OpenDots' Spaces and Pages (CopilotKit, MIT, released 2026-10-01: a wiki the Dot drafts into,
+with a review card before a page is saved) and against StickyFlow (`chetto1983/stickyflow`
+at `e36c4eb`): a Kanban board whose copilot creates, moves, edits and schedules the cards
+through tools, reads the board as a bounded snapshot (at most 32 cards of 160 characters)
+and may name only ids that snapshot carries. The operator chose the board over the wiki.
+Measured in the tree, not on a live run:
+- Aura has no durable unit of work the operator and the agent share. `todo` is a session
+  scratchpad the model rewrites whole and nothing persists; `task` is the scheduler's verb;
+  a delegation ends as a record card in `aura.conversation_turns`; the governance scheduler
+  board is a master-detail list of jobs, not a board of work;
+- StickyFlow's board is hand-written (`components/Board/BoardView.tsx`) over Supabase; its
+  SVAR dependency is the Gantt, not the Kanban. What transfers is the model: card, column
+  with a WIP limit, priority, tags, due date, a project that owns its columns, and the
+  copilot's tool set and snapshot rule;
+- `@svar-ui/react-kanban` 2.6.0 is MIT (npm registry, 2026-06-23), React 18 and up, built
+  on `@svar-ui/react-core` 2.6.0, which the cockpit already pins at 2.6.1 through an
+  override for the file manager. Its free edition carries the board, the editor, the menu,
+  filter, sort, search, custom cards, virtualization and a REST provider that maps
+  `add-card`, `update-card`, `move-card`, `delete-card` and `duplicate-card` to
+  `/cards` routes; undo and redo, dynamic loading and export are the paid edition, and its
+  documentation names no realtime channel. A card is an `id` plus any fields.
+
+The decision: one board per identity, with its own columns and WIP limits, stored in
+Postgres under the 0087 fail-closed RLS pair, and a `board` tool, action-multiplexed and
+deferred like `task`, through which the agent adds, updates, moves, lists and searches cards
+and, as the one Destructive verb, deletes them. The cockpit renders the board with SVAR
+React Kanban, driven by its REST provider against a mount that speaks its dialect, the way
+the file manager is, with the self-hosted theme and fonts. A card may name the conversation
+it came from and the scheduled task it waits on. The agent sees the board only when it
+asks or when a turn is opened from a card. Design:
+`docs/superpowers/specs/2026-10-09-work-board-design.md`. This reading does not measure
+the board on a phone, the provider's behaviour on a failed write or on a stale card, nor
+whether a model keeps a board tidy over a week of real use; those are the lab-VM acceptance
+in the design.
+
 Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
 Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo
 3.1.0 and Grafana 13.2.3:
