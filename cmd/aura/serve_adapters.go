@@ -20,6 +20,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/board"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
@@ -43,6 +44,16 @@ func newTaskTool(ts *cronTaskStore, notifier cron.Notifier) *tools.TaskTool {
 	if ts != nil {
 		t.Store = ts
 		t.Destinations = notifier
+	}
+	return t
+}
+
+// newBoardTool builds the deferred `board` tool. A nil pool keeps Store a genuine nil
+// interface for the same reason newTaskTool does: the pool-free manifest path lists the Spec.
+func newBoardTool(pool *pgxpool.Pool) *tools.BoardTool {
+	t := &tools.BoardTool{}
+	if pool != nil {
+		t.Store = board.New(pool)
 	}
 	return t
 }

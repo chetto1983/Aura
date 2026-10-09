@@ -23,7 +23,7 @@
 - **The provider does not check HTTP status.** `sendRequest` is `fetch(...).then(res => res.json())`: a 500 with a JSON body reads as success. The cockpit subclasses the provider and overrides the public `send` to check `res.ok`; on failure it shows the error and reloads the board from the server, and returns `{}` so the widget's queue does not hang. That is acceptance item 3 answered in code; the lab run confirms it.
 - **The free edition has no add-column or delete-column action**, only `update-column` (label, limit, collapsed). Columns are added and removed through `PUT /api/board/columns` from a small editor in the board's header; the agent does not edit columns in this release.
 - **No `aura.board` frame.** `useRunSignals` records the measurement: the cockpit's surfaces are mutually exclusive, so a run and the board are never on screen in the same tab, and a frame would reach no mounted board. The board query refetches on mount and on window focus, as the scheduler board does.
-- **`source` replaces `created_by`.** Values: `cockpit` (the operator on the board), `chat` (the agent with a live responder), `background` (the agent in a scheduled job or a swarm child, `gateway.HasResponder` false). Who created a card follows from where; `updated_by` (`operator`|`agent`) stays, because the last hand can differ from the first.
+- **`source` replaces `created_by`.** Values: `cockpit` (the operator on the board), `chat` (the agent with a live responder), `background` (the agent in a scheduled job or a swarm child). The tool reads it off the session id, not `gateway.HasResponder`: the gateway imports the tools package, so the reverse import is a cycle. A conversation's session is its UUID; a scheduled job runs as `agent_job:<run>` (`internal/cron/handlers/handler.go`) and a swarm worker as `<conv>-swarm-<child>`, neither of which parses, so both are `background` with no conversation link. Who created a card follows from where; `updated_by` (`operator`|`agent`) stays, because the last hand can differ from the first.
 - **Seen ids are per conversation**, kept by the tool keyed like `TodoTool`; an id returned by `list`, `search` or `add` in this conversation may be updated, moved or deleted. A stricter per-turn reset adds nothing against invented ids and costs a `list` per turn.
 - **Search is `ILIKE` on label and description plus an exact tag match**, bounded to 32 rows. A personal board is small; a `tsvector` column is a later measurement.
 - **Priorities follow the widget**: 1 Low, 2 Medium, 3 High (`getPriorityOptions`).
@@ -39,9 +39,9 @@
 | `web/src/board/*`, `web/src/shell/modes.ts`, `AppShell.tsx`, `resources.board.ts` + tests | 5 |
 | skill/prompt line, closing gates | 6 |
 
-### Task 1: Tables — [ ]
-### Task 2: Store — [ ]
-### Task 3: Tool and classifier — [ ]
+### Task 1: Tables — [x]
+### Task 2: Store — [x]
+### Task 3: Tool and classifier — [x]
 ### Task 4: REST mount — [ ]
 ### Task 5: Cockpit mode — [ ]
 ### Task 6: Closing gates — [ ]

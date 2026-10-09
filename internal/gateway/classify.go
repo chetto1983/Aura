@@ -37,6 +37,7 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 	"skill_manage":                       classifySkill,
 	"task":                               classifyTask,
 	"swarm_spawn":                        classifySwarmSpawn,
+	"board":                              classifyBoard,
 	mcptools.CalendarMultiplexedToolName: classifyCalendarAction,
 }
 
@@ -111,6 +112,32 @@ func classifySkill(raw json.RawMessage) scoring.RiskTier {
 	}
 	if skillScoredActions[a.Action] {
 		return scoring.ComputeSkillTier(scoring.SkillAction(a.Action), "")
+	}
+	return scoring.Risky
+}
+
+// boardFixedTiers grades every board action (prd.md §16, 2026-10-09). A card is the
+// operator's own reversible note, so add, update and move are ordinary writes, reserved and
+// recorded but never a prompt, as task schedule is; delete is the one verb that removes what
+// the operator wrote, and it stops the turn. Reads are Safe. Anything else saturates to Risky.
+var boardFixedTiers = map[string]scoring.RiskTier{
+	"list":   scoring.Safe,
+	"search": scoring.Safe,
+	"add":    scoring.Normal,
+	"update": scoring.Normal,
+	"move":   scoring.Normal,
+	"delete": scoring.Destructive,
+}
+
+func classifyBoard(raw json.RawMessage) scoring.RiskTier {
+	var a struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return scoring.Risky
+	}
+	if tier, ok := boardFixedTiers[a.Action]; ok {
+		return tier
 	}
 	return scoring.Risky
 }

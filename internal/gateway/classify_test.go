@@ -20,6 +20,7 @@ func skillSpec() tools.Spec { return (&tools.SkillManageTool{}).Spec() }
 func skillReadSpec() tools.Spec { return (&tools.SkillTool{}).Spec() }
 func taskSpec() tools.Spec      { return (&tools.TaskTool{}).Spec() }
 func swarmSpec() tools.Spec     { return (&tools.SwarmSpawn{}).Spec() }
+func boardSpec() tools.Spec     { return (&tools.BoardTool{}).Spec() }
 
 func mustArgs(t *testing.T, v any) json.RawMessage {
 	t.Helper()
@@ -172,6 +173,39 @@ func TestClassifyExhaustive(t *testing.T) {
 		}
 		assertSameActions(t, "task", schema, covered)
 	})
+	t.Run("board", func(t *testing.T) {
+		schema := actionEnum(t, boardSpec())
+		covered := map[string]bool{}
+		for a := range boardFixedTiers {
+			covered[a] = true
+		}
+		assertSameActions(t, "board", schema, covered)
+	})
+}
+
+// The board's tiers: delete is the one prompt, writes are ordinary, reads are free, and a
+// malformed or unknown action never slips below Risky.
+func TestClassifyBoard(t *testing.T) {
+	for raw, want := range map[string]scoring.RiskTier{
+		`{"action":"list"}`:   scoring.Safe,
+		`{"action":"search"}`: scoring.Safe,
+		`{"action":"add"}`:    scoring.Normal,
+		`{"action":"update"}`: scoring.Normal,
+		`{"action":"move"}`:   scoring.Normal,
+		`{"action":"delete"}`: scoring.Destructive,
+		`{"action":"purge"}`:  scoring.Risky,
+		`{"action":`:          scoring.Risky,
+	} {
+		if got := classify(boardSpec(), json.RawMessage(raw)); got != want {
+			t.Errorf("classify(board, %s) = %s, want %s", raw, got, want)
+		}
+	}
+	if !gated(classify(boardSpec(), json.RawMessage(`{"action":"delete"}`))) {
+		t.Error("board delete must stop the turn")
+	}
+	if gated(classify(boardSpec(), json.RawMessage(`{"action":"move"}`))) {
+		t.Error("board move must not stop the turn")
+	}
 }
 
 func assertSameActions(t *testing.T, tool string, schema, covered map[string]bool) {

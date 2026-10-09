@@ -12,7 +12,7 @@ import (
 
 // ambiguousToolName lists tools whose names are also ordinary English words the
 // prompt uses as nouns — "never edit a skill by writing files there", "a task that
-// splits into independent subtasks". A substring check cannot tell those from a
+// splits into independent subtasks", and "board" inside "dashboard". A substring check cannot tell those from a
 // tool reference, and widening it to word boundaries would not help: the words are
 // genuinely the same. They are exempted HERE, visibly, rather than by loosening the
 // rule for every tool.
@@ -21,7 +21,7 @@ import (
 // is the prompt TEACHING a deferred tool — "call skill_manage action=install", "shell_exec
 // is a full terminal" — and any such instruction names other tools, verbs or
 // arguments alongside, which the rest of the check still catches.
-var ambiguousToolName = map[string]bool{"skill": true, "task": true}
+var ambiguousToolName = map[string]bool{"board": true, "skill": true, "task": true}
 
 // promptTag matches an angle-bracket tag such as <memory_context> or
 // <tool_output source="swarm" ...>: a tag is a delimiter the prompt explains, not a

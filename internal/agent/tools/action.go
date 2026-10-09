@@ -55,3 +55,22 @@ func (r *ActionRouter) Dispatch(ctx context.Context, action string, args json.Ra
 	}
 	return fn(ctx, args)
 }
+
+// dispatchStoreAction is the Execute of a store-backed multiplexed tool (`task`, `board`): it
+// reads the `action` discriminator, refuses when the pool-free manifest path left the store
+// unset (every handler dereferences it), and routes. noStore names what is missing.
+func dispatchStoreAction(ctx context.Context, tool string, raw json.RawMessage, hasStore bool, noStore string, router func() *ActionRouter) (ToolResult, error) {
+	var head struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return ToolResult{}, fmt.Errorf("%s args: %w", tool, err)
+	}
+	if head.Action == "" {
+		return ToolResult{}, fmt.Errorf("%s: action is required", tool)
+	}
+	if !hasStore {
+		return ToolResult{}, fmt.Errorf("%s %s: %s in this context", tool, head.Action, noStore)
+	}
+	return router().Dispatch(ctx, head.Action, raw)
+}
