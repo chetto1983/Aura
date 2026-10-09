@@ -2851,6 +2851,24 @@ This does not cover:
   settled one-shot is still deleted;
 - a model failure after a tool ran, which is not retried because the tool may have acted.
 
+Measured on the lab VM at `5145b43f0` (2026-10-09), with the same cut as above from 14:14:30 to
+14:20:30 UTC. A one-shot `agent_job` and a one-shot `reminder` were both due at 14:16:00, both
+with `notify=telegram`. Both messages reached the operator's Telegram.
+- The job's first run failed at 14:16:48 on the same HTTP 502 and was re-armed for 14:18:48. Its
+  first retry ran at 14:18:58 and failed at 14:19:18, and was re-armed for 14:24:18. The second
+  retry ran at 14:24:28 and was delivered at 16:24 local time. Nothing was sent for the two
+  failed runs.
+- The reminder ran at 14:16:28 and its push failed at 14:16:36. The retries failed at 14:16:53,
+  14:17:33 and 14:19:25, each pushing the next one back by 30 s, 1 min and 2 min. The retry due
+  at 14:21:25 was delivered, at 16:21 local time.
+- Each one-shot was deleted on the tick that settled it, at 14:21:28 and 14:24:29.
+
+The retry of 14:18:33 ran only at 14:19:25. The tick that would have swept it was running the
+job's retry, and a tick waits for its runs before it sweeps notices. So every wait is a minimum.
+
+This does not measure an outage longer than the first two retry delays, a direct cloud provider
+whose lookup fails inside Aura (that path is covered only by unit tests), or a recurring task.
+
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
 promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
