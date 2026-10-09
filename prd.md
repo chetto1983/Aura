@@ -2827,16 +2827,26 @@ fixes and declined a third, keeping a failed one-shot visible on the board.
    64 min after the first failure. A delegation nudge shares the same retry rows and backs off
    the same way. A one-shot is kept until its notice settles, so a failed one now stays up to
    that hour.
-2. A job that fails on a transient model error before any tool ran is retried as a new fire,
-   2, 5, 15 and 30 min after each failure, about 52 min in all. These count as transient:
+2. A job that fails on a transient model error before any tool that changes state ran is
+   retried as a new fire, 2, 5, 15 and 30 min after each failure, about 52 min in all. These
+   count as transient:
    - an HTTP 429 or 5xx from the provider;
    - a timeout, a dropped or refused connection, or a stream that went silent;
    - a DNS lookup that timed out or failed temporarily, which Go reports as `IsTimeout` or
      `IsTemporary` for a SERVFAIL or a socket error (`net/dnsclient_unix.go`, go1.27.2).
 
    A name that does not exist, another 4xx, a cancel and the job's own deadline do not count.
-   "Before any tool ran" means the model never asked for a tool, so a retry cannot repeat an
-   effect.
+
+   A tool changes state when its spec says `Mutating`, for example `send_message`, a file write
+   or `shell_exec`. A job that asked only for read-only tools is retried: web search and fetch,
+   and memory and document reads, leave nothing behind to repeat. A job that asked for a
+   mutating tool is not retried, by the operator's decision: a fresh run could send the same
+   message twice, because Aura's duplicate protection keys on the run and the model may reword
+   the call. A tool name the registry does not know counts as mutating.
+
+   The first version of this rule (`72e5eece7`) also refused a retry after a read-only tool. The
+   operator rejected it the same day, since it lost the common scheduled job, one that searches
+   the web and then summarizes.
 
    The retry is a fire, not a wait inside the run. A tick waits for its runs to finish, and
    `/readyz` reports `scheduler_stalled` after 90 s without progress, so a run that slept
@@ -2849,7 +2859,8 @@ fixes and declined a third, keeping a failed one-shot visible on the board.
 This does not cover:
 - an outage longer than those windows: the job and its notice are lost as before, and the
   settled one-shot is still deleted;
-- a model failure after a tool ran, which is not retried because the tool may have acted.
+- a model failure after a mutating tool ran, which is not retried because the tool may have
+  acted.
 
 Measured on the lab VM at `5145b43f0` (2026-10-09), with the same cut as above from 14:14:30 to
 14:20:30 UTC. A one-shot `agent_job` and a one-shot `reminder` were both due at 14:16:00, both
