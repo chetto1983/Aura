@@ -30,14 +30,14 @@ speculative ones. Run, with Go 1.27.2 and `GOTOOLCHAIN=local` as CI does:
 ```bash
 export PATH="$HOME/go/bin:$PATH"
 go vet ./... && go build ./...
-golangci-lint run <touched packages>     # must be v2.13.2 built with go1.27.x
+golangci-lint run <touched packages>     # must be v2.14.0 built with go1.27.2
 go test -race -count=1 <touched packages>
 go test -count=1 ./...                   # the whole unit suite, not just touched packages
 ```
 
 - A golangci-lint built with an older Go refuses the module ("the Go language version ...
   is lower than the targeted Go version"). Rebuild it:
-  `GOTOOLCHAIN=go1.27.2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`.
+  `GOTOOLCHAIN=go1.27.2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0`.
 - **Docs are code here.** `cmd/aura/distribution_artifacts_test.go` asserts phrases in
   `README.md`, `docs/INSTALL.md` and `docs/BACKUP-RESTORE.md`. After any docs move or
   rewrap, run `go test -count=1 ./cmd/aura/`. Grep for tests that read a file's content,
