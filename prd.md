@@ -2893,7 +2893,10 @@ retried.**
 
 The run also logged `gateway: decision-fact insert failed`. A job with no origin conversation
 keys the gateway ledger on `agent_job:<run id>`, which is not a UUID, so the decision facts of
-such jobs are never recorded. That gap is open and not addressed here.
+such jobs are never recorded. Only the CLI creates such a job: the `task` tool always forwards the
+conversation it was called from, and the boot seeders create system sweeps, not agent jobs. The
+CLI is a debug tool nobody uses in production, so the operator closed this as not relevant
+(2026-10-09).
 
 Decision (2026-10-09): a model call that runs out of its own time while the job still has time
 counts as transient. In an `agent_job` the job's context is the parent of every model call, and
