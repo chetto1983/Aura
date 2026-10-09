@@ -13,8 +13,7 @@ import {
 } from '@svar-ui/react-kanban';
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
-import '@svar-ui/react-kanban/all.css';
-import '@/styles/svar.css';
+import '@/styles/svarWidgets';
 import {
   BOARD_QUERY_KEY,
   createBoardProvider,

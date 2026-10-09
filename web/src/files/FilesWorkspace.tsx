@@ -9,8 +9,7 @@ import {
 } from '@svar-ui/react-filemanager';
 import { Locale } from '@svar-ui/react-core';
 import { useTranslation } from 'react-i18next';
-import '@svar-ui/react-filemanager/all.css';
-import '@/styles/svar.css';
+import '@/styles/svarWidgets';
 import {
   createFileManagerProvider,
   directURL,
