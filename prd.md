@@ -3048,6 +3048,13 @@ putting 64–320 KiB objects into a throwaway bucket, about 7 a second.
 - The guest's journal had lost its last 27 s as well, so the reset discarded unsynced writes
   the way a power loss does.
 
+A third reset measured the window at Aura's own pace, one 64–320 KiB PUT every 5 s for
+4.5 minutes:
+- Of 51 acknowledged objects, 47 read back intact, and none was corrupt.
+- The last 4 were gone; the oldest of them had been acknowledged 15 to 20 s before the
+  reset. The one acknowledged 5 s earlier survived.
+- The journal again ended about 20 s early.
+
 A Garage acknowledgement is therefore not durable until SQLite's WAL reaches the disk. LMDB is
 no way out:
 - Garage's configuration reference calls it prone to corruption after an unclean shutdown.
@@ -3058,8 +3065,8 @@ Aura marks an asset `accepted` in PostgreSQL as soon as Garage acknowledges its 
 (`internal/assets/ingest_agent.go`). A power loss inside that window leaves an accepted asset
 whose object is gone.
 
-This does not measure the window under Aura's light write load, where SQLite checkpoints
-rarely, an appliance's own SSD, or a power cut that also drops the host's cache.
+This does not measure an appliance's own SSD, a filesystem tuned differently from the VM's
+ext4 defaults, or a power cut that also drops the host's cache.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
