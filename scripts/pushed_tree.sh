@@ -22,6 +22,8 @@ set -euo pipefail
 
 tree="${AURA_PUSHED_TREE:-$HOME/.cache/aura/pushed-tree}"
 marker="$tree.commit"
+# The directories whose gitignored node_modules the gates need inside the checkout.
+node_dirs=". web packages/create-aura"
 
 all_zero() { case "$1" in *[!0]*) return 1 ;; *) return 0 ;; esac; }
 
@@ -72,7 +74,7 @@ prepare() {
     # `git clean -ffdx` can traverse an ignored node_modules symlink on WSL/DrvFS
     # and remove files from the shared install. Unlink only the symlinks first;
     # they are restored below after the checkout is clean.
-    for dir in . web; do
+    for dir in $node_dirs; do
       if [ -L "$tree/$dir/node_modules" ]; then
         rm -- "$tree/$dir/node_modules"
       fi
@@ -84,7 +86,7 @@ prepare() {
     git worktree add -q -f --detach "$tree" "$commit"
   fi
   main="$(git rev-parse --show-toplevel)"
-  for dir in . web; do
+  for dir in $node_dirs; do
     if [ -d "$main/$dir/node_modules" ]; then
       ln -sfn "$main/$dir/node_modules" "$tree/$dir/node_modules"
     fi
