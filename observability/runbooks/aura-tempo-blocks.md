@@ -16,6 +16,8 @@ Open panel 6 of `aura-data-retention`. From the Aura install directory (`/opt/au
 docker compose logs --since 1h tempo | grep 'failed to poll'
 ```
 
+After a power loss `docker compose logs` can stop at the line the crash truncated and show nothing later; read the container's raw log instead (`docker inspect --format '{{.LogPath}}' aura-tempo-1`).
+
 `failed reading unknown blocks: unexpected end of JSON input` means an unreadable meta. Any other reason, such as permission denied or no space left on the device, has a different cause and the repair below will not help.
 
 ## Immediate safe actions

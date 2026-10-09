@@ -2887,6 +2887,20 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   The alert fires when the 10-minute increase stays above zero for 15 minutes. With the
   default 5-minute poll, a broken tenant keeps that window above zero, and one failed poll
   holds it there for 10 minutes only, so a lone failure never fires.
+- Two hard resets of the lab VM on 2026-10-09 reproduced the empty meta. The VMware reset
+  dropped the guest's memory and kept its virtual disk.
+  - Compaction was writing about 2.5 metas a minute. The first reset left one empty
+    `meta.json`, and the second left three more.
+  - Docker's restart policy started Tempo 8 s and then 14 s before `aura.service` ran the
+    repair. Each time, Tempo's first poll failed with `failed to poll or create index for
+    tenant`.
+  - The repair removed the blocks. The next poll, 5 minutes later, rebuilt the tenant index
+    with no restart.
+
+  After an unclean boot Tempo is therefore blind for one poll interval, too short for the
+  alert. Tempo's WAL replay also dropped a block it could not read, so traces not yet
+  flushed are lost. `docker logs` stopped at the line the reset truncated; the container's
+  raw JSON log still held every later line.
 - Grafana 13.2.3 started on a volume initialised by 12.3.9, and on one initialised by
   12.4.12. Each time both datasources were healthy, and the four provisioned dashboards
   and their folder migrated with none rejected. It used 249 MiB of its 384 MiB limit. None
@@ -3024,8 +3038,28 @@ acknowledged. Measured 2026-10-09 on the lab VM:
   buffered, with the device in write-through.
 - Aura had written 2 objects since that Garage was recreated, that morning.
 
-Both options are now on. This does not measure an appliance's own SSD, a real power loss, or
-Garage under sustained write load.
+Both options are now on.
+
+A hard reset of the lab VM on 2026-10-09 confirmed the rollback under load. One writer was
+putting 64–320 KiB objects into a throwaway bucket, about 7 a second.
+- Of 3,721 PUTs that Garage acknowledged, 3,714 read back with their sha256, and none was
+  corrupt.
+- The last 7, acknowledged in the final 0.6 s, were gone (404).
+- The guest's journal had lost its last 27 s as well, so the reset discarded unsynced writes
+  the way a power loss does.
+
+A Garage acknowledgement is therefore not durable until SQLite's WAL reaches the disk. LMDB is
+no way out:
+- Garage's configuration reference calls it prone to corruption after an unclean shutdown.
+- With `metadata_fsync` on, it still runs `MDB_NOMETASYNC`, which may undo the last
+  transaction.
+
+Aura marks an asset `accepted` in PostgreSQL as soon as Garage acknowledges its object
+(`internal/assets/ingest_agent.go`). A power loss inside that window leaves an accepted asset
+whose object is gone.
+
+This does not measure the window under Aura's light write load, where SQLite checkpoints
+rarely, an appliance's own SSD, or a power cut that also drops the host's cache.
 
 Postgres uses a seeded `0 1 * * * Europe/Rome` `backup_postgres` task, atomic dump promotion and 14-day
 retention. ArcadeDB loads `docker/arcadedb/backup.json`, covers all databases including
