@@ -86,8 +86,9 @@ export function BoardColumnsDialog({
         </DialogHeader>
         <ol className="flex flex-col gap-2">
           {draft.map((row, index) => (
-            <li key={row.id} className="flex items-center gap-1.5">
+            <li key={row.id} className="flex flex-wrap items-center gap-1.5 sm:flex-nowrap">
               <Input
+                className="basis-full sm:basis-auto sm:flex-1"
                 aria-label={t('board.columns.label', { position: index + 1 })}
                 value={row.label}
                 maxLength={80}

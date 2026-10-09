@@ -98,7 +98,7 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
       <div className="flex items-center gap-1.5 overflow-x-auto md:flex-wrap">
         <NativeSelect
           size="sm"
-          className="w-auto min-w-32 shrink-0"
+          className="w-auto shrink-0 pr-10 field-sizing-content"
           aria-label={t('board.filters.source')}
           value={filters.source ?? ''}
           onChange={(event) => {
@@ -114,7 +114,7 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
         </NativeSelect>
         <NativeSelect
           size="sm"
-          className="w-auto min-w-32 shrink-0"
+          className="w-auto shrink-0 pr-10 field-sizing-content"
           aria-label={t('board.filters.priority')}
           value={filters.priority === undefined ? '' : String(filters.priority)}
           onChange={(event) => {
@@ -130,7 +130,7 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
         </NativeSelect>
         <NativeSelect
           size="sm"
-          className="w-auto min-w-32 shrink-0"
+          className="w-auto shrink-0 pr-10 field-sizing-content"
           aria-label={t('board.filters.due')}
           value={filters.due ?? ''}
           onChange={(event) => {
@@ -144,7 +144,7 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
         {tags.length > 0 && (
           <NativeSelect
             size="sm"
-            className="w-auto min-w-32 shrink-0"
+            className="w-auto shrink-0 pr-10 field-sizing-content"
             aria-label={t('board.filters.tag')}
             value={filters.tag ?? ''}
             onChange={(event) => {

@@ -84,7 +84,7 @@ export const resources = {
           graph: 'Graph',
           governance: 'Gov',
           documents: 'Docs',
-          settings: 'Settings',
+          settings: 'Config',
         },
       },
       chat: {
@@ -357,7 +357,7 @@ export const resources = {
         },
         modesCompact: {
           chat: 'Chat',
-          board: 'Bacheca',
+          board: 'Bach.',
           studio: 'Studio',
           graph: 'Grafo',
           governance: 'Gov',

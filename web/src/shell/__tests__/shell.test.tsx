@@ -6,7 +6,8 @@ import { ModeSwitcher } from '../ModeSwitcher';
 import { ModeTabBar } from '../ModeTabBar';
 import { useEdgeSwipe } from '../useEdgeSwipe';
 import { useSurfaceIntent } from '../useSurfaceIntent';
-import type { SurfaceIntent } from '../modes';
+import { MODES, type SurfaceIntent } from '../modes';
+import { resources } from '../../i18n/resources';
 
 function EdgeProbe({
   onLeft,
@@ -47,6 +48,23 @@ function SurfaceProbe() {
     </>
   );
 }
+
+// Seven tabs share a 360-390px phone: about 52px each at 11px type. A longer word does not
+// wrap or truncate (the bar rules both out), it runs into its neighbour, as "Bacheca" did into
+// "Studio" when the board mode arrived (operator screenshot, 2026-10-09).
+describe('mobile mode labels', () => {
+  it('keeps every compact label to six characters in both languages', () => {
+    for (const lang of ['en', 'it'] as const) {
+      const compact = resources[lang].translation.shell.modesCompact as Record<string, string>;
+      for (const mode of MODES) {
+        expect(
+          compact[mode]?.length ?? 99,
+          `${lang} ${mode}: ${String(compact[mode])}`,
+        ).toBeLessThanOrEqual(6);
+      }
+    }
+  });
+});
 
 describe('shell utilities', () => {
   afterEach(() => {
