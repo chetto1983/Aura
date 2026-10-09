@@ -230,7 +230,7 @@ func TestRouteApproveProductionDeniesEvenWithLedgerApproval(t *testing.T) {
 func TestGatewayApproveChallengeRefusedUnderProduction(t *testing.T) {
 	g := New(config.ProfileServerProduction, &fakeStore{})
 	conv, tool, fp := testKey().ConversationID, gatedSpec().Name, "fp-prod"
-	g.approvals.Challenge(conv, tool, fp, "q", grantSubject{Tool: tool})
+	g.approvals.Challenge(conv, tool, fp, "q", grantSubject{Tool: tool}, "")
 
 	accept := ApprovalAccept{
 		ConversationID: conv, Tool: tool, ArgsFingerprint: fp, Question: "q", OperatorID: "local",

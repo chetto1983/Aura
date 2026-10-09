@@ -72,12 +72,19 @@ type scopeLabel struct {
 // It is the SINGLE source for both the options the operator is shown and the mapping the
 // resume hook reads back, so a label can never be offered under one meaning and honoured
 // under another.
-func scopeLabels(s grantSubject) []scopeLabel {
-	return []scopeLabel{
+//
+// Under PolicyAsk the "always" entry is absent: the operator asked to be asked, so the
+// prompt cannot offer to stop asking, and an "always" answer relayed anyway resolves, like
+// any label this table did not generate, to ScopeOnce.
+func scopeLabels(s grantSubject, policy Policy) []scopeLabel {
+	labels := []scopeLabel{
 		{Label: "Approve once", Scope: ScopeOnce},
 		{Label: fmt.Sprintf("Approve %s for this conversation", s), Scope: ScopeSession},
-		{Label: fmt.Sprintf("Always approve %s", s), Scope: ScopeAlways},
 	}
+	if policy == PolicyAsk {
+		return labels
+	}
+	return append(labels, scopeLabel{Label: fmt.Sprintf("Always approve %s", s), Scope: ScopeAlways})
 }
 
 // scopeOptionPrefix marks an option VALUE as a gateway scope choice. The value is a
@@ -104,11 +111,11 @@ func scopeOptionValue(scope ApprovalScope, s grantSubject) string {
 }
 
 // scopeOptions is the option list routeApprove hands the model to relay verbatim into
-// ask_user's options. ask_user accepts 2-4 distinct entries; these are three, distinct by
+// ask_user's options. ask_user accepts 2-4 distinct entries; these are two or three, distinct by
 // construction. The English label is the fallback for a surface that does not localize —
 // it is never the thing matched on resume.
-func scopeOptions(s grantSubject) []ScopeOption {
-	entries := scopeLabels(s)
+func scopeOptions(s grantSubject, policy Policy) []ScopeOption {
+	entries := scopeLabels(s, policy)
 	out := make([]ScopeOption, len(entries))
 	for i, e := range entries {
 		out[i] = ScopeOption{Label: e.Label, Value: scopeOptionValue(e.Scope, s)}
@@ -125,8 +132,8 @@ func scopeOptions(s grantSubject) []ScopeOption {
 // Matching the value against THIS subject's own encoding is what stops a replay: a code
 // minted for "calendar delete_event" does not equal the one for "skill_manage delete", so
 // an answer lifted from another approval grants nothing here.
-func scopeForAnswer(s grantSubject, answer string) ApprovalScope {
-	for _, e := range scopeLabels(s) {
+func scopeForAnswer(s grantSubject, policy Policy, answer string) ApprovalScope {
+	for _, e := range scopeLabels(s, policy) {
 		if answer == scopeOptionValue(e.Scope, s) || answer == e.Label {
 			return e.Scope
 		}

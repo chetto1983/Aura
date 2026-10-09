@@ -344,7 +344,7 @@ func TestApprovalRequestCarriesTheScopeOptions(t *testing.T) {
 	if err := json.Unmarshal([]byte(v.ApprovalRequest.Preview), &payload); err != nil {
 		t.Fatalf("approval payload: %v", err)
 	}
-	want := scopeOptions(subjectFor(gatedSpec(), args))
+	want := scopeOptions(subjectFor(gatedSpec(), args), "")
 	if len(payload.Options) != len(want) {
 		t.Fatalf("options = %v, want %v", payload.Options, want)
 	}

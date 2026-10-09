@@ -74,13 +74,14 @@ type ResolvedApproval struct {
 //     return Verdict{Approve, ApprovalRequest} — the shell_exec-style approval-required
 //     tool RESULT (no pause sentinel). The resume hook records the operator's accept ONLY
 //     IF this challenge exists AND the operator-visible question matches it (CR-01).
-func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
+func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scoring.RiskTier, rawArgs json.RawMessage, key ReservationKey, policy Policy) (Verdict, error) {
 	// WR-01 deny-before-Consume: the production/headless hard-deny is evaluated BEFORE the
 	// cross-turn Consume, so a recorded (or CR-01-fabricated) approval can NEVER be consumed
 	// on a headless/production run. D-03b: production identity is unverified pre-Phase-36, so
 	// it is never interactive; D-03a: a headless run has no positively-known responder → DENY.
 	if g.profile == config.ProfileServerProduction || !responderPresent(ctx) {
-		g.recordDegradedDeny(ctx, spec, key, tier)
+		g.recordDenyFact(ctx, spec, key, tier, "gateway degraded_deny: no interactive approver",
+			map[string]any{"degraded_deny": true, "reason": "no_approver"})
 		return Verdict{Decision: Deny, Tier: tier, Reason: "no interactive approver — action declined"}, nil
 	}
 	// Standing grants (amendment #127) come FIRST, after the hard-deny and before the
@@ -93,7 +94,9 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	if r, ok := g.approvals.SessionGrant(key.ConversationID, subject); ok && r.Approved {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: r.OperatorID, Scope: ScopeSession}, nil
 	}
-	if g.alwaysGranted(ctx, identityctx.IdentityID(ctx), subject) {
+	// An "always" grant does not satisfy an ask: the operator who set the policy asked to be
+	// asked, which a standing grant from before the policy cannot answer.
+	if policy != PolicyAsk && g.alwaysGranted(ctx, identityctx.IdentityID(ctx), subject) {
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: "local", Scope: ScopeAlways}, nil
 	}
 	// Cross-turn ledger re-entry (D-03 point 2, the production carrier): reachable only under
@@ -140,8 +143,8 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 	// ApproveChallenge requires this challenge AND a matching operator-visible question before
 	// recording — the informed-consent binding a benign relayed question cannot satisfy (CR-01).
 	question := gatewayApprovalQuestion(spec, tier, rawArgs)
-	g.approvals.Challenge(key.ConversationID, spec.Name, fp, question, subject)
-	result := gatewayApprovalRequiredResult(spec, tier, key, fp, question, subject)
+	g.approvals.Challenge(key.ConversationID, spec.Name, fp, question, subject, policy)
+	result := gatewayApprovalRequiredResult(spec, tier, key, fp, question, subject, policy)
 	return Verdict{Decision: Approve, Tier: tier, ApprovalRequest: &result}, nil
 }
 
@@ -158,7 +161,7 @@ func (g *Gateway) routeApprove(ctx context.Context, spec tools.Spec, tier scorin
 // and question are computed ONCE by routeApprove and threaded in (IN-02: a single
 // gatewayArgsFingerprint call site, and the SAME question recorded as the challenge).
 func gatewayApprovalRequiredResult(
-	spec tools.Spec, tier scoring.RiskTier, key ReservationKey, fp, question string, subject grantSubject,
+	spec tools.Spec, tier scoring.RiskTier, key ReservationKey, fp, question string, subject grantSubject, policy Policy,
 ) tools.ToolResult {
 	resumeContext := gatewayApprovalContext(spec, tier, key, fp)
 	payload := map[string]any{
@@ -167,11 +170,11 @@ func gatewayApprovalRequiredResult(
 		"tier":           string(tier),
 		"args_sha256":    fp,
 		"question":       question,
-		"options":        scopeOptions(subject),
+		"options":        scopeOptions(subject, policy),
 		"resume_context": resumeContext,
 		"message": "This mutating action requires operator approval and has been WITHHELD. " +
 			"Call ask_user with kind=\"approval\", question exactly equal to the question field, " +
-			"options exactly equal to the options field (copy all three verbatim — do not reword, " +
+			"options exactly equal to the options field (copy every one verbatim — do not reword, " +
 			"reorder or drop any), priority=" + strconv.Itoa(tools.ApprovalPriority(tier)) +
 			", and resume_context exactly equal to the resume_context field. " +
 			"Retry the exact call only after the user accepts.",
@@ -230,17 +233,25 @@ func gatewayApprovalContext(spec tools.Spec, tier scoring.RiskTier, key Reservat
 	return b
 }
 
-// recordDegradedDeny durably records the headless/production denial as a TERMINAL `end`
-// row (event_kind='end', status='error', reason=no_approver in Event.Meta) keyed on the
-// ORIGINATING conversation UUID (D-03 point 1 / GATE-01). This is the only legal terminal
-// shape (migration 0011 event_kind ∈ {'start','end'}); because the call never executes, a
-// lone `end` row is correct — the 35-05 reconciler's start∧¬end anti-join never flags it,
-// and a denied triple never later executes (a model retry yields a fresh tool_call_id), so
-// it never collides with a future start/end. A store or key failure is a WARN: the denial
-// itself still stands (fail-closed) — only the audit fact is best-effort.
-func (g *Gateway) recordDegradedDeny(ctx context.Context, spec tools.Spec, key ReservationKey, tier scoring.RiskTier) {
+// recordDenyFact durably records a refusal as a TERMINAL `end` row (event_kind='end',
+// status='error') keyed on the ORIGINATING conversation UUID (D-03 point 1 / GATE-01). Two
+// refusals write it: the headless/production degraded deny (reason=no_approver) and an
+// identity's deny policy (reason=policy); marker carries which. This is the only legal
+// terminal shape (migration 0011 event_kind ∈ {'start','end'}); because the call never
+// executes, a lone `end` row is correct — the 35-05 reconciler's start∧¬end anti-join never
+// flags it, and a denied triple never later executes (a model retry yields a fresh
+// tool_call_id), so it never collides with a future start/end. A store or key failure is a
+// WARN: the denial itself still stands (fail-closed) — only the audit fact is best-effort.
+func (g *Gateway) recordDenyFact(ctx context.Context, spec tools.Spec, key ReservationKey, tier scoring.RiskTier, message string, marker map[string]any) {
 	if g.store == nil {
 		return
+	}
+	meta := map[string]any{
+		"gateway_verdict": string(Deny),
+		"gateway_tier":    string(tier),
+	}
+	for k, v := range marker {
+		meta[k] = v
 	}
 	ev := toolinvocations.Event{
 		ConversationID: key.ConversationID,
@@ -250,16 +261,11 @@ func (g *Gateway) recordDegradedDeny(ctx context.Context, spec tools.Spec, key R
 		Event:          toolinvocations.EventEnd,
 		EndedAt:        time.Now().UTC(),
 		Status:         "error",
-		Error:          "gateway degraded_deny: no interactive approver",
-		Meta: map[string]any{
-			"gateway_verdict": string(Deny),
-			"gateway_tier":    string(tier),
-			"degraded_deny":   true,
-			"reason":          "no_approver",
-		},
+		Error:          message,
+		Meta:           meta,
 	}
 	if err := g.store.Insert(ctx, ev); err != nil {
-		slog.Warn("gateway: degraded_deny fact insert failed",
-			"tool", spec.Name, "conversation_id", key.ConversationID, "err", err)
+		slog.Warn("gateway: deny fact insert failed",
+			"tool", spec.Name, "conversation_id", key.ConversationID, "reason", marker["reason"], "err", err)
 	}
 }

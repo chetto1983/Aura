@@ -30,7 +30,7 @@ func TestGatewayApprovalsLedgerOneShot(t *testing.T) {
 func TestGatewayApprovalsChallengeApproveConsume(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
-	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool})
+	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool}, "")
 
 	if err := approveChallenge(led, conv, tool, fp, q, ResolvedApproval{Approved: true, OperatorID: "op-7"}); err != nil {
 		t.Fatalf("ApproveChallenge(matching question): %v", err)
@@ -51,8 +51,8 @@ func TestGatewayApprovalsDiscardChallengeIsExactAndNilSafe(t *testing.T) {
 	nilGateway.DiscardApprovalChallenge("conv", "tool", "fp")
 
 	ledger := NewGatewayApprovals()
-	ledger.Challenge("conv", "tool", "fp-first", "first?", grantSubject{Tool: "tool"})
-	ledger.Challenge("conv", "tool", "fp-second", "second?", grantSubject{Tool: "tool"})
+	ledger.Challenge("conv", "tool", "fp-first", "first?", grantSubject{Tool: "tool"}, "")
+	ledger.Challenge("conv", "tool", "fp-second", "second?", grantSubject{Tool: "tool"}, "")
 	gateway := &Gateway{approvals: ledger}
 	gateway.DiscardApprovalChallenge("conv", "tool", "fp-first")
 
@@ -75,7 +75,7 @@ func TestGatewayApprovalsDiscardChallengeIsExactAndNilSafe(t *testing.T) {
 func TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp, q := "conv-1", "swarm_spawn", "fp-abc", "Approve swarm_spawn (risk=risky)? args: goals"
-	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool})
+	led.Challenge(conv, tool, fp, q, grantSubject{Tool: tool}, "")
 	led.Approve(conv, tool, fp, ResolvedApproval{Approved: true, OperatorID: "op-7"})
 
 	// The pending challenge must be gone: a question-matched ApproveChallenge now finds
@@ -96,7 +96,7 @@ func TestGatewayApprovalsApproveClearsSameKeyPendingChallenge(t *testing.T) {
 func TestGatewayApprovalsApproveChallengeQuestionMismatch(t *testing.T) {
 	led := NewGatewayApprovals()
 	conv, tool, fp := "conv-1", "swarm_spawn", "fp-abc"
-	led.Challenge(conv, tool, fp, "Approve swarm_spawn (risk=risky)? args: goals", grantSubject{Tool: tool})
+	led.Challenge(conv, tool, fp, "Approve swarm_spawn (risk=risky)? args: goals", grantSubject{Tool: tool}, "")
 
 	err := approveChallenge(led, conv, tool, fp, "Save your meeting notes?", ResolvedApproval{Approved: true})
 	if err == nil {
@@ -133,7 +133,7 @@ func TestGatewayApprovalsApproveChallengeNotFound(t *testing.T) {
 func TestGatewayApprovalsEvictPrefixSweep(t *testing.T) {
 	led := NewGatewayApprovals()
 	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // approved map
-	led.Challenge("conv-A", "skill", "fp-2", "Q-A", grantSubject{Tool: "skill"})   // pending map
+	led.Challenge("conv-A", "skill", "fp-2", "Q-A", grantSubject{Tool: "skill"}, "")   // pending map
 	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // must survive
 
 	led.Evict("conv-A")
@@ -159,7 +159,7 @@ func TestGatewayApprovalsNilSafe(t *testing.T) {
 	if _, ok := led.Consume("c", "t", "f"); ok {
 		t.Fatal("nil ledger Consume must be false")
 	}
-	led.Challenge("c", "t", "f", "q", grantSubject{Tool: "t"}) // must not panic
+	led.Challenge("c", "t", "f", "q", grantSubject{Tool: "t"}, "") // must not panic
 	if err := approveChallenge(led, "c", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("nil ledger ApproveChallenge must return an error (challenge not found)")
 	}
@@ -183,7 +183,7 @@ func TestGatewayApprovalsEmptyArgsRejected(t *testing.T) {
 		t.Fatal("empty fingerprint must not record")
 	}
 	// An empty coordinate must not record a challenge either (guard parity with Approve).
-	led.Challenge("", "t", "f", "q", grantSubject{Tool: "t"})
+	led.Challenge("", "t", "f", "q", grantSubject{Tool: "t"}, "")
 	if err := approveChallenge(led, "", "t", "f", "q", ResolvedApproval{Approved: true}); err == nil {
 		t.Fatal("empty convID ApproveChallenge must error (no challenge recorded)")
 	}

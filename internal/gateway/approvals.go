@@ -58,6 +58,9 @@ type gatewayChallenge struct {
 	// recorded at issue time, from the same arguments the question summarized, so the
 	// resume hook resolves the answer against the subject the operator actually saw.
 	subject grantSubject
+	// policy is the subject's policy when the challenge was issued. Under PolicyAsk the
+	// options carried no "always", so the answer must be resolved against that same table.
+	policy Policy
 }
 
 // NewGatewayApprovals builds an empty ledger with both maps initialized.
@@ -123,7 +126,7 @@ func (a *GatewayApprovals) Consume(convID, toolName, argsFingerprint string) (Re
 // resume hook later calls ApproveChallenge, which records the operator's approval ONLY IF
 // this challenge exists AND the operator-visible question matches it. An empty coordinate
 // is a no-op (guard parity with Approve); nil-receiver-safe; guarded by a.mu.
-func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question string, subject grantSubject) {
+func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question string, subject grantSubject, policy Policy) {
 	if a == nil || convID == "" || toolName == "" || argsFingerprint == "" {
 		return
 	}
@@ -135,6 +138,7 @@ func (a *GatewayApprovals) Challenge(convID, toolName, argsFingerprint, question
 	a.pending[gatewayApprovalKey(convID, toolName, argsFingerprint)] = gatewayChallenge{
 		question: question,
 		subject:  subject,
+		policy:   policy,
 	}
 }
 
@@ -174,7 +178,7 @@ func (a *GatewayApprovals) ApproveChallenge(
 	}
 	a.approved[key] = r
 	delete(a.pending, key)
-	return scopeForAnswer(ch.subject, answer), ch.subject, nil
+	return scopeForAnswer(ch.subject, ch.policy, answer), ch.subject, nil
 }
 
 // DiscardChallenge removes one unresolved challenge without creating an approval.

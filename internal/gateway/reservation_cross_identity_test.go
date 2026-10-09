@@ -112,8 +112,8 @@ func TestReservationKeyCrossIdentityDoesNotMerge(t *testing.T) {
 	t.Run("ledger_non_merge", func(t *testing.T) {
 		store := newUniqueKeyStore()
 		g := New(config.ProfileSingleUserHardened, store)
-		startA := g.reservationStart(spec, args, keyA, scoring.Normal, "", "")
-		startB := g.reservationStart(spec, args, keyB, scoring.Normal, "", "")
+		startA := g.reservationStart(spec, args, keyA, scoring.Normal, "", "", "")
+		startB := g.reservationStart(spec, args, keyB, scoring.Normal, "", "", "")
 
 		var wg sync.WaitGroup
 		var accA, accB bool

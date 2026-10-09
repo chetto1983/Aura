@@ -248,14 +248,14 @@ func boundedString(value string, limit int) string {
 // folded into the single start Meta so both origins produce the SAME single start∧¬end shape.
 func (g *Gateway) reserve(
 	ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
-	tier scoring.RiskTier, operatorID string, scope ApprovalScope,
+	tier scoring.RiskTier, operatorID string, scope ApprovalScope, policy Policy,
 ) (Verdict, error) {
 	if g.store == nil {
 		// A strict Gateway constructed without a ledger (standalone/tests): allow without
 		// a reservation. The dev/local_trusted no-op already short-circuits before here.
 		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}, nil
 	}
-	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID, scope))
+	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID, scope, policy))
 	if err != nil {
 		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}, nil
 	}
@@ -286,7 +286,7 @@ func (g *Gateway) reserve(
 // toParams, so any secret on the tool command line is redacted before the durable column.
 func (g *Gateway) reservationStart(
 	spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
-	tier scoring.RiskTier, operatorID string, scope ApprovalScope,
+	tier scoring.RiskTier, operatorID string, scope ApprovalScope, policy Policy,
 ) toolinvocations.Event {
 	meta := map[string]any{
 		"gateway_verdict": string(Allow),
@@ -304,6 +304,10 @@ func (g *Gateway) reservationStart(
 		// #127). Recording WHICH grant is the whole point: an audit that shows an
 		// unprompted destructive execution and cannot say why is worse than no record.
 		meta["approval_scope"] = string(scope)
+	}
+	if policy != "" {
+		// The identity's policy, not the tier, is why this call was asked for.
+		meta["gateway_policy"] = string(policy)
 	}
 	return toolinvocations.Event{
 		ConversationID: key.ConversationID,

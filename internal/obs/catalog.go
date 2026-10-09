@@ -93,6 +93,7 @@ const (
 	RetentionDiskUtilizationID   InstrumentID = "retention_disk_utilization"
 	IngestionJobsID              InstrumentID = "ingestion_jobs"
 	IngestionQueueDepthID        InstrumentID = "ingestion_queue_depth"
+	GatewayPolicyDecisionsID     InstrumentID = "gateway_policy_decisions"
 )
 
 // Descriptor defines one stable OTel instrument and its Prometheus projection.
@@ -131,6 +132,7 @@ var descriptors = []Descriptor{
 	count(AgentPrefixDriftID, "aura.agent.prefix.drift", "aura_agent_prefix_drift_total", nil, "Total cache-stable message prefix drift events."),
 	count(AgentTeacherAttemptsID, "aura.agent.teacher.attempt", "aura_agent_teacher_attempt_total", []AttributeKey{AttributeOutcome}, "Total background reasoning-teacher attempts by outcome."),
 	count(AgentTurnDecisionsID, "aura.agent.turn.decision", "aura_agent_turn_decision_total", []AttributeKey{AttributeOutcome}, "Total turn effort decisions by source."),
+	count(GatewayPolicyDecisionsID, "aura.gateway.policy.decision", "aura_gateway_policy_decision_total", []AttributeKey{AttributeOutcome}, "Total tool calls a per-identity policy routed to approval or denied."),
 	count(AgentLLMCallsID, "aura.agent.llm.call", "aura_agent_llm_call_total", []AttributeKey{AttributeOutcome, AttributeErrorClass}, "Total completed LLM call boundaries."),
 	count(AgentPauseTransitionsID, "aura.agent.pause.transition", "aura_agent_pause_transition_total", []AttributeKey{AttributeOperation, AttributeState, AttributeOutcome}, "Total pause lifecycle transitions."),
 	count(RunnerResumeCallsID, "aura.runner.resume", "aura_runner_resume_total", []AttributeKey{AttributeOperation, AttributeOutcome, AttributeErrorClass}, "Total runner resume boundaries."),
@@ -280,7 +282,7 @@ var allowedAttributeValues = map[AttributeKey]map[string]struct{}{
 		"panic", "hook_error", "breaker_open", "consumer_stopped", "empty_response", "tool_args_truncated", "tool_call_leaked", "tool_terminal", "denied",
 		"accepted", "declined", "replayed", "conflict", "in_progress", "indeterminate", "skipped", "allow", "result", "fail_open",
 		"succeeded", "dead_letter", "retry_scheduled", "invalid",
-		"user", "teacher", "memory", "seeds", "greeting", "fallback", "undecided", ValueOther,
+		"user", "teacher", "memory", "seeds", "greeting", "fallback", "undecided", "ask", ValueOther,
 	),
 	AttributeErrorClass: finiteSet("none", "canceled", "timeout", "unavailable", "invalid", "conflict", "permission", "panic", "internal", ValueOther),
 	AttributeState:      finiteSet("starting", "running", "ready", "degraded", "draining", "stopped", "pending", "in_progress", "completed", "failed", "indeterminate", "expired", ValueOther),

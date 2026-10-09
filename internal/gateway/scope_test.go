@@ -61,7 +61,7 @@ func TestScopeOptionsAreRelayable(t *testing.T) {
 		{Tool: "skill_manage", Action: "delete"},
 		{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"},
 	} {
-		opts := scopeOptions(subject)
+		opts := scopeOptions(subject, "")
 		if len(opts) < 2 || len(opts) > 4 {
 			t.Fatalf("subject %q: %d options, ask_user accepts 2-4", subject, len(opts))
 		}
@@ -83,7 +83,7 @@ func TestScopeOptionsAreRelayable(t *testing.T) {
 // surfaces render their own words from this, so a change here is a change to their copy.
 func TestScopeOptionValueIsALocaleFreeCode(t *testing.T) {
 	t.Parallel()
-	opts := scopeOptions(grantSubject{Tool: "calendar", Action: "delete_event"})
+	opts := scopeOptions(grantSubject{Tool: "calendar", Action: "delete_event"}, "")
 	want := []string{
 		"gateway_scope:once:calendar delete_event",
 		"gateway_scope:session:calendar delete_event",
@@ -95,7 +95,7 @@ func TestScopeOptionValueIsALocaleFreeCode(t *testing.T) {
 		}
 	}
 	// A subject with no verb still yields a two-colon shape the surfaces can split.
-	if got := scopeOptions(grantSubject{Tool: "shell_exec"})[2].Value; got != "gateway_scope:always:shell_exec" {
+	if got := scopeOptions(grantSubject{Tool: "shell_exec"}, "")[2].Value; got != "gateway_scope:always:shell_exec" {
 		t.Errorf("verb-less always value = %q", got)
 	}
 }
@@ -109,10 +109,10 @@ func TestScopeForAnswerResolvesOnlyItsOwnLabels(t *testing.T) {
 	subject := grantSubject{Tool: "skill_manage", Action: "delete"}
 	other := grantSubject{Tool: mcptools.CalendarMultiplexedToolName, Action: "delete_event"}
 
-	for _, e := range scopeLabels(subject) {
+	for _, e := range scopeLabels(subject, "") {
 		// Both the stable code the surfaces submit and the English fallback resolve.
 		for _, answer := range []string{scopeOptionValue(e.Scope, subject), e.Label} {
-			if got := scopeForAnswer(subject, answer); got != e.Scope {
+			if got := scopeForAnswer(subject, "", answer); got != e.Scope {
 				t.Errorf("scopeForAnswer(%q) = %q, want %q", answer, got, e.Scope)
 			}
 		}
@@ -128,13 +128,13 @@ func TestScopeForAnswerResolvesOnlyItsOwnLabels(t *testing.T) {
 		"Always approve everything",
 		"Approve skill_manage for this convo", // reworded
 	}
-	for _, e := range scopeLabels(other) {
+	for _, e := range scopeLabels(other, "") {
 		// Another subject's labels AND its codes grant nothing here: an answer lifted from
 		// a different approval must not widen this one.
 		widening = append(widening, e.Label, scopeOptionValue(e.Scope, other))
 	}
 	for _, answer := range widening {
-		if got := scopeForAnswer(subject, answer); got != ScopeOnce {
+		if got := scopeForAnswer(subject, "", answer); got != ScopeOnce {
 			t.Errorf("scopeForAnswer(%q) = %q, want once — an unrecognised answer must never widen", answer, got)
 		}
 	}
@@ -149,7 +149,7 @@ func TestScopeLabelsNameTheirSubject(t *testing.T) {
 	if subject.String() != "calendar delete_event" {
 		t.Fatalf("subject.String() = %q", subject.String())
 	}
-	for _, e := range scopeLabels(subject) {
+	for _, e := range scopeLabels(subject, "") {
 		if e.Scope == ScopeOnce {
 			continue // "Approve once" is about THIS call; naming the verb adds nothing
 		}

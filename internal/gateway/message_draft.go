@@ -45,7 +45,7 @@ func (g *Gateway) decideReviewedMessage(ctx context.Context, spec tools.Spec, ar
 	if !proceed {
 		return operationVerdict, true, nil
 	}
-	verdict, err := g.reserve(ctx, spec, args, key, tier, claim.IdentityID, "")
+	verdict, err := g.reserve(ctx, spec, args, key, tier, claim.IdentityID, "", "")
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, true, err

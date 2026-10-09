@@ -152,6 +152,7 @@ type Gateway struct {
 	operations operationRegistry
 	approvals  *GatewayApprovals // cross-turn carrier for an operator's ResolvedApproval (D-03 point 2)
 	grants     grantStore        // durable ScopeAlways grants (amendment #127); nil = the two in-memory scopes only
+	policies   policyStore       // durable ask/deny narrowing (prd.md §5, 2026-10-09); nil = no policy
 }
 
 // New builds a Gateway over the resolved runtime profile and the append-only tool

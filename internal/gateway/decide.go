@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 )
@@ -55,6 +56,18 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 		spec.Mutating = true
 	}
 	tier := classify(spec, rawArgs)
+	// The identity's policy outranks everything below it (prd.md §5, 2026-10-09): a deny
+	// refuses even a read-only call, and an ask turns any call into a reserved, approved one.
+	subject := subjectFor(spec, rawArgs)
+	policy := g.policyFor(ctx, identityctx.IdentityID(ctx), subject)
+	switch policy {
+	case PolicyDeny:
+		reason := policyDenyReason(subject)
+		g.recordDenyFact(ctx, spec, key, tier, reason, map[string]any{"gateway_policy": string(PolicyDeny), "reason": "policy"})
+		return Verdict{Decision: Deny, Tier: tier, Reason: reason}, nil
+	case PolicyAsk:
+		spec.Mutating = true
+	}
 	if !spec.Mutating {
 		// D-01e: a read-only tool call under a strict profile is a recorded decision-fact
 		// ONLY — no reserve→execute→append machinery. The fact is a start row (see
@@ -70,8 +83,8 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	// start's Meta (GATE-03/04 / D-03 point 2). This is the unified reserve invariant.
 	operatorID := ""
 	scope := ApprovalScope("")
-	if gated(tier) {
-		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key)
+	if gated(tier) || policy == PolicyAsk {
+		v, err := g.routeApprove(ctx, spec, tier, rawArgs, key, policy)
 		if err != nil || v.Decision != Allow {
 			return v, err
 		}
@@ -81,7 +94,7 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	if !proceed {
 		return operationVerdict, nil
 	}
-	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope)
+	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope, policy)
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
 	return verdict, err
