@@ -118,7 +118,9 @@ type browserControl interface {
 if err := browserRefusal(b.name, args, held, stale); err != nil { return tools.ToolResult{}, err }
 ```
 
-and after a successful `agent_browser_snapshot`, `Refresh`. `browserRefusal` is a pure function
+and `Refresh` after any call whose result text carries `@eN` references, whatever the tool:
+the rule is "the agent holds fresh references", not a tool name, so it needs no table to
+maintain and acceptance item 5 only confirms which tools qualify. `browserRefusal` is a pure function
 in a new `bridge_browser_control.go`: it reads the session from the profiled args, grades the
 tool through `browserRecipeActions`, and returns one of two errors. The identity comes from
 `identityctx.IdentityID(ctx)`, as `routeApprove` reads it.
@@ -186,12 +188,21 @@ coverage floor 85% across the tag matrix, mutation ≥70% on the critical files.
   5. measure which of `read`, `screenshot`, `snapshot` without `interactive` renumber
      references, and narrow or widen `Refresh`'s trigger to the measurement.
 
-## Open questions for the operator
+## Open questions, answered 2026-10-09
 
-1. Should `read` count as a snapshot for `Refresh`? Decided after item 5 above, not before.
-2. Should a hold end an in-flight `wait_for_*`? Proposed no.
-3. On Telegram, should the agent be told when the operator releases, or does the operator say
-   so, as the skill has it today? Proposed the latter, nothing new.
+Answered by the engineer at the operator's request; each stands unless the operator objects.
+
+1. **Does `read` count as a snapshot for `Refresh`?** The question dissolves: `Refresh` fires
+   on any result that carries `@eN` references, whatever tool produced it (Shape, Bridge).
+   A stale session is one whose references the agent has not re-read; which tools re-read
+   them is what acceptance item 5 measures, and the rule needs no change when it does.
+2. **Does a hold end an in-flight `wait_for_*`?** No. It is a read, bounded by the call
+   ceiling, and the operator's hold changes nothing about what it waits for. Ending it would
+   hand the model a spurious error in the middle of a turn that did nothing wrong.
+3. **On Telegram, is the agent told when the operator releases?** No. The operator says so,
+   as the skill has it today. A release event alone is ambiguous: the tab closed, or the
+   login is done? The human message is the only signal that carries the meaning, and the
+   stale-reference refusal already protects the first action after it.
 
 ## Out of scope
 

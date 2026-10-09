@@ -307,21 +307,27 @@ mutation ≥70% on the critical files.
      that the operator deleted unchanged, as the measure of a board kept tidy; the number
      decides whether `add` stays Mutate or becomes `ask` by default in the policy design.
 
-## Open questions for the operator
+## Open questions, answered 2026-10-09
 
-1. Should `add` by the agent be prompted by default, as OpenDots prompts before a page is
-   saved? Proposed no: `task schedule` is not, and acceptance 5 measures the cost of being
-   wrong.
-2. Several boards per identity (StickyFlow's projects) now or later? Proposed later; the
-   schema allows it.
-3. Should "discuss" start a new conversation with the card as context, or open the one the
-   card names when it has one? Proposed: open the named one, else start one.
-4. A due date that passes: does the scheduler send a reminder for a card, through the
-   existing `reminder` kind, or does the board only colour it? Proposed colour only in this
-   release, since a card may name a task that already reminds.
-5. The editor's `comments` item gives a card its own thread for free. Is a card thread
-   between the operator and the agent wanted, or is "discuss" (a conversation) enough?
-   Proposed: "discuss" only; a second place to talk to the agent is a second history.
+Answered by the engineer at the operator's request; each stands unless the operator objects.
+
+1. **Is `add` by the agent prompted by default?** No. A card is reversible, `delete` is the
+   one gated verb, and `task schedule` sets the precedent that the expected write is not a
+   prompt. An operator who wants to be asked sets `ask` on `board add` in the policy design;
+   acceptance 5 measures how many agent cards the operator deletes unchanged, and that
+   number, not a guess, decides whether the default flips.
+2. **Several boards per identity, now or later?** Later. `board_id` is on every card, so a
+   second board is a migration-free change; what is missing is the evidence that one board
+   overflows. The week of real use in acceptance 5 counts cards and columns first.
+3. **What does "discuss" open?** The conversation the card names when it has one, else a new
+   one with the card as its context block. A card the agent creates names the conversation
+   of its turn automatically; a card the operator creates names none until "discuss".
+4. **A due date that passes?** The board colours it, nothing else, in this release. A card
+   that must remind names a scheduler task (`task_id`), created through `task` when the
+   operator says "remind me": one reminder path, not two.
+5. **A card thread through the editor's `comments` item?** No. "Discuss" is the thread, and
+   it is the conversation history the agent already reads. A second place to talk to the
+   agent is a second history that memory, recall and export would all have to learn.
 
 ## Out of scope
 

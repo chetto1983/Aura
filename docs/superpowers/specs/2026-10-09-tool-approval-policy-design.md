@@ -197,15 +197,23 @@ mutation ≥70% on the critical files.
   4. count the extra rounds a denied tool costs each model over ten turns, to decide whether
      a denied tool must be hidden from `tool_search` in the next release.
 
-## Open questions for the operator
+## Open questions, answered 2026-10-09
 
-1. Should `deny` also hide the tool from `tool_search` now, before acceptance 4 measures the
-   cost? Proposed no: measure first.
-2. Should an admin be able to set a policy on another identity from the CLI? The grants CLI
-   resolves any identity by name already, and the root operator runs it; proposed the same,
-   with `set_by` recording who.
-3. Is `ask` on a read-only tool worth its reservation row? Proposed yes: an `ask` is a
-   statement that the operator wants a record.
+Answered by the engineer at the operator's request; each stands unless the operator objects.
+
+1. **Does `deny` hide the tool from `tool_search` now?** No, measure first. Hiding needs a
+   per-identity manifest, which the registry does not have, and the refusal already tells
+   the model not to retry. Acceptance 4 counts the rounds a denied tool costs on two models;
+   if the count is more than one round per denied call, hiding becomes the next release's
+   first item.
+2. **Can an admin set a policy on another identity from the CLI?** Yes. A policy only
+   narrows what an agent may do, so an admin imposing one is the safe direction, unlike a
+   grant, which widens and stays the identity's own. The CLI resolves the identity by name
+   as the grants CLI does, runs as the root operator, and `set_by` records who. The cockpit
+   stays own-identity.
+3. **Is `ask` on a read-only tool worth its reservation row?** Yes. An `ask` is the operator
+   saying "I want to see this one": the reservation is that record, the audit view reads it,
+   and the cost is one row per call on a tool the operator flagged by hand.
 
 ## Out of scope
 
