@@ -237,3 +237,51 @@ describe('BrowserLivePage', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe('BrowserLivePage — who drives', () => {
+  it('shows the agent may drive until the first input is accepted', async () => {
+    const source = renderPage();
+    source.emit(frame);
+    expect(screen.getByText(/Aura may drive/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Let Aura drive/ })).toBeNull();
+    fireEvent.keyDown(screen.getByLabelText(/live browser page/i), {
+      key: 'a',
+      code: 'KeyA',
+      keyCode: 65,
+    });
+    expect(await screen.findByText(/You are driving/)).toBeTruthy();
+  });
+
+  it('hands the session back to the agent', async () => {
+    const source = renderPage();
+    source.emit(frame);
+    fireEvent.keyDown(screen.getByLabelText(/live browser page/i), {
+      key: 'a',
+      code: 'KeyA',
+      keyCode: 65,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: /Let Aura drive/ }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/browser/sessions/login/control');
+    });
+    expect(JSON.parse(fetchMock.mock.calls.at(-1)?.[1]?.body as string)).toEqual({ held: false });
+    expect(await screen.findByText(/Aura may drive/)).toBeTruthy();
+  });
+
+  it('keeps driving when the release is refused', async () => {
+    const source = renderPage();
+    source.emit(frame);
+    fireEvent.keyDown(screen.getByLabelText(/live browser page/i), {
+      key: 'a',
+      code: 'KeyA',
+      keyCode: 65,
+    });
+    const button = await screen.findByRole('button', { name: /Let Aura drive/ });
+    fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
+    fireEvent.click(button);
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.at(-1)?.[0]).toBe('/api/browser/sessions/login/control');
+    });
+    expect(screen.getByText(/You are driving/)).toBeTruthy();
+  });
+});

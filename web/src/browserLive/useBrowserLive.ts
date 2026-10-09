@@ -10,9 +10,22 @@ export interface LiveState {
   url: string;
   /** Why the view ended: the relay's own reason, `taken_over`, or `disconnected`. */
   reason: string;
+  /**
+   * True once the server accepted this viewer's input: the operator's hand is on the page and
+   * the agent's writes to this session are refused until `release()` or the view closes
+   * (prd.md §12, "The operator takes the browser over").
+   */
+  driving: boolean;
 }
 
-const initial: LiveState = { phase: 'connecting', frame: null, meta: null, url: '', reason: '' };
+const initial: LiveState = {
+  phase: 'connecting',
+  frame: null,
+  meta: null,
+  url: '',
+  reason: '',
+  driving: false,
+};
 
 function sessionPath(session: string): string {
   return `/api/browser/sessions/${encodeURIComponent(session)}`;
@@ -26,6 +39,7 @@ function sessionPath(session: string): string {
 export function useBrowserLive(session: string): {
   state: LiveState;
   send: (event: object) => void;
+  release: () => void;
 } {
   // Mount it under key={session}: state starts fresh per session without a reset in an effect.
   const [state, setState] = useState<LiveState>(() =>
@@ -75,7 +89,8 @@ export function useBrowserLive(session: string): {
         }).then(
           (res) => {
             if (res.status === 409)
-              setState((s) => ({ ...s, phase: 'ended', reason: 'taken_over' }));
+              setState((s) => ({ ...s, phase: 'ended', reason: 'taken_over', driving: false }));
+            else if (res.ok) setState((s) => (s.driving ? s : { ...s, driving: true }));
           },
           () => undefined,
         ),
@@ -84,5 +99,23 @@ export function useBrowserLive(session: string): {
     [session],
   );
 
-  return { state, send };
+  // Hands the session back to the agent. Queued behind any input still in flight, so a key
+  // typed just before the click cannot re-take the session after it was released.
+  const release = useCallback(() => {
+    queue.current = queue.current.then(() =>
+      fetch(`${sessionPath(session)}/control`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ held: false }),
+      }).then(
+        (res) => {
+          if (res.ok) setState((s) => ({ ...s, driving: false }));
+        },
+        () => undefined,
+      ),
+    );
+  }, [session]);
+
+  return { state, send, release };
 }

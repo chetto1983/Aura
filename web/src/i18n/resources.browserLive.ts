@@ -11,6 +11,11 @@ export const browserLiveEn = {
     notice:
       "You are using the browser in your own sandbox. What you type goes to the page, not to the model, but the session it saves stays in the sandbox, where the agent's tools can read it.",
     connecting: 'Connecting to your sandbox browser…',
+    control: {
+      driving: 'You are driving · Aura waits',
+      agentMay: 'Aura may drive · click the page to take over',
+      release: 'Let Aura drive',
+    },
     ended: {
       disconnected: 'The connection to your sandbox browser was lost.',
       taken_over: 'This browser is now open in another window.',
@@ -32,6 +37,11 @@ export const browserLiveIt = {
     notice:
       "Stai usando il browser della tua sandbox. Ciò che digiti va alla pagina, non al modello, ma la sessione che salva resta nella sandbox, dove gli strumenti dell'agente possono leggerla.",
     connecting: 'Connessione al browser della sandbox…',
+    control: {
+      driving: 'Stai guidando tu · Aura aspetta',
+      agentMay: 'Aura può guidare · fai clic sulla pagina per prendere il controllo',
+      release: 'Lascia guidare Aura',
+    },
     ended: {
       disconnected: 'La connessione al browser della sandbox si è interrotta.',
       taken_over: 'Questo browser ora è aperto in un’altra finestra.',

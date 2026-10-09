@@ -51,6 +51,12 @@ If the `browser__` tools are not mounted, the same commands work through `shell_
    are done. Do not poll the page while they type.
 4. Take a snapshot to confirm you are past the login, then carry on.
 
+While the operator's hand is on the page, the session is theirs: any click, fill, type or
+navigation you send on it fails with "browser session \"x\" is held by the operator in the
+live view". Do not retry it. Reads still work, but wait for them to say they are done. After
+they let go, your old `@eN` references are refused with "references ... are stale, the
+operator drove it": take a snapshot, then use the new references.
+
 Never ask for a password, a one-time code or a recovery key in chat, and never type one
 you were given there: it would sit in the conversation for good. If the operator asks you
 to remember a login so they need not repeat it, `agent-browser auth save` exists, but first

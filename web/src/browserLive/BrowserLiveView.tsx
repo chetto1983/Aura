@@ -7,7 +7,7 @@ import {
   type WheelEvent,
 } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Keyboard, ShieldAlert } from 'lucide-react';
+import { Hand, Keyboard, ShieldAlert } from 'lucide-react';
 import { keyEvent, mouseEvent, textEvents, toViewport, wheelEvent } from './liveInput';
 import { useBrowserLive } from './useBrowserLive';
 import { ComputerUse, type ComputerStep } from '@/components/computer-use';
@@ -30,7 +30,7 @@ interface BrowserLiveViewProps {
  */
 export function BrowserLiveView({ session, actions, className }: BrowserLiveViewProps) {
   const { t } = useTranslation();
-  const { state, send } = useBrowserLive(session);
+  const { state, send, release } = useBrowserLive(session);
   const frameRef = useRef<HTMLImageElement>(null);
   const softKeys = useRef<HTMLInputElement>(null);
   const [clicks, setClicks] = useState<readonly ComputerStep[]>([]);
@@ -82,7 +82,24 @@ export function BrowserLiveView({ session, actions, className }: BrowserLiveView
           )}
         />
         <h2 className="text-sm font-medium">{t('browserLive.title')}</h2>
+        {live ? (
+          <span
+            aria-live="polite"
+            className={cn(
+              'rounded-full px-2 py-0.5 text-xs',
+              state.driving ? 'bg-warning/15 text-warning' : 'text-text-muted',
+            )}
+          >
+            {state.driving ? t('browserLive.control.driving') : t('browserLive.control.agentMay')}
+          </span>
+        ) : null}
         <span className="flex-1" />
+        {live && state.driving ? (
+          <Button variant="outline" size="sm" onClick={release}>
+            <Hand aria-hidden className="size-4" />
+            {t('browserLive.control.release')}
+          </Button>
+        ) : null}
         <Button
           variant="outline"
           size="sm"
