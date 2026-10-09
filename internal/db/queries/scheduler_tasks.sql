@@ -6,19 +6,19 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason;
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries;
 
 -- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE id = $1;
 
 -- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -30,7 +30,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- is what makes each due task a singleton across concurrent workers.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -77,7 +77,7 @@ WHERE t.schedule_kind = 'at'
 -- time).
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC;
@@ -96,7 +96,7 @@ ORDER BY next_run_at ASC NULLS LAST, id ASC;
 -- lock; a rare cross-instance double-nudge under HA is benign.
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -145,19 +145,22 @@ WHERE id = $1 AND status = 'active';
 
 -- name: ResumeTaskRow :execrows
 -- Reactivate a paused task at the next fire the caller computed from now, clearing the
--- failure count that may have paused it. Returns rows affected (a non-paused task misses).
+-- failure count that may have paused it and any retry it was waiting for. Returns rows
+-- affected (a non-paused task misses).
 UPDATE aura.scheduler_tasks
-SET status = 'active', paused_reason = NULL, consecutive_failures = 0, next_run_at = $2,
-    updated_at = now()
+SET status = 'active', paused_reason = NULL, consecutive_failures = 0, transient_retries = 0,
+    next_run_at = $2, updated_at = now()
 WHERE id = $1 AND status = 'paused';
 
 -- name: RecordTaskRunOutcome :one
 -- One finished run's effect on its task, in one statement: a success resets the failure count;
 -- a failure increments it and, when the caller's pause_after is positive and the new count
 -- reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
--- row as it was before the update, so consecutive_failures + 1 is the new count.
+-- row as it was before the update, so consecutive_failures + 1 is the new count. A reported
+-- outcome ends any chain of transient retries, so their count starts over.
 UPDATE aura.scheduler_tasks
 SET consecutive_failures = CASE WHEN sqlc.arg(succeeded)::boolean THEN 0 ELSE consecutive_failures + 1 END,
+    transient_retries = 0,
     status = CASE
         WHEN NOT sqlc.arg(succeeded)::boolean AND sqlc.arg(pause_after)::integer > 0
             AND consecutive_failures + 1 >= sqlc.arg(pause_after)::integer AND status = 'active'
@@ -169,3 +172,17 @@ SET consecutive_failures = CASE WHEN sqlc.arg(succeeded)::boolean THEN 0 ELSE co
     updated_at = now()
 WHERE id = sqlc.arg(id)
 RETURNING status, consecutive_failures, paused_reason;
+
+-- name: ScheduleTransientRetry :one
+-- Re-arm a task whose run failed on a transient model error before any tool ran (prd.md §15).
+-- The next fire becomes the earlier of its regular one and now plus the delay for this retry,
+-- taken from the caller's schedule. LEAST ignores a NULL, so a fired one-shot takes the retry.
+-- A task past its last delay, or no longer active, is left alone and returns no row.
+UPDATE aura.scheduler_tasks
+SET transient_retries = transient_retries + 1,
+    next_run_at = LEAST(next_run_at,
+        now() + make_interval(secs => (sqlc.arg(delay_seconds)::integer[])[transient_retries + 1])),
+    updated_at = now()
+WHERE id = sqlc.arg(id) AND status = 'active'
+    AND transient_retries < cardinality(sqlc.arg(delay_seconds)::integer[])
+RETURNING next_run_at, transient_retries;

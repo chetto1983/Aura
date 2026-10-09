@@ -308,9 +308,9 @@ func (s *Store) MarkNotificationDelivered(ctx context.Context, id string) error 
 	return nil
 }
 
-// MarkNotificationFailed records an undelivered sweep attempt and increments the
-// retry counter. Once attempts reaches the dispatcher bound, the sweep stops
-// re-selecting the row.
+// MarkNotificationFailed records an undelivered sweep attempt, increments the retry
+// counter and pushes the next attempt back (30 s, doubled per earlier failure). Once
+// attempts reaches the dispatcher bound, the sweep stops re-selecting the row.
 func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) error {
 	u, err := db.ParseUUID("uuid", id)
 	if err != nil {

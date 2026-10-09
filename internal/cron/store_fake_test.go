@@ -146,7 +146,7 @@ const (
 	fakeNotifID = "44444444-4444-4444-4444-444444444444"
 )
 
-// schedulerTaskRow returns the 19-column AuraSchedulerTasks value-set in the
+// schedulerTaskRow returns the 20-column AuraSchedulerTasks value-set in the
 // CreateTask/GetTask/ListActiveTasks/DueTasks column order.
 func schedulerTaskRow(t *testing.T) []any {
 	t.Helper()
@@ -171,6 +171,7 @@ func schedulerTaskRow(t *testing.T) []any {
 		pgtype.Timestamptz{},                       // approval_reminded_at (NULL)
 		int32(0),                                   // consecutive_failures
 		pgtype.Text{},                              // paused_reason (NULL)
+		int32(0),                                   // transient_retries
 	}
 }
 

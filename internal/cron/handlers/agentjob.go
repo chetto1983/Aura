@@ -90,12 +90,14 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 
 	prior := []llm.Message{{Role: llm.RoleUser, Content: goal}}
 	var summary strings.Builder
+	askedTools := false
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
 		worker := newAgentWorker(h.Deps, client, cfg, job.RunID, job.OriginConversationID, prior)
-		content, pause, runErr := drain(runCtx, worker, budget)
+		content, pause, asked, runErr := drain(runCtx, worker, budget)
+		askedTools = askedTools || asked
 		if runErr != nil {
-			return summary.String(), fmt.Errorf("agent_job run: %w", runErr)
+			return summary.String(), runFailure(runErr, askedTools)
 		}
 		if content != "" {
 			appendLine(&summary, content)
@@ -154,33 +156,57 @@ func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config
 }
 
 // drain runs one LlmAgent invocation to completion, returning the final assistant
-// content, the FIRST ask_user pause (nil when the run finished without one), and a
-// terminal error. A pause stops the drain so the caller can inject-and-continue; the
-// agent's own loop terminates the run on a pause (llm_agent.go emitPauses returns),
-// so there is nothing left to drain after it.
-func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget) (string, *agent.AwaitingInput, error) {
+// content, the FIRST ask_user pause (nil when the run finished without one), whether the
+// model asked for any tool, and a terminal error. A pause stops the drain so the caller can
+// inject-and-continue; the agent's own loop terminates the run on a pause (llm_agent.go
+// emitPauses returns), so there is nothing left to drain after it.
+func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget) (content string, pause *agent.AwaitingInput, askedTools bool, err error) {
 	ic := agent.InvocationContext{
 		Ctx:       ctx,
 		RequestID: uuid.Must(uuid.NewV7()),
 		Budget:    budget,
 	}
-	var content string
-	for ev, err := range worker.Run(ic) {
-		if err != nil {
-			return content, nil, err
+	for ev, runErr := range worker.Run(ic) {
+		if runErr != nil {
+			return content, nil, askedTools, runErr
 		}
 		if ev == nil {
 			continue
 		}
+		if ev.Actions.ToolInvocation != nil || (ev.LLMResponse != nil && len(ev.LLMResponse.ToolCalls) > 0) {
+			askedTools = true
+		}
 		if ai := ev.Actions.AwaitingInput; ai != nil {
-			return content, ai, nil
+			return content, ai, askedTools, nil
 		}
 		if ev.LLMResponse != nil && ev.LLMResponse.Content != "" {
 			content = ev.LLMResponse.Content
 		}
 	}
-	return content, nil, nil
+	return content, nil, askedTools, nil
 }
+
+// runFailure wraps a failed run. It marks the failure retryable when the model failed on a
+// transient error before it asked for any tool: nothing was done yet, so firing the job again
+// later cannot repeat an effect (prd.md §15). A job that asked for a tool is never retried,
+// because the tool may have acted.
+func runFailure(err error, askedTools bool) error {
+	err = fmt.Errorf("agent_job run: %w", err)
+	if askedTools || !agent.IsTransientLLMError(err) {
+		return err
+	}
+	return retryableBeforeEffectsError{err: err}
+}
+
+// retryableBeforeEffectsError is the mark the cron dispatcher reads, through the method, to
+// re-arm the task (internal/cron/transient_retry.go). This package cannot import cron.
+type retryableBeforeEffectsError struct{ err error }
+
+func (e retryableBeforeEffectsError) Error() string { return e.err.Error() }
+func (e retryableBeforeEffectsError) Unwrap() error { return e.err }
+
+// RetryableBeforeEffects tells the dispatcher this run may be fired again.
+func (e retryableBeforeEffectsError) RetryableBeforeEffects() bool { return true }
 
 // newJobBudget builds the agent_job budget with MaxSteps INHERITED from the row
 // (D-24): a positive Job.StepBudget overrides the runtime profile's loop budget

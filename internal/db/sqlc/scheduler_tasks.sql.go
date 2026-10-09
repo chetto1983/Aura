@@ -49,7 +49,7 @@ INSERT INTO aura.scheduler_tasks (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 RETURNING id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 `
 
 type CreateTaskParams struct {
@@ -107,6 +107,7 @@ func (q *Queries) CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSch
 		&i.ApprovalRemindedAt,
 		&i.ConsecutiveFailures,
 		&i.PausedReason,
+		&i.TransientRetries,
 	)
 	return i, err
 }
@@ -145,7 +146,7 @@ func (q *Queries) DeleteSettledOneShots(ctx context.Context, attempts int32) (in
 const dueTasks = `-- name: DueTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
@@ -185,6 +186,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 			&i.ApprovalRemindedAt,
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
+			&i.TransientRetries,
 		); err != nil {
 			return nil, err
 		}
@@ -199,7 +201,7 @@ func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTas
 const getTask = `-- name: GetTask :one
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE id = $1
 `
@@ -227,6 +229,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 		&i.ApprovalRemindedAt,
 		&i.ConsecutiveFailures,
 		&i.PausedReason,
+		&i.TransientRetries,
 	)
 	return i, err
 }
@@ -234,7 +237,7 @@ func (q *Queries) GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTas
 const listActiveTasks = `-- name: ListActiveTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'active'
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -269,6 +272,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 			&i.ApprovalRemindedAt,
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
+			&i.TransientRetries,
 		); err != nil {
 			return nil, err
 		}
@@ -283,7 +287,7 @@ func (q *Queries) ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, er
 const listDuePendingApprovalReminders = `-- name: ListDuePendingApprovalReminders :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status = 'pending_approval'
     AND origin_conversation_id IS NOT NULL
@@ -337,6 +341,7 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 			&i.ApprovalRemindedAt,
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
+			&i.TransientRetries,
 		); err != nil {
 			return nil, err
 		}
@@ -351,7 +356,7 @@ func (q *Queries) ListDuePendingApprovalReminders(ctx context.Context, arg ListD
 const listManageableTasks = `-- name: ListManageableTasks :many
 SELECT id, kind, schedule_kind, cron_expr, every_minutes, run_at, tz, payload,
     step_budget, status, next_run_at, notify_route, identity_id, origin_conversation_id,
-    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason
+    created_at, updated_at, approval_reminded_at, consecutive_failures, paused_reason, transient_retries
 FROM aura.scheduler_tasks
 WHERE status IN ('active', 'pending_approval', 'paused')
 ORDER BY next_run_at ASC NULLS LAST, id ASC
@@ -390,6 +395,7 @@ func (q *Queries) ListManageableTasks(ctx context.Context) ([]AuraSchedulerTasks
 			&i.ApprovalRemindedAt,
 			&i.ConsecutiveFailures,
 			&i.PausedReason,
+			&i.TransientRetries,
 		); err != nil {
 			return nil, err
 		}
@@ -433,6 +439,7 @@ func (q *Queries) PauseTaskRow(ctx context.Context, id pgtype.UUID) (int64, erro
 const recordTaskRunOutcome = `-- name: RecordTaskRunOutcome :one
 UPDATE aura.scheduler_tasks
 SET consecutive_failures = CASE WHEN $1::boolean THEN 0 ELSE consecutive_failures + 1 END,
+    transient_retries = 0,
     status = CASE
         WHEN NOT $1::boolean AND $2::integer > 0
             AND consecutive_failures + 1 >= $2::integer AND status = 'active'
@@ -461,7 +468,8 @@ type RecordTaskRunOutcomeRow struct {
 // One finished run's effect on its task, in one statement: a success resets the failure count;
 // a failure increments it and, when the caller's pause_after is positive and the new count
 // reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
-// row as it was before the update, so consecutive_failures + 1 is the new count.
+// row as it was before the update, so consecutive_failures + 1 is the new count. A reported
+// outcome ends any chain of transient retries, so their count starts over.
 func (q *Queries) RecordTaskRunOutcome(ctx context.Context, arg RecordTaskRunOutcomeParams) (RecordTaskRunOutcomeRow, error) {
 	row := q.db.QueryRow(ctx, recordTaskRunOutcome, arg.Succeeded, arg.PauseAfter, arg.ID)
 	var i RecordTaskRunOutcomeRow
@@ -471,8 +479,8 @@ func (q *Queries) RecordTaskRunOutcome(ctx context.Context, arg RecordTaskRunOut
 
 const resumeTaskRow = `-- name: ResumeTaskRow :execrows
 UPDATE aura.scheduler_tasks
-SET status = 'active', paused_reason = NULL, consecutive_failures = 0, next_run_at = $2,
-    updated_at = now()
+SET status = 'active', paused_reason = NULL, consecutive_failures = 0, transient_retries = 0,
+    next_run_at = $2, updated_at = now()
 WHERE id = $1 AND status = 'paused'
 `
 
@@ -482,7 +490,8 @@ type ResumeTaskRowParams struct {
 }
 
 // Reactivate a paused task at the next fire the caller computed from now, clearing the
-// failure count that may have paused it. Returns rows affected (a non-paused task misses).
+// failure count that may have paused it and any retry it was waiting for. Returns rows
+// affected (a non-paused task misses).
 func (q *Queries) ResumeTaskRow(ctx context.Context, arg ResumeTaskRowParams) (int64, error) {
 	result, err := q.db.Exec(ctx, resumeTaskRow, arg.ID, arg.NextRunAt)
 	if err != nil {
@@ -505,6 +514,38 @@ func (q *Queries) RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, err
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const scheduleTransientRetry = `-- name: ScheduleTransientRetry :one
+UPDATE aura.scheduler_tasks
+SET transient_retries = transient_retries + 1,
+    next_run_at = LEAST(next_run_at,
+        now() + make_interval(secs => ($1::integer[])[transient_retries + 1])),
+    updated_at = now()
+WHERE id = $2 AND status = 'active'
+    AND transient_retries < cardinality($1::integer[])
+RETURNING next_run_at, transient_retries
+`
+
+type ScheduleTransientRetryParams struct {
+	DelaySeconds []int32     `json:"delay_seconds"`
+	ID           pgtype.UUID `json:"id"`
+}
+
+type ScheduleTransientRetryRow struct {
+	NextRunAt        pgtype.Timestamptz `json:"next_run_at"`
+	TransientRetries int32              `json:"transient_retries"`
+}
+
+// Re-arm a task whose run failed on a transient model error before any tool ran (prd.md §15).
+// The next fire becomes the earlier of its regular one and now plus the delay for this retry,
+// taken from the caller's schedule. LEAST ignores a NULL, so a fired one-shot takes the retry.
+// A task past its last delay, or no longer active, is left alone and returns no row.
+func (q *Queries) ScheduleTransientRetry(ctx context.Context, arg ScheduleTransientRetryParams) (ScheduleTransientRetryRow, error) {
+	row := q.db.QueryRow(ctx, scheduleTransientRetry, arg.DelaySeconds, arg.ID)
+	var i ScheduleTransientRetryRow
+	err := row.Scan(&i.NextRunAt, &i.TransientRetries)
+	return i, err
 }
 
 const updateNextRunAt = `-- name: UpdateNextRunAt :exec

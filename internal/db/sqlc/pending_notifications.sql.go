@@ -84,6 +84,7 @@ UPDATE aura.pending_notifications
 SET status = 'failed',
     attempts = attempts + 1,
     last_error = $2,
+    notify_after = now() + interval '30 seconds' * power(2, LEAST(attempts, 7)),
     updated_at = now()
 WHERE id = $1
 `
@@ -93,6 +94,9 @@ type MarkNotificationFailedParams struct {
 	LastError pgtype.Text `json:"last_error"`
 }
 
+// The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
+// the increment), so the attempt bound spans an outage instead of being spent in one minute
+// (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
 func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error {
 	_, err := q.db.Exec(ctx, markNotificationFailed, arg.ID, arg.LastError)
 	return err
@@ -106,8 +110,8 @@ FROM aura.pending_notifications AS n
 LEFT JOIN aura.agent_job_runs AS r ON r.id = n.run_id
 LEFT JOIN aura.scheduler_tasks AS t ON t.id = r.task_id
 LEFT JOIN aura.steer_queue AS s ON s.id = n.steer_queue_id
-WHERE (n.status = 'pending' AND n.notify_after <= now())
-   OR (n.status = 'failed' AND n.attempts < $1)
+WHERE n.notify_after <= now()
+  AND (n.status = 'pending' OR (n.status = 'failed' AND n.attempts < $1))
 ORDER BY n.notify_after ASC, n.created_at ASC
 LIMIT $2
 FOR UPDATE OF n SKIP LOCKED

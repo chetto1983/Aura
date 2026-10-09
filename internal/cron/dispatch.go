@@ -132,6 +132,9 @@ type DispatchDeps struct {
 	OutcomeRecorder RunOutcomeRecorder
 	// PauseAfterFailures overrides AURA_SCHEDULER_PAUSE_AFTER_FAILURES when non-nil (tests).
 	PauseAfterFailures *int
+	// RetryScheduler re-arms a job that failed on a transient model error before any tool ran.
+	// Nil → defaulted from Store in NewDispatch; still nil means such a job is never retried.
+	RetryScheduler TransientRetryScheduler
 }
 
 // ConversationRecorder appends a finished run's outcome to the conversation the task
@@ -189,12 +192,18 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 		n := pauseAfterFailures()
 		deps.PauseAfterFailures = &n
 	}
+	if deps.RetryScheduler == nil {
+		if store, ok := deps.Store.(TransientRetryScheduler); ok {
+			deps.RetryScheduler = store
+		}
+	}
 	return &Dispatch{deps: deps, handlers: handlers}
 }
 
 // Dispatch runs the handler for task.Kind, writes the terminal run state, and
-// notifies. A missing handler for an unknown kind is a terminal failed run (never a
-// silent drop, D-21). The held conn (claim.go) keeps the advisory lock for the run's
+// notifies. A failure the handler marked retryable re-arms the task instead of being
+// reported (transient_retry.go). A missing handler for an unknown kind is a terminal
+// failed run (never a silent drop, D-21). The held conn (claim.go) keeps the advisory lock for the run's
 // lifetime; CompleteRun writes through the pool but the lock is unaffected.
 func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error) {
 	if ctx == nil {
@@ -232,6 +241,9 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) (err error
 		status = "failed"
 	}
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
+	if d.scheduleRetry(ctx, task, c.RunID, runErr) {
+		return runErr
+	}
 	reported := d.recordOutcome(ctx, task, runErr)
 	undelivered := d.notify(ctx, task, c.RunID, summary, reported)
 	d.recordToOrigin(ctx, task, summary, reported, undelivered)
@@ -492,8 +504,11 @@ func (d *Dispatch) taskTier(task Task) scoring.RiskTier {
 	})
 }
 
+// The default bound gives a failed notice 8 retries over about an hour, because the sweep backs
+// off 30 s doubling per failure (MarkNotificationFailed). Before the backoff, the old bound of 3
+// was spent in 32 s of an outage on 2026-10-09 (prd.md §15).
 const (
-	defaultPendingNotificationAttemptBound = 3
+	defaultPendingNotificationAttemptBound = 8
 	pendingNotificationSweepLimit          = 50
 )
 

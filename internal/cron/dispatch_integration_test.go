@@ -178,7 +178,11 @@ func TestPendingNotificationQuietHoursDispatchAndSweep(t *testing.T) {
 	}
 }
 
+// TestPendingNotificationFailedSelfSendBoundedRetry pins the attempt bound. Each failed retry
+// backs the row off (TestMarkNotificationFailedBacksOff), so the test makes it due again
+// before every sweep, standing in for the wait.
 func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS", "3")
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -224,8 +228,15 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 		t.Fatalf("after failed send status=%q attempts=%d, want failed/0", status, attempts)
 	}
 
+	makeDue := func() {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `UPDATE aura.pending_notifications SET notify_after = now() WHERE id = $1`, notificationID); err != nil {
+			t.Fatalf("make failed notification due: %v", err)
+		}
+	}
 	attemptBound := pendingNotificationAttemptBound()
 	for i := range attemptBound {
+		makeDue()
 		if err := d.sweepNotifications(ctx); err != nil {
 			t.Fatalf("sweepNotifications #%d: %v", i+1, err)
 		}
@@ -237,6 +248,7 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 		t.Fatalf("after bounded retries status=%q attempts=%d, want failed/%d", status, attempts, attemptBound)
 	}
 
+	makeDue()
 	if err := d.sweepNotifications(ctx); err != nil {
 		t.Fatalf("sweepNotifications past bound: %v", err)
 	}

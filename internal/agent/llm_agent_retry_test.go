@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/url"
 	"syscall"
 	"testing"
@@ -172,6 +173,9 @@ func TestRetryableStreamOpenError_GoldenParity(t *testing.T) {
 		{"bare eof text", errors.New("eof"), true},
 		{"wrapped sentinel marker-free message", opaqueWrapErr{msg: "upstream stream interrupted", inner: syscall.ECONNRESET}, true},
 		{"plain non-network error", errors.New("invalid api key configuration"), false},
+		{"dns servfail behind url.Error", &url.Error{Op: "Post", URL: "http://x", Err: &net.OpError{Op: "dial", Err: &net.DNSError{Err: "server misbehaving", IsTemporary: true}}}, true},
+		{"dns no such host", &net.DNSError{Err: "no such host", IsNotFound: true}, false},
+		{"dns lookup cut by the deadline", &net.DNSError{UnwrapErr: context.DeadlineExceeded, IsTimeout: true, IsTemporary: true}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,9 +186,25 @@ func TestRetryableStreamOpenError_GoldenParity(t *testing.T) {
 	}
 }
 
+// TestIsTransientLLMErrorIsTheStreamRetryRule pins that the scheduler's retry decision
+// (internal/cron/handlers) and the agent's own stream retry cannot drift apart.
+func TestIsTransientLLMErrorIsTheStreamRetryRule(t *testing.T) {
+	for _, err := range []error{
+		nil,
+		context.DeadlineExceeded,
+		&openai_compat.HTTPError{StatusCode: 502},
+		&openai_compat.HTTPError{StatusCode: 401},
+		&net.DNSError{Err: "server misbehaving", IsTemporary: true},
+	} {
+		if IsTransientLLMError(err) != retryableStreamOpenError(err) {
+			t.Errorf("IsTransientLLMError(%v) differs from the stream retry rule", err)
+		}
+	}
+}
+
 // TestIsTransientNetworkErr characterizes the shared typed-network subset extracted
-// in QUAL-03. It matches only typed sentinels (a net.Error that timed out + the
-// io/syscall connection sentinels) and excludes context.*, HTTP status, url.Error,
+// in QUAL-03. It matches only typed sentinels (a net.Error that timed out, a DNS
+// lookup Go marks temporary, and the io/syscall connection sentinels) and excludes context.*, HTTP status, url.Error,
 // ErrStreamIdleTimeout, and the substring fallback — those stay caller-specific.
 func TestIsTransientNetworkErr(t *testing.T) {
 	cases := []struct {
@@ -200,6 +220,8 @@ func TestIsTransientNetworkErr(t *testing.T) {
 		{"syscall.ECONNREFUSED", syscall.ECONNREFUSED, true},
 		{"syscall.ETIMEDOUT", syscall.ETIMEDOUT, true},
 		{"wrapped sentinel marker-free message", opaqueWrapErr{msg: "stream interrupted", inner: syscall.ECONNRESET}, true},
+		{"dns temporary failure", &net.DNSError{Err: "server misbehaving", IsTemporary: true}, true},
+		{"dns no such host", &net.DNSError{Err: "no such host", IsNotFound: true}, false},
 		{"plain non-network error", errors.New("validation: bad arg"), false},
 	}
 	for _, tc := range cases {

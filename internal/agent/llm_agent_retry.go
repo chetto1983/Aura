@@ -219,7 +219,9 @@ func (a *LlmAgent) execTool(ctx context.Context, tool tools.Tool, mutating bool,
 
 // isTransientNetworkErr reports whether err is a TYPED transient network failure —
 // the subset shared by the tool-retry and stream-open-retry classifiers (QUAL-03).
-// It matches a net.Error that timed out or any wrapped connection sentinel
+// It matches a net.Error that timed out, a DNS lookup Go marks temporary (a SERVFAIL
+// or a socket error to the resolver, net/dnsclient_unix.go; a name that does not
+// exist is not temporary), or any wrapped connection sentinel
 // (io.EOF/io.ErrUnexpectedEOF, ECONNRESET/ECONNREFUSED/ETIMEDOUT) via errors.Is, so
 // a sentinel survives wrapping even when its rendered message carries no substring
 // marker. It deliberately EXCLUDES context.*, HTTP status, url.Error,
@@ -234,6 +236,10 @@ func isTransientNetworkErr(err error) bool {
 	}
 	var ne net.Error
 	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) && dnsErr.IsTemporary {
 		return true
 	}
 	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||

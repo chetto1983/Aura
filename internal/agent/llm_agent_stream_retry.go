@@ -80,6 +80,13 @@ func (a *LlmAgent) streamWithOpenRetry(ctx context.Context, req llm.Request, req
 	return nil, lastErr
 }
 
+// IsTransientLLMError reports whether a failed model call may succeed if tried later: the rule
+// the stream retry applies. A scheduled job uses it to decide whether a failure before any
+// tool ran is worth a later fire (internal/cron/handlers).
+func IsTransientLLMError(err error) bool {
+	return retryableStreamOpenError(err)
+}
+
 func retryableStreamOpenError(err error) bool {
 	// Context guard FIRST and deliberately STRICT (Pitfall 2): a deadline/cancel is
 	// itself a net.Error{Timeout}, so it MUST short-circuit before the shared

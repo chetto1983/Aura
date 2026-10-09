@@ -382,8 +382,9 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// 0137 records on a user turn how its reasoning effort was decided (turn recall: context key,
 	// effort, requested effort, source, route, policy, origin).
 	// 0138 adds the scheduler task pause: consecutive_failures and paused_reason.
-	if head != 138 {
-		t.Fatalf("MigrationHead=%d, want embedded head 138", head)
+	// 0139 adds scheduler_tasks.transient_retries, the job retries after a transient model error.
+	if head != 139 {
+		t.Fatalf("MigrationHead=%d, want embedded head 139", head)
 	}
 }
 

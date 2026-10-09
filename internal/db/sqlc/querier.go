@@ -573,6 +573,9 @@ type Querier interface {
 	MarkInterruptedMessageDraftUncertain(ctx context.Context, arg MarkInterruptedMessageDraftUncertainParams) (AuraMessageDrafts, error)
 	MarkMessageDraftOutcome(ctx context.Context, arg MarkMessageDraftOutcomeParams) (AuraMessageDrafts, error)
 	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
+	// The next retry waits 30 s, doubled for every earlier failed retry (attempts is read before
+	// the increment), so the attempt bound spans an outage instead of being spent in one minute
+	// (prd.md §15, measured 2026-10-09). The exponent is capped so a large bound cannot overflow.
 	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	// The onboarding gate. Two timestamps rather than a state enum: they say WHEN, which a
 	// boolean cannot, and "completed" plus "skipped" are not mutually exclusive over time --
@@ -658,7 +661,8 @@ type Querier interface {
 	// One finished run's effect on its task, in one statement: a success resets the failure count;
 	// a failure increments it and, when the caller's pause_after is positive and the new count
 	// reaches it, pauses an active task with reason 'failures'. Every SET expression reads the
-	// row as it was before the update, so consecutive_failures + 1 is the new count.
+	// row as it was before the update, so consecutive_failures + 1 is the new count. A reported
+	// outcome ends any chain of transient retries, so their count starts over.
 	RecordTaskRunOutcome(ctx context.Context, arg RecordTaskRunOutcomeParams) (RecordTaskRunOutcomeRow, error)
 	// A byte-identical deterministic plan receives a fresh authorization window only
 	// while it has not crossed the first-apply durability boundary. In-flight and
@@ -695,7 +699,8 @@ type Querier interface {
 	ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error)
 	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
 	// Reactivate a paused task at the next fire the caller computed from now, clearing the
-	// failure count that may have paused it. Returns rows affected (a non-paused task misses).
+	// failure count that may have paused it and any retry it was waiting for. Returns rows
+	// affected (a non-paused task misses).
 	ResumeTaskRow(ctx context.Context, arg ResumeTaskRowParams) (int64, error)
 	// Marks deleting, oldest first, the identity's rows in one of the given statuses that nothing
 	// has written since the cutoff: an abandoned upload, or a refused or failed one kept past its
@@ -714,6 +719,11 @@ type Querier interface {
 	RunTaskNowRow(ctx context.Context, id pgtype.UUID) (int64, error)
 	SaveCloudflareRemoteAccessDesired(ctx context.Context, arg SaveCloudflareRemoteAccessDesiredParams) (AuraCloudflareRemoteAccess, error)
 	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
+	// Re-arm a task whose run failed on a transient model error before any tool ran (prd.md §15).
+	// The next fire becomes the earlier of its regular one and now plus the delay for this retry,
+	// taken from the caller's schedule. LEAST ignores a NULL, so a fired one-shot takes the retry.
+	// A task past its last delay, or no longer active, is left alone and returns no row.
+	ScheduleTransientRetry(ctx context.Context, arg ScheduleTransientRetryParams) (ScheduleTransientRetryRow, error)
 	// The one conversation search: cockpit, Telegram /search and the CLI share it and differ
 	// only in how they render the excerpt. word_similarity compares the query with the best
 	// matching extent of the message, so a word is found inside a long message; similarity()
