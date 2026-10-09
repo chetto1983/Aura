@@ -55,6 +55,7 @@ func (s *Server) registerApprovalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/approvals/{token}/resolve", s.handleResolveApproval)
 	mux.HandleFunc("GET /api/approvals/grants", s.handleListApprovalGrants)
 	mux.HandleFunc("POST /api/approvals/grants/revoke", s.handleRevokeApprovalGrant)
+	s.registerApprovalPolicyRoutes(mux)
 }
 
 // approvalGrantStore is the narrow seam over the durable "always approve" rows

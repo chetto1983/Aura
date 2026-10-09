@@ -132,8 +132,11 @@ type Server struct {
 	// approvalGrants serves the durable "always approve" grants (amendment #127). nil ⇒ the
 	// grant routes answer 503, exactly like the pending read without an ApprovalStore.
 	approvalGrants approvalGrantStore
-	assets         AssetService
-	ownerExports   ExportDestination
+	// approvalPolicies serves the per-identity ask/deny policies (prd.md §5, 2026-10-09).
+	// nil ⇒ the policy routes answer 503.
+	approvalPolicies approvalPolicyStore
+	assets           AssetService
+	ownerExports     ExportDestination
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService

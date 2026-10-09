@@ -121,6 +121,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle("POST /api/message-drafts/{id}/resolve", agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(approvalGrantsRoute, aguiHandler)
 	mux.Handle(approvalGrantsRevokeRoute, aguiHandler)
+	mux.Handle(approvalPoliciesRoute, aguiHandler)
+	mux.Handle(approvalPoliciesClearRoute, aguiHandler)
 	mux.Handle(assetsPresignRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(assetsFinalizeRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))
 	mux.Handle(assetsPromoteRoute, agui.RequireCapability(aguiHandler, auth, agentRunCapability))

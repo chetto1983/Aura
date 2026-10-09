@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/approvalgrants"
+	"github.com/chetto1983/aura/internal/approvalpolicies"
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/assets"
@@ -364,6 +365,8 @@ func assembleChatEnv(
 	// the two in-memory scopes and an "always" accept degrades to "for this conversation" —
 	// the honest failure, not a silent one.
 	gw.SetGrantStore(approvalgrants.New(pool))
+	// The narrowing half: an identity's ask/deny policies outrank grants and tiers.
+	gw.SetPolicyStore(gatewayPolicies{approvalpolicies.New(pool)})
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.

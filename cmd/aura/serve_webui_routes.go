@@ -134,6 +134,11 @@ const approvalsListRoute = "/api/approvals"
 const (
 	approvalGrantsRoute       = "/api/approvals/grants"
 	approvalGrantsRevokeRoute = "/api/approvals/grants/revoke"
+	// The per-identity ask/deny tool policies (prd.md §5, 2026-10-09). Same posture as the
+	// grants: owner-scoped server-side, and a policy only narrows what the principal's own
+	// agent may do, so it needs no capability beyond RequireAuth.
+	approvalPoliciesRoute      = "/api/approvals/policies"
+	approvalPoliciesClearRoute = "/api/approvals/policies/clear"
 )
 
 // imageProxyRoute is the DISP-05/D-09 SSRF-safe image relay (web_result thumbnails/
