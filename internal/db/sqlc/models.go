@@ -253,6 +253,16 @@ type AuraGatewayApprovalGrants struct {
 	GrantedBy  pgtype.Text        `json:"granted_by"`
 }
 
+// Per-identity ask/deny policy per tool + multiplexed action (prd.md §5, 2026-10-09). Outranks grants and tiers; set with `aura gateway policy` or /api/approvals/policies.
+type AuraGatewayToolPolicies struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Tool       string             `json:"tool"`
+	Action     string             `json:"action"`
+	Policy     string             `json:"policy"`
+	SetAt      pgtype.Timestamptz `json:"set_at"`
+	SetBy      pgtype.Text        `json:"set_by"`
+}
+
 // Identity-scoped public-operation state and bounded replay metadata linked optionally to the append-only tool invocation audit tuple.
 type AuraIdempotencyOperations struct {
 	IdentityID          pgtype.UUID        `json:"identity_id"`

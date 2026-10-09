@@ -82,6 +82,7 @@ type Querier interface {
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	ClearActiveMCPProfile(ctx context.Context) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
+	ClearGatewayToolPolicy(ctx context.Context, arg ClearGatewayToolPolicyParams) (int64, error)
 	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
 	// The asset must be deliverable by BindMediaJobAssetDelivery when the job completes: owned,
 	// in the job's conversation, an accepted agent video that is not deleted.
@@ -228,6 +229,7 @@ type Querier interface {
 	// when the conversation has no request-bearing turn yet.
 	GetConversationLastInputTokens(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	GetConversationVersionForIdentity(ctx context.Context, arg GetConversationVersionForIdentityParams) (int64, error)
+	GetGatewayToolPolicy(ctx context.Context, arg GetGatewayToolPolicyParams) (string, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetIdentityLLMKey(ctx context.Context, identityID pgtype.UUID) (AuraIdentityLlmKey, error)
@@ -446,6 +448,7 @@ type Querier interface {
 	ListExpiredPendingApprovals(ctx context.Context, arg ListExpiredPendingApprovalsParams) ([]AuraPausedStates, error)
 	ListExpiredReplayBodies(ctx context.Context, arg ListExpiredReplayBodiesParams) ([]ListExpiredReplayBodiesRow, error)
 	ListGatewayApprovalGrants(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayApprovalGrants, error)
+	ListGatewayToolPolicies(ctx context.Context, identityID pgtype.UUID) ([]AuraGatewayToolPolicies, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListIdentityAudit(ctx context.Context, arg ListIdentityAuditParams) ([]AuraIdentityAudit, error)
 	// Deliberately selects NO ciphertext (mirrors internal/db/sqlc/identity_mcp_oauth.sql.go's
@@ -735,6 +738,7 @@ type Querier interface {
 	// half the hits (prd.md §7). The filter stays here, before the LIMIT.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	SetGatewayToolPolicy(ctx context.Context, arg SetGatewayToolPolicyParams) error
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
 	// uses when an edit/regenerate forks a new sibling branch off an existing parent turn.
 	SetTurnBranchPointers(ctx context.Context, arg SetTurnBranchPointersParams) error
