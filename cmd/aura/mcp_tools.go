@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/chetto1983/aura/internal/browsercontrol"
+
 	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
@@ -276,7 +278,17 @@ func mcpMountOptions(ctx context.Context, strict bool, server mcp.ManagedServer,
 		Files:       handles.MCPFiles,
 		Box:         handles.MCPBox,
 		Elicitation: handles.Elicitation,
+		Browser:     browserControl(handles.Browser),
 	}
+}
+
+// browserControl keeps a nil registry a nil interface: a typed nil would read as wired and
+// panic on its first lock.
+func browserControl(r *browsercontrol.Registry) mcptools.BrowserControl {
+	if r == nil {
+		return nil
+	}
+	return r
 }
 
 // stdioMountOptions carries the runtime choices needed by a stdio-configured server.

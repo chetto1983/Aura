@@ -32,6 +32,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/browsercontrol"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
@@ -353,6 +354,7 @@ func buildRegistryWithMCP(
 	handles.MCPFiles = &tools.MCPFileSink{Router: sandboxRouter}
 	handles.Elicitation = consent
 	handles.MCPBox = newSandboxMCPBox(sandboxRouter)
+	handles.Browser = &browsercontrol.Registry{}
 	if len(mcpServers) == 0 && len(mcpPolicies) == 0 {
 		return reg, handles, nil, nil
 	}

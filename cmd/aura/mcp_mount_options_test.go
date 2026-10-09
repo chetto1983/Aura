@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/browsercontrol"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
@@ -17,6 +18,20 @@ func TestMCPMountOptionsCarryTheViewsAndTheFileSink(t *testing.T) {
 
 	if opts.Views != handles.MCPViews || opts.Files != handles.MCPFiles {
 		t.Fatalf("mount options = %+v, want the handles' views and file sink", opts)
+	}
+}
+
+// The live view's registry reaches every managed mount, and a nil one reaches it as a nil
+// interface: a typed nil would read as wired to the bridge and panic on its first lock.
+func TestMCPMountOptionsCarryTheBrowserControl(t *testing.T) {
+	handles := &runtimeToolHandles{Browser: &browsercontrol.Registry{}}
+	opts := mcpMountOptions(context.Background(), true, mcp.ManagedServer{URL: "https://mcp.example/mcp"}, handles)
+	if opts.Browser != handles.Browser {
+		t.Fatalf("mount options browser = %v, want the handles' registry", opts.Browser)
+	}
+	none := mcpMountOptions(context.Background(), true, mcp.ManagedServer{URL: "https://mcp.example/mcp"}, &runtimeToolHandles{})
+	if none.Browser != nil {
+		t.Fatalf("handles with no registry produced %#v, want a nil interface", none.Browser)
 	}
 }
 

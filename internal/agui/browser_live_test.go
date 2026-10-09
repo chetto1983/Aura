@@ -11,6 +11,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/browsercontrol"
 )
 
 // echoRelay stands in for the in-box relay: it announces itself, then echoes every input line
@@ -262,5 +264,114 @@ func TestBrowserLineSinkKeepsTheViewerLive(t *testing.T) {
 	_, _ = big.Write(make([]byte, browserLineMax+1))
 	if len(big.pending) != 0 {
 		t.Fatalf("an unterminated line past %d bytes is kept (%d bytes)", browserLineMax, len(big.pending))
+	}
+}
+
+func postBrowserControl(t *testing.T, srv *httptest.Server, identity, session, body string) int {
+	t.Helper()
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/api/browser/sessions/"+session+"/control", strings.NewReader(body))
+	req.Header.Set("X-Test-Identity", identity)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("post control: %v", err)
+	}
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// controlledBrowserServer is browserTestServer with the control registry wired.
+func controlledBrowserServer(t *testing.T) (*httptest.Server, *browsercontrol.Registry) {
+	t.Helper()
+	s := NewServer(&scriptedRunner{}, &fakeConvStore{}, ServerConfig{})
+	s.SetBrowserRelay(&echoRelay{})
+	registry := &browsercontrol.Registry{}
+	s.SetBrowserControl(registry)
+	mux := s.Mux()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.ServeHTTP(w, withPrincipal(r, r.Header.Get("X-Test-Identity")))
+	}))
+	t.Cleanup(srv.Close)
+	return srv, registry
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// The viewer's input takes the session, the control route hands it back, and the end of the
+// viewer's stream releases it; a release always leaves the session stale for the agent.
+func TestBrowserControlFollowsTheViewer(t *testing.T) {
+	srv, registry := controlledBrowserServer(t)
+	stream := openBrowserStream(t, srv, "alice", "portal")
+	stream.next(t)
+	if registry.Held("alice", "portal") {
+		t.Fatal("watching must not take the session")
+	}
+	if code := postBrowserInput(t, srv, "alice", "portal", "application/json", keyEvent); code != http.StatusNoContent {
+		t.Fatalf("input = %d", code)
+	}
+	if !registry.Held("alice", "portal") {
+		t.Fatal("the viewer's input must take the session")
+	}
+	if code := postBrowserControl(t, srv, "alice", "portal", `{"held":false}`); code != http.StatusNoContent {
+		t.Fatalf("release = %d", code)
+	}
+	if registry.Held("alice", "portal") || !registry.Stale("alice", "portal") {
+		t.Fatal("a release must free the session and leave it stale")
+	}
+	if code := postBrowserControl(t, srv, "alice", "portal", `{"held":true}`); code != http.StatusNoContent || !registry.Held("alice", "portal") {
+		t.Fatalf("take = %d, held=%v", code, registry.Held("alice", "portal"))
+	}
+	stream.close()
+	waitFor(t, "the stream's end to release the session", func() bool { return !registry.Held("alice", "portal") })
+}
+
+// A replaced viewer's stream ending late must not free the newer viewer's hold.
+func TestBrowserControlSurvivesTheReplacedViewer(t *testing.T) {
+	srv, registry := controlledBrowserServer(t)
+	first := openBrowserStream(t, srv, "alice", "portal")
+	first.next(t)
+	postBrowserInput(t, srv, "alice", "portal", "application/json", keyEvent)
+	second := openBrowserStream(t, srv, "alice", "portal")
+	defer second.close()
+	second.next(t)
+	postBrowserInput(t, srv, "alice", "portal", "application/json", keyEvent)
+	first.close()
+	time.Sleep(100 * time.Millisecond)
+	if !registry.Held("alice", "portal") {
+		t.Fatal("the first viewer's late end released the second viewer's hold")
+	}
+}
+
+func TestBrowserControlRefusesWhatItCannotServe(t *testing.T) {
+	srv, _ := controlledBrowserServer(t)
+	if code := postBrowserControl(t, srv, "alice", "portal", `{"held":false}`); code != http.StatusConflict {
+		t.Fatalf("no viewer = %d, want 409", code)
+	}
+	stream := openBrowserStream(t, srv, "alice", "portal")
+	defer stream.close()
+	stream.next(t)
+	for name, body := range map[string]string{"no held": `{}`, "malformed": `{"held":`} {
+		if code := postBrowserControl(t, srv, "alice", "portal", body); code != http.StatusBadRequest {
+			t.Errorf("%s = %d, want 400", name, code)
+		}
+	}
+	if code := postBrowserControl(t, srv, "mallory", "portal", `{"held":false}`); code != http.StatusConflict {
+		t.Fatalf("another identity = %d, want 409", code)
+	}
+	if code := postBrowserControl(t, srv, "alice", "..%2Fx", `{"held":false}`); code != http.StatusNotFound {
+		t.Fatalf("traversal = %d, want 404", code)
+	}
+	plain := browserTestServer(t, &echoRelay{})
+	if code := postBrowserControl(t, plain, "alice", "portal", `{"held":false}`); code != http.StatusServiceUnavailable {
+		t.Fatalf("unwired = %d, want 503", code)
 	}
 }

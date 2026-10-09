@@ -61,6 +61,7 @@ type browserViewer struct {
 func (s *Server) registerBrowserLiveRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/browser/sessions/{session}/stream", s.handleBrowserStream)
 	mux.HandleFunc("POST /api/browser/sessions/{session}/input", s.handleBrowserInput)
+	s.registerBrowserControlRoutes(mux)
 }
 
 func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +93,7 @@ func (s *Server) handleBrowserStream(w http.ResponseWriter, r *http.Request) {
 	go func() { _, _ = h.Wait(); close(ended) }()
 	viewer := s.browserViewers.claim(key, pw)
 	defer func() {
+		s.releaseBrowserControl(ctx, session, viewer)
 		s.browserViewers.release(key, viewer)
 		h.Kill()
 		_ = pw.Close()
@@ -160,6 +162,11 @@ func (s *Server) handleBrowserInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	viewer := s.browserViewers.get(scopedIdentityID(r.Context()) + "\x00" + session)
+	if viewer != nil {
+		// The operator's hand is on the page before the event reaches it, so an agent call
+		// racing this one is refused rather than interleaved.
+		s.holdBrowserControl(r.Context(), session, viewer)
+	}
 	if viewer == nil || viewer.send(append(line, '\n')) != nil {
 		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "no_live_view"})
 		return

@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/browsercontrol"
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
@@ -47,6 +48,10 @@ type runtimeToolHandles struct {
 	// MCPBox starts box-runtime MCP servers in the calling identity's sandbox. Nil where
 	// there is no sandbox router, which refuses such a server instead of running it here.
 	MCPBox mcp.BoxLauncher
+	// Browser is the live view's control registry: the cockpit writes it, the browser
+	// recipe's calls read it (prd.md §12). Nil on the paths with no live view, which then
+	// refuse nothing.
+	Browser *browsercontrol.Registry
 	// Documents is retained so chat boot can route its query embedder through the live LLM key
 	// once the runtime exists (wireDocumentQueryEmbedder).
 	Documents *documentLibrary

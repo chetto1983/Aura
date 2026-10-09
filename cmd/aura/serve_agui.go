@@ -127,6 +127,9 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 	aguiServer.SetOwnerExportDestination(ownerExports)
 	aguiServer.SetShareService(shareAPI)
 	aguiServer.SetBrowserRelay(sandboxBrowserRelay{router: chat.sandboxRouter})
+	// The same registry the browser recipe's mounts read, so the operator's hand in the
+	// live view is what the agent's calls see.
+	aguiServer.SetBrowserControl(chat.toolHandles.Browser)
 	if chat.chatGPTPlan != nil {
 		chat.chatGPTBrowser = chatgptplan.NewBrowserLogin(ctx, chat.chatGPTPlan, sandboxChatGPTBrowser{router: chat.sandboxRouter})
 		aguiServer.SetChatGPTBrowserLogin(chat.chatGPTBrowser)

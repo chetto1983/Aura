@@ -14,6 +14,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/browsercontrol"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
@@ -304,6 +305,9 @@ type Server struct {
 	// browserRelay opens the in-box live-view relay (browser_live.go); nil answers 503.
 	browserRelay   BrowserRelay
 	browserViewers browserViewers
+	// browserControl records which viewer drives each session (browser_control.go); nil
+	// keeps the live view as it was and refuses nothing on the agent's side.
+	browserControl *browsercontrol.Registry
 }
 
 // NewServer builds the gateway over the supplied driver + store + config. The
