@@ -32,6 +32,16 @@ The current product does not promise universal accuracy, universal prompt-inject
 resistance, exactly-once external side effects or unrestricted self-modification.
 A feature named in an old design does not authorize recreating it.
 
+**Aura is the host of the year's work, decided 2026-10-09.** The operator's other
+repositories of the twelve months to this date (PMSync, StickyFlow, wpt-iot, sacchi_agent,
+Market_MCP, the memory MCP already absorbed, and the OpenDots and SVAR readings of the same
+day) feed Aura behaviours, never code: each is a different stack, and two were built at a
+quality bar this product no longer accepts. The inventory, ranked and gated by a lab-VM
+measurement each, is `docs/superpowers/specs/2026-10-09-consolidation-best-of-design.md`;
+the first three behaviours have their own designs and their paragraphs in §5, §12 and §16.
+This records a decision and a static reading of eight repositories, not a measurement of
+any behaviour on the live stack.
+
 ## 2. Architecture and ownership
 
 | Layer            | Responsibility                                                    | Source                                                                         |
