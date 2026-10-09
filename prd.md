@@ -2904,6 +2904,18 @@ still not transient.
 This does not measure a call left hanging by a direct cloud provider. A provider that is merely
 slower than the call timeout, with the network up, is retried too, at most four times.
 
+Measured at `f3a8b9b4f` (2026-10-09), with the same job and cut. The model asked for
+`tool_search` at 15:14:27 UTC and the internet was cut 43 ms later, until 15:20:27.
+- The model call after the tool hung and timed out at 15:16:27. The job was re-armed for
+  15:18:27, and nothing was sent.
+- The first retry ran at 15:18:56 and failed at 15:19:16 on the provider's 502, with the
+  network still down. It was re-armed for 15:24:16.
+- The second retry ran at 15:24:26. The model called `tool_search` again and answered at
+  15:24:28. The answer reached the operator's Telegram, with no failure message before it, and
+  the one-shot was deleted on the same tick.
+
+This does not measure a job that asked for a mutating tool, which the rule reports by design.
+
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
 promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
