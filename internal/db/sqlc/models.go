@@ -103,6 +103,43 @@ type AuraBenchmarkSettingsOverrides struct {
 	RecoveryCount  int32              `json:"recovery_count"`
 }
 
+type AuraBoardCards struct {
+	ID             pgtype.UUID        `json:"id"`
+	BoardID        pgtype.UUID        `json:"board_id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	ColumnID       string             `json:"column_id"`
+	Position       float64            `json:"position"`
+	Label          string             `json:"label"`
+	Description    string             `json:"description"`
+	Priority       int16              `json:"priority"`
+	Tags           []string           `json:"tags"`
+	DueAt          pgtype.Timestamptz `json:"due_at"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	TaskID         pgtype.UUID        `json:"task_id"`
+	Source         string             `json:"source"`
+	UpdatedBy      string             `json:"updated_by"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type AuraBoardViews struct {
+	ID         pgtype.UUID        `json:"id"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Name       string             `json:"name"`
+	Filters    []byte             `json:"filters"`
+	Pinned     bool               `json:"pinned"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+}
+
+type AuraBoards struct {
+	ID         pgtype.UUID        `json:"id"`
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Name       string             `json:"name"`
+	Columns    []byte             `json:"columns"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Per-turn KV-cache metrics (Slice 4 / Phase 6, D-02). Append-only: one row per completed assistant turn from llm.Usage (token counts + cost only, no message content).
 type AuraCacheMetrics struct {
 	ConversationID pgtype.UUID        `json:"conversation_id"`

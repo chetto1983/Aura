@@ -146,6 +146,8 @@ type Querier interface {
 	CreateRetentionOperation(ctx context.Context, arg CreateRetentionOperationParams) (AuraRetentionOperations, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeclineMessageDraft(ctx context.Context, arg DeclineMessageDraftParams) (AuraMessageDrafts, error)
+	DeleteBoardCard(ctx context.Context, id pgtype.UUID) (int64, error)
+	DeleteBoardView(ctx context.Context, id pgtype.UUID) (int64, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	// Owner-scoped hard delete (Phase 36 MUSR-01 / D-06): affects a row ONLY when the caller
 	// owns it. rows-affected==0 lets the handler split 403 (a known-foreign id) from 404.
@@ -192,6 +194,9 @@ type Querier interface {
 	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
+	// Creates the identity's board on first use and returns it either way. The no-op update makes
+	// RETURNING yield the existing row on conflict.
+	EnsureBoard(ctx context.Context, arg EnsureBoardParams) (AuraBoards, error)
 	ExpireMessageDraft(ctx context.Context, arg ExpireMessageDraftParams) (AuraMessageDrafts, error)
 	ExpireWorkerRunSteers(ctx context.Context, arg ExpireWorkerRunSteersParams) (int64, error)
 	FailRetentionItem(ctx context.Context, arg FailRetentionItemParams) (int64, error)
@@ -205,6 +210,7 @@ type Querier interface {
 	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
+	GetBoardCard(ctx context.Context, id pgtype.UUID) (AuraBoardCards, error)
 	GetCloudflareRemoteAccess(ctx context.Context) (AuraCloudflareRemoteAccess, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	// The durable summary of this branch's earlier turns (migration 0096, HANDOFF 6.1).
@@ -292,6 +298,7 @@ type Querier interface {
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
 	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
 	InsertBenchmarkSettingsOverride(ctx context.Context, arg InsertBenchmarkSettingsOverrideParams) (AuraBenchmarkSettingsOverrides, error)
+	InsertBoardCard(ctx context.Context, arg InsertBoardCardParams) (AuraBoardCards, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
 	// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
@@ -395,6 +402,9 @@ type Querier interface {
 	// The tool_calls filter mirrors turnToMessage's Go semantics: rows whose tool_calls
 	// decode to zero calls ('[]'/'null') count as answer-shaped there too.
 	ListAssistantTurnReasoning(ctx context.Context, conversationID pgtype.UUID) ([]ListAssistantTurnReasoningRow, error)
+	ListBoardCards(ctx context.Context, boardID pgtype.UUID) ([]AuraBoardCards, error)
+	ListBoardColumnCards(ctx context.Context, arg ListBoardColumnCardsParams) ([]AuraBoardCards, error)
+	ListBoardViews(ctx context.Context, identityID pgtype.UUID) ([]AuraBoardViews, error)
 	// D-09 (CHAT-05): the navigable branch set. A leaf is a turn that is NOT the parent of
 	// any other turn (no row's parent_seq points at it) — i.e. the tip of a branch path. The
 	// BranchPicker navigates among these sibling leaves; a re-run continues over the selected
@@ -610,6 +620,7 @@ type Querier interface {
 	// trace (D-07's "the sweep is idempotent").
 	MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
+	MoveBoardCard(ctx context.Context, arg MoveBoardCardParams) (AuraBoardCards, error)
 	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
@@ -727,6 +738,7 @@ type Querier interface {
 	// taken from the caller's schedule. LEAST ignores a NULL, so a fired one-shot takes the retry.
 	// A task past its last delay, or no longer active, is left alone and returns no row.
 	ScheduleTransientRetry(ctx context.Context, arg ScheduleTransientRetryParams) (ScheduleTransientRetryRow, error)
+	SearchBoardCards(ctx context.Context, arg SearchBoardCardsParams) ([]AuraBoardCards, error)
 	// The one conversation search: cockpit, Telegram /search and the CLI share it and differ
 	// only in how they render the excerpt. word_similarity compares the query with the best
 	// matching extent of the message, so a word is found inside a long message; similarity()
@@ -737,6 +749,7 @@ type Querier interface {
 	// is the result inside the assistant's tool card) nor a system turn, and tool output took
 	// half the hits (prd.md §7). The filter stays here, before the LIMIT.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
+	SetBoardCardPosition(ctx context.Context, arg SetBoardCardPositionParams) error
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	SetGatewayToolPolicy(ctx context.Context, arg SetGatewayToolPolicyParams) error
 	// D-09 (CHAT-05): set a turn's branch/parent pointers. The branch-write seam plan 25-07
@@ -778,6 +791,8 @@ type Querier interface {
 	UpdateAssetResult(ctx context.Context, arg UpdateAssetResultParams) (AuraAssets, error)
 	UpdateAssetStatus(ctx context.Context, arg UpdateAssetStatusParams) (AuraAssets, error)
 	UpdateAssetUploaded(ctx context.Context, arg UpdateAssetUploadedParams) (AuraAssets, error)
+	UpdateBoardCard(ctx context.Context, arg UpdateBoardCardParams) (AuraBoardCards, error)
+	UpdateBoardColumns(ctx context.Context, arg UpdateBoardColumnsParams) (AuraBoards, error)
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	// Owner-scoped reasoning-effort persistence (Phase 37E WEBMODEL-01 / D-06): writes the
 	// chosen effort symbol into the EXISTING metadata jsonb — the column exists since
@@ -808,6 +823,7 @@ type Querier interface {
 	// rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
 	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
+	UpsertBoardView(ctx context.Context, arg UpsertBoardViewParams) (AuraBoardViews, error)
 	// Writes the branch's summary, advancing the watermark.
 	//
 	// The WHERE on the DO UPDATE is the whole invariant: a watermark may only move FORWARD.
