@@ -444,6 +444,34 @@ Unanswered approvals have a bounded lifetime. Expiry, cancellation and resumed a
 converge through an identity-scoped durable lifecycle. One malformed or failed row must
 not starve other resumptions; invalid rows are quarantined and failures stay visible.
 
+**A tool policy per identity, `ask` and `deny`, decided 2026-10-09 at `1c872a1`.** Read against
+OpenDots' per-Dot tool toggles (CopilotKit, MIT, released 2026-10-01): every MCP tool can be
+turned off for one Dot, and every tool not marked read-only starts with "Ask first" on. The
+gateway's three scopes, `once`, `session` and `always` (amendment #127), all widen: an operator
+can stop being asked, and cannot ask to be asked more, nor forbid one tool. Measured in the
+tree, not on a live run:
+- only the Destructive tier stops a turn (`gated`, `internal/gateway/decide.go`), and a
+  read-only call is recorded as a decision fact and never reserved;
+- the tier of an MCP tool comes from the server's own annotations or a recipe table
+  (`internal/agent/mcptools/bridge_risk.go`), so a server that declares a write read-only
+  runs it ungated and unreserved, and nothing lets the operator correct that one tool;
+- the only per-identity row the gateway reads is the `always` grant
+  (`aura.gateway_approval_grants`, migration 0099); the registry toggles whole servers and
+  profiles (`aura mcp profile`, `/api/governance/mcp/{name}/enable`), never one tool, and no
+  file in `internal/gateway`, `internal/mcpregistry` or the cockpit names a per-tool policy.
+
+The decision: a durable per-identity policy keyed like a grant (identity, tool, multiplexed
+action) with two values. `deny` refuses the call at `Decide` with a reason the model reads.
+`ask` routes the subject to approval whatever its tier, takes it through the reservation
+funnel, and its prompt offers no `always`. Precedence is deny, then ask, then grant, then
+tier. A policy read that fails falls to the prompt, as a grant read does. It applies under the
+strict profiles only, since `Decide` is a no-op under dev and local_trusted; it binds at the
+next decision and does not interrupt a running call. No agent tool writes a policy. Design:
+`docs/superpowers/specs/2026-10-09-tool-approval-policy-design.md`. This reading does not
+measure a live turn: how a model behaves when a tool it was offered answers "disabled by
+policy", whether it retries or tells the operator, is for the lab VM, and so is the cost in
+operator prompts of `ask` on a busy read-only tool.
+
 ## 6. Model runtime and hot settings
 
 Provider, endpoint, model, supported reasoning settings, limits, credentials, loop
@@ -1939,6 +1967,36 @@ frozen by a full pipe, which no run here reached, nor whether that freeze is wha
 as an unresponsive live view. The release's other changes (auth vault controls, chat mode, Kernel,
 Browser Use) were not exercised, and its `/dev/shm` detection changes nothing here: 0.38.1 already
 passes `--disable-dev-shm-usage` to a browser running as root, as the box's does.
+
+**The operator takes the browser over, decided 2026-10-09 at `1c872a1`.** Read against
+OpenDots' Dot computers (CopilotKit, MIT, released 2026-10-01): taking over pauses the agent's
+input while the person clicks and types, and after release the agent must take a fresh
+snapshot before element actions resume. Aura's live view has no such state. Measured in the
+tree, not on a live box:
+- the relay forwards every allowed viewer event to the browser as it arrives
+  (`docker/aura-sandbox/browser-relay.mjs`), and the input route checks only that a viewer
+  stream is open (`handleBrowserInput`, `internal/agui/browser_live.go`);
+- nothing on the agent's call path reads the viewer registry: `browserViewers` is named in
+  `server.go` and `browser_live.go` alone, and the one browser-specific hook on that path,
+  `withBrowserProfile` in `internal/agent/mcptools/bridge_call.go`, rewrites the profile
+  argument only;
+- so a viewer's click and the agent's `agent_browser_click` reach the same Chromium with no
+  order between them, and the `@eN` references the agent holds survive the operator's
+  navigation in its context while the page has renumbered them. The browser skill advises a
+  new snapshot after anything that navigates, and the 2026-09-27 run above shows a model
+  skipping the skill.
+
+The decision: control of a session is explicit and belongs to one viewer. "Take over" on the
+live view holds it; "release", or the end of that viewer's stream, gives it back. While held, a
+`browser__agent_browser_*` call on that session that the recipe grades as a write is refused at
+once with an error naming the session and the operator, never paused and never an approval;
+reads still run, so the agent can confirm the page after the handoff. After a release, the
+first call on the session that carries a `selector` is refused until a snapshot of that
+session has succeeded, and the error says so. The chat's inline view and `/browser/<session>`
+share the control. Design: `docs/superpowers/specs/2026-10-09-browser-takeover-design.md`.
+This reading does not measure the race itself on a live box, which read tools renumber
+references (`snapshot` does; `read` and `screenshot` are not measured), nor how a model answers
+the refusal; those are the lab-VM acceptance in the design.
 
 `web-artifacts-builder` is a native, on-demand skill shipped in the binary,
 including scripts, component archive and license. Bootstrap exports native
