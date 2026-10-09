@@ -59,45 +59,32 @@ Persistence: Postgres `aura.*` schema (control plane, documenti, catalogo) + Arc
 
 ## Slice Q&A discipline (3 gate sequenziali, mandatory)
 
-Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapping ai GSD commands:
+Ogni slice attraversa 3 gate (formalizzati nel PRD §Slice Q&A discipline). Mapping alle skill
+superpowers (dal 2026-10-09; prima il workflow era GSD, vedi sotto):
 
-| Gate | Cosa | GSD command equivalente |
+| Gate | Cosa | Skill superpowers |
 |---|---|---|
-| **Gate 1 — Definition of Ready** (PRE) | Pre-req completati, OQ chiuse, acceptance machine-checkable, smoke runnable, file targets ≤600 LOC, test plan, Risk tier, migration, env catalog, commit template | `/gsd-spec-phase` → `/gsd-discuss-phase` → `/gsd-plan-phase` |
-| **Gate 2 — Implementation Q&A** (DURANTE) | `go vet + build + test + race` verdi, refactor-on-touch, no asilo nido, no TODO orphan, no hard-coded env, 3-strike rule | `/gsd-execute-phase` con `gsd-executor` agent |
-| **Gate 3 — Definition of Done** (POST pre-merge) | Acceptance ticked, smoke green, integration + regression passing, coverage ≥75% unit / ≥60% integration, mutation testing ≥70% killed, no goroutine leak, no data race, PRD updated | `/gsd-verify-work` → `/gsd-code-review` → `/gsd-audit-fix` → `/gsd-complete-milestone` |
+| **Gate 1 — Definition of Ready** (PRE) | Pre-req completati, OQ chiuse, acceptance machine-checkable, smoke runnable, file targets ≤600 LOC, test plan, Risk tier, migration, env catalog, commit template | `brainstorming` → spec in `docs/superpowers/specs/` → `writing-plans` → piano in `docs/superpowers/plans/` |
+| **Gate 2 — Implementation Q&A** (DURANTE) | `go vet + build + test + race` verdi, refactor-on-touch, no asilo nido, no TODO orphan, no hard-coded env, 3-strike rule | `executing-plans` o `subagent-driven-development`, task per task con `test-driven-development`; `systematic-debugging` quando qualcosa è rosso |
+| **Gate 3 — Definition of Done** (POST pre-merge) | Acceptance ticked, smoke green, integration + regression passing, coverage ≥75% unit / ≥60% integration, mutation testing ≥70% killed, no goroutine leak, no data race, PRD updated | `verification-before-completion`, `requesting-code-review`, poi il run live sul lab VM con il suo file in `docs/superpowers/verification/` |
 
 **Niente shortcut.** Niente "lo aggiusto dopo". Niente "il PRD si capisce dal codice".
 
-## GSD tooling (workflow ufficiale)
+## Superpowers (workflow ufficiale dal 2026-10-09)
 
-Installazione: **una sola copia, in HOME** (`~/.claude/`, **1.12.0**, layout skills-based):
-71 skill `gsd-*` in `~/.claude/skills/`, tool in `~/.claude/gsd-core/bin/gsd-tools.cjs`,
-18 hook wired in `~/.claude/settings.json`, 35 agent `gsd-*` in `~/.claude/agents/`.
+Il workflow è quello del plugin superpowers (`obra/superpowers`): una spec per decisione in
+`docs/superpowers/specs/YYYY-MM-DD-<tema>-design.md`, un piano per implementazione in
+`docs/superpowers/plans/YYYY-MM-DD-<tema>.md` con task a checkbox, passi TDD e comandi di
+verifica, l'esecuzione task per task con un commit atomico per task, e un file datato in
+`docs/superpowers/verification/` per ogni run di accettazione. Il formato dei piani esistenti
+(`Goal`, `Architecture`, `Tech Stack`, `Spec`, `Global Constraints`, `Review Focus`,
+`Decisions taken while writing this plan`, `File structure`, i task) è il modello: si copia
+quello, non si inventa un altro.
 
-La copia project-local 1.1.0 è stata **ritirata il 2026-08-25**: comandi rimossi, hook
-sganciati da `.claude/settings.json`. Non era una ridondanza innocua -- gli hook dei diversi
-scope si **sommano**, non si sovrascrivono, quindi ogni `Edit` faceva partire due
-`prompt-guard` e due `read-guard` di versioni divergenti (3.489 B contro 10.445 B), e la
-guard vecchia poteva bloccare ciò che la nuova consente. Verificato prima di rimuoverla:
-tutti e 67 i comandi `/gsd:*` locali avevano la skill HOME equivalente (HOME ne ha 4 in più:
-`gsd-mempalace-capture`, `gsd-mempalace-recall`, `gsd-next`, `gsd-onboard`), e il set di hook
-HOME è un superset con matcher più larghi (`workflow-guard` locale su `Write|Edit`, HOME su
-`Bash|Edit|Write|MultiEdit`).
-
-**Anche `.claude/agents/` è stata ritirata il 2026-08-27**: l'installazione GSD è ora
-interamente in HOME. La motivazione del 2026-08-25 ("scope diversi non collidono, il progetto
-vince e basta") era corretta sul rischio doppia-esecuzione ma non aveva verificato che i corpi
-degli agent risolvessero ancora i propri `@`-include. Non lo facevano: **15 dei 33 agent
-project-local** (fra cui `gsd-executor`, `gsd-verifier`, `gsd-plan-checker`) puntavano a
-`/home/user/Aura/.claude/get-shit-done/...`, un path Linux inesistente su questo host, quindi
-perdevano silenziosamente `mandatory-initial-read`, `checkpoints.md`, `execute-mvp-tdd.md`,
-`executor-examples.md` e il template SUMMARY.
-
-Misurato prima di rimuoverli: i tool set registrati in sessione coincidevano con le copie di
-progetto (`gsd-executor` senza `Skill` né `mcp__plugin_context7_context7__*`), non con HOME --
-quindi "il progetto vince" era vero e per questo il danno era attivo, non teorico. HOME 1.11.0
-contiene tutti e 33 i nomi più uno. **`gsd-tools.cjs` e gli agent si invocano sempre da HOME.**
+**GSD è ritirato dal 2026-10-09** per decisione dell'utente. Le note che seguono sulla
+`.planning/` restano vere come storia: la directory esiste ancora ed è tracciata, ma i comandi
+`/gsd-*` non sono più il workflow e nessun nuovo piano vi atterra. Il ritiro delle copie
+project-local di GSD (2026-08-25 e 2026-08-27) è nella storia git di questo file.
 
 > **`.planning/` ESISTE ed è tracciata in git.** Cancellata alla chiusura della milestone
 > v2.0.0, è stata **rigenerata il 2026-08-05** (`b1a95faf8`, apertura di v2.1.0
@@ -125,27 +112,10 @@ contiene tutti e 33 i nomi più uno. **`gsd-tools.cjs` e gli agent si invocano s
 
 > **Slice → Phase (Rosetta).** Il PRD numera per **Slice** (0.5, 0.7, 1, 3, 11a-e, 13 — vocabolario storico, tuttora in `prd.md`); `.planning/ROADMAP.md`, `.planning/phases/` e gli scope dei commit numerano per **Phase** (0-43). Le due sequenze NON coincidono: una Slice può atterrare in una Phase con numero diverso. Per qualunque decisione di ordine/atterraggio (migrations su tutte) vale l'**ordine-fase**, mai l'ordine-slice.
 
-Core workflow per nuova slice:
-```
-/gsd-discuss-phase  → adaptive questioning su contesto (Gate 1 DoR check)
-/gsd-plan-phase     → PLAN.md dettagliato con verification loop
-/gsd-execute-phase  → wave-based parallel execution
-/gsd-verify-work    → conversational UAT validation
-/gsd-code-review    → bug/security/quality review
-/gsd-audit-fix      → autonomous audit-to-fix pipeline (Gate 3 DoD)
-/gsd-complete-milestone → archive + prepare next
-```
-
-Specializzati per Aura:
-- `/gsd-ai-integration-phase` — design contract AI-SPEC.md per Slice 1/3/11/13 (agent runtime, swarm, memory, vLLM)
-- `/gsd-secure-phase` — threat mitigations retro-verification (Risk-Based governance audit)
-- `/gsd-validate-phase` — Nyquist validation gaps (test discipline rigorosa); **spawna l'agent `gsd-nyquist-auditor`, che NON è un comando invocabile**
-- `/gsd-add-tests` — test generation da UAT criteria
-- `/gsd-graphify` — knowledge graph del progetto in `.planning/graphs/`
-
-Bootstrap inziale (one-shot):
-- `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
-- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v1.1.0 *Production Launch — Multi-Tenant* shippata 2026-10-08 — **~212k LOC non-test su 99 package**, escluse le ~14k sqlc-generated; ~313k LOC di test; misurato 2026-10-09 con `git ls-files '*.go'`, la cifra precedente di ~98k era ferma a un'altra era)
+Misura del codebase (`/gsd-map-codebase` non si usa più; il numero si rimisura con
+`git ls-files '*.go'`): v1.1.0 *Production Launch — Multi-Tenant* shippata 2026-10-08,
+**~212k LOC non-test su 99 package**, escluse le ~14k sqlc-generated, ~313k LOC di test
+(misurato 2026-10-09; la cifra precedente di ~98k era ferma a un'altra era).
 
 ## Skills installate
 
