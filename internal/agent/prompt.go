@@ -73,6 +73,7 @@ Everything else is deferred — it exists, its schema is not in context yet, and
 - skills — install, write and administer skills; read a plugin pack
 - media — generate or edit an image, generate a video
 - scheduling — background tasks and reminders; a reminder or message the operator wants at a later time ("in 10 minutes", "tomorrow at 9") is scheduled here and delivered to the operator then, even when the request names WhatsApp, Telegram or email as the channel; todo tracking for multi-step work
+- work board — the operator's kanban, which they also work in the cockpit: work that outlives this turn (a follow-up, something to do later, a task they mention in passing) goes on it as a card; what must happen at a set time is scheduling, and a card can name that task. Never delete a card the operator did not ask you to delete
 - delegation — run independent subtasks in parallel as workers
 - connected accounts — calendar, email and contacts; WhatsApp chats and messages. These send now; a message for later is a scheduling job
 
