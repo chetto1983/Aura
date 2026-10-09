@@ -55,5 +55,7 @@
 ### Task 3: Tool and classifier — [x]
 ### Task 4: REST mount — [x]
 ### Task 5: Cockpit mode — [x]
-### Task 6: Closing gates — [ ]
+### Task 6: Closing gates — [x]
+
+Measured 2026-10-09 in the cloud container, disposable Postgres 16 on 5433: `go vet`, `go build` and `go test ./...` green (98 packages); `golangci-lint run ./...` 0 issues; `make deadcode file-size capability-declaration embedding-model-contract llm-model-contract vuln` green; race on every touched package green; `db_integration` for `internal/board` (90.7%) and `internal/approvalpolicies` green. Web: Oxlint, tsc, Prettier, knip, jscpd green; vitest 3,779 tests, 93.3% statements; `e2e/board.spec.ts` 9/9 over three repeats against `aura serve` on the disposable database. What this does not show: the board on a real phone, two models driving it, or a week of use, which are the lab-VM items below. `internal/db`'s `TestEnsureRoles_NonPrivilegedBootstrapDenied` fails locally only because the disposable cluster's password, `aura`, is a substring of the role name in the error it inspects.
 - [ ] Lab-VM acceptance (spec, Testing, items 1-5): open.
