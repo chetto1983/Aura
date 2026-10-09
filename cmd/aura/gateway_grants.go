@@ -1,5 +1,6 @@
 // `aura gateway grants {list|revoke}` — the operator's surface over the durable "always
-// approve" rows the approval prompt creates (PRD amendment #127). Hand-rolled switch tree
+// approve" rows the approval prompt creates (PRD amendment #127). `aura gateway policy` is
+// its narrowing sibling (gateway_policy.go). Hand-rolled switch tree
 // mirroring runIdentity/runDB, not cobra: go.mod has no spf13/cobra and this codebase
 // dispatches subcommands with nested switches.
 //
@@ -16,17 +17,19 @@ import (
 	"text/tabwriter"
 
 	"github.com/chetto1983/aura/internal/approvalgrants"
+	"github.com/chetto1983/aura/internal/approvalpolicies"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
 )
 
 const gatewayUsage = "usage: aura gateway grants {list <identity>|revoke <identity> <tool> [action]}\n" +
+	"       aura gateway policy {list <identity>|set <identity> <tool> [action] ask|deny|clear <identity> <tool> [action]}\n" +
 	"  <identity> = the identity NAME (`aura identity list`)\n" +
 	"  [action]   = the verb of an action-multiplexed tool; omit it for a plain tool"
 
 func runGateway(args []string) {
-	if len(args) < 2 || args[0] != "grants" {
+	if len(args) < 2 || (args[0] != "grants" && args[0] != "policy") {
 		fmt.Fprintln(os.Stderr, gatewayUsage)
 		os.Exit(1)
 	}
@@ -40,6 +43,21 @@ func runGateway(args []string) {
 	}
 	defer pool.Close()
 
+	if args[0] == "policy" {
+		ids := identity.New(pool)
+		resolve := func(name string) (string, error) {
+			idn, err := ids.GetIdentityByName(ctx, name)
+			if err != nil {
+				return "", err
+			}
+			return idn.ID, nil
+		}
+		if err := gatewayPolicyCommand(ctx, resolve, approvalpolicies.New(pool), args[1:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	switch args[1] {
 	case "list":
 		gatewayGrantsList(ctx, identity.New(pool), approvalgrants.New(pool), args[2:])
