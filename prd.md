@@ -2861,9 +2861,15 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   aborts the poll of the whole tenant, so no stored trace is found and retention stops. On
   the lab VM this held from 2026-10-07: 89 failed polls, three blocks with an empty meta,
   21 blocks past the 14-day window. With those three removed from the copy, 3.1.0 polled
-  224 blocks without error. The `tempo-blocks-repair` service now removes such blocks before
-  every Tempo start. It skips a meta younger than ten minutes, which a running Tempo may
-  still be writing.
+  224 blocks without error. A running 3.1.0 needs no restart: with an empty meta added, its
+  poll failed and `tempodb_blocklist_tenant_index_errors_total` rose by 6 in 50 s; once that
+  block was gone, its next poll wrote the tenant index without error.
+  The `tempo-blocks-repair` service removes such blocks on every `compose up`, the one
+  aura.service runs at boot included, where Docker's restart policy may already have started
+  Tempo. It removes an empty meta written before the current boot. Otherwise it skips one
+  younger than ten minutes, which a running Tempo may still be writing. It logs a failure
+  and never returns one: a failed one-shot would fail the whole `up`, at boot and on every
+  update.
 - Grafana 13.2.3 started on a volume initialised by 12.3.9, and on one initialised by
   12.4.12. Each time both datasources were healthy, and the four provisioned dashboards
   and their folder migrated with none rejected. It used 249 MiB of its 384 MiB limit. None
