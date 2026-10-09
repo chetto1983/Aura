@@ -135,7 +135,7 @@ func TestBoardActsOnlyOnSeenCards(t *testing.T) {
 	if out, err := runBoard(t, tool, ctx, `{"action":"list"}`); err != nil || !strings.Contains(out, "[old] pay the invoice") {
 		t.Fatalf("list = %q, %v", out, err)
 	}
-	if out, err := runBoard(t, tool, ctx, `{"action":"move","id":"old","column":"done"}`); err != nil || !strings.Contains(out, "done") {
+	if out, err := runBoard(t, tool, ctx, `{"action":"move","id":"old","column":"done"}`); err != nil || !strings.Contains(out, "moved to done: [old] pay the invoice") {
 		t.Fatalf("move after list = %q, %v", out, err)
 	}
 	if _, err := runBoard(t, tool, boardCtx("other-session"), `{"action":"delete","id":"old"}`); err == nil {

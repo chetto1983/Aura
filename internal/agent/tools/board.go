@@ -71,6 +71,7 @@ func (t *BoardTool) Spec() Spec {
 		Description: "The identity's work board, shared with the operator who sees it in the cockpit. Use it for work that outlives this turn: something to do later, a follow-up, a task the operator mentions in passing. " +
 			"Use todo, not board, for the steps of the turn you are in, and task, not board, when something must happen at a set time; a card can name that task. " +
 			"action=list shows the columns and up to 32 cards; action=search finds cards; add, update and move change the board; delete removes a card and stops for the operator's approval. " +
+			"Before add, search or list: when a card for the same work is already there, update or move it instead of adding a second one. " +
 			"Only act on card ids that list, search or add returned in this conversation, and never delete a card the operator did not ask you to delete.",
 		Parameters:     json.RawMessage(boardParamsSchema),
 		Deferred:       true,

@@ -59,7 +59,7 @@ func (t *BoardTool) actionSearch(ctx context.Context, raw json.RawMessage) (Tool
 		return ToolResult{}, err
 	}
 	var out strings.Builder
-	fmt.Fprintf(&out, "%d card(s) match %q:\n", len(cards), a.Query)
+	fmt.Fprintf(&out, "%d card(s) match %s:\n", len(cards), a.Query)
 	for _, c := range cards {
 		writeCard(&out, c, true)
 	}
@@ -143,7 +143,7 @@ func (t *BoardTool) actionMove(ctx context.Context, raw json.RawMessage) (ToolRe
 	if err != nil {
 		return ToolResult{}, err
 	}
-	return NewResult(ctx, fmt.Sprintf("moved %q to %s", c.Label, c.ColumnID))
+	return NewResult(ctx, fmt.Sprintf("moved to %s: [%s] %s", c.ColumnID, c.ID, c.Label))
 }
 
 func (t *BoardTool) actionDelete(ctx context.Context, raw json.RawMessage) (ToolResult, error) {

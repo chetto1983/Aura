@@ -45,7 +45,7 @@ Aura's tree as the second column. "Spec" means a design exists in this directory
 | 3 | Work board with a `board` tool | StickyFlow, PMSync Tasks pillar, OpenDots | `todo` is a scratchpad | `internal/board`, SVAR Kanban mode | lab-VM acceptance in spec | spec, PRD §16 |
 | 3a | `source` on a card and saved smart views | PMSync `ManualTask`, `TaskSmartView` | none | the board spec | with 3 | add to spec |
 | 4 | Inbox triage as a scheduled job feeding the board | PMSync triage pipeline | PIM reads live, no per-email state | `agent_job` kind, PIM, board | triage of a real mailbox through the PIM: calls, latency, cost | blocked on the mail-table decision |
-| 5 | Daily briefing | PMSync `BriefingService`, Smart Today | scheduler, Telegram, `memory_digest` | one skill plus one scheduled task | one week of real use on the lab VM | to spec |
+| 5 | Daily briefing | PMSync `BriefingService`, Smart Today | scheduler, Telegram, `memory_digest` | one skill plus one scheduled task | five working days on the lab VM against a no-model baseline | spec |
 | 6 | Command palette | StickyFlow, PMSync v12 Phase 136 | `cmdk` used by two pickers only | `web/src/shell`, one `CommandDialog` | measured use over a week | to spec |
 | 7 | PII tokenization before a cloud model | PMSync chat pipeline | `redact` covers logs only | the route boundary in `internal/llm` | count of PII in PIM results reaching a cloud route | to measure |
 | 8 | Air-gapped appliance install | wpt-iot `build-bundle.sh`, `install-offline.sh` | wizard carries its payload, needs GHCR | `packages/create-aura` | one install on a machine with no Internet | to measure demand |
@@ -100,16 +100,26 @@ migrate-only discipline are the answer and are already in `CLAUDE.md`.
 
 1. **Wave 1, specs exist**: items 1, 2, 3 with 3a. Each closes on its lab-VM acceptance.
    Item 3 is the largest and the one the others feed; items 1 and 2 are a few days each.
-2. **Decision before wave 2**: does Aura keep a per-email analysis table (a mail index
+   Implemented on 2026-10-09; not closed. None of the three lab-VM acceptances has run: the
+   only live run so far had the reviewer in place of the model, in a cloud container
+   (`docs/superpowers/verification/2026-10-09-wave1-model-in-the-loop.md`).
+2. **Decisions before wave 2.** First, the six gateway and cockpit findings that run left to
+   the operator (a delete prompt that names no card, a second prompt after a restart,
+   policies inert under `dev` and `local_trusted` with no notice, a denied call shown as
+   completed, the approval request HTML-escaped, a slow SIGTERM): the wave-2 triage runs
+   through the same gateway. Then, does Aura keep a per-email analysis table (a mail index
    light)? Measured first by running one triage over a real mailbox through the PIM on the
    lab VM and recording calls, latency and cost; the amendment to prd.md §11 and §15 follows
    the number, then the spec for item 4.
-3. **Wave 2**: items 4 and 5, which share the scheduler and the board.
+3. **Wave 2**: items 4 and 5, which share the scheduler and the board. Item 5 does not wait
+   on the mail-table decision: `2026-10-09-daily-briefing-design.md`.
 4. **Wave 3**: items 6, 7, 8, each with its own small spec after its measurement.
 5. **Later**: items 9 and 10, once the board has a week of real cards.
 
-Each wave is one GSD milestone with its own phases; the live run closes a phase, never the
-unit suite (CLAUDE.md, Definition of Done).
+Each wave follows the superpowers workflow (CLAUDE.md): one spec per decision in
+`docs/superpowers/specs/`, one plan per implementation in `docs/superpowers/plans/`, and one
+dated file in `docs/superpowers/verification/` per acceptance run. The live run closes a
+wave's item, never the unit suite (CLAUDE.md, Definition of Done).
 
 ## What this document does not establish
 
