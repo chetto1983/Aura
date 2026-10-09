@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"sort"
 	"strconv"
 	"strings"
@@ -250,9 +251,7 @@ func (g *Gateway) recordDenyFact(ctx context.Context, spec tools.Spec, key Reser
 		"gateway_verdict": string(Deny),
 		"gateway_tier":    string(tier),
 	}
-	for k, v := range marker {
-		meta[k] = v
-	}
+	maps.Copy(meta, marker)
 	ev := toolinvocations.Event{
 		ConversationID: key.ConversationID,
 		RequestID:      key.RequestID,

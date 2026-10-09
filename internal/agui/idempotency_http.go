@@ -81,6 +81,9 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/approvals/{token}/resolve":    httpMutationMeta("approval_resolve"),
 	"POST /api/message-drafts/{id}/resolve":  httpMutationMeta("message_draft_resolve"),
 	"POST /api/approvals/grants/revoke":      httpMutationMeta("approval_grant_revoke"),
+	// A replayed policy write answers its stored result instead of revoking a grant twice.
+	"PUT /api/approvals/policies":        httpMutationMeta("approval_policy_set"),
+	"POST /api/approvals/policies/clear": httpMutationMeta("approval_policy_clear"),
 	// A replayed restart answers its stored 202 instead of stopping the daemon again.
 	"POST /api/admin/restart": httpMutationMeta("daemon_restart"),
 	// A replayed decision answers its stored 202 instead of writing a second request with

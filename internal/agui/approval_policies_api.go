@@ -2,7 +2,6 @@ package agui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -45,12 +44,6 @@ type approvalPolicyItem struct {
 	SetBy   string `json:"set_by,omitempty"`
 }
 
-type approvalPolicyBody struct {
-	Tool   string `json:"tool"`
-	Action string `json:"action"`
-	Policy string `json:"policy"`
-}
-
 func (s *Server) handleListApprovalPolicies(w http.ResponseWriter, r *http.Request) {
 	if s.approvalPolicies == nil {
 		http.Error(w, "tool policies not available", http.StatusServiceUnavailable)
@@ -84,13 +77,8 @@ func (s *Server) handleSetApprovalPolicy(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "tool policies not available", http.StatusServiceUnavailable)
 		return
 	}
-	var body approvalPolicyBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if body.Tool == "" {
-		http.Error(w, "tool is required", http.StatusBadRequest)
+	body, ok := decodeApprovalSubject(w, r)
+	if !ok {
 		return
 	}
 	policy, err := approvalpolicies.ParsePolicy(body.Policy)
@@ -123,19 +111,5 @@ func (s *Server) handleClearApprovalPolicy(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "tool policies not available", http.StatusServiceUnavailable)
 		return
 	}
-	var body approvalPolicyBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	if body.Tool == "" {
-		http.Error(w, "tool is required", http.StatusBadRequest)
-		return
-	}
-	cleared, err := s.approvalPolicies.Clear(r.Context(), scopedIdentityID(r.Context()), body.Tool, body.Action)
-	if err != nil {
-		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, map[string]bool{"cleared": cleared})
+	removeApprovalSubject(w, r, "cleared", s.approvalPolicies.Clear)
 }

@@ -132,9 +132,9 @@ func TestGatewayApprovalsApproveChallengeNotFound(t *testing.T) {
 // pending challenge — and leaves other conversations untouched (R-41 / shell parity).
 func TestGatewayApprovalsEvictPrefixSweep(t *testing.T) {
 	led := NewGatewayApprovals()
-	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // approved map
-	led.Challenge("conv-A", "skill", "fp-2", "Q-A", grantSubject{Tool: "skill"}, "")   // pending map
-	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true}) // must survive
+	led.Approve("conv-A", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true})   // approved map
+	led.Challenge("conv-A", "skill", "fp-2", "Q-A", grantSubject{Tool: "skill"}, "") // pending map
+	led.Approve("conv-B", "swarm_spawn", "fp-1", ResolvedApproval{Approved: true})   // must survive
 
 	led.Evict("conv-A")
 

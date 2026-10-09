@@ -106,12 +106,27 @@ func (s *Server) handleListApprovalGrants(w http.ResponseWriter, r *http.Request
 	writeJSON(w, items)
 }
 
-// revokeGrantBody is the POST /grants/revoke payload. The subject is sent as its two
-// coordinates rather than the rendered string, so the server never has to parse a label
-// back into a key.
-type revokeGrantBody struct {
+// approvalSubjectBody is the payload of every grant and policy write: the subject as its two
+// coordinates rather than the rendered string, so the server never has to parse a label back
+// into a key, plus the policy word for a policy PUT.
+type approvalSubjectBody struct {
 	Tool   string `json:"tool"`
 	Action string `json:"action"`
+	Policy string `json:"policy"`
+}
+
+// decodeApprovalSubject reads the body and refuses one with no tool, writing the 400 itself.
+func decodeApprovalSubject(w http.ResponseWriter, r *http.Request) (approvalSubjectBody, bool) {
+	var body approvalSubjectBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return body, false
+	}
+	if body.Tool == "" {
+		http.Error(w, "tool is required", http.StatusBadRequest)
+		return body, false
+	}
+	return body, true
 }
 
 // handleRevokeApprovalGrant drops one standing grant of the authenticated principal and
@@ -122,21 +137,26 @@ func (s *Server) handleRevokeApprovalGrant(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "approval grants not available", http.StatusServiceUnavailable)
 		return
 	}
-	var body revokeGrantBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+	removeApprovalSubject(w, r, "revoked", s.approvalGrants.Revoke)
+}
+
+// removeApprovalSubject is the shared body of every "drop one row by its subject" route: the
+// grant revoke and the policy clear. It decodes the subject, removes it for the authenticated
+// principal only, and answers {<key>: whether a row went}.
+func removeApprovalSubject(
+	w http.ResponseWriter, r *http.Request, key string,
+	remove func(ctx context.Context, identityID, tool, action string) (bool, error),
+) {
+	body, ok := decodeApprovalSubject(w, r)
+	if !ok {
 		return
 	}
-	if body.Tool == "" {
-		http.Error(w, "tool is required", http.StatusBadRequest)
-		return
-	}
-	revoked, err := s.approvalGrants.Revoke(r.Context(), scopedIdentityID(r.Context()), body.Tool, body.Action)
+	removed, err := remove(r.Context(), scopedIdentityID(r.Context()), body.Tool, body.Action)
 	if err != nil {
 		http.Error(w, sanitizeErr(err), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]bool{"revoked": revoked})
+	writeJSON(w, map[string]bool{key: removed})
 }
 
 // approvalItem is the JSON projection of one cross-thread pending pause (APRV-01). It

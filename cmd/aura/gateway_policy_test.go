@@ -22,7 +22,9 @@ func (f *cliPolicyStore) Set(_ context.Context, _, tool, action string, p approv
 	return nil
 }
 
-func (f *cliPolicyStore) List(context.Context, string) ([]approvalpolicies.Row, error) { return f.rows, nil }
+func (f *cliPolicyStore) List(context.Context, string) ([]approvalpolicies.Row, error) {
+	return f.rows, nil
+}
 
 func (f *cliPolicyStore) Clear(_ context.Context, _, tool, action string) (bool, error) {
 	for i, r := range f.rows {
