@@ -45,11 +45,11 @@
 
 ### Task 1: Registry — [x] done with 100% statement coverage and a property test.
 ### Task 2: Bridge
-- [ ] Failing tests, then `BrowserControl{Held, Stale, Refresh}`, `browserGuard`, `refreshesReferences`; wire through `MountOptions` and `Execute`.
+- [x] Failing tests, then `BrowserControl{Held, Stale, Refresh}`, `browserGuard`, `refreshesReferences`; wire through `MountOptions` and `Execute`.
 ### Task 3: Live view routes and wiring
-- [ ] Failing tests, then hold on input, release on stream end, the control route, the exemption, one registry from the composition root.
+- [x] Failing tests, then hold on input, release on stream end, the control route, the exemption, one registry from the composition root.
 ### Task 4: Cockpit
-- [ ] Failing tests, then the hook's `driving` state and `release()`, the header chip and button, keys in en and it.
+- [x] Failing tests, then the hook's `driving` state and `release()`, the header chip and button, keys in en and it.
 ### Task 5: Skill and closing gates
-- [ ] Skill text; vet, build, race on touched packages; CI linter; web typecheck, oxlint, vitest.
+- [x] Skill text; vet, build, race on touched packages; CI linter; web typecheck, oxlint, vitest.
 - [ ] Lab-VM acceptance (spec, Testing, items 1-5): open; each run leaves its file in `docs/superpowers/verification/`.
