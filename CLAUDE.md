@@ -3,6 +3,10 @@
 Project guidance for Claude Code (claude.ai/code) on this codebase.
 
 - **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel) → `Skill("spike-findings-Aura")`
+- **Consolidamento 2026-10-09 — Aura è l'ospite del lavoro dell'anno.** PMSync, StickyFlow,
+  wpt-iot, sacchi_agent, Market_MCP e le letture di OpenDots e SVAR cedono ad Aura
+  **comportamenti, mai codice**: inventario ordinato, con la misura che gata ogni atterraggio,
+  in `docs/superpowers/specs/2026-10-09-consolidation-best-of-design.md` (PRD §1).
 
 ## PRD-first principle — misura, poi emenda, poi implementa
 
@@ -114,7 +118,8 @@ contiene tutti e 33 i nomi più uno. **`gsd-tools.cjs` e gli agent si invocano s
 >
 > **Il contenuto invecchia.** Prima di trattare un file di `.planning/` come stato corrente,
 > confronta il suo `last_updated` con `git log`: la data nel file è un'asserzione, non una
-> misura. E su un clone shallow (il default delle sessioni cloud) `git log` su un percorso
+> misura. Misurato 2026-10-09: `STATE.md` dava la fase 02 chiusa al 2026-09-12 mentre la
+> v1.1.0 è uscita l'8 ottobre (`CHANGELOG.md`); la roadmap non aveva seguito il rilascio. E su un clone shallow (il default delle sessioni cloud) `git log` su un percorso
 > mente per omissione: `git rev-parse --is-shallow-repository` prima di concludere che un
 > percorso "non è mai stato tracciato".
 
@@ -140,7 +145,7 @@ Specializzati per Aura:
 
 Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
-- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v0.0.0 Phase 0-21 + v1.0.0 Phase 22-30 shippate, v2.0.0 Phase 31-42 in corso — **~98k LOC non-test su 68 package**, di cui ~7k sqlc-generated; ~143k LOC di test)
+- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (v1.1.0 *Production Launch — Multi-Tenant* shippata 2026-10-08 — **~212k LOC non-test su 99 package**, escluse le ~14k sqlc-generated; ~313k LOC di test; misurato 2026-10-09 con `git ls-files '*.go'`, la cifra precedente di ~98k era ferma a un'altra era)
 
 ## Skills installate
 
@@ -229,6 +234,9 @@ If the implementation is easy to explain, it may be a good idea.
 - **COVERAGE FLOOR 85%.** No phase/slice closes below 85% measured coverage across the full tag matrix (unit + integration + smoke). This overrides the PRD's ≥75% unit / ≥60% integration. A bare unit-only number under 85% is not an acceptable closing metric — report the combined figure.
 - **COVERAGE EVIDENCE IS TIERED AND PACKAGE-LOCAL.** `scripts/coverage_gate.sh` defaults to `db_integration`, runs in both `ci.yml` and `skills.yml`, and collects native covdata with `-coverpkg=./internal/...` from tests in `internal` plus `cmd/aura`. The aggregate owned-source floor remains exactly 85%. `scripts/coverage_package_policy.json` additionally classifies every filtered package: packages already compliant keep an exact 85% floor; named low packages keep an exact covered/total non-regression baseline and visible 85% target; inventory or denominator drift fails closed. Two packages delegate, each to a separately release-blocking report measuring the same 85% floor on a denominator this tier can execute: `internal/sandbox/usersandbox` to the native `docker_integration` coverage report, and `internal/arcadedb` to the live `arcadedb_integration` profile, whose `arcadedb_package_coverage` scenario is an Agent Memory hard gate re-checked by release readiness (amendment #203). Never concatenate or average these denominators. **When you add daemon/container-gated runtime code you MUST also write daemon-free unit tests for its pure logic** — spec/tar builders, path-traversal + symlink guards, nil/disabled early-return paths, structural-capability "not supported" errors. **Verify locally BEFORE pushing with `bash scripts/coverage_docker.sh`** — it provisions and drops only the disposable `aura_cov` database and refuses a local `db_integration` run against the live `aura` database unless the explicit danger override is set.
 - **DEFINITION OF DONE** Phase/Job are complete when is fully validate E2E at score >9.8 on real scenario.
+- **BASELINE OR DROP.** Un componente che impara (seed bank, recall, triage, briefing, stile) deve battere il suo baseline stupido su dati fuori campione, o si scarta. Nessuna eccezione. Regola misurata su Market_MCP (principio guida 3) e già praticata dal gate del turn recall: qui diventa obbligatoria per ogni pezzo appreso.
+- **SPIKE VERDICTS GATE SPECS.** Una spec usa liberamente un finding `VALIDATED`, un `PARTIAL` solo con i suoi vincoli dichiarati, e mai un `INVALIDATED` finché uno spike successivo non lo supera. Il vocabolario è quello di `Skill("spike-findings-Aura")`; prima del 2026-10-09 il gate non era scritto.
+- **VALIDATIONS ARE A DATED LEDGER.** Ogni run di accettazione sul lab VM lascia un file in `docs/superpowers/verification/`, nominato per data e scenario, che dice cosa ha misurato e cosa non dimostra. Una spec chiusa senza il suo file non è chiusa (pattern di sacchi_agent `docs/superpowers/validazioni/`).
 - **AUDIT** refer to \docs\audit for audit finding and improvement on codebase test and observability
 
 ## Tool design — deferred-tool pattern (mandatory)
