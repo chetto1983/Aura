@@ -383,8 +383,10 @@ func TestMigrationHeadMatchesEmbeddedCatalog(t *testing.T) {
 	// effort, requested effort, source, route, policy, origin).
 	// 0138 adds the scheduler task pause: consecutive_failures and paused_reason.
 	// 0139 adds scheduler_tasks.transient_retries, the job retries after a transient model error.
-	if head != 139 {
-		t.Fatalf("MigrationHead=%d, want embedded head 139", head)
+	// 0140 adds aura.gateway_tool_policies, the per-identity ask/deny narrowing of the grants.
+	// 0141 adds the work board: aura.boards, aura.board_cards and aura.board_views.
+	if head != 141 {
+		t.Fatalf("MigrationHead=%d, want embedded head 141", head)
 	}
 }
 
