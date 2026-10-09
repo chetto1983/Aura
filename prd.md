@@ -3064,6 +3064,15 @@ no way out:
 Aura marks an asset `accepted` in PostgreSQL as soon as Garage acknowledges its object
 (`internal/assets/ingest_agent.go`). A power loss inside that window leaves an accepted asset
 whose object is gone.
+- Documents and images then still reach `complete`, since their processors never read the
+  object.
+- Downloads answer 404.
+- `Retry` re-arms the asset without checking the object.
+
+The gap is open by decision, as of 2026-10-09. A boot-time check that marks such assets
+`failed` was designed and deferred. Upstream,
+[garage#1571](https://git.deuxfleurs.fr/Deuxfleurs/garage/issues/1571) asks for a durable
+acknowledgement mode.
 
 This does not measure an appliance's own SSD, a filesystem tuned differently from the VM's
 ext4 defaults, or a power cut that also drops the host's cache.
