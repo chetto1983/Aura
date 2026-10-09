@@ -1516,8 +1516,8 @@ services:
       start_period: 15s
 
   # A power loss can leave a Tempo block with an empty meta file, and one such block stops
-  # Tempo from finding any stored trace or applying retention. Runs before every Tempo start;
-  # see docker/aura/aura-tempo-blocks-repair.sh.
+  # Tempo from finding any stored trace or applying retention. Runs on every `compose up`,
+  # the one aura.service runs at boot included; see docker/aura/aura-tempo-blocks-repair.sh.
   tempo-blocks-repair:
     build:
       context: .
