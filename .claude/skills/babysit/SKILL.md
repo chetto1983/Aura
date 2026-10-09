@@ -31,7 +31,7 @@ blocked test: it is usually waiting on a retry loop whose error is permanent.
 
 ## Jobs
 
-Unless noted, jobs live in `.github/workflows/ci.yml` and run Go 1.27.1 with `GOTOOLCHAIN=local`.
+Unless noted, jobs live in `.github/workflows/ci.yml` and run Go 1.27.2 with `GOTOOLCHAIN=local`.
 Go package lists come from `bash scripts/go_packages.sh`, never a bare `./...`
 (`scripts/check_ci_go_packages.sh` rejects one).
 

@@ -25,7 +25,7 @@ where CLAUDE.md is stricter, CLAUDE.md wins. Job-level CI triage lives in `babys
 ## Before every push
 
 CI is slow: most jobs take 10 to 20 minutes and Stryker can run over an hour. One validated push beats three
-speculative ones. Run, with Go 1.27.1 and `GOTOOLCHAIN=local` as CI does:
+speculative ones. Run, with Go 1.27.2 and `GOTOOLCHAIN=local` as CI does:
 
 ```bash
 export PATH="$HOME/go/bin:$PATH"
@@ -37,7 +37,7 @@ go test -count=1 ./...                   # the whole unit suite, not just touche
 
 - A golangci-lint built with an older Go refuses the module ("the Go language version ...
   is lower than the targeted Go version"). Rebuild it:
-  `GOTOOLCHAIN=go1.27.1 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`.
+  `GOTOOLCHAIN=go1.27.2 go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2`.
 - **Docs are code here.** `cmd/aura/distribution_artifacts_test.go` asserts phrases in
   `README.md`, `docs/INSTALL.md` and `docs/BACKUP-RESTORE.md`. After any docs move or
   rewrap, run `go test -count=1 ./cmd/aura/`. Grep for tests that read a file's content,
