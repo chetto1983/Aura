@@ -11,7 +11,10 @@
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
 GOBIN := $(shell go env GOPATH)/bin
-GO_PACKAGES := $(shell bash scripts/go_packages.sh)
+# Expanded on first use and then kept, not at parse time: `go list ./...` walks the whole tree,
+# web/node_modules included, and from WSL on /mnt/d that took 194 s warm and over 10 min cold
+# (2026-10-09) before every target, including ones that never build Go (payload-manifest).
+GO_PACKAGES = $(eval GO_PACKAGES := $$(shell bash scripts/go_packages.sh))$(GO_PACKAGES)
 
 help:
 	@echo "make embedding-model-contract — verify validated atomic EmbeddingGemma cache materialization"
