@@ -2843,6 +2843,36 @@ Localized surfaces render user-facing labels themselves. Wire status and approva
 scope use stable machine codes, so translated labels or model-written wording cannot
 alter the authorization they represent.
 
+Traces and dashboards run in the `observability` Compose profile on digest-pinned Tempo and
+Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.4.12 to Tempo
+3.1.0 and Grafana 13.2.3:
+- Tempo 3.1.0 refuses the 2.x config: `field ingester not found`, `field compactor not
+  found`. Retention moves to `backend_worker.compaction.block_retention`; 3.1.0 reported
+  336h for it on `/status/config`. Tempo 2.9.4 also accepts the new file under
+  `-config.verify`, so the running 2.9.4 stays healthy while the updater replaces the file.
+- On a copy of the lab VM's 2.2 GB Tempo volume, 3.1.0 returned traces that 2.9.4 had stored
+  on 23 September, 6 October and 7–8 October. It accepted new OTLP spans and found them by
+  ID and by TraceQL, using 86 MiB where 2.9.4 used 155 MiB. It does not replay the 2.x
+  ingester WAL, so traces not yet flushed when Tempo is replaced are lost. It writes
+  vParquet5 blocks, and Tempo's migration guide states there is no downgrade from 3.0 to 2.x:
+  rolling back to an image older than this change also needs the Tempo volume removed.
+- A power loss can leave a block's `meta.json` or `meta.compacted.json` empty, because the
+  local backend writes it without fsync or rename, in 2.9.4 and 3.1.0 alike. One such file
+  aborts the poll of the whole tenant, so no stored trace is found and retention stops. On
+  the lab VM this held from 2026-10-07: 89 failed polls, three blocks with an empty meta,
+  21 blocks past the 14-day window. With those three removed from the copy, 3.1.0 polled
+  224 blocks without error. The `tempo-blocks-repair` service now removes such blocks before
+  every Tempo start. It skips a meta younger than ten minutes, which a running Tempo may
+  still be writing.
+- Grafana 13.2.3 started on a volume initialised by 12.3.9, and on one initialised by
+  12.4.12. Each time both datasources were healthy, and the four provisioned dashboards
+  and their folder migrated with none rejected. It used 249 MiB of its 384 MiB limit. None
+  of the removals in 13.0 touches Aura: the checks call `grafana --version`, not
+  `grafana-cli`, and look datasources up by UID.
+
+This does not measure Tempo under sustained load, a real power loss on an appliance, or the
+updater applying the change to an appliance.
+
 ## 17. Deployment, backup and recovery
 
 The appliance is Docker Compose. Installation validates target prerequisites, prepares
