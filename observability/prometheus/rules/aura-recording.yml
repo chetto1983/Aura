@@ -62,3 +62,5 @@ groups:
         expr: max(aura_retention_backlog_items)
       - record: aura:retention_disk_utilization:max
         expr: max by (state) (aura_retention_disk_utilization_ratio)
+      - record: aura:tempo_blocklist_error:increase10m
+        expr: sum(increase(tempodb_blocklist_tenant_index_errors_total[10m])) or vector(0)

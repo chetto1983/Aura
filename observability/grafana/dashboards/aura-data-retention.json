@@ -33,6 +33,13 @@
       "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}, "id": 5,
       "options": {"minVizHeight": 75, "minVizWidth": 75, "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showThresholdLabels": true, "showThresholdMarkers": true, "sizing": "auto"},
       "targets": [{"editorMode": "code", "expr": "max(aura_retention_disk_utilization_ratio)", "legendFormat": "utilization", "range": true, "refId": "A"}], "title": "Aura storage utilization", "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "aura-prometheus"}, "description": "Tempo block-list errors over ten minutes; each failed poll adds 2. While they grow Tempo finds no stored trace and retention stops, yet its block count keeps the last good list. Alert: errors > 0 for 15m.",
+      "fieldConfig": {"defaults": {"links": [{"title": "Tempo blocks runbook", "url": "https://github.com/chetto1983/Aura/blob/master/observability/runbooks/aura-tempo-blocks.md"}], "noValue": "No data", "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}, "id": 6,
+      "options": {"colorMode": "value", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "aura:tempo_blocklist_error:increase10m", "legendFormat": "errors", "range": true, "refId": "A"}], "title": "Tempo block-list errors", "type": "stat"
     }
   ],
   "refresh": "30s", "schemaVersion": 41, "tags": ["aura", "data", "retention", "bounded-labels"], "templating": {"list": []},

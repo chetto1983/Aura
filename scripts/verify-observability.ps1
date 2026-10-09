@@ -194,7 +194,7 @@ $expectedThresholds = @{
     'aura-tools-mcp/2' = @(0.1); 'aura-tools-mcp/3' = @(0.1); 'aura-tools-mcp/4' = @(5)
     'aura-tools-mcp/6' = @(0); 'aura-tools-mcp/7' = @(20); 'aura-tools-mcp/8' = @(0)
     'aura-data-retention/3' = @(0); 'aura-data-retention/4' = @(100)
-    'aura-data-retention/5' = @(0.7, 0.8, 0.85); 'aura-data-retention/7' = @(10000)
+    'aura-data-retention/5' = @(0.7, 0.8, 0.85); 'aura-data-retention/6' = @(1)
 }
 
 $dashboardRoot = Join-Path $repoRoot 'observability/grafana/dashboards'

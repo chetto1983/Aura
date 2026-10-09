@@ -273,8 +273,74 @@ tests:
               threshold: utilization >= 0.85
               debounce: 5m
 
-  # Static verification requires every alert below to be named here and checks
-  # its threshold-1/equal/threshold+1 plus for-window before/equal/after contract.
+  # Tempo polls every 5 minutes and each failed poll adds 2. The counter only appears
+  # with the first error, so that poll is invisible to increase(). Here it fails at
+  # minutes 5 through 35, and a repair at minute 36 removes the empty meta.
+  - name: tempo block-list failures warn once they persist and resolve after repair
+    interval: 1m
+    input_series:
+      - series: 'tempodb_blocklist_tenant_index_errors_total{tenant="single-tenant"}'
+        values: '_x5 2x4 4x4 6x4 8x4 10x4 12x4 14x24'
+    promql_expr_test:
+      - expr: aura:tempo_blocklist_error:increase10m
+        eval_time: 4m
+        exp_samples:
+          - labels: '{__name__="aura:tempo_blocklist_error:increase10m"}'
+            value: 0
+      - expr: aura:tempo_blocklist_error:increase10m
+        eval_time: 9m
+        exp_samples:
+          - labels: '{__name__="aura:tempo_blocklist_error:increase10m"}'
+            value: 0
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Tempo cannot list its stored trace blocks
+              dashboard_uid: aura-data-retention
+              panel_id: "6"
+              dashboard_url: /d/aura-data-retention?viewPanel=6
+              runbook_url: observability/runbooks/aura-tempo-blocks.md
+              threshold: errors > 0
+              debounce: 15m
+      - eval_time: 43m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Tempo cannot list its stored trace blocks
+              dashboard_uid: aura-data-retention
+              panel_id: "6"
+              dashboard_url: /d/aura-data-retention?viewPanel=6
+              runbook_url: observability/runbooks/aura-tempo-blocks.md
+              threshold: errors > 0
+              debounce: 15m
+      - eval_time: 45m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts: []
+
+  - name: one failed tempo poll never warns
+    interval: 1m
+    input_series:
+      - series: 'tempodb_blocklist_tenant_index_errors_total{tenant="single-tenant"}'
+        values: '2x10 4x40'
+    alert_rule_test:
+      - eval_time: 19m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: AuraTempoBlocklistFailing
+        exp_alerts: []
+
+  # Nothing verifies this list: the alerts below have no boundary test yet, and each
+  # line records the threshold-1/equal/threshold+1 and for-window points one must cover.
   # boundary: AuraListenerFailure threshold 0/1/2 debounce 4m/5m/6m
   # boundary: AuraSchedulerNoProgress threshold 0/1/2 debounce 4m/5m/6m
   # boundary: AuraLLMLatencyBudgetBurn threshold 14.3/14.4/14.5 debounce 4m/5m/6m

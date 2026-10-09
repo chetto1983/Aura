@@ -8,7 +8,7 @@ Retention failures and backlog indicate the two-phase mark/remove/finalize polic
 
 A missing retention-backlog series means the PostgreSQL observation failed or Aura is not scrape-reachable. Treat it as unknown, never as an empty backlog; restore database/scrape health before using the backlog threshold for recovery decisions.
 
-Tempo exclusively owns its trace blocks and 14-day compaction. Aura cleanup must never delete Tempo blocks.
+Tempo owns its trace blocks and 14-day compaction, and Aura's retention cleanup must never delete a Tempo block. The one exception is `tempo-blocks-repair`, which removes a block whose meta is empty because one such block blinds Tempo; see `aura-tempo-blocks.md`.
 
 ## Drilldown and correlation
 
