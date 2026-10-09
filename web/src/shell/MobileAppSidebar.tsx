@@ -6,6 +6,7 @@ import {
   Network,
   Settings,
   ShieldCheck,
+  SquareKanban,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { MODES, type SurfaceIntent } from './modes';
@@ -13,6 +14,7 @@ import { Button } from '@/components/ui/button';
 
 const modeIcons = {
   chat: MessageSquareText,
+  board: SquareKanban,
   studio: Clapperboard,
   graph: Network,
   governance: ShieldCheck,

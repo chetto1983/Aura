@@ -18,9 +18,20 @@ describe('admin-mode gating (MUSR-01 / D-03)', () => {
   it('offers Studio to every identity, beside Chat', () => {
     // Generating is not an operator privilege: the Studio is gated by the server's own
     // identity scope, not by governance.write, so it must survive the non-admin filter.
-    expect(MODES).toEqual(['chat', 'studio', 'graph', 'governance', 'documents', 'settings']);
+    expect(MODES).toEqual([
+      'chat',
+      'board',
+      'studio',
+      'graph',
+      'governance',
+      'documents',
+      'settings',
+    ]);
     expect(isAdminMode('studio')).toBe(false);
     expect(visibleModes(MODES, false)).toContain('studio');
+    // The work board is the identity's own, shared with its agent: no operator privilege either.
+    expect(isAdminMode('board')).toBe(false);
+    expect(visibleModes(MODES, false)).toContain('board');
   });
 
   it('lists only surfaces that exist — no disabled placeholders', () => {

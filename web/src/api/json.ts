@@ -52,15 +52,30 @@ export async function getJSON<T>(url: string, signal?: AbortSignal): Promise<T> 
   return (await res.json()) as T;
 }
 
-export async function postJSON<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
+function jsonRequest(method: string, url: string, body: unknown): Promise<Response> {
+  return fetch(url, {
+    method,
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     credentials: 'same-origin',
-    body: JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
+}
+
+export async function postJSON<T>(url: string, body: unknown): Promise<T> {
+  const res = await jsonRequest('POST', url, body);
   if (!res.ok) {
     throw new HttpError(res.status);
+  }
+  return (await res.json()) as T;
+}
+
+/** sendJSON is any JSON write whose failure keeps the server's `{error}` code: the caller
+ * branches on HttpError.reason to say what to change. A body-less call still labels itself
+ * application/json, the CSRF floor the server's write boundary checks. */
+export async function sendJSON<T>(method: string, url: string, body?: unknown): Promise<T> {
+  const res = await jsonRequest(method, url, body);
+  if (!res.ok) {
+    throw await httpErrorFrom(res);
   }
   return (await res.json()) as T;
 }

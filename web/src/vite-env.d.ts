@@ -7,3 +7,9 @@ declare module '@svar-ui/core-locales' {
   export const en: Record<string, unknown>;
   export const it: Record<string, unknown>;
 }
+
+// The Kanban word pack, the same plain JS with no declarations.
+declare module '@svar-ui/kanban-locales' {
+  export const en: Record<string, unknown>;
+  export const it: Record<string, unknown>;
+}

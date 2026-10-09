@@ -12,7 +12,7 @@ import { Drawer } from './shell/Drawer';
 import { MobileAppSidebar } from './shell/MobileAppSidebar';
 import { ShellHeader } from './shell/ShellHeader';
 import type { SurfaceIntent } from './shell/modes';
-import { MODES, isAdminMode, visibleModes } from './shell/modes';
+import { MODES, SURFACE_LOADING, isAdminMode, visibleModes } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
 import { useSurfaceIntent } from './shell/useSurfaceIntent';
 import { isSettingsSectionId } from './settings/settingsSections';
@@ -51,6 +51,7 @@ const GraphExplorer = lazy(() => import('./graph/GraphExplorer'));
 
 const GovernanceWorkspace = lazy(() => import('./governance/GovernanceWorkspace'));
 const FilesWorkspace = lazy(() => import('./files/FilesWorkspace'));
+const BoardWorkspace = lazy(() => import('./board/BoardWorkspace'));
 const SettingsWorkspace = lazy(() => import('./settings/SettingsWorkspace'));
 
 const OnboardingWizard = lazy(() => import('./onboarding/OnboardingWizard'));
@@ -220,8 +221,9 @@ export function AppShell() {
     closeNav();
   }, [closeNav]);
 
-  const startNewConversation = useCallback(async () => {
-    if (createConversation.isPending) return;
+  // Resolves whether a conversation was started, so a caller can put a draft into it.
+  const startNewConversation = useCallback(async (): Promise<boolean> => {
+    if (createConversation.isPending) return false;
     try {
       const conv = await createConversation.mutateAsync();
       setSurface('chat');
@@ -229,8 +231,10 @@ export function AppShell() {
       resetUsage();
       closeNav();
       void navigate(`/c/${encodeURIComponent(conv.ID)}`);
+      return true;
     } catch {
       // The mutation keeps the failure state; the current thread remains selected.
+      return false;
     }
   }, [closeNav, createConversation, navigate, resetUsage, setSurface]);
 
@@ -246,6 +250,17 @@ export function AppShell() {
     },
     [closeNav, setSurface],
   );
+
+  // A board card's "discuss": its own conversation, or a new one with the card in the composer.
+  function discussCard(conversationId: string, draft: string) {
+    if (conversationId !== '') {
+      selectThread(conversationId);
+      return;
+    }
+    void startNewConversation().then((started) => {
+      if (started) requestComposerDraft(draft);
+    });
+  }
 
   const consumeComposerDraft = useCallback((nonce: number) => {
     setComposerDraftPrompt((current) => (current?.nonce === nonce ? undefined : current));
@@ -349,17 +364,7 @@ export function AppShell() {
           <Suspense
             fallback={
               <div role="status" className="grid h-full place-items-center text-sm text-text-muted">
-                {surface === 'studio'
-                  ? t('studio.loading')
-                  : surface === 'graph'
-                    ? t('graph.loading')
-                    : surface === 'governance'
-                      ? t('governance.loading')
-                      : surface === 'documents'
-                        ? t('files.loading')
-                        : surface === 'settings'
-                          ? t('settings.loading')
-                          : t('chat.loading')}
+                {t(SURFACE_LOADING[surface])}
               </div>
             }
           >
@@ -371,6 +376,8 @@ export function AppShell() {
               <GovernanceWorkspace />
             ) : surface === 'documents' ? (
               <FilesWorkspace mobileMenu={documentsMobileMenu} />
+            ) : surface === 'board' ? (
+              <BoardWorkspace mobileMenu={documentsMobileMenu} onDiscuss={discussCard} />
             ) : surface === 'settings' ? (
               <SettingsWorkspace onCreateIdentity={openCreateIdentity} />
             ) : (

@@ -16,6 +16,7 @@ import { displayEn, displayIt } from './resources.display';
 import { browserLiveEn, browserLiveIt } from './resources.browserLive';
 import { footerEn, footerIt } from './resources.footer';
 import { filesEn, filesIt } from './resources.files';
+import { boardEn, boardIt } from './resources.board';
 import { chatEmptyEn, chatEmptyIt } from './resources.empty';
 import { governanceEn, governanceIt } from './resources.governance';
 import { graphEn, graphIt } from './resources.graph';
@@ -69,6 +70,7 @@ export const resources = {
         logout: 'Sign out',
         modes: {
           chat: 'Chat',
+          board: 'Board',
           studio: 'Studio',
           graph: 'Graph',
           governance: 'Governance',
@@ -77,6 +79,7 @@ export const resources = {
         },
         modesCompact: {
           chat: 'Chat',
+          board: 'Board',
           studio: 'Studio',
           graph: 'Graph',
           governance: 'Gov',
@@ -193,6 +196,7 @@ export const resources = {
       ...videoStudioEn,
       ...shareEn,
       ...filesEn,
+      ...boardEn,
       ...governanceEn,
       ...graphEn,
       ...settingsEn,
@@ -344,6 +348,7 @@ export const resources = {
         logout: 'Disconnetti',
         modes: {
           chat: 'Chat',
+          board: 'Bacheca',
           studio: 'Studio',
           graph: 'Grafo',
           governance: 'Governance',
@@ -352,6 +357,7 @@ export const resources = {
         },
         modesCompact: {
           chat: 'Chat',
+          board: 'Bacheca',
           studio: 'Studio',
           graph: 'Grafo',
           governance: 'Gov',
@@ -468,6 +474,7 @@ export const resources = {
       ...videoStudioIt,
       ...shareIt,
       ...filesIt,
+      ...boardIt,
       ...governanceIt,
       ...graphIt,
       ...settingsIt,

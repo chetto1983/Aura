@@ -1,9 +1,28 @@
 // Every mode here is a real surface. 'tree' and 'displays' used to sit in this list as
 // disabled "coming soon" tabs; a control that has never done anything is not a promise,
 // it is clutter that costs a click to discover is dead.
-export const MODES = ['chat', 'studio', 'graph', 'governance', 'documents', 'settings'] as const;
+export const MODES = [
+  'chat',
+  'board',
+  'studio',
+  'graph',
+  'governance',
+  'documents',
+  'settings',
+] as const;
 
 export type SurfaceIntent = (typeof MODES)[number];
+
+// What each surface says while its lazy chunk loads.
+export const SURFACE_LOADING = {
+  chat: 'chat.loading',
+  board: 'board.loading',
+  studio: 'studio.loading',
+  graph: 'graph.loading',
+  governance: 'governance.loading',
+  documents: 'files.loading',
+  settings: 'settings.loading',
+} as const satisfies Record<SurfaceIntent, string>;
 
 // ADMIN_MODES are the operator/admin-only surfaces (MUSR-01 / D-03): the model Settings page
 // (governance.write-gated writes) and the Governance boards (governance.read/write-gated). A
