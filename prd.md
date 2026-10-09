@@ -2858,8 +2858,9 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   are lost. It writes
   vParquet5 blocks, and Tempo's migration guide states there is no downgrade from 3.0 to 2.x:
   rolling back to an image older than this change also needs the Tempo volume removed.
-- A power loss can leave a block's `meta.json` or `meta.compacted.json` empty, because the
-  local backend writes it without fsync or rename, in 2.9.4 and 3.1.0 alike. One such file
+- A power loss can leave a block's `meta.json` or `meta.compacted.json` empty, in 2.9.4 and
+  3.1.0 alike. The local backend writes `meta.json` with `os.Create` and `io.Copy`, with no
+  fsync or rename, and marks a block compacted by renaming that file. One such file
   aborts the poll of the whole tenant, so no stored trace is found and retention stops. On
   the lab VM this held from 2026-10-07: 89 failed polls, three blocks with an empty meta,
   21 blocks past the 14-day window. With those three removed from the copy, 3.1.0 polled
@@ -2872,6 +2873,20 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   younger than ten minutes, which a running Tempo may still be writing. It logs a failure
   and never returns one: a failed one-shot would fail the whole `up`, at boot and on every
   update.
+- An empty meta that appears while Tempo runs stays until the next `up`, so the
+  `AuraTempoBlocklistFailing` warning reports it. Measured on a throwaway 3.1.0 on the lab VM
+  that polled every 20 s:
+  - Each failed poll added 2 to `tempodb_blocklist_tenant_index_errors_total`: 6 after 60 s
+    and 12 after 120 s.
+  - `tempodb_blocklist_poll_errors_total` was never exported.
+  - `tempodb_blocklist_length` kept reporting the last good list.
+  - The error counter does not exist until the first error, so `increase()` misses that
+    first poll.
+  - After the block was removed the counter stayed at 12 while polls went on.
+
+  The alert fires when the 10-minute increase stays above zero for 15 minutes. With the
+  default 5-minute poll, a broken tenant keeps that window above zero, and one failed poll
+  holds it there for 10 minutes only, so a lone failure never fires.
 - Grafana 13.2.3 started on a volume initialised by 12.3.9, and on one initialised by
   12.4.12. Each time both datasources were healthy, and the four provisioned dashboards
   and their folder migrated with none rejected. It used 249 MiB of its 384 MiB limit. None
@@ -2879,7 +2894,8 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   `grafana-cli`, and look datasources up by UID.
 
 This does not measure Tempo under sustained load, a real power loss on an appliance, or the
-updater applying the change to an appliance.
+updater applying the change to an appliance. The alert timing comes from that 20-second spike
+and the 5-minute default, not from an alert firing on the appliance stack.
 
 ## 17. Deployment, backup and recovery
 
