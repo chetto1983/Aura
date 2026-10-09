@@ -2880,6 +2880,30 @@ job's retry, and a tick waits for its runs before it sweeps notices. So every wa
 This does not measure an outage longer than the first two retry delays, a direct cloud provider
 whose lookup fails inside Aura (that path is covered only by unit tests), or a recurring task.
 
+Measured again at `6d42f82cb` (2026-10-09), for the read-only rule. A one-shot `agent_job` asked
+the model to call `tool_search` and then answer. A script followed the log and cut the VM's
+internet 38 ms after the model's reply asked for the tool, at 14:49:03 UTC. **The job was not
+retried.**
+- The model call after the tool had already left when the cut landed. It hung until the
+  per-call timeout (`TotalTimeoutSec`, 120 s on the VM) and failed at 14:51:03 with
+  `context deadline exceeded`.
+- The retry rule had excluded that error as if it were the job's own deadline.
+- The failure notice backed off (14:51:41, 14:53:07, 14:55:35). It was delivered at 14:55:35,
+  32 s after the network returned, and the one-shot was deleted at 14:56:02.
+
+The run also logged `gateway: decision-fact insert failed`. A job with no origin conversation
+keys the gateway ledger on `agent_job:<run id>`, which is not a UUID, so the decision facts of
+such jobs are never recorded. That gap is open and not addressed here.
+
+Decision (2026-10-09): a model call that runs out of its own time while the job still has time
+counts as transient. In an `agent_job` the job's context is the parent of every model call, and
+the agent's wallclock budget ends a turn as an event, not an error. So a deadline error while
+the job's context is still live can only be the call's own timeout. The job's own deadline is
+still not transient.
+
+This does not measure a call left hanging by a direct cloud provider. A provider that is merely
+slower than the call timeout, with the network up, is retried too, at most four times.
+
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
 promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
