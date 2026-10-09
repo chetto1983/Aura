@@ -119,7 +119,11 @@ describe('ChatGPT plan connection', () => {
       '/api/settings/chatgpt',
       expect.objectContaining({ method: 'DELETE', credentials: 'same-origin' }),
     );
-    expect(onConnectionChange).toHaveBeenLastCalledWith(false);
+    // Same race as the failed-disconnect case below: the callback follows the commit that
+    // shows the login button (failed once on PR #144, 2026-10-09).
+    await waitFor(() => {
+      expect(onConnectionChange).toHaveBeenLastCalledWith(false);
+    });
   });
 
   it('keeps a missing inference grant disabled and displays the server explanation', async () => {
