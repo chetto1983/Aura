@@ -1,6 +1,6 @@
 # Tool approval policy: `ask` and `deny` per identity
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** An identity can narrow what its agent may do, tool by tool: `deny` refuses the call at the gateway with a reason the model reads, `ask` routes the call to approval whatever its tier and offers no `always`. Precedence deny > ask > grant > tier. Visible in the cockpit's standing-approvals panel, settable from the CLI, recorded in every reservation it touched.
 
@@ -36,6 +36,8 @@
 - **`gateway_policy` rides the reservation Meta and the deny decision fact**, beside `approval_scope`; no new ledger column (D-01 zero-migration for Meta).
 - **The counter is a boundary**, `obs.NewGlobalBoundary` with `Operation: "gateway_policy"` and `State: ask|deny`, `Count: obs.GatewayPolicyDecisionsID`: the obs package has no bare counter helper and every other package counts through a boundary.
 - **Setting `ask` revokes the `always` grant in the API handler**, after the policy is written, through the grants store's existing `Revoke`; the store packages stay independent and precedence covers the window between the two writes.
+- **Taken during execution (2026-10-09):** under `ask` the session grant is honoured and only the `always` grant is skipped, as the spec says; the plan's Task 3 text said both. The operator who picks "for this conversation" on an `ask` prompt has answered for this conversation.
+- **Taken during execution (2026-10-09):** the two new unsafe routes are inventoried in `idempotency_http.go` (`approval_policy_set`, `approval_policy_clear`); the mutation-route test found them missing. The grant revoke and the policy clear share one handler body, which the CI linter's `dupl` asked for.
 - **The cockpit types the tool name.** The subject vocabulary is what `tool_search` and `aura mcp tools` print; a picker from the manifest is a follow-up named in the spec.
 
 ## File structure
@@ -68,47 +70,47 @@
 
 **Files:** the four under `internal/db/` above.
 
-- [ ] **Step 1: Confirm the slot.** `ls internal/db/migrations/ | tail -1` → `0139_...`; the slot is `0140`.
-- [ ] **Step 2: Write the failing migration test** `internal/db/migrate_0140_integration_test.go` (tag `db_integration`): fresh database to 0139, table absent; up: table present, `policy` CHECK admits `ask` and `deny` and refuses `maybe`, RLS enabled with the two policies, `aura_app` without `app.current_identity` sees zero rows after an insert as `aura`; down: table gone; up again.
-- [ ] **Step 3: Write the migration** by copying 0099 line for line and renaming: `aura.gateway_tool_policies (identity_id, tool, action DEFAULT '', policy CHECK IN ('ask','deny'), set_at, set_by, PRIMARY KEY (identity_id, tool, action))`.
-- [ ] **Step 4: Write the queries** `SetGatewayToolPolicy` (`INSERT ... ON CONFLICT (identity_id, tool, action) DO UPDATE SET policy = EXCLUDED.policy, set_at = now(), set_by = EXCLUDED.set_by`), `GetGatewayToolPolicy :one`, `ListGatewayToolPolicies :many ORDER BY tool, action`, `ClearGatewayToolPolicy :execrows`.
-- [ ] **Step 5: `sqlc generate`**, run the test with the tier env, commit: `feat(db): add per-identity tool policies beside the approval grants`.
+- [x] **Step 1: Confirm the slot.** `ls internal/db/migrations/ | tail -1` → `0139_...`; the slot is `0140`.
+- [x] **Step 2: Write the failing migration test** `internal/db/migrate_0140_integration_test.go` (tag `db_integration`): fresh database to 0139, table absent; up: table present, `policy` CHECK admits `ask` and `deny` and refuses `maybe`, RLS enabled with the two policies, `aura_app` without `app.current_identity` sees zero rows after an insert as `aura`; down: table gone; up again.
+- [x] **Step 3: Write the migration** by copying 0099 line for line and renaming: `aura.gateway_tool_policies (identity_id, tool, action DEFAULT '', policy CHECK IN ('ask','deny'), set_at, set_by, PRIMARY KEY (identity_id, tool, action))`.
+- [x] **Step 4: Write the queries** `SetGatewayToolPolicy` (`INSERT ... ON CONFLICT (identity_id, tool, action) DO UPDATE SET policy = EXCLUDED.policy, set_at = now(), set_by = EXCLUDED.set_by`), `GetGatewayToolPolicy :one`, `ListGatewayToolPolicies :many ORDER BY tool, action`, `ClearGatewayToolPolicy :execrows`.
+- [x] **Step 5: `sqlc generate`**, run the test with the tier env, commit: `feat(db): add per-identity tool policies beside the approval grants`.
 
 ### Task 2: The store
 
-- [ ] **Step 1: Failing tests** `internal/approvalpolicies/store_integration_test.go`: set then get; upsert `ask` to `deny`; list order; clear reports removed or not; no identity bound sees nothing (`db.WithIdentityTx` with another identity); cascade on identity delete.
-- [ ] **Step 2: Implement** `store.go` in `approvalgrants`'s shape: `Policy` string type with `PolicyAsk`, `PolicyDeny`, `ParsePolicy`; `Row{Tool, Action, Policy, SetAt, SetBy}` with `Subject()` through `approvalgrants.Subject`; `Set` refuses an empty tool and an unknown policy; `Get` returns `(Policy, bool, error)`.
-- [ ] **Step 3: Gates, commit** `feat(approvalpolicies): durable ask and deny policies per identity`.
+- [x] **Step 1: Failing tests** `internal/approvalpolicies/store_integration_test.go`: set then get; upsert `ask` to `deny`; list order; clear reports removed or not; no identity bound sees nothing (`db.WithIdentityTx` with another identity); cascade on identity delete.
+- [x] **Step 2: Implement** `store.go` in `approvalgrants`'s shape: `Policy` string type with `PolicyAsk`, `PolicyDeny`, `ParsePolicy`; `Row{Tool, Action, Policy, SetAt, SetBy}` with `Subject()` through `approvalgrants.Subject`; `Set` refuses an empty tool and an unknown policy; `Get` returns `(Policy, bool, error)`.
+- [x] **Step 3: Gates, commit** `feat(approvalpolicies): durable ask and deny policies per identity`.
 
 ### Task 3: The gateway
 
-- [ ] **Step 1: Failing tests** `internal/gateway/policy_test.go` with a `fakePolicies` beside `fakeGrants`: the five review-focus tests, plus `TestPolicyAskReservesAReadOnlyTool` (an `ask` on a read-only spec goes through `routeApprove` and, after accept, reserves with `gateway_policy=ask` in Meta), `TestPolicyDenyRecordsADecisionFact` (an `end` row with `gateway_policy=deny`, `reason=policy`), `TestPolicyAskUnderHeadlessDeniesWithGuidance`.
-- [ ] **Step 2: Implement** `policy.go`: `type Policy = approvalpolicies.Policy`? No: the gateway declares its own `Policy string` with the two values so it imports no store package (the same line `grantStore` draws); `policyStore interface{ Get(ctx, identityID, tool, action string) (string, bool, error) }`; `SetPolicyStore`; `policyFor(ctx, identityID, subject) Policy` with the warn-and-ask fallback; two boundaries.
-- [ ] **Step 3: `decide.go`:** after `tier := classify(...)`, `policy := g.policyFor(...)`; `deny` → `recordPolicyDeny` (an `end` decision fact like `recordDegradedDeny`, reason `policy`) and `Verdict{Deny, Reason: "policy"}`; `ask` → `spec.Mutating = true`; `if gated(tier) || policy == PolicyAsk { routeApprove(..., policy) }`. `ErrDenied` message for `policy`: `tool "<subject>" is disabled for this identity by policy: do not retry it, tell the operator` (built where `execTool` maps the verdict; check `internal/agent/llm_agent_retry.go:156`).
-- [ ] **Step 4: `approve.go`:** `routeApprove` takes `policy`; under `ask` skip `SessionGrant` and `alwaysGranted`; pass `policy` to `gatewayApprovalRequiredResult` → `scopeOptions(subject, policy)`; `scope.go`: `scopeLabels(s, policy)` drops the `always` entry under `ask` and `scopeForAnswer` resolves against the same table (an `always` answer under `ask` is `ScopeOnce`).
-- [ ] **Step 5: `reserve.go`:** `reservationStart` gains `policy` and writes `meta["gateway_policy"]` when set; thread through `reserve`.
-- [ ] **Step 6: Gates on `internal/gateway` (unit, race) and the two integration suites it has under the tier; commit** `feat(gateway): ask and deny policies outrank grants and tiers`.
+- [x] **Step 1: Failing tests** `internal/gateway/policy_test.go` with a `fakePolicies` beside `fakeGrants`: the five review-focus tests, plus `TestPolicyAskReservesAReadOnlyTool` (an `ask` on a read-only spec goes through `routeApprove` and, after accept, reserves with `gateway_policy=ask` in Meta), `TestPolicyDenyRecordsADecisionFact` (an `end` row with `gateway_policy=deny`, `reason=policy`), `TestPolicyAskUnderHeadlessDeniesWithGuidance`.
+- [x] **Step 2: Implement** `policy.go`: `type Policy = approvalpolicies.Policy`? No: the gateway declares its own `Policy string` with the two values so it imports no store package (the same line `grantStore` draws); `policyStore interface{ Get(ctx, identityID, tool, action string) (string, bool, error) }`; `SetPolicyStore`; `policyFor(ctx, identityID, subject) Policy` with the warn-and-ask fallback; two boundaries.
+- [x] **Step 3: `decide.go`:** after `tier := classify(...)`, `policy := g.policyFor(...)`; `deny` → `recordPolicyDeny` (an `end` decision fact like `recordDegradedDeny`, reason `policy`) and `Verdict{Deny, Reason: "policy"}`; `ask` → `spec.Mutating = true`; `if gated(tier) || policy == PolicyAsk { routeApprove(..., policy) }`. `ErrDenied` message for `policy`: `tool "<subject>" is disabled for this identity by policy: do not retry it, tell the operator` (built where `execTool` maps the verdict; check `internal/agent/llm_agent_retry.go:156`).
+- [x] **Step 4: `approve.go`:** `routeApprove` takes `policy`; under `ask` skip `SessionGrant` and `alwaysGranted`; pass `policy` to `gatewayApprovalRequiredResult` → `scopeOptions(subject, policy)`; `scope.go`: `scopeLabels(s, policy)` drops the `always` entry under `ask` and `scopeForAnswer` resolves against the same table (an `always` answer under `ask` is `ScopeOnce`).
+- [x] **Step 5: `reserve.go`:** `reservationStart` gains `policy` and writes `meta["gateway_policy"]` when set; thread through `reserve`.
+- [x] **Step 6: Gates on `internal/gateway` (unit, race) and the two integration suites it has under the tier; commit** `feat(gateway): ask and deny policies outrank grants and tiers`.
 
 ### Task 4: The API
 
-- [ ] **Step 1: Failing tests** `approval_policies_api_test.go` with fakes: `GET` lists own identity only; `PUT` with `deny`, with `ask` (revokes the grant), with `maybe` (400 `invalid_policy`), with an empty tool (400); `POST /clear` reports removed; 503 when unwired.
-- [ ] **Step 2: Implement** `approval_policies_api.go`: `approvalPolicyStore` seam (Set, Get not needed, List, Clear), `SetApprovalPolicyStore`, `registerApprovalPolicyRoutes` called from `registerApprovalRoutes`, items with `subject`, `policy`, `set_at`, `set_by`.
-- [ ] **Step 3: Mounts** in `serve_webui_routes.go` (`approvalPoliciesRoute`, `approvalPoliciesClearRoute`) and `serve_webui.go`, wiring in `serve_agui.go` (`SetApprovalPolicyStore(approvalpolicies.New(chat.pool))`) and `chat_boot.go` (`gw.SetPolicyStore(approvalpolicies.New(pool))`).
-- [ ] **Step 4: Gates, commit** `feat(agui): own-identity tool policies at /api/approvals/policies`.
+- [x] **Step 1: Failing tests** `approval_policies_api_test.go` with fakes: `GET` lists own identity only; `PUT` with `deny`, with `ask` (revokes the grant), with `maybe` (400 `invalid_policy`), with an empty tool (400); `POST /clear` reports removed; 503 when unwired.
+- [x] **Step 2: Implement** `approval_policies_api.go`: `approvalPolicyStore` seam (Set, Get not needed, List, Clear), `SetApprovalPolicyStore`, `registerApprovalPolicyRoutes` called from `registerApprovalRoutes`, items with `subject`, `policy`, `set_at`, `set_by`.
+- [x] **Step 3: Mounts** in `serve_webui_routes.go` (`approvalPoliciesRoute`, `approvalPoliciesClearRoute`) and `serve_webui.go`, wiring in `serve_agui.go` (`SetApprovalPolicyStore(approvalpolicies.New(chat.pool))`) and `chat_boot.go` (`gw.SetPolicyStore(approvalpolicies.New(pool))`).
+- [x] **Step 4: Gates, commit** `feat(agui): own-identity tool policies at /api/approvals/policies`.
 
 ### Task 5: The CLI
 
-- [ ] **Step 1: Failing tests** `gateway_policy_test.go`: `set <identity> <tool> [action] ask|deny`, `clear`, `list`, unknown policy word refused, usage on bad arity.
-- [ ] **Step 2: Implement** `gateway_policy.go`; `runGateway` grows `case "policy"`; usage text covers both verbs.
-- [ ] **Step 3: Gates, commit** `feat(cli): aura gateway policy sets ask and deny per identity`.
+- [x] **Step 1: Failing tests** `gateway_policy_test.go`: `set <identity> <tool> [action] ask|deny`, `clear`, `list`, unknown policy word refused, usage on bad arity.
+- [x] **Step 2: Implement** `gateway_policy.go`; `runGateway` grows `case "policy"`; usage text covers both verbs.
+- [x] **Step 3: Gates, commit** `feat(cli): aura gateway policy sets ask and deny per identity`.
 
 ### Task 6: The cockpit
 
-- [ ] **Step 1: Failing test** `ToolPoliciesPanel.test.tsx` (the `CreditPanel` test's stubbed-fetch shape): renders the list with subjects and policies, submits a `PUT`, clears, shows the error alert.
-- [ ] **Step 2: Implement** `useApprovalPolicies.ts` (mirrors `useApprovalGrants.ts`), `ToolPoliciesPanel.tsx` (list + form: tool, optional action, ask/deny), mounted under the grants in `StandingApprovalsPanel`; keys `settings.toolPolicies.*` in en and it.
-- [ ] **Step 3:** `npm run typecheck`, `npm run lint`, `npm test -- ToolPoliciesPanel`, i18n key parity test; commit `feat(web): tool policies block under standing approvals`.
+- [x] **Step 1: Failing test** `ToolPoliciesPanel.test.tsx` (the `CreditPanel` test's stubbed-fetch shape): renders the list with subjects and policies, submits a `PUT`, clears, shows the error alert.
+- [x] **Step 2: Implement** `useApprovalPolicies.ts` (mirrors `useApprovalGrants.ts`), `ToolPoliciesPanel.tsx` (list + form: tool, optional action, ask/deny), mounted under the grants in `StandingApprovalsPanel`; keys `settings.toolPolicies.*` in en and it.
+- [x] **Step 3:** `npm run typecheck`, `npm run lint`, `npm test -- ToolPoliciesPanel`, i18n key parity test; commit `feat(web): tool policies block under standing approvals`.
 
 ### Task 7: Closing
 
-- [ ] `make file-size`, `go vet ./...`, `go build ./...`, `go test -race ./internal/gateway/ ./internal/approvalpolicies/ ./internal/agui/ ./cmd/aura/`, the `db_integration` tier for the touched packages, `golangci-lint run ./internal/gateway/... ./internal/approvalpolicies/... ./internal/agui/... ./cmd/aura/...`.
-- [ ] Spec: tick the acceptance items that unit and integration tests cover; the lab-VM items stay open and get their file in `docs/superpowers/verification/` when run.
+- [x] `make file-size`, `go vet ./...`, `go build ./...`, `go test -race ./internal/gateway/ ./internal/approvalpolicies/ ./internal/agui/ ./cmd/aura/`, the `db_integration` tier for the touched packages, `golangci-lint run ./internal/gateway/... ./internal/approvalpolicies/... ./internal/agui/... ./cmd/aura/...`.
+- [ ] Lab-VM acceptance (spec, Testing, items 1-4): open; each run leaves its file in `docs/superpowers/verification/`.
