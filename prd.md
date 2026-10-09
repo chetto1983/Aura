@@ -2852,8 +2852,10 @@ Grafana images. Measured 2026-10-09 when moving from Tempo 2.9.4 and Grafana 12.
   `-config.verify`, so the running 2.9.4 stays healthy while the updater replaces the file.
 - On a copy of the lab VM's 2.2 GB Tempo volume, 3.1.0 returned traces that 2.9.4 had stored
   on 23 September, 6 October and 7–8 October. It accepted new OTLP spans and found them by
-  ID and by TraceQL, using 86 MiB where 2.9.4 used 155 MiB. It does not replay the 2.x
-  ingester WAL, so traces not yet flushed when Tempo is replaced are lost. It writes
+  ID and by TraceQL, using 86 MiB where 2.9.4 used 155 MiB. Within its first hour its
+  retention marked every block past the 14-day window for deletion: 21 before, none after.
+  It does not replay the 2.x ingester WAL, so traces not yet flushed when Tempo is replaced
+  are lost. It writes
   vParquet5 blocks, and Tempo's migration guide states there is no downgrade from 3.0 to 2.x:
   rolling back to an image older than this change also needs the Tempo volume removed.
 - A power loss can leave a block's `meta.json` or `meta.compacted.json` empty, because the
