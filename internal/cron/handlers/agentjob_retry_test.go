@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net"
 	"net/url"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -106,38 +108,104 @@ func TestAgentJobDoesNotRetryAPermanentFailure(t *testing.T) {
 	}
 }
 
-// TestRunFailureClassifiesTheOutageShapes pins the errors an outage produces when Aura calls a
-// cloud provider directly: the lookup fails temporarily (SERVFAIL or a refused resolver) or
-// times out. A name that does not exist and the job's own deadline are not outages.
+// TestRunFailureClassifiesTheOutageShapes pins the errors an outage produces: the lookup fails
+// temporarily (SERVFAIL or a refused resolver) or times out when Aura calls a cloud provider
+// directly, and a model call left hanging runs out of its own time while the job still has
+// time. A name that does not exist, a cancel and the job's own deadline are not outages.
 func TestRunFailureClassifiesTheOutageShapes(t *testing.T) {
 	t.Parallel()
 	dial := func(dnsErr *net.DNSError) error {
 		return &url.Error{Op: "Post", URL: "https://openrouter.ai/api/v1/chat/completions",
 			Err: &net.OpError{Op: "dial", Net: "tcp", Err: dnsErr}}
 	}
+	expired, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
 	for _, tc := range []struct {
 		name          string
 		err           error
 		askedMutating bool
+		jobCtx        context.Context
 		want          bool
 	}{
-		{"dns servfail", dial(&net.DNSError{Err: "server misbehaving", Name: "openrouter.ai", IsTemporary: true}), false, true},
-		{"dns timeout", dial(&net.DNSError{Err: "i/o timeout", Name: "openrouter.ai", IsTimeout: true}), false, true},
-		{"dns no such host", dial(&net.DNSError{Err: "no such host", Name: "openrouter.ai", IsNotFound: true}), false, false},
-		{"dns servfail after a mutating tool", dial(&net.DNSError{Err: "server misbehaving", IsTemporary: true}), true, false},
-		{"job deadline", context.DeadlineExceeded, false, false},
-		{"cancelled", context.Canceled, false, false},
-		{"stream went silent", openai_compat.ErrStreamIdleTimeout, false, true},
-		{"rate limited", &openai_compat.HTTPError{StatusCode: 429}, false, true},
+		{"dns servfail", dial(&net.DNSError{Err: "server misbehaving", Name: "openrouter.ai", IsTemporary: true}), false, context.Background(), true},
+		{"dns timeout", dial(&net.DNSError{Err: "i/o timeout", Name: "openrouter.ai", IsTimeout: true}), false, context.Background(), true},
+		{"dns no such host", dial(&net.DNSError{Err: "no such host", Name: "openrouter.ai", IsNotFound: true}), false, context.Background(), false},
+		{"dns servfail after a mutating tool", dial(&net.DNSError{Err: "server misbehaving", IsTemporary: true}), true, context.Background(), false},
+		{"call timed out, job has time", context.DeadlineExceeded, false, context.Background(), true},
+		{"call timed out after a mutating tool", context.DeadlineExceeded, true, context.Background(), false},
+		{"job deadline", context.DeadlineExceeded, false, expired, false},
+		{"cancelled", context.Canceled, false, context.Background(), false},
+		{"stream went silent", openai_compat.ErrStreamIdleTimeout, false, context.Background(), true},
+		{"rate limited", &openai_compat.HTTPError{StatusCode: 429}, false, context.Background(), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := runFailure(tc.err, tc.askedMutating)
+			got := runFailure(tc.jobCtx, tc.err, tc.askedMutating)
 			if isRetryableBeforeEffects(got) != tc.want {
 				t.Fatalf("runFailure(%v, %v) retryable = %v, want %v", tc.err, tc.askedMutating, !tc.want, tc.want)
 			}
 			if !errors.Is(got, tc.err) {
 				t.Fatalf("runFailure must keep %v reachable, got %v", tc.err, got)
+			}
+		})
+	}
+}
+
+// hangingClient answers its scripted turns, then leaves every later call hanging until the
+// call's context ends: a request the network dropped before any byte came back.
+type hangingClient struct {
+	mu    sync.Mutex
+	turns []agenttest.FakeTurn
+	calls int
+}
+
+func (c *hangingClient) Stream(ctx context.Context, _ llm.Request) (<-chan llm.Chunk, error) {
+	c.mu.Lock()
+	i := c.calls
+	c.calls++
+	c.mu.Unlock()
+	if i >= len(c.turns) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	ch := make(chan llm.Chunk, len(c.turns[i].Chunks))
+	for _, chunk := range c.turns[i].Chunks {
+		ch <- chunk
+	}
+	close(ch)
+	return ch, nil
+}
+
+// TestAgentJobRetriesAModelCallThatHungPastItsTimeout reproduces the lab VM run of 2026-10-09:
+// the model asked for a read-only tool, the network went away, and the next model call hung
+// until its own timeout. The job still had time, so the failure is retryable. When the job's own
+// deadline ends the same hanging call, it is not.
+func TestAgentJobRetriesAModelCallThatHungPastItsTimeout(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name        string
+		callTimeout int
+		jobDuration time.Duration
+		want        bool
+	}{
+		{"call timeout inside the job", 1, time.Minute, true},
+		{"job deadline first", 30, time.Second, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			client := &hangingClient{turns: []agenttest.FakeTurn{
+				agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "loop", `{"n":1}`)),
+			}}
+			h := AgentJobHandler{Deps: AgentDeps{
+				Client: client, LLM: llm.Config{TotalTimeoutSec: tc.callTimeout},
+				Registry: jobRegistry(), MaxDuration: tc.jobDuration,
+			}}
+			_, err := h.Run(context.Background(), Job{Payload: []byte(`{"goal":"summarize the news"}`), StepBudget: 5, RunID: "run-hang"})
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("the hanging call must end on a deadline, got %v", err)
+			}
+			if isRetryableBeforeEffects(err) != tc.want {
+				t.Fatalf("retryable = %v, want %v (%v)", !tc.want, tc.want, err)
 			}
 		})
 	}

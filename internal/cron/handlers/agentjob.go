@@ -97,7 +97,7 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool)
 		askedMutating = askedMutating || asked
 		if runErr != nil {
-			return summary.String(), runFailure(runErr, askedMutating)
+			return summary.String(), runFailure(runCtx, runErr, askedMutating)
 		}
 		if content != "" {
 			appendLine(&summary, content)
@@ -216,12 +216,24 @@ func (h AgentJobHandler) mutatingTool(name string) bool {
 // web search leaves nothing behind, so firing the job again later cannot repeat an effect
 // (prd.md §15). After a mutating tool the failure is reported, never retried, because the
 // tool may have acted and a fresh run could act twice.
-func runFailure(err error, askedMutating bool) error {
+func runFailure(jobCtx context.Context, err error, askedMutating bool) error {
 	err = fmt.Errorf("agent_job run: %w", err)
-	if askedMutating || !agent.IsTransientLLMError(err) {
+	if askedMutating || !transientFailure(jobCtx, err) {
 		return err
 	}
 	return retryableBeforeEffectsError{err: err}
+}
+
+// transientFailure reports whether a later run may not hit err. Besides the agent's own rule it
+// counts a model call that ran out of its own time while the job still had time: jobCtx is the
+// parent of every call and the wallclock budget ends a turn as an event, so such a deadline is
+// the call's timeout, typically a request the network dropped mid-flight (measured 2026-10-09).
+// The job's own deadline is not transient.
+func transientFailure(jobCtx context.Context, err error) bool {
+	if agent.IsTransientLLMError(err) {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded) && jobCtx.Err() == nil
 }
 
 // retryableBeforeEffectsError is the mark the cron dispatcher reads, through the method, to
