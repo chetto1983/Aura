@@ -90,14 +90,14 @@ func (h AgentJobHandler) Run(ctx context.Context, job Job) (string, error) {
 
 	prior := []llm.Message{{Role: llm.RoleUser, Content: goal}}
 	var summary strings.Builder
-	askedTools := false
+	askedMutating := false
 
 	for attempt := 0; attempt <= maxAutoRejects; attempt++ {
 		worker := newAgentWorker(h.Deps, client, cfg, job.RunID, job.OriginConversationID, prior)
-		content, pause, asked, runErr := drain(runCtx, worker, budget)
-		askedTools = askedTools || asked
+		content, pause, asked, runErr := drain(runCtx, worker, budget, h.mutatingTool)
+		askedMutating = askedMutating || asked
 		if runErr != nil {
-			return summary.String(), runFailure(runErr, askedTools)
+			return summary.String(), runFailure(runErr, askedMutating)
 		}
 		if content != "" {
 			appendLine(&summary, content)
@@ -157,10 +157,11 @@ func (h AgentJobHandler) resolveLLM(ctx context.Context) (llm.Client, llm.Config
 
 // drain runs one LlmAgent invocation to completion, returning the final assistant
 // content, the FIRST ask_user pause (nil when the run finished without one), whether the
-// model asked for any tool, and a terminal error. A pause stops the drain so the caller can
-// inject-and-continue; the agent's own loop terminates the run on a pause (llm_agent.go
-// emitPauses returns), so there is nothing left to drain after it.
-func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget) (content string, pause *agent.AwaitingInput, askedTools bool, err error) {
+// model asked for a tool that mutating reports as changing state, and a terminal error. A
+// pause stops the drain so the caller can inject-and-continue; the agent's own loop
+// terminates the run on a pause (llm_agent.go emitPauses returns), so there is nothing left
+// to drain after it.
+func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget, mutating func(tool string) bool) (content string, pause *agent.AwaitingInput, askedMutating bool, err error) {
 	ic := agent.InvocationContext{
 		Ctx:       ctx,
 		RequestID: uuid.Must(uuid.NewV7()),
@@ -168,31 +169,56 @@ func drain(ctx context.Context, worker *agent.LlmAgent, budget *agent.Budget) (c
 	}
 	for ev, runErr := range worker.Run(ic) {
 		if runErr != nil {
-			return content, nil, askedTools, runErr
+			return content, nil, askedMutating, runErr
 		}
 		if ev == nil {
 			continue
 		}
-		if ev.Actions.ToolInvocation != nil || (ev.LLMResponse != nil && len(ev.LLMResponse.ToolCalls) > 0) {
-			askedTools = true
+		for _, tool := range eventTools(ev) {
+			askedMutating = askedMutating || mutating(tool)
 		}
 		if ai := ev.Actions.AwaitingInput; ai != nil {
-			return content, ai, askedTools, nil
+			return content, ai, askedMutating, nil
 		}
 		if ev.LLMResponse != nil && ev.LLMResponse.Content != "" {
 			content = ev.LLMResponse.Content
 		}
 	}
-	return content, nil, askedTools, nil
+	return content, nil, askedMutating, nil
+}
+
+// eventTools names the tools an event announces: a call the model asked for, or one starting.
+func eventTools(ev *agent.Event) []string {
+	var names []string
+	if ev.LLMResponse != nil {
+		for _, call := range ev.LLMResponse.ToolCalls {
+			names = append(names, call.Function.Name)
+		}
+	}
+	if inv := ev.Actions.ToolInvocation; inv != nil {
+		names = append(names, inv.ToolName)
+	}
+	return names
+}
+
+// mutatingTool reports whether a tool may change state, by its spec. A name the registry does
+// not know counts as mutating: the retry must never assume a call left nothing behind.
+func (h AgentJobHandler) mutatingTool(name string) bool {
+	if h.Deps.Registry == nil {
+		return true
+	}
+	tool, ok := h.Deps.Registry.Get(name)
+	return !ok || tool.Spec().Mutating
 }
 
 // runFailure wraps a failed run. It marks the failure retryable when the model failed on a
-// transient error before it asked for any tool: nothing was done yet, so firing the job again
-// later cannot repeat an effect (prd.md §15). A job that asked for a tool is never retried,
-// because the tool may have acted.
-func runFailure(err error, askedTools bool) error {
+// transient error before it asked for any tool that changes state: a read-only tool such as a
+// web search leaves nothing behind, so firing the job again later cannot repeat an effect
+// (prd.md §15). After a mutating tool the failure is reported, never retried, because the
+// tool may have acted and a fresh run could act twice.
+func runFailure(err error, askedMutating bool) error {
 	err = fmt.Errorf("agent_job run: %w", err)
-	if askedTools || !agent.IsTransientLLMError(err) {
+	if askedMutating || !agent.IsTransientLLMError(err) {
 		return err
 	}
 	return retryableBeforeEffectsError{err: err}
