@@ -2790,6 +2790,33 @@ Measured on the lab VM at `efdc895c0`, then `174adbe23` (2026-10-05):
 This does not establish behaviour for a fired one-shot whose run never ended, which waits for
 orphan recovery.
 
+An internet outage loses a scheduled job and its failure notice (2026-10-09). An operator's
+appliance, which stays on and had no build pending at that hour, did not deliver an
+`agent_job` on Telegram around 10:00.
+
+Reproduced on the lab VM at `7099f88a5`, with `gemma4:31b-cloud` through the host's Ollama:
+- A one-shot `agent_job` with `notify=telegram` was scheduled with `aura task schedule` for
+  12:23:00 UTC.
+- The VM's internet was cut from 12:21:30 to 12:27:30 with iptables. The LAN and the Docker
+  networks were kept, and DNS was refused.
+- The same job with the network up was delivered.
+
+What happened:
+- The run started at 12:23:10 and failed at 12:23:31. Ollama could not resolve `ollama.com` and
+  answered HTTP 502. The LLM clients run with `WithMaxRetries(0)` and the `agent_job` handler
+  does not retry, so the job never ran again.
+- The failure notice failed at 12:23:39 because `api.telegram.org` did not resolve. Its three
+  retries failed at 12:23:47, 12:23:55 and 12:24:11, 32 s in all.
+- At 12:24:11 the scheduler deleted the settled one-shot together with its run and notification.
+
+When the network came back nothing was sent, and the board had nothing to show. So a job that
+runs while the network is down is lost, and its failure notice is lost too unless the network
+returns within about 40 s. This task had no origin conversation, so nothing recorded the
+outcome anywhere.
+
+This does not measure a recurring task, a `reminder` (no model call), a direct cloud provider
+instead of Ollama, or an outage shorter than the 21 s the model call took to fail.
+
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
 promemoria su WhatsApp, scrivendomi ricordati di fare un test tra 10 minuti", the agent never
