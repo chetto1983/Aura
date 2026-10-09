@@ -204,6 +204,7 @@ evidence-contracts:
 	bash scripts/docker_coverage_gate_test.sh
 	bash scripts/restore_drill_name_test.sh
 	bash scripts/mirror_whisper_server_test.sh
+	bash scripts/tempo_blocks_repair_test.sh
 
 agent-memory-eval-contract:
 	PYTHONPATH=scripts python3 -m unittest scripts/agent_memory_eval_test.py

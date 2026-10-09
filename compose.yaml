@@ -1515,8 +1515,24 @@ services:
       retries: 12
       start_period: 15s
 
+  # A power loss can leave a Tempo block with an empty meta file, and one such block stops
+  # Tempo from finding any stored trace or applying retention. Runs before every Tempo start;
+  # see docker/aura/aura-tempo-blocks-repair.sh.
+  tempo-blocks-repair:
+    build:
+      context: .
+      dockerfile: docker/aura/Dockerfile
+    image: ${AURA_IMAGE:-aura:local}
+    pull_policy: ${AURA_PULL_POLICY:-never}
+    profiles: [observability]
+    restart: "no"
+    entrypoint: ["aura-tempo-blocks-repair.sh"]
+    command: []
+    volumes:
+      - aura-tempo:/var/tempo
+
   tempo:
-    image: grafana/tempo:2.9.4@sha256:3ecdaa1af90b3068e77e4fb4b11d9f26201c3a57d5740d34965a323173a4f1aa
+    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
     profiles: [observability]
     restart: unless-stopped
     # The distroless image has no init shell; root is required to initialize a
@@ -1525,6 +1541,8 @@ services:
     depends_on:
       aura:
         condition: service_healthy
+      tempo-blocks-repair:
+        condition: service_completed_successfully
     command:
       - -config.file=/etc/tempo/tempo.yml
     volumes:
@@ -1546,7 +1564,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:12.4.12@sha256:83be3e511ede559bee80e2215bb1987cb1246075461cb961beb515b0341e7aea
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
     profiles: [observability]
     restart: unless-stopped
     depends_on:
@@ -1563,7 +1581,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_SECURITY_DISABLE_GRAVATAR: "true"
-      # Grafana 12 otherwise downloads its suggested plugins asynchronously on each
+      # Grafana 12 and later otherwise download their suggested plugins asynchronously on each
       # fresh data volume. Aura dashboards use only built-ins, so keep startup bounded
       # and compatible with an egress-restricted appliance.
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
