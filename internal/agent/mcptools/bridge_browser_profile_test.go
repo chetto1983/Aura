@@ -70,12 +70,12 @@ func TestWithBrowserProfileRefusesWhatWouldMoveTheProfile(t *testing.T) {
 
 // echoCaller mounts server on a box whose agent_browser_eval answers with the arguments it
 // received, and returns a caller for it: what the box saw, or the bridge's error.
-func echoCaller(t *testing.T, server mcp.ManagedServer) func(raw string) (map[string]any, error) {
+func echoCaller(t *testing.T, server mcp.ManagedServer, browser BrowserControl) func(raw string) (map[string]any, error) {
 	t.Helper()
 	boxes := &identityBoxes{echoTool: "agent_browser_eval"}
 	reg := tools.NewRegistry()
 	handshakeCtx := identityctx.WithIdentityID(t.Context(), "identity-a")
-	closer, _, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, reg, "browser", server, MountOptions{Box: boxes})
+	closer, _, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, reg, "browser", server, MountOptions{Box: boxes, Browser: browser})
 	if err != nil {
 		t.Fatalf("mount: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestBrowserRecipeCallsReachTheBoxWithTheirSessionProfile(t *testing.T) {
 	if !ok {
 		t.Fatal("browser recipe missing from the catalog")
 	}
-	call := echoCaller(t, recipe.Server)
+	call := echoCaller(t, recipe.Server, nil)
 	seen, err := call(`{"script":"document.title"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -123,7 +123,7 @@ func TestBrowserRecipeCallsReachTheBoxWithTheirSessionProfile(t *testing.T) {
 }
 
 func TestOtherBoxServersGetNoBrowserProfile(t *testing.T) {
-	call := echoCaller(t, boxServer)
+	call := echoCaller(t, boxServer, nil)
 	seen, err := call(`{"session":"../etc"}`)
 	if err != nil {
 		t.Fatal(err)

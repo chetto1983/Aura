@@ -79,6 +79,8 @@ type MountedServer struct {
 	// files materializes the files a tool result carries (bridge_files.go). Set once
 	// at mount, before any call; nil on a host with no workspace.
 	files FileSink
+	// browser is the live view's control registry (bridge_browser_control.go); nil refuses nothing.
+	browser BrowserControl
 
 	mu                sync.Mutex
 	session           *sdkmcp.ClientSession

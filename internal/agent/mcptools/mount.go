@@ -70,6 +70,10 @@ type MountOptions struct {
 	// Box starts a box-runtime server in the calling identity's sandbox. Nil means this
 	// host has no sandbox, and such a server fails to mount instead of running here.
 	Box mcp.BoxLauncher
+	// Browser is the live view's control registry, read by the browser recipe's calls to
+	// refuse a write while the operator drives (bridge_browser_control.go). Nil refuses
+	// nothing, which is right for a host with no live view.
+	Browser BrowserControl
 }
 
 // MountManagedServerWithOptions opens a managed MCP server (stdio or streamable
@@ -177,6 +181,7 @@ func openIdentityScopedMount(processCtx, handshakeCtx context.Context, reg *tool
 	pool.firstStart = firstStart
 	parent.identityPool = pool
 	parent.files = opts.Files
+	parent.browser = opts.Browser
 
 	session, advertised, err := pool.openInitial(handshakeCtx)
 	if err != nil {
@@ -222,6 +227,7 @@ func mountStdioWithPolicyHost(processCtx, handshakeCtx context.Context, reg *too
 // with the given policy — reaping the session on any failure along the way.
 func openAttachAndMount(srv *MountedServer, processCtx, handshakeCtx context.Context, open openSessionFunc, reg *tools.Registry, name string, policy bridgePolicy, opts MountOptions) (closer func() error, names []string, host *MountedServer, err error) {
 	srv.files = opts.Files
+	srv.browser = opts.Browser
 	// Each mount attempt gets its own cancellable slice of the daemon-lifetime process
 	// context, so a mount that gives up reaps the child it spawned. Without this a stdio
 	// server that hangs during discovery outlives the mount that dropped it: the process

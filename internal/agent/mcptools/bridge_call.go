@@ -40,13 +40,18 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
-	if b.policy.recipeSource == mcpmanager.BrowserRecipeSource {
+	browser := b.policy.recipeSource == mcpmanager.BrowserRecipeSource
+	if browser {
 		profiled, err := withBrowserProfile(args)
 		if err != nil {
 			observeErr = err
 			return tools.ToolResult{}, err
 		}
 		args = profiled
+		if err := browserGuard(b.srv.browser, browserIdentity(ctx), b.name, args); err != nil {
+			observeErr = err
+			return tools.ToolResult{}, err
+		}
 	}
 	timeout := b.callTimeout
 	if ceiling, ok := tools.CallCeiling(ctx); ok {
@@ -66,6 +71,9 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	if err != nil {
 		observeErr = err
 		return tools.ToolResult{}, boundedMCPError(err)
+	}
+	if browser {
+		refreshBrowserReferences(b.srv.browser, browserIdentity(ctx), args, payload.Text)
 	}
 	return b.newResult(ctx, args, payload)
 }
