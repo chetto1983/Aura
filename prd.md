@@ -2803,8 +2803,9 @@ Reproduced on the lab VM at `7099f88a5`, with `gemma4:31b-cloud` through the hos
 
 What happened:
 - The run started at 12:23:10 and failed at 12:23:31. Ollama could not resolve `ollama.com` and
-  answered HTTP 502. The LLM clients run with `WithMaxRetries(0)` and the `agent_job` handler
-  does not retry, so the job never ran again.
+  answered HTTP 502. The LLM clients run with `WithMaxRetries(0)`; the agent retries a failed
+  stream open only once, 750 ms later (`streamWithOpenRetry`), and the `agent_job` handler does
+  not retry, so the job never ran again.
 - The failure notice failed at 12:23:39 because `api.telegram.org` did not resolve. Its three
   retries failed at 12:23:47, 12:23:55 and 12:24:11, 32 s in all.
 - At 12:24:11 the scheduler deleted the settled one-shot together with its run and notification.
@@ -2816,6 +2817,39 @@ outcome anywhere.
 
 This does not measure a recurring task, a `reminder` (no model call), a direct cloud provider
 instead of Ollama, or an outage shorter than the 21 s the model call took to fail.
+
+Decision (2026-10-09): the scheduler outlasts an outage of about an hour. The operator chose two
+fixes and declined a third, keeping a failed one-shot visible on the board.
+
+1. A failed notice backs off. The sweep retries it on the next tick, then waits 30 s and doubles
+   the wait after each failure (1, 2, 4, 8, 16, 32 min). The default
+   `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` rises from 3 to 8, so the last retry comes about
+   64 min after the first failure. A delegation nudge shares the same retry rows and backs off
+   the same way. A one-shot is kept until its notice settles, so a failed one now stays up to
+   that hour.
+2. A job that fails on a transient model error before any tool ran is retried as a new fire,
+   2, 5, 15 and 30 min after each failure, about 52 min in all. These count as transient:
+   - an HTTP 429 or 5xx from the provider;
+   - a timeout, a dropped or refused connection, or a stream that went silent;
+   - a DNS lookup that timed out or failed temporarily, which Go reports as `IsTimeout` or
+     `IsTemporary` for a SERVFAIL or a socket error (`net/dnsclient_unix.go`, go1.27.2).
+
+   A name that does not exist, another 4xx, a cancel and the job's own deadline do not count.
+   "Before any tool ran" means the model never asked for a tool, so a retry cannot repeat an
+   effect.
+
+   The retry is a fire, not a wait inside the run. A tick waits for its runs to finish, and
+   `/readyz` reports `scheduler_stalled` after 90 s without progress, so a run that slept
+   through an outage would mark the whole scheduler stalled. A retried run is recorded as failed
+   on the run ledger, but it is not notified, not written to the origin conversation and not
+   counted toward the auto-pause. The last failure is reported like any other. A recurring task
+   takes whichever comes first, the retry or its next regular fire. The retry count lives on the
+   task (`transient_retries`). It is reset by any reported outcome and by a resume.
+
+This does not cover:
+- an outage longer than those windows: the job and its notice are lost as before, and the
+  settled one-shot is still deleted;
+- a model failure after a tool ran, which is not retried because the tool may have acted.
 
 A reminder on a channel is scheduled, not sent (2026-10-05). Reported by an operator on his own
 appliance and reproduced on the lab VM at `c57322064` with `gemma4:31b-cloud`. Asked "mandami un
