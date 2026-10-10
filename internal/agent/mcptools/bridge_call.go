@@ -67,6 +67,15 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	}
 	defer cancel()
 
+	var madeRoom string
+	if browser {
+		room, err := b.makeBrowserRoom(callCtx, args)
+		if err != nil {
+			observeErr = err
+			return tools.ToolResult{}, err
+		}
+		madeRoom = room
+	}
 	payload, err := b.srv.CallTool(callCtx, b.name, args)
 	if err != nil {
 		observeErr = err
@@ -74,6 +83,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	}
 	if browser {
 		refreshBrowserReferences(b.srv.browser, browserIdentity(ctx), args, payload.Text)
+		payload.Text += madeRoom + b.browserCallDone(ctx, args)
 	}
 	return b.newResult(ctx, args, payload)
 }

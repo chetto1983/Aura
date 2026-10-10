@@ -31,11 +31,12 @@ A closed browser keeps the login, not the open page: after a pause, `open` the p
 before you read it. The first screenshot of a browser takes about ten seconds; later ones are
 quick.
 
-Each open session is its own Chromium: on a real site about 200 processes and 400 MB of your
-sandbox, which has room for four at most. Keep to one session per site, reuse its name, and
-`browser__agent_browser_close` it when the site is done — the profile keeps the login for next
-time, the process does not need to stay alive. A browser left idle for ten minutes closes by
-itself; open the page again with the same session.
+Each open session is its own Chromium: on a real site about 200 processes and up to 900 MB of
+your sandbox. Aura keeps three open, and a session past them closes the one you used least
+recently. Keep to one session per site, reuse its name, and `browser__agent_browser_close` it
+when the site is done — the profile keeps the login for next time, the process does not need
+to stay alive. A browser left idle for three minutes closes by itself; open the page again with
+the same session.
 
 If the `browser__` tools are not mounted, the same commands work through `shell_exec`:
 `agent-browser --session portal open https://example.com/login`, then `snapshot -i`,

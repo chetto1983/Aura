@@ -76,7 +76,7 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 	oldDestructive := spec.Destructive
 	oldRequired := requiredArgNames(spec.Parameters)
 	spec.Summary = summary
-	spec.Description = description
+	spec.Description = description + browserOpenRule(b.policy, b.name, spec.Name)
 	spec.Parameters = params
 	// Frozen at mount, never recomputed here: b.policy carries the decision
 	// bridgeToolsWithPolicy took once from this mount's model-facing tool count
@@ -162,7 +162,7 @@ func specFromToolDefWithPolicy(namespace string, t *sdkmcp.Tool, policy bridgePo
 	spec := tools.Spec{
 		Name:                name,
 		Summary:             summary,
-		Description:         description,
+		Description:         description + browserOpenRule(policy, t.Name, name),
 		Parameters:          params,
 		Deferred:            policy.deferredTool(t.Name),
 		Mutating:            mutating,

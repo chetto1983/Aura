@@ -9,8 +9,10 @@
 #   - Google refuses sign-in to a browser that announces automation (2026-09-27, Dockerfile), so
 #     the browser starts with AutomationControlled off and the image's plain Chrome user agent;
 #   - a browser idle for an hour, agent-browser's default, holds about 200 of the box's pids and
-#     its CPU: two real sites left open kept a box at 398 pids (2026-09-27). It closes after ten
-#     minutes instead; the session's profile keeps its login for the next open;
+#     its CPU: two real sites left open kept a box at 398 pids (2026-09-27). Ten minutes still
+#     let five browsers pile up and exhaust the box (2026-10-10, prd.md §12), so it closes after
+#     three; the session's profile keeps its login for the next open, and the MCP bridge keeps
+#     at most three open (internal/agent/mcptools/bridge_browser_sessions.go);
 #   - a login lasts only in a persistent Chrome profile, one per session, and agent-browser
 #     relaunches on a temporary one whenever a call of the session omits it (2026-09-27). A CLI
 #     call therefore gets the directory the MCP bridge gives every call of the same session
@@ -26,7 +28,7 @@ HOME="${AURA_AGENT_BROWSER_HOME:?set by the image}"
 AGENT_BROWSER_AUTOSAVE_INTERVAL_MS="${AGENT_BROWSER_AUTOSAVE_INTERVAL_MS:-2000}"
 AGENT_BROWSER_ARGS="${AGENT_BROWSER_ARGS:---disable-blink-features=AutomationControlled}"
 AGENT_BROWSER_USER_AGENT="${AGENT_BROWSER_USER_AGENT:-$(cat /usr/local/share/aura/browser-user-agent)}"
-AGENT_BROWSER_IDLE_TIMEOUT_MS="${AGENT_BROWSER_IDLE_TIMEOUT_MS:-600000}"
+AGENT_BROWSER_IDLE_TIMEOUT_MS="${AGENT_BROWSER_IDLE_TIMEOUT_MS:-180000}"
 export AGENT_BROWSER_ENCRYPTION_KEY HOME AGENT_BROWSER_AUTOSAVE_INTERVAL_MS AGENT_BROWSER_ARGS \
     AGENT_BROWSER_USER_AGENT AGENT_BROWSER_IDLE_TIMEOUT_MS
 if [ "${1:-}" != mcp ] && [ -z "${AGENT_BROWSER_PROFILE:-}" ]; then

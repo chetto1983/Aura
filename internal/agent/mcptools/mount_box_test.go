@@ -23,12 +23,13 @@ import (
 // exec's pipes, in the "box" of the identity the context carries, and its one tool answers
 // with that identity — so a call that reached the wrong box would say so.
 type identityBoxes struct {
-	startFor time.Duration // a cold start: the server answers only after this long
-	echoTool string        // when set, one more tool, answering with the arguments it received
+	startFor  time.Duration // a cold start: the server answers only after this long
+	echoTools []string      // more tools, each answering with the arguments it received
 
 	mu     sync.Mutex
 	starts []string
 	procs  []*boxProc
+	calls  []string // "<tool> <arguments>" of every echo tool call, in order
 }
 
 type boxProc struct {
@@ -58,9 +59,12 @@ func (b *identityBoxes) StartStdio(ctx context.Context, _ string, _, _ []string,
 		func(context.Context, *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
 			return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: owner}}}, nil
 		})
-	if b.echoTool != "" {
-		server.AddTool(&sdkmcp.Tool{Name: b.echoTool, InputSchema: map[string]any{"type": "object"}},
+	for _, name := range b.echoTools {
+		server.AddTool(&sdkmcp.Tool{Name: name, InputSchema: map[string]any{"type": "object"}},
 			func(_ context.Context, req *sdkmcp.CallToolRequest) (*sdkmcp.CallToolResult, error) {
+				b.mu.Lock()
+				b.calls = append(b.calls, name+" "+string(req.Params.Arguments))
+				b.mu.Unlock()
 				return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: string(req.Params.Arguments)}}}, nil
 			})
 	}

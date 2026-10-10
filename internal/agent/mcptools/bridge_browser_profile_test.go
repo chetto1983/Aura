@@ -1,6 +1,7 @@
 package mcptools
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -68,11 +69,9 @@ func TestWithBrowserProfileRefusesWhatWouldMoveTheProfile(t *testing.T) {
 	}
 }
 
-// echoCaller mounts server on a box whose agent_browser_eval answers with the arguments it
-// received, and returns a caller for it: what the box saw, or the bridge's error.
-func echoCaller(t *testing.T, server mcp.ManagedServer, browser BrowserControl) func(raw string) (map[string]any, error) {
+// mountBox mounts server as "browser" on boxes.
+func mountBox(t *testing.T, server mcp.ManagedServer, browser BrowserControl, boxes *identityBoxes) *tools.Registry {
 	t.Helper()
-	boxes := &identityBoxes{echoTool: "agent_browser_eval"}
 	reg := tools.NewRegistry()
 	handshakeCtx := identityctx.WithIdentityID(t.Context(), "identity-a")
 	closer, _, _, err := MountManagedServerWithOptions(t.Context(), handshakeCtx, reg, "browser", server, MountOptions{Box: boxes, Browser: browser})
@@ -85,13 +84,25 @@ func echoCaller(t *testing.T, server mcp.ManagedServer, browser BrowserControl) 
 			<-p.done
 		}
 	})
-	tool, ok := reg.Get("browser__agent_browser_eval")
+	return reg
+}
+
+// boxCallCtx is a tool call of identity-a, the identity mountBox mounts for.
+func boxCallCtx(t *testing.T) context.Context {
+	return tools.WithToolCallContext(identityctx.WithIdentityID(t.Context(), "identity-a"), "sess", "tc", t.TempDir(), 2048)
+}
+
+// echoCaller mounts server on a box whose agent_browser_eval answers with the arguments it
+// received, and returns a caller for it: what the box saw, or the bridge's error.
+func echoCaller(t *testing.T, server mcp.ManagedServer, browser BrowserControl) func(raw string) (map[string]any, error) {
+	t.Helper()
+	boxes := &identityBoxes{echoTools: []string{"agent_browser_eval"}}
+	tool, ok := mountBox(t, server, browser, boxes).Get("browser__agent_browser_eval")
 	if !ok {
 		t.Fatal("the echo tool was not mounted")
 	}
 	return func(raw string) (map[string]any, error) {
-		ctx := tools.WithToolCallContext(identityctx.WithIdentityID(t.Context(), "identity-a"), "sess", "tc", t.TempDir(), 2048)
-		res, err := tool.Execute(ctx, json.RawMessage(raw))
+		res, err := tool.Execute(boxCallCtx(t), json.RawMessage(raw))
 		if err != nil {
 			return nil, err
 		}
