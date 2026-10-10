@@ -288,6 +288,40 @@ func TestTenantClientsWaitingCallerHonorsContext(t *testing.T) {
 	}
 }
 
+// A second resolver in the same process waits for the first one's open of the same database
+// (tenant_schema_race_live_test.go measures why), and gives up when its context does.
+func TestIndependentResolverWaitsAndHonorsContext(t *testing.T) {
+	recorder := newTenantHTTPRecorder(t)
+	release := make(chan struct{})
+	started := make(chan struct{}, 2)
+	recorder.blockSchema = release
+	recorder.schemaStarted = started
+	first := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), nil, nil, resolverCredentials(),
+	)
+	second := NewTenantClients(
+		recorder.config("template", "shared", "shared-password"), nil, nil, resolverCredentials(),
+	)
+	firstDone := make(chan error, 1)
+	go func() {
+		_, err := first.For(context.Background(), resolverIdentity)
+		firstDone <- err
+	}()
+	<-started
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	_, err := second.For(ctx, resolverIdentity)
+	secondReachedSchema := len(started) > 0
+	close(release)
+	<-firstDone
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("second resolver's For error = %v, want it to wait and give up", err)
+	}
+	if secondReachedSchema {
+		t.Fatal("the second resolver ran schema DDL while the first was still running it")
+	}
+}
+
 func TestTenantClientsExistingNeverProvisions(t *testing.T) {
 	recorder := newTenantHTTPRecorder(t)
 	admin, err := New(recorder.config("admin", "root", "root-password"))

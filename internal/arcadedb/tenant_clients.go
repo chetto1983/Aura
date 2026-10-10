@@ -23,6 +23,22 @@ type TenantClients struct {
 	verified bool // the server cleared minSecureVersion; a refusal is re-checked on the next call
 }
 
+// tenantOpenLocks serializes the first open of one tenant database across every resolver in
+// this process. aura serve builds one per subsystem (tenant reconcile, conversation
+// projection, document index), so a gate per resolver lets several of them run the schema
+// DDL on the same new database at once, and ArcadeDB does not survive that: measured on
+// 2026-10-10 against 26.10.1, concurrent CREATE ... IF NOT EXISTS answered 500 "Cannot create
+// type 'Entity' because already exists" and a NullPointerException in the SQL parser, and the
+// boot reconcile's failure ended aura serve. Keyed by server and database; a process opens a
+// bounded number of tenants, so entries are never removed. A one-slot channel rather than a
+// mutex, so a caller waiting on another resolver still honors its context.
+var tenantOpenSlots sync.Map
+
+func tenantOpenSlot(baseURL, database string) chan struct{} {
+	slot, _ := tenantOpenSlots.LoadOrStore(baseURL+"\x00"+database, make(chan struct{}, 1))
+	return slot.(chan struct{})
+}
+
 // NewTenantClients builds a resolver without performing I/O. A nil admin means
 // tenant databases must already be provisioned.
 func NewTenantClients(
@@ -88,6 +104,13 @@ func (t *TenantClients) For(ctx context.Context, identityID string) (*Client, er
 		t.mu.Unlock()
 		close(gate)
 	}()
+	open := tenantOpenSlot(t.base.BaseURL, database)
+	select {
+	case open <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() { <-open }()
 
 	client, err := t.client(database)
 	if err != nil {
