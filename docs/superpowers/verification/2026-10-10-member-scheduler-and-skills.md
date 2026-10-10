@@ -1,7 +1,7 @@
 # A member and the scheduler, the house skills and the skill install
 
-Date: 2026-10-10. Tree: master `f2214c886`, after amendment #216 (PR #149). Scope: the three
-paths amendment #216 lists as still open on `governance.write`: the scheduler write routes,
+Date: 2026-10-10. Tree: master `f2214c886`, after PR #149. Scope: the three
+paths prd.md §3 (2026-10-10) lists as still open on `governance.write`: the scheduler write routes,
 the house-skill archive, restore and delete, and the skill install.
 
 Not the lab VM. The same cloud container and stack as
@@ -59,3 +59,38 @@ same process tree, so nothing stops it.
 3. A member-triggered skill install executes in the daemon's process tree as its user, and
    the environment filter is bypassed through `/proc/<pid>/environ`, so whatever runs there
    can read every secret the daemon holds.
+
+## After the fix
+
+Same stack, same seed, the daemon rebuilt from the fix (prd.md §3, 2026-10-10: the scheduler's
+owner rule, the house library and the skill install on `identity.create`). Before the run the
+admin's job, the backup and `house-probe` were put back as seeded.
+
+As the member:
+
+| Call | Answer | Effect, read back |
+|---|---|---|
+| `GET /api/governance/scheduler` | 200 `{"tasks":[]}` | the member owns no task; the admin's job and the backup are not listed |
+| `PATCH`, `POST …/run`, `DELETE` on the admin's job | 404 `task not found` | job unchanged: every 1 440 minutes, the admin's goal, 0 runs |
+| `PATCH`, `POST …/run` on `backup_postgres` | 404 `task not found` | backup unchanged, `0 1 * * *` |
+| `POST …/house-probe/archive`, `/restore`, `DELETE …/house-probe` | 400 `no active skill by that name` | the verbs resolved in the member's own root; `house-probe` untouched |
+| `POST /api/governance/skills/install` | 403 | the stand-in's log empty: nothing spawned |
+
+As the admin (`identity.create`):
+
+| Call | Answer | Effect, read back |
+|---|---|---|
+| `GET /api/governance/scheduler` | 200 | every task, the backup included |
+| `PATCH` the admin's job, every 60 minutes | 200 | rewritten |
+| `POST …/run` | 200 `queued` | one `agent_job_runs` row |
+| `POST …/house-probe/archive`, `/restore` | 204, 204 | archived and restored |
+| `POST /api/governance/skills/install` `{"source":"admin-chosen/repo"}` | 502 (the stand-in exits 1) | `npx skills add admin-chosen/repo --copy -y` spawned, uid 0 |
+
+What the second run does not prove:
+
+- **That an admin's install is contained.** It still runs in the daemon's process tree as its
+  user, and that user is root on the appliance too: `id` in the lab VM's `aura` container read
+  `uid=0(root)` on 2026-10-10 (image `f2214c886`). The fix decides who may start an install,
+  not what the install can read.
+- **The lab VM.** The fix is not deployed there, and the VM holds one human identity, the
+  operator's (`aura.identities`, read 2026-10-10), so no member has made these calls there.
