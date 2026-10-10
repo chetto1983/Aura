@@ -563,6 +563,21 @@ measure a live turn: how a model behaves when a tool it was offered answers "dis
 policy", whether it retries or tells the operator, is for the lab VM, and so is the cost in
 operator prompts of `ask` on a busy read-only tool.
 
+**A denied tool on the lab VM, and a confirmed draft that passes a deny, 2026-10-10.** With
+gemma4:31b-cloud, `deny` on `web_search` and ten questions that needed it: every turn called it
+once and never retried. Only 2 of 10 told the operator it was disabled. Eight answered anyway,
+seven through the agent-browser and one through `web_fetch`: a deny stops a tool, not what the
+tool does. `deny` on `calendar__calendar` action `send_email` did not stop an email. For a
+trusted outbound tool the agent drafts the message before the gateway
+(`withholdOutboundMessage`), so the model never hears of the policy, and once the operator
+confirms the draft, `Decide` allows the send through `decideReviewedMessage`, ahead of the policy
+check (`internal/gateway/decide.go`). The send carried `gateway_verdict: allow` while the deny
+was set. The operator decided that this stands: a drafted message leaves only on their own
+confirmation, which is the stronger statement, so a confirmed draft passes a `deny`. Ledger:
+`docs/superpowers/verification/2026-10-10-lab-vm-wave1-acceptance.md`. Not shown: a second
+model; an outbound tool that is not drafted; whether the cockpit should tell the operator, as
+they confirm, that a deny is set on the tool.
+
 ## 6. Model runtime and hot settings
 
 Provider, endpoint, model, supported reasoning settings, limits, credentials, loop

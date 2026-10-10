@@ -50,6 +50,10 @@ the cost in prompts of `ask` on a busy read-only tool. Both are acceptance items
 - **Precedence: deny, then ask, then grant, then tier.** A standing `always` grant does not
   bypass `ask`. Setting `ask` on a subject also revokes its `always` grant, so one state is
   stored, not two that contradict each other.
+- **A confirmed message draft passes a `deny`** (operator, 2026-10-10, after the lab VM run).
+  A trusted outbound tool drafts the message before the gateway, and `decideReviewedMessage`
+  allows what the operator confirmed ahead of the policy check. Nothing leaves without that
+  confirmation, so it stands over the policy (prd.md §5, 2026-10-10).
 - **A policy read that fails falls to the prompt**, as `alwaysGranted` does: the operator sees
   the call rather than the gateway deciding on a store error. A `deny` subject under a failed
   read is therefore prompted, not run, which is the fail-closed direction.
@@ -190,8 +194,12 @@ mutation ≥70% on the critical files.
 - Lab-VM acceptance, the Definition of Done (score > 9.8 on the real scenario):
   1. `ask` on `browser__agent_browser_open`; "open example.com" produces an approval card in
      the chat, with `once` and `session` only; accept runs the call, three runs out of three;
-  2. `deny` on `calendar send_email`; "email Bob the summary" ends with the model telling the
-     operator the tool is disabled, with no retry loop, on two models of the release's matrix;
+  2. `deny` on a tool that is not drafted; a request that needs it ends with the model telling
+     the operator the tool is disabled, with no retry loop, on two models of the release's
+     matrix. Written first for `calendar send_email`. That is not a subject: the gateway's is
+     `calendar__calendar` plus action `send_email`. And a confirmed draft passes a deny there
+     by decision (above). Run on 2026-10-10 with `web_search` and one model: no retry, and 2
+     of 10 turns told the operator;
   3. `always` granted on `shell_exec`, then `ask` set: the next `shell_exec` prompts and the
      grant row is gone;
   4. count the extra rounds a denied tool costs each model over ten turns, to decide whether
