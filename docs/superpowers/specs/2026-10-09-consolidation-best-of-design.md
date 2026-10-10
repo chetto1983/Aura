@@ -51,11 +51,13 @@ Aura's tree as the second column. "Spec" means a design exists in this directory
 | 8 | Air-gapped appliance install | wpt-iot `build-bundle.sh`, `install-offline.sh` | wizard carries its payload, needs GHCR | `packages/create-aura` | one install on a machine with no Internet | to measure demand |
 | 9 | Writing style profile for drafts | PMSync `WritingStyleProfile` | `messagedrafts` reviews, learns nothing | memory facts about the operator's style | draft acceptance rate before and after | later |
 | 10 | Strategy lenses for task generation | StickyFlow | none | a skill, used by the board | with 3, after the board is in use | later |
+| 11 | A member administers nothing that is not theirs (added 2026-10-10) | Aura's own measurement, 2026-10-10; Open WebUI and LibreChat as reference | `governance.write`, which every identity holds, gated deployment administration, every identity's scheduled tasks, the house skills and the skill install | `identity.create` on administration, an owner rule on the scheduler board (prd.md §3) | the member calls of the two `verification/2026-10-10-member-*` ledgers, repeated on the lab VM | on master; lab VM pending a member identity; background shells and the install running as root still open |
 
 Already in Aura, no action: HITL with tiers, reservations and durable grants (PMSync's
 `needsApproval` and rate tiers are weaker); bitemporal memory with supersede authority
 (PMSync's `AIMemory` and `GraphEdge` decay are the Postgres version); per-identity RLS and a
-database per identity (PMSync's `tenantId` with coarse RBAC); hybrid retrieval in one engine
+database per identity (PMSync's `tenantId` with coarse RBAC), though the capability gates in
+front of them were not: item 11; hybrid retrieval in one engine
 (PMSync's RRF function); the memory MCP (turing, absorbed); faster-whisper STT and TTS
 (StickyFlow's client-side Whisper); the per-file mutation gate
 (`scripts/critical_mutation_gate.py`, which sacchi_agent's `tools/mutation_score.py` copies);
@@ -123,7 +125,7 @@ wave's item, never the unit suite (CLAUDE.md, Definition of Done).
 
 ## What this document does not establish
 
-It does not measure any of the ten behaviours on the live stack; every row's gate is still
-to run. It does not decide what happens to PMSync and StickyFlow, both idle since spring with
+It does not measure items 1 to 10 on the live stack, and item 11 only on a cloud stack, not
+on the lab VM; every row's gate is still to run. It does not decide what happens to PMSync and StickyFlow, both idle since spring with
 a milestone half done: archive or cantiere is the operator's call, and nothing here depends
 on it. It does not resolve the fifteen open questions in the three specs of the same day.
