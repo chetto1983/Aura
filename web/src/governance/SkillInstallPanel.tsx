@@ -239,7 +239,7 @@ export function SkillInstallPanel({ onClose }: SkillInstallPanelProps) {
       <div className="flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          disabled={install.isPending || installed !== undefined}
+          disabled={install.isPending}
           aria-busy={install.isPending}
           onClick={submit}
         >

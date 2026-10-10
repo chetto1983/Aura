@@ -302,6 +302,29 @@ describe('SkillInstallPanel (SKW-01, no-ceremony)', () => {
     expect(screen.queryByText(/Staged for approval/)).toBeNull();
   });
 
+  it('allows another install after a successful install without reloading', async () => {
+    const secondInstall: SkillsInstallInfo = {
+      ...activeInstall,
+      name: 'docx',
+      source: 'anthropics/skills@docx',
+      destination: '/var/lib/aura/skills/docx',
+    };
+    installSkill.mockResolvedValueOnce(activeInstall).mockResolvedValueOnce(secondInstall);
+    renderPanel();
+
+    const source = screen.getByLabelText('Source');
+    const submit = screen.getByRole('button', { name: 'Install' });
+    fireEvent.change(source, { target: { value: 'anthropics/skills@xlsx' } });
+    fireEvent.click(submit);
+    expect(await screen.findByText('/var/lib/aura/skills/xlsx')).toBeTruthy();
+
+    fireEvent.change(source, { target: { value: 'anthropics/skills@docx' } });
+    fireEvent.click(submit);
+
+    expect(await screen.findByText('/var/lib/aura/skills/docx')).toBeTruthy();
+    expect(installSkill).toHaveBeenNthCalledWith(2, 'anthropics/skills@docx');
+  });
+
   it('a failed install surfaces the generic governance error, not the source-format hint', async () => {
     installSkill.mockRejectedValue(new Error('HTTP 502'));
     renderPanel();
