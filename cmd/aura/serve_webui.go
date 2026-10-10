@@ -213,8 +213,8 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mountRemoteAccessRoutes(mux, aguiHandler, auth)
 	mux.Handle("GET /api/settings/llm-routes", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
-	// llm-models is a GET behind governance.WRITE on purpose: it makes the daemon fetch
-	// an operator-supplied URL, which is the same power as pointing the chat route at it.
+	// llm-models makes the daemon fetch a browser-supplied URL with the OpenRouter key, so
+	// the handler also requires identity.create, the gate on AURA_LLM_BASE_URL itself.
 	mux.Handle("GET /api/settings/llm-models", agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	for _, pattern := range agui.ChatGPTPlanRoutes() {
 		// Every authenticated owner may connect their own account. Deployment-wide
@@ -222,7 +222,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(pattern, aguiHandler)
 	}
 	// The media catalogues take no URL from the browser, but refresh=1 makes the daemon call
-	// the provider, so they share llm-models' gate rather than governance.read.
+	// the provider, so they take governance.write rather than governance.read.
 	for _, pattern := range agui.SettingsCatalogRoutes() {
 		mux.Handle(pattern, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	}
