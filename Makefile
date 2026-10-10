@@ -61,20 +61,20 @@ help:
 	@echo "make restore-drill — three-plane DR drill with measured RPO/RTO"
 	@echo "make load-chaos    — blocking Vegeta + Toxiproxy production gate"
 
-# Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
-# CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
-# lefthook is pinned too: from v2 its module path ends in /v2, so `lefthook@latest` stayed
-# on 1.13.6 for a year. v2 needs encoding/json/v2, so it builds WITHOUT GOEXPERIMENT=nojsonv2,
-# which the 1.x line required.
+# Bootstrap the quality toolchain into $GOPATH/bin. Every tool CI installs is pinned to the
+# version in .github/workflows (ci.yml, skills.yml) for local/CI parity; the tools CI does
+# not run track latest. lefthook is pinned too: from v2 its module path ends in /v2, so
+# `lefthook@latest` stayed on 1.13.6 for a year. v2 needs encoding/json/v2, so it builds
+# WITHOUT GOEXPERIMENT=nojsonv2, which the 1.x line required.
 tools:
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
 	go install honnef.co/go/tools/cmd/staticcheck@latest
-	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
 	go install github.com/mibk/dupl@latest
 	go install gotest.tools/gotestsum@latest
-	go install golang.org/x/tools/cmd/deadcode@latest
+	go install golang.org/x/tools/cmd/deadcode@v0.48.0
 	go install golang.org/x/tools/cmd/goimports@latest
-	go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+	go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@v0.0.0-20251226130216-48d0401f00fb
 	go install github.com/evilmartians/lefthook/v2@v2.2.1
 	@echo "now run: lefthook install   (wires the git pre-commit/pre-push hooks)"
 
