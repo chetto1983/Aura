@@ -154,6 +154,13 @@ verbs failed in the member's own root (400, "no active skill by that name") with
 untouched, and the install answered 403 with no `npx` spawned; the admin kept the full list,
 the edit, the run (a run row written), house archive and restore, and the install.
 
+Measured on the lab VM the same day, with a member provisioned through `aura identity create`
+and purged after (`docs/superpowers/verification/2026-10-10-lab-vm-member-governance.md`).
+The member got the same refusals, plus a 403 on the `/api/admin/*` reads. The admin passed
+every gate it was sent through. The backup was read back unchanged. The run also found the
+board's pause and resume never mounted on the parent mux since they shipped (2026-10-07); both
+now reach the handler.
+
 This does not establish:
 - that an admin's install is contained: it still runs as the daemon's user, root in the
   appliance image (`id` in the lab VM's `aura` container, 2026-10-10), and can read the
@@ -162,8 +169,8 @@ This does not establish:
 - an owner rule in the store: the check is in the board's handlers, `scheduler_tasks` has no
   RLS, and the agent's `task` tool keeps its own owner scoping, not re-measured here;
 - background shells across identities, still open;
-- the appliance: the run was the same host daemon with `AURA_PROFILE=dev` and isolation off.
-  The lab VM holds one human identity, the operator's, so no member has been measured there.
+- on the lab VM: a member acting on a task of their own, an admin's edit or run of the real
+  backup, and an install that fetches a source. None of the three was made there.
 
 **Signing out ends the session (2026-10-02).** Authula runs a plugin's capability hook
 only on the routes Aura lists in its route mappings, and `/sign-out` was not listed, so
