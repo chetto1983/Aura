@@ -32,8 +32,8 @@ case "$*" in
   create\ *) echo payload-container ;;
   cp\ payload-container:*) cp -R "$CF_FIXTURE/payload/." "$3" ;;
   'rm -f payload-container') ;;
-  'compose pull aura aura-migrate garage-bootstrap'|'compose up -d aura'|'compose exec -T aura aura version') ;;
-  'compose up -d')
+  'compose pull aura aura-migrate garage-bootstrap'|'compose up -d --pull missing aura'|'compose exec -T aura aura version') ;;
+  'compose up -d --pull missing')
     grep -qx 'AURA_CLOUDFLARED_IMAGE=ghcr.io/chetto1983/aura-cloudflared:edge' "$INSTALL_DIR/.env"
     grep -qx 'AURA_CLOUDFLARED_PULL_POLICY=always' "$INSTALL_DIR/.env"
     touch "$CF_FIXTURE/started" ;;
@@ -41,7 +41,7 @@ case "$*" in
   'compose ps -q aura-cloudflared') [[ ! -f "$CF_FIXTURE/started" ]] || echo cloudflared-id ;;
   'compose ps -q '* ) ;;
   'compose ps -q') ;;
-  'compose pull aura-cloudflared'|'compose up -d --no-deps aura-cloudflared') ;;
+  'compose pull aura-cloudflared'|'compose up -d --no-deps --pull missing aura-cloudflared') ;;
   inspect\ --format\ * )
     case "$3" in
       '{{.Image}}') echo image-id ;;
@@ -67,7 +67,7 @@ export PATH="$fixture/bin:$PATH"
 bash "$repo_root/deploy/aura-image-update.sh" >"$fixture/output"
 grep -q 're-executing it' "$fixture/output"
 grep -qx 'compose pull aura-cloudflared' "$fixture/calls"
-grep -qx 'compose up -d --no-deps aura-cloudflared' "$fixture/calls"
+grep -qx 'compose up -d --no-deps --pull missing aura-cloudflared' "$fixture/calls"
 grep -q 'healthy' "$fixture/output"
 grep -qx 'volume prune --force --filter label=com.docker.volume.anonymous' "$fixture/calls"
 # The applied stack clears the record of changed payload paths, only once it is applied.

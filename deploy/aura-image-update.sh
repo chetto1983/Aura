@@ -316,11 +316,11 @@ update_sidecar() {
   svc_before="$(container_image_id "${svc}")"
   # Tolerate an unpullable pin (a :local image, or a registry blip): the timer
   # must keep refreshing everything else and retry on its next tick.
-  docker compose pull "${svc}" || {
+  pull_retrying docker compose pull "${svc}" || {
     echo "${svc}: pull failed (local-only pin or registry unreachable); skipped."
     return 0
   }
-  docker compose up -d --no-deps "${svc}"
+  docker compose up -d --no-deps --pull missing "${svc}"
   wait_healthy "${svc}"
   svc_after="$(container_image_id "${svc}")"
   echo "${svc}: ${svc_before} -> ${svc_after}"
@@ -329,7 +329,17 @@ update_sidecar() {
 # Download only: a pulled tag leaves the running container on its old image until the apply.
 pull_sidecar() {
   [[ -n "$(docker compose ps -q "$1")" ]] || return 0
-  docker compose pull "$1" >/dev/null 2>&1 || echo "$1: pull failed (local-only pin or registry unreachable); skipped."
+  pull_retrying docker compose pull "$1" >/dev/null 2>&1 || echo "$1: pull failed (local-only pin or registry unreachable); skipped."
+}
+
+# GHCR stalls one request now and then: on the lab VM, 2026-10-10, five pulls ended in
+# "timeout awaiting response headers" while the requests around them took 0.3 s. One more try
+# keeps the image from waiting for the next tick, and keeps a pull main cannot skip from
+# failing the whole tick.
+pull_retrying() {
+  "$@" && return 0
+  sleep 10
+  "$@"
 }
 
 image_id() {
@@ -356,7 +366,7 @@ pull_sandbox_images() {
   box_image="$(env_value AURA_SANDBOX_IMAGE)"
   egress_image="$(env_value AURA_SANDBOX_EGRESS_IMAGE)"
   [[ -n "${box_image}" && -n "${egress_image}" ]] || return 0
-  if ! docker pull -q "${box_image}" >/dev/null || ! docker pull -q "${egress_image}" >/dev/null; then
+  if ! pull_retrying docker pull -q "${box_image}" >/dev/null || ! pull_retrying docker pull -q "${egress_image}" >/dev/null; then
     echo "sandbox: pull failed (local-only pin or registry unreachable); skipped."
   fi
 }
@@ -418,7 +428,10 @@ apply_update() {
   # A pre-existing .env used to omit these keys forever, silently retaining dev.
   bash scripts/appliance_posture.sh .env
 
-  docker compose up -d aura
+  # The tick already pulled every moving tag. `--pull missing` overrides the services'
+  # `pull_policy: always`, so the apply never asks the registry again for an image it holds:
+  # on 2026-10-10 a tick died inside `up` on whatsapp-mcp's second pull of the same tag.
+  docker compose up -d --pull missing aura
   wait_healthy aura
 
   after="$(container_image_id aura)"
@@ -431,7 +444,7 @@ apply_update() {
   # brought to it the way aura.service brings it up at boot: enabled profiles only, and a
   # service is recreated only when its image or configuration differs.
   if [[ -f payload_manifest.txt ]] && ! cmp -s payload_manifest.txt "${APPLIED_MANIFEST}"; then
-    docker compose up -d
+    docker compose up -d --pull missing
     wait_healthy aura
     restart_payload_readers
     rm -f "${PENDING_PAYLOAD}"
@@ -487,7 +500,7 @@ main() {
   # waits for the restart. aura, aura-migrate and garage-bootstrap share ${AURA_IMAGE}: the
   # migrator must run the binary it migrates for.
   local svc
-  docker compose pull aura aura-migrate garage-bootstrap
+  pull_retrying docker compose pull aura aura-migrate garage-bootstrap
   for svc in "${SIDECARS[@]}"; do
     pull_sidecar "${svc}"
   done

@@ -81,7 +81,7 @@ LIB
   bash() { [[ "$1" == scripts/appliance_posture.sh ]] || fail 'unexpected bash'; }
   docker() {
     case "$*" in
-      'compose pull aura aura-migrate garage-bootstrap'|'compose up -d aura'|'compose exec -T aura aura version'|'image prune --force') ;;
+      'compose pull aura aura-migrate garage-bootstrap'|'compose up -d --pull missing aura'|'compose exec -T aura aura version'|'image prune --force') ;;
       'volume prune --force --filter label=com.docker.volume.anonymous') echo pruned >"$fixture/volume-prune" ;;
       *) fail "unexpected Docker mutation: $*" ;;
     esac
@@ -359,3 +359,50 @@ readers_case() { # <pending path>... | none, for no record at all
   [[ "$(restarted)" == "garage prometheus" ]] || fail "without a record, every payload reader was not restarted: $(restarted)"
 )
 echo "ok: services mounting a changed payload file are restarted, and only those"
+
+# GHCR stalls one request now and then: on the lab VM, 2026-10-10, five pulls ended in
+# "timeout awaiting response headers" while the requests around them took 0.3 s. A pull gets
+# one more try before its image waits for the next tick.
+(
+  INSTALL_DIR="$fixture/stalls"
+  mkdir -p "$INSTALL_DIR"
+  printf '%s\n' AURA_SANDBOX_IMAGE=box:edge AURA_SANDBOX_EGRESS_IMAGE=egress:edge >"$INSTALL_DIR/.env"
+  declare -A stalls_left
+  docker() {
+    echo "docker $*" >>"$calls"
+    local ref="${*: -1}"
+    case "$1 $2" in
+      'pull -q' | 'compose pull')
+        if ((${stalls_left[$ref]:-0} > 0)); then
+          stalls_left[$ref]=$((stalls_left[$ref] - 1))
+          echo "Error response from daemon: net/http: timeout awaiting response headers" >&2
+          return 1
+        fi
+        ;;
+      'compose ps') echo "$ref-id" ;;
+      *) fail "unexpected docker $*" ;;
+    esac
+  }
+  sleep() { echo "sleep $*" >>"$calls"; }
+  pulls() { grep -c "^docker $1\$" "$calls" || true; }
+
+  : >"$calls"
+  stalls_left=([box:edge]=1)
+  out="$(pull_sandbox_images 2>/dev/null)"
+  [[ -z "$out" && "$(pulls 'pull -q box:edge')" == 2 && "$(pulls 'pull -q egress:edge')" == 1 ]] ||
+    fail "a box pull that stalled once was not retried: $out $(cat "$calls")"
+  grep -qx 'sleep 10' "$calls" || fail "the retry did not wait: $(cat "$calls")"
+
+  : >"$calls"
+  stalls_left=([box:edge]=2)
+  out="$(pull_sandbox_images 2>/dev/null)"
+  [[ "$out" == *'sandbox: pull failed'* && "$(pulls 'pull -q box:edge')" == 2 ]] ||
+    fail "a box pull that stalled twice was not skipped after one retry: $out $(cat "$calls")"
+
+  : >"$calls"
+  stalls_left=([aura-ingest]=1)
+  out="$(pull_sidecar aura-ingest)"
+  [[ -z "$out" && "$(pulls 'compose pull aura-ingest')" == 2 ]] ||
+    fail "a sidecar pull that stalled once was not retried: $out $(cat "$calls")"
+)
+echo "ok: a pull the registry stalls gets one more try before it waits for the next tick"
