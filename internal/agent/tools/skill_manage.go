@@ -55,7 +55,8 @@ func (t *SkillManageTool) Spec() Spec {
 		Summary: "Administer the deployment-wide skills library.",
 		Description: "Write half of the skills library: author (create/update/delete), install from the open ecosystem, " +
 			"and manage runnable snippets (save_snippet/archive/restore). " +
-			"Requires the authenticated identity to hold `governance.write` because the library is shared deployment configuration. " +
+			"Requires the authenticated identity to hold `governance.write`; install also requires an admin (`identity.create`), " +
+			"because it runs `npx skills add` inside Aura's own process. " +
 			"Use `skill` to list, read or apply an existing skill — this tool is for changing the library. " +
 			"Every write takes effect immediately: what you create, update, install or save is usable on this same turn.",
 		Parameters: json.RawMessage(skillManageParamsSchema),
@@ -73,7 +74,7 @@ func (t *SkillManageTool) Spec() Spec {
 // Execute parses the `action` discriminator and dispatches through the ActionRouter.
 // It never panics on a bad action — the router returns a structured error.
 func (t *SkillManageTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	if err := t.authorize(ctx); err != nil {
+	if err := t.authorize(ctx, skillManageCapability); err != nil {
 		return ToolResult{}, err
 	}
 	if t.Skills == nil {
@@ -88,17 +89,24 @@ func (t *SkillManageTool) Execute(ctx context.Context, raw json.RawMessage) (Too
 	if head.Action == "" {
 		return ToolResult{}, fmt.Errorf("skill_manage: action is required")
 	}
+	// install runs `npx skills add` in the daemon's process tree, which can read the daemon's
+	// environment through /proc: an admin's, as on the cockpit route (prd.md §3, 2026-10-10).
+	if head.Action == "install" {
+		if err := t.authorize(ctx, identity.CapIdentityCreate); err != nil {
+			return ToolResult{}, err
+		}
+	}
 	return t.actionRouter().Dispatch(ctx, head.Action, raw)
 }
 
-func (t *SkillManageTool) authorize(ctx context.Context) error {
+func (t *SkillManageTool) authorize(ctx context.Context, capability string) error {
 	identityID := identityctx.IdentityID(ctx)
 	if identityID == "" || t.Caps == nil {
-		return fmt.Errorf("skill_manage: %s capability required", skillManageCapability)
+		return fmt.Errorf("skill_manage: %s capability required", capability)
 	}
-	ok, err := t.Caps.HasCapability(ctx, identityID, skillManageCapability)
+	ok, err := t.Caps.HasCapability(ctx, identityID, capability)
 	if err != nil || !ok {
-		return fmt.Errorf("skill_manage: %s capability required", skillManageCapability)
+		return fmt.Errorf("skill_manage: %s capability required", capability)
 	}
 	return nil
 }

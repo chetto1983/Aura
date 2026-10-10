@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log/slog"
 	"path/filepath"
 
 	"github.com/chetto1983/aura/internal/agui"
@@ -25,15 +24,16 @@ import (
 // install ACTIVATES directly — no approval pause, no staging ceremony, no two-step. The Writer
 // itself lands the fetched tree active + materialized + audited, so the adapter has no promotion
 // step of its own to perform. The security keep is intrinsic and invisible: the loader-level
-// injection blocklist + the five write-boundary validations run on every body, and the container
-// is the blast boundary. There is no model/agent path here — the route is operator-only behind
-// RequireCapability(governance.write).
+// injection blocklist + the five write-boundary validations run on every body. An install runs
+// `npx skills add` in the daemon's process tree, so the install and catalog routes take
+// identity.create (prd.md §3, 2026-10-10): a member's request ran it there and could read the daemon's
+// environment through /proc. A member keeps authoring skills in their own root.
 //
 // SKW-03 restore-collision guard: the restore handler maps the provider's ErrSkillActiveExists
 // sentinel to 409 — the provider stat'd active/{name} and returned the sentinel BEFORE
 // Writer.Restore (which does an os.RemoveAll that would silently overwrite an active skill).
-// The parent-mux mount behind RequireCapability(governance.write) is cmd/aura/serve_webui.go's
-// job; every wire error passes through sanitizeErr (no leak).
+// The parent-mux mounts are cmd/aura/serve_webui.go's job; every wire error passes through
+// sanitizeErr (no leak).
 
 // skillsWriteAdapter satisfies agui.SkillsWriteProvider over the live Phase-11 primitives.
 // installer fetches + validates + stages; writer is the lifecycle sink
@@ -46,7 +46,7 @@ import (
 // beside it now reads the same one. It was per-actor once before and run 1790 said out loud
 // why not: the board read the deployment library, so an install vanished from the console
 // that had just made it — a write landing where the read cannot see it is worse than either
-// choice alone (amendment #216). The answer was never "write to the house library", it was
+// choice alone (prd.md §3, 2026-10-10). The answer was never "write to the house library", it was
 // "give the board an identity", and that is what this slice does: skillsBoardAdapter resolves
 // its loader and its archive from the identity on the request, so the invariant #216 states —
 // a console's write lands where its read looks — holds with BOTH halves scoped (#218 A).
@@ -81,7 +81,7 @@ func (a skillsWriteAdapter) forActor(actor string) (*skills.Writer, error) {
 }
 
 // writerFor resolves the Writer a verb aimed at THIS NAME must use: the actor's own root when
-// it holds the name, and the HOUSE root when it does not and the actor holds governance.write.
+// it holds the name, and the HOUSE root when it does not and the actor is an admin.
 //
 // Resolving by name rather than by actor alone is what makes the board's `owned` flag honest.
 // The board lists the house library beside the caller's own, and #214 pointed every write at
@@ -107,7 +107,7 @@ func (a skillsWriteAdapter) archiveWriterFor(ctx context.Context, actor, name st
 
 // rootHolding resolves the Writer whose root actually HOLDS this name, per the supplied
 // predicate: the actor's own root when it holds it, and the HOUSE root when it does not and the
-// actor holds governance.write.
+// actor is an admin (mayWriteHouseSkills).
 //
 // Resolving by name rather than by actor alone is what makes the board's `owned` flag honest.
 // The board lists the house library beside the caller's own, and #214 pointed every write at
@@ -127,27 +127,10 @@ func (a skillsWriteAdapter) rootHolding(
 	if holds(own, name) || !holds(a.writer, name) {
 		return own, nil
 	}
-	if !a.mayWriteHouse(ctx, actor) {
+	if !mayWriteHouseSkills(ctx, a.capabilities, actor, "skills write") {
 		return own, nil
 	}
 	return a.writer, nil
-}
-
-// mayWriteHouse answers whether this actor may address the deployment's own library. It fails
-// closed and says so once: a write that cannot prove the permission stays in the caller's own
-// root, where it fails with the sentinel that names their library rather than reaching into
-// the house's.
-func (a skillsWriteAdapter) mayWriteHouse(ctx context.Context, actor string) bool {
-	if a.capabilities == nil {
-		return false
-	}
-	allowed, err := a.capabilities.HasCapability(ctx, actor, governanceWriteCapability)
-	if err != nil {
-		slog.Warn("skills write: capability lookup failed, keeping the verb in the caller's root",
-			"identity_id", actor, "capability", governanceWriteCapability, "err", err)
-		return false
-	}
-	return allowed
 }
 
 // installerForActor is forActor's twin for the fetch transport, so an installed tree lands in

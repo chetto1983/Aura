@@ -26,7 +26,8 @@ func (a adminIdentities) HasCapability(_ context.Context, id, capability string)
 }
 
 // deploymentControlRoutes change what every identity runs on, or another identity's
-// grants and budget. Every identity holds governance.write (D-01), so a member reaching
+// grants and budget, or run code in the daemon's process tree (the skill install and catalog,
+// prd.md §3, 2026-10-10). Every identity holds governance.write (D-01), so a member reaching
 // them administers the deployment; identity.create is the gate.
 var deploymentControlRoutes = []struct{ method, path string }{
 	{http.MethodGet, "/api/admin/identities"},
@@ -43,6 +44,8 @@ var deploymentControlRoutes = []struct{ method, path string }{
 	{http.MethodPost, "/api/governance/mcp/slack/enable"},
 	{http.MethodPost, "/api/governance/mcp/slack/disable"},
 	{http.MethodDelete, "/api/governance/mcp/slack"},
+	{http.MethodPost, "/api/governance/skills/install"},
+	{http.MethodGet, "/api/governance/skills/catalog"},
 }
 
 func TestDeploymentControlRoutesRequireAnAdmin(t *testing.T) {

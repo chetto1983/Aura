@@ -39,18 +39,24 @@ func (b *scriptedMCPBoard) Probe(ctx context.Context, name string, server mcp.Ma
 	return mcp.ProbeResult{Name: name, OK: true}
 }
 
-// govServer builds a Server with the supplied governance providers wired (any may be nil)
-// and a short probe timeout so the deadline-honoring probe path resolves fast.
+// govOperator is the admin the governance board tests act as: the scheduler board shows a
+// member only their own tasks (prd.md §3, 2026-10-10), and these tests cover the board itself.
+const govOperator = "00000000-0000-0000-0000-0000000000a1"
+
+// govServer builds a Server with the supplied governance providers wired (any may be nil),
+// govOperator as its admin, and a short probe timeout so the deadline-honoring probe path
+// resolves fast.
 func govServer(p GovernanceProviders) *Server {
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetGovernanceProviders(p)
+	s.SetIdentityAdmin(adminCaps(govOperator))
 	s.probeTimeout = 50 * time.Millisecond
 	return s
 }
 
 func doGov(t *testing.T, s *Server, method, target string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, target, nil)
+	req := withPrincipal(httptest.NewRequest(method, target, nil), govOperator)
 	rec := httptest.NewRecorder()
 	s.Mux().ServeHTTP(rec, req)
 	return rec

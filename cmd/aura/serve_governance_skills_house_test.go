@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/skills"
 )
@@ -21,20 +22,43 @@ import (
 // per-identity roots, sits in the house root, and lost its buttons the moment the image was
 // rebuilt.
 //
-// The capability is the boundary, not the directory: governance.write already means "may
-// change shared deployment configuration" (skill_manage.go says so in those words) and the
-// cockpit's write routes are mounted behind it. A tenant without it sees the house library
-// exactly as #214 left it — listed, runnable, not theirs to touch.
+// The capability is the boundary, not the directory. It was governance.write until 2026-10-10
+// (prd.md §3), but D-01 grants that to every identity, and a member was measured archiving and
+// deleting a house skill with it. It is identity.create now: the admin's. Everyone else sees
+// the house library exactly as #214 left it — listed, runnable, not theirs to touch.
 
 // stubCapabilities is the identity store's one answer, stated rather than granted through a
-// database: identity -> holds governance.write.
+// database: identity -> is an admin (holds identity.create).
 type stubCapabilities map[string]bool
 
 func (s stubCapabilities) HasCapability(_ context.Context, identityID, capability string) (bool, error) {
-	if capability != governanceWriteCapability {
+	if capability != identity.CapIdentityCreate {
 		return false, nil
 	}
 	return s[identityID], nil
+}
+
+// governanceWriteOnly is what every member holds: governance.write and no identity.create.
+type governanceWriteOnly struct{}
+
+func (governanceWriteOnly) HasCapability(_ context.Context, _, capability string) (bool, error) {
+	return capability == governanceWriteCapability, nil
+}
+
+// TestSkillsBoardKeepsTheHouseFromAMemberWithGovernanceWrite is the measured regression:
+// governance.write alone, which every identity holds, no longer opens the house library.
+func TestSkillsBoardKeepsTheHouseFromAMemberWithGovernanceWrite(t *testing.T) {
+	t.Parallel()
+	cfg := rootsConfig(t)
+	seedSkill(t, cfg.SkillsDir, "house-rule", "house body", false)
+
+	board := boardFor(cfg, nil)
+	board.capabilities = governanceWriteOnly{}
+
+	member := identityctx.WithIdentityID(context.Background(), rootsAlice)
+	if got := board.WritableHouseRoot(member); got != "" {
+		t.Fatalf("a member's writable house root = %q, want none", got)
+	}
 }
 
 // failingCapabilities is the store that cannot answer, so the fail-closed branch is asserted
@@ -46,7 +70,7 @@ func (failingCapabilities) HasCapability(context.Context, string, string) (bool,
 }
 
 // TestSkillsBoardOffersTheHouseVerbsToAnOperator is the regression this file exists for: an
-// identity holding governance.write gets the deployment root as a second writable root, so the
+// admin gets the deployment root as a second writable root, so the
 // board can offer Archive/Delete on house policy instead of rendering dead buttons.
 func TestSkillsBoardOffersTheHouseVerbsToAnOperator(t *testing.T) {
 	t.Parallel()
@@ -63,7 +87,7 @@ func TestSkillsBoardOffersTheHouseVerbsToAnOperator(t *testing.T) {
 }
 
 // TestSkillsBoardKeepsTheHouseFromATenant is the other half, and the reason this is a
-// capability check rather than a widening: a person without governance.write must see the
+// capability check rather than a widening: a person who is not an admin must see the
 // house library exactly as #214 left it.
 func TestSkillsBoardKeepsTheHouseFromATenant(t *testing.T) {
 	t.Parallel()
@@ -75,7 +99,7 @@ func TestSkillsBoardKeepsTheHouseFromATenant(t *testing.T) {
 
 	tenant := identityctx.WithIdentityID(context.Background(), rootsBob)
 	if got := board.WritableHouseRoot(tenant); got != "" {
-		t.Fatalf("a tenant without governance.write got house root %q, want none", got)
+		t.Fatalf("a tenant who is not an admin got house root %q, want none", got)
 	}
 }
 

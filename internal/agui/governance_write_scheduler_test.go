@@ -95,7 +95,7 @@ func (b *scriptedSchedulerBoard) ListRunsForTask(_ context.Context, _ string, li
 // doGovBody issues a governance request with a body (the PATCH edit path doGov cannot cover).
 func doGovBody(t *testing.T, s *Server, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req := withPrincipal(httptest.NewRequest(method, target, strings.NewReader(body)), govOperator)
 	rec := httptest.NewRecorder()
 	s.Mux().ServeHTTP(rec, req)
 	return rec

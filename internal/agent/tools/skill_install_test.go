@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/identity"
 )
 
 // skill_manage action=install exists because the taught alternative could not work: `npx skills
@@ -134,5 +136,32 @@ func TestSkillSpecAdvertisesInstallAndWarnsOffTheCLI(t *testing.T) {
 	}
 	if _, ok := schema.Properties["source"]; !ok {
 		t.Error("schema has no source property for action=install")
+	}
+}
+
+// memberCaps answers like the identity store does for every member: governance.write, and
+// not identity.create.
+type memberCaps struct{}
+
+func (memberCaps) HasCapability(_ context.Context, _, capability string) (bool, error) {
+	return capability == identity.CapGovernanceWrite, nil
+}
+
+// An install runs `npx skills add` in Aura's own process tree, where it could read the daemon's
+// environment through /proc (prd.md §3, 2026-10-10): a member who may author skills may not install
+// one, and the installer is never reached.
+func TestSkillInstallRefusesAMember(t *testing.T) {
+	w := &fakeSkillWriter{installName: "xlsx"}
+	tool := &SkillManageTool{Skills: &SkillTool{Loader: &fakeSkillLoader{}, Writer: w}, Caps: memberCaps{}}
+
+	if _, err := tool.Execute(installCtx(t), installArgs(t, "anthropics/skills@xlsx")); err == nil ||
+		!strings.Contains(err.Error(), identity.CapIdentityCreate) {
+		t.Fatalf("member install error = %v, want identity.create required", err)
+	}
+	if w.installCalls != 0 {
+		t.Fatalf("installer calls = %d, want 0", w.installCalls)
+	}
+	if _, err := tool.Execute(installCtx(t), json.RawMessage(`{"action":"create","name":"mine","description":"my skill","body":"# instructions"}`)); err != nil {
+		t.Fatalf("member create: %v, want their own authoring to stay open", err)
 	}
 }

@@ -177,7 +177,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSchedRunsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	// The MCP registry is one per deployment (migration 0101) and its servers mount for every
 	// identity, so changing it administers the deployment: identity.create, not the
-	// governance.write every identity holds (amendment #216). A member keeps their own
+	// governance.write every identity holds (prd.md §3, 2026-10-10). A member keeps their own
 	// authorization on a server. CSRF: same-origin SameSite=Strict covers these SPA writes.
 	for _, route := range []string{
 		governanceMCPInstallRoute, governanceMCPEnvRoute, governanceMCPTrustRoute,
@@ -194,21 +194,23 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// coexist under longest-pattern precedence; the {name}/restore + {name}/archive patterns win
 	// over the {name} update/delete patterns; /skills/catalog + /skills/install are more specific
 	// than the bare /skills subtree.
-	mux.Handle(governanceSkillInstallRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillRestoreRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillArchiveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillCreateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillUpdateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceSkillDeleteRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// Install and catalog run `npx skills` in the daemon's process tree, where a member's request
+	// could read the daemon's environment through /proc (prd.md §3, 2026-10-10): an admin's.
+	mux.Handle(governanceSkillInstallRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
+	mux.Handle(governanceSkillCatalogRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	mux.Handle(governanceSkillValidateRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 
 	mountGovernanceSchedulerWriteRoutes(mux, aguiHandler, auth)
 	// The SETTINGS-01 cockpit Settings routes delegate to the AG-UI handler (routes on
 	// Server.Mux). GET is an operator read of the model-backend knobs (secrets redacted)
-	// behind governance.read; PUT/DELETE mutate aura.settings behind governance.write — the
-	// same gate as the MCP/skills writes. Method+path-specific so each wins Go 1.22
-	// longest-pattern precedence over the bare "/api/" carve-out.
+	// behind governance.read; PUT/DELETE mutate aura.settings, mounted behind governance.write
+	// and refused to a non-admin by the handler (prd.md §3, 2026-10-10). Method+path-specific so each
+	// wins Go 1.22 longest-pattern precedence over the bare "/api/" carve-out.
 	mux.Handle("GET /api/settings", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mountRemoteAccessRoutes(mux, aguiHandler, auth)
 	mux.Handle("GET /api/settings/llm-routes", agui.RequireCapability(aguiHandler, auth, governanceReadCapability))

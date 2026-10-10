@@ -2,13 +2,13 @@ package agui
 
 // governance_write_scheduler.go is the GOV-03 write adapter over the SchedulerBoardProvider
 // seam: the operator management verbs for a scheduled task — approve a gated task, run it
-// now, pause or resume it, cancel it, or reschedule/re-payload it. Every handler nil-checks the
-// provider (503 when unwired), resolves the task, enforces the system-kind guard (a system-seeded
-// sweep is never operator-mutable → 403, and the database backup is never paused or cancelled
-// → 403), makes
-// ONE provider call, and projects JSON. The parent-mux
-// mount behind RequireCapability(governance.write) is cmd/aura/serve_webui.go's job; every
-// wire error passes through sanitizeErr. There is no business logic here — schedule grammar
+// now, pause or resume it, cancel it, or reschedule/re-payload it. Every handler resolves the
+// task the caller may manage (schedulerTask: their own, or any for an admin; another
+// identity's task answers 404 like a missing one), enforces the system-kind guard (a
+// system-seeded sweep is never operator-mutable → 403, and the database backup is never paused
+// or cancelled → 403), makes ONE provider call, and projects JSON. The parent-mux mount behind
+// RequireCapability(governance.write) is cmd/aura/serve_webui.go's job; every wire error passes
+// through sanitizeErr. There is no business logic here — schedule grammar
 // validation reuses the shipped cron engine (ParseSchedule + FirstFire), exactly like the
 // model-facing `task` tool.
 
@@ -39,26 +39,12 @@ func (s *Server) registerGovernanceSchedulerWriteRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/governance/scheduler/{id}", s.handleSchedulerEdit)
 }
 
-// schedulerMutable resolves the {id} task and enforces the write preconditions shared by
-// every verb: provider wired (else 503), valid uuid (else 404 via parseTaskID), task exists
-// (else 404), and the kind is operator-manageable (else 403 — a system sweep is off-limits).
+// schedulerMutable resolves the {id} task the caller may manage (schedulerTask: their own, or any
+// for an admin) and refuses a system-seeded sweep with 403: those are never operator-mutable.
 // It returns the resolved task, its id, and ok=false when it has already written a response.
 func (s *Server) schedulerMutable(w http.ResponseWriter, r *http.Request) (cron.Task, string, bool) {
-	if s.governance.Scheduler == nil {
-		http.Error(w, "scheduler board not configured", http.StatusServiceUnavailable)
-		return cron.Task{}, "", false
-	}
-	id, ok := parseTaskID(w, r)
+	task, id, ok := s.schedulerTask(w, r)
 	if !ok {
-		return cron.Task{}, "", false
-	}
-	task, err := s.governance.Scheduler.GetTask(r.Context(), id)
-	if err != nil {
-		if errors.Is(err, cron.ErrTaskNotFound) {
-			writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "task not found"})
-			return cron.Task{}, "", false
-		}
-		writeJSONStatus(w, http.StatusBadGateway, map[string]string{"error": sanitizeErr(err)})
 		return cron.Task{}, "", false
 	}
 	if !cron.IsUserManageableKind(task.Kind) {

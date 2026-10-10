@@ -145,24 +145,28 @@ type capabilityChecker interface {
 	HasCapability(ctx context.Context, identityID, capability string) (bool, error)
 }
 
-// WritableHouseRoot is the deployment root for a caller holding governance.write, and "" for
-// everyone else.
-//
-// It answers "" on a store error rather than opening the house library on a failed lookup: a
-// governance read that cannot PROVE the permission must not grant it, so an outage costs an
-// operator two greyed-out buttons instead of handing every caller the deployment's policy.
-func (a skillsBoardAdapter) WritableHouseRoot(ctx context.Context) string {
-	if a.capabilities == nil {
-		return ""
+// mayWriteHouseSkills answers whether actor may change the deployment's own skill library.
+// The house library is every identity's, so it takes identity.create: every identity holds
+// governance.write (D-01), and a member measured archiving and deleting a shared skill on it
+// (prd.md §3, 2026-10-10). It fails closed and says so once: a lookup that cannot prove the
+// permission does not grant it.
+func mayWriteHouseSkills(ctx context.Context, checker capabilityChecker, actor, surface string) bool {
+	if checker == nil {
+		return false
 	}
-	caller := identityctx.IdentityID(ctx)
-	allowed, err := a.capabilities.HasCapability(ctx, caller, governanceWriteCapability)
+	allowed, err := checker.HasCapability(ctx, actor, identity.CapIdentityCreate)
 	if err != nil {
-		slog.Warn("skills board: capability lookup failed, hiding the house verbs",
-			"identity_id", caller, "capability", governanceWriteCapability, "err", err)
-		return ""
+		slog.Warn(surface+": capability lookup failed, keeping the house library closed",
+			"identity_id", actor, "capability", identity.CapIdentityCreate, "err", err)
+		return false
 	}
-	if !allowed {
+	return allowed
+}
+
+// WritableHouseRoot is the deployment root for an admin, and "" for everyone else: a board
+// that cannot prove the permission shows two greyed-out buttons rather than the house verbs.
+func (a skillsBoardAdapter) WritableHouseRoot(ctx context.Context) string {
+	if !mayWriteHouseSkills(ctx, a.capabilities, identityctx.IdentityID(ctx), "skills board") {
 		return ""
 	}
 	return a.layout.Global
