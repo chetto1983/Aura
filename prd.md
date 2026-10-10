@@ -91,6 +91,38 @@ Web sessions use Authula. Recovery and administration are audited and require th
 actual capabilities. Sharing does not imply administration. A wildcard capability
 grant is not a standing approval for every tool action.
 
+**Administering the deployment takes `identity.create` (2026-10-10, amendment #216).** D-01
+grants every identity `governance.write`, but about twenty routes kept using it as the
+admin gate, and the cockpit hid them with `identity.create` while the server let any
+member through. Measured on 2026-10-10 against the real parent mux (`newServeHandler`,
+`RequireCapability`) with a principal holding exactly `identity.UserSet()`: a member
+reached all 14 routes below, among them revoking the admin's capabilities, lifting their
+own credit cap, restarting the daemon and installing a stdio MCP server that runs as a
+child of Aura in its container. They now take `identity.create`:
+
+- `/api/admin/*`: the roster, grant and revoke, the activity feed, credit caps, spend,
+  restart, the OpenRouter reconcile and the update decisions (removal keeps
+  `identity.delete`);
+- the MCP registry writes: install, env, trust, enable, disable and remove. The registry
+  is one per deployment (migration 0101) and its servers mount for every identity. A
+  member keeps their own authorization on a server;
+- `PUT` and `DELETE /api/settings/{key}`: `aura.settings` has no identity column, so every
+  key configures the deployment, `TELEGRAM_BOT_TOKEN` included. The per-key admin list
+  goes: every key is the admin's.
+
+The cockpit follows: a member's Governance shows no activity feed, no MCP install and no
+MCP lifecycle or env controls. A member keeps `governance.write` for what is theirs: their
+skills, their MCP authorizations, their ChatGPT plan and calendar accounts.
+
+This does not establish:
+- that a member reaches nothing else of the deployment: the scheduler routes manage any
+  identity's task (no owner check, no RLS on `scheduler_tasks`), archive and delete reach
+  the house skills, `npx skills add` runs in the aura container, and an agent's background
+  shells can be polled or killed across identities on `governance.write`. Each is its own
+  fix;
+- the behaviour on a running appliance: measured in-process on the parent mux, not yet on
+  the lab VM.
+
 **Signing out ends the session (2026-10-02).** Authula runs a plugin's capability hook
 only on the routes Aura lists in its route mappings, and `/sign-out` was not listed, so
 the session hook never read the cookie: on the lab VM on 2026-10-01, `POST /auth/sign-out`
