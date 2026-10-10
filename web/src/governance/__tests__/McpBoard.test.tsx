@@ -26,6 +26,9 @@ vi.mock('../governanceApi', async (importOriginal) => {
   };
 });
 
+let caps = { isAdmin: true };
+vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => caps }));
+
 const { McpBoard } = await import('../McpBoard');
 
 const SECRET_VALUE = 'super-secret-token-VALUE-42';
@@ -72,6 +75,21 @@ describe('McpBoard (GOV-01)', () => {
   });
   afterEach(() => {
     vi.clearAllMocks();
+    caps = { isAdmin: true };
+  });
+
+  it("offers a member no install: the registry is the admin's", async () => {
+    caps = { isAdmin: false };
+    fetchMcpServers.mockResolvedValue(SERVERS);
+    probeMcpServer.mockResolvedValue({ name: 'github', ok: true, tool_count: 3, detail: 'ok' });
+
+    render(<McpBoard />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+    await waitFor(() => {
+      expect(screen.getByText('github')).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Add MCP server' })).toBeNull();
   });
 
   it('renders only redacted chips — no raw secret value reaches the DOM (T-28-03-01)', async () => {

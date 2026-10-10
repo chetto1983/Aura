@@ -76,13 +76,27 @@ func TestMemberCannotPutAnLLMProfile(t *testing.T) {
 	}
 }
 
-func TestMemberStillTunesAnOrdinarySetting(t *testing.T) {
+// Every key in aura.settings configures the whole deployment, and the member holds the
+// governance.write every identity holds (D-01): an ordinary key is the admin's too (#216).
+func TestMemberCannotTuneAnOrdinarySetting(t *testing.T) {
 	store := &fakeSettingsStore{}
 	s := &Server{settings: store, idAdmin: adminCaps("admin-1")}
-	rr, r := putReq(t, "AURA_TTS_MODEL", "tts-x", "member-1")
-	s.handlePutSetting(rr, r)
-	if rr.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: members keep governance.write for the rest", rr.Code)
+	for _, key := range []string{"AURA_TTS_MODEL", "TELEGRAM_BOT_TOKEN", "AURA_LOOP_MAX_STEPS"} {
+		rr, r := putReq(t, key, "1", "member-1")
+		s.handlePutSetting(rr, r)
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("PUT %s = %d, want 403", key, rr.Code)
+		}
+		rr = httptest.NewRecorder()
+		del := httptest.NewRequest(http.MethodDelete, "/api/settings/"+key, nil)
+		del.SetPathValue("key", key)
+		s.handleDeleteSetting(rr, withPrincipal(del, "member-1"))
+		if rr.Code != http.StatusForbidden {
+			t.Errorf("DELETE %s = %d, want 403", key, rr.Code)
+		}
+	}
+	if len(store.upserted) != 0 || len(store.deleted) != 0 {
+		t.Fatalf("a member wrote settings: upserted %v deleted %v", store.upserted, store.deleted)
 	}
 }
 

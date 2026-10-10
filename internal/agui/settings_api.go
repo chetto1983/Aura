@@ -11,12 +11,10 @@ package agui
 // remains boot-bound, and POST /api/admin/restart applies it where supported.
 //
 // GET returns the allowlist + current effective values with SECRETS REDACTED (the
-// real value never crosses the wire on read). PUT/DELETE are operator write-class
-// actions gated by RequireCapability(governance.write) at the parent-mux mount
-// (serve_webui.go); GET is gated by governance.read. PUT and DELETE of the credential,
-// route and model keys, and the whole llm-profile route, also require identity.create
-// (settings_api_authz.go); OPENROUTER_API_KEY is minted by Aura and cannot be written
-// through the API. Every key is validated against the static allowlist + its Kind before
+// real value never crosses the wire on read). GET is gated by governance.read. Every key
+// configures the whole deployment, so PUT, DELETE and the llm-profile route require
+// identity.create (settings_api_authz.go, amendment #216); OPENROUTER_API_KEY is minted by
+// Aura and cannot be written through the API. Every key is validated against the static allowlist + its Kind before
 // persisting, so the API can never write a non-model key (the allowlist already excludes
 // connection/security env).
 
@@ -293,7 +291,7 @@ func (s *Server) handlePutLLMProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !s.authorizeSettingWrite(w, r, actor, true, slices.Collect(maps.Keys(body.Settings))...) {
+	if !s.authorizeSettingWrite(w, r, actor, slices.Collect(maps.Keys(body.Settings))...) {
 		return
 	}
 
@@ -375,7 +373,7 @@ func (s *Server) handlePutSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	if !s.authorizeSettingWrite(w, r, actor, false, key) {
+	if !s.authorizeSettingWrite(w, r, actor, key) {
 		return
 	}
 	raw, ok := readCappedBody(w, r)
@@ -461,7 +459,7 @@ func (s *Server) handleDeleteSetting(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	if !s.authorizeSettingWrite(w, r, actor, false, key) {
+	if !s.authorizeSettingWrite(w, r, actor, key) {
 		return
 	}
 	s.settingsMu.Lock()

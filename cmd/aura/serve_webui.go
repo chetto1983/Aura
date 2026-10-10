@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/webui"
 )
@@ -174,20 +175,18 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	mux.Handle(governanceSkillsBodyRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSchedulerRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
 	mux.Handle(governanceSchedRunsRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
-	// The Phase-29 MCPW-01/02/03 governance WRITE routes delegate to the AG-UI handler
-	// (routes on Server.Mux) behind RequireCapability(governance.write) — strictly stronger
-	// than governance.read (a write can install a new MCP server). Method+path-specific so
-	// each wins Go 1.22 longest-pattern precedence over the bare "/api/" carve-out, the "/"
-	// embed catch-all, AND the GET governance read siblings. CSRF: same-origin SameSite=Strict
-	// covers these SPA writes (auth.go:18) — no cross-origin write path is introduced.
-	mux.Handle(governanceMCPInstallRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceMCPEnvRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceMCPTrustRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
+	// The MCP registry is one per deployment (migration 0101) and its servers mount for every
+	// identity, so changing it administers the deployment: identity.create, not the
+	// governance.write every identity holds (amendment #216). A member keeps their own
+	// authorization on a server. CSRF: same-origin SameSite=Strict covers these SPA writes.
+	for _, route := range []string{
+		governanceMCPInstallRoute, governanceMCPEnvRoute, governanceMCPTrustRoute,
+		governanceMCPEnableRoute, governanceMCPDisableRoute, governanceMCPRemoveRoute,
+	} {
+		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
+	}
 	mux.Handle(governanceMCPAuthStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(governanceMCPAuthRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceMCPEnableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceMCPDisableRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(governanceMCPRemoveRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	// The Phase-29 SKW-01/02/03 governance SKILLS WRITE routes — same governance.write gate.
 	// The install mints the operator-origin /api/approvals pause (D-13); the gate is what keeps
 	// that second paused_states writer capability-scoped. POST /api/governance/skills (create)

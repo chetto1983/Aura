@@ -107,10 +107,10 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 }
 
 // gateMultiUserRequiresStrictProfile keeps multi-user provisioning an explicit hardened-
-// deployment posture. Tenant data and tool sandboxes are identity-scoped; the remaining
-// deployment-global settings, MCP, scheduler-governance and skills catalogs are intentional
-// administrator control planes protected by governance.read/write. The strict-profile
-// requirement therefore controls the runtime posture, not tenant selection.
+// deployment posture. Tenant data and tool sandboxes are identity-scoped; deployment-global
+// settings and the MCP registry are administrator control planes behind identity.create
+// (amendment #216). The strict-profile requirement therefore controls the runtime posture,
+// not tenant selection.
 func (c *Config) gateMultiUserRequiresStrictProfile(p RuntimeProfile) []Violation {
 	if c == nil || !c.MUSRIsolation || p.Strict() {
 		return nil
@@ -125,7 +125,7 @@ func (c *Config) gateMultiUserRequiresStrictProfile(p RuntimeProfile) []Violatio
 		Msg: "a second identity needs a hardened profile: set AURA_PROFILE to " +
 			"single_user_hardened or server_production, or leave AURA_MUSR_ISOLATION off — " +
 			"multi-user provisioning is supported only under a strict runtime posture; " +
-			"deployment-global catalogs remain administrator-only via governance.read/write",
+			"deployment-global settings and the MCP registry remain administrator-only",
 	}}
 }
 

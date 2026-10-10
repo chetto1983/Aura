@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Pencil, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useCapabilities } from '../admin/useAdmin';
 import { McpEnvEditForm } from './McpEnvEditForm';
 import { McpLifecycleCluster } from './McpLifecycleCluster';
 import { McpAuthorizationPanel } from './McpAuthorizationPanel';
@@ -36,6 +37,9 @@ function Field({ label, value }: { readonly label: string; readonly value: strin
 export function McpServerDetail({ server, probe, probeLoading, onClose }: McpServerDetailProps) {
   const { t } = useTranslation();
   const none = t('governance.mcp.detail.none');
+  // Lifecycle and env change the server for every identity, so they are an admin's; a member
+  // keeps their own authorization and account links below.
+  const { isAdmin } = useCapabilities();
   const [editingEnv, setEditingEnv] = useState(false);
   const [secretPreserved, setSecretPreserved] = useState(false);
 
@@ -72,7 +76,7 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
       </dl>
 
       {/* Lifecycle cluster — enable/disable + trust-approve + remove (inline, not a kebab). */}
-      <McpLifecycleCluster server={server} onRemoved={onClose} />
+      {isAdmin ? <McpLifecycleCluster server={server} onRemoved={onClose} /> : null}
 
       {/* Per-identity authorization. It renders nothing until the server answers, and one
           muted line for a server that takes no flow, so it never adds noise to the local
@@ -103,17 +107,19 @@ export function McpServerDetail({ server, probe, probeLoading, onClose }: McpSer
             <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
               {t('governance.mcp.detail.envKeys')}
             </h4>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setSecretPreserved(false);
-                setEditingEnv(true);
-              }}
-            >
-              <Pencil data-icon aria-hidden="true" className="size-4" />
-              {t('governance.mcp.detail.editEnv')}
-            </Button>
+            {isAdmin ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setSecretPreserved(false);
+                  setEditingEnv(true);
+                }}
+              >
+                <Pencil data-icon aria-hidden="true" className="size-4" />
+                {t('governance.mcp.detail.editEnv')}
+              </Button>
+            ) : null}
           </div>
           {secretPreserved ? (
             <p role="status" className="text-[13px] text-success">

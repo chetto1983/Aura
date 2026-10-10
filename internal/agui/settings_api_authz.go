@@ -7,29 +7,6 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 )
 
-// adminOnlySettingKeys decide which credential, which route and which model the whole
-// deployment runs on. Every identity holds governance.write (D-01), so writing them also
-// takes identity.create, the capability that makes an identity an admin.
-var adminOnlySettingKeys = map[string]struct{}{
-	"AURA_OPENROUTER_MANAGEMENT_KEY":   {},
-	"AURA_OPENROUTER_SERVICES_CAP_USD": {},
-	"AURA_LLM_PROVIDER":                {},
-	"AURA_LLM_MODEL":                   {},
-	"AURA_LLM_BASE_URL":                {},
-	// The four live media-generation settings (image/video plan, ruling R3): the same
-	// governance-write + identity.create gate as the primary LLM route, because they
-	// pick the model (and spend) every identity's generation calls use.
-	"AURA_IMAGE_MODEL":           {},
-	"AURA_VIDEO_MODEL":           {},
-	"AURA_VIDEO_INLINE_WAIT_SEC": {},
-	"AURA_ASSET_MAX_VIDEO_BYTES": {},
-	// The embedding route re-embeds every tenant, restarts the daemon and bills the whole
-	// corpus to the deployment's key (settings_embedding_route.go).
-	"AURA_EMBED_BASE_URL":       {},
-	"AURA_EMBED_MODEL":          {},
-	"AURA_EMBED_CLOUD_BASE_URL": {},
-}
-
 // mintedSettingKeys are written only by the reconciler: nobody types the services key.
 var mintedSettingKeys = map[string]struct{}{"OPENROUTER_API_KEY": {}}
 
@@ -67,9 +44,11 @@ func (s *Server) callerIsAdmin(r *http.Request) bool {
 }
 
 // authorizeSettingWrite refuses, and answers for, a write the caller may not make: a minted key
-// from anyone, an admin-only key — or, with requireAdmin, any key — from a member. It returns
+// or a Cloudflare token from anyone, and any setting from a member. aura.settings has no
+// identity column, so every key configures the whole deployment, and every identity holds
+// governance.write (D-01): writing one takes identity.create (amendment #216). It returns
 // true when the write may go ahead.
-func (s *Server) authorizeSettingWrite(w http.ResponseWriter, r *http.Request, actor string, requireAdmin bool, keys ...string) bool {
+func (s *Server) authorizeSettingWrite(w http.ResponseWriter, r *http.Request, actor string, keys ...string) bool {
 	for _, key := range keys {
 		if key == "CLOUDFLARE_API_TOKEN" || key == "CLOUDFLARE_TUNNEL_TOKEN" {
 			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "use the dedicated Remote access controls"})
@@ -79,12 +58,6 @@ func (s *Server) authorizeSettingWrite(w http.ResponseWriter, r *http.Request, a
 			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": key + " is minted by Aura and cannot be set"})
 			return false
 		}
-		if _, adminOnly := adminOnlySettingKeys[key]; adminOnly {
-			requireAdmin = true
-		}
-	}
-	if !requireAdmin {
-		return true
 	}
 	if s.idAdmin == nil {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "identity admin not configured"})

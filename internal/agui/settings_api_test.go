@@ -288,7 +288,7 @@ func putReq(t *testing.T, key, value, principal string) (*httptest.ResponseRecor
 func TestHandlePutSetting(t *testing.T) {
 	t.Run("unknown key 400", func(t *testing.T) {
 		store := &fakeSettingsStore{}
-		s := &Server{settings: store}
+		s := &Server{settings: store, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "POSTGRES_PASSWORD", "evil", "op-1")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusBadRequest {
@@ -300,7 +300,7 @@ func TestHandlePutSetting(t *testing.T) {
 	})
 
 	t.Run("no principal 401", func(t *testing.T) {
-		s := &Server{settings: &fakeSettingsStore{}}
+		s := &Server{settings: &fakeSettingsStore{}, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "AURA_TTS_MODEL", "openai/tts-1", "")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusUnauthorized {
@@ -310,7 +310,7 @@ func TestHandlePutSetting(t *testing.T) {
 
 	t.Run("invalid int 400", func(t *testing.T) {
 		store := &fakeSettingsStore{}
-		s := &Server{settings: store}
+		s := &Server{settings: store, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "AURA_LOOP_MAX_STEPS", "not-a-number", "op-1")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusBadRequest {
@@ -323,7 +323,7 @@ func TestHandlePutSetting(t *testing.T) {
 
 	t.Run("valid upsert 200", func(t *testing.T) {
 		store := &fakeSettingsStore{}
-		s := &Server{settings: store}
+		s := &Server{settings: store, idAdmin: adminCaps("op-1")}
 		rr, r := putReq(t, "AURA_STT_CLOUD_MODEL", "openai/whisper-1", "op-1")
 		s.handlePutSetting(rr, r)
 		if rr.Code != http.StatusOK {
@@ -444,7 +444,7 @@ func TestHandlePutSettingRejectsInvalidLLMTokenBudget(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &fakeSettingsStore{rows: tc.rows}
-			s := &Server{settings: store}
+			s := &Server{settings: store, idAdmin: adminCaps("op-1")}
 			rr, r := putReq(t, tc.key, tc.value, "op-1")
 
 			s.handlePutSetting(rr, r)
@@ -572,7 +572,7 @@ func TestHandleSettingsTelegramStatus(t *testing.T) {
 
 func TestHandleDeleteSetting(t *testing.T) {
 	store := &fakeSettingsStore{}
-	s := &Server{settings: store}
+	s := &Server{settings: store, idAdmin: adminCaps("op-1")}
 	r := httptest.NewRequest(http.MethodDelete, "/api/settings/AURA_TTS_MODEL", nil)
 	r.SetPathValue("key", "AURA_TTS_MODEL")
 	r = withPrincipal(r, "op-1")

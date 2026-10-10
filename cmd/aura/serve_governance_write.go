@@ -310,9 +310,9 @@ func buildInstallServer(req agui.MCPInstallRequest) (mcp.ManagedServer, string, 
 		Source:  "custom",
 		Runtime: runtime,
 		// No trust class: Classify resolves one from the transport. Installing IS the
-		// authorization — this route is operator-authenticated and capability-gated
-		// (governance.write), so the human who reached it already made the decision a
-		// trust-approve would have asked for a second time.
+		// authorization — this route is admin-gated (identity.create), so the human who
+		// reached it already made the decision a trust-approve would have asked for a
+		// second time.
 	}
 	cli := "aura mcp add " + req.Name
 	if runtime.Kind == mcp.RuntimeKindBox {

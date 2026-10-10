@@ -260,8 +260,8 @@ func (s *Server) handleApplyEmbeddingRoute(w http.ResponseWriter, r *http.Reques
 }
 
 // embeddingRouteRequest answers for everything a route request must pass before it is read:
-// the seam, the caller, the capability the route keys require (identity.create: they are
-// admin-only), and a body that decodes.
+// the seam, the caller, the admin capability every setting write requires, and a body that
+// decodes.
 func (s *Server) embeddingRouteRequest(w http.ResponseWriter, r *http.Request, body any) (string, bool) {
 	if s.embeddingRoutes == nil {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "embedding routes not configured"})
@@ -272,7 +272,7 @@ func (s *Server) embeddingRouteRequest(w http.ResponseWriter, r *http.Request, b
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return "", false
 	}
-	if !s.authorizeSettingWrite(w, r, actor, false, embeddingRouteKeys...) {
+	if !s.authorizeSettingWrite(w, r, actor, embeddingRouteKeys...) {
 		return "", false
 	}
 	raw, ok := readCappedBody(w, r)
