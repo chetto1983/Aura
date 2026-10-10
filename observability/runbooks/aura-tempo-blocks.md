@@ -8,6 +8,17 @@ Tempo has failed to list the trace blocks of a tenant for at least fifteen minut
 
 The cause measured on the lab VM is a block whose `meta.json` or `meta.compacted.json` was left empty by a power loss. Tempo's local backend writes the meta without fsync, and one unreadable meta aborts the poll of the whole tenant (grafana/tempo#8054). The `tempo-blocks-repair` service removes such blocks on every `docker compose up`, the one at boot included, so this alert covers a meta emptied while Tempo was running.
 
+## Upstream fix and the next Tempo upgrade
+
+grafana/tempo#8058 closed #8054 on 2026-10-09 (commit `51304f345` on `main`). The poller now skips a block whose meta is not valid JSON, counts it in `tempodb_blocklist_corrupt_block_meta_total{tenant}`, and fails the tenant only when every meta is corrupt. As of 2026-10-10 no release carries it: the latest is v3.1.0 and `release-v3.1` has no backport. Aura pins 3.1.0, so this runbook applies as written.
+
+The upgrade that brings #8058 must change two things here:
+
+1. A single empty meta no longer fails the poll, so `tempodb_blocklist_tenant_index_errors_total` stays flat and this alert stays silent. Add an alert on `tempodb_blocklist_corrupt_block_meta_total`, and keep this one for a tenant whose metas are all corrupt or for a backend error.
+2. Keep `tempo-blocks-repair`. A skipped block is not in the block list, so retention never deletes it and a search never finds its traces; the repair stays the one thing that removes it. This is read in the #8058 code, not measured.
+
+#8058 adds no fsync: the local backend still writes the meta with `os.Create` and `io.Copy`, so a power loss still leaves empty metas.
+
 ## Drilldown and correlation
 
 Open panel 6 of `aura-data-retention`. From the Aura install directory (`/opt/aura` on the appliance), read Tempo's reason:
