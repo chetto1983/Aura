@@ -3,7 +3,7 @@ export const boardEn = {
     title: 'Board',
     loading: 'Loading the board...',
     newCard: 'New card',
-    discussDraft: 'About the board card "{{label}}": ',
+    discussDraft: 'About the card "{{label}}" on my Aura board (id {{id}}, column {{column}}): ',
     errors: {
       generic: 'The board could not save that change; it now shows what is stored.',
       not_found: 'That card is no longer on the board.',
@@ -96,7 +96,8 @@ export const boardIt = {
     title: 'Bacheca',
     loading: 'Caricamento della bacheca...',
     newCard: 'Nuova scheda',
-    discussDraft: 'A proposito della scheda "{{label}}": ',
+    discussDraft:
+      'A proposito della scheda "{{label}}" della mia bacheca di Aura (board, id {{id}}, colonna {{column}}): ',
     errors: {
       generic: 'La bacheca non ha potuto salvare la modifica; ora mostra ciò che è salvato.',
       not_found: 'Quella scheda non è più sulla bacheca.',

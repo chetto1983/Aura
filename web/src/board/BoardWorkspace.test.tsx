@@ -238,13 +238,26 @@ describe('BoardWorkspace', () => {
     expect(await screen.findByText('Task: active')).toBeTruthy();
     fireEvent.click(await screen.findByText('Call the supplier'));
     fireEvent.click(await screen.findByText('Discuss in chat'));
-    expect(onDiscuss).toHaveBeenCalledWith('conv-1', 'About the board card "Call the supplier": ');
+    expect(onDiscuss).toHaveBeenCalledWith(
+      'conv-1',
+      'About the card "Call the supplier" on my Aura board (id c-1, column todo): ',
+    );
     await waitFor(() => {
       expect(screen.queryByText('Discuss in chat')).toBeNull();
     });
     fireEvent.click(screen.getByText('Pay the invoice'));
     fireEvent.click(await screen.findByText('Discuss in chat'));
-    expect(onDiscuss).toHaveBeenLastCalledWith('', 'About the board card "Pay the invoice": ');
+    expect(onDiscuss).toHaveBeenLastCalledWith(
+      '',
+      'About the card "Pay the invoice" on my Aura board (id c-2, column doing): ',
+    );
+    // The draft is all the model gets: without the board's name it searched documents, memory
+    // and Linear before loading `board` (lab VM, 2026-10-10).
+    expect(
+      i18n.getFixedT('it')('board.discussDraft', { label: 'X', id: 'c-9', column: 'doing' }),
+    ).toBe(
+      'A proposito della scheda "X" della mia bacheca di Aura (board, id c-9, colonna doing): ',
+    );
   });
 
   it('saves an edited card through the provider, and deletes from the editor only once confirmed', async () => {

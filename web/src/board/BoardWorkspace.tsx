@@ -183,7 +183,14 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
       if (card == null) return;
       if (item.id === 'discuss') {
         const conversation = typeof card.conversation_id === 'string' ? card.conversation_id : '';
-        onDiscuss(conversation, t('board.discussDraft', { label: String(card.label ?? '') }));
+        // The draft is all the model gets: it names the board, so the model loads `board` rather
+        // than searching documents, memory or Linear, and the id and column the card has there.
+        const draft = t('board.discussDraft', {
+          label: String(card.label ?? ''),
+          id: String(card.id),
+          column: String(card.column ?? ''),
+        });
+        onDiscuss(conversation, draft);
       } else if (item.id === 'delete') {
         void api.exec('delete-card', { id: card.id });
       } else if (item.id !== 'save') {
