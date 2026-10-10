@@ -318,10 +318,10 @@ type Config struct {
 	// policies, memory by one ArcadeDB database and one derived credential per identity,
 	// objects by per-identity Garage buckets and keys, and tools by an identity-keyed box.
 	//
-	// Deployment-wide settings, MCP configuration, scheduler governance and skills are
-	// intentional administrator control planes guarded by governance.read/write; ordinary
-	// agent.run identities cannot mutate them. The flag remains an explicit opt-in and
-	// requires a strict runtime profile. Default false makes provisioning deliberate.
+	// Deployment-wide settings and the MCP registry are administrator control planes behind
+	// identity.create (amendment #216): governance.write, which every identity holds (D-01),
+	// does not reach them. The flag remains an explicit opt-in and requires a strict runtime
+	// profile. Default false makes provisioning deliberate.
 	//
 	// Read as a dedicated config field, deliberately NOT routed through the
 	// internal/settings OverlayEnv allowlist, so a model-driven settings write can never

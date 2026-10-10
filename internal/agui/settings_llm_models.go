@@ -9,10 +9,9 @@ package agui
 // The probe target is the base URL the operator has in the FORM, not the one in
 // aura.settings: the point is to check a route before saving it. That makes this GET an
 // outbound request to an operator-supplied host carrying the OpenRouter key, so it takes the
-// admin gate of AURA_LLM_BASE_URL (adminOnlySettingKeys): the same principal who may point
-// the daemon's chat traffic at a host may point this probe at it. governance.write alone is
-// not that principal, because every identity holds it. The OpenRouter key never comes from
-// the client; it is read server-side from aura.settings, then the environment.
+// admin gate of the settings writes: the same principal who may point the daemon's chat
+// traffic at a host may point this probe at it. The OpenRouter key never comes from the
+// client; it is read server-side from aura.settings, then the environment.
 
 import (
 	"context"
@@ -62,7 +61,7 @@ func (s *Server) handleListLLMModels(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	if !s.authorizeSettingWrite(w, r, actor, true) {
+	if !s.authorizeSettingWrite(w, r, actor) {
 		return
 	}
 	provider := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("provider")))

@@ -89,7 +89,7 @@ func TestHandlePutSettingBranches(t *testing.T) {
 	})
 
 	t.Run("invalid JSON body 400", func(t *testing.T) {
-		s := &Server{settings: &fakeSettingsStore{}}
+		s := &Server{settings: &fakeSettingsStore{}, idAdmin: adminCaps("op-1")}
 		r := httptest.NewRequest(http.MethodPut, "/api/settings/AURA_TTS_MODEL", strings.NewReader(`{bad`))
 		r.SetPathValue("key", "AURA_TTS_MODEL")
 		r = withPrincipal(r, "op-1")
@@ -101,7 +101,7 @@ func TestHandlePutSettingBranches(t *testing.T) {
 	})
 
 	t.Run("502 on store error", func(t *testing.T) {
-		s := &Server{settings: errSettingsStore{err: errors.New("db down")}}
+		s := &Server{settings: errSettingsStore{err: errors.New("db down")}, idAdmin: adminCaps("op-1")}
 		rec, r := putReq(t, "AURA_TTS_MODEL", "openai/tts-1", "op-1")
 		s.handlePutSetting(rec, r)
 		if rec.Code != http.StatusBadGateway {
@@ -122,7 +122,7 @@ func TestHandleDeleteSettingBranches(t *testing.T) {
 	})
 
 	t.Run("unknown key 400", func(t *testing.T) {
-		s := &Server{settings: &fakeSettingsStore{}}
+		s := &Server{settings: &fakeSettingsStore{}, idAdmin: adminCaps("op-1")}
 		r := httptest.NewRequest(http.MethodDelete, "/api/settings/POSTGRES_PASSWORD", nil)
 		r.SetPathValue("key", "POSTGRES_PASSWORD")
 		r = withPrincipal(r, "op-1")
@@ -134,7 +134,7 @@ func TestHandleDeleteSettingBranches(t *testing.T) {
 	})
 
 	t.Run("401 without principal", func(t *testing.T) {
-		s := &Server{settings: &fakeSettingsStore{}}
+		s := &Server{settings: &fakeSettingsStore{}, idAdmin: adminCaps("op-1")}
 		r := httptest.NewRequest(http.MethodDelete, "/api/settings/AURA_TTS_MODEL", nil)
 		r.SetPathValue("key", "AURA_TTS_MODEL")
 		rec := httptest.NewRecorder()
@@ -145,7 +145,7 @@ func TestHandleDeleteSettingBranches(t *testing.T) {
 	})
 
 	t.Run("502 on store error", func(t *testing.T) {
-		s := &Server{settings: errSettingsStore{err: errors.New("db down")}}
+		s := &Server{settings: errSettingsStore{err: errors.New("db down")}, idAdmin: adminCaps("op-1")}
 		r := httptest.NewRequest(http.MethodDelete, "/api/settings/AURA_TTS_MODEL", nil)
 		r.SetPathValue("key", "AURA_TTS_MODEL")
 		r = withPrincipal(r, "op-1")

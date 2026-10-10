@@ -1,72 +1,21 @@
 package main
 
 // serve_webui_musr.go carries the Phase-36 (MUSR-01) admin/user-distinction parent-mux
-// mounts, kept OUT of serve_webui.go so that file stays under the 600-LOC ceiling. It
-// mounts the D-03/D-26/D-28 surface registered on the agui Server.Mux (audit_api.go):
+// mounts, kept OUT of serve_webui.go so that file stays under the 600-LOC ceiling. Each
+// delegates to the AG-UI handler, where the routes live on Server.Mux (audit_api.go,
+// credit_api.go, deprovision_route.go, spend_overview_api.go, restart_api.go,
+// openrouter_reconcile.go, system_update_api.go).
 //
-//   - GET /api/me — SELF-scoped (a user reads their OWN capabilities so the SPA can hide
-//     admin surfaces). It inherits the whole-origin RequireAuth from the parent-mux wrap;
-//     NO RequireCapability (self-read is not privileged).
-//   - GET /api/admin/identities, POST/DELETE .../{id}/capabilities[/{cap}],
-//     GET /api/admin/audit — the admin surface, each interposed with
-//     RequireCapability(governance.write). The SPA hide is cosmetic; THIS server-side gate
-//     is the trust boundary (T-36-10-E). governance.write is the EXISTING capability
-//     (RESEARCH OQ3 — no net-new settings.model.write).
+// GET /api/me and GET /api/system/update are every identity's: the first so the SPA can
+// hide what the caller may not use, the second because a member must be warned before the
+// host updater restarts Aura under them.
 //
-// GET /api/settings/telegram/link is deliberately NOT touched here — it stays a self-scoped
-// USER action (D-02), gated only by the governance.write it already carries in
-// serve_webui.go for the write-class Telegram recovery, never re-gated as an admin route.
-//
-// Phase 2 plan 07 (RBAC-05/CRED-03/CRED-06) adds two more admin routes here:
-//
-//   - GET/POST /api/admin/identities/{id}/credit — the credit-cap read/write
-//     (credit_api.go). Gated on governance.write, the SAME gate the four routes above
-//     already use "for consistency" per audit_api.go's own header comment — under D-01
-//     that gate no longer distinguishes an admin from a member, but this route was
-//     never meant to be admin-exclusive in the D-01 sense; it just needs a caller who
-//     is authenticated and passes the existing admin-surface gate, exactly like the
-//     capability grant/revoke routes it sits beside.
-//   - DELETE /api/admin/identities/{id} — identity removal (deprovision_route.go).
-//     Gated on identity.delete, NOT governance.write — with the OpenRouter reconcile
-//     below, one of the two routes on this surface that ARE still admin-exclusive under
-//     D-01 (identity.delete is one of exactly two administrative capabilities), and copying the neighbouring
-//     governance.write mount would make removal available to every user in the
-//     deployment. Referenced directly as identity.CapIdentityDelete (not through a
-//     same-shaped local alias like identityCreateCapability) so the mount and the
-//     capability name it depends on are one grep away from each other.
-//
-// Phase 2 plan 09 (RBAC-11/CRED-06) adds a third:
-//
-//   - GET /api/admin/spend/overview — the account-wide reconciliation surface
-//     (spend_overview_api.go): five KPI tiles, Top-Identities-by-spend, the
-//     over-allocation advisory. Gated on governance.write, the SAME gate the credit
-//     routes above use — this is a read, and credit management (unlike identity
-//     removal) was never one of D-01's two administrative capabilities. Under D-01
-//     that gate no longer distinguishes an admin from a member, so this route's real
-//     protection is that it exposes account-wide reconciliation data any identity in
-//     the deployment could already see reflected in its own roster row and credit
-//     panel — nothing here is new information an identity couldn't already infer,
-//     just aggregated. Following the credit routes' own precedent rather than
-//     inventing a stricter gate for a read.
-//
-// And the in-app restart:
-//
-//   - POST /api/admin/restart — ends the daemon as SIGTERM does, so the container's
-//     restart policy brings it back (restart_api.go). Gated on governance.write, the
-//     gate of the settings writes whose boot-bound rows it exists to apply.
-//
-// And the OpenRouter reconcile:
-//
-//   - POST /api/admin/openrouter/reconcile — mints the keys the deployment is missing and
-//     aligns each key's limit with its owner's role (openrouter_reconcile.go). Gated on
-//     identity.create: minting spends the deployment's money.
-//
-// And the appliance update prompt (system_update_api.go):
-//
-//   - GET /api/system/update — every identity reads it, because a member must be warned
-//     before the host updater restarts Aura under them.
-//   - POST /api/system/update/apply and /defer — restart everyone's Aura now, or hold every
-//     machine back: an administrative decision, so identity.create.
+// Everything else here administers the deployment or another identity — the roster and its
+// grants, the activity feed, credit caps, spend, restart, key minting, updates — so it takes
+// an administrative capability. It used to take governance.write, which D-01 grants to every
+// identity, so any member could revoke the admin's capabilities or lift their own credit cap
+// (amendment #216). The SPA hide is cosmetic; THIS gate is the trust boundary. Removal takes
+// identity.delete, every other route identity.create.
 
 import (
 	"net/http"
@@ -98,21 +47,13 @@ const (
 // catch-all; the "/api/" fallback exclusion already returns them as backend routes.
 func registerMUSRRoutes(mux *http.ServeMux, aguiHandler http.Handler, auth agui.AuthDeps) {
 	mux.Handle(meRoute, aguiHandler)
-	mux.Handle(adminIdentitiesRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminGrantRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminRevokeRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminAuditRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminCreditGetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminCreditSetRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	// The ONE route on this surface gated on identity.CapIdentityDelete rather than
-	// governance.write — see the file header for why.
+	for _, route := range []string{
+		adminIdentitiesRoute, adminGrantRoute, adminRevokeRoute, adminAuditRoute,
+		adminCreditGetRoute, adminCreditSetRoute, adminOpenRouterReconcileRoute,
+		adminSpendOverviewRoute, adminRestartRoute, systemUpdateApplyRoute, systemUpdateDeferRoute,
+	} {
+		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
+	}
 	mux.Handle(adminRemoveRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityDelete))
-	// Minting keys spends the deployment's money, so like the remove route it takes an
-	// administrative capability: identity.create.
-	mux.Handle(adminOpenRouterReconcileRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
-	mux.Handle(adminSpendOverviewRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
-	mux.Handle(adminRestartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))
 	mux.Handle(systemUpdateRoute, aguiHandler)
-	mux.Handle(systemUpdateApplyRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
-	mux.Handle(systemUpdateDeferRoute, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 }

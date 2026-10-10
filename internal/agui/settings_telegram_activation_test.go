@@ -35,6 +35,7 @@ func (f *fakeTelegramChannel) runs(token string) bool { return token != "" && to
 func telegramServer(store settingsStore, tg *fakeTelegramChannel) *Server {
 	s := &Server{
 		settings:      store,
+		idAdmin:       adminCaps("op-1"),
 		telegramProbe: func(context.Context, string) (string, error) { return "AuraBot", nil },
 	}
 	if tg != nil {

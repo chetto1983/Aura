@@ -26,9 +26,10 @@ const CapAgentRun = "agent.run"
 // audit rows that can reveal cross-identity operational metadata.
 const CapGovernanceRead = "governance.read"
 
-// CapGovernanceWrite permits every governance WRITE surface: MCP server
-// config mutation, skill install, background-shell admin recovery, and
-// model-settings changes. Strictly stronger than CapGovernanceRead.
+// CapGovernanceWrite permits the governance writes every identity holds (D-01): its own
+// skills and its own MCP authorizations. A write that changes the deployment for every
+// identity — settings, the MCP registry, another identity's grants — also takes
+// CapIdentityCreate (amendment #216).
 const CapGovernanceWrite = "governance.write"
 
 // CapSharePublic permits minting a public share link for the caller's own

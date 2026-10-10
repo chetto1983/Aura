@@ -38,13 +38,15 @@ these resources configure the daemon and are writable only by an administrator.
 | Plane | Contract |
 |---|---|
 | Skills library | `skill` read/use is available to agent users. Every model-facing mutation through `skill_manage` checks the authenticated identity for `governance.write` before parsing or dispatching the action; nil/missing/error/denied checks fail closed. Changes made inside a user's copied `/skills` box tree do not write back to the host catalog. |
-| `aura.settings` | Keyed deployment-wide because it configures one daemon. GET is behind `governance.read`; PUT/DELETE are behind `governance.write`; secret values are redacted on reads. |
-| MCP catalog | The server catalog is deployment configuration behind `governance.read/write`. OAuth grants, credentials, client sessions and MCP data remain per identity. |
+| `aura.settings` | Keyed deployment-wide because it configures one daemon. GET is behind `governance.read`; PUT/DELETE take `identity.create` (amendment #216); secret values are redacted on reads. |
+| MCP catalog | The server catalog is deployment configuration: read behind `governance.read`, install, env, trust, enable, disable and remove behind `identity.create` (amendment #216). OAuth grants, credentials, client sessions and MCP data remain per identity, and each identity authorizes its own account on a server. |
 | Scheduler governance board | The operator board is a deployment-wide administrative view behind `governance.read/write`; ordinary agent task operations remain owner-scoped. |
 
-Granting `governance.write` deliberately makes an identity an administrator of these shared
-control planes. An ordinary user who only needs Aura should receive `agent.run`, not
-`governance.write`.
+Every provisioned identity holds `governance.write` (D-01), so it is not what makes an
+administrator: `identity.create` is. Settings, the MCP catalog and the `/api/admin/*` routes
+take it (amendment #216). The scheduler board and the house skills library still take
+`governance.write`, so on a multi-user deployment a member can still change them; their
+fixes are tracked separately.
 
 ## Why the flag still exists
 

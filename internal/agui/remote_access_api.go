@@ -84,7 +84,7 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, r *http.Request) {
 		writeJSONStatus(w, 401, map[string]string{"error": "unauthorized"})
 		return
 	}
-	if !s.authorizeSettingWrite(w, r, actor, true) {
+	if !s.authorizeSettingWrite(w, r, actor) {
 		return
 	}
 	allowed, err := s.idAdmin.HasCapability(r.Context(), actor, identity.CapGovernanceWrite)

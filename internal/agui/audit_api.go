@@ -12,20 +12,17 @@ package agui
 //   - DELETE /api/admin/identities/{id}/capabilities/{capability} — admin: revoke (D-26).
 //   - GET /api/admin/audit?identity=<uuid> — admin: the per-user activity feed (D-28).
 //
-// The four /api/admin/* routes are gated server-side by RequireCapability(governance.write)
+// The four /api/admin/* routes are gated server-side by RequireCapability(identity.create)
 // at the parent-mux mount (cmd/aura/serve_webui_musr.go) — the SPA hide is cosmetic, NOT the
-// security boundary (T-36-10-E). Capability names use the EXISTING governance.write (RESEARCH
-// OQ3: no net-new settings.model.write). Grant/revoke go through the SAME validated
-// identity.Store seam the CLI uses (D-26), and every capability mutation is audit-logged.
+// security boundary (T-36-10-E). They took governance.write until amendment #216, which D-01
+// grants to every identity: any member could revoke the admin's capabilities. Grant/revoke go
+// through the SAME validated identity.Store seam the CLI uses (D-26), and every capability
+// mutation is audit-logged.
 //
-// Phase 2 gate asymmetry (D-01/D-02/RBAC-06): under D-01 every identity holds
-// governance.write, so the parent-mux gate above no longer distinguishes an admin from a
-// member on the capability grant/revoke routes — it stays wired for consistency with the
-// other three admin routes, but it is NOT what makes granting/revoking safe. The safety
-// boundary is identity.CanGrantThroughAPI/CanRevokeThroughAPI in mutateCapability below,
-// which refuse the two administrative names (identity.create, identity.delete) for EVERY
-// caller, including one who already holds them — admin is bootstrap-only and the
-// administrative capabilities never transit this API at all.
+// identity.CanGrantThroughAPI/CanRevokeThroughAPI in mutateCapability below still refuse the
+// two administrative names (identity.create, identity.delete) for EVERY caller, the admin
+// included: admin is bootstrap-only and the administrative capabilities never transit this
+// API at all.
 
 import (
 	"context"
@@ -187,8 +184,8 @@ func (s *Server) handleRevokeCapability(w http.ResponseWriter, r *http.Request) 
 // (a valid UUID), reads the capability (JSON body on grant, path value on revoke), calls
 // the SAME validated store method the CLI uses, audit-logs the change, and returns the
 // updated grant set. A grammar/'*'-managed rejection from the store is a 400; other store
-// failures are 502. The route is already RequireCapability(governance.write)-gated at the
-// mount, so reaching here means the caller is an authorized admin (T-36-10-E).
+// failures are 502. The route is RequireCapability(identity.create)-gated at the mount, so
+// reaching here means the caller is an admin (T-36-10-E).
 func (s *Server) mutateCapability(w http.ResponseWriter, r *http.Request, grant bool) {
 	if s.idAdmin == nil {
 		writeJSONStatus(w, http.StatusServiceUnavailable, map[string]string{"error": "identity admin not configured"})
