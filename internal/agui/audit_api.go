@@ -14,7 +14,7 @@ package agui
 //
 // The four /api/admin/* routes are gated server-side by RequireCapability(identity.create)
 // at the parent-mux mount (cmd/aura/serve_webui_musr.go) — the SPA hide is cosmetic, NOT the
-// security boundary (T-36-10-E). They took governance.write until amendment #216, which D-01
+// security boundary (T-36-10-E). They took governance.write until 2026-10-10 (prd.md §3), which D-01
 // grants to every identity: any member could revoke the admin's capabilities. Grant/revoke go
 // through the SAME validated identity.Store seam the CLI uses (D-26), and every capability
 // mutation is audit-logged.

@@ -46,7 +46,7 @@ func (s *Server) callerIsAdmin(r *http.Request) bool {
 // authorizeSettingWrite refuses, and answers for, a write the caller may not make: a minted key
 // or a Cloudflare token from anyone, and any setting from a member. aura.settings has no
 // identity column, so every key configures the whole deployment, and every identity holds
-// governance.write (D-01): writing one takes identity.create (amendment #216). It returns
+// governance.write (D-01): writing one takes identity.create (prd.md §3, 2026-10-10). It returns
 // true when the write may go ahead.
 func (s *Server) authorizeSettingWrite(w http.ResponseWriter, r *http.Request, actor string, keys ...string) bool {
 	for _, key := range keys {

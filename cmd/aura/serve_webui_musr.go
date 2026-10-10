@@ -14,7 +14,7 @@ package main
 // grants, the activity feed, credit caps, spend, restart, key minting, updates — so it takes
 // an administrative capability. It used to take governance.write, which D-01 grants to every
 // identity, so any member could revoke the admin's capabilities or lift their own credit cap
-// (amendment #216). The SPA hide is cosmetic; THIS gate is the trust boundary. Removal takes
+// (prd.md §3, 2026-10-10). The SPA hide is cosmetic; THIS gate is the trust boundary. Removal takes
 // identity.delete, every other route identity.create.
 
 import (

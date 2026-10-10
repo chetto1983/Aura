@@ -109,7 +109,7 @@ func (c *Config) ValidateProfile(p RuntimeProfile) []Violation {
 // gateMultiUserRequiresStrictProfile keeps multi-user provisioning an explicit hardened-
 // deployment posture. Tenant data and tool sandboxes are identity-scoped; deployment-global
 // settings and the MCP registry are administrator control planes behind identity.create
-// (amendment #216). The strict-profile requirement therefore controls the runtime posture,
+// (prd.md §3, 2026-10-10). The strict-profile requirement therefore controls the runtime posture,
 // not tenant selection.
 func (c *Config) gateMultiUserRequiresStrictProfile(p RuntimeProfile) []Violation {
 	if c == nil || !c.MUSRIsolation || p.Strict() {

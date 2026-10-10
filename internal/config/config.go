@@ -319,7 +319,7 @@ type Config struct {
 	// objects by per-identity Garage buckets and keys, and tools by an identity-keyed box.
 	//
 	// Deployment-wide settings and the MCP registry are administrator control planes behind
-	// identity.create (amendment #216): governance.write, which every identity holds (D-01),
+	// identity.create (prd.md §3, 2026-10-10): governance.write, which every identity holds (D-01),
 	// does not reach them. The flag remains an explicit opt-in and requires a strict runtime
 	// profile. Default false makes provisioning deliberate.
 	//

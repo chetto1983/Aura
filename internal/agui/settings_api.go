@@ -13,7 +13,7 @@ package agui
 // GET returns the allowlist + current effective values with SECRETS REDACTED (the
 // real value never crosses the wire on read). GET is gated by governance.read. Every key
 // configures the whole deployment, so PUT, DELETE and the llm-profile route require
-// identity.create (settings_api_authz.go, amendment #216); OPENROUTER_API_KEY is minted by
+// identity.create (settings_api_authz.go, prd.md §3, 2026-10-10); OPENROUTER_API_KEY is minted by
 // Aura and cannot be written through the API. Every key is validated against the static allowlist + its Kind before
 // persisting, so the API can never write a non-model key (the allowlist already excludes
 // connection/security env).

@@ -77,7 +77,7 @@ func TestMemberCannotPutAnLLMProfile(t *testing.T) {
 }
 
 // Every key in aura.settings configures the whole deployment, and the member holds the
-// governance.write every identity holds (D-01): an ordinary key is the admin's too (#216).
+// governance.write every identity holds (D-01): an ordinary key is the admin's too (prd.md §3, 2026-10-10).
 func TestMemberCannotTuneAnOrdinarySetting(t *testing.T) {
 	store := &fakeSettingsStore{}
 	s := &Server{settings: store, idAdmin: adminCaps("admin-1")}

@@ -1,7 +1,7 @@
-# A member administering the deployment — before and after amendment #216
+# A member administering the deployment — before and after the identity.create gate
 
 Date: 2026-10-10. Trees: master `d25c4a027` and PR #149 (`ccr-56123334-7n4k4s`). Scope: the
-routes amendment #216 moves to `identity.create`.
+routes prd.md §3 (2026-10-10) moves to `identity.create`.
 
 Not the lab VM. This ran in a cloud container with Docker: `aura serve --only=cli` built from
 each tree, run the way the web-e2e CI job runs it (`AURA_PROFILE=dev`, Authula behind
