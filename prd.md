@@ -110,9 +110,15 @@ child of Aura in its container. They now take `identity.create`:
   key configures the deployment, `TELEGRAM_BOT_TOKEN` included. The per-key admin list
   goes: every key is the admin's.
 
-The cockpit follows: a member's Governance shows no activity feed, no MCP install and no
-MCP lifecycle or env controls. A member keeps `governance.write` for what is theirs: their
-skills, their MCP authorizations, their ChatGPT plan and calendar accounts.
+The cockpit needed no change: it already sends a non-admin away from Governance and Settings,
+deep links included (`AppShell`, `ADMIN_MODES`). A member keeps `governance.write` for what is
+theirs: their skills, their MCP authorizations, their ChatGPT plan and calendar accounts.
+
+Measured again the same day on a running daemon (`aura serve` from master and from the fix, on
+Postgres and ArcadeDB, Authula sign-in in Chromium): on master the member revoked a capability
+from the admin, replaced the deployment's Telegram bot token and had the daemon spawn
+`touch /tmp/aura-member-exec-proof`; with the fix all 18 calls answered 403 and the admin
+reached every handler (`docs/superpowers/verification/2026-10-10-member-deployment-administration.md`).
 
 This does not establish:
 - that a member reaches nothing else of the deployment: the scheduler routes manage any
@@ -120,8 +126,8 @@ This does not establish:
   the house skills, `npx skills add` runs in the aura container, and an agent's background
   shells can be polled or killed across identities on `governance.write`. Each is its own
   fix;
-- the behaviour on a running appliance: measured in-process on the parent mux, not yet on
-  the lab VM.
+- the appliance: the member was inserted rather than provisioned, the daemon ran on the host
+  with `AURA_PROFILE=dev` and isolation off, and nothing ran on the lab VM.
 
 **Signing out ends the session (2026-10-02).** Authula runs a plugin's capability hook
 only on the routes Aura lists in its route mappings, and `/sign-out` was not listed, so
