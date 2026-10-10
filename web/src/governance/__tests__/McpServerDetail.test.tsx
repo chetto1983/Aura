@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../../i18n/i18n';
@@ -12,9 +12,6 @@ import type { McpProbeResult, McpServerRow } from '../governanceApi';
 vi.mock('../WhatsAppConnect', () => ({
   WhatsAppConnect: () => <div data-testid="whatsapp-connect-section" />,
 }));
-
-let caps = { isAdmin: true };
-vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => caps }));
 
 const { McpServerDetail } = await import('../McpServerDetail');
 
@@ -52,29 +49,6 @@ const SERVER: McpServerRow = {
 const HEALTHY: McpProbeResult = { name: 'github', ok: true, tool_count: 7, detail: 'ok (7 tools)' };
 
 describe('McpServerDetail', () => {
-  afterEach(() => {
-    caps = { isAdmin: true };
-  });
-
-  // The registry is the deployment's: a member reads the server and keeps their own
-  // authorization, but changing it is an admin's (the server refuses it too, amendment #216).
-  it('shows a member no lifecycle and no environment edit', () => {
-    caps = { isAdmin: false };
-    render(
-      <McpServerDetail
-        server={SERVER}
-        probe={HEALTHY}
-        probeLoading={false}
-        onClose={() => undefined}
-      />,
-      { wrapper: Providers },
-    );
-
-    expect(screen.getByText('GITHUB_TOKEN')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Edit environment' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Remove server' })).toBeNull();
-  });
-
   it('renders every static field label and value', () => {
     render(
       <McpServerDetail

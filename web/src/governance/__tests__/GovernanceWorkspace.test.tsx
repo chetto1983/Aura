@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 
@@ -22,27 +22,9 @@ vi.mock('../../audit/AdminAuditView', () => ({
   AdminAuditView: () => <div data-testid="audit-view">audit</div>,
 }));
 
-let caps = { isAdmin: true };
-vi.mock('../../admin/useAdmin', () => ({ useCapabilities: () => caps }));
-
 const { default: GovernanceWorkspace } = await import('../GovernanceWorkspace');
 
 describe('GovernanceWorkspace (boards mocked)', () => {
-  afterEach(() => {
-    caps = { isAdmin: true };
-  });
-
-  // The feed reads every identity's activity, so only an admin gets it (amendment #216).
-  it('shows a member the boards but not the activity feed', () => {
-    caps = { isAdmin: false };
-    render(<GovernanceWorkspace />);
-
-    for (const name of ['MCP servers', 'Skills', 'Scheduler']) {
-      expect(screen.getByRole('button', { name })).toBeTruthy();
-    }
-    expect(screen.queryByRole('button', { name: 'Audit' })).toBeNull();
-  });
-
   it('renders the section rail with the four governance boards', async () => {
     render(<GovernanceWorkspace />);
 

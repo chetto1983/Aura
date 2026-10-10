@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useCapabilities } from '../admin/useAdmin';
 import { BoardLayout } from './BoardLayout';
 import { BoardStateView, boardStatus } from './governanceView';
 import { McpInstallPanel } from './McpInstallPanel';
@@ -58,8 +57,6 @@ function McpProbeStatus({ name }: { readonly name: string }) {
 
 export function McpBoard() {
   const { t } = useTranslation();
-  // The registry is the deployment's: installing is an admin's, the server enforces it.
-  const { isAdmin } = useCapabilities();
   const [selected, setSelected] = useState<string | undefined>(undefined);
   const [installing, setInstalling] = useState(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
@@ -215,20 +212,18 @@ export function McpBoard() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {isAdmin ? (
-        <div className="flex shrink-0 items-center justify-end border-b border-border bg-surface px-2 py-1">
-          <Button
-            ref={addButtonRef}
-            type="button"
-            onClick={(e) => {
-              openInstall(e.currentTarget);
-            }}
-          >
-            <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
-            {t('governance.mcp.addServer')}
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex shrink-0 items-center justify-end border-b border-border bg-surface px-2 py-1">
+        <Button
+          ref={addButtonRef}
+          type="button"
+          onClick={(e) => {
+            openInstall(e.currentTarget);
+          }}
+        >
+          <Plus data-icon="inline-start" aria-hidden="true" focusable="false" />
+          {t('governance.mcp.addServer')}
+        </Button>
+      </div>
       <div className="min-h-0 flex-1">
         {installing ? (
           <BoardLayout

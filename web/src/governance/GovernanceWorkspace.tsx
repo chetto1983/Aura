@@ -2,7 +2,6 @@ import { lazy, Suspense, useState } from 'react';
 import { CalendarClock, ScrollText, Server, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useCapabilities } from '../admin/useAdmin';
 import { SectionRail } from '@/components/SectionRail';
 
 const McpBoard = lazy(() => import('./McpBoard').then((m) => ({ default: m.McpBoard })));
@@ -11,7 +10,7 @@ const SchedulerBoard = lazy(() =>
   import('./SchedulerBoard').then((m) => ({ default: m.SchedulerBoard })),
 );
 // The per-identity activity feed lives here, not in Settings: it is a log to read, not a
-// control to set. It reads every identity's activity, so only an admin sees it.
+// control to set, and it shares the roster + governance.write gate with the other boards.
 const AdminAuditView = lazy(() =>
   import('../audit/AdminAuditView').then((m) => ({ default: m.AdminAuditView })),
 );
@@ -25,8 +24,7 @@ const SECTION_ICONS: Record<GovSection, LucideIcon> = {
   audit: ScrollText,
 };
 
-const MEMBER_SECTIONS: readonly GovSection[] = ['mcp', 'skills', 'scheduler'];
-const ADMIN_SECTIONS: readonly GovSection[] = [...MEMBER_SECTIONS, 'audit'];
+const SECTIONS: readonly GovSection[] = ['mcp', 'skills', 'scheduler', 'audit'];
 
 // Governance is a rail + pane, the same shape as Settings and on the same SectionRail: a
 // sidebar column from `lg` up, a scrollable strip above the board below it. It used to be a
@@ -35,7 +33,6 @@ const ADMIN_SECTIONS: readonly GovSection[] = [...MEMBER_SECTIONS, 'audit'];
 export default function GovernanceWorkspace() {
   const { t } = useTranslation();
   const [section, setSection] = useState<GovSection>('mcp');
-  const sections = useCapabilities().isAdmin ? ADMIN_SECTIONS : MEMBER_SECTIONS;
 
   return (
     <section
@@ -48,7 +45,7 @@ export default function GovernanceWorkspace() {
         groups={[
           {
             id: 'boards',
-            items: sections.map((id) => ({
+            items: SECTIONS.map((id) => ({
               id,
               icon: SECTION_ICONS[id],
               label: t(`governance.sections.${id}`),
