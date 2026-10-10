@@ -1987,6 +1987,38 @@ every 5 s, so an operator signing in is not cut off. Not shown: why Chromium is 
 lab VM's network, an appliance's page loads, and four heavy browsers together under the new
 cap.
 
+**Five browsers in two minutes exhaust a box; the bridge keeps three, measured 2026-10-10.** On
+the lab VM, the ten turns of the tool-policy acceptance (`web_search` denied, gemma4:31b-cloud
+through Ollama, one conversation per question, about 25 s apart) sent the agent to the browser
+in eight. Each of those turns loaded the `browser-aura` skill, which says to keep one session
+per site and close it when done, then named a new session (`weather`, `finance`, `news-it`,
+`movies_it`, `strikes_check`, ...) and closed none. Four browsers were still up under the
+10-minute idle shutdown when the fifth launched, 131 s after the first. Its open timed out after
+27 s, and the next launch died with `pthread_create: Resource temporarily unavailable`. The
+box's cgroup counted 136 forks refused at its 1024 pids (`pids.events`), and its memory reached
+the 2 GiB cap 2403 times, with no OOM kill. Then `agent-browser mcp` itself panicked (`failed to
+spawn thread`): the call ended in EOF, the bridge's redial failed in the box (`rm -rf "/skills"
+exited 128`), and all seven browser calls of the last four turns failed. Each browser closed
+afterwards gave back 137-263 pids and 178-868 MiB, ANSA's the most. The box recovered by itself:
+the idle shutdown closed each browser about 10 minutes after its last call, and two
+`agent_browser_close` calls the operator asked for freed two sooner.
+
+The bridge now keeps at most three browsers per box: a call on a fourth session first closes the
+one used least recently, never one the operator holds in the live view (the call is refused if
+they hold all three), and its result says which. agent-browser lists its sessions only in its
+`state` MCP profile, which would also mount its cookie, auth and state tools for the model, so
+the list is the bridge's own; a browser the box already shut down stays on it until it is the
+one closed, which is then a no-op. The rule also rides on the tool that starts a browser:
+`agent_browser_open`'s description says what a session costs and to close it, and every open
+that succeeds ends with its session's name and the close tool. Idle browsers now close after
+three minutes (`AGENT_BROWSER_IDLE_TIMEOUT_MS=180000`). Replayed on this timeline, three minutes
+alone would not have prevented the failure, because all four browsers were inside it when the
+fifth launched. The cap bounds the pids at about 850 of 1024 with three of the heaviest pages
+measured, which would still fill the 2 GiB. Not shown: whether a model closes its sessions
+because of the new lines; whether a live view watched without input survives three idle minutes
+(on 2026-09-27 only a key every 5 s was measured); browsers started through `shell_exec`, which
+the bridge does not see; and how many browsers an operator keeps open in real use.
+
 **Chrome no longer signs itself in, measured 2026-09-27.** After the operator signed in to
 YouTube through the live view, Chrome's account consistency (DICE) opened `chrome://signin-error`
 and a new tab beside the page. From 13:11 the session's daemon answered no command: a snapshot
