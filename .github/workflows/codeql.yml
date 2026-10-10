@@ -72,3 +72,14 @@ jobs:
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4
         with:
           category: "/language:${{ matrix.language }}"
+          output: codeql-sarif
+
+      # The Security tab needs a security-events token to read; the same SARIF as an
+      # artifact is readable with plain actions access (agents triaging the alerts).
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: codeql-sarif-${{ matrix.language }}
+          path: codeql-sarif/*.sarif
+          if-no-files-found: error
+          retention-days: 30
