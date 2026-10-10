@@ -21,13 +21,18 @@ function renderBar(filters: BoardFilters = {}, activeViewId = '') {
   render(
     <BoardViewsBar
       filters={filters}
-      tags={['billing', 'ops']}
+      tags={['all', 'billing', 'ops']}
       views={VIEWS}
       activeViewId={activeViewId}
       {...handlers}
     />,
   );
   return handlers;
+}
+
+function selectFilter(label: string, option: string) {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  fireEvent.click(screen.getByRole('option', { name: option }));
 }
 
 beforeEach(async () => {
@@ -48,20 +53,22 @@ describe('BoardViewsBar', () => {
   });
 
   it('turns every control into a filter change', () => {
-    const { onFiltersChange } = renderBar({ source: 'chat' });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Priority' }), {
-      target: { value: '3' },
-    });
+    const { onFiltersChange } = renderBar({ source: 'chat', priority: 1 });
+    selectFilter('Priority', 'High priority');
     expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', priority: 3 });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Due date' }), {
-      target: { value: 'overdue' },
+    selectFilter('Due date', 'Overdue');
+    expect(onFiltersChange).toHaveBeenLastCalledWith({
+      source: 'chat',
+      priority: 1,
+      due: 'overdue',
     });
-    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', due: 'overdue' });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Tag' }), { target: { value: 'ops' } });
-    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', tag: 'ops' });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Source' }), { target: { value: '' } });
-    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: undefined });
-    fireEvent.change(screen.getByRole('combobox', { name: 'Priority' }), { target: { value: '' } });
+    selectFilter('Tag', 'ops');
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', priority: 1, tag: 'ops' });
+    selectFilter('Tag', 'all');
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', priority: 1, tag: 'all' });
+    selectFilter('Source', 'All');
+    expect(onFiltersChange).toHaveBeenLastCalledWith({ source: undefined, priority: 1 });
+    selectFilter('Priority', 'All');
     expect(onFiltersChange).toHaveBeenLastCalledWith({ source: 'chat', priority: undefined });
   });
 

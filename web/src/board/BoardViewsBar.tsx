@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Pin, PinOff, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
+import { Check, ChevronDown, Pin, PinOff, X } from 'lucide-react';
+import { Select } from 'radix-ui';
 import { useTranslation } from 'react-i18next';
 import type { BoardFilters, BoardView, CardSource } from './boardApi';
 import { orderViews } from './boardModel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select';
 
 interface BoardViewsBarProps {
   readonly filters: BoardFilters;
@@ -20,6 +20,79 @@ interface BoardViewsBarProps {
 }
 
 const SOURCES: readonly CardSource[] = ['cockpit', 'chat', 'background'];
+const ALL_FILTERS = 'all';
+
+interface FilterFieldProps {
+  readonly label: string;
+  readonly active: boolean;
+  readonly children: ReactNode;
+}
+
+function FilterField({ label, active, children }: FilterFieldProps) {
+  return (
+    <div
+      className={`flex min-w-36 shrink-0 flex-col rounded-md border bg-surface-3 px-1 py-1 transition-colors has-[button:focus-visible]:ring-2 has-[button:focus-visible]:ring-ring ${
+        active ? 'border-info/60 bg-info/8' : 'border-border'
+      }`}
+    >
+      <span className="px-2 text-[11px] font-medium text-text-muted">{label}</span>
+      {children}
+    </div>
+  );
+}
+
+interface FilterSelectProps {
+  readonly label: string;
+  readonly value: string | undefined;
+  readonly active: boolean;
+  readonly options: readonly { readonly value: string; readonly label: string }[];
+  readonly onValueChange: (value: string | undefined) => void;
+}
+
+function FilterSelect({ label, value, active, options, onValueChange }: FilterSelectProps) {
+  return (
+    <FilterField label={label} active={active}>
+      <Select.Root
+        value={value ?? ALL_FILTERS}
+        onValueChange={(next) => {
+          onValueChange(next === ALL_FILTERS ? undefined : next);
+        }}
+      >
+        <Select.Trigger
+          aria-label={label}
+          className="flex min-h-8 w-full items-center justify-between gap-2 rounded px-2 py-0 text-left text-[13px] font-medium text-text outline-none"
+        >
+          <Select.Value />
+          <Select.Icon asChild>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-text-muted" />
+          </Select.Icon>
+        </Select.Trigger>
+        <Select.Portal>
+          <Select.Content
+            position="popper"
+            sideOffset={6}
+            className="z-50 max-h-(--radix-select-content-available-height) w-(--radix-select-trigger-width) overflow-hidden rounded-lg border border-border-strong bg-surface-3 p-1 text-text shadow-xl data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
+          >
+            <Select.Viewport>
+              {options.map((option) => (
+                <Select.Item
+                  key={option.value}
+                  value={option.value}
+                  className="relative flex min-h-10 cursor-default items-center rounded-md py-2 pr-8 pl-3 text-[13px] outline-none select-none data-[highlighted]:bg-surface-2 data-[state=checked]:font-semibold data-[state=checked]:text-info"
+                >
+                  <Select.ItemText>{option.label}</Select.ItemText>
+                  <Select.ItemIndicator className="absolute right-2 inline-flex size-4 items-center justify-center">
+                    <Check aria-hidden="true" className="size-3.5" />
+                  </Select.ItemIndicator>
+                </Select.Item>
+              ))}
+            </Select.Viewport>
+          </Select.Content>
+        </Select.Portal>
+      </Select.Root>
+    </FilterField>
+  );
+}
 
 /**
  * The board's filters and the views saved from them (PMSync's smart views, consolidation item
@@ -95,69 +168,60 @@ export function BoardViewsBar(props: BoardViewsBarProps) {
           </span>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 overflow-x-auto md:flex-wrap">
-        <NativeSelect
-          size="sm"
-          className="w-auto shrink-0 pr-10 field-sizing-content"
-          aria-label={t('board.filters.source')}
-          value={filters.source ?? ''}
-          onChange={(event) => {
-            set('source', (event.target.value || undefined) as CardSource | undefined);
+      <div className="flex items-end gap-1.5 overflow-x-auto pb-1 md:flex-wrap">
+        <FilterSelect
+          label={t('board.filters.source')}
+          value={filters.source}
+          active={filters.source !== undefined}
+          options={[
+            { value: ALL_FILTERS, label: t('board.filters.anySource') },
+            ...SOURCES.map((source) => ({ value: source, label: t(`board.source.${source}`) })),
+          ]}
+          onValueChange={(value) => {
+            set('source', value as CardSource | undefined);
           }}
-        >
-          <NativeSelectOption value="">{t('board.filters.anySource')}</NativeSelectOption>
-          {SOURCES.map((source) => (
-            <NativeSelectOption key={source} value={source}>
-              {t(`board.source.${source}`)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          size="sm"
-          className="w-auto shrink-0 pr-10 field-sizing-content"
-          aria-label={t('board.filters.priority')}
-          value={filters.priority === undefined ? '' : String(filters.priority)}
-          onChange={(event) => {
-            set('priority', event.target.value === '' ? undefined : Number(event.target.value));
+        />
+        <FilterSelect
+          label={t('board.filters.priority')}
+          value={filters.priority === undefined ? undefined : String(filters.priority)}
+          active={filters.priority !== undefined}
+          options={[
+            { value: ALL_FILTERS, label: t('board.filters.anyPriority') },
+            ...[3, 2, 1].map((priority) => ({
+              value: String(priority),
+              label: t(`board.priority.${String(priority)}`),
+            })),
+          ]}
+          onValueChange={(value) => {
+            set('priority', value === undefined ? undefined : Number(value));
           }}
-        >
-          <NativeSelectOption value="">{t('board.filters.anyPriority')}</NativeSelectOption>
-          {[3, 2, 1].map((priority) => (
-            <NativeSelectOption key={priority} value={String(priority)}>
-              {t(`board.priority.${String(priority)}`)}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <NativeSelect
-          size="sm"
-          className="w-auto shrink-0 pr-10 field-sizing-content"
-          aria-label={t('board.filters.due')}
-          value={filters.due ?? ''}
-          onChange={(event) => {
-            set('due', (event.target.value || undefined) as BoardFilters['due']);
+        />
+        <FilterSelect
+          label={t('board.filters.due')}
+          value={filters.due}
+          active={filters.due !== undefined}
+          options={[
+            { value: ALL_FILTERS, label: t('board.filters.anyDue') },
+            { value: 'overdue', label: t('board.filters.overdue') },
+            { value: 'week', label: t('board.filters.week') },
+          ]}
+          onValueChange={(value) => {
+            set('due', value as BoardFilters['due']);
           }}
-        >
-          <NativeSelectOption value="">{t('board.filters.anyDue')}</NativeSelectOption>
-          <NativeSelectOption value="overdue">{t('board.filters.overdue')}</NativeSelectOption>
-          <NativeSelectOption value="week">{t('board.filters.week')}</NativeSelectOption>
-        </NativeSelect>
+        />
         {tags.length > 0 && (
-          <NativeSelect
-            size="sm"
-            className="w-auto shrink-0 pr-10 field-sizing-content"
-            aria-label={t('board.filters.tag')}
-            value={filters.tag ?? ''}
-            onChange={(event) => {
-              set('tag', event.target.value || undefined);
+          <FilterSelect
+            label={t('board.filters.tag')}
+            value={filters.tag === undefined ? undefined : `tag:${filters.tag}`}
+            active={filters.tag !== undefined}
+            options={[
+              { value: ALL_FILTERS, label: t('board.filters.anyTag') },
+              ...tags.map((tag) => ({ value: `tag:${tag}`, label: tag })),
+            ]}
+            onValueChange={(value) => {
+              set('tag', value?.slice(4));
             }}
-          >
-            <NativeSelectOption value="">{t('board.filters.anyTag')}</NativeSelectOption>
-            {tags.map((tag) => (
-              <NativeSelectOption key={tag} value={tag}>
-                {tag}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+          />
         )}
         {filtering && !naming && (
           <Button

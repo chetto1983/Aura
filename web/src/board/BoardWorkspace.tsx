@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Columns3 } from 'lucide-react';
+import { ChevronDown, Columns3, SlidersHorizontal } from 'lucide-react';
 import {
   Editor,
   getEditorItems,
@@ -79,9 +79,11 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
   const [error, setError] = useState('');
   const [filters, setFilters] = useState<BoardFilters>({});
   const [activeViewId, setActiveViewId] = useState('');
+  const [controlsOpen, setControlsOpen] = useState(true);
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const confirmedDelete = useRef<string | null>(null);
+  const controlsId = useId();
   const now = useNow(MINUTE_MS);
 
   const errorText = useCallback(
@@ -104,6 +106,7 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
   const cards = useMemo(() => withDates(board.data?.cards ?? []), [board.data?.cards]);
   const columns = useMemo(() => [...(board.data?.columns ?? [])], [board.data?.columns]);
   const tags = useMemo(() => boardTags(cards), [cards]);
+  const activeFilterCount = Object.values(filters).filter((value) => value !== undefined).length;
   const linksTasks = cards.some((card) => card.task_id !== undefined);
   const tasks = useQuery({
     queryKey: SCHEDULER_QUERY_KEY,
@@ -215,49 +218,88 @@ export default function BoardWorkspace({ mobileMenu, onDiscuss }: BoardWorkspace
       aria-label={t('board.title')}
       className="relative flex h-full min-h-0 min-w-0 flex-col bg-bg"
     >
-      <header className="flex items-center gap-2 border-b border-border px-3 py-2">
+      <header
+        className={`flex items-center gap-2 px-3 py-2 ${controlsOpen ? '' : 'border-b border-border'}`}
+      >
         <span className="md:hidden">{mobileMenu}</span>
         <h1 className="text-[15px] font-semibold text-text">{t('board.title')}</h1>
-        <Button
-          type="button"
-          variant="ghost"
-          className="ml-auto"
-          disabled={board.data === undefined}
-          onClick={() => {
-            setColumnsOpen(true);
-          }}
-        >
-          <Columns3 data-icon="inline-start" aria-hidden="true" />
-          {t('board.columns.edit')}
-        </Button>
+        <div className="ml-auto flex min-w-0 items-center gap-1">
+          {activeFilterCount > 0 && (
+            <span
+              aria-live="polite"
+              aria-label={t('board.filters.active', { count: activeFilterCount })}
+              className="shrink-0 rounded-full bg-info/15 px-2 py-1 text-xs font-medium text-info"
+            >
+              <span className="sm:hidden">{activeFilterCount}</span>
+              <span className="hidden sm:inline">
+                {t('board.filters.active', { count: activeFilterCount })}
+              </span>
+            </span>
+          )}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-label={t('board.columns.edit')}
+            disabled={board.data === undefined}
+            onClick={() => {
+              setColumnsOpen(true);
+            }}
+          >
+            <Columns3 data-icon="inline-start" aria-hidden="true" />
+            <span className="hidden sm:inline">{t('board.columns.edit')}</span>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            aria-controls={controlsId}
+            aria-expanded={controlsOpen}
+            aria-label={t(controlsOpen ? 'board.controls.hide' : 'board.controls.show')}
+            onClick={() => {
+              setControlsOpen((open) => !open);
+            }}
+          >
+            <SlidersHorizontal data-icon="inline-start" aria-hidden="true" />
+            <span className="hidden sm:inline">
+              {t(controlsOpen ? 'board.controls.hide' : 'board.controls.show')}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className={`transition-transform motion-reduce:transition-none ${controlsOpen ? 'rotate-180' : ''}`}
+            />
+          </Button>
+        </div>
       </header>
-      <BoardViewsBar
-        filters={filters}
-        onFiltersChange={(next) => {
-          setActiveViewId('');
-          setFilters(next);
-        }}
-        tags={tags}
-        views={views.data ?? []}
-        activeViewId={activeViewId}
-        onSelectView={selectView}
-        onSaveView={(name) => {
-          void saveView.mutateAsync({ name, filters, pinned: false }).then((view) => {
-            setActiveViewId(view.id);
-          });
-        }}
-        onTogglePin={(view) => {
-          void saveView.mutateAsync({
-            name: view.name,
-            filters: view.filters,
-            pinned: !view.pinned,
-          });
-        }}
-        onDeleteView={(view) => {
-          if (view.id === activeViewId) selectView(null);
-          void deleteView.mutateAsync(view.id);
-        }}
-      />
+      <div id={controlsId} hidden={!controlsOpen} className="aura-part-reveal">
+        <BoardViewsBar
+          filters={filters}
+          onFiltersChange={(next) => {
+            setActiveViewId('');
+            setFilters(next);
+          }}
+          tags={tags}
+          views={views.data ?? []}
+          activeViewId={activeViewId}
+          onSelectView={selectView}
+          onSaveView={(name) => {
+            void saveView.mutateAsync({ name, filters, pinned: false }).then((view) => {
+              setActiveViewId(view.id);
+            });
+          }}
+          onTogglePin={(view) => {
+            void saveView.mutateAsync({
+              name: view.name,
+              filters: view.filters,
+              pinned: !view.pinned,
+            });
+          }}
+          onDeleteView={(view) => {
+            if (view.id === activeViewId) selectView(null);
+            void deleteView.mutateAsync(view.id);
+          }}
+        />
+      </div>
       {(error !== '' || loadError !== '') && (
         <p role="alert" className="px-3 py-2 text-sm text-danger">
           {error || loadError}

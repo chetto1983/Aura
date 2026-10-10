@@ -104,6 +104,11 @@ async function openCardMenu(label: string) {
   fireEvent.click(trigger);
 }
 
+async function selectFilter(label: string, option: string) {
+  fireEvent.click(screen.getByRole('combobox', { name: label }));
+  fireEvent.click(await screen.findByRole('option', { name: option }));
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
 });
@@ -133,15 +138,31 @@ describe('BoardWorkspace', () => {
     stubServer();
     renderBoard();
     await screen.findByText('Call the supplier');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Source' }), {
-      target: { value: 'cockpit' },
-    });
+    await selectFilter('Source', 'You');
     await waitFor(() => {
       expect(screen.queryByText('Call the supplier')).toBeNull();
     });
     expect(screen.getByText('Pay the invoice')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'All cards' }));
     expect(await screen.findByText('Call the supplier')).toBeTruthy();
+  });
+
+  it('collapses the board controls without losing an active filter', async () => {
+    await act(() => i18n.changeLanguage('en'));
+    stubServer();
+    renderBoard();
+    await screen.findByText('Call the supplier');
+    await selectFilter('Source', 'You');
+    await waitFor(() => {
+      expect(screen.queryByText('Call the supplier')).toBeNull();
+    });
+    const toggle = screen.getByRole('button', { name: 'Hide controls' });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByText('1 filter active')).toBeTruthy();
+    expect(screen.queryByRole('combobox', { name: 'Source' })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Show controls' }));
+    expect((await screen.findByRole('combobox', { name: 'Source' })).textContent).toContain('You');
   });
 
   it('asks before a delete, and deletes only once confirmed', async () => {
@@ -272,9 +293,7 @@ describe('BoardWorkspace', () => {
       expect(screen.queryByText('Call the supplier')).toBeNull();
     });
     fireEvent.click(screen.getByRole('button', { name: 'Pin urgent' }));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Source' }), {
-      target: { value: 'cockpit' },
-    });
+    await selectFilter('Source', 'You');
     fireEvent.click(screen.getByRole('button', { name: 'Save as view' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'View name' }), {
       target: { value: 'mine' },
