@@ -37,16 +37,16 @@ these resources configure the daemon and are writable only by an administrator.
 
 | Plane | Contract |
 |---|---|
-| Skills library | `skill` read/use is available to agent users. Every model-facing mutation through `skill_manage` checks the authenticated identity for `governance.write` before parsing or dispatching the action; nil/missing/error/denied checks fail closed. Changes made inside a user's copied `/skills` box tree do not write back to the host catalog. |
-| `aura.settings` | Keyed deployment-wide because it configures one daemon. GET is behind `governance.read`; PUT/DELETE take `identity.create` (amendment #216); secret values are redacted on reads. |
-| MCP catalog | The server catalog is deployment configuration: read behind `governance.read`, install, env, trust, enable, disable and remove behind `identity.create` (amendment #216). OAuth grants, credentials, client sessions and MCP data remain per identity, and each identity authorizes its own account on a server. |
-| Scheduler governance board | The operator board is a deployment-wide administrative view behind `governance.read/write`; ordinary agent task operations remain owner-scoped. |
+| Skills library | `skill` read/use is available to agent users. Every model-facing mutation through `skill_manage` checks the authenticated identity for `governance.write` before parsing or dispatching the action, and `install` also for `identity.create`; nil/missing/error/denied checks fail closed. Writes to the house library and the cockpit's install and catalog routes take `identity.create` (prd.md §3, 2026-10-10). Changes made inside a user's copied `/skills` box tree do not write back to the host catalog. |
+| `aura.settings` | Keyed deployment-wide because it configures one daemon. GET is behind `governance.read`; PUT/DELETE take `identity.create` (prd.md §3, 2026-10-10); secret values are redacted on reads. |
+| MCP catalog | The server catalog is deployment configuration: read behind `governance.read`, install, env, trust, enable, disable and remove behind `identity.create` (prd.md §3, 2026-10-10). OAuth grants, credentials, client sessions and MCP data remain per identity, and each identity authorizes its own account on a server. |
+| Scheduler governance board | Mounted behind `governance.read/write`. A member sees and manages only the tasks they own, and another identity's task answers 404; an administrator (`identity.create`) sees and manages every task, the database backup included (prd.md §3, 2026-10-10). Ordinary agent task operations remain owner-scoped. |
 
 Every provisioned identity holds `governance.write` (D-01), so it is not what makes an
-administrator: `identity.create` is. Settings, the MCP catalog and the `/api/admin/*` routes
-take it (amendment #216). The scheduler board and the house skills library still take
-`governance.write`, so on a multi-user deployment a member can still change them; their
-fixes are tracked separately.
+administrator: `identity.create` is. Settings, the MCP catalog, the `/api/admin/*` routes,
+the house skills library and the skill install take it (prd.md §3, 2026-10-10). An agent's
+background shells can still be polled or killed across identities on `governance.write`;
+that fix is tracked separately.
 
 ## Why the flag still exists
 

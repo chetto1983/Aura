@@ -91,7 +91,7 @@ Web sessions use Authula. Recovery and administration are audited and require th
 actual capabilities. Sharing does not imply administration. A wildcard capability
 grant is not a standing approval for every tool action.
 
-**Administering the deployment takes `identity.create` (2026-10-10, amendment #216).** D-01
+**Administering the deployment takes `identity.create` (2026-10-10).** D-01
 grants every identity `governance.write`, but about twenty routes kept using it as the
 admin gate, and the cockpit hid them with `identity.create` while the server let any
 member through. Measured on 2026-10-10 against the real parent mux (`newServeHandler`,
@@ -121,13 +121,49 @@ from the admin, replaced the deployment's Telegram bot token and had the daemon 
 reached every handler (`docs/superpowers/verification/2026-10-10-member-deployment-administration.md`).
 
 This does not establish:
-- that a member reaches nothing else of the deployment: the scheduler routes manage any
-  identity's task (no owner check, no RLS on `scheduler_tasks`), archive and delete reach
-  the house skills, `npx skills add` runs in the aura container, and an agent's background
-  shells can be polled or killed across identities on `governance.write`. Each is its own
-  fix;
+- that a member reaches nothing else of the deployment: an agent's background shells can be
+  polled or killed across identities on `governance.write`. The scheduler, the house skills
+  and the skill install, open when this was written, are the next paragraph;
 - the appliance: the member was inserted rather than provisioned, the daemon ran on the host
   with `AURA_PROFILE=dev` and isolation off, and nothing ran on the lab VM.
+
+**A member's schedule is their own; the house skills and the skill install are the admin's
+(2026-10-10).** Measured the same day on the same stack, the member holding exactly
+`identity.UserSet()` (`docs/superpowers/verification/2026-10-10-member-scheduler-and-skills.md`):
+the scheduler board listed every identity's tasks; the member rewrote the goal of the admin's
+`agent_job`, ran it (a run executes as the task's owner) and cancelled it, and made the
+nightly `backup_postgres` yearly; archived, restored and deleted a house skill; and
+`POST /api/governance/skills/install` spawned `npx skills add <the member's source>` as uid 0
+in the daemon's process tree, where the child read the daemon's `/proc/<pid>/environ` (the
+database URL, the Authula secret, the OpenRouter key, the ArcadeDB secrets) past the filtered
+environment `mcp.InstallerEnv` hands it. Now:
+
+- the board shows a member the tasks whose `identity_id` is theirs, and answers every verb on
+  another identity's task, its run history included, with the 404 of a missing one. An admin
+  (`identity.create`) sees and manages every task, the backup included. A member keeps every
+  verb on their own reminders and jobs;
+- writes reach the house library (`AURA_SKILLS_DIR`) only for an admin. Commit `e1118908b`
+  (2026-09-07) opened them to `governance.write`, read then as "may change shared deployment
+  configuration"; D-01 gives that to every identity. A member keeps authoring in their own root;
+- the cockpit's install and catalog routes and the `install` action of the agent's
+  `skill_manage` take `identity.create`.
+
+Measured again on the same stack with the fix: as the member the list came back empty, every
+verb on the admin's job and on the backup answered 404 with the database unchanged, the house
+verbs failed in the member's own root (400, "no active skill by that name") with the house
+untouched, and the install answered 403 with no `npx` spawned; the admin kept the full list,
+the edit, the run (a run row written), house archive and restore, and the install.
+
+This does not establish:
+- that an admin's install is contained: it still runs as the daemon's user, root in the
+  appliance image (`id` in the lab VM's `aura` container, 2026-10-10), and can read the
+  daemon's environment. Closing that takes a non-root daemon or secrets mounted as files, not
+  a capability;
+- an owner rule in the store: the check is in the board's handlers, `scheduler_tasks` has no
+  RLS, and the agent's `task` tool keeps its own owner scoping, not re-measured here;
+- background shells across identities, still open;
+- the appliance: the run was the same host daemon with `AURA_PROFILE=dev` and isolation off.
+  The lab VM holds one human identity, the operator's, so no member has been measured there.
 
 **Signing out ends the session (2026-10-02).** Authula runs a plugin's capability hook
 only on the routes Aura lists in its route mappings, and `/sign-out` was not listed, so
