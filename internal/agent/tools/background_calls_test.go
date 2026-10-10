@@ -184,6 +184,12 @@ func TestBackgroundCallsMovesASlowCallAndHandsItsResultOverOnce(t *testing.T) {
 		t.Fatalf("the call ended with its turn: %v", callCtx.Err())
 	}
 
+	// Duration is time.Since(startedAt), and a coarse clock (Windows) can read the same
+	// instant at both ends: hold the call until the clock has moved past its registration.
+	registered := time.Now()
+	for time.Since(registered) <= 0 {
+		time.Sleep(time.Millisecond)
+	}
 	close(tool.release)
 	c := awaitCompletion(t, got)
 	if callCtx.Err() == nil {
