@@ -1330,6 +1330,22 @@ browser acceptance. Evidence: `docs/superpowers/verification/2026-10-21-paperles
 (final acceptance) and `.superpowers/sdd/2026-10-21-paperless-documents/task-1-report.md`
 (Task 1 measurements).
 
+Measured 2026-10-21 on disposable ArcadeDB 26.10.1 databases: the Documents library's
+`file_type` filter accepts `all|documents|pdf|word|spreadsheet|presentation|text|image|video|audio|code`.
+Omitted or empty means Documents across GET, bulk selection, saved queries and direct store
+calls; All files is explicit. A 27-file mixed fixture returned exactly the 12 PDF/Word/
+spreadsheet/presentation/prose documents for the default and all 27 for `all`, with identical
+List/Select membership, exact totals and stable paging. One extension inventory supplies both
+bound case-insensitive SQL suffix predicates and `DocumentRow.file_type`, including `other`
+for unknown extensions. Code reuses `filecard.SourceExtensions()` plus the existing separately
+handled JSON/XML/HTML/HTM formats; prose TXT/Markdown stays Text. Broader library categories
+identify indexed files independently of the narrower upload-admission allowlists. Type inference
+does not inspect MIME or file bytes: ambiguous suffixes such as `.db` retain their registered
+source category even if the actual bytes are binary. These checks establish grouping and filter
+composition on synthetic records, not extraction/editor support, large-corpus latency or browser
+acceptance. Extraction is unchanged. Evidence:
+`docs/superpowers/verification/2026-10-21-paperless-document-file-types.md`.
+
 Identity-bound originals live in Garage. The ingestion supervisor resolves existing
 provisioning bindings and manages CocoIndex workers. Live refresh actually rescans
 sources. Add/modify/delete reconciles cards and passages; source identity and scope
