@@ -89,7 +89,6 @@ dockers_v2:
       - internal
       - web
       - docker/aura
-      - docker/craft-web
       - docker/arcadedb
       - docker/garage
       - caddy

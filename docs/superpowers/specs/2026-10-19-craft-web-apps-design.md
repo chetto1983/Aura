@@ -57,6 +57,16 @@ aura's own static-app handler).
    from release tarballs pinned by SHA-256 per architecture. WebAssembly is the same everywhere, so the
    stage runs once on `$BUILDPLATFORM`. Cost: about 50 minutes of cold build (FINDINGS 10), cached by
    the release workflow's buildx cache afterwards.
+   - **Amended 2026-10-21: the builds leave the aura image.** Measured on GitHub's runner: every
+     build without a warm cache paid them again, about 35 minutes (pdfcraft 498 s, wordcraft 388 s,
+     deckcraft 419 s, photocraft 469 s, filmcraft 295 s on 49dcf01), which held the Agent Memory job
+     at 42 minutes for a 3-minute evaluation and cut it off at a 30-minute cap. The same stage now
+     lives in `docker/aura-craft-web/Dockerfile`, `publish-craft-web.yml` publishes it as
+     `ghcr.io/chetto1983/aura-craft-web` tagged with the hash of its inputs
+     (`scripts/craft_web_inputs.sh`), and the aura image copies it by tag and digest.
+     `TestCraftWebImagePinMatchesItsInputs` fails when `docker/craft-web/` changes and the pin does
+     not follow. Not shown by this: how long a cold build of the remaining aura image takes; the
+     acceptance below still reads the apps from `/usr/share/aura/apps`, which this does not move.
    - No craft-fonts, as in the official web builds (FINDINGS 12): their `release.yml` names a
      craft-fonts commit for the desktop builds, but the published wasm carries none of its faces.
 5. **Edit is offered only where a save is stored.** The file manager's source (and the Documenti
