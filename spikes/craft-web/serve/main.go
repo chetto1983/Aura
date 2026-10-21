@@ -46,7 +46,7 @@ func main() {
 	mux.Handle("GET /", http.FileServer(http.Dir(*host)))
 	mux.HandleFunc("POST /save", func(w http.ResponseWriter, r *http.Request) {
 		name := filepath.Base(r.URL.Query().Get("name"))
-		if name == "." || name == "/" {
+		if name == "." || name == ".." || name == "/" {
 			http.Error(w, "no name", http.StatusBadRequest)
 			return
 		}
@@ -55,7 +55,7 @@ func main() {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		// #nosec G703 -- name is a single path component (filepath.Base), written inside -out
+		// #nosec G703 -- name is a single path component (filepath.Base, never . or ..), written inside -out
 		if err := os.WriteFile(filepath.Join(*out, name), body, 0o600); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
