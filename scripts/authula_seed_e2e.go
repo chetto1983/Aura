@@ -4,12 +4,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
@@ -32,11 +34,6 @@ func main() {
 		fatalf("%v", err)
 	}
 	defer pool.Close()
-
-	local, err := identity.New(pool).GetIdentityByName(ctx, "local")
-	if err != nil {
-		fatalf("resolve local identity: %v", err)
-	}
 
 	dsn := strings.TrimSpace(os.Getenv("AURA_AUTHULA_DATABASE_URL"))
 	if dsn == "" {
@@ -88,10 +85,44 @@ func main() {
 		}
 	}
 
-	if err := webauth.NewIdentityLinker(pool).LinkOperator(ctx, local.ID, user.ID); err != nil {
-		fatalf("link Authula user to local identity: %v", err)
+	identityID, err := operatorIdentity(ctx, pool, email)
+	if err != nil {
+		fatalf("%v", err)
 	}
-	fmt.Printf("seeded Authula E2E operator %s -> %s\n", email, local.ID)
+	if err := webauth.NewIdentityLinker(pool).LinkOperator(ctx, identityID, user.ID); err != nil {
+		fatalf("link Authula user to its identity: %v", err)
+	}
+	fmt.Printf("seeded Authula E2E operator %s -> %s\n", email, identityID)
+}
+
+// operatorIdentity returns the `user` identity named after the operator's email, creating it
+// with the bootstrap operator's capabilities when it is missing. It is what the first-run
+// bootstrap gives a real operator; the seeded `local` row is a `system` identity, which Aura
+// mints no first-party MCP grants for, so an operator linked to it never mounts calendar,
+// memory or whatsapp.
+func operatorIdentity(ctx context.Context, pool *pgxpool.Pool, email string) (string, error) {
+	existing, err := identity.New(pool).GetIdentityByName(ctx, email)
+	switch {
+	case err == nil && existing.Kind == "user":
+		return existing.ID, nil
+	case err == nil:
+		return "", fmt.Errorf("identity %q exists with kind %q, not user", email, existing.Kind)
+	case !errors.Is(err, identity.ErrIdentityNotFound):
+		return "", fmt.Errorf("resolve operator identity: %w", err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id, err := identity.CreateUserTx(ctx, tx, email, identity.All())
+	if err != nil {
+		return "", fmt.Errorf("create operator identity: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", fmt.Errorf("commit operator identity: %w", err)
+	}
+	return id.String(), nil
 }
 
 func firstEnv(names ...string) string {

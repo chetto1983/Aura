@@ -1883,6 +1883,10 @@ jobs:
       AURA_OBJECTSTORE_ACCESS_KEY: GK000000000000000000000000
       AURA_OBJECTSTORE_SECRET_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
       AURA_OBJECTSTORE_PATH_STYLE: "true"
+      # The seeded operator is a `user` identity, as the first-run bootstrap makes one, so its
+      # files live in its own bucket: Aura mints it on first use through the admin API that
+      # compose publishes on loopback. The token is the workflow-level AURA_GARAGE_ADMIN_TOKEN.
+      AURA_GARAGE_ADMIN_ENDPOINT: http://127.0.0.1:3903
       # A local tag built from this commit, never a published pin. The digest pinned here
       # until 2026-10-03 was revision 3c1723cc (2026-08-26): it predated the host-derived
       # write actor and the recall `mode` contract, so the browser suite drove a memory

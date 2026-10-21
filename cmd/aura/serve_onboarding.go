@@ -135,40 +135,17 @@ func (a auraLegAdapter) CreateIdentityWithGrants(ctx context.Context, p agui.Aur
 		}
 	}()
 
-	q := sqlc.New(tx)
-	newID := uuid.New()
-	if _, err := q.CreateIdentity(ctx, sqlc.CreateIdentityParams{
-		ID:   pgtype.UUID{Bytes: newID, Valid: true},
-		Name: p.IdentityName,
-		Kind: "user",
-	}); err != nil {
-		// A duplicate name (NOT NULL UNIQUE) is a clean 409 (idempotent double-submit →
-		// one identity), classified by SQLSTATE 23505 (never a message match).
-		if isUniqueViolation(err) {
-			return "", agui.ErrOnboardingDuplicate
-		}
-		return "", fmt.Errorf("create identity: %w", err)
-	}
-	// aura.capability_grants is fail-closed as of migration 0087, so the grants below need
-	// app.current_identity bound to the identity being granted. It only exists as of the
-	// statement above, which is why this is SetTxIdentity inside the open tx rather than
-	// db.WithIdentityTx around it.
-	if err := db.SetTxIdentity(ctx, tx, newID.String()); err != nil {
-		return "", fmt.Errorf("scope aura leg to new identity: %w", err)
-	}
-	for _, cap := range p.Capabilities {
-		// Backstop the no-escalation re-validation at the store edge. Leg A binds raw sqlc
-		// inside this tx, so it must reuse identity.Store's capability grammar helper
-		// instead of bypassing Store.GrantCapability.
-		if err := identity.ValidateCapabilityName(cap); err != nil {
-			return "", agui.ErrOnboardingEscalation
-		}
-		if err := q.GrantCapability(ctx, sqlc.GrantCapabilityParams{
-			IdentityID: pgtype.UUID{Bytes: newID, Valid: true},
-			Capability: cap,
-		}); err != nil {
-			return "", fmt.Errorf("grant capability: %w", err)
-		}
+	newID, err := identity.CreateUserTx(ctx, tx, p.IdentityName, p.Capabilities)
+	switch {
+	// A duplicate name (NOT NULL UNIQUE) is a clean 409 (idempotent double-submit → one
+	// identity), classified by SQLSTATE 23505 (never a message match).
+	case isUniqueViolation(err):
+		return "", agui.ErrOnboardingDuplicate
+	// Backstop of the no-escalation re-validation at the store edge.
+	case errors.Is(err, identity.ErrInvalidCapability), errors.Is(err, identity.ErrWildcardManaged):
+		return "", agui.ErrOnboardingEscalation
+	case err != nil:
+		return "", err
 	}
 	if _, err := tx.Exec(ctx, linkOperatorSQL, newID.String(), p.AuthulaUserID); err != nil {
 		return "", fmt.Errorf("link operator: %w", err)
