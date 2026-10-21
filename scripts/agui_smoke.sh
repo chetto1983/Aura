@@ -149,10 +149,26 @@ echo "==> building aura"
 go build -o "${BIN}" ./cmd/aura
 
 # --- seed a conversation + one user turn directly (key-free) -------------------
-LOCAL_IDENTITY="00000000-0000-0000-0000-000000000001"
+# The thread must belong to the identity the request runs as. An Authula operator is the
+# `user` identity named after its email (scripts/authula_seed_e2e.go, as the first-run
+# bootstrap makes it); without Authula the cockpit runs as the seeded `local` row.
+SEED_IDENTITY="00000000-0000-0000-0000-000000000001"
+if [[ -n "${AURA_AUTHULA_SECRET:-}" ]]; then
+  AUTH_EMAIL="${AURA_E2E_AUTHULA_EMAIL:-${AURA_AUTHULA_OPERATOR_EMAIL:-}}"
+  AUTH_PASSWORD="${AURA_E2E_AUTHULA_PASSWORD:-${AURA_AUTHULA_OPERATOR_PASSWORD:-}}"
+  if [[ -z "${AUTH_EMAIL}" || -z "${AUTH_PASSWORD}" ]]; then
+    echo "FAIL: Authula auth is configured; set AURA_E2E_AUTHULA_EMAIL/PASSWORD for the agui smoke" >&2
+    exit 2
+  fi
+  SEED_IDENTITY="$("${BIN}" identity get "${AUTH_EMAIL}" | awk '$1 == "ID" { print $2 }')"
+  if [[ -z "${SEED_IDENTITY}" ]]; then
+    echo "FAIL: no Aura identity named ${AUTH_EMAIL}; run scripts/authula_seed_e2e.go first" >&2
+    exit 2
+  fi
+fi
 TID="$(python3 -c "import uuid;print(uuid.uuid4())")"
 echo "==> seeding conversation ${TID} via Postgres TCP"
-go run ./scripts/agui_db_seed.go seed "${TID}" "${LOCAL_IDENTITY}" "${USER_PROMPT}"
+go run ./scripts/agui_db_seed.go seed "${TID}" "${SEED_IDENTITY}" "${USER_PROMPT}"
 
 # --- start the daemon ---------------------------------------------------------
 SERVE_LOG="${WORK}/serve.log"
@@ -203,12 +219,6 @@ cookie_header_from_jar() {
   ' "${COOKIE_JAR}"
 }
 if [[ -n "${AURA_AUTHULA_SECRET:-}" ]]; then
-  AUTH_EMAIL="${AURA_E2E_AUTHULA_EMAIL:-${AURA_AUTHULA_OPERATOR_EMAIL:-}}"
-  AUTH_PASSWORD="${AURA_E2E_AUTHULA_PASSWORD:-${AURA_AUTHULA_OPERATOR_PASSWORD:-}}"
-  if [[ -z "${AUTH_EMAIL}" || -z "${AUTH_PASSWORD}" ]]; then
-    echo "FAIL: Authula auth is configured; set AURA_E2E_AUTHULA_EMAIL/PASSWORD for the agui smoke" >&2
-    exit 2
-  fi
   AUTH_CFG="$(curl -fsS -c "${COOKIE_JAR}" "${BASE}/api/auth/config" 2>&1)" || {
     echo "FAIL: GET /api/auth/config failed" >&2
     printf '%s\n' "${AUTH_CFG}" >&2
