@@ -6,7 +6,7 @@
 
 **Architecture:** Extend the existing tenant-scoped document store/API and reuse the object-store upload routes. Compose a persistent document sidebar, overview/library/processing screens and a routed detail view from Aura's React components. Keep Chat/Board/Studio/Graph/Governance intact and preserve all field/provenance/file-viewer contracts.
 
-**Tech Stack:** Go, ArcadeDB 26.10.1, React 19, React Router, TanStack Query, existing Radix/UI primitives, SVAR Grid and Filemanager, existing Poppler utilities and Craft viewers.
+**Tech Stack:** Go, ArcadeDB 26.10.1, React 19, React Router, TanStack Query, existing Radix/UI primitives, SVAR Grid and Filemanager, native Craft CLI/apps and existing viewers.
 
 **Spec:** `docs/superpowers/specs/2026-10-21-paperless-document-workspace-design.md`
 
@@ -35,13 +35,14 @@
 - Saved views store a versioned URL query string plus display mode and pin/dashboard flags. The server validates allowed query fields, values and bounded length.
 - Processing shows states this stack can establish: uploading, upload failed, waiting for indexing, ready. An unindexed successful upload stays waiting with an explanation; no invented failed/indexing percentage.
 - Content tab displays ordered indexed passages with pagination, explicitly labeled indexed content. It does not promise lossless original-file text or editable OCR.
-- Thumbnails render PDF first page and supported raster images. Unsupported formats get a named file-type fallback; every existing full viewer/editor remains available.
+- User correction: previews must reuse native Craft apps for PDFs and all supported Office families. No new Poppler/x-image rendering implementation. Unsupported formats get a named fallback; existing CraftFrame/EditInCraft and native audio/video viewers remain available.
+- Documents UI defaults to document/Office/text file types; pictures, videos and audio are explicit filters. Backend default stays all files for compatibility.
 - Inbox means `reviewed_at` is absent. Suggestions remains the existing `needs_review` filter.
 - Custom-field filtering initially offers exact value/unassigned; all five existing types retain their validators. No new numeric/range query language.
 
 ## File structure
 
-Backend additions stay in `internal/docfields`, `internal/arcadedb` and `internal/agui`, next to existing document code. Thumbnail rendering has a small focused package if no existing renderer can be reused. Frontend additions stay in `web/src/documents`, split into route/state, navigation, overview, list/cards, saved views, uploads and detail concerns. Only route mounting/surface synchronization and hiding document telemetry touch the outer shell.
+Backend additions stay in `internal/docfields`, `internal/arcadedb` and `internal/agui`, next to existing document code. Native preview orchestration reuses `internal/documents` and sandbox transport; Craft owns rendering. Frontend additions stay in `web/src/documents`, split into route/state, navigation, overview, list/cards, saved views, uploads and detail concerns. Only route mounting/surface synchronization and hiding document telemetry touch the outer shell.
 
 ### Task 1: Document workspace data contracts
 
@@ -61,15 +62,26 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 - [x] Run `go vet ./...`, `go build ./...`, package unit/race tests, and disposable `arcadedb_integration` tests with actual database credentials; record commands/results.
 - [x] Commit task, run fresh review, resolve findings, merge to master and run fresh targeted verification before Task 2.
 
-### Task 2: Real document thumbnails
+### Task 1b: Separate documents from pictures, video and audio
 
-**Files:** new focused thumbnail renderer/tests; `internal/agui/documents_preview_api.go` and tests; existing document route registration/wiring only where necessary.
+**Files:** `internal/docfields/library_query.go`, `library_search.go`, `library.go`, new focused file-type helper/tests, workspace integration tests; `internal/agui/documents_api.go` and workspace API tests.
 
-**Interfaces:** `GET /api/documents/{id}/thumbnail` returns an authorized JPEG/PNG thumbnail for PDF/raster inputs, or explicit unsupported/not-found/error status. Client URL may include `v=<raw_sha256 or indexed_at>` for invalidation. No externally supplied source URLs. Use existing document lookup and file-object opener.
+**Interfaces:** add `file_type=all|documents|pdf|word|spreadsheet|presentation|text|image|video|audio` to GET and bulk filter JSON. Omitted/empty means all for compatibility. Saved-view validation accepts the same enum. `DocumentRow.file_type` reports its canonical inferred category, including `other` for unknown extensions. Documents includes the five non-media groups pdf/word/spreadsheet/presentation/text; unknown files are available only under all.
 
-- [ ] Inventory existing Poppler/image helpers and read their installed docs. Write failing tests for PDF/raster output, unsupported input, corrupt input, cancellation, size bounds, foreign/missing document IDs and same-name different-identity separation.
-- [ ] Render only a bounded first-page/raster preview, with bounded input/output/runtime and concurrency. Reuse the shipped `pdftoppm`; no application-stack rebuild or new unbounded converter.
-- [ ] Verify actual sample PDF and raster output and reject malformed/malicious dimensions before expensive allocation. Never serve active file content as an image.
+- [ ] TDD: uppercase extensions, names with multiple dots, unknown types, documents excluding images/video/audio, exact groups, query+metadata+kind composition, consistent List/Select/bulk and saved-query validation.
+- [ ] Implement one shared extension inventory, with case-insensitive SQL suffix predicates and response classification from the same definitions. Include common Office/ODF/macro-enabled/template and media suffixes; unsupported editor formats may still be listed and downloaded.
+- [ ] Run package unit/race and real disposable ArcadeDB tests, vet/build, then independent review, commit/merge and post-merge verification.
+
+### Task 2: Reuse Craft for document and Office previews
+
+**Files:** focused orchestration beside existing `internal/documents` and sandbox helpers; `internal/agui/documents_preview_api.go` and tests; composition-root wiring only where necessary. No new document/image rendering engine.
+
+**Interfaces:** `GET /api/documents/{id}/thumbnail` returns authorized PNG from the native Craft apps for PDF, supported Word/spreadsheet/presentation families and supported raster inputs, or explicit unsupported/not-found/error status. Client URL may include `v=<raw_sha256 or indexed_at>`. No externally supplied source URLs. Use existing document lookup, object opener and SandboxRouter.
+
+- [ ] Inventory full native Craft tool/CLI surfaces and measure PDF, Word, spreadsheet, presentation and photo preview paths. Existing `CraftFrame`, `EditInCraft`, `PreviewByKind`, per-identity SandboxRouter, streamed copy-in/out and native batch protocols are the reuse boundary.
+- [ ] TDD for scoped preview orchestration, unsupported/corrupt input, cancellation, byte/time/concurrency bounds and cross-identity isolation. Native renderer correctness is tested with actual Craft binaries, not reimplemented.
+- [ ] Stage in a unique request directory in the caller's existing box; run independent native CLI processes so previews cannot change a mounted agent editor session. Stream input with WriteFileStream and copy out only a bounded PNG. Use PdfCraft bounded render_preview on PDF/native Office exports; use the apps' own image preview capabilities.
+- [ ] Verify real PDF, Word, spreadsheet, presentation and photo output; document font/layout/import limitations and any explicitly bounded sheet window. Never return SVG/HTML as image content. No whole-stack rebuild.
 - [ ] Run Go checks, focused race/integration tests and review; commit/merge with fresh targeted verification.
 
 ### Task 3: Connected workspace, uploads and saved views

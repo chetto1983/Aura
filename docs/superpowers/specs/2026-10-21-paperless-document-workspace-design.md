@@ -27,6 +27,10 @@ These are proposed choices, not statements that the user already approved them:
 - Keep Aura branding, existing theme tokens and light/dark support. Adopt Paperless's archive
   layout and behavior rather than its logo or exact green palette.
 - Keep the existing global app destinations available. Put document navigation inside Documents.
+- User correction: reuse the existing Craft applications for PDF and all supported Office file
+  families, including Word, spreadsheets and presentations. Do not build a separate renderer.
+- User correction: default the Documents library to PDFs, Office and text documents. Pictures,
+  video and audio each have an explicit file-type filter; All files remains available.
 - Use the existing backend, index, object store, auth, query library, route library and UI
   primitives. Existing components are the starting point; a new dependency needs an inventory.
 - The proposed implementation boundary is increments A and B: the connected daily document
@@ -89,6 +93,11 @@ guessing progress from a timer. Existing objects remain visible through Files wh
 
 ### Library, search and filters
 
+The file-type filter includes Documents, PDF, Word documents, Spreadsheets, Presentations, Text,
+Pictures, Video, Audio and All files. Documents is the UI default and excludes pictures, video
+and audio. The API keeps its legacy all-file default for existing clients. Type inference is
+explicitly filename-extension based because IndexedDocument does not store a MIME type.
+
 Provide table, compact list and thumbnail-card modes. Cards use actual generated previews, with
 file-type fallbacks. They show readable title/filename, date, type, counterparty, tags and review
 state. Clicking a title opens the document; selection has its own explicit target.
@@ -127,6 +136,11 @@ in context without leaving the document. Existing custom field types remain supp
 Retain every currently supported preview and Craft editor. PDF download/print/edit actions must
 have understandable labels outside any browser-specific viewer toolbar where needed. Text content
 is readable and searchable; editing extracted/OCR content requires an explicit reindex contract.
+
+Card/page previews reuse native Craft export/render capabilities in an isolated request process:
+WordCraft for Word-family files, GridCraft for spreadsheet-family files, DeckCraft for supported
+presentations, PdfCraft for PDF, PhotoCraft for images. Keep existing audio/video viewers and
+Craft editors. Unsupported legacy formats must retain download access and honest labeling.
 
 Mobile uses Details and Preview tabs rather than forcing the entire desktop PDF above the form.
 Primary actions remain reachable. Names wrap or truncate with a way to read the full name.
