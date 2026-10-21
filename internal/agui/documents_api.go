@@ -47,6 +47,7 @@ func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+documentsBase+"/{id}/review", s.documentsRoute(s.handleDocumentReview))
 	s.registerDocumentListRoutes(mux)
 	s.registerDocumentWorkspaceRoutes(mux)
+	s.registerDocumentPreviewRoutes(mux)
 }
 
 // documentsHandler is a Documenti route with the store checked and the caller's identity resolved.

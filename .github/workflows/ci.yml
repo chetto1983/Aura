@@ -2236,6 +2236,16 @@ jobs:
         # Building it here puts the Dockerfile under a gate BEFORE the publish runs.
         run: docker build -f docker/aura-sandbox/Dockerfile -t aura-sandbox:latest .
 
+      - name: Native Craft document and video previews (race)
+        run: |
+          craft_box=aura-box-craft-preview-ci
+          trap 'docker rm -f "$craft_box" >/dev/null 2>&1 || true' EXIT
+          docker run -d --rm --name "$craft_box" --network none \
+            --cpus 2 --memory 2g --pids-limit 256 aura-sandbox:latest
+          AURA_CRAFT_PREVIEW_TEST_BOX="$craft_box" \
+            go test -race -tags craft_integration ./cmd/aura \
+              -run '^TestCraftPreviewNative' -count=1 -timeout 5m
+
       - name: Box image runtime contract (pip, agent-browser)
         # Proves, offline, what the prompts promise the model about the shipped image:
         # `python3 -m pip install ...` works despite PEP 668 (PIP_BREAK_SYSTEM_PACKAGES=1),

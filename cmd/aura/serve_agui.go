@@ -111,6 +111,12 @@ func wireAGUIServer(ctx context.Context, chat *chatEnv, store *cron.Store, sched
 		aguiServer.SetFileAssetLookup(lookup)
 	}
 	aguiServer.SetFileOpener(fileObjects)
+	aguiServer.SetDocumentPreviewer(documents.NewCraftPreviews(craftPreviewSandbox{chat.sandboxRouter}))
+	if index, err := newRuntimeDocumentIndex(chat.cfg, false); err == nil {
+		aguiServer.SetDocumentIngestionReader(index)
+	} else {
+		slog.Warn("documents ingestion status unavailable", "err", err)
+	}
 	aguiServer.SetFileWriter(fileObjects)
 	aguiServer.SetFileOperations(fileBrowser)
 	// Wire the cross-thread HITL approval read (APRV-01 / D-04). Without this the

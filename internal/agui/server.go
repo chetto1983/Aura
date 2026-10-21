@@ -146,10 +146,12 @@ type Server struct {
 	// policyTools lists the tools a policy can name (approval_policies_tools.go); nil ⇒ 503.
 	policyTools policyToolLister
 	// board serves the work board (board_api.go); nil ⇒ its routes answer 503.
-	board        boardStore
-	documents    documentsStore
-	assets       AssetService
-	ownerExports ExportDestination
+	board             boardStore
+	documents         documentsStore
+	documentPreviews  documentPreviewer
+	documentIngestion documentIngestionReader
+	assets            AssetService
+	ownerExports      ExportDestination
 	// share is the WEBSHARE-02/03 share-lifecycle API (plan 37F-10) the share route
 	// handlers call; nil until SetShareService wires it (D-A2-02 narrow seam).
 	share            ShareService
