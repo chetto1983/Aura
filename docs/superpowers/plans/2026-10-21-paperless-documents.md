@@ -90,7 +90,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 - [x] Verify real PDF, Word, spreadsheet, presentation and photo output; document font/layout/import limitations and any explicitly bounded sheet window. Never return SVG/HTML as image content. No whole-stack rebuild.
 - [x] Include video per the latest user instruction. Use FilmCraft's native probe/import/newSequence/render path with bounded JSON, returned media IDs, a unique project/data directory and dimension/byte/time guards. Derive a bounded render scale from probed video dimensions; refuse offline placeholders. Verify actual MP4 output and preserve video playback/FilmCraft editing in the UI.
 - [x] Add endpoint/tenant/null/error tests for existing ingestion status; do not alter extraction or fabricate per-file failures from aggregate counters.
-- [ ] Run Go checks, focused race/integration tests and review; commit/merge with fresh targeted verification.
+- [x] Run Go checks, focused race/integration tests and review; commit/merge with fresh targeted verification.
 
 ### Task 3: Connected workspace, uploads and saved views
 

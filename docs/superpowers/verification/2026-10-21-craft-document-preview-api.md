@@ -79,6 +79,12 @@ build, using an offline disposable2CPU/2GB box; missing configuration fails unde
 
 ## Go verification
 
+Controller close, 2026-10-22: independent review approved the original preview boundary after
+the two focused cancellation fixes (`acd29b3a5`, `22b8cc3c8`). The task was fast-forwarded into
+master at `ef213ea19`. Fresh post-merge `go test -p 1` passed for documents (0.175s), AGUI
+(27.373s), usersandbox (0.160s) and agent/tools (3.826s), followed by the focused cmd/aura
+CraftPreview tests (0.025s). The rebuilt frontend and final GHCR publication remain later tasks.
+
 - Whole `go vet ./...`, `go build ./...`, and `go test -p1 ./...`: PASS. The later tiny
   cancellation-start classification fix passed fresh package vet/build and focused tests.
 - Serial final race: documents4.723s, agui37.559s, cmd/aura94.985s: PASS.
