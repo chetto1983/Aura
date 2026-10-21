@@ -53,6 +53,25 @@ func requireSidecarCommand(t *testing.T, cli *client.Client, h BoxHandle, comman
 	return out
 }
 
+// requireSidecarCommandSoon retries command until it exits 0. ExecStream returns once the exec
+// has started, while its /bin/sh wrapper is still writing the PID file before it reaches the
+// job's exec, so a probe for the job run right after the call can see only the shell (lost on
+// a GitHub runner on 2026-10-21).
+func requireSidecarCommandSoon(t *testing.T, cli *client.Client, h BoxHandle, command string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		out, code := rawExec(t, cli, h.ContainerID, []string{"/bin/sh", "-c", command})
+		if code == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("fixture command in kind %v still exited %d after 10s: %s", h.Kind, code, out)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func requireSidecarAbsent(t *testing.T, cli *client.Client, name string) {
 	t.Helper()
 	if _, err := cli.ContainerInspect(context.Background(), name, client.ContainerInspectOptions{}); !cerrdefs.IsNotFound(err) {
@@ -116,7 +135,7 @@ func TestBrowserSidecarLazyIsolationPersistenceAndPurge(t *testing.T) {
 	stopProcess := sync.OnceFunc(func() { process.Kill(); _, _ = process.Wait() })
 	t.Cleanup(stopProcess)
 	const processProbe = `found=; for file in /proc/[0-9]*/comm; do read -r name < "$file" || continue; [ "$name" = sleep ] && found=1; done; test "$found" = 1`
-	requireSidecarCommand(t, cli, browser, processProbe)
+	requireSidecarCommandSoon(t, cli, browser, processProbe)
 	requireSidecarCommand(t, cli, shell, "! ("+processProbe+")")
 	stopProcess()
 	if err := backend.Suspend(ctx, browser); err != nil {
