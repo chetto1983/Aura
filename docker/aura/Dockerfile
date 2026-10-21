@@ -84,7 +84,7 @@ RUN --mount=type=bind,target=/src \
     install -m 0644 /src/scripts/payload_manifest.txt /payload/payload_manifest.txt; \
     cd /payload && sha256sum --check --quiet --strict payload_manifest.txt
 
-FROM golang:1.27.2-alpine AS build
+FROM golang:1.27.3-alpine AS build
 
 WORKDIR /src
 RUN apk add --no-cache ca-certificates git

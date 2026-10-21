@@ -47,7 +47,7 @@ workflow:
       changes: *python_inputs
 
 quality:
-  image: golang:1.27.2-bookworm
+  image: golang:1.27.3-bookworm
   timeout: 60m
   rules:
     - changes: *go_inputs
@@ -78,10 +78,10 @@ python-lint:
     - pip install --quiet ruff==0.17.1
     - bash scripts/ruff.sh check .
 
-# The updater, its consent channel and image homes, the bridge patch, the publisher and the
+# The updater, its consent channel and image homes, the publisher and the
 # installer: what an appliance runs as root, driven against stubs, as ci.yml does.
 appliance-shell:
-  image: golang:1.27.2-bookworm
+  image: golang:1.27.3-bookworm
   timeout: 15m
   rules:
     - changes: *appliance_inputs
