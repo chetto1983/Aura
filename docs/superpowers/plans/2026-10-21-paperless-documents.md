@@ -53,13 +53,13 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 - `GET /api/documents/{id}/content?offset=0&limit=25` → `{passages:[{ordinal,text}],offset,has_more}`; max 50 passages per call. Document existence and tenant membership are checked before reading passages.
 - Existing `GET /api/documents?source_key=<key>&...` provides the uploaded-file lookup without adding fictitious queue records. `DocumentRow` can add a bounded `excerpt` and `raw_sha256` for display/cache identity.
 
-- [ ] Write failing tests for content-only matches; more than 50 matching passages/documents with exact total, stable pages and no duplicate rows; content+metadata filters; Inbox versus suggestions; empty/missing index; malformed search mode/custom filters; exact upload key lookup.
-- [ ] Read official ArcadeDB query docs and run disposable live probes for the query forms. Record actual supported SQL on 26.10.1; append the measured PRD amendment before implementation.
-- [ ] Implement scoped search/filter/content behavior using the existing full-text indexes and named field records. Do not load only a top-k agent result or interpolate user text into SQL.
-- [ ] Write failing CRUD/validation/isolation tests for saved views, including new Store instance persistence and unknown/foreign IDs.
-- [ ] Extend idempotent document schema and named-record/API helpers; keep old API clients compatible and split oversized files on touch.
-- [ ] Run `go vet ./...`, `go build ./...`, package unit/race tests, and disposable `arcadedb_integration` tests with actual database credentials; record commands/results.
-- [ ] Commit task, run fresh review, resolve findings, merge to master and run fresh targeted verification before Task 2.
+- [x] Write failing tests for content-only matches; more than 50 matching passages/documents with exact total, stable pages and no duplicate rows; content+metadata filters; Inbox versus suggestions; empty/missing index; malformed search mode/custom filters; exact upload key lookup.
+- [x] Read official ArcadeDB query docs and run disposable live probes for the query forms. Record actual supported SQL on 26.10.1; append the measured PRD amendment before implementation.
+- [x] Implement scoped search/filter/content behavior using the existing full-text indexes and named field records. Do not load only a top-k agent result or interpolate user text into SQL.
+- [x] Write failing CRUD/validation/isolation tests for saved views, including new Store instance persistence and unknown/foreign IDs.
+- [x] Extend idempotent document schema and named-record/API helpers; keep old API clients compatible and split oversized files on touch.
+- [x] Run `go vet ./...`, `go build ./...`, package unit/race tests, and disposable `arcadedb_integration` tests with actual database credentials; record commands/results.
+- [x] Commit task, run fresh review, resolve findings, merge to master and run fresh targeted verification before Task 2.
 
 ### Task 2: Real document thumbnails
 
