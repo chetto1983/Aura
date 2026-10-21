@@ -4022,9 +4022,11 @@ So a fork image must be republished to ghcr before a bridged host receives this 
 host would step back to the 2026-09-24 build. Hosts receive it only from the GitLab `aura:edge`,
 which the operator publishes (Return trip step 3), so that publish waits for the forks.
 
-Not shown by these measurements: a host making the return trip, Andrea's included; whether
-Andrea's box ever ran the bridge patch, since a box still on ghcr keys needs nothing from GitLab
-at all; and the fork workflows republishing on GitHub.
+Andrea's box ran the bridge patch (operator, 2026-10-21), so its updater reads GitLab and comes
+back only through that publish.
+
+Not shown by these measurements: a host making the return trip, Andrea's included; and the fork
+workflows republishing on GitHub.
 
 `aura.service` stops the stack with `compose down`, which removes the containers, so every
 volume an image declares without a compose name is orphaned and the next start creates a new
