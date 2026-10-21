@@ -1306,6 +1306,30 @@ What this does not show:
 
 ## 11. Documents and media
 
+Measured 2026-10-21 on a disposable database in the running ArcadeDB 26.10.1:
+`source_key IN (SELECT source_key FROM Passage WHERE SEARCH_INDEX('Passage[text]', :term))`
+returned one indexed document for 55 matching passages. Library content search uses this
+uncapped membership predicate together with existing metadata filters, rather than agent
+retrieval's top-k. Literal phrase parameters keep the simple search from becoming a Lucene
+query language. Filename search remains the compatible default. `source_key NOT IN (SELECT
+source_key FROM DocumentFields WHERE reviewed_at IS NOT NULL)` included the document with no
+field record and excluded the reviewed one: Inbox is independent of suggested values.
+`values CONTAINS (field = :field AND value_key = :value)` matched the stored custom value;
+custom filters initially expose exact value/unassigned and preserve the existing review filter.
+`ORDER BY ordinal SKIP 50 LIMIT 6` returned the last five of 55 indexed passages. The Content
+API checks document membership first and returns at most 50 passages, with lookahead for paging.
+It displays indexed content, which may overlap or omit original formatting; it is not lossless OCR.
+
+Saved document views use tenant-local `DocumentSavedView` named records in the existing
+ArcadeDB schema, with version 1 URL queries (maximum 16 KiB), validated library parameters,
+1–80 character names, table/compact/cards display and pin/dashboard flags. Source-key filters
+support exact uploaded-object lookup without inventing queue records. No Postgres migration
+or new environment setting is needed. These measurements establish SQL behavior on synthetic
+fixtures, not latency or memory bounds on a large archive, ingestion status, OCR fidelity or
+browser acceptance. Evidence: `docs/superpowers/verification/2026-10-21-paperless-documents.md`
+(final acceptance) and `.superpowers/sdd/2026-10-21-paperless-documents/task-1-report.md`
+(Task 1 measurements).
+
 Identity-bound originals live in Garage. The ingestion supervisor resolves existing
 provisioning bindings and manages CocoIndex workers. Live refresh actually rescans
 sources. Add/modify/delete reconciles cards and passages; source identity and scope
