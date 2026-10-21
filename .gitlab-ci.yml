@@ -1,6 +1,7 @@
-# Aura's CI. GitHub is gone for good: the chetto1983 restriction became final on 2026-10-20.
-# It runs `make quality` and the appliance's shell suites. Images and the create-aura npm
-# package are still published by hand from the operator's PC (scripts/publish_images.sh).
+# Secondary CI for the GitLab copy. Aura's CI is GitHub Actions on github.com/chetto1983/Aura
+# again since 2026-10-21 (.github/workflows), which also publishes images and the
+# create-aura npm package. This file runs `make quality` and the appliance's shell suites,
+# and only when something is pushed to GitLab.
 
 # Every job runs on the project's own runner, registered with this tag: the free tier's 400
 # instance-runner minutes a month would not last a week of pushes.
