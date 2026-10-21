@@ -1,6 +1,6 @@
 # A Paperless-style document workspace for Aura
 
-Date: 2026-10-21. Status: Documents-area scope confirmed by the user; implementation planning.
+Date: 2026-10-21. Status: Documents-area scope confirmed by the user; implementation underway.
 
 Evidence: [live comparison](../../paperless-ngx-live-comparison-2026-10-21.md).
 Reference: locally running Paperless-ngx 3.3.3. Aura baseline:
@@ -32,6 +32,13 @@ These are proposed choices, not statements that the user already approved them:
 - User correction: default the Documents library to PDFs, Office and text documents. Pictures,
   video, audio and code each have an explicit file-type filter; All files remains available.
   Inspect ingestion and reuse its actual status/classification mechanisms.
+- User added "video too": include video thumbnails through native FilmCraft as well as the
+  explicit Video filter, existing playback and FilmCraft editing. Keep video extraction's
+  existing metadata-only behavior; thumbnail rendering is independent of ingestion.
+- User added "look also code file and render": Code files use Aura's existing highlighted
+  source viewer with copy/download, language-appropriate highlighting and a readable text
+  fallback. Original source is distinct from indexed passages. Preserve the existing sandboxed
+  HTML Source/Preview behavior; large or binary inputs need an explicit bounded fallback.
 - User clarified: "Keep extraction; replace UI/rendering paths". Existing CocoIndex,
   Tika/LibreOffice normalization and media/code extraction remain. Superseded UI/rendering code
   is removed; no parallel legacy viewer or default-all compatibility branch is introduced.

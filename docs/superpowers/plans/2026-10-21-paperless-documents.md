@@ -24,7 +24,7 @@
 ## Review Focus
 
 - Switching identity must not retain another identity's uploads, views, content or previews.
-- Same-name uploads must not overwrite an existing object silently; use a unique `uploads/<batch UUID>/` prefix for the new workspace uploader.
+- Same-name uploads must not overwrite an existing object silently, including within one batch; use a unique `uploads/<item UUID>/` prefix per queue entry in the new workspace uploader.
 - Content matches across many passages must produce unique documents, exact total and correct pagination; the agent's top-k cap is not an archive limit.
 - A late query/upload response must not overwrite a newer filter or unsaved form.
 - Reload/back/direct links and a failed API request must preserve meaningful context and expose failure rather than show a falsely empty library.
@@ -77,18 +77,19 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 
 **Files:** focused orchestration beside existing `internal/documents` and sandbox helpers; `internal/agui/documents_preview_api.go` and tests; composition-root wiring only where necessary. No new document/image rendering engine.
 
-**Interfaces:** `GET /api/documents/{id}/thumbnail` returns authorized PNG from the native Craft apps for PDF, supported Word/spreadsheet/presentation families and supported raster inputs, or explicit unsupported/not-found/error status. Client URL may include `v=<raw_sha256 or indexed_at>`. No externally supplied source URLs. Use existing document lookup, object opener and SandboxRouter.
+**Interfaces:** `GET /api/documents/{id}/thumbnail` returns authorized PNG from the native Craft apps for PDF, supported Word/spreadsheet/presentation families, supported raster inputs and supported video, or explicit unsupported/not-found/error status. Client URL may include `v=<raw_sha256 or indexed_at>`. No externally supplied source URLs. Use existing document lookup, object opener and SandboxRouter.
 
 Also expose `GET /api/documents/ingestion` → `{indexing: IngestState|null}` by reusing the existing
 `internal/arcadedb/document_ingest_state.go` reader and tenant resolution, not a second status
 store/publisher. Preserve status/observed_at/in_progress/finished/errors exactly. Missing state
 is null, query failure is an error. Ready with nonzero errors must not appear successful.
 
-- [ ] Inventory full native Craft tool/CLI surfaces and measure PDF, Word, spreadsheet, presentation and photo preview paths. Existing `CraftFrame`, `EditInCraft`, `PreviewByKind`, per-identity SandboxRouter, streamed copy-in/out and native batch protocols are the reuse boundary.
-- [ ] TDD for scoped preview orchestration, unsupported/corrupt input, cancellation, byte/time/concurrency bounds and cross-identity isolation. Native renderer correctness is tested with actual Craft binaries, not reimplemented.
-- [ ] Stage in a unique request directory in the caller's existing box; run independent native CLI processes so previews cannot change a mounted agent editor session. Stream input with WriteFileStream and copy out only a bounded PNG. Use PdfCraft bounded render_preview on PDF/native Office exports; use the apps' own image preview capabilities.
-- [ ] Verify real PDF, Word, spreadsheet, presentation and photo output; document font/layout/import limitations and any explicitly bounded sheet window. Never return SVG/HTML as image content. No whole-stack rebuild.
-- [ ] Add endpoint/tenant/null/error tests for existing ingestion status; do not alter extraction or fabricate per-file failures from aggregate counters.
+- [x] Inventory full native Craft tool/CLI surfaces and measure PDF, Word, spreadsheet, presentation and photo preview paths. Existing `CraftFrame`, `EditInCraft`, `PreviewByKind`, per-identity SandboxRouter, streamed copy-in/out and native batch protocols are the reuse boundary.
+- [x] TDD for scoped preview orchestration, unsupported/corrupt input, cancellation, byte/time/concurrency bounds and cross-identity isolation. Native renderer correctness is tested with actual Craft binaries, not reimplemented.
+- [x] Stage in a unique request directory in the caller's existing box; run independent native CLI processes so previews cannot change a mounted agent editor session. Stream input with WriteFileStream and copy out only a bounded PNG. Use PdfCraft bounded render_preview on PDF/native Office exports; use the apps' own image preview capabilities.
+- [x] Verify real PDF, Word, spreadsheet, presentation and photo output; document font/layout/import limitations and any explicitly bounded sheet window. Never return SVG/HTML as image content. No whole-stack rebuild.
+- [x] Include video per the latest user instruction. Use FilmCraft's native probe/import/newSequence/render path with bounded JSON, returned media IDs, a unique project/data directory and dimension/byte/time guards. Derive a bounded render scale from probed video dimensions; refuse offline placeholders. Verify actual MP4 output and preserve video playback/FilmCraft editing in the UI.
+- [x] Add endpoint/tenant/null/error tests for existing ingestion status; do not alter extraction or fabricate per-file failures from aggregate counters.
 - [ ] Run Go checks, focused race/integration tests and review; commit/merge with fresh targeted verification.
 
 ### Task 3: Connected workspace, uploads and saved views
@@ -100,7 +101,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 - [ ] Write failing interaction tests for default document entry, sidebar destinations, URL round trips/back/reload, content/name mode, Inbox and Suggestions distinction, empty/error/retry states and stale-result protection.
 - [ ] Mount the existing route table through React Router's createBrowserRouter/RouterProvider so Task 4 can use the installed useBlocker for unsaved navigation, including browser Back. Preserve auth, lazy boundaries and TanStack fetching; adapt document test fixtures with createMemoryRouter.
 - [ ] Implement sidebar/drawer and overview using live counts, recent documents and pinned saved views; library has table/compact/cards, visible Upload, explicit sort/page-size, retained filter chips and bulk-selection contracts.
-- [ ] Write failing uploader tests for multi-file/drop, real file-manager multipart response IDs, individual errors/retry, unique batch keys, ready lookup and library/count invalidation. Preserve pending successful uploads across workspace navigation and avoid replaying upload after refresh.
+- [ ] Write failing uploader tests for multi-file/drop, two same-named files in one batch, real file-manager multipart response IDs, individual errors/retry, unique item keys, ready lookup and library/count invalidation. Preserve pending successful uploads across workspace navigation and avoid replaying upload after refresh.
 - [ ] Implement upload state with polling of exact source keys; show waiting honestly and offer Files/Open when appropriate. Keep processing status and polling identity-scoped; avoid refetch storms.
 - [ ] Write saved-view tests for save/apply/rename/delete/pin/dashboard and fresh session/server persistence. Add custom-field filters and bulk field edits with explicit confirmation, reusing existing Diff validation.
 - [ ] Implement real thumbnails with named fallbacks; responsive cards/compact rows keep names readable. Hide global token/cost telemetry only while working in Documents.
@@ -108,13 +109,15 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 
 ### Task 4: Focused document detail and organization
 
-**Files:** `DocumentDetail.tsx`, `DetailFields.tsx`, `DocumentHistory.tsx`, `LabelsAdmin.tsx`, `CustomFieldsAdmin.tsx`, `ListsPage.tsx`; shared artifact preview dispatch and format mapping; new focused detail tabs/navigation/contextual label controls and tests; document translations.
+**Files:** `DocumentDetail.tsx`, `DetailFields.tsx`, `DocumentHistory.tsx`, `LabelsAdmin.tsx`, `CustomFieldsAdmin.tsx`, `ListsPage.tsx`; shared artifact preview dispatch, CraftFrame save/guard behavior and format mapping; new focused detail tabs/navigation/contextual label controls and tests; document translations.
 
 **Interfaces:** consume the routed selection/result context from Task 3 and indexed-content endpoint from Task 1. Existing metadata/preview/editor APIs remain authoritative.
 
 - [ ] Write failing tests for direct-link detail, previous/next in current results, return context, unsaved-change guards, failed label loads, searchable/create-in-context labels and mobile Details/Preview tabs.
 - [ ] Implement desktop fields beside preview with the existing resizable-pane library, and clear Details/Content/History tabs. Mobile separates preview from metadata. Preserve every full preview/Craft edit path and provenance control.
 - [ ] Route PDF and supported Office formats through the existing CraftFrame in shared preview dispatch. Remove superseded PDF/DOCX viewer code and dependencies once callers move, with replacement behavior tests. Keep existing audio/video players and escaped code text; do not maintain a second Documents-only Office dispatch or broaden active HTML/SVG rendering.
+- [ ] Include code-file rendering per the latest user instruction. Reuse TextPreview/HighlightedSource and the existing lazy Shiki engine for original source, with copy/download and readable wrapping. Route canonical Code rows even when their suffix is absent from artifactMeta's short list. Add missing common grammars through existing fine-grained loaders, retain an escaped fallback for unknown languages, bound source reading/highlighting, and detect binary content. Preserve existing sandboxed HTML Source/Preview behavior; never execute other source languages. Test language/theme changes, failed fetches, large files and HTML-source escaping.
+- [ ] Preserve native drafts across tab changes and include pending/failed host persistence in Craft's unsaved guard: native dirty=false is not storage acknowledgment. Serialize repeated saves, provide a real failed-save retry, retain converted Save As filenames, and distinguish Save details from file-content Save. Abort stale identity/unmount continuations and test delayed/failed writes and refreshed metadata without losing untouched fields.
 - [ ] Add organization name search and visible document counts; retain matching-rule validation and existing custom-field types. Creating a label from detail preserves the unsaved form.
 - [ ] Run focused tests, full document regression, typecheck/lint/build; review, commit/merge and fresh targeted verification.
 

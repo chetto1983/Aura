@@ -1374,6 +1374,17 @@ Word converts every page before previewing the first, spreadsheet fit-to-page is
 overview, and native font substitution remains visible. Evidence:
 `docs/superpowers/verification/2026-10-21-craft-document-previews.md`.
 
+Measured 2026-10-22 during review: closing the execution stream after SIGTERM did not prove
+native process exit; a TERM-resistant child was still running when cancellation returned.
+The shared execution mechanism now escalates TERM to KILL, checks process identity and exit,
+and keeps Kill nonblocking for registry callers. The live regression confirmed the child PID
+was absent before return. If Docker prevents exit confirmation, previews fail closed: close
+the source, retain scratch and admission, and promptly refuse queued/new previews. Recovery
+requires confirmed process-tree or box cleanup before resetting the service; a blind restart
+is not confirmation. This deliberately trades thumbnail availability for bounded outstanding
+work under infrastructure uncertainty, without changing extraction or the full viewers.
+Evidence: `docs/superpowers/verification/2026-10-22-craft-preview-cancellation.md`.
+
 `GET /api/documents/ingestion` exposes the existing tenant-local IngestState reader as
 `{indexing: state|null}`. Status, observed_at, in_progress, finished and errors keep their
 existing meanings: counts are work components, not files; ready can coexist with errors.
