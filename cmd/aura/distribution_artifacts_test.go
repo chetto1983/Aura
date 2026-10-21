@@ -328,7 +328,7 @@ func TestDotEnvTemplateHygiene(t *testing.T) {
 	// development fallbacks for them, so the template must state the appliance values.
 	for _, want := range []string{
 		"AURA_MUSR_ISOLATION=true",
-		"AURA_SANDBOX_IMAGE=registry.gitlab.com/chetto1983/aura/aura-sandbox:edge",
+		"AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge",
 		"COMPOSE_PROFILES=observability",
 	} {
 		if !hasActiveEnvLine(envExample, want) {

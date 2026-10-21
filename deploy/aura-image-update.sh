@@ -16,15 +16,15 @@
 #
 # Prerequisites in /opt/aura/.env (the dev default stays build-from-source, and
 # an MCP left at its SHA-pinned compose default is a no-op here):
-#   AURA_IMAGE=registry.gitlab.com/chetto1983/aura/aura:edge
+#   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
 #   AURA_PULL_POLICY=always
-#   AURA_ARCADEDB_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
-#   AURA_PIM_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/aura-pim-mcp:sidecar
-#   AURA_WHATSAPP_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/whatsapp-mcp:latest
-#   AURA_CADDY_IMAGE=registry.gitlab.com/chetto1983/aura/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
-#   AURA_INGEST_IMAGE=registry.gitlab.com/chetto1983/aura/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
-#   AURA_SANDBOX_IMAGE=registry.gitlab.com/chetto1983/aura/aura-sandbox:edge
-#   AURA_SANDBOX_EGRESS_IMAGE=registry.gitlab.com/chetto1983/aura/aura-egress:edge
+#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
+#   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
+#   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
+#   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
+#   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
+#   AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
+#   AURA_SANDBOX_EGRESS_IMAGE=ghcr.io/chetto1983/aura-egress:edge
 #
 # /etc/default/aura may override how long the cockpit can hold an update back:
 #   AURA_UPDATE_IDLE_SECONDS=900            quiet spell before applying on its own
@@ -55,7 +55,7 @@ UNITS=(aura.service aura-image-update.service aura-image-update.timer)
 # time, so the constant that sends hosts to the GitLab bridge also brings them back
 # (docs/superpowers/specs/2026-10-13-gitlab-image-bridge-design.md).
 IMAGE_HOMES=(ghcr.io/chetto1983 registry.gitlab.com/chetto1983/aura)
-IMAGE_HOME=registry.gitlab.com/chetto1983/aura
+IMAGE_HOME=ghcr.io/chetto1983
 # Sourced by main from INSTALL_DIR; replacing either counts as a new updater (see sync_payload).
 CONSENT_LIB=deploy/aura-update-consent.sh
 IMAGE_HOME_LIB=deploy/aura-image-home.sh

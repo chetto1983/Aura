@@ -10,13 +10,13 @@
 #
 # /opt/aura/.env must point the aura service at the edge channel, and each MCP
 # sidecar the machine runs at its moving tag (a SHA-pinned default is a no-op):
-#   AURA_IMAGE=registry.gitlab.com/chetto1983/aura/aura:edge
+#   AURA_IMAGE=ghcr.io/chetto1983/aura:edge
 #   AURA_PULL_POLICY=always
-#   AURA_ARCADEDB_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
-#   AURA_PIM_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/aura-pim-mcp:sidecar
-#   AURA_WHATSAPP_MCP_IMAGE=registry.gitlab.com/chetto1983/aura/whatsapp-mcp:latest
-#   AURA_CADDY_IMAGE=registry.gitlab.com/chetto1983/aura/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
-#   AURA_INGEST_IMAGE=registry.gitlab.com/chetto1983/aura/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
+#   AURA_ARCADEDB_MCP_IMAGE=ghcr.io/chetto1983/aura-arcadedb-mcp:edge  (+ AURA_ARCADEDB_MCP_PULL_POLICY=always)
+#   AURA_PIM_MCP_IMAGE=ghcr.io/chetto1983/aura-pim-mcp:sidecar
+#   AURA_WHATSAPP_MCP_IMAGE=ghcr.io/chetto1983/whatsapp-mcp:latest
+#   AURA_CADDY_IMAGE=ghcr.io/chetto1983/aura-caddy:edge  (+ AURA_CADDY_PULL_POLICY=always)
+#   AURA_INGEST_IMAGE=ghcr.io/chetto1983/aura-ingest:edge  (+ AURA_INGEST_PULL_POLICY=always)
 
 [Unit]
 Description=Aura appliance image update from its image home

@@ -1023,7 +1023,7 @@ services:
     # "the deployed pin went stale", and a digest only updates when a human remembers to
     # paste a new one. `always` is safe HERE in a way it is not for the `aura` service --
     # nothing builds these locally, so there is no local image for a pull to discard.
-    image: ${AURA_WHATSAPP_MCP_IMAGE:-registry.gitlab.com/chetto1983/aura/whatsapp-mcp:latest}
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}
     pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-always}
     container_name: aura-whatsapp
     restart: unless-stopped
@@ -1157,7 +1157,7 @@ services:
     # and every fresh install four times. scripts/mirror_whisper_server.sh copies
     # each new :latest to a dated tag with the same digest (on GitHub, mirror-whisper-server.yml
     # runs it and Dependabot proposes the bump).
-    image: ${AURA_STT_IMAGE:-registry.gitlab.com/chetto1983/aura/aura-whisper-server:2026.10.08.1056@sha256:c6c6311af66c2fda59645745628edbda1737c619dcd30ce7ea2c00e5e5a1d9d6}
+    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.10.08.1056@sha256:c6c6311af66c2fda59645745628edbda1737c619dcd30ce7ea2c00e5e5a1d9d6}
     container_name: aura-stt
     restart: unless-stopped
     environment:
@@ -1264,8 +1264,7 @@ services:
   # Aura PIM sidecar — forked calendar-mcp (chetto1983/aura-pim-mcp @ main):
   # unified mail+calendar+contacts over MCP-over-HTTP (/) + an OAuth-protected admin REST API
   # (/admin) the cockpit drives for provider-account connect. Not vendored: the image is
-  # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow, and to
-  # the GitLab image home by scripts/publish_images.sh while GitHub blocks the account.
+  # CI-built + published to GHCR (public) by the fork's aura-publish-image workflow.
   # Aura's catalog points at the loopback publish; Aura boot never depends on this service.
   aura-pim-mcp:
     # A MOVING tag, deliberately, and `always` so it actually moves. Both sidecars were
@@ -1273,7 +1272,7 @@ services:
     # "the deployed pin went stale", and a digest only updates when a human remembers to
     # paste a new one. `always` is safe HERE in a way it is not for the `aura` service --
     # nothing builds these locally, so there is no local image for a pull to discard.
-    image: ${AURA_PIM_MCP_IMAGE:-registry.gitlab.com/chetto1983/aura/aura-pim-mcp:latest}
+    image: ${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}
     pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}
     container_name: aura-pim-mcp
     restart: unless-stopped

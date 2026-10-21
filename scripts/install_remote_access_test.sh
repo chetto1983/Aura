@@ -41,7 +41,7 @@ run_install() {
   fi
 }
 run_install "$@"
-grep -qx 'AURA_CLOUDFLARED_IMAGE=registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge' "$fixture/install/.env" || fail 'published image missing'
+grep -qx 'AURA_CLOUDFLARED_IMAGE=ghcr.io/chetto1983/aura-cloudflared:edge' "$fixture/install/.env" || fail 'published image missing'
 grep -qx 'AURA_CLOUDFLARED_PULL_POLICY=always' "$fixture/install/.env" || fail 'pull policy missing'
 grep -qx 'compose pull aura-cloudflared' "$FIXTURE_CALLS" || fail 'sidecar was not explicitly pulled'
 grep -qx 'compose up -d --wait --wait-timeout 300' "$FIXTURE_CALLS" || fail 'stack health was not awaited'

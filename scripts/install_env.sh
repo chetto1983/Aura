@@ -168,21 +168,21 @@ ensure_edge_channel_env() {
   case "$(env_value AURA_IMAGE)" in
     *:edge)
       ensure_env_default AURA_PULL_POLICY always
-      ensure_env_default AURA_PIM_MCP_IMAGE registry.gitlab.com/chetto1983/aura/aura-pim-mcp:sidecar
-      ensure_env_default AURA_WHATSAPP_MCP_IMAGE registry.gitlab.com/chetto1983/aura/whatsapp-mcp:latest
+      ensure_env_default AURA_PIM_MCP_IMAGE ghcr.io/chetto1983/aura-pim-mcp:sidecar
+      ensure_env_default AURA_WHATSAPP_MCP_IMAGE ghcr.io/chetto1983/whatsapp-mcp:latest
       # caddy, ingest and arcadedb-mcp are repo-built images whose compose
       # pull_policy defaults to `never`: without a published pin AND `always` a
       # fresh appliance tries to `docker build` them against a payload that has
       # no build context and dies (measured 2026-08-31 for caddy and ingest on
       # the first clean-host E2E, 2026-09-10 for arcadedb-mcp on the first npx
       # install).
-      ensure_env_default AURA_CADDY_IMAGE registry.gitlab.com/chetto1983/aura/aura-caddy:edge
+      ensure_env_default AURA_CADDY_IMAGE ghcr.io/chetto1983/aura-caddy:edge
       ensure_env_default AURA_CADDY_PULL_POLICY always
-      ensure_env_default AURA_CLOUDFLARED_IMAGE registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge
+      ensure_env_default AURA_CLOUDFLARED_IMAGE ghcr.io/chetto1983/aura-cloudflared:edge
       ensure_env_default AURA_CLOUDFLARED_PULL_POLICY always
-      ensure_env_default AURA_INGEST_IMAGE registry.gitlab.com/chetto1983/aura/aura-ingest:edge
+      ensure_env_default AURA_INGEST_IMAGE ghcr.io/chetto1983/aura-ingest:edge
       ensure_env_default AURA_INGEST_PULL_POLICY always
-      ensure_env_default AURA_ARCADEDB_MCP_IMAGE registry.gitlab.com/chetto1983/aura/aura-arcadedb-mcp:edge
+      ensure_env_default AURA_ARCADEDB_MCP_IMAGE ghcr.io/chetto1983/aura-arcadedb-mcp:edge
       ensure_env_default AURA_ARCADEDB_MCP_PULL_POLICY always
       # The per-identity box and its egress sidecar are repo-built too, but they
       # are NOT compose services -- the daemon creates them per identity -- so
@@ -193,8 +193,8 @@ ensure_edge_channel_env() {
       # sandbox readiness probe holds the machine unhealthy. Pointing them at
       # the edge tags makes ensureImage pull on first box creation, which is the
       # whole install: there is nothing to build here.
-      ensure_env_default AURA_SANDBOX_IMAGE registry.gitlab.com/chetto1983/aura/aura-sandbox:edge
-      ensure_env_default AURA_SANDBOX_EGRESS_IMAGE registry.gitlab.com/chetto1983/aura/aura-egress:edge
+      ensure_env_default AURA_SANDBOX_IMAGE ghcr.io/chetto1983/aura-sandbox:edge
+      ensure_env_default AURA_SANDBOX_EGRESS_IMAGE ghcr.io/chetto1983/aura-egress:edge
       ;;
   esac
 }
@@ -404,7 +404,7 @@ AURA_AUTHULA_SECRET=${authula_secret}
 # Appliance upgrades enforce the same strict posture as a fresh install.
 AURA_PROFILE=single_user_hardened
 AURA_MUSR_ISOLATION=true
-AURA_SANDBOX_IMAGE=registry.gitlab.com/chetto1983/aura/aura-sandbox:edge
+AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
 AURA_HTTPS_PORT=443
 AURA_AGUI_PORT=9080
 AURA_SETUP_PORT=9081

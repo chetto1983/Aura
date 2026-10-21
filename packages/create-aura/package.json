@@ -1,10 +1,10 @@
 {
   "name": "create-aura-appliance",
-  "version": "0.2.15",
+  "version": "0.2.16",
   "description": "Interactive local and remote installer for the Aura appliance",
   "repository": {
     "type": "git",
-    "url": "git+https://gitlab.com/Chetto1983/aura.git",
+    "url": "git+https://github.com/chetto1983/Aura.git",
     "directory": "packages/create-aura"
   },
   "type": "module",

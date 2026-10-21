@@ -24,11 +24,9 @@ proxy that allows the box lifecycle verbs.
 `Release` workflow on a `v*` tag, and only after the exact-SHA *Production Readiness*
 check passed for that commit ([release-readiness.md](release-readiness.md)). Check the
 [Releases page](https://github.com/chetto1983/Aura/releases) for the current tag
-(`v1.1.0` is the latest) and use it as `vX.Y.Z` below. Independently of releases, the
-moving edge image every default install tracks is published as
-`registry.gitlab.com/chetto1983/aura/aura:edge` (plus an immutable `master-<sha>` tag) while
-GitHub blocks the account: release tags stay on ghcr and are not mirrored, so a pinned
-`vX.Y.Z` install is not available until GitHub returns.
+(`v1.1.0` is the latest) and use it as `vX.Y.Z` below. Independently of releases,
+every master push publishes the moving `ghcr.io/chetto1983/aura:edge` image (plus an
+immutable `master-<sha>` tag), the continuous-delivery channel a default install tracks.
 
 ## Linux or macOS
 
@@ -47,13 +45,18 @@ exposing `/dev/dri`, otherwise CPU. See the
 [installer guide](../packages/create-aura/README.md) for supported targets and
 prerequisites. The npm installer carries its own payload.
 
-The source-hosted installer remains available. Install Docker, then run the script from
-the GitLab mirror's `master`, which tracks the edge channel. A release tag `vX.Y.Z` would
-pin the install, but its images are on ghcr only (see above), so it is not available while
-GitHub blocks the account:
+The source-hosted installer remains available. Install Docker, then run it on a
+machine with Node 18+ (`npx` fetches the repo and runs `scripts/install.sh`):
 
 ```bash
-curl -fsSL https://gitlab.com/Chetto1983/aura/-/raw/master/scripts/install.sh | sudo bash -s -- --appliance
+sudo npx github:chetto1983/Aura -- --appliance
+```
+
+or the curl equivalent of the same script. Use `master` to track the edge channel, or
+a release tag `vX.Y.Z` to pin:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/master/scripts/install.sh | sudo bash -s -- --appliance
 ```
 
 The installer checks hardware, creates `.env` with generated `POSTGRES_PASSWORD`, the
@@ -62,7 +65,7 @@ assets, and starts the stack. Re-running it keeps an existing `.env` intact. A
 master/edge install points `.env` at the `:edge` moving tags, and `--appliance` also
 enables the `aura-image-update` systemd timer: from then on the machine re-pulls aura
 and its MCP sidecars from the image home (`IMAGE_HOME` in `deploy/aura-image-update.sh`,
-`registry.gitlab.com/chetto1983/aura` today) on its own, migrations and Compose payload
+`ghcr.io/chetto1983` today) on its own, migrations and Compose payload
 included, with no operator involved. Without `--appliance` (no systemd units, no timer), the
 stack still starts; updates stay manual.
 
@@ -87,7 +90,6 @@ POSTGRES_DB=aura
 ARCADEDB_PASSWORD=$(New-Hex)
 ARCADEDB_APP_PASSWORD=$(New-Hex)
 AURA_ARCADEDB_TENANT_SECRET=$(New-Hex)
-# a release image is on ghcr only; while GitHub blocks it, use registry.gitlab.com/chetto1983/aura/aura:edge
 AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
 AURA_ACCESS_TOKEN=$(New-Hex)
 AURA_AUTHULA_SECRET=$(New-Hex)
@@ -158,22 +160,12 @@ version pin changed in `compose.yaml` therefore reaches every appliance on its o
 `sha256sum -c payload_manifest.txt` inside `/opt/aura` shows whether a host matches
 its payload. Watch it with `journalctl -u aura-image-update.service -f`.
 
-### An appliance frozen on ghcr
+### An appliance on the GitLab bridge
 
-An appliance whose `.env` names `ghcr.io/chetto1983` images stopped updating on
-2026-10-11, when GitHub began answering 403: its updater cannot pull the successor that
-knows the new home. Re-running the installer does not help, because it keeps the existing
-`.env`. One command moves it, once, as root on the appliance:
-
-```bash
-curl -fsSL https://gitlab.com/Chetto1983/aura/-/raw/master/deploy/aura-registry-bridge.sh | sudo bash
-```
-
-It refuses and changes nothing unless Docker answers, there are 12 GiB free where the
-images are stored, and every image `.env` names pulls from the new home. It then points
-`AURA_IMAGE` there, enables the update timer, and starts the updater. The updater moves
-the remaining image keys and applies the new build after 15 idle minutes, like any update.
-Run it again after a refusal, once the cause it names is fixed.
+From 2026-10-13 to 2026-10-21, while GitHub blocked the account, appliances pulled from
+`registry.gitlab.com/chetto1983/aura`. The updater brings each one back on its own: once
+the `ghcr.io/chetto1983` copy of an image `.env` names has been fetched, the next apply
+points that key at ghcr, and the GitLab copy leaves the disk. Nothing is run on the host.
 
 Manual update (pinned installs, or no systemd). Volumes persist, and the
 `aura-migrate` one-shot runs the Postgres migrations before the Aura service starts

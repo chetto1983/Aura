@@ -8,7 +8,7 @@ export INSTALL_DIR="$fixture/install" AURA_IMAGE_UPDATE_BIN="$fixture/sbin/updat
 export AURA_SYSTEMD_DIR="$fixture/systemd" AURA_IMAGE_UPDATE_LOCK="$fixture/lock"
 export CF_FIXTURE="$fixture"
 mkdir -p "$INSTALL_DIR" "$fixture/bin" "$fixture/sbin" "$fixture/payload/deploy" "$fixture/payload/scripts"
-printf 'AURA_IMAGE=registry.gitlab.com/chetto1983/aura/aura:edge\nPOSTGRES_PASSWORD=synthetic-preserve\n' >"$INSTALL_DIR/.env"
+printf 'AURA_IMAGE=ghcr.io/chetto1983/aura:edge\nPOSTGRES_PASSWORD=synthetic-preserve\n' >"$INSTALL_DIR/.env"
 chmod 600 "$INSTALL_DIR/.env"
 env_metadata="$(stat -c '%a:%u:%g' "$INSTALL_DIR/.env")"
 printf 'old compose' >"$INSTALL_DIR/compose.yaml"
@@ -36,7 +36,7 @@ case "$*" in
   'rm -f payload-container') ;;
   'compose pull aura aura-migrate garage-bootstrap'|'compose up -d --pull missing aura'|'compose exec -T aura aura version') ;;
   'compose up -d --pull missing')
-    grep -qx 'AURA_CLOUDFLARED_IMAGE=registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge' "$INSTALL_DIR/.env"
+    grep -qx 'AURA_CLOUDFLARED_IMAGE=ghcr.io/chetto1983/aura-cloudflared:edge' "$INSTALL_DIR/.env"
     grep -qx 'AURA_CLOUDFLARED_PULL_POLICY=always' "$INSTALL_DIR/.env"
     touch "$CF_FIXTURE/started" ;;
   'compose ps -q aura') echo aura-id ;;
@@ -47,7 +47,7 @@ case "$*" in
   inspect\ --format\ * )
     case "$3" in
       '{{.Image}}') echo image-id ;;
-      '{{.Config.Image}}') echo registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge ;;
+      '{{.Config.Image}}') echo ghcr.io/chetto1983/aura-cloudflared:edge ;;
       '{{.State.Status}}') echo running ;;
       '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}') echo healthy ;;
       *) exit 1 ;;

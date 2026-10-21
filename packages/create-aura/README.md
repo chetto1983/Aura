@@ -1,6 +1,6 @@
 # create-aura-appliance
 
-Interactive installer for an [Aura](https://gitlab.com/Chetto1983/aura) appliance — on this
+Interactive installer for an [Aura](https://github.com/chetto1983/Aura) appliance — on this
 machine, or on another one over SSH.
 
 ```bash
@@ -39,7 +39,7 @@ On the machine running this wizard: Node.js >= 22.13.
 
 On the target: Linux (local installs may also be macOS), `x86_64` or `arm64`, at least
 4 CPU cores, 14 GiB of usable RAM, 20 GiB of free disk, `sudo`, `curl` and `openssl`, and
-network reach to `registry.gitlab.com`, `ghcr.io`, `get.docker.com` and `huggingface.co`. The hardware floors are
+network reach to `ghcr.io`, `get.docker.com` and `huggingface.co`. The hardware floors are
 checked before anything is copied, and again by the installer itself.
 
 The RAM floor is measured against `MemTotal`, which is installed RAM minus firmware, kernel

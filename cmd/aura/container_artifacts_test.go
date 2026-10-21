@@ -96,7 +96,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		// A moving tag with `always`, not a digest. Both sidecar pins went stale because
 		// a digest only advances when a human pastes a new one; nothing builds these
 		// locally, so a pull has no local image to discard.
-		"${AURA_WHATSAPP_MCP_IMAGE:-registry.gitlab.com/chetto1983/aura/whatsapp-mcp:latest}",
+		"${AURA_WHATSAPP_MCP_IMAGE:-ghcr.io/chetto1983/whatsapp-mcp:latest}",
 		"pull_policy: ${AURA_WHATSAPP_MCP_PULL_POLICY:-always}",
 		"MCP_OAUTH_TRUSTED_ISSUERS: ${AURA_WHATSAPP_MCP_TRUSTED_ISSUERS:-}",
 		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
@@ -117,7 +117,7 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"image: ${AURA_GARAGE_IMAGE:-dxflrs/garage:v2.4.1}",
 		"GARAGE_RPC_SECRET: ${GARAGE_RPC_SECRET:?GARAGE_RPC_SECRET required in .env}",
 		"CALENDAR_MCP_OAuth__Resource: ${AURA_PIM_MCP_OAUTH_RESOURCE:-http://127.0.0.1:8093,http://127.0.0.1:8093/,http://aura-pim-mcp:8080/,http://aura-pim-mcp:8080}",
-		"${AURA_PIM_MCP_IMAGE:-registry.gitlab.com/chetto1983/aura/aura-pim-mcp:latest}",
+		"${AURA_PIM_MCP_IMAGE:-ghcr.io/chetto1983/aura-pim-mcp:latest}",
 		"pull_policy: ${AURA_PIM_MCP_PULL_POLICY:-always}",
 		"CALENDAR_MCP_OAuth__TrustedIssuers: ${AURA_PIM_MCP_TRUSTED_ISSUERS:-}",
 		"SEARXNG_SECRET: ${SEARXNG_SECRET:?SEARXNG_SECRET required in .env}",

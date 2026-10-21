@@ -36,11 +36,8 @@ const REQUIRED_COMMANDS = ['sudo', 'curl', 'openssl'] as const;
 // AURA_PAYLOAD_DIR and never touches RAW_BASE; requiring that host would re-assert a trust
 // path this design deliberately removed. huggingface.co goes IN: install.sh fetches
 // embeddinggemma-300M-Q8_0.gguf from there, the one pinned artifact in the whole product,
-// and ensure_embed_model's HEAD probe against it is unconditional (see curl, above). Two image
-// registries: Aura's own images come from the image home (deploy/aura-image-update.sh
-// IMAGE_HOME), while llama.cpp, searxng and kokoro still pull from ghcr.io (compose.yaml).
+// and ensure_embed_model's HEAD probe against it is unconditional (see curl, above).
 const REQUIRED_HOSTS = [
-  'https://registry.gitlab.com',
   'https://ghcr.io',
   'https://get.docker.com',
   'https://huggingface.co',

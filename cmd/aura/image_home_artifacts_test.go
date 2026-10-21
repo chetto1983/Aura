@@ -96,8 +96,7 @@ func TestForeignHomeRefsFindsTheOtherHome(t *testing.T) {
 // and an updated host pull the same images (docs/superpowers/specs/2026-10-13-gitlab-image-bridge-design.md).
 // The payload manifest is what every host receives; the installer, the env template and the npm
 // package reach a host the first time. The updater declares every home by design, so its
-// IMAGE_HOMES line is not read; the one-time bridge patch names both homes by design and is not
-// shipped.
+// IMAGE_HOMES line is not read.
 func TestShippedDefaultsNameTheUpdatersImageHome(t *testing.T) {
 	root := repoRootForTest(t)
 	home, others := imageHomes(t, root)
@@ -124,9 +123,6 @@ func TestShippedDefaultsNameTheUpdatersImageHome(t *testing.T) {
 	}
 	declaration := regexp.MustCompile(`(?m)^IMAGE_HOMES=.*$`)
 	for _, rel := range shipped {
-		if rel == "deploy/aura-registry-bridge.sh" {
-			continue
-		}
 		text := readProjectFile(t, root, rel)
 		if rel == "deploy/aura-image-update.sh" {
 			text = declaration.ReplaceAllString(text, "")

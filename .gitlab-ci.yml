@@ -97,7 +97,6 @@ appliance-shell:
     - bash scripts/aura_update_consent_test.sh
     - bash scripts/aura_image_home_test.sh
     - bash scripts/cloudflare_update_test.sh
-    - bash scripts/aura_registry_bridge_test.sh
     - bash scripts/publish_images_test.sh
     - bash scripts/install_lib_test.sh
     - bash scripts/install_config_test.sh

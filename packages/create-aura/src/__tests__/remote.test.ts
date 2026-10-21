@@ -81,10 +81,7 @@ describe('remote installer', () => {
     // R2: install.sh's actual hard gate is cpu+mem+disk, not disk alone.
     expect(probeScript).toContain('_NPROCESSORS_ONLN');
     expect(probeScript).toContain('MemTotal');
-    // R3: the image home (registry.gitlab.com while GitHub blocks ghcr), ghcr.io for the
-    // third-party images (llama.cpp, searxng, kokoro), get.docker.com, huggingface.co added,
-    // raw.githubusercontent.com removed.
-    expect(probeScript).toContain('https://registry.gitlab.com');
+    // R3: ghcr.io and get.docker.com kept, huggingface.co added, raw.githubusercontent.com removed.
     expect(probeScript).toContain('https://ghcr.io');
     expect(probeScript).toContain('https://get.docker.com');
     expect(probeScript).toContain('https://huggingface.co');

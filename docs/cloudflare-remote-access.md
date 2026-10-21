@@ -13,7 +13,7 @@ No result from a mock, a local certificate or a Quick Tunnel closes that accepta
 ## Install and enable
 
 Use the repository installer or the self-extracting Ubuntu appliance installer normally.
-Both ship the Compose/Caddy configuration, pull `registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge` on
+Both ship the Compose/Caddy configuration, pull `ghcr.io/chetto1983/aura-cloudflared:edge` on
 the edge channel, and wait for the default stack to become healthy. Before onboarding, the
 supervisor is healthy-idle; it runs no connector and needs no Cloudflare credential.
 The installer never asks for a Cloudflare token or writes one into `.env`.

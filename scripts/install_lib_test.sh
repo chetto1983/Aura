@@ -110,9 +110,9 @@ never_policies="$(sed -n 's/.*pull_policy: \${\([A-Z_]*\):-never}.*/\1/p' "$repo
 mkdir -p "$fixture_root/edge"
 (
   cd "$fixture_root/edge"
-  printf 'AURA_IMAGE=registry.gitlab.com/chetto1983/aura/aura:edge\n' > .env
+  printf 'AURA_IMAGE=ghcr.io/chetto1983/aura:edge\n' > .env
   ensure_edge_channel_env
-  [ "$(env_value AURA_CLOUDFLARED_IMAGE)" = "registry.gitlab.com/chetto1983/aura/aura-cloudflared:edge" ] \
+  [ "$(env_value AURA_CLOUDFLARED_IMAGE)" = "ghcr.io/chetto1983/aura-cloudflared:edge" ] \
     || { echo "FAIL: Cloudflare sidecar edge image missing" >&2; exit 1; }
   set_env_value AURA_CLOUDFLARED_IMAGE example.invalid/operator/cloudflared:pinned
   set_env_value AURA_CLOUDFLARED_PULL_POLICY missing

@@ -3983,7 +3983,7 @@ Measured 2026-10-14 on the lab VM (`docs/superpowers/verification/2026-10-14-git
   - **create-aura 0.2.15** ships the unit and the updater to fresh installs.
 
 The way back is the same move in reverse: one commit sets `IMAGE_HOME` back and deletes the
-patch.
+patch (done 2026-10-21, below).
 
 Not shown by these measurements:
 - the way back itself, which runs only in the tests;
@@ -4000,6 +4000,31 @@ Not shown by these measurements:
   sidecar than `aura` until the next tick.
 - **The install fix inside a clean install.** `record_applied_update` ran on the lab VM's real
   image and payload, not at the end of a fresh install.
+
+**Return to ghcr (2026-10-21).** GitHub reinstated the chetto1983 account. Measured that day
+with anonymous registry requests, no login:
+- **ghcr answers again.** All ten `ghcr.io/chetto1983` repositories list their tags (HTTP 200),
+  and every tag a host's `.env` pins resolves.
+- **What ghcr holds.** `aura-arcadedb-mcp:edge` was already rebuilt from `5f7966aa5` by the
+  Actions run of that push. The other Aura images were still the pre-block builds (`64ec61820`,
+  2026-10-08/11) while that run's edge publish was in progress. The two fork images were older still,
+  `aura-pim-mcp:sidecar` and `whatsapp-mcp:latest` from 2026-09-24, against GitLab copies from
+  2026-10-14. Whisper is the same digest on both registries.
+
+So `IMAGE_HOME` names `ghcr.io/chetto1983` again, and every shipped default follows it
+(`TestShippedDefaultsNameTheUpdatersImageHome` failed on six files before they moved).
+`IMAGE_HOMES` keeps both registries, so a bridged host comes back through the same move, with no
+patch run on it, and `deploy/aura-registry-bridge.sh` is deleted. create-aura 0.2.16 probes
+ghcr.io, get.docker.com and huggingface.co, as before the bridge.
+
+The move does not compare builds: it repoints a key as soon as the ghcr copy of its tag pulls.
+So a fork image must be republished to ghcr before a bridged host receives this updater, or the
+host would step back to the 2026-09-24 build. Hosts receive it only from the GitLab `aura:edge`,
+which the operator publishes (Return trip step 3), so that publish waits for the forks.
+
+Not shown by these measurements: a host making the return trip, Andrea's included; whether
+Andrea's box ever ran the bridge patch, since a box still on ghcr keys needs nothing from GitLab
+at all; and the fork workflows republishing on GitHub.
 
 `aura.service` stops the stack with `compose down`, which removes the containers, so every
 volume an image declares without a compose name is orphaned and the next start creates a new
