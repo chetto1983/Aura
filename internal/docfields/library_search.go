@@ -13,6 +13,9 @@ type CustomFilter struct {
 }
 
 func validateWorkspaceQuery(q ListQuery) error {
+	if !validFileType(q.FileType) {
+		return invalid("unknown file type %q", q.FileType)
+	}
 	if q.SearchMode != "" && q.SearchMode != "name" && q.SearchMode != "content" {
 		return invalid("unknown search mode %q", q.SearchMode)
 	}
@@ -35,6 +38,9 @@ func validateWorkspaceQuery(q ListQuery) error {
 
 func workspacePredicates(q ListQuery, params map[string]any) []string {
 	var out []string
+	if predicate := fileTypePredicate(q.FileType, params); predicate != "" {
+		out = append(out, predicate)
+	}
 	if q.SearchMode == "content" && strings.TrimSpace(q.Search) != "" {
 		// SEARCH_INDEX takes Lucene syntax; phrase quoting keeps archive search literal.
 		// https://docs.arcadedb.com/arcadedb/how-to/data-modeling/full-text-index

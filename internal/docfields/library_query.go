@@ -33,7 +33,7 @@ func ParseCustomFilters(raw string) ([]CustomFilter, error) {
 // ParseListQuery keeps the saved-view and HTTP query validators identical.
 func ParseListQuery(v url.Values) (ListQuery, error) {
 	q := ListQuery{Fields: arcadedb.FieldFilter{Types: v["type"], Counterparties: v["counterparty"], Tags: v["tags"], TagsAll: v.Get("tags_mode") == "all", DateFrom: v.Get("date_from"), DateTo: v.Get("date_to"), IncludeUnreviewed: true},
-		Exclude: arcadedb.FieldFilter{Types: v["type_not"], Counterparties: v["counterparty_not"], Tags: v["tags_not"]}, Unassigned: v["unassigned"], Search: v.Get("q"), SearchMode: v.Get("search_mode"), SourceKeys: v["source_key"], Sort: v.Get("sort")}
+		Exclude: arcadedb.FieldFilter{Types: v["type_not"], Counterparties: v["counterparty_not"], Tags: v["tags_not"]}, Unassigned: v["unassigned"], Search: v.Get("q"), SearchMode: v.Get("search_mode"), FileType: NormalizeFileType(v.Get("file_type")), SourceKeys: v["source_key"], Sort: v.Get("sort")}
 	if mode := v.Get("tags_mode"); mode != "" && mode != "all" && mode != "any" {
 		return ListQuery{}, invalid("unknown tags mode")
 	}

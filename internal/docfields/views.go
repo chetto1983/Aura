@@ -37,7 +37,7 @@ func validateView(v *SavedView) error {
 	if err != nil {
 		return invalid("invalid saved view query")
 	}
-	allowed := map[string]bool{"q": true, "search_mode": true, "inbox": true, "source_key": true, "custom": true, "type": true, "counterparty": true, "tags": true, "type_not": true, "counterparty_not": true, "tags_not": true, "unassigned": true, "tags_mode": true, "date_from": true, "date_to": true, "include_unreviewed": true, "needs_review": true, "sort": true, "offset": true, "limit": true}
+	allowed := map[string]bool{"q": true, "search_mode": true, "file_type": true, "inbox": true, "source_key": true, "custom": true, "type": true, "counterparty": true, "tags": true, "type_not": true, "counterparty_not": true, "tags_not": true, "unassigned": true, "tags_mode": true, "date_from": true, "date_to": true, "include_unreviewed": true, "needs_review": true, "sort": true, "offset": true, "limit": true}
 	repeated := map[string]bool{"type": true, "counterparty": true, "tags": true, "type_not": true, "counterparty_not": true, "tags_not": true, "unassigned": true, "source_key": true}
 	for key, items := range values {
 		if !allowed[key] || (!repeated[key] && len(items) > 1) {

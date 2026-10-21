@@ -80,6 +80,7 @@ type documentsFilter struct {
 	IncludeUnreviewed *bool                    `json:"include_unreviewed"`
 	NeedsReview       bool                     `json:"needs_review"`
 	SearchMode        string                   `json:"search_mode"`
+	FileType          string                   `json:"file_type"`
 	Inbox             bool                     `json:"inbox"`
 	SourceKeys        []string                 `json:"source_key"`
 	Custom            []docfields.CustomFilter `json:"custom"`
@@ -96,6 +97,7 @@ func (f documentsFilter) query() docfields.ListQuery {
 		Search:      f.Search,
 		NeedsReview: f.NeedsReview,
 		SearchMode:  f.SearchMode,
+		FileType:    docfields.NormalizeFileType(f.FileType),
 		Inbox:       f.Inbox,
 		SourceKeys:  f.SourceKeys,
 		Custom:      f.Custom,

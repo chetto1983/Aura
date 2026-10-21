@@ -29,6 +29,7 @@ type DocumentRow struct {
 	ID          string     `json:"id"`
 	SourceKey   string     `json:"source_key"`
 	FileName    string     `json:"file_name"`
+	FileType    string     `json:"file_type"`
 	SizeBytes   int64      `json:"size_bytes"`
 	IndexedAt   string     `json:"indexed_at"`
 	RawSHA256   string     `json:"raw_sha256,omitempty"`
@@ -50,6 +51,7 @@ type DocumentDetail struct {
 // fields that must hold nothing: "type", "counterparty", "tags". Fields.IncludeUnreviewed decides,
 // for all three, whether suggestions count. SearchMode selects filename matching or the content
 // index. Inbox includes records without reviewed_at, independently of NeedsReview suggestions.
+// FileType defaults to documents; all explicitly includes media, code and unknown extensions.
 // Sort is a column of sortColumns, descending with a leading "-".
 type ListQuery struct {
 	Fields      arcadedb.FieldFilter
@@ -57,6 +59,7 @@ type ListQuery struct {
 	Unassigned  []string
 	Search      string
 	SearchMode  string
+	FileType    string
 	Inbox       bool
 	SourceKeys  []string
 	Custom      []CustomFilter
@@ -382,7 +385,7 @@ func decodeRows(rows []map[string]any) []DocumentRow {
 	for _, row := range rows {
 		size, _ := row["size_bytes"].(float64)
 		out = append(out, DocumentRow{ID: str(row["search_document_id"]), SourceKey: str(row["source_key"]),
-			FileName: str(row["file_name"]), SizeBytes: int64(size), IndexedAt: str(row["indexed_at"]), RawSHA256: str(row["raw_sha256"]), Values: []Value{}})
+			FileName: str(row["file_name"]), FileType: fileTypeFromName(str(row["file_name"])), SizeBytes: int64(size), IndexedAt: str(row["indexed_at"]), RawSHA256: str(row["raw_sha256"]), Values: []Value{}})
 	}
 	return out
 }
