@@ -16,10 +16,16 @@ const (
 	DocumentFieldsType      = "DocumentFields"
 	DocumentFieldEventType  = "DocumentFieldEvent"
 	DocumentRulePassType    = "DocumentRulePass"
+	DocumentSavedViewType   = "DocumentSavedView"
 )
 
 func documentFieldsSchemaStatements() []string {
 	return []string{
+		"CREATE DOCUMENT TYPE DocumentSavedView IF NOT EXISTS",
+		"CREATE PROPERTY DocumentSavedView.id IF NOT EXISTS STRING",
+		"CREATE PROPERTY DocumentSavedView.name_key IF NOT EXISTS STRING",
+		"CREATE INDEX IF NOT EXISTS ON DocumentSavedView (id) UNIQUE",
+		"CREATE INDEX IF NOT EXISTS ON DocumentSavedView (name_key) UNIQUE",
 		"CREATE DOCUMENT TYPE DocumentLabel IF NOT EXISTS",
 		"CREATE PROPERTY DocumentLabel.id IF NOT EXISTS STRING",
 		"CREATE PROPERTY DocumentLabel.kind IF NOT EXISTS STRING",

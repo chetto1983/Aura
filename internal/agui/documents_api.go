@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"net/url"
-	"strconv"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/docfields"
@@ -48,6 +46,7 @@ func (s *Server) registerDocumentRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH "+documentsBase+"/{id}", s.documentsRoute(s.handleDocumentPatch))
 	mux.HandleFunc("POST "+documentsBase+"/{id}/review", s.documentsRoute(s.handleDocumentReview))
 	s.registerDocumentListRoutes(mux)
+	s.registerDocumentWorkspaceRoutes(mux)
 }
 
 // documentsHandler is a Documenti route with the store checked and the caller's identity resolved.
@@ -67,19 +66,23 @@ func (s *Server) documentsRoute(h documentsHandler) http.HandlerFunc {
 // selection's body does. Values are label ids: the view picks them from the operator's lists. The
 // _not lists exclude, and unassigned names the fields that must hold nothing.
 type documentsFilter struct {
-	Type              []string `json:"type"`
-	Counterparty      []string `json:"counterparty"`
-	Tags              []string `json:"tags"`
-	TypeNot           []string `json:"type_not"`
-	CounterpartyNot   []string `json:"counterparty_not"`
-	TagsNot           []string `json:"tags_not"`
-	Unassigned        []string `json:"unassigned"`
-	TagsMode          string   `json:"tags_mode"`
-	DateFrom          string   `json:"date_from"`
-	DateTo            string   `json:"date_to"`
-	Search            string   `json:"q"`
-	IncludeUnreviewed *bool    `json:"include_unreviewed"`
-	NeedsReview       bool     `json:"needs_review"`
+	Type              []string                 `json:"type"`
+	Counterparty      []string                 `json:"counterparty"`
+	Tags              []string                 `json:"tags"`
+	TypeNot           []string                 `json:"type_not"`
+	CounterpartyNot   []string                 `json:"counterparty_not"`
+	TagsNot           []string                 `json:"tags_not"`
+	Unassigned        []string                 `json:"unassigned"`
+	TagsMode          string                   `json:"tags_mode"`
+	DateFrom          string                   `json:"date_from"`
+	DateTo            string                   `json:"date_to"`
+	Search            string                   `json:"q"`
+	IncludeUnreviewed *bool                    `json:"include_unreviewed"`
+	NeedsReview       bool                     `json:"needs_review"`
+	SearchMode        string                   `json:"search_mode"`
+	Inbox             bool                     `json:"inbox"`
+	SourceKeys        []string                 `json:"source_key"`
+	Custom            []docfields.CustomFilter `json:"custom"`
 }
 
 func (f documentsFilter) query() docfields.ListQuery {
@@ -92,43 +95,15 @@ func (f documentsFilter) query() docfields.ListQuery {
 		Unassigned:  f.Unassigned,
 		Search:      f.Search,
 		NeedsReview: f.NeedsReview,
+		SearchMode:  f.SearchMode,
+		Inbox:       f.Inbox,
+		SourceKeys:  f.SourceKeys,
+		Custom:      f.Custom,
 	}
-}
-
-func filterFromQuery(values url.Values) (documentsFilter, error) {
-	f := documentsFilter{Type: values["type"], Counterparty: values["counterparty"], Tags: values["tags"],
-		TypeNot: values["type_not"], CounterpartyNot: values["counterparty_not"], TagsNot: values["tags_not"],
-		Unassigned: values["unassigned"], TagsMode: values.Get("tags_mode"), DateFrom: values.Get("date_from"),
-		DateTo: values.Get("date_to"), Search: values.Get("q")}
-	needsReview, err := queryBool(values, "needs_review")
-	if err != nil {
-		return documentsFilter{}, err
-	}
-	f.NeedsReview = needsReview != nil && *needsReview
-	f.IncludeUnreviewed, err = queryBool(values, "include_unreviewed")
-	return f, err
-}
-
-// queryBool reads an optional boolean parameter: nil when absent.
-func queryBool(values url.Values, name string) (*bool, error) {
-	raw := values.Get(name)
-	if raw == "" {
-		return nil, nil
-	}
-	v, err := strconv.ParseBool(raw)
-	return &v, err
 }
 
 func (s *Server) handleDocumentsList(w http.ResponseWriter, r *http.Request, store documentsStore, identityID string) {
-	values := r.URL.Query()
-	filter, err := filterFromQuery(values)
-	q := filter.query()
-	q.Sort = values.Get("sort")
-	for name, dst := range map[string]*int{"offset": &q.Offset, "limit": &q.Limit} {
-		if raw := values.Get(name); raw != "" && err == nil {
-			*dst, err = strconv.Atoi(raw)
-		}
-	}
+	q, err := docfields.ParseListQuery(r.URL.Query())
 	if err != nil {
 		writeJSONStatus(w, http.StatusBadRequest, map[string]string{"error": "invalid_query"})
 		return

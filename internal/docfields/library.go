@@ -31,6 +31,7 @@ type DocumentRow struct {
 	FileName    string     `json:"file_name"`
 	SizeBytes   int64      `json:"size_bytes"`
 	IndexedAt   string     `json:"indexed_at"`
+	RawSHA256   string     `json:"raw_sha256,omitempty"`
 	RecordID    string     `json:"record_id,omitempty"`
 	Values      []Value    `json:"values"`
 	ReviewedAt  *time.Time `json:"reviewed_at,omitempty"`
@@ -47,13 +48,18 @@ type DocumentDetail struct {
 // ListQuery filters, orders and pages the library. Fields holds the label ids a document must
 // hold, Exclude the ones it must not (its types, counterparties and tags), and Unassigned the
 // fields that must hold nothing: "type", "counterparty", "tags". Fields.IncludeUnreviewed decides,
-// for all three, whether suggestions count. Search matches part of the file name, in any case.
+// for all three, whether suggestions count. SearchMode selects filename matching or the content
+// index. Inbox includes records without reviewed_at, independently of NeedsReview suggestions.
 // Sort is a column of sortColumns, descending with a leading "-".
 type ListQuery struct {
 	Fields      arcadedb.FieldFilter
 	Exclude     arcadedb.FieldFilter
 	Unassigned  []string
 	Search      string
+	SearchMode  string
+	Inbox       bool
+	SourceKeys  []string
+	Custom      []CustomFilter
 	NeedsReview bool
 	Sort        string
 	Offset      int
@@ -74,7 +80,7 @@ type ListResult struct {
 	Facets Facets        `json:"facets"`
 }
 
-const documentRowColumns = "search_document_id, source_key, file_name, size_bytes, indexed_at"
+const documentRowColumns = "search_document_id, source_key, file_name, size_bytes, indexed_at, raw_sha256"
 
 // List reads a page of the library. The total and the facets count the whole result, so the
 // view can say how many documents a filter holds before the operator pages through them.
@@ -216,6 +222,13 @@ func (s *Store) libraryScope(ctx context.Context, identityID string, q ListQuery
 		return nil, "", nil, err
 	}
 	c, err := s.client(ctx, identityID)
+	if err == nil && q.SearchMode == "content" && strings.TrimSpace(q.Search) != "" {
+		var rows []map[string]any
+		rows, err = c.Query(ctx, "SELECT name FROM schema:types WHERE name = :name", map[string]any{"name": arcadedb.IndexedDocumentType})
+		if err == nil && len(rows) == 0 {
+			return c, "1 = 0", params, nil
+		}
+	}
 	return c, strings.Join(append([]string{where}, extra...), " AND "), params, err
 }
 
@@ -253,13 +266,17 @@ func libraryPredicates(q ListQuery, params map[string]any) ([]string, error) {
 			out = append(out, property(name)+" IS NULL")
 		}
 	}
-	if search := strings.TrimSpace(q.Search); search != "" {
+	if err := validateWorkspaceQuery(q); err != nil {
+		return nil, err
+	}
+	if search := strings.TrimSpace(q.Search); search != "" && q.SearchMode != "content" {
 		params["search"] = "%" + likeLiteral.Replace(strings.ToLower(search)) + "%"
 		out = append(out, "file_name.toLowerCase() LIKE :search")
 	}
 	if q.NeedsReview {
 		out = append(out, "df_needs_review = true")
 	}
+	out = append(out, workspacePredicates(q, params)...)
 	return out, nil
 }
 
@@ -365,7 +382,7 @@ func decodeRows(rows []map[string]any) []DocumentRow {
 	for _, row := range rows {
 		size, _ := row["size_bytes"].(float64)
 		out = append(out, DocumentRow{ID: str(row["search_document_id"]), SourceKey: str(row["source_key"]),
-			FileName: str(row["file_name"]), SizeBytes: int64(size), IndexedAt: str(row["indexed_at"]), Values: []Value{}})
+			FileName: str(row["file_name"]), SizeBytes: int64(size), IndexedAt: str(row["indexed_at"]), RawSHA256: str(row["raw_sha256"]), Values: []Value{}})
 	}
 	return out
 }
