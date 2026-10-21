@@ -109,7 +109,13 @@ type ExecStreamHandle struct {
 	attach    client.ExecAttachResult
 	in        io.ReadCloser
 
-	killOnce sync.Once
+	lifecycleMu sync.Mutex
+	killing     bool
+	completed   bool
+	waitOnce    sync.Once
+	waitCode    int
+	waitErr     error
+
 	killReq  chan struct{}
 	done     chan struct{}
 	stopDone chan struct{}
@@ -226,38 +232,53 @@ func wrapCommandWithPIDFile(pidFile, cmd string) string {
 }
 
 // Kill requests bounded termination once, without waiting under the caller's registry lock.
-// Wait joins the termination worker even if the output stream had already closed.
+// Confirmed completion and termination admission share one lock. No Docker I/O or
+// worker join happens under it, so callers may still hold their registry lock.
 func (s *ExecStreamHandle) Kill() {
-	s.killOnce.Do(func() {
-		close(s.killReq)
-		go func() {
-			defer close(s.stopDone)
-			s.stopCode, s.stopErr = killBoxProcessGroup(s.cli, s.container, s.pidFile, s.execID)
-			if s.stopErr != nil {
-				slog.Warn("sandbox job exit unconfirmed", "container", s.container, "exec", s.execID, "err", s.stopErr)
-			}
-		}()
-	})
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if !s.completed && !s.killing {
+		s.startKillLocked()
+	}
+}
+
+func (s *ExecStreamHandle) startKillLocked() {
+	s.killing = true
+	close(s.killReq)
+	go func() {
+		defer close(s.stopDone)
+		s.stopCode, s.stopErr = killBoxProcessGroup(s.cli, s.container, s.pidFile, s.execID)
+		if s.stopErr != nil {
+			slog.Warn("sandbox job exit unconfirmed", "container", s.container, "exec", s.execID, "err", s.stopErr)
+		}
+	}()
 }
 
 // Wait joins stream and termination work and returns a confirmed remote exit code.
 // ErrExecUnconfirmed is distinct from both a confirmed nonzero exit and cancellation.
 func (s *ExecStreamHandle) Wait() (int, error) {
+	s.waitOnce.Do(func() { s.waitCode, s.waitErr = s.wait() })
+	return s.waitCode, s.waitErr
+}
+
+func (s *ExecStreamHandle) wait() (int, error) {
 	<-s.done
-	select {
-	case <-s.killReq:
-		<-s.stopDone
-		return s.stopCode, s.stopErr
-	default:
-	}
 	// Stream EOF does not prove process exit. Inspection and escalation stay bounded.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	code, err := waitExecExit(ctx, s.cli, s.execID, s.killReq)
-	if err == nil {
+	s.lifecycleMu.Lock()
+	if err == nil && !s.killing {
+		s.completed = true
+		s.lifecycleMu.Unlock()
 		return code, nil
 	}
-	s.Kill()
+	// Kill may have won while the final successful ExecInspect was in flight.
+	// Its worker remains owned by Wait, including any unconfirmed-exit result.
+	if !s.killing {
+		s.startKillLocked()
+	}
+	s.lifecycleMu.Unlock()
 	<-s.stopDone
 	if s.stopErr != nil {
 		return s.stopCode, errors.Join(err, s.stopErr)

@@ -65,3 +65,28 @@ waiver or baseline change was used. Full official release covdata gating remains
 Five valid isolated overlay mutants were killed (100%): Running treated as exit, masking
 unknown exit with cancellation, releasing uncertain admission, deleting uncertain scratch
 and blocking Kill. Normal commit-hook details and the exact fix range are in the task report.
+
+## Review round2: completion and cancellation ordering
+
+Base: `acd29b3a5`, measured 2026-10-22, Europe/Rome. The background-shell reaper defers
+Kill until after Wait returns. The original round1 handle admitted a termination worker
+even after successful completion. A second ordering let Kill start during the last successful
+Docker inspection, then allowed Wait to return code17/nil while that worker was still blocked.
+Both orderings were reproduced by daemon-free transport tests before this correction.
+
+The handle now coordinates confirmed completion and termination admission under one short
+mutex. A Kill after confirmed completion does nothing. A Kill admitted before completion
+owns the result: Wait joins its bounded worker and preserves its exit code or typed uncertainty,
+even if the concurrent inspection reports successful exit. Multiple Wait calls share the
+same settled result. Docker I/O and joins happen outside that mutex, preserving nonblocking,
+idempotent Kill and existing caller registry lock ordering. No preview lifecycle policy changed.
+
+Round2 verification: targeted vet/build and all three unit suites passed (usersandbox0.160s,
+agent/tools3.776s, cmd/aura29.545s). Serial race suites passed in1.284s,12.442s and64.742s
+respectively. Live shared execution/stdin/EOF/kill race regressions passed2.613s. The offline
+native race matrix passed6.307s across nine committed fixtures, normal cancellation0.40s and
+resistant-child cancellation0.60s, confirming PID absence before return. Both valid lifecycle
+overlay mutants were killed: removing the completed guard and bypassing a concurrent
+termination worker. Document source and its coverage denominator are unchanged by round2;
+no new whole-repository discovery or coverage-policy exception was used. Exact commands,
+logs, commit and scoped re-review range are in the task report.
