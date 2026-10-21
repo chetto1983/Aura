@@ -98,13 +98,13 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 
 **Interfaces:** consume Task 1/2 DTOs. Mount `/documents/*` through the existing authenticated AppShell and preserve the document surface on direct navigation. Document routes include overview/library/inbox/processing/lists and `document/:id`; query state uses existing API parameter names plus display/page-size. Legacy Documents entry moves into the new workspace without changing other app destinations.
 
-- [ ] Write failing interaction tests for default document entry, sidebar destinations, URL round trips/back/reload, content/name mode, Inbox and Suggestions distinction, empty/error/retry states and stale-result protection.
-- [ ] Mount the existing route table through React Router's createBrowserRouter/RouterProvider so Task 4 can use the installed useBlocker for unsaved navigation, including browser Back. Preserve auth, lazy boundaries and TanStack fetching; adapt document test fixtures with createMemoryRouter.
-- [ ] Implement sidebar/drawer and overview using live counts, recent documents and pinned saved views; library has table/compact/cards, visible Upload, explicit sort/page-size, retained filter chips and bulk-selection contracts.
-- [ ] Write failing uploader tests for multi-file/drop, two same-named files in one batch, real file-manager multipart response IDs, individual errors/retry, unique item keys, ready lookup and library/count invalidation. Preserve pending successful uploads across workspace navigation and avoid replaying upload after refresh.
-- [ ] Implement upload state with polling of exact source keys; show waiting honestly and offer Files/Open when appropriate. Keep processing status and polling identity-scoped; avoid refetch storms.
-- [ ] Write saved-view tests for save/apply/rename/delete/pin/dashboard and fresh session/server persistence. Add custom-field filters and bulk field edits with explicit confirmation, reusing existing Diff validation.
-- [ ] Implement real thumbnails with named fallbacks; responsive cards/compact rows keep names readable. Hide global token/cost telemetry only while working in Documents.
+- [x] Write failing interaction tests for default document entry, sidebar destinations, URL round trips/back/reload, content/name mode, Inbox and Suggestions distinction, empty/error/retry states and stale-result protection.
+- [x] Mount the existing route table through React Router's createBrowserRouter/RouterProvider so Task 4 can use the installed useBlocker for unsaved navigation, including browser Back. Preserve auth, lazy boundaries and TanStack fetching; adapt document test fixtures with createMemoryRouter.
+- [x] Implement sidebar/drawer and overview using live counts, recent documents and pinned saved views; library has table/compact/cards, visible Upload, explicit sort/page-size, retained filter chips and bulk-selection contracts.
+- [x] Write failing uploader tests for multi-file/drop, two same-named files in one batch, real file-manager multipart response IDs, individual errors/retry, unique item keys, ready lookup and library/count invalidation. Preserve pending successful uploads across workspace navigation and avoid replaying upload after refresh.
+- [x] Implement upload state with polling of exact source keys; show waiting honestly and offer Files/Open when appropriate. Keep processing status and polling identity-scoped; avoid refetch storms.
+- [x] Write saved-view tests for save/apply/rename/delete/pin/dashboard and fresh session/server persistence. Add custom-field filters and bulk field edits with explicit confirmation, reusing existing Diff validation.
+- [x] Implement real thumbnails with named fallbacks; responsive cards/compact rows keep names readable. Hide global token/cost telemetry only while working in Documents.
 - [ ] Run focused Vitest tests, typecheck, lint and build; inspect both themes and languages; review, commit/merge and fresh targeted verification.
 
 ### Task 4: Focused document detail and organization

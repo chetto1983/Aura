@@ -34,3 +34,24 @@ SQLite versus Siemens `.db`); classification alone cannot establish that it is r
 Existing HTML behavior is a reusable supported renderer, not an instruction to execute arbitrary
 programming languages. The new Code filter must preserve source escaping and the current iframe
 sandbox boundary. No ingestion/extraction changes were made by this inventory.
+
+## Source-size measurement, 2026-10-22
+
+The installed helper was also run on synthetic Python source after warming its grammar:
+
+| Source bytes | Lines | Highlighted HTML bytes | Elapsed | Heap change |
+|---|---|---|---|---|
+| 65,536 | 1,338 | 239,525 | 112 ms | 4 MiB |
+| 262,144 | 5,351 | 957,753 | 182 ms | 21 MiB |
+| 1,225,037 | 25,002 | 4,475,241 | 784 ms | 43 MiB |
+
+Command: `node .superpowers/sdd/2026-10-21-paperless-documents/measure-source-preview.mjs`.
+The fixture repeats a simple assignment and is not a worst-case grammar benchmark. Times are
+one local Node run, excluding browser DOM layout, and heap changes are not peak memory. The
+measurement demonstrates that source expansion and synchronous tokenization grow enough to
+justify bounding preview reads and highlighting. Download must still provide the original file.
+
+The running pre-rebuild file-manager preview was also exercised with the newly indexed
+synthetic sources. Python displayed all 308 bytes and 35 styled syntax spans. Rust opened the
+shared preview dialog but showed only its download fallback. This establishes the actual
+routing gap in addition to the grammar-selection probe; both need to be addressed.
