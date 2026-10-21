@@ -25,6 +25,13 @@ permissions:
 # every job that touches compose needs it set — a non-secret CI placeholder is enough
 # (caddy itself is never started in CI; this only satisfies interpolation).
 env:
+  # proxy.golang.org drops a stream mid-download now and then: on 1e38e4c the build job died on
+  # `stream error: stream ID 473; INTERNAL_ERROR` fetching go-playground/locales before any
+  # code compiled. With a comma Go tries the next source only after a 404 or 410; with a pipe
+  # it tries `direct` after any error, the .zip download included (cmd/go/internal/modfetch:
+  # proxy.go fallBackOnError, fetch.go TryProxies around Repo.Zip). go.sum still checks what
+  # direct fetches. docker/arcadedb-mcp/Dockerfile retries its own download for the same reason.
+  GOPROXY: https://proxy.golang.org|direct
   AURA_ACCESS_TOKEN: ci-not-a-secret
   AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
   SEARXNG_SECRET: 00000000000000000000000000000000000000000000000000000000000000b2
