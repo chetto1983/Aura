@@ -4018,9 +4018,16 @@ patch run on it, and `deploy/aura-registry-bridge.sh` is deleted. create-aura 0.
 ghcr.io, get.docker.com and huggingface.co, as before the bridge.
 
 The move does not compare builds: it repoints a key as soon as the ghcr copy of its tag pulls.
-So a fork image must be republished to ghcr before a bridged host receives this updater, or the
-host would step back to the 2026-09-24 build. Hosts receive it only from the GitLab `aura:edge`,
-which the operator publishes (Return trip step 3), so that publish waits for the forks.
+So every image must be current on ghcr before a bridged host receives this updater, or the host
+would step back: to the 2026-10-08/11 builds for Aura's own images until the edge workflow
+publishes this commit, and to the 2026-09-24 builds for the forks until they are republished.
+Hosts receive the updater only from the GitLab `aura:edge`, which the operator publishes (Return
+trip step 3), so that publish waits for both.
+
+The edge workflow itself timed out on this commit, the first GitHub build of the aura image
+since the Craft apps joined it on 2026-10-19: with a cold cache, pdfcraft took 717 s and
+wordcraft 508 s, and the 30-minute cap cut the job off in the third of five Rust builds. Its cap
+is now 90 minutes.
 
 Andrea's box ran the bridge patch (operator, 2026-10-21), so its updater reads GitLab and comes
 back only through that publish.
