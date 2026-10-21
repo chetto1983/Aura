@@ -6,5 +6,12 @@ import type { RendererProps } from './PreviewStatus';
 // by the file's extension when Shiki has that grammar. Never parsed as markdown or HTML, so
 // there is zero injection surface (T-37B-10).
 export default function TextPreview({ assetId, fileName }: RendererProps) {
-  return <HighlightedSource assetId={assetId} lang={extOf(fileName)} wrap />;
+  return (
+    <HighlightedSource
+      assetId={assetId}
+      fileName={fileName}
+      lang={extOf(fileName) || fileName}
+      wrap
+    />
+  );
 }

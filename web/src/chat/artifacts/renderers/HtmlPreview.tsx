@@ -4,7 +4,7 @@ import { Code2, Eye } from 'lucide-react';
 import { HighlightedSource } from './HighlightedSource';
 import { useAssetContent } from './useAssetContent';
 import { useAssetSource } from './assetSourceContext';
-import { PreviewError, PreviewLoading, type RendererProps } from './PreviewStatus';
+import { PreviewErrorWithDownload, PreviewLoading, type RendererProps } from './PreviewStatus';
 
 // text/html (D-07 / WEBART-07 / T-37B-08): an agent-written page is untrusted markup, so it
 // renders in a NULL-ORIGIN iframe. sandbox="allow-scripts" WITHOUT the same-origin token is
@@ -47,8 +47,19 @@ function RenderedFrame({ src, title }: { readonly src: string; readonly title: s
  *  CSP and gets no scrub — the pre-existing behavior, kept rather than removed so those pages
  *  do not regress while they wait for a sealed route of their own. */
 function SrcdocFrame({ assetId, title }: { readonly assetId: string; readonly title: string }) {
-  const { data, error } = useAssetContent(assetId, 'text');
-  if (error !== undefined) return <PreviewError detail={error} />;
+  const { data, error, truncated, binary } = useAssetContent(assetId, 'text');
+  const { t } = useTranslation();
+  if (error !== undefined || truncated || binary)
+    return (
+      <PreviewErrorWithDownload
+        assetId={assetId}
+        fileName={title}
+        detail={
+          error ??
+          t(binary ? 'artifacts.preview.binarySource' : 'artifacts.preview.truncatedSource')
+        }
+      />
+    );
   if (data === undefined) return <PreviewLoading />;
   return (
     <iframe
@@ -110,7 +121,7 @@ export default function HtmlPreview({ assetId, fileName }: RendererProps) {
         {/* The source mounts only while its tab is active, so opening an artifact does not
             fetch a large body a second time just to have it available. */}
         {tab === 'source' ? (
-          <HighlightedSource assetId={assetId} lang="html" />
+          <HighlightedSource assetId={assetId} fileName={fileName} lang="html" />
         ) : (
           <ArtifactFrame assetId={assetId} fileName={fileName} />
         )}

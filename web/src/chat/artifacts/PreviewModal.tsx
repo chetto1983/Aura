@@ -13,8 +13,8 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 
 // PreviewModal (WEBART-05 / D-09): a ~90vw×90vh Radix Dialog that previews an agent-
 // delivered asset in-cockpit. It dispatches by previewKind (plan 03, the pure MIME gate)
-// to one of seven SUSPENSE-wrapped lazy renderer chunks — so docx-preview never enters
-// this modal's static import graph — or, for the download-only kinds (svg/pptx/unknown),
+// to SUSPENSE-wrapped shared renderers, keeping native apps out of the modal's static import
+// graph — or, for the download-only kinds (svg/legacy-ppt/unknown),
 // shows a download card WITHOUT mounting any renderer. The header carries the filename and
 // a download anchor resolved through useAssetSource() (the 37A auth route by default; a
 // token-scoped public route once a provider is mounted — R-05); Radix owns focus-trap, Esc,

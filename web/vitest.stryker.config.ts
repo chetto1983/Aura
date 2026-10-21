@@ -17,6 +17,11 @@ const mutationTests = [
   'src/questions/__tests__/useCountdown.test.ts',
   'src/questions/__tests__/ElicitationCard.test.tsx',
   'src/chat/artifacts/artifactMeta.test.ts',
+  'src/chat/artifacts/PreviewModal.test.tsx',
+  'src/chat/artifacts/renderers/sourcePreview.test.tsx',
+  'src/chat/artifacts/renderers/CraftFrame.persistence.test.tsx',
+  'src/documents/DocumentDetail.workspace.test.tsx',
+  'src/documents/documentNeighbors.test.ts',
   'src/chat/artifacts/downloadAll.test.ts',
   // iOS's home-screen app saves through the share sheet (prd.md §3).
   'src/chat/artifacts/SaveFileLink.test.tsx',

@@ -60,7 +60,7 @@ describe('previewKind', () => {
       expect(previewKind(mime, 'recording.bin')).toBe('audio');
     }
     expect(previewKind('audio/flac', 'recording.mp3')).toBe('download');
-    expect(previewKind('application/octet-stream', 'recording.mp3')).toBe('download');
+    expect(previewKind('application/octet-stream', 'recording.mp3')).toBe('audio');
     expect(previewKind('image/svg+xml; charset=utf-8', 'recording.mp3')).toBe('download');
   });
 
@@ -91,7 +91,7 @@ describe('previewKind', () => {
 
   it('routes the text family by text/* mime and by known text/code extensions', () => {
     expect(previewKind('text/plain', 'x.txt')).toBe('text');
-    for (const name of ['x.md', 'x.csv', 'x.json', 'x.sh', 'x.yaml', 'x.go']) {
+    for (const name of ['x.md', 'x.json', 'x.sh', 'x.yaml', 'x.go']) {
       expect(previewKind('', name)).toBe('text');
     }
   });

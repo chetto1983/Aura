@@ -129,7 +129,7 @@ function Surface({
           }}
           onFilter={(field, id) => {
             void navigate(
-              `/documents/library?${writeDocumentQuery({ ...query, filter: withField(EMPTY_FILTER, 'include', field, id), page: { ...query.page, offset: 0 } })}`,
+              `/documents/library?${writeDocumentQuery({ ...query, filter: withField({ ...EMPTY_FILTER, fileType: 'all' }, 'include', field, id), page: { ...query.page, offset: 0 } })}`,
             );
           }}
         />
@@ -146,8 +146,13 @@ function Surface({
           onClose={() => {
             void navigate(resultHref(params));
           }}
-          onOpen={(id) => {
-            void navigate(documentHref(id, params.get('from') ?? '/documents/library', query));
+          onOpen={(id, offset) => {
+            void navigate(
+              documentHref(id, params.get('from') ?? '/documents/library', {
+                ...query,
+                page: { ...query.page, offset: offset ?? query.page.offset },
+              }),
+            );
           }}
         />
       );

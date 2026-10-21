@@ -18,6 +18,17 @@ async function openFields() {
 }
 
 describe('the custom fields', () => {
+  it('filters custom field names', async () => {
+    stubServer();
+    renderDocuments('/documents/lists');
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Campi personalizzati' }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.change(await screen.findByRole('searchbox'), { target: { value: 'Numero' } });
+    expect(screen.queryByRole('heading', { name: 'Stato', level: 3 })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Numero fattura', level: 3 })).toBeTruthy();
+  });
   it('shows each field with its type in words, and a choice with its options', async () => {
     stubServer();
     await openFields();

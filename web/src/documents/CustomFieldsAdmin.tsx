@@ -6,6 +6,7 @@ import { deleteCustomField, saveCustomField, type CustomField } from './document
 import { useWrite } from './useWrite';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 
 const DATA_TYPES: readonly CustomField['data_type'][] = [
   'date',
@@ -28,11 +29,21 @@ function optionsOf(text: string): string[] {
  * words and a choice's options; a new field, an edit and a delete. A custom field holds no rule:
  * the extractor fills the ones it reads, and the operator the rest.
  */
-export function CustomFieldsAdmin({ fields }: { readonly fields: readonly CustomField[] }) {
+export function CustomFieldsAdmin({
+  fields,
+  counts,
+}: {
+  readonly fields: readonly CustomField[];
+  readonly counts?: Readonly<Record<string, number>>;
+}) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState<CustomField | 'new' | null>(null);
   const [deleting, setDeleting] = useState<CustomField | null>(null);
+  const [search, setSearch] = useState('');
+  const visible = fields.filter((field) =>
+    field.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+  );
   const remove = useWrite('documents.lists.failed');
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['documents-custom-fields'] });
@@ -55,6 +66,15 @@ export function CustomFieldsAdmin({ fields }: { readonly fields: readonly Custom
 
   return (
     <div className="flex flex-col gap-3">
+      <Input
+        type="search"
+        aria-label={t('documents.lists.search')}
+        placeholder={t('documents.lists.search')}
+        value={search}
+        onChange={(event) => {
+          setSearch(event.target.value);
+        }}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
@@ -71,11 +91,11 @@ export function CustomFieldsAdmin({ fields }: { readonly fields: readonly Custom
         )}
       </div>
       {editing === 'new' && editor()}
-      {fields.length === 0 && editing !== 'new' && (
+      {visible.length === 0 && editing !== 'new' && (
         <p className="text-sm text-text-muted">{t('documents.lists.empty')}</p>
       )}
       <ul className="flex flex-col">
-        {fields.map((field) =>
+        {visible.map((field) =>
           editing !== 'new' && editing?.id === field.id ? (
             <li key={field.id} className="py-3">
               {editor(field)}
@@ -84,7 +104,12 @@ export function CustomFieldsAdmin({ fields }: { readonly fields: readonly Custom
             <AdminEntry
               key={field.id}
               name={field.name}
-              lines={[typeWords(field)]}
+              lines={[
+                typeWords(field),
+                ...(counts?.[field.id] === undefined
+                  ? []
+                  : [t('documents.lists.count', { count: counts[field.id] })]),
+              ]}
               onEdit={() => {
                 setEditing(field);
               }}

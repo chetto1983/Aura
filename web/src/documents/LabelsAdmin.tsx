@@ -47,6 +47,10 @@ export function LabelsAdmin({ kind, labels, counts, onFilter }: LabelsAdminProps
   const [editing, setEditing] = useState<Label | 'new' | null>(null);
   const [deleting, setDeleting] = useState<Label | null>(null);
   const [status, setStatus] = useState('');
+  const [search, setSearch] = useState('');
+  const visible = labels.filter((label) =>
+    label.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+  );
   const remove = useWrite('documents.lists.failed');
 
   const refresh = () =>
@@ -69,6 +73,15 @@ export function LabelsAdmin({ kind, labels, counts, onFilter }: LabelsAdminProps
 
   return (
     <div className="flex flex-col gap-3">
+      <Input
+        type="search"
+        aria-label={t('documents.lists.search')}
+        placeholder={t('documents.lists.search')}
+        value={search}
+        onChange={(event) => {
+          setSearch(event.target.value);
+        }}
+      />
       <div className="flex flex-wrap items-center gap-3">
         <Button
           type="button"
@@ -91,11 +104,11 @@ export function LabelsAdmin({ kind, labels, counts, onFilter }: LabelsAdminProps
         )}
       </div>
       {editing === 'new' && editor()}
-      {labels.length === 0 && editing !== 'new' && (
+      {visible.length === 0 && editing !== 'new' && (
         <p className="text-sm text-text-muted">{t('documents.lists.empty')}</p>
       )}
       <ul className="flex flex-col">
-        {labels.map((label) =>
+        {visible.map((label) =>
           editing !== 'new' && editing?.id === label.id ? (
             <li key={label.id} className="py-3">
               {editor(label)}

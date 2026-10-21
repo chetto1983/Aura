@@ -27,6 +27,31 @@ const LANG_LOADERS: Record<string, () => Promise<{ default: unknown }>> = {
   css: () => import('@shikijs/langs/css'),
   yaml: () => import('@shikijs/langs/yaml'),
   markdown: () => import('@shikijs/langs/markdown'),
+  rust: () => import('@shikijs/langs/rust'),
+  c: () => import('@shikijs/langs/c'),
+  cpp: () => import('@shikijs/langs/cpp'),
+  csharp: () => import('@shikijs/langs/csharp'),
+  java: () => import('@shikijs/langs/java'),
+  xml: () => import('@shikijs/langs/xml'),
+  toml: () => import('@shikijs/langs/toml'),
+  ruby: () => import('@shikijs/langs/ruby'),
+  php: () => import('@shikijs/langs/php'),
+  swift: () => import('@shikijs/langs/swift'),
+  kotlin: () => import('@shikijs/langs/kotlin'),
+  dart: () => import('@shikijs/langs/dart'),
+  r: () => import('@shikijs/langs/r'),
+  lua: () => import('@shikijs/langs/lua'),
+  perl: () => import('@shikijs/langs/perl'),
+  powershell: () => import('@shikijs/langs/powershell'),
+  dockerfile: () => import('@shikijs/langs/dockerfile'),
+  makefile: () => import('@shikijs/langs/makefile'),
+  ini: () => import('@shikijs/langs/ini'),
+  scss: () => import('@shikijs/langs/scss'),
+  vue: () => import('@shikijs/langs/vue'),
+  svelte: () => import('@shikijs/langs/svelte'),
+  terraform: () => import('@shikijs/langs/terraform'),
+  graphql: () => import('@shikijs/langs/graphql'),
+  diff: () => import('@shikijs/langs/diff'),
 };
 
 const LANG_ALIASES: Record<string, string> = {
@@ -40,6 +65,21 @@ const LANG_ALIASES: Record<string, string> = {
   yml: 'yaml',
   md: 'markdown',
   golang: 'go',
+  rs: 'rust',
+  h: 'c',
+  hpp: 'cpp',
+  cc: 'cpp',
+  cxx: 'cpp',
+  cs: 'csharp',
+  rb: 'ruby',
+  kt: 'kotlin',
+  kts: 'kotlin',
+  pl: 'perl',
+  ps1: 'powershell',
+  tf: 'terraform',
+  gql: 'graphql',
+  conf: 'ini',
+  htm: 'html',
 };
 
 export const DARK_THEME = 'github-dark-default';
@@ -93,6 +133,7 @@ export async function highlightCode(
   lang: string | undefined,
   isDark: boolean,
 ): Promise<string | null> {
+  if (!canHighlight(code)) return null;
   const resolved = resolveLang(lang);
   if (resolved === null) return null;
   const highlighter = await getHighlighter();
@@ -101,6 +142,10 @@ export async function highlightCode(
     lang: resolved,
     theme: isDark ? DARK_THEME : LIGHT_THEME,
   });
+}
+
+export function canHighlight(code: string): boolean {
+  return code.length <= 64 * 1024 && code.split('\n').length <= 2000 && !/[^\n]{8193}/.test(code);
 }
 
 /** Test-only: reset the memoised highlighter + loaded-lang cache. */

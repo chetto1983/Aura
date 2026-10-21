@@ -9,6 +9,7 @@ import {
   Globe,
   type LucideIcon,
 } from 'lucide-react';
+import { resolveLang } from '../displays/shiki';
 
 // Pure artifact-meta helpers shared by the 37B "Artefatti" panel and the inline
 // local_artifact chip. Everything here is decision logic only (no React, no DOM),
@@ -65,7 +66,7 @@ export function extOf(filename: string): string {
 
 /** Route an asset to its preview renderer. SVG is gated to `download` FIRST — before
  *  the `image/*` branch — so a script-bearing SVG never reaches an executing <img>. */
-export function previewKind(mime: string, filename: string): PreviewKind {
+export function previewKind(mime: string, filename: string, fileType?: string): PreviewKind {
   const ext = extOf(filename);
   const mediaType = mime.split(';', 1)[0]?.trim().toLowerCase() ?? '';
   if (mediaType === 'image/svg+xml' || ext === 'svg') return 'download';
@@ -74,16 +75,28 @@ export function previewKind(mime: string, filename: string): PreviewKind {
   // The file manager's listing carries no media type, so there a raster extension stands in for
   // one. An <img> runs no script, and the route serves only inline-safe types as themselves.
   const untyped = mediaType === '' || mediaType === 'application/octet-stream';
+  if (
+    untyped &&
+    (fileType === 'audio' || ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac', 'opus'].includes(ext))
+  )
+    return 'audio';
   if (untyped && RASTER_EXT.has(ext)) return 'image';
   if (mediaType === 'video/mp4' || mediaType === 'video/webm' || ext === 'mp4' || ext === 'webm') {
     return 'video';
   }
   if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
   if (mime === 'text/html' || ext === 'html' || ext === 'htm') return 'html';
-  if (ext === 'docx') return 'docx';
-  if (ext === 'xlsx') return 'xlsx';
+  if (['docx', 'doc', 'odt', 'rtf'].includes(ext)) return 'docx';
+  if (['xlsx', 'xls', 'ods', 'csv'].includes(ext)) return 'xlsx';
   if (ext === 'pptx') return 'pptx';
-  if (mime.startsWith('text/') || TEXT_EXT.has(ext)) return 'text';
+  if (
+    fileType === 'code' ||
+    mime.startsWith('text/') ||
+    TEXT_EXT.has(ext) ||
+    resolveLang(ext) !== null
+  )
+    return 'text';
+  if (untyped && fileType === 'video') return 'video';
   return 'download';
 }
 

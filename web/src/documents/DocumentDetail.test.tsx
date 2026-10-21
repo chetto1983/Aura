@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderDetail, renderDocuments, stubServer } from './documentsTestServer';
+import { DETAILS, PAGE, renderDetail, renderDocuments, stubServer } from './documentsTestServer';
 import i18n from '@/i18n/i18n';
 
 beforeEach(async () => {
@@ -44,12 +44,15 @@ describe('document detail', () => {
   it('puts a suggestion in the form with a click, without saving it', async () => {
     const { writes } = stubServer();
     await openInvoice();
-    expect(screen.getByRole('button', { name: 'Salva' })).toHaveProperty('disabled', true);
+    expect(screen.getByRole('button', { name: 'Salva dettagli' })).toHaveProperty('disabled', true);
     useGialli();
     expect(screen.getByRole('combobox', { name: 'Controparte' }).textContent).toContain(
       'Gialli Import',
     );
-    expect(screen.getByRole('button', { name: 'Salva' })).toHaveProperty('disabled', false);
+    expect(screen.getByRole('button', { name: 'Salva dettagli' })).toHaveProperty(
+      'disabled',
+      false,
+    );
     expect(writes).toEqual([]);
   });
 
@@ -72,7 +75,7 @@ describe('document detail', () => {
     await openInvoice();
     useGialli();
     fireEvent.change(screen.getByLabelText('Data documento'), { target: { value: '2026-04-15' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salva dettagli' }));
     await waitFor(() => {
       expect(writes).toHaveLength(1);
     });
@@ -89,8 +92,23 @@ describe('document detail', () => {
     });
   });
 
-  it('"Rivisto, salva e avanti" saves, marks it reviewed and opens the next to review', async () => {
+  it('"Rivisto, salva e avanti" saves, marks it reviewed and opens the next current result', async () => {
     const { writes } = stubServer();
+    const original = fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+          location.origin,
+        );
+        if (url.pathname === '/api/documents')
+          return Promise.resolve(
+            Response.json({ ...PAGE, rows: [...PAGE.rows, DETAILS.d3], total: 3 }),
+          );
+        return original(input, init);
+      }),
+    );
     await openInvoice();
     useGialli();
     fireEvent.click(screen.getByRole('button', { name: 'Rivisto, salva e avanti' }));
@@ -134,7 +152,7 @@ describe('document detail', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: 'Usa il suggerimento Verdi SpA (nuova)' }),
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Salva' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salva dettagli' }));
     await waitFor(() => {
       expect(writes).toHaveLength(1);
     });
@@ -145,19 +163,20 @@ describe('document detail', () => {
     });
   });
 
-  // Floating over the document, Edit covered the PDF viewer's own toolbar.
-  it("puts Modifica in the preview's heading row, not over the document", async () => {
+  it('opens PDF directly in Craft with a named original download', async () => {
     stubServer();
     renderDetail('d2');
-    const heading = await screen.findByRole('heading', { name: 'Anteprima' });
-    const edit = await screen.findByRole('button', { name: 'Modifica' });
-    // In the heading's own row, beside the title: not inside the preview below it.
-    expect(edit.parentElement?.parentElement).toBe(heading.parentElement);
+    await screen.findByRole('heading', { name: 'Anteprima' });
+    expect(await screen.findByRole('link', { name: 'Scarica originale' })).toBeTruthy();
   });
 
   it('lists the history, and says when the operator has not reviewed it yet', async () => {
     stubServer();
     renderDetail('d2');
+    fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Storico' }), {
+      button: 0,
+      ctrlKey: false,
+    });
     const history = await screen.findByRole('list', { name: 'Storico' });
     const lines = within(history)
       .getAllByRole('listitem')

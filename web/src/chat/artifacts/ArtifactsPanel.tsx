@@ -16,8 +16,8 @@ import { useThreadArtifacts } from './useThreadArtifacts';
 // newest-first over the identity-scoped list), renders one ArtifactRow per row, a
 // considered empty-state, a throttled "Scarica tutto" bulk download with N/M
 // progress (skips degraded rows, disabled during the run, aborted on unmount/thread
-// switch; one share sheet instead in iOS's home-screen app), and a LAZILY-mounted PreviewModal for the active row — so docx-preview/
-// xlsx and the other renderer chunks stay out of the panel's static import graph
+// switch; one share sheet instead in iOS's home-screen app), and a LAZILY-mounted PreviewModal
+// for the active row, keeping the shared renderer chunks out of the panel's static import graph
 // until the user first opens a preview. Below the artifact list it also renders
 // SharedSection (D-05, 37F-17) — the "Condiviso" list of this thread's active share
 // links, 37B explicitly deferred to this phase — which derives entirely from

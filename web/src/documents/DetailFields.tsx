@@ -6,6 +6,7 @@ import { suggestionsOf, TAG_FIELD, type DetailForm } from './detailModel';
 import type { DetailNames } from './detailNames';
 import { SuggestionChip } from './SuggestionChip';
 import type { DocumentLists } from './useDocumentLists';
+import { DocumentLabelPicker } from './DocumentLabelPicker';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 
@@ -67,18 +68,14 @@ export function DetailFields(props: DetailFieldsProps) {
 
   const labelSelect = (field: 'type' | 'counterparty', list: FilterField) => {
     const current = form.single[field] ?? '';
-    const known = lists[list].some((label) => label.id === current);
-    const options = [
-      { value: '', label: t('documents.detail.none') },
-      ...lists[list].map((label) => ({ value: label.id, label: label.name })),
-      ...(current === '' || known ? [] : [{ value: current, label: names.value(field, current) }]),
-    ];
     return (
       <Field legend={names.field(field)} suggestions={chips(field, takeSingle)}>
-        <Select
-          aria-label={names.field(field)}
+        <DocumentLabelPicker
+          name={names.field(field)}
+          kind={field}
+          labels={lists[list]}
+          currentName={names.value(field, current)}
           value={current}
-          options={options}
           disabled={busy}
           onValueChange={(key) => {
             setSingle(field, key);
@@ -160,20 +157,16 @@ export function DetailFields(props: DetailFieldsProps) {
               </span>
             );
           })}
-          {tagList.length > 0 && (
-            <Select
-              aria-label={t('documents.detail.addTagLabel')}
-              size="sm"
-              className="w-auto"
-              value=""
-              placeholder={t('documents.detail.addTag')}
-              disabled={busy}
-              options={tagList.map((label) => ({ value: label.id, label: label.name }))}
-              onValueChange={(id) => {
-                onChange({ ...form, tags: [...form.tags, id] });
-              }}
-            />
-          )}
+          <DocumentLabelPicker
+            name={t('documents.detail.addTagLabel')}
+            kind="tag"
+            labels={tagList}
+            value=""
+            disabled={busy}
+            onValueChange={(id) => {
+              onChange({ ...form, tags: [...form.tags, id] });
+            }}
+          />
         </div>
       </Field>
     </div>

@@ -39,7 +39,8 @@ interface CraftMessage {
 type SaveState =
   | { readonly kind: 'none' }
   | { readonly kind: 'unsaved' }
-  | { readonly kind: 'saved' }
+  | { readonly kind: 'pending' }
+  | { readonly kind: 'saved'; readonly name: string | undefined }
   | { readonly kind: 'failed'; readonly message: string };
 
 interface CraftFrameProps extends RendererProps {
@@ -58,6 +59,8 @@ function noticeOf(t: TFunction, saving: SaveState, dirty: boolean, held: boolean
     const text = t('artifacts.preview.saveFailed', { message: saving.message });
     return { role: 'alert', tone: 'bg-danger', text };
   }
+  if (saving.kind === 'pending')
+    return { role: 'status', tone: 'bg-warning', text: t('artifacts.preview.saving') };
   if (dirty && held) {
     return { role: 'alert', tone: 'bg-warning', text: t('artifacts.preview.closeDiscards') };
   }
@@ -65,6 +68,12 @@ function noticeOf(t: TFunction, saving: SaveState, dirty: boolean, held: boolean
     return { role: 'status', tone: 'bg-warning', text: t('artifacts.preview.unsavedChanges') };
   }
   if (saving.kind === 'none') return null;
+  if (saving.kind === 'saved' && saving.name)
+    return {
+      role: 'status',
+      tone: 'bg-warning',
+      text: t('artifacts.preview.savedAs', { name: saving.name }),
+    };
   const key = saving.kind === 'saved' ? 'artifacts.preview.saved' : 'artifacts.preview.notSaved';
   return { role: 'status', tone: 'bg-warning', text: t(key) };
 }
@@ -79,11 +88,49 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
   const [failed, setFailed] = useState<string>();
   const [saving, setSaving] = useState<SaveState>({ kind: 'none' });
   const [dirty, setDirty] = useState(false);
+  const retry = useRef<(() => void) | null>(null);
   const { save } = useAssetSource();
   const guard = useContext(PreviewCloseGuardContext);
   const setUnsaved = guard?.setUnsaved;
 
   useEffect(() => {
+    const controller = new AbortController();
+    const active = () => !controller.signal.aborted;
+    const queue: { bytes: ArrayBuffer; name: string | undefined }[] = [];
+    let writing = false;
+    let blocked = false;
+    const drain = async () => {
+      if (writing || blocked || !active() || !save) return;
+      writing = true;
+      try {
+        while (queue.length && active()) {
+          const item = queue[0];
+          if (!item) break;
+          setSaving({ kind: 'pending' });
+          try {
+            await save(assetId, item.bytes, item.name, controller.signal);
+          } catch (err) {
+            if (active()) {
+              blocked = true;
+              setSaving({
+                kind: 'failed',
+                message: err instanceof Error ? err.message : String(err),
+              });
+            }
+            return;
+          }
+          if (!active()) return;
+          queue.shift();
+          if (!queue.length) setSaving({ kind: 'saved', name: item.name });
+        }
+      } finally {
+        writing = false;
+      }
+    };
+    retry.current = () => {
+      blocked = false;
+      void drain();
+    };
     const onMessage = (event: MessageEvent<CraftMessage | null>) => {
       if (
         event.source !== frame.current?.contentWindow ||
@@ -96,17 +143,8 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
       else if (message.type === `${app}:failed`) setFailed(message.error ?? '');
       else if (message.type === `${app}:save` && save !== undefined && message.bytes) {
         const saveAs = message.name === fileName ? undefined : message.name;
-        save(assetId, message.bytes, saveAs).then(
-          () => {
-            setSaving({ kind: 'saved' });
-          },
-          (err: unknown) => {
-            setSaving({
-              kind: 'failed',
-              message: err instanceof Error ? err.message : String(err),
-            });
-          },
-        );
+        queue.push({ bytes: message.bytes, name: saveAs });
+        void drain();
       } else if (save !== undefined && message.type === `${app}:dirty`) {
         setDirty(message.dirty === true);
       } else if (save === undefined && (message.type === `${app}:save` || message.dirty === true)) {
@@ -115,12 +153,15 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
     };
     window.addEventListener('message', onMessage);
     return () => {
+      controller.abort();
+      queue.length = 0;
       window.removeEventListener('message', onMessage);
     };
   }, [app, assetId, fileName, save]);
 
+  const unsaved = dirty || saving.kind === 'pending' || saving.kind === 'failed';
   useEffect(() => {
-    if (!dirty) return;
+    if (!unsaved) return;
     setUnsaved?.(true);
     const holdUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -130,7 +171,7 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
       window.removeEventListener('beforeunload', holdUnload);
       setUnsaved?.(false);
     };
-  }, [dirty, setUnsaved]);
+  }, [unsaved, setUnsaved]);
 
   useEffect(() => {
     if (ready) return;
@@ -180,6 +221,17 @@ export default function CraftFrame({ app, assetId, fileName }: CraftFrameProps) 
           className={`absolute right-3 bottom-3 rounded-md ${notice.tone} px-3 py-1.5 text-xs font-semibold text-bg shadow-lg`}
         >
           {notice.text}
+          {saving.kind === 'failed' && (
+            <button
+              type="button"
+              className="ml-3 min-h-[44px] underline"
+              onClick={() => {
+                retry.current?.();
+              }}
+            >
+              {t('artifacts.preview.retrySave')}
+            </button>
+          )}
         </p>
       )}
     </div>

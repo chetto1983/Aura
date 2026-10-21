@@ -97,13 +97,13 @@ export function directURL(id: string, download: boolean): string {
 /**
  * Where the cockpit's preview reads a file manager object from: the direct route, inline. That
  * route answers Range requests itself, so a clip streams from the same URL; there is no render
- * route and no editing, so those optional capabilities are left out.
+ * route. Craft writes use the existing upload path beside the original object.
  */
 export const FILE_MANAGER_SOURCE: AssetSource = {
   assetUrl: (id) => directURL(id, false),
   streamUrl: (id) => directURL(id, false),
   credentials: 'same-origin',
-  save: (id, bytes, saveAs) => saveBeside(id, bytes, saveAs),
+  save: (id, bytes, saveAs, signal) => saveBeside(id, bytes, saveAs, signal),
 };
 
 /**
@@ -112,7 +112,12 @@ export const FILE_MANAGER_SOURCE: AssetSource = {
  * known by, or as a new file named `saveAs` beside it (Save As, a PDF export). It goes through
  * the upload route, so the ingest reads it again like any upload.
  */
-export async function saveBeside(id: string, bytes: ArrayBuffer, saveAs?: string): Promise<void> {
+export async function saveBeside(
+  id: string,
+  bytes: ArrayBuffer,
+  saveAs?: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const folder = id.slice(0, id.lastIndexOf('/') + 1);
   const form = new FormData();
   form.append('file', new File([bytes], saveAs ?? id.slice(folder.length)));
@@ -120,6 +125,7 @@ export async function saveBeside(id: string, bytes: ArrayBuffer, saveAs?: string
     method: 'POST',
     credentials: 'same-origin',
     body: form,
+    ...(signal ? { signal } : {}),
   });
   if (!res.ok) throw await httpErrorFrom(res);
 }

@@ -132,7 +132,7 @@ export default function HtmlArtifactViewer({
           {showCode && (
             <>
               <ResizablePanel id="artifact-source" defaultSize="48%" minSize="25%">
-                <HighlightedSource assetId={assetId} lang="html" />
+                <HighlightedSource assetId={assetId} fileName={fileName} lang="html" />
               </ResizablePanel>
               <ResizableHandle aria-label={t('artifacts.workspace.resize')} />
             </>
@@ -147,7 +147,7 @@ export default function HtmlArtifactViewer({
         <div className="relative min-h-0 flex-1 border-t border-border">
           {showCode && (
             <div className="absolute inset-0">
-              <HighlightedSource assetId={assetId} lang="html" />
+              <HighlightedSource assetId={assetId} fileName={fileName} lang="html" />
             </div>
           )}
           <div className="h-full" hidden={showCode}>

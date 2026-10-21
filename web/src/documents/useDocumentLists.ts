@@ -31,7 +31,11 @@ export interface DocumentLists {
 
 /** useDocumentLists reads the operator's lists and custom fields, which the list and the
  * detail share through the query cache, and the names behind each label id. */
-export function useDocumentLists(): DocumentLists & { readonly settled: boolean } {
+export function useDocumentLists(): DocumentLists & {
+  readonly settled: boolean;
+  readonly failed: boolean;
+  readonly retry: () => void;
+} {
   const { identityId } = useCapabilities();
   const types = useLabels('type');
   const counterparties = useLabels('counterparty');
@@ -50,8 +54,11 @@ export function useDocumentLists(): DocumentLists & { readonly settled: boolean 
     [types.data, counterparties.data, tags.data],
   );
   const names = useMemo(() => labelNames(lists), [lists]);
-  // Settled, not succeeded: a list that failed to load reads as empty rather than holding the
-  // detail back for good.
   const settled = [types, counterparties, tags, customFields].every((query) => !query.isPending);
-  return { lists, names, customFields: customFields.data ?? NO_FIELDS, settled };
+  const failed = [types, counterparties, tags, customFields].some((query) => query.isError);
+  const retry = () => {
+    for (const query of [types, counterparties, tags, customFields])
+      if (query.isError) void query.refetch();
+  };
+  return { lists, names, customFields: customFields.data ?? NO_FIELDS, settled, failed, retry };
 }

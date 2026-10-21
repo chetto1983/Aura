@@ -13,7 +13,7 @@ const HOST_PATH = '/run/out/report.csv';
 
 // The preview renderers are lazy chunks that fetch bytes; the card test only needs to know
 // which one the modal mounts.
-vi.mock('../../artifacts/renderers/PdfPreview', () => ({
+vi.mock('../../artifacts/renderers/CraftFrame', () => ({
   default: () => <div data-testid="r-pdf" />,
 }));
 

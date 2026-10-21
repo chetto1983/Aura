@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CK5xzyS1.js";function t(e){return e?`true`:void 0}function n(){return(n=e((()=>{})))()}export{n,t};

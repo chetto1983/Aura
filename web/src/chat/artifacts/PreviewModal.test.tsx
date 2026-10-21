@@ -8,13 +8,11 @@ import { AssetSourceContext, IDENTITY_SCOPED } from './renderers/assetSourceCont
 // PreviewModal (WEBART-05 / D-09): the click-to-preview modal. The renderers are MOCKED to
 // marker divs (a Craft app's names its app) so the test pins the previewKind→renderer dispatch
 // table, the download-only card for svg/ppt/unknown, the 90vw×90vh sizing, the header download
-// href, and onClose — without loading the real renderer chunks (and docx-preview's weight).
+// href, and onClose — without loading the real renderer chunks (and native app assets).
 
 vi.mock('./renderers/ImagePreview', () => ({ default: () => <div data-testid="r-image" /> }));
-vi.mock('./renderers/PdfPreview', () => ({ default: () => <div data-testid="r-pdf" /> }));
 vi.mock('./renderers/TextPreview', () => ({ default: () => <div data-testid="r-text" /> }));
 vi.mock('./renderers/HtmlPreview', () => ({ default: () => <div data-testid="r-html" /> }));
-vi.mock('./renderers/DocxPreview', () => ({ default: () => <div data-testid="r-docx" /> }));
 // The Craft app's marker can report an edit and a save to its host, as the real frame does.
 vi.mock('./renderers/CraftFrame', async () => {
   const { useContext } = await import('react');
@@ -39,10 +37,10 @@ vi.mock('./renderers/VideoPreview', () => ({ default: () => <div data-testid="r-
 
 const RENDERER_IDS = [
   'r-image',
-  'r-pdf',
+  'r-pdfcraft',
   'r-text',
   'r-html',
-  'r-docx',
+  'r-wordcraft',
   'r-gridcraft',
   'r-deckcraft',
   'r-video',
@@ -70,10 +68,10 @@ function dialogContent(): HTMLElement {
 describe('PreviewModal dispatch (previewKind → renderer)', () => {
   const cases: readonly (readonly [string, string, string])[] = [
     ['image/png', 'cat.png', 'r-image'],
-    ['application/pdf', 'doc.pdf', 'r-pdf'],
+    ['application/pdf', 'doc.pdf', 'r-pdfcraft'],
     ['text/plain', 'notes.txt', 'r-text'],
     ['text/html', 'page.html', 'r-html'],
-    ['application/octet-stream', 'memo.docx', 'r-docx'],
+    ['application/octet-stream', 'memo.docx', 'r-wordcraft'],
     ['application/octet-stream', 'book.xlsx', 'r-gridcraft'],
     ['application/octet-stream', 'deck.pptx', 'r-deckcraft'],
     ['video/mp4', 'sea.mp4', 'r-video'],
@@ -111,8 +109,6 @@ describe('PreviewModal dispatch (previewKind → renderer)', () => {
 // its own Craft app.
 describe('PreviewModal edit (a source that can save)', () => {
   const editable: readonly (readonly [string, string, string, string])[] = [
-    ['application/pdf', 'doc.pdf', 'r-pdf', 'r-pdfcraft'],
-    ['application/octet-stream', 'memo.docx', 'r-docx', 'r-wordcraft'],
     ['image/png', 'cat.png', 'r-image', 'r-photocraft'],
     ['video/mp4', 'sea.mp4', 'r-video', 'r-filmcraft'],
   ];
@@ -142,13 +138,13 @@ describe('PreviewModal edit (a source that can save)', () => {
         value={{ ...IDENTITY_SCOPED, save: vi.fn(() => Promise.resolve()) }}
       >
         <PreviewModal
-          active={asset({ mime_type: 'application/pdf', file_name: 'doc.pdf' })}
+          active={asset({ mime_type: 'image/png', file_name: 'photo.png' })}
           onClose={vi.fn()}
         />
       </AssetSourceContext.Provider>,
     );
     const edit = await screen.findByRole('button', { name: /^(Edit|Modifica)$/ });
-    const download = screen.getByRole('link', { name: /download doc\.pdf|scarica doc\.pdf/i });
+    const download = screen.getByRole('link', { name: /download photo\.png|scarica photo\.png/i });
     const header = download.closest('[data-slot="preview-header"]');
     expect(header).not.toBeNull();
     expect(header?.contains(edit)).toBe(true);

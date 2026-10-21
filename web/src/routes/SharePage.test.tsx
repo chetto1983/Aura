@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router';
-import { renderAsync } from 'docx-preview';
 import '../i18n/i18n';
 import type { Snapshot } from '../chat/share/shareTypes';
 import { SharePage } from './SharePage';
@@ -10,13 +9,6 @@ import { SharePage } from './SharePage';
 // security assertions (null-origin iframe, SVG download-only, XSS-as-escaped-text,
 // the oracle-free 404/401) as the centrepiece, per the plan's own acceptance criteria.
 //
-// docx-preview is MOCKED (mirrors renderers.test.tsx) purely to exercise every previewKind branch
-// in renderArtifactKind's switch without loading the real heavy parser — the security-critical
-// kinds (html/svg/image) get full assertions above; docx and xlsx are presence-only, proving the
-// dispatch wires up, not re-testing the renderers.
-vi.mock('docx-preview', () => ({
-  renderAsync: vi.fn(() => Promise.resolve({})),
-}));
 const baseSnapshot: Snapshot = {
   schema_version: 1,
   title: 'Weekend trip to Turin',
@@ -71,7 +63,7 @@ function stubFetch(opts: FetchStub = {}) {
     return Promise.resolve({
       ok: true,
       status: 200,
-      text: () => Promise.resolve(text),
+      body: new Response(text).body,
       blob: () => Promise.resolve(new Blob([text])),
       arrayBuffer: () => Promise.resolve(new ArrayBuffer(8)),
     } as unknown as Response);
@@ -273,7 +265,7 @@ describe('SharePage — public tier (/s/:token)', () => {
     expect(screen.queryByRole('button')).toBeNull();
   });
 
-  it('renders a PDF artifact via a native <iframe src>', async () => {
+  it('renders a PDF artifact through PdfCraft', async () => {
     URL.createObjectURL = vi.fn(() => 'blob:mock-pdf');
     URL.revokeObjectURL = vi.fn();
     stubFetch({
@@ -286,7 +278,7 @@ describe('SharePage — public tier (/s/:token)', () => {
     });
     const { container } = renderShare('/s/tok-123');
     await waitFor(() => {
-      expect(container.querySelector('iframe[src="blob:mock-pdf"]')).not.toBeNull();
+      expect(container.querySelector('iframe[src="/apps/pdfcraft/?host=parent"]')).not.toBeNull();
     });
   });
 
@@ -307,7 +299,7 @@ describe('SharePage — public tier (/s/:token)', () => {
     expect(container.querySelector('pre')?.textContent).toBe('plain notes');
   });
 
-  it('renders a docx artifact through docx-preview.renderAsync', async () => {
+  it('renders a docx artifact through WordCraft', async () => {
     stubFetch({
       snapshot: {
         ...baseSnapshot,
@@ -323,7 +315,12 @@ describe('SharePage — public tier (/s/:token)', () => {
     });
     renderShare('/s/tok-123');
     await waitFor(() => {
-      expect(vi.mocked(renderAsync)).toHaveBeenCalled();
+      expect(
+        screen
+          .getAllByTitle('memo.docx')
+          .find((element) => element.tagName === 'IFRAME')
+          ?.getAttribute('src'),
+      ).toBe('/apps/wordcraft/?host=parent');
     });
   });
 

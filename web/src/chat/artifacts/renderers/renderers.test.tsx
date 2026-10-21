@@ -1,26 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useState, type ReactNode } from 'react';
-import { renderAsync } from 'docx-preview';
 import '../../../i18n/i18n'; // side-effect: initialise i18next so preview t() keys resolve
 import ImagePreview from './ImagePreview';
-import PdfPreview from './PdfPreview';
 import TextPreview from './TextPreview';
 import HtmlPreview from './HtmlPreview';
 import { AssetSourceContext, type AssetSource } from './assetSourceContext';
-import DocxPreview from './DocxPreview';
 import CraftFrame from './CraftFrame';
 import { PreviewActionsContext } from './previewActionsContext';
 import { PreviewCloseGuardContext } from './previewCloseGuardContext';
 
-// The lazy per-MIME renderers (D-07/D-08/D-09). docx-preview is the heavy dep confined to its own
-// chunk — here it is MOCKED (vi.mock, hoisted above the imports) so the suite asserts the wrapper
-// calls it with the right args without loading the real library (Pitfall 4, which would drag the
-// 85% aggregate). The security-critical surface is pinned directly: HtmlPreview's null-origin
-// sandbox, and the Craft apps' frame, which hears only its own frame on this origin.
-vi.mock('docx-preview', () => ({
-  renderAsync: vi.fn(() => Promise.resolve({})),
-}));
 interface FetchShape {
   readonly ok?: boolean;
   readonly status?: number;
@@ -34,7 +23,7 @@ function stubFetch(shape: FetchShape): void {
   const res = {
     ok: shape.ok ?? true,
     status: shape.status ?? 200,
-    text: () => Promise.resolve(shape.text ?? ''),
+    body: new Response(shape.text ?? '').body,
     blob: () => Promise.resolve(shape.blob ?? new Blob(['docx-bytes'])),
     arrayBuffer: () => Promise.resolve(shape.buffer ?? new ArrayBuffer(8)),
   } as unknown as Response;
@@ -64,7 +53,6 @@ const FILE_SOURCE: AssetSource = {
 beforeEach(() => {
   URL.createObjectURL = vi.fn(() => 'blob:mock');
   URL.revokeObjectURL = vi.fn();
-  vi.mocked(renderAsync).mockClear();
 });
 
 afterEach(() => {
@@ -95,26 +83,6 @@ describe('ImagePreview', () => {
   it('shows the error state on a non-ok response', async () => {
     stubFetch({ ok: false, status: 404 });
     render(<ImagePreview {...props} mimeType="image/png" />);
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-    });
-  });
-});
-
-describe('PdfPreview', () => {
-  it('renders a native <iframe src> from the object URL', async () => {
-    stubFetch({ blob: new Blob(['pdf']) });
-    const { container } = render(<PdfPreview {...props} mimeType="application/pdf" />);
-
-    await waitFor(() => {
-      expect(container.querySelector('iframe')).not.toBeNull();
-    });
-    expect(iframeOf(container).getAttribute('src')).toBe('blob:mock');
-  });
-
-  it('shows the error state on a non-ok response', async () => {
-    stubFetch({ ok: false, status: 404 });
-    render(<PdfPreview {...props} mimeType="application/pdf" />);
     await waitFor(() => {
       expect(screen.getByRole('alert')).toBeTruthy();
     });
@@ -250,45 +218,6 @@ describe('HtmlPreview (WEBART-07 / T-37B-08)', () => {
   });
 });
 
-describe('DocxPreview (D-08 / T-37B-12)', () => {
-  it('calls docx-preview.renderAsync with the fetched Blob and the aura-docx className', async () => {
-    stubFetch({ blob: new Blob(['docx']) });
-    render(<DocxPreview {...props} fileName="memo.docx" />);
-
-    await waitFor(() => {
-      expect(vi.mocked(renderAsync)).toHaveBeenCalledTimes(1);
-    });
-    expect(vi.mocked(renderAsync)).toHaveBeenCalledWith(
-      expect.any(Blob),
-      expect.any(HTMLElement),
-      expect.anything(),
-      expect.objectContaining({
-        className: 'aura-docx',
-        inWrapper: true,
-        ignoreLastRenderedPageBreak: true,
-      }),
-    );
-  });
-
-  it('shows the error state when renderAsync rejects', async () => {
-    stubFetch({ blob: new Blob(['docx']) });
-    vi.mocked(renderAsync).mockRejectedValueOnce(new Error('corrupt docx'));
-    render(<DocxPreview {...props} fileName="memo.docx" />);
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-    });
-  });
-
-  it('shows the error state when the fetch fails', async () => {
-    stubFetch({ ok: false, status: 404 });
-    render(<DocxPreview {...props} fileName="memo.docx" />);
-    await waitFor(() => {
-      expect(screen.getByRole('alert')).toBeTruthy();
-    });
-    expect(vi.mocked(renderAsync)).not.toHaveBeenCalled();
-  });
-});
-
 describe('CraftFrame', () => {
   /** gridcraft sends a message as a framed Craft app does, from its window on this origin. */
   function gridcraft(frame: HTMLIFrameElement, data: unknown, source = frame.contentWindow): void {
@@ -374,10 +303,15 @@ describe('CraftFrame', () => {
     const saved = new ArrayBuffer(32);
     gridcraft(frame, { type: 'gridcraft:save', name: 'book.xlsx', bytes: saved });
     expect((await screen.findByRole('status')).textContent).toMatch(/Saved|Salvato/);
-    expect(save).toHaveBeenCalledWith('/chat/c5d7.xlsx', saved, undefined);
+    expect(save).toHaveBeenCalledWith('/chat/c5d7.xlsx', saved, undefined, expect.any(AbortSignal));
     gridcraft(frame, { type: 'gridcraft:save', name: 'book.pdf', bytes: saved });
     await waitFor(() => {
-      expect(save).toHaveBeenLastCalledWith('/chat/c5d7.xlsx', saved, 'book.pdf');
+      expect(save).toHaveBeenLastCalledWith(
+        '/chat/c5d7.xlsx',
+        saved,
+        'book.pdf',
+        expect.any(AbortSignal),
+      );
     });
   });
 

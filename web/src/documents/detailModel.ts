@@ -63,3 +63,19 @@ export function formDiff(doc: DocumentRow, form: DetailForm): FieldsDiff {
   }
   return { set, remove };
 }
+
+/** Apply only the user's changes over refreshed values; untouched fields stay current. */
+export function formWithDiff(doc: DocumentRow, diff: FieldsDiff): DetailForm {
+  const held = formOf(doc);
+  const single = { ...held.single };
+  const tags = new Set(held.tags);
+  for (const value of diff.remove) {
+    if (value.field === TAG_FIELD) tags.delete(value.value_key);
+    else single[value.field] = '';
+  }
+  for (const value of diff.set) {
+    if (value.field === TAG_FIELD) tags.add(value.value_key);
+    else single[value.field] = value.value_key;
+  }
+  return { single, tags: [...tags] };
+}

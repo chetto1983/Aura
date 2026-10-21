@@ -48,6 +48,44 @@ describe('resolveLang (shiki lang allow-list)', () => {
 // The lazy loader runs against the REAL Shiki JS-regex engine (no WASM, jsdom-safe).
 // These exercise the dynamic-import() path the build code-splits into the shiki chunk.
 describe('highlightCode (lazy escaped-span highlighter)', () => {
+  it.each([
+    'rust',
+    'c',
+    'cpp',
+    'csharp',
+    'java',
+    'xml',
+    'toml',
+    'ruby',
+    'php',
+    'swift',
+    'kotlin',
+    'dart',
+    'r',
+    'lua',
+    'perl',
+    'powershell',
+    'dockerfile',
+    'makefile',
+    'ini',
+    'scss',
+    'vue',
+    'svelte',
+    'terraform',
+    'graphql',
+    'diff',
+  ])('lazily loads the common %s source grammar with escaped output', async (lang) => {
+    const html = await highlightCode('example <script>alert(1)</script>', lang, true);
+    expect(html).toContain('<pre');
+    expect(html).not.toContain('<script>');
+  });
+
+  it.each(['a'.repeat(65537), 'x\n'.repeat(2001), 'a'.repeat(8193)])(
+    'bounds tokenization work for oversized sources',
+    async (source) => {
+      expect(await highlightCode(source, 'python', false)).toBeNull();
+    },
+  );
   afterEach(() => {
     __resetShikiForTest();
   });

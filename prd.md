@@ -4392,6 +4392,34 @@ input transport and sandbox execution, not CLI retry semantics or HTTP authoriza
 
 ## 19. Evidence, exclusions and remaining limits
 
+### Documents detail and shared previews — measured 2026-10-22
+
+The native Office browser/save probes in
+`docs/superpowers/verification/2026-10-21-craft-office-browser.md` and
+`2026-10-22-craft-office-save.md` establish Word DOCX/DOC/ODT/RTF, Grid XLS/ODS/CSV
+and Deck PPTX imports. Shared preview dispatch uses those existing Craft apps and PdfCraft;
+the superseded PDF/DOCX viewers are retired. Native dirty=false precedes host persistence,
+so pending and failed writes remain guarded, retries retain bytes, and writes are serialized.
+Converted Save As filenames remain visible. Tab changes preserve the mounted native draft.
+
+`2026-10-21-code-preview-inventory.md` measured 262,144 source bytes expanding to 957,753
+HTML bytes and 1,225,037 bytes to 4,475,241 HTML bytes (784 ms, excluding DOM layout).
+Original-source previews therefore bound streaming reads at 256 KiB and syntax highlighting
+at 65,536 UTF-16 code units/2,000 lines (8,192 per line), with explicit truncated/plain/binary
+notices, complete-original copy for bounded text and original download for every size.
+The existing lazy Shiki engine supplies common grammars; unsupported languages remain escaped
+text. Canonical document file_type supplies the source/media routing fallback. Existing HTML
+Source/Preview retains its opaque-origin sandbox, and incomplete srcdoc is never rendered.
+The live code/media ingestion evidence confirms that indexed HTML/XML passages omit markup
+and .db can contain SQLite bytes: indexed Content and original Preview remain separate tabs.
+
+Detail reuses the routed result query and existing resizable panels, with current-result
+previous/next across pages, Details/Content/History and mobile Preview. Metadata drafts track
+only intended changes across ingest refresh; file Save and Save details are distinct. Label
+creation uses existing APIs without resetting the form; failed lists remain explicit. These
+measurements do not establish every Office import, legacy binary PPT support, arbitrary source
+encodings, worst-case grammar latency, or the final rebuilt workspace's live acceptance.
+
 The 2026-09-07 backup check passed four restore planes and restored one real scheduled
 memory archive into a disposable database. Temporal memory passed 11 mounted-MCP cases;
 the six-query context comparison improved retention of direct evidence. Eighteen guided

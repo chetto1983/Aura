@@ -44,7 +44,12 @@ export interface AssetSource {
    *  (CraftFrame) saves an edited file over the file (`saveAs` absent) or as a new file of that
    *  name beside it. A tier without it offers no Edit, and keeps edits made in a spreadsheet or
    *  deck preview in the preview and says so. */
-  readonly save?: (assetId: string, bytes: ArrayBuffer, saveAs?: string) => Promise<void>;
+  readonly save?: (
+    assetId: string,
+    bytes: ArrayBuffer,
+    saveAs?: string,
+    signal?: AbortSignal,
+  ) => Promise<void>;
 }
 
 /** The identity-scoped tier, this context's default. A share tier overrides it through the

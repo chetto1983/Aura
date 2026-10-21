@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Label } from './documentsApi';
-import { LABELS, renderDocuments, stubServer } from './documentsTestServer';
+import { LABELS, PAGE, renderDocuments, stubServer } from './documentsTestServer';
 import { LabelsAdmin } from './LabelsAdmin';
 import i18n from '@/i18n/i18n';
 
@@ -32,6 +32,51 @@ async function newType() {
 }
 
 describe('the lists', () => {
+  it('opens the same all-file scope counted by organization for mixed Office and code', async () => {
+    stubServer();
+    const original = fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(
+          typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+          location.origin,
+        );
+        if (url.pathname === '/api/documents') {
+          const rows = [
+            { ...PAGE.rows[0], file_name: 'office.ods', file_type: 'spreadsheet' },
+            ...(url.searchParams.get('file_type') === 'all'
+              ? [{ ...PAGE.rows[1], file_name: 'source.rs', file_type: 'code' }]
+              : []),
+          ];
+          return Promise.resolve(
+            Response.json({
+              rows,
+              total: rows.length,
+              facets: { type: { 't-fattura': rows.length } },
+            }),
+          );
+        }
+        return original(input, init);
+      }),
+    );
+    await openLists();
+    const label = await entry('Fattura');
+    await waitFor(() => {
+      expect(label.textContent).toContain('2 documenti');
+    });
+    fireEvent.click(within(label).getByRole('button', { name: /Filtra/ }));
+    expect(await screen.findByRole('button', { name: 'source.rs' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'office.ods' })).toBeTruthy();
+  });
+  it('searches organization names without hiding document counts', async () => {
+    stubServer();
+    await openLists();
+    await entry('Fattura');
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'fatt' } });
+    expect(screen.queryByRole('heading', { name: 'Contratto', level: 3 })).toBeNull();
+    expect((await entry('Fattura')).textContent).toContain('20');
+  });
   it('shows each value with its rule in words, its count and "Filtra documenti"', async () => {
     const { lists } = stubServer();
     await openLists();

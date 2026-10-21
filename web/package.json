@@ -57,7 +57,6 @@
     "cmdk": "^1.1.1",
     "cytoscape": "3.34.3",
     "cytoscape-fcose": "2.2.0",
-    "docx-preview": "^0.4.1",
     "i18next": "^26.4.2",
     "lucide-react": "^1.52.0",
     "radix-ui": "^1.6.0",

@@ -1,5 +1,5 @@
 import { useId, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CustomFieldsAdmin } from './CustomFieldsAdmin';
@@ -9,6 +9,7 @@ import { LabelsAdmin } from './LabelsAdmin';
 import { useDocumentLists } from './useDocumentLists';
 import { useCapabilities } from '@/admin/useAdmin';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Button } from '@/components/ui/button';
 
 /** The list pages in tab order, each with the filter field its values filter on. */
 const LISTS: readonly { readonly kind: LabelKind; readonly field: FilterField }[] = (
@@ -32,13 +33,39 @@ export function ListsPage({ onClose, onFilter }: ListsPageProps) {
   const { t } = useTranslation();
   const { identityId } = useCapabilities();
   const headingId = useId();
-  const { lists, customFields } = useDocumentLists();
+  const { lists, customFields, failed, retry } = useDocumentLists();
   const [tab, setTab] = useState<string>('type');
   const library = useQuery({
-    queryKey: ['documents', identityId, 'counts'],
+    queryKey: ['documents', identityId, 'organization-counts'],
     enabled: !!identityId,
     queryFn: ({ signal }) =>
-      fetchDocuments(EMPTY_FILTER, { sort: '', offset: 0, limit: 1 }, signal),
+      fetchDocuments(
+        { ...EMPTY_FILTER, fileType: 'all' },
+        { sort: '', offset: 0, limit: 1 },
+        signal,
+      ),
+  });
+  const fieldCounts = useQueries({
+    queries: customFields.map((field) => ({
+      queryKey: ['documents', identityId, 'field-count', field.id],
+      enabled: !!identityId && tab === FIELDS_TAB,
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        fetchDocuments(
+          {
+            ...EMPTY_FILTER,
+            fileType: 'all',
+            custom: [{ field: `custom:${field.id}`, operator: 'unassigned' }],
+          },
+          { sort: '', offset: 0, limit: 1 },
+          signal,
+        ),
+    })),
+  });
+  const counts: Record<string, number> = {};
+  customFields.forEach((field, index) => {
+    const unassigned = fieldCounts[index]?.data?.total;
+    if (unassigned !== undefined && library.data)
+      counts[field.id] = Math.max(0, library.data.total - unassigned);
   });
 
   return (
@@ -56,6 +83,25 @@ export function ListsPage({ onClose, onFilter }: ListsPageProps) {
           {t('documents.lists.title')}
         </h1>
       </header>
+      {failed && (
+        <p role="alert" className="p-4">
+          {t('documents.detail.listsFailed')}{' '}
+          <Button onClick={retry}>{t('documents.detail.retryLists')}</Button>
+        </p>
+      )}
+      {(library.isError || fieldCounts.some((query) => query.isError)) && (
+        <p role="alert" className="p-4">
+          {t('documents.lists.countsFailed')}{' '}
+          <Button
+            onClick={() => {
+              void library.refetch();
+              for (const query of fieldCounts) if (query.isError) void query.refetch();
+            }}
+          >
+            {t('documents.workspace.retry')}
+          </Button>
+        </p>
+      )}
       <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
         <TabsList className="max-w-full flex-wrap justify-start">
           {LISTS.map(({ kind }) => (
@@ -80,7 +126,7 @@ export function ListsPage({ onClose, onFilter }: ListsPageProps) {
           </TabsContent>
         ))}
         <TabsContent value={FIELDS_TAB} className="max-w-3xl">
-          <CustomFieldsAdmin fields={customFields} />
+          <CustomFieldsAdmin fields={customFields} counts={counts} />
         </TabsContent>
       </Tabs>
     </section>

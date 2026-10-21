@@ -7,7 +7,10 @@ import { ArtifactWorkspace } from './ArtifactWorkspace';
 import { ArtifactCopyButton } from './ArtifactCopyButton';
 import { AssetSourceContext } from './renderers/assetSourceContext';
 
-vi.mock('../displays/shiki', () => ({ highlightCode: () => Promise.resolve(null) }));
+vi.mock('../displays/shiki', () => ({
+  highlightCode: () => Promise.resolve(null),
+  canHighlight: () => true,
+}));
 
 const artifact = { assetId: 'html-1', fileName: 'weather.html', mimeType: 'text/html' };
 const source = '<html><script>parent.secret = true</script><h1>Weather</h1></html>';

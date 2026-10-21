@@ -234,21 +234,32 @@ export function renderDocuments(path = '/documents/library') {
   const router = createMemoryRouter([{ path: '/documents/*', element: <DocumentsSurface /> }], {
     initialEntries: [path],
   });
-  return render(
+  const view = render(
     <QueryClientProvider client={newClient()}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
+  return { ...view, router };
 }
 
 /** renderDetail opens one document's detail on its own, with the callbacks it reports to. */
 export function renderDetail(id: string) {
   const onClose = vi.fn();
   const onOpen = vi.fn();
-  render(
-    <QueryClientProvider client={newClient()}>
-      <DocumentDetail id={id} onClose={onClose} onOpen={onOpen} />
+  const client = newClient();
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/documents/document/:id',
+        element: <DocumentDetail id={id} onClose={onClose} onOpen={onOpen} />,
+      },
+    ],
+    { initialEntries: [`/documents/document/${id}`] },
+  );
+  const view = render(
+    <QueryClientProvider client={client}>
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return { onClose, onOpen };
+  return { onClose, onOpen, client, router, ...view };
 }

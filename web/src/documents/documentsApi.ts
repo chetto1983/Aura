@@ -229,12 +229,6 @@ export function fetchDocuments(
   return getJSON<DocumentsPage>(`${documentsBase}?${documentsQuery(filter, page)}`, signal);
 }
 
-/** fetchReviewCount is how many documents of the whole library wait for review. */
-export async function fetchReviewCount(signal?: AbortSignal): Promise<number> {
-  const page = await getJSON<DocumentsPage>(`${documentsBase}?needs_review=true&limit=1`, signal);
-  return page.total;
-}
-
 export async function fetchLabels(
   kind: LabelKind,
   signal?: AbortSignal,
@@ -338,20 +332,17 @@ export function fetchDocument(id: string, signal?: AbortSignal): Promise<Documen
 
 /** patchDocument writes one document's diff. Removing a value the operator did not set rejects
  * it: the server records the rejection and never suggests the value again. */
-export async function patchDocument(id: string, diff: FieldsDiff): Promise<void> {
-  await sendJSON('PATCH', documentURL(id), diff);
+export async function patchDocument(
+  id: string,
+  diff: FieldsDiff,
+  signal?: AbortSignal,
+): Promise<void> {
+  await sendJSON('PATCH', documentURL(id), diff, signal);
 }
 
 /** reviewDocument marks a document reviewed: every suggestion left on it counts as accepted. */
-export async function reviewDocument(id: string): Promise<void> {
-  await sendJSON('POST', `${documentURL(id)}/review`);
-}
-
-/** fetchNextToReview names the first document of the library still waiting for review, other
- * than the one just left, or null when none is. */
-export async function fetchNextToReview(after: string): Promise<string | null> {
-  const page = await getJSON<DocumentsPage>(`${documentsBase}?needs_review=true&limit=2`);
-  return page.rows.find((row) => row.id !== after)?.id ?? null;
+export async function reviewDocument(id: string, signal?: AbortSignal): Promise<void> {
+  await sendJSON('POST', `${documentURL(id)}/review`, undefined, signal);
 }
 
 /** A label as the operator writes it: no id for a new one. */
@@ -362,10 +353,11 @@ export type LabelInput = Omit<Label, 'id'>;
 export function saveLabel(
   label: LabelInput,
   id?: string,
+  signal?: AbortSignal,
 ): Promise<{ readonly label: Label; readonly suggested: number }> {
   return id === undefined
-    ? sendJSON('POST', `${documentsBase}/labels`, label)
-    : sendJSON('PUT', `${documentsBase}/labels/${encodeURIComponent(id)}`, label);
+    ? sendJSON('POST', `${documentsBase}/labels`, label, signal)
+    : sendJSON('PUT', `${documentsBase}/labels/${encodeURIComponent(id)}`, label, signal);
 }
 
 /** deleteLabel removes a label; the values naming it read as an unknown label. */
