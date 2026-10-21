@@ -754,10 +754,11 @@ jobs:
   arcadedb-integration-test:
     name: Agent Memory MRS (live ArcadeDB + MCP + EmbeddingGemma)
     runs-on: ubuntu-latest
-    # arcadedb-mcp verifies tokens against the aura daemon's JWKS, so compose builds the aura
+    # arcadedb-mcp verifies tokens against the aura daemon's JWKS, so the job builds the aura
     # image from this commit, and since 2026-10-19 that image compiles five Craft apps from
-    # Rust. On 2026-10-21 the job was cut off at 30 minutes still building them; on 2026-10-11,
-    # before them, it passed in about 15.
+    # Rust. The build reads them from the edge cache (see the build step), but a cold cache,
+    # after a change to docker/craft-web/ or the Rust image, compiles them all again: about
+    # 35 minutes on 2026-10-21, when a 30-minute cap cut the job off. The cap covers that case.
     timeout-minutes: 75
     # `aura.agent-memory-eval/v1` is the sole scored memory gate. Deterministic
     # tests, live ArcadeDB, the shipped Go MCP and EmbeddingGemma run together;
@@ -852,6 +853,28 @@ jobs:
         # database, so its store, pass and review run only against a live server; the db_integration
         # coverage tier cannot reach them. CI=true arms newDisposableTenants' no-skip-as-green guard.
         run: go test -race -count=1 -tags arcadedb_integration ./internal/docfields/...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Build the aura image from this commit over the edge build cache
+        # `compose up` below builds aura:local only when it is missing. Left to compose, the
+        # build had no cache and spent 34.5 of this job's 42 minutes on 49dcf01 compiling the
+        # five Craft apps (pdfcraft 498 s, wordcraft 388 s, deckcraft 419 s, photocraft 469 s,
+        # filmcraft 295 s). Those layers depend only on the Rust image and docker/craft-web/,
+        # and publish-aura-edge.yml already writes them to this cache scope on every master
+        # push, so here they are read, never compiled; the Go and web layers still build from
+        # this commit. Read-only: publish-aura-edge stays the one writer of the scope.
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: docker/aura/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: aura:local
+          build-args: |
+            VCS_REF=${{ github.sha }}
+          cache-from: type=gha,scope=aura-edge
 
       - name: Bring up EmbeddingGemma and the ArcadeDB MCP built from this commit
         run: |
