@@ -570,7 +570,7 @@ describe('CraftFrame', () => {
         </AssetSourceContext.Provider>,
       );
       act(() => {
-        vi.advanceTimersByTime(14_000);
+        vi.advanceTimersByTime(29_000);
       });
       expect(screen.queryByRole('alert')).toBeNull();
       act(() => {

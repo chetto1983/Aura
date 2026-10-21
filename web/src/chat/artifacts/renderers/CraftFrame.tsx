@@ -25,7 +25,8 @@ import { PreviewCloseGuardContext } from './previewCloseGuardContext';
 export type CraftApp =
   'gridcraft' | 'pdfcraft' | 'wordcraft' | 'deckcraft' | 'photocraft' | 'filmcraft';
 
-const READY_WITHIN_MS = 15_000;
+// WordCraft's wasm is 15 MB gzipped: over a remote link of a few Mbit/s it takes longer than 15 s.
+const READY_WITHIN_MS = 30_000;
 
 interface CraftMessage {
   readonly type?: string;
