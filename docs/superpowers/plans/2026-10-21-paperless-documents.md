@@ -36,7 +36,8 @@
 - Processing shows states this stack can establish: uploading, upload failed, waiting for indexing, ready. An unindexed successful upload stays waiting with an explanation; no invented failed/indexing percentage.
 - Content tab displays ordered indexed passages with pagination, explicitly labeled indexed content. It does not promise lossless original-file text or editable OCR.
 - User correction: previews must reuse native Craft apps for PDFs and all supported Office families. No new Poppler/x-image rendering implementation. Unsupported formats get a named fallback; existing CraftFrame/EditInCraft and native audio/video viewers remain available.
-- Documents UI defaults to document/Office/text file types; pictures, videos and audio are explicit filters. Backend default stays all files for compatibility.
+- Documents UI and API default to document/Office/text file types; pictures, videos, audio, code and All files are explicit filters. No old default-all compatibility branch.
+- User clarified ingestion: **keep extraction; replace UI/rendering paths**. Retain CocoIndex, Tika/LibreOffice normalization and media/source-text processing. Reuse existing per-identity IngestStatus; its counters count work components, not documents.
 - Inbox means `reviewed_at` is absent. Suggestions remains the existing `needs_review` filter.
 - Custom-field filtering initially offers exact value/unassigned; all five existing types retain their validators. No new numeric/range query language.
 
@@ -62,15 +63,15 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 - [x] Run `go vet ./...`, `go build ./...`, package unit/race tests, and disposable `arcadedb_integration` tests with actual database credentials; record commands/results.
 - [x] Commit task, run fresh review, resolve findings, merge to master and run fresh targeted verification before Task 2.
 
-### Task 1b: Separate documents from pictures, video and audio
+### Task 1b: Separate documents from pictures, video, audio and code
 
 **Files:** `internal/docfields/library_query.go`, `library_search.go`, `library.go`, new focused file-type helper/tests, workspace integration tests; `internal/agui/documents_api.go` and workspace API tests.
 
-**Interfaces:** add `file_type=all|documents|pdf|word|spreadsheet|presentation|text|image|video|audio` to GET and bulk filter JSON. Omitted/empty means all for compatibility. Saved-view validation accepts the same enum. `DocumentRow.file_type` reports its canonical inferred category, including `other` for unknown extensions. Documents includes the five non-media groups pdf/word/spreadsheet/presentation/text; unknown files are available only under all.
+**Interfaces:** add `file_type=all|documents|pdf|word|spreadsheet|presentation|text|image|video|audio|code` to GET and bulk filter JSON. Omitted/empty means documents; explicit all accesses all categories. Saved-view validation accepts the same enum. `DocumentRow.file_type` reports its canonical inferred category, including `other` for unknown extensions. Documents includes pdf/word/spreadsheet/presentation/text; unknown files are available only under all. Reuse `filecard.SourceExtensions()` for source-code formats, with JSON/XML/HTML/HTM classified as code/config alongside that registry; prose txt/md/markdown remains text.
 
-- [ ] TDD: uppercase extensions, names with multiple dots, unknown types, documents excluding images/video/audio, exact groups, query+metadata+kind composition, consistent List/Select/bulk and saved-query validation.
-- [ ] Implement one shared extension inventory, with case-insensitive SQL suffix predicates and response classification from the same definitions. Include common Office/ODF/macro-enabled/template and media suffixes; unsupported editor formats may still be listed and downloaded.
-- [ ] Run package unit/race and real disposable ArcadeDB tests, vet/build, then independent review, commit/merge and post-merge verification.
+- [x] TDD: uppercase extensions, names with multiple dots, unknown types, documents excluding images/video/audio/code, exact groups, query+metadata+kind composition, consistent List/Select/bulk and saved-query validation.
+- [x] Implement one shared extension inventory, with case-insensitive SQL suffix predicates and response classification from the same definitions. Include common Office/ODF/macro-enabled/template and media suffixes; unsupported editor formats may still be listed and downloaded.
+- [x] Run package unit/race and real disposable ArcadeDB tests, vet/build, then independent review, commit/merge and post-merge verification.
 
 ### Task 2: Reuse Craft for document and Office previews
 
@@ -78,10 +79,16 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 
 **Interfaces:** `GET /api/documents/{id}/thumbnail` returns authorized PNG from the native Craft apps for PDF, supported Word/spreadsheet/presentation families and supported raster inputs, or explicit unsupported/not-found/error status. Client URL may include `v=<raw_sha256 or indexed_at>`. No externally supplied source URLs. Use existing document lookup, object opener and SandboxRouter.
 
+Also expose `GET /api/documents/ingestion` → `{indexing: IngestState|null}` by reusing the existing
+`internal/arcadedb/document_ingest_state.go` reader and tenant resolution, not a second status
+store/publisher. Preserve status/observed_at/in_progress/finished/errors exactly. Missing state
+is null, query failure is an error. Ready with nonzero errors must not appear successful.
+
 - [ ] Inventory full native Craft tool/CLI surfaces and measure PDF, Word, spreadsheet, presentation and photo preview paths. Existing `CraftFrame`, `EditInCraft`, `PreviewByKind`, per-identity SandboxRouter, streamed copy-in/out and native batch protocols are the reuse boundary.
 - [ ] TDD for scoped preview orchestration, unsupported/corrupt input, cancellation, byte/time/concurrency bounds and cross-identity isolation. Native renderer correctness is tested with actual Craft binaries, not reimplemented.
 - [ ] Stage in a unique request directory in the caller's existing box; run independent native CLI processes so previews cannot change a mounted agent editor session. Stream input with WriteFileStream and copy out only a bounded PNG. Use PdfCraft bounded render_preview on PDF/native Office exports; use the apps' own image preview capabilities.
 - [ ] Verify real PDF, Word, spreadsheet, presentation and photo output; document font/layout/import limitations and any explicitly bounded sheet window. Never return SVG/HTML as image content. No whole-stack rebuild.
+- [ ] Add endpoint/tenant/null/error tests for existing ingestion status; do not alter extraction or fabricate per-file failures from aggregate counters.
 - [ ] Run Go checks, focused race/integration tests and review; commit/merge with fresh targeted verification.
 
 ### Task 3: Connected workspace, uploads and saved views
@@ -91,6 +98,7 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 **Interfaces:** consume Task 1/2 DTOs. Mount `/documents/*` through the existing authenticated AppShell and preserve the document surface on direct navigation. Document routes include overview/library/inbox/processing/lists and `document/:id`; query state uses existing API parameter names plus display/page-size. Legacy Documents entry moves into the new workspace without changing other app destinations.
 
 - [ ] Write failing interaction tests for default document entry, sidebar destinations, URL round trips/back/reload, content/name mode, Inbox and Suggestions distinction, empty/error/retry states and stale-result protection.
+- [ ] Mount the existing route table through React Router's createBrowserRouter/RouterProvider so Task 4 can use the installed useBlocker for unsaved navigation, including browser Back. Preserve auth, lazy boundaries and TanStack fetching; adapt document test fixtures with createMemoryRouter.
 - [ ] Implement sidebar/drawer and overview using live counts, recent documents and pinned saved views; library has table/compact/cards, visible Upload, explicit sort/page-size, retained filter chips and bulk-selection contracts.
 - [ ] Write failing uploader tests for multi-file/drop, real file-manager multipart response IDs, individual errors/retry, unique batch keys, ready lookup and library/count invalidation. Preserve pending successful uploads across workspace navigation and avoid replaying upload after refresh.
 - [ ] Implement upload state with polling of exact source keys; show waiting honestly and offer Files/Open when appropriate. Keep processing status and polling identity-scoped; avoid refetch storms.
@@ -100,12 +108,13 @@ Backend additions stay in `internal/docfields`, `internal/arcadedb` and `interna
 
 ### Task 4: Focused document detail and organization
 
-**Files:** `DocumentDetail.tsx`, `DetailFields.tsx`, `DocumentHistory.tsx`, `LabelsAdmin.tsx`, `CustomFieldsAdmin.tsx`, `ListsPage.tsx`; new focused detail tabs/navigation/contextual label controls and tests; document translations.
+**Files:** `DocumentDetail.tsx`, `DetailFields.tsx`, `DocumentHistory.tsx`, `LabelsAdmin.tsx`, `CustomFieldsAdmin.tsx`, `ListsPage.tsx`; shared artifact preview dispatch and format mapping; new focused detail tabs/navigation/contextual label controls and tests; document translations.
 
 **Interfaces:** consume the routed selection/result context from Task 3 and indexed-content endpoint from Task 1. Existing metadata/preview/editor APIs remain authoritative.
 
 - [ ] Write failing tests for direct-link detail, previous/next in current results, return context, unsaved-change guards, failed label loads, searchable/create-in-context labels and mobile Details/Preview tabs.
 - [ ] Implement desktop fields beside preview with the existing resizable-pane library, and clear Details/Content/History tabs. Mobile separates preview from metadata. Preserve every full preview/Craft edit path and provenance control.
+- [ ] Route PDF and supported Office formats through the existing CraftFrame in shared preview dispatch. Remove superseded PDF/DOCX viewer code and dependencies once callers move, with replacement behavior tests. Keep existing audio/video players and escaped code text; do not maintain a second Documents-only Office dispatch or broaden active HTML/SVG rendering.
 - [ ] Add organization name search and visible document counts; retain matching-rule validation and existing custom-field types. Creating a label from detail preserves the unsaved form.
 - [ ] Run focused tests, full document regression, typecheck/lint/build; review, commit/merge and fresh targeted verification.
 

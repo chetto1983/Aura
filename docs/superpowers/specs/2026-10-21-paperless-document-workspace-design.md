@@ -30,7 +30,11 @@ These are proposed choices, not statements that the user already approved them:
 - User correction: reuse the existing Craft applications for PDF and all supported Office file
   families, including Word, spreadsheets and presentations. Do not build a separate renderer.
 - User correction: default the Documents library to PDFs, Office and text documents. Pictures,
-  video and audio each have an explicit file-type filter; All files remains available.
+  video, audio and code each have an explicit file-type filter; All files remains available.
+  Inspect ingestion and reuse its actual status/classification mechanisms.
+- User clarified: "Keep extraction; replace UI/rendering paths". Existing CocoIndex,
+  Tika/LibreOffice normalization and media/code extraction remain. Superseded UI/rendering code
+  is removed; no parallel legacy viewer or default-all compatibility branch is introduced.
 - Use the existing backend, index, object store, auth, query library, route library and UI
   primitives. Existing components are the starting point; a new dependency needs an inventory.
 - The proposed implementation boundary is increments A and B: the connected daily document
@@ -94,8 +98,8 @@ guessing progress from a timer. Existing objects remain visible through Files wh
 ### Library, search and filters
 
 The file-type filter includes Documents, PDF, Word documents, Spreadsheets, Presentations, Text,
-Pictures, Video, Audio and All files. Documents is the UI default and excludes pictures, video
-and audio. The API keeps its legacy all-file default for existing clients. Type inference is
+Pictures, Video, Audio, Code and All files. Documents is the UI default and excludes pictures,
+video, audio and code. The API uses the same Documents default; All files is explicit. Type inference is
 explicitly filename-extension based because IndexedDocument does not store a MIME type.
 
 Provide table, compact list and thumbnail-card modes. Cards use actual generated previews, with
