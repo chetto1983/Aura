@@ -343,13 +343,14 @@ def query(command):
 
 doc_id = search_document_id(os.environ["IDENTITY_ID"], "s3", "order.xls")
 passages = query(f"SELECT text FROM Passage WHERE search_document_id = '{doc_id}'")
-# A spreadsheet is queried, not read: index_text routes it to document_open and returns ""
-# on purpose, so it carries NO passages. This used to assert the opposite -- that the
-# sheet's tokens appeared in Passage text -- and became false the moment the routing
-# landed. The .xls -> .xlsx LibreOffice normalisation it was really proving still has its
-# own gate in scripts/extractor_matrix_test.sh, which asserts the same three tokens
-# against the extractor directly, where the routing cannot hide them.
-assert not passages, f"a spreadsheet was chunked into {len(passages)} passage(s); it must route to document_open"
+# A workbook's passages are its rows, which filecard reads from the LibreOffice-converted file
+# and rows.py groups under the file and sheet (spec 2026-10-17-workbook-row-passages): index_text
+# still returns "" for it, so no passage is chunked from extracted text. The fixture's five rows
+# sit on rows 4-8 under a banner, one group, and the canary code is on row 6.
+assert len(passages) == 1, f"expected the five rows of order.xls in one passage, got {len(passages)}"
+text = passages[0]["text"]
+assert text.startswith("File: order.xls — Foglio: Ordine\n"), f"the row passage does not name its file and sheet: {text!r}"
+assert "Riga 6: Codice: A9A26924;" in text, f"the canary row is missing or misnumbered: {text!r}"
 
 # Still indexed, though: the card, the name and the row are what keep it findable, and the
 # card IS built from the LibreOffice-converted file -- so a normalisation that silently
@@ -359,7 +360,7 @@ assert len(cards) == 1, f"expected exactly one IndexedDocument row for order.xls
 card = cards[0].get("card") or ""
 for token in ("Descrizione", "Quantita"):
     assert token in card, f"{token!r} not found in the spreadsheet's card: {card!r}"
-print("ok: .xls carries no passages and keeps a card naming its columns")
+print("ok: .xls carries its rows as one passage and keeps a card naming its columns")
 PY
 
 echo "== Wiring probe 1: rerun unchanged -> zero re-extractions =="
