@@ -105,7 +105,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 - [x] Implement upload state with polling of exact source keys; show waiting honestly and offer Files/Open when appropriate. Keep processing status and polling identity-scoped; avoid refetch storms.
 - [x] Write saved-view tests for save/apply/rename/delete/pin/dashboard and fresh session/server persistence. Add custom-field filters and bulk field edits with explicit confirmation, reusing existing Diff validation.
 - [x] Implement real thumbnails with named fallbacks; responsive cards/compact rows keep names readable. Hide global token/cost telemetry only while working in Documents.
-- [ ] Run focused Vitest tests, typecheck, lint and build; inspect both themes and languages; review, commit/merge and fresh targeted verification.
+- [x] Run focused Vitest tests, typecheck, lint and build; inspect both themes and languages; review, commit/merge and fresh targeted verification.
 
 ### Task 4: Focused document detail and organization
 

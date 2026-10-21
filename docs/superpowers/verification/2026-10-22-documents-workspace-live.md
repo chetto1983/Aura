@@ -73,3 +73,11 @@ Fix `46ac9bcdb` replaced the rem-based targets with literal 44 px values. Scoped
 no remaining issues. The fixed production bundle was embedded and measured live: all 13 controls
 in the mobile Filters popover had both a 44 px rendered height and 44 px computed minimum height;
 document width stayed 390 px. No new test was written merely to assert the CSS spelling.
+
+## Reviewed merge and fresh verification
+
+Task commits `b237f0c13`, `46ac9bcdb` and evidence commit `4b8fc580e` were fast-forward merged
+into master. Fresh post-merge Vitest covered Documents, routed-surface blocking, AppShell and
+the file-manager API: **126 tests passed in 30 files**, 19.55 seconds. The source/runtime fixes
+are approved with no remaining review findings. Full frontend coverage and final publication
+remain in the final acceptance task, after the shared detail/editor changes.
