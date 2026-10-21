@@ -754,7 +754,11 @@ jobs:
   arcadedb-integration-test:
     name: Agent Memory MRS (live ArcadeDB + MCP + EmbeddingGemma)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # arcadedb-mcp verifies tokens against the aura daemon's JWKS, so compose builds the aura
+    # image from this commit, and since 2026-10-19 that image compiles five Craft apps from
+    # Rust. On 2026-10-21 the job was cut off at 30 minutes still building them; on 2026-10-11,
+    # before them, it passed in about 15.
+    timeout-minutes: 75
     # `aura.agent-memory-eval/v1` is the sole scored memory gate. Deterministic
     # tests, live ArcadeDB, the shipped Go MCP and EmbeddingGemma run together;
     # missing evidence or t.Skip is a failure, never a smaller-but-green score.

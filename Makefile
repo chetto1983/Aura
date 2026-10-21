@@ -369,7 +369,11 @@ arcadedb-integration: db-migrate memory-up
 ingest-image:
 	docker build -f docker/aura-ingest/Dockerfile -t aura-ingest:local .
 
-ingest-test: memory-up ingest-image
+# memory-up-core, not memory-up: the suite reaches ArcadeDB as root and makes disposable
+# databases, so it needs no MCP, and arcadedb-mcp would start the aura daemon, whose image
+# compiles the five Craft apps from source. On 2026-10-21 that cut the CI job off at its
+# 25-minute cap in the third Rust build, before a single test ran.
+ingest-test: memory-up-core ingest-image
 	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
 	@docker run --rm --network aura_default --entrypoint sh \
 	  -v "$(CURDIR)/services/ingest:/app/ingest:ro" \
