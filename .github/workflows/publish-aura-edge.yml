@@ -34,7 +34,11 @@ jobs:
   publish:
     name: Build and push edge
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The aura image compiles five Craft apps from Rust (docker/aura/Dockerfile). With a cold gha
+    # cache they ran past 30 minutes on 2026-10-21: pdfcraft 717 s, wordcraft 508 s, and the job
+    # was cut off in the third. The cache is written only by a build that finishes, so a cap
+    # below the cold build would never warm it.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
