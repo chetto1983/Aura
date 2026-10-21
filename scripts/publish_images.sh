@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
-# Publishes every appliance image to the image home from the operator's machine, while GitHub
-# runs no workflow (docs/superpowers/specs/2026-10-13-gitlab-image-bridge-design.md). It builds
+# Publishes every appliance image from the operator's machine. It was the image home's only
+# publisher while GitHub ran no workflow (docs/superpowers/specs/2026-10-13-gitlab-image-bridge-design.md);
+# since 2026-10-21 GitHub Actions publishes ghcr again, and this script serves the GitLab copy
+# that bridged hosts still read: run it with AURA_PUBLISH_REGISTRY=registry.gitlab.com/chetto1983/aura
+# until none is left (PRD §17, "Return to ghcr"). It builds
 # what .github/workflows/publish-aura-edge.yml and publish-arcadedb-mcp.yml build, the same way,
 # plus the two forks; nothing is pushed until every build and image contract passed, and the
 # moving tags move only once every per-commit tag is in the registry, aura:edge last.

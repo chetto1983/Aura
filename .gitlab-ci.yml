@@ -1,56 +1,22 @@
 # Secondary CI for the GitLab copy. Aura's CI is GitHub Actions on github.com/chetto1983/Aura
 # again since 2026-10-21 (.github/workflows), which also publishes images and the
-# create-aura npm package. This file runs `make quality` and the appliance's shell suites,
-# and only when something is pushed to GitLab.
+# create-aura npm package. This file runs `make quality`, ruff and the appliance's shell suites.
+
+# Only a pipeline started from GitLab's web UI runs, and it runs every job. Every push reaches
+# GitLab as origin's second push URL, and the project has no runner online: the pipeline of
+# 258cee0 sat pending on 2026-10-21, as every push's would.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web"
 
 # Every job runs on the project's own runner, registered with this tag: the free tier's 400
 # instance-runner minutes a month would not last a week of pushes.
 default:
   tags: [aura-ci]
 
-# Doc-only pushes do not run. A web pipeline runs every job: rules:changes is always true
-# without a push event.
-.go_inputs: &go_inputs
-  - "**/*.go"
-  - go.mod
-  - go.sum
-  - Makefile
-  - .golangci.yml
-  - scripts/**/*
-  - .gitlab-ci.yml
-# Every directory install.sh downloads from (scripts/payload_files.sh), and the updater's.
-.appliance_inputs: &appliance_inputs
-  - scripts/**/*
-  - deploy/**/*
-  - compose*.yaml
-  - caddy/**/*
-  - docker/**/*
-  - observability/**/*
-  - searxng/**/*
-  - .env.example
-  - .gitlab-ci.yml
-
-.python_inputs: &python_inputs
-  - "**/*.py"
-  - ruff.toml
-  - scripts/ruff.sh
-  - .gitlab-ci.yml
-
-workflow:
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "web"
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes: *go_inputs
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes: *appliance_inputs
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      changes: *python_inputs
-
 quality:
   image: golang:1.27.3-bookworm
   timeout: 60m
-  rules:
-    - changes: *go_inputs
   variables:
     GOPATH: $CI_PROJECT_DIR/.go
     GOCACHE: $CI_PROJECT_DIR/.cache/go-build
@@ -72,8 +38,6 @@ quality:
 # version, so the install below must name the same one or ruff refuses to run.
 python-lint:
   image: python:3.12-slim-bookworm
-  rules:
-    - changes: *python_inputs
   script:
     - pip install --quiet ruff==0.17.1
     - bash scripts/ruff.sh check .
@@ -83,8 +47,6 @@ python-lint:
 appliance-shell:
   image: golang:1.27.3-bookworm
   timeout: 15m
-  rules:
-    - changes: *appliance_inputs
   before_script:
     # install_lib_test.sh merges the compose overlays with `docker compose config`, which
     # needs the CLI and its plugin but no daemon, from Docker's apt repository.
