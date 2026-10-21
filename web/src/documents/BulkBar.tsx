@@ -49,7 +49,7 @@ export function BulkBar(props: BulkBarProps) {
       {filterTotal !== null && (
         <button
           type="button"
-          className="min-h-11 px-1 text-sm underline underline-offset-2"
+          className="min-h-[44px] px-1 text-sm underline underline-offset-2"
           onClick={onSelectFilter}
         >
           {t('documents.bulk.selectAll', { count: filterTotal })}
@@ -211,7 +211,7 @@ function BulkRow(props: {
     <button
       type="button"
       onClick={onClick}
-      className={`flex min-h-11 w-full items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-3 ${
+      className={`flex min-h-[44px] w-full items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-3 ${
         touched ? 'bg-success/10' : ''
       }`}
     >

@@ -144,7 +144,7 @@ function MenuRow(props: {
     <li>
       <label
         htmlFor={id}
-        className={`flex min-h-11 cursor-pointer items-center gap-2 rounded-md px-1 hover:bg-surface-3 ${
+        className={`flex min-h-[44px] cursor-pointer items-center gap-2 rounded-md px-1 hover:bg-surface-3 ${
           count === 0 && !checked ? 'text-text-muted' : muted ? 'text-text-muted' : 'text-text'
         }`}
       >

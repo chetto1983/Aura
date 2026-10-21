@@ -31,7 +31,7 @@ export function DocumentsNavigation({
             title={compact ? label : undefined}
             onClick={onNavigate}
             className={({ isActive }) =>
-              `flex min-h-11 items-center gap-3 rounded-lg px-3 text-sm font-medium ${isActive || (destination === 'overview' && pathname === '/documents') ? 'bg-info/10 text-info' : 'text-text-muted hover:bg-surface-2 hover:text-text'}`
+              `flex min-h-[44px] items-center gap-3 rounded-lg px-3 text-sm font-medium ${isActive || (destination === 'overview' && pathname === '/documents') ? 'bg-info/10 text-info' : 'text-text-muted hover:bg-surface-2 hover:text-text'}`
             }
           >
             <Icon aria-hidden="true" className="size-4 shrink-0" />

@@ -151,7 +151,7 @@ function ViewEditor({ identity, view }: { readonly identity: string; readonly vi
         <Link to={savedViewHref(view)} className="text-sm text-info underline">
           {t('documents.workspace.openView')}
         </Link>
-        <label className="flex min-h-11 items-center gap-2 text-sm">
+        <label className="flex min-h-[44px] items-center gap-2 text-sm">
           <Checkbox
             checked={draft.pinned}
             onCheckedChange={(value) => {
@@ -160,7 +160,7 @@ function ViewEditor({ identity, view }: { readonly identity: string; readonly vi
           />
           {t('documents.workspace.pin')}
         </label>
-        <label className="flex min-h-11 items-center gap-2 text-sm">
+        <label className="flex min-h-[44px] items-center gap-2 text-sm">
           <Checkbox
             checked={draft.dashboard}
             onCheckedChange={(value) => {

@@ -30,7 +30,7 @@ export function IngestionStatus({ state }: { readonly state: IngestionState | nu
         </p>
       )}
       <details className="mt-3 text-xs text-text-muted">
-        <summary className="min-h-11 cursor-pointer py-3 text-info">
+        <summary className="min-h-[44px] cursor-pointer py-3 text-info">
           {t('documents.workspace.indexDetails')}
         </summary>
         <p>{t('documents.workspace.status', { status: state.status })}</p>

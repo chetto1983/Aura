@@ -86,7 +86,7 @@ export default function DocumentsWorkspace({ upload }: { readonly upload?: React
       </Button>
       <Select
         size="sm"
-        className="min-h-11 w-auto md:min-h-8"
+        className="min-h-[44px] w-auto md:min-h-8"
         aria-label={t('documents.workspace.sort')}
         value={sortKey}
         options={['indexed_at', 'document_date', 'file_name'].map((value) => ({
@@ -109,7 +109,7 @@ export default function DocumentsWorkspace({ upload }: { readonly upload?: React
       </Button>
       <Select
         size="sm"
-        className="min-h-11 w-auto md:min-h-8"
+        className="min-h-[44px] w-auto md:min-h-8"
         aria-label={t('documents.workspace.pageSize')}
         value={String(request.limit)}
         options={[25, 50, 100].map((value) => ({ value: String(value), label: String(value) }))}

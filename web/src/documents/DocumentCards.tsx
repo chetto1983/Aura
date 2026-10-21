@@ -58,7 +58,7 @@ export function DocumentCards({
   const { t, i18n } = useTranslation();
   return (
     <div className="min-h-0 flex-1 overflow-y-auto p-3">
-      <label className="mb-3 flex min-h-11 items-center gap-2 text-sm">
+      <label className="mb-3 flex min-h-[44px] items-center gap-2 text-sm">
         <Checkbox
           checked={
             selection.pageState === 'all'

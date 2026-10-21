@@ -68,7 +68,7 @@ export function FilterBar(props: FilterBarProps) {
     <>
       <Select
         size="sm"
-        className="min-h-11 w-auto md:min-h-8"
+        className="min-h-[44px] w-auto md:min-h-8"
         aria-label={t('documents.workspace.searchMode')}
         value={filter.searchMode}
         options={['content', 'name'].map((value) => ({
@@ -125,7 +125,7 @@ export function FilterBar(props: FilterBarProps) {
                 <label
                   key={cf.id}
                   htmlFor={`cf-${cf.id}`}
-                  className="flex min-h-11 items-center gap-2"
+                  className="flex min-h-[44px] items-center gap-2"
                 >
                   <Checkbox
                     id={`cf-${cf.id}`}
@@ -161,7 +161,7 @@ export function FilterBar(props: FilterBarProps) {
       />
       <Select
         size="sm"
-        className="min-h-11 w-auto md:min-h-8"
+        className="min-h-[44px] w-auto md:min-h-8"
         aria-label={t('documents.workspace.fileType')}
         value={filter.fileType}
         options={FILE_TYPES.map((value) => ({
@@ -178,14 +178,14 @@ export function FilterBar(props: FilterBarProps) {
       {props.compact ? (
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="min-h-11">
+            <Button variant="outline" className="min-h-[44px]">
               {t('documents.workspace.filters')}
             </Button>
           </PopoverTrigger>
           <PopoverContent
             aria-label={t('documents.workspace.filters')}
             align="end"
-            className="flex max-h-[70dvh] w-[min(360px,calc(100vw-2rem))] flex-wrap gap-3 overflow-y-auto p-4 [&_button]:min-h-11"
+            className="flex max-h-[70dvh] w-[min(360px,calc(100vw-2rem))] flex-wrap gap-3 overflow-y-auto p-4 [&_button]:min-h-[44px]"
           >
             {advanced}
           </PopoverContent>
