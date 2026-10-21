@@ -1351,6 +1351,29 @@ provisioning bindings and manages CocoIndex workers. Live refresh actually resca
 sources. Add/modify/delete reconciles cards and passages; source identity and scope
 agree between Python writers and Go readers.
 
+Measured 2026-10-21 with the deployed Craft CLIs: isolated native processes rendered
+recognizable 480-pixel PNG previews for PDF, DOCX, XLS, PPTX and JPEG. Documents thumbnails
+reuse these apps inside the caller's existing SandboxRouter box: PdfCraft native batch
+`render_preview`, WordCraft PDF conversion, GridCraft first-sheet fit-to-page PDF export,
+DeckCraft slide-zero PDF export, and PhotoCraft's native `serve` preview. Each request has
+its own scratch directory and process; the mounted agent editor session is never used.
+The authenticated document lookup precedes source access. Source bytes stream from Garage,
+using the object's current size, with no user-provided source URL or host renderer fallback.
+Thumbnail responses are PNG and private/no-store; no cross-request preview cache exists.
+Input/output, concurrent work and elapsed conversion time are bounded, and output dimensions
+are checked before pixel allocation. Unsupported or failed previews retain the full viewer.
+These sample measurements do not establish fidelity for every supported Office import,
+large-archive latency, cold box startup time or safe decoding of every malformed native input;
+Word converts every page before previewing the first, spreadsheet fit-to-page is a first-sheet
+overview, and native font substitution remains visible. Evidence:
+`docs/superpowers/verification/2026-10-21-craft-document-previews.md`.
+
+`GET /api/documents/ingestion` exposes the existing tenant-local IngestState reader as
+`{indexing: state|null}`. Status, observed_at, in_progress, finished and errors keep their
+existing meanings: counts are work components, not files; ready can coexist with errors.
+A missing state is null and a failed read is an error. Extraction and its publisher remain
+unchanged; these aggregate counters cannot identify a particular failed upload.
+
 Extraction and supported format normalization feed token-bounded chunks. The current
 EmbeddingGemma contract is 768 dimensions with a 2,048-token input ceiling, including
 prefixes and special tokens. Model artifact, dimension, input format and fingerprint
