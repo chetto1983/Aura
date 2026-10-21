@@ -126,6 +126,32 @@ func TestEnsureImagePullsOnInspectMiss(t *testing.T) {
 		if !strings.Contains(err.Error(), "ghcr.io/example/aura-sandbox:edge") {
 			t.Fatalf("err = %v, want it to name the image ref", err)
 		}
+		if errors.Is(err, ErrImageUnavailable) {
+			t.Fatalf("err = %v: an unreachable registry was marked as one without the image, so it would never be retried", err)
+		}
+	})
+
+	// The daemon's answer when the registry has no such image, measured in the CI memory job on
+	// 2026-10-21 with the box image left unbuilt.
+	t.Run("registry without the image is unavailable", func(t *testing.T) {
+		cli := newFakeDockerClient(t, func(req *http.Request) (*http.Response, error) {
+			switch {
+			case req.Method == http.MethodGet && strings.Contains(req.URL.Path, "/images/"):
+				return dockerJSONResponse(http.StatusNotFound, `{"message":"no such image"}`), nil
+			case req.Method == http.MethodPost && strings.Contains(req.URL.Path, "/images/create"):
+				return dockerJSONResponse(http.StatusNotFound, `{"message":"pull access denied for aura-sandbox, repository does not exist or may require 'docker login': denied: requested access to the resource is denied"}`), nil
+			}
+			return nil, fmt.Errorf("unexpected request: %s %s", req.Method, req.URL.Path)
+		})
+		backend := NewDockerBackend(cli, "aura-sandbox:latest", Resources{})
+
+		err := NewSandboxRouter(backend, unitSandboxConfig()).EnsureImage(context.Background())
+		if !errors.Is(err, ErrImageUnavailable) {
+			t.Fatalf("err = %v, want ErrImageUnavailable", err)
+		}
+		if !strings.Contains(err.Error(), "aura-sandbox:latest") {
+			t.Fatalf("err = %v, want it to name the image ref", err)
+		}
 	})
 }
 

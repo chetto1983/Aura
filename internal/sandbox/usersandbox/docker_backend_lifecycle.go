@@ -9,6 +9,7 @@ package usersandbox
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -365,6 +366,11 @@ func (b *DockerBackend) EnsureEgressImage(ctx context.Context) error {
 	return b.ensureImage(ctx, b.egressImage)
 }
 
+// ErrImageUnavailable is an image its registry does not have, or will not hand over: the daemon
+// answers "repository does not exist" and "denied" alike as not found (moby
+// daemon/internal/distribution/errors.go). Pulling again gets the same answer.
+var ErrImageUnavailable = errors.New("image not in its registry")
+
 // ensureImage pulls the box image only when it is not already present locally. This keeps a
 // locally-built, registry-less image (e.g. aura-sandbox:latest) working — ImageInspect finds
 // it and no pull is attempted — while a remote test image is pulled on first use.
@@ -373,6 +379,9 @@ func (b *DockerBackend) ensureImage(ctx context.Context, ref string) error {
 		return nil
 	}
 	resp, err := b.cli.ImagePull(ctx, ref, client.ImagePullOptions{})
+	if cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("pull image %q: %w: %w", ref, ErrImageUnavailable, err)
+	}
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", ref, err)
 	}

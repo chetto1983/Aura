@@ -34,6 +34,17 @@ func TestRegistrationImpossibleIsNotRetryable(t *testing.T) {
 	}
 }
 
+// TestBoxUnavailableIsNotRetryable covers a box server whose box cannot be created. On
+// 2026-10-21 a box image its registry did not have held each Craft server in the mount loop
+// for its whole 180 s, and aura's HTTP listener with it: the CI memory job stopped waiting
+// 316 s into boot.
+func TestBoxUnavailableIsNotRetryable(t *testing.T) {
+	err := TransportErrorf("deckcraft", fmt.Errorf("%w: pull image %q: not in its registry", ErrBoxUnavailable, "aura-sandbox:latest"))
+	if IsTransportError(err) {
+		t.Fatal("a box server whose box cannot be created is being retried as a transient transport failure")
+	}
+}
+
 func TestIsTransportErrorOnNil(t *testing.T) {
 	if IsTransportError(nil) {
 		t.Fatal("nil is not a transport error")

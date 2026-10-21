@@ -23,6 +23,11 @@ import (
 // not wrap ErrTransport, and a box server is never run on the host instead.
 var ErrNoBox = errors.New("mcp: this server runs in the sandbox box, and this caller has no sandbox")
 
+// ErrBoxUnavailable is a BoxLauncher's answer when the box cannot be created at all, such as
+// when its image is not in its registry. It reaches the caller wrapped as a transport failure,
+// and IsTransportError does not retry it.
+var ErrBoxUnavailable = errors.New("mcp: this server's sandbox box cannot be created")
+
 // BoxLauncher starts a stdio server in the box of the identity ctx carries. stdin feeds the
 // server's stdin and its EOF closes it; the server's stdout is copied to stdout as it comes.
 // The launcher keeps the server's stderr off stdout, where it would corrupt the framing.

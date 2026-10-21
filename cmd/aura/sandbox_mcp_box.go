@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"regexp"
 	"slices"
@@ -46,6 +47,9 @@ func (b sandboxMCPBox) startStdio(ctx context.Context, name string, argv, env []
 		route = b.router.RouteBrowser
 	}
 	h, err := route(ctx)
+	if errors.Is(err, usersandbox.ErrImageUnavailable) {
+		return nil, fmt.Errorf("%w: %w", mcp.ErrBoxUnavailable, err)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -39,11 +39,15 @@ const sdkNoRegistrationMethod = "no configured client registration methods are s
 // Measured 2026-08-24, twice: each of these sat in the mount loop for 40 attempts, holding
 // the whole daemon's startup and leaving the container unhealthy, while the log repeated
 // the one line that already said what a person had to go and do.
+//
+// A box that cannot be created (ErrBoxUnavailable) is the third. Measured 2026-10-21: a box
+// image its registry did not have held each Craft server for its whole mount budget, and
+// aura's HTTP listener with them.
 func IsTransportError(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrOAuthAuthorizationRequired) || isNoRegistrationMethod(err) {
+	if errors.Is(err, ErrOAuthAuthorizationRequired) || isNoRegistrationMethod(err) || errors.Is(err, ErrBoxUnavailable) {
 		return false
 	}
 	return errors.Is(err, ErrTransport)
