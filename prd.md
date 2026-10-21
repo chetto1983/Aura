@@ -1355,7 +1355,13 @@ Measured 2026-10-21 with the deployed Craft CLIs: isolated native processes rend
 recognizable 480-pixel PNG previews for PDF, DOCX, XLS, PPTX and JPEG. Documents thumbnails
 reuse these apps inside the caller's existing SandboxRouter box: PdfCraft native batch
 `render_preview`, WordCraft PDF conversion, GridCraft first-sheet fit-to-page PDF export,
-DeckCraft slide-zero PDF export, and PhotoCraft's native `serve` preview. Each request has
+DeckCraft slide-zero PDF export, and PhotoCraft's native `serve` preview. A subsequent live
+FilmCraft probe rendered a 1920x1080 MP4 as a recognizable 480x270 PNG (70,076 bytes) in
+1.912 seconds including Docker transport. Video previews reuse FilmCraft's native probe,
+isolated project import, sequence creation from the returned item id and one-frame render;
+metadata dimensions are checked before frame import. Data/preset directories remain inside
+the request scratch directory. This one MP4 does not establish every codec/container or
+offline-media behavior; failed or unsupported videos retain their full viewer. Each request has
 its own scratch directory and process; the mounted agent editor session is never used.
 The authenticated document lookup precedes source access. Source bytes stream from Garage,
 using the object's current size, with no user-provided source URL or host renderer fallback.
