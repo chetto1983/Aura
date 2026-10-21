@@ -44,12 +44,14 @@ export class FileManagerProvider extends RestDataProvider {
     method: string,
     data?: unknown,
     customHeaders?: Record<string, string>,
+    signal?: AbortSignal,
   ): Promise<T> {
     // An upload is multipart and only the browser can write its boundary parameter, so
     // labelling that one would break the body it is meant to describe.
     const carriesJSON = data != null && !(data instanceof FormData);
     const response = await fetch(`${this._url}/${url}`, {
       method,
+      ...(signal ? { signal } : {}),
       headers: carriesJSON
         ? { 'Content-Type': 'application/json', ...customHeaders }
         : { ...customHeaders },

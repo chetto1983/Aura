@@ -18,6 +18,7 @@ import {
 } from './documentsApi';
 import { useDocumentLists, type DocumentLists } from './useDocumentLists';
 import { useWrite } from './useWrite';
+import { useCapabilities } from '@/admin/useAdmin';
 import { previewKind } from '@/chat/artifacts/artifactMeta';
 import { AssetSourceContext } from '@/chat/artifacts/renderers/assetSourceContext';
 import { PreviewLoading } from '@/chat/artifacts/renderers/PreviewStatus';
@@ -42,8 +43,10 @@ export interface DocumentDetailProps {
  */
 export function DocumentDetail({ id, onClose, onOpen }: DocumentDetailProps) {
   const { t } = useTranslation();
+  const { identityId } = useCapabilities();
   const detail = useQuery({
-    queryKey: ['document', id],
+    queryKey: ['document', identityId, id],
+    enabled: !!identityId,
     queryFn: ({ signal }) => fetchDocument(id, signal),
   });
   // The page waits for the lists too, so no label shows as unknown while they load.

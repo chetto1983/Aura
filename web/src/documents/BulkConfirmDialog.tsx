@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { BulkPending } from './bulkModel';
-import type { FilterField } from './documentsApi';
+import type { CustomField, FilterField } from './documentsApi';
 import type { LabelNames } from './documentsModel';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 
@@ -8,6 +8,7 @@ interface BulkConfirmDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly pending: BulkPending;
+  readonly customFields: readonly CustomField[];
   readonly names: LabelNames;
   readonly count: number;
   /** The count a filter selection holds now, when the server refused the confirmed one. */
@@ -31,6 +32,13 @@ export function BulkConfirmDialog(props: BulkConfirmDialogProps) {
   const { t } = useTranslation();
   const nameOf = (field: FilterField, id: string) => names[field].get(id) ?? id;
   const changes: string[] = [];
+  for (const [field, value] of Object.entries(pending.custom ?? {})) {
+    if (value === undefined) continue;
+    const label = props.customFields.find((cf) => `custom:${cf.id}` === field)?.name ?? field;
+    changes.push(
+      t(value === null ? 'documents.bulk.clear' : 'documents.bulk.set', { field: label, value }),
+    );
+  }
   for (const field of ['type', 'counterparty'] as const) {
     const target = pending[field];
     const label = t(FIELD_LABEL[field]).toLowerCase();

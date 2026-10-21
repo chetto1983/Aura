@@ -1,8 +1,10 @@
 import { render } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { DocumentDetail } from './DocumentDetail';
-import DocumentsWorkspace from './DocumentsWorkspace';
+import DocumentsSurface from './DocumentsSurface';
+import './DocumentsWorkspace';
 import type {
   CustomField,
   DocumentDetail as Detail,
@@ -182,6 +184,10 @@ export function stubServer(
     vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(urlOf(input), 'http://cockpit.test');
       const method = init?.method ?? 'GET';
+      if (url.pathname === '/api/me')
+        return json({ identity_id: 'documents-test', capabilities: [] });
+      if (url.pathname === '/api/documents/ingestion') return json({ indexing: null });
+      if (url.pathname === '/api/documents/views' && method === 'GET') return json({ views: [] });
       const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
       if (url.pathname === '/api/documents/bulk') {
         posts.push(body);
@@ -224,10 +230,13 @@ function newClient() {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-export function renderDocuments() {
+export function renderDocuments(path = '/documents/library') {
+  const router = createMemoryRouter([{ path: '/documents/*', element: <DocumentsSurface /> }], {
+    initialEntries: [path],
+  });
   return render(
     <QueryClientProvider client={newClient()}>
-      <DocumentsWorkspace />
+      <RouterProvider router={router} />
     </QueryClientProvider>,
   );
 }

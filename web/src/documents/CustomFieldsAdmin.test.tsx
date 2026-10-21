@@ -12,8 +12,7 @@ afterEach(() => {
 });
 
 async function openFields() {
-  renderDocuments();
-  fireEvent.click(await screen.findByRole('button', { name: 'Liste e regole' }));
+  renderDocuments('/documents/lists');
   // Radix activates a tab on mousedown, as a pointer press does.
   fireEvent.mouseDown(await screen.findByRole('tab', { name: 'Campi personalizzati' }));
 }

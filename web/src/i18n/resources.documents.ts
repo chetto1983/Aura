@@ -1,5 +1,8 @@
+import { workspaceEn, workspaceIt } from './resources.documents.workspace';
+
 export const documentsEn = {
   documents: {
+    workspace: workspaceEn,
     title: 'Documents',
     views: { label: 'View', folders: 'Folders', documents: 'Documents' },
     total_one: '{{count}} document',
@@ -191,6 +194,7 @@ export const documentsEn = {
 
 export const documentsIt = {
   documents: {
+    workspace: workspaceIt,
     title: 'Documenti',
     views: { label: 'Vista', folders: 'Cartelle', documents: 'Documenti' },
     total_one: '{{count}} documento',

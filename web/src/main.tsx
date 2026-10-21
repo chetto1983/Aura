@@ -2,7 +2,7 @@
 import { StrictMode, Suspense, lazy } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { BrowserRouter, Route, Routes } from 'react-router';
+import { createBrowserRouter, RouterProvider } from 'react-router';
 import { RouteSkeletonFallback } from './components/skeleton';
 import { ErrorBoundary } from './ErrorBoundary';
 import { queryClient } from './queryClient';
@@ -33,6 +33,18 @@ const BrowserLivePage = lazy(() =>
 // Re-assert them from localStorage BEFORE React mounts so there is no theme flash.
 applyTheme();
 
+// Server authentication remains the boundary; the data router enables document leave guards.
+const router = createBrowserRouter([
+  { path: '/login', element: <LoginPage /> },
+  { path: '/', element: <AppShell /> },
+  { path: '/c/:id', element: <AppShell /> },
+  { path: '/documents/*', element: <AppShell /> },
+  { path: '/s/:token', element: <SharePage tier="public" /> },
+  { path: '/shared/:id', element: <SharePage tier="internal" /> },
+  { path: '/browser/:session', element: <BrowserLivePage /> },
+  { path: '*', element: <NotFoundView /> },
+]);
+
 const container = document.getElementById('root');
 if (!container) {
   throw new Error('Aura: #root mount point missing from index.html');
@@ -45,31 +57,9 @@ createRoot(container).render(
   <StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <Suspense fallback={<RouteSkeletonFallback />}>
-            <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/" element={<AppShell />} />
-              {/* Deep link to a conversation at a search match (D-08); AppShell
-                  reads :id into the active thread. */}
-              <Route path="/c/:id" element={<AppShell />} />
-              {/* WEBSHARE-02/03 (37F-16): /s/{token} renders WITHOUT a session — the
-                  server admits this prefix to the SPA shell unauthenticated
-                  (isPublicShareRoute, plan 37F-12) and the 404 from GET
-                  /s/{token}/data is the real gate, not this route. /shared/{id} is
-                  deliberately OUTSIDE the /s/ prefix and stays behind RequireAuth;
-                  its gate is the 401/404 from GET /api/shares/{id}/data. Neither
-                  route hides anything client-side — same rule as this file's
-                  header comment above. */}
-              <Route path="/s/:token" element={<SharePage tier="public" />} />
-              <Route path="/shared/:id" element={<SharePage tier="internal" />} />
-              {/* Live view of an agent-browser session in the caller's own box; the
-                  server keys it on the session's identity, so the route hides nothing. */}
-              <Route path="/browser/:session" element={<BrowserLivePage />} />
-              <Route path="*" element={<NotFoundView />} />
-            </Routes>
-          </Suspense>
-        </BrowserRouter>
+        <Suspense fallback={<RouteSkeletonFallback />}>
+          <RouterProvider router={router} />
+        </Suspense>
       </QueryClientProvider>
     </ErrorBoundary>
   </StrictMode>,

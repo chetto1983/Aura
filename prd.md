@@ -1374,6 +1374,31 @@ Word converts every page before previewing the first, spreadsheet fit-to-page is
 overview, and native font substitution remains visible. Evidence:
 `docs/superpowers/verification/2026-10-21-craft-document-previews.md`.
 
+Documents workspace amendment, recorded 2026-10-22 before Task 3 implementation:
+the live Paperless comparison and frontend inventory measured a folders-first entry,
+no document route, and a 17 px filename column at 390 px. The running content-search
+probe returned 61 distinct documents across four pages from 122 matching passages;
+native Craft produced PDF/Office/image/video previews. These are the reasons to route
+Overview, Library, Inbox, Processing, saved views and organization within Documents,
+use compact rows on narrow screens, and explicitly request content search and the
+Documents file family. React Router's installed useBlocker requires a data router;
+the existing route table will use createBrowserRouter without replacing query fetching.
+File manager uploads return the stored absolute object ID; each queue item needs its
+own uploads/UUID/ prefix, exact source-key polling with file_type=all, and identity-scoped
+storage/cancellation. Ingest counters measure components, not files. The measurements
+do not establish the new frontend's usability, refresh behavior or ingestion latency;
+those require Task 3 tests and controller-run live acceptance. Evidence and API inventory:
+`.superpowers/sdd/2026-10-21-paperless-documents/frontend-inventory.md`,
+`docs/superpowers/verification/2026-10-21-paperless-documents.md`, and
+`output/playwright/paperless-comparison/`.
+
+Task 3 implementation inventory also confirms that library facets enumerate only type,
+counterparty and tag values. Custom-field Diff.set works for both explicit and filter-wide
+selections; Diff.remove needs the actual held value_key, available for explicitly selected
+rows only. The UI therefore offers custom clears on explicit selection and explains how
+to select documents when a filter-wide selection cannot clear them. No clear-by-field
+backend operation or typed-value coercion is inferred from the existing Diff contract.
+
 Measured 2026-10-22 during review: closing the execution stream after SIGTERM did not prove
 native process exit; a TERM-resistant child was still running when cancellation returned.
 The shared execution mechanism now escalates TERM to KILL, checks process identity and exit,

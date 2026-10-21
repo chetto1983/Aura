@@ -14,7 +14,7 @@ import { ShellHeader } from './shell/ShellHeader';
 import type { SurfaceIntent } from './shell/modes';
 import { MODES, SURFACE_LOADING, isAdminMode, visibleModes } from './shell/modes';
 import { useEdgeSwipe } from './shell/useEdgeSwipe';
-import { useSurfaceIntent } from './shell/useSurfaceIntent';
+import { useRoutedSurface } from './shell/useRoutedSurface';
 import { isSettingsSectionId } from './settings/settingsSections';
 import { storeSettingsSection } from './settings/useSettingsSection';
 import { useSurfaceRestore } from './shell/useSurfaceRestore';
@@ -65,7 +65,7 @@ export function AppShell() {
   const { id: routeId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { surface, setSurface } = useSurfaceIntent();
+  const { surface, setSurface } = useRoutedSurface();
   // MUSR-01 (D-03): hide the admin-only surfaces (Settings + Governance) from the nav when the
   // signed-in identity lacks governance.write. The filtering is cosmetic — the routes are
   // gated server-side by RequireCapability — but keeps a non-admin session from ever landing
@@ -356,7 +356,7 @@ export function AppShell() {
   const workspace = (
     <ArtifactWorkspace scopeKey={`${activeThreadId}:${surface}`} onExpand={closeArtifacts}>
       <section
-        aria-label={t('shell.chatRegion')}
+        aria-label={t(surface === 'documents' ? 'documents.title' : 'shell.chatRegion')}
         className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-bg"
       >
         <div className="min-h-0 flex-1 overflow-hidden">
@@ -507,12 +507,14 @@ export function AppShell() {
           )}
 
           <BottomDock activeMode={surface} onModeSelect={setSurface} modes={liveModes}>
-            <RuntimeFooter
-              usageState={usageState}
-              conversationId={activeThreadId}
-              {...(contextWindow !== undefined ? { windowTokens: contextWindow } : {})}
-              {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
-            />
+            {surface !== 'documents' && (
+              <RuntimeFooter
+                usageState={usageState}
+                conversationId={activeThreadId}
+                {...(contextWindow !== undefined ? { windowTokens: contextWindow } : {})}
+                {...(sessionBaseline !== undefined ? { sessionBaseline } : {})}
+              />
+            )}
           </BottomDock>
 
           <Drawer open={surfaces.navOpen} side="left" title="Aura" onClose={surfaces.closeNav}>

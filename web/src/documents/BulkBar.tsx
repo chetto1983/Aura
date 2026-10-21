@@ -1,11 +1,14 @@
 import { Check, ChevronDown, Minus, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { BulkPending, ValueState } from './bulkModel';
-import type { FilterField, Label } from './documentsApi';
+import type { CustomField, FilterField, Label } from './documentsApi';
+import { BulkCustomFields } from './BulkCustomFields';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export interface BulkBarProps {
+  readonly customFields: readonly CustomField[];
+  readonly canClearCustom: boolean;
   readonly count: number;
   /** The filter's whole result, offered when the selection is a list of ids smaller than it. */
   readonly filterTotal: number | null;
@@ -59,6 +62,12 @@ export function BulkBar(props: BulkBarProps) {
       <Button type="button" size="sm" disabled={!canApply} onClick={onApply}>
         {t('documents.bulk.apply')}
       </Button>
+      <BulkCustomFields
+        fields={props.customFields}
+        pending={props.pending}
+        onChange={props.onPendingChange}
+        canClear={props.canClearCustom}
+      />
       <Button
         type="button"
         size="sm"

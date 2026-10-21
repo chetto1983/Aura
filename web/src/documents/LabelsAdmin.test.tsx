@@ -15,8 +15,7 @@ afterEach(() => {
 });
 
 async function openLists() {
-  renderDocuments();
-  fireEvent.click(await screen.findByRole('button', { name: 'Liste e regole' }));
+  renderDocuments('/documents/lists');
   await screen.findByRole('heading', { name: 'Liste e regole', level: 1 });
 }
 

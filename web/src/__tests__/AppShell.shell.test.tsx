@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter, Route, Routes } from 'react-router';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { AppShell } from '../AppShell';
 import i18n from '../i18n/i18n';
 import { fetchOnboardingStatus } from '../onboarding/onboardingApi';
@@ -45,8 +45,8 @@ vi.mock('../settings/SettingsWorkspace', () => ({
   ),
 }));
 
-vi.mock('../files/FilesWorkspace', () => ({
-  default: () => <section aria-label="Documents">Document library</section>,
+vi.mock('../documents/DocumentsSurface', () => ({
+  default: () => <div>Document overview</div>,
 }));
 
 vi.mock('../graph/GraphExplorer', () => ({
@@ -70,9 +70,7 @@ function renderShell() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <AppShell />
-      </MemoryRouter>
+      <RouterProvider router={createMemoryRouter([{ path: '/*', element: <AppShell /> }])} />
     </QueryClientProvider>,
   );
 }
@@ -82,12 +80,12 @@ function renderShellWithLogin() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <MemoryRouter initialEntries={['/']}>
-        <Routes>
-          <Route path="/" element={<AppShell />} />
-          <Route path="/login" element={<div>login page</div>} />
-        </Routes>
-      </MemoryRouter>
+      <RouterProvider
+        router={createMemoryRouter([
+          { path: '/', element: <AppShell /> },
+          { path: '/login', element: <div>login page</div> },
+        ])}
+      />
     </QueryClientProvider>,
   );
 }
@@ -323,7 +321,7 @@ describe('AppShell', () => {
     expect(within(nav).getByRole('button', { name: 'Chat' })).toBeTruthy();
   });
 
-  it('opens the file workspace from the shell mode switcher', async () => {
+  it('opens the routed document workspace from the shell mode switcher', async () => {
     renderShell();
 
     fireEvent.click(
@@ -332,11 +330,11 @@ describe('AppShell', () => {
       }),
     );
 
-    // The region, not its heading text: the workspace is now the file manager and the
-    // header reads the same as the nav button that opened it.
     await waitFor(() => {
       expect(screen.getByRole('region', { name: 'Documents' })).toBeTruthy();
     });
+    expect(await screen.findByText('Document overview')).toBeTruthy();
+    expect(screen.queryByTestId('footer-visible-metrics')).toBeNull();
   });
 
   it('keeps the conversation navigation scoped to the chat surface', async () => {

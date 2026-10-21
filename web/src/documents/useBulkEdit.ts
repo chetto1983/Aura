@@ -21,6 +21,7 @@ import {
   type FilterField,
 } from './documentsApi';
 import type { SelectionApi } from './documentsCellContext';
+import { useCapabilities } from '@/admin/useAdmin';
 
 /** The documents ticked, or every document of the filter minus the ones unticked. */
 type Selection =
@@ -58,10 +59,19 @@ interface BulkEditInput {
  */
 export function useBulkEdit({ rows, total, filter, facets }: BulkEditInput) {
   const { t } = useTranslation();
+  const { identityId } = useCapabilities();
   const queryClient = useQueryClient();
   const [selection, setSelection] = useState<Selection>(null);
   const [pending, setPending] = useState<BulkPending>(NO_PENDING);
   const [confirm, setConfirm] = useState<ConfirmState>(CLOSED);
+  const resultKey = JSON.stringify(filter);
+  const [selectedResult, setSelectedResult] = useState(resultKey);
+  if (selectedResult !== resultKey) {
+    setSelectedResult(resultKey);
+    setSelection(null);
+    setPending(NO_PENDING);
+    setConfirm(CLOSED);
+  }
 
   const count =
     selection === null
@@ -138,7 +148,7 @@ export function useBulkEdit({ rows, total, filter, facets }: BulkEditInput) {
         diff,
       );
       clear();
-      await queryClient.invalidateQueries({ queryKey: ['documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['documents', identityId] });
       await queryClient.invalidateQueries({ queryKey: ['documents-review'] });
     } catch (error) {
       if (error instanceof CountChangedError) {
@@ -161,16 +171,27 @@ export function useBulkEdit({ rows, total, filter, facets }: BulkEditInput) {
     clear,
     selectionApi,
     bar: {
+      canClearCustom: selection?.kind === 'ids',
       count,
       filterTotal: selection?.kind === 'ids' && total > count ? total : null,
       onSelectFilter: () => {
         setSelection({ kind: 'filter', exclude: [] });
+        setPending((current) => ({
+          ...current,
+          custom: Object.fromEntries(
+            Object.entries(current.custom ?? {}).filter(([, value]) => value !== null),
+          ),
+        }));
       },
       onClear: clear,
       stateOf,
       pending,
       onPendingChange: setPending,
-      canApply: !isEmptyDiff(diff),
+      canApply:
+        !isEmptyDiff(diff) &&
+        !Object.values(pending.custom ?? {}).some(
+          (value) => typeof value === 'string' && !value.trim(),
+        ),
       onApply: () => {
         setConfirm({ ...CLOSED, open: true, expected: count });
       },

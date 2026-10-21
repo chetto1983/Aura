@@ -42,6 +42,20 @@ describe('valueState', () => {
 });
 
 describe('bulkDiff', () => {
+  it('sets and clears custom fields through the same explicit Diff contract', () => {
+    const held = heldInRows([
+      doc('custom', [
+        ['custom:status', 'open'],
+        ['custom:amount', '20'],
+      ]),
+    ]);
+    expect(
+      bulkDiff({ tags: {}, custom: { 'custom:status': 'paid', 'custom:amount': null } }, held),
+    ).toEqual({
+      set: [{ field: 'custom:status', value_key: 'paid' }],
+      remove: [{ field: 'custom:amount', value_key: '20' }],
+    });
+  });
   it('sends only what the operator touched', () => {
     const pending: BulkPending = {
       counterparty: 'c-gialli',

@@ -7,6 +7,7 @@ import { EMPTY_FILTER, fetchDocuments, type FilterField, type LabelKind } from '
 import { KIND_OF } from './documentsModel';
 import { LabelsAdmin } from './LabelsAdmin';
 import { useDocumentLists } from './useDocumentLists';
+import { useCapabilities } from '@/admin/useAdmin';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 /** The list pages in tab order, each with the filter field its values filter on. */
@@ -29,11 +30,13 @@ interface ListsPageProps {
  */
 export function ListsPage({ onClose, onFilter }: ListsPageProps) {
   const { t } = useTranslation();
+  const { identityId } = useCapabilities();
   const headingId = useId();
   const { lists, customFields } = useDocumentLists();
   const [tab, setTab] = useState<string>('type');
   const library = useQuery({
-    queryKey: ['documents', 'counts'],
+    queryKey: ['documents', identityId, 'counts'],
+    enabled: !!identityId,
     queryFn: ({ signal }) =>
       fetchDocuments(EMPTY_FILTER, { sort: '', offset: 0, limit: 1 }, signal),
   });

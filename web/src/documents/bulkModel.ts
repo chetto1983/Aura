@@ -7,6 +7,7 @@ export interface BulkPending {
   readonly type?: string | null;
   readonly counterparty?: string | null;
   readonly tags: Readonly<Record<string, 'add' | 'remove'>>;
+  readonly custom?: Readonly<Record<string, string | null | undefined>>;
 }
 
 export const NO_PENDING: BulkPending = { tags: {} };
@@ -26,7 +27,7 @@ export function valueState(
 }
 
 /** The values a selection holds on a field, which clearing the field removes. */
-export type HeldValues = (field: FilterField) => readonly string[];
+export type HeldValues = (field: string) => readonly string[];
 
 /** heldInRows reads them from the selected documents, when they are all loaded. */
 export function heldInRows(rows: readonly DocumentRow[]): HeldValues {
@@ -58,6 +59,11 @@ export function bulkDiff(pending: BulkPending, held: HeldValues): FieldsDiff {
   }
   for (const [tag, change] of Object.entries(pending.tags)) {
     (change === 'add' ? set : remove).push({ field: VALUE_FIELD.tags, value_key: tag });
+  }
+  for (const [field, value] of Object.entries(pending.custom ?? {})) {
+    if (value === undefined) continue;
+    if (value === null) for (const key of held(field)) remove.push({ field, value_key: key });
+    else if (value.trim()) set.push({ field, value_key: value.trim() });
   }
   return { set, remove };
 }

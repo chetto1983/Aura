@@ -28,8 +28,10 @@ export interface DocumentRow {
   readonly id: string;
   readonly source_key: string;
   readonly file_name: string;
+  readonly file_type?: FileType | 'other';
   readonly size_bytes: number;
   readonly indexed_at: string;
+  readonly raw_sha256?: string;
   readonly record_id?: string;
   readonly values: readonly FieldValue[];
   readonly reviewed_at?: string;
@@ -66,9 +68,33 @@ export interface CustomField {
 
 type PerField = Readonly<Record<FilterField, readonly string[]>>;
 
+export const FILE_TYPES = [
+  'documents',
+  'pdf',
+  'word',
+  'spreadsheet',
+  'presentation',
+  'text',
+  'image',
+  'video',
+  'audio',
+  'code',
+  'all',
+] as const;
+export type FileType = (typeof FILE_TYPES)[number];
+export interface CustomFilter {
+  readonly field: string;
+  readonly operator: 'eq' | 'unassigned';
+  readonly value?: string;
+}
+
 /** The filter bar's state. include and exclude hold label ids per field; unassigned names the
  * fields that must be empty. */
 export interface DocumentsFilter {
+  readonly fileType: FileType;
+  readonly searchMode: 'name' | 'content';
+  readonly inbox: boolean;
+  readonly custom: readonly CustomFilter[];
   readonly include: PerField;
   readonly exclude: PerField;
   readonly unassigned: readonly FilterField[];
@@ -84,6 +110,10 @@ export interface DocumentsFilter {
 const NO_VALUES: PerField = { type: [], counterparty: [], tags: [] };
 
 export const EMPTY_FILTER: DocumentsFilter = {
+  fileType: 'documents',
+  searchMode: 'content',
+  inbox: false,
+  custom: [],
   include: NO_VALUES,
   exclude: NO_VALUES,
   unassigned: [],
@@ -115,6 +145,10 @@ export function documentsQuery(filter: DocumentsFilter, page: DocumentsPageReque
   if (filter.search.trim() !== '') params.set('q', filter.search.trim());
   if (filter.needsReview) params.set('needs_review', 'true');
   if (!filter.includeUnreviewed) params.set('include_unreviewed', 'false');
+  params.set('file_type', filter.fileType);
+  params.set('search_mode', filter.searchMode);
+  if (filter.inbox) params.set('inbox', 'true');
+  if (filter.custom.length) params.set('custom', JSON.stringify(filter.custom));
   if (page.sort !== '') params.set('sort', page.sort);
   params.set('offset', String(page.offset));
   params.set('limit', String(page.limit));
@@ -237,6 +271,10 @@ export function filterBody(filter: DocumentsFilter): Record<string, unknown> {
     q: filter.search.trim(),
     include_unreviewed: filter.includeUnreviewed,
     needs_review: filter.needsReview,
+    file_type: filter.fileType,
+    search_mode: filter.searchMode,
+    inbox: filter.inbox,
+    custom: filter.custom,
   };
 }
 

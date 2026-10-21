@@ -71,7 +71,7 @@ describe('DocumentsWorkspace', () => {
     await act(() => i18n.changeLanguage('it'));
     const { lists } = stubServer(7);
     renderDocuments();
-    const counter = await screen.findByRole('button', { name: /Da rivedere\s*7/ });
+    const counter = await screen.findByRole('button', { name: /Suggerimenti\s*7/ });
     expect(counter.getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(counter);
     await waitFor(() => {

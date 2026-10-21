@@ -10,9 +10,9 @@ import {
 } from './documentsApi';
 
 describe('documentsQuery', () => {
-  it('sends only the page for an empty filter', () => {
+  it('explicitly requests Documents and content search for the default library', () => {
     expect(documentsQuery(EMPTY_FILTER, { sort: '', offset: 0, limit: 50 })).toBe(
-      'offset=0&limit=50',
+      'file_type=documents&search_mode=content&offset=0&limit=50',
     );
   });
 
@@ -108,6 +108,10 @@ describe('bulkApply', () => {
           q: 'nota',
           include_unreviewed: true,
           needs_review: false,
+          file_type: 'documents',
+          search_mode: 'content',
+          inbox: false,
+          custom: [],
         },
         exclude: ['d9'],
         expected_count: 24,
@@ -116,4 +120,37 @@ describe('bulkApply', () => {
     });
     vi.unstubAllGlobals();
   });
+});
+
+it('keeps an equal-sized media selection on the same GET and bulk filter', async () => {
+  let sent: unknown;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((_url: unknown, init?: RequestInit) => {
+      sent = JSON.parse(typeof init?.body === 'string' ? init.body : '{}');
+      return Promise.resolve(new Response(JSON.stringify({ applied: 2 })));
+    }),
+  );
+  const filter = {
+    ...EMPTY_FILTER,
+    fileType: 'video' as const,
+    searchMode: 'content' as const,
+    inbox: true,
+    custom: [{ field: 'custom:invoice', operator: 'eq' as const, value: 'Cedar' }],
+  };
+  const query = new URLSearchParams(documentsQuery(filter, { sort: '', offset: 0, limit: 50 }));
+  await bulkApply(
+    { kind: 'filter', filter, exclude: [], expectedCount: 2 },
+    { set: [{ field: 'tag', value_key: 'g1' }], remove: [] },
+  );
+  expect(query.get('file_type')).toBe('video');
+  expect(query.get('inbox')).toBe('true');
+  expect(JSON.parse(query.get('custom') ?? 'null')).toEqual(filter.custom);
+  expect(sent).toMatchObject({
+    selection: {
+      expected_count: 2,
+      filter: { file_type: 'video', search_mode: 'content', inbox: true, custom: filter.custom },
+    },
+  });
+  vi.unstubAllGlobals();
 });

@@ -1,260 +1,270 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { ListTree } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Grid, Willow, WillowDark, type IApi } from '@svar-ui/react-grid';
-import { Locale, Pager } from '@svar-ui/react-core';
-import '@/styles/svarWidgets';
-import {
-  EMPTY_FILTER,
-  fetchDocuments,
-  fetchReviewCount,
-  withField,
-  type DocumentRow,
-  type DocumentsFilter,
-  type Facets,
-} from './documentsApi';
+import { EMPTY_FILTER, fetchDocuments, withField, type DocumentsFilter } from './documentsApi';
 import { BulkBar } from './BulkBar';
 import { BulkConfirmDialog } from './BulkConfirmDialog';
-import {
-  DocumentsCellContext,
-  SelectionContext,
-  type FilterValueEvent,
-  type OpenDocumentEvent,
-} from './documentsCellContext';
-import { DocumentDetail } from './DocumentDetail';
-import { documentColumns } from './documentsColumns';
-import { documentsWords } from './documentsLocale';
 import { FilterBar } from './FilterBar';
-import { ListsPage } from './ListsPage';
 import { useBulkEdit } from './useBulkEdit';
-import { readShownFields, readWidths, saveShownFields, saveWidth } from './documentsPrefs';
+import { readShownFields, saveShownFields } from './documentsPrefs';
 import { useDocumentLists } from './useDocumentLists';
 import { useWideView } from './useWideView';
+import {
+  documentHref,
+  readDocumentQuery,
+  writeDocumentQuery,
+  type DocumentQuery,
+} from './documentRoute';
+import { DocumentTable } from './DocumentTable';
+import { DocumentCards } from './DocumentCards';
+import { SaveViewButton } from './SavedViews';
+import { Select } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { useThemeMode } from '@/theme/useThemeMode';
+import { useCapabilities } from '@/admin/useAdmin';
 
-const PAGE_SIZE = 50;
-
-/** The columns a header click sorts, each by the API's own sort key. */
-const SORTABLE: Readonly<Record<string, string>> = {
-  file_name: 'file_name',
-  document_date: 'document_date',
-};
-
-const NO_ROWS: readonly DocumentRow[] = [];
-const NO_FACETS: Facets = {};
-
-interface DocumentsWorkspaceProps {
-  readonly mobileMenu?: ReactNode;
-}
-
-/**
- * The Documenti view's list (spec decision 4, mockup 1): every indexed document with the fields
- * the operator keeps on it, filtered by the bar above and paged on the server. A value's click
- * filters by it; the "Da rivedere" counter shows the documents a suggestion waits on.
- */
-export default function DocumentsWorkspace({ mobileMenu }: DocumentsWorkspaceProps) {
-  const { t, i18n } = useTranslation();
-  const [filter, setFilterState] = useState<DocumentsFilter>(EMPTY_FILTER);
-  const [sort, setSort] = useState('');
-  const [offset, setOffset] = useState(0);
-  const [shownFields, setShownFieldsState] = useState(readShownFields);
-  const [widths, setWidths] = useState(readWidths);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [listsOpen, setListsOpen] = useState(false);
-  const wide = useWideView();
-
-  const setFilter = useCallback((next: DocumentsFilter) => {
-    setFilterState(next);
-    setOffset(0);
-  }, []);
-  const setShownFields = useCallback((ids: readonly string[]) => {
-    setShownFieldsState(ids);
-    saveShownFields(ids);
-  }, []);
-
-  const { lists, names, customFields } = useDocumentLists();
-  const reviewCount = useQuery({
-    queryKey: ['documents-review'],
-    queryFn: ({ signal }) => fetchReviewCount(signal),
-  });
-  const page = useQuery({
-    queryKey: ['documents', filter, sort, offset],
-    queryFn: ({ signal }) => fetchDocuments(filter, { sort, offset, limit: PAGE_SIZE }, signal),
-    placeholderData: keepPreviousData,
-  });
-
-  const total = page.data?.total ?? 0;
-  const rows = page.data?.rows ?? NO_ROWS;
-  const facets = page.data?.facets ?? NO_FACETS;
-  const bulk = useBulkEdit({ rows, total, filter, facets });
-  // A selection belongs to the result it was made in: a new filter drops it.
+export default function DocumentsWorkspace({ upload }: { readonly upload?: ReactNode }) {
+  const { t } = useTranslation();
+  const { identityId } = useCapabilities();
+  const { pathname, search } = useLocation();
+  const navigate = useNavigate();
+  const query = useMemo(() => {
+    const state = readDocumentQuery(search);
+    return { ...state, filter: { ...state.filter, inbox: pathname === '/documents/inbox' } };
+  }, [pathname, search]);
+  const { filter, page: request, display } = query;
+  const changeQuery = useCallback(
+    (next: DocumentQuery) => {
+      void navigate(`${pathname}?${writeDocumentQuery(next)}`);
+    },
+    [navigate, pathname],
+  );
   const changeFilter = (next: DocumentsFilter) => {
-    bulk.clear();
-    setFilter(next);
+    changeQuery({ ...query, filter: next, page: { ...request, offset: 0 } });
   };
-
-  const columns = useMemo(
-    () => documentColumns(t, customFields, shownFields, wide, widths),
-    [t, customFields, shownFields, wide, widths],
+  const [shownFields, setShownFields] = useState(readShownFields);
+  const { lists, names, customFields } = useDocumentLists();
+  const wide = useWideView();
+  const page = useQuery({
+    queryKey: ['documents', identityId, filter, request],
+    queryFn: ({ signal }) => fetchDocuments(filter, request, signal),
+    enabled: !!identityId,
+  });
+  const count = useQuery({
+    queryKey: ['documents', identityId, 'suggestions', filter.fileType],
+    queryFn: ({ signal }) =>
+      fetchDocuments(
+        { ...EMPTY_FILTER, fileType: filter.fileType, needsReview: true },
+        { sort: '', offset: 0, limit: 1 },
+        signal,
+      ),
+    enabled: !!identityId,
+  });
+  const rows = page.data?.rows ?? [];
+  const total = page.data?.total ?? 0;
+  const bulk = useBulkEdit({ rows, total, filter, facets: page.data?.facets ?? {} });
+  const open = (id: string) => {
+    void navigate(documentHref(id, pathname, query));
+  };
+  const sortKey = request.sort.replace(/^-/, '');
+  const descending = request.sort.startsWith('-');
+  const sort = (value: string) => {
+    changeQuery({ ...query, page: { ...request, sort: value, offset: 0 } });
+  };
+  const controls = (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <Button
+        size="sm"
+        variant={filter.needsReview ? 'default' : 'outline'}
+        aria-pressed={filter.needsReview}
+        onClick={() => {
+          changeFilter({ ...filter, needsReview: !filter.needsReview });
+        }}
+      >
+        {t('documents.workspace.suggestions')}{' '}
+        <span className="ml-1">{count.data?.total ?? '—'}</span>
+      </Button>
+      <Select
+        size="sm"
+        className="min-h-11 w-auto md:min-h-8"
+        aria-label={t('documents.workspace.sort')}
+        value={sortKey}
+        options={['indexed_at', 'document_date', 'file_name'].map((value) => ({
+          value,
+          label: t(`documents.workspace.${value}`),
+        }))}
+        onValueChange={(value) => {
+          sort(`${descending ? '-' : ''}${value}`);
+        }}
+      />
+      <Button
+        size="sm"
+        variant="ghost"
+        aria-label={t('documents.workspace.direction')}
+        onClick={() => {
+          sort(`${descending ? '' : '-'}${sortKey}`);
+        }}
+      >
+        {t(`documents.workspace.${descending ? 'descending' : 'ascending'}`)}
+      </Button>
+      <Select
+        size="sm"
+        className="min-h-11 w-auto md:min-h-8"
+        aria-label={t('documents.workspace.pageSize')}
+        value={String(request.limit)}
+        options={[25, 50, 100].map((value) => ({ value: String(value), label: String(value) }))}
+        onValueChange={(value) => {
+          changeQuery({ ...query, page: { ...request, limit: Number(value), offset: 0 } });
+        }}
+      />
+      <div
+        className="ml-auto flex gap-1"
+        role="group"
+        aria-label={t('documents.workspace.display')}
+      >
+        {(['table', 'compact', 'cards'] as const).map((mode) => (
+          <Button
+            key={mode}
+            size="sm"
+            variant={display === mode ? 'secondary' : 'ghost'}
+            aria-pressed={display === mode}
+            onClick={() => {
+              changeQuery({ ...query, display: mode });
+            }}
+          >
+            {t(`documents.workspace.${mode}`)}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 
-  // The library is sorted on the server, a page at a time: a header click becomes the query's
-  // sort, and the grid's own sort is stopped (an intercept that answers false ends the action).
-  const init = useCallback((api: IApi) => {
-    api.intercept('sort-rows', (ev) => {
-      const key = SORTABLE[String(ev.key)];
-      if (key !== undefined) {
-        setSort((current) => (current === key ? `-${key}` : key));
-        setOffset(0);
-      }
-      return false;
-    });
-    // A column dragged to a new width keeps it, here and on the next visit; the drag itself
-    // stays the grid's until the operator lets go.
-    api.on('resize-column', (ev) => {
-      const width = ev.width;
-      if (ev.inProgress === true || width === undefined) return;
-      setWidths((current) => saveWidth(current, String(ev.id), width));
-    });
-  }, []);
-  const sortMarks = useMemo(() => {
-    const key = sort.replace(/^-/, '');
-    const column = Object.keys(SORTABLE).find((id) => SORTABLE[id] === key);
-    return column === undefined
-      ? {}
-      : { [column]: { order: sort.startsWith('-') ? ('desc' as const) : ('asc' as const) } };
-  }, [sort]);
-
-  const Theme = useThemeMode() === 'light' ? Willow : WillowDark;
-  const review = reviewCount.data ?? 0;
-
-  if (openId !== null) {
-    return (
-      <DocumentDetail
-        id={openId}
-        onClose={() => {
-          setOpenId(null);
-        }}
-        onOpen={setOpenId}
-      />
-    );
-  }
-  if (listsOpen) {
-    return (
-      <ListsPage
-        onClose={() => {
-          setListsOpen(false);
-        }}
-        onFilter={(field, id) => {
-          setListsOpen(false);
-          changeFilter(withField(EMPTY_FILTER, 'include', field, id));
-        }}
-      />
-    );
-  }
   return (
     <section
       aria-label={t('documents.title')}
-      className="relative flex h-full min-h-0 min-w-0 flex-col bg-bg"
+      className="flex h-full min-h-0 min-w-0 flex-col bg-bg"
     >
-      <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <span className="md:hidden">{mobileMenu}</span>
-        <h1 className="text-[15px] font-semibold text-text">{t('documents.title')}</h1>
-        <span className="text-sm text-text-muted">{t('documents.total', { count: total })}</span>
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="ml-auto gap-2"
-          onClick={() => {
-            setListsOpen(true);
-          }}
-        >
-          <ListTree aria-hidden="true" />
-          {t('documents.lists.open')}
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant={filter.needsReview ? 'default' : 'outline'}
-          aria-pressed={filter.needsReview}
-          className="gap-2"
-          onClick={() => {
-            changeFilter({ ...filter, needsReview: !filter.needsReview });
-          }}
-        >
-          {t('documents.review')}
-          <span className="rounded-full bg-warning px-2 text-xs font-bold text-bg">{review}</span>
-        </Button>
+      <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+        <div className="mr-auto">
+          <h1 className="font-display text-xl font-semibold">
+            {t(`documents.workspace.${filter.inbox ? 'inbox' : 'library'}`)}
+          </h1>
+          <span className="text-xs text-text-muted">{t('documents.total', { count: total })}</span>
+        </div>
+        {upload}
+        <SaveViewButton identity={identityId} query={query} />
       </header>
-      {bulk.active ? (
-        <BulkBar {...bulk.bar} lists={lists} />
-      ) : (
-        <FilterBar
-          filter={filter}
-          onChange={changeFilter}
-          facets={facets}
-          lists={lists}
+      <div className="shrink-0">
+        {bulk.active ? (
+          <BulkBar {...bulk.bar} lists={lists} customFields={customFields} />
+        ) : (
+          <FilterBar
+            compact={!wide}
+            children={!wide ? controls : undefined}
+            filter={filter}
+            onChange={changeFilter}
+            facets={page.data?.facets ?? {}}
+            lists={lists}
+            names={names}
+            customFields={customFields}
+            shownFields={shownFields}
+            onShownFieldsChange={(ids) => {
+              setShownFields(ids);
+              saveShownFields(ids);
+            }}
+          />
+        )}
+        {wide && controls}
+      </div>
+      <BulkConfirmDialog {...bulk.confirm} names={names} customFields={customFields} />
+      {page.isError ? (
+        <div role="alert" className="p-5 text-danger">
+          {t('documents.loadFailed')}{' '}
+          <Button
+            variant="outline"
+            onClick={() => {
+              void page.refetch();
+            }}
+          >
+            {t('documents.workspace.retry')}
+          </Button>
+        </div>
+      ) : page.isPending ? (
+        <p role="status" className="p-5 text-text-muted">
+          {t('documents.loading')}
+        </p>
+      ) : rows.length === 0 ? (
+        <div className="grid flex-1 place-content-center gap-3 p-6 text-center">
+          <h2 className="font-display text-xl">{t('documents.workspace.empty')}</h2>
+          <p className="text-sm text-text-muted">{t('documents.workspace.emptyHint')}</p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              changeFilter({ ...EMPTY_FILTER, inbox: filter.inbox });
+            }}
+          >
+            {t('documents.workspace.clear')}
+          </Button>
+        </div>
+      ) : display === 'table' && wide ? (
+        <DocumentTable
+          rows={rows}
           names={names}
           customFields={customFields}
           shownFields={shownFields}
-          onShownFieldsChange={setShownFields}
+          selection={bulk.selectionApi}
+          sort={request.sort}
+          onSort={sort}
+          onOpen={open}
+          onFilter={(field, id) => {
+            changeFilter(withField(filter, 'include', field, id));
+          }}
+        />
+      ) : (
+        <DocumentCards
+          rows={rows}
+          names={names}
+          cards={display === 'cards'}
+          selection={bulk.selectionApi}
+          onOpen={open}
         />
       )}
-      <BulkConfirmDialog {...bulk.confirm} names={names} />
-      {page.isError && (
-        <p role="alert" className="px-3 py-2 text-sm text-danger">
-          {t('documents.loadFailed')}
-        </p>
-      )}
-      {page.isPending ? (
-        <p role="status" className="grid flex-1 place-items-center text-sm text-text-muted">
-          {t('documents.loading')}
-        </p>
-      ) : (
-        // The theme wrapper is a plain div with no height of its own: stretched here, the grid
-        // gets the room left and scrolls inside it. Left to its content, the grid grew to all
-        // fifty rows and the page cut off those below the fold and the pager (measured live
-        // 2026-10-18, a 1,889 px grid in 438 px). FilesWorkspace stretches its manager the same way.
-        <div className="min-h-0 flex-1 [&>*]:h-full">
-          <Theme fonts={false}>
-            <Locale words={documentsWords(i18n.language)}>
-              <DocumentsCellContext.Provider value={names}>
-                <SelectionContext.Provider value={bulk.selectionApi}>
-                  <div className="flex h-full min-h-0 flex-col">
-                    <div className="min-h-0 flex-1 [&>*]:h-full">
-                      <Grid
-                        data={rows.map((row) => ({ ...row }))}
-                        columns={columns}
-                        sortMarks={sortMarks}
-                        init={init}
-                        select={false}
-                        onFilterValue={(ev: FilterValueEvent) => {
-                          changeFilter(withField(filter, 'include', ev.field, ev.id));
-                        }}
-                        onOpenDocument={(ev: OpenDocumentEvent) => {
-                          setOpenId(ev.id);
-                        }}
-                      />
-                    </div>
-                    {total > PAGE_SIZE && (
-                      <Pager
-                        total={total}
-                        pageSize={PAGE_SIZE}
-                        value={Math.floor(offset / PAGE_SIZE) + 1}
-                        onChange={(ev) => {
-                          setOffset(ev.from);
-                        }}
-                      />
-                    )}
-                  </div>
-                </SelectionContext.Provider>
-              </DocumentsCellContext.Provider>
-            </Locale>
-          </Theme>
-        </div>
+      {total > 0 && (
+        <footer className="mt-auto flex shrink-0 items-center justify-between gap-2 border-t border-border px-3 py-2">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={request.offset === 0 || page.isPending}
+            onClick={() => {
+              changeQuery({
+                ...query,
+                page: { ...request, offset: Math.max(0, request.offset - request.limit) },
+              });
+            }}
+          >
+            {t('documents.workspace.previous')}
+          </Button>
+          <span className="text-xs text-text-muted">
+            {t('documents.workspace.page', {
+              from: Math.min(request.offset + 1, total),
+              to: Math.min(request.offset + request.limit, total),
+              total,
+            })}
+          </span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={request.offset + request.limit >= total || page.isPending}
+            onClick={() => {
+              changeQuery({
+                ...query,
+                page: { ...request, offset: request.offset + request.limit },
+              });
+            }}
+          >
+            {t('documents.workspace.next')}
+          </Button>
+        </footer>
       )}
     </section>
   );

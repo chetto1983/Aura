@@ -1,7 +1,9 @@
+import type { ReactNode } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   EMPTY_FILTER,
+  FILE_TYPES,
   FILTER_FIELDS,
   type CustomField,
   type DocumentsFilter,
@@ -11,12 +13,16 @@ import {
 } from './documentsApi';
 import { displayDate, filterChips, type LabelNames } from './documentsModel';
 import { FieldMenu } from './FieldMenu';
+import { CustomFilters } from './CustomFilters';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
+import { Select } from '@/components/ui/select';
 
 interface FilterBarProps {
+  readonly compact?: boolean;
+  readonly children?: ReactNode;
   readonly filter: DocumentsFilter;
   readonly onChange: (filter: DocumentsFilter) => void;
   readonly facets: Facets;
@@ -50,44 +56,35 @@ export function FilterBar(props: FilterBarProps) {
       .filter(Boolean)
       .join(' '),
   );
-  const filtering = chips.length > 0 || filter.search.trim() !== '';
+  const filtering =
+    chips.length > 0 ||
+    filter.search.trim() !== '' ||
+    filter.fileType !== 'documents' ||
+    filter.custom.length > 0 ||
+    !filter.includeUnreviewed ||
+    filter.needsReview;
 
-  return (
-    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-      <Input
-        type="search"
-        aria-label={t('documents.filters.search')}
-        placeholder={t('documents.filters.search')}
-        className="min-w-48 flex-[1_1_16rem]"
-        value={filter.search}
-        onChange={(e) => {
-          onChange({ ...filter, search: e.target.value });
+  const advanced = (
+    <>
+      <Select
+        size="sm"
+        className="min-h-11 w-auto md:min-h-8"
+        aria-label={t('documents.workspace.searchMode')}
+        value={filter.searchMode}
+        options={['content', 'name'].map((value) => ({
+          value,
+          label: t(`documents.workspace.${value}`),
+        }))}
+        onValueChange={(value) => {
+          onChange({ ...filter, searchMode: value === 'name' ? 'name' : 'content' });
         }}
       />
-      {chips.map((chip) => {
-        const field =
-          chip.field === 'date' ? t('documents.filters.date') : t(FIELD_LABEL[chip.field]);
-        const text = t(chip.excluded ? 'documents.filters.chipNot' : 'documents.filters.chip', {
-          field,
-          value: chip.label,
-        });
-        return (
-          <Button
-            key={chip.key}
-            type="button"
-            size="sm"
-            variant="outline"
-            title={t('documents.filters.removeChip', { field, value: chip.label })}
-            className="border-info/60 bg-info/10 font-semibold"
-            onClick={() => {
-              onChange(chip.remove(filter));
-            }}
-          >
-            {text}
-            <X aria-hidden="true" data-icon="inline-end" />
-          </Button>
-        );
-      })}
+      <CustomFilters
+        fields={customFields}
+        filter={filter}
+        onChange={onChange}
+        showChips={!props.compact}
+      />
       {FILTER_FIELDS.map((field) => (
         <FieldMenu
           key={field}
@@ -100,6 +97,15 @@ export function FilterBar(props: FilterBarProps) {
         />
       ))}
       <DateMenu filter={filter} onChange={onChange} />
+      <label className="flex items-center gap-2 text-xs text-text-muted">
+        <Checkbox
+          checked={filter.includeUnreviewed}
+          onCheckedChange={(value) => {
+            onChange({ ...filter, includeUnreviewed: value === true });
+          }}
+        />
+        {t('documents.workspace.includeUnreviewed')}
+      </label>
       {customFields.length > 0 && (
         <Popover>
           <PopoverTrigger asChild>
@@ -137,6 +143,88 @@ export function FilterBar(props: FilterBarProps) {
           </PopoverContent>
         </Popover>
       )}
+      {props.children}
+    </>
+  );
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+      <Input
+        type="search"
+        aria-label={t('documents.workspace.search')}
+        placeholder={t('documents.workspace.search')}
+        className="min-w-48 flex-[1_1_16rem]"
+        value={filter.search}
+        onChange={(e) => {
+          onChange({ ...filter, search: e.target.value });
+        }}
+      />
+      <Select
+        size="sm"
+        className="min-h-11 w-auto md:min-h-8"
+        aria-label={t('documents.workspace.fileType')}
+        value={filter.fileType}
+        options={FILE_TYPES.map((value) => ({
+          value,
+          label: t(`documents.workspace.fileTypes.${value}`),
+        }))}
+        onValueChange={(value) => {
+          onChange({
+            ...filter,
+            fileType: FILE_TYPES.find((type) => type === value) ?? 'documents',
+          });
+        }}
+      />
+      {props.compact ? (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" className="min-h-11">
+              {t('documents.workspace.filters')}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            aria-label={t('documents.workspace.filters')}
+            align="end"
+            className="flex max-h-[70dvh] w-[min(360px,calc(100vw-2rem))] flex-wrap gap-3 overflow-y-auto p-4 [&_button]:min-h-11"
+          >
+            {advanced}
+          </PopoverContent>
+        </Popover>
+      ) : (
+        advanced
+      )}
+      {props.compact && (
+        <CustomFilters
+          fields={customFields}
+          filter={filter}
+          onChange={onChange}
+          showControl={false}
+        />
+      )}
+      {chips.map((chip) => {
+        const field =
+          chip.field === 'date' ? t('documents.filters.date') : t(FIELD_LABEL[chip.field]);
+        const text = t(chip.excluded ? 'documents.filters.chipNot' : 'documents.filters.chip', {
+          field,
+          value: chip.label,
+        });
+        return (
+          <Button
+            key={chip.key}
+            type="button"
+            size="sm"
+            variant="outline"
+            title={t('documents.filters.removeChip', { field, value: chip.label })}
+            className="border-info/60 bg-info/10 font-semibold"
+            onClick={() => {
+              onChange(chip.remove(filter));
+            }}
+          >
+            {text}
+            <X aria-hidden="true" data-icon="inline-end" />
+          </Button>
+        );
+      })}
       {filtering && (
         <Button
           type="button"
@@ -144,7 +232,7 @@ export function FilterBar(props: FilterBarProps) {
           variant="ghost"
           className="ml-auto text-info"
           onClick={() => {
-            onChange({ ...EMPTY_FILTER, needsReview: filter.needsReview });
+            onChange({ ...EMPTY_FILTER, inbox: filter.inbox });
           }}
         >
           {t('documents.filters.reset')}
