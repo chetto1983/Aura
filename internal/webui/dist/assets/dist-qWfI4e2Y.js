@@ -1,1 +1,0 @@
-import{n as e}from"./rolldown-runtime-CsOFd3vK.js";function t(e,[t,n]){return Math.min(n,Math.max(t,e))}var n,r;function i(){return(i=e((()=>{n=Object.defineProperty,r=(e,t)=>n(e,`name`,{value:t,configurable:!0}),r(t,`clamp`)})))()}export{i as n,t};

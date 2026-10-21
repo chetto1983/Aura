@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-2s6bX4vc.js";function t(e){e.languages.hpkp={directive:{pattern:/\b(?:includeSubDomains|max-age|pin-sha256|preload|report-to|report-uri|strict)(?=[\s;=]|$)/i,alias:`property`},operator:/=/,punctuation:/;/}}function n(){return(n=e((()=>{t.displayName=`hpkp`,t.aliases=[]})))()}n();export{t as default};
