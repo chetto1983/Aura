@@ -47,13 +47,14 @@ type PreviewSandbox interface {
 
 // CraftPreviews orchestrates native Craft apps without sharing their editor sessions or outputs.
 type CraftPreviews struct {
-	box  PreviewSandbox
-	slot chan struct{}
+	box         PreviewSandbox
+	slot        chan struct{}
+	unavailable chan struct{}
 }
 
 // NewCraftPreviews limits thumbnail work to one conversion, including source materialization.
 func NewCraftPreviews(box PreviewSandbox) *CraftPreviews {
-	return &CraftPreviews{box: box, slot: make(chan struct{}, 1)}
+	return &CraftPreviews{box: box, slot: make(chan struct{}, 1), unavailable: make(chan struct{})}
 }
 
 // Preview streams one original into a fresh tenant scratch directory and returns a bounded PNG.
@@ -74,11 +75,19 @@ func (p *CraftPreviews) Preview(ctx context.Context, identityID, fileName string
 		return nil, err
 	}
 	select {
+	case <-p.unavailable:
+		return nil, ErrPreviewUnavailable
 	case p.slot <- struct{}{}:
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
-	defer func() { <-p.slot }()
+	defer func() {
+		if errors.Is(err, usersandbox.ErrExecUnconfirmed) {
+			close(p.unavailable)
+			return
+		}
+		<-p.slot
+	}()
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -91,6 +100,9 @@ func (p *CraftPreviews) Preview(ctx context.Context, identityID, fileName string
 	}
 	dir := "/workspace/scratch/document-preview-" + uuid.NewString()
 	defer func() {
+		if errors.Is(err, usersandbox.ErrExecUnconfirmed) {
+			return
+		}
 		cleanup, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 		defer stop()
 		if _, cleanupErr := p.box.RunPreview(cleanup, h, usersandbox.ExecRequest{Command: "rm -rf -- " + dir, Dir: "/workspace"}); cleanupErr != nil {

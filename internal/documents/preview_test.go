@@ -77,6 +77,9 @@ func (b *previewBox) RunPreview(ctx context.Context, _ usersandbox.BoxHandle, re
 		select {
 		case <-b.block:
 		case <-ctx.Done():
+			if b.fail == "unconfirmed" {
+				return nil, errors.Join(ctx.Err(), usersandbox.ErrExecUnconfirmed)
+			}
 			return nil, ctx.Err()
 		}
 	}
@@ -315,5 +318,50 @@ func TestCraftPreviewCapacityBeforeSourceAndCancellation(t *testing.T) {
 	_, err = p.Preview(ctx2, "one", "x.pdf", previewSource("pdf"))
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("already cancelled=%v", err)
+	}
+}
+
+func TestCraftPreviewUnconfirmedExitClosesSourceAndRetainsAdmission(t *testing.T) {
+	b := newPreviewBox(t)
+	b.block = make(chan struct{})
+	b.entered = make(chan struct{})
+	b.fail = "unconfirmed"
+	p := NewCraftPreviews(b)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	closed := false
+	first := make(chan error, 1)
+	go func() {
+		_, err := p.Preview(ctx, "one", "x.pdf", func(context.Context) (io.ReadCloser, int64, error) {
+			return &previewCloser{Reader: strings.NewReader("pdf"), closed: &closed}, 3, nil
+		})
+		first <- err
+	}()
+	<-b.entered
+	var opened atomic.Bool
+	deniedSource := func(context.Context) (io.ReadCloser, int64, error) {
+		opened.Store(true)
+		return nil, 0, errors.New("must not open another source")
+	}
+	queued := make(chan error, 1)
+	go func() { _, err := p.Preview(t.Context(), "two", "x.pdf", deniedSource); queued <- err }()
+	cancel()
+	if err := <-first; !errors.Is(err, usersandbox.ErrExecUnconfirmed) || !closed {
+		t.Fatalf("unconfirmed=%v source closed=%v", err, closed)
+	}
+	select {
+	case err := <-queued:
+		if !errors.Is(err, ErrPreviewUnavailable) {
+			t.Fatalf("queued=%v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued request waited instead of failing unavailable")
+	}
+	_, err := p.Preview(t.Context(), "three", "x.pdf", deniedSource)
+	if !errors.Is(err, ErrPreviewUnavailable) || opened.Load() {
+		t.Fatalf("new request=%v opened=%v", err, opened.Load())
+	}
+	if strings.Contains(strings.Join(b.commands, "\n"), "rm -rf") {
+		t.Fatal("scratch was removed before execution exit could be confirmed")
 	}
 }

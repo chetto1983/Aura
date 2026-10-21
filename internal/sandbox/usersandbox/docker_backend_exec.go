@@ -57,7 +57,8 @@ func (b *DockerBackend) Exec(ctx context.Context, h BoxHandle, req ExecRequest) 
 	}
 	att, err := b.cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
 	if err != nil {
-		return ExecResult{}, fmt.Errorf("box exec attach: %w", err)
+		_, stopErr := killBoxProcessGroup(b.cli, h.ContainerID, pidFile, ec.ID)
+		return ExecResult{}, errors.Join(fmt.Errorf("box exec attach: %w", err), stopErr)
 	}
 	defer att.Close()
 
@@ -72,27 +73,31 @@ func (b *DockerBackend) Exec(ctx context.Context, h BoxHandle, req ExecRequest) 
 	case <-ctx.Done():
 		// Signal the box-side process group BEFORE detaching -- detaching alone (the
 		// pre-fix behaviour) leaves the process running with no handle left to kill it.
-		killBoxProcessGroup(b.cli, h.ContainerID, pidFile)
+		_, stopErr := killBoxProcessGroup(b.cli, h.ContainerID, pidFile, ec.ID)
 		att.Close()
 		<-copyDone
-		return ExecResult{}, ctx.Err()
+		return ExecResult{}, errors.Join(ctx.Err(), stopErr)
 	case cerr := <-copyDone:
 		if cerr != nil && !errors.Is(cerr, io.EOF) {
 			return ExecResult{}, fmt.Errorf("box exec stream: %w", cerr)
 		}
 	}
 
-	ins, err := b.cli.ExecInspect(ctx, ec.ID, client.ExecInspectOptions{})
-	if err != nil {
-		return ExecResult{}, fmt.Errorf("box exec inspect: %w", err)
+	code, err := waitExecExit(ctx, b.cli, ec.ID, ctx.Done())
+	if ctx.Err() != nil {
+		_, stopErr := killBoxProcessGroup(b.cli, h.ContainerID, pidFile, ec.ID)
+		return ExecResult{}, errors.Join(ctx.Err(), stopErr)
 	}
-	return ExecResult{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes(), ExitCode: ins.ExitCode}, nil
+	if err != nil {
+		return ExecResult{}, err
+	}
+	return ExecResult{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes(), ExitCode: code}, nil
 }
 
 // ExecStreamHandle is a live streamed/detached box exec backing a BACKGROUND shell job (37-09).
 // It streams the job's combined stdout/stderr into the writer supplied at start, blocks for the
-// exit code via ExecInspect (Wait), and terminates the job with a box-side SIGTERM to its process
-// group (Kill). It is a CONCRETE DockerBackend capability, NOT a 6th Backend verb — D-02 locks the
+// exit code via ExecInspect (Wait), and terminates the job tree with bounded TERM/KILL escalation
+// (Kill). It is a CONCRETE DockerBackend capability, NOT a 6th Backend verb — D-02 locks the
 // Backend seam at Resolve/Exec/Suspend/Resume/Stop so the DGX agent-sandbox E2B impl drops in
 // unmodified; the router surfaces this streaming verb structurally (router_tools.go), never through
 // the Backend interface. It owns every goroutine it starts (goleak-clean).
@@ -107,6 +112,9 @@ type ExecStreamHandle struct {
 	killOnce sync.Once
 	killReq  chan struct{}
 	done     chan struct{}
+	stopDone chan struct{}
+	stopCode int
+	stopErr  error
 }
 
 // ExecStream starts req inside the box as a streamed/detached exec and returns a handle. The
@@ -139,7 +147,8 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 	}
 	att, err := b.cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("box bg exec attach: %w", err)
+		_, stopErr := killBoxProcessGroup(b.cli, h.ContainerID, pidFile, ec.ID)
+		return nil, errors.Join(fmt.Errorf("box bg exec attach: %w", err), stopErr)
 	}
 	s := &ExecStreamHandle{
 		cli:       b.cli,
@@ -150,14 +159,14 @@ func (b *DockerBackend) ExecStream(ctx context.Context, h BoxHandle, req ExecReq
 		in:        in,
 		killReq:   make(chan struct{}),
 		done:      make(chan struct{}),
+		stopDone:  make(chan struct{}),
 	}
 	go s.pump(out)
 	return s, nil
 }
 
-// pump demuxes the box exec stream into out until the job exits on its own (stream EOF) or Kill
-// requests termination — in which case it signals the box-side process group, detaches to unblock
-// the copy, and joins the copy goroutine. It closes done on return (Wait's completion signal).
+// pump joins output/input copying on EOF or after the bounded termination worker settles.
+// Wait separately confirms remote execution exit: stream EOF alone is not that proof.
 func (s *ExecStreamHandle) pump(out io.Writer) {
 	defer close(s.done)
 	feedDone := s.feedStdin()
@@ -170,7 +179,7 @@ func (s *ExecStreamHandle) pump(out io.Writer) {
 	case <-copyDone:
 		s.attach.Close()
 	case <-s.killReq:
-		s.sigterm()
+		<-s.stopDone
 		s.attach.Close() // unblock the StdCopy read so the copy goroutine exits
 		<-copyDone
 	}
@@ -196,12 +205,6 @@ func (s *ExecStreamHandle) feedStdin() <-chan struct{} {
 	return done
 }
 
-// sigterm signals the job's process group from a separate short-lived box exec. Runs in the
-// pump goroutine, so Kill itself stays non-blocking.
-func (s *ExecStreamHandle) sigterm() {
-	killBoxProcessGroup(s.cli, s.container, s.pidFile)
-}
-
 // wrapCommandWithPIDFile prefixes cmd with a shell snippet that records the wrapper shell's own
 // PID to pidFile before cmd runs -- the ONE PID-file kill mechanism this package uses, shared by
 // ExecStream's background jobs and Exec's synchronous cancel/timeout path (defect E, above). No
@@ -215,99 +218,51 @@ func (s *ExecStreamHandle) sigterm() {
 // here is consequently the ROOT OF A TREE, and killJobTreeCommand walks it; it is not a
 // process-group handle, and reading it as one is the mistake this comment used to make.
 //
-// The EXIT trap removes the file on a normal exit so a long-lived box does not accumulate
-// one file per shell_exec call; a wrapper killed by killBoxProcessGroup's TERM exits
-// without running it, which leaves a file naming a dead PID -- harmless, and
-// killJobTreeCommand's `2>/dev/null` already tolerates it.
+// Refuse untracked execution if the PID file cannot be written. On TERM the wrapper waits
+// for its foreground child so escalation can kill the child without orphaning it, then
+// exits instead of continuing a compound command. EXIT removes the tracking file.
 func wrapCommandWithPIDFile(pidFile, cmd string) string {
-	return "echo $$ > '" + pidFile + "'; trap 'rm -f " + pidFile + "' EXIT; " + cmd
+	return "echo $$ > '" + pidFile + "' || exit 1; trap 'rm -f " + pidFile + "' EXIT; trap 'wait; exit 143' TERM; " + cmd
 }
 
-// killJobTreeCommand is the pure shell snippet killBoxProcessGroup runs in a separate,
-// short-lived box exec: terminate the job wrapCommandWithPIDFile recorded, and everything it
-// started.
-//
-// The process GROUP is the primary mechanism and it is correct. Measured inside a real box on
-// 2026-09-06 during a live cancel:
-//
-//	wrapper shell   pid=497  pgid=497  sid=497
-//	sleep           pid=503  pgid=497  sid=497   <- the SAME group
-//
-// so `kill -TERM -497` is the right signal and reaches the work.
-//
-// The tree walk is belt-and-braces on top of it, for the case the group does not cover: a child
-// that calls setsid, or a job runner that puts its workers in groups of their own. It is NOT
-// there because the ordinary case was measured broken — it was not — and this comment says so
-// because an earlier draft of it claimed the opposite from a misread process table, where the
-// wrapper was mistaken for the job (the wrapper's argv contains the whole command string, so a
-// naive cmdline match finds it first).
-//
-// The tree is collected BEFORE anything is signalled. That order is load-bearing: a child
-// reparents the instant its parent dies, so a walk performed afterwards has already lost the
-// links it needs. /proc is read directly because the box image has no ps and no pkill.
-//
-// A job that already exited leaves no PID to signal, so the trailing `; true` keeps the kill
-// exec's own exit clean either way.
-func killJobTreeCommand(pidFile string) string {
-	return "P=$(cat '" + pidFile + "' 2>/dev/null); " +
-		"[ -n \"$P\" ] || exit 0; " +
-		"T=\"$P\"; F=\"$P\"; " +
-		"while [ -n \"$F\" ]; do N=\"\"; " +
-		"for d in /proc/[0-9]*; do c=${d#/proc/}; " +
-		"pp=$(awk '/^PPid:/{print $2; exit}' \"$d/status\" 2>/dev/null); " +
-		"for f in $F; do [ \"$pp\" = \"$f\" ] && { N=\"$N $c\"; T=\"$T $c\"; }; done; " +
-		"done; F=\"$N\"; done; " +
-		"for pid in $T; do kill -TERM \"$pid\" 2>/dev/null; done; " +
-		"kill -TERM -\"$P\" 2>/dev/null; true"
-}
-
-// killBoxProcessGroup signals the process group recorded in pidFile from a separate, short-lived
-// box exec -- the Docker exec API has no kill-exec verb, and closing/detaching the original exec's
-// hijacked stream alone leaves the box-side process running (37-RESEARCH A5; defect E, above).
-// Best-effort and silent on failure: a box that is already gone, or a job that already exited,
-// leaves nothing to signal and nothing to report.
-func killBoxProcessGroup(cli *client.Client, containerID, pidFile string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	ec, err := cli.ExecCreate(ctx, containerID, client.ExecCreateOptions{Cmd: []string{"/bin/sh", "-c", killJobTreeCommand(pidFile)}})
-	if err != nil {
-		// Best-effort is about not FAILING the caller, never about staying quiet. When this
-		// exec cannot even be created the job keeps running inside the box with nothing left
-		// holding a handle to it, and the operator — who pressed stop and was told
-		// "cancelling" — has no way to learn that it did not stop. Measured 2026-09-06: a
-		// cancelled turn left its `sleep` alive and every log was silent about it.
-		slog.Warn("box exec kill: could not start the terminate exec — the job may still be running in the box",
-			"container", containerID, "err", err)
-		return
-	}
-	att, err := cli.ExecAttach(ctx, ec.ID, client.ExecAttachOptions{})
-	if err != nil {
-		slog.Warn("box exec kill: could not attach the terminate exec — the job may still be running in the box",
-			"container", containerID, "err", err)
-		return
-	}
-	_, _ = io.Copy(io.Discard, att.Reader) // run the kill exec to completion
-	att.Close()
-}
-
-// Kill requests termination of the job (non-blocking, once-guarded): the actual box-side SIGTERM
-// runs in the pump goroutine, so Kill is safe to call while holding the registry lock.
+// Kill requests bounded termination once, without waiting under the caller's registry lock.
+// Wait joins the termination worker even if the output stream had already closed.
 func (s *ExecStreamHandle) Kill() {
-	s.killOnce.Do(func() { close(s.killReq) })
+	s.killOnce.Do(func() {
+		close(s.killReq)
+		go func() {
+			defer close(s.stopDone)
+			s.stopCode, s.stopErr = killBoxProcessGroup(s.cli, s.container, s.pidFile, s.execID)
+			if s.stopErr != nil {
+				slog.Warn("sandbox job exit unconfirmed", "container", s.container, "exec", s.execID, "err", s.stopErr)
+			}
+		}()
+	})
 }
 
-// Wait blocks until the job's stream ends, then returns the box exit code via ExecInspect. err is
-// a non-nil INFRA failure (inspect failed), distinct from a non-zero exit code.
+// Wait joins stream and termination work and returns a confirmed remote exit code.
+// ErrExecUnconfirmed is distinct from both a confirmed nonzero exit and cancellation.
 func (s *ExecStreamHandle) Wait() (int, error) {
 	<-s.done
-	// The stream has ended; an unreachable Docker daemon must not prevent callers joining cleanup.
+	select {
+	case <-s.killReq:
+		<-s.stopDone
+		return s.stopCode, s.stopErr
+	default:
+	}
+	// Stream EOF does not prove process exit. Inspection and escalation stay bounded.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	ins, err := s.cli.ExecInspect(ctx, s.execID, client.ExecInspectOptions{})
-	if err != nil {
-		return 0, fmt.Errorf("box bg exec inspect: %w", err)
+	code, err := waitExecExit(ctx, s.cli, s.execID, s.killReq)
+	if err == nil {
+		return code, nil
 	}
-	return ins.ExitCode, nil
+	s.Kill()
+	<-s.stopDone
+	if s.stopErr != nil {
+		return s.stopCode, errors.Join(err, s.stopErr)
+	}
+	return s.stopCode, s.stopErr
 }
 
 // randHexToken mints a short unguessable hex token for the per-job PID file name.

@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 )
 
@@ -154,4 +156,61 @@ func TestCraftPreviewNativeCancellation(t *testing.T) {
 		t.Fatalf("cancelled native process=%v", err)
 	}
 	// A finished Wait means the SDK stream and its feeder/copy goroutines joined.
+}
+
+func TestCraftPreviewNativeResistantCancellation(t *testing.T) {
+	box := nativeCraftBox(t)
+	dir := "/workspace/scratch/resistant-preview-" + uuid.NewString()
+	pidPath := dir + "/child.pid"
+	script := "import os, signal, time\nsignal.signal(signal.SIGTERM, signal.SIG_IGN)\nwith open('" + pidPath + "', 'w') as f: f.write(str(os.getpid()))\nwhile True: time.sleep(0.05)\n"
+	if err := box.WriteFile(t.Context(), box.handle, dir+"/resistant.py", []byte(script)); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := box.RunPreview(ctx, box.handle, usersandbox.ExecRequest{Command: "python3 " + dir + "/resistant.py", Dir: "/workspace"})
+		done <- err
+	}()
+	pid := 0
+	t.Cleanup(func() {
+		cleanup, stop := context.WithTimeout(context.Background(), 5*time.Second)
+		defer stop()
+		command := "rm -rf -- " + dir
+		if pid > 0 {
+			command = "kill -KILL " + strconv.Itoa(pid) + " 2>/dev/null; " + command
+		}
+		_, _ = box.RunPreview(cleanup, box.handle, usersandbox.ExecRequest{Command: command, Dir: "/workspace"})
+	})
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		result, err := box.RunPreview(t.Context(), box.handle, usersandbox.ExecRequest{Command: "cat " + pidPath, Dir: "/workspace"})
+		if err == nil {
+			pid, err = strconv.Atoi(strings.TrimSpace(string(result)))
+			if err == nil && pid > 0 {
+				break
+			}
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if pid == 0 {
+		t.Fatal("resistant child did not become ready")
+	}
+	start := time.Now()
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("cancellation=%v", err)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("cancellation failed to join within its bound")
+	}
+	state, err := box.RunPreview(t.Context(), box.handle, usersandbox.ExecRequest{Command: "if test -e /proc/" + strconv.Itoa(pid) + "/stat; then cat /proc/" + strconv.Itoa(pid) + "/stat; else echo gone; fi", Dir: "/workspace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(state)) != "gone" {
+		t.Fatalf("preview returned while resistant child still exists after %s: %s", time.Since(start), state)
+	}
 }

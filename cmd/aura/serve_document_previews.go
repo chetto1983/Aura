@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/boundedbuffer"
@@ -18,19 +19,13 @@ func (b craftPreviewSandbox) RunPreview(ctx context.Context, h usersandbox.BoxHa
 	output := boundedbuffer.New(64 << 10)
 	process, err := b.ExecStream(ctx, h, req, nil, output)
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, fmt.Errorf("%w: start native process", documents.ErrPreviewUnavailable)
+		return nil, previewExitError(ctx, err)
 	}
 	stop := context.AfterFunc(ctx, process.Kill)
 	defer stop()
 	code, err := process.Wait()
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: wait native process", documents.ErrPreviewUnavailable)
+	if err := previewExitError(ctx, err); err != nil {
+		return nil, err
 	}
 	if code == 127 {
 		return nil, documents.ErrPreviewUnavailable
@@ -39,4 +34,17 @@ func (b craftPreviewSandbox) RunPreview(ctx context.Context, h usersandbox.BoxHa
 		return nil, documents.ErrPreviewInvalid
 	}
 	return []byte(output.String()), nil
+}
+
+func previewExitError(ctx context.Context, err error) error {
+	if errors.Is(err, usersandbox.ErrExecUnconfirmed) {
+		return errors.Join(documents.ErrPreviewUnavailable, err)
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("%w: native process", documents.ErrPreviewUnavailable)
+	}
+	return nil
 }

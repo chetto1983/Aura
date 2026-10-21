@@ -73,6 +73,7 @@ func TestDocumentThumbnailExplicitFailures(t *testing.T) {
 		{documents.ErrPreviewTooLarge, 413, "thumbnail_too_large"},
 		{documents.ErrPreviewInvalid, 422, "thumbnail_invalid"},
 		{documents.ErrPreviewUnavailable, 503, "thumbnail_unavailable"},
+		{errors.Join(documents.ErrPreviewUnavailable, context.Canceled), 503, "thumbnail_unavailable"},
 		{context.Canceled, 408, "thumbnail_cancelled"},
 		{context.DeadlineExceeded, 504, "thumbnail_timeout"},
 		{errors.New("private secret"), 500, "thumbnail_failed"},

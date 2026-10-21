@@ -72,6 +72,8 @@ func (s *Server) handleDocumentThumbnail(w http.ResponseWriter, r *http.Request,
 func writePreviewError(w http.ResponseWriter, err error) {
 	status, code := http.StatusInternalServerError, "thumbnail_failed"
 	switch {
+	case errors.Is(err, documents.ErrPreviewUnavailable):
+		status, code = http.StatusServiceUnavailable, "thumbnail_unavailable"
 	case errors.Is(err, context.DeadlineExceeded):
 		status, code = http.StatusGatewayTimeout, "thumbnail_timeout"
 	case errors.Is(err, context.Canceled):
@@ -84,8 +86,6 @@ func writePreviewError(w http.ResponseWriter, err error) {
 		status, code = http.StatusRequestEntityTooLarge, "thumbnail_too_large"
 	case errors.Is(err, documents.ErrPreviewInvalid):
 		status, code = http.StatusUnprocessableEntity, "thumbnail_invalid"
-	case errors.Is(err, documents.ErrPreviewUnavailable):
-		status, code = http.StatusServiceUnavailable, "thumbnail_unavailable"
 	}
 	writeJSONStatus(w, status, map[string]string{"error": code})
 }

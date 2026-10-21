@@ -11,11 +11,16 @@ package usersandbox
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/moby/moby/client"
 )
 
 func TestExecStreamWaitBoundsDockerInspectAfterProcessExit(t *testing.T) {
@@ -32,7 +37,7 @@ func TestExecStreamWaitBoundsDockerInspectAfterProcessExit(t *testing.T) {
 		})
 		done := make(chan struct{})
 		close(done)
-		handle := &ExecStreamHandle{cli: cli, execID: "finished-login", done: done}
+		handle := &ExecStreamHandle{cli: cli, container: "box", pidFile: "/tmp/job.pid", execID: "finished-login", done: done, killReq: make(chan struct{}), stopDone: make(chan struct{})}
 		code, err := handle.Wait()
 		if unavailable {
 			if !errors.Is(err, context.DeadlineExceeded) {
@@ -42,6 +47,45 @@ func TestExecStreamWaitBoundsDockerInspectAfterProcessExit(t *testing.T) {
 			t.Fatal("lost process exit result")
 		}
 		_ = cli.Close()
+	}
+}
+
+func TestExecStreamWaitDoesNotReturnWhileDockerReportsRunning(t *testing.T) {
+	calls := 0
+	cli := newFakeDockerClient(t, func(*http.Request) (*http.Response, error) {
+		calls++
+		if calls < 3 {
+			return dockerJSONResponse(http.StatusOK, `{"Running":true,"ExitCode":0}`), nil
+		}
+		return dockerJSONResponse(http.StatusOK, `{"Running":false,"ExitCode":17}`), nil
+	})
+	defer cli.Close()
+	done := make(chan struct{})
+	close(done)
+	handle := &ExecStreamHandle{cli: cli, execID: "still-running", done: done}
+	code, err := handle.Wait()
+	if err != nil || code != 17 || calls != 3 {
+		t.Fatalf("Wait accepted a running execution: code=%d err=%v inspections=%d", code, err, calls)
+	}
+}
+
+func TestExecStreamKillRemainsNonblockingAndIdempotent(t *testing.T) {
+	release := make(chan struct{})
+	cli := newFakeDockerClient(t, func(*http.Request) (*http.Response, error) { <-release; return nil, context.DeadlineExceeded })
+	handle := &ExecStreamHandle{cli: cli, container: "box", pidFile: "/tmp/job.pid", execID: "blocked", killReq: make(chan struct{}), done: make(chan struct{}), stopDone: make(chan struct{})}
+	t.Cleanup(func() { close(release); <-handle.stopDone; _ = cli.Close() })
+	returned := make(chan struct{})
+	go func() { handle.Kill(); handle.Kill(); close(returned) }()
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		close(handle.done)
+		t.Fatal("Kill waited for exit instead of signaling the pump")
+	}
+	select {
+	case <-handle.killReq:
+	default:
+		t.Fatal("Kill did not signal termination")
 	}
 }
 
@@ -56,7 +100,7 @@ func TestWrapCommandWithPIDFile_RecordsPIDBeforeRunningCmd(t *testing.T) {
 		"sleep 480 && echo STALL-PROBE-DONE",
 	} {
 		got := wrapCommandWithPIDFile("/tmp/.aura-exec-deadbeef.pid", cmd)
-		wantPrefix := "echo $$ > '/tmp/.aura-exec-deadbeef.pid'; "
+		wantPrefix := "echo $$ > '/tmp/.aura-exec-deadbeef.pid' || exit 1; "
 		if !strings.HasPrefix(got, wantPrefix) {
 			t.Fatalf("wrapCommandWithPIDFile(%q) = %q, want it to start with %q", cmd, got, wantPrefix)
 		}
@@ -97,8 +141,56 @@ func TestKillJobTreeCommand_ReachesTheChildrenNotJustTheGroup(t *testing.T) {
 	if strings.Index(got, "PPid:") > strings.Index(got, "kill -TERM") {
 		t.Fatalf("killJobTreeCommand signals before it finishes walking the tree: %q", got)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(got), "true") {
-		t.Fatalf("killJobTreeCommand = %q, want it to end clean (`; true`) so a vanished PID file is not a kill-exec failure", got)
+	if !strings.Contains(got, `[ -n "$P" ] || exit 0`) {
+		t.Fatal("an already-finished job must be harmless")
+	}
+}
+
+func TestWaitExecExitIsBoundedAndPreservesUnconfirmedState(t *testing.T) {
+	cli := newFakeDockerClient(t, func(*http.Request) (*http.Response, error) {
+		return dockerJSONResponse(http.StatusOK, `{"Running":true,"ExitCode":0}`), nil
+	})
+	defer cli.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	_, err := waitExecExit(ctx, cli, "running", nil)
+	if !errors.Is(err, ErrExecUnconfirmed) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("unconfirmed running execution=%v", err)
+	}
+}
+
+func TestExecAttachFailureAttemptsTerminationAndPreservesUnconfirmedExit(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		var creates atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			if strings.HasSuffix(r.URL.Path, "/containers/box/exec") {
+				id := "job"
+				if creates.Add(1) > 1 {
+					id = "terminate"
+				}
+				w.WriteHeader(201)
+				_, _ = io.WriteString(w, `{"Id":"`+id+`"}`)
+				return
+			}
+			w.WriteHeader(500)
+			_, _ = io.WriteString(w, `{"message":"attach transport failed"}`)
+		}))
+		cli, err := client.New(client.WithHost("tcp://"+strings.TrimPrefix(server.URL, "http://")), client.WithAPIVersion("1.51"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		backend := NewDockerBackend(cli, "unused", Resources{})
+		if stream {
+			_, err = backend.ExecStream(t.Context(), BoxHandle{ContainerID: "box"}, ExecRequest{Command: "sleep 30"}, nil, io.Discard)
+		} else {
+			_, err = backend.Exec(t.Context(), BoxHandle{ContainerID: "box"}, ExecRequest{Command: "sleep 30"})
+		}
+		_ = cli.Close()
+		server.Close()
+		if !errors.Is(err, ErrExecUnconfirmed) || creates.Load() != 2 {
+			t.Fatalf("stream=%v err=%v created=%d", stream, err, creates.Load())
+		}
 	}
 }
 
