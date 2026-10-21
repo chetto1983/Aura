@@ -114,12 +114,18 @@ async function waitForCapturedMail(request: APIRequestContext, subject: string) 
     });
 }
 
-test('authorizes the built-in MCP servers through the live cockpit', async ({ page, context }) => {
+// The shipped sidecars take no consent: Aura mints their tokens itself (379f41c06,
+// cmd/aura/mcp_oauth_provider.go selfIssuedReason), so the panel says why and offers no
+// Connect, and each server is healthy with no one having authorized anything.
+const selfIssuedReason =
+  "Aura issues this sidecar's credential itself and renews it before it expires";
+
+test('runs the built-in MCP servers on credentials Aura issues itself', async ({ page }) => {
   test.setTimeout(120_000);
 
   await gotoAuthenticated(page, '/');
   // gotoAuthenticated only fixtures the orthogonal first-run and shell-health
-  // requests. MCP inventory, authorization, probes and popup callbacks stay live.
+  // requests. MCP inventory, authorization and probes stay live.
 
   await expect(page.locator('.aura-shell')).toBeVisible();
   await openGovernance(page);
@@ -133,23 +139,8 @@ test('authorizes the built-in MCP servers through the live cockpit', async ({ pa
     const authorization = page
       .getByRole('heading', { name: 'Your authorization', exact: true })
       .locator('..');
-    await expect(authorization).toBeVisible();
-
-    const connect = authorization.getByRole('button', { name: 'Connect', exact: true });
-    if (await connect.isVisible()) {
-      const popupPromise = context.waitForEvent('page');
-      await connect.click();
-      const popup = await popupPromise;
-      await popup.waitForLoadState('domcontentloaded');
-      await expect(popup.getByText('Aura is authorized. You can close this tab.')).toBeVisible({
-        timeout: 30_000,
-      });
-      await popup.close();
-    }
-
-    await expect(authorization.getByText('Authorized for your identity')).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(authorization.getByText(selfIssuedReason)).toBeVisible({ timeout: 30_000 });
+    await expect(authorization.getByRole('button')).toHaveCount(0);
     await closeServerDetailIfOverlay(page);
   }
 
