@@ -1,5 +1,6 @@
 import { expect, test, type Page, type Request } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
+import { openFilesFolders } from './support/filesFolders';
 
 // The write half of the corpus browser, against the REAL bucket -- nothing is mocked here.
 //
@@ -50,12 +51,7 @@ function panelEntry(page: Page, name: string) {
 
 async function openFiles(page: Page, projectName: string): Promise<void> {
   await gotoAuthenticated(page, '/');
-  const nav =
-    projectName === 'chrome'
-      ? page.getByRole('navigation', { name: /Primary|Principale/ })
-      : page.getByRole('navigation', { name: /Modes|Modalit/ });
-  await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
-  await expect(page.getByRole('region', { name: /Documents|Documenti/ })).toBeVisible();
+  await openFilesFolders(page, projectName);
   // The root listing has to have landed before the toolbar will act on it.
   await expect(page.getByRole('button', { name: 'Add New' })).toBeVisible();
 }
@@ -146,12 +142,8 @@ test('the deployed server refuses a write that is not labelled JSON', async ({
   expect((await refused).status(), 'the CSRF Content-Type gate is not enforced').toBe(400);
 
   // And the bucket did not take it: a reload asks the server, not the optimistic row the
-  // widget drew before the answer came back.
+  // widget drew before the answer came back. The route keeps the reload on Files / folders.
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page
-    .getByRole('navigation', { name: /Primary|Modes/ })
-    .getByRole('button', { name: /Documents/ })
-    .click();
   await expect(page.getByRole('button', { name: 'Add New' })).toBeVisible();
   await expect(panelEntry(page, folder)).toHaveCount(0);
 });

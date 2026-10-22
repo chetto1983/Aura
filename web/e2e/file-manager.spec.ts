@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { emulateIOSHomeScreen } from './iosHomeScreen';
+import { openFilesFolders } from './support/filesFolders';
 
 // E2E of the corpus browser, which is SVAR React File Manager driven by
 // GET /api/filemanager/files. It replaces the two document-library specs, whose subject —
@@ -61,12 +62,7 @@ function panelEntry(page: Page, name: string) {
 async function openFiles(page: Page, projectName: string): Promise<void> {
   await mockListing(page);
   await gotoAuthenticated(page, '/');
-  const nav =
-    projectName === 'chrome'
-      ? page.getByRole('navigation', { name: /Primary|Principale/ })
-      : page.getByRole('navigation', { name: /Modes|Modalit/ });
-  await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
-  await expect(page.getByRole('region', { name: /Documents|Documenti/ })).toBeVisible();
+  await openFilesFolders(page, projectName);
 }
 
 test('the file manager lists the bucket root', async ({ page }, testInfo) => {
@@ -108,8 +104,8 @@ test('a file opens in the cockpit preview in the iOS home-screen app', async ({
   await panelEntry(page, 'listino-2026.pdf').dblclick();
   const preview = page.getByRole('dialog', { name: 'listino-2026.pdf' });
   await expect(preview).toBeVisible();
-  await expect(preview.locator('iframe[src^="blob:"]')).toHaveCount(1);
-  expect(read).toContain('?id=%2Flistino-2026.pdf');
+  await expect(preview.locator('iframe[src="/apps/pdfcraft/?host=parent"]')).toHaveCount(1);
+  await expect.poll(() => read).toContain('?id=%2Flistino-2026.pdf');
   expect(tabs).toEqual([]);
   expect(page.url()).toBe(before);
 

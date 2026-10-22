@@ -10,6 +10,7 @@ import {
 } from '@playwright/test';
 import { gotoAuthenticated } from './auth';
 import { emulateIOSHomeScreen, sharedFiles } from './iosHomeScreen';
+import { openFilesFolders } from './support/filesFolders';
 
 // Several files at once, against the REAL bucket, on a desktop and on a phone.
 //
@@ -116,11 +117,7 @@ async function choose(page: Page, label: string): Promise<void> {
 }
 
 async function openScratch(page: Page, folder: string, projectName: string): Promise<void> {
-  const nav =
-    projectName === 'chrome'
-      ? page.getByRole('navigation', { name: /Primary|Principale/ })
-      : page.getByRole('navigation', { name: /Modes|Modalit/ });
-  await nav.getByRole('button', { name: /Documents|Documenti/ }).click();
+  await openFilesFolders(page, projectName);
   await card(page, folder.slice(1)).dblclick();
   // `sub` is the one entry no test moves or deletes.
   await expect(card(page, 'sub')).toBeVisible();

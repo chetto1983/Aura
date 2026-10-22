@@ -183,7 +183,8 @@ test('trusted images group while audio, video and failed previews keep asset con
 
 // A delivered PDF's only action used to be the download link, and on an iPad's home-screen
 // app that link left the cockpit for iOS's file page with no way back (prd.md §3). Apri
-// opens the cockpit's own preview: the page stays where it is and the bytes arrive as a blob.
+// opens the cockpit's own preview: the page stays where it is, the PDF opens in PdfCraft, and
+// its bytes are read from the asset route.
 test('a delivered PDF opens in the cockpit preview without leaving the page', async ({ page }) => {
   await installConversationRoutes(page);
   let pdfFetches = 0;
@@ -201,8 +202,8 @@ test('a delivered PDF opens in the cockpit preview without leaving the page', as
   await page.getByRole('button', { name: 'Open Appunti.pdf' }).click();
   const preview = page.getByRole('dialog', { name: 'Appunti.pdf' });
   await expect(preview).toBeVisible();
-  await expect(preview.locator('iframe[src^="blob:"]')).toHaveCount(1);
-  expect(pdfFetches).toBeGreaterThan(0);
+  await expect(preview.locator('iframe[src="/apps/pdfcraft/?host=parent"]')).toHaveCount(1);
+  await expect.poll(() => pdfFetches).toBeGreaterThan(0);
   expect(page.url()).toBe(conversationURL);
 
   await page.keyboard.press('Escape');
