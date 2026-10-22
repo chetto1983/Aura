@@ -102,3 +102,21 @@ included in the existing Stryker Vitest allow-list. Local reproducible runner/re
 The controller's separate `2026-10-22-documents-detail-live.md` records actual native saves,
 mobile dimensions and original-source checks. This implementation evidence does not claim
 independent review, merge, publication, every native import/codec, or global accessibility.
+
+## Independent review follow-up: tab relationships
+
+Review approved the main implementation with no Critical/Important findings and one Minor:
+the manually rendered metadata panel had no ID matching Radix trigger `aria-controls`, and
+mobile Preview had no corresponding tabpanel. New desktop/mobile cases failed on that exact
+missing relationship before the fix.
+
+Detail now uses existing `TabsContent` for Details, Content, History and Preview. Preview uses
+the installed Radix `forceMount` capability with explicit mobile visibility/inertness, keeping
+the native iframe alive. Tests assert every trigger's referenced panel exists (including
+inactive panels), reciprocal `aria-labelledby`, selected panels' accessible names, the same
+iframe and contentWindow across mobile Preview/Details/Preview, and the retained dirty guard.
+
+Follow-up verification: detail/detail-workspace/native-save tests **23 passed / 3 files**;
+typecheck via production build PASS (4513 modules, **15.86 seconds**); scoped type-aware lint,
+format and diff whitespace checks PASS. The stable dist was handed to the controller for its
+final runtime check. This follow-up does not broaden the feature scope.

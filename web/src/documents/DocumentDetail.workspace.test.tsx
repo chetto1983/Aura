@@ -2,6 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { DETAILS, renderDetail, renderDocuments, stubServer } from './documentsTestServer';
 import i18n from '@/i18n/i18n';
+import { mediaQueryList } from '@/test/mediaQuery';
 
 beforeEach(async () => {
   await act(() => i18n.changeLanguage('en'));
@@ -276,3 +277,50 @@ it('blocks browser Back with metadata edits and restores the same result after d
   await screen.findByRole('heading', { name: 'Inbox' });
   expect(router.state.location.search).toBe('?file_type=all&display=cards');
 });
+
+it.each([false, true])(
+  'connects every detail tab to its named panel and retains the native frame (mobile=%s)',
+  async (mobile) => {
+    vi.stubGlobal('matchMedia', (query: string) => mediaQueryList(query, mobile));
+    server();
+    renderDocuments(path);
+    await screen.findByRole('heading', { name: invoice.file_name });
+    const frame = await waitFor(() => {
+      const found = document.querySelector('iframe');
+      if (!found) throw new Error('Missing native frame');
+      return found;
+    });
+    const nativeWindow = frame.contentWindow;
+    for (const trigger of screen.getAllByRole('tab')) {
+      const panel = document.getElementById(trigger.getAttribute('aria-controls') ?? '');
+      expect(panel?.getAttribute('role')).toBe('tabpanel');
+      expect(panel?.getAttribute('aria-labelledby')).toBe(trigger.id);
+    }
+    act(() => {
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          source: nativeWindow,
+          origin: location.origin,
+          data: { type: 'pdfcraft:dirty', dirty: true },
+        }),
+      );
+    });
+    for (const name of [
+      'Details',
+      'Content',
+      'History',
+      ...(mobile ? ['Preview', 'Details', 'Preview'] : []),
+    ]) {
+      const trigger = screen.getByRole('tab', { name });
+      fireEvent.mouseDown(trigger, { button: 0, ctrlKey: false });
+      const panel = await screen.findByRole('tabpanel', { name });
+      expect(trigger.getAttribute('aria-controls')).toBe(panel.id);
+      expect(panel.getAttribute('aria-labelledby')).toBe(trigger.id);
+      expect(trigger.getAttribute('aria-selected')).toBe('true');
+      expect(document.querySelector('iframe')).toBe(frame);
+      expect(frame.contentWindow).toBe(nativeWindow);
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Documents' }));
+    expect(await screen.findByRole('dialog', { name: 'Close without saving?' })).toBeTruthy();
+  },
+);

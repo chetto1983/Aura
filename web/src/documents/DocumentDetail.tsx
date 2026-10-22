@@ -28,7 +28,7 @@ import { PreviewCloseGuardContext } from '@/chat/artifacts/renderers/previewClos
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/components/ui/resizable';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface DocumentDetailProps {
   readonly id: string;
@@ -293,7 +293,11 @@ function DetailPage({
         </p>
       )}
       <PreviewCloseGuardContext.Provider value={{ setUnsaved: setFileDirty, held: false }}>
-        <Tabs value={tab} onValueChange={setTab} className="min-h-0 flex-1 gap-0">
+        <Tabs
+          value={wide && tab === 'preview' ? 'details' : tab}
+          onValueChange={setTab}
+          className="min-h-0 flex-1 gap-0"
+        >
           <TabsList className="mx-4 my-2 max-w-full shrink-0">
             <TabsTrigger value="details">{t('documents.detail.details')}</TabsTrigger>
             <TabsTrigger value="content">{t('documents.detail.content')}</TabsTrigger>
@@ -312,36 +316,34 @@ function DetailPage({
                 className="h-full overflow-y-auto p-4"
                 inert={!wide && tab === 'preview'}
                 aria-hidden={!wide && tab === 'preview'}
-                role="tabpanel"
-                aria-label={t(`documents.detail.${tab === 'preview' ? 'details' : tab}`)}
               >
-                {tab === 'content' ? (
+                <TabsContent value="content">
                   <DocumentContent id={doc.id} identity={identity} />
-                ) : tab === 'history' ? (
+                </TabsContent>
+                <TabsContent value="history">
                   <DocumentHistory doc={doc} names={shown} />
-                ) : (
-                  <>
-                    <p className="mb-4 break-all text-xs text-text-muted">
-                      {t('documents.detail.storedFilename')}: {doc.file_name}
-                    </p>
-                    {lists.settled ? (
-                      <DetailFields
-                        doc={doc}
-                        form={form}
-                        onChange={(next) => {
-                          setDiff(formDiff(doc, next));
-                        }}
-                        onReject={reject}
-                        lists={lists.lists}
-                        customFields={lists.customFields}
-                        names={shown}
-                        busy={busy || lists.failed}
-                      />
-                    ) : (
-                      <p role="status">{t('documents.detail.loading')}</p>
-                    )}
-                  </>
-                )}
+                </TabsContent>
+                <TabsContent value="details">
+                  <p className="mb-4 break-all text-xs text-text-muted">
+                    {t('documents.detail.storedFilename')}: {doc.file_name}
+                  </p>
+                  {lists.settled ? (
+                    <DetailFields
+                      doc={doc}
+                      form={form}
+                      onChange={(next) => {
+                        setDiff(formDiff(doc, next));
+                      }}
+                      onReject={reject}
+                      lists={lists.lists}
+                      customFields={lists.customFields}
+                      names={shown}
+                      busy={busy || lists.failed}
+                    />
+                  ) : (
+                    <p role="status">{t('documents.detail.loading')}</p>
+                  )}
+                </TabsContent>
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle className="hidden lg:flex" />
@@ -350,13 +352,16 @@ function DetailPage({
               minSize={wide ? '320px' : tab === 'preview' ? '100%' : '0%'}
               maxSize={wide || tab === 'preview' ? '100%' : '0%'}
             >
-              <div
+              <TabsContent
+                value="preview"
+                forceMount
+                hidden={!wide && tab !== 'preview'}
                 className="h-full"
                 inert={!wide && tab !== 'preview'}
                 aria-hidden={!wide && tab !== 'preview'}
               >
                 <DocumentPreview doc={doc} />
-              </div>
+              </TabsContent>
             </ResizablePanel>
           </ResizablePanelGroup>
         </Tabs>
