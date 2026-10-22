@@ -173,6 +173,8 @@ def test_peer_comparison_reports_failures_and_converts_currencies(live) -> None:
     assert set(r["companies"]) == {"ENI.MI", "TTE.PA", "SHEL.L"}
     assert "NOTATICKER123" in r["errors"]
     shell = r["companies"]["SHEL.L"]
+    assert "scores" not in shell and "piotroski_f_score" in shell["metrics"]
+    assert "piotroski" in r["references"]
     assert shell["statement_currency"] == "USD"
     assert any("converted" in w for w in shell["warnings"])
     for company in r["companies"].values():

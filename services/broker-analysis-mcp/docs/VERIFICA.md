@@ -35,12 +35,14 @@ misure **non** dimostrano.
 | Per ASML il flusso di cassa operativo si chiama "Cash Flow From Continuing Operating Activities" e i rapporti che lo usano erano `null` | Misura delle righe Yahoo su 10 emittenti prima di scrivere i punteggi | Nome alternativo nella tabella delle righe |
 | I tre prospetti di Yahoo hanno un numero di anni diverso (ENEL, SAP, TTE, KO, ISP) e venivano abbinati per posizione | Stessa misura; nessun valore sbagliato osservato, perché i primi anni coincidono | Anni abbinati per data di chiusura dell'esercizio; output identico al precedente su 5 ticker, salvo il flusso di cassa di ASML |
 | La fonte del tracking error parlava di rendimenti giornalieri, il codice usa quelli settimanali | Rilettura delle fonti | Testo corretto |
+| Con i punteggi, `peer_comparison` su 6 case auto restituiva 62.381 caratteri: Claude Code ha salvato il risultato in un file, l'agente l'ha letto con Grep e lo scorer non ha trovato i numeri (7,92/10) | E2E con agente, scenario Stellantis | Fonti una volta sola e componenti dei punteggi solo in `fundamental_ratios`: 41.904 caratteri, meno di prima dei punteggi |
+| La skill tecnica diceva di usare l'ATR "per dimensionare stop e posizioni", e l'agente proponeva stop a 1,5-2 ATR calcolati a mente | E2E con agente, in tutte le run | La skill vieta stop, target e dimensioni di posizione, e distanze invertite a mano |
 | L'agente calcolava a mano la distanza dell'ATR e dalle bande | Valutazione dell'E2E con agente | Il tool fornisce `atr_pct_of_close`, `price_vs_*`, `sharpe_t_stat` |
 | Per ENI Yahoo mette in "Interest Expense" gli oneri finanziari lordi (8,17 mld su 35,5 mld di debito medio, con 7,2 mld di "Interest Income"): copertura interessi 1,7× e WACC 8,9%, sopra il costo dell'equity | Test live: WACC > costo dell'equity. Su 11 emittenti gli interessi valgono 1,4-7,1% del debito di fine anno (XOM-BP), ENI 23,9% | Avviso quando gli interessi superano il 15% del debito medio; la skill non presenta copertura, costo del debito, WACC ed EVA come affidabili. Il test live asseriva `WACC ≤ ke`, che non è un'invariante: ora `0 < WACC ≤ max(ke, kd)` |
 
 ## 3. End to end
 
-- **Test offline:** 96 verdi.
+- **Test offline:** 97 verdi.
 - **Test live via MCP:** 18 verdi.
 - **E2E via protocollo MCP su dati live:** server avviato come sottoprocesso stdio, ogni tool chiamato su ticker reali e confrontato con i numeri di Yahoo e con un ricalcolo indipendente.
 - **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve 7 domande di un analista ed è valutato in automatico. La valutazione considera:

@@ -298,6 +298,22 @@ def fundamentals_report(
     }
 
 
+def peer_report(tickers: list[str]) -> dict:
+    """One fundamentals report per company, with references once and without score components,
+    which would push a ten-company answer past an MCP client's tool-result limit."""
+    rows, errors, refs = {}, {}, {}
+    for ticker in tickers:
+        try:
+            report = fundamentals_report(ticker)
+        except data.DataError as err:
+            errors[ticker] = str(err)
+            continue
+        refs |= report.pop("references")
+        report.pop("scores")
+        rows[ticker] = report
+    return {"companies": rows, "errors": errors, "references": refs}
+
+
 def etf_report(ticker: str, benchmark: str, period: str = "3y") -> dict:
     profile = data.info(ticker)
     if profile.get("quoteType") != "ETF":

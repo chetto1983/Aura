@@ -54,3 +54,17 @@ def test_missing_score_inputs_are_reported() -> None:
     assert metrics["piotroski_f_score"]["value"] is None
     assert details["piotroski"]["missing"]
     assert any(w.startswith("Beneish M-score: no value for") for w in warnings)
+
+
+def test_peer_report_shares_references_and_drops_score_components(monkeypatch) -> None:
+    def fake_report(ticker: str) -> dict:
+        if ticker == "BAD":
+            raise analysis.data.DataError("no profile for 'BAD'")
+        return {"ticker": ticker, "metrics": {}, "scores": {"piotroski": {}}, "references": {f"ref_{ticker}": "x"}}
+
+    monkeypatch.setattr(analysis, "fundamentals_report", fake_report)
+    r = analysis.peer_report(["A", "BAD", "B"])
+    assert set(r["companies"]) == {"A", "B"}
+    assert r["errors"] == {"BAD": "no profile for 'BAD'"}
+    assert r["references"] == {"ref_A": "x", "ref_B": "x"}
+    assert all("scores" not in c and "references" not in c for c in r["companies"].values())

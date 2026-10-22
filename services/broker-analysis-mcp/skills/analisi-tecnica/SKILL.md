@@ -8,6 +8,8 @@ description: Analisi tecnica di prezzo con il tool technical_indicators del serv
 ## Regole
 - Ogni indicatore viene da `technical_indicators` con `period` di almeno 1y (meglio 2y), così la media a 200 sedute è definita.
 - Cita la data dell'ultima chiusura (`window.end`) e la valuta.
+- Ogni numero viene dal tool: non calcolare distanze, multipli dell'ATR o livelli. Una distanza si riporta come la dà il tool, dal punto di vista del prezzo ("prezzo +18,5% sopra la SMA200"), senza invertirla.
+- Non proporre stop, target o dimensioni di posizione: sono decisioni di trading, e questo è uno strumento di analisi.
 - L'analisi tecnica descrive il prezzo, non il valore: non presentarla come previsione certa.
 - È analisi interna, non una raccomandazione personalizzata a un cliente.
 
@@ -19,7 +21,7 @@ description: Analisi tecnica di prezzo con il tool technical_indicators del serv
 | `rsi14` (Wilder) | Sopra 70 ipercomprato, sotto 30 ipervenduto | In un trend forte resta estremo a lungo |
 | `macd_histogram` | Positivo e in crescita = momentum rialzista | Conta il segno e la direzione, non il livello |
 | Bande di Bollinger | Prezzo vicino alla banda alta o bassa = estremo statistico a 20 sedute | Non indicano la direzione |
-| `atr14`, `atr14_pct_of_close` | Escursione media giornaliera, in valuta e in % del prezzo | Usala per dimensionare stop e posizioni |
+| `atr14`, `atr14_pct_of_close` | Escursione media giornaliera, in valuta e in % del prezzo | Descrive la volatilità: non trasformarla in stop o in dimensioni di posizione |
 | `high_52w` / `low_52w` e `price_vs_*_52w` | Livelli recenti e distanza del prezzo in % | Sono supporti e resistenze solo se il prezzo vi ha reagito |
 
 ## Combinare i segnali

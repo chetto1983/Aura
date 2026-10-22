@@ -106,17 +106,12 @@ def fundamental_ratios(
 
 @server.tool(annotations=READ_ONLY)
 def peer_comparison(tickers: list[str]) -> dict:
-    """Fundamental ratios for several companies side by side (2 to 10 tickers), for
-    relative valuation within one sector. Failed tickers are reported, not dropped silently."""
+    """Fundamental ratios and scores for several companies side by side (2 to 10 tickers), for
+    relative valuation within one sector. Failed tickers are reported, not dropped silently.
+    Score components and their inputs are left out: call fundamental_ratios for one company."""
     if not 2 <= len(tickers) <= 10:
         raise ToolError("pass between 2 and 10 tickers")
-    rows, errors = {}, {}
-    for t in tickers:
-        try:
-            rows[t] = analysis.fundamentals_report(t)
-        except DataError as err:
-            errors[t] = str(err)
-    return {"companies": rows, "errors": errors}
+    return analysis.peer_report(tickers)
 
 
 @server.tool(annotations=READ_ONLY)
