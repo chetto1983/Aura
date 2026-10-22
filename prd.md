@@ -4451,6 +4451,13 @@ removes only that saved configuration and refreshes views for the current identi
 the current query and documents. This measurement establishes a discoverability gap, not a
 missing server capability or a need for a second persistence path.
 
+The first desktop and 390 px live runs of that action also measured a keyboard defect:
+Cancel closed confirmation without returning focus to Delete. The existing ConfirmDialog
+opens from an external button and has no Radix DialogTrigger reference. Reuse DialogTrigger
+with `asChild` through an optional trigger slot in `web/src/components/ui/confirm-dialog.tsx`;
+retain the existing safe initial Cancel focus and untriggered callers. A focused regression and
+both live viewport runs must prove focus returns to the originating button after cancellation.
+
 The 2026-09-07 backup check passed four restore planes and restored one real scheduled
 memory archive into a disposable database. Temporal memory passed 11 mounted-MCP cases;
 the six-query context comparison improved retention of direct evidence. Eighteen guided

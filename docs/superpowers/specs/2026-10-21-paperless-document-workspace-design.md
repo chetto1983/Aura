@@ -205,6 +205,7 @@ Record a PRD amendment only for decisions supported by those measurements.
   in desktop navigation and the mobile drawer. Reuse existing tenant-scoped deletion and
   confirmation; cancel sends no request, failures retain the view with an actionable error, and
   success refreshes saved views without deleting documents or resetting the current search.
+  Cancel returns keyboard focus to the originating Delete action on desktop and mobile.
 - All existing document field/review/bulk and file-manager contracts keep working.
 - Newly uploaded unreviewed files cannot disappear behind a stale zero-result table or a
   misleading zero-suggestions count.

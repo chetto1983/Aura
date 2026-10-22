@@ -123,7 +123,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 
 ### Task 5: Live acceptance and publication
 
-**Files:** focused `web/e2e` workflow tests; `docs/superpowers/verification/2026-10-22-paperless-documents-acceptance.md`; final ingestion-refresh regression; `DocumentsNavigation.tsx`, existing saved-view deletion UI, their tests and narrow identity wiring; plan checkbox updates; measured PRD/evidence corrections.
+**Files:** focused `web/e2e` workflow tests; `docs/superpowers/verification/2026-10-22-paperless-documents-acceptance.md`; final ingestion-refresh regression; `DocumentsNavigation.tsx`, existing saved-view deletion UI, their tests and narrow identity wiring; shared `web/src/components/ui/confirm-dialog.tsx` trigger slot and focus regression; plan checkbox updates; measured PRD/evidence corrections.
 
 - [x] Exercise the synthetic PDF set on the real backend: upload → waiting → ready → content search → classify → review → saved view → reload/direct link/back; compare against the captured Paperless reference on desktop and 390 px viewport.
 - [x] Check independent identities for saved views/content/thumbnails; confirm unauthorized responses never expose another identity's data. Verify all tested file previews still open and no unsupported controls are shown.
