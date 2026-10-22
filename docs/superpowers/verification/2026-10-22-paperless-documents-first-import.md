@@ -43,7 +43,10 @@ AURA_E2E_ORIGIN=http://127.0.0.1:9080 AURA_E2E_LIVE_DOCUMENTS=1 \
   --output=../output/playwright/paperless-final-fix
 ```
 
-Final run: **1/1 passed**, exit 0, **25.0 seconds**. A disposable identity was created
+The F1-only artifact run passed **1/1**, exit 0, **25.0 seconds**. A later run retained the
+same successful F1 case in **19.6 seconds** against `ec4cf56e2+dirty`, before the independent
+sidebar keyboard fixes; that case's explicit screenshot and JSON remain at the paths below.
+A disposable identity was created
 through the normal administrator UI, signed in through Authula, and completed the standard
 first-run skip flow. Its Library initially displayed the empty state and returned
 `{"indexing":null}`. While that Library remained mounted, the test posted one unique PDF

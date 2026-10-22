@@ -106,9 +106,25 @@ and a subsequent outer Escape still dismisses the drawer.
 
 ## Final quality gates
 
-Pending the consolidated full frontend run after both the F1 polling fix and the sidebar
-delete changes. No coverage exclusion or threshold was changed. The earlier F1-only run is
-recorded separately in `2026-10-22-paperless-documents-first-import.md`.
+The final consolidated run after the F1 polling fix, sidebar deletion and both keyboard fixes:
+
+```sh
+cd web
+npm test -- --maxWorkers=2
+```
+
+**381 files / 3,274 tests passed**, exit 0, **398.20 seconds**. No coverage exclusion or
+threshold was changed; all four exact 85% floors passed.
+
+| Metric | Exact result |
+|---|---|
+| Statements | 13,730/14,883 = 92.25% |
+| Branches | 10,606/12,223 = 86.77% |
+| Functions | 4,025/4,424 = 90.98% |
+| Lines | 12,384/13,146 = 94.20% |
+
+The earlier F1-only run is recorded separately in
+`2026-10-22-paperless-documents-first-import.md`.
 
 `npm run lint`, `npm run typecheck`, `npm run format:check`, `npm run dup`, `npm run deadcode`
 and `npm run build` passed. Duplication reported zero clones; all touched source files are
@@ -116,6 +132,10 @@ below 600 LOC. Vite retained its existing advisory for chunks larger than 500 kB
 consolidated coverage attempt was explicitly stopped as incomplete when the live focus defect
 required a source fix; it is not passing evidence. The final run started only after both
 viewport checks passed and production source/assets were frozen.
+
+The source, tests and embedded assets were committed as `564aa3bc4` with normal pre-commit
+hooks passing (file-size and zero-clone duplication). The controller's fix-scoped review
+approved that commit without findings. This evidence update changes documentation only.
 
 The completed base global Stryker measurement was **81.22%**, above the unchanged 70% break
 threshold, for its configured source scope. None of this fix's production files are in that
