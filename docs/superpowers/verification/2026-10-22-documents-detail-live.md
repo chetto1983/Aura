@@ -80,3 +80,10 @@ save payloads were copied into the public comparison report.
 
 This verifies the tested formats and flows in Chromium, including390px responsive layout. It
 does not establish every codec, native-mobile browser behavior, or lossless Office conversion.
+
+## Reviewed merge
+
+Implementation `246af7770`, accessibility fix `6a9f8a4cb` and evidence `bf5cbc34f` were
+fast-forward merged into master. Fresh post-merge Documents/shared-artifact/media/share
+regression passed **360tests in45files**,23.68seconds. Full coverage, end-to-end isolation,
+whole-change review and published-image deployment remain the final acceptance task.

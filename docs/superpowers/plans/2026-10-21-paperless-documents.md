@@ -119,7 +119,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 - [x] Include code-file rendering per the latest user instruction. Reuse TextPreview/HighlightedSource and the existing lazy Shiki engine for original source, with copy/download and readable wrapping. Route canonical Code rows even when their suffix is absent from artifactMeta's short list. Add missing common grammars through existing fine-grained loaders, retain an escaped fallback for unknown languages, bound source reading/highlighting, and detect binary content. Preserve existing sandboxed HTML Source/Preview behavior; never execute other source languages. Test language/theme changes, failed fetches, large files and HTML-source escaping.
 - [x] Preserve native drafts across tab changes and include pending/failed host persistence in Craft's unsaved guard: native dirty=false is not storage acknowledgment. Serialize repeated saves, provide a real failed-save retry, retain converted Save As filenames, and distinguish Save details from file-content Save. Abort stale identity/unmount continuations and test delayed/failed writes and refreshed metadata without losing untouched fields.
 - [x] Add organization name search and visible document counts; retain matching-rule validation and existing custom-field types. Creating a label from detail preserves the unsaved form.
-- [ ] Run focused tests, full document regression, typecheck/lint/build; review, commit/merge and fresh targeted verification.
+- [x] Run focused tests, full document regression, typecheck/lint/build; review, commit/merge and fresh targeted verification.
 
 ### Task 5: Live acceptance and publication
 
