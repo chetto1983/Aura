@@ -4458,6 +4458,13 @@ with `asChild` through an optional trigger slot in `web/src/components/ui/confir
 retain the existing safe initial Cancel focus and untriggered callers. A focused regression and
 both live viewport runs must prove focus returns to the originating button after cancellation.
 
+The subsequent native-trigger run passed desktop cancellation, Escape and deletion. On 390 px,
+Escape dismissed both confirmation and its outer navigation drawer: Drawer's document keydown
+handler ignored the inner modal's already-prevented event. `web/src/shell/Drawer.tsx` must respect
+`event.defaultPrevented` before handling Escape/Tab, preserving its normal keyboard dismissal
+when no nested component consumed the key. The nested-dialog regression retains the drawer and
+returns focus to Delete; it must not replace the existing dialog or drawer focus mechanisms.
+
 The 2026-09-07 backup check passed four restore planes and restored one real scheduled
 memory archive into a disposable database. Temporal memory passed 11 mounted-MCP cases;
 the six-query context comparison improved retention of direct evidence. Eighteen guided
