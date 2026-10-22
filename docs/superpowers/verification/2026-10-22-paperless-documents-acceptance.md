@@ -174,3 +174,10 @@ All four unchanged 85% thresholds passed. One intervening coverage run was stopp
 incomplete when a real live keyboard failure required a production correction; it is not
 counted as passing evidence. The final default incremental Stryker verification uses the
 existing cache and remains a separate recorded result.
+
+The coordinator then ran the unchanged default `stryker run` command on the consolidated
+tree, with the existing incremental cache. It completed with **exit 0 in 1 min 51 s**, after
+the initial runner tests, and reported **81.22%**, above the unchanged 70% break threshold.
+The configured 6,344-mutant inventory and report were retained. This fresh incremental
+verification supplements the earlier cold full run; neither mutation configuration nor
+thresholds nor cache contents were manually altered.
