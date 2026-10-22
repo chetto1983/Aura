@@ -40,4 +40,16 @@ Focused RED command (exit 1, only `docfields` denominator drift):
 python3 scripts/coverage_package_gate.py --profile cover_gate.out.filtered --policy scripts/coverage_package_policy.json --report artifacts/production-readiness/coverage-report.json
 ```
 
-Policy test and GREEN command results are appended after the measured policy row is reconciled.
+After changing only that existing baseline's two counters, verification passed in WSL:
+
+| Command | Result |
+|---|---|
+| `python3 -m unittest scripts.coverage_package_gate_test` | 8 tests passed, 0.837 s |
+| `bash scripts/coverage_profile_gate_test.sh` | PASS, exact aggregate ratio enforcement |
+| The focused package-gate command above, on the same retained profile | PASS, exit 0 |
+
+The report now includes package policy results while retaining the exact 48,423/55,407 aggregate
+and its 85% minimum. Existing tests still reject exact-ratio regression, denominator changes,
+unclassified/missing packages, zero baselines and unsupported delegated authorities. No Go source
+or test assertion changed. The official consumer suites were not needlessly rerun for this
+two-number policy reconciliation; their retained source profile is the measured authority.
