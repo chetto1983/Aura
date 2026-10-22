@@ -158,3 +158,19 @@ Those linked records separately account for the subsequent full frontend coverag
 coordinator's final incremental mutation verification. The earlier full measurements above
 retain their original source scope. Publication and published-image deployment remain separate
 release work until their exact pushed revision is verified.
+
+The scoped source review of `4d3ceb1c0..564aa3bc4` approved the fix with no remaining
+Critical, Important or Minor findings. The subsequent full frontend run passed **381 files /
+3,274 tests**, exit 0, 398.20 seconds, on the frozen consolidated production tree:
+
+| Metric | Final consolidated result |
+|---|---|
+| Statements | 13,730/14,883 = 92.25% |
+| Branches | 10,606/12,223 = 86.77% |
+| Functions | 4,025/4,424 = 90.98% |
+| Lines | 12,384/13,146 = 94.20% |
+
+All four unchanged 85% thresholds passed. One intervening coverage run was stopped as
+incomplete when a real live keyboard failure required a production correction; it is not
+counted as passing evidence. The final default incremental Stryker verification uses the
+existing cache and remains a separate recorded result.

@@ -127,7 +127,7 @@ is null, query failure is an error. Ready with nonzero errors must not appear su
 
 - [x] Exercise the synthetic PDF set on the real backend: upload → waiting → ready → content search → classify → review → saved view → reload/direct link/back; compare against the captured Paperless reference on desktop and 390 px viewport.
 - [x] Check independent identities for saved views/content/thumbnails; confirm unauthorized responses never expose another identity's data. Verify all tested file previews still open and no unsupported controls are shown.
-- [ ] Resolve final-review first-null ingestion refresh and the user-reported missing sidebar Delete action; reuse existing saved-view deletion/confirmation, test cancel/error/target isolation and verify the new controls live on desktop/mobile.
+- [x] Resolve final-review first-null ingestion refresh and the user-reported missing sidebar Delete action; reuse existing saved-view deletion/confirmation, test cancel/error/target isolation and verify the new controls live on desktop/mobile.
 - [ ] Run required backend/web quality, coverage, mutation and live integration gates for changed packages; fix observed defects, not assertions that correctly expose regressions.
-- [ ] Obtain whole-change review, address findings and verify the final tree. Record measured limits, screenshot comparisons and test results; do not invent a UX score.
+- [x] Obtain whole-change review, address findings and verify the final tree. Record measured limits, screenshot comparisons and test results; do not invent a UX score.
 - [ ] Merge task branch into master, run fresh post-merge checks, push using the repository's WSL hook recipe, check CI and publication for that SHA, then pull/apply the published GHCR image set and verify the running commit.
