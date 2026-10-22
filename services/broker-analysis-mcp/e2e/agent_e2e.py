@@ -101,6 +101,26 @@ SCENARIOS = [
         ["passat|nuov|run_hooks|cron|periodic", "aapl"],
     ),
     Scenario(
+        "beta_capture_eni",
+        "Qual è il beta di ENI (ENI.MI) contro il FTSE MIB calcolato come su Bloomberg? E come si comporta ENI "
+        "nei mesi in cui l'indice sale e in quelli in cui scende? Usa gli ultimi 3 anni.",
+        "risk_metrics",
+        {"ticker": "ENI.MI", "benchmark": "FTSEMIB.MI"},
+        "analisi-rischio",
+        ["beta_weekly_2y", "beta_adjusted", "up_capture", "down_capture"],
+        ["yahoo", r"\d+\s+mesi"],
+    ),
+    Scenario(
+        "qualita_stellantis",
+        "Fai un controllo della qualità del bilancio di Stellantis (STLAM.MI): solidità finanziaria, rischio di "
+        "dissesto e segnali di manipolazione degli utili.",
+        "fundamental_ratios",
+        {"ticker": "STLAM.MI"},
+        "analisi-fondamentale",
+        ["altman_z", "altman_z_double_prime"],
+        ["piotroski", "beneish", "margine lordo|gross margin|gmi", "yahoo"],
+    ),
+    Scenario(
         "ticker_inesistente",
         "Qual è il P/E della società con ticker NOTATICKER123?",
         "fundamental_ratios",

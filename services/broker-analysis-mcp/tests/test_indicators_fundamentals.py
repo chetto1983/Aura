@@ -10,7 +10,7 @@ from ta.volatility import AverageTrueRange, BollingerBands
 from broker_analysis_mcp import indicators
 from broker_analysis_mcp.fundamentals import (
     CapitalInputs,
-    Statements,
+    Year,
     cost_of_capital,
     interest_warning,
     ratios,
@@ -78,8 +78,9 @@ def test_atr_matches_ta(ohlc: pd.DataFrame) -> None:
     pd.testing.assert_series_equal(ours.iloc[13:], theirs.iloc[13:], check_names=False, rtol=1e-9)
 
 
-def _statements(**overrides) -> Statements:
-    base = dict(
+def _statements(**overrides) -> list[Year]:
+    """Fiscal years newest first: `revenue` lists one value per year, `<line>_prior` sets the year before."""
+    lines = dict(
         revenue=[1200.0, 1100.0, 1000.0],
         gross_profit=480.0,
         ebitda=300.0,
@@ -95,8 +96,10 @@ def _statements(**overrides) -> Statements:
         free_cash_flow=90.0,
         dividends_paid=-60.0,
         diluted_eps=1.2,
-    )
-    return Statements(**(base | overrides))
+    ) | overrides
+    revenue = lines.pop("revenue")
+    prior = {k.removesuffix("_prior"): lines.pop(k) for k in list(lines) if k.endswith("_prior")}
+    return [Year(revenue=revenue[0], **lines), Year(revenue=revenue[1], **prior), *(Year(revenue=v) for v in revenue[2:])]
 
 
 def test_ratios_hand_computed() -> None:
@@ -128,12 +131,12 @@ def test_revenue_cagr_skips_missing_years() -> None:
     assert revenue_cagr([1000.0]) is None
 
 
-def _full_statements(**overrides) -> Statements:
+def _full_statements(**overrides) -> list[Year]:
     return _statements(
         total_assets=2400.0, total_assets_prior=1600.0, current_assets=900.0, current_liabilities=600.0,
         current_liabilities_prior=400.0, receivables=200.0, receivables_prior=100.0, inventory=150.0,
         inventory_prior=150.0, payables=120.0, payables_prior=80.0, total_liabilities=1500.0, long_term_debt=350.0,
-        total_debt_prior=300.0, short_term_investments=50.0, depreciation=100.0, cost_of_revenue=720.0,
+        total_debt_prior=300.0, short_term_investments=50.0, depreciation_amortization=100.0, cost_of_revenue=720.0,
         pretax_income=160.0, operating_cash_flow=250.0, **overrides,
     )
 

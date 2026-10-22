@@ -49,9 +49,11 @@ def risk_metrics(
     Returns CAGR, close-to-close and range-based volatility (Garman-Klass, Parkinson,
     Rogers-Satchell), Sharpe with its standard error, Probabilistic Sharpe Ratio, Sortino,
     Omega, maximum drawdown, CDaR, Calmar, historical and Cornish-Fisher one-day VaR and
-    expected shortfall; with a benchmark ticker also beta and correlation (benchmark converted
-    to the security's currency). period: 1y, 2y, 3y, 5y, 10y or max. risk_free_annual as a
-    decimal (0.03 = 3%).
+    expected shortfall. With a benchmark ticker (converted to the security's currency) also daily
+    beta and correlation, Bloomberg-style beta (two years of weekly returns, adjusted 0.67 raw +
+    0.33), Jensen's alpha, Treynor, M2, information ratio and tracking error, and Morningstar-style
+    up and down capture on monthly returns. period: 1y, 2y, 3y, 5y, 10y or max. risk_free_annual
+    as a decimal (0.03 = 3%).
     """
     return _run(analysis.risk_report, ticker, period, benchmark, risk_free_annual, confidence)
 
@@ -95,8 +97,10 @@ def fundamental_ratios(
     inventory, days sales/inventory/payables, cash conversion cycle), liquidity (current, quick,
     cash ratios, operating cash flow coverage, working capital), leverage and coverage, payout.
     With risk_free_annual and equity_risk_premium (decimals, from the analyst) also CAPM cost of
-    equity, WACC, EVA and unlevered beta; beta defaults to Yahoo's. Ratios not meaningful
-    (losses, banks without current assets) are null."""
+    equity, WACC, EVA and unlevered beta; beta defaults to Yahoo's. Also the Piotroski F-score
+    (financial strength, 0-9), Altman Z and Z'' (distress) and Beneish M-score (earnings
+    manipulation), with their components in `scores`; not computed for banks and insurers.
+    Ratios not meaningful (losses, banks without current assets) are null."""
     return _run(analysis.fundamentals_report, ticker, risk_free_annual, equity_risk_premium, beta)
 
 

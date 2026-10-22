@@ -149,3 +149,73 @@ def test_parkinson_single_bar_golden_value() -> None:
     bar = pd.DataFrame({"Open": [100.0], "High": [102.0], "Low": [99.0], "Close": [101.0]})
     expected = math.sqrt(math.log(102 / 99) ** 2 / (4 * math.log(2)) * 252)
     assert risk.parkinson(bar) == pytest.approx(expected, rel=1e-12)
+
+
+def test_adjusted_beta_shrinks_toward_one() -> None:
+    assert risk.adjusted_beta(1.5) == pytest.approx(0.67 * 1.5 + 0.33)
+    assert risk.adjusted_beta(1.0) == pytest.approx(1.0)
+    assert risk.adjusted_beta(0.2) > 0.2
+
+
+def test_jensen_alpha_matches_empyrical(returns: pd.Series, market: pd.Series) -> None:
+    rf = 0.02
+    capm = risk.capm_measures(returns, market, rf)
+    ep_alpha, ep_beta = ep.alpha_beta(returns, market, risk_free=risk.daily_rate(rf))
+    # empyrical compounds the mean daily alpha; ours annualises it arithmetically, like the Sharpe ratio.
+    assert (1 + capm["jensen_alpha"] / 252) ** 252 - 1 == pytest.approx(ep_alpha, rel=1e-9)
+    assert risk.beta(returns, market) == pytest.approx(ep_beta, rel=1e-9)
+
+
+def test_capm_measures_closed_forms(returns: pd.Series, market: pd.Series) -> None:
+    rf = 0.02
+    capm = risk.capm_measures(returns, market, rf)
+    b = risk.beta(returns, market)
+    assert capm["treynor"] == pytest.approx(risk.sharpe(returns, rf) * risk.volatility(returns) / b, rel=1e-9)
+    benchmark_mean = float(market.mean()) * 252
+    assert capm["m_squared"] - benchmark_mean == pytest.approx(capm["m_squared_vs_benchmark"], rel=1e-9)
+    # The benchmark measured against itself has no alpha, beta 1 and an M2 equal to its own mean return.
+    itself = risk.capm_measures(market, market, rf)
+    assert itself["jensen_alpha"] == pytest.approx(0.0, abs=1e-12)
+    assert itself["m_squared"] == pytest.approx(benchmark_mean, rel=1e-9)
+    assert itself["m_squared_vs_benchmark"] == pytest.approx(0.0, abs=1e-12)
+    assert risk.capm_measures(-market, market, rf)["treynor"] is None
+
+
+def _monthly(n: int, seed: int) -> tuple[pd.Series, pd.Series]:
+    rng = np.random.default_rng(seed)
+    index = pd.date_range("2020-01-31", periods=n, freq="ME")
+    bench = pd.Series(rng.normal(0.008, 0.04, n), index=index)
+    fund = 1.2 * bench + pd.Series(rng.normal(0.0, 0.01, n), index=index)
+    return fund, bench
+
+
+def test_capture_ratios_match_empyrical() -> None:
+    fund, bench = _monthly(60, seed=21)
+    assert not (bench == 0).any()  # empyrical's up months exclude zero, Morningstar's include it
+    c = risk.capture_ratios(fund, bench)
+    assert c["up_capture"] == pytest.approx(ep.up_capture(fund, bench, period="monthly"), rel=1e-9)
+    assert c["down_capture"] == pytest.approx(ep.down_capture(fund, bench, period="monthly"), rel=1e-9)
+    assert c["up_months"] + c["down_months"] == 60
+    assert c["up_capture"] > 1 and c["down_capture"] > 1  # a fund with beta 1.2 amplifies both
+
+
+def test_capture_counts_a_flat_benchmark_month_as_up() -> None:
+    index = pd.date_range("2024-01-31", periods=3, freq="ME")
+    c = risk.capture_ratios(pd.Series([0.01, 0.02, -0.03], index=index), pd.Series([0.0, 0.01, -0.02], index=index))
+    assert c["up_months"] == 2 and c["down_months"] == 1
+    flat = risk.capture_ratios(pd.Series([0.01], index=index[:1]), pd.Series([0.0], index=index[:1]))
+    assert flat["up_capture"] is None and flat["down_capture"] is None
+
+
+def test_monthly_returns_drop_the_month_in_progress() -> None:
+    days = pd.bdate_range("2024-01-02", "2024-03-15")
+    prices = pd.DataFrame({"a": np.linspace(100, 110, len(days)), "b": 100.0}, index=days)
+    assert list(risk.monthly_returns(prices).index.strftime("%Y-%m")) == ["2024-02"]
+    complete = prices.reindex(pd.bdate_range("2024-01-02", "2024-03-29")).ffill()
+    assert list(risk.monthly_returns(complete).index.strftime("%Y-%m")) == ["2024-02", "2024-03"]
+
+
+def test_information_ratio_matches_empyrical(returns: pd.Series, market: pd.Series) -> None:
+    assert risk.information_ratio(returns, market) == pytest.approx(
+        ep.excess_sharpe(returns, market) * math.sqrt(52), rel=1e-9
+    )

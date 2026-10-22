@@ -16,9 +16,9 @@ who wants it adds it as a custom server.
 
 | Tool | What it returns |
 | --- | --- |
-| `risk_metrics` | CAGR, close-to-close and range volatility (Garman-Klass, Parkinson, Rogers-Satchell), Sharpe with standard error and t statistic, Probabilistic Sharpe Ratio, Sortino, Omega, max drawdown, CDaR, Calmar, historical and Cornish-Fisher VaR, expected shortfall, beta and correlation |
+| `risk_metrics` | CAGR, close-to-close and range volatility (Garman-Klass, Parkinson, Rogers-Satchell), Sharpe with standard error and t statistic, Probabilistic Sharpe Ratio, Sortino, Omega, max drawdown, CDaR, Calmar, historical and Cornish-Fisher VaR, expected shortfall; against a benchmark also beta and correlation, Bloomberg-style adjusted beta (two years weekly, 0.67 raw + 0.33), Jensen's alpha, Treynor, M², information ratio, tracking error and Morningstar-style up/down capture |
 | `technical_indicators` | Snapshot of SMAs, RSI, MACD, Bollinger, ATR, 52-week range, all with adjustable parameters |
-| `fundamental_ratios` / `peer_comparison` | Multiples, DuPont (ROE, ROA, margins, turnover, equity multiplier), ROIC, working-capital cycle, liquidity, leverage and coverage, payout, revenue CAGR; CAPM cost of equity, WACC, EVA and unlevered beta when the analyst gives the risk-free rate and the equity risk premium; currency conversion between quote and statements |
+| `fundamental_ratios` / `peer_comparison` | Multiples, DuPont (ROE, ROA, margins, turnover, equity multiplier), ROIC, working-capital cycle, liquidity, leverage and coverage, payout, revenue CAGR; CAPM cost of equity, WACC, EVA and unlevered beta when the analyst gives the risk-free rate and the equity risk premium; Piotroski F-score, Altman Z and Z'', Beneish M-score with their components (not for banks and insurers); currency conversion between quote and statements |
 | `etf_analysis` | TER, tracking difference and tracking error against a benchmark converted to the fund's currency |
 | `list_indicator_catalog` | The parametric indicators (typed parameters with defaults and bounds), expression functions and syntax |
 | `custom_analysis` | User-defined indicators, derived series, conditions and levels on one ticker; condition events with forward returns against all bars; PNG chart plus a QuantDinger-style JSON spec (plots, signals, layers) |

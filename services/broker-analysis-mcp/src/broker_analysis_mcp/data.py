@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import yfinance as yf
 
-from .fundamentals import Statements
+from .fundamentals import Year
 
 SOURCE = "Yahoo Finance via yfinance (unofficial, prototype only)"
 
@@ -85,58 +85,74 @@ def info(ticker: str) -> dict:
     return data
 
 
-def _row(df: pd.DataFrame, names: tuple[str, ...], col: int = 0) -> float | None:
-    for name in names:
-        if name in df.index and df.shape[1] > col:
-            value = df.loc[name].iloc[col]
+# Statement lines by Year field: the first (statement, row) pair Yahoo reports wins.
+ROWS: dict[str, tuple[tuple[str, str], ...]] = {
+    "revenue": (("inc", "Total Revenue"), ("inc", "Operating Revenue")),
+    "cost_of_revenue": (("inc", "Cost Of Revenue"), ("inc", "Reconciled Cost Of Revenue")),
+    "gross_profit": (("inc", "Gross Profit"),),
+    "sga": (("inc", "Selling General And Administration"),),
+    "ebitda": (("inc", "EBITDA"), ("inc", "Normalized EBITDA")),
+    "ebit": (("inc", "EBIT"), ("inc", "Operating Income")),
+    "pretax_income": (("inc", "Pretax Income"),),
+    "net_income": (("inc", "Net Income Common Stockholders"), ("inc", "Net Income")),
+    "net_income_continuing": (
+        ("inc", "Net Income From Continuing Operation Net Minority Interest"),
+        ("inc", "Net Income Continuous Operations"),
+    ),
+    "interest_expense": (("inc", "Interest Expense"), ("inc", "Interest Expense Non Operating")),
+    "tax_rate": (("inc", "Tax Rate For Calcs"),),
+    "diluted_eps": (("inc", "Diluted EPS"),),
+    "total_assets": (("bal", "Total Assets"),),
+    "current_assets": (("bal", "Current Assets"),),
+    "current_liabilities": (("bal", "Current Liabilities"),),
+    "cash": (("bal", "Cash And Cash Equivalents"), ("bal", "Cash Cash Equivalents And Short Term Investments")),
+    "short_term_investments": (("bal", "Other Short Term Investments"),),
+    "receivables": (("bal", "Accounts Receivable"), ("bal", "Receivables")),
+    "inventory": (("bal", "Inventory"),),
+    "payables": (("bal", "Accounts Payable"), ("bal", "Payables")),
+    "net_ppe": (("bal", "Net PPE"),),
+    "total_debt": (("bal", "Total Debt"),),
+    "long_term_debt": (("bal", "Long Term Debt"),),
+    "current_debt": (("bal", "Current Debt"),),
+    "tax_payable": (("bal", "Income Tax Payable"), ("bal", "Total Tax Payable")),
+    "total_liabilities": (("bal", "Total Liabilities Net Minority Interest"),),
+    "retained_earnings": (("bal", "Retained Earnings"),),
+    "equity": (("bal", "Stockholders Equity"), ("bal", "Common Stock Equity")),
+    "invested_capital": (("bal", "Invested Capital"),),
+    "shares": (("bal", "Ordinary Shares Number"), ("bal", "Share Issued")),
+    "operating_cash_flow": (("cf", "Operating Cash Flow"), ("cf", "Cash Flow From Continuing Operating Activities")),
+    "free_cash_flow": (("cf", "Free Cash Flow"),),
+    "dividends_paid": (("cf", "Cash Dividends Paid"), ("cf", "Common Stock Dividend Paid")),
+    "depreciation": (("cf", "Depreciation"),),
+    "depreciation_amortization": (("cf", "Depreciation And Amortization"), ("inc", "Reconciled Depreciation")),
+    "stock_issuance": (("cf", "Common Stock Issuance"), ("cf", "Issuance Of Capital Stock")),
+}
+
+
+def _value(frames: dict[str, pd.DataFrame], pairs: tuple[tuple[str, str], ...], date: pd.Timestamp) -> float | None:
+    for statement, row in pairs:
+        df = frames[statement]
+        if row in df.index and date in df.columns:
+            value = df.at[row, date]
             if pd.notna(value):
                 return float(value)
     return None
 
 
-def statements(ticker: str) -> tuple[Statements, str, str]:
-    """Latest annual statements, their currency and fiscal year end."""
+def statements(ticker: str) -> tuple[list[Year], str, str]:
+    """Annual statements newest first, their currency and the latest fiscal year end.
+
+    The three statements can list different numbers of years, so lines are matched by fiscal
+    year-end date, with the income statement's years as the reference.
+    """
     t = yf.Ticker(ticker)
-    inc, bal, cf = t.income_stmt, t.balance_sheet, t.cashflow
-    if inc.empty or bal.empty:
+    frames = {"inc": t.income_stmt, "bal": t.balance_sheet, "cf": t.cashflow}
+    if frames["inc"].empty or frames["bal"].empty:
         raise DataError(f"no annual statements for {ticker!r}")
-    revenue = [_row(inc, ("Total Revenue", "Operating Revenue"), i) for i in range(inc.shape[1])]
-    s = Statements(
-        revenue=revenue,
-        gross_profit=_row(inc, ("Gross Profit",)),
-        ebitda=_row(inc, ("EBITDA", "Normalized EBITDA")),
-        ebit=_row(inc, ("EBIT", "Operating Income")),
-        net_income=_row(inc, ("Net Income Common Stockholders", "Net Income")),
-        interest_expense=_row(inc, ("Interest Expense", "Interest Expense Non Operating")),
-        tax_rate=_row(inc, ("Tax Rate For Calcs",)),
-        equity=_row(bal, ("Stockholders Equity", "Common Stock Equity")),
-        equity_prior=_row(bal, ("Stockholders Equity", "Common Stock Equity"), 1),
-        total_debt=_row(bal, ("Total Debt",)),
-        cash=_row(bal, ("Cash And Cash Equivalents", "Cash Cash Equivalents And Short Term Investments")),
-        invested_capital=_row(bal, ("Invested Capital",)),
-        free_cash_flow=_row(cf, ("Free Cash Flow",)),
-        dividends_paid=_row(cf, ("Cash Dividends Paid", "Common Stock Dividend Paid")),
-        diluted_eps=_row(inc, ("Diluted EPS",)),
-        total_assets=_row(bal, ("Total Assets",)),
-        total_assets_prior=_row(bal, ("Total Assets",), 1),
-        current_assets=_row(bal, ("Current Assets",)),
-        current_liabilities=_row(bal, ("Current Liabilities",)),
-        current_liabilities_prior=_row(bal, ("Current Liabilities",), 1),
-        receivables=_row(bal, ("Accounts Receivable", "Receivables")),
-        receivables_prior=_row(bal, ("Accounts Receivable", "Receivables"), 1),
-        inventory=_row(bal, ("Inventory",)),
-        inventory_prior=_row(bal, ("Inventory",), 1),
-        payables=_row(bal, ("Accounts Payable", "Payables")),
-        payables_prior=_row(bal, ("Accounts Payable", "Payables"), 1),
-        total_liabilities=_row(bal, ("Total Liabilities Net Minority Interest",)),
-        long_term_debt=_row(bal, ("Long Term Debt",)),
-        total_debt_prior=_row(bal, ("Total Debt",), 1),
-        short_term_investments=_row(bal, ("Other Short Term Investments",)),
-        depreciation=_row(cf, ("Depreciation And Amortization",)) or _row(inc, ("Reconciled Depreciation",)),
-        cost_of_revenue=_row(inc, ("Cost Of Revenue", "Reconciled Cost Of Revenue")),
-        pretax_income=_row(inc, ("Pretax Income",)),
-        operating_cash_flow=_row(cf, ("Operating Cash Flow",)),
-    )
+    years = [
+        Year(**{name: _value(frames, pairs, date) for name, pairs in ROWS.items()})
+        for date in frames["inc"].columns
+    ]
     profile = t.info or {}
     currency = profile.get("financialCurrency") or profile.get("currency") or "?"
-    return s, currency, str(inc.columns[0].date())
+    return years, currency, str(frames["inc"].columns[0].date())

@@ -10,8 +10,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 
-from . import data, indicators, risk
-from .fundamentals import CapitalInputs, cost_of_capital, interest_warning, ratios
+from . import data, indicators, risk, scores
+from .fundamentals import CapitalInputs, Year, cost_of_capital, interest_warning, ratios
 from .references import REFERENCES
 
 
@@ -56,6 +56,47 @@ def references(keys: set[str]) -> dict[str, str]:
     return {k: REFERENCES[k] for k in sorted(keys)}
 
 
+def _rounded(obj, digits: int = 4):
+    if isinstance(obj, dict):
+        return {k: _rounded(v, digits) for k, v in obj.items()}
+    return round(obj, digits) if isinstance(obj, float) else obj
+
+
+def _benchmark_metrics(close: pd.Series, bench_close: pd.Series, rf_annual: float, warnings: list[str]) -> dict:
+    r, b = risk.simple_returns(close), risk.simple_returns(bench_close)
+    prices = risk.aligned(close, bench_close)
+    weekly = risk.weekly_returns(prices)
+    beta_weeks = weekly.iloc[-risk.BETA_WEEKS:]
+    if len(beta_weeks) < risk.BETA_WEEKS:
+        warnings.append(
+            f"beta_weekly_2y uses {len(beta_weeks)} weekly returns instead of {risk.BETA_WEEKS}: "
+            "request period 2y or longer to match Bloomberg's default window"
+        )
+    raw = risk.beta(beta_weeks.iloc[:, 0], beta_weeks.iloc[:, 1])
+    monthly = risk.monthly_returns(prices)
+    capm = risk.capm_measures(r, b, rf_annual)
+    capture = risk.capture_ratios(monthly.iloc[:, 0], monthly.iloc[:, 1])
+    return {
+        "beta": _metric(risk.beta(r, b), "ratio", "beta"),
+        "correlation": _metric(risk.correlation(r, b), "ratio", "beta"),
+        "beta_weekly_2y": _metric(raw, "ratio", "beta_adjusted"),
+        "beta_adjusted": _metric(risk.adjusted_beta(raw), "ratio", "beta_adjusted"),
+        "weeks_for_beta": _metric(len(beta_weeks), "weeks", "beta_adjusted", 0),
+        "jensen_alpha": _metric(capm["jensen_alpha"], "%", "capm"),
+        "treynor": _metric(capm["treynor"], "%", "capm"),
+        "m_squared": _metric(capm["m_squared"], "%", "capm"),
+        "m_squared_vs_benchmark": _metric(capm["m_squared_vs_benchmark"], "%", "capm"),
+        "information_ratio": _metric(
+            risk.information_ratio(weekly.iloc[:, 0], weekly.iloc[:, 1]), "ratio", "information_ratio"
+        ),
+        "tracking_error": _metric(risk.tracking(close, bench_close)["tracking_error"], "%", "information_ratio"),
+        "up_capture": _metric(capture["up_capture"], "%", "capture"),
+        "down_capture": _metric(capture["down_capture"], "%", "capture"),
+        "up_months": _metric(capture["up_months"], "months", "capture", 0),
+        "down_months": _metric(capture["down_months"], "months", "capture", 0),
+    }
+
+
 def risk_report(
     ticker: str,
     period: str = "3y",
@@ -90,9 +131,7 @@ def risk_report(
         bench_prices, bench_meta = data.history(benchmark, period)
         bench_prices = _in_currency(bench_prices, bench_meta, meta.currency, period)
         meta.warnings.extend(bench_meta.warnings)
-        b = risk.simple_returns(bench_prices["Close"])
-        metrics["beta"] = _metric(risk.beta(r, b), "ratio", "beta")
-        metrics["correlation"] = _metric(risk.correlation(r, b), "ratio", "beta")
+        metrics |= _benchmark_metrics(prices["Close"], bench_prices["Close"], rf_annual, meta.warnings)
     return {
         "ticker": ticker,
         "currency": meta.currency,
@@ -176,6 +215,27 @@ def _unit(name: str, currency: str) -> str:
     return "days" if name in DAY_RATIOS else "ratio"
 
 
+# Yahoo's sector for banks and insurers, whose balance sheets these scores do not describe.
+FINANCIAL_SECTORS = {"Financial Services"}
+
+
+def _scores(years: list[Year], market_cap: float, sector: str | None, warnings: list[str]) -> tuple[dict, dict]:
+    if sector in FINANCIAL_SECTORS:
+        warnings.append("Piotroski, Altman and Beneish scores are not computed for banks and insurers")
+        return {}, {}
+    f, z, m = scores.piotroski(years), scores.altman(years, market_cap), scores.beneish(years)
+    for name, result in (("Piotroski F-score", f), ("Altman Z", z), ("Beneish M-score", m)):
+        if result["missing"]:
+            warnings.append(f"{name}: no value for {', '.join(result['missing'])}")
+    metrics = {
+        "piotroski_f_score": _metric(f["score"], "points of 9", "piotroski", 0),
+        "altman_z": _metric(z["z"], "score", "altman", 2),
+        "altman_z_double_prime": _metric(z["z_double_prime"], "score", "altman", 2),
+        "beneish_m": _metric(m["m"], "score", "beneish", 2),
+    }
+    return metrics, _rounded({"piotroski": f, "altman": z, "beneish": m})
+
+
 def fundamentals_report(
     ticker: str,
     risk_free_annual: float | None = None,
@@ -183,7 +243,7 @@ def fundamentals_report(
     beta: float | None = None,
 ) -> dict:
     profile = data.info(ticker)
-    s, fin_ccy, fiscal_end = data.statements(ticker)
+    years, fin_ccy, fiscal_end = data.statements(ticker)
     price_ccy = profile.get("currency") or "?"
     price = profile.get("currentPrice") or profile.get("regularMarketPrice")
     market_cap = profile.get("marketCap")
@@ -198,8 +258,8 @@ def fundamentals_report(
             f"market values converted from {price_ccy} to statement currency {fin_ccy} at {fx:.4f}; "
             "for depositary receipts check the share ratio before trusting per-share ratios"
         )
-    values = ratios(s, float(price), float(market_cap))
-    if warning := interest_warning(s):
+    values = ratios(years, float(price), float(market_cap))
+    if warning := interest_warning(years):
         warnings.append(warning)
     parameters = {"risk_free_annual": risk_free_annual, "equity_risk_premium": equity_risk_premium, "beta": beta}
     if risk_free_annual is not None and equity_risk_premium is not None:
@@ -209,7 +269,7 @@ def fundamentals_report(
         else:
             parameters["beta"] = used_beta
             parameters["beta_source"] = "analyst" if beta is not None else "Yahoo Finance profile"
-            values |= cost_of_capital(s, float(market_cap), CapitalInputs(risk_free_annual, equity_risk_premium, used_beta))
+            values |= cost_of_capital(years, float(market_cap), CapitalInputs(risk_free_annual, equity_risk_premium, used_beta))
     else:
         warnings.append("cost of equity, WACC and EVA need risk_free_annual and equity_risk_premium from the analyst")
     metrics = {k: _metric(v, _unit(k, fin_ccy), "fundamentals", 2 if k in MONEY else 4) for k, v in values.items()}
@@ -217,6 +277,8 @@ def fundamentals_report(
     metrics["yahoo_dividend_yield"] = _metric(
         (profile.get("dividendYield") or 0) / 100 if profile.get("dividendYield") else None, "%", "fundamentals"
     )
+    score_metrics, score_details = _scores(years, float(market_cap), profile.get("sector"), warnings)
+    metrics |= score_metrics
     return {
         "ticker": ticker,
         "name": profile.get("longName") or profile.get("shortName"),
@@ -225,10 +287,12 @@ def fundamentals_report(
         "statement_currency": fin_ccy,
         "fiscal_year_end": fiscal_end,
         "basis": "latest annual statements, averages of opening and closing balances where the ratio uses them; "
-        "yahoo_* fields are Yahoo's own trailing figures",
+        "yahoo_* fields are Yahoo's own trailing figures; scores compare the latest two fiscal years (Piotroski "
+        "also uses total assets of the third) and Altman's market-value X4 uses today's market capitalisation",
         "parameters": parameters,
         "metrics": metrics,
-        "references": references({"fundamentals"}),
+        "scores": score_details,
+        "references": references({m["ref"] for m in metrics.values()}),
         "source": data.SOURCE,
         "warnings": warnings,
     }

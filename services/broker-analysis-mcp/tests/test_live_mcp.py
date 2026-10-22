@@ -13,6 +13,8 @@ import sys
 import tempfile
 
 import empyrical as ep
+import numpy as np
+import pandas as pd
 import pytest
 import yfinance as yf
 from mcp import ClientSession, StdioServerParameters, stdio_client
@@ -267,3 +269,56 @@ def test_bank_ratios_that_do_not_apply_are_null(live) -> None:
     assert r["metrics"]["cash_conversion_cycle"]["value"] is None
     assert any("risk_free_annual" in w for w in r["warnings"])
     assert _v(r, "pb") > 0 and _v(r, "roe") > 0
+
+
+def _closes(ticker: str, start: str, end: str):
+    closes = yf.Ticker(ticker).history(start=start, auto_adjust=True)["Close"]
+    closes.index = closes.index.tz_localize(None).normalize()
+    return closes.loc[:end]
+
+
+def test_benchmark_relative_metrics_match_a_recomputation(live) -> None:
+    r = live[1]["risk_eni"]["data"]
+    raw = _v(r, "beta_weekly_2y")
+    assert _v(r, "beta_adjusted") == pytest.approx(0.67 * raw + 0.33, abs=2e-4)
+    assert _v(r, "weeks_for_beta") == 104
+    w = r["window"]
+    prices = pd.concat([_closes("ENI.MI", w["start"], w["end"]), _closes("FTSEMIB.MI", w["start"], w["end"])], axis=1)
+    prices = prices.dropna()
+    weekly = prices.resample("W-FRI").last().pct_change().dropna().iloc[-104:]
+    cov = np.cov(weekly.iloc[:, 0], weekly.iloc[:, 1])
+    assert raw == pytest.approx(cov[0, 1] / cov[1, 1], rel=0.02)
+    monthly = prices.resample("ME").last().pct_change().dropna()
+    if prices.index[-1] < prices.index[-1] + pd.offsets.BMonthEnd(0):
+        monthly = monthly.iloc[:-1]
+    up = ep.up_capture(monthly.iloc[:, 0], monthly.iloc[:, 1], period="monthly") * 100
+    assert _v(r, "up_capture") == pytest.approx(up, rel=0.02)
+    assert _v(r, "up_months") + _v(r, "down_months") == len(monthly)
+
+
+def test_scores_on_live_statements(live) -> None:
+    r = live[1]["fund_eni"]["data"]
+    s = r["scores"]
+    f = s["piotroski"]
+    assert f["signals_available"] + len(f["missing"]) == 9
+    assert (r["metrics"]["piotroski_f_score"]["value"] is None) == bool(f["missing"])
+    x = s["altman"]["components"]
+    z = 1.2 * x["x1_working_capital_to_assets"] + 1.4 * x["x2_retained_earnings_to_assets"] + 3.3 * x[
+        "x3_ebit_to_assets"
+    ] + 0.6 * x["x4_market_equity_to_liabilities"] + 1.0 * x["x5_sales_to_assets"]
+    assert _v(r, "altman_z") == pytest.approx(z, abs=0.01)
+    inc, bal = yf.Ticker("ENI.MI").income_stmt, yf.Ticker("ENI.MI").balance_sheet
+    sales_to_assets = inc.loc["Total Revenue"].iloc[0] / bal.loc["Total Assets"].iloc[0]
+    assert x["x5_sales_to_assets"] == pytest.approx(sales_to_assets, rel=1e-3)
+    m = s["beneish"]
+    if m["m"] is not None:
+        assert _v(r, "beneish_m") == pytest.approx(m["m"], abs=0.01)
+        assert m["above_cutoff"] == (m["m"] > -1.78)
+    assert r["references"]["piotroski"].startswith("Piotroski (2000)")
+
+
+def test_scores_are_not_computed_for_a_bank(live) -> None:
+    r = live[1]["fund_bank"]["data"]
+    assert r["scores"] == {}
+    assert "altman_z" not in r["metrics"]
+    assert any("banks and insurers" in w for w in r["warnings"])

@@ -1,6 +1,6 @@
 ---
 name: analisi-rischio
-description: Analisi di rischio e rendimento di un titolo, indice, ETF o portafoglio con il tool risk_metrics del server broker-analysis. Usala quando l'analista chiede volatilità, drawdown, Sharpe, Sortino, VaR, expected shortfall, beta, correlazione, "quanto è rischioso", "quanto può perdere", o un confronto di rischio tra strumenti.
+description: Analisi di rischio e rendimento di un titolo, indice, ETF o portafoglio con il tool risk_metrics del server broker-analysis. Usala quando l'analista chiede volatilità, drawdown, Sharpe, Sortino, VaR, expected shortfall, beta (anche corretto come su Bloomberg), correlazione, alfa di Jensen, Treynor, M², information ratio, upside/downside capture, "quanto è rischioso", "quanto può perdere", o un confronto di rischio tra strumenti o contro un benchmark.
 ---
 
 # Analisi di rischio
@@ -13,7 +13,8 @@ description: Analisi di rischio e rendimento di un titolo, indice, ETF o portafo
 
 ## Come chiamare il tool
 - `period`: 3y di default; 5y per strumenti volatili, 1y solo se l'analista vuole il regime recente.
-- `benchmark`: l'indice di riferimento del mercato del titolo (FTSEMIB.MI per Milano, ^STOXX50E per l'area euro, ^GSPC per gli USA). Serve per beta e correlazione; il tool lo converte nella valuta del titolo.
+- `benchmark`: l'indice di riferimento del mercato del titolo (FTSEMIB.MI per Milano, ^STOXX50E per l'area euro, ^GSPC per gli USA). Serve per beta, correlazione, alfa, Treynor, M², information ratio e capture; il tool lo converte nella valuta del titolo.
+- Per il beta in stile Bloomberg serve `period` di almeno 2y: con meno settimane il tool lo avvisa.
 - `risk_free_annual`: tasso privo di rischio in decimali (€STR o BOT a 12 mesi per l'euro, T-bill per il dollaro). Se l'analista non lo indica usa 0 e dichiaralo.
 
 ## Come leggere i risultati
@@ -29,7 +30,13 @@ description: Analisi di rischio e rendimento di un titolo, indice, ETF o portafo
 | `cdar` | Media del 5% peggiore dei drawdown (Chekhlov, Uryasev, Zabarankin) | Più stabile del solo massimo |
 | `var_historical_1d` / `expected_shortfall_1d` | Perdita giornaliera superata nel 5% dei giorni / media in quei giorni | L'ES è sempre maggiore del VaR: riportali insieme |
 | `var_cornish_fisher_1d` | VaR corretto per asimmetria e curtosi | Al 95% le code grasse possono *abbassarlo*; il segno si inverte oltre il 95,8% di confidenza |
-| `beta`, `correlation` | Sensibilità e legame col benchmark | Beta basso con correlazione bassa significa rischio specifico, non un titolo difensivo |
+| `beta`, `correlation` | Sensibilità e legame col benchmark su rendimenti giornalieri | Beta basso con correlazione bassa significa rischio specifico, non un titolo difensivo |
+| `beta_weekly_2y`, `beta_adjusted` | Beta su due anni di rendimenti settimanali e beta corretto 0,67 × grezzo + 0,33, come la schermata BETA di Bloomberg | È il numero da confrontare col terminale. Con benchmark di un mercato che chiude a un'altra ora preferiscilo al beta giornaliero |
+| `jensen_alpha` | Rendimento annuo oltre quello spiegato dal beta (CAPM) | Il tool non ne testa la significatività: non presentarlo come abilità del gestore |
+| `treynor` | Rendimento in eccesso per unità di beta | `null` con beta negativo o nullo; con un beta basso diventa enorme e dice poco: in quel caso dillo |
+| `m_squared`, `m_squared_vs_benchmark` | Rendimento che lo strumento avrebbe avuto con la volatilità del benchmark, e la differenza col benchmark | È il confronto a parità di rischio, in punti percentuali |
+| `information_ratio`, `tracking_error` | Rendimento attivo per unità di scarto dal benchmark, su rendimenti settimanali | Ha senso per fondi e gestioni attive più che per un singolo titolo |
+| `up_capture`, `down_capture` (con `up_months`, `down_months`) | In %: quanto lo strumento cattura dei mesi positivi e negativi del benchmark | Upside sopra 100 amplifica i rialzi; downside sotto 100 perde meno nei ribassi. Cita sempre il numero di mesi: con pochi mesi la stima è fragile |
 
 ## Formato della risposta
 1. Una frase con il giudizio principale e i suoi due numeri chiave.
