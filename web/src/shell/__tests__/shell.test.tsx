@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import '../../i18n/i18n';
 import { Drawer } from '../Drawer';
 import { ModeSwitcher } from '../ModeSwitcher';
@@ -8,6 +9,8 @@ import { useEdgeSwipe } from '../useEdgeSwipe';
 import { useSurfaceIntent } from '../useSurfaceIntent';
 import { MODES, type SurfaceIntent } from '../modes';
 import { resources } from '../../i18n/resources';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Button } from '@/components/ui/button';
 
 function EdgeProbe({
   onLeft,
@@ -71,6 +74,47 @@ describe('shell utilities', () => {
     localStorage.clear();
     document.body.style.overflow = '';
     vi.restoreAllMocks();
+  });
+
+  it('closes only the nested confirmation on Escape and leaves the drawer usable', async () => {
+    function Example() {
+      const [drawer, setDrawer] = useState(true);
+      const [confirm, setConfirm] = useState(false);
+      return (
+        <Drawer
+          open={drawer}
+          title="Navigation"
+          side="left"
+          onClose={() => {
+            setDrawer(false);
+          }}
+        >
+          <ConfirmDialog
+            open={confirm}
+            onOpenChange={setConfirm}
+            trigger={<Button>Delete saved view</Button>}
+            title="Delete this saved view?"
+            cancelLabel="Cancel"
+            confirmLabel="Confirm"
+            onConfirm={() => undefined}
+          />
+        </Drawer>
+      );
+    }
+    render(<Example />);
+    const trigger = screen.getByRole('button', { name: 'Delete saved view' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Cancel' }), { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Delete this saved view?' })).toBeNull();
+      expect(screen.getByRole('dialog', { name: 'Navigation' })).toBeTruthy();
+      expect(document.activeElement).toBe(trigger);
+    });
+    fireEvent.keyDown(trigger, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Navigation' })).toBeNull();
+    });
   });
 
   it('Drawer traps focus, closes on Escape, and restores scroll lock on unmount', () => {

@@ -1,8 +1,45 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { useState } from 'react';
 import { ConfirmDialog } from '../confirm-dialog';
+import { Button } from '../button';
 
 describe('ConfirmDialog', () => {
+  it('opens from its composed trigger and restores focus after Cancel or Escape', async () => {
+    function Example() {
+      const [open, setOpen] = useState(false);
+      return (
+        <ConfirmDialog
+          open={open}
+          onOpenChange={setOpen}
+          trigger={<Button>Delete saved view</Button>}
+          title="Delete this saved view?"
+          cancelLabel="Cancel"
+          confirmLabel="Confirm"
+          onConfirm={() => undefined}
+        />
+      );
+    }
+    render(<Example />);
+    const trigger = screen.getByRole('button', { name: 'Delete saved view' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const cancel = screen.getByRole('button', { name: 'Cancel' });
+    await waitFor(() => {
+      expect(document.activeElement).toBe(cancel);
+    });
+    fireEvent.click(cancel);
+    await waitFor(() => {
+      expect(document.activeElement).toBe(trigger);
+    });
+    fireEvent.click(trigger);
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Cancel' }), { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(document.activeElement).toBe(trigger);
+    });
+  });
+
   it('renders a centered portal dialog with the safe action default-focused', async () => {
     const onOpenChange = vi.fn();
     const { container } = render(

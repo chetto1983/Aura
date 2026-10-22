@@ -3,13 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, Files, Inbox, LoaderCircle, Bookmark, Tags, Folder } from 'lucide-react';
 import { DOCUMENT_DESTINATIONS, savedViewHref } from './documentRoute';
 import type { SavedView } from './workspaceApi';
+import { DeleteSavedViewButton } from './SavedViews';
 
 const icons = [LayoutDashboard, Files, Inbox, LoaderCircle, Bookmark, Tags, Folder];
 export function DocumentsNavigation({
+  identity,
   views,
   compact = false,
   onNavigate,
 }: {
+  readonly identity: string;
   readonly views: readonly SavedView[];
   readonly compact?: boolean;
   readonly onNavigate: () => void;
@@ -45,14 +48,16 @@ export function DocumentsNavigation({
           {views
             .filter((view) => view.pinned)
             .map((view) => (
-              <Link
-                key={view.id}
-                to={savedViewHref(view)}
-                onClick={onNavigate}
-                className="block break-words rounded-lg px-3 py-2 text-sm hover:bg-surface-2"
-              >
-                {view.name}
-              </Link>
+              <div key={view.id} className="flex items-center rounded-lg hover:bg-surface-2">
+                <Link
+                  to={savedViewHref(view)}
+                  onClick={onNavigate}
+                  className="min-w-0 flex-1 break-words rounded-lg px-3 py-2 text-sm"
+                >
+                  {view.name}
+                </Link>
+                <DeleteSavedViewButton identity={identity} view={view} iconOnly />
+              </div>
             ))}
         </div>
       )}

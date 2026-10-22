@@ -7,12 +7,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
 } from '@/components/ui/dialog';
 
 export interface ConfirmDialogProps {
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly title: ReactNode;
+  readonly trigger?: ReactNode;
   readonly description?: ReactNode;
   readonly children?: ReactNode;
   readonly cancelLabel: ReactNode;
@@ -29,6 +31,7 @@ export function ConfirmDialog({
   open,
   onOpenChange,
   title,
+  trigger,
   description,
   children,
   cancelLabel,
@@ -44,6 +47,7 @@ export function ConfirmDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent
         role={role}
         aria-modal="true"

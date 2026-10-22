@@ -1,0 +1,1 @@
+import{t as e}from"./web-DYA2ZCFA.js";e();

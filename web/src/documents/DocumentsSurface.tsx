@@ -62,6 +62,7 @@ function Surface({
   const uploadButton = <DocumentUpload onFiles={uploads.add} />;
   const nav = (
     <DocumentsNavigation
+      identity={identity}
       views={views.data ?? []}
       compact={compact}
       onNavigate={() => {
@@ -246,6 +247,7 @@ function Surface({
         }}
       >
         <DocumentsNavigation
+          identity={identity}
           views={views.data ?? []}
           onNavigate={() => {
             setDrawer(false);

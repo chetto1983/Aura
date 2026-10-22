@@ -40,6 +40,7 @@ export function Drawer({ open, title, side, onClose, children }: DrawerProps) {
     focusFirstDescendant(panel);
 
     function onKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
         event.preventDefault();
         onCloseRef.current('explicit');

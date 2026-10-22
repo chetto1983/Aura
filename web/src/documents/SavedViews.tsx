@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { Trash2 } from 'lucide-react';
 import { documentsQuery, errorMessage } from './documentsApi';
 import { deleteView, saveView, type SavedView } from './workspaceApi';
 import { savedViewHref, type DocumentQuery } from './documentRoute';
@@ -125,7 +126,6 @@ export function SavedViews({
 function ViewEditor({ identity, view }: { readonly identity: string; readonly view: SavedView }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(view);
-  const [confirm, setConfirm] = useState(false);
   const write = useViewWrite(identity);
   return (
     <li className="rounded-xl border border-border bg-surface p-4">
@@ -172,16 +172,7 @@ function ViewEditor({ identity, view }: { readonly identity: string; readonly vi
         <Button type="submit" disabled={write.isPending || !draft.name.trim()}>
           {t('documents.workspace.save')}
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          disabled={write.isPending}
-          onClick={() => {
-            setConfirm(true);
-          }}
-        >
-          {t('documents.workspace.delete')}
-        </Button>
+        <DeleteSavedViewButton identity={identity} view={view} disabled={write.isPending} />
       </form>
       {write.isError && (
         <p role="alert" className="text-sm text-danger">
@@ -193,21 +184,63 @@ function ViewEditor({ identity, view }: { readonly identity: string; readonly vi
           {t('documents.workspace.viewSaved')}
         </p>
       )}
-      <ConfirmDialog
-        open={confirm}
-        onOpenChange={setConfirm}
-        title={t('documents.workspace.deleteTitle')}
-        cancelLabel={t('documents.workspace.cancel')}
-        confirmLabel={t('documents.bulk.confirm')}
-        confirmPending={write.isPending}
-        onConfirm={() => {
-          write.mutate(() => deleteView(view.id), {
-            onSuccess: () => {
-              setConfirm(false);
-            },
-          });
-        }}
-      />
     </li>
+  );
+}
+
+export function DeleteSavedViewButton({
+  identity,
+  view,
+  iconOnly = false,
+  disabled = false,
+}: {
+  readonly identity: string;
+  readonly view: SavedView;
+  readonly iconOnly?: boolean;
+  readonly disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [confirm, setConfirm] = useState(false);
+  const write = useViewWrite(identity);
+  const label = `${t('documents.workspace.delete')}: ${view.name}`;
+  return (
+    <ConfirmDialog
+      trigger={
+        <Button
+          type="button"
+          variant="ghost"
+          size={iconOnly ? 'icon' : 'default'}
+          aria-label={iconOnly ? label : undefined}
+          title={iconOnly ? label : undefined}
+          disabled={disabled || write.isPending}
+          onClick={() => {
+            write.reset();
+          }}
+        >
+          {iconOnly ? <Trash2 aria-hidden="true" /> : t('documents.workspace.delete')}
+        </Button>
+      }
+      open={confirm}
+      onOpenChange={setConfirm}
+      title={t('documents.workspace.deleteTitle')}
+      description={view.name}
+      cancelLabel={t('documents.workspace.cancel')}
+      confirmLabel={t(write.isError ? 'documents.workspace.retry' : 'documents.bulk.confirm')}
+      confirmPending={write.isPending}
+      onConfirm={() => {
+        if (write.isPending) return;
+        write.mutate(() => deleteView(view.id), {
+          onSuccess: () => {
+            setConfirm(false);
+          },
+        });
+      }}
+    >
+      {write.isError && (
+        <p role="alert" className="text-sm text-danger">
+          {errorMessage(write.error)}
+        </p>
+      )}
+    </ConfirmDialog>
   );
 }

@@ -21,7 +21,7 @@ export function useIngestion(identity: string) {
     retry: false,
   });
   useEffect(() => {
-    if (!query.data) return;
+    if (query.data === undefined) return;
     const signature = JSON.stringify(query.data);
     const before = previous.current;
     previous.current = { identity, signature };
