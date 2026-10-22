@@ -4392,6 +4392,22 @@ input transport and sandbox execution, not CLI retry semantics or HTTP authoriza
 
 ## 19. Evidence, exclusions and remaining limits
 
+### Document-field coverage tiers — measured 2026-10-22
+
+The official unit/database run's native coverage union measured the owned source at
+48,423/55,407 statements (87.3951%). Its `db_integration` package inventory found
+`internal/docfields` at 392/1,112 (35.2518%), versus the previous pinned baseline
+217/932 (23.2833%). The existing baseline mechanism records the new measured counts;
+the owned aggregate and target-package floors remain 85%, and denominator drift still
+fails closed. No delegated authority is added. This database tier cannot execute the
+ArcadeDB-backed document-field store: the separate same-source
+`arcadedb_integration` package run measured 90.6%, recorded in
+`docs/superpowers/verification/2026-10-21-paperless-document-file-types.md`.
+These denominators are separate measurements and are never averaged or concatenated.
+The database baseline is explicit non-regression debt, not an 85% package-coverage claim;
+the live result does not establish whole-repository or native Docker coverage. Final
+browser, mutation and publication evidence remains separately required.
+
 ### Documents detail and shared previews — measured 2026-10-22
 
 The native Office browser/save probes in
