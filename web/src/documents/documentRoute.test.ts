@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { readDocumentQuery, writeDocumentQuery, documentHref, resultHref } from './documentRoute';
 
 describe('document result routes', () => {
+  it('keeps the document-only default and permits media only through an explicit category', () => {
+    for (const search of ['', 'file_type=', 'file_type=unsupported']) {
+      expect(readDocumentQuery(search).filter.fileType).toBe('documents');
+    }
+    for (const category of ['all', 'audio', 'video', 'image', 'code']) {
+      expect(readDocumentQuery(`file_type=${category}`).filter.fileType).toBe(category);
+    }
+  });
   it('round trips filters, paging and display through direct detail links', () => {
     const search =
       '?q=Cedar&search_mode=content&file_type=video&inbox=true&type=t1&type=t2&offset=50&limit=25&sort=-indexed_at&display=cards';
