@@ -201,6 +201,10 @@ Record a PRD amendment only for decisions supported by those measurements.
 
 ## Acceptance and test boundaries
 
+- User correction on 2026-10-22: pinned saved views need a visible, named Delete action directly
+  in desktop navigation and the mobile drawer. Reuse existing tenant-scoped deletion and
+  confirmation; cancel sends no request, failures retain the view with an actionable error, and
+  success refreshes saved views without deleting documents or resetting the current search.
 - All existing document field/review/bulk and file-manager contracts keep working.
 - Newly uploaded unreviewed files cannot disappear behind a stale zero-result table or a
   misleading zero-suggestions count.

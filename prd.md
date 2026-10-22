@@ -4436,6 +4436,21 @@ creation uses existing APIs without resetting the form; failed lists remain expl
 measurements do not establish every Office import, legacy binary PPT support, arbitrary source
 encodings, worst-case grammar latency, or the final rebuilt workspace's live acceptance.
 
+### Saved-view deletion in navigation — measured 2026-10-22
+
+The user reported a missing Delete action beside the pinned saved view. On the running
+Documents workspace, `Navigazione documenti` contained the synthetic `UX study — Cedar archive`
+link and zero buttons. Source inspection confirmed that deletion already exists in the saved-view
+management screen, using the tenant-scoped DELETE API and ConfirmDialog, but the sidebar exposes
+only links. Evidence: `docs/superpowers/verification/2026-10-22-saved-view-delete-gap.md`.
+
+Expose a named, visible Delete action beside each pinned view in desktop navigation and its
+mobile drawer, reusing the existing deletion API, mutation invalidation and confirmation UI.
+Cancel sends no deletion; a server error retains the view and offers a visible retry. Success
+removes only that saved configuration and refreshes views for the current identity, preserving
+the current query and documents. This measurement establishes a discoverability gap, not a
+missing server capability or a need for a second persistence path.
+
 The 2026-09-07 backup check passed four restore planes and restored one real scheduled
 memory archive into a disposable database. Temporal memory passed 11 mounted-MCP cases;
 the six-query context comparison improved retention of direct evidence. Eighteen guided
