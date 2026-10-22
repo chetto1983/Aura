@@ -34,3 +34,16 @@ This run establishes that the retained pipeline handles these samples. It does n
 all source encodings, every media codec, or transcript quality. Original code rendering is a
 separate UI check: the XML/HTML results demonstrate why indexed passages cannot replace the
 original-source viewer, and the `.db` result demonstrates why previewing must detect binary bytes.
+
+## Additional source-size and Office checks
+
+Five small synthetic DOC, ODT, RTF, ODS and CSV copies were uploaded through the rebuilt workspace
+and each reached Indexed. Their original files remain available for the following Craft-save
+checks; no existing user document was edited.
+
+The 1,225,037-byte synthetic Python fixture also indexed. Its content endpoint returned ordinal
+0 through 49 on the first page and 50 through 99 on the second, with more pages available. A
+content search for the fixture marker returned seven distinct matching Code documents, including
+the large source exactly once. The original file route honored a 64-byte Range request with
+HTTP 206 and `Content-Range: bytes 0-63/1225037`. These checks distinguish paged indexed content
+from the original source and establish the real large-file fixture for bounded preview testing.
