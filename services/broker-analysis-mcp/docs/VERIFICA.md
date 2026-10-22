@@ -45,7 +45,7 @@ misure **non** dimostrano.
 - **Test offline:** 97 verdi.
 - **Test live via MCP:** 18 verdi.
 - **E2E via protocollo MCP su dati live:** server avviato come sottoprocesso stdio, ogni tool chiamato su ticker reali e confrontato con i numeri di Yahoo e con un ricalcolo indipendente.
-- **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve 7 domande di un analista ed è valutato in automatico. La valutazione considera:
+- **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve le domande di un analista ed è valutato in automatico. La valutazione considera:
   - tool giusto con argomenti giusti;
   - skill caricata;
   - numeri decimali della risposta presenti nei risultati dei tool, con l'arrotondamento mostrato;
@@ -54,13 +54,17 @@ misure **non** dimostrano.
 
   Un numero inventato inserito come controllo negativo (27,35%) viene segnalato.
 
-  Due run consecutive, a codice fermo, dalla posizione in Aura: **9,95** e **9,97** su 10. Sulle 14 risposte
-  i punti persi vengono da due cause:
-  - due falsi positivi dello scorer: etichette di parametri scritte con la virgola ("Bollinger 20,2",
-    "MACD 12,26,9") lette come decimali;
-  - due calcoli fatti a mente dall'agente, aritmeticamente giusti e segnalati con "circa", ma contro la
-    regola della skill: la distanza della SMA200 invertita rispetto a `price_vs_sma200` (−15,6% invece di
-    +18,54%) e il rapporto fra expected shortfall e VaR (1,6).
+  Nove scenari: i sette iniziali più il beta in stile Bloomberg con il capture di ENI e il controllo di
+  qualità del bilancio di Stellantis. Due run consecutive a codice fermo, sul commit che corregge
+  `peer_comparison` e la skill tecnica: **9,99** e **9,98** su 10. I pochi punti persi sono falsi positivi
+  dello scorer, non errori dell'agente:
+  - debiti netti dati dal tool in unità e riportati in miliardi (ENI 26.103.000.000 → "26,1 miliardi");
+  - l'etichetta di parametri "MACD 12,26,9" letta come decimale.
+
+  Nessun numero calcolato a mente e nessun consiglio di trading. Prima delle correzioni le due run davano
+  9,72 e 9,80: lo scenario Stellantis era sceso a 7,92 per la risposta troppo grande di
+  `peer_comparison`, e in tutte le run l'agente proponeva stop calcolati dall'ATR (vedi la sezione 2).
+  Ancora prima, sui sette scenari iniziali, le run davano 9,95 e 9,97.
 
 ## 4. Modelli di previsione: scartati
 
@@ -99,6 +103,8 @@ con errori standard di Newey-West; t negativo = modello migliore.
     fonti secondarie, perché il testo del 2000 letto dà solo 1,81 e 2,675; per Z'' non ci sono soglie.
   - Il capture è annualizzato come in empyrical; Morningstar dichiara la media geometrica ma non
     l'annualizzazione.
+- Che `peer_comparison` stia sempre nel limite del client: 6 società valgono 41.904 caratteri, quindi 10
+  possono superare il limite predefinito di Claude Code per i risultati MCP.
 - Che i mesi del capture siano sempre completi: se l'ultimo giorno lavorativo del mese è festivo per la Borsa
   (il 31 dicembre a Milano), un'analisi lanciata il 30 scarta un mese chiuso.
 - Che un beta basso indichi un titolo difensivo: per ENI contro il FTSE MIB la correlazione giornaliera è
