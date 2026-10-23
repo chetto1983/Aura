@@ -112,6 +112,26 @@ func TestLibraryListHonoursSourcePrefixes(t *testing.T) {
 	}
 }
 
+// The hits are named by their own fields: the invoice's type the operator set, no tag for the
+// suggestion whose label does not exist, nothing for the note, and no entry for an unknown id.
+func TestDocumentFieldsNameTheHits(t *testing.T) {
+	s, ctx, id, _ := officeLibrary(t)
+	named, err := s.DocumentFields(ctx, id, []string{docID("chat/b.xlsx"), docID("chat/c.txt"), "doc_unknown"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, ok := named[docID("chat/b.xlsx")]
+	if !ok || b.Type == nil || *b.Type != (NamedValue{Name: "Fattura", Reviewed: true}) || len(b.Tags) != 0 {
+		t.Fatalf("b.xlsx = %+v (present %v)", b, ok)
+	}
+	if c, ok := named[docID("chat/c.txt")]; !ok || c.Type != nil || len(c.Tags) != 0 {
+		t.Fatalf("c.txt = %+v (present %v)", c, ok)
+	}
+	if _, ok := named["doc_unknown"]; ok || len(named) != 2 {
+		t.Fatalf("named = %+v", named)
+	}
+}
+
 func TestLibraryDocumentDetail(t *testing.T) {
 	s, ctx, id, fattura := officeLibrary(t)
 	detail, err := s.Document(ctx, id, docID("chat/b.xlsx"))

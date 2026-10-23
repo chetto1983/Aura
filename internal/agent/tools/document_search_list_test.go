@@ -48,6 +48,9 @@ func TestDocumentSearchListsWhatTheFiltersAdmit(t *testing.T) {
 	if out.Lists == nil {
 		t.Fatal("a listing carried no library_lists")
 	}
+	if !slices.Equal(fields.namedAsked, []string{"doc_a", "doc_b"}) {
+		t.Fatalf("asked names for %v", fields.namedAsked)
+	}
 }
 
 // The run's @-scope narrows a listing as it narrows a search.

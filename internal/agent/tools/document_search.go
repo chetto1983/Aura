@@ -40,9 +40,10 @@ type documentSearchArgs struct {
 // result past the preview cap is cut inside the passages, while the agent picks its next filter
 // from them.
 type documentSearchResult struct {
-	Filters  []documentFilterReport  `json:"filters,omitempty"`
-	Lists    *docfields.LibraryLists `json:"library_lists,omitempty"`
-	Matching int                     `json:"matching_documents,omitempty"`
+	Filters        []documentFilterReport          `json:"filters,omitempty"`
+	Lists          *docfields.LibraryLists         `json:"library_lists,omitempty"`
+	Matching       int                             `json:"matching_documents,omitempty"`
+	DocumentFields map[string]docfields.FieldNames `json:"document_fields,omitempty"`
 	documents.RetrievalResponse
 }
 
@@ -93,6 +94,8 @@ func (t *DocumentSearch) Spec() Spec {
 			"library_lists in every result names the types and tags the operator's library holds, with how " +
 			"many documents carry each: when the question asks for a kind of document or a quality its words " +
 			"do not spell (internal, draft), filter by the listed name. " +
+			"document_fields names each returned document's type, counterparty, document_date and tags; " +
+			"reviewed true is a value the operator set or accepted, false a suggestion. " +
 			"Files YOU created live under /workspace: read those with read_file/search_files instead. " +
 			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
@@ -164,6 +167,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	}
 	out, err := json.Marshal(documentSearchResult{
 		RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner), Matching: matching,
+		DocumentFields: t.documentFields(ctx, owner, response.Documents),
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: marshal results: %w", err)

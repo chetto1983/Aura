@@ -22,6 +22,14 @@ type fakeFieldFilters struct {
 	libraryErr error
 	listed     docfields.ListResult
 	listAsked  *docfields.ListQuery
+	named      map[string]docfields.FieldNames
+	namedErr   error
+	namedAsked []string
+}
+
+func (f *fakeFieldFilters) DocumentFields(_ context.Context, _ string, documentIDs []string) (map[string]docfields.FieldNames, error) {
+	f.namedAsked = documentIDs
+	return f.named, f.namedErr
 }
 
 func (f *fakeFieldFilters) LibraryLists(context.Context, string) (docfields.LibraryLists, error) {
@@ -85,8 +93,9 @@ type filteredSearch struct {
 		RestsOnSuggestions bool                `json:"rests_on_suggestions"`
 		UnknownNames       map[string][]string `json:"unknown_names"`
 	} `json:"filters"`
-	Lists    *docfields.LibraryLists `json:"library_lists"`
-	Matching int                     `json:"matching_documents"`
+	Lists          *docfields.LibraryLists         `json:"library_lists"`
+	Matching       int                             `json:"matching_documents"`
+	DocumentFields map[string]docfields.FieldNames `json:"document_fields"`
 }
 
 func runFiltered(t *testing.T, tool *DocumentSearch, raw string) filteredSearch {
@@ -258,13 +267,55 @@ func TestDocumentSearchListsSurviveACutPreview(t *testing.T) {
 		DocumentID: "doc_1", Title: "Verbale.pdf",
 		Passages: []documents.RetrievalPassage{{Text: strings.Repeat("verbale della riunione ", 400), CitationToken: "document:doc_1@1"}},
 	}}}}
-	result, err := (&DocumentSearch{Library: library, Fields: officeFilters()}).Execute(toolTestContext(t),
+	fields := officeFilters()
+	fields.named = map[string]docfields.FieldNames{"doc_1": {Tags: []docfields.NamedValue{{Name: "interno"}}}}
+	result, err := (&DocumentSearch{Library: library, Fields: fields}).Execute(toolTestContext(t),
 		json.RawMessage(`{"query":"documenti interni","date_from":"2026-01-01"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.Truncated || !strings.Contains(result.Preview, `"library_lists"`) || !strings.Contains(result.Preview, `"filters"`) {
+	if !result.Truncated || !strings.Contains(result.Preview, `"library_lists"`) || !strings.Contains(result.Preview, `"filters"`) ||
+		!strings.Contains(result.Preview, `"document_fields"`) {
 		t.Fatalf("truncated %v, preview head %.300q", result.Truncated, result.Preview)
+	}
+}
+
+// Each hit is named by its own fields, so the agent tells a reviewed tag from a suggested one
+// without comparing two searches.
+func TestDocumentSearchNamesEachHitsFields(t *testing.T) {
+	t.Parallel()
+	library := &fakeLibrary{response: documents.RetrievalResponse{Query: "fatture", Documents: []documents.RetrievalDocument{{DocumentID: "doc_1"}}}}
+	fields := officeFilters()
+	fields.named = map[string]docfields.FieldNames{"doc_1": {
+		Type: &docfields.NamedValue{Name: "Fattura", Reviewed: true}, Tags: []docfields.NamedValue{{Name: "Cliente"}},
+	}}
+	out := runFiltered(t, &DocumentSearch{Library: library, Fields: fields}, `{"query":"fatture"}`)
+	if !slices.Equal(fields.namedAsked, []string{"doc_1"}) {
+		t.Fatalf("asked names for %v", fields.namedAsked)
+	}
+	hit := out.DocumentFields["doc_1"]
+	if hit.Type == nil || *hit.Type != (docfields.NamedValue{Name: "Fattura", Reviewed: true}) || len(hit.Tags) != 1 || hit.Tags[0].Reviewed {
+		t.Fatalf("document_fields = %+v", out.DocumentFields)
+	}
+}
+
+// Fields that cannot be read never fail the search, and an answer with no document asks nothing.
+func TestDocumentSearchAnswersWithoutDocumentFieldsItCannotRead(t *testing.T) {
+	t.Parallel()
+	library := &fakeLibrary{response: documents.RetrievalResponse{Query: "fatture", Documents: []documents.RetrievalDocument{{DocumentID: "doc_1"}}}}
+	fields := officeFilters()
+	fields.namedErr = errors.New("arcadedb: connection refused")
+	result, err := (&DocumentSearch{Library: library, Fields: fields}).Execute(toolTestContext(t), json.RawMessage(`{"query":"fatture"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := resultKeys(t, result); slices.Contains(keys, "document_fields") || !slices.Contains(keys, "documents") {
+		t.Fatalf("result keys = %v", keys)
+	}
+	empty := officeFilters()
+	runFiltered(t, &DocumentSearch{Library: &fakeLibrary{response: documents.RetrievalResponse{Documents: []documents.RetrievalDocument{}}}, Fields: empty}, `{"query":"fatture"}`)
+	if empty.namedAsked != nil {
+		t.Fatalf("asked names for an empty answer: %v", empty.namedAsked)
 	}
 }
 

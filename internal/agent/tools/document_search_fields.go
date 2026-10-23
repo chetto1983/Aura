@@ -13,12 +13,14 @@ import (
 
 // DocumentFieldFilters is what document_search needs of the document fields: the label ids behind
 // the names it is given, how many documents each filter admits, the types and tags the library
-// holds, and the library's own list for a search with no query. *docfields.Store in production.
+// holds, the library's own list for a search with no query, and each returned document's fields
+// by name. *docfields.Store in production.
 type DocumentFieldFilters interface {
 	ResolveNames(ctx context.Context, identityID string, kind docfields.Kind, names []string) ([]string, map[string][]string, error)
 	Admissions(ctx context.Context, identityID string, f arcadedb.FieldFilter) ([]arcadedb.FieldAdmission, error)
 	LibraryLists(ctx context.Context, identityID string) (docfields.LibraryLists, error)
 	List(ctx context.Context, identityID string, q docfields.ListQuery) (docfields.ListResult, error)
+	DocumentFields(ctx context.Context, identityID string, documentIDs []string) (map[string]docfields.FieldNames, error)
 }
 
 // documentFieldArgs are the filters by the fields the operator keeps on documents (spec decision
@@ -135,6 +137,24 @@ func (t *DocumentSearch) libraryLists(ctx context.Context, identityID string) *d
 		return nil
 	}
 	return &lists
+}
+
+// documentFields names each returned document's fields. Fields that cannot be read are left out,
+// like the lists, rather than failing a search that can still answer.
+func (t *DocumentSearch) documentFields(ctx context.Context, identityID string, found []documents.RetrievalDocument) map[string]docfields.FieldNames {
+	if t.Fields == nil || len(found) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(found))
+	for _, document := range found {
+		ids = append(ids, document.DocumentID)
+	}
+	named, err := t.Fields.DocumentFields(ctx, identityID, ids)
+	if err != nil {
+		slog.Warn("document_search: document fields unavailable", "err", err)
+		return nil
+	}
+	return named
 }
 
 // admitsNothing reports a filter no document passes: searching under it can only come back empty.
