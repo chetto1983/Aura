@@ -97,7 +97,7 @@ func TestAnswersAtWidthRefusesAModelThatRejectsDimensionsOrAnswersAnotherWidth(t
 // and Refresh asks every model again.
 func TestCompatibilityRemembersVerdictsAndRetriesWhatFailedForAMoment(t *testing.T) {
 	srv := newCompatServer(t)
-	compat := &Compatibility{Client: srv.Client(), CloudBaseURL: srv.URL, Width: 768, Key: func() string { return "key" }}
+	compat := &Compatibility{Client: srv.Client(), CloudBaseURL: srv.URL, Width: 768, Key: staticCredential("key")}
 	models := []string{"ok", "refuses", "wide", "flaky"}
 
 	first, err := compat.Check(t.Context(), models, false)
@@ -131,7 +131,7 @@ func TestCompatibilityRemembersVerdictsAndRetriesWhatFailedForAMoment(t *testing
 
 func TestCompatibilityWithoutAKeySendsNothing(t *testing.T) {
 	srv := newCompatServer(t)
-	compat := &Compatibility{Client: srv.Client(), CloudBaseURL: srv.URL, Width: 768, Key: func() string { return " " }}
+	compat := &Compatibility{Client: srv.Client(), CloudBaseURL: srv.URL, Width: 768, Key: staticCredential(" ")}
 	if _, err := compat.Check(t.Context(), []string{"ok"}, false); !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("err = %v, want ErrNoCredential", err)
 	}

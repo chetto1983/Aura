@@ -142,7 +142,7 @@ func evalMemory(t *testing.T) *arcadedb.Client {
 	if err != nil {
 		t.Fatalf("memory client: %v", err)
 	}
-	client = client.WithEmbedder(arcadedb.NewMemoryEmbedder(config.LoadEmbed(), func() string { return "" }))
+	client = client.WithEmbedder(arcadedb.NewMemoryEmbedder(config.LoadEmbed(), nil))
 	if err := client.EnsureMemorySchema(context.Background()); err != nil {
 		t.Fatalf("memory schema: %v", err)
 	}

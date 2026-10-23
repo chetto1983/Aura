@@ -91,7 +91,7 @@ func agentMemoryLiveTenantClient(t *testing.T, ctx context.Context, identityID s
 			BaseURL:    agentMemoryLiveEnv("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			CloudModel: os.Getenv("AURA_EMBED_MODEL"),
 		},
-		func() string { return os.Getenv("OPENROUTER_API_KEY") },
+		func(context.Context) (string, error) { return os.Getenv("OPENROUTER_API_KEY"), nil },
 	)
 	client, err := newTenants(base, admin, embedder, credentials).For(ctx, identityID)
 	if err != nil {

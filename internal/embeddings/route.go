@@ -22,7 +22,7 @@ type Route struct {
 // (the local route with no base). credential is read on every request of a cloud route; a
 // cloud route built without one refuses to embed instead of sending an unauthenticated
 // request.
-func NewRoute(embed config.EmbedConfig, credential func() string, dims int, timeout time.Duration) *Route {
+func NewRoute(embed config.EmbedConfig, credential CredentialFunc, dims int, timeout time.Duration) *Route {
 	base, _, model := config.ResolveEmbedRoute(embed, "")
 	base = strings.TrimRight(strings.TrimSpace(base), "/")
 	if base == "" {
@@ -37,7 +37,7 @@ func NewRoute(embed config.EmbedConfig, credential func() string, dims int, time
 	}
 	if config.EmbedRouteKind(embed) != config.EmbedLocal {
 		if credential == nil {
-			credential = func() string { return "" }
+			credential = func(context.Context) (string, error) { return "", nil }
 		}
 		client.Credential = credential
 	}
@@ -52,8 +52,8 @@ func (r *Route) Embed(ctx context.Context, texts []string) ([][]float64, error) 
 // Space names the space this route's vectors are in. A hosted route without a credential
 // produces no vector, so it has no space either.
 func (r *Route) Space(ctx context.Context) (Space, error) {
-	if r.client.hosted() && r.client.key() == "" {
-		return Space{}, ErrNoCredential
+	if err := r.client.requireKey(ctx); err != nil {
+		return Space{}, err
 	}
 	return RouteSpace(ctx, r.client.httpClient(), r.embed, r.client.Dimensions)
 }

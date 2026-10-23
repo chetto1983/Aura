@@ -217,7 +217,7 @@ func TestClientReadsTheCredentialOnEveryRequest(t *testing.T) {
 	t.Cleanup(server.Close)
 	key := "first"
 	client := &Client{
-		BaseURL: server.URL, Model: "model", Credential: func() string { return key },
+		BaseURL: server.URL, Model: "model", Credential: func(context.Context) (string, error) { return key, nil },
 		Client: server.Client(), Dimensions: 2,
 	}
 	if _, err := client.Embed(t.Context(), []string{"a"}); err != nil {
@@ -246,7 +246,7 @@ func TestClientRefusesAHostedRouteWithoutACredential(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 	client := &Client{
-		BaseURL: server.URL, Model: "model", Credential: func() string { return " " },
+		BaseURL: server.URL, Model: "model", Credential: staticCredential(" "),
 		Client: server.Client(), Dimensions: 2,
 	}
 	if _, err := client.Embed(t.Context(), []string{"a"}); !errors.Is(err, ErrNoCredential) {

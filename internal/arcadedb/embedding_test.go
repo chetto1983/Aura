@@ -43,7 +43,8 @@ func TestNewMemoryEmbedderIsABareNilWhenDenseRetrievalIsOff(t *testing.T) {
 }
 
 func TestNewMemoryEmbedderNamesItsSpaceAtTheIndexWidth(t *testing.T) {
-	embedder := NewMemoryEmbedder(config.EmbedConfig{CloudModel: "vendor/embed"}, func() string { return "key" })
+	embedder := NewMemoryEmbedder(config.EmbedConfig{CloudModel: "vendor/embed"},
+		func(context.Context) (string, error) { return "key", nil })
 	space, err := embedder.Space(context.Background())
 	if err != nil {
 		t.Fatalf("Space: %v", err)

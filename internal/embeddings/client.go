@@ -62,6 +62,10 @@ func RejectsInput(err error) bool {
 	return false
 }
 
+// CredentialFunc reads a hosted route's key at the moment a request needs it. An error is
+// the store failing, never a missing key: a missing key is "".
+type CredentialFunc func(ctx context.Context) (string, error)
+
 // Client calls an OpenAI-compatible /v1/embeddings endpoint. With neither APIKey nor
 // Credential it is the local llama.cpp sidecar; either one selects a hosted route.
 type Client struct {
@@ -72,7 +76,7 @@ type Client struct {
 	// in the cockpit reaches a running client. Setting it marks the route hosted even while
 	// it returns "": such a client refuses to embed (ErrNoCredential) rather than send an
 	// unauthenticated request to a provider.
-	Credential func() string
+	Credential CredentialFunc
 	Client     *http.Client
 	Dimensions int
 	BatchSize  int
@@ -109,8 +113,8 @@ func (c *Client) Embed(ctx context.Context, texts []string) ([][]float64, error)
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	if c.hosted() && c.key() == "" {
-		return nil, ErrNoCredential
+	if err := c.requireKey(ctx); err != nil {
+		return nil, err
 	}
 	dimensions := c.Dimensions
 	if dimensions <= 0 {
@@ -203,7 +207,11 @@ func (c *Client) postJSON(ctx context.Context, url string, payload, out any) err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if c.hosted() {
-		req.Header.Set("Authorization", "Bearer "+c.key())
+		key, err := c.key(ctx)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
@@ -230,12 +238,33 @@ func (c *Client) hosted() bool {
 	return c.Credential != nil || strings.TrimSpace(c.APIKey) != ""
 }
 
-// key is this request's credential: Credential's current answer, else APIKey.
-func (c *Client) key() string {
-	if c.Credential != nil {
-		return strings.TrimSpace(c.Credential())
+// key is this request's credential: Credential's current answer, else APIKey. A read that
+// fails comes back as the error it is, so a store that cannot be read is never reported as
+// a missing key.
+func (c *Client) key(ctx context.Context) (string, error) {
+	if c.Credential == nil {
+		return strings.TrimSpace(c.APIKey), nil
 	}
-	return strings.TrimSpace(c.APIKey)
+	key, err := c.Credential(ctx)
+	if err != nil {
+		return "", fmt.Errorf("embeddings: credential: %w", err)
+	}
+	return strings.TrimSpace(key), nil
+}
+
+// requireKey refuses a hosted route whose key is unreadable or empty before anything is sent.
+func (c *Client) requireKey(ctx context.Context) error {
+	if !c.hosted() {
+		return nil
+	}
+	key, err := c.key(ctx)
+	if err != nil {
+		return err
+	}
+	if key == "" {
+		return ErrNoCredential
+	}
+	return nil
 }
 
 func (c *Client) httpClient() *http.Client {

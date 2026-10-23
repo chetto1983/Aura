@@ -55,9 +55,13 @@ func (c *Client) catalogEntry(ctx context.Context) (llm.ModelCatalogEntry, error
 	if c.hosted() {
 		provider, catalogue = "openrouter", endpoint(c.BaseURL)
 	}
+	key, err := c.key(ctx)
+	if err != nil {
+		return llm.ModelCatalogEntry{}, err
+	}
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout())
 	defer cancel()
-	entries, err := llm.FetchModelCatalog(reqCtx, c.httpClient(), provider, catalogue, c.key())
+	entries, err := llm.FetchModelCatalog(reqCtx, c.httpClient(), provider, catalogue, key)
 	if err != nil {
 		return llm.ModelCatalogEntry{}, err
 	}

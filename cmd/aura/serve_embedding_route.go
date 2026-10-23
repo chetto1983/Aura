@@ -25,7 +25,7 @@ var bootEmbedEnvironment = config.LoadEmbed()
 type embeddingRoutes struct {
 	memory, documents arcadedb.DenseEmbedder
 	corpus            *arcadedb.TenantBackfill
-	key               func() string
+	key               embeddings.CredentialFunc
 	dims              int
 	http              *http.Client
 	environment       config.EmbedConfig
@@ -58,7 +58,11 @@ func (e *embeddingRoutes) Work(ctx context.Context, memory, documents string, li
 // Probe measures the route at the documents width with the daemon's own credential. The memory
 // family's target is named apart only when its pinned width differs.
 func (e *embeddingRoutes) Probe(ctx context.Context, embed config.EmbedConfig) (embeddings.RouteProbe, embeddings.Space, error) {
-	probe, err := embeddings.ProbeRoute(ctx, e.http, embed, e.key(), e.dims)
+	key, err := e.key(ctx)
+	if err != nil {
+		return embeddings.RouteProbe{}, embeddings.Space{}, fmt.Errorf("embedding credential: %w", err)
+	}
+	probe, err := embeddings.ProbeRoute(ctx, e.http, embed, key, e.dims)
 	if err != nil || e.dims == arcadedb.MemoryDimensions {
 		return probe, probe.Space, err
 	}

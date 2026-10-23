@@ -50,17 +50,20 @@ type Compatibility struct {
 	// CloudBaseURL is the route's cloud base; empty is OpenRouter, the same rule as the route.
 	CloudBaseURL string
 	Width        int
-	Key          func() string
+	Key          CredentialFunc
 
 	mu    sync.Mutex
 	known map[string]bool
 }
 
 // Check answers, for each model, whether it answers at Width. Without a key nothing is sent and
-// the answer is ErrNoCredential.
+// the answer is ErrNoCredential; a key that cannot be read is that read's error.
 func (c *Compatibility) Check(ctx context.Context, models []string, refresh bool) (map[string]bool, error) {
-	key := strings.TrimSpace(c.Key())
-	if key == "" {
+	key, err := c.Key(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("embeddings: credential: %w", err)
+	}
+	if key = strings.TrimSpace(key); key == "" {
 		return nil, ErrNoCredential
 	}
 	c.mu.Lock()

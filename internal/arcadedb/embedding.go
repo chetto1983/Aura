@@ -32,7 +32,7 @@ func withTask(prefix string, texts []string) []string {
 // when dense embedding is switched off. The result is an interface on purpose: a nil
 // *embeddings.Route stored in one is non-nil, and every "no embedder" branch would call
 // through it. credential is read on every request of a cloud route.
-func NewMemoryEmbedder(embed config.EmbedConfig, credential func() string) DenseEmbedder {
+func NewMemoryEmbedder(embed config.EmbedConfig, credential embeddings.CredentialFunc) DenseEmbedder {
 	route := embeddings.NewRoute(embed, credential, vectorDimensions, DefaultTimeout)
 	if route == nil {
 		return nil

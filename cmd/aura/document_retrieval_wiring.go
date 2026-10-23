@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -17,7 +18,7 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 		return nil, fmt.Errorf("document retriever requires configuration and database pool")
 	}
 	retriever := &documents.HostRetriever{
-		Embedder: newQueryEmbedder(cfg, func() string { return cfg.LLM.APIKey }),
+		Embedder: newQueryEmbedder(cfg, func(context.Context) (string, error) { return cfg.LLM.APIKey, nil }),
 		Config: documents.RetrievalConfig{
 			CandidateLimit: cfg.DocumentRetrieval.RetrievalCandidates,
 			FusionStrategy: arcadedb.FusionStrategy(cfg.DocumentRetrieval.FusionStrategy),
@@ -46,7 +47,7 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 // width (AURA_EMBED_DIMENSIONS, spec §1), or nil when dense embedding is switched off. It is an
 // interface on purpose: a nil *embeddings.Route stored in one is non-nil. The timeout is the
 // one the query embedder always had.
-func newQueryEmbedder(cfg *config.Config, credential func() string) documents.QueryEmbedder {
+func newQueryEmbedder(cfg *config.Config, credential embeddings.CredentialFunc) documents.QueryEmbedder {
 	route := embeddings.NewRoute(cfg.Embed, credential, cfg.Embed.Dimensions, documentQueryTimeout(cfg))
 	if route == nil {
 		return nil

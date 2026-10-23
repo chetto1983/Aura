@@ -1,19 +1,21 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/embeddings"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
 // liveKey reads the running LLM profile's key on every request: a key rotated in the cockpit
 // replaces that profile in place (serve_settings.go primaryLLMRouteReloader) without a restart,
 // and a boot copy would keep embedding with the revoked key (spec §5).
-func liveKey(runtime *llm.Runtime) func() string {
-	return func() string { return runtime.Snapshot().Config.APIKey }
+func liveKey(runtime *llm.Runtime) embeddings.CredentialFunc {
+	return func(context.Context) (string, error) { return runtime.Snapshot().Config.APIKey, nil }
 }
 
 // memoryEmbedder is the daemon's one memory route.

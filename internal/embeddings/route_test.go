@@ -1,8 +1,11 @@
 package embeddings
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -42,7 +45,7 @@ func TestRouteWithoutAKeyHasNoSpace(t *testing.T) {
 	if _, err := NewRoute(cloud, nil, 768, time.Second).Space(t.Context()); !errors.Is(err, ErrNoCredential) {
 		t.Fatalf("keyless cloud route: err = %v, want ErrNoCredential", err)
 	}
-	keyed := NewRoute(cloud, func() string { return "sk-or" }, 768, time.Second)
+	keyed := NewRoute(cloud, staticCredential("sk-or"), 768, time.Second)
 	space, err := keyed.Space(t.Context())
 	if err != nil {
 		t.Fatalf("Space: %v", err)
@@ -52,5 +55,54 @@ func TestRouteWithoutAKeyHasNoSpace(t *testing.T) {
 	}
 	if keyed.client.BaseURL != "https://openrouter.ai/api" {
 		t.Fatalf("base = %q, want OpenRouter", keyed.client.BaseURL)
+	}
+}
+
+func staticCredential(key string) CredentialFunc {
+	return func(context.Context) (string, error) { return key, nil }
+}
+
+// countingServer counts every request that reaches it; a route refusing to embed must leave it
+// at zero.
+func countingServer(t *testing.T) (*httptest.Server, func() int) {
+	t.Helper()
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests.Add(1) }))
+	t.Cleanup(server.Close)
+	return server, func() int { return int(requests.Load()) }
+}
+
+// A credential the store could not read is not a missing one: the operator must see the
+// store's failure, never "no key" over a key that is there.
+func TestRouteReturnsTheCredentialReadError(t *testing.T) {
+	errBoom := errors.New("sealed row unreadable")
+	server, requests := countingServer(t)
+	route := NewRoute(config.EmbedConfig{CloudModel: "mistral-embed", CloudBaseURL: server.URL},
+		func(context.Context) (string, error) { return "", errBoom }, 768, time.Second)
+	_, embedErr := route.Embed(t.Context(), []string{"a"})
+	_, spaceErr := route.Space(t.Context())
+	for name, err := range map[string]error{"Embed": embedErr, "Space": spaceErr} {
+		if !errors.Is(err, errBoom) || errors.Is(err, ErrNoCredential) {
+			t.Fatalf("%s: err = %v, want the read error and not ErrNoCredential", name, err)
+		}
+	}
+	if n := requests(); n != 0 {
+		t.Fatalf("%d request(s) reached the endpoint", n)
+	}
+}
+
+func TestRouteRefusesAnEmptyCredential(t *testing.T) {
+	server, requests := countingServer(t)
+	route := NewRoute(config.EmbedConfig{CloudModel: "mistral-embed", CloudBaseURL: server.URL},
+		staticCredential(""), 768, time.Second)
+	_, embedErr := route.Embed(t.Context(), []string{"a"})
+	_, spaceErr := route.Space(t.Context())
+	for name, err := range map[string]error{"Embed": embedErr, "Space": spaceErr} {
+		if !errors.Is(err, ErrNoCredential) {
+			t.Fatalf("%s: err = %v, want ErrNoCredential", name, err)
+		}
+	}
+	if n := requests(); n != 0 {
+		t.Fatalf("%d request(s) reached the endpoint", n)
 	}
 }
