@@ -3,7 +3,7 @@ package docfields
 import (
 	"context"
 	"fmt"
-	"strings"
+	"slices"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 )
@@ -60,29 +60,24 @@ func (s *Store) DocumentFields(ctx context.Context, identityID string, documentI
 	return out, nil
 }
 
-// nameFields names values by their labels. A date is its own name.
+// nameFields names the projection of values, the very values a filter matches on, by their labels.
+// A date is its own name; a label id with no name is left out.
 func nameFields(values []Value, names map[string]string) FieldNames {
-	var f FieldNames
-	for _, v := range values {
-		if strings.HasPrefix(v.ValueKey, proposedPrefix) {
-			continue
+	p := (&Fields{Values: values}).projection()
+	single := func(key, ok, name string) *NamedValue {
+		if key == "" || name == "" {
+			return nil
 		}
-		named := NamedValue{Name: names[v.ValueKey], Reviewed: v.reviewed()}
-		if v.Field == FieldDocumentDate {
-			named.Name = v.ValueKey
-		}
-		if named.Name == "" {
-			continue
-		}
-		switch v.Field {
-		case FieldType:
-			f.Type = &named
-		case FieldCounterparty:
-			f.Counterparty = &named
-		case FieldDocumentDate:
-			f.DocumentDate = &named
-		case FieldTag:
-			f.Tags = append(f.Tags, named)
+		return &NamedValue{Name: name, Reviewed: ok != ""}
+	}
+	f := FieldNames{
+		Type:         single(p.Type, p.TypeOK, names[p.Type]),
+		Counterparty: single(p.Counterparty, p.CounterpartyOK, names[p.Counterparty]),
+		DocumentDate: single(p.DocumentDate, p.DocumentDateOK, p.DocumentDate),
+	}
+	for _, tag := range p.Tags {
+		if name := names[tag]; name != "" {
+			f.Tags = append(f.Tags, NamedValue{Name: name, Reviewed: slices.Contains(p.TagsOK, tag)})
 		}
 	}
 	return f

@@ -285,7 +285,7 @@ func libraryPredicates(q ListQuery, params map[string]any) ([]string, error) {
 		return nil, err
 	}
 	if search := strings.TrimSpace(q.Search); search != "" && q.SearchMode != "content" {
-		params["search"] = "%" + likeLiteral.Replace(strings.ToLower(search)) + "%"
+		params["search"] = "%" + arcadedb.EscapeLike(strings.ToLower(search)) + "%"
 		out = append(out, "file_name.toLowerCase() LIKE :search")
 	}
 	if q.NeedsReview {
@@ -294,9 +294,6 @@ func libraryPredicates(q ListQuery, params map[string]any) ([]string, error) {
 	out = append(out, workspacePredicates(q, params)...)
 	return out, nil
 }
-
-// likeLiteral keeps a search's own characters literal: ArcadeDB's LIKE wildcards are % and ?.
-var likeLiteral = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `?`, `\?`)
 
 // documentRecords is the record id of each named document, in order, created for those that have
 // none: one script for every missing record. A name that is no document of this identity's is

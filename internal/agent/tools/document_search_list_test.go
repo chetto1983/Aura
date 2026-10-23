@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/docfields"
 	"github.com/chetto1983/aura/internal/documents"
@@ -18,8 +19,8 @@ func (f *fakeFieldFilters) List(_ context.Context, _ string, q docfields.ListQue
 func listingFilters() *fakeFieldFilters {
 	fields := officeFilters()
 	fields.listed = docfields.ListResult{Total: 3, Rows: []docfields.DocumentRow{
-		{ID: "doc_a", SourceKey: "archivio/a.pdf", FileName: "a.pdf", SizeBytes: 1200, IndexedAt: "2026-10-23T10:40:00Z", RawSHA256: "aa"},
-		{ID: "doc_b", SourceKey: "archivio/b.pdf", FileName: "b.pdf", SizeBytes: 900, IndexedAt: "2026-10-23T10:39:00Z", RawSHA256: "bb"},
+		{ID: "doc_a", SourceKey: "archivio/a.pdf", FileName: "a.pdf", SizeBytes: 1200, IndexedAt: "2026-10-23 10:40:00.123", RawSHA256: "aa"},
+		{ID: "doc_b", SourceKey: "archivio/b.pdf", FileName: "b.pdf", SizeBytes: 900, IndexedAt: "2026-10-23 10:39:00.000", RawSHA256: "bb"},
 	}}
 	return fields
 }
@@ -42,7 +43,8 @@ func TestDocumentSearchListsWhatTheFiltersAdmit(t *testing.T) {
 		t.Fatalf("listing = %+v, matching %d", out.RetrievalResponse, out.Matching)
 	}
 	if first := out.Documents[0]; first.DocumentID != "doc_a" || first.Title != "a.pdf" || first.SourceKey != "archivio/a.pdf" ||
-		first.OriginalSHA256 != "aa" || !first.RequiresOpen || first.SizeBytes == nil || *first.SizeBytes != 1200 || first.IndexedAt == nil {
+		first.OriginalSHA256 != "aa" || !first.RequiresOpen || first.SizeBytes == nil || *first.SizeBytes != 1200 ||
+		first.IndexedAt == nil || !first.IndexedAt.Equal(time.Date(2026, 10, 23, 10, 40, 0, 123e6, time.UTC)) {
 		t.Fatalf("first listed = %+v", first)
 	}
 	if out.Lists == nil {

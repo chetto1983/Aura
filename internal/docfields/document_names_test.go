@@ -38,3 +38,15 @@ func TestNameFieldsOfAnUnlabelledDocumentIsEmpty(t *testing.T) {
 		t.Fatalf("fields = %+v", got)
 	}
 }
+
+// The names are the projection's, the values a filter matches on: when a single-valued field holds
+// two values and the last one's label is gone, the filter matches the gone one, so no name shows.
+func TestNameFieldsShowWhatAFilterMatches(t *testing.T) {
+	got := nameFields([]Value{
+		{Field: FieldType, ValueKey: "l-fattura", SetBy: SetByOperator},
+		{Field: FieldType, ValueKey: "l-gone", SetBy: SetByOperator},
+	}, map[string]string{"l-fattura": "Fattura"})
+	if got.Type != nil {
+		t.Fatalf("type = %+v, want none: the projection stamps l-gone", got.Type)
+	}
+}

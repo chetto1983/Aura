@@ -81,9 +81,10 @@ func (t *DocumentSearch) Spec() Spec {
 			"spreadsheet or table, and any conversion -- call document_open with that document_id; it writes " +
 			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
 			"query may be a question, a topic, an entity, an exact identifier or a filename. Omit it, with type, " +
-			"counterparty, tags or a date bound, to list every document those filters admit, most recently added " +
-			"first, with matching_documents saying how many there are: that is how to answer 'show me the " +
-			"documents tagged X', which a ranked search can miss. " +
+			"counterparty, tags or a date bound, to list up to limit of the documents those filters admit, most " +
+			"recently added first, with matching_documents saying how many there are in all: that is how to answer " +
+			"'show me the documents tagged X', which a ranked search can miss. A listed document has no passages: " +
+			"answer from its title and document_fields, and open it only to read its content. " +
 			"document_ids optionally narrows a search to ids already returned to this operator. " +
 			"type, counterparty and tags narrow it to documents whose fields hold those names, from the " +
 			"operator's own lists (case-insensitive, exact); tags_mode all asks for every tag; date_from and " +

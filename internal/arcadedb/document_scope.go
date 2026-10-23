@@ -26,9 +26,12 @@ func SourcePredicate(keys, prefixes []string, params map[string]any) string {
 	return "(" + strings.Join(parts, " OR ") + ")"
 }
 
+// likeLiteral escapes ArcadeDB's LIKE wildcards, % and ?, and the escape itself.
+var likeLiteral = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `?`, `\?`)
+
+// EscapeLike keeps text literal inside a LIKE pattern: a caller adds the wildcards it means.
+func EscapeLike(text string) string { return likeLiteral.Replace(text) }
+
 // escapeLikePrefix keeps Garage keys containing ArcadeDB LIKE wildcards literal. The only
 // wildcard this function introduces is the final %, which means "descendant of folder".
-func escapeLikePrefix(prefix string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `?`, `\?`)
-	return replacer.Replace(prefix) + "%"
-}
+func escapeLikePrefix(prefix string) string { return EscapeLike(prefix) + "%" }

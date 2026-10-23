@@ -132,6 +132,13 @@ func TestDocumentSearchSpecNamesCitationAndOpenContract(t *testing.T) {
 			t.Errorf("description never mentions %q", want)
 		}
 	}
+	// A listing answers "which documents" from titles and fields; telling the agent to open every
+	// requires_open hit would open each listed file for nothing.
+	for _, want := range []string{"up to limit", "answer from its title and document_fields"} {
+		if !strings.Contains(spec.Description, want) {
+			t.Errorf("description never says %q of a listing", want)
+		}
+	}
 }
 
 func toolTestContext(t *testing.T) context.Context {
