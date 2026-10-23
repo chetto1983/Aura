@@ -95,6 +95,7 @@ type filteredSearch struct {
 	} `json:"filters"`
 	Lists          *docfields.LibraryLists         `json:"library_lists"`
 	Matching       int                             `json:"matching_documents"`
+	NextOffset     int                             `json:"next_offset"`
 	DocumentFields map[string]docfields.FieldNames `json:"document_fields"`
 }
 

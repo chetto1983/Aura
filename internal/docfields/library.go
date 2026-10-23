@@ -52,7 +52,8 @@ type DocumentDetail struct {
 // for all three, whether suggestions count. SearchMode selects filename matching or the content
 // index. Inbox includes records without reviewed_at, independently of NeedsReview suggestions.
 // FileType defaults to documents; all explicitly includes media, code and unknown extensions.
-// SourceKeys and SourcePrefixes are a scope: the objects named, or any below a folder.
+// SourceKeys and SourcePrefixes are a scope: the objects named, or any below a folder. DocumentIDs
+// narrows to known documents by the id the search returns.
 // Sort is a column of sortColumns, descending with a leading "-".
 type ListQuery struct {
 	Fields         arcadedb.FieldFilter
@@ -64,6 +65,7 @@ type ListQuery struct {
 	Inbox          bool
 	SourceKeys     []string
 	SourcePrefixes []string
+	DocumentIDs    []string
 	Custom         []CustomFilter
 	NeedsReview    bool
 	Sort           string

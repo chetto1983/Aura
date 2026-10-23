@@ -32,6 +32,7 @@ type documentSearchArgs struct {
 	Limit       int      `json:"limit"`
 	DocumentIDs []string `json:"document_ids"`
 	Neighbours  int      `json:"neighbours"`
+	Offset      int      `json:"offset"`
 	documentFieldArgs
 }
 
@@ -40,9 +41,9 @@ type documentSearchArgs struct {
 // result past the preview cap is cut inside the passages, while the agent picks its next filter
 // from them.
 type documentSearchResult struct {
-	Filters        []documentFilterReport          `json:"filters,omitempty"`
-	Lists          *docfields.LibraryLists         `json:"library_lists,omitempty"`
-	Matching       int                             `json:"matching_documents,omitempty"`
+	Filters []documentFilterReport  `json:"filters,omitempty"`
+	Lists   *docfields.LibraryLists `json:"library_lists,omitempty"`
+	listingPage
 	DocumentFields map[string]docfields.FieldNames `json:"document_fields,omitempty"`
 	documents.RetrievalResponse
 }
@@ -84,14 +85,19 @@ func (t *DocumentSearch) Spec() Spec {
 			"counterparty, tags or a date bound, to list up to limit of the documents those filters admit, most " +
 			"recently added first, with matching_documents saying how many there are in all: that is how to answer " +
 			"'show me the documents tagged X', which a ranked search can miss. A listed document has no passages: " +
-			"answer from its title and document_fields, and open it only to read its content. " +
-			"document_ids optionally narrows a search to ids already returned to this operator. " +
+			"answer from its title and document_fields, and open it only to read its content. next_offset, when " +
+			"present, is where the next page starts: pass it as offset to read on. " +
+			"document_ids narrows a search to ids already returned to this operator, or, with no query, lists " +
+			"those documents with their fields. " +
 			"type, counterparty and tags narrow it to documents whose fields hold those names, from the " +
 			"operator's own lists (case-insensitive, exact); tags_mode all asks for every tag; date_from and " +
 			"date_to bound the document's date (YYYY-MM-DD); include_unreviewed false keeps only values the " +
 			"operator set or accepted. filters in the result says what each admitted, whether a match rests on " +
-			"suggestions, and the closest names on the list when one matched nothing -- correct the name or drop " +
-			"the filter. " +
+			"suggestions, and the names on the list that resemble one that matched nothing -- correct the name, " +
+			"or read library_lists for the names there are. " +
+			"Three counts, three scopes: library_lists counts the whole library, suggestions included; " +
+			"admitted_documents is what each filter admits on its own across the library; matching_documents is " +
+			"what a listing's filters, @-scope, document_ids and include_unreviewed admit together. " +
 			"library_lists in every result names the types and tags the operator's library holds, with how " +
 			"many documents carry each: when the question asks for a kind of document or a quality its words " +
 			"do not spell (internal, draft), filter by the listed name. " +
@@ -104,7 +110,8 @@ func (t *DocumentSearch) Spec() Spec {
   "properties": {
     "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename. Omit it, with a filter, to list the documents the filter admits."},
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."},
-    "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids."},
+    "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids: narrow a search, or with no query list those documents."},
+    "offset": {"type": "integer", "minimum": 0, "description": "Listing only (no query): skip this many documents; next_offset says where the next page starts."},
     "neighbours": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Also return this many passages either side of every hit. Default 0."},
     "type": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}, "description": "Document type names, e.g. Fattura."},
     "counterparty": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1}, "description": "Counterparty names."},
@@ -131,11 +138,11 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	}
 	args.Query = strings.TrimSpace(args.Query)
 	listing := args.Query == ""
-	if listing && args.empty() {
-		return ToolResult{}, fmt.Errorf("document_search: query is required, unless type, counterparty, tags or a date bound lists the documents they admit")
+	if listing && args.empty() && len(args.DocumentIDs) == 0 {
+		return ToolResult{}, fmt.Errorf("document_search: query is required, unless type, counterparty, tags, a date bound or document_ids lists the documents they admit")
 	}
-	if listing && len(args.DocumentIDs) > 0 {
-		return ToolResult{}, fmt.Errorf("document_search: document_ids narrows a search, so it needs a query")
+	if args.Offset < 0 || (args.Offset > 0 && !listing) {
+		return ToolResult{}, fmt.Errorf("document_search: offset pages a listing, which has no query, and cannot be negative")
 	}
 	if args.Limit < 0 {
 		return ToolResult{}, fmt.Errorf("document_search: limit must be positive")
@@ -151,11 +158,11 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: %w", err)
 	}
-	response, matching := filterAbstention(args.Query), 0
+	response, page := filterAbstention(args.Query), listingPage{}
 	switch {
 	case admitsNothing(filters):
 	case listing:
-		response, matching, err = t.listDocuments(ctx, owner, fields, effectiveDocumentLimit(args.Limit))
+		response, page, err = t.listDocuments(ctx, owner, fields, args)
 	default:
 		response, err = t.Library.Retrieve(ctx, documents.RetrievalRequest{
 			IdentityID: owner, Query: args.Query,
@@ -167,7 +174,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 		return ToolResult{}, fmt.Errorf("document_search: %w", err)
 	}
 	out, err := json.Marshal(documentSearchResult{
-		RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner), Matching: matching,
+		RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner), listingPage: page,
 		DocumentFields: t.documentFields(ctx, owner, response.Documents),
 	})
 	if err != nil {

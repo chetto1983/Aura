@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/docfields"
@@ -12,21 +13,35 @@ import (
 // most recently added first.
 const documentListProfile = "field_list"
 
-// listDocuments answers a search with no query: the library's own list under the filters, the
-// one the cockpit shows. A document the filters admit is never hidden behind a relevance floor,
-// which is what "show me the documents tagged X" needs. It returns the listing and how many
-// documents match in all.
-func (t *DocumentSearch) listDocuments(ctx context.Context, owner string, fields *arcadedb.FieldFilter, limit int) (documents.RetrievalResponse, int, error) {
+// listingPage is where a listing stands: how many documents match in all, and the offset of the
+// next page while one remains.
+type listingPage struct {
+	Matching   int `json:"matching_documents,omitempty"`
+	NextOffset int `json:"next_offset,omitempty"`
+}
+
+// listDocuments answers a search with no query: the library's own list under the filters and
+// document_ids, the one the cockpit shows. A document they admit is never hidden behind a
+// relevance floor, which is what "show me the documents tagged X" needs.
+func (t *DocumentSearch) listDocuments(ctx context.Context, owner string, fields *arcadedb.FieldFilter, args documentSearchArgs) (documents.RetrievalResponse, listingPage, error) {
+	if t.Fields == nil {
+		return documents.RetrievalResponse{}, listingPage{}, fmt.Errorf("document fields are not configured, so there is no list to read")
+	}
 	scopes, err := documents.NormalizeSourceScopes(documents.SourceScopesFromContext(ctx))
 	if err != nil {
-		return documents.RetrievalResponse{}, 0, err
+		return documents.RetrievalResponse{}, listingPage{}, err
 	}
 	keys, prefixes := documents.ArcadeSourceFilters(scopes)
-	listed, err := t.Fields.List(ctx, owner, docfields.ListQuery{
-		Fields: *fields, FileType: "all", SourceKeys: keys, SourcePrefixes: prefixes, Sort: "-indexed_at", Limit: limit,
-	})
+	q := docfields.ListQuery{
+		FileType: "all", SourceKeys: keys, SourcePrefixes: prefixes, DocumentIDs: args.DocumentIDs,
+		Sort: "-indexed_at", Offset: args.Offset, Limit: effectiveDocumentLimit(args.Limit),
+	}
+	if fields != nil {
+		q.Fields = *fields
+	}
+	listed, err := t.Fields.List(ctx, owner, q)
 	if err != nil {
-		return documents.RetrievalResponse{}, 0, err
+		return documents.RetrievalResponse{}, listingPage{}, err
 	}
 	response := documents.RetrievalResponse{
 		Profile: documentListProfile, Status: documents.RetrievalComplete,
@@ -35,10 +50,16 @@ func (t *DocumentSearch) listDocuments(ctx context.Context, owner string, fields
 	for _, row := range listed.Rows {
 		response.Documents = append(response.Documents, listedDocument(row))
 	}
-	if len(response.Documents) == 0 {
+	// A page past the end is empty while the filters still admit documents: only a total of zero
+	// is the filters admitting nothing.
+	if listed.Total == 0 {
 		response.Abstained, response.AbstentionReason = true, documents.AbstainedFilterAdmitsNothing
 	}
-	return response, listed.Total, nil
+	page := listingPage{Matching: listed.Total}
+	if next := args.Offset + len(listed.Rows); len(listed.Rows) > 0 && next < listed.Total {
+		page.NextOffset = next
+	}
+	return response, page, nil
 }
 
 // listedDocument is a library row as a search document: no passage, so it is opened to be read.

@@ -70,13 +70,55 @@ func TestDocumentSearchListHonoursTheRunScope(t *testing.T) {
 	}
 }
 
+// A call that names nothing to list, and an offset into a ranked search, are refused; known ids
+// with a filter and no query are a listing.
 func TestDocumentSearchRefusesNeitherQueryNorFilter(t *testing.T) {
 	t.Parallel()
 	tool := &DocumentSearch{Library: &fakeLibrary{}, Fields: listingFilters()}
-	for _, raw := range []string{`{}`, `{"query":"  "}`, `{"tags":["urgente"],"document_ids":["doc_a"]}`} {
+	for _, raw := range []string{`{}`, `{"query":"  "}`, `{"query":"fatture","offset":1}`, `{"tags":["urgente"],"offset":-1}`} {
 		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(raw)); err == nil {
 			t.Errorf("args %s: accepted", raw)
 		}
+	}
+	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"tags":["urgente"],"document_ids":["doc_a"]}`)); err != nil {
+		t.Errorf("known ids with a filter: %v", err)
+	}
+}
+
+// A listing pages: next_offset says where the next page starts, and the last page has none.
+func TestDocumentSearchListPages(t *testing.T) {
+	t.Parallel()
+	fields := listingFilters()
+	tool := &DocumentSearch{Library: &fakeLibrary{}, Fields: fields}
+	first := runFiltered(t, tool, `{"tags":["urgente"],"limit":2}`)
+	if first.NextOffset != 2 || fields.listAsked.Offset != 0 {
+		t.Fatalf("first page: next_offset %d, asked offset %d", first.NextOffset, fields.listAsked.Offset)
+	}
+	fields.listed.Rows = fields.listed.Rows[:1]
+	last := runFiltered(t, tool, `{"tags":["urgente"],"limit":2,"offset":2}`)
+	if last.NextOffset != 0 || fields.listAsked.Offset != 2 || len(last.Documents) != 1 {
+		t.Fatalf("last page: next_offset %d, asked offset %d, %d documents", last.NextOffset, fields.listAsked.Offset, len(last.Documents))
+	}
+}
+
+// Known ids list without a query: a selection comes back with its fields.
+func TestDocumentSearchListsKnownIDs(t *testing.T) {
+	t.Parallel()
+	fields := listingFilters()
+	out := runFiltered(t, &DocumentSearch{Library: &fakeLibrary{}, Fields: fields}, `{"document_ids":["doc_a"]}`)
+	if q := fields.listAsked; q == nil || !slices.Equal(q.DocumentIDs, []string{"doc_a"}) || out.Profile != documentListProfile {
+		t.Fatalf("list query = %+v, profile %q", q, out.Profile)
+	}
+}
+
+// A page past the end is empty, but the filters still admit documents: it is no abstention.
+func TestDocumentSearchListPastTheEndIsNotAnAbstention(t *testing.T) {
+	t.Parallel()
+	fields := listingFilters()
+	fields.listed.Rows = []docfields.DocumentRow{}
+	out := runFiltered(t, &DocumentSearch{Library: &fakeLibrary{}, Fields: fields}, `{"tags":["urgente"],"offset":5}`)
+	if out.Abstained || out.NextOffset != 0 || out.Matching != 3 || len(out.Documents) != 0 {
+		t.Fatalf("past the end = %+v, matching %d, next %d", out.RetrievalResponse, out.Matching, out.NextOffset)
 	}
 }
 

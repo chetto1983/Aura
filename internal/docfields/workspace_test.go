@@ -82,3 +82,18 @@ func TestListScopeJoinsKeysAndFolders(t *testing.T) {
 		t.Fatalf("a scope of 201 entries: %v", err)
 	}
 }
+
+// Known ids narrow a listing by the id the search returns; past 200 they are refused before any query.
+func TestListDocumentIDsNarrowTheListing(t *testing.T) {
+	params := map[string]any{}
+	predicates, err := libraryPredicates(ListQuery{FileType: "all", DocumentIDs: []string{"doc_a"}}, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(predicates, "search_document_id IN :document_ids") || !slices.Equal(params["document_ids"].([]string), []string{"doc_a"}) {
+		t.Fatalf("predicates = %v, params = %v", predicates, params)
+	}
+	if _, err := libraryPredicates(ListQuery{DocumentIDs: make([]string, 201)}, map[string]any{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("201 ids: %v", err)
+	}
+}

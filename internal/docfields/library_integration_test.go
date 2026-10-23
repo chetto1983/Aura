@@ -110,6 +110,10 @@ func TestLibraryListHonoursSourcePrefixes(t *testing.T) {
 	if err != nil || !slices.Equal(keysOf(both.Rows), []string{"chat/a.pdf"}) {
 		t.Fatalf("a key or a prefix = %v, %v", keysOf(both.Rows), err)
 	}
+	known, err := s.List(ctx, id, ListQuery{FileType: "all", DocumentIDs: []string{docID("chat/b.xlsx"), "doc_unknown"}})
+	if err != nil || known.Total != 1 || !slices.Equal(keysOf(known.Rows), []string{"chat/b.xlsx"}) {
+		t.Fatalf("known ids = %v of %d, %v", keysOf(known.Rows), known.Total, err)
+	}
 }
 
 // The hits are named by their own fields: the invoice's type the operator set, no tag for the
