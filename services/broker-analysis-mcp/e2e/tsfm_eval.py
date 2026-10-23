@@ -23,6 +23,12 @@ A component that learns must beat its dumb baseline out of sample, or it is drop
 Run with an environment holding `timestral` and torch:
   python e2e/tsfm_eval.py --models timestral-28M chronos-bolt-base chronos-2 --out e2e/runs/tsfm.json
   python e2e/tsfm_eval.py --tickers BTC-USD ETH-USD SOL-USD XRP-USD --out e2e/runs/tsfm_crypto.json
+Kronos (arXiv:2508.02739, NeoQuasar/Kronos-*) differs by design, fixed before its first run: it
+reads OHLCV bars with their dates instead of a close series, so its price quantiles come from
+--samples independent sampled paths and its volatility forecast is the mean Garman-Klass variance
+of the sampled bars, the target's own estimator. Kronos-small and -base accept at most 512 bars of
+context, so they read the last 512 of the 1,024; Kronos-mini reads all 1,024. Its code is not on
+PyPI: pass the cloned repository with --kronos-src.
 Crypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the
 latest N sessions before anything is computed, so a second test can run on an earlier window
 disjoint from the first; each ticker's window dates are in the report.
@@ -31,6 +37,7 @@ disjoint from the first; each ticker's window dates are in the report.
 import argparse
 import json
 import math
+import sys
 import time
 
 import numpy as np
@@ -43,7 +50,18 @@ CONTEXT, STEP, SPAN, HORIZONS, VOL_H = 1024, 10, 750, (5, 20), 20
 LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 
 
-class Timestral:
+class Univariate:
+    """Models that read one series: the close for prices, the daily Garman-Klass variance for volatility."""
+
+    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, np.ndarray]:
+        close, var = df["Close"].to_numpy(), gk_variance(df)
+        qp = self.quantiles(np.stack([close[o - CONTEXT:o] for o in origins]), hmax)  # (B, H, Q)
+        qv = self.quantiles(np.stack([var[o - CONTEXT:o] for o in origins]), VOL_H)
+        # The mean of the quantiles approximates the predictive mean of the variance.
+        return qp, qv.mean(axis=2).mean(axis=1)
+
+
+class Timestral(Univariate):
     def __init__(self, size: str):
         from timestral import TimestralForecaster
 
@@ -57,7 +75,7 @@ class Timestral:
         return f.quantiles[:, 0][..., idx].cpu().numpy()
 
 
-class Chronos:
+class Chronos(Univariate):
     def __init__(self, repo: str):
         from chronos import BaseChronosPipeline
 
@@ -74,15 +92,59 @@ class Chronos:
         return q.cpu().numpy()
 
 
-def make(name: str):
+KRONOS = {  # model: (tokenizer, maximum context)
+    "Kronos-mini": ("Kronos-Tokenizer-2k", 2048),
+    "Kronos-small": ("Kronos-Tokenizer-base", 512),
+    "Kronos-base": ("Kronos-Tokenizer-base", 512),
+}
+
+
+class KronosModel:
+    def __init__(self, name: str, src: str, samples: int, chunk: int = 256):
+        sys.path.insert(0, src)
+        from model import Kronos, KronosPredictor, KronosTokenizer
+
+        tokenizer_id, max_context = KRONOS[name]
+        self.context = min(CONTEXT, max_context)
+        self.samples, self.chunk = samples, chunk
+        self.predictor = KronosPredictor(
+            Kronos.from_pretrained(f"NeoQuasar/{name}"), KronosTokenizer.from_pretrained(f"NeoQuasar/{tokenizer_id}"),
+            device="cpu", max_context=self.context,
+        )
+
+    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, np.ndarray]:
+        """Sampled paths: one batch row per (origin, sample), each drawn with sample_count=1 so that
+        Kronos does not average them."""
+        bars = df[["Open", "High", "Low", "Close", "Volume"]].rename(columns=str.lower)
+        dates = pd.Series(df.index.tz_localize(None) if df.index.tz is not None else df.index)
+        rows = [(o, s) for o in origins for s in range(self.samples)]
+        paths = []
+        for start in range(0, len(rows), self.chunk):
+            batch = rows[start:start + self.chunk]
+            paths += self.predictor.predict_batch(
+                [bars.iloc[o - self.context:o] for o, _ in batch],
+                [dates.iloc[o - self.context:o].reset_index(drop=True) for o, _ in batch],
+                [dates.iloc[o:o + hmax].reset_index(drop=True) for o, _ in batch],
+                pred_len=hmax, sample_count=1, verbose=False,
+            )
+        close = np.array([p["close"].to_numpy() for p in paths]).reshape(len(origins), self.samples, hmax)
+        variance = np.array([gk_variance(p.rename(columns=str.title)) for p in paths])
+        qp = np.quantile(close, LEVELS, axis=1).transpose(1, 2, 0)  # (B, H, Q)
+        return qp, variance.reshape(len(origins), self.samples, hmax)[:, :, :VOL_H].mean(axis=(1, 2))
+
+
+def make(name: str, args: argparse.Namespace):
     if name.startswith("timestral-"):
         return Timestral(name.removeprefix("timestral-"))
+    if name in KRONOS:
+        return KronosModel(name, args.kronos_src, args.samples)
     return Chronos(name)
 
 
 def load(ticker: str) -> pd.DataFrame:
-    df = yf.Ticker(ticker).history(period="10y", auto_adjust=True)[["Open", "High", "Low", "Close"]].dropna()
-    return df[(df > 0).all(axis=1)]
+    df = yf.Ticker(ticker).history(period="10y", auto_adjust=True)[["Open", "High", "Low", "Close", "Volume"]]
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    return df[(df[["Open", "High", "Low", "Close"]] > 0).all(axis=1)]
 
 
 def gk_variance(df: pd.DataFrame) -> np.ndarray:
@@ -110,11 +172,8 @@ def evaluate(model, df: pd.DataFrame) -> dict:
     origins = [o for o in origins if o >= CONTEXT]
     hmax = max((*HORIZONS, VOL_H))
 
-    price_ctx = np.stack([close[o - CONTEXT:o] for o in origins])
-    var_ctx = np.stack([var[o - CONTEXT:o] for o in origins])
     levels = np.array(LEVELS)
-    qp = model.quantiles(price_ctx, hmax)  # (B, H, Q)
-    qv = model.quantiles(var_ctx, VOL_H)
+    qp, model_var = model.forecast(df, origins, hmax)
 
     out = {
         "origins": len(origins),
@@ -150,7 +209,6 @@ def evaluate(model, df: pd.DataFrame) -> dict:
         }
 
     realised = np.array([var[o:o + VOL_H].mean() for o in origins])
-    model_var = qv.mean(axis=2).mean(axis=1)  # mean of the quantiles approximates the predictive mean
     ewma = []
     for o in origins:
         w = 0.94 ** np.arange(250)[::-1]
@@ -226,6 +284,8 @@ def main() -> None:
     parser.add_argument("--models", nargs="+", default=["timestral-28M", "chronos-bolt-base", "chronos-2"])
     parser.add_argument("--tickers", nargs="+", default=UNIVERSE)
     parser.add_argument("--skip-last", type=int, default=0)
+    parser.add_argument("--kronos-src", help="path of a clone of github.com/shiyu-coder/Kronos")
+    parser.add_argument("--samples", type=int, default=20, help="sampled paths per origin for Kronos")
     parser.add_argument("--hypothesis", default=None, help="written into the report before any result")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
@@ -236,7 +296,7 @@ def main() -> None:
         "hypothesis": args.hypothesis, "models": {},
     }
     for size in args.models:
-        model = make(size)
+        model = make(size, args)
         started = time.time()
         per_ticker = {t: evaluate(model, df) for t, df in data.items()}
         report["models"][size] = {
