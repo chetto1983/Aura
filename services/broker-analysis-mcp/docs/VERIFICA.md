@@ -114,6 +114,31 @@ Stesso script e stesso protocollo su BTC-USD, ETH-USD, SOL-USD e XRP-USD, 73 ori
 - Esito: restano scartati. Il segnale sulla volatilità delle criptovalute è un'ipotesi da riprovare con un
   protocollo fissato prima, con più serie o una finestra più lunga; non è un risultato.
 
+### Conferma su ETH e SOL con il solo Timestral-28M, 23 ottobre 2026
+
+Timestral-28M è il modello migliore del test sulle criptovalute: t più forti sulla volatilità con
+entrambe le perdite, il migliore sul prezzo a 20 giorni, intervalli meglio calibrati. Ripeterlo sulla
+stessa finestra non è nuova evidenza, perché sono i dati che lo hanno scelto. L'ipotesi è stata scritta
+nel report prima di eseguire (`e2e/runs/tsfm_eth_sol_holdout.json`, campo `hypothesis`):
+
+- in una finestra disgiunta da quella del segnale, ottenuta togliendo prima le ultime 750 sedute,
+  il QLIKE della volatilità a 20 giorni è più basso di quello dell'EWMA;
+- confermata su un asset se il t di Diebold-Mariano è al massimo −2,24 (5% bilaterale con Bonferroni
+  su due asset); confermata per le criptovalute solo se passano entrambi.
+
+| Finestra | ETH: QLIKE (t) | SOL: QLIKE (t) | ETH / SOL: MSE della log-varianza (t) |
+| --- | --- | --- | --- |
+| Quella che ha scelto il modello, ott 2024 – ott 2026 (`tsfm_eth_sol.json`, in-sample) | −0,46 | −1,91 | −1,02 / −2,51 |
+| Conferma, set 2022 – set 2024 (SOL da feb 2023, 59 origini) | −0,93 | −0,16 | −1,89 / −1,13 |
+
+- Esito: ipotesi non confermata, Timestral-28M resta scartato anche sulle criptovalute. Il segnale stava
+  quasi tutto su SOL nella finestra recente e non si ripete prima.
+- La direzione è a favore del modello in tutti e quattro i casi, ma con un effetto che non si distingue
+  dal caso. Prezzo e quantili restano non significativi (t fra −0,3 e −1,6).
+- Le due finestre non si sovrappongono: l'ultimo obiettivo della conferma è del 22 settembre 2024, la
+  prima origine della finestra recente del 3 ottobre 2024. I contesti dei modelli sì, ma i modelli non
+  sono addestrati su questi dati.
+
 ## Cosa queste misure non dimostrano
 
 - Che i dati Yahoo siano corretti o stabili: yfinance usa endpoint non ufficiali.

@@ -10,3 +10,5 @@ wheels/
 e2e/runs/*
 !e2e/runs/tsfm.json
 !e2e/runs/tsfm_crypto.json
+!e2e/runs/tsfm_eth_sol.json
+!e2e/runs/tsfm_eth_sol_holdout.json

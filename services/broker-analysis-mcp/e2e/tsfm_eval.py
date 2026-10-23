@@ -23,7 +23,9 @@ A component that learns must beat its dumb baseline out of sample, or it is drop
 Run with an environment holding `timestral` and torch:
   python e2e/tsfm_eval.py --models timestral-28M chronos-bolt-base chronos-2 --out e2e/runs/tsfm.json
   python e2e/tsfm_eval.py --tickers BTC-USD ETH-USD SOL-USD XRP-USD --out e2e/runs/tsfm_crypto.json
-Crypto assets trade every day, so for them a session is a calendar day.
+Crypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the
+latest N sessions before anything is computed, so a second test can run on an earlier window
+disjoint from the first; each ticker's window dates are in the report.
 """
 
 import argparse
@@ -114,7 +116,11 @@ def evaluate(model, df: pd.DataFrame) -> dict:
     qp = model.quantiles(price_ctx, hmax)  # (B, H, Q)
     qv = model.quantiles(var_ctx, VOL_H)
 
-    out = {"origins": len(origins)}
+    out = {
+        "origins": len(origins),
+        "first_origin": str(df.index[origins[0]].date()),
+        "last_target": str(df.index[origins[-1] + hmax - 1].date()),
+    }
     for h in HORIZONS:
         last = close[np.array(origins) - 1]
         actual = np.log(close[np.array(origins) + h - 1] / last)
@@ -206,14 +212,29 @@ def tests(per_ticker: dict) -> dict:
     return out
 
 
+def all_tests(per_ticker: dict) -> dict:
+    """Pooled tests need the same origins for every ticker; per-ticker tests always run."""
+    pooled = len({r["origins"] for r in per_ticker.values()}) == 1
+    return {
+        "pooled": tests(per_ticker) if pooled else "not computed: tickers have different numbers of origins",
+        "per_ticker": {t: tests({t: r}) for t, r in per_ticker.items()},
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", default=["timestral-28M", "chronos-bolt-base", "chronos-2"])
     parser.add_argument("--tickers", nargs="+", default=UNIVERSE)
+    parser.add_argument("--skip-last", type=int, default=0)
+    parser.add_argument("--hypothesis", default=None, help="written into the report before any result")
     parser.add_argument("--out", required=True)
     args = parser.parse_args()
     data = {t: load(t) for t in args.tickers}
-    report = {"protocol": __doc__, "universe": args.tickers, "models": {}}
+    data = {t: df.iloc[: len(df) - args.skip_last] for t, df in data.items()}
+    report = {
+        "protocol": __doc__, "universe": args.tickers, "skip_last": args.skip_last,
+        "hypothesis": args.hypothesis, "models": {},
+    }
     for size in args.models:
         model = make(size)
         started = time.time()
@@ -222,7 +243,7 @@ def main() -> None:
             "seconds": round(time.time() - started, 1),
             "per_ticker": per_ticker,
             "mean": summarise(per_ticker),
-            "diebold_mariano": tests(per_ticker),
+            "diebold_mariano": all_tests(per_ticker),
         }
         print(size, json.dumps(report["models"][size]["diebold_mariano"], indent=1), flush=True)
     with open(args.out, "w") as f:
