@@ -40,6 +40,7 @@ Kronos (arXiv:2508.02739, NeoQuasar/Kronos-*) differs by design, fixed before it
                Kronos-mini, which accepts 2,048, reads all 1,024
   leakage      its pre-training data end in June 2024, so --first-origin 2024-07-01 drops earlier
                origins
+  --kronos-context N replaces the context length, e.g. the paper's 40 bars for daily data (Table 8)
 Its code is not on PyPI: pass the cloned repository with --kronos-src.
 Crypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the
 latest N sessions before anything is computed, so a second test can run on an earlier window
@@ -113,13 +114,16 @@ KRONOS = {  # model: (tokenizer, maximum context)
 
 
 class KronosModel:
-    def __init__(self, name: str, src: str, samples: int, chunk: int = 256, temperature: float = 0.9, top_p: float = 0.9):
+    def __init__(
+        self, name: str, src: str, samples: int, context: int | None = None, chunk: int = 256,
+        temperature: float = 0.9, top_p: float = 0.9,
+    ):
         sys.path.insert(0, src)
         import model.kronos as kronos
         from kronos_cache import cached_predictor
 
         tokenizer_id, max_context = KRONOS[name]
-        self.context = min(CONTEXT, max_context - max((*HORIZONS, VOL_H)))
+        self.context = min(context or CONTEXT, max_context - max((*HORIZONS, VOL_H)))
         self.samples, self.chunk, self.temperature, self.top_p = samples, chunk, temperature, top_p
         self.predictor = cached_predictor(kronos)(
             kronos.Kronos.from_pretrained(f"NeoQuasar/{name}"),
@@ -164,7 +168,7 @@ def make(name: str, args: argparse.Namespace):
     if name.startswith("timestral-"):
         return Timestral(name.removeprefix("timestral-"))
     if name in KRONOS:
-        return KronosModel(name, args.kronos_src, args.samples)
+        return KronosModel(name, args.kronos_src, args.samples, args.kronos_context)
     return Chronos(name)
 
 
@@ -326,6 +330,7 @@ def main() -> None:
     parser.add_argument("--skip-last", type=int, default=0)
     parser.add_argument("--kronos-src", help="path of a clone of github.com/shiyu-coder/Kronos")
     parser.add_argument("--samples", type=int, default=10, help="sampled paths per origin for Kronos")
+    parser.add_argument("--kronos-context", type=int, help="bars of context for Kronos instead of the protocol's")
     parser.add_argument("--first-origin", help="drop origins before this date (a model's training cutoff)")
     parser.add_argument("--hypothesis", default=None, help="written into the report before any result")
     parser.add_argument("--out", required=True)
