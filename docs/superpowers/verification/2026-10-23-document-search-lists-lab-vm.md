@@ -5,8 +5,10 @@ of one conversation, in which the operator asked Aura's agent to test its docume
 friction.
 
 **Verdict.** The agent reports four frictions resolved and one improved, with no regression across
-its repeated probes. Four residual frictions remain; none is a wrong result. No 9.8 score is
-produced: the operator replaced the 25-question run with this check.
+its repeated probes. It named four residual frictions, none a wrong result; on build `ee662da70` it
+reports all four resolved (turns 3 and 4). The floors friction remains, and is plan
+`2026-10-23-document-floors-calibration.md`. No 9.8 score is produced: the operator replaced the
+25-question run with this check.
 
 ## Protocol
 
@@ -72,6 +74,53 @@ and outside this plan.
    the only tag. Now that `library_lists` exists, the agent would separate "a similar name" from "the tags
    there are".
 
+## Turns 3 and 4, on `ee662da70`: the residuals
+
+Plan `docs/superpowers/plans/2026-10-23-document-search-residuals.md`, Task 3. The updater applied
+`ee662da70` at 15:00Z; it carries the residuals' code (`d9948dd60`, `80163e712`).
+
+- **Turn 3, 15:04Z to 15:06Z, the operator's own**, in the cockpit: "cosa ti mancherebbe per avere un
+  sistema perfetto?". Before answering, the agent re-checked two residuals with three
+  `document_search` calls:
+  - `tags: [Cliente]`, `limit: 1`, `offset: 0` gave `Financial_Sample.xlsx`, `matching_documents: 2`
+    and `next_offset: 1`; `offset: 1` gave `esempio.md` and no `next_offset`;
+  - `document_ids: [<esempio.md>]` with no query listed it with its fields, `profile: field_list`.
+
+  It withdrew both from its list. The rest of its answer is a wish list; see below.
+- **Turn 4, 15:07Z to 15:08Z, driven through `POST /agent/run`**, asking it to retry the other two.
+  7 `document_search` calls in 53 s, `RUN_FINISHED`.
+
+| Residual | The agent's probe | Its result | The agent's verdict |
+|---|---|---|---|
+| paging past `limit` | `offset` 0 then 1 | `next_offset` 1, then the last page | resolved (turn 3) |
+| listing known ids | `document_ids` alone | listed, with `document_fields` | resolved (turn 3) |
+| count scopes | `Cliente` reviewed only; `Cliente` within one id | library 2 / filter 1 / selection 1; library 2 / filter 2 / selection 1 | resolved |
+| closest names | `__tag_test_inesistente__`, `fatture`, `contratti`, `Clente` | `[]`, `[]`, `[]`, `["Cliente"]` | resolved |
+
+On the counts, the agent notes that the scope is stated in the tool's description, not repeated as
+a label beside each number, and that this answers its ambiguity.
+
+### What it asked for next (turn 3)
+
+Its priorities, in its own order:
+1. **Relevance first.** "fattura" still returns the example Markdown: a weak semantic match should
+   not become evidence, and "nothing relevant" is a normal answer. This is the floors plan.
+2. **Editing metadata through the tools.** Assign and remove tags; correct title, type,
+   counterparty, date and custom fields; confirm or reject a suggestion; batch edits; create, rename
+   and merge tags or counterparties. With a preview, conflict checks and undo.
+3. **Provenance of a classification.** Who set it (user, rule, import, AI), when, why, the evidence
+   for an automatic one, and its correction history.
+4. **Observable ingestion.** Each document's state, retrying a failure, re-indexing, duplicates,
+   and telling original, version and attachment apart. It marks these as to verify, not as proven
+   gaps.
+5. **Verifiable answers.** From an answer to its document, passage and position; whole-sheet data
+   for exact sums.
+6. **Document-system guarantees.** Permissions on search and download, isolation between users,
+   an audit of changes, trash and restore, export with metadata, and a real restore from backup.
+   It says these were not tested.
+
+None of these is decided. They are the agent's, recorded for the operator.
+
 ## What this does not show
 
 - **No score.** The 25-question set was not run, so there is no number against the 9.8 gate.
@@ -84,6 +133,8 @@ and outside this plan.
 - **Not two real tags.** With one distinct tag, `all` and `any` across two existing tags were not tried.
   The agent says so itself.
 - **One model, one run.** `gpt-6.1-sol` only, and each turn once.
+- **The residuals rest on one library.** Paging was walked over two documents, not past 50; the
+  closest names were tried against a single tag.
 
 ## Gates
 

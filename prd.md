@@ -2083,6 +2083,11 @@ The floors are out of this slice.
   - three counts with unlabelled scopes;
   - known ids cannot be listed without a query;
   - closest names that are not selective.
+
+  On build `ee662da70` the same day, the agent reported all four resolved: `offset` and
+  `next_offset`, the scopes in the tool's description, `document_ids` listed without a query, and
+  no closest name for `fatture` or `contratti` while `Clente` still gets `Cliente`. It walked two
+  documents, not 50, against one tag.
 - **The floors friction is still there.**
 - **What it does not show:**
   - no 9.8 score, and the 23 passing questions were not re-run;

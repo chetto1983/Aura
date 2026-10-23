@@ -1,7 +1,9 @@
 # Document search residual frictions Implementation Plan
 
-**Status (2026-10-23):** written. Spec §5 was amended a third time the same day, on the operator's
-decision ("Frizioni + soglie ora").
+**Status (2026-10-23):** COMPLETE. `d9948dd60` and `80163e712`, CI green on `ee662da70`; on the lab VM
+the agent reported all four residuals resolved (turns 3 and 4 of
+`docs/superpowers/verification/2026-10-23-document-search-lists-lab-vm.md`). Spec §5 was amended a
+third time the same day, on the operator's decision ("Frizioni + soglie ora").
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -55,18 +57,18 @@ decision ("Frizioni + soglie ora").
 
 **Files:** Modify `internal/docfields/filters.go` and `internal/docfields/filters_test.go`.
 
-- [ ] **Step 1: Tests.**
+- [x] **Step 1: Tests.**
   - Rewrite `TestUnknownNameReturnsClosest`: "Rosi SRL" now gets `["Rossi SRL", "Rossi Snc"]`, without
     `ACME SpA`. The commit message justifies the rewrite: the operator's decision.
   - Add `TestClosestNamesAreSimilar`:
     - against labels `Cliente`, `Gialli Import` and `Fattura`, the names `fatture`, `contratti`,
       `__tag_test_inesistente__` and `x` get, in order: `["Fattura"]`, `[]`, `[]`, `[]`;
     - `Gialli` gets `["Gialli Import"]`.
-- [ ] **Step 2: Run** `go test ./internal/docfields/ -run 'TestUnknownName|TestClosestNames'`. Expected: FAIL.
-- [ ] **Step 3: Implement** `similar(a, b string) bool` in `filters.go`. `closest` keeps only similar
+- [x] **Step 2: Run** `go test ./internal/docfields/ -run 'TestUnknownName|TestClosestNames'`. Expected: FAIL.
+- [x] **Step 3: Implement** `similar(a, b string) bool` in `filters.go`. `closest` keeps only similar
   labels, ranked as before.
-- [ ] **Step 4: Run.** Expected: PASS. Also run `go test -race ./internal/docfields/`.
-- [ ] **Step 5: Commit** `fix(docfields): answer an unknown name only with names that resemble it`.
+- [x] **Step 4: Run.** Expected: PASS. Also run `go test -race ./internal/docfields/`.
+- [x] **Step 5: Commit** `fix(docfields): answer an unknown name only with names that resemble it`.
 
 ### Task 2: a listing pages and lists known ids; the counts say their scope
 
@@ -82,7 +84,7 @@ decision ("Frizioni + soglie ora").
   - `documentSearchArgs.Offset int` (`json:"offset"`);
   - `documentSearchResult.NextOffset int` (`json:"next_offset,omitempty"`).
 
-- [ ] **Step 1: Tests.**
+- [x] **Step 1: Tests.**
   - `TestListDocumentIDsNarrowTheListing`: unit test on `libraryPredicates`; the predicate and its
     param are present, and 201 ids are refused.
   - Integration: `TestLibraryListHonoursSourcePrefixes` gains a `DocumentIDs` case.
@@ -100,27 +102,27 @@ decision ("Frizioni + soglie ora").
     `next_offset`.
   - `TestDocumentSearchSpecNamesCitationAndOpenContract`: the description says "library_lists counts the
     whole library" and "next_offset".
-- [ ] **Step 2: Run** `go test ./internal/docfields/ ./internal/agent/tools/`. Expected: FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `go test ./internal/docfields/ ./internal/agent/tools/`. Expected: FAIL.
+- [x] **Step 3: Implement.**
   - The schema:
     - `"offset": {"type":"integer","minimum":0,…}`;
     - the `document_ids` description reads "narrows a search, or with no query lists those documents".
   - The description gains one count-scope sentence; the closest-names wording becomes "names on the list
     that resemble one that matched nothing".
   - A listing abstains only when `matching_documents` is 0.
-- [ ] **Step 4: Run** `go test` and `-race` on both packages, the `docfields` `arcadedb_integration` tier,
+- [x] **Step 4: Run** `go test` and `-race` on both packages, the `docfields` `arcadedb_integration` tier,
   and `go vet ./cmd/aura/`. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(document_search): a listing pages, lists known ids, and its counts say their scope`.
+- [x] **Step 5: Commit** `feat(document_search): a listing pages, lists known ids, and its counts say their scope`.
 
 ### Task 3: gates, push, ask the agent again
 
-- [ ] **Step 1: Push** with the CLAUDE.md recipe, once no other session's CI run is in flight on master.
+- [x] **Step 1: Push** with the CLAUDE.md recipe, once no other session's CI run is in flight on master.
   Check that CI is green on the SHA.
-- [ ] **Step 2: Continue the operator's conversation** `01a168cf-…` on the VM once the updater has
+- [x] **Step 2: Continue the operator's conversation** `01a168cf-…` on the VM once the updater has
   applied the SHA:
   - ask the agent to retry the four frictions it named;
   - record the turn in the same verification file, as a third turn.
-- [ ] **Step 3: Commit** the verification and Status lines.
+- [x] **Step 3: Commit** the verification and Status lines.
 
 ## Decisions taken while writing this plan
 
