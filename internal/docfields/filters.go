@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/agnivade/levenshtein"
 
@@ -16,8 +17,8 @@ const maxClosestNames = 3
 
 // ResolveNames turns the names a caller gives into the ids of one kind's labels. A name matches
 // trimmed and case-folded, and exactly (NameKey). A name that matches nothing comes back with up to
-// three of the closest names on the list, by edit distance, so the caller can correct itself or
-// drop the filter without a second query.
+// three of the names on the list that resemble it, closest first, so the caller can correct itself
+// or drop the filter without a second query. None resembling it is an empty list.
 func (s *Store) ResolveNames(ctx context.Context, identityID string, kind Kind, names []string) ([]string, map[string][]string, error) {
 	labels, err := s.Labels(ctx, identityID, kind)
 	if err != nil {
@@ -56,7 +57,12 @@ func resolve(labels []Label, names []string) ([]string, map[string][]string) {
 }
 
 func closest(key string, labels []Label) []string {
-	ranked := slices.Clone(labels)
+	var ranked []Label
+	for _, label := range labels {
+		if similar(key, NameKey(label.Name)) {
+			ranked = append(ranked, label)
+		}
+	}
 	slices.SortStableFunc(ranked, func(a, b Label) int {
 		if d := levenshtein.ComputeDistance(key, NameKey(a.Name)) - levenshtein.ComputeDistance(key, NameKey(b.Name)); d != 0 {
 			return d
@@ -68,4 +74,20 @@ func closest(key string, labels []Label) []string {
 		out = append(out, label.Name)
 	}
 	return out
+}
+
+// minContainedRunes keeps containment from matching everything: a one-letter name is in most names.
+const minContainedRunes = 3
+
+// similar is whether two name keys are near enough for one to be a correction of the other: an edit
+// distance of at most half the longer, or one containing the other. Measured on the lab VM, a name
+// with nothing like it on the list was still answered with the list's only tag (spec §5).
+func similar(a, b string) bool {
+	if levenshtein.ComputeDistance(a, b)*2 <= max(utf8.RuneCountInString(a), utf8.RuneCountInString(b)) {
+		return true
+	}
+	if utf8.RuneCountInString(a) < minContainedRunes || utf8.RuneCountInString(b) < minContainedRunes {
+		return false
+	}
+	return strings.Contains(a, b) || strings.Contains(b, a)
 }

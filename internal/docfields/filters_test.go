@@ -30,10 +30,32 @@ func TestUnknownNameReturnsClosest(t *testing.T) {
 	if !slices.Equal(ids, []string{"l-gialli"}) {
 		t.Fatalf("ids = %v", ids)
 	}
-	if got := unknown["Rosi SRL"]; !slices.Equal(got, []string{"Rossi SRL", "Rossi Snc", "ACME SpA"}) {
+	if got := unknown["Rosi SRL"]; !slices.Equal(got, []string{"Rossi SRL", "Rossi Snc"}) {
 		t.Fatalf("closest to Rosi SRL = %v", got)
 	}
 	if _, unknown := resolve(nil, []string{"Rossi"}); unknown["Rossi"] == nil || len(unknown["Rossi"]) != 0 {
 		t.Fatalf("an empty list suggests %v, want an empty list", unknown["Rossi"])
+	}
+}
+
+// A closest name resembles the unknown one: within half the longer name by edit distance, or one
+// containing the other. The agent's own probes on the lab VM got the only tag for all three of
+// fatture, contratti and a nonsense name (spec §5, amended a third time 2026-10-23).
+func TestClosestNamesAreSimilar(t *testing.T) {
+	labels := []Label{
+		{ID: "l-cliente", Kind: KindTag, Name: "Cliente"},
+		{ID: "l-gialli", Kind: KindCounterparty, Name: "Gialli Import"},
+		{ID: "l-fattura", Kind: KindType, Name: "Fattura"},
+	}
+	for name, want := range map[string][]string{
+		"fatture":                  {"Fattura"},
+		"contratti":                {},
+		"__tag_test_inesistente__": {},
+		"x":                        {},
+		"Gialli":                   {"Gialli Import"},
+	} {
+		if _, unknown := resolve(labels, []string{name}); !slices.Equal(unknown[name], want) {
+			t.Errorf("closest to %q = %v, want %v", name, unknown[name], want)
+		}
 	}
 }
