@@ -8,7 +8,7 @@ Notable changes to Aura, newest first. Each section is also the text of its
 ### Financial analysis MCP server (prototype)
 
 - `services/broker-analysis-mcp/` is a standalone, read-only MCP server for market analysis
-  on Yahoo Finance data, with five Italian skills that teach the agent to read and explain
+  on Yahoo Finance data, with five skills that teach the agent to read and explain
   each result. It places no orders and gives no personalised advice.
 - Tools:
   - risk metrics, including against a benchmark: Bloomberg-style adjusted beta, Jensen's
