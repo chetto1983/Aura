@@ -339,6 +339,31 @@ the lists. Three frictions changed the rule.
 Left out of this amendment: the agent also found passages that were not relevant returned under
 `uncalibrated_floors`. The floors are spec §9, measured per embedding space, and not this slice.
 
+*Amended a third time 2026-10-23, after the agent's check on `489815bf7`*
+(`docs/superpowers/verification/2026-10-23-document-search-lists-lab-vm.md`). The agent named four
+residual frictions. The operator approved the fixes below ("Frizioni + soglie ora").
+
+- **A listing pages.**
+  - `offset` skips that many listed documents. When more remain, the result's `next_offset` says
+    where the next page starts.
+  - `offset` with a `query` is refused: a ranked search has no pages.
+- **The three counts say their scope.** The description states it once:
+  - `library_lists` counts the whole library, suggestions included;
+  - `filters[].admitted_documents` is what each filter admits on its own, across the library;
+  - `matching_documents` is what a listing's filters, @-scope, `document_ids` and
+    `include_unreviewed` admit together.
+- **`document_ids` lists without a query.** With no `query`, `document_ids` narrows the listing,
+  alone or with filters. A known selection then comes back with its fields. With no query, no
+  filter and no `document_ids`, the call is refused.
+- **A closest name is a similar name.** An unknown name is answered only with names on the list
+  that resemble it:
+  - the edit distance is at most half the longer name, both in `NameKey` form;
+  - or one name contains the other.
+
+  When none does, the list is empty. `library_lists` names what there is.
+  - Measured: `fatture`, `contratti` and a nonsense name all got `Cliente`, the only tag.
+  - Kept: `Rosi SRL` still gets `Rossi SRL` and `Rossi Snc`, and `Gialli` gets `Gialli Import`.
+
 The agent filters on the fixed fields and tags only. Custom fields are shown, edited and filtered
 in the cockpit; the agent gets them in a later slice.
 
