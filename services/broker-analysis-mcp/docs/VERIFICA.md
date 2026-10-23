@@ -57,17 +57,28 @@ misure **non** dimostrano.
 
   Un numero inventato inserito come controllo negativo (27,35%) viene segnalato.
 
-  Nove scenari: i sette iniziali più il beta in stile Bloomberg con il capture di ENI e il controllo di
-  qualità del bilancio di Stellantis. Due run consecutive a codice fermo, sul commit che corregge
-  `peer_comparison` e la skill tecnica: **9,99** e **9,98** su 10. I pochi punti persi sono falsi positivi
-  dello scorer, non errori dell'agente:
-  - debiti netti dati dal tool in unità e riportati in miliardi (ENI 26.103.000.000 → "26,1 miliardi");
-  - l'etichetta di parametri "MACD 12,26,9" letta come decimale.
+  Undici scenari:
+  - i sette iniziali;
+  - il beta in stile Bloomberg con il capture di ENI;
+  - il controllo di qualità del bilancio di Stellantis;
+  - rischio e analisi tecnica del Bitcoin contro l'S&P 500.
 
-  Nessun numero calcolato a mente e nessun consiglio di trading. Prima delle correzioni le due run davano
-  9,72 e 9,80: lo scenario Stellantis era sceso a 7,92 per la risposta troppo grande di
-  `peer_comparison`, e in tutte le run l'agente proponeva stop calcolati dall'ATR (vedi la sezione 2).
-  Ancora prima, sui sette scenari iniziali, le run davano 9,95 e 9,97.
+  Due run consecutive a codice fermo, sul commit che annualizza le criptovalute su 365 giorni: **9,94** e
+  **9,93** su 10. Quasi tutti i punti persi sono falsi positivi dello scorer:
+  - migliaia scritte col punto all'italiana lette come decimali ("81.789 USD", "1.096 giorni");
+  - debiti netti dati dal tool in unità e riportati in miliardi ("15,8 miliardi");
+  - l'etichetta di parametri "MACD 12,26,9".
+
+  L'unico errore vero si ripete in entrambe le run: nello scenario del grafico l'agente stima a occhio un
+  livello di prezzo dall'immagine ("circa 18,5 €", "20–20,5 EUR"). Su questo codice nessuno stop e nessun
+  consiglio di trading.
+
+  Run precedenti:
+  - nove scenari, prima delle correzioni a `peer_comparison` e alla skill tecnica: 9,72 e 9,80, con lo
+    scenario Stellantis a 7,92 per la risposta troppo grande e l'agente che proponeva stop calcolati
+    dall'ATR (vedi la sezione 2);
+  - nove scenari, dopo quelle correzioni: 9,99 e 9,98;
+  - i sette scenari iniziali: 9,95 e 9,97.
 
 ## 4. Modelli di previsione: scartati
 
