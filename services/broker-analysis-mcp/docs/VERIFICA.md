@@ -91,6 +91,29 @@ con errori standard di Newey-West; t negativo = modello migliore.
   20 sedute); i suoi file non sono conservati perché lo script di allora è confluito in `tsfm_eval.py`.
 - Licenze: Timestral ha un tetto di 20 milioni di dollari di ricavi mensili; Chronos è Apache-2.0.
 
+### Criptovalute, 23 ottobre 2026
+
+Stesso script e stesso protocollo su BTC-USD, ETH-USD, SOL-USD e XRP-USD, 73 origini per serie
+(`e2e/runs/tsfm_crypto.json`). Per le criptovalute una seduta è un giorno di calendario.
+
+| Modello | Prezzo a 20 giorni contro drift (t) | Quantili a 20 giorni contro simulazione storica (t) | Volatilità contro EWMA, QLIKE (t) | Volatilità contro EWMA, MSE della log-varianza (t) | Esito |
+| --- | --- | --- | --- | --- | --- |
+| Mistral Timestral-28M | −1,76 | −0,71 | −1,65 | −2,64 | Scartato |
+| Amazon Chronos-Bolt-base | −0,13 | +0,94 | +0,56 | −0,49 | Scartato |
+| Amazon Chronos-2 | −0,27 | +0,86 | −1,29 | −2,23 | Scartato |
+
+- Prezzi e quantili: nessun modello batte drift o simulazione storica. A 5 giorni Chronos-2 e
+  Chronos-Bolt fanno peggio della random walk (t +2,24 e +1,78), e Chronos-Bolt anche dei quantili
+  storici (t +2,06).
+- Volatilità: Timestral-28M e Chronos-2 hanno un MSE della log-varianza più basso dell'EWMA, ma non un
+  QLIKE significativamente più basso. Il QLIKE è la perdita che resta coerente quando la varianza vera è
+  sostituita da una proxy rumorosa come quella di Garman-Klass (Patton 2011); l'MSE della log-varianza no.
+  Su 24 test, due |t| fra 2 e 3 sono compatibili col caso.
+- Copertura dell'intervallo 80% a 20 giorni: Timestral 81,2%, la simulazione storica 77,4%. Sulle
+  criptovalute gli intervalli di Timestral sono meglio calibrati che sulle azioni (75,8%).
+- Esito: restano scartati. Il segnale sulla volatilità delle criptovalute è un'ipotesi da riprovare con un
+  protocollo fissato prima, con più serie o una finestra più lunga; non è un risultato.
+
 ## Cosa queste misure non dimostrano
 
 - Che i dati Yahoo siano corretti o stabili: yfinance usa endpoint non ufficiali.
