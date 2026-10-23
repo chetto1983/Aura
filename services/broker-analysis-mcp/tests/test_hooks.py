@@ -84,6 +84,8 @@ class _Receiver(BaseHTTPRequestHandler):
         body = self.rfile.read(int(self.headers["Content-Length"]))
         _Receiver.received.append(json.loads(body))
         self.send_response(_Receiver.status)
+        if 300 <= _Receiver.status < 400:
+            self.send_header("Location", "http://169.254.169.254/latest/meta-data")
         self.end_headers()
 
     def log_message(self, *args):
@@ -104,8 +106,17 @@ def receiver(monkeypatch):
 def test_webhook_delivery_to_an_allowed_url(receiver) -> None:
     market = Market(HISTORY)
     hooks.create("cross", "TEST.MI", CROSS, HookAction(type="webhook", target=f"{receiver}/hook"), SMA3, [], loader=market)
-    with pytest.raises(SpecError, match="not in the allowed"):
-        hooks.check_action(HookAction(type="webhook", target="http://169.254.169.254/latest"))
+    port = receiver.rsplit(":", 1)[1]
+    look_alikes = [
+        "http://169.254.169.254/latest",
+        f"{receiver}.evil.example/hook",  # the allowed text continues into another host
+        f"http://127.0.0.1:{port}@evil.example/hook",  # the allowed text is only the userinfo
+        f"{receiver}0/hook",  # a longer port that starts with the allowed one
+    ]
+    for target in look_alikes:
+        with pytest.raises(SpecError, match="not in the allowed"):
+            hooks.check_action(HookAction(type="webhook", target=target))
+    hooks.check_action(HookAction(type="webhook", target=f"{receiver}/hook"))
     market.closes += [10, 9, 14]
     assert len(hooks.run(loader=market)["fired"]) == 1
     assert _Receiver.received[0]["condition"] == "crosses_above(close, sma3)"
@@ -120,6 +131,46 @@ def test_failed_webhook_is_retried_on_the_next_run(receiver) -> None:
     assert failed["fired"] == [] and len(failed["failed"]) == 1
     _Receiver.status = 200
     assert len(hooks.run(loader=market)["fired"]) == 1
+
+
+def test_an_allowed_host_cannot_redirect_the_delivery(receiver) -> None:
+    market = Market(HISTORY)
+    hooks.create("cross", "TEST.MI", CROSS, HookAction(type="webhook", target=f"{receiver}/hook"), SMA3, [], loader=market)
+    market.closes += [10, 9, 14]
+    _Receiver.status = 302  # points at the cloud metadata address
+    run = hooks.run(loader=market)
+    assert run["fired"] == [] and "302" in run["failed"][0]["error"]
+    assert len(_Receiver.received) == 1  # only the allowed host was called
+
+
+def test_a_failing_hook_does_not_stop_the_others_and_bookmarks_survive() -> None:
+    market = Market(HISTORY)
+    ok = hooks.create("ok", "TEST.MI", CROSS, HookAction(type="file", target="a"), SMA3, [], loader=market)["hook"]["id"]
+    broken = hooks.create("broken", "BAD.MI", CROSS, HookAction(type="file", target="a"), SMA3, [], loader=market)["hook"]["id"]
+    market.closes += [10, 9, 14]
+
+    def loader(ticker: str, period: str):
+        if ticker == "BAD.MI":
+            raise KeyError("unexpected payload")  # not a DataError: the kind that used to escape
+        return market(ticker, period)
+
+    run = hooks.run(loader=loader)
+    assert [e["hook_id"] for e in run["fired"]] == [ok]
+    assert run["failed"][0]["hook_id"] == broken and run["failed"][0]["error"].startswith("KeyError")
+    assert hooks.load_hooks()[ok]["last_event"] == str(frame(market.closes).index[-1].date())
+
+
+def test_a_hook_created_during_a_run_is_kept() -> None:
+    market = Market(HISTORY)
+    hooks.create("first", "TEST.MI", CROSS, HookAction(type="file", target="a"), SMA3, [], loader=market)
+    market.closes += [10, 9, 14]
+
+    def loader(ticker: str, period: str):
+        hooks.create("second", "NEW.MI", CROSS, HookAction(type="file", target="a"), SMA3, [], loader=market)
+        return market(ticker, period)
+
+    hooks.run(loader=loader)
+    assert sorted(h["name"] for h in hooks.load_hooks().values()) == ["first", "second"]
 
 
 def test_delete() -> None:

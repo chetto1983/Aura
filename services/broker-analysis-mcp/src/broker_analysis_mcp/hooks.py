@@ -6,7 +6,10 @@ the bookmark only for the deliveries that succeeded, so a failed webhook retries
 
 Webhooks are refused unless the operator lists allowed URL prefixes in
 BROKER_ANALYSIS_WEBHOOK_ALLOW: an agent must not be able to make the server call arbitrary hosts.
-File deliveries append JSON lines under $BROKER_ANALYSIS_HOME/alerts/.
+A target matches a prefix on the exact scheme and host[:port] and at a path-segment boundary, and
+redirects are not followed, so neither a look-alike host nor an allowed host's redirect reaches
+an address the operator did not list. File deliveries append JSON lines under
+$BROKER_ANALYSIS_HOME/alerts/.
 """
 
 import json
@@ -16,6 +19,7 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pandas as pd
 
@@ -39,18 +43,26 @@ def _store() -> Path:
 
 def load_hooks() -> dict[str, dict]:
     path = _store()
-    return json.loads(path.read_text()) if path.exists() else {}
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
 
 def _save(hooks: dict[str, dict]) -> None:
     tmp = _store().with_suffix(".tmp")
-    tmp.write_text(json.dumps(hooks, indent=1, ensure_ascii=False))
+    tmp.write_text(json.dumps(hooks, indent=1, ensure_ascii=False), encoding="utf-8")
     tmp.replace(_store())
 
 
 def _allowed_prefixes() -> list[str]:
     raw = os.environ.get("BROKER_ANALYSIS_WEBHOOK_ALLOW", "")
     return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def _within(target: str, prefix: str) -> bool:
+    t, p = urlsplit(target), urlsplit(prefix)
+    base = p.path.rstrip("/")
+    return (t.scheme, t.netloc.lower()) == (p.scheme, p.netloc.lower()) and (
+        t.path == base or t.path.startswith(base + "/")
+    )
 
 
 def check_action(action: HookAction) -> None:
@@ -63,7 +75,7 @@ def check_action(action: HookAction) -> None:
     allowed = _allowed_prefixes()
     if not allowed:
         raise SpecError("webhooks are disabled: the operator must set BROKER_ANALYSIS_WEBHOOK_ALLOW")
-    if not any(action.target.startswith(p) for p in allowed):
+    if not any(_within(action.target, p) for p in allowed):
         raise SpecError(f"webhook target not in the allowed prefixes {allowed}")
 
 
@@ -133,42 +145,64 @@ def _payload(hook: dict, date: pd.Timestamp, ns: dict, meta: data.Meta) -> dict:
     }
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # urllib then raises HTTPError for the 3xx: a failed delivery, retried next run
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def deliver(action: dict, payload: dict) -> None:
     if action["type"] == "file":
-        with (home() / "alerts").joinpath(f"{action['target']}.jsonl").open("a") as f:
+        with (home() / "alerts").joinpath(f"{action['target']}.jsonl").open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
         return
     check_action(HookAction(**action))
     request = urllib.request.Request(
         action["target"], data=json.dumps(payload).encode(), headers={"Content-Type": "application/json"}, method="POST"
     )
-    with urllib.request.urlopen(request, timeout=10) as response:  # target is prefix-allowlisted by check_action
+    with _OPENER.open(request, timeout=10) as response:
         if response.status >= 300:
             raise OSError(f"webhook answered {response.status}")
 
 
+def _save_bookmarks(bookmarks: dict[str, str]) -> None:
+    """Writes advanced bookmarks into the store as it is now, so a hook created or deleted while
+    the run was fetching prices is neither lost nor brought back."""
+    latest = load_hooks()
+    for hook_id, last_event in bookmarks.items():
+        if hook_id in latest:
+            latest[hook_id]["last_event"] = last_event
+    _save(latest)
+
+
 def run(loader: Loader = data.history) -> dict:
+    """Evaluates every hook; one failing hook or delivery is reported and does not stop the others."""
     (home() / "alerts").mkdir(exist_ok=True)
-    hooks = load_hooks()
-    fired, failed, checked = [], [], []
-    for hook_id, hook in hooks.items():
-        try:
-            prices, ns, events, meta = _evaluate(hook, loader)
-        except (data.DataError, SpecError) as err:
-            failed.append({"hook_id": hook_id, "error": str(err)})
-            continue
-        checked.append({"hook_id": hook_id, "data_until": str(prices.index[-1].date())})
-        new = [d for d in events.index[events.to_numpy()] if hook["last_event"] is None or str(d.date()) > hook["last_event"]]
-        for date in new:
-            payload = _payload(hook, date, ns, meta)
+    fired, failed, checked, bookmarks = [], [], [], {}
+    try:
+        for hook_id, hook in load_hooks().items():
             try:
-                deliver(hook["action"], payload)
-            except (OSError, SpecError) as err:
-                failed.append({"hook_id": hook_id, "event_date": payload["event_date"], "error": str(err)})
-                break
-            hook["last_event"] = payload["event_date"]
-            fired.append(payload)
-    _save(hooks)
+                prices, ns, events, meta = _evaluate(hook, loader)
+            except Exception as err:
+                failed.append({"hook_id": hook_id, "error": f"{type(err).__name__}: {err}"})
+                continue
+            checked.append({"hook_id": hook_id, "data_until": str(prices.index[-1].date())})
+            last = hook["last_event"]
+            for date in [d for d in events.index[events.to_numpy()] if last is None or str(d.date()) > last]:
+                payload = _payload(hook, date, ns, meta)
+                try:
+                    deliver(hook["action"], payload)
+                except Exception as err:
+                    failed.append({
+                        "hook_id": hook_id, "event_date": payload["event_date"], "error": f"{type(err).__name__}: {err}",
+                    })
+                    break
+                bookmarks[hook_id] = payload["event_date"]
+                fired.append(payload)
+    finally:
+        _save_bookmarks(bookmarks)
     return {"checked": checked, "fired": fired, "failed": failed}
 
 

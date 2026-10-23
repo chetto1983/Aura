@@ -154,7 +154,9 @@ def resolve_params(name: str, given: dict, defaults: dict | None = None) -> dict
         raw = given.get(key, (defaults or {}).get(key, param.default))
         try:
             value = param.kind(raw) if param.kind is not int else int(float(raw))
-        except (TypeError, ValueError) as err:
+            if isinstance(value, float) and not math.isfinite(value):
+                raise ValueError("not finite")
+        except (TypeError, ValueError, OverflowError) as err:
             raise SpecError(f"{name}.{key}: expected {param.kind.__name__}, got {raw!r}") from err
         if (param.low is not None and value < param.low) or (param.high is not None and value > param.high):
             raise SpecError(f"{name}.{key}={value} outside [{param.low}, {param.high}]")

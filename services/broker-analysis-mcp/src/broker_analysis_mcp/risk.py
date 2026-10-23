@@ -72,7 +72,8 @@ def downside_deviation(returns: pd.Series, mar_annual: float = 0.0, periods: int
 
 def sortino(returns: pd.Series, mar_annual: float = 0.0, periods: int = PERIODS) -> float:
     excess_mean = float((returns - daily_rate(mar_annual, periods)).mean()) * periods
-    return excess_mean / downside_deviation(returns, mar_annual, periods)
+    deviation = downside_deviation(returns, mar_annual, periods)
+    return excess_mean / deviation if deviation > 0 else math.inf
 
 
 def omega(returns: pd.Series, threshold_annual: float = 0.0, periods: int = PERIODS) -> float:

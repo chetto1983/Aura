@@ -204,3 +204,38 @@ def test_volatility_indicator_annualises_with_the_instruments_year() -> None:
     assert crypto["vol"].iloc[-1] / stock["vol"].iloc[-1] == pytest.approx(math.sqrt(365 / 252))
     chosen, _ = custom.build(prices, [IndicatorSpec(id="vol", fn="volatility", params={"n": 30, "periods": 252})], [], periods=365)
     assert chosen["vol"].iloc[-1] == pytest.approx(stock["vol"].iloc[-1])
+
+
+@pytest.mark.parametrize("raw", ["inf", "nan", "-inf"])
+def test_non_finite_parameters_are_refused(raw: str) -> None:
+    with pytest.raises(SpecError):
+        resolve_params("sma", {"n": raw})
+    with pytest.raises(SpecError):
+        resolve_params("bollinger", {"k": raw})
+
+
+@pytest.mark.parametrize("text", ["1 / 0", "highest(5, 3)", "crosses_above(1, 2)"])
+def test_runtime_errors_in_expressions_are_spec_errors(text: str) -> None:
+    with pytest.raises(SpecError, match="cannot evaluate"):
+        expr.evaluate(text, {"close": pd.Series([1.0, 2.0, 3.0])})
+
+
+def test_a_series_cannot_reuse_a_multi_output_indicator_id() -> None:
+    days = pd.date_range("2025-01-01", periods=40, freq="D")
+    close = pd.Series(np.linspace(10, 20, 40), index=days)
+    prices = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close, "Volume": 1.0})
+    with pytest.raises(SpecError, match="duplicate series id 'bb'"):
+        custom.build(prices, [IndicatorSpec(id="bb", fn="bollinger")], [SeriesSpec(id="bb", expr="close * 2")])
+
+
+def test_candles_take_the_typical_bar_spacing() -> None:
+    import matplotlib.pyplot as plt
+
+    from broker_analysis_mcp import charts
+
+    days = pd.bdate_range("2025-01-03", periods=10)  # starts on a Friday: the first gap is three days
+    prices = pd.DataFrame({"Open": 1.0, "High": 2.0, "Low": 0.5, "Close": 1.5}, index=days)
+    fig, ax = plt.subplots()
+    charts._candles(ax, prices)
+    assert ax.patches[0].get_width() == pytest.approx(0.6)
+    plt.close(fig)

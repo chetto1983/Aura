@@ -60,12 +60,14 @@ def test_peer_report_shares_references_and_drops_score_components(monkeypatch) -
     def fake_report(ticker: str) -> dict:
         if ticker == "BAD":
             raise analysis.data.DataError("no profile for 'BAD'")
+        if ticker == "BOOM":
+            raise RuntimeError("rate limited")
         return {"ticker": ticker, "metrics": {}, "scores": {"piotroski": {}}, "references": {f"ref_{ticker}": "x"}}
 
     monkeypatch.setattr(analysis, "fundamentals_report", fake_report)
-    r = analysis.peer_report(["A", "BAD", "B"])
+    r = analysis.peer_report(["A", "BAD", "BOOM", "B"])
     assert set(r["companies"]) == {"A", "B"}
-    assert r["errors"] == {"BAD": "no profile for 'BAD'"}
+    assert r["errors"] == {"BAD": "no profile for 'BAD'", "BOOM": "RuntimeError: rate limited"}
     assert r["references"] == {"ref_A": "x", "ref_B": "x"}
     assert all("scores" not in c and "references" not in c for c in r["companies"].values())
 

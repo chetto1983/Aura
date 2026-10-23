@@ -230,3 +230,7 @@ def test_crypto_assets_annualise_over_365_days() -> None:
     r = pd.Series(np.random.default_rng(2).normal(0, 0.03, 730))
     assert risk.volatility(r, 365) == pytest.approx(float(r.std()) * math.sqrt(365), rel=1e-12)
     assert risk.sharpe(r, 0.0, 365) / risk.sharpe(r) == pytest.approx(math.sqrt(365 / 252), rel=1e-12)
+
+
+def test_sortino_without_downside_is_infinite_not_an_error() -> None:
+    assert risk.sortino(pd.Series([0.01, 0.02, 0.01])) == math.inf

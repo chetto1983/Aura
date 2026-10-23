@@ -100,7 +100,10 @@ def names(text: str) -> set[str]:
 
 
 def evaluate(text: str, namespace: dict[str, pd.Series]) -> Value:
-    return _Evaluator(namespace).visit(parse(text).body)
+    try:
+        return _Evaluator(namespace).visit(parse(text).body)
+    except (ArithmeticError, AttributeError) as err:  # 1 / 0, or a series function given a number
+        raise SpecError(f"cannot evaluate {text!r}: {err}") from err
 
 
 class _Evaluator:

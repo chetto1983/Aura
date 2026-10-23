@@ -320,8 +320,8 @@ def peer_report(tickers: list[str]) -> dict:
     for ticker in tickers:
         try:
             report = fundamentals_report(ticker)
-        except data.DataError as err:
-            errors[ticker] = str(err)
+        except Exception as err:  # one failing ticker must not discard the reports already built
+            errors[ticker] = str(err) if isinstance(err, data.DataError) else f"{type(err).__name__}: {err}"
             continue
         refs |= report.pop("references")
         report.pop("scores")

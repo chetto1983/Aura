@@ -165,19 +165,28 @@ def _to_float(token: str) -> float | None:
         return None
 
 
+# Metrics the tools report as positive losses, which an answer may quote with a minus sign.
+LOSSES = {"var_historical_1d", "expected_shortfall_1d", "var_cornish_fisher_1d", "max_drawdown", "cdar"}
+
+
+def _signed(value: float, loss: bool) -> list[float]:
+    """The value and its percentage reading, and their negatives for a loss."""
+    readings = [value, value * 100]  # a fraction the agent may quote as a percentage
+    return readings + [-r for r in readings] if loss else readings
+
+
 def _tool_numbers(results: list) -> list[float]:
     found = []
 
-    def walk(x):
+    def walk(x, loss=False):
         if isinstance(x, dict):
-            for v in x.values():
-                walk(v)
+            for k, v in x.items():
+                walk(v, loss or k in LOSSES)
         elif isinstance(x, list):
             for v in x:
-                walk(v)
+                walk(v, loss)
         elif isinstance(x, (int, float)) and not isinstance(x, bool):
-            found.append(float(x))
-            found.append(float(x) * 100)  # a fraction the agent may quote as a percentage
+            found.extend(_signed(float(x), loss))
         elif isinstance(x, str):
             found.extend(float(n) for n in re.findall(r"\d+\.\d+|\d+", x))  # e.g. FX rates in warnings
 
@@ -187,9 +196,9 @@ def _tool_numbers(results: list) -> list[float]:
 
 
 def _matches(value: float, pool: list[float], decimals: int = 2) -> bool:
-    """A quoted number matches a tool number if it equals it once rounded to the digits shown."""
+    """A quoted number matches a tool number, sign included, if it equals it once rounded to the digits shown."""
     tolerance = 0.5 * 10 ** (-decimals) + 1e-9
-    return any(abs(abs(value) - abs(p)) <= tolerance for p in pool)
+    return any(abs(value - p) <= tolerance for p in pool)
 
 
 def _answer_decimals(text: str) -> list[tuple[float, int]]:
@@ -278,7 +287,7 @@ def score(scenario: Scenario, run: dict) -> dict:
 
     covered = sum(
         1 for m in scenario.metrics
-        if any(_matches(q, [v, v * 100], nd) for v in _metric_values(run["results"], m) for q, nd in decimals)
+        if any(_matches(q, _signed(v, m in LOSSES), nd) for v in _metric_values(run["results"], m) for q, nd in decimals)
     )
     coverage = 2.0 if not scenario.metrics else 2.0 * covered / len(scenario.metrics)
 

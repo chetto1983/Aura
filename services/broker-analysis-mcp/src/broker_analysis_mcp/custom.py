@@ -24,6 +24,11 @@ def base_namespace(prices: pd.DataFrame) -> dict[str, pd.Series]:
     return {c.lower(): prices[c].astype(float) for c in ("Open", "High", "Low", "Close", "Volume")}
 
 
+def _check_new_id(spec_id: str, ns: dict[str, pd.Series]) -> None:
+    if spec_id in ns or any(k.startswith(spec_id + ".") for k in ns):
+        raise SpecError(f"duplicate series id {spec_id!r}")
+
+
 def build(
     prices: pd.DataFrame, indicators: list[IndicatorSpec], series: list[SeriesSpec], periods: int = 252
 ) -> tuple[dict[str, pd.Series], list[dict]]:
@@ -33,8 +38,7 @@ def build(
     for i, spec in enumerate(indicators):
         if spec.fn not in CATALOG:
             raise SpecError(f"unknown indicator {spec.fn!r}; available: {sorted(CATALOG)}")
-        if spec.id in ns or any(k.startswith(spec.id + ".") for k in ns):
-            raise SpecError(f"duplicate series id {spec.id!r}")
+        _check_new_id(spec.id, ns)
         entry = CATALOG[spec.fn]
         params = resolve_params(spec.fn, spec.params, {"periods": periods})
         if "source" in params and params["source"] not in ns:
@@ -50,8 +54,7 @@ def build(
                 "guides": list(entry.guides),
             })
     for k, spec in enumerate(series):
-        if spec.id in ns:
-            raise SpecError(f"duplicate series id {spec.id!r}")
+        _check_new_id(spec.id, ns)
         value = expr.evaluate(spec.expr, ns)
         if not isinstance(value, pd.Series) or value.dtype == bool:
             raise SpecError(f"series {spec.id!r} must be numeric and vary over time; use a condition for true/false rules")

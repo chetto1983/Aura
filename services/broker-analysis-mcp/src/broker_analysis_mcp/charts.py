@@ -6,6 +6,7 @@ matplotlib.use("Agg")
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from .models import ConditionSpec, LevelSpec
@@ -16,7 +17,7 @@ UP, DOWN, INK, GRID = "#16A34A", "#DC2626", "#1F2937", "#E5E7EB"
 
 def _candles(ax, prices: pd.DataFrame) -> None:
     x = mdates.date2num(prices.index.to_pydatetime())
-    width = 0.6 * (x[1] - x[0]) if len(x) > 1 else 0.6
+    width = 0.6 * float(np.median(np.diff(x))) if len(x) > 1 else 0.6  # weekends make some gaps wider
     rising = prices["Close"] >= prices["Open"]
     colors = [UP if r else DOWN for r in rising]
     ax.vlines(x, prices["Low"], prices["High"], color=colors, linewidth=0.7)
