@@ -3,6 +3,32 @@
 Notable changes to Aura, newest first. Each section is also the text of its
 [GitHub release](https://github.com/chetto1983/Aura/releases); the full history is in git.
 
+## Unreleased
+
+### Financial analysis MCP server (prototype)
+
+- `services/broker-analysis-mcp/` is a standalone, read-only MCP server for market analysis
+  on Yahoo Finance data, with five Italian skills that teach the agent to read and explain
+  each result. It places no orders and gives no personalised advice.
+- Tools:
+  - risk metrics, including against a benchmark: Bloomberg-style adjusted beta, Jensen's
+    alpha, Treynor, M², information ratio, up and down capture;
+  - technical indicators;
+  - fundamental ratios, with the Piotroski, Altman and Beneish scores;
+  - peer comparison and ETF analysis;
+  - user-defined indicators and conditions, with charts;
+  - condition hooks that append to a file or call a webhook.
+- Every metric carries its unit and a reference to its formula's source.
+- Webhooks stay off until the operator lists allowed URL prefixes in
+  `BROKER_ANALYSIS_WEBHOOK_ALLOW`.
+- It is not wired into Aura: there is no MCP recipe, and an operator adds it as a custom
+  server. Aura CI lints it with ruff but does not run its tests.
+- `services/broker-analysis-mcp/docs/VERIFICA.md`, in Italian, records:
+  - how each formula was checked;
+  - the agent end-to-end runs;
+  - the forecasting models tested against naive baselines and dropped.
+- yfinance reads unofficial endpoints, so production use needs a licensed data source.
+
 ## v1.1.0 — 2026-10-08
 
 About 1,700 commits since the previous prerelease, v1.0.2-rc1 of 2026-08-30. Aura is now a

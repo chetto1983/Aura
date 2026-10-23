@@ -1,0 +1,40 @@
+[project]
+name = "broker-analysis-mcp"
+version = "0.1.0"
+description = "Read-only MCP server for financial analysis on Yahoo Finance data (prototype)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.11.2",
+    "mcp[cli]>=2.3.0",
+    "numpy>=2.5.4",
+    "pandas>=3.1.0",
+    "scipy>=1.18.1",
+    "yfinance>=1.7.0",
+]
+
+[project.scripts]
+broker-analysis-mcp = "broker_analysis_mcp.server:main"
+broker-analysis-hooks = "broker_analysis_mcp.hooks:main"
+
+[build-system]
+requires = ["uv_build>=0.11.32,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "empyrical-reloaded>=0.7.0",
+    "pytest>=9.1.1",
+    "ta>=0.11.0",
+]
+
+[tool.pytest.ini_options]
+markers = ["live: needs network access to Yahoo Finance"]
+addopts = "-m 'not live'"
+
+[tool.ruff]
+# Aura's rules and pinned version; only the first-party package is local to this service.
+extend = "../../ruff.toml"
+
+[tool.ruff.lint.isort]
+known-first-party = ["broker_analysis_mcp"]
