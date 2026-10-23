@@ -1533,6 +1533,25 @@ This does not prove: the preview's duration on a hosted route (one request measu
 the same qwen probe gave 758 and 184 chars/s), a library larger than the VM's, several
 tenants, or relevance with a cloud model — its floors stay uncalibrated.
 
+**Document floors for pplx-embed-v1-4b, measured 2026-10-23.** Space `es1-b604719dc5fc0ce4`,
+the operator's 8 documents, 29 questions: 24 written by Aura's agent on the operator's request
+to collaborate, plus the five out-of-corpus questions of 2026-09-09.
+- **The bands.** Each question ran twice in one `aura docs search` process with
+  `AURA_DOCUMENT_MIN_RELEVANCE` and `AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO` lowered, while the
+  daemon kept its floors. True top-1 matches scored 0.4047..0.6523, out-of-corpus questions
+  0.2637..0.2961, and "fattura" 0.3833 on an unrelated Markdown example.
+- **The floors.** Relevance 0.39, the operator's choice over 0.35: it drops "fattura" and no
+  measured true match, on a band 0.0214 wide. The 0.72 distance dropped no true match and stays.
+- **Per family.** The floors table is one per family from this measurement on, because memory
+  was not measured. This space's memory keeps EmbeddingGemma's floors and still says
+  `uncalibrated_floors`, and the cockpit's `floors_calibrated` is true only when both families
+  are measured.
+
+This does not prove: a library beyond 8 documents, questions written by someone who had not read
+the documents, short queries in general (one word scored high against a card), or exact phrases,
+which the cosine rerank can bury (0.199 for a font named verbatim in the DOCX). Record:
+`docs/superpowers/verification/2026-10-23-document-floors-pplx.md`.
+
 **Upgrade note.** The release that ships the stamps finds every existing vector unstamped,
 so memory and documents answer lexically until they are re-embedded on the running route:
 the memory pass runs at boot and every five minutes, and every document is re-extracted and
@@ -2088,7 +2107,8 @@ The floors are out of this slice.
   `next_offset`, the scopes in the tool's description, `document_ids` listed without a query, and
   no closest name for `fatture` or `contratti` while `Clente` still gets `Cliente`. It walked two
   documents, not 50, against one tag.
-- **The floors friction is still there.**
+- **The floors friction is still there.** Measured and recorded the same day: relevance 0.39 for
+  the VM's space (§11, "Document floors for pplx-embed-v1-4b").
 - **What it does not show:**
   - no 9.8 score, and the 23 passing questions were not re-run;
   - f20 and f21 were not exercised, because the library holds a single tag;

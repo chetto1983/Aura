@@ -1,7 +1,9 @@
 # Document relevance floors for the cloud space Implementation Plan
 
-**Status (2026-10-23):** Task 1 done (the overrides); Task 2 waits for the updater to apply its SHA.
-Operator's decisions the same day: "Frizioni + soglie ora" and "CLI + override".
+**Status (2026-10-23):** Tasks 1 and 2 done (overrides `95514022d`; measurement
+`docs/superpowers/verification/2026-10-23-document-floors-pplx.md`); Task 3 records documents
+0.72 / 0.39 in a per-family table. Operator's decisions the same day: "Frizioni + soglie ora",
+"CLI + override", and "0.39" over 0.35.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -95,19 +97,19 @@ Measured: unit and race green on both packages; 53 live ArcadeDB document tests 
 
 Once the updater has applied Task 1's SHA.
 
-- [ ] **Step 1: Write the question set** against the operator's passages:
+- [x] **Step 1: Write the question set** against the operator's passages:
   - read the 8 documents' passages through the CLI;
   - write questions the library can answer, identifiers and file names among them;
   - write questions it cannot answer: the 2026-09-09 set's out-of-corpus five, plus questions near the
     library's topics that it does not answer.
 
   Keep the set in the scratchpad, never in the repository: it quotes the operator's documents.
-- [ ] **Step 2: Measure.** For each question, run
+- [x] **Step 2: Measure.** For each question, run
   `docker exec -e AURA_DOCUMENT_MIN_RELEVANCE=0.0001 -e AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO=2 aura aura docs search "<q>" --limit 3`.
   - Record the top-1 `fused` score, the rerank cosine, and whether it is the right document.
   - Repeat the answerable ones with only the relevance override. That shows whether the 0.72 distance
     drops a true match from the dense leg.
-- [ ] **Step 3: Write** `docs/superpowers/verification/2026-10-23-document-floors-pplx.md`. It holds the
+- [x] **Step 3: Write** `docs/superpowers/verification/2026-10-23-document-floors-pplx.md`. It holds the
   bands, the midpoint, and what the measurement does not show: one library of 8 documents, one day,
   top-1 only, one model.
 
@@ -136,3 +138,19 @@ Taken while executing Task 1:
   boot gates, so the index refuses an override outside its range on its own.
 - **Not in the cockpit's settings.** The measurement needs one CLI process only. Whether the daemon
   should read them from `aura.settings` is Task 3's to decide.
+
+Taken while executing Tasks 2 and 3:
+- **Aura wrote the questions.** The operator's direction was "se collaborate te ed Aura sistemate
+  tutto". In the operator's conversation, the agent listed its library and wrote 12 answerable
+  questions and 12 hard negatives. It also asked to keep file-name lookups apart from semantic ones,
+  and "topically relevant" apart from "holds the answer". The 2026-09-09 out-of-corpus five were added.
+  - Cost if wrong: the positives may be easier than an operator's, since the agent had read the
+    documents.
+- **The score the floor decides on** is the top-1 document's higher leg, the passage or the card,
+  because a document is admitted when either leg clears it.
+- **One table per family.** `calibratedFloors` became `memoryFloorsBySpace` and
+  `documentFloorsBySpace`. `FloorsCalibrated` became `MemoryFloorsCalibrated` and
+  `DocumentFloorsCalibrated`; the cockpit's card and preview require both. A per-family flag on one
+  struct was the alternative, but two flat maps say "measured" by having a row.
+- **The library has 8 documents, not the 6 the agent found.** The video and the image surfaced only
+  with the floors off: the agent had no way to list the library.

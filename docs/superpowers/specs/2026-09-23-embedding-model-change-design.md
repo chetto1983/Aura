@@ -574,6 +574,19 @@ existing measurement procedure (the 2026-09-02 and 2026-09-09 calibrations behin
 `relevance_floors.go`) adding a row. The E2E below records the first datum for the cloud model it
 uses.
 
+Amended 2026-10-23, after the measurement in
+`docs/superpowers/verification/2026-10-23-document-floors-pplx.md`:
+- **One table per family.** A model can be measured for one family and not the other. The lab
+  VM's cloud space `es1-b604719dc5fc0ce4` (`openrouter perplexity/pplx-embed-v1-4b`, 768d,
+  recipe 1) has a documents row and no memory row.
+- **That row.** Documents 0.72 / 0.39, where 0.39 is the operator's choice: the midpoint of
+  "fattura" (0.3833) and the worst true match (0.4047), over 0.35, the midpoint of true and
+  out-of-corpus.
+- **What each family says.** A document answer in that space no longer carries
+  `uncalibrated_floors`; a memory read still does. The cockpit's `floors_calibrated` is true only
+  when both families are measured.
+- **What the measurement does not show.** One library of 8 documents, 29 questions, one day, top-1.
+
 ### §10. Visibility
 
 - **Cockpit, embedding card**, per tenant and family:
