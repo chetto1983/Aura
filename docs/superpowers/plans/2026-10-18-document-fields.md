@@ -1,7 +1,11 @@
 # Document fields implementation plan
 
-**Status (2026-10-18):** written, not started. The operator approved the spec, decision 2
-included ("Approvata, scrivi il piano").
+**Status (2026-10-23):** PARTIAL. Task 0 measured in ffa66d6a9
+(`verification/2026-10-18-document-fields-mirror.md`); T1-T12 in 2c9923ec3..dfc4f5e13; Task 13
+steps 1-6 in 28fa1f13d..4a46a87e2 (`verification/2026-10-18-document-fields.md`, final review's
+fixes c65598a2a..4d66b7008), on master. Open: step 7, the operator's run on the lab VM, where the
+real agent picks the filters from the operator's words; the dev-stack run wrote them into the set.
+The operator approved the spec, decision 2 included ("Approvata, scrivi il piano").
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task by task, with
