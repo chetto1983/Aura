@@ -32,8 +32,12 @@ Kronos (arXiv:2508.02739, NeoQuasar/Kronos-*) differs by design, fixed before it
   volatility   primary: mean Garman-Klass variance of the sampled bars, the target's estimator,
                after repairing bars whose high or low does not bracket open and close; secondary:
                the paper's realised variance, mean squared log return of the sampled closes
-  context      Kronos-small and -base accept at most 512 bars and read the last 512 of the 1,024;
-               Kronos-mini reads all 1,024
+  speed        sampling runs through a KV cache (e2e/kronos_cache.py) instead of re-encoding the
+               window at every step; on teacher-forced sequences its logits match Kronos's own to
+               float32 rounding (largest difference 1e-5 on logits up to 15)
+  context      the cache is exact only while the window does not slide, so Kronos-small and -base,
+               which accept 512 bars, read the last 492 of the 1,024 (492 + 20 steps = 512);
+               Kronos-mini, which accepts 2,048, reads all 1,024
   leakage      its pre-training data end in June 2024, so --first-origin 2024-07-01 drops earlier
                origins
 Its code is not on PyPI: pass the cloned repository with --kronos-src.
@@ -111,14 +115,16 @@ KRONOS = {  # model: (tokenizer, maximum context)
 class KronosModel:
     def __init__(self, name: str, src: str, samples: int, chunk: int = 256, temperature: float = 0.9, top_p: float = 0.9):
         sys.path.insert(0, src)
-        from model import Kronos, KronosPredictor, KronosTokenizer
+        import model.kronos as kronos
+        from kronos_cache import cached_predictor
 
         tokenizer_id, max_context = KRONOS[name]
-        self.context = min(CONTEXT, max_context)
+        self.context = min(CONTEXT, max_context - max((*HORIZONS, VOL_H)))
         self.samples, self.chunk, self.temperature, self.top_p = samples, chunk, temperature, top_p
-        self.predictor = KronosPredictor(
-            Kronos.from_pretrained(f"NeoQuasar/{name}"), KronosTokenizer.from_pretrained(f"NeoQuasar/{tokenizer_id}"),
-            device="cpu", max_context=self.context,
+        self.predictor = cached_predictor(kronos)(
+            kronos.Kronos.from_pretrained(f"NeoQuasar/{name}"),
+            kronos.KronosTokenizer.from_pretrained(f"NeoQuasar/{tokenizer_id}"),
+            device="cpu", max_context=max_context,
         )
 
     def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
