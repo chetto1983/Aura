@@ -5,6 +5,15 @@ Notable changes to Aura, newest first. Each section is also the text of its
 
 ## Unreleased
 
+### Plugin connectors run in the sandbox box
+
+- `aura pack install` puts a plugin's stdio connector in each identity's sandbox box, never in
+  the Aura container, whose environment holds the database credentials. Its first start may take
+  up to 120 seconds, the time a cold `uvx` needs to fetch a Python server and its dependencies.
+  Remote connectors are unchanged.
+- A box server takes no secrets, so a plugin that passes a key to its stdio connector is refused
+  at install, and the error names the key.
+
 ### Financial analysis MCP server (prototype)
 
 - `services/broker-analysis-mcp/` is a standalone, read-only MCP server for market analysis

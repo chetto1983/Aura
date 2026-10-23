@@ -79,9 +79,20 @@ func packInstall(ctx context.Context, pool *pgxpool.Pool, refArg string, out io.
 	return nil
 }
 
+// packBoxInitTimeoutSec is a pack stdio connector's first-start budget in a box. Measured
+// 2026-10-23 for broker-analysis-mcp with an empty uv cache and no Python 3.13: 28.7 s
+// to the initialize answer (1.5 s warm), against the 30 s DefaultBoxInitTimeout. A pack
+// cannot declare its own budget, since the plugin format has no field for it.
+const packBoxInitTimeoutSec = 120
+
 // stagePackServer adds one connector to the in-memory config. It refuses a name
 // that is already taken rather than overwriting it: the existing server may be
 // one the operator configured by hand, and a pack must not silently replace it.
+//
+// A stdio connector is third-party code, so it runs in the calling identity's box,
+// not as a child of the Aura process, whose environment holds the database
+// credentials. A box server takes no secrets, so the write refuses a pack that hands
+// one to its stdio connector.
 func stagePackServer(doc *mcp.ManagedConfig, ref packs.Ref, name string, s packs.Server) error {
 	if existing, taken := doc.MCPServers[name]; taken {
 		if existing.Source == packs.SourceMarker(ref) {
@@ -90,7 +101,7 @@ func stagePackServer(doc *mcp.ManagedConfig, ref packs.Ref, name string, s packs
 		return fmt.Errorf("name is taken by a server from %q", existing.Source)
 	}
 	enabled := true
-	doc.MCPServers[name] = mcp.ManagedServer{
+	server := mcp.ManagedServer{
 		Command: s.Command,
 		Args:    s.Args,
 		Env:     packEnvPairs(s.Env),
@@ -102,6 +113,10 @@ func stagePackServer(doc *mcp.ManagedConfig, ref packs.Ref, name string, s packs
 		// whole pack (amendment #126).
 		Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked},
 	}
+	if transport, _, err := mcp.Classify(server); err == nil && transport == mcp.ServerTypeStdio {
+		server.Runtime = mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox, InitTimeoutSec: packBoxInitTimeoutSec}
+	}
+	doc.MCPServers[name] = server
 	ensureProfileMembership(doc, doc.ActiveProfileName(), name)
 	return nil
 }

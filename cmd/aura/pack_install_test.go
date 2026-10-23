@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/packs"
@@ -68,6 +69,60 @@ func TestStagePackServerCarriesStdioArgvAndEnv(t *testing.T) {
 	// on every install for no reason.
 	if len(got.Env) != 2 || got.Env[0] != "A=1" || got.Env[1] != "B=2" {
 		t.Errorf("env = %v, want sorted KEY=VALUE pairs", got.Env)
+	}
+}
+
+// A pack's stdio connector is third-party code: it runs in the calling identity's
+// sandbox box, never as a child of the Aura process, whose environment holds the
+// database credentials.
+func TestStagePackServerRunsAStdioConnectorInTheBox(t *testing.T) {
+	t.Parallel()
+	for name, server := range map[string]packs.Server{
+		"typed":   {Type: "stdio", Command: "uvx", Args: []string{"--from", "git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.0", "broker-analysis-mcp"}},
+		"untyped": {Command: "notes-mcp"},
+	} {
+		doc := emptyConfig()
+		if err := stagePackServer(&doc, packRef(t), name, server); err != nil {
+			t.Fatalf("%s: stagePackServer: %v", name, err)
+		}
+		got := doc.MCPServers[name]
+		if !mcp.IsBoxRuntime(got) {
+			t.Errorf("%s: runtime = %q, want the identity's box", name, got.Runtime.Kind)
+		}
+		if mcp.BoxInitTimeout(got) != 120*time.Second {
+			t.Errorf("%s: first-start budget = %v, want 120s", name, mcp.BoxInitTimeout(got))
+		}
+		if err := mcp.ValidateManagedServer(name, got); err != nil {
+			t.Errorf("%s: the staged connector would not survive the write: %v", name, err)
+		}
+	}
+}
+
+func TestStagePackServerLeavesARemoteConnectorWithoutARuntime(t *testing.T) {
+	t.Parallel()
+	doc := emptyConfig()
+	if err := stagePackServer(&doc, packRef(t), "hubspot", packs.Server{Type: "http", URL: "https://mcp.hubspot.com/anthropic"}); err != nil {
+		t.Fatalf("stagePackServer: %v", err)
+	}
+	if got := doc.MCPServers["hubspot"].Runtime; got.Kind != "" || got.InitTimeoutSec != 0 {
+		t.Errorf("runtime = %+v, want none: a remote connector runs nowhere in Aura", got)
+	}
+}
+
+// A box server takes no secrets: everything in the box is readable by the agent's
+// shell. A pack that hands its stdio connector a credential is refused at the write,
+// by name, instead of starting without it.
+func TestStagePackServerWithASecretIsRefusedForTheBox(t *testing.T) {
+	t.Parallel()
+	doc := emptyConfig()
+	if err := stagePackServer(&doc, packRef(t), "crm", packs.Server{
+		Command: "crm-mcp", Env: map[string]string{"CRM_API_KEY": "sk-live"},
+	}); err != nil {
+		t.Fatalf("stagePackServer: %v", err)
+	}
+	err := mcp.ValidateManagedServer("crm", doc.MCPServers["crm"])
+	if err == nil || !strings.Contains(err.Error(), "CRM_API_KEY") || !strings.Contains(err.Error(), "box") {
+		t.Fatalf("err = %v, want a refusal naming the key and the box", err)
 	}
 }
 
