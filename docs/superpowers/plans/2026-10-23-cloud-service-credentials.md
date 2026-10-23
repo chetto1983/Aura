@@ -1,6 +1,13 @@
 # Cloud service credentials Implementation Plan
 
-**Status (2026-10-23):** written; spec approved in chat ("procedi pure con la risoluzione dei bachi").
+**Status (2026-10-23):** COMPLETE.
+- **Implementation.** Tasks 1-5 in fa9e4d9f0..21c647412; the final review's fixes in d4d933b12.
+- **Delivery.** Pushed as d46cedab6, with CI, Skills, CodeQL and the edge image green.
+- **Acceptance 7 and 8** measured on the lab VM with the chat on ChatGPT:
+  `verification/2026-10-23-cloud-service-credentials.md`.
+- **Acceptance 9.** Task 13 step 7 of the document fields plan ran on this build:
+  `verification/2026-10-23-document-fields-lab-vm.md`.
+- **Spec.** Approved in chat ("procedi pure con la risoluzione dei bachi").
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -72,7 +79,7 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
     `ServicesKey` when `llm.ReasoningTarget(provider, baseURL) == llm.ReasoningTargetOpenRouter`, else `""`.
   - `EmbedRoute` keeps its signature; its returned key is now `EmbedKey` of the route it returns.
 
-- [ ] **Step 1: Write the failing tests** in `credentials_test.go`, over a fake `SecretReader` backed by a map
+- [x] **Step 1: Write the failing tests** in `credentials_test.go`, over a fake `SecretReader` backed by a map
   the test can change and an optional error:
   - `TestServicesKeyReadsTheRowOnEveryCall`: row `"k1"`, read, set `"k2"`, read → `"k1"` then `"k2"`.
   - `TestServicesKeyFallsBackToTheEnvironmentForAnEmptyRow`: no row, `LookupEnv` gives `"env-key"` → `"env-key"`.
@@ -88,15 +95,15 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
     → returned key `"endpoint"`; with the endpoint secret absent → `""`.
   - In `internal/ingestsupervisor/route_test.go`, `TestRouteResolverRefusesAManualEndpointWithoutItsKey`: the
     same rows with only the services secret → `Resolve` returns `embeddings.ErrNoCredential`.
-- [ ] **Step 2: Run them, expect FAIL** (undefined `Credentials`, `EmbedEndpointKeySetting`):
+- [x] **Step 2: Run them, expect FAIL** (undefined `Credentials`, `EmbedEndpointKeySetting`):
   `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./internal/settings/ ./internal/ingestsupervisor/'`
-- [ ] **Step 3: Implement.** `credentials.go` with the interfaces above; add
+- [x] **Step 3: Implement.** `credentials.go` with the interfaces above; add
   `"AURA_EMBED_CLOUD_API_KEY": {Secret: true, Kind: KindString, Label: "Embedding endpoint API key"}` beside
   `AURA_EMBED_CLOUD_BASE_URL`; in `EmbedRoute` replace the direct `OPENROUTER_API_KEY` read with
   `Credentials{Store: store, LookupEnv: lookupEnv}.EmbedKey(ctx, embed)` and rewrite its doc comment ("There
   is no embedding-specific key" goes: the manual endpoint has one, OpenRouter does not).
-- [ ] **Step 4: Run them, expect PASS**, then `go vet` and `go test -race` on both packages (WSL).
-- [ ] **Step 5: Commit** `feat(settings): one reader for the cloud credentials, and a manual endpoint's own key`.
+- [x] **Step 4: Run them, expect PASS**, then `go vet` and `go test -race` on both packages (WSL).
+- [x] **Step 5: Commit** `feat(settings): one reader for the cloud credentials, and a manual endpoint's own key`.
 
 ### Task 2: the embedding client reads its credential with the call's context
 
@@ -114,20 +121,20 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
   - `func NewMemoryEmbedder(embed config.EmbedConfig, credential embeddings.CredentialFunc) DenseEmbedder`.
 - Behaviour is unchanged in this task: `cmd/aura` and `arcadedb-mcp` wrap what they pass today.
 
-- [ ] **Step 1: Write the failing tests** in `internal/embeddings`:
+- [x] **Step 1: Write the failing tests** in `internal/embeddings`:
   - `TestRouteReturnsTheCredentialReadError`: a hosted route whose credential fails with `errBoom` →
     `Embed` and `Space` return an error that `errors.Is(err, errBoom)` and not `errors.Is(err, ErrNoCredential)`;
     the test server receives no request.
   - `TestRouteRefusesAnEmptyCredential`: credential returns `""` → `ErrNoCredential` from `Embed` and `Space`.
   - Existing tests that set `Credential: func() string {…}` or `Key: func() string {…}` move to the new type.
-- [ ] **Step 2: Run, expect FAIL** (type mismatch): `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./internal/embeddings/'`
-- [ ] **Step 3: Implement.** `key(ctx)` returns the read's error unchanged; every caller of `key()`
+- [x] **Step 2: Run, expect FAIL** (type mismatch): `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./internal/embeddings/'`
+- [x] **Step 3: Implement.** `key(ctx)` returns the read's error unchanged; every caller of `key()`
   (`Embed`, the request build, `fit.go`'s catalogue read, `Route.Space`) passes its `ctx` and returns the
   error. `Compatibility.Check` reads `c.Key(ctx)` once. Adapt the three `cmd/aura` callers and
   `arcadedb-mcp`'s `func() string` closures to `CredentialFunc` with no change of source.
-- [ ] **Step 4: Run, expect PASS**: `go build ./... && go vet ./...` and `-race` tests for `internal/embeddings`,
+- [x] **Step 4: Run, expect PASS**: `go build ./... && go vet ./...` and `-race` tests for `internal/embeddings`,
   `internal/arcadedb`, `cmd/arcadedb-mcp`, `cmd/aura` (WSL).
-- [ ] **Step 5: Commit** `refactor(embeddings): read a route's credential with the call's context, and fail loudly`.
+- [x] **Step 5: Commit** `refactor(embeddings): read a route's credential with the call's context, and fail loudly`.
 
 ### Task 3: the daemon's embedders and the embedding page on the helper
 
@@ -151,7 +158,7 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
 - Removed: `liveKey`, `wireDocumentQueryEmbedder` (the retriever is built with the helper from the start),
   `primaryLLMRouteReloader.EffectiveValue`'s `OPENROUTER_API_KEY` case, `config.(*Config).EmbedRoute`.
 
-- [ ] **Step 1: Write the failing tests**, replacing `TestMemoryEmbedderReadsTheRotatedKey` and
+- [x] **Step 1: Write the failing tests**, replacing `TestMemoryEmbedderReadsTheRotatedKey` and
   `TestDocumentQueryEmbedderReadsTheRotatedKey` (they pinned the chat profile as the source, which the spec
   retires; say so in the commit body):
   - `TestMemoryEmbedderReadsTheEndpointKeyOnEveryCall` and `TestDocumentQueryEmbedderReadsTheEndpointKeyOnEveryCall`:
@@ -168,15 +175,15 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
     the environment.
   - `TestDoctorProbeNamesAManualEndpointWithoutItsKey`: endpoint route, services key only → the embed probe
     fails naming `AURA_EMBED_CLOUD_API_KEY`.
-- [ ] **Step 2: Run, expect FAIL**: `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./cmd/aura/ -run "Embedder|Probe|Settings|Doctor"'`
-- [ ] **Step 3: Implement** the interfaces above. `bootChatEnv` builds `serviceCredentials(cfg, pool)` once and
+- [x] **Step 2: Run, expect FAIL**: `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./cmd/aura/ -run "Embedder|Probe|Settings|Doctor"'`
+- [x] **Step 3: Implement** the interfaces above. `bootChatEnv` builds `serviceCredentials(cfg, pool)` once and
   passes it to `memoryEmbedder`, `newQueryEmbedder` (classifier and `chatEnv.documentEmbedder`) and
   `chatEnv`; `newHostDocumentRetriever` builds its own from `(cfg, pool)`. `wireEmbeddingRoutes` gives the
   probe `creds.EmbedKey(ctx, embed)` for the route being probed and the compatibility check
   `creds.ServicesKey`. The doctor's embed probe opens `settingsListerForCLI`'s store as the `SecretReader`
   and reports the missing key by its setting name.
-- [ ] **Step 4: Run, expect PASS**; `go vet ./... && go build ./...`; `go test -race ./cmd/aura/` (WSL).
-- [ ] **Step 5: Commit** `fix(aura): the embedders take the services key from the settings, not the chat profile`.
+- [x] **Step 4: Run, expect PASS**; `go vet ./... && go build ./...`; `go test -race ./cmd/aura/` (WSL).
+- [x] **Step 5: Commit** `fix(aura): the embedders take the services key from the settings, not the chat profile`.
 
 ### Task 4: speech and vision on the helper
 
@@ -199,7 +206,7 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
   to vision. `aura-media-index` builds `settings.Credentials{Store: store, LookupEnv: os.LookupEnv}` from the
   store it already opens and stops writing the services key into `cfg.LLM.APIKey`.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - `TestSTTCloudSendsTheKeyReadAtRequestTime` and `TestTTSCloudSendsTheKeyReadAtRequestTime`: the key func
     returns `"k1"` then `"k2"` → two requests carry `Bearer k1`, `Bearer k2`.
   - `TestSpeechKeyReadErrorFailsTheRequest`: the key func fails → `Transcribe`/`Synthesize` return that error and
@@ -209,12 +216,12 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
   - `TestVisionSendsTheServicesKeyToAnOpenRouterPrimary`: the same over the OpenRouter provider and base →
     `PrimaryKey` returns the services key.
   - `TestTelegramTTSUsesTheServicesKeyFunc`: `newTTSClient` with `OpenRouterKey` returning `"k"` → `Bearer k`.
-- [ ] **Step 2: Run, expect FAIL**: `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./internal/multimodal/ ./internal/channels/telegram/'`
-- [ ] **Step 3: Implement.** The request builders read the key with the request's `ctx`; `route()` methods take
+- [x] **Step 2: Run, expect FAIL**: `wsl -e bash -lc 'cd /mnt/d/Aura && go test ./internal/multimodal/ ./internal/channels/telegram/'`
+- [x] **Step 3: Implement.** The request builders read the key with the request's `ctx`; `route()` methods take
   `ctx` and return the read error. Adapt the callers named above.
-- [ ] **Step 4: Run, expect PASS**; `go vet ./... && go build ./...`; `-race` on `internal/multimodal`,
+- [x] **Step 4: Run, expect PASS**; `go vet ./... && go build ./...`; `-race` on `internal/multimodal`,
   `internal/channels/telegram`, `cmd/aura`, `cmd/aura-media-index` (WSL).
-- [ ] **Step 5: Commit** `fix(multimodal): speech and vision take the services key from the settings, and only to OpenRouter`.
+- [x] **Step 5: Commit** `fix(multimodal): speech and vision take the services key from the settings, and only to OpenRouter`.
 
 ### Task 5: the manual endpoint's key in the cockpit
 
@@ -230,19 +237,19 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
   'settings.fields.embedCloudApiKey', helpKey: 'settings.help.embedCloudApiKey' }` in `EMBEDDING_SETTINGS`,
   rendered only in the manual arm, after the URL and the model.
 
-- [ ] **Step 1: Write the failing tests:**
+- [x] **Step 1: Write the failing tests:**
   - Go, `TestSettingsListNeverCarriesTheEndpointKey`: a stored `AURA_EMBED_CLOUD_API_KEY` row → the list item has
     `has_value: true`, `value: ""`, `applied: "live"`.
   - vitest: the manual arm shows the key field; Locale and OpenRouter do not; typing a key and saving sends it
     through the generic settings save (`PUT /api/settings/AURA_EMBED_CLOUD_API_KEY`), not the route apply;
     an untouched empty box sends nothing.
-- [ ] **Step 2: Run, expect FAIL**: `go test ./internal/agui/ -run SettingsList` (WSL);
+- [x] **Step 2: Run, expect FAIL**: `go test ./internal/agui/ -run SettingsList` (WSL);
   `cd web && npx vitest run src/settings` (Windows).
-- [ ] **Step 3: Implement.** Add the key to `callTimeSettingKeys` (the daemon reads it on every call); add the
+- [x] **Step 3: Implement.** Add the key to `callTimeSettingKeys` (the daemon reads it on every call); add the
   def; render it in the `choice === 'manual'` `SettingsFields` with the existing secret field; Italian label
   "Chiave API dell'endpoint", English "Endpoint API key"; help says it is sent only to the endpoint above.
-- [ ] **Step 4: Run, expect PASS**; `npx tsc -b`; `npx oxlint`; the web gates the pre-push runs.
-- [ ] **Step 5: Commit** `feat(cockpit): a manual embedding endpoint takes its own key`.
+- [x] **Step 4: Run, expect PASS**; `npx tsc -b`; `npx oxlint`; the web gates the pre-push runs.
+- [x] **Step 5: Commit** `feat(cockpit): a manual embedding endpoint takes its own key`.
 
 ### Task 6: gates, the lab VM, and the record
 
@@ -253,18 +260,18 @@ probes, speech and vision; `arcadedb-mcp`, the ingest supervisor and `aura-media
   pointing to this spec), this plan's Status line, `scripts/coverage_package_policy.json` if a pinned
   denominator moved.
 
-- [ ] **Step 1:** `make quality` in WSL; the coverage gate `bash scripts/coverage_docker.sh` with the package
+- [x] **Step 1:** `make quality` in WSL; the coverage gate `bash scripts/coverage_docker.sh` with the package
   policy (update an exact baseline only when the measured denominator moved, with its numbers in the commit).
-- [ ] **Step 2:** Push from WSL with the recipe in `CLAUDE.md`; CI, Skills and CodeQL green on the pushed SHA;
+- [x] **Step 2:** Push from WSL with the recipe in `CLAUDE.md`; CI, Skills and CodeQL green on the pushed SHA;
   "Publish Aura edge image" green; the VM's updater applies it (`docker inspect aura` revision).
-- [ ] **Step 3: Measure on the VM, chat on ChatGPT** (acceptance 7 and 8):
+- [x] **Step 3: Measure on the VM, chat on ChatGPT** (acceptance 7 and 8):
   - `GET /api/settings/embedding-space`: the space named, no error;
   - one `document_search` through `aura docs mcp` in the `aura` container: `status` is not `lexical_only`;
   - the aura log names no `retrieval degraded` with `query_embedding_unavailable`.
-- [ ] **Step 4:** Write the verification file: what was measured, and what it does not show (the Ollama vision
+- [x] **Step 4:** Write the verification file: what was measured, and what it does not show (the Ollama vision
   leak is read in the code, not measured; no Mistral run). Add the PRD note and the 2026-09-23 amendment.
   Set this plan's Status.
-- [ ] **Step 5: Commit** `docs: the cloud service credentials, measured on the lab VM`. Task 13 step 7 of
+- [x] **Step 5: Commit** `docs: the cloud service credentials, measured on the lab VM`. Task 13 step 7 of
   `2026-10-18-document-fields.md` then runs on this build.
 
 ## Decisions taken while writing this plan

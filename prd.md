@@ -758,6 +758,28 @@ speech call with the chat on Ollama; and the Credit panel's spend reads
 `aura.cache_metrics`, so generation spend is enforced by the key's OpenRouter limit but
 not shown there.
 
+Amended 2026-10-23, measured on the lab VM with the chat on ChatGPT
+(`docs/superpowers/verification/2026-10-23-cloud-service-credentials.md`):
+- **The finding.** The daemon's embedders and the cloud speech clients took the services key
+  from the chat profile, and the ChatGPT profile clears it. The embedding space had no name,
+  the memory embed backfill failed every five minutes, and every `document_search` answered
+  `lexical_only`.
+- **The rule now.** The shared services read the services key from the settings on every
+  call, through one helper (`settings.Credentials`), and send it only to OpenRouter.
+  - Vision through a primary on any other host sends no key.
+  - A manual embedding endpoint has its own sealed key, `AURA_EMBED_CLOUD_API_KEY`, and never
+    receives the services key.
+- **After `d46cedab6`.** The space is named, the backfill runs clean and a real agent turn's
+  `document_search` answers `complete`.
+- **What this does not prove:**
+  - no manual endpoint was tried;
+  - the per-call read's cost is unmeasured;
+  - cloud speech was not called live.
+- **What the same run found.** A ChatGPT primary gives the media indexer no vision route: the
+  capability source has no ChatGPT case. A scan then goes to the local OCR sidecar, which the
+  VM does not run. The operator decided that the chosen model reads images whenever it can,
+  ChatGPT included; that is a slice of its own.
+
 A key counts as present only while the provider still holds it, not while Aura still has a
 row for it. Measured 2026-10-02 on the lab VM, reproducing an operator report: every key of
 the account was deleted on OpenRouter and a new management key saved from the cockpit. The

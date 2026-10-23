@@ -5,6 +5,25 @@ Notable changes to Aura, newest first. Each section is also the text of its
 
 ## Unreleased
 
+### Cloud services read their key from the settings
+
+- Cloud embeddings, cloud speech-to-text and text-to-speech, and vision through an OpenRouter
+  primary model read the services key (`OPENROUTER_API_KEY`) from the settings on every call,
+  never from the chat route. With the chat on ChatGPT they used to get no key: memory and
+  document search ran on keywords only, and the embedding settings reported "the hosted route has
+  no credential".
+- A rotated services key reaches the running embedders and speech clients on their next call,
+  with no restart.
+- The services key goes only to OpenRouter. A manual embedding endpoint no longer receives it,
+  and vision through a primary model on any other host sends no key.
+
+#### Upgrading
+
+- **A manual embedding endpoint needs its own key.** Enter it in the embedding settings under
+  *Endpoint API key* (`AURA_EMBED_CLOUD_API_KEY`, stored sealed, or set in the environment), then
+  save. Until it is set, the route is refused, the preview names the missing key, and memory and
+  documents are served by keyword search.
+
 ### Plugin connectors run in the sandbox box
 
 - `aura pack install` puts a plugin's stdio connector in each identity's sandbox box, never in

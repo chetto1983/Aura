@@ -357,6 +357,12 @@ over the daemon's space `S`:
   the family stays lexical, and `aura doctor` and the cockpit name the missing key.
 - **The key is read live.** The daemon's embedders take the credential from the running LLM
   profile, not a boot copy, so a key rotated in the cockpit reaches them without a restart.
+  *Amended 2026-10-23:* the live read stays, the source changes. The chat profile is the chat's,
+  and a ChatGPT plan leaves it keyless: measured on the lab VM that day, every daemon embedder
+  answered "no credential" while the services key sat in `aura.settings`, and `document_search`
+  ran lexical only. The embedders now read their route's own key from the settings on every
+  request: the services key for OpenRouter, `AURA_EMBED_CLOUD_API_KEY` for a manual endpoint,
+  none for the local sidecar (`docs/superpowers/specs/2026-10-23-cloud-service-credentials-design.md`).
 - **Turns.** The conversation reconciler keeps filling turns that have no vector, now as one
   batched call per projection instead of one request per turn. The pass touches turns only
   through the stale selection, so no turn is embedded twice. A turn a space refused is
