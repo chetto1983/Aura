@@ -63,7 +63,7 @@ def _donchian(ns: Namespace, p: dict) -> dict[str, Series]:
 
 def _rolling_vol(ns: Namespace, p: dict) -> dict[str, Series]:
     returns = _src(ns, p).pct_change()
-    return {"value": returns.rolling(p["n"]).std(ddof=1) * math.sqrt(252) * 100}
+    return {"value": returns.rolling(p["n"]).std(ddof=1) * math.sqrt(p["periods"]) * 100}
 
 
 def _zscore(ns: Namespace, p: dict) -> dict[str, Series]:
@@ -118,7 +118,12 @@ CATALOG: dict[str, Indicator] = {
         {"source": SOURCE, "n": N}, ("value",), "lower", "Rate of change over n sessions, in %", (0.0,),
     ),
     "volatility": Indicator(
-        _rolling_vol, {"source": SOURCE, "n": N}, ("value",), "lower",
+        _rolling_vol,
+        {
+            "source": SOURCE, "n": N,
+            "periods": Param(int, 252, 1, 366, "bars per year to annualise; defaults to 365 for crypto assets"),
+        },
+        ("value",), "lower",
         "Rolling annualised close-to-close volatility, in %",
     ),
     "zscore": Indicator(
@@ -137,15 +142,16 @@ class SpecError(ValueError):
     """An indicator, expression or condition the user supplied is not valid."""
 
 
-def resolve_params(name: str, given: dict) -> dict:
-    """Merges user parameters over the defaults, checking names, types and bounds."""
+def resolve_params(name: str, given: dict, defaults: dict | None = None) -> dict:
+    """Merges user parameters over the defaults, checking names, types and bounds. `defaults`
+    replaces a catalog default for this instrument (periods per year for a crypto asset)."""
     spec = CATALOG[name]
     unknown = set(given) - set(spec.params)
     if unknown:
         raise SpecError(f"{name}: unknown parameters {sorted(unknown)}; allowed {sorted(spec.params)}")
     out = {}
     for key, param in spec.params.items():
-        raw = given.get(key, param.default)
+        raw = given.get(key, (defaults or {}).get(key, param.default))
         try:
             value = param.kind(raw) if param.kind is not int else int(float(raw))
         except (TypeError, ValueError) as err:

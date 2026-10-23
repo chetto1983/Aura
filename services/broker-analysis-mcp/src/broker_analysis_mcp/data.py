@@ -13,6 +13,7 @@ import pandas as pd
 import yfinance as yf
 
 from .fundamentals import Year
+from .risk import PERIODS, periods_per_year
 
 SOURCE = "Yahoo Finance via yfinance (unofficial, prototype only)"
 
@@ -29,6 +30,7 @@ class Meta:
     ticker: str
     currency: str
     timezone: str = "?"
+    periods_per_year: int = PERIODS
     retrieved_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
     source: str = SOURCE
     warnings: list[str] = field(default_factory=list)
@@ -55,7 +57,12 @@ def history(ticker: str, period: str = "3y") -> tuple[pd.DataFrame, Meta]:
     meta = t.history_metadata or {}
     currency = meta.get("currency") or t.info.get("currency") or "?"
     prices, currency = _normalise_currency(prices, currency)
-    return prices, Meta(ticker=ticker, currency=currency, timezone=meta.get("exchangeTimezoneName") or "?")
+    return prices, Meta(
+        ticker=ticker,
+        currency=currency,
+        timezone=meta.get("exchangeTimezoneName") or "?",
+        periods_per_year=periods_per_year(meta.get("instrumentType") or "?"),
+    )
 
 
 def fx_rate(from_ccy: str, to_ccy: str) -> float:

@@ -1,7 +1,8 @@
 """Where each formula comes from. Every tool result cites one of these keys."""
 
 REFERENCES: dict[str, str] = {
-    "sharpe": "Sharpe ratio, annualised: mean(r - rf) / std(r) * sqrt(252). "
+    "sharpe": "Sharpe ratio, annualised: mean(r - rf) / std(r) * sqrt(N), N = parameters.periods_per_year: 252 "
+    "sessions, 365 for crypto assets, which trade every day; volatilities and CAGR use the same N. "
     "Standard error under Gaussian returns: sqrt((1 + SR^2/2) / n), Lo (2002), as restated in "
     "arXiv:1906.00573 and arXiv:2302.08829.",
     "psr": "Probabilistic Sharpe Ratio, Bailey & Lopez de Prado (2012), J. of Risk 15(2): "
@@ -23,14 +24,15 @@ REFERENCES: dict[str, str] = {
     "var_cornish_fisher": "Modified (Cornish-Fisher) VaR, Favre & Galeano (2002), Boudt, Peterson & "
     "Croux (2008), J. of Risk 11(2). Not an arXiv source: z_cf = z + (z^2-1)S/6 + (z^3-3z)K/24 "
     "- (2z^3-5z)S^2/36, K excess kurtosis.",
-    "beta": "Beta: cov(r, r_m) / var(r_m) on aligned daily returns.",
+    "beta": "Beta: cov(r, r_m) / var(r_m) on daily returns taken over the dates both instruments trade.",
     "beta_adjusted": "Bloomberg-style beta: raw beta on the last 104 Friday-to-Friday returns (two years, the default "
     "window of Bloomberg's BETA screen), adjusted as 0.67 x raw + 0.33 x 1, the shrinkage toward the market Blume "
     "(1971, J. of Finance 26(1)) measured; weights as documented by university guides to the BETA screen (BYU, "
     "Babson). Bloomberg's own figure can differ with its data, its index and its return definition.",
     "capm": "Jensen's alpha = (mean(r - rf) - beta x mean(r_m - rf)) x 252; Treynor = mean(r - rf) x 252 / beta "
     "(null when beta <= 0); Modigliani & Modigliani (1997) M2 = rf + Sharpe x sigma_m, and M2 minus the benchmark's "
-    "mean return = sigma_m x (Sharpe - Sharpe_m). Aligned daily returns, arithmetic annualisation, daily beta.",
+    "mean return = sigma_m x (Sharpe - Sharpe_m). Daily returns over the dates both trade, annualised arithmetically "
+    "with 252 sessions (365 only when both are crypto assets), daily beta.",
     "information_ratio": "Information ratio = mean(r - r_b) / std(r - r_b) x sqrt(52); tracking error = "
     "std(r - r_b) x sqrt(52); Friday-to-Friday returns, so markets closing at different times stay comparable.",
     "capture": "Up (down) capture: annualised geometric return of the security over the calendar months in which "
@@ -47,7 +49,8 @@ REFERENCES: dict[str, str] = {
     "tracking": "Tracking difference: annualised fund return minus annualised benchmark return on "
     "the same dates and currency (sign: fund - benchmark). Tracking error: annualised standard "
     "deviation of Friday-to-Friday return differences.",
-    "price": "Last close and 52-week high/low from split- and dividend-adjusted daily prices.",
+    "price": "Last close and the high/low of the last 52 calendar weeks, from split- and dividend-adjusted daily "
+    "prices.",
     "sma": "Simple moving average of the last n closes (50 and 200 sessions).",
     "rsi": "RSI, Wilder (1978): smoothing alpha = 1/n.",
     "macd": "MACD (12, 26, 9): EMA12 - EMA26, signal = EMA9 of MACD.",

@@ -121,6 +121,26 @@ SCENARIOS = [
         ["piotroski", "beneish", "margine lordo|gross margin|gmi", "yahoo"],
     ),
     Scenario(
+        "rischio_bitcoin",
+        "Quanto è rischioso il Bitcoin (BTC-USD) rispetto all'S&P 500 negli ultimi 3 anni? Volatilità, drawdown "
+        "massimo, VaR al 95%, beta e come si comporta nei mesi in cui la borsa sale e in quelli in cui scende.",
+        "risk_metrics",
+        {"ticker": "BTC-USD", "benchmark": "^GSPC"},
+        "analisi-rischio",
+        ["volatility_close_to_close", "max_drawdown", "var_historical_1d", "up_capture", "down_capture"],
+        ["yahoo", "365|ogni giorno|tutti i giorni|7 giorni|fine settimana|weekend"],
+    ),
+    Scenario(
+        "tecnica_bitcoin",
+        "Com'è messo tecnicamente il Bitcoin (BTC-USD)? Trend, momentum e distanza dai massimi e dai minimi "
+        "dell'ultimo anno.",
+        "technical_indicators",
+        {"ticker": "BTC-USD"},
+        "analisi-tecnica",
+        ["rsi14", "price_vs_sma200", "price_vs_high_52w"],
+        ["yahoo|fonte"],
+    ),
+    Scenario(
         "ticker_inesistente",
         "Qual è il P/E della società con ticker NOTATICKER123?",
         "fundamental_ratios",

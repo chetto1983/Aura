@@ -1,5 +1,7 @@
 """Parametric indicators, safe expressions, conditions, event study and charts."""
 
+import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -189,3 +191,16 @@ class TestBuildAndConditions:
         chart = custom.chart_spec(prices, ns, plots, [(spec, events)], [LevelSpec(price=60)])
         assert len(chart["plots"][0]["data"]) == len(prices)
         assert sum(v is not None for v in chart["signals"][0]["data"]) == report["events"]
+
+
+def test_volatility_indicator_annualises_with_the_instruments_year() -> None:
+    days = pd.date_range("2025-01-01", periods=120, freq="D")
+    close = pd.Series(100 * np.cumprod(1 + np.random.default_rng(1).normal(0, 0.03, 120)), index=days)
+    prices = pd.DataFrame({"Open": close, "High": close, "Low": close, "Close": close, "Volume": 1.0})
+    spec = [IndicatorSpec(id="vol", fn="volatility", params={"n": 30})]
+    crypto, plots = custom.build(prices, spec, [], periods=365)
+    stock, _ = custom.build(prices, spec, [])
+    assert plots[0]["params"]["periods"] == 365
+    assert crypto["vol"].iloc[-1] / stock["vol"].iloc[-1] == pytest.approx(math.sqrt(365 / 252))
+    chosen, _ = custom.build(prices, [IndicatorSpec(id="vol", fn="volatility", params={"n": 30, "periods": 252})], [], periods=365)
+    assert chosen["vol"].iloc[-1] == pytest.approx(stock["vol"].iloc[-1])

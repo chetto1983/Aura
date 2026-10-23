@@ -25,7 +25,7 @@ def base_namespace(prices: pd.DataFrame) -> dict[str, pd.Series]:
 
 
 def build(
-    prices: pd.DataFrame, indicators: list[IndicatorSpec], series: list[SeriesSpec]
+    prices: pd.DataFrame, indicators: list[IndicatorSpec], series: list[SeriesSpec], periods: int = 252
 ) -> tuple[dict[str, pd.Series], list[dict]]:
     """Evaluates indicators then derived series in order; returns the namespace and plot specs."""
     ns = base_namespace(prices)
@@ -36,7 +36,7 @@ def build(
         if spec.id in ns or any(k.startswith(spec.id + ".") for k in ns):
             raise SpecError(f"duplicate series id {spec.id!r}")
         entry = CATALOG[spec.fn]
-        params = resolve_params(spec.fn, spec.params)
+        params = resolve_params(spec.fn, spec.params, {"periods": periods})
         if "source" in params and params["source"] not in ns:
             raise SpecError(f"{spec.id}: source {params['source']!r} is not an earlier series; available {sorted(ns)}")
         outputs = entry.compute(ns, params)

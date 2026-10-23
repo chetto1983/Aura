@@ -1,4 +1,8 @@
-"""Risk and performance measures on daily return series. Pure functions, no I/O."""
+"""Risk and performance measures on daily return series. Pure functions, no I/O.
+
+Annualised measures take the number of daily bars in a year: 252 trading sessions, or 365 for
+crypto assets, which trade every day; `periods_per_year` picks it from Yahoo's instrument type.
+"""
 
 import math
 
@@ -7,18 +11,23 @@ import pandas as pd
 from scipy import stats
 
 PERIODS = 252
+CRYPTO_PERIODS = 365
 WEEKS = 52
 MONTHS = 12
 BETA_WEEKS = 104  # two years of weekly returns, Bloomberg's default window for BETA
 BLUME_WEIGHT = 0.67
 
 
+def periods_per_year(instrument_type: str) -> int:
+    return CRYPTO_PERIODS if instrument_type == "CRYPTOCURRENCY" else PERIODS
+
+
 def simple_returns(prices: pd.Series) -> pd.Series:
     return prices.pct_change().dropna()
 
 
-def daily_rate(annual_rate: float) -> float:
-    return (1 + annual_rate) ** (1 / PERIODS) - 1
+def daily_rate(annual_rate: float, periods: int = PERIODS) -> float:
+    return (1 + annual_rate) ** (1 / periods) - 1
 
 
 def cagr(returns: pd.Series, periods: int = PERIODS) -> float:
@@ -27,28 +36,28 @@ def cagr(returns: pd.Series, periods: int = PERIODS) -> float:
     return growth ** (1 / years) - 1
 
 
-def volatility(returns: pd.Series) -> float:
-    return float(returns.std(ddof=1)) * math.sqrt(PERIODS)
+def volatility(returns: pd.Series, periods: int = PERIODS) -> float:
+    return float(returns.std(ddof=1)) * math.sqrt(periods)
 
 
-def sharpe(returns: pd.Series, rf_annual: float = 0.0) -> float:
-    excess = returns - daily_rate(rf_annual)
-    return float(excess.mean() / excess.std(ddof=1)) * math.sqrt(PERIODS)
+def sharpe(returns: pd.Series, rf_annual: float = 0.0, periods: int = PERIODS) -> float:
+    excess = returns - daily_rate(rf_annual, periods)
+    return float(excess.mean() / excess.std(ddof=1)) * math.sqrt(periods)
 
 
-def sharpe_standard_error(sr_annual: float, n: int) -> float:
+def sharpe_standard_error(sr_annual: float, n: int, periods: int = PERIODS) -> float:
     """Lo (2002) Gaussian standard error of the annualised Sharpe ratio."""
-    sr = sr_annual / math.sqrt(PERIODS)
-    return math.sqrt((1 + sr**2 / 2) / n) * math.sqrt(PERIODS)
+    sr = sr_annual / math.sqrt(periods)
+    return math.sqrt((1 + sr**2 / 2) / n) * math.sqrt(periods)
 
 
 def probabilistic_sharpe(
-    returns: pd.Series, benchmark_sr_annual: float = 0.0, rf_annual: float = 0.0
+    returns: pd.Series, benchmark_sr_annual: float = 0.0, rf_annual: float = 0.0, periods: int = PERIODS
 ) -> float:
     """Probability that the true Sharpe ratio exceeds the benchmark one (Bailey & Lopez de Prado)."""
-    excess = returns - daily_rate(rf_annual)
+    excess = returns - daily_rate(rf_annual, periods)
     sr = float(excess.mean() / excess.std(ddof=1))
-    sr_star = benchmark_sr_annual / math.sqrt(PERIODS)
+    sr_star = benchmark_sr_annual / math.sqrt(periods)
     skew = float(stats.skew(excess))
     kurt = float(stats.kurtosis(excess, fisher=False))
     denominator = math.sqrt(1 - skew * sr + (kurt - 1) / 4 * sr**2)
@@ -56,18 +65,18 @@ def probabilistic_sharpe(
     return float(stats.norm.cdf(z))
 
 
-def downside_deviation(returns: pd.Series, mar_annual: float = 0.0) -> float:
-    shortfall = np.minimum(returns - daily_rate(mar_annual), 0.0)
-    return math.sqrt(float(np.mean(shortfall**2))) * math.sqrt(PERIODS)
+def downside_deviation(returns: pd.Series, mar_annual: float = 0.0, periods: int = PERIODS) -> float:
+    shortfall = np.minimum(returns - daily_rate(mar_annual, periods), 0.0)
+    return math.sqrt(float(np.mean(shortfall**2))) * math.sqrt(periods)
 
 
-def sortino(returns: pd.Series, mar_annual: float = 0.0) -> float:
-    excess_mean = float((returns - daily_rate(mar_annual)).mean()) * PERIODS
-    return excess_mean / downside_deviation(returns, mar_annual)
+def sortino(returns: pd.Series, mar_annual: float = 0.0, periods: int = PERIODS) -> float:
+    excess_mean = float((returns - daily_rate(mar_annual, periods)).mean()) * periods
+    return excess_mean / downside_deviation(returns, mar_annual, periods)
 
 
-def omega(returns: pd.Series, threshold_annual: float = 0.0) -> float:
-    excess = returns - daily_rate(threshold_annual)
+def omega(returns: pd.Series, threshold_annual: float = 0.0, periods: int = PERIODS) -> float:
+    excess = returns - daily_rate(threshold_annual, periods)
     gains = float(excess[excess > 0].sum())
     losses = float(-excess[excess < 0].sum())
     return gains / losses if losses > 0 else math.inf
@@ -91,9 +100,9 @@ def cdar(returns: pd.Series, alpha: float = 0.95) -> float:
     return float(dd[:tail].mean())
 
 
-def calmar(returns: pd.Series) -> float:
+def calmar(returns: pd.Series, periods: int = PERIODS) -> float:
     mdd = max_drawdown(returns)
-    return cagr(returns) / mdd if mdd > 0 else math.inf
+    return cagr(returns, periods) / mdd if mdd > 0 else math.inf
 
 
 def var_historical(returns: pd.Series, alpha: float = 0.95) -> float:
@@ -158,21 +167,23 @@ def adjusted_beta(raw: float) -> float:
     return BLUME_WEIGHT * raw + (1 - BLUME_WEIGHT)
 
 
-def capm_measures(returns: pd.Series, market: pd.Series, rf_annual: float = 0.0) -> dict[str, float | None]:
+def capm_measures(
+    returns: pd.Series, market: pd.Series, rf_annual: float = 0.0, periods: int = PERIODS
+) -> dict[str, float | None]:
     """Jensen's alpha, Treynor ratio and Modigliani M2 on aligned daily returns, annualised
     arithmetically like the Sharpe ratio. M2 is the return of the security levered to the
     benchmark's volatility; minus the benchmark's return it equals sigma_m (SR - SR_m)."""
     pair = aligned(returns, market)
     r, m = pair.iloc[:, 0], pair.iloc[:, 1]
-    rf = daily_rate(rf_annual)
+    rf = daily_rate(rf_annual, periods)
     b = beta(r, m)
-    excess_r, excess_m = float((r - rf).mean()) * PERIODS, float((m - rf).mean()) * PERIODS
-    sigma_m = volatility(m)
-    sr, sr_m = sharpe(r, rf_annual), sharpe(m, rf_annual)
+    excess_r, excess_m = float((r - rf).mean()) * periods, float((m - rf).mean()) * periods
+    sigma_m = volatility(m, periods)
+    sr, sr_m = sharpe(r, rf_annual, periods), sharpe(m, rf_annual, periods)
     return {
         "jensen_alpha": excess_r - b * excess_m,
         "treynor": excess_r / b if b > 0 else None,
-        "m_squared": rf * PERIODS + sr * sigma_m,
+        "m_squared": rf * periods + sr * sigma_m,
         "m_squared_vs_benchmark": sigma_m * (sr - sr_m),
     }
 
@@ -193,10 +204,12 @@ def capture_ratios(returns: pd.Series, market: pd.Series) -> dict[str, float | N
     return {"up_capture": capture(up), "down_capture": capture(~up), "up_months": int(up.sum()), "down_months": int((~up).sum())}
 
 
-def information_ratio(returns: pd.Series, benchmark: pd.Series) -> float:
-    """Mean active return over its standard deviation, annualised from weekly returns."""
+def information_ratio(returns: pd.Series, benchmark: pd.Series) -> float | None:
+    """Mean active return over its standard deviation, annualised from weekly returns; None when
+    the security never departs from the benchmark."""
     active = returns - benchmark
-    return float(active.mean() / active.std(ddof=1)) * math.sqrt(WEEKS)
+    deviation = float(active.std(ddof=1))
+    return float(active.mean()) / deviation * math.sqrt(WEEKS) if deviation > 0 else None
 
 
 def tracking(fund_prices: pd.Series, benchmark_prices: pd.Series) -> dict[str, float]:
@@ -213,24 +226,24 @@ def tracking(fund_prices: pd.Series, benchmark_prices: pd.Series) -> dict[str, f
     }
 
 
-def _annualised(variance: pd.Series) -> float:
-    return math.sqrt(float(variance.mean()) * PERIODS)
+def _annualised(variance: pd.Series, periods: int) -> float:
+    return math.sqrt(float(variance.mean()) * periods)
 
 
-def parkinson(ohlc: pd.DataFrame) -> float:
+def parkinson(ohlc: pd.DataFrame, periods: int = PERIODS) -> float:
     hl = np.log(ohlc["High"] / ohlc["Low"])
-    return _annualised(hl**2 / (4 * math.log(2)))
+    return _annualised(hl**2 / (4 * math.log(2)), periods)
 
 
-def garman_klass(ohlc: pd.DataFrame) -> float:
+def garman_klass(ohlc: pd.DataFrame, periods: int = PERIODS) -> float:
     hl = np.log(ohlc["High"] / ohlc["Low"])
     co = np.log(ohlc["Close"] / ohlc["Open"])
-    return _annualised(0.5 * hl**2 - (2 * math.log(2) - 1) * co**2)
+    return _annualised(0.5 * hl**2 - (2 * math.log(2) - 1) * co**2, periods)
 
 
-def rogers_satchell(ohlc: pd.DataFrame) -> float:
+def rogers_satchell(ohlc: pd.DataFrame, periods: int = PERIODS) -> float:
     ho = np.log(ohlc["High"] / ohlc["Open"])
     hc = np.log(ohlc["High"] / ohlc["Close"])
     lo = np.log(ohlc["Low"] / ohlc["Open"])
     lc = np.log(ohlc["Low"] / ohlc["Close"])
-    return _annualised(ho * hc + lo * lc)
+    return _annualised(ho * hc + lo * lc, periods)

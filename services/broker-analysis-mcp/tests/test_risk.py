@@ -219,3 +219,14 @@ def test_information_ratio_matches_empyrical(returns: pd.Series, market: pd.Seri
     assert risk.information_ratio(returns, market) == pytest.approx(
         ep.excess_sharpe(returns, market) * math.sqrt(52), rel=1e-9
     )
+
+
+def test_crypto_assets_annualise_over_365_days() -> None:
+    assert risk.periods_per_year("CRYPTOCURRENCY") == 365
+    assert risk.periods_per_year("EQUITY") == risk.periods_per_year("ETF") == 252
+    daily = pd.Series([0.001] * 365)
+    assert risk.cagr(daily, 365) == pytest.approx(1.001**365 - 1, rel=1e-12)  # one calendar year
+    assert risk.cagr(daily) < risk.cagr(daily, 365)  # 365 bars read as 1.45 years of sessions
+    r = pd.Series(np.random.default_rng(2).normal(0, 0.03, 730))
+    assert risk.volatility(r, 365) == pytest.approx(float(r.std()) * math.sqrt(365), rel=1e-12)
+    assert risk.sharpe(r, 0.0, 365) / risk.sharpe(r) == pytest.approx(math.sqrt(365 / 252), rel=1e-12)

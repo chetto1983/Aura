@@ -22,6 +22,8 @@ Protocol, fixed before looking at any result:
 A component that learns must beat its dumb baseline out of sample, or it is dropped.
 Run with an environment holding `timestral` and torch:
   python e2e/tsfm_eval.py --models timestral-28M chronos-bolt-base chronos-2 --out e2e/runs/tsfm.json
+  python e2e/tsfm_eval.py --tickers BTC-USD ETH-USD SOL-USD XRP-USD --out e2e/runs/tsfm_crypto.json
+Crypto assets trade every day, so for them a session is a calendar day.
 """
 
 import argparse
@@ -207,10 +209,11 @@ def tests(per_ticker: dict) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--models", nargs="+", default=["timestral-28M", "chronos-bolt-base", "chronos-2"])
-    parser.add_argument("--out", default="timestral_eval.json")
+    parser.add_argument("--tickers", nargs="+", default=UNIVERSE)
+    parser.add_argument("--out", required=True)
     args = parser.parse_args()
-    data = {t: load(t) for t in UNIVERSE}
-    report = {"protocol": __doc__, "universe": UNIVERSE, "models": {}}
+    data = {t: load(t) for t in args.tickers}
+    report = {"protocol": __doc__, "universe": args.tickers, "models": {}}
     for size in args.models:
         model = make(size)
         started = time.time()

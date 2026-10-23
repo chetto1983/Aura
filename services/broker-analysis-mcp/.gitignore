@@ -9,3 +9,4 @@ wheels/
 # agent_e2e.py writes one JSON per scenario here; only the forecasting evidence is kept.
 e2e/runs/*
 !e2e/runs/tsfm.json
+!e2e/runs/tsfm_crypto.json

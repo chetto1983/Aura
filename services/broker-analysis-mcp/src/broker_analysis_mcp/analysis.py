@@ -62,9 +62,14 @@ def _rounded(obj, digits: int = 4):
     return round(obj, digits) if isinstance(obj, float) else obj
 
 
-def _benchmark_metrics(close: pd.Series, bench_close: pd.Series, rf_annual: float, warnings: list[str]) -> dict:
-    r, b = risk.simple_returns(close), risk.simple_returns(bench_close)
+def _benchmark_metrics(
+    close: pd.Series, bench_close: pd.Series, rf_annual: float, periods: int, warnings: list[str]
+) -> dict:
+    """Measures against a benchmark on the dates both trade: prices are aligned before any return
+    is taken, so a Monday return spans the same days for a crypto asset and for a stock index."""
     prices = risk.aligned(close, bench_close)
+    daily = prices.pct_change().dropna()
+    r, b = daily.iloc[:, 0], daily.iloc[:, 1]
     weekly = risk.weekly_returns(prices)
     beta_weeks = weekly.iloc[-risk.BETA_WEEKS:]
     if len(beta_weeks) < risk.BETA_WEEKS:
@@ -74,7 +79,7 @@ def _benchmark_metrics(close: pd.Series, bench_close: pd.Series, rf_annual: floa
         )
     raw = risk.beta(beta_weeks.iloc[:, 0], beta_weeks.iloc[:, 1])
     monthly = risk.monthly_returns(prices)
-    capm = risk.capm_measures(r, b, rf_annual)
+    capm = risk.capm_measures(r, b, rf_annual, periods)
     capture = risk.capture_ratios(monthly.iloc[:, 0], monthly.iloc[:, 1])
     return {
         "beta": _metric(risk.beta(r, b), "ratio", "beta"),
@@ -105,24 +110,25 @@ def risk_report(
     alpha: float = 0.95,
 ) -> dict:
     prices, meta = data.history(ticker, period)
+    n = meta.periods_per_year
     r = risk.simple_returns(prices["Close"])
-    sr = risk.sharpe(r, rf_annual)
-    se = risk.sharpe_standard_error(sr, len(r))
+    sr = risk.sharpe(r, rf_annual, n)
+    se = risk.sharpe_standard_error(sr, len(r), n)
     metrics = {
-        "cagr": _metric(risk.cagr(r), "%", "calmar"),
-        "volatility_close_to_close": _metric(risk.volatility(r), "%", "sharpe"),
-        "volatility_garman_klass": _metric(risk.garman_klass(prices), "%", "garman_klass"),
-        "volatility_parkinson": _metric(risk.parkinson(prices), "%", "parkinson"),
-        "volatility_rogers_satchell": _metric(risk.rogers_satchell(prices), "%", "rogers_satchell"),
+        "cagr": _metric(risk.cagr(r, n), "%", "calmar"),
+        "volatility_close_to_close": _metric(risk.volatility(r, n), "%", "sharpe"),
+        "volatility_garman_klass": _metric(risk.garman_klass(prices, n), "%", "garman_klass"),
+        "volatility_parkinson": _metric(risk.parkinson(prices, n), "%", "parkinson"),
+        "volatility_rogers_satchell": _metric(risk.rogers_satchell(prices, n), "%", "rogers_satchell"),
         "sharpe": _metric(sr, "ratio", "sharpe"),
         "sharpe_standard_error": _metric(se, "ratio", "sharpe"),
         "sharpe_t_stat": _metric(sr / se, "standard errors from zero", "sharpe"),
-        "probabilistic_sharpe_vs_0": _metric(risk.probabilistic_sharpe(r, 0.0, rf_annual), "probability", "psr"),
-        "sortino": _metric(risk.sortino(r, rf_annual), "ratio", "sortino"),
-        "omega": _metric(risk.omega(r, rf_annual), "ratio", "omega"),
+        "probabilistic_sharpe_vs_0": _metric(risk.probabilistic_sharpe(r, 0.0, rf_annual, n), "probability", "psr"),
+        "sortino": _metric(risk.sortino(r, rf_annual, n), "ratio", "sortino"),
+        "omega": _metric(risk.omega(r, rf_annual, n), "ratio", "omega"),
         "max_drawdown": _metric(risk.max_drawdown(r), "%", "max_drawdown"),
         "cdar": _metric(risk.cdar(r, alpha), "%", "cdar"),
-        "calmar": _metric(risk.calmar(r), "ratio", "calmar"),
+        "calmar": _metric(risk.calmar(r, n), "ratio", "calmar"),
         "var_historical_1d": _metric(risk.var_historical(r, alpha), "%", "var_historical"),
         "expected_shortfall_1d": _metric(risk.expected_shortfall(r, alpha), "%", "var_historical"),
         "var_cornish_fisher_1d": _metric(risk.var_cornish_fisher(r, alpha), "%", "var_cornish_fisher"),
@@ -131,18 +137,26 @@ def risk_report(
         bench_prices, bench_meta = data.history(benchmark, period)
         bench_prices = _in_currency(bench_prices, bench_meta, meta.currency, period)
         meta.warnings.extend(bench_meta.warnings)
-        metrics |= _benchmark_metrics(prices["Close"], bench_prices["Close"], rf_annual, meta.warnings)
+        common = min(n, bench_meta.periods_per_year)
+        metrics |= _benchmark_metrics(prices["Close"], bench_prices["Close"], rf_annual, common, meta.warnings)
     return {
         "ticker": ticker,
         "currency": meta.currency,
         "window": _window(prices),
-        "parameters": {"risk_free_annual": rf_annual, "confidence": alpha, "benchmark": benchmark},
+        "parameters": {
+            "risk_free_annual": rf_annual, "confidence": alpha, "benchmark": benchmark, "periods_per_year": n,
+        },
         "metrics": metrics,
         "references": references({m["ref"] for m in metrics.values()}),
         "source": meta.source,
         "retrieved_at": meta.retrieved_at,
         "warnings": meta.warnings,
     }
+
+
+def last_52_weeks(prices: pd.DataFrame) -> pd.DataFrame:
+    """A calendar window: 252 bars are a year of sessions but eight months of a crypto asset."""
+    return prices.loc[prices.index > prices.index[-1] - pd.DateOffset(weeks=52)]
 
 
 TECHNICAL_DEFAULTS = dict(
@@ -161,7 +175,8 @@ def technical_report(ticker: str, period: str = "1y", params: dict | None = None
     bands = indicators.bollinger(close, p["bollinger_n"], p["bollinger_k"]).iloc[-1]
     sma_f, sma_s = indicators.sma(close, fast).iloc[-1], indicators.sma(close, slow).iloc[-1]
     atr = float(indicators.atr(prices, p["atr_period"]).iloc[-1])
-    high, low = float(prices["High"].iloc[-252:].max()), float(prices["Low"].iloc[-252:].min())
+    year = last_52_weeks(prices)
+    high, low = float(year["High"].max()), float(year["Low"].min())
     rsi_key, atr_key = f"rsi{p['rsi_period']}", f"atr{p['atr_period']}"
     metrics = {
         "close": _metric(last, meta.currency, "price"),

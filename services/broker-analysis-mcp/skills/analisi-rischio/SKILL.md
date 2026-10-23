@@ -15,6 +15,7 @@ description: Analisi di rischio e rendimento di un titolo, indice, ETF o portafo
 - `period`: 3y di default; 5y per strumenti volatili, 1y solo se l'analista vuole il regime recente.
 - `benchmark`: l'indice di riferimento del mercato del titolo (FTSEMIB.MI per Milano, ^STOXX50E per l'area euro, ^GSPC per gli USA). Serve per beta, correlazione, alfa, Treynor, M², information ratio e capture; il tool lo converte nella valuta del titolo.
 - Per il beta in stile Bloomberg serve `period` di almeno 2y: con meno settimane il tool lo avvisa.
+- Criptovalute (BTC-USD, ETH-USD): quotano tutti i giorni, quindi il tool annualizza su 365 giorni invece di 252 sedute (`parameters.periods_per_year`); dichiaralo. Contro un indice azionario le metriche relative usano solo i giorni in cui quotano entrambi.
 - `risk_free_annual`: tasso privo di rischio in decimali (€STR o BOT a 12 mesi per l'euro, T-bill per il dollaro). Se l'analista non lo indica usa 0 e dichiaralo.
 
 ## Come leggere i risultati

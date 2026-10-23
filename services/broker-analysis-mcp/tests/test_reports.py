@@ -22,7 +22,7 @@ def _prices(years: int, seed: int = 4) -> tuple[pd.Series, pd.Series]:
 def test_benchmark_metrics_carry_units_and_the_bloomberg_window() -> None:
     warnings: list[str] = []
     stock, bench = _prices(3)
-    m = analysis._benchmark_metrics(stock, bench, 0.02, warnings)
+    m = analysis._benchmark_metrics(stock, bench, 0.02, 252, warnings)
     assert warnings == []
     assert m["weeks_for_beta"]["value"] == 104
     raw = m["beta_weekly_2y"]["value"]
@@ -36,7 +36,7 @@ def test_benchmark_metrics_carry_units_and_the_bloomberg_window() -> None:
 
 def test_short_history_warns_about_the_beta_window() -> None:
     warnings: list[str] = []
-    m = analysis._benchmark_metrics(*_prices(1), 0.0, warnings)
+    m = analysis._benchmark_metrics(*_prices(1), 0.0, 252, warnings)
     assert m["weeks_for_beta"]["value"] < 104
     assert any("beta_weekly_2y" in w for w in warnings)
 
@@ -68,3 +68,28 @@ def test_peer_report_shares_references_and_drops_score_components(monkeypatch) -
     assert r["errors"] == {"BAD": "no profile for 'BAD'"}
     assert r["references"] == {"ref_A": "x", "ref_B": "x"}
     assert all("scores" not in c and "references" not in c for c in r["companies"].values())
+
+
+def test_a_crypto_asset_is_compared_on_the_dates_both_trade() -> None:
+    # The asset equals the index on every weekday and wanders at weekends. Returns taken after
+    # aligning the prices are identical; returns taken first would compare a Sunday-to-Monday
+    # move with a Friday-to-Monday one.
+    _, index_close = _prices(3)
+    every_day = pd.date_range(index_close.index[0], index_close.index[-1], freq="D")
+    crypto = index_close.reindex(every_day).ffill()
+    weekend = crypto.index.day_of_week >= 5
+    crypto[weekend] *= np.random.default_rng(9).uniform(0.9, 1.1, int(weekend.sum()))
+    m = analysis._benchmark_metrics(crypto, index_close, 0.0, 252, [])
+    assert m["beta"]["value"] == pytest.approx(1.0, abs=1e-4)
+    assert m["correlation"]["value"] == pytest.approx(1.0, abs=1e-4)
+    assert m["jensen_alpha"]["value"] == pytest.approx(0.0, abs=1e-4)
+    assert m["information_ratio"]["value"] is None  # no active return to scale
+
+
+def test_the_52_week_window_is_calendar_time() -> None:
+    days = pd.date_range("2025-01-01", periods=500, freq="D")
+    prices = pd.DataFrame({"High": np.arange(500.0)}, index=days)
+    window = analysis.last_52_weeks(prices)
+    assert len(window) == 364  # a year of a crypto asset, not 252 bars
+    sessions = pd.DataFrame({"High": np.arange(500.0)}, index=pd.bdate_range("2025-01-01", periods=500))
+    assert 255 <= len(analysis.last_52_weeks(sessions)) <= 261

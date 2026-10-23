@@ -37,7 +37,7 @@ def run(
     title: str | None = None,
 ) -> tuple[dict, str | None]:
     prices, meta = data.history(ticker, period)
-    ns, plots = custom.build(prices, indicators, series)
+    ns, plots = custom.build(prices, indicators, series, meta.periods_per_year)
     reports, marked = [], []
     for spec in conditions:
         report, events = custom.condition_report(spec, ns)

@@ -76,6 +76,8 @@ CALLS = {
     ),
     "fund_wacc": ("fundamental_ratios", {"ticker": "ENI.MI", "risk_free_annual": 0.035, "equity_risk_premium": 0.055}),
     "fund_bank": ("fundamental_ratios", {"ticker": "ISP.MI"}),
+    "risk_btc": ("risk_metrics", {"ticker": "BTC-USD", "period": "3y", "benchmark": "^GSPC"}),
+    "tech_btc": ("technical_indicators", {"ticker": "BTC-USD", "period": "2y"}),
     "hook_list": ("list_hooks", {}),
     "hook_run": ("run_hooks", {}),
 }
@@ -324,3 +326,23 @@ def test_scores_are_not_computed_for_a_bank(live) -> None:
     assert r["scores"] == {}
     assert "altman_z" not in r["metrics"]
     assert any("banks and insurers" in w for w in r["warnings"])
+
+
+def test_bitcoin_is_annualised_over_calendar_days(live) -> None:
+    r = live[1]["risk_btc"]["data"]
+    assert r["parameters"]["periods_per_year"] == 365
+    w = r["window"]
+    closes = _closes("BTC-USD", w["start"], w["end"])
+    returns = closes.pct_change().dropna()
+    years = (closes.index[-1] - closes.index[0]).days / 365.25
+    assert _v(r, "volatility_close_to_close") == pytest.approx(float(returns.std()) * 365**0.5 * 100, rel=0.01)
+    assert _v(r, "cagr") == pytest.approx(((closes.iloc[-1] / closes.iloc[0]) ** (1 / years) - 1) * 100, rel=0.02)
+
+
+def test_bitcoin_52_week_range_covers_a_calendar_year(live) -> None:
+    r = live[1]["tech_btc"]["data"]
+    bars = yf.Ticker("BTC-USD").history(period="2y", auto_adjust=True)
+    bars.index = bars.index.tz_localize(None).normalize()
+    year = bars.loc[bars.index > bars.index[-1] - pd.DateOffset(weeks=52)]
+    assert _v(r, "high_52w") == pytest.approx(float(year["High"].max()), rel=0.01)
+    assert _v(r, "low_52w") == pytest.approx(float(year["Low"].min()), rel=0.01)

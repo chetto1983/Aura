@@ -8,6 +8,7 @@ description: Analisi tecnica di prezzo con il tool technical_indicators del serv
 ## Regole
 - Ogni indicatore viene da `technical_indicators` con `period` di almeno 1y (meglio 2y), così la media a 200 sedute è definita.
 - Cita la data dell'ultima chiusura (`window.end`) e la valuta.
+- Per le criptovalute ogni barra è un giorno di calendario, weekend compresi: la media a 200 copre 200 giorni, non 200 sedute. Massimi e minimi a 52 settimane sono comunque su un anno di calendario.
 - Ogni numero viene dal tool: non calcolare distanze, multipli dell'ATR o livelli. Una distanza si riporta come la dà il tool, dal punto di vista del prezzo ("prezzo +18,5% sopra la SMA200"), senza invertirla.
 - Non proporre stop, target o dimensioni di posizione: sono decisioni di trading, e questo è uno strumento di analisi.
 - L'analisi tecnica descrive il prezzo, non il valore: non presentarla come previsione certa.

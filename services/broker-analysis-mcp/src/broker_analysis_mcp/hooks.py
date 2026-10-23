@@ -71,7 +71,7 @@ def _evaluate(hook: dict, loader: Loader) -> tuple[pd.DataFrame, dict, pd.Series
     prices, meta = loader(hook["ticker"], hook["period"])
     indicators = [IndicatorSpec(**i) for i in hook["indicators"]]
     series = [SeriesSpec(**s) for s in hook["series"]]
-    ns, _ = custom.build(prices, indicators, series)
+    ns, _ = custom.build(prices, indicators, series, meta.periods_per_year)
     _, events = custom.condition_series(ConditionSpec(**hook["condition"]), ns)
     return prices, ns, events, meta
 

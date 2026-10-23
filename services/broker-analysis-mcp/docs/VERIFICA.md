@@ -36,14 +36,17 @@ misure **non** dimostrano.
 | I tre prospetti di Yahoo hanno un numero di anni diverso (ENEL, SAP, TTE, KO, ISP) e venivano abbinati per posizione | Stessa misura; nessun valore sbagliato osservato, perché i primi anni coincidono | Anni abbinati per data di chiusura dell'esercizio; output identico al precedente su 5 ticker, salvo il flusso di cassa di ASML |
 | La fonte del tracking error parlava di rendimenti giornalieri, il codice usa quelli settimanali | Rilettura delle fonti | Testo corretto |
 | Con i punteggi, `peer_comparison` su 6 case auto restituiva 62.381 caratteri: Claude Code ha salvato il risultato in un file, l'agente l'ha letto con Grep e lo scorer non ha trovato i numeri (7,92/10) | E2E con agente, scenario Stellantis | Fonti una volta sola e componenti dei punteggi solo in `fundamental_ratios`: 41.904 caratteri, meno di prima dei punteggi |
+| Ogni misura annualizzata usava 252 sedute anche per le criptovalute, che quotano tutti i giorni | Test sul Bitcoin, 3 anni: CAGR 23,1% contro il 35,2% di calendario (1.095 rendimenti letti come 4,35 anni), volatilità 39,0% contro 46,9% | 365 giorni quando Yahoo dichiara `CRYPTOCURRENCY`, riportati in `parameters.periods_per_year`; anche l'indicatore `volatility` |
+| Il massimo e il minimo "a 52 settimane" erano le ultime 252 barre: per il Bitcoin otto mesi | Stesso test: massimo 87.364 contro 116.273 dell'anno di calendario | Finestra di 52 settimane di calendario |
+| I rendimenti contro il benchmark erano calcolati prima di allineare le date: il lunedì del Bitcoin copriva domenica-lunedì, quello dell'S&P 500 venerdì-lunedì; lo stesso accade fra borse con festività diverse | Test con una cripto identica all'indice nei giorni feriali: correlazione 0,37 invece di 1 | Prezzi allineati prima dei rendimenti; ora correlazione e beta valgono 1 |
 | La skill tecnica diceva di usare l'ATR "per dimensionare stop e posizioni", e l'agente proponeva stop a 1,5-2 ATR calcolati a mente | E2E con agente, in tutte le run | La skill vieta stop, target e dimensioni di posizione, e distanze invertite a mano |
 | L'agente calcolava a mano la distanza dell'ATR e dalle bande | Valutazione dell'E2E con agente | Il tool fornisce `atr_pct_of_close`, `price_vs_*`, `sharpe_t_stat` |
 | Per ENI Yahoo mette in "Interest Expense" gli oneri finanziari lordi (8,17 mld su 35,5 mld di debito medio, con 7,2 mld di "Interest Income"): copertura interessi 1,7× e WACC 8,9%, sopra il costo dell'equity | Test live: WACC > costo dell'equity. Su 11 emittenti gli interessi valgono 1,4-7,1% del debito di fine anno (XOM-BP), ENI 23,9% | Avviso quando gli interessi superano il 15% del debito medio; la skill non presenta copertura, costo del debito, WACC ed EVA come affidabili. Il test live asseriva `WACC ≤ ke`, che non è un'invariante: ora `0 < WACC ≤ max(ke, kd)` |
 
 ## 3. End to end
 
-- **Test offline:** 97 verdi.
-- **Test live via MCP:** 18 verdi.
+- **Test offline:** 101 verdi.
+- **Test live via MCP:** 20 verdi, compresi volatilità, CAGR e massimi a 52 settimane del Bitcoin ricalcolati da yfinance.
 - **E2E via protocollo MCP su dati live:** server avviato come sottoprocesso stdio, ogni tool chiamato su ticker reali e confrontato con i numeri di Yahoo e con un ricalcolo indipendente.
 - **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve le domande di un analista ed è valutato in automatico. La valutazione considera:
   - tool giusto con argomenti giusti;
