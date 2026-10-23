@@ -18,6 +18,10 @@ esca la nuova release di ArcadeDB nelle prossime 2 settimane". It is not yet app
     latency and memory files on `26.11.1` and `26.11.1-native`;
   - answer the question above;
   - then approve the spec.
+- **2026-10-23: the JVM pin moved to 26.10.2**
+  ([verification](../verification/2026-10-23-cocoindex-neo4j-connector-and-arcadedb-26-10-2.md)),
+  with the floor still at 26.10.1. Where this spec starts from 26.10.1 (phase A's revert,
+  acceptance 8), it now starts from 26.10.2.
 
 **This spec waits for ArcadeDB 26.11.1.**
 - Roberto Franchini said on 2026-10-17 that it ships "un paio di settimane" later.

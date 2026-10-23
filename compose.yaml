@@ -624,11 +624,18 @@ services:
   # Retrieval is full-text + graph, with an optional dense leg over the sidecar
   # embedder (LSM_VECTOR + vector.fuse); see internal/arcadedb/memory_vector.go.
   arcadedb:
-    # Stable 26.10.1, pinned BY the multi-arch index DIGEST as well as the tag, so a
+    # Stable 26.10.2, pinned BY the multi-arch index DIGEST as well as the tag, so a
     # re-pushed tag cannot change the running engine between two `up` runs with no
     # commit to show for it.
     #
-    # Why 26.10.1: it patches four advisories that reach 26.9.1, among them the critical
+    # Why 26.10.2: it closes 377 bugs found since 26.10.1, 20 of them rated critical, and
+    # it records the names of Cypher constraints (#9707), so the cocoindex connector's
+    # DROP CONSTRAINT removes the unique index it created instead of nothing. Measured
+    # before the move, on Aura's live tier and on the lab VM's restored databases:
+    # docs/superpowers/verification/2026-10-23-cocoindex-neo4j-connector-and-arcadedb-26-10-2.md.
+    # The floor in internal/arcadedb/admin.go stays 26.10.1: no statement needs 26.10.2.
+    #
+    # Why 26.10.1 is the floor: it patches four advisories that reach 26.9.1, among them the critical
     # GHSA-h2j4-28h8-cj5v (Gremlin scripting with no authorization check, remote code
     # execution by ANY authenticated user). Every identity here authenticates as its own
     # scoped user, so on 26.9.1 one tenant's credential was a path to the whole server.
@@ -644,7 +651,7 @@ services:
     # §"Searching Vectors Not Yet in the Graph"). Ungrouped searches — which is what
     # memory recall in memory_vector.go issues — always scored the delta buffer and
     # were never affected.
-    image: arcadedata/arcadedb:26.10.1@sha256:01506549bcb4a6d16af678ee43718850eba605430a3720a6b0398cb0470c710d
+    image: arcadedata/arcadedb:26.10.2@sha256:7a498ebbbb9a5f02f7d43487c13b6632f83eb7fff345968baf220ac9266fd791
     container_name: aura-arcadedb
     restart: unless-stopped
     mem_limit: 3g
