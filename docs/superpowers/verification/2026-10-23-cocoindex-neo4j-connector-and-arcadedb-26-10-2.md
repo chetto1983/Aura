@@ -150,7 +150,7 @@ The release notes were read against Aura's statements:
 **The archives.** The newest backup of each tenant database came from the lab VM's
 `aura_aura-arcadedb-backups` volume, read-only there:
 - the system identity's database, from today;
-- the operator's database, from 2026-10-13, for the reason in section 7.
+- the operator's database, from 2026-10-13, for the reason in section 8.
 
 **The run.** The archives were restored into an empty volume under 26.10.1. The same volume was then
 opened by 26.10.2, and then by 26.10.1 again.
@@ -174,7 +174,42 @@ All 33 answers were identical, and every vector probe found itself first. The se
   22 entities, 60 turns and 21 reasoning traces;
 - the system database had 22 types and 29 type indexes.
 
-## 7. Found on the way
+## 7. CI and the lab VM after the pin
+
+**CI on `1dfddad8d`** (the pin, `d33eef432`, plus the payload manifest). All five workflows passed,
+CI with its 29 jobs out of 29. Among them:
+- **Agent Memory MRS.** Score 100/100 over 36 of 36 scenarios, and every hard gate passed. The
+  report's `runtime.arcadedb_version` is `26.10.2`. The 5 embedder tests skipped locally ran here:
+  EmbeddingGemma 768 and cross-lingual hybrid. `running_aura_conversation` is `NOT_EVALUATED`
+  in CI by design.
+- **The other jobs that bring ArcadeDB up through compose:**
+  - Ingestion sidecar;
+  - Ingestion reconciliation;
+  - the owned-surface coverage gate;
+  - the db_integration tier.
+
+**The lab VM.** The updater moved `aura-arcadedb` to 26.10.2 at 14:36:54 UTC. Read at 14:40,
+read-only:
+- **Schema.** It matches the morning's read: 3 databases, the operator's with 31 types, 53 type
+  indexes and 114 indexes, none invalid. The system database has 22 types and 29 type indexes.
+- **Records.** 82 passages, 8 documents and 22 entities, as before. Turns went from 60 to 62 and
+  traces from 21 to 22; both newest are from 14:17, before the update.
+- **Reads.** All 9 single-field vector and full-text indexes of the operator's database answer, and
+  every vector probe finds itself first.
+- **A write after the update.** The ingest's `IngestStatus` `UPSERT` at 14:40:28: `ready`, 39
+  finished, 0 errors.
+- **Logs.** ArcadeDB logged no `SEVER` and no `WARNI` line since the restart, and `aura` no version
+  refusal. `aura`, `aura-arcadedb`, `aura-ingest` and `aura-arcadedb-mcp` are healthy.
+
+Not yet on the VM: a memory write and a recall through the agent, and a conversation turn projected
+after the update.
+
+**Upstream.** The operator opened
+[ArcadeData/arcadedb#10678](https://github.com/ArcadeData/arcadedb/issues/10678) for the missing
+DDL: Neo4j's `CREATE VECTOR INDEX`, `CREATE FULLTEXT INDEX` and the `VECTOR` type. cocoindex
+already declined an ArcadeDB target (cocoindex-io/cocoindex#603).
+
+## 8. Found on the way
 
 - **The operator's database has had no backup since 2026-10-13.** The VM's ArcadeDB logs
   `AccessDeniedException` on `backups/mem_448ddbe1…/` every hour.
@@ -187,9 +222,8 @@ All 33 answers were identical, and every vector probe found itself first. The se
 
 ## Not shown here
 
-- **The 5 embedder tests** on 26.10.2. CI's Agent Memory MRS job runs them with EmbeddingGemma.
-- **The ingest sidecar's own suite** and the memory MCP's live tier on 26.10.2. CI runs both
-  through compose, so they meet the new pin on its push.
+- **The real-agent E2E on the VM** (Definition of Done): document search, memory write and recall,
+  turn recall. It drives paid model calls.
 - **The operator database's schema since 2026-10-13.** Its 6 newer types and 13 newer type indexes,
   among them the document fields, were not opened from 26.10.1 data. The live tier creates them on
   26.10.2 from scratch.
