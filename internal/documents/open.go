@@ -1,9 +1,11 @@
 package documents
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"path"
 	"strings"
 
@@ -106,14 +108,29 @@ func (s *OpenService) OpenDocument(
 	if err != nil {
 		return nil, OpenedDocument{}, fmt.Errorf("open document %s: %w", documentID, err)
 	}
+	fileName := documentFileName(record)
 	return body, OpenedDocument{
 		DocumentID: record.SearchDocumentID,
-		FileName:   documentFileName(record),
+		FileName:   fileName,
 		SourceKey:  record.SourceKey,
-		MIMEType:   mimeType,
+		MIMEType:   openedMIMEType(mimeType, fileName),
 		SizeBytes:  record.SizeBytes,
 		SHA256:     record.RawSHA256,
 	}, nil
+}
+
+const genericMIMEType = "application/octet-stream"
+
+// openedMIMEType is the media type the store recorded, or the file name's when it recorded
+// none or only application/octet-stream, which says the uploader did not know the type.
+func openedMIMEType(stored, fileName string) string {
+	if stored != "" && stored != genericMIMEType {
+		return stored
+	}
+	if byName := mime.TypeByExtension(strings.ToLower(path.Ext(fileName))); byName != "" {
+		return byName
+	}
+	return genericMIMEType
 }
 
 // openUpload opens the caller's own upload of id, or returns the index's error when there is no
@@ -130,9 +147,7 @@ func (s *OpenService) openUpload(ctx context.Context, identityID, id string, ind
 	if err != nil {
 		return nil, OpenedDocument{}, fmt.Errorf("open upload %s: %w", id, err)
 	}
-	if mimeType != "" {
-		upload.MIMEType = mimeType
-	}
+	upload.MIMEType = openedMIMEType(cmp.Or(mimeType, upload.MIMEType), upload.FileName)
 	return body, upload, nil
 }
 

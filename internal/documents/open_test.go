@@ -106,6 +106,29 @@ func TestOpenDocumentCarriesTheStoresMediaType(t *testing.T) {
 	}
 }
 
+// An object stored as application/octet-stream says only that its uploader did not know the type.
+// Measured 2026-10-23 on the lab VM: three Office files of the operator's opened as
+// octet-stream, while the same formats uploaded through the chat carried their real type.
+func TestOpenDocumentNamesAGenericallyStoredTypeByItsExtension(t *testing.T) {
+	for _, test := range []struct{ stored, fileName, want string }{
+		{"application/octet-stream", "fattura-acme.pdf", "application/pdf"},
+		{"", "fattura-acme.pdf", "application/pdf"},
+		{"application/octet-stream", "export.unknownext", "application/octet-stream"},
+		{"text/csv", "fattura-acme.pdf", "text/csv"},
+	} {
+		service, lookup, opener := openFixture()
+		lookup.record.FileName, opener.mimeType = test.fileName, test.stored
+		body, meta, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = body.Close()
+		if meta.MIMEType != test.want {
+			t.Fatalf("stored %q for %s: MIMEType = %q, want %q", test.stored, test.fileName, meta.MIMEType, test.want)
+		}
+	}
+}
+
 func TestOpenDocumentPassesTheIdentityToBothGates(t *testing.T) {
 	service, lookup, opener := openFixture()
 	body, _, err := service.OpenDocument(t.Context(), retrievalIdentity, lookup.record.SearchDocumentID)
