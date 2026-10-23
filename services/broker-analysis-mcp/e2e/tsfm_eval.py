@@ -44,6 +44,11 @@ Kronos (arXiv:2508.02739, NeoQuasar/Kronos-*) differs by design, fixed before it
   leakage      its pre-training data end in June 2024, so --first-origin 2024-07-01 drops earlier
                origins
   --kronos-context N replaces the context length, e.g. the paper's 40 bars for daily data (Table 8)
+  corrected 2026-10-23, before any Kronos result was recorded: a sampled bar with a non-positive
+  price is left out of both volatility reads (its Garman-Klass variance was NaN for Kronos-small on
+  SOL and XRP) and the share of such bars is reported; batches are sized to keep the KV cache under
+  2 GiB (Kronos-base at 256 rows needed 10.5 GB and was killed on a 16 GB machine); sampling is
+  seeded, so a run is repeatable on the same data
 Its code is not on PyPI: pass the cloned repository with --kronos-src.
 Crypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the
 latest N sessions before anything is computed, so a second test can run on an earlier window
@@ -69,13 +74,14 @@ LEVELS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
 class Univariate:
     """Models that read one series: the close for prices, the daily Garman-Klass variance for volatility."""
 
-    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
-        """Price quantiles (B, H, Q) and variance forecasts by name; "model" is the one tested first."""
+    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, dict, dict]:
+        """Price quantiles (B, H, Q), variance forecasts by name ("model" is the one tested first) and
+        notes on the forecasts, reported with the results."""
         close, var = df["Close"].to_numpy(), gk_variance(df)
         qp = self.quantiles(np.stack([close[o - CONTEXT:o] for o in origins]), hmax)
         qv = self.quantiles(np.stack([var[o - CONTEXT:o] for o in origins]), VOL_H)
         # The mean of the quantiles approximates the predictive mean of the variance.
-        return qp, {"model": qv.mean(axis=2).mean(axis=1)}
+        return qp, {"model": qv.mean(axis=2).mean(axis=1)}, {}
 
 
 class Timestral(Univariate):
@@ -109,6 +115,7 @@ class Chronos(Univariate):
         return q.cpu().numpy()
 
 
+KV_CACHE_BYTES = 2 * 1024**3
 KRONOS = {  # model: (tokenizer, maximum context)
     "Kronos-mini": ("Kronos-Tokenizer-2k", 2048),
     "Kronos-small": ("Kronos-Tokenizer-base", 512),
@@ -118,7 +125,7 @@ KRONOS = {  # model: (tokenizer, maximum context)
 
 class KronosModel:
     def __init__(
-        self, name: str, src: str, samples: int, context: int | None = None, chunk: int = 256,
+        self, name: str, src: str, samples: int, context: int | None = None,
         temperature: float = 0.9, top_p: float = 0.9,
     ):
         sys.path.insert(0, src)
@@ -126,15 +133,19 @@ class KronosModel:
         from kronos_cache import cached_predictor
 
         tokenizer_id, max_context = KRONOS[name]
-        self.context = min(context or CONTEXT, max_context - max((*HORIZONS, VOL_H)))
-        self.samples, self.chunk, self.temperature, self.top_p = samples, chunk, temperature, top_p
+        hmax = max((*HORIZONS, VOL_H))
+        self.context = min(context or CONTEXT, max_context - hmax)
+        self.samples, self.temperature, self.top_p = samples, temperature, top_p
+        model = kronos.Kronos.from_pretrained(f"NeoQuasar/{name}")
+        kv_bytes_per_row = 2 * model.n_layers * (self.context + hmax) * model.d_model * 4
+        self.chunk = max(1, min(256, KV_CACHE_BYTES // kv_bytes_per_row))
         self.predictor = cached_predictor(kronos)(
-            kronos.Kronos.from_pretrained(f"NeoQuasar/{name}"),
-            kronos.KronosTokenizer.from_pretrained(f"NeoQuasar/{tokenizer_id}"),
+            model, kronos.KronosTokenizer.from_pretrained(f"NeoQuasar/{tokenizer_id}"),
             device="cpu", max_context=max_context,
         )
+        torch.manual_seed(0)
 
-    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    def forecast(self, df: pd.DataFrame, origins: list[int], hmax: int) -> tuple[np.ndarray, dict, dict]:
         """Sampled paths: one batch row per (origin, sample), each drawn with sample_count=1 so that
         Kronos does not average them."""
         bars = df[["Open", "High", "Low", "Close", "Volume"]].rename(columns=str.lower)
@@ -151,12 +162,16 @@ class KronosModel:
             )
         shape = (len(origins), self.samples, hmax)
         close = np.array([p["close"].to_numpy() for p in paths]).reshape(shape)
-        bars = [_repaired(p) for p in paths]
-        gk = np.array([gk_variance(b) for b in bars]).reshape(shape)[:, :, :VOL_H]
-        log_close = np.log(np.maximum(close[:, :, :VOL_H], 1e-12))
-        close_to_close = (np.diff(log_close, axis=2) ** 2).mean(axis=(1, 2))
+        prices = ["open", "high", "low", "close"]
+        valid = np.array([(p[prices] > 0).all(axis=1).to_numpy() for p in paths]).reshape(shape)[:, :, :VOL_H]
+        with np.errstate(invalid="ignore", divide="ignore"):
+            gk = np.array([gk_variance(_repaired(p)) for p in paths]).reshape(shape)[:, :, :VOL_H]
+        gk = np.nanmean(np.where(valid, gk, np.nan), axis=(1, 2))
+        log_close = np.log(np.where(valid, close[:, :, :VOL_H], np.nan))
+        close_to_close = np.nanmean(np.diff(log_close, axis=2) ** 2, axis=(1, 2))
         qp = np.quantile(close, LEVELS, axis=1, method="weibull").transpose(1, 2, 0)  # (B, H, Q)
-        return qp, {"model": gk.mean(axis=(1, 2)), "close_to_close": close_to_close}
+        notes = {"non_positive_bar_share": float(1 - valid.mean()), "batch_rows": self.chunk}
+        return qp, {"model": gk, "close_to_close": close_to_close}, notes
 
 
 def _repaired(path: pd.DataFrame) -> pd.DataFrame:
@@ -198,7 +213,8 @@ def qlike(actual: np.ndarray, forecast: np.ndarray) -> np.ndarray:
     return ratio - np.log(ratio) - 1
 
 
-def evaluate(model, df: pd.DataFrame, first_origin: str | None = None) -> dict:
+def evaluate(model, df: pd.DataFrame, first_origin: str | None = None) -> dict | None:
+    """Losses and summaries at every origin; None when the window holds no origin."""
     close = df["Close"].to_numpy()
     var = gk_variance(df)
     n = len(close)
@@ -206,10 +222,12 @@ def evaluate(model, df: pd.DataFrame, first_origin: str | None = None) -> dict:
     origins = [o for o in origins if o >= CONTEXT]
     if first_origin:
         origins = [o for o in origins if df.index[o].tz_localize(None) >= pd.Timestamp(first_origin)]
+    if not origins:
+        return None
     hmax = max((*HORIZONS, VOL_H))
 
     levels = np.array(LEVELS)
-    qp, variances = model.forecast(df, origins, hmax)
+    qp, variances, notes = model.forecast(df, origins, hmax)
     model_var = variances["model"]
 
     out = {
@@ -218,6 +236,8 @@ def evaluate(model, df: pd.DataFrame, first_origin: str | None = None) -> dict:
         "last_target": str(df.index[origins[-1] + hmax - 1].date()),
         "origin_dates": [str(df.index[o].date()) for o in origins],
     }
+    if notes:
+        out["sampling"] = notes
     for h in HORIZONS:
         last = close[np.array(origins) - 1]
         actual = np.log(close[np.array(origins) + h - 1] / last)
@@ -353,15 +373,22 @@ def main() -> None:
     for size in args.models:
         model = make(size, args)
         started = time.time()
-        per_ticker = {}
+        per_ticker, skipped = {}, {}
         for t, df in data.items():
-            per_ticker[t] = evaluate(model, df, args.first_origin)
-            report["models"][size] = {"partial": True, "per_ticker": per_ticker}
+            result = evaluate(model, df, args.first_origin)
+            if result is None:
+                skipped[t] = f"no origin with {CONTEXT} sessions of context in the window" + (
+                    f" on or after {args.first_origin}" if args.first_origin else ""
+                )
+            else:
+                per_ticker[t] = result
+            report["models"][size] = {"partial": True, "per_ticker": per_ticker, "skipped": skipped}
             with open(args.out, "w") as f:  # a long run keeps what it has finished
                 json.dump(report, f, indent=1)
         report["models"][size] = {
             "seconds": round(time.time() - started, 1),
             "per_ticker": per_ticker,
+            "skipped": skipped,
             "mean": summarise(per_ticker),
             "diebold_mariano": all_tests(per_ticker),
         }
