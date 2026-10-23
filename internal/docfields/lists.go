@@ -28,7 +28,11 @@ type LibraryLists struct {
 // LibraryLists counts the whole library, every file type, suggestions included: the counts the
 // cockpit's lists page shows, and the values a search filter admits by default.
 func (s *Store) LibraryLists(ctx context.Context, identityID string) (LibraryLists, error) {
-	library, err := s.List(ctx, identityID, ListQuery{FileType: "all", Limit: 1})
+	c, where, params, err := s.libraryScope(ctx, identityID, ListQuery{FileType: "all"})
+	if err != nil {
+		return LibraryLists{}, err
+	}
+	library, _, err := libraryCounts(ctx, c, where, params)
 	if err != nil {
 		return LibraryLists{}, err
 	}

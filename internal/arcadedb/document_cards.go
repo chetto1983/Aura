@@ -398,7 +398,7 @@ func decodeDocumentCard(row map[string]any) (DocumentCard, error) {
 	if err != nil {
 		return DocumentCard{}, err
 	}
-	if card.IndexedAt, err = parseArcadeDateTime(indexedAt); err != nil {
+	if card.IndexedAt, err = ParseDateTime(indexedAt); err != nil {
 		return DocumentCard{}, fmt.Errorf("document card indexed_at: %w", err)
 	}
 	card.Score = optionalFloat(row, "card_score")

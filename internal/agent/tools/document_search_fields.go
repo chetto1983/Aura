@@ -12,12 +12,13 @@ import (
 )
 
 // DocumentFieldFilters is what document_search needs of the document fields: the label ids behind
-// the names it is given, how many documents each filter admits, and the types and tags the library
-// holds. *docfields.Store in production.
+// the names it is given, how many documents each filter admits, the types and tags the library
+// holds, and the library's own list for a search with no query. *docfields.Store in production.
 type DocumentFieldFilters interface {
 	ResolveNames(ctx context.Context, identityID string, kind docfields.Kind, names []string) ([]string, map[string][]string, error)
 	Admissions(ctx context.Context, identityID string, f arcadedb.FieldFilter) ([]arcadedb.FieldAdmission, error)
 	LibraryLists(ctx context.Context, identityID string) (docfields.LibraryLists, error)
+	List(ctx context.Context, identityID string, q docfields.ListQuery) (docfields.ListResult, error)
 }
 
 // documentFieldArgs are the filters by the fields the operator keeps on documents (spec decision

@@ -318,18 +318,8 @@ func candidateWhere(filter CandidateFilter) (string, map[string]any) {
 		where += " AND search_document_id IN :document_ids"
 		params["document_ids"] = filter.DocumentIDs
 	}
-	if len(filter.SourceKeys) > 0 || len(filter.SourcePrefixes) > 0 {
-		parts := make([]string, 0, 1+len(filter.SourcePrefixes))
-		if len(filter.SourceKeys) > 0 {
-			parts = append(parts, "source_key IN :source_keys")
-			params["source_keys"] = filter.SourceKeys
-		}
-		for index, prefix := range filter.SourcePrefixes {
-			name := "source_prefix_" + strconv.Itoa(index)
-			parts = append(parts, "source_key LIKE :"+name)
-			params[name] = escapeLikePrefix(prefix)
-		}
-		where += " AND (" + strings.Join(parts, " OR ") + ")"
+	if scope := SourcePredicate(filter.SourceKeys, filter.SourcePrefixes, params); scope != "" {
+		where += " AND " + scope
 	}
 	if filter.Fields != nil {
 		predicates := []string{where}
@@ -339,13 +329,6 @@ func candidateWhere(filter CandidateFilter) (string, map[string]any) {
 		where = strings.Join(predicates, " AND ")
 	}
 	return where, params
-}
-
-// escapeLikePrefix keeps Garage keys containing ArcadeDB LIKE wildcards literal. The only
-// wildcard this function introduces is the final %, which means "descendant of folder".
-func escapeLikePrefix(prefix string) string {
-	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `?`, `\?`)
-	return replacer.Replace(prefix) + "%"
 }
 
 func validateDenseVector(vector []float64, dimensions int) error {

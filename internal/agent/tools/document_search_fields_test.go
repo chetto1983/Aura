@@ -20,6 +20,8 @@ type fakeFieldFilters struct {
 	asked      arcadedb.FieldFilter
 	library    docfields.LibraryLists
 	libraryErr error
+	listed     docfields.ListResult
+	listAsked  *docfields.ListQuery
 }
 
 func (f *fakeFieldFilters) LibraryLists(context.Context, string) (docfields.LibraryLists, error) {
@@ -83,7 +85,8 @@ type filteredSearch struct {
 		RestsOnSuggestions bool                `json:"rests_on_suggestions"`
 		UnknownNames       map[string][]string `json:"unknown_names"`
 	} `json:"filters"`
-	Lists *docfields.LibraryLists `json:"library_lists"`
+	Lists    *docfields.LibraryLists `json:"library_lists"`
+	Matching int                     `json:"matching_documents"`
 }
 
 func runFiltered(t *testing.T, tool *DocumentSearch, raw string) filteredSearch {

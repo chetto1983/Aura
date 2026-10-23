@@ -172,19 +172,19 @@ func (tx *clientMemoryBatchTx) LoadState(ctx context.Context) (memoryBatchState,
 		if rid == "" {
 			return memoryBatchState{}, fmt.Errorf("fact row has no RID")
 		}
-		validFrom, err := parseArcadeDateTime(rowString(row, "valid_from"))
+		validFrom, err := ParseDateTime(rowString(row, "valid_from"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s valid_from: %w", rid, err)
 		}
-		validTo, err := parseArcadeDateTime(rowString(row, "valid_to"))
+		validTo, err := ParseDateTime(rowString(row, "valid_to"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s valid_to: %w", rid, err)
 		}
-		createdAt, err := parseArcadeDateTime(rowString(row, "created_at"))
+		createdAt, err := ParseDateTime(rowString(row, "created_at"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s created_at: %w", rid, err)
 		}
-		expiredAt, err := parseArcadeDateTime(rowString(row, "expired_at"))
+		expiredAt, err := ParseDateTime(rowString(row, "expired_at"))
 		if err != nil {
 			return memoryBatchState{}, fmt.Errorf("fact %s expired_at: %w", rid, err)
 		}

@@ -40,8 +40,9 @@ type documentSearchArgs struct {
 // result past the preview cap is cut inside the passages, while the agent picks its next filter
 // from them.
 type documentSearchResult struct {
-	Filters []documentFilterReport  `json:"filters,omitempty"`
-	Lists   *docfields.LibraryLists `json:"library_lists,omitempty"`
+	Filters  []documentFilterReport  `json:"filters,omitempty"`
+	Lists    *docfields.LibraryLists `json:"library_lists,omitempty"`
+	Matching int                     `json:"matching_documents,omitempty"`
 	documents.RetrievalResponse
 }
 
@@ -78,8 +79,11 @@ func (t *DocumentSearch) Spec() Spec {
 			"-- any count, sum, average, maximum, grouping, sort, cross-column filter or 'how many' over a " +
 			"spreadsheet or table, and any conversion -- call document_open with that document_id; it writes " +
 			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
-			"query is required and may be a question, a topic, an entity, an exact identifier or a filename; " +
-			"document_ids optionally narrows the search to ids already returned to this operator. " +
+			"query may be a question, a topic, an entity, an exact identifier or a filename. Omit it, with type, " +
+			"counterparty, tags or a date bound, to list every document those filters admit, most recently added " +
+			"first, with matching_documents saying how many there are: that is how to answer 'show me the " +
+			"documents tagged X', which a ranked search can miss. " +
+			"document_ids optionally narrows a search to ids already returned to this operator. " +
 			"type, counterparty and tags narrow it to documents whose fields hold those names, from the " +
 			"operator's own lists (case-insensitive, exact); tags_mode all asks for every tag; date_from and " +
 			"date_to bound the document's date (YYYY-MM-DD); include_unreviewed false keeps only values the " +
@@ -94,7 +98,7 @@ func (t *DocumentSearch) Spec() Spec {
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename."},
+    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename. Omit it, with a filter, to list the documents the filter admits."},
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."},
     "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids."},
     "neighbours": {"type": "integer", "minimum": 0, "maximum": 3, "description": "Also return this many passages either side of every hit. Default 0."},
@@ -105,8 +109,7 @@ func (t *DocumentSearch) Spec() Spec {
     "date_from": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Earliest document date, YYYY-MM-DD."},
     "date_to": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "Latest document date, YYYY-MM-DD."},
     "include_unreviewed": {"type": "boolean", "description": "Match suggested values too. Default true."}
-  },
-  "required": ["query"]
+  }
 }`),
 		// This remains in the working set because choosing filesystem or public-web
 		// search before the owner's private library is both a quality and privacy failure.
@@ -123,8 +126,12 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 		return ToolResult{}, fmt.Errorf("document_search args: %w", err)
 	}
 	args.Query = strings.TrimSpace(args.Query)
-	if args.Query == "" {
-		return ToolResult{}, fmt.Errorf("document_search: query is required")
+	listing := args.Query == ""
+	if listing && args.empty() {
+		return ToolResult{}, fmt.Errorf("document_search: query is required, unless type, counterparty, tags or a date bound lists the documents they admit")
+	}
+	if listing && len(args.DocumentIDs) > 0 {
+		return ToolResult{}, fmt.Errorf("document_search: document_ids narrows a search, so it needs a query")
 	}
 	if args.Limit < 0 {
 		return ToolResult{}, fmt.Errorf("document_search: limit must be positive")
@@ -140,18 +147,24 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: %w", err)
 	}
-	response := filterAbstention(args.Query)
-	if !admitsNothing(filters) {
+	response, matching := filterAbstention(args.Query), 0
+	switch {
+	case admitsNothing(filters):
+	case listing:
+		response, matching, err = t.listDocuments(ctx, owner, fields, effectiveDocumentLimit(args.Limit))
+	default:
 		response, err = t.Library.Retrieve(ctx, documents.RetrievalRequest{
 			IdentityID: owner, Query: args.Query,
 			Limit: effectiveDocumentLimit(args.Limit), DocumentIDs: args.DocumentIDs,
 			Neighbours: args.Neighbours, SourceScopes: documents.SourceScopesFromContext(ctx), Fields: fields,
 		})
-		if err != nil {
-			return ToolResult{}, fmt.Errorf("document_search: %w", err)
-		}
 	}
-	out, err := json.Marshal(documentSearchResult{RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner)})
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("document_search: %w", err)
+	}
+	out, err := json.Marshal(documentSearchResult{
+		RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner), Matching: matching,
+	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: marshal results: %w", err)
 	}

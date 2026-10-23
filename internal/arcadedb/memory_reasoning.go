@@ -452,15 +452,15 @@ func reasoningTracesFromRows(rows []map[string]any, identityID string, limit int
 }
 
 func reasoningTraceFromRow(row map[string]any) (ReasoningTrace, error) {
-	createdAt, err := parseArcadeDateTime(rowString(row, "created_at"))
+	createdAt, err := ParseDateTime(rowString(row, "created_at"))
 	if err != nil {
 		return ReasoningTrace{}, fmt.Errorf("arcadedb: parse reasoning created_at: %w", err)
 	}
-	terminalAt, err := parseArcadeDateTime(rowString(row, "terminal_at"))
+	terminalAt, err := ParseDateTime(rowString(row, "terminal_at"))
 	if err != nil {
 		return ReasoningTrace{}, fmt.Errorf("arcadedb: parse reasoning terminal_at: %w", err)
 	}
-	expiresAt, err := parseArcadeDateTime(rowString(row, "expires_at"))
+	expiresAt, err := ParseDateTime(rowString(row, "expires_at"))
 	if err != nil {
 		return ReasoningTrace{}, fmt.Errorf("arcadedb: parse reasoning expires_at: %w", err)
 	}
@@ -485,7 +485,7 @@ func reasoningStepsFromRows(rows []map[string]any, identityID, traceID string) (
 		if rowString(row, "identity_id") != identityID || rowString(row, "trace_id") != traceID {
 			continue
 		}
-		createdAt, err := parseArcadeDateTime(rowString(row, "created_at"))
+		createdAt, err := ParseDateTime(rowString(row, "created_at"))
 		if err != nil {
 			return nil, fmt.Errorf("arcadedb: parse reasoning step created_at: %w", err)
 		}

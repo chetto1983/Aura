@@ -158,3 +158,19 @@ func TestNormalizeSourceFilters(t *testing.T) {
 		})
 	}
 }
+
+// A scope is the union of the files and folders it names: one OR clause, each prefix kept
+// literal, and nothing at all when it names neither.
+func TestSourcePredicateJoinsKeysAndPrefixes(t *testing.T) {
+	params := map[string]any{}
+	got := SourcePredicate([]string{"chat/a.pdf"}, []string{"100%/"}, params)
+	if want := "(source_key IN :source_keys OR source_key LIKE :source_prefix_0)"; got != want {
+		t.Fatalf("predicate = %q, want %q", got, want)
+	}
+	if params["source_prefix_0"] != `100\%/%` || len(params["source_keys"].([]string)) != 1 {
+		t.Fatalf("params = %v", params)
+	}
+	if got := SourcePredicate(nil, nil, map[string]any{}); got != "" {
+		t.Fatalf("empty scope = %q", got)
+	}
+}

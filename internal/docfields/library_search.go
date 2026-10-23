@@ -3,6 +3,8 @@ package docfields
 import (
 	"fmt"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/arcadedb"
 )
 
 // CustomFilter compares canonical custom value keys, rather than display values.
@@ -19,7 +21,7 @@ func validateWorkspaceQuery(q ListQuery) error {
 	if q.SearchMode != "" && q.SearchMode != "name" && q.SearchMode != "content" {
 		return invalid("unknown search mode %q", q.SearchMode)
 	}
-	if len(q.Search) > 16384 || len(q.Custom) > 50 || len(q.SourceKeys) > 200 {
+	if len(q.Search) > 16384 || len(q.Custom) > 50 || len(q.SourceKeys)+len(q.SourcePrefixes) > 200 {
 		return invalid("document query exceeds its bounds")
 	}
 	for _, f := range q.Custom {
@@ -50,9 +52,8 @@ func workspacePredicates(q ListQuery, params map[string]any) []string {
 	if q.Inbox {
 		out = append(out, "source_key NOT IN (SELECT source_key FROM DocumentFields WHERE reviewed_at IS NOT NULL)")
 	}
-	if len(q.SourceKeys) > 0 {
-		params["source_keys"] = q.SourceKeys
-		out = append(out, "source_key IN :source_keys")
+	if scope := arcadedb.SourcePredicate(q.SourceKeys, q.SourcePrefixes, params); scope != "" {
+		out = append(out, scope)
 	}
 	for i, f := range q.Custom {
 		field, value := fmt.Sprintf("custom_field_%d", i), fmt.Sprintf("custom_value_%d", i)

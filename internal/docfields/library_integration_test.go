@@ -95,6 +95,23 @@ func TestLibraryListsNameTypesAndTagsWithCounts(t *testing.T) {
 	}
 }
 
+// A folder scope lists the documents below it, as the search's scope admits them.
+func TestLibraryListHonoursSourcePrefixes(t *testing.T) {
+	s, ctx, id, _ := officeLibrary(t)
+	under, err := s.List(ctx, id, ListQuery{FileType: "all", SourcePrefixes: []string{"chat/"}})
+	if err != nil || under.Total != 3 {
+		t.Fatalf("under chat/ = %d, %v", under.Total, err)
+	}
+	elsewhere, err := s.List(ctx, id, ListQuery{FileType: "all", SourcePrefixes: []string{"altro/"}})
+	if err != nil || elsewhere.Total != 0 {
+		t.Fatalf("under altro/ = %d, %v", elsewhere.Total, err)
+	}
+	both, err := s.List(ctx, id, ListQuery{FileType: "all", SourceKeys: []string{"chat/a.pdf"}, SourcePrefixes: []string{"altro/"}})
+	if err != nil || !slices.Equal(keysOf(both.Rows), []string{"chat/a.pdf"}) {
+		t.Fatalf("a key or a prefix = %v, %v", keysOf(both.Rows), err)
+	}
+}
+
 func TestLibraryDocumentDetail(t *testing.T) {
 	s, ctx, id, fattura := officeLibrary(t)
 	detail, err := s.Document(ctx, id, docID("chat/b.xlsx"))

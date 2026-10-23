@@ -52,21 +52,23 @@ type DocumentDetail struct {
 // for all three, whether suggestions count. SearchMode selects filename matching or the content
 // index. Inbox includes records without reviewed_at, independently of NeedsReview suggestions.
 // FileType defaults to documents; all explicitly includes media, code and unknown extensions.
+// SourceKeys and SourcePrefixes are a scope: the objects named, or any below a folder.
 // Sort is a column of sortColumns, descending with a leading "-".
 type ListQuery struct {
-	Fields      arcadedb.FieldFilter
-	Exclude     arcadedb.FieldFilter
-	Unassigned  []string
-	Search      string
-	SearchMode  string
-	FileType    string
-	Inbox       bool
-	SourceKeys  []string
-	Custom      []CustomFilter
-	NeedsReview bool
-	Sort        string
-	Offset      int
-	Limit       int
+	Fields         arcadedb.FieldFilter
+	Exclude        arcadedb.FieldFilter
+	Unassigned     []string
+	Search         string
+	SearchMode     string
+	FileType       string
+	Inbox          bool
+	SourceKeys     []string
+	SourcePrefixes []string
+	Custom         []CustomFilter
+	NeedsReview    bool
+	Sort           string
+	Offset         int
+	Limit          int
 }
 
 // unassignable maps a field a filter may ask to be empty to its stamped property; tags are empty
@@ -101,13 +103,29 @@ func (s *Store) List(ctx context.Context, identityID string, q ListQuery) (ListR
 	if err != nil {
 		return ListResult{}, err
 	}
+	result, ingested, err := libraryCounts(ctx, c, where, params)
+	if err != nil || !ingested {
+		return result, err
+	}
+	page, err := c.Query(ctx, fmt.Sprintf("SELECT %s FROM IndexedDocument WHERE %s ORDER BY %s SKIP %d LIMIT %d",
+		documentRowColumns, where, order, max(q.Offset, 0), limit), params)
+	if err != nil {
+		return ListResult{}, fmt.Errorf("read the library: %w", err)
+	}
+	result.Rows, err = withFields(ctx, c, decodeRows(page))
+	return result, err
+}
+
+// libraryCounts is the size and the facets of every document where admits. A library nothing was
+// ingested into has no IndexedDocument type yet: it counts nothing, and ingested is false.
+func libraryCounts(ctx context.Context, c *arcadedb.Client, where string, params map[string]any) (ListResult, bool, error) {
 	result := ListResult{Rows: []DocumentRow{}, Facets: Facets{"type": {}, "counterparty": {}, "tags": {}, "unassigned": {}}}
 	all, err := c.Query(ctx, "SELECT df_type, df_counterparty, df_tags FROM IndexedDocument WHERE "+where, params)
 	if arcadedb.IsMissingType(err, arcadedb.IndexedDocumentType) {
-		return result, nil
+		return result, false, nil
 	}
 	if err != nil {
-		return ListResult{}, fmt.Errorf("count the library: %w", err)
+		return ListResult{}, false, fmt.Errorf("count the library: %w", err)
 	}
 	result.Total = len(all)
 	for _, row := range all {
@@ -123,13 +141,7 @@ func (s *Store) List(ctx context.Context, identityID string, q ListQuery) (ListR
 			}
 		}
 	}
-	page, err := c.Query(ctx, fmt.Sprintf("SELECT %s FROM IndexedDocument WHERE %s ORDER BY %s SKIP %d LIMIT %d",
-		documentRowColumns, where, order, max(q.Offset, 0), limit), params)
-	if err != nil {
-		return ListResult{}, fmt.Errorf("read the library: %w", err)
-	}
-	result.Rows, err = withFields(ctx, c, decodeRows(page))
-	return result, err
+	return result, true, nil
 }
 
 // Select is every document a query admits, minus the ones excluded: what "select all in the

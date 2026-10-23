@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-// parseArcadeDateTime decodes any ArcadeDB DATETIME property this package reads.
+// ParseDateTime decodes any ArcadeDB DATETIME property, this package's own and the ones a caller
+// reads raw from a row.
 //
 // ArcadeDB renders DATETIME with its documented default WITHOUT a zone, even when the
 // value written was RFC3339 UTC, so the zone the wire representation omits has to be
@@ -15,7 +16,7 @@ import (
 // https://docs.arcadedb.com/arcadedb/reference/managing-dates
 //
 // Every timestamp this package writes is UTC, which is what makes restoring it sound.
-func parseArcadeDateTime(value string) (time.Time, error) {
+func ParseDateTime(value string) (time.Time, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return time.Time{}, nil
