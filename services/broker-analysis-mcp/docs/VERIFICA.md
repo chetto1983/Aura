@@ -104,6 +104,10 @@ giornaliere (ENI.MI, ISP.MI, UCG.MI, AAPL, MSFT, NVDA, ^GSPC, FTSEMIB.MI, ^STOXX
 ogni 10 sedute sulle ultime 750, 1.024 sedute di contesto, quantili 0,1-0,9. Test di Diebold-Mariano
 con errori standard di Newey-West; t negativo = modello migliore.
 
+> Da rifare: i t di questa tabella mediano le perdite di titoli le cui origini cadono in date diverse,
+> fino a 13 giorni di distanza fra Milano e New York (misurato il 23 ottobre ricostruendo le date).
+> `tsfm_eval.py` ora media solo titoli con le stesse date; il run corretto sostituirà questa tabella.
+
 | Modello | Prezzo a 20 sedute contro drift (t) | Quantili a 20 sedute contro simulazione storica (t) | Volatilità a 20 sedute contro EWMA, QLIKE (t) | Copertura dell'intervallo 80%, 5 / 20 sedute | Esito |
 | --- | --- | --- | --- | --- | --- |
 | Mistral Timestral-28M | −0,79 | −0,38 | −0,31 | 76,6% / 75,8% | Scartato |

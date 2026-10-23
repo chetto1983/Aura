@@ -14,6 +14,9 @@ Protocol, fixed before looking at any result:
   added after the first run, before deciding: a drift baseline (mean daily log return of the last
   500 sessions times h) and Diebold-Mariano tests on the per-origin loss differences averaged
   across tickers, with Newey-West standard errors (lag = ceil(h / step)) for overlapping windows
+  corrected 2026-10-23: the average pairs origins by position, so it pools only tickers whose
+  origins fall on the same dates, one pool per trading calendar; the first equity run had averaged
+  origins up to 13 days apart. Per-ticker tests always run.
   task B       mean daily Garman-Klass variance over the next 20 sessions
                model fed the daily GK variance; forecast = mean of the 21 quantiles, averaged
                over the 20 steps; baselines EWMA (lambda 0.94) and the 60-session mean
@@ -213,6 +216,7 @@ def evaluate(model, df: pd.DataFrame, first_origin: str | None = None) -> dict:
         "origins": len(origins),
         "first_origin": str(df.index[origins[0]].date()),
         "last_target": str(df.index[origins[-1] + hmax - 1].date()),
+        "origin_dates": [str(df.index[o].date()) for o in origins],
     }
     for h in HORIZONS:
         last = close[np.array(origins) - 1]
@@ -315,10 +319,15 @@ def tests(per_ticker: dict) -> dict:
 
 
 def all_tests(per_ticker: dict) -> dict:
-    """Pooled tests need the same origins for every ticker; per-ticker tests always run."""
-    pooled = len({r["origins"] for r in per_ticker.values()}) == 1
+    """One pooled test per group of two or more tickers with identical origin dates, keyed by the
+    group's tickers; per-ticker tests always run."""
+    calendars: dict[tuple, list[str]] = {}
+    for t, r in per_ticker.items():
+        calendars.setdefault(tuple(r["origin_dates"]), []).append(t)
     return {
-        "pooled": tests(per_ticker) if pooled else "not computed: tickers have different numbers of origins",
+        "pooled": {
+            " ".join(group): tests({t: per_ticker[t] for t in group}) for group in calendars.values() if len(group) > 1
+        },
         "per_ticker": {t: tests({t: r}) for t, r in per_ticker.items()},
     }
 
