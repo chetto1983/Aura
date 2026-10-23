@@ -145,11 +145,11 @@ func configSet(args []string) {
 	fmt.Printf("ok: set %s = %s in %s\n", key, value, path)
 }
 
-// settingsListerForCLI opens the keyless overlay pool and hands back a Lister over
-// aura.settings, a closer, and -- when it cannot -- the reason why. It is a var so a
+// settingsListerForCLI opens the keyless overlay pool and hands back aura.settings' rows and
+// sealed values, a closer, and -- when it cannot -- the reason why. It is a var so a
 // test can drive both branches without a live Postgres, mirroring doctorLookupLLMKey's
 // own seam in doctor.go.
-var settingsListerForCLI = func(ctx context.Context) (settings.Lister, func(), string) {
+var settingsListerForCLI = func(ctx context.Context) (settings.SecretLister, func(), string) {
 	pool, ok, err := openSettingsOverlayPool(ctx)
 	switch {
 	case err != nil:

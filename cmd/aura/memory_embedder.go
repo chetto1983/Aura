@@ -8,19 +8,18 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
-	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
-// liveKey reads the running LLM profile's key on every request: a key rotated in the cockpit
-// replaces that profile in place (serve_settings.go primaryLLMRouteReloader) without a restart,
-// and a boot copy would keep embedding with the revoked key (spec §5).
-func liveKey(runtime *llm.Runtime) embeddings.CredentialFunc {
-	return func(context.Context) (string, error) { return runtime.Snapshot().Config.APIKey, nil }
+// embedKey is the route's own credential, read on every request so a key replaced in the
+// cockpit or by the reconciler reaches the running daemon without a restart.
+func embedKey(cfg *config.Config, creds settings.Credentials) embeddings.CredentialFunc {
+	return func(ctx context.Context) (string, error) { return creds.EmbedKey(ctx, cfg.Embed) }
 }
 
 // memoryEmbedder is the daemon's one memory route.
-func memoryEmbedder(cfg *config.Config, runtime *llm.Runtime) arcadedb.DenseEmbedder {
-	return arcadedb.NewMemoryEmbedder(cfg.Embed, liveKey(runtime))
+func memoryEmbedder(cfg *config.Config, creds settings.Credentials) arcadedb.DenseEmbedder {
+	return arcadedb.NewMemoryEmbedder(cfg.Embed, embedKey(cfg, creds))
 }
 
 // spaceBootTimeout bounds the one boot call that is only logged.

@@ -39,6 +39,7 @@ import (
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/chetto1983/aura/internal/share"
 	"github.com/chetto1983/aura/internal/steer"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -60,8 +61,9 @@ type chatEnv struct {
 	run                   *runner.Runner
 	client                llm.Client
 	llmRuntime            *llm.Runtime
+	credentials           settings.Credentials    // the cloud services' keys, read per call (service_credentials.go)
 	memoryEmbedder        arcadedb.DenseEmbedder  // the daemon's one memory route (memory_embedder.go)
-	documentEmbedder      documents.QueryEmbedder // the document query route, key read live
+	documentEmbedder      documents.QueryEmbedder // the document query route, key read per call
 	llmFallback           llm.Config
 	reg                   *tools.Registry
 	gateway               *gateway.Gateway
@@ -455,10 +457,10 @@ func assembleChatEnv(
 		memoryContext = newMemoryContextProvider(toolHandles.Memory, cfg.MemoryPreloadTopK, time.Duration(cfg.MemoryPreloadTimeoutMS)*time.Millisecond)
 	}
 	toolHandles.MemoryContext = memoryContext
-	memoryDense := memoryEmbedder(cfg, llmRuntime)
-	// The document query route and the reasoning classifier embed with the live key too.
-	documentQuery := newQueryEmbedder(cfg, liveKey(llmRuntime))
-	wireDocumentQueryEmbedder(&toolHandles, documentQuery)
+	credentials := serviceCredentials(cfg, pool)
+	memoryDense := memoryEmbedder(cfg, credentials)
+	// The reasoning classifier embeds on the document query route.
+	documentQuery := newQueryEmbedder(cfg, credentials)
 	memoryClients := newChatTenantClients(cfg, memoryDense)
 	conversationProjector := newChatConversationProjector(memoryClients, convStore)
 	reasoningMemory := newChatReasoningMemory(cfg, memoryClients)
@@ -544,7 +546,7 @@ func assembleChatEnv(
 	}
 	deleteReconciler.Start(ctx)
 	success = true // disarm the close-on-error guard; chatEnv.close now owns the lifecycle.
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox, chatGPTPlan: chatGPTPlan}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, llmRuntime: llmRuntime, credentials: credentials, memoryEmbedder: memoryDense, documentEmbedder: documentQuery, reg: reg, gateway: gw, operations: operations, toolInvocations: toolInvocationStore, deleteReconciler: deleteReconciler, conversationProjector: conversationProjector, memoryCaptureQueue: memoryCaptureQueue, reasoningWriter: reasoningWriter, toolHandles: toolHandles, mcpClosers: mcpClosers, sandboxRouter: sandboxRouter, elicitation: elicitation, steer: steerInbox, chatGPTPlan: chatGPTPlan}, nil
 }
 
 // newSteerInbox builds the process-wide mid-turn steer/delegation-result store from

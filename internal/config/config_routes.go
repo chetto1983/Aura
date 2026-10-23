@@ -10,20 +10,6 @@ import (
 // local↔cloud swap (D-28). Split out of config.go to keep that file under the
 // 600-LOC cap (CLAUDE.md §No god class).
 
-// EmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap (D-28),
-// the same shape STT and TTS already use: the cloud MODEL is the switch, and the local
-// base is never a candidate for the cloud route. Empty model means the local sidecar at
-// Embed.BaseURL with no auth; a model set means the cloud route — Embed.CloudBaseURL if
-// the operator named a non-OpenRouter embedder, otherwise OpenRouter itself — always
-// with the single OPENROUTER_API_KEY.
-//
-// "Otherwise OpenRouter itself" used to be "otherwise the chat LLM's base", and the
-// cockpit's OpenRouter option writes exactly that empty cloud base. Measured on the lab VM
-// 2026-09-23, whose chat route is Ollama: choosing OpenRouter sent embeddings to Ollama.
-func (c *Config) EmbedRoute() (baseURL, apiKey, model string) {
-	return ResolveEmbedRoute(c.Embed, c.LLM.APIKey)
-}
-
 // SpeechCloudRoute is where cloud speech-to-text and text-to-speech run: OpenRouter itself,
 // with the single OPENROUTER_API_KEY, never the chat LLM's base. Found by code reading on
 // 2026-09-27: the cloud speech clients were built on the chat base URL, so with the chat on
@@ -34,8 +20,16 @@ func (c *Config) SpeechCloudRoute() (baseURL, apiKey string) {
 	return llm.DefaultBaseURL, c.LLM.APIKey
 }
 
-// ResolveEmbedRoute exposes the daemon's route contract to processes that read the same
-// aura.settings rows without loading the daemon's full configuration.
+// ResolveEmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap (D-28),
+// the same shape STT and TTS already use: the cloud MODEL is the switch, and the local
+// base is never a candidate for the cloud route. Empty model means the local sidecar at
+// Embed.BaseURL with no auth, and apiKey is dropped; a model set means the cloud route --
+// Embed.CloudBaseURL if the operator named a non-OpenRouter embedder, otherwise OpenRouter
+// itself -- with apiKey, which the caller reads for that route (settings.Credentials.EmbedKey).
+//
+// "Otherwise OpenRouter itself" used to be "otherwise the chat LLM's base", and the
+// cockpit's OpenRouter option writes exactly that empty cloud base. Measured on the lab VM
+// 2026-09-23, whose chat route is Ollama: choosing OpenRouter sent embeddings to Ollama.
 func ResolveEmbedRoute(embed EmbedConfig, apiKey string) (baseURL, credential, model string) {
 	model = strings.TrimSpace(embed.CloudModel)
 	if model == "" {

@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 const doctorEmbedProbeTimeout = 10 * time.Second
@@ -41,13 +43,18 @@ type llamaProps struct {
 }
 
 func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, error) {
-	base, key, model := cfg.EmbedRoute()
+	base, _, model := config.ResolveEmbedRoute(cfg.Embed, "")
 	if model != "" {
 		// A hosted embedder's health belongs to its provider, and probing it would bill a
 		// call on every `aura doctor`. What this stack can be wrong about is the route, and
 		// its key: a non-OpenRouter chat provider lets the daemon boot without one.
+		key, err := cliEmbedKey(ctx, cfg.Embed)
+		if err != nil {
+			return "", fmt.Errorf("embedding credential: %w", err)
+		}
 		if key == "" {
-			return "", fmt.Errorf("cloud embedding model %s has no OPENROUTER_API_KEY: every embedding call would be refused", model)
+			return "", fmt.Errorf("cloud embedding model %s has no %s: every embedding call would be refused",
+				model, settings.EmbedKeySetting(cfg.Embed))
 		}
 		space, err := embeddings.RouteSpace(ctx, nil, cfg.Embed, cfg.Embed.Dimensions)
 		if err != nil {
@@ -87,6 +94,18 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 		return "", err
 	}
 	return describeEmbedProps(props) + ", " + describeSpace(space), nil
+}
+
+// cliEmbedKey is the credential the daemon's embed route would send: the sealed row, else the
+// environment. With aura.settings unreachable it is the environment's alone; the postgres check
+// reports why.
+func cliEmbedKey(ctx context.Context, embed config.EmbedConfig) (string, error) {
+	creds := settings.Credentials{LookupEnv: os.LookupEnv}
+	if store, closeStore, _ := settingsListerForCLI(ctx); store != nil {
+		defer closeStore()
+		creds.Store = store
+	}
+	return creds.EmbedKey(ctx, embed)
 }
 
 // describeSpace prints the id stored beside every vector and the name an operator reads, so

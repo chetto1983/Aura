@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // embeddingProbeTimeout bounds each request of a route preview's probe: a hosted catalogue
@@ -25,7 +26,7 @@ var bootEmbedEnvironment = config.LoadEmbed()
 type embeddingRoutes struct {
 	memory, documents arcadedb.DenseEmbedder
 	corpus            *arcadedb.TenantBackfill
-	key               embeddings.CredentialFunc
+	credentials       settings.Credentials
 	dims              int
 	http              *http.Client
 	environment       config.EmbedConfig
@@ -55,10 +56,11 @@ func (e *embeddingRoutes) Work(ctx context.Context, memory, documents string, li
 	return e.corpus.CorpusWork(ctx, memory, documents, limitChars)
 }
 
-// Probe measures the route at the documents width with the daemon's own credential. The memory
-// family's target is named apart only when its pinned width differs.
+// Probe measures the route at the documents width with that route's own credential: a manual
+// endpoint is never sent the services key. The memory family's target is named apart only when
+// its pinned width differs.
 func (e *embeddingRoutes) Probe(ctx context.Context, embed config.EmbedConfig) (embeddings.RouteProbe, embeddings.Space, error) {
-	key, err := e.key(ctx)
+	key, err := e.credentials.EmbedKey(ctx, embed)
 	if err != nil {
 		return embeddings.RouteProbe{}, embeddings.Space{}, fmt.Errorf("embedding credential: %w", err)
 	}
@@ -85,12 +87,11 @@ func wireEmbeddingRoutes(server *agui.Server, chat *chatEnv) {
 	if corpus == nil {
 		return
 	}
-	key := liveKey(chat.llmRuntime)
 	probes := &http.Client{Timeout: embeddingProbeTimeout}
 	server.SetEmbeddingRoutes(&embeddingRoutes{
 		memory: chat.memoryEmbedder, documents: chat.documentEmbedder, corpus: corpus,
-		key: key, dims: chat.cfg.Embed.Dimensions, http: probes, environment: bootEmbedEnvironment,
+		credentials: chat.credentials, dims: chat.cfg.Embed.Dimensions, http: probes, environment: bootEmbedEnvironment,
 		// The picker lists OpenRouter's models, so they are checked on OpenRouter's route.
-		compat: &embeddings.Compatibility{Client: probes, Width: chat.cfg.Embed.Dimensions, Key: key},
+		compat: &embeddings.Compatibility{Client: probes, Width: chat.cfg.Embed.Dimensions, Key: chat.credentials.ServicesKey},
 	})
 }

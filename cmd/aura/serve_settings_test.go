@@ -171,6 +171,17 @@ func TestPrimaryLLMRouteReloaderResolvesLoopBudgetAndCompactionTrigger(t *testin
 	}
 }
 
+// A ChatGPT profile carries no key, so reporting OPENROUTER_API_KEY from the profile showed the
+// services key unset on a deployment that had one in its environment. The services key is not
+// the chat's: the list reads it from its row or the environment, like any other secret.
+func TestSettingsReportAnEnvironmentServicesKeyOnAChatGPTRoute(t *testing.T) {
+	chatGPT := llm.Config{Provider: llm.ChatGPTProvider, BaseURL: llm.ChatGPTBaseURL, Model: "gpt-5"}
+	r := &primaryLLMRouteReloader{fallback: chatGPT, runtime: llm.NewRuntime(nil, chatGPT)}
+	if value, ok := r.EffectiveValue("OPENROUTER_API_KEY"); ok {
+		t.Fatalf("EffectiveValue(OPENROUTER_API_KEY) = (%q, true), want the environment to answer", value)
+	}
+}
+
 // The background window and ceiling ride the same profile (prd.md §15). A save is refused
 // when the pair it leaves would fail every turn's budget, whichever half it changed.
 func TestPrimaryLLMRouteReloaderResolvesTheBackgroundWindowAndCeiling(t *testing.T) {

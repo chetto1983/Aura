@@ -89,9 +89,6 @@ func (r *primaryLLMRouteReloader) EffectiveValue(key string) (string, bool) {
 		return strconv.Itoa(cfg.MaxOutputTokens), true
 	case "AURA_CONTEXT_COMPACTION_TRIGGER_PERCENT":
 		return strconv.Itoa(cfg.CompactionTriggerPercent), true
-	case "OPENROUTER_API_KEY":
-		// Read only for has_value: the Settings GET never puts a secret on the wire.
-		return cfg.APIKey, true
 	case "AURA_LOOP_MAX_STEPS":
 		return optionalLoopSetting(cfg.LoopMaxSteps)
 	case "AURA_LOOP_MAX_WALLCLOCK_SEC":

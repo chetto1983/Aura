@@ -16,7 +16,7 @@ const DefaultEmbedDimensions = 768
 
 // EmbedConfig is the embedding-sidecar wiring: an OpenAI-compatible endpoint, the
 // contract width every stored vector is narrowed to, and the model that decides
-// whether the endpoint is the local sidecar or a hosted one (see EmbedRoute).
+// whether the endpoint is the local sidecar or a hosted one (see ResolveEmbedRoute).
 //
 // It lives here rather than in an owning subsystem package because there is no
 // longer one: the embedder is read by the reasoning classifier, the doctor, the

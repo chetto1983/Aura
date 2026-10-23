@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 func installDoctorFakeProbes(t *testing.T) {
@@ -262,7 +264,7 @@ func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
 		CloudBaseURL: srv.URL,
 		Dimensions:   768,
 	}}
-	cfg.LLM.APIKey = "sk-or-test"
+	cliSettings(t, sqlc.AuraSettings{Key: settings.EmbedEndpointKeySetting, Value: "sk-endpoint"})
 	detail, err := defaultDoctorProbeEmbed(context.Background(), cfg)
 	if err != nil {
 		t.Fatalf("defaultDoctorProbeEmbed: %v", err)
@@ -278,10 +280,26 @@ func TestDoctorEmbedProbeDoesNotCallTheCloudRoute(t *testing.T) {
 // With a non-OpenRouter chat provider the key is optional at boot, so a cloud embedding
 // model can be selected with none: every embedding call would then be refused.
 func TestDoctorEmbedProbeFailsACloudRouteWithoutAKey(t *testing.T) {
+	t.Setenv(settings.ServicesKeySetting, "")
+	cliSettings(t)
 	cfg := &config.Config{Embed: config.EmbedConfig{CloudModel: "perplexity/pplx-embed-v1-0.6b", Dimensions: 768}}
 	_, err := defaultDoctorProbeEmbed(context.Background(), cfg)
 	if err == nil || !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
 		t.Fatalf("err = %v, want the missing key named", err)
+	}
+}
+
+// A manual endpoint is sent its own key and never the services key, so a services key alone
+// leaves it with none: the doctor names the setting that is missing.
+func TestDoctorProbeNamesAManualEndpointWithoutItsKey(t *testing.T) {
+	t.Setenv(settings.EmbedEndpointKeySetting, "")
+	cliSettings(t, sqlc.AuraSettings{Key: settings.ServicesKeySetting, Value: "services"})
+	cfg := &config.Config{Embed: config.EmbedConfig{
+		CloudModel: "mistral-embed", CloudBaseURL: "https://api.mistral.ai", Dimensions: 768,
+	}}
+	_, err := defaultDoctorProbeEmbed(context.Background(), cfg)
+	if err == nil || !strings.Contains(err.Error(), settings.EmbedEndpointKeySetting) {
+		t.Fatalf("err = %v, want %s named", err, settings.EmbedEndpointKeySetting)
 	}
 }
 

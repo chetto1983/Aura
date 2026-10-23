@@ -38,17 +38,27 @@ func (c Credentials) ServicesKey(ctx context.Context) (string, error) {
 	return c.read(ctx, ServicesKeySetting)
 }
 
-// EmbedKey is the credential embed's route sends: none to the local sidecar, the services key to
-// OpenRouter, the endpoint's own key to a manual endpoint.
-func (c Credentials) EmbedKey(ctx context.Context, embed config.EmbedConfig) (string, error) {
+// EmbedKeySetting names the setting embed's route takes its credential from: the services key
+// for OpenRouter, the endpoint's own key for a manual endpoint, "" for the local sidecar, which
+// sends none.
+func EmbedKeySetting(embed config.EmbedConfig) string {
 	switch config.EmbedRouteKind(embed) {
 	case config.EmbedOpenRouter:
-		return c.ServicesKey(ctx)
+		return ServicesKeySetting
 	case config.EmbedEndpoint:
-		return c.read(ctx, EmbedEndpointKeySetting)
+		return EmbedEndpointKeySetting
 	default:
+		return ""
+	}
+}
+
+// EmbedKey is the credential embed's route sends (EmbedKeySetting).
+func (c Credentials) EmbedKey(ctx context.Context, embed config.EmbedConfig) (string, error) {
+	setting := EmbedKeySetting(embed)
+	if setting == "" {
 		return "", nil
 	}
+	return c.read(ctx, setting)
 }
 
 // PrimaryRouteKey is the credential vision sends through the primary chat route: the services

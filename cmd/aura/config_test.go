@@ -178,6 +178,26 @@ func (f *fakeSettingsLister) List(context.Context) ([]sqlc.AuraSettings, error) 
 	return f.rows, nil
 }
 
+func (f *fakeSettingsLister) Secret(_ context.Context, key string) (string, error) {
+	for _, row := range f.rows {
+		if row.Key == key {
+			return row.Value, nil
+		}
+	}
+	return "", nil
+}
+
+// cliSettings stands rows in for the aura.settings a CLI command reads, so no test dials the
+// developer's Postgres.
+func cliSettings(t *testing.T, rows ...sqlc.AuraSettings) {
+	t.Helper()
+	restore := settingsListerForCLI
+	t.Cleanup(func() { settingsListerForCLI = restore })
+	settingsListerForCLI = func(context.Context) (settings.SecretLister, func(), string) {
+		return &fakeSettingsLister{rows: rows}, func() {}, ""
+	}
+}
+
 // TestConfigShowResolvesTheDatabaseTier is the defect this seam closes. `aura config
 // show` documented itself as printing "the effective config" while resolving only the
 // built-in/.env/llm.json/AURA_LLM_* tiers -- never aura.settings, which is where a
@@ -189,14 +209,10 @@ func TestConfigShowResolvesTheDatabaseTier(t *testing.T) {
 	t.Setenv("AURA_LLM_MODEL", "")
 	t.Setenv("AURA_LLM_BASE_URL", "")
 
-	restore := settingsListerForCLI
-	t.Cleanup(func() { settingsListerForCLI = restore })
-	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
-		return &fakeSettingsLister{rows: []sqlc.AuraSettings{
-			{Key: "AURA_LLM_MODEL", Value: "qwen3:8b"},
-			{Key: "AURA_LLM_BASE_URL", Value: "http://127.0.0.1:11434/v1"},
-		}}, func() {}, ""
-	}
+	cliSettings(t,
+		sqlc.AuraSettings{Key: "AURA_LLM_MODEL", Value: "qwen3:8b"},
+		sqlc.AuraSettings{Key: "AURA_LLM_BASE_URL", Value: "http://127.0.0.1:11434/v1"},
+	)
 
 	cfg, note, err := loadLLMConfigAndOverlayNote()
 	if err != nil {
@@ -221,14 +237,10 @@ func TestCLIConfigEmbedsOnTheRouteAndKeyTheDaemonRuns(t *testing.T) {
 	t.Setenv("AURA_EMBED_BASE_URL", "http://aura-llama-embed:8081")
 	t.Setenv("AURA_EMBED_MODEL", "")
 	t.Setenv("OPENROUTER_API_KEY", "")
-	restore := settingsListerForCLI
-	t.Cleanup(func() { settingsListerForCLI = restore })
-	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
-		return &fakeSettingsLister{rows: []sqlc.AuraSettings{
-			{Key: "AURA_EMBED_MODEL", Value: "perplexity/pplx-embed-v1-0.6b"},
-			{Key: "OPENROUTER_API_KEY", Value: "sk-sealed"},
-		}}, func() {}, ""
-	}
+	cliSettings(t,
+		sqlc.AuraSettings{Key: "AURA_EMBED_MODEL", Value: "perplexity/pplx-embed-v1-0.6b"},
+		sqlc.AuraSettings{Key: "OPENROUTER_API_KEY", Value: "sk-sealed"},
+	)
 	var notes strings.Builder
 	cfg := cliConfig(context.Background(), &notes)
 	if cfg.Embed.CloudModel != "perplexity/pplx-embed-v1-0.6b" || cfg.LLM.APIKey != "sk-sealed" {
@@ -248,7 +260,7 @@ func TestConfigShowSaysWhenItCouldNotReachTheDatabase(t *testing.T) {
 
 	restore := settingsListerForCLI
 	t.Cleanup(func() { settingsListerForCLI = restore })
-	settingsListerForCLI = func(context.Context) (settings.Lister, func(), string) {
+	settingsListerForCLI = func(context.Context) (settings.SecretLister, func(), string) {
 		return nil, nil, "no database configured, so aura.settings was not consulted"
 	}
 

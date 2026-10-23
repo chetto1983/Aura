@@ -1,17 +1,16 @@
 package main
 
 import (
-	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
-	"sync"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
-	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -41,44 +40,37 @@ func TestNewHostDocumentRetrieverHasNoControlPlaneWithoutArcadeDB(t *testing.T) 
 	}
 }
 
-// Review Focus 4: a key rotated in the cockpit replaces the LLM profile in place, and the
-// retriever the registry built before that runtime existed must send the new key on its next
-// request (spec §5).
-func TestDocumentQueryEmbedderReadsTheRotatedKey(t *testing.T) {
-	var mu sync.Mutex
-	var seen []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// A hosted route reads the model's input limit from the catalogue first (fit.go),
-		// as TestMemoryEmbedderReadsTheRotatedKey's server answers it.
-		if strings.HasSuffix(r.URL.Path, "/models") {
-			_, _ = io.WriteString(w, `{"data":[{"id":"vendor/embed","context_length":2048}]}`)
-			return
-		}
-		mu.Lock()
-		seen = append(seen, r.Header.Get("Authorization"))
-		mu.Unlock()
-		vector := make([]float64, 768)
-		vector[0] = 1
-		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"index": 0, "embedding": vector}}})
-	}))
-	t.Cleanup(server.Close)
+// The document query route reads the same key the memory route does, at every request
+// (TestMemoryEmbedderReadsTheEndpointKeyOnEveryCall).
+func TestDocumentQueryEmbedderReadsTheEndpointKeyOnEveryCall(t *testing.T) {
+	server := newAuthorizationRecorder(t)
+	creds, store := storedCredentials(map[string]string{
+		settings.ServicesKeySetting: "services", settings.EmbedEndpointKeySetting: "k1",
+	})
 	cfg := &config.Config{Embed: config.EmbedConfig{CloudModel: "vendor/embed", CloudBaseURL: server.URL, Dimensions: 768}}
-	handles := runtimeToolHandles{Documents: newDocumentLibrary(&pgxpool.Pool{}, cfg)}
-	runtime := llm.NewRuntime(nil, llm.Config{APIKey: "boot-key"})
-	wireDocumentQueryEmbedder(&handles, newQueryEmbedder(cfg, liveKey(runtime)))
-
-	embedder := handles.Documents.retriever.Embedder
+	embedder := newQueryEmbedder(cfg, creds)
 	if _, err := embedder.Embed(t.Context(), []string{"a"}); err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
-	runtime.Replace(nil, llm.Config{APIKey: "rotated-key"})
+	store.set(settings.EmbedEndpointKeySetting, "k2")
 	if _, err := embedder.Embed(t.Context(), []string{"b"}); err != nil {
 		t.Fatalf("Embed after rotation: %v", err)
 	}
-	mu.Lock()
-	defer mu.Unlock()
-	if len(seen) != 2 || seen[0] != "Bearer boot-key" || seen[1] != "Bearer rotated-key" {
-		t.Fatalf("authorization = %q, want the key read live at each request", seen)
+	server.assertEmbeddedWith(t, "Bearer services", "Bearer k1", "Bearer k2")
+}
+
+// Measured on the lab VM 2026-10-23: with the chat on a ChatGPT plan its profile carries no
+// key, and the query route, which read that profile, answered ErrNoCredential while the
+// services key sat in the settings. The OpenRouter route names its space from the stored key.
+func TestQueryEmbedderNamesTheOpenRouterSpaceWithTheStoredServicesKey(t *testing.T) {
+	cfg := &config.Config{Embed: config.EmbedConfig{CloudModel: "perplexity/pplx-embed-v1-4b", Dimensions: 768}}
+	creds, _ := storedCredentials(map[string]string{settings.ServicesKeySetting: "services"})
+	if _, err := newQueryEmbedder(cfg, creds).Space(t.Context()); err != nil {
+		t.Fatalf("Space with the services key stored: %v", err)
+	}
+	keyless, _ := storedCredentials(map[string]string{})
+	if _, err := newQueryEmbedder(cfg, keyless).Space(t.Context()); !errors.Is(err, embeddings.ErrNoCredential) {
+		t.Fatalf("Space with no key anywhere: err = %v, want ErrNoCredential", err)
 	}
 }
 
@@ -92,7 +84,7 @@ func TestDocumentQuerySpaceIsTheSpaceIngestStamps(t *testing.T) {
 			`"meta":{"n_embd":768,"n_params":307581696,"size":327060480,"ftype":"Q8_0"}}]}`)
 	}))
 	t.Cleanup(sidecar.Close)
-	space, err := newQueryEmbedder(&config.Config{Embed: config.EmbedConfig{BaseURL: sidecar.URL, Dimensions: 768}}, nil).
+	space, err := newQueryEmbedder(&config.Config{Embed: config.EmbedConfig{BaseURL: sidecar.URL, Dimensions: 768}}, settings.Credentials{}).
 		Space(t.Context())
 	if err != nil || space.ID != "es1-e0aa6accf0b79c6b" {
 		t.Fatalf("daemon reads documents in %q (err %v), want es1-e0aa6accf0b79c6b", space.ID, err)

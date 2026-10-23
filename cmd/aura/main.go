@@ -217,8 +217,7 @@ func buildBaseRegistryWithHandles(
 	// manifest always lists it (Spec reads no dependency); with no pool it fails
 	// loudly at call time rather than being silently absent, which is how the
 	// upload->chat regression happened once already.
-	handles.Documents = newDocumentLibrary(taskStorePool(ts), cfg)
-	documentSearch := &tools.DocumentSearch{Library: handles.Documents}
+	documentSearch := &tools.DocumentSearch{Library: newDocumentLibrary(taskStorePool(ts), cfg)}
 	if fields := newRuntimeDocumentFields(cfg, "document_search"); fields != nil {
 		documentSearch.Fields = fields
 	}

@@ -12,13 +12,9 @@ import "testing"
 // vector. Green healthchecks, wrong vector space.
 func TestEmbedRouteNeverSendsACloudModelToTheLocalSidecar(t *testing.T) {
 	const composeSidecar = "http://aura-llama-embed:8081"
-	cfg := &Config{}
-	cfg.Embed.BaseURL = composeSidecar
-	cfg.Embed.CloudModel = "qwen/qwen3-embedding-8b"
-	cfg.LLM.BaseURL = "https://openrouter.ai/api/v1"
-	cfg.LLM.APIKey = "sk-or-v1-test"
+	embed := EmbedConfig{BaseURL: composeSidecar, CloudModel: "qwen/qwen3-embedding-8b"}
 
-	base, key, model := cfg.EmbedRoute()
+	base, key, model := ResolveEmbedRoute(embed, "sk-or-v1-test")
 	if base == composeSidecar {
 		t.Fatalf("a cloud model resolved to the local sidecar %q: the corpus would be embedded locally while the operator believes it is on %q", base, model)
 	}
@@ -31,12 +27,7 @@ func TestEmbedRouteNeverSendsACloudModelToTheLocalSidecar(t *testing.T) {
 }
 
 func TestEmbedRouteStaysLocalWithoutACloudModel(t *testing.T) {
-	cfg := &Config{}
-	cfg.Embed.BaseURL = "http://aura-llama-embed:8081"
-	cfg.LLM.BaseURL = "https://openrouter.ai/api/v1"
-	cfg.LLM.APIKey = "sk-or-v1-test"
-
-	base, key, model := cfg.EmbedRoute()
+	base, key, model := ResolveEmbedRoute(EmbedConfig{BaseURL: "http://aura-llama-embed:8081"}, "sk-or-v1-test")
 	// No credential may ride to the local sidecar, and no model name either: llama.cpp
 	// ignores both, so sending them can only ever mislead a reader of the wire.
 	if base != "http://aura-llama-embed:8081" || key != "" || model != "" {
@@ -47,14 +38,10 @@ func TestEmbedRouteStaysLocalWithoutACloudModel(t *testing.T) {
 // A non-OpenRouter embedder is a real deployment, and it is the case the old loopback
 // heuristic was trying to serve. It now has a field of its own instead of being inferred.
 func TestEmbedRouteHonoursAnExplicitCloudEndpoint(t *testing.T) {
-	cfg := &Config{}
-	cfg.Embed.BaseURL = "http://aura-llama-embed:8081"
-	cfg.Embed.CloudModel = "vendor/embed-1"
-	cfg.Embed.CloudBaseURL = "https://embed.example.internal/v1"
-	cfg.LLM.BaseURL = "https://openrouter.ai/api/v1"
-	cfg.LLM.APIKey = "sk-or-v1-test"
-
-	base, _, _ := cfg.EmbedRoute()
+	base, _, _ := ResolveEmbedRoute(EmbedConfig{
+		BaseURL: "http://aura-llama-embed:8081", CloudModel: "vendor/embed-1",
+		CloudBaseURL: "https://embed.example.internal/v1",
+	}, "sk-endpoint")
 	// Trailing /v1 is stripped whoever supplied it: this client appends /v1/embeddings,
 	// and the doubled path 404s -- the exact trap .env.example still documents wrongly.
 	if base != "https://embed.example.internal" {
@@ -66,14 +53,11 @@ func TestEmbedRouteHonoursAnExplicitCloudEndpoint(t *testing.T) {
 // (AURA_LLM_BASE_URL=http://host.docker.internal:11434/v1), and the cockpit's OpenRouter
 // option -- which writes an EMPTY cloud base -- resolved embeddings to that Ollama server
 // under an OpenRouter model id. Changing the chat model would also have re-routed embeddings.
+// The resolver now takes no chat configuration at all; this pins the base it falls back to.
 func TestEmbedRouteOpenRouterOptionIgnoresTheChatBase(t *testing.T) {
-	cfg := &Config{}
-	cfg.Embed.BaseURL = "http://aura-llama-embed:8081"
-	cfg.Embed.CloudModel = "qwen/qwen3-embedding-8b"
-	cfg.LLM.BaseURL = "http://host.docker.internal:11434/v1"
-	cfg.LLM.APIKey = "sk-or-v1-test"
+	embed := EmbedConfig{BaseURL: "http://aura-llama-embed:8081", CloudModel: "qwen/qwen3-embedding-8b"}
 
-	base, key, model := cfg.EmbedRoute()
+	base, key, model := ResolveEmbedRoute(embed, "sk-or-v1-test")
 	if base != "https://openrouter.ai/api" {
 		t.Fatalf("OpenRouter option resolved to %q: embeddings followed the chat LLM's base", base)
 	}

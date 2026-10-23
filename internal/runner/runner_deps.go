@@ -143,7 +143,7 @@ type Deps struct {
 	// Embedder wires the local embedding-based reasoning-tier classifier into
 	// each per-turn agent. nil => an adaptive turn is decided static low, and a dispatched
 	// one is labelled by the background teacher. The composition root passes
-	// the daemon's document query route (embeddings.Route over config.EmbedRoute, key read live).
+	// the daemon's document query route (embeddings.Route, its key read per call from the settings).
 	Embedder prompt.Embedder
 	// HookManager is the optional agent extension surface. nil keeps the agent's
 	// hook calls as no-ops; production may inject command hooks here.

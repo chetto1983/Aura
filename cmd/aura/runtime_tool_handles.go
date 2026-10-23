@@ -53,8 +53,5 @@ type runtimeToolHandles struct {
 	// recipe's calls read it (prd.md §12). Nil on the paths with no live view, which then
 	// refuse nothing.
 	Browser *browsercontrol.Registry
-	// Documents is retained so chat boot can route its query embedder through the live LLM key
-	// once the runtime exists (wireDocumentQueryEmbedder).
-	Documents *documentLibrary
 	mediaToolHandles
 }

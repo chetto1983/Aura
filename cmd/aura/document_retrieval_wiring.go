@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/embeddings"
+	"github.com/chetto1983/aura/internal/settings"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -18,7 +18,7 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 		return nil, fmt.Errorf("document retriever requires configuration and database pool")
 	}
 	retriever := &documents.HostRetriever{
-		Embedder: newQueryEmbedder(cfg, func(context.Context) (string, error) { return cfg.LLM.APIKey, nil }),
+		Embedder: newQueryEmbedder(cfg, serviceCredentials(cfg, pool)),
 		Config: documents.RetrievalConfig{
 			CandidateLimit: cfg.DocumentRetrieval.RetrievalCandidates,
 			FusionStrategy: arcadedb.FusionStrategy(cfg.DocumentRetrieval.FusionStrategy),
@@ -47,20 +47,10 @@ func newHostDocumentRetriever(cfg *config.Config, pool *pgxpool.Pool) (*document
 // width (AURA_EMBED_DIMENSIONS, spec §1), or nil when dense embedding is switched off. It is an
 // interface on purpose: a nil *embeddings.Route stored in one is non-nil. The timeout is the
 // one the query embedder always had.
-func newQueryEmbedder(cfg *config.Config, credential embeddings.CredentialFunc) documents.QueryEmbedder {
-	route := embeddings.NewRoute(cfg.Embed, credential, cfg.Embed.Dimensions, documentQueryTimeout(cfg))
+func newQueryEmbedder(cfg *config.Config, creds settings.Credentials) documents.QueryEmbedder {
+	route := embeddings.NewRoute(cfg.Embed, embedKey(cfg, creds), cfg.Embed.Dimensions, documentQueryTimeout(cfg))
 	if route == nil {
 		return nil
 	}
 	return route
-}
-
-// wireDocumentQueryEmbedder puts embedder behind document_search. The retriever is built with
-// the registry, before the LLM runtime exists, so it starts on the boot key; chat boot calls
-// this before any turn, once the runtime can give the key live (spec §5).
-func wireDocumentQueryEmbedder(handles *runtimeToolHandles, embedder documents.QueryEmbedder) {
-	if handles == nil || handles.Documents == nil || handles.Documents.retriever == nil {
-		return
-	}
-	handles.Documents.retriever.Embedder = embedder
 }

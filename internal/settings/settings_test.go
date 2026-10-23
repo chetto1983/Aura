@@ -182,9 +182,9 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 	// LLM's base is no candidate either: measured on the lab VM 2026-09-23, a chat route on
 	// Ollama took the embeddings with it. With no AURA_EMBED_CLOUD_BASE_URL the route is
 	// OpenRouter itself, /v1 stripped because this client appends /v1/embeddings.
-	embedBase, embedKey, embedModel := cfg.EmbedRoute()
-	if embedBase != "https://openrouter.ai/api" || embedKey != "sk-from-environment" || embedModel != "settings/embed-model" {
-		t.Errorf("EmbedRoute() = (%q, %q, %q), want OpenRouter with the environment's key, never the overlaid chat base", embedBase, embedKey, embedModel)
+	embedBase, _, embedModel := config.ResolveEmbedRoute(cfg.Embed, "")
+	if embedBase != "https://openrouter.ai/api" || embedModel != "settings/embed-model" {
+		t.Errorf("ResolveEmbedRoute = (%q, %q), want OpenRouter, never the overlaid chat base", embedBase, embedModel)
 	}
 }
 
