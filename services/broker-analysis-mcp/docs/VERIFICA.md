@@ -45,7 +45,7 @@ misure **non** dimostrano.
 
 ## 3. End to end
 
-- **Test offline:** 120 verdi.
+- **Test offline:** 124 verdi.
 - **Test live via MCP:** 20 verdi, compresi volatilità, CAGR e massimi a 52 settimane del Bitcoin ricalcolati da yfinance.
 - **E2E via protocollo MCP su dati live:** server avviato come sottoprocesso stdio, ogni tool chiamato su ticker reali e confrontato con i numeri di Yahoo e con un ricalcolo indipendente.
 - **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve le domande di un analista ed è valutato in automatico. La valutazione considera:
@@ -104,20 +104,30 @@ giornaliere (ENI.MI, ISP.MI, UCG.MI, AAPL, MSFT, NVDA, ^GSPC, FTSEMIB.MI, ^STOXX
 ogni 10 sedute sulle ultime 750, 1.024 sedute di contesto, quantili 0,1-0,9. Test di Diebold-Mariano
 con errori standard di Newey-West; t negativo = modello migliore.
 
-> Da rifare: i t di questa tabella mediano le perdite di titoli le cui origini cadono in date diverse,
-> fino a 13 giorni di distanza fra Milano e New York (misurato il 23 ottobre ricostruendo le date).
-> `tsfm_eval.py` ora media solo titoli con le stesse date; il run corretto sostituirà questa tabella.
+Il test aggregato media le perdite dei titoli origine per origine, quindi vale solo fra titoli con le
+stesse date: Milano (ENI, ISP, UCG) e USA (AAPL, MSFT, NVDA, ^GSPC). FTSE MIB, Euro Stoxx 50 e SWDA hanno
+ciascuno un calendario proprio e hanno solo il test per titolo. Run del 23 ottobre: prima origine fra il
+24 ottobre e il 6 novembre 2023 secondo il calendario, ultimo obiettivo il 7 o l'8 ottobre 2026.
 
-| Modello | Prezzo a 20 sedute contro drift (t) | Quantili a 20 sedute contro simulazione storica (t) | Volatilità a 20 sedute contro EWMA, QLIKE (t) | Copertura dell'intervallo 80%, 5 / 20 sedute | Esito |
+| Modello | Prezzo a 20 sedute contro drift (t), Milano / USA | Quantili a 20 sedute contro simulazione storica (t), Milano / USA | Volatilità a 20 sedute contro EWMA, QLIKE (t), Milano / USA | Copertura dell'intervallo 80%, 5 / 20 sedute | Esito |
 | --- | --- | --- | --- | --- | --- |
-| Mistral Timestral-28M | −0,79 | −0,38 | −0,31 | 76,6% / 75,8% | Scartato |
-| Amazon Chronos-Bolt-base | +2,34 (peggio) | +2,80 (peggio) | +0,29 | 81,5% / 75,2% | Scartato |
-| Amazon Chronos-2 | −0,07 | +0,22 | −0,05 | 72,7% / 70,0% | Scartato |
-| Simulazione storica (baseline) | — | — | — | 84,4% / 80,0% | — |
+| Mistral Timestral-28M | −0,11 / −0,76 | −0,12 / −0,56 | +0,10 / −0,72 | 78,8% / 75,5% | Scartato |
+| Amazon Chronos-Bolt-base | +1,03 / +2,02 (peggio) | +1,41 / +2,22 (peggio) | +0,25 / +0,36 | 81,9% / 74,8% | Scartato |
+| Amazon Chronos-2 | +0,75 / −0,07 | +0,75 / +0,30 | +0,19 / −0,44 | 74,0% / 69,7% | Scartato |
+| Simulazione storica (baseline) | — | — | — | 84,5% / 78,6% | — |
 
-- Timestral-28M e Chronos-2 battono la random walk a 20 sedute (t −3,55 e −2,69), ma il guadagno è la
-  deriva, che il baseline di drift cattura senza modello.
-- A 20 sedute gli intervalli dei modelli sono troppo stretti: coprono il 70-76% dei casi invece dell'80%.
+- Contro il drift nessun modello scende sotto t −0,8 in un gruppo, né sotto −1,7 su un singolo titolo.
+- Timestral-28M batte la random walk a 20 sedute nel gruppo di Milano (t −3,02); Timestral e Chronos-2 la
+  battono anche su singoli titoli (ISP, UCG, ^GSPC e SWDA: t fra −2,7 e −3,4). Il guadagno è la deriva, che il
+  baseline di drift cattura senza modello.
+- Sui quantili di MSFT Timestral e Chronos-2 hanno t −2,01 e −2,37: su 10 titoli e più test per modello
+  due |t| poco sopra 2 sono compatibili col caso.
+- A 20 sedute gli intervalli dei modelli sono troppo stretti: coprono dal 69,7% al 75,5% dei casi, contro
+  il 78,6% della simulazione storica.
+- La prima versione di questa tabella, run del 22 ottobre, mediava i dieci titoli insieme, con origini
+  fino a 13 giorni di distanza fra Milano e New York. I verdetti non cambiano. Cambia la significatività:
+  Chronos-Bolt è peggio del drift sui titoli USA (t +2,02), non su quelli di Milano (+1,03), mentre prima
+  risultava peggio su tutti (+2,34).
 - Una prima passata su Timestral-5M, con 21 quantili, ha dato lo stesso verdetto (t −0,74 contro drift a
   20 sedute); i suoi file non sono conservati perché lo script di allora è confluito in `tsfm_eval.py`.
 - Licenze: Timestral ha un tetto di 20 milioni di dollari di ricavi mensili; Chronos è Apache-2.0.
@@ -174,7 +184,12 @@ nel report prima di eseguire (`e2e/runs/tsfm_eth_sol_holdout.json`, campo `hypot
 
 - Che i dati Yahoo siano corretti o stabili: yfinance usa endpoint non ufficiali.
 - Che le statistiche degli eventi abbiano valore previsivo: sono event study con finestre sovrapposte e senza costi.
-- Che l'agente risponda bene a domande diverse dalle sette valutate.
+- Che l'agente risponda bene a domande diverse dalle undici valutate.
+- Che le risposte dell'agente siano fondate oltre ciò che lo scorer controlla. Lo scorer cerca ogni
+  decimale della risposta fra i numeri dei tool e le metriche richieste fra quelli citati; non verifica
+  che un numero sia attribuito alla grandezza giusta, che un calcolo dell'agente sia corretto, né che
+  la risposta non contenga affermazioni senza numeri e senza fondamento. Il 10,00 e il 9,99 misurano
+  solo questo.
 - Che i punteggi coincidano con quelli dei terminali. Le differenze note sono queste:
   - Piotroski usa il debito corrente di Yahoo, che include i prestiti a breve, al posto della sola quota
     corrente del debito a lungo; senza la riga di emissione di azioni usa la variazione del numero di azioni.
