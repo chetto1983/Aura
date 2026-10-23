@@ -14,28 +14,16 @@ Notable changes to Aura, newest first. Each section is also the text of its
 - A box server takes no secrets, so a plugin that passes a key to its stdio connector is refused
   at install, and the error names the key.
 
-### Financial analysis MCP server (prototype)
+### Financial analysis plugin (prototype)
 
-- `services/broker-analysis-mcp/` is a standalone, read-only MCP server for market analysis
-  on Yahoo Finance data, with five skills that teach the agent to read and explain
-  each result. It places no orders and gives no personalised advice.
-- Tools:
-  - risk metrics, including against a benchmark: Bloomberg-style adjusted beta, Jensen's
-    alpha, Treynor, M², information ratio, up and down capture;
-  - technical indicators;
-  - fundamental ratios, with the Piotroski, Altman and Beneish scores;
-  - peer comparison and ETF analysis;
-  - user-defined indicators and conditions, with charts;
-  - condition hooks that append to a file or call a webhook.
-- Every metric carries its unit and a reference to its formula's source.
-- Webhooks stay off until the operator lists allowed URL prefixes in
-  `BROKER_ANALYSIS_WEBHOOK_ALLOW`.
-- It is not wired into Aura: there is no MCP recipe, and an operator adds it as a custom
-  server. Aura CI lints it with ruff but does not run its tests.
-- `services/broker-analysis-mcp/docs/VERIFICA.md`, in Italian, records:
-  - how each formula was checked;
-  - the agent end-to-end runs;
-  - the forecasting models tested against naive baselines and dropped.
+- The read-only financial analysis MCP server for market analysis on Yahoo Finance data, with
+  five skills that teach the agent to read each result, now lives in its own repository,
+  [chetto1983/broker-analysis-mcp](https://github.com/chetto1983/broker-analysis-mcp). It ships
+  as one plugin that Claude Code, Codex and Aura install as it is. It places no orders and gives
+  no personalised advice.
+- In Aura: `aura pack install chetto1983/broker-analysis-mcp/broker-analysis`, then
+  `aura pack trust chetto1983/broker-analysis-mcp/broker-analysis --class sandboxed_local --reason "..."`.
+  The server runs in each identity's sandbox box.
 - yfinance reads unofficial endpoints, so production use needs a licensed data source.
 
 ## v1.1.0 — 2026-10-08
