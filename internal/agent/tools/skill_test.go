@@ -325,3 +325,24 @@ func TestSkillDescriptionIgnoresTheLoader(t *testing.T) {
 func withTestToolCallCtx(ctx context.Context) context.Context {
 	return WithToolCallContext(ctx, "test-session", "test-call", "", 1<<20)
 }
+
+// A skill body is bounded by the loader, which refuses one past AURA_SKILL_BODY_CAP_BYTES (32768),
+// so the preview cap (30000) must not cut it again. Measured 2026-10-23 on the lab VM: memory-aura,
+// 30939 bytes, came back truncated, and the agent spent a read_tool_output call on its last 58.
+func TestSkillDeliversABodyTheLoaderAcceptedWhole(t *testing.T) {
+	t.Parallel()
+	body := strings.Repeat("Recall before you write. ", 1240) // 31000 bytes
+	loader := newFakeLoader()
+	loader.bodies["memory"] = body
+	ctx := WithToolCallContext(context.Background(), "test-session", "test-call", t.TempDir(), 30000)
+	tool := &SkillTool{Loader: loader}
+	for _, action := range []string{"use", "info"} {
+		result, err := tool.Execute(ctx, json.RawMessage(`{"action":"`+action+`","name":"memory"}`))
+		if err != nil {
+			t.Fatalf("%s: %v", action, err)
+		}
+		if result.Truncated || !strings.Contains(result.Preview, body) {
+			t.Fatalf("%s: truncated %v, %d of %d bytes in the preview", action, result.Truncated, len(result.Preview), len(body))
+		}
+	}
+}

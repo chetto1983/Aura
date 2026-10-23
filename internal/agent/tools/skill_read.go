@@ -83,7 +83,7 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 	if err != nil {
 		return ToolResult{}, err
 	}
-	return NewResult(ctx, body)
+	return NewWholeResult(ctx, body)
 }
 
 // actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it renders the docs instructions +
@@ -92,8 +92,8 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 // because shell_exec only runs inside the box: the host export-dir copy is a real file the agent
 // can never reach, and handing the model a path nobody it can talk to looks at is exactly the
 // defect that motivated the one-path collapse. action=use EXECUTES NOTHING itself. For an
-// instruction skill it returns the body wrapped in the authority frame, via NewResult so a large
-// skill pages through the sidecar.
+// instruction skill it returns the body wrapped in the authority frame, whole: the loader already
+// refused any body past AURA_SKILL_BODY_CAP_BYTES, so the preview cap has nothing left to bound.
 func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	if t.Loader == nil {
 		return ToolResult{}, fmt.Errorf("skill use: no skill loader configured")
@@ -113,7 +113,7 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if !ok {
 		return ToolResult{}, fmt.Errorf("skill use: unknown skill %q", name)
 	}
-	return NewResult(ctx, UseAuthorityFrame+body)
+	return NewWholeResult(ctx, UseAuthorityFrame+body)
 }
 
 // renderSnippetUse frames a snippet's by-path invocation for the model: the instructions, then a

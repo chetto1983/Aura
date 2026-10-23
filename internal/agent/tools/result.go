@@ -312,6 +312,19 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 	}, nil
 }
 
+// NewWholeResult is NewResult for content its producer already bounded, such as a skill body
+// the loader validated against AURA_SKILL_BODY_CAP_BYTES. It is never cut at the preview cap:
+// a second, smaller cut would make the model page back the tail of text it was meant to read
+// whole. It is redacted and retained like any result that fits.
+func NewWholeResult(ctx context.Context, content string) (ToolResult, error) {
+	tc, ok := toolCallCtx(ctx)
+	if !ok {
+		return ToolResult{}, fmt.Errorf("tools.NewWholeResult: missing tool-call context (call WithToolCallContext first)")
+	}
+	content = secret.RedactConfigured(content)
+	return retainedResult(tc, content, len(content)), nil
+}
+
 // NewResultReservingTail behaves like NewResult, but treats footer as
 // always-visible content. It truncates body first, then appends footer, so shell
 // status, stderr tails, and structured exit-code metadata cannot be sliced off by
