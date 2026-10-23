@@ -2008,6 +2008,20 @@ This does not prove:
   the same keys, but the cost of that re-index was not measured;
 - anything about the `aura.assets` rows of the lost objects, whose downloads still answer 404.
 
+**The agent learns the operator's lists from the search, 2026-10-23.** On the lab VM, the real
+agent answered the document fields set with a score of 9.44, against the 9.8 gate. The two tag
+questions failed because the agent never saw that the tags `interno` and `bozza` existed
+(`docs/superpowers/verification/2026-10-23-document-fields-lab-vm.md`).
+
+Every `document_search` result now carries `library_lists`:
+- the library's types and tags with their document counts;
+- most documents first, at most 30 per list.
+
+The tool description stays the same text for every identity, so the prompt cache holds.
+Counterparties are not listed; the question names them. Specified in
+`docs/superpowers/specs/2026-10-18-document-fields-design.md` §5, amended the same day. Not yet
+measured: the re-run of the set on the build that carries it.
+
 ## 12. Workspace, shell and web
 
 Tools and artifact delivery resolve the persistent working root consistently. Sandbox

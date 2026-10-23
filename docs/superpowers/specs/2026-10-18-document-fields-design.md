@@ -268,6 +268,42 @@ and the operator has not accepted it.
 - when a name matches nothing, the closest names on the list, so the agent can correct itself or
   retry without the filter. That answers the first anti-goal at no second query.
 
+*Amended 2026-10-23* (`docs/superpowers/verification/2026-10-23-document-fields-lab-vm.md`):
+
+**The run that prompted it.** Step 7 on the lab VM scored 9.44, against a 9.8 gate.
+- The two failures were the tag questions: "i documenti interni" and "la bozza interna".
+- The agent never passed `tags`. Nothing told it that `interno` and `bozza` exist, and the closest
+  names come back only to a call that tries a name.
+- Type and counterparty worked, because the operator's words carry those names.
+
+**The rule now: every result also carries `library_lists`.**
+- **What it holds.** The library's types and tags, each with the number of documents that hold
+  it, most documents first, at most 30 per list. Lists cut at 30 say how many names they left
+  out. A label no document holds is not listed.
+- **When.** On every call, the abstention on a filter included; whenever the document fields are
+  configured.
+- **If it cannot be read.** A list that cannot be read leaves the search answering without it,
+  and the failure is logged.
+- **Counterparties are not listed.** The question names them, and an unknown one already gets
+  the closest names.
+
+**Decided by the operator ("Nel risultato").** Two alternatives were rejected:
+- the lists in the tool description, which would change with every label and break the prompt
+  cache;
+- a separate tool, which is a call the model may never make.
+
+**Compared with Paperless-ngx** (`src/paperless_ai/taxonomy.py`, read 2026-10-23):
+- **Paperless's suggestions.** The LLM gets its candidates from the documents most similar to
+  the document being classified. Each tag and type is weighted by summed similarity, and the list
+  is capped at 10 tags and 5 of each other kind.
+- **Paperless's chat.** The chat never filters by tag: the person narrows the view, and the chat
+  answers over it.
+- **Why Aura ranks the whole library instead.** In Aura the agent itself filters, and the tag it
+  needs sits on documents the question's words do not reach. Ranking by the hits would hide
+  exactly the tag f20 and f21 missed.
+- **What carries over.** Names travel as JSON data, not as prompt text, and a name that matches
+  nothing is dropped, never trusted.
+
 The agent filters on the fixed fields and tags only. Custom fields are shown, edited and filtered
 in the cockpit; the agent gets them in a later slice.
 
