@@ -1326,6 +1326,32 @@ What this does not show:
   apart, and two of five warm/cold pairs fell outside the radius;
 - the set-read `LIMIT` truncation parked in plan 1, which is unchanged.
 
+ArcadeDB 26.10.2 on the JVM, 2026-10-23
+([verification](docs/superpowers/verification/2026-10-23-cocoindex-neo4j-connector-and-arcadedb-26-10-2.md)).
+- **The pin and the floor.** The compose pin moves from 26.10.1 to 26.10.2. The floor in
+  `TenantClients.For` stays 26.10.1, because no statement needs 26.10.2.
+- **Aura's live tier.** On throwaway servers from both digests, the `arcadedb_integration` tier
+  (`internal/arcadedb`, `internal/docfields`) gives 613 passes and the same 5 embedder skips on
+  each, with the same 8 server errors.
+- **The lab VM's data.** Its databases were restored from their archives under 26.10.1. They open on
+  26.10.2, and back on 26.10.1, with identical types, indexes and record counts, and the same 33
+  vector and full-text answers.
+- **The release's `UPSERT` rule** (#9339, a UNIQUE index on every property of the WHERE) holds for
+  every Aura upsert.
+- **Constraint names.** 26.10.2 records the names of Cypher constraints (#9707). The cocoindex
+  connector's `DROP CONSTRAINT` therefore removes the unique index it created; on 26.10.1 it was a
+  silent no-op.
+- **The ingest schema stays SQL.** ArcadeDB's Cypher still refuses vector and full-text indexes, a
+  vector property type and database creation, so `services/ingest/arcade.py` keeps writing them.
+
+What this does not show:
+- the 5 embedder tests, the ingest suite and the memory MCP's live tier on 26.10.2, which CI runs
+  on the push;
+- the operator schema's types newer than 2026-10-13, opened from 26.10.1 data;
+- any load.
+
+The native image stays with the 2026-10-17 spec, which waits for 26.11.1.
+
 ## 11. Documents and media
 
 Measured 2026-10-21 on a disposable database in the running ArcadeDB 26.10.1:
