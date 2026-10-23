@@ -1,0 +1,955 @@
+{
+ "protocol": "Out-of-sample test of time-series foundation models against naive baselines on market data.\n\nModels: Mistral Timestral (5M, 28M, 123M) and Amazon Chronos-Bolt-base and Chronos-2.\n\nProtocol, fixed before looking at any result:\n  universe     10 daily series, 10 years of Yahoo adjusted OHLC\n  origins      every 10 sessions over the last 750 sessions, 1,024 sessions of context\n  task A       price at +5 and +20 sessions\n               point: median vs random walk (last close), mean absolute log error\n               distribution: mean pinball loss over the quantiles 0.1, 0.2, ..., 0.9 (the levels\n               every model provides; Chronos-Bolt has no others) vs historical simulation\n               (the last 500 sessions' h-day log returns applied to the last close); coverage\n               of the 10-90% and 5-95% intervals\n  added after the first run, before deciding: a drift baseline (mean daily log return of the last\n  500 sessions times h) and Diebold-Mariano tests on the per-origin loss differences averaged\n  across tickers, with Newey-West standard errors (lag = ceil(h / step)) for overlapping windows\n  task B       mean daily Garman-Klass variance over the next 20 sessions\n               model fed the daily GK variance; forecast = mean of the 21 quantiles, averaged\n               over the 20 steps; baselines EWMA (lambda 0.94) and the 60-session mean\n               loss QLIKE (Patton 2011) and MSE of log variance\n\nA component that learns must beat its dumb baseline out of sample, or it is dropped.\nRun with an environment holding `timestral` and torch:\n  python e2e/tsfm_eval.py --models timestral-28M chronos-bolt-base chronos-2 --out e2e/runs/tsfm.json\n  python e2e/tsfm_eval.py --tickers BTC-USD ETH-USD SOL-USD XRP-USD --out e2e/runs/tsfm_crypto.json\nKronos (arXiv:2508.02739, NeoQuasar/Kronos-*) differs by design, fixed before its first evaluation:\n  input        OHLCV bars with their dates instead of a close series\n  sampling     temperature 0.9 and top-p 0.9, the paper's volatility setting (Table 6); its price\n               setting, 0.6, is too narrow for quantiles; --samples independent paths per origin,\n               read with Weibull plotting positions (k / (n + 1)), which give the nominal\n               expected coverage even with ten samples\n  volatility   primary: mean Garman-Klass variance of the sampled bars, the target's estimator,\n               after repairing bars whose high or low does not bracket open and close; secondary:\n               the paper's realised variance, mean squared log return of the sampled closes\n  speed        sampling runs through a KV cache (e2e/kronos_cache.py) instead of re-encoding the\n               window at every step; on teacher-forced sequences its logits match Kronos's own to\n               float32 rounding (largest difference 1e-5 on logits up to 15)\n  context      the cache is exact only while the window does not slide, so Kronos-small and -base,\n               which accept 512 bars, read the last 492 of the 1,024 (492 + 20 steps = 512);\n               Kronos-mini, which accepts 2,048, reads all 1,024\n  leakage      its pre-training data end in June 2024, so --first-origin 2024-07-01 drops earlier\n               origins\n  --kronos-context N replaces the context length, e.g. the paper's 40 bars for daily data (Table 8)\nIts code is not on PyPI: pass the cloned repository with --kronos-src.\nCrypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the\nlatest N sessions before anything is computed, so a second test can run on an earlier window\ndisjoint from the first; each ticker's window dates are in the report.\n",
+ "universe": [
+  "BTC-USD",
+  "ETH-USD",
+  "SOL-USD",
+  "XRP-USD"
+ ],
+ "skip_last": 0,
+ "first_origin": "2024-07-01",
+ "hypothesis": "Secondary and post hoc: chosen after the primary Kronos-mini crypto result, which extrapolated a 13% median 20-day drift from 1,024 bars. Context = the paper's daily lookback of 40 bars (Table 8), not tuned here. A gain found here would need confirmation on other crypto assets over the same post-cutoff window.",
+ "models": {
+  "Kronos-mini": {
+   "seconds": 389.9,
+   "per_ticker": {
+    "BTC-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.031410384706025404,
+      "mae_model": 0.03624099436982206,
+      "mae_random_walk": 0.032708878587601714,
+      "pinball_model": 0.014754806637139902,
+      "pinball_historical": 0.012747103599986534,
+      "coverage80_model": 0.6164383561643836,
+      "coverage80_historical": 0.8767123287671232
+     },
+     "h20": {
+      "mae_drift": 0.08594961705002063,
+      "mae_model": 0.09988361786548715,
+      "mae_random_walk": 0.08180828252621793,
+      "pinball_model": 0.04399604310861465,
+      "pinball_historical": 0.03397658025890077,
+      "coverage80_model": 0.3287671232876712,
+      "coverage80_historical": 0.7671232876712328
+     },
+     "vol20": {
+      "qlike_close_to_close": 1.6498916562841663,
+      "qlike_model": 0.19690194175224207,
+      "qlike_ewma": 0.19241247396794942,
+      "qlike_mean60": 0.18322285841706284,
+      "mse_logvar_model": 0.4076122107639344,
+      "mse_logvar_ewma": 0.30278612141933353,
+      "mse_logvar_mean60": 0.337521363070107
+     }
+    },
+    "ETH-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.047580205885864695,
+      "mae_model": 0.05142959027321387,
+      "mae_random_walk": 0.0477214174070772,
+      "pinball_model": 0.020723667214726637,
+      "pinball_historical": 0.018758234788646005,
+      "coverage80_model": 0.684931506849315,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.13283878651797032,
+      "mae_model": 0.15921922872176916,
+      "mae_random_walk": 0.12968764490532625,
+      "pinball_model": 0.0696208595048143,
+      "pinball_historical": 0.05372748939188585,
+      "coverage80_model": 0.3150684931506849,
+      "coverage80_historical": 0.7671232876712328
+     },
+     "vol20": {
+      "qlike_close_to_close": 1.332720907497692,
+      "qlike_model": 0.2101606325745026,
+      "qlike_ewma": 0.19237246805141353,
+      "qlike_mean60": 0.17375026204111146,
+      "mse_logvar_model": 0.47904484315342083,
+      "mse_logvar_ewma": 0.33989802319672635,
+      "mse_logvar_mean60": 0.3478127122937441
+     }
+    },
+    "SOL-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.056221000376216065,
+      "mae_model": 0.06571441240663593,
+      "mae_random_walk": 0.056159212914077467,
+      "pinball_model": 0.02719265980067666,
+      "pinball_historical": 0.022541352053150197,
+      "coverage80_model": 0.6301369863013698,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.1486566501150922,
+      "mae_model": 0.15724388439501824,
+      "mae_random_walk": 0.1419845133362936,
+      "pinball_model": 0.0690239999983785,
+      "pinball_historical": 0.05657344638461691,
+      "coverage80_model": 0.3424657534246575,
+      "coverage80_historical": 0.8356164383561644
+     },
+     "vol20": {
+      "qlike_close_to_close": 0.9951629008402288,
+      "qlike_model": 0.18374893819601212,
+      "qlike_ewma": 0.186620292882394,
+      "qlike_mean60": 0.177325010525178,
+      "mse_logvar_model": 0.43433477253717817,
+      "mse_logvar_ewma": 0.33444479294755447,
+      "mse_logvar_mean60": 0.3711294552057491
+     }
+    },
+    "XRP-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.06615703737692084,
+      "mae_model": 0.07175672611366762,
+      "mae_random_walk": 0.06505451455773133,
+      "pinball_model": 0.02997528461887676,
+      "pinball_historical": 0.026989322295753015,
+      "coverage80_model": 0.6164383561643836,
+      "coverage80_historical": 0.8082191780821918
+     },
+     "h20": {
+      "mae_drift": 0.1681098662022928,
+      "mae_model": 0.1811977636102237,
+      "mae_random_walk": 0.15261202071917265,
+      "pinball_model": 0.07956518686049663,
+      "pinball_historical": 0.06456275949000483,
+      "coverage80_model": 0.3698630136986301,
+      "coverage80_historical": 0.726027397260274
+     },
+     "vol20": {
+      "qlike_close_to_close": 3.612261116789065,
+      "qlike_model": 0.8637025454852173,
+      "qlike_ewma": 0.8841396209865431,
+      "qlike_mean60": 0.8116782234374044,
+      "mse_logvar_model": 1.1814559927618151,
+      "mse_logvar_ewma": 0.9501376441025071,
+      "mse_logvar_mean60": 1.0453505188609011
+     }
+    }
+   },
+   "mean": {
+    "h20.coverage80_historical": 0.773972602739726,
+    "h20.coverage80_model": 0.3390410958904109,
+    "h20.mae_drift": 0.133888729971344,
+    "h20.mae_model": 0.14938612364812456,
+    "h20.mae_random_walk": 0.12652311537175262,
+    "h20.pinball_historical": 0.05221006888135209,
+    "h20.pinball_model": 0.06555152236807602,
+    "h5.coverage80_historical": 0.8527397260273972,
+    "h5.coverage80_model": 0.6369863013698629,
+    "h5.mae_drift": 0.05034215708625675,
+    "h5.mae_model": 0.05628543079083487,
+    "h5.mae_random_walk": 0.05041100586662192,
+    "h5.pinball_historical": 0.020259003184383936,
+    "h5.pinball_model": 0.02316160456785499,
+    "vol20.mse_logvar_ewma": 0.48181664541653035,
+    "vol20.mse_logvar_mean60": 0.5254535123576254,
+    "vol20.mse_logvar_model": 0.6256119548040872,
+    "vol20.qlike_close_to_close": 1.897509145352788,
+    "vol20.qlike_ewma": 0.363886213972075,
+    "vol20.qlike_mean60": 0.33649408860518915,
+    "vol20.qlike_model": 0.3636285145019935
+   },
+   "diebold_mariano": {
+    "pooled": {
+     "h5: abs_model vs abs_random_walk": {
+      "mean_difference": 0.0058744249242129575,
+      "t_stat": 2.41,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: abs_model vs abs_drift": {
+      "mean_difference": 0.005943273704578129,
+      "t_stat": 2.3,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: pinball_model vs pinball_historical": {
+      "mean_difference": 0.002902601383471054,
+      "t_stat": 2.88,
+      "origins": 73,
+      "lag": 1
+     },
+     "h20: abs_model vs abs_random_walk": {
+      "mean_difference": 0.02286300827637196,
+      "t_stat": 3.84,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: abs_model vs abs_drift": {
+      "mean_difference": 0.015497393676780581,
+      "t_stat": 2.19,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: pinball_model vs pinball_historical": {
+      "mean_difference": 0.013341453486723932,
+      "t_stat": 4.42,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: qlike_model vs qlike_ewma": {
+      "mean_difference": -0.00025769947008148753,
+      "t_stat": -0.01,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: sqlog_model vs sqlog_ewma": {
+      "mean_difference": 0.14379530938755675,
+      "t_stat": 2.65,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: qlike_close_to_close vs qlike_ewma": {
+      "mean_difference": 1.533622931380713,
+      "t_stat": 4.49,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: sqlog_close_to_close vs sqlog_ewma": {
+      "mean_difference": 1.022730356719534,
+      "t_stat": 5.21,
+      "origins": 73,
+      "lag": 2
+     }
+    },
+    "per_ticker": {
+     "BTC-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.003532115782220354,
+       "t_stat": 1.68,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.004830609663796648,
+       "t_stat": 2.27,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.0020077030371533685,
+       "t_stat": 2.38,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.018075335339269225,
+       "t_stat": 3.78,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.01393400081546651,
+       "t_stat": 2.15,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.01001946284971389,
+       "t_stat": 3.75,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.004489467784292624,
+       "t_stat": 0.13,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.10482608934460091,
+       "t_stat": 1.72,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 1.4574791823162172,
+       "t_stat": 4.51,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 1.2007909574066922,
+       "t_stat": 5.31,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "ETH-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.0037081728661366832,
+       "t_stat": 1.06,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.003849384387349181,
+       "t_stat": 1.07,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.001965432426080629,
+       "t_stat": 1.62,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.029531583816442927,
+       "t_stat": 4.21,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.026380442203798853,
+       "t_stat": 3.6,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.015893370112928462,
+       "t_stat": 4.5,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.017788164523089053,
+       "t_stat": 0.68,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.13914681995669442,
+       "t_stat": 2.76,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 1.1403484394462788,
+       "t_stat": 4.2,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 0.9566472920400731,
+       "t_stat": 4.38,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "SOL-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.009555199492558486,
+       "t_stat": 2.78,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.009493412030419892,
+       "t_stat": 2.44,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.004651307747526469,
+       "t_stat": 2.79,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.01525937105872464,
+       "t_stat": 1.89,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.008587234279926045,
+       "t_stat": 0.79,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.012450553613761585,
+       "t_stat": 2.78,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": -0.0028713546863819005,
+       "t_stat": -0.09,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.09988997958962371,
+       "t_stat": 1.67,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 0.8085426079578348,
+       "t_stat": 4.07,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 0.7530663668540333,
+       "t_stat": 4.17,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "XRP-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.006702211555936307,
+       "t_stat": 1.29,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.005599688736746797,
+       "t_stat": 0.99,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.0029859623231237465,
+       "t_stat": 1.41,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.028585742891051043,
+       "t_stat": 2.81,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.013087897407930907,
+       "t_stat": 1.0,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.015002427370491804,
+       "t_stat": 3.12,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": -0.02043707550132577,
+       "t_stat": -0.18,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.231318348659308,
+       "t_stat": 2.67,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 2.7281214958025215,
+       "t_stat": 2.99,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 1.1804168105773374,
+       "t_stat": 3.88,
+       "origins": 73,
+       "lag": 2
+      }
+     }
+    }
+   }
+  },
+  "Kronos-small": {
+   "seconds": 1031.8,
+   "per_ticker": {
+    "BTC-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.031410384706025404,
+      "mae_model": 0.040431278805497656,
+      "mae_random_walk": 0.032708878587601714,
+      "pinball_model": 0.017230332618682787,
+      "pinball_historical": 0.012747103599986534,
+      "coverage80_model": 0.4657534246575342,
+      "coverage80_historical": 0.8767123287671232
+     },
+     "h20": {
+      "mae_drift": 0.08594961705002063,
+      "mae_model": 0.10386352144594758,
+      "mae_random_walk": 0.08180828252621793,
+      "pinball_model": 0.04713100004024595,
+      "pinball_historical": 0.03397658025890077,
+      "coverage80_model": 0.3287671232876712,
+      "coverage80_historical": 0.7671232876712328
+     },
+     "vol20": {
+      "qlike_close_to_close": 1.161844172513319,
+      "qlike_model": 0.20448136540613437,
+      "qlike_ewma": 0.19241247396794942,
+      "qlike_mean60": 0.18322285841706284,
+      "mse_logvar_model": 0.4359820073068076,
+      "mse_logvar_ewma": 0.30278612141933353,
+      "mse_logvar_mean60": 0.337521363070107
+     }
+    },
+    "ETH-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.047580205885864695,
+      "mae_model": 0.05650627552272375,
+      "mae_random_walk": 0.0477214174070772,
+      "pinball_model": 0.023392894720708234,
+      "pinball_historical": 0.018758234788646005,
+      "coverage80_model": 0.5753424657534246,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.13283878651797032,
+      "mae_model": 0.17424497450366314,
+      "mae_random_walk": 0.12968764490532625,
+      "pinball_model": 0.07895122316109816,
+      "pinball_historical": 0.05372748939188585,
+      "coverage80_model": 0.273972602739726,
+      "coverage80_historical": 0.7671232876712328
+     },
+     "vol20": {
+      "qlike_close_to_close": 1.3138914615884107,
+      "qlike_model": 0.2328106257344825,
+      "qlike_ewma": 0.19237246805141353,
+      "qlike_mean60": 0.17375026204111146,
+      "mse_logvar_model": 0.5229482940052819,
+      "mse_logvar_ewma": 0.33989802319672635,
+      "mse_logvar_mean60": 0.3478127122937441
+     }
+    },
+    "SOL-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.056221000376216065,
+      "mae_model": 0.06700567355553157,
+      "mae_random_walk": 0.056159212914077467,
+      "pinball_model": 0.027675008975204286,
+      "pinball_historical": 0.022541352053150197,
+      "coverage80_model": 0.589041095890411,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.1486566501150922,
+      "mae_model": 0.173417576992459,
+      "mae_random_walk": 0.1419845133362936,
+      "pinball_model": 0.07519841527087752,
+      "pinball_historical": 0.05657344638461691,
+      "coverage80_model": 0.3013698630136986,
+      "coverage80_historical": 0.8356164383561644
+     },
+     "vol20": {
+      "qlike_close_to_close": 0.9865829178996918,
+      "qlike_model": 0.19544355994599924,
+      "qlike_ewma": 0.186620292882394,
+      "qlike_mean60": 0.177325010525178,
+      "mse_logvar_model": 0.46589249324976345,
+      "mse_logvar_ewma": 0.33444479294755447,
+      "mse_logvar_mean60": 0.3711294552057491
+     }
+    },
+    "XRP-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.06615703737692084,
+      "mae_model": 0.07299218009276327,
+      "mae_random_walk": 0.06505451455773133,
+      "pinball_model": 0.03050353412045099,
+      "pinball_historical": 0.026989322295753015,
+      "coverage80_model": 0.6301369863013698,
+      "coverage80_historical": 0.8082191780821918
+     },
+     "h20": {
+      "mae_drift": 0.1681098662022928,
+      "mae_model": 0.1878520057456994,
+      "mae_random_walk": 0.15261202071917265,
+      "pinball_model": 0.08459076273417195,
+      "pinball_historical": 0.06456275949000483,
+      "coverage80_model": 0.3561643835616438,
+      "coverage80_historical": 0.726027397260274
+     },
+     "vol20": {
+      "qlike_close_to_close": 3.255647937760723,
+      "qlike_model": 0.9017419569309042,
+      "qlike_ewma": 0.8841396209865431,
+      "qlike_mean60": 0.8116782234374044,
+      "mse_logvar_model": 1.1792643999569474,
+      "mse_logvar_ewma": 0.9501376441025071,
+      "mse_logvar_mean60": 1.0453505188609011
+     }
+    }
+   },
+   "mean": {
+    "h20.coverage80_historical": 0.773972602739726,
+    "h20.coverage80_model": 0.3150684931506849,
+    "h20.mae_drift": 0.133888729971344,
+    "h20.mae_model": 0.15984451967194227,
+    "h20.mae_random_walk": 0.12652311537175262,
+    "h20.pinball_historical": 0.05221006888135209,
+    "h20.pinball_model": 0.07146785030159838,
+    "h5.coverage80_historical": 0.8527397260273972,
+    "h5.coverage80_model": 0.5650684931506849,
+    "h5.mae_drift": 0.05034215708625675,
+    "h5.mae_model": 0.05923385199412906,
+    "h5.mae_random_walk": 0.05041100586662192,
+    "h5.pinball_historical": 0.020259003184383936,
+    "h5.pinball_model": 0.024700442608761572,
+    "vol20.mse_logvar_ewma": 0.48181664541653035,
+    "vol20.mse_logvar_mean60": 0.5254535123576254,
+    "vol20.mse_logvar_model": 0.6510217986297001,
+    "vol20.qlike_close_to_close": 1.679491622440536,
+    "vol20.qlike_ewma": 0.363886213972075,
+    "vol20.qlike_mean60": 0.33649408860518915,
+    "vol20.qlike_model": 0.3836193770043801
+   },
+   "diebold_mariano": {
+    "pooled": {
+     "h5: abs_model vs abs_random_walk": {
+      "mean_difference": 0.008822846127507143,
+      "t_stat": 3.15,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: abs_model vs abs_drift": {
+      "mean_difference": 0.008891694907872314,
+      "t_stat": 3.09,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: pinball_model vs pinball_historical": {
+      "mean_difference": 0.004441439424377636,
+      "t_stat": 3.63,
+      "origins": 73,
+      "lag": 1
+     },
+     "h20: abs_model vs abs_random_walk": {
+      "mean_difference": 0.03332140430018968,
+      "t_stat": 3.09,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: abs_model vs abs_drift": {
+      "mean_difference": 0.025955789700598298,
+      "t_stat": 2.35,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: pinball_model vs pinball_historical": {
+      "mean_difference": 0.019257781420246308,
+      "t_stat": 3.61,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: qlike_model vs qlike_ewma": {
+      "mean_difference": 0.019733163032305056,
+      "t_stat": 0.47,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: sqlog_model vs sqlog_ewma": {
+      "mean_difference": 0.16920515321316967,
+      "t_stat": 2.7,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: qlike_close_to_close vs qlike_ewma": {
+      "mean_difference": 1.315605408468461,
+      "t_stat": 4.26,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: sqlog_close_to_close vs sqlog_ewma": {
+      "mean_difference": 0.8771498528883099,
+      "t_stat": 5.0,
+      "origins": 73,
+      "lag": 2
+     }
+    },
+    "per_ticker": {
+     "BTC-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.0077224002178959495,
+       "t_stat": 2.69,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.009020894099472246,
+       "t_stat": 3.11,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.004483229018696254,
+       "t_stat": 3.6,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.022055238919729672,
+       "t_stat": 2.62,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.01791390439592696,
+       "t_stat": 1.86,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.013154419781345182,
+       "t_stat": 2.9,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.012068891438184959,
+       "t_stat": 0.34,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.13319588588747405,
+       "t_stat": 1.93,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 0.9694316985453694,
+       "t_stat": 3.91,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 0.8332042881647092,
+       "t_stat": 4.8,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "ETH-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.008784858115646556,
+       "t_stat": 1.86,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.008926069636859053,
+       "t_stat": 1.88,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.004634659932062227,
+       "t_stat": 2.45,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.04455732959833688,
+       "t_stat": 3.85,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.04140618798569282,
+       "t_stat": 3.4,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.025223733769212327,
+       "t_stat": 4.21,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.04043815768306897,
+       "t_stat": 1.43,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.18305027080855557,
+       "t_stat": 3.04,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 1.121518993536997,
+       "t_stat": 4.21,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 0.930272137360548,
+       "t_stat": 4.59,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "SOL-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.010846460641454106,
+       "t_stat": 2.33,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.01078467317931551,
+       "t_stat": 2.11,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.005133656922054091,
+       "t_stat": 2.47,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.031433063656165376,
+       "t_stat": 2.75,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.02476092687736679,
+       "t_stat": 1.84,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.018624968886260623,
+       "t_stat": 2.91,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.008823267063605223,
+       "t_stat": 0.25,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.13144770030220898,
+       "t_stat": 1.76,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 0.7999626250172978,
+       "t_stat": 3.77,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 0.6821076271384472,
+       "t_stat": 4.08,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "XRP-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": 0.007937665535031963,
+       "t_stat": 1.31,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": 0.006835142715842451,
+       "t_stat": 1.06,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.003514211824697968,
+       "t_stat": 1.46,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.03523998502652677,
+       "t_stat": 1.49,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": 0.019742139543406624,
+       "t_stat": 0.8,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": 0.0200280032441671,
+       "t_stat": 1.84,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": 0.017602335944361093,
+       "t_stat": 0.18,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": 0.22912675585444023,
+       "t_stat": 2.64,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_close_to_close vs qlike_ewma": {
+       "mean_difference": 2.3715083167741797,
+       "t_stat": 2.89,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_close_to_close vs sqlog_ewma": {
+       "mean_difference": 1.0630153588895352,
+       "t_stat": 3.8,
+       "origins": 73,
+       "lag": 2
+      }
+     }
+    }
+   }
+  }
+ },
+ "stopped": "during Kronos-base, when its runs were restarted with 0f1ee88. Run with the code before that commit: unseeded sampling and 256-row batches. No sampled bar had a non-positive price (every volatility forecast is finite), so the fix that leaves such bars out does not change it."
+}

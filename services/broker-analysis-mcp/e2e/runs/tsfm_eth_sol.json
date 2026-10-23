@@ -1,0 +1,254 @@
+{
+ "protocol": "Out-of-sample test of time-series foundation models against naive baselines on market data.\n\nModels: Mistral Timestral (5M, 28M, 123M) and Amazon Chronos-Bolt-base and Chronos-2.\n\nProtocol, fixed before looking at any result:\n  universe     10 daily series, 10 years of Yahoo adjusted OHLC\n  origins      every 10 sessions over the last 750 sessions, 1,024 sessions of context\n  task A       price at +5 and +20 sessions\n               point: median vs random walk (last close), mean absolute log error\n               distribution: mean pinball loss over the quantiles 0.1, 0.2, ..., 0.9 (the levels\n               every model provides; Chronos-Bolt has no others) vs historical simulation\n               (the last 500 sessions' h-day log returns applied to the last close); coverage\n               of the 10-90% and 5-95% intervals\n  added after the first run, before deciding: a drift baseline (mean daily log return of the last\n  500 sessions times h) and Diebold-Mariano tests on the per-origin loss differences averaged\n  across tickers, with Newey-West standard errors (lag = ceil(h / step)) for overlapping windows\n  task B       mean daily Garman-Klass variance over the next 20 sessions\n               model fed the daily GK variance; forecast = mean of the 21 quantiles, averaged\n               over the 20 steps; baselines EWMA (lambda 0.94) and the 60-session mean\n               loss QLIKE (Patton 2011) and MSE of log variance\n\nA component that learns must beat its dumb baseline out of sample, or it is dropped.\nRun with an environment holding `timestral` and torch:\n  python e2e/tsfm_eval.py --models timestral-28M chronos-bolt-base chronos-2 --out e2e/runs/tsfm.json\n  python e2e/tsfm_eval.py --tickers BTC-USD ETH-USD SOL-USD XRP-USD --out e2e/runs/tsfm_crypto.json\nCrypto assets trade every day, so for them a session is a calendar day. --skip-last N drops the\nlatest N sessions before anything is computed, so a second test can run on an earlier window\ndisjoint from the first; each ticker's window dates are in the report.\n",
+ "universe": [
+  "ETH-USD",
+  "SOL-USD"
+ ],
+ "skip_last": 0,
+ "hypothesis": "In-sample breakdown of the window that selected the model; not evidence for H1.",
+ "models": {
+  "timestral-28M": {
+   "seconds": 8.2,
+   "per_ticker": {
+    "ETH-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.047580205885864695,
+      "mae_model": 0.04720079450424253,
+      "mae_random_walk": 0.0477214174070772,
+      "pinball_model": 0.018941021920282738,
+      "pinball_historical": 0.018758234788646005,
+      "coverage80_model": 0.8493150684931506,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.13283878651797032,
+      "mae_model": 0.12962637349987471,
+      "mae_random_walk": 0.12968764490532625,
+      "pinball_model": 0.05235224124595791,
+      "pinball_historical": 0.05372748939188585,
+      "coverage80_model": 0.7808219178082192,
+      "coverage80_historical": 0.7671232876712328
+     },
+     "vol20": {
+      "qlike_model": 0.1810367394998266,
+      "qlike_ewma": 0.19237246805141353,
+      "qlike_mean60": 0.17375026204111146,
+      "mse_logvar_model": 0.3119543686214636,
+      "mse_logvar_ewma": 0.33989802319672635,
+      "mse_logvar_mean60": 0.3478127122937441
+     }
+    },
+    "SOL-USD": {
+     "origins": 73,
+     "first_origin": "2024-10-03",
+     "last_target": "2026-10-12",
+     "h5": {
+      "mae_drift": 0.056221000376216065,
+      "mae_model": 0.056012387423852415,
+      "mae_random_walk": 0.056159212914077467,
+      "pinball_model": 0.022546111270388698,
+      "pinball_historical": 0.022541352053150197,
+      "coverage80_model": 0.8082191780821918,
+      "coverage80_historical": 0.863013698630137
+     },
+     "h20": {
+      "mae_drift": 0.1486566501150922,
+      "mae_model": 0.14278450544537966,
+      "mae_random_walk": 0.1419845133362936,
+      "pinball_model": 0.05585545058961758,
+      "pinball_historical": 0.05657344638461691,
+      "coverage80_model": 0.8082191780821918,
+      "coverage80_historical": 0.8356164383561644
+     },
+     "vol20": {
+      "qlike_model": 0.14664089555505408,
+      "qlike_ewma": 0.186620292882394,
+      "qlike_mean60": 0.177325010525178,
+      "mse_logvar_model": 0.26796895666858067,
+      "mse_logvar_ewma": 0.33444479294755447,
+      "mse_logvar_mean60": 0.3711294552057491
+     }
+    }
+   },
+   "mean": {
+    "h20.coverage80_historical": 0.8013698630136986,
+    "h20.coverage80_model": 0.7945205479452055,
+    "h20.mae_drift": 0.14074771831653127,
+    "h20.mae_model": 0.1362054394726272,
+    "h20.mae_random_walk": 0.13583607912080992,
+    "h20.pinball_historical": 0.055150467888251384,
+    "h20.pinball_model": 0.054103845917787746,
+    "h5.coverage80_historical": 0.863013698630137,
+    "h5.coverage80_model": 0.8287671232876712,
+    "h5.mae_drift": 0.051900603131040376,
+    "h5.mae_model": 0.051606590964047475,
+    "h5.mae_random_walk": 0.05194031516057733,
+    "h5.pinball_historical": 0.0206497934208981,
+    "h5.pinball_model": 0.020743566595335716,
+    "vol20.mse_logvar_ewma": 0.3371714080721404,
+    "vol20.mse_logvar_mean60": 0.35947108374974657,
+    "vol20.mse_logvar_model": 0.2899616626450221,
+    "vol20.qlike_ewma": 0.18949638046690376,
+    "vol20.qlike_mean60": 0.17553763628314473,
+    "vol20.qlike_model": 0.16383881752744034
+   },
+   "diebold_mariano": {
+    "pooled": {
+     "h5: abs_model vs abs_random_walk": {
+      "mean_difference": -0.00033372419652985725,
+      "t_stat": -1.02,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: abs_model vs abs_drift": {
+      "mean_difference": -0.00029401216699290514,
+      "t_stat": -0.28,
+      "origins": 73,
+      "lag": 1
+     },
+     "h5: pinball_model vs pinball_historical": {
+      "mean_difference": 9.377317443761845e-05,
+      "t_stat": 0.31,
+      "origins": 73,
+      "lag": 1
+     },
+     "h20: abs_model vs abs_random_walk": {
+      "mean_difference": 0.00036936035181726635,
+      "t_stat": 0.47,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: abs_model vs abs_drift": {
+      "mean_difference": -0.004542278843904063,
+      "t_stat": -1.08,
+      "origins": 73,
+      "lag": 2
+     },
+     "h20: pinball_model vs pinball_historical": {
+      "mean_difference": -0.0010466219704636337,
+      "t_stat": -0.72,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: qlike_model vs qlike_ewma": {
+      "mean_difference": -0.025657562939463453,
+      "t_stat": -1.18,
+      "origins": 73,
+      "lag": 2
+     },
+     "vol20: sqlog_model vs sqlog_ewma": {
+      "mean_difference": -0.04720974542711825,
+      "t_stat": -1.96,
+      "origins": 73,
+      "lag": 2
+     }
+    },
+    "per_ticker": {
+     "ETH-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": -0.0005206229028346575,
+       "t_stat": -1.62,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": -0.00037941138162216005,
+       "t_stat": -0.73,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 0.00018278713163673454,
+       "t_stat": 0.85,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": -6.127140545151092e-05,
+       "t_stat": -0.06,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": -0.0032124130180955827,
+       "t_stat": -1.25,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": -0.0013752481459279368,
+       "t_stat": -1.61,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": -0.011335728551586953,
+       "t_stat": -0.46,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": -0.027943654575262763,
+       "t_stat": -1.02,
+       "origins": 73,
+       "lag": 2
+      }
+     },
+     "SOL-USD": {
+      "h5: abs_model vs abs_random_walk": {
+       "mean_difference": -0.00014682549022505776,
+       "t_stat": -0.31,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: abs_model vs abs_drift": {
+       "mean_difference": -0.00020861295236365175,
+       "t_stat": -0.11,
+       "origins": 73,
+       "lag": 1
+      },
+      "h5: pinball_model vs pinball_historical": {
+       "mean_difference": 4.759217238501934e-06,
+       "t_stat": 0.01,
+       "origins": 73,
+       "lag": 1
+      },
+      "h20: abs_model vs abs_random_walk": {
+       "mean_difference": 0.0007999921090860502,
+       "t_stat": 0.78,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: abs_model vs abs_drift": {
+       "mean_difference": -0.005872144669712545,
+       "t_stat": -0.83,
+       "origins": 73,
+       "lag": 2
+      },
+      "h20: pinball_model vs pinball_historical": {
+       "mean_difference": -0.0007179957949993306,
+       "t_stat": -0.3,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: qlike_model vs qlike_ewma": {
+       "mean_difference": -0.03997939732733994,
+       "t_stat": -1.91,
+       "origins": 73,
+       "lag": 2
+      },
+      "vol20: sqlog_model vs sqlog_ewma": {
+       "mean_difference": -0.06647583627897376,
+       "t_stat": -2.51,
+       "origins": 73,
+       "lag": 2
+      }
+     }
+    }
+   }
+  }
+ }
+}
