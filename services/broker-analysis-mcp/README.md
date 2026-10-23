@@ -53,8 +53,9 @@ BROKER_ANALYSIS_WEBHOOK_ALLOW=https://hooks.example.com/   # webhooks are off wi
 
 ## Skills
 
-`skills/` holds five skills for Claude: `analisi-rischio`, `analisi-fondamentale`,
-`analisi-tecnica`, `selezione-etf`, `analisi-parametrica`. Copy them to `.claude/skills/`.
+`skills/` holds five skills for Claude: `risk-analysis`, `fundamental-analysis`,
+`technical-analysis`, `etf-selection`, `custom-analysis`. Copy them to `.claude/skills/`. They are
+written in English and tell the agent to answer in the analyst's language.
 
 ## Run
 
@@ -73,5 +74,6 @@ bash ../../scripts/ruff.sh check .              # Aura's ruff rules, through [to
 ## Measured, not assumed
 
 `docs/VERIFICA.md` records what was measured, including the formulas checked against
-independent implementations and the forecasting models (Mistral Timestral, Amazon Chronos-Bolt and
-Chronos-2) that were dropped for not beating naive baselines.
+independent implementations and the forecasting models (Mistral Timestral, Amazon Chronos-Bolt,
+Chronos-2 and Kronos) that were dropped for not beating naive baselines. The Kronos adapter was
+removed afterwards; it is at commit b996f52 with the runs it produced.

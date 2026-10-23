@@ -158,13 +158,40 @@ func egressITRawExec(t *testing.T, cli *client.Client, containerID string, cmd [
 	return outBuf.String(), ins.ExitCode
 }
 
-// egressITBoxWgetOK reports whether the box can reach url over HTTP within tmo seconds. A DROPped
-// destination hangs until the busybox `timeout` fires (false); an allowed 200 returns true.
-func egressITBoxWgetOK(t *testing.T, cli *client.Client, containerID, url string, tmo int) bool {
+// egressITPublicProbeAttempts bounds the retries of the public reachability probe: example.com is
+// a third-party host, so one failed fetch is not evidence that the floor over-blocked. A DROP fails
+// every attempt. Mirrors usersandbox.publicProbeAttempts.
+const egressITPublicProbeAttempts = 3
+
+// egressITBoxWget reports whether the box can fetch url over HTTP within tmo seconds, and what wget
+// printed. A DROPped destination hangs until the busybox `timeout` fires and prints nothing; busybox
+// wget prints its errors even with -q, so a fast failure says why.
+func egressITBoxWget(t *testing.T, cli *client.Client, containerID, url string, tmo int) (bool, string) {
 	t.Helper()
-	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("timeout %d wget -T %d -q -O /dev/null %s", tmo+2, tmo, url)}
-	_, code := egressITRawExec(t, cli, containerID, cmd)
-	return code == 0
+	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("timeout %d wget -T %d -q -O /dev/null %s 2>&1", tmo+2, tmo, url)}
+	out, code := egressITRawExec(t, cli, containerID, cmd)
+	return code == 0, strings.TrimSpace(out)
+}
+
+// egressITRequireBoxReachesPublic fails the test, with every attempt's wget output, when the box
+// cannot fetch a public url in egressITPublicProbeAttempts tries.
+func egressITRequireBoxReachesPublic(t *testing.T, cli *client.Client, containerID, url, failure string) {
+	t.Helper()
+	var attempts []string
+	for i := 1; i <= egressITPublicProbeAttempts; i++ {
+		ok, out := egressITBoxWget(t, cli, containerID, url, 6)
+		if ok {
+			return
+		}
+		if out == "" {
+			out = "no output (timed out)"
+		}
+		attempts = append(attempts, fmt.Sprintf("attempt %d: %s", i, out))
+		if i < egressITPublicProbeAttempts {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	t.Fatalf("%s; %s", failure, strings.Join(attempts, "; "))
 }
 
 // egressITCapAdd returns the CapAdd list of a container by id-or-name.
@@ -263,13 +290,12 @@ func TestBuildSandboxRouter_LaunchesEgressFloor(t *testing.T) {
 	}
 
 	// Full public internet (D-04): a public HTTP host is reachable through the floor.
-	if !egressITBoxWgetOK(t, cli, h.ContainerID, "http://example.com", 6) {
-		t.Fatal("box must reach the public internet (example.com) — the composition-root floor over-blocked public egress")
-	}
+	egressITRequireBoxReachesPublic(t, cli, h.ContainerID, "http://example.com",
+		"box must reach the public internet (example.com) — the composition-root floor over-blocked public egress")
 	// Tenancy boundary (D-05): the cloud-metadata IP + an RFC1918 target are DROPPED — the box the
 	// PRODUCTION path created cannot cross into the host/tenancy zone (SBX-04).
 	for _, target := range []string{"http://169.254.169.254", "http://10.0.0.1"} {
-		if egressITBoxWgetOK(t, cli, h.ContainerID, target, 4) {
+		if ok, _ := egressITBoxWget(t, cli, h.ContainerID, target, 4); ok {
 			t.Fatalf("box reached internal target %q — the composition-root floor did not DROP it (SBX-04 breach)", target)
 		}
 	}

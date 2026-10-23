@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/client"
 )
@@ -73,14 +74,41 @@ func skipUnlessEnforcingBridge(t *testing.T) {
 		"informational-only outside CI. Set AURA_EGRESS_ENFORCE=1 on a native-Linux non-masquerading host to run (Pitfall 3)")
 }
 
-// boxWgetOK reports whether the box can reach url over HTTP within tmo seconds. A DROPped
-// destination hangs until the timeout (false); an allowed destination that serves HTTP 200
-// returns true. Wrapped in busybox `timeout` so a dropped target can never wedge the test.
-func boxWgetOK(t *testing.T, cli *client.Client, containerID, url string, tmo int) bool {
+// publicProbeAttempts bounds the retries of a public reachability probe: example.com is a
+// third-party host, so one failed fetch is not evidence that the floor over-blocked. A DROP
+// fails every attempt.
+const publicProbeAttempts = 3
+
+// boxWget reports whether the box can fetch url over HTTP within tmo seconds, and what wget
+// printed. A DROPped destination hangs until the timeout and prints nothing; busybox wget
+// prints its errors even with -q ("bad address", "Connection refused", the HTTP status), so a
+// fast failure says why. Wrapped in busybox `timeout` so a dropped target can never wedge the test.
+func boxWget(t *testing.T, cli *client.Client, containerID, url string, tmo int) (bool, string) {
 	t.Helper()
-	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("timeout %d wget -T %d -q -O /dev/null %s", tmo+2, tmo, url)}
-	_, code := rawExec(t, cli, containerID, cmd)
-	return code == 0
+	cmd := []string{"/bin/sh", "-c", fmt.Sprintf("timeout %d wget -T %d -q -O /dev/null %s 2>&1", tmo+2, tmo, url)}
+	out, code := rawExec(t, cli, containerID, cmd)
+	return code == 0, strings.TrimSpace(out)
+}
+
+// requireBoxReachesPublic fails the test, with every attempt's wget output, when the box cannot
+// fetch a public url in publicProbeAttempts tries.
+func requireBoxReachesPublic(t *testing.T, cli *client.Client, containerID, url, failure string) {
+	t.Helper()
+	var attempts []string
+	for i := 1; i <= publicProbeAttempts; i++ {
+		ok, out := boxWget(t, cli, containerID, url, 6)
+		if ok {
+			return
+		}
+		if out == "" {
+			out = "no output (timed out)"
+		}
+		attempts = append(attempts, fmt.Sprintf("attempt %d: %s", i, out))
+		if i < publicProbeAttempts {
+			time.Sleep(2 * time.Second)
+		}
+	}
+	t.Fatalf("%s; %s", failure, strings.Join(attempts, "; "))
 }
 
 // inspectCapAdd returns the CapAdd list of a container by id-or-name.
@@ -136,9 +164,8 @@ func TestEgress_FloorDropsInternal(t *testing.T) {
 	}
 
 	// Full public internet (D-04): a public HTTP host is reachable.
-	if !boxWgetOK(t, cli, h.ContainerID, "http://example.com", 6) {
-		t.Fatalf("box must reach the public internet (example.com) — floor over-blocked public egress")
-	}
+	requireBoxReachesPublic(t, cli, h.ContainerID, "http://example.com",
+		"box must reach the public internet (example.com) — floor over-blocked public egress")
 
 	// Tenancy boundary (D-05): every internal target is DROPPED (unreachable).
 	for _, target := range []string{
@@ -146,7 +173,7 @@ func TestEgress_FloorDropsInternal(t *testing.T) {
 		"http://169.254.169.254", // cloud-metadata IP
 		"http://172.18.0.1",      // shared-services bridge
 	} {
-		if boxWgetOK(t, cli, h.ContainerID, target, 4) {
+		if ok, _ := boxWget(t, cli, h.ContainerID, target, 4); ok {
 			t.Fatalf("box reached internal target %q — the tenancy floor did not DROP it (SBX-04 breach)", target)
 		}
 	}
@@ -194,15 +221,13 @@ func TestEgress_FQDNAllowlist(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = backend.Stop(context.Background(), h) })
 
-	if !boxWgetOK(t, cli, h.ContainerID, "http://example.com", 6) {
-		t.Fatalf("box must reach the ALLOWED FQDN example.com under the configured allowlist")
-	}
-	if boxWgetOK(t, cli, h.ContainerID, "http://www.wikipedia.org", 5) {
+	requireBoxReachesPublic(t, cli, h.ContainerID, "http://example.com",
+		"box must reach the ALLOWED FQDN example.com under the configured allowlist")
+	if ok, _ := boxWget(t, cli, h.ContainerID, "http://www.wikipedia.org", 5); ok {
 		t.Fatalf("box reached a DISALLOWED FQDN — the tightened allowlist did not DROP it (SBX-04 breach)")
 	}
 }
 
-// containsStr reports whether s is in xs.
 // hasCap reports whether caps contains want, tolerant of Docker's capability normalization:
 // the daemon returns caps in the canonical "CAP_NET_ADMIN" form on inspect even when the
 // container was created with the short "NET_ADMIN" name (moby v0.4.1 / Docker 29+). Comparing
