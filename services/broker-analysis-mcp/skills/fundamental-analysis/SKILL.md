@@ -11,7 +11,7 @@ description: Fundamental analysis and relative valuation of listed companies wit
 - A `null` value means "not meaningful" (losses, negative EBITDA, missing data): say so, do not replace it.
 - Report the `warnings`, in particular the currency conversion between price and financial statements.
 - This is internal analysis, not a personalised recommendation to a client.
-- Answer in the language the analyst writes in, with that language's number format.
+- Reply in the language of the question: English for a question in English, Italian for one in Italian. Use that language's number format (22.1% in English, 22,1% in Italian).
 
 ## Cost of capital
 - WACC, cost of equity and EVA are computed only if the analyst gives `risk_free_annual` and `equity_risk_premium` (decimals). Do not choose them yourself: ask for them, or propose explicit values (for instance the 10-year BTP yield and a stated risk premium) and have them confirmed.

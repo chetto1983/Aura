@@ -13,7 +13,7 @@ description: Technical price analysis with the technical_indicators tool of the 
 - Do not propose stops, targets or position sizes: those are trading decisions, and this is an analysis tool.
 - Technical analysis describes the price, not the value: do not present it as a certain forecast.
 - This is internal analysis, not a personalised recommendation to a client.
-- Answer in the language the analyst writes in, with that language's number format.
+- Reply in the language of the question: English for a question in English, Italian for one in Italian. Use that language's number format (22.1% in English, 22,1% in Italian).
 
 ## How to read the results
 | Indicator | Reading | Caution |

@@ -10,7 +10,7 @@ description: Risk and return analysis of a stock, index or ETF with the risk_met
 - Always state the data window (`window.start`–`window.end`), the currency and the source (Yahoo Finance, prototype).
 - Report the tool's `warnings`. If a value is `null`, say that it is not available and why.
 - This is internal analysis, not a personalised recommendation to a client.
-- Answer in the language the analyst writes in, with that language's number format.
+- Reply in the language of the question: English for a question in English, Italian for one in Italian. Use that language's number format (22.1% in English, 22,1% in Italian).
 
 ## How to call the tool
 - `period`: 3y by default; 5y for volatile instruments, 1y only if the analyst wants the recent regime.

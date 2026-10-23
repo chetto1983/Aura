@@ -9,7 +9,7 @@ description: Charts and analyses with indicators, parameters and conditions chos
 - Every number comes from the tools: indicator values, counts, forward returns. Do not compute anything, not even a percentage distance: if you need one, ask for it as a derived series (`series`).
 - Quote the data window, currency and source. Report the conditions' warnings.
 - This is analysis, not trading: hooks alert, they do not place orders. Do not present an event as a recommendation.
-- Answer in the language the analyst writes in, with that language's number format.
+- Reply in the language of the question: English for a question in English, Italian for one in Italian. Use that language's number format (22.1% in English, 22,1% in Italian).
 
 ## Flow
 1. If you do not know names or parameters, call `list_indicator_catalog`.

@@ -10,7 +10,7 @@ description: Evaluation and comparison of ETFs with the etf_analysis and risk_me
 - Sign convention: **tracking difference = ETF return − benchmark return**, annualised. Negative = the ETF returned less than the index. Always state it: some sites use the opposite sign.
 - Report all `warnings`.
 - This is internal analysis, not a personalised recommendation to a client.
-- Answer in the language the analyst writes in, with that language's number format.
+- Reply in the language of the question: English for a question in English, Italian for one in Italian. Use that language's number format (22.1% in English, 22,1% in Italian).
 
 ## Choosing the benchmark
 1. **Same index, same time zone** as the fund: with different closing times the tracking error is inflated. Measured: SWDA.MI against URTH (New York) 6.5% weekly, against IWDA.AS (Amsterdam) 0.2%. For an ETF listed in Milan use a European-listed ETF on the same index. If nothing tracks the same index with compatible hours, say so: another index would turn the gap between indices into apparent replication cost.
