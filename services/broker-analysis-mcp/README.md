@@ -73,5 +73,6 @@ bash ../../scripts/ruff.sh check .              # Aura's ruff rules, through [to
 ## Measured, not assumed
 
 `docs/VERIFICA.md` records what was measured, including the formulas checked against
-independent implementations and the forecasting models (Mistral Timestral, Amazon Chronos-Bolt and
-Chronos-2) that were dropped for not beating naive baselines.
+independent implementations and the forecasting models (Mistral Timestral, Amazon Chronos-Bolt,
+Chronos-2 and Kronos) that were dropped for not beating naive baselines. The Kronos adapter was
+removed afterwards; it is at commit b996f52 with the runs it produced.

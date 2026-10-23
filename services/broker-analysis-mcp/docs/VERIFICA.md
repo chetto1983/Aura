@@ -193,7 +193,8 @@ prima esecuzione e scritte in testa a `tsfm_eval.py`:
   comincia comunque a ottobre 2024, con 73 origini per serie.
 
 Il campionamento passa da una cache KV, che riproduce i logit di Kronos a meno di 1e-5 ed è da 6,5 a
-13,6 volte più veloce.
+13,6 volte più veloce. Dopo lo scarto l'adapter e la cache sono stati tolti da `e2e/`: per rifare
+questi run si parte dal commit `b996f52`, che li contiene insieme ai risultati.
 
 | Run | Prezzo a 20 giorni contro drift (t) | Quantili a 20 giorni contro simulazione storica (t) | Volatilità contro EWMA, QLIKE (t) | Copertura dell'intervallo 80%, 5 / 20 giorni |
 | --- | --- | --- | --- | --- |
