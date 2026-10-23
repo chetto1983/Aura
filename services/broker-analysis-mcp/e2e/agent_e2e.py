@@ -10,6 +10,7 @@ server and the project's skills available. Each run is scored from its transcrip
   caveats    1 pt   required facts (source, window, warnings) are stated
 
 Usage: uv run python e2e/agent_e2e.py [--only KEY] [--out DIR]
+       uv run python e2e/agent_e2e.py --rescore DIR   (score saved runs again, no agent)
 """
 
 import argparse
@@ -24,7 +25,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = "broker-analysis"
-NUMBER = re.compile(r"(?<![\w.])[-\u2212]?\d{1,3}(?:[.\s']\d{3})*(?:,\d+)?(?![\w])|(?<![\w.])[-\u2212]?\d+(?:[.,]\d+)?(?![\w])")
+# A minus may be typed as a hyphen, a dash or U+2212; numbers joined by ",digit" are a parameter
+# list, as in MACD (12,26,9).
+NUMBER = re.compile(
+    r"(?<![\w.])(?<!\d,)[-\u2010-\u2013\u2212]?\d{1,3}(?:[.\s']\d{3})*(?:,\d+)?(?!\w|[.,]\d)"
+    r"|(?<![\w.])(?<!\d,)[-\u2010-\u2013\u2212]?\d+(?:[.,]\d+)?(?!\w|,\d)"
+)
+MINUS = str.maketrans(dict.fromkeys("\u2010\u2011\u2012\u2013\u2212", "-"))
+SCALE = re.compile(r"\s*(?:(miliard|mld|bn\b|billion)|(milion|mln|million))", re.I)
 
 
 @dataclass
@@ -36,7 +44,6 @@ class Scenario:
     skill: str | None  # None: no data comes back, so there is nothing for a skill to interpret
     metrics: list[str]
     caveats: list[str] = field(default_factory=list)
-    expect_error: bool = False
 
 
 SCENARIOS = [
@@ -148,13 +155,12 @@ SCENARIOS = [
         None,
         [],
         ["non .{0,40}(disponibil|trovat|esist|riconosc)|nessun|errore"],
-        expect_error=True,
     ),
 ]
 
 
 def _to_float(token: str) -> float | None:
-    t = token.replace("\u2212", "-").replace("\u202f", "").replace(" ", "").replace("'", "")
+    t = token.translate(MINUS).replace("\u202f", "").replace(" ", "").replace("'", "")
     if "," in t:
         t = t.replace(".", "").replace(",", ".")
     elif t.count(".") > 1:
@@ -187,8 +193,9 @@ def _tool_numbers(results: list) -> list[float]:
                 walk(v, loss)
         elif isinstance(x, (int, float)) and not isinstance(x, bool):
             found.extend(_signed(float(x), loss))
-        elif isinstance(x, str):
-            found.extend(float(n) for n in re.findall(r"\d+\.\d+|\d+", x))  # e.g. FX rates in warnings
+        elif isinstance(x, str):  # prose such as FX rates in warnings, where a hyphen may be a minus
+            for sign, digits in re.findall(r"([-\u2212]?)(\d+\.\d+|\d+)", x):
+                found.extend([float(digits), -float(digits)] if sign else [float(digits)])
 
     for r in results:
         walk(r)
@@ -201,17 +208,34 @@ def _matches(value: float, pool: list[float], decimals: int = 2) -> bool:
     return any(abs(value - p) <= tolerance for p in pool)
 
 
-def _answer_decimals(text: str) -> list[tuple[float, int]]:
-    """Decimal numbers quoted in the answer, with the number of digits after the decimal mark."""
-    values = []
-    for token in NUMBER.findall(text):
+def _answer_decimals(text: str) -> list[list[tuple[float, int]]]:
+    """Decimal numbers quoted in the answer, each as its readings: (value, digits after the mark).
+
+    In Italian 81.792 may be 81792, and 15,8 miliardi is 15.8e9 shown to the nearest 1e8. A number
+    written without a sign may also be negative, the sign being in words ("8,2 punti in meno"); one
+    written with a sign is read only with it.
+    """
+    quoted = []
+    for m in NUMBER.finditer(text):
+        token = m.group()
         v = _to_float(token)
         if v is None or re.fullmatch(r"20\d\d[-.]\d\d", token):
             continue
         mark = "," if "," in token else ("." if token.count(".") == 1 else None)
-        if mark:
-            values.append((v, len(token.rsplit(mark, 1)[1])))
-    return values
+        if not mark:
+            continue
+        digits = len(token.rsplit(mark, 1)[1])
+        readings = [(v, digits)]
+        if mark == "." and digits == 3:
+            readings.append((v * 1000, 0))
+        scale = SCALE.match(text, m.end())
+        if scale:
+            exponent = 9 if scale.group(1) else 6
+            readings.append((v * 10**exponent, digits - exponent))
+        if token[0].isdigit() and text[m.start() - 1 : m.start()] != "+":
+            readings += [(-r, d) for r, d in readings]
+        quoted.append(readings)
+    return quoted
 
 
 def _resolve(obj, path: str):
@@ -278,16 +302,16 @@ def score(scenario: Scenario, run: dict) -> dict:
     skill = 1.0 if scenario.skill is None or any(scenario.skill in s for s in run["skills"]) else 0.0
 
     pool = [*_tool_numbers(run["results"]), 2.0, 3.0, 95.0, 99.0, 0.02, 14.0, 50.0, 200.0, 70.0, 30.0, 52.0, 12.0, 26.0, 9.0, 20.0]
-    decimals = _answer_decimals(run["answer"])
-    ungrounded = [v for v, nd in decimals if not _matches(v, pool, nd)]
-    grounded_share = 1.0 if not decimals else 1 - len(ungrounded) / len(decimals)
-    if scenario.expect_error:
-        grounded_share = 1.0 if not decimals else grounded_share
-    grounded = 4.0 * grounded_share
+    quoted = _answer_decimals(run["answer"])
+    ungrounded = [readings[0][0] for readings in quoted if not any(_matches(v, pool, nd) for v, nd in readings)]
+    grounded = 4.0 * (1.0 if not quoted else 1 - len(ungrounded) / len(quoted))
 
     covered = sum(
         1 for m in scenario.metrics
-        if any(_matches(q, _signed(v, m in LOSSES), nd) for v in _metric_values(run["results"], m) for q, nd in decimals)
+        if any(
+            _matches(q, _signed(v, m in LOSSES), nd)
+            for v in _metric_values(run["results"], m) for readings in quoted for q, nd in readings
+        )
     )
     coverage = 2.0 if not scenario.metrics else 2.0 * covered / len(scenario.metrics)
 
@@ -309,11 +333,27 @@ def score(scenario: Scenario, run: dict) -> dict:
     }
 
 
+def _print_mean(scores: list[dict]) -> None:
+    mean = sum(s["total"] for s in scores) / len(scores)
+    print(f"MEAN SCORE {mean:.2f} / 10 over {len(scores)} scenarios")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--only")
     parser.add_argument("--out", default=str(ROOT / "e2e" / "runs"))
+    parser.add_argument("--rescore", metavar="DIR", help="score the runs saved in DIR again, without the agent")
     args = parser.parse_args()
+    if args.rescore:
+        fields = Scenario.__dataclass_fields__
+        scores = []
+        for path in sorted(Path(args.rescore).glob("*.json")):
+            saved = json.loads(path.read_text(encoding="utf-8"))
+            scenario = Scenario(**{k: v for k, v in saved["scenario"].items() if k in fields})
+            scores.append(score(scenario, saved["run"]))
+            print(json.dumps(scores[-1], ensure_ascii=False))
+        _print_mean(scores)
+        return
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -332,10 +372,10 @@ def main() -> None:
             run = run_agent(sc, work, mcp_config)
             s = score(sc, run)
             scores.append(s)
-            (out / f"{sc.key}.json").write_text(json.dumps({"scenario": sc.__dict__, "run": run, "score": s}, ensure_ascii=False, indent=2))
+            saved = {"scenario": sc.__dict__, "run": run, "score": s}
+            (out / f"{sc.key}.json").write_text(json.dumps(saved, ensure_ascii=False, indent=2), encoding="utf-8")
             print(json.dumps(s, ensure_ascii=False))
-    mean = sum(s["total"] for s in scores) / len(scores)
-    print(f"MEAN SCORE {mean:.2f} / 10 over {len(scores)} scenarios")
+    _print_mean(scores)
 
 
 if __name__ == "__main__":

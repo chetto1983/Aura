@@ -45,17 +45,21 @@ misure **non** dimostrano.
 
 ## 3. End to end
 
-- **Test offline:** 101 verdi.
+- **Test offline:** 120 verdi.
 - **Test live via MCP:** 20 verdi, compresi volatilità, CAGR e massimi a 52 settimane del Bitcoin ricalcolati da yfinance.
 - **E2E via protocollo MCP su dati live:** server avviato come sottoprocesso stdio, ogni tool chiamato su ticker reali e confrontato con i numeri di Yahoo e con un ricalcolo indipendente.
 - **Agente reale:** Claude Code headless, con solo questo server e le skill, riceve le domande di un analista ed è valutato in automatico. La valutazione considera:
   - tool giusto con argomenti giusti;
   - skill caricata;
-  - numeri decimali della risposta presenti nei risultati dei tool, con l'arrotondamento mostrato;
+  - numeri decimali della risposta presenti nei risultati dei tool, con l'arrotondamento mostrato e con
+    il segno: un numero scritto col segno vale solo con quel segno, tranne le perdite che il tool dà
+    positive (VaR, expected shortfall, drawdown); uno scritto senza segno può averlo nelle parole
+    ("8,2 punti in meno");
   - metriche richieste presenti;
   - avvertenze dichiarate.
 
-  Un numero inventato inserito come controllo negativo (27,35%) viene segnalato.
+  Controlli negativi: un numero inventato (27,35%) e un beta, una correlazione o un up capture col segno
+  invertito vengono segnalati.
 
   Undici scenari:
   - i sette iniziali;
@@ -63,22 +67,34 @@ misure **non** dimostrano.
   - il controllo di qualità del bilancio di Stellantis;
   - rischio e analisi tecnica del Bitcoin contro l'S&P 500.
 
-  Due run consecutive a codice fermo, sul commit che annualizza le criptovalute su 365 giorni: **9,94** e
-  **9,93** su 10. Quasi tutti i punti persi sono falsi positivi dello scorer:
-  - migliaia scritte col punto all'italiana lette come decimali ("81.789 USD", "1.096 giorni");
-  - debiti netti dati dal tool in unità e riportati in miliardi ("15,8 miliardi");
-  - l'etichetta di parametri "MACD 12,26,9".
+  Due run consecutive a codice fermo, dopo le correzioni chieste da CodeRabbit (`1896227`): **10,00** e
+  **9,99** su 10. L'unico punto perso è un rapporto calcolato dall'agente: drawdown "oltre 2,5 volte"
+  quello dell'S&P 500 (53,1% contro 18,9%). Nessun livello di prezzo stimato dal grafico, nessuno stop,
+  nessun consiglio di trading.
 
-  L'unico errore vero si ripete in entrambe le run: nello scenario del grafico l'agente stima a occhio un
-  livello di prezzo dall'immagine ("circa 18,5 €", "20–20,5 EUR"). Su questo codice nessuno stop e nessun
-  consiglio di trading.
+  Lo scorer di `1896227`, il primo col segno, dava 9,84 e 9,90: confrontava col segno anche dove il
+  segno non c'era o era scritto altrimenti. Questi falsi positivi, insieme a tre che lo scorer aveva già,
+  sono corretti:
+  - il meno scritto come trattino lungo o come trattino unificatore ("–132,7%", "‑53,1%");
+  - il meno nel testo dei tool, letto senza segno ("Above -1.78" nella nota su Beneish);
+  - il segno detto a parole ("1,5 punti percentuali sotto il FTSE MIB");
+  - migliaia col punto all'italiana ("81.792 USD") e miliardi ("15,8 miliardi" per 15.801.000.000);
+  - etichette di parametri ("MACD (12,26,9)").
 
-  Run precedenti:
-  - nove scenari, prima delle correzioni a `peer_comparison` e alla skill tecnica: 9,72 e 9,80, con lo
-    scenario Stellantis a 7,92 per la risposta troppo grande e l'agente che proponeva stop calcolati
-    dall'ATR (vedi la sezione 2);
-  - nove scenari, dopo quelle correzioni: 9,99 e 9,98;
-  - i sette scenari iniziali: 9,95 e 9,97.
+  Un decimale col punto all'inglese ("0.28") prima non veniva letto affatto; adesso sì.
+
+  Tutte le run conservate, ripunteggiate con lo scorer corrente (`--rescore`); tra parentesi il punteggio
+  dato allora:
+  - undici scenari, sul commit che annualizza le criptovalute su 365 giorni: 9,98 e 9,98 (9,94 e 9,93).
+    Errore vero ripetuto in entrambe: nello scenario del grafico l'agente stima a occhio un livello di
+    prezzo dall'immagine ("circa 18,5 €", "20–20,5 EUR");
+  - nove scenari, dopo le correzioni a `peer_comparison` e alla skill tecnica: 10,00 e 10,00 (9,99 e 9,98);
+  - nove scenari, prima di quelle correzioni: 9,73 e 9,82 (9,72 e 9,80), con lo scenario Stellantis a
+    7,97 per la risposta troppo grande e l'agente che proponeva stop calcolati dall'ATR (vedi la
+    sezione 2);
+  - i sette scenari iniziali: 9,93 e 9,98 (9,95 e 9,97). Lo scorer col segno trova le distanze dai
+    supporti girate in negativo ("SMA50 a 328,6 USD (−5,9%)" dove il tool dà il prezzo +5,94% sopra),
+    corrette poi nella skill tecnica.
 
 ## 4. Modelli di previsione: scartati
 
