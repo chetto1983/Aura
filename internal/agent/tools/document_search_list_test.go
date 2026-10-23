@@ -70,18 +70,48 @@ func TestDocumentSearchListHonoursTheRunScope(t *testing.T) {
 	}
 }
 
-// A call that names nothing to list, and an offset into a ranked search, are refused; known ids
-// with a filter and no query are a listing.
-func TestDocumentSearchRefusesNeitherQueryNorFilter(t *testing.T) {
+// An offset into a ranked search, or a negative one, is refused; known ids with a filter and no
+// query are a listing.
+func TestDocumentSearchRefusesAnOffsetOutsideAListing(t *testing.T) {
 	t.Parallel()
 	tool := &DocumentSearch{Library: &fakeLibrary{}, Fields: listingFilters()}
-	for _, raw := range []string{`{}`, `{"query":"  "}`, `{"query":"fatture","offset":1}`, `{"tags":["urgente"],"offset":-1}`} {
+	for _, raw := range []string{`{"query":"fatture","offset":1}`, `{"tags":["urgente"],"offset":-1}`} {
 		if _, err := tool.Execute(toolTestContext(t), json.RawMessage(raw)); err == nil {
 			t.Errorf("args %s: accepted", raw)
 		}
 	}
 	if _, err := tool.Execute(toolTestContext(t), json.RawMessage(`{"tags":["urgente"],"document_ids":["doc_a"]}`)); err != nil {
 		t.Errorf("known ids with a filter: %v", err)
+	}
+}
+
+// Nothing to narrow it lists the whole library, a page at a time. Measured 2026-10-23 on the lab
+// VM: refused that, the agent spent ten searches inventorying the library and still missed two
+// of its eight documents, a video and an image that no query of its ranked above the floor.
+func TestDocumentSearchWithNothingListsTheWholeLibrary(t *testing.T) {
+	t.Parallel()
+	for _, raw := range []string{`{}`, `{"query":"  ","limit":2,"offset":2}`} {
+		fields := listingFilters()
+		out := runFiltered(t, &DocumentSearch{Library: &fakeLibrary{}, Fields: fields}, raw)
+		q := fields.listAsked
+		if q == nil || q.FileType != "all" || q.Fields.Tags != nil || q.DocumentIDs != nil || q.SourceKeys != nil || q.SourcePrefixes != nil {
+			t.Fatalf("args %s: list query = %+v", raw, q)
+		}
+		if out.Profile != documentListProfile || out.Matching != 3 || out.Abstained {
+			t.Fatalf("args %s: listing = %+v, matching %d", raw, out.RetrievalResponse, out.Matching)
+		}
+	}
+}
+
+// An empty library listed with nothing to narrow it is an empty list, not a filter that admits
+// nothing: there is no filter.
+func TestDocumentSearchListOfAnEmptyLibraryIsNoAbstention(t *testing.T) {
+	t.Parallel()
+	fields := listingFilters()
+	fields.listed = docfields.ListResult{Rows: []docfields.DocumentRow{}}
+	out := runFiltered(t, &DocumentSearch{Library: &fakeLibrary{}, Fields: fields}, `{}`)
+	if out.Abstained || out.AbstentionReason != "" || out.Documents == nil || len(out.Documents) != 0 {
+		t.Fatalf("empty library = %+v", out.RetrievalResponse)
 	}
 }
 

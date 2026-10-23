@@ -81,10 +81,11 @@ func (t *DocumentSearch) Spec() Spec {
 			"-- any count, sum, average, maximum, grouping, sort, cross-column filter or 'how many' over a " +
 			"spreadsheet or table, and any conversion -- call document_open with that document_id; it writes " +
 			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
-			"query may be a question, a topic, an entity, an exact identifier or a filename. Omit it, with type, " +
-			"counterparty, tags or a date bound, to list up to limit of the documents those filters admit, most " +
-			"recently added first, with matching_documents saying how many there are in all: that is how to answer " +
-			"'show me the documents tagged X', which a ranked search can miss. A listed document has no passages: " +
+			"query may be a question, a topic, an entity, an exact identifier or a filename. Omit it to list up to " +
+			"limit of the documents type, counterparty, tags or a date bound admit, or of the whole library with no " +
+			"filter, most recently added first, with matching_documents saying how many there are in all: that is " +
+			"how to answer 'show me the documents tagged X' or 'what is in my library', which a ranked search can " +
+			"miss. A listed document has no passages: " +
 			"answer from its title and document_fields, and open it only to read its content. next_offset, when " +
 			"present, is where the next page starts: pass it as offset to read on. " +
 			"document_ids narrows a search to ids already returned to this operator, or, with no query, lists " +
@@ -108,7 +109,7 @@ func (t *DocumentSearch) Spec() Spec {
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename. Omit it, with a filter, to list the documents the filter admits."},
+    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename. Omit it to list the documents the filters admit, or the whole library."},
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."},
     "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids: narrow a search, or with no query list those documents."},
     "offset": {"type": "integer", "minimum": 0, "description": "Listing only (no query): skip this many documents; next_offset says where the next page starts."},
@@ -138,9 +139,6 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 	}
 	args.Query = strings.TrimSpace(args.Query)
 	listing := args.Query == ""
-	if listing && args.empty() && len(args.DocumentIDs) == 0 {
-		return ToolResult{}, fmt.Errorf("document_search: query is required, unless type, counterparty, tags, a date bound or document_ids lists the documents they admit")
-	}
 	if args.Offset < 0 || (args.Offset > 0 && !listing) {
 		return ToolResult{}, fmt.Errorf("document_search: offset pages a listing, which has no query, and cannot be negative")
 	}

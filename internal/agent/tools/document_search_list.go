@@ -21,8 +21,8 @@ type listingPage struct {
 }
 
 // listDocuments answers a search with no query: the library's own list under the filters and
-// document_ids, the one the cockpit shows. A document they admit is never hidden behind a
-// relevance floor, which is what "show me the documents tagged X" needs.
+// document_ids, or all of it with neither, the one the cockpit shows. A document they admit is
+// never hidden behind a relevance floor, which is what "show me the documents tagged X" needs.
 func (t *DocumentSearch) listDocuments(ctx context.Context, owner string, fields *arcadedb.FieldFilter, args documentSearchArgs) (documents.RetrievalResponse, listingPage, error) {
 	if t.Fields == nil {
 		return documents.RetrievalResponse{}, listingPage{}, fmt.Errorf("document fields are not configured, so there is no list to read")
@@ -51,8 +51,10 @@ func (t *DocumentSearch) listDocuments(ctx context.Context, owner string, fields
 		response.Documents = append(response.Documents, listedDocument(row))
 	}
 	// A page past the end is empty while the filters still admit documents: only a total of zero
-	// is the filters admitting nothing.
-	if listed.Total == 0 {
+	// is the filters admitting nothing, and only when something narrowed the list. Unnarrowed, an
+	// empty list is an empty library.
+	narrowed := fields != nil || len(args.DocumentIDs) > 0 || len(scopes) > 0
+	if listed.Total == 0 && narrowed {
 		response.Abstained, response.AbstentionReason = true, documents.AbstainedFilterAdmitsNothing
 	}
 	page := listingPage{Matching: listed.Total}

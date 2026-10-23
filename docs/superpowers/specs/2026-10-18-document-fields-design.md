@@ -354,7 +354,7 @@ residual frictions. The operator approved the fixes below ("Frizioni + soglie or
     `include_unreviewed` admit together.
 - **`document_ids` lists without a query.** With no `query`, `document_ids` narrows the listing,
   alone or with filters. A known selection then comes back with its fields. With no query, no
-  filter and no `document_ids`, the call is refused.
+  filter and no `document_ids`, the call was refused (superseded the same day, below).
 - **A closest name is a similar name.** An unknown name is answered only with names on the list
   that resemble it:
   - the edit distance is at most half the longer name, both in `NameKey` form;
@@ -363,6 +363,18 @@ residual frictions. The operator approved the fixes below ("Frizioni + soglie or
   When none does, the list is empty. `library_lists` names what there is.
   - Measured: `fatture`, `contratti` and a nonsense name all got `Cliente`, the only tag.
   - Kept: `Rosi SRL` still gets `Rossi SRL` and `Rossi Snc`, and `Gialli` gets `Gialli Import`.
+
+*Amended a fourth time 2026-10-23, after the agent's calibration turn on `ee662da70`*
+(`docs/superpowers/verification/2026-10-23-document-floors-pplx.md`):
+- **A listing with nothing to narrow it lists the whole library.** With no query, no filter
+  and no `document_ids`, the call used to be refused. Asked to list its library, the agent spent
+  ten searches on an inventory and still missed two of the eight documents, a video and an
+  image, because no query ranked them above the floor.
+  - Now the call lists all of the library, most recently added first, a page at a time.
+  - An empty library listed that way is an empty list, not `filter_admits_nothing`, because there
+    is no filter.
+- **Who decided.** Claude did. The operator said "i bachi sono nostri" about the tools the agent
+  got wrong, and this one is in the measurement.
 
 The agent filters on the fixed fields and tags only. Custom fields are shown, edited and filtered
 in the cockpit; the agent gets them in a later slice.

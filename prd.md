@@ -2087,7 +2087,8 @@ the operator's own library and reported five frictions:
 The operator decided two of them:
 - **A search without `query`, with at least one filter, lists the documents the filters
   admit.** It uses the cockpit's own list: most recently added first, with how many match, and
-  no ranking.
+  no ranking. Since 2026-10-23 a search with no query and nothing to narrow it lists the whole
+  library: refused, the agent had missed two of its eight documents taking an inventory.
 - **Every result names each document's type, counterparty, date and tags**, each marked
   reviewed or suggested.
 

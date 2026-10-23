@@ -135,7 +135,8 @@ func TestDocumentSearchSpecNamesCitationAndOpenContract(t *testing.T) {
 	// A listing answers "which documents" from titles and fields; telling the agent to open every
 	// requires_open hit would open each listed file for nothing.
 	for _, want := range []string{"up to limit", "answer from its title and document_fields", "next_offset",
-		"library_lists counts the whole library", "admitted_documents is what each filter admits on its own"} {
+		"of the whole library with no filter", "library_lists counts the whole library",
+		"admitted_documents is what each filter admits on its own"} {
 		if !strings.Contains(spec.Description, want) {
 			t.Errorf("description never says %q of a listing", want)
 		}
