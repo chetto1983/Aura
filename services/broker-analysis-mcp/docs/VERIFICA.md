@@ -72,6 +72,24 @@ misure **non** dimostrano.
   quello dell'S&P 500 (53,1% contro 18,9%). Nessun livello di prezzo stimato dal grafico, nessuno stop,
   nessun consiglio di trading.
 
+  **Skill in inglese, 23 ottobre.** Le skill sono state tradotte e rinominate (`182916f`). Poi sono
+  state corrette su indicazione di CodeRabbit (`36af021`): `risk_metrics` non copre un portafoglio, e il
+  benchmark di un ETF deve seguire lo stesso indice. Infine la regola sulla lingua è stata resa esplicita
+  (`43d6dfd`).
+  - Due run sul testo tradotto: 9,99 e 10,00. I quattro scenari toccati da `36af021`, rilanciati: rischio
+    ENI 10, beta ENI 9,85, rischio Bitcoin 10, ETF 10. Un run sul testo finale: 9,99.
+  - Ogni scenario carica la skill giusta e chiama il tool atteso. Nessuno stop, target o consiglio.
+  - I punti persi sono calcoli dell'agente:
+    - "21,1%" dell'S&P 500, cioè M² più la differenza dal benchmark;
+    - "1,3 volte", dal down capture di −132,7%;
+    - "1,6 punti", cioè expected shortfall meno VaR.
+  - Lingua: lo script E2E chiede all'agente di rispondere in italiano, quindi non prova la regola delle
+    skill. Senza quell'istruzione, con la prima formulazione ("rispondi nella lingua in cui scrive
+    l'analista"), una domanda in inglese su ENI ha avuto risposta in italiano. Senza skill, la stessa
+    domanda ha avuto risposta in inglese. Con la regola esplicita (la lingua della domanda), la domanda in
+    inglese ha risposta in inglese e quella in italiano in italiano, entrambe 10. È una domanda per lingua,
+    ripetuta una volta; altre lingue non sono provate.
+
   Lo scorer di `1896227`, il primo col segno, dava 9,84 e 9,90: confrontava col segno anche dove il
   segno non c'era o era scritto altrimenti. Questi falsi positivi, insieme a tre che lo scorer aveva già,
   sono corretti:
