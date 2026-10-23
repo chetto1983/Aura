@@ -246,3 +246,21 @@ func resultKeys(t *testing.T, result ToolResult) []string {
 	}
 	return keys
 }
+
+// A result past the preview cap is cut, and what the agent decides its next search from must sit
+// before the cut: the lists and the filter reports come ahead of the passages.
+func TestDocumentSearchListsSurviveACutPreview(t *testing.T) {
+	t.Parallel()
+	library := &fakeLibrary{response: documents.RetrievalResponse{Query: "documenti interni", Documents: []documents.RetrievalDocument{{
+		DocumentID: "doc_1", Title: "Verbale.pdf",
+		Passages: []documents.RetrievalPassage{{Text: strings.Repeat("verbale della riunione ", 400), CitationToken: "document:doc_1@1"}},
+	}}}}
+	result, err := (&DocumentSearch{Library: library, Fields: officeFilters()}).Execute(toolTestContext(t),
+		json.RawMessage(`{"query":"documenti interni","date_from":"2026-01-01"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Truncated || !strings.Contains(result.Preview, `"library_lists"`) || !strings.Contains(result.Preview, `"filters"`) {
+		t.Fatalf("truncated %v, preview head %.300q", result.Truncated, result.Preview)
+	}
+}

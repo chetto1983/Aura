@@ -36,11 +36,13 @@ type documentSearchArgs struct {
 }
 
 // documentSearchResult is the retrieval answer plus what each field filter did and the lists a
-// filter can name.
+// filter can name. Those two come first: encoding/json writes fields in declaration order, and a
+// result past the preview cap is cut inside the passages, while the agent picks its next filter
+// from them.
 type documentSearchResult struct {
-	documents.RetrievalResponse
 	Filters []documentFilterReport  `json:"filters,omitempty"`
 	Lists   *docfields.LibraryLists `json:"library_lists,omitempty"`
+	documents.RetrievalResponse
 }
 
 func (t *DocumentSearch) Spec() Spec {
