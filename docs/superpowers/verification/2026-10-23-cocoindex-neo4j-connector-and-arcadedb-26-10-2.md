@@ -26,6 +26,9 @@ operator then chose ArcadeDB 26.10.2 on the JVM now, and cocoindex 1.0.26 in a s
 - **26.10.2 changes nothing Aura measured.** On the live tier, it gives the same 613 passes and the
   same skips as 26.10.1, and the same set of server errors. The lab VM's databases open
   identically, and give the same answers, on 26.10.2 and back on 26.10.1.
+- **On the lab VM, 26.10.2 passes the real-agent E2E at 10.0** (section 7): document search with
+  citations, memory write and recall, and recall of the day's turns. A recall that times out now
+  makes the server drop the vector graph it was building, and the next query builds it again.
 - **cocoindex 1.0.26 deletes what 1.0.25 leaked.** When a table is rebuilt (a primary key change)
   or unmounted, 1.0.26 deletes every node with the label, rows written outside cocoindex included.
   1.0.25 left them all in place, untracked.
@@ -201,8 +204,33 @@ read-only:
 - **Logs.** ArcadeDB logged no `SEVER` and no `WARNI` line since the restart, and `aura` no version
   refusal. `aura`, `aura-arcadedb`, `aura-ingest` and `aura-arcadedb-mcp` are healthy.
 
-Not yet on the VM: a memory write and a recall through the agent, and a conversation turn projected
-after the update.
+**The real-agent E2E, 14:46 to 14:49 UTC.** It ran through the cockpit API with the operator's
+account (approved: "vai"), on the cockpit's own route, in four new conversations. Every point below
+was checked in the answer and, where it says so, in ArcadeDB.
+
+| Turn | What was asked | Points | Result |
+|---|---|---|---|
+| 1, documents (47 s) | the mouse row of `esempio_excel.xlsx`, and article 1 of the Constitution, with citations | `document_search` complete on the fused profile `arcadedb-fused-card-v3`; 5 × 25 = 125; article 1 word for word; both cited with document links | 4/4 |
+| 2, memory write (28 s) | remember that the lab VM runs ArcadeDB 26.10.2 since 2026-10-23 | `memory_upsert_fact` accepted, not refused; the fact is in `FACT` (26 → 27) with that statement; the answer confirms it | 3/3 |
+| 3, memory recall (17 s) | in a new conversation: which ArcadeDB version, since when | `memory_recall` on the entity; "26.10.2 on the JVM since 23 October 2026" | 2/2 |
+| 4, turn recall (54 s) | in a new conversation: the topics of today's chats | `memory_recall` mode `period` over the local day; the three chats above, with their content; turn 3's answer not yet projected, and the agent said so rather than inventing it; `ConversationTurn` 62 → 69, newest 14:48:27, after the update | 4/4 |
+
+Score: 13 of 13 points, **10.0**.
+
+Two internal recalls degraded during the run. They are outside the rubric, because neither reached an
+answer: the turn reads its effort without memory when its recall fails, as designed.
+- **14:47:24, the first vector search on `ConversationTurn` after the restart.** Aura's turn recall
+  (`recallTimeout`, 500 ms, `internal/agent/llm_agent_turn_reading.go`) hit its deadline while the
+  server rebuilt the graph inside that request.
+  - **What 26.10.2 then did.** It terminated the request's commit ("terminated by client
+    disconnected") and logged `SEVER … PERSIST: Failed to persist graph for ConversationTurn…`.
+  - **The next build persisted it.** That was the next turn's, at 14:48:28: 67 vectors in 9 ms.
+    ArcadeDB's own background rebuild then kept it current, 69 vectors at 14:49:33.
+  - **The difference from 26.10.1.** 26.10.1 did not stop a commit when its client left. On 26.10.2
+    the first recall after a restart throws its graph away, and the next one builds it again.
+- **14:46:27, the first turn after the update: `embedding_failed`.** The question's embedding did not
+  finish within the same 500 ms, before any ArcadeDB query. The embedder was not restarted, so this
+  is not ArcadeDB's.
 
 **Upstream.** The operator opened
 [ArcadeData/arcadedb#10678](https://github.com/ArcadeData/arcadedb/issues/10678) for the missing
@@ -211,19 +239,34 @@ already declined an ArcadeDB target (cocoindex-io/cocoindex#603).
 
 ## 8. Found on the way
 
-- **The operator's database has had no backup since 2026-10-13.** The VM's ArcadeDB logs
-  `AccessDeniedException` on `backups/mem_448ddbe1…/` every hour.
+- **The operator's database had no backup from 2026-10-13 to 2026-10-23.** The VM's ArcadeDB
+  logged `AccessDeniedException` on `backups/mem_448ddbe1…/` every hour.
   - The directory and its one archive belong to `root:root`, and the JVM server runs as UID 1000.
   - The other two databases back up hourly.
-  - The directory was last changed on 2026-10-14 at 09:19, the day the native image, which runs as
-    UID 0 by default, was measured on that VM. That this is the cause is a hypothesis.
-  - Not repaired here: it is a change on the VM by hand, so it is left to the operator.
+  - **The cause, measured on the VM's sudo journal and file birth times:** the reinstall of
+    2026-10-14. A `wipe.sh` at 08:50 and the installer at 08:57 were followed at 09:19:14 by a
+    hand-written `restore.sh` run as root. It put back each database, and the directory of the
+    operator's database was born at 09:19:54 holding the archive `vm-backup.sh` had taken at
+    2026-10-13 14:43. The databases came back owned by `aura:aura`, the backup directory by root.
+    The native image is not the cause: it was measured on a separate volume. Neither script is in
+    the repository; they lived in the VM's `/tmp/claude-vm/`, which is gone.
+  - **Repaired 2026-10-23 at 14:44 UTC, with the operator's go-ahead ("vai").** The directory and
+    its archive were the only files in either ArcadeDB volume not owned by the server's 1000:1000.
+    After a `chown -R 1000:1000` of that directory none is left, and a `BACKUP DATABASE` wrote a
+    2.9 MB archive.
+  - **Nothing reported the failure for ten days.** ArcadeDB's own API does show it: the server
+    command `list backups <db>` answers every archive with its `timestamp`, and for the operator's
+    database the newest was 2026-10-13 while the other two had one from the last hour. Without a
+    database name the command is a 400 (`Database name empty`), so a check walks `list databases`.
+    The server event log (`get server events`) recorded the scheduler's start but no failed run.
 - **ArcadeDB logs its levels as five letters, `SEVER` and `WARNI`.** A `grep SEVERE` counts nothing.
 
 ## Not shown here
 
-- **The real-agent E2E on the VM** (Definition of Done): document search, memory write and recall,
-  turn recall. It drives paid model calls.
+- **A restart of ArcadeDB in the middle of a session.** The E2E ran after the updater's restart,
+  not across one.
+- **The cost of a cold graph build at scale.** At 69 vectors it is 9 ms. A large memory could keep
+  missing the 500 ms recall budget after each restart; that was not measured.
 - **The operator database's schema since 2026-10-13.** Its 6 newer types and 13 newer type indexes,
   among them the document fields, were not opened from 26.10.1 data. The live tier creates them on
   26.10.2 from scratch.

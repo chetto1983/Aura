@@ -1344,10 +1344,17 @@ ArcadeDB 26.10.2 on the JVM, 2026-10-23
 - **The ingest schema stays SQL.** ArcadeDB's Cypher still refuses vector and full-text indexes, a
   vector property type and database creation, so `services/ingest/arcade.py` keeps writing them.
 
+- **CI and the lab VM.** CI on the pin passed. Agent Memory MRS scored 100/100 with
+  `arcadedb_version` 26.10.2. The updater moved the VM, whose schema and indexes read back unchanged.
+  The real-agent E2E scored 10.0 (13/13): document search with citations, memory write, recall from
+  a new conversation, and period recall of the day's turns.
+- **A timed-out recall now costs one graph build.** 26.10.2 terminates a commit whose HTTP client
+  has left. The first turn recall after a restart missed its 500 ms budget while the server rebuilt
+  the `ConversationTurn` graph; the server dropped that graph, and the next query rebuilt it in 9 ms.
+
 What this does not show:
-- the 5 embedder tests, the ingest suite and the memory MCP's live tier on 26.10.2, which CI runs
-  on the push;
 - the operator schema's types newer than 2026-10-13, opened from 26.10.1 data;
+- a cold graph build on a large memory against the 500 ms recall budget;
 - any load.
 
 The native image stays with the 2026-10-17 spec, which waits for 26.11.1.
