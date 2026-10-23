@@ -22,6 +22,8 @@ var callTimeSettingKeys = map[string]struct{}{
 	"AURA_IMAGE_MODEL":           {},
 	"AURA_VIDEO_MODEL":           {},
 	"AURA_VIDEO_INLINE_WAIT_SEC": {},
+	// A manual embedding endpoint's own key, read by settings.Credentials on every embed.
+	"AURA_EMBED_CLOUD_API_KEY": {},
 }
 
 func isCallTimeSetting(key string) bool {

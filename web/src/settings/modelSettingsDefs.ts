@@ -33,6 +33,7 @@ export type SettingsKey =
   | 'AURA_EMBED_MODEL'
   | 'AURA_EMBED_BASE_URL'
   | 'AURA_EMBED_CLOUD_BASE_URL'
+  | 'AURA_EMBED_CLOUD_API_KEY'
   | 'AURA_TTS_MODEL'
   | 'AURA_TTS_CLOUD_VOICE'
   | 'AURA_STT_CLOUD_MODEL'
@@ -188,6 +189,15 @@ export const EMBEDDING_SETTINGS: readonly SettingDef[] = [
     placeholder: 'https://embeddings.example',
   },
   { key: 'AURA_EMBED_MODEL', kind: 'string', labelKey: 'settings.fields.embedModel' },
+  // A manual endpoint's own key: the services key is OpenRouter's and never goes to a URL the
+  // admin typed. It is not a route key, so it is saved as its own row and is live at once.
+  {
+    key: 'AURA_EMBED_CLOUD_API_KEY',
+    kind: 'string',
+    secret: true,
+    labelKey: 'settings.fields.embedCloudApiKey',
+    helpKey: 'settings.help.embedCloudApiKey',
+  },
 ];
 
 export const BACKEND_SETTINGS: readonly SettingDef[] = [

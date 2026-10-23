@@ -46,6 +46,7 @@ function embeddingSetting(key: SettingsKey): SettingDef {
 const localBaseURL = embeddingSetting('AURA_EMBED_BASE_URL');
 const cloudBaseURL = embeddingSetting('AURA_EMBED_CLOUD_BASE_URL');
 const model = embeddingSetting('AURA_EMBED_MODEL');
+const endpointKey = embeddingSetting('AURA_EMBED_CLOUD_API_KEY');
 
 function messageOf(err: unknown): string {
   return err instanceof Error && err.message.trim() !== '' ? err.message : String(err);
@@ -194,7 +195,7 @@ export function EmbeddingBackendControl({
       {choice === 'manual' ? (
         <SettingsFields
           variant="inline"
-          defs={[cloudBaseURL, model]}
+          defs={[cloudBaseURL, model, endpointKey]}
           loaded={loaded}
           resetting={undefined}
           onValueChange={(key, value) => {

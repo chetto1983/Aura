@@ -166,6 +166,8 @@ export const settingsEn = {
       openRouterServicesCap:
         'The monthly cap, in USD, of the key Aura mints for speech, embeddings and vision the first time OpenRouter is connected.',
       mediaModel: "Runs on OpenRouter with each person's own key, whatever route the chat uses.",
+      embedCloudApiKey:
+        'Sent only to the endpoint above, never to OpenRouter. Leave it empty to keep the saved key.',
       loopMaxSteps:
         'LLM calls or tool rounds one turn may spend before Aura wraps up (default 25).',
       loopMaxWallclock:
@@ -206,6 +208,7 @@ export const settingsEn = {
       embedBaseUrl: 'Embedding base URL',
       embedCloudBaseUrl: 'Embedding cloud base URL',
       embedModel: 'Embedding model',
+      embedCloudApiKey: 'Endpoint API key',
       sttCloudModel: 'Speech-to-text cloud model',
       ttsModel: 'Text-to-speech model',
       ttsCloudVoice: 'Text-to-speech cloud voice',
@@ -399,6 +402,8 @@ export const settingsIt = {
       openRouterServicesCap:
         'Il limite mensile, in USD, della chiave che Aura crea per voce, embedding e visione la prima volta che OpenRouter viene collegato.',
       mediaModel: 'Gira su OpenRouter con la chiave di ogni persona, qualunque rotta usi la chat.',
+      embedCloudApiKey:
+        "Inviata solo all'endpoint qui sopra, mai a OpenRouter. Lasciala vuota per tenere quella salvata.",
       loopMaxSteps:
         'Chiamate LLM o giri di strumenti che un turno può spendere prima che Aura concluda (default 25).',
       loopMaxWallclock:
@@ -439,6 +444,7 @@ export const settingsIt = {
       embedBaseUrl: 'URL base embedding',
       embedCloudBaseUrl: 'URL base cloud embedding',
       embedModel: 'Modello embedding',
+      embedCloudApiKey: "Chiave API dell'endpoint",
       sttCloudModel: 'Modello cloud speech-to-text',
       ttsModel: 'Modello text-to-speech',
       ttsCloudVoice: 'Voce cloud text-to-speech',

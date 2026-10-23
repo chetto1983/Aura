@@ -41,6 +41,13 @@ function settingsBody(
       setting('AURA_TTS_CLOUD_VOICE', ttsVoice),
       setting('AURA_EMBED_MODEL', embed),
       setting('AURA_EMBED_CLOUD_BASE_URL', embedCloudBaseURL),
+      // Sealed and never sent back, so an untouched box is empty whatever is stored.
+      {
+        ...setting('AURA_EMBED_CLOUD_API_KEY', ''),
+        secret: true,
+        has_value: true,
+        applied: 'live',
+      },
     ],
   };
 }
@@ -421,6 +428,53 @@ describe('ModelSettingsPanel backend models', () => {
         'https://embed.example',
       ]);
     });
+  });
+
+  // The key belongs to the endpoint the admin typed: OpenRouter is paid with the services key,
+  // and the local sidecar takes none.
+  it('asks for an endpoint key on a manual endpoint only', async () => {
+    stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        '',
+        '',
+        '',
+        'qwen/qwen3-embedding-8b',
+      ),
+    );
+    renderBackends();
+    await screen.findByRole('radio', { name: 'Manual endpoint' });
+    expect(screen.queryByLabelText('Endpoint API key')).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Local' }));
+    expect(screen.queryByLabelText('Endpoint API key')).toBeNull();
+    fireEvent.click(screen.getByRole('radio', { name: 'Manual endpoint' }));
+    expect(screen.getByLabelText('Endpoint API key')).toBeTruthy();
+  });
+
+  // The key is not part of the route: it is saved as its own sealed row and read on the next
+  // embed, so it never rides the preview-and-apply that moves the corpus to another space.
+  it('saves a typed endpoint key as its own setting, never with the route', async () => {
+    const { writes, posts } = stubFetch(
+      settingsBody(
+        'openrouter',
+        'https://openrouter.ai/api/v1',
+        '',
+        '',
+        '',
+        'mistral-embed',
+        'https://api.mistral.ai',
+      ),
+    );
+    renderBackends();
+    const key = await screen.findByLabelText('Endpoint API key');
+    fireEvent.change(key, { target: { value: 'sk-mistral' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save runtime settings' }));
+
+    await waitFor(() => {
+      expect(writes).toEqual([{ key: 'AURA_EMBED_CLOUD_API_KEY', value: 'sk-mistral' }]);
+    });
+    expect(posts).toEqual([]);
   });
 
   it('clears the cloud route values when returning to the local sidecar', async () => {

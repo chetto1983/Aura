@@ -52,6 +52,27 @@ func TestHandleListSettingsReportsPerItemApplicationState(t *testing.T) {
 	}
 }
 
+// A manual embedding endpoint's key is sealed: the list says one is stored and never what it
+// is, and the daemon reads it on every embed, so a saved key is live without a restart.
+func TestSettingsListNeverCarriesTheEndpointKey(t *testing.T) {
+	t.Setenv("AURA_EMBED_CLOUD_API_KEY", "")
+	s := &Server{settings: &fakeSettingsStore{rows: []sqlc.AuraSettings{
+		{Key: "AURA_EMBED_CLOUD_API_KEY", Value: "sk-mistral", IsSecret: true},
+	}}}
+	rr := httptest.NewRecorder()
+	s.handleListSettings(rr, httptest.NewRequest(http.MethodGet, "/api/settings", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rr.Code, rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), "sk-mistral") {
+		t.Fatal("the endpoint key crossed the wire")
+	}
+	item := settingItemByKey(t, rr.Body.Bytes(), "AURA_EMBED_CLOUD_API_KEY")
+	if !item.Secret || !item.HasValue || item.Value != "" || item.Applied != appliedLive {
+		t.Fatalf("endpoint key item = %+v, want secret, has_value, no value, applied live", item)
+	}
+}
+
 // An unpinned loop budget falls through to the process env in the GET, exactly
 // like before it became a setting; a reloader that pins it wins.
 func TestHandleListSettingsLoopBudgetEffectiveValue(t *testing.T) {
