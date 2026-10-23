@@ -53,8 +53,9 @@ BROKER_ANALYSIS_WEBHOOK_ALLOW=https://hooks.example.com/   # webhooks are off wi
 
 ## Skills
 
-`skills/` holds five skills for Claude: `analisi-rischio`, `analisi-fondamentale`,
-`analisi-tecnica`, `selezione-etf`, `analisi-parametrica`. Copy them to `.claude/skills/`.
+`skills/` holds five skills for Claude: `risk-analysis`, `fundamental-analysis`,
+`technical-analysis`, `etf-selection`, `custom-analysis`. Copy them to `.claude/skills/`. They are
+written in English and tell the agent to answer in the analyst's language.
 
 ## Run
 
