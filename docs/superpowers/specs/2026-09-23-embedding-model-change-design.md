@@ -565,7 +565,11 @@ documents 0.72 / 0.32). A space with no row keeps those values, and every dense 
 `uncalibrated_floors` in a field of its own, `floors_reason`. `Reason` and `degradation_reason`
 name why a read left the dense path; an uncalibrated dense answer did not leave it. The memory
 overrides `AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO` and `AURA_MEMORY_MIN_RELEVANCE` still win over
-the table when set. The cockpit and the preview state the same. Calibrating a new model is the
+the table when set; the documents gained the same pair on 2026-10-23,
+`AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO` and `AURA_DOCUMENT_MIN_RELEVANCE`, so that one
+`aura docs search` process can show every candidate's rerank cosine while the daemon keeps the
+table's floors. An override never marks a space calibrated. The cockpit and the preview state the
+same. Calibrating a new model is the
 existing measurement procedure (the 2026-09-02 and 2026-09-09 calibrations behind
 `relevance_floors.go`) adding a row. The E2E below records the first datum for the cloud model it
 uses.

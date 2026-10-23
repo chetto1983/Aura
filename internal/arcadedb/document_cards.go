@@ -136,7 +136,7 @@ func (d *DocumentIndex) DocumentCardsScoped(
 		return nil, err
 	}
 	where, params := candidateWhere(filter)
-	if where, err = bindDense(where, params, space); err != nil {
+	if where, err = d.config.bindDense(where, params, space); err != nil {
 		return nil, err
 	}
 	client, err := d.tenantClient(ctx, filter.IdentityID)

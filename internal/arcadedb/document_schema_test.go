@@ -3,6 +3,7 @@ package arcadedb
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 )
 
@@ -25,13 +26,22 @@ func testDocumentIndex(
 	respond func(recordedRequest) testResponse,
 ) (*DocumentIndex, *[]recordedRequest) {
 	t.Helper()
+	return testDocumentIndexWith(t, testDocumentConfig(), respond)
+}
+
+func testDocumentIndexWith(
+	t *testing.T,
+	cfg DocumentIndexConfig,
+	respond func(recordedRequest) testResponse,
+) (*DocumentIndex, *[]recordedRequest) {
+	t.Helper()
 	client, requests := routedClient(t, respond)
 	index, err := NewDocumentIndex(tenantResolverFunc(func(_ context.Context, identityID string) (*Client, error) {
 		if identityID != documentTestIdentity {
 			t.Fatalf("identity = %q", identityID)
 		}
 		return client, nil
-	}), testDocumentConfig())
+	}), cfg)
 	if err != nil {
 		t.Fatalf("NewDocumentIndex: %v", err)
 	}
@@ -58,6 +68,10 @@ func TestNewDocumentIndexRejectsInvalidContracts(t *testing.T) {
 	}{
 		{"dimension", DocumentIndexConfig{}},
 		{"negative limit", DocumentIndexConfig{Dimensions: 3, MaxRetrievalCandidates: -1}},
+		{"negative distance", DocumentIndexConfig{Dimensions: 3, DenseMaxDistance: -0.1}},
+		{"distance above 2", DocumentIndexConfig{Dimensions: 3, DenseMaxDistance: 2.5}},
+		{"relevance above 1", DocumentIndexConfig{Dimensions: 3, MinRelevance: 1.5}},
+		{"relevance NaN", DocumentIndexConfig{Dimensions: 3, MinRelevance: math.NaN()}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := NewDocumentIndex(resolver, test.cfg); err == nil {

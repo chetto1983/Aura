@@ -42,7 +42,7 @@ func TestDenseFilterCost(t *testing.T) {
 	t.Logf("embedding space %s", space.ID)
 
 	where, params := candidateWhere(CandidateFilter{IdentityID: identity})
-	if where, err = bindDense(where, params, space.ID); err != nil {
+	if where, err = (DocumentIndexConfig{}).bindDense(where, params, space.ID); err != nil {
 		t.Fatal(err)
 	}
 	const limit = 20

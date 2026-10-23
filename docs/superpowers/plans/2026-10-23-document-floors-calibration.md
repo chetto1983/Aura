@@ -1,7 +1,7 @@
 # Document relevance floors for the cloud space Implementation Plan
 
-**Status (2026-10-23):** written. Operator's decisions the same day: "Frizioni + soglie ora" and "CLI +
-override".
+**Status (2026-10-23):** Task 1 done (the overrides); Task 2 waits for the updater to apply its SHA.
+Operator's decisions the same day: "Frizioni + soglie ora" and "CLI + override".
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -70,7 +70,7 @@ that `document_search` abstains on the operator's own library.
 - `func (cfg DocumentIndexConfig) documentFloors(space string) denseFloors`. It replaces the free
   `documentFloors(space)` and applies an override when it is positive.
 
-- [ ] **Step 1: Tests.**
+- [x] **Step 1: Tests.**
   - `TestDocumentFloorOverridesLoadAndValidate` (config):
     - unset gives 0 and 0;
     - `0.9` and `0.4` are kept;
@@ -81,12 +81,15 @@ that `document_search` abstains on the operator's own library.
     - `FloorsCalibrated` is unchanged.
   - Test `bindDense` through both legs' parameter maps: the overridden value reaches `max_distance` and
     `min_relevance`.
-- [ ] **Step 2: Run** `go test ./internal/config/ ./internal/arcadedb/`. Expected: FAIL.
-- [ ] **Step 3: Implement.** Wire the overrides through `newRuntimeDocumentIndex`. Add both variables to
+- [x] **Step 2: Run** `go test ./internal/config/ ./internal/arcadedb/`. Expected: FAIL.
+- [x] **Step 3: Implement.** Wire the overrides through `newRuntimeDocumentIndex`. Add both variables to
   the PRD's env catalog, beside the `AURA_MEMORY_*` pair.
-- [ ] **Step 4: Run** `go test` and `-race` on both packages, `go vet ./cmd/aura/`, and the arcadedb live
+- [x] **Step 4: Run** `go test` and `-race` on both packages, `go vet ./cmd/aura/`, and the arcadedb live
   document tests. Expected: PASS.
-- [ ] **Step 5: Commit** `feat(documents): operator overrides of the document relevance floors`.
+- [x] **Step 5: Commit** `feat(documents): operator overrides of the document relevance floors`.
+
+Measured: unit and race green on both packages; 53 live ArcadeDB document tests passed, none skipped;
+`go vet` clean on `cmd/aura` and under the `retrieval_eval` and `arcadedb_integration` tags.
 
 ### Task 2: measure on the lab VM
 
@@ -122,3 +125,14 @@ agent's "fattura" with `Cliente` must abstain.
 - **Overrides on the CLI process only.** `docker exec -e` sets them for one command. The daemon and the
   agent keep the table's floors throughout the measurement.
 - **`AURA_DOCUMENT_*`, not `AURA_DOCUMENTS_*`.** The package's other knobs are `AURA_DOCUMENT_RETRIEVAL_*`.
+
+Taken while executing Task 1:
+- **`.env.example` and spec §9, not the PRD.** `prd.md` has no env catalog any more, and the
+  `AURA_MEMORY_*` pair is not in it either. `.env.example` lists the document knobs, so the pair went
+  there, commented, and §9 names it.
+- **An unparsable value loads as NaN.** The config cannot carry a parse error, and a silent zero would
+  mean "the measured floors". `Validate` refuses NaN with the out-of-range values.
+- **`DocumentIndexConfig` checks the ranges too.** `aura docs search` loads its config without the
+  boot gates, so the index refuses an override outside its range on its own.
+- **Not in the cockpit's settings.** The measurement needs one CLI process only. Whether the daemon
+  should read them from `aura.settings` is Task 3's to decide.

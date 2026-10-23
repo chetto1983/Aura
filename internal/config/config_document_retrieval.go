@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"math"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +22,10 @@ const (
 type DocumentRetrievalConfig struct {
 	RetrievalCandidates int
 	FusionStrategy      string
+	// DenseMaxDistance and MinRelevance override the document floors measured for the
+	// embedding space (spec §9) when positive; zero keeps the measured ones.
+	DenseMaxDistance float64
+	MinRelevance     float64
 }
 
 func loadDocumentRetrievalConfig() DocumentRetrievalConfig {
@@ -29,7 +36,24 @@ func loadDocumentRetrievalConfig() DocumentRetrievalConfig {
 		FusionStrategy: envDefault(
 			"AURA_DOCUMENT_FUSION_STRATEGY", DefaultDocumentFusionStrategy,
 		),
+		DenseMaxDistance: floorOverrideEnv("AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO"),
+		MinRelevance:     floorOverrideEnv("AURA_DOCUMENT_MIN_RELEVANCE"),
 	}
+}
+
+// floorOverrideEnv is key's value, zero when unset. A value that does not parse loads as NaN,
+// which Validate refuses: a silent zero would serve the measured floors to an operator who
+// believes theirs are in force.
+func floorOverrideEnv(key string) float64 {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return math.NaN()
+	}
+	return value
 }
 
 // Validate rejects an out-of-range RetrievalCandidates; a zero-value config
@@ -48,6 +72,17 @@ func (c DocumentRetrievalConfig) Validate() error {
 	case "RRF", "DBSF", "LINEAR":
 	default:
 		return fmt.Errorf("AURA_DOCUMENT_FUSION_STRATEGY must be RRF, DBSF or LINEAR")
+	}
+	for _, floor := range []struct {
+		key        string
+		value, max float64
+	}{
+		{"AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO", c.DenseMaxDistance, 2},
+		{"AURA_DOCUMENT_MIN_RELEVANCE", c.MinRelevance, 1},
+	} {
+		if !(floor.value >= 0 && floor.value <= floor.max) {
+			return fmt.Errorf("%s must be a number in (0, %g], or unset for the measured floors", floor.key, floor.max)
+		}
 	}
 	return nil
 }

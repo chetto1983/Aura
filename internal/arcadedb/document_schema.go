@@ -41,6 +41,10 @@ type DocumentIndexConfig struct {
 	MaxRetrievalCandidates int
 	MaxDocumentFilters     int
 	MaxQueryRunes          int
+	// DenseMaxDistance and MinRelevance override the space's measured document floors when
+	// positive (AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO, AURA_DOCUMENT_MIN_RELEVANCE).
+	DenseMaxDistance float64
+	MinRelevance     float64
 }
 
 func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
@@ -62,6 +66,11 @@ func (cfg DocumentIndexConfig) normalized() (DocumentIndexConfig, error) {
 		if limit.value <= 0 {
 			return DocumentIndexConfig{}, fmt.Errorf("arcadedb: document %s limit must be positive", limit.name)
 		}
+	}
+	// A cosine distance never exceeds 2 and a cosine never exceeds 1: an override past either
+	// bound admits everything or nothing. The `!` form also refuses NaN.
+	if !(cfg.DenseMaxDistance >= 0 && cfg.DenseMaxDistance <= 2) || !(cfg.MinRelevance >= 0 && cfg.MinRelevance <= 1) {
+		return DocumentIndexConfig{}, fmt.Errorf("arcadedb: document floor overrides must be a distance in (0, 2] and a relevance in (0, 1]")
 	}
 	return cfg, nil
 }

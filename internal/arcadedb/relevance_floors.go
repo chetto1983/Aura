@@ -104,10 +104,18 @@ func FloorsCalibrated(space string) bool {
 	return measured
 }
 
-// documentFloors are the dense document floors for space.
-func documentFloors(space string) denseFloors {
+// documentFloors are the dense document floors for space. A positive limit is an operator
+// override (AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO, AURA_DOCUMENT_MIN_RELEVANCE) and wins.
+func (cfg DocumentIndexConfig) documentFloors(space string) denseFloors {
 	calibrated, _ := floorsFor(space)
-	return calibrated.documents
+	floors := calibrated.documents
+	if cfg.DenseMaxDistance > 0 {
+		floors.maxDistance = cfg.DenseMaxDistance
+	}
+	if cfg.MinRelevance > 0 {
+		floors.minRelevance = cfg.MinRelevance
+	}
+	return floors
 }
 
 // bindDenseFloors sets a dense memory read's floors for space, and returns

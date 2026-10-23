@@ -74,7 +74,7 @@ func TestCardTextVariants(t *testing.T) {
 		queries[i] = vectors[0]
 	}
 
-	floor := documentFloors(embeddingGemmaSpace).minRelevance
+	floor := (DocumentIndexConfig{}).documentFloors(embeddingGemmaSpace).minRelevance
 	for _, variant := range cardTextVariants {
 		texts := make([]string, len(rows))
 		for i, row := range rows {
@@ -151,7 +151,7 @@ func TestCardCosineBand(t *testing.T) {
 		", :embedding) AS cosine FROM " + IndexedDocumentType + " WHERE card IS NOT NULL AND card <> ''" +
 		" ORDER BY cosine DESC"
 
-	floor := documentFloors(embeddingGemmaSpace).minRelevance
+	floor := (DocumentIndexConfig{}).documentFloors(embeddingGemmaSpace).minRelevance
 	t.Logf("floor %.2f; %-20s %-44s %s", floor, "question", "gold card cosine (rank)", "best other card")
 	for _, q := range questions {
 		vectors, err := embedder.Embed(ctx, embeddings.RetrievalQueries([]string{q.Query}))

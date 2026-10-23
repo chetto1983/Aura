@@ -135,7 +135,7 @@ func (d *DocumentIndex) FusedCandidates(
 		return nil, fmt.Errorf("arcadedb: unknown fusion strategy %q", strategy)
 	}
 	where, params := candidateWhere(filter)
-	if where, err = bindDense(where, params, request.Space); err != nil {
+	if where, err = d.config.bindDense(where, params, request.Space); err != nil {
 		return nil, err
 	}
 	client, err := d.tenantClient(ctx, filter.IdentityID)
@@ -171,11 +171,11 @@ func (d *DocumentIndex) validQuery(query string) (string, error) {
 }
 
 // bindDense extends a candidate scope to the query's space and binds that space's floors.
-func bindDense(where string, params map[string]any, space string) (string, error) {
+func (cfg DocumentIndexConfig) bindDense(where string, params map[string]any, space string) (string, error) {
 	if strings.TrimSpace(space) == "" {
 		return "", fmt.Errorf("arcadedb: a dense document read needs the query's embedding space")
 	}
-	floors := documentFloors(space)
+	floors := cfg.documentFloors(space)
 	params["space"], params["max_distance"], params["min_relevance"] = space, floors.maxDistance, floors.minRelevance
 	return where + denseSpaceFilter, nil
 }

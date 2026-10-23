@@ -16,6 +16,8 @@ func newRuntimeDocumentIndex(cfg *config.Config, allowProvisioning bool) (*arcad
 	index, err := arcadedb.NewDocumentIndex(tenants, arcadedb.DocumentIndexConfig{
 		Dimensions:             cfg.Embed.Dimensions,
 		MaxRetrievalCandidates: cfg.DocumentRetrieval.RetrievalCandidates,
+		DenseMaxDistance:       cfg.DocumentRetrieval.DenseMaxDistance,
+		MinRelevance:           cfg.DocumentRetrieval.MinRelevance,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("document index: %w", err)

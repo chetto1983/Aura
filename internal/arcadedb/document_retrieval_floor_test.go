@@ -81,6 +81,51 @@ func TestDocumentLegsTakeTheirFloorsFromTheQuerysSpace(t *testing.T) {
 	}
 }
 
+// AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO and AURA_DOCUMENT_MIN_RELEVANCE are how a new space's
+// floors are measured (spec §9): lowered, they let every candidate's rerank cosine show. A
+// positive override wins over the table, and the space stays as calibrated as it was.
+func TestDocumentFloorsHonourOverrides(t *testing.T) {
+	const space = "es1-never-measured"
+	if got := (DocumentIndexConfig{}).documentFloors(space); got != embeddingGemmaFloors.documents {
+		t.Fatalf("no override: floors = %+v, want EmbeddingGemma's", got)
+	}
+	if got := (DocumentIndexConfig{DenseMaxDistance: 2}).documentFloors(space); got != (denseFloors{2, 0.32}) {
+		t.Fatalf("distance override: floors = %+v", got)
+	}
+	if got := (DocumentIndexConfig{MinRelevance: 0.0001}).documentFloors(embeddingGemmaSpace); got != (denseFloors{0.72, 0.0001}) {
+		t.Fatalf("relevance override: floors = %+v", got)
+	}
+	if FloorsCalibrated(space) || !FloorsCalibrated(embeddingGemmaSpace) {
+		t.Fatal("an override changed which spaces are calibrated")
+	}
+}
+
+// Both dense legs bind the floors: an override reaching the passage leg alone would measure
+// half the retrieval.
+func TestDocumentFloorOverridesReachBothDenseLegs(t *testing.T) {
+	cfg := testDocumentConfig()
+	cfg.DenseMaxDistance, cfg.MinRelevance = 1.5, 0.05
+	index, requests := testDocumentIndexWith(t, cfg, func(recordedRequest) testResponse {
+		return testResponse{Body: `{"result":[]}`}
+	})
+	if _, err := index.FusedCandidates(t.Context(), fusedFixtureQuery("clienti")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := index.DocumentCardsScoped(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 2},
+		"clienti", documentCardVector(), "es1-docs"); err != nil {
+		t.Fatal(err)
+	}
+	if len(*requests) != 2 {
+		t.Fatalf("requests = %d, want the fused and the card statement", len(*requests))
+	}
+	for _, request := range *requests {
+		params, _ := request.Payload["params"].(map[string]any)
+		if params["max_distance"] != 1.5 || params["min_relevance"] != 0.05 {
+			t.Fatalf("floors = %v / %v, want the overrides 1.5 / 0.05", params["max_distance"], params["min_relevance"])
+		}
+	}
+}
+
 func TestDenseDocumentLegsRefuseAQueryWithoutItsSpace(t *testing.T) {
 	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
 		return testResponse{Body: `{"result":[]}`}
