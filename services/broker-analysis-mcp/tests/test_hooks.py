@@ -70,6 +70,23 @@ def test_webhooks_need_an_operator_allowlist() -> None:
         hooks.check_action(HookAction(type="webhook", target="https://example.com/hook"))
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://hooks.example.com/broker/../admin",
+        "https://hooks.example.com/broker/%2e%2E/admin",  # percent-encoded
+        "https://hooks.example.com/broker/..%2fadmin",  # encoded separator
+        "https://hooks.example.com/broker/./x",
+    ],
+)
+def test_dot_segments_cannot_leave_the_allowed_path(monkeypatch, target) -> None:
+    # A receiver or proxy that resolves dot segments (RFC 3986, 5.2.4) would deliver outside the prefix.
+    monkeypatch.setenv("BROKER_ANALYSIS_WEBHOOK_ALLOW", "https://hooks.example.com/broker")
+    hooks.check_action(HookAction(type="webhook", target="https://hooks.example.com/broker/alerts"))
+    with pytest.raises(SpecError, match="not in the allowed"):
+        hooks.check_action(HookAction(type="webhook", target=target))
+
+
 @pytest.mark.parametrize("target", ["../escape", "a/b", "x.jsonl", ""])
 def test_file_targets_cannot_escape_the_alerts_folder(target) -> None:
     with pytest.raises(SpecError):

@@ -6,9 +6,10 @@ the bookmark only for the deliveries that succeeded, so a failed webhook retries
 
 Webhooks are refused unless the operator lists allowed URL prefixes in
 BROKER_ANALYSIS_WEBHOOK_ALLOW: an agent must not be able to make the server call arbitrary hosts.
-A target matches a prefix on the exact scheme and host[:port] and at a path-segment boundary, and
-redirects are not followed, so neither a look-alike host nor an allowed host's redirect reaches
-an address the operator did not list. File deliveries append JSON lines under
+A target matches a prefix on the exact scheme and host[:port] and at a path-segment boundary, its
+path may not hold a . or .. segment, even percent-encoded, and redirects are not followed, so
+neither a look-alike host, a receiver that resolves dot segments nor an allowed host's redirect
+reaches an address the operator did not list. File deliveries append JSON lines under
 $BROKER_ANALYSIS_HOME/alerts/.
 """
 
@@ -19,7 +20,7 @@ import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import pandas as pd
 
@@ -59,6 +60,8 @@ def _allowed_prefixes() -> list[str]:
 
 def _within(target: str, prefix: str) -> bool:
     t, p = urlsplit(target), urlsplit(prefix)
+    if {".", ".."} & set(unquote(t.path).split("/")):
+        return False
     base = p.path.rstrip("/")
     return (t.scheme, t.netloc.lower()) == (p.scheme, p.netloc.lower()) and (
         t.path == base or t.path.startswith(base + "/")
