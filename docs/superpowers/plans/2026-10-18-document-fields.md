@@ -5,6 +5,11 @@
 steps 1-6 in 28fa1f13d..4a46a87e2 (`verification/2026-10-18-document-fields.md`, final review's
 fixes c65598a2a..4d66b7008), on master. Open: step 7, the operator's run on the lab VM, where the
 real agent picks the filters from the operator's words; the dev-stack run wrote them into the set.
+Step 7 was measured on 2026-10-23 on d46cedab6 (`verification/2026-10-23-document-fields-lab-vm.md`):
+- **Below the gate.** The score is 9.44 against the 9.8 gate: 23 of 25 exact sets, and the
+  extractor's proposals are 14/14 since 2fa2df738.
+- **Why.** The two tag questions fail because the agent never sees the operator's tag list. How it
+  learns the lists is the operator's decision, before the next run.
 The operator approved the spec, decision 2 included ("Approvata, scrivi il piano").
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
