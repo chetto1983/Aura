@@ -24,6 +24,21 @@ Notable changes to Aura, newest first. Each section is also the text of its
   save. Until it is set, the route is refused, the preview names the missing key, and memory and
   documents are served by keyword search.
 
+### Document search knows the operator's lists
+
+- **Every result names the library's types and tags**, with how many documents carry each, most
+  used first, up to 30 per list. The agent can filter by a tag that the question does not
+  spell, such as "the internal documents" for the tag `interno`.
+- **Every result names each returned document's own fields:** type, counterparty, date and
+  tags, each marked as reviewed by the operator or suggested.
+- **A search with no query and at least one filter lists the documents the filters admit.**
+  The list is the cockpit's own: most recently added first, with how many match in all.
+  "Show me the documents tagged Cliente" no longer depends on a passage clearing the
+  relevance floor.
+- **Fixed: unknown tags under `tags_mode: all`.** Asking for all of several tags, one of which
+  is on no list, used to drop that tag and return documents with only the others. It now
+  admits nothing, and the answer names the closest tags.
+
 ### Plugin connectors run in the sandbox box
 
 - `aura pack install` puts a plugin's stdio connector in each identity's sandbox box, never in

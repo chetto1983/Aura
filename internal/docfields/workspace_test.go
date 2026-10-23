@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -62,5 +63,22 @@ func TestCustomFilterQueryBoundary(t *testing.T) {
 	filters, err := ParseCustomFilters(`[{"field":"custom:x","operator":"eq","value":"paid"},{"field":"custom:y","operator":"unassigned"}]`)
 	if err != nil || len(filters) != 2 || filters[0].Value != "paid" || filters[1].Operator != "unassigned" {
 		t.Fatalf("filters=%+v %v", filters, err)
+	}
+}
+
+// A scope is the files and the folders it names, one OR clause beside the other predicates, the
+// same clause the search builds; past 200 entries it is refused before any query.
+func TestListScopeJoinsKeysAndFolders(t *testing.T) {
+	params := map[string]any{}
+	predicates, err := libraryPredicates(ListQuery{FileType: "all", SourceKeys: []string{"altro/c.pdf"}, SourcePrefixes: []string{"archivio/"}}, params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(predicates, "(source_key IN :source_keys OR source_key LIKE :source_prefix_0)") || params["source_prefix_0"] != "archivio/%" {
+		t.Fatalf("predicates = %v, params = %v", predicates, params)
+	}
+	wide := ListQuery{SourcePrefixes: make([]string, 150), SourceKeys: make([]string, 51)}
+	if _, err := libraryPredicates(wide, map[string]any{}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a scope of 201 entries: %v", err)
 	}
 }

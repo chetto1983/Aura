@@ -64,6 +64,15 @@ func TestRefusalsNeedNoDatabase(t *testing.T) {
 	}
 }
 
+// A search that found nothing names nothing, and never resolves a database to do it: a Store with
+// no resolver would panic.
+func TestDocumentFieldsOfNoDocumentNeedNoDatabase(t *testing.T) {
+	named, err := New(nil).DocumentFields(context.Background(), "id", nil)
+	if err != nil || named == nil || len(named) != 0 {
+		t.Fatalf("named = %v, %v", named, err)
+	}
+}
+
 func TestNameKeyTrimsAndLowers(t *testing.T) {
 	if got := NameKey("  Gialli IMPORT "); got != "gialli import" {
 		t.Fatalf("NameKey = %q", got)
