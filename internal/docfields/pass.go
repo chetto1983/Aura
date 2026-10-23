@@ -151,18 +151,18 @@ func matchText(doc DocumentText) string {
 	return text
 }
 
-// RunPass suggests values for the documents indexed since the last pass, a batch at a time, and
-// moves the watermark past them. An identity with nothing indexed costs one schema read.
+// RunPass suggests values for the documents no pass has read at their current indexed_at, a batch
+// at a time, and marks them read. An identity with nothing indexed costs one schema read.
 func (s *Store) RunPass(ctx context.Context, identityID string) (PassResult, error) {
 	c, err := s.tenants.For(ctx, identityID)
 	if err != nil {
 		return PassResult{}, fmt.Errorf("document fields pass for %s: %w", identityID, err)
 	}
-	indexed, cursor, err := passState(ctx, c)
+	indexed, err := hasIndexedDocuments(ctx, c)
 	if err != nil || !indexed {
 		return PassResult{}, err
 	}
-	docs, err := documentsAfter(ctx, c, cursor, passBatch)
+	docs, err := documentsDue(ctx, c, passBatch)
 	if err != nil || len(docs) == 0 {
 		return PassResult{}, err
 	}
@@ -174,8 +174,7 @@ func (s *Store) RunPass(ctx context.Context, identityID string) (PassResult, err
 	if err != nil {
 		return result, err
 	}
-	last := docs[len(docs)-1]
-	return result, writeWatermark(ctx, c, passCursor{At: last.IndexedAt, Key: last.SourceKey})
+	return result, markPassed(ctx, c, docs)
 }
 
 // RunRule runs one label's rule over every indexed document: what saving a rule does.

@@ -15,7 +15,6 @@ const (
 	DocumentCustomFieldType = "DocumentCustomField"
 	DocumentFieldsType      = "DocumentFields"
 	DocumentFieldEventType  = "DocumentFieldEvent"
-	DocumentRulePassType    = "DocumentRulePass"
 	DocumentSavedViewType   = "DocumentSavedView"
 )
 
@@ -46,11 +45,6 @@ func documentFieldsSchemaStatements() []string {
 		"CREATE DOCUMENT TYPE DocumentFieldEvent IF NOT EXISTS",
 		"CREATE PROPERTY DocumentFieldEvent.record_id IF NOT EXISTS STRING",
 		"CREATE INDEX IF NOT EXISTS ON DocumentFieldEvent (record_id) NOTUNIQUE",
-		"CREATE DOCUMENT TYPE DocumentRulePass IF NOT EXISTS",
-		"CREATE PROPERTY DocumentRulePass.kind IF NOT EXISTS STRING",
-		// The watermark is written with UPDATE ... UPSERT, which ArcadeDB refuses without an
-		// index on its WHERE (measured 2026-10-18 on 26.10.1).
-		"CREATE INDEX IF NOT EXISTS ON DocumentRulePass (kind) UNIQUE",
 	}
 }
 

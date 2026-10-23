@@ -183,6 +183,11 @@ amendment records why, citing these four reasons.
    - **One matcher, in Go.** It runs in two cases:
      - when the operator saves a rule, over every document;
      - for each newly indexed document, found by `IndexedDocument.indexed_at` since the last pass.
+       **Amended 2026-10-23:** found by a per-document mark instead, `IndexedDocument.df_passed_at`,
+       the `indexed_at` the pass read it at; a document whose mark is missing or older is read. A
+       watermark assumed documents become visible in `indexed_at` order, and the ingest breaks it:
+       on the lab VM 8 of 14 invoices uploaded together became visible after a pass had read later
+       ones, and were never read (Task 13 step 7; `TestPassReadsADocumentThatBecameVisibleLate`).
    - It reads the card and the passages from ArcadeDB. The ingest runs no rules.
 3. **The extractor.** filecard keeps an invoice's header pairs. They are derived from the bytes,
    so they ride on `IndexedDocument` as a CocoIndex-owned property, as the card does. Go's pass

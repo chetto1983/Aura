@@ -136,6 +136,28 @@ func TestPassReadsEveryDocumentOfAnInstantABatchSplits(t *testing.T) {
 	}
 }
 
+// The ingest writes a library concurrently, so a document can become visible after one indexed later
+// than it: measured 2026-10-23 on the lab VM, 8 of 14 invoices uploaded together were indexed at
+// .615-.616, became visible after a pass had read those at .617-.618, and no pass read them again.
+func TestPassReadsADocumentThatBecameVisibleLate(t *testing.T) {
+	s, ctx, id, c := indexedLibrary(t)
+	indexDocument(t, c, "chat/visible-first.xlsx", "2026-10-23 06:37:41.618", "Fattura", "Cliente: ACME SpA")
+	if _, err := s.RunPass(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	indexDocument(t, c, "chat/visible-late.xlsx", "2026-10-23 06:37:41.615", "Fattura", "Cliente: Rossi SRL")
+	if _, err := s.RunPass(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	late, err := s.Record(ctx, id, "chat/visible-late.xlsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v := late.value(FieldCounterparty); v.ValueKey != proposedPrefix+"Rossi SRL" {
+		t.Fatalf("counterparty = %+v, want the extractor's Rossi SRL", v)
+	}
+}
+
 // The operator removes a suggestion, then the document is indexed again and the rule saved again:
 // the value comes back from neither (Review Focus 4).
 func TestPassNeverResuggestsRejected(t *testing.T) {

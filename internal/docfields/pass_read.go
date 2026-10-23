@@ -17,58 +17,48 @@ const passagePage = 256
 
 const documentTextColumns = "source_key, file_name, card, header_pairs, indexed_at"
 
-// passCursor is how far the last pass got: the last document it read, by indexed_at and then by
-// key. The key is what tells apart the documents indexed in one millisecond, which a batch can
-// split: measured 2026-10-18, a re-ingest wrote three at one instant across a batch boundary,
-// and a cursor on indexed_at alone skipped them for good. indexed_at compares as the string
-// ArcadeDB returns it, to the millisecond (measured 2026-10-18 on 26.10.1).
-type passCursor struct {
-	At, Key string
+// The pass marks each document it read with the indexed_at it read, in df_passed_at, and reads
+// every document whose mark is missing or older. A watermark on indexed_at assumed documents
+// become visible in indexed_at order, and the ingest breaks that: it stamps indexed_at when it
+// declares a document and writes it later, concurrently. Measured 2026-10-23 on the lab VM, 8 of
+// 14 invoices uploaded together were indexed at .615-.616, became visible after a pass had read
+// those at .617-.618, and were never read. A document indexed again carries a newer indexed_at
+// than its mark, so it is read again.
+const documentsDueWhere = "indexed_at IS NOT NULL AND (df_passed_at IS NULL OR df_passed_at <> indexed_at)"
+
+// hasIndexedDocuments reports whether the identity's ingest has created its document type yet.
+func hasIndexedDocuments(ctx context.Context, c *arcadedb.Client) (bool, error) {
+	rows, err := c.Query(ctx, "SELECT name FROM schema:types WHERE name = :name",
+		map[string]any{"name": arcadedb.IndexedDocumentType})
+	if err != nil {
+		return false, fmt.Errorf("read the pass state: %w", err)
+	}
+	return len(rows) > 0, nil
 }
 
-// passState reads, in one request, whether anything is indexed yet and, from the
-// DocumentRulePass record, how far the last pass got.
-func passState(ctx context.Context, c *arcadedb.Client) (bool, passCursor, error) {
-	rows, err := c.Query(ctx, "SELECT name FROM schema:types WHERE name IN :names",
-		map[string]any{"names": []string{arcadedb.IndexedDocumentType, arcadedb.DocumentRulePassType}})
-	if err != nil {
-		return false, passCursor{}, fmt.Errorf("read the pass state: %w", err)
-	}
-	present := map[string]bool{}
-	for _, row := range rows {
-		present[str(row["name"])] = true
-	}
-	if !present[arcadedb.IndexedDocumentType] || !present[arcadedb.DocumentRulePassType] {
-		return present[arcadedb.IndexedDocumentType], passCursor{}, nil
-	}
-	rows, err = c.Query(ctx, "SELECT watermark, watermark_key FROM DocumentRulePass WHERE kind = 'pass'", nil)
-	if err != nil {
-		return false, passCursor{}, fmt.Errorf("read the pass watermark: %w", err)
-	}
-	if len(rows) == 0 {
-		return true, passCursor{}, nil
-	}
-	return true, passCursor{At: str(rows[0]["watermark"]), Key: str(rows[0]["watermark_key"])}, nil
+// documentsDue reads the documents no pass has read at their current indexed_at, oldest first.
+// No index answers it: it scans the type, as the watermark's range did, in half the time
+// (2026-10-23, 26.10.1, nothing due: 17.8 ms over 4,000 documents and 72 ms over 40,000, against
+// 34.8 ms and 134.5 ms).
+func documentsDue(ctx context.Context, c *arcadedb.Client, limit int) ([]DocumentText, error) {
+	return readDocuments(ctx, c, documentsDueWhere, map[string]any{}, "indexed_at, source_key", limit)
 }
 
-func writeWatermark(ctx context.Context, c *arcadedb.Client, cursor passCursor) error {
-	if _, err := c.Command(ctx, "UPDATE DocumentRulePass SET kind = 'pass', watermark = :w, watermark_key = :k UPSERT WHERE kind = 'pass'",
-		map[string]any{"w": cursor.At, "k": cursor.Key}); err != nil {
-		return fmt.Errorf("move the pass watermark: %w", err)
+// markPassed marks each document as read at the indexed_at the pass read it at. A document indexed
+// again since is left unmarked, so the next pass reads its new version. indexed_at compares as the
+// string ArcadeDB returns it, to the millisecond (measured 2026-10-18 on 26.10.1).
+func markPassed(ctx context.Context, c *arcadedb.Client, docs []DocumentText) error {
+	var script strings.Builder
+	params := make(map[string]any, 2*len(docs))
+	for i, doc := range docs {
+		params[fmt.Sprintf("k%d", i)], params[fmt.Sprintf("a%d", i)] = doc.SourceKey, doc.IndexedAt
+		fmt.Fprintf(&script, "UPDATE %s SET df_passed_at = indexed_at WHERE source_key = :k%[2]d AND indexed_at = :a%[2]d;\n",
+			arcadedb.IndexedDocumentType, i)
+	}
+	if _, err := c.Script(ctx, script.String(), params); err != nil {
+		return fmt.Errorf("mark the documents passed: %w", err)
 	}
 	return nil
-}
-
-// documentsAfter reads the documents indexed after the cursor, oldest first. The range on
-// indexed_at alone is what its index answers; the documents of the cursor's own instant that
-// the last pass already read are then left out by key.
-func documentsAfter(ctx context.Context, c *arcadedb.Client, cursor passCursor, limit int) ([]DocumentText, error) {
-	where, params := "indexed_at IS NOT NULL", map[string]any{}
-	if cursor.At != "" {
-		where = "indexed_at >= :w AND NOT (indexed_at = :w AND source_key <= :from_key)"
-		params["w"], params["from_key"] = cursor.At, cursor.Key
-	}
-	return readDocuments(ctx, c, where, params, "indexed_at, source_key", limit)
 }
 
 // documentsFrom reads the documents whose key sorts after the given one: the whole library, a

@@ -98,7 +98,7 @@ func TestPassReadsPassagesAPageAtATime(t *testing.T) {
 		"header_pairs = [], indexed_at = '2026-10-18 10:00:00.000'", params); err != nil {
 		t.Fatal(err)
 	}
-	docs, err := documentsAfter(ctx, c, passCursor{}, passBatch)
+	docs, err := documentsDue(ctx, c, passBatch)
 	if err != nil {
 		t.Fatal(err)
 	}
