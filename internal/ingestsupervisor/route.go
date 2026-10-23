@@ -72,7 +72,7 @@ func (r *RouteResolver) Resolve(ctx context.Context) (EmbedRoute, error) {
 	base, credential, model := config.ResolveEmbedRoute(embed, key)
 	hosted := config.EmbedRouteKind(embed) != config.EmbedLocal
 	if hosted && credential == "" {
-		return EmbedRoute{}, embeddings.ErrNoCredential
+		return EmbedRoute{}, fmt.Errorf("%w: %s is not set", embeddings.ErrNoCredential, settings.EmbedKeySetting(embed))
 	}
 	space, err := embeddings.RouteSpace(ctx, r.HTTP, embed, r.Dimensions)
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -212,6 +213,11 @@ func TestRouteResolverRefusesAManualEndpointWithoutItsKey(t *testing.T) {
 	_, err := resolver.Resolve(context.Background())
 	if !errors.Is(err, embeddings.ErrNoCredential) {
 		t.Fatalf("Resolve error = %v, want ErrNoCredential", err)
+	}
+	// The supervisor logs this error once and starts no child: it is the only place an operator
+	// upgraded onto a manual endpoint learns which setting to fill.
+	if !strings.Contains(err.Error(), "AURA_EMBED_CLOUD_API_KEY") {
+		t.Fatalf("Resolve error = %v, want the missing setting named", err)
 	}
 	if reads.Load() != 0 {
 		t.Fatal("the services key was taken to a manual endpoint")

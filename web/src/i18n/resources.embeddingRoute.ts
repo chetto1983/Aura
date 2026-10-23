@@ -43,6 +43,8 @@ export const embeddingRouteEn = {
     refusals: {
       no_route: 'No embedding route is set: the local sidecar address is empty.',
       key_missing: 'This cloud route needs an OpenRouter key, and none is configured.',
+      endpoint_key_missing:
+        'This endpoint has no key saved. Enter it in Endpoint API key, then Save runtime settings and preview again.',
       probe_failed: 'The route did not answer: {{detail}}',
       width_too_narrow: 'The model answers narrower vectors than Aura stores; it cannot be used.',
       input_limit_too_small:
@@ -127,6 +129,8 @@ export const embeddingRouteIt = {
       no_route: 'Nessun percorso embedding: l’indirizzo del sidecar locale è vuoto.',
       key_missing:
         'Questo percorso cloud richiede una chiave OpenRouter, e non ce n’è una configurata.',
+      endpoint_key_missing:
+        'Questo endpoint non ha una chiave salvata. Inseriscila in Chiave API dell’endpoint, poi Salva impostazioni runtime e ripeti l’anteprima.',
       probe_failed: 'Il percorso non ha risposto: {{detail}}',
       width_too_narrow:
         'Il modello produce vettori più stretti di quelli che Aura salva: non si può usare.',

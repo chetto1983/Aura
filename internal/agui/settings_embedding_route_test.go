@@ -103,6 +103,20 @@ func decodeInto[T any](t *testing.T, rr *httptest.ResponseRecorder) T {
 
 var cloudRoute = EmbeddingRouteValues{BaseURL: "http://aura-llama-embed:8081", Model: "vendor/embed"}
 
+// A manual endpoint is never sent the services key, so its missing key is its own: telling the
+// admin to add an OpenRouter key would name the wrong setting on a deployment that has one.
+func TestEmbeddingRoutePreviewNamesTheEndpointKeyForAManualRoute(t *testing.T) {
+	routes := &fakeEmbeddingRoutes{probeErr: embeddings.ErrNoCredential, dims: 768}
+	s := asAdmin(&Server{embeddingRoutes: routes})
+	manual := EmbeddingRouteValues{Model: "mistral-embed", CloudBaseURL: "https://api.mistral.ai"}
+	rr := httptest.NewRecorder()
+	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", manual))
+	got := decodeInto[embeddingRoutePreview](t, rr)
+	if rr.Code != http.StatusOK || len(got.Refusals) != 1 || got.Refusals[0].Code != refusalEndpointKeyMissing {
+		t.Fatalf("status %d refusals %+v, want only %s", rr.Code, got.Refusals, refusalEndpointKeyMissing)
+	}
+}
+
 // Spec §4: the three route keys change only through the preview and the confirmed apply.
 func TestGenericSettingWritesRefuseTheEmbeddingRouteKeys(t *testing.T) {
 	for _, key := range embeddingRouteKeys {

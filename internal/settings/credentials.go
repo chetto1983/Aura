@@ -61,13 +61,13 @@ func (c Credentials) EmbedKey(ctx context.Context, embed config.EmbedConfig) (st
 	return c.read(ctx, setting)
 }
 
-// PrimaryRouteKey is the credential vision sends through the primary chat route: the services
-// key when that route is OpenRouter, none on any other host.
-func (c Credentials) PrimaryRouteKey(ctx context.Context, provider, baseURL string) (string, error) {
+// PrimaryRouteKey reads the credential vision sends through the primary chat route at provider
+// and baseURL: the services key when that route is OpenRouter, none on any other host.
+func (c Credentials) PrimaryRouteKey(provider, baseURL string) func(context.Context) (string, error) {
 	if llm.ReasoningTarget(provider, baseURL) != llm.ReasoningTargetOpenRouter {
-		return "", nil
+		return func(context.Context) (string, error) { return "", nil }
 	}
-	return c.ServicesKey(ctx)
+	return c.ServicesKey
 }
 
 // read is a sealed row's value, else the environment's: a row wins when it is set.

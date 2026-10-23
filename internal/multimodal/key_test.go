@@ -117,9 +117,7 @@ func TestSpeechKeyReadErrorFailsTheRequest(t *testing.T) {
 
 // primaryKeyOf is the binding the daemon and aura-media-index give VisionConfigFrom.
 func primaryKeyOf(cfg *config.Config, creds settings.Credentials) KeyFunc {
-	return func(ctx context.Context) (string, error) {
-		return creds.PrimaryRouteKey(ctx, cfg.LLM.Provider, cfg.LLM.BaseURL)
-	}
+	return creds.PrimaryRouteKey(cfg.LLM.Provider, cfg.LLM.BaseURL)
 }
 
 func servicesKeyOnly() settings.Credentials {

@@ -86,6 +86,22 @@ describe('EmbeddingRoutePreviewCard', () => {
     expect(screen.getByText(/uncalibrated/)).toBeTruthy();
   });
 
+  // The preview reads the stored key, so the admin who typed one must save it first: the text
+  // names the field and the save, never the OpenRouter key a manual endpoint is not sent.
+  it('names the endpoint key, and the save, when a manual endpoint has none', () => {
+    render(
+      <EmbeddingRoutePreviewCard
+        preview={preview({ space: '', refusals: [{ code: 'endpoint_key_missing' }] })}
+        applying={false}
+        onApply={vi.fn()}
+      />,
+    );
+    const alert = screen.getByRole('alert');
+    expect(alert.textContent).toContain('Endpoint API key');
+    expect(alert.textContent).toContain('Save runtime settings');
+    expect(alert.textContent).not.toContain('OpenRouter');
+  });
+
   it('shows the refusals and never lets a refused route be applied', () => {
     render(
       <EmbeddingRoutePreviewCard

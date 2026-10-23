@@ -170,6 +170,41 @@ func TestMediaRuntimeDerivesImageTextThroughSelectedPrimaryModel(t *testing.T) {
 	}
 }
 
+// An OpenRouter primary reads the image with the services key: the one route on which the
+// vision request carries it.
+func TestMediaRuntimeSendsTheServicesKeyToAnOpenRouterPrimary(t *testing.T) {
+	var gotURL, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"Pilot workspace Expired"}}]}`)
+	}))
+	defer srv.Close()
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse fake server URL: %v", err)
+	}
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		gotURL = r.URL.String()
+		out := r.Clone(r.Context())
+		out.URL.Scheme, out.URL.Host, out.Host = target.Scheme, target.Host, target.Host
+		return http.DefaultTransport.RoundTrip(out)
+	})}
+
+	path := filepath.Join(t.TempDir(), "cockpit.png")
+	if err := os.WriteFile(path, []byte("provider-input"), 0o600); err != nil {
+		t.Fatalf("write image fixture: %v", err)
+	}
+	cfg := &config.Config{LLM: llm.Config{Provider: "openrouter", BaseURL: llm.DefaultBaseURL, Model: "z-ai/glm-5.3-flash"}}
+	runtime := newMediaRuntime(cfg, storedServicesKey("sk-or-services"), client, true)
+	if _, err := runtime.derive(t.Context(), mediaKindImage, path, "cockpit.png"); err != nil {
+		t.Fatalf("derive image: %v", err)
+	}
+	if gotURL != llm.DefaultBaseURL+"/chat/completions" || gotAuth != "Bearer sk-or-services" {
+		t.Fatalf("vision went to %q with %q, want OpenRouter with the services key", gotURL, gotAuth)
+	}
+}
+
 func TestMediaRuntimeDerivesScannedPDFPagesThroughSelectedPrimaryModel(t *testing.T) {
 	var models []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

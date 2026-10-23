@@ -47,7 +47,8 @@ func defaultDoctorProbeEmbed(ctx context.Context, cfg *config.Config) (string, e
 	if model != "" {
 		// A hosted embedder's health belongs to its provider, and probing it would bill a
 		// call on every `aura doctor`. What this stack can be wrong about is the route, and
-		// its key: a non-OpenRouter chat provider lets the daemon boot without one.
+		// its key: the daemon boots without one, on any chat route, and a manual endpoint
+		// needs its own.
 		key, err := cliEmbedKey(ctx, cfg.Embed)
 		if err != nil {
 			return "", fmt.Errorf("embedding credential: %w", err)

@@ -90,7 +90,7 @@ func TestPrimaryRouteKeyGoesOnlyToOpenRouter(t *testing.T) {
 		{"ollama", "http://ollama:11434/v1", ""},
 		{"chatgpt", "https://api.openai.com/v1", ""},
 	} {
-		key, err := creds.PrimaryRouteKey(t.Context(), tc.provider, tc.base)
+		key, err := creds.PrimaryRouteKey(tc.provider, tc.base)(t.Context())
 		if err != nil || key != tc.want {
 			t.Fatalf("%s at %s: key = %q, %v, want %q", tc.provider, tc.base, key, err, tc.want)
 		}

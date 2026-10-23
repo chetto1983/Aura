@@ -177,18 +177,16 @@ func newCachingPerIdentityStoreFactory(cfg *config.Config) assets.StoreFactory {
 	}
 }
 
-// visionConfigFrom resolves the image route once at boot, which is the lifetime the
-// primary-route settings already have: changing them is an appliedRestart key, so a
-// snapshot here cannot drift from what the running process is using. The primary route is
-// sent the services key only when it is OpenRouter; the key itself is read per request.
+// visionConfigFrom resolves the image route once at boot, from the boot cfg.LLM. The primary
+// route is hot in the cockpit, but this snapshot, its capability and its key all read the same
+// boot route, so they never disagree; a live route switch reaches vision at the next restart.
+// The primary route is sent the services key only when it is OpenRouter, read per request.
 func visionConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.VisionConfig {
 	ctx, cancel := context.WithTimeout(context.Background(), visionCapabilityTimeout)
 	defer cancel()
 	source := llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL)
-	primaryKey := func(ctx context.Context) (string, error) {
-		return creds.PrimaryRouteKey(ctx, cfg.LLM.Provider, cfg.LLM.BaseURL)
-	}
-	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source), primaryKey)
+	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source),
+		creds.PrimaryRouteKey(cfg.LLM.Provider, cfg.LLM.BaseURL))
 }
 
 func sttConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.STTConfig {

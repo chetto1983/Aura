@@ -56,10 +56,8 @@ type mediaRuntime struct {
 func newMediaRuntime(
 	cfg *config.Config, creds settings.Credentials, client *http.Client, primaryAcceptsImages bool,
 ) mediaRuntime {
-	primaryKey := func(ctx context.Context) (string, error) {
-		return creds.PrimaryRouteKey(ctx, cfg.LLM.Provider, cfg.LLM.BaseURL)
-	}
-	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages, primaryKey)
+	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages,
+		creds.PrimaryRouteKey(cfg.LLM.Provider, cfg.LLM.BaseURL))
 	visionCfg.HTTPClient = client
 	sttCfg := multimodal.STTConfigFrom(cfg, creds.ServicesKey)
 	sttCfg.HTTPClient = client

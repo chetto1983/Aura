@@ -41,8 +41,10 @@ const minEmbeddingInputLimit = 2048
 
 // Refusal codes: the cockpit translates the code, and shows the detail as it came.
 const (
-	refusalNoRoute            = "no_route"
-	refusalKeyMissing         = "key_missing"
+	refusalNoRoute    = "no_route"
+	refusalKeyMissing = "key_missing"
+	// A manual endpoint is never sent the services key, so its missing key is its own setting.
+	refusalEndpointKeyMissing = "endpoint_key_missing"
 	refusalProbeFailed        = "probe_failed"
 	refusalWidthTooNarrow     = "width_too_narrow"
 	refusalInputLimitTooSmall = "input_limit_too_small"
@@ -303,7 +305,11 @@ func (s *Server) probeEmbeddingRoute(ctx context.Context, route EmbeddingRouteVa
 		preview.Refusals = append(preview.Refusals, routeRefusal{Code: refusalNoRoute})
 		return preview
 	case errors.Is(err, embeddings.ErrNoCredential):
-		preview.Refusals = append(preview.Refusals, routeRefusal{Code: refusalKeyMissing})
+		code := refusalKeyMissing
+		if config.EmbedRouteKind(embed) == config.EmbedEndpoint {
+			code = refusalEndpointKeyMissing
+		}
+		preview.Refusals = append(preview.Refusals, routeRefusal{Code: code})
 		return preview
 	case err != nil:
 		preview.Refusals = append(preview.Refusals, routeRefusal{Code: refusalProbeFailed, Detail: err.Error()})
