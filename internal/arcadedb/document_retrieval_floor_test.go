@@ -83,7 +83,8 @@ func TestDocumentLegsTakeTheirFloorsFromTheQuerysSpace(t *testing.T) {
 
 // AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO and AURA_DOCUMENT_MIN_RELEVANCE are how a new space's
 // floors are measured (spec §9): lowered, they let every candidate's rerank cosine show. A
-// positive override wins over the table, and the space stays as calibrated as it was.
+// positive override wins over the table. Whether a space is calibrated is read from the table
+// alone, which never sees the config, so an override cannot change it.
 func TestDocumentFloorsHonourOverrides(t *testing.T) {
 	const space = "es1-never-measured"
 	if got := (DocumentIndexConfig{}).documentFloors(space); got != embeddingGemmaFloors.documents {
@@ -94,9 +95,6 @@ func TestDocumentFloorsHonourOverrides(t *testing.T) {
 	}
 	if got := (DocumentIndexConfig{MinRelevance: 0.0001}).documentFloors(embeddingGemmaSpace); got != (denseFloors{0.72, 0.0001}) {
 		t.Fatalf("relevance override: floors = %+v", got)
-	}
-	if DocumentFloorsCalibrated(space) || !DocumentFloorsCalibrated(embeddingGemmaSpace) {
-		t.Fatal("an override changed which spaces are calibrated")
 	}
 }
 

@@ -258,6 +258,11 @@ func (c docsCLI) WorkspaceRoot() string { return c.root }
 func newDocsService(ctx context.Context) (docsCLIService, func(), error) {
 	// Notes go to stderr: `aura docs mcp` speaks its protocol on stdout.
 	cfg := cliConfig(ctx, os.Stderr)
+	// The CLI skips the boot gates, and a floor override is set here to measure (spec §9): a
+	// wrong one must be refused by name, not surface as a passage index that could not be built.
+	if err := cfg.DocumentRetrieval.Validate(); err != nil {
+		return nil, nil, err
+	}
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
 		return nil, nil, err

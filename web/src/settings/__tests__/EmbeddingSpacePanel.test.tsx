@@ -150,7 +150,11 @@ describe('EmbeddingSpacePanel', () => {
     // Nothing stored and nothing wrong: the panel starts closed, as on a healthy box.
     fireEvent.click(await screen.findByRole('button', { name: /Embedding space/ }));
     expect(await screen.findByText('No identity has memory or documents yet.')).toBeTruthy();
-    expect(screen.getByText('Relevance thresholds are uncalibrated for this model.')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Relevance thresholds are uncalibrated for this model in memory, documents or both.',
+      ),
+    ).toBeTruthy();
   });
 
   it('names why the space cannot be read', async () => {

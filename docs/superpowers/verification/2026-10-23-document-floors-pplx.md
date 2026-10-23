@@ -74,9 +74,11 @@ The distance drops no true match in this library, so it stays at 0.72.
 | **0.39** (midpoint of true and "fattura") | **11/11** | **5/5** | **abstains** | **7/12** |
 
 The operator chose 0.39 over 0.35.
-- **What it adds.** "fattura" abstains, with no measured true match lost.
-- **What it costs.** A topically relevant document between 0.35 and 0.39 is no longer admitted.
-  Measured: the VAT question went to the sales spreadsheet at 0.3312.
+- **What it adds.** "fattura" abstains, with no measured true match lost. It is the only
+  measured question between 0.35 and 0.39.
+- **What it costs.** Any document between 0.35 and 0.39 is no longer admitted; none was
+  measured there but "fattura". Raising the floor from today's 0.32 costs one topically
+  relevant document at either floor: the VAT question went to the sales spreadsheet at 0.3312.
 - **The midpoint.** (0.3833 + 0.4047) / 2 = 0.394, rounded down toward recall.
 
 ## What this does not show

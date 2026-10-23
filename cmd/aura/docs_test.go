@@ -265,3 +265,15 @@ func TestDocsSearchReportsAbstention(t *testing.T) {
 		t.Fatalf("decoded = %#v, raw = %s", decoded, out.String())
 	}
 }
+
+// A floor override is set on the one `aura docs search` process that measures (spec §9), so the
+// CLI is where a wrong one is typed: an Italian decimal comma must be refused by name, not left
+// to surface later as a passage index that could not be built.
+func TestDocsServiceRefusesAnInvalidFloorOverrideByName(t *testing.T) {
+	cliSettings(t)
+	t.Setenv("AURA_DOCUMENT_MIN_RELEVANCE", "0,0001")
+	_, _, err := newDocsService(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "AURA_DOCUMENT_MIN_RELEVANCE") {
+		t.Fatalf("err = %v, want the override refused by name", err)
+	}
+}

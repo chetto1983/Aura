@@ -2,6 +2,7 @@ package agui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ type fakeEmbeddingRoutes struct {
 	reports           []arcadedb.TenantSpaceReport
 	reportsErr        error
 	probe             embeddings.RouteProbe
+	probeMemory       embeddings.Space
 	probeErr          error
 	probed            []config.EmbedConfig
 	work              arcadedb.CorpusWork
@@ -53,7 +55,8 @@ func (f *fakeEmbeddingRoutes) Reports(context.Context, string, string) ([]arcade
 
 func (f *fakeEmbeddingRoutes) Probe(_ context.Context, embed config.EmbedConfig) (embeddings.RouteProbe, embeddings.Space, error) {
 	f.probed = append(f.probed, embed)
-	return f.probe, embeddings.Space{ID: "es1-mem-target"}, f.probeErr
+	memory := cmp.Or(f.probeMemory, embeddings.Space{ID: "es1-mem-target"})
+	return f.probe, memory, f.probeErr
 }
 
 func (f *fakeEmbeddingRoutes) Work(_ context.Context, _, _ string, limitChars int) (arcadedb.CorpusWork, error) {
@@ -167,6 +170,20 @@ func TestEmbeddingSpaceWarnsWhileOneFamilyIsUncalibrated(t *testing.T) {
 	s.handleEmbeddingSpace(rr, routeRequest(t, http.MethodGet, "/api/settings/embedding-space", nil))
 	if got := decodeInto[embeddingSpaceDTO](t, rr); got.FloorsCalibrated {
 		t.Fatalf("state = %+v, want floors_calibrated false while memory is unmeasured", got)
+	}
+}
+
+// Memory is stored at its own width, so a route's memory space is not the documents' one when
+// AURA_EMBED_DIMENSIONS is not 768: the preview checks each family in its own space.
+func TestEmbeddingRoutePreviewChecksEachFamilyInItsOwnSpace(t *testing.T) {
+	probe := cloudProbe()
+	probe.Space.ID = "es1-b604719dc5fc0ce4" // documents measured
+	routes := &fakeEmbeddingRoutes{probe: probe, probeMemory: embeddings.Space{ID: "es1-e0aa6accf0b79c6b"}, dims: 768}
+	s := asAdmin(&Server{embeddingRoutes: routes})
+	rr := httptest.NewRecorder()
+	s.handleEmbeddingRoutePreview(rr, routeRequest(t, http.MethodPost, "/api/settings/embedding-route/preview", cloudRoute))
+	if got := decodeInto[embeddingRoutePreview](t, rr); !got.FloorsCalibrated {
+		t.Fatalf("preview = %+v, want floors calibrated: memory in its space, documents in theirs", got)
 	}
 }
 

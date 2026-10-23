@@ -284,7 +284,7 @@ Two guards back the gate (final review of plan 2, 2026-09-24):
   - the model's published input limit — models below 2,048 are refused — and on a hosted route
     how many stored passages exceed it in bytes and would be cut (§6);
   - the statement that each family is served lexically until its pass completes, and that dense
-    relevance floors are uncalibrated for any model but EmbeddingGemma (§9).
+    relevance floors are uncalibrated for the target model in any family without a row (§9).
 - **`POST /api/settings/embedding-route`** — body: the route plus `confirm_space`, which must
   equal the target the server recomputes. It writes the three settings rows and fires the
   existing restart trigger (`cmd/aura/serve_restart.go:17`). Nothing else: the pass starts
@@ -729,9 +729,9 @@ fusion and index work; nothing here adds Go vector math.
 - **A mutable cloud alias.** A provider change behind an unchanged OpenRouter id does not move
   the space. For `qwen/qwen3-embedding-8b`, several providers, one of them fp8, serve one id.
   Provider pinning is out of scope; the stamp names the model, not the provider.
-- **Relevance floors are uncalibrated for any model but EmbeddingGemma.** Dense retrieval
-  after a switch may abstain too often or too little until a calibration row exists; every
-  response says so.
+- **Relevance floors are uncalibrated for a model until its family has a row.** EmbeddingGemma
+  has both; pplx-embed-v1-4b has documents only (2026-10-23). Dense retrieval after a switch may
+  abstain too often or too little until a calibration row exists; every response says so.
 - **Local attestation is metadata, not a hash:** file name, size, parameter count, width and
   quantization. Two different GGUFs identical in all five would share a space.
 - **Lexical-mode quality is not measured as recall.** Acceptance asserts grouped, floored,

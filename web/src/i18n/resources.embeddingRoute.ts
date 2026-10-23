@@ -31,7 +31,7 @@ export const embeddingRouteEn = {
     lexical:
       'Until each family is re-embedded, memory and documents are served by keyword search only.',
     uncalibrated:
-      'Relevance thresholds were measured for EmbeddingGemma only; with this model they are uncalibrated.',
+      'Relevance thresholds are uncalibrated for this model in memory, documents or both: there it may abstain too often or too rarely.',
     confirm: 'I understand: switch the route and re-embed everything',
     apply: 'Apply and restart',
     applying: 'Applying…',
@@ -57,7 +57,8 @@ export const embeddingRouteEn = {
       error: 'The embedding state could not be read.',
       spaceError: 'Aura cannot name its embedding space: {{message}}',
       current: 'Current space',
-      uncalibrated: 'Relevance thresholds are uncalibrated for this model.',
+      uncalibrated:
+        'Relevance thresholds are uncalibrated for this model in memory, documents or both.',
       noTenants: 'No identity has memory or documents yet.',
       tenant: 'Identity {{id}}',
       dense: 'Dense',
@@ -116,7 +117,7 @@ export const embeddingRouteIt = {
     lexical:
       'Finché ogni famiglia non è ricalcolata, memoria e documenti rispondono solo con la ricerca per parole chiave.',
     uncalibrated:
-      'Le soglie di rilevanza sono misurate solo per EmbeddingGemma: con questo modello non sono calibrate.',
+      'Con questo modello le soglie di rilevanza non sono calibrate per la memoria, per i documenti o per entrambi: lì può astenersi troppo o troppo poco.',
     confirm: 'Ho capito: cambia il percorso e ricalcola tutto',
     apply: 'Applica e riavvia',
     applying: 'Applico…',
@@ -144,7 +145,8 @@ export const embeddingRouteIt = {
       error: 'Non riesco a leggere lo stato degli embedding.',
       spaceError: 'Aura non riesce a nominare il suo spazio di embedding: {{message}}',
       current: 'Spazio attuale',
-      uncalibrated: 'Le soglie di rilevanza non sono calibrate per questo modello.',
+      uncalibrated:
+        'Le soglie di rilevanza non sono calibrate per questo modello nella memoria, nei documenti o in entrambi.',
       noTenants: 'Nessuna identità ha ancora memoria o documenti.',
       tenant: 'Identità {{id}}',
       dense: 'Semantica',
