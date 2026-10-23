@@ -13,7 +13,7 @@ description: Evaluation and comparison of ETFs with the etf_analysis and risk_me
 - Answer in the language the analyst writes in, with that language's number format.
 
 ## Choosing the benchmark
-1. **Same time zone** as the fund: with different closing times the tracking error is inflated. Measured: SWDA.MI against URTH (New York) 6.5% weekly, against IWDA.AS (Amsterdam) 0.2%. For an ETF listed in Milan use a European ETF on the same index or the local index.
+1. **Same index, same time zone** as the fund: with different closing times the tracking error is inflated. Measured: SWDA.MI against URTH (New York) 6.5% weekly, against IWDA.AS (Amsterdam) 0.2%. For an ETF listed in Milan use a European-listed ETF on the same index. If nothing tracks the same index with compatible hours, say so: another index would turn the gap between indices into apparent replication cost.
 2. **Total return** (dividends included): against a price index the tracking difference is inflated by the dividend yield.
 3. The tool converts the benchmark's currency into the fund's with Yahoo's daily exchange rates.
 
