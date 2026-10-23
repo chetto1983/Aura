@@ -9,6 +9,8 @@
 // Telegram's and whose synthesis is the shared multimodal.TTSClient's.
 package telegram
 
+import "github.com/chetto1983/aura/internal/multimodal"
+
 // MultimodalConfig is the telegram-package projection of the central internal/config
 // TTS knobs (the upstream-named TTS_*/AURA_TTS_MODEL vars). It is populated by the
 // composition root (serve_channels.go); keeping it local frees the telegram package
@@ -25,12 +27,12 @@ type MultimodalConfig struct {
 	TTSModel      string
 	TTSCloudVoice string
 
-	// OpenRouterBaseURL/APIKey are OpenRouter's endpoint + the services key, used by
-	// the cloud TTS leg whatever route the chat runs on. The key is set ONLY
-	// on the Authorization header at request-build time, never logged or serialized
-	// (the openai_compat D-28 discipline, enforced inside internal/multimodal).
+	// OpenRouterBaseURL/Key are OpenRouter's endpoint + the services key's reader, used by
+	// the cloud TTS leg whatever route the chat runs on. The key is read per request and set
+	// ONLY on the Authorization header, never logged or serialized (the openai_compat D-28
+	// discipline, enforced inside internal/multimodal).
 	OpenRouterBaseURL string
-	OpenRouterAPIKey  string
+	OpenRouterKey     multimodal.KeyFunc
 
 	// TimeoutSec bounds each sidecar request (T-13-08-SidecarDoS, 30s default when
 	// zero). The timeout rides the request ctx, not http.Client.Timeout, so a

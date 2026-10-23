@@ -4,7 +4,8 @@ package main
 // OpenRouter whatever route the chat runs on: image and video from the generation tools' own
 // catalog, cloud speech-to-text, text-to-speech and embeddings from OpenRouter's
 // output-modality filter. Each of those backends runs on OpenRouter itself (mediaBaseURL,
-// config.SpeechCloudRoute, config.EmbedRoute), so a picker lists what its backend can call.
+// multimodal.STTConfigFrom and TTSConfigFrom, config.ResolveEmbedRoute), so a picker lists
+// what its backend can call.
 
 import (
 	"context"

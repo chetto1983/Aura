@@ -50,11 +50,18 @@ type mediaRuntime struct {
 }
 
 // primaryAcceptsImages is passed in, not probed here: the capability is resolved once at
-// the edge so construction stays pure and the route needs no network to be decided.
-func newMediaRuntime(cfg *config.Config, client *http.Client, primaryAcceptsImages bool) mediaRuntime {
-	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages)
+// the edge so construction stays pure and the route needs no network to be decided. creds
+// gives the cloud speech leg the services key, and the primary vision route the same key only
+// when that route is OpenRouter.
+func newMediaRuntime(
+	cfg *config.Config, creds settings.Credentials, client *http.Client, primaryAcceptsImages bool,
+) mediaRuntime {
+	primaryKey := func(ctx context.Context) (string, error) {
+		return creds.PrimaryRouteKey(ctx, cfg.LLM.Provider, cfg.LLM.BaseURL)
+	}
+	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages, primaryKey)
 	visionCfg.HTTPClient = client
-	sttCfg := multimodal.STTConfigFrom(cfg)
+	sttCfg := multimodal.STTConfigFrom(cfg, creds.ServicesKey)
 	sttCfg.HTTPClient = client
 	return mediaRuntime{
 		vision:    multimodal.NewVisionClient(visionCfg),
@@ -185,37 +192,36 @@ func mediaType(path, fileName string, raw []byte) string {
 	return http.DetectContentType(raw)
 }
 
-func loadEffectiveConfig(ctx context.Context) (*config.Config, error) {
+// loadEffectiveConfig is the configuration the daemon runs, aura.settings overlaid, and the
+// credentials read from the same store; close releases its pool once the file is processed.
+// The services key never reaches the environment or the chat profile: the speech and vision
+// calls read it through the credentials when they send.
+func loadEffectiveConfig(ctx context.Context) (cfg *config.Config, creds settings.Credentials, closeStore func(), err error) {
+	creds = settings.Credentials{LookupEnv: os.LookupEnv}
 	dbURL := strings.TrimSpace(os.Getenv("AURA_DB_URL"))
 	if dbURL == "" {
-		return config.LoadServe()
+		cfg, err = config.LoadServe()
+		return cfg, creds, func() {}, err
 	}
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {
-		return nil, fmt.Errorf("settings database: %w", err)
+		return nil, creds, nil, fmt.Errorf("settings database: %w", err)
 	}
-	defer pool.Close()
 	store, err := settings.NewStore(pool, os.Getenv("AURA_AUTHULA_SECRET"))
 	if err != nil {
-		return nil, fmt.Errorf("settings store: %w", err)
+		pool.Close()
+		return nil, creds, nil, fmt.Errorf("settings store: %w", err)
 	}
 	if err = settings.OverlayEnv(ctx, store); err != nil {
-		return nil, fmt.Errorf("settings overlay: %w", err)
+		pool.Close()
+		return nil, creds, nil, fmt.Errorf("settings overlay: %w", err)
 	}
-	cfg, err := config.LoadServe()
-	if err != nil {
-		return nil, err
+	if cfg, err = config.LoadServe(); err != nil {
+		pool.Close()
+		return nil, creds, nil, err
 	}
-	// The services key never reaches the environment, and the vision call on the OpenRouter
-	// route needs it.
-	key, err := store.Secret(ctx, "OPENROUTER_API_KEY")
-	if err != nil {
-		return nil, fmt.Errorf("settings secret: %w", err)
-	}
-	if key != "" {
-		cfg.LLM.APIKey = key
-	}
-	return cfg, nil
+	creds.Store = store
+	return cfg, creds, pool.Close, nil
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -230,11 +236,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, "usage: aura-media-index -kind image|audio|pdf [-name NAME] PATH")
 		return 2
 	}
-	cfg, err := loadEffectiveConfig(ctx)
+	cfg, creds, closeStore, err := loadEffectiveConfig(ctx)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
+	defer closeStore()
 	acceptsImages := multimodal.PrimaryAcceptsImages(
 		ctx, llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL),
 	)
@@ -242,7 +249,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if fileName == "" {
 		fileName = filepath.Base(fs.Arg(0))
 	}
-	text, err := newMediaRuntime(cfg, nil, acceptsImages).derive(ctx, mediaKind(*kind), fs.Arg(0), fileName)
+	text, err := newMediaRuntime(cfg, creds, nil, acceptsImages).derive(ctx, mediaKind(*kind), fs.Arg(0), fileName)
 	if err != nil {
 		_, _ = fmt.Fprintln(stderr, err)
 		if errors.Is(err, multimodal.ErrNoVisionRoute) {

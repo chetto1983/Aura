@@ -50,17 +50,19 @@ func TestVisionConfigFromCarriesPrimaryRouteAndCapability(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.LLM.Model = "gemma4:31b-cloud"
 	cfg.LLM.BaseURL = "http://host.docker.internal:11434/v1"
-	cfg.LLM.APIKey = "k"
 	cfg.MultimodalBaseURL = "http://aura-ocr-vl:8082/v1"
 	cfg.MultimodalModel = "glm-ocr"
 
-	got := VisionConfigFrom(cfg, true)
+	got := VisionConfigFrom(cfg, true, staticKey("k"))
 	if !got.PrimaryAcceptsImages {
 		t.Error("PrimaryAcceptsImages = false, want the resolved capability carried through")
 	}
-	if got.PrimaryBaseURL != cfg.LLM.BaseURL || got.PrimaryAPIKey != "k" || got.Model != "gemma4:31b-cloud" {
-		t.Errorf("primary route = %q/%q/%q, want the operator-selected model's own endpoint",
-			got.PrimaryBaseURL, got.PrimaryAPIKey, got.Model)
+	if got.PrimaryBaseURL != cfg.LLM.BaseURL || got.Model != "gemma4:31b-cloud" {
+		t.Errorf("primary route = %q/%q, want the operator-selected model's own endpoint",
+			got.PrimaryBaseURL, got.Model)
+	}
+	if key, _ := got.PrimaryKey(t.Context()); key != "k" {
+		t.Errorf("primary key = %q, want the one the caller bound", key)
 	}
 	if got.LocalBaseURL != cfg.MultimodalBaseURL || got.LocalModel != "glm-ocr" {
 		t.Errorf("sidecar route = %q/%q, want it preserved as the fallback", got.LocalBaseURL, got.LocalModel)

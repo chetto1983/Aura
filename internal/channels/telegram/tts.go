@@ -56,7 +56,7 @@ func newTTSClient(cfg MultimodalConfig) *ttsClient {
 		CloudModel:        cfg.TTSModel,
 		CloudVoice:        cfg.TTSCloudVoice,
 		OpenRouterBaseURL: cfg.OpenRouterBaseURL,
-		OpenRouterAPIKey:  cfg.OpenRouterAPIKey,
+		OpenRouterKey:     cfg.OpenRouterKey,
 		TimeoutSec:        cfg.TimeoutSec,
 	}
 	return &ttsClient{

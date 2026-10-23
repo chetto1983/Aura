@@ -80,6 +80,33 @@ func ttsTestConfig(base string) MultimodalConfig {
 	return MultimodalConfig{TTSBaseURL: base, TTSVoice: "if_sara", TTSFormat: "opus"}
 }
 
+// The cloud voice-note leg reads the services key when it speaks, so a key replaced in the
+// cockpit reaches a channel started at boot.
+func TestTelegramTTSUsesTheServicesKeyFunc(t *testing.T) {
+	t.Parallel()
+	var mu sync.Mutex
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotAuth = r.Header.Get("Authorization")
+		mu.Unlock()
+		_, _ = w.Write([]byte("OggS"))
+	}))
+	defer srv.Close()
+	tc := newTTSClient(MultimodalConfig{
+		TTSModel: "hexgrad/kokoro-82m", TTSCloudVoice: "af_sarah", OpenRouterBaseURL: srv.URL,
+		OpenRouterKey: func(context.Context) (string, error) { return "k", nil },
+	})
+	if _, err := tc.tts.Synthesize(context.Background(), "ciao"); err != nil {
+		t.Fatalf("Synthesize: %v", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotAuth != "Bearer k" {
+		t.Fatalf("Authorization = %q, want Bearer k", gotAuth)
+	}
+}
+
 // TestTTSSpeakSendsVoice proves the opus bytes go out via sendVoice and the
 // RESPONSE carries a non-nil msg.Voice (VALIDATION UX-04 "tts.go opus→sendVoice").
 func TestTTSSpeakSendsVoice(t *testing.T) {

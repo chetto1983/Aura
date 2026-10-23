@@ -43,7 +43,7 @@ func voiceCaps(t *testing.T, srv *agui.Server) (tts, stt bool) {
 // (D-02 / RESEARCH Landmine #2): AudioFormat()=="mp3", the web override — NOT opus.
 func TestWireVoiceProviders_Mp3(t *testing.T) {
 	cfg := &config.Config{TTSModel: "hexgrad/kokoro-82m", TTSVoice: "if_sara"}
-	tts := buildWebTTSClient(cfg)
+	tts := buildWebTTSClient(cfg, nil)
 	if tts == nil {
 		t.Fatal("buildWebTTSClient returned nil for a configured TTSModel")
 	}
@@ -62,11 +62,11 @@ func TestWireVoiceProviders_OpusUntouched(t *testing.T) {
 		TTSVoice:      "if_sara",
 		TTSFormat:     "opus", // the Telegram voice-note container (config default)
 	}
-	web := buildWebTTSClient(cfg)
+	web := buildWebTTSClient(cfg, nil)
 	if web == nil || web.AudioFormat() != "mp3" {
 		t.Fatalf("web TTS is not mp3: nil=%v", web == nil)
 	}
-	if tg := multimodalConfig(cfg); tg.TTSFormat != "opus" || tg.TTSCloudVoice != "af_sarah" {
+	if tg := multimodalConfig(cfg, nil); tg.TTSFormat != "opus" || tg.TTSCloudVoice != "af_sarah" {
 		t.Fatalf("telegram TTS format/cloud voice = %q/%q, want opus/af_sarah", tg.TTSFormat, tg.TTSCloudVoice)
 	}
 }
@@ -78,11 +78,13 @@ func ollamaChatVoiceConfig() *config.Config {
 	return &config.Config{
 		TTSModel: "qwen/qwen-audio-3.0-tts-flash", TTSCloudVoice: "longanhuan_v3.6", TTSVoice: "if_sara",
 		STTCloudModel: "openai/whisper-large-v3",
-		LLM: llm.Config{
-			Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1", APIKey: "sk-or-v1-services",
-		},
+		LLM:           llm.Config{Provider: "ollama", BaseURL: "http://host.docker.internal:11434/v1"},
 	}
 }
+
+// storedServicesKey is the services key read from the settings, which the chat profile never
+// carries.
+func storedServicesKey(context.Context) (string, error) { return "sk-or-v1-services", nil }
 
 // capturedCall is what a cloud speech request carried before the fake answered it.
 type capturedCall struct {
@@ -108,7 +110,7 @@ func openRouterFake(t *testing.T, answer string) (*http.Client, *[]capturedCall)
 }
 
 func TestCloudTTSRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
-	voiceCfg := multimodal.TTSConfigFrom(ollamaChatVoiceConfig(), "mp3")
+	voiceCfg := multimodal.TTSConfigFrom(ollamaChatVoiceConfig(), "mp3", storedServicesKey)
 	client, calls := openRouterFake(t, "mp3-bytes")
 	voiceCfg.HTTPClient = client
 	if _, err := multimodal.NewTTSClient(voiceCfg).Synthesize(t.Context(), "ciao"); err != nil {
@@ -127,7 +129,7 @@ func TestCloudTTSRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
 }
 
 func TestCloudSTTRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
-	voiceCfg := multimodal.STTConfigFrom(ollamaChatVoiceConfig())
+	voiceCfg := multimodal.STTConfigFrom(ollamaChatVoiceConfig(), storedServicesKey)
 	client, calls := openRouterFake(t, `{"text":"ciao mondo"}`)
 	voiceCfg.HTTPClient = client
 	transcript, err := multimodal.NewSTTClient(voiceCfg).Transcribe(t.Context(), []byte("webm-bytes"), "dictation", "webm")
@@ -143,10 +145,13 @@ func TestCloudSTTRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
 }
 
 func TestTelegramCloudTTSRunsOnOpenRouterWhateverTheChatRoute(t *testing.T) {
-	tg := multimodalConfig(ollamaChatVoiceConfig())
-	if tg.OpenRouterBaseURL != openRouterBaseURL || tg.OpenRouterAPIKey != "sk-or-v1-services" {
-		t.Fatalf("telegram cloud TTS route = (%q, %q), want OpenRouter with the services key",
-			tg.OpenRouterBaseURL, tg.OpenRouterAPIKey)
+	tg := multimodalConfig(ollamaChatVoiceConfig(), storedServicesKey)
+	if tg.OpenRouterBaseURL != openRouterBaseURL || tg.OpenRouterKey == nil {
+		t.Fatalf("telegram cloud TTS route = (%q, key set %v), want OpenRouter with the services key",
+			tg.OpenRouterBaseURL, tg.OpenRouterKey != nil)
+	}
+	if key, _ := tg.OpenRouterKey(t.Context()); key != "sk-or-v1-services" {
+		t.Fatalf("telegram cloud TTS key = %q, want the services key", key)
 	}
 }
 
@@ -168,7 +173,7 @@ func TestBuildWebTTSClient_LocalRoute(t *testing.T) {
 	defer ts.Close()
 
 	cfg := &config.Config{TTSBaseURL: ts.URL, TTSVoice: "if_sara"} // no TTSModel → local
-	client := buildWebTTSClient(cfg)
+	client := buildWebTTSClient(cfg, nil)
 	if client == nil {
 		t.Fatal("buildWebTTSClient returned nil for a configured local TTSBaseURL")
 	}
@@ -215,7 +220,7 @@ func TestBuildWebSTTClient_LocalRoute(t *testing.T) {
 	defer ts.Close()
 
 	cfg := &config.Config{STTBaseURL: ts.URL, STTModel: "large-v3-turbo", STTLanguage: "it"} // no cloud → local
-	client := buildWebSTTClient(cfg)
+	client := buildWebSTTClient(cfg, nil)
 	if client == nil {
 		t.Fatal("buildWebSTTClient returned nil for a configured local STTBaseURL")
 	}
@@ -250,14 +255,14 @@ func TestBuildWebSTTClient_LocalRoute(t *testing.T) {
 // original cloud-only gating): neither set ⇒ nil (capability absent); a local base URL ⇒
 // a local-routed client; a cloud model ⇒ a cloud-routed client.
 func TestBuildWebSTTClient_Selectable(t *testing.T) {
-	if stt := buildWebSTTClient(&config.Config{}); stt != nil {
+	if stt := buildWebSTTClient(&config.Config{}, nil); stt != nil {
 		t.Fatal("buildWebSTTClient built a client with no base URL and no cloud model (want nil)")
 	}
-	local := buildWebSTTClient(&config.Config{STTBaseURL: "http://aura-stt:9000/v1"})
+	local := buildWebSTTClient(&config.Config{STTBaseURL: "http://aura-stt:9000/v1"}, nil)
 	if local == nil || local.Cloud() {
 		t.Fatalf("STT with a local base URL is not local-routed: nil=%v", local == nil)
 	}
-	cloud := buildWebSTTClient(&config.Config{STTCloudModel: "openai/whisper-large-v3"})
+	cloud := buildWebSTTClient(&config.Config{STTCloudModel: "openai/whisper-large-v3"}, nil)
 	if cloud == nil || !cloud.Cloud() {
 		t.Fatalf("STT with a cloud model is not cloud-routed: nil=%v", cloud == nil)
 	}
@@ -268,11 +273,11 @@ func TestBuildWebSTTClient_Selectable(t *testing.T) {
 // the capabilities endpoint reports {false,false} (never 503).
 func TestWireVoiceProviders_Degraded(t *testing.T) {
 	cfg := &config.Config{} // no base URLs, no cloud models
-	if buildWebTTSClient(cfg) != nil || buildWebSTTClient(cfg) != nil {
+	if buildWebTTSClient(cfg, nil) != nil || buildWebSTTClient(cfg, nil) != nil {
 		t.Fatal("voice clients built despite no base URL and no cloud model (want nil/nil)")
 	}
 	srv := agui.NewServer(nil, nil, agui.ServerConfig{})
-	wireVoiceProviders(srv, cfg)
+	wireVoiceProviders(srv, cfg, nil)
 	if tts, stt := voiceCaps(t, srv); tts || stt {
 		t.Fatalf("degraded caps = {tts:%v stt:%v}, want {false,false}", tts, stt)
 	}
@@ -300,7 +305,7 @@ func TestWireVoiceProviders_Branches(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := agui.NewServer(nil, nil, agui.ServerConfig{})
-			wireVoiceProviders(srv, tc.cfg)
+			wireVoiceProviders(srv, tc.cfg, nil)
 			tts, stt := voiceCaps(t, srv)
 			if tts != tc.wantTTS || stt != tc.wantSTT {
 				t.Fatalf("caps = {tts:%v stt:%v}, want {tts:%v stt:%v}", tts, stt, tc.wantTTS, tc.wantSTT)

@@ -31,8 +31,9 @@ const (
 
 func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
 	docProcessor := &assets.DocumentProcessor{}
-	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg))
-	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg))
+	creds := serviceCredentials(cfg, pool)
+	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg, creds))
+	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg, creds))
 	svc := &assets.Service{
 		Store:          assets.NewStore(pool),
 		Objects:        objectStore,
@@ -178,16 +179,20 @@ func newCachingPerIdentityStoreFactory(cfg *config.Config) assets.StoreFactory {
 
 // visionConfigFrom resolves the image route once at boot, which is the lifetime the
 // primary-route settings already have: changing them is an appliedRestart key, so a
-// snapshot here cannot drift from what the running process is using.
-func visionConfigFrom(cfg *config.Config) multimodal.VisionConfig {
+// snapshot here cannot drift from what the running process is using. The primary route is
+// sent the services key only when it is OpenRouter; the key itself is read per request.
+func visionConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.VisionConfig {
 	ctx, cancel := context.WithTimeout(context.Background(), visionCapabilityTimeout)
 	defer cancel()
 	source := llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL)
-	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source))
+	primaryKey := func(ctx context.Context) (string, error) {
+		return creds.PrimaryRouteKey(ctx, cfg.LLM.Provider, cfg.LLM.BaseURL)
+	}
+	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source), primaryKey)
 }
 
-func sttConfigFrom(cfg *config.Config) multimodal.STTConfig {
-	return multimodal.STTConfigFrom(cfg)
+func sttConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.STTConfig {
+	return multimodal.STTConfigFrom(cfg, creds.ServicesKey)
 }
 
 // assetMaxVideoBytesFor resolves assets.Limits.MaxVideoBytes at boot, over a settings store

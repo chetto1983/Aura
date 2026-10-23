@@ -72,7 +72,7 @@ func TestTTSCloudModelAndBearer(t *testing.T) {
 		Voice:             "if_sara",
 		CloudVoice:        "af_sarah",
 		OpenRouterBaseURL: srv.URL,
-		OpenRouterAPIKey:  "shared-key",
+		OpenRouterKey:     staticKey("shared-key"),
 		HTTPClient:        srv.Client(),
 	})
 	if _, err := c.Synthesize(t.Context(), "hi"); err != nil {

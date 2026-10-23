@@ -34,9 +34,9 @@ import (
 // typed-nil *multimodal.TTSClient), so s.tts != nil / s.stt != nil report presence
 // correctly rather than wrapping a nil pointer in a non-nil interface (the typed-nil
 // footgun that would make a capability report true and then panic on the first call).
-func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
-	tts := buildWebTTSClient(cfg)
-	stt := buildWebSTTClient(cfg)
+func wireVoiceProviders(server *agui.Server, cfg *config.Config, servicesKey multimodal.KeyFunc) {
+	tts := buildWebTTSClient(cfg, servicesKey)
+	stt := buildWebSTTClient(cfg, servicesKey)
 	switch {
 	case tts == nil && stt == nil:
 		return
@@ -52,11 +52,11 @@ func wireVoiceProviders(server *agui.Server, cfg *config.Config) {
 // buildWebTTSClient builds the DEDICATED mp3 web TTS client (D-02): Format="mp3" (the
 // web override — distinct from Telegram's opus client, which multimodalConfig leaves at
 // cfg.TTSFormat). Local↔cloud SELECTABLE: the aura-tts Kokoro sidecar is the default, and
-// cfg.TTSModel switches it to OpenRouter with the services key, whatever route the chat runs
-// on (config.SpeechCloudRoute). Returns nil only when NEITHER a local base URL NOR a cloud
+// cfg.TTSModel switches it to OpenRouter with servicesKey, whatever route the chat runs
+// on (multimodal.TTSConfigFrom). Returns nil only when NEITHER a local base URL NOR a cloud
 // model is set, so the caller leaves the tts capability absent.
-func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
-	voiceCfg := multimodal.TTSConfigFrom(cfg, "mp3")
+func buildWebTTSClient(cfg *config.Config, servicesKey multimodal.KeyFunc) *multimodal.TTSClient {
+	voiceCfg := multimodal.TTSConfigFrom(cfg, "mp3", servicesKey)
 	if !voiceCfg.Configured() {
 		return nil
 	}
@@ -67,8 +67,8 @@ func buildWebTTSClient(cfg *config.Config) *multimodal.TTSClient {
 // uses: the aura-stt faster-whisper sidecar by default, OpenRouter's JSON transcription route
 // once cfg.STTCloudModel is set. Returns nil only when NEITHER a local base URL NOR a cloud
 // model is set, leaving the stt capability absent.
-func buildWebSTTClient(cfg *config.Config) *multimodal.STTClient {
-	voiceCfg := multimodal.STTConfigFrom(cfg)
+func buildWebSTTClient(cfg *config.Config, servicesKey multimodal.KeyFunc) *multimodal.STTClient {
+	voiceCfg := multimodal.STTConfigFrom(cfg, servicesKey)
 	if !voiceCfg.Configured() {
 		return nil
 	}

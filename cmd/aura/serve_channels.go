@@ -35,6 +35,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
+	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
@@ -84,7 +85,7 @@ func buildTelegramDeps(chat *chatEnv, tgCfg telegram.Config) telegram.Deps {
 		Token:             tgCfg.BotToken,
 		Store:             telegram.New(chat.pool),
 		Profile:           onboarding.NewProfileStore(chat.pool),
-		Multimodal:        multimodalConfig(chat.cfg),
+		Multimodal:        multimodalConfig(chat.cfg, chat.credentials.ServicesKey),
 		Assets:            chat.assets,
 		Search:            chat.conv,
 		Cost:              newTodayCost(chat.pool),
@@ -130,8 +131,8 @@ func telegramSteerOrNil(inbox *steer.PostgresStore) telegram.SteerPusher {
 
 // multimodalConfig projects the central config.Config TTS knobs onto the
 // telegram-package MultimodalConfig the outbound voice-note path reads. The cloud
-// leg is OpenRouter with the services key whatever route the chat runs on
-// (config.SpeechCloudRoute); the local leg reads the upstream-named sidecar URL. This is the
+// leg is OpenRouter with servicesKey whatever route the chat runs on
+// (multimodal.TTSConfigFrom); the local leg reads the upstream-named sidecar URL. This is the
 // serve-side mapper — it lives here (cmd/aura imports both packages) so the telegram
 // package stays free of an internal/config import (the sidecar.go contract).
 //
@@ -139,17 +140,17 @@ func telegramSteerOrNil(inbox *steer.PostgresStore) telegram.SteerPusher {
 // ingested as assets, and internal/assets is wired with its own vision/STT config by
 // buildAssetService. Projecting them here too would recreate the second pipeline
 // this channel just stopped being.
-func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
-	cloudBase, cloudKey := cfg.SpeechCloudRoute()
+func multimodalConfig(cfg *config.Config, servicesKey multimodal.KeyFunc) telegram.MultimodalConfig {
+	voice := multimodal.TTSConfigFrom(cfg, cfg.TTSFormat, servicesKey)
 	return telegram.MultimodalConfig{
-		OpenRouterBaseURL: cloudBase,
-		OpenRouterAPIKey:  cloudKey,
-		TTSBaseURL:        cfg.TTSBaseURL,
-		TTSVoice:          cfg.TTSVoice,
-		TTSFormat:         cfg.TTSFormat,
-		TTSModel:          cfg.TTSModel,
-		TTSCloudVoice:     cfg.TTSCloudVoice,
-		TimeoutSec:        cfg.MultimodalTimeoutSec,
+		OpenRouterBaseURL: voice.OpenRouterBaseURL,
+		OpenRouterKey:     voice.OpenRouterKey,
+		TTSBaseURL:        voice.LocalBaseURL,
+		TTSVoice:          voice.Voice,
+		TTSFormat:         voice.Format,
+		TTSModel:          voice.CloudModel,
+		TTSCloudVoice:     voice.CloudVoice,
+		TimeoutSec:        voice.TimeoutSec,
 	}
 }
 

@@ -5,9 +5,8 @@
 // (internal/assets). Each modality is a thin stdlib net/http POST + decode with
 // ONE config-only local↔cloud swap (D-28): unset cloud model → the local sidecar
 // (no auth); set a cloud model → the shared OpenRouter endpoint authenticated
-// with the SINGLE OPENROUTER_API_KEY every cloud backend reuses. The Bearer key
-// is set ONLY on the Authorization header at request-build time, never logged or
-// serialized.
+// with the services key, read per request (KeyFunc). The Bearer key is set ONLY
+// on the Authorization header at request-build time, never logged or serialized.
 //
 // This package owns the wire format and the credential boundary; callers own
 // their own I/O (telebot file download + retry + sendVoice; objectstore Get +
@@ -20,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -75,6 +75,23 @@ func resolveClient(c *http.Client) *http.Client {
 		return c
 	}
 	return HTTPClient()
+}
+
+// KeyFunc reads a cloud route's key when a request needs it, so a key replaced in the cockpit
+// reaches a client built at boot. nil sends no key. An error is the store failing, never a
+// missing key, and fails the request before anything is sent.
+type KeyFunc func(ctx context.Context) (string, error)
+
+// readKey is key's current answer, "" when key is nil.
+func readKey(ctx context.Context, key KeyFunc) (string, error) {
+	if key == nil {
+		return "", nil
+	}
+	value, err := key(ctx)
+	if err != nil {
+		return "", fmt.Errorf("credential: %w", err)
+	}
+	return strings.TrimSpace(value), nil
 }
 
 // setBearer sets the Authorization header ONLY when apiKey is non-empty (the

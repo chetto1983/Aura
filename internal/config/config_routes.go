@@ -10,16 +10,6 @@ import (
 // local↔cloud swap (D-28). Split out of config.go to keep that file under the
 // 600-LOC cap (CLAUDE.md §No god class).
 
-// SpeechCloudRoute is where cloud speech-to-text and text-to-speech run: OpenRouter itself,
-// with the single OPENROUTER_API_KEY, never the chat LLM's base. Found by code reading on
-// 2026-09-27: the cloud speech clients were built on the chat base URL, so with the chat on
-// Ollama they would post /audio/* to the Ollama server with the OpenRouter key in the
-// Authorization header -- the embedding route's defect of 2026-09-23 in the two other cloud
-// backends.
-func (c *Config) SpeechCloudRoute() (baseURL, apiKey string) {
-	return llm.DefaultBaseURL, c.LLM.APIKey
-}
-
 // ResolveEmbedRoute resolves the embeddings endpoint as a ONE-knob local↔cloud swap (D-28),
 // the same shape STT and TTS already use: the cloud MODEL is the switch, and the local
 // base is never a candidate for the cloud route. Empty model means the local sidecar at

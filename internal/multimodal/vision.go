@@ -20,8 +20,8 @@ var ErrNoVisionRoute = errors.New("vision: no route accepts images")
 // VisionConfig selects the image-analysis route from what the models can actually
 // do, not from a switch. PrimaryAcceptsImages is the resolved answer of the model's
 // own card or capability probe (llm.ContentCapabilitySource): when it is true the
-// operator-selected Model reads the image at PrimaryBaseURL, otherwise the local
-// aura-ocr-vl sidecar (LocalBaseURL/LocalModel, no auth) does.
+// operator-selected Model reads the image at PrimaryBaseURL with PrimaryKey's answer, otherwise
+// the local aura-ocr-vl sidecar (LocalBaseURL/LocalModel, no auth) does.
 //
 // It is resolved upstream, not here, so route() stays a pure config branch that
 // issues no I/O (Pitfall 6 / #60). Both arms speak OpenAI /chat/completions, so the
@@ -33,7 +33,7 @@ type VisionConfig struct {
 	LocalBaseURL         string
 	LocalModel           string
 	PrimaryBaseURL       string
-	PrimaryAPIKey        string
+	PrimaryKey           KeyFunc
 	TimeoutSec           int
 	HTTPClient           *http.Client // optional; nil → a fresh shared client
 }
@@ -83,9 +83,15 @@ type visionChatResponse struct {
 // and prompt to the vision route, returning the description text. An empty base
 // URL is a configuration error; a non-2xx response is a *StatusError.
 func (c *VisionClient) Describe(ctx context.Context, imageBytes []byte, mimeType, prompt string) (string, error) {
-	baseURL, apiKey, model, ok := c.route()
+	baseURL, keyFunc, model, ok := c.route()
 	if !ok {
 		return "", ErrNoVisionRoute
+	}
+	reqCtx, cancel := TimeoutContext(ctx, c.cfg.TimeoutSec)
+	defer cancel()
+	apiKey, err := readKey(reqCtx, keyFunc)
+	if err != nil {
+		return "", fmt.Errorf("vision: %w", err)
 	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
@@ -105,8 +111,6 @@ func (c *VisionClient) Describe(ctx context.Context, imageBytes []byte, mimeType
 		return "", err
 	}
 
-	reqCtx, cancel := TimeoutContext(ctx, c.cfg.TimeoutSec)
-	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return "", err
@@ -140,13 +144,14 @@ func (c *VisionClient) VisionModel() string {
 }
 
 // route is the SINGLE config-only vision branch (Pitfall 6 / #60). ok is false when
-// neither arm can see an image, which is ErrNoVisionRoute rather than a failed call.
-func (c *VisionClient) route() (baseURL, apiKey, model string, ok bool) {
+// neither arm can see an image, which is ErrNoVisionRoute rather than a failed call. It
+// names the key's reader, not the key: reading it is I/O, done with the request.
+func (c *VisionClient) route() (baseURL string, key KeyFunc, model string, ok bool) {
 	if c.cfg.PrimaryAcceptsImages && c.cfg.PrimaryBaseURL != "" {
-		return c.cfg.PrimaryBaseURL, c.cfg.PrimaryAPIKey, c.cfg.Model, true
+		return c.cfg.PrimaryBaseURL, c.cfg.PrimaryKey, c.cfg.Model, true
 	}
 	if c.cfg.LocalBaseURL != "" {
-		return c.cfg.LocalBaseURL, "", c.cfg.LocalModel, true
+		return c.cfg.LocalBaseURL, nil, c.cfg.LocalModel, true
 	}
-	return "", "", "", false
+	return "", nil, "", false
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -12,7 +13,7 @@ import (
 // text is POSTed to the local aura-tts (Kokoro) sidecar at
 // LocalBaseURL+"/audio/speech" (no model id — Kokoro is single-model and selects
 // the voice via the Voice field, no auth). Set CloudModel to swap to OpenRouter's
-// /audio/speech with the shared Bearer key + the cloud model id and its own CloudVoice.
+// /audio/speech with the services key as Bearer + the cloud model id and its own CloudVoice.
 // OpenRouter requires a model-specific voice (the catalogue's supported_voices); see
 // https://openrouter.ai/docs/guides/overview/multimodal/tts. Both arms speak
 // OpenAI /audio/speech, so the base already carries any version segment and only
@@ -24,7 +25,7 @@ type TTSConfig struct {
 	CloudModel        string
 	CloudVoice        string
 	OpenRouterBaseURL string
-	OpenRouterAPIKey  string
+	OpenRouterKey     KeyFunc
 	TimeoutSec        int
 	HTTPClient        *http.Client // optional; nil → a fresh shared client
 }
@@ -71,7 +72,11 @@ func (c *TTSClient) Synthesize(ctx context.Context, text string) ([]byte, error)
 	reqCtx, cancel := TimeoutContext(ctx, c.cfg.TimeoutSec)
 	defer cancel()
 
-	baseURL, apiKey, model := c.route()
+	baseURL, keyFunc, model := c.route()
+	apiKey, err := readKey(reqCtx, keyFunc)
+	if err != nil {
+		return nil, fmt.Errorf("tts: %w", err)
+	}
 	body, err := json.Marshal(ttsRequest{
 		Model:          model,
 		Input:          text,
@@ -112,10 +117,11 @@ func (c *TTSClient) voice(cloudModel string) string {
 }
 
 // route is the SINGLE config-only TTS branch. Cloud (CloudModel set) → OpenRouter
-// with the shared key + model; local → the aura-tts sidecar, no key, no model.
-func (c *TTSClient) route() (baseURL, apiKey, model string) {
+// with the services key + model; local → the aura-tts sidecar, no key, no model. It
+// names the key's reader, not the key: reading it is I/O, done with the request.
+func (c *TTSClient) route() (baseURL string, key KeyFunc, model string) {
 	if c.cfg.CloudModel != "" {
-		return c.cfg.OpenRouterBaseURL, c.cfg.OpenRouterAPIKey, c.cfg.CloudModel
+		return c.cfg.OpenRouterBaseURL, c.cfg.OpenRouterKey, c.cfg.CloudModel
 	}
-	return c.cfg.LocalBaseURL, "", ""
+	return c.cfg.LocalBaseURL, nil, ""
 }

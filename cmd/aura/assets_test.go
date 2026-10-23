@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/mediagen"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 func TestBuildObjectStoreBackends(t *testing.T) {
@@ -88,7 +89,6 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 		LLM: llmpkg.Config{
 			Model:   "deepseek/deepseek-v4-flash",
 			BaseURL: "http://openrouter.test/api/v1",
-			APIKey:  "test-key",
 		},
 	}
 	objects := objectstore.NewFake()
@@ -135,12 +135,11 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	// the cfg -> multimodal.VisionConfig projection directly (the wiring under test).
 	// The capability is passed in rather than probed: visionConfigFrom resolves it from
 	// the live model card, which is not a thing a unit test should reach for.
-	vcfg := multimodal.VisionConfigFrom(cfg, true)
+	vcfg := multimodal.VisionConfigFrom(cfg, true, nil)
 	if !vcfg.PrimaryAcceptsImages || vcfg.Model != "deepseek/deepseek-v4-flash" ||
 		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
 		vcfg.LocalModel != "glm-ocr" ||
 		vcfg.PrimaryBaseURL != "http://openrouter.test/api/v1" ||
-		vcfg.PrimaryAPIKey != "test-key" ||
 		vcfg.TimeoutSec != 7 {
 		t.Fatalf("vision config = %+v, want projected vision config", vcfg)
 	}
@@ -152,14 +151,17 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 		t.Fatalf("audio processor object store = %T, want shared fake store", audio.Objects)
 	}
 	// Unlike vision, which reads the image with the primary model on the chat route, cloud STT
-	// runs on OpenRouter itself whatever the chat base is (config.SpeechCloudRoute).
-	scfg := sttConfigFrom(cfg)
+	// runs on OpenRouter itself whatever the chat base is, with the stored services key.
+	creds, _ := storedCredentials(map[string]string{settings.ServicesKeySetting: "test-key"})
+	scfg := sttConfigFrom(cfg, creds)
 	if scfg.LocalBaseURL != "http://stt.test/v1" ||
 		scfg.LocalModel != "large-v3-turbo" ||
 		scfg.Language != "it" ||
 		scfg.OpenRouterBaseURL != openRouterBaseURL ||
-		scfg.OpenRouterAPIKey != "test-key" ||
 		scfg.TimeoutSec != 7 {
 		t.Fatalf("stt config = %+v, want projected STT config", scfg)
+	}
+	if key, err := scfg.OpenRouterKey(t.Context()); err != nil || key != "test-key" {
+		t.Fatalf("stt key = %q, %v, want the stored services key", key, err)
 	}
 }

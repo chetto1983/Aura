@@ -75,7 +75,7 @@ func TestVisionPrefersPrimaryModelWhenItAcceptsImages(t *testing.T) {
 		PrimaryAcceptsImages: true,
 		Model:                "gemma4:31b-cloud",
 		PrimaryBaseURL:       srv.URL,
-		PrimaryAPIKey:        "shared-key",
+		PrimaryKey:           staticKey("shared-key"),
 		LocalBaseURL:         "http://aura-ocr-vl:8082/v1",
 		LocalModel:           "glm-ocr",
 		HTTPClient:           srv.Client(),
@@ -109,7 +109,7 @@ func TestVisionFallsBackToSidecarWhenPrimaryRejectsImages(t *testing.T) {
 		PrimaryAcceptsImages: false,
 		Model:                "z-ai/glm-5.3",
 		PrimaryBaseURL:       "https://openrouter.ai/api/v1",
-		PrimaryAPIKey:        "shared-key",
+		PrimaryKey:           staticKey("shared-key"),
 		LocalBaseURL:         srv.URL,
 		LocalModel:           "glm-ocr",
 		HTTPClient:           srv.Client(),
@@ -132,7 +132,7 @@ func TestVisionReportsNoRouteWhenNeitherArmCanSeeImages(t *testing.T) {
 		PrimaryAcceptsImages: false,
 		Model:                "z-ai/glm-5.3",
 		PrimaryBaseURL:       "https://openrouter.ai/api/v1",
-		PrimaryAPIKey:        "shared-key",
+		PrimaryKey:           staticKey("shared-key"),
 	})
 	_, err := c.Describe(t.Context(), []byte("img"), "image/png", "x")
 	if !errors.Is(err, ErrNoVisionRoute) {

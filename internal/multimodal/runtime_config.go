@@ -27,47 +27,49 @@ func PrimaryAcceptsImages(ctx context.Context, source llm.ContentCapabilitySourc
 
 // VisionConfigFrom projects Aura's canonical runtime settings onto the shared client.
 // primaryAcceptsImages is resolved by the caller (PrimaryAcceptsImages) so this stays
-// a pure projection and the vision route issues no I/O to decide where to go.
-func VisionConfigFrom(cfg *config.Config, primaryAcceptsImages bool) VisionConfig {
+// a pure projection and the vision route issues no I/O to decide where to go. primaryKey
+// is the key the primary chat route is sent: the services key on OpenRouter, none elsewhere
+// (settings.Credentials.PrimaryRouteKey).
+func VisionConfigFrom(cfg *config.Config, primaryAcceptsImages bool, primaryKey KeyFunc) VisionConfig {
 	return VisionConfig{
 		PrimaryAcceptsImages: primaryAcceptsImages,
 		Model:                cfg.LLM.Model,
 		LocalBaseURL:         cfg.MultimodalBaseURL,
 		LocalModel:           cfg.MultimodalModel,
 		PrimaryBaseURL:       cfg.LLM.BaseURL,
-		PrimaryAPIKey:        cfg.LLM.APIKey,
+		PrimaryKey:           primaryKey,
 		TimeoutSec:           cfg.MultimodalTimeoutSec,
 	}
 }
 
 // STTConfigFrom projects Aura's canonical runtime settings onto the shared client. The cloud
-// leg is OpenRouter whatever the chat route is (config.SpeechCloudRoute).
-func STTConfigFrom(cfg *config.Config) STTConfig {
-	cloudBase, cloudKey := cfg.SpeechCloudRoute()
+// leg is OpenRouter itself with servicesKey, whatever host the chat runs on: found by code
+// reading on 2026-09-27, the cloud speech clients were built on the chat base URL and, with the
+// chat on Ollama, would have posted /audio/* to Ollama with the OpenRouter key.
+func STTConfigFrom(cfg *config.Config, servicesKey KeyFunc) STTConfig {
 	return STTConfig{
 		LocalBaseURL:      cfg.STTBaseURL,
 		LocalModel:        cfg.STTModel,
 		Language:          cfg.STTLanguage,
 		CloudModel:        cfg.STTCloudModel,
-		OpenRouterBaseURL: cloudBase,
-		OpenRouterAPIKey:  cloudKey,
+		OpenRouterBaseURL: llm.DefaultBaseURL,
+		OpenRouterKey:     servicesKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }
 
 // TTSConfigFrom projects Aura's canonical runtime settings onto the shared client, in the
-// container format the caller delivers. The cloud leg is OpenRouter whatever the chat route is
-// (config.SpeechCloudRoute).
-func TTSConfigFrom(cfg *config.Config, format string) TTSConfig {
-	cloudBase, cloudKey := cfg.SpeechCloudRoute()
+// container format the caller delivers. The cloud leg is OpenRouter itself with servicesKey,
+// as STTConfigFrom's is.
+func TTSConfigFrom(cfg *config.Config, format string, servicesKey KeyFunc) TTSConfig {
 	return TTSConfig{
 		LocalBaseURL:      cfg.TTSBaseURL,
 		Voice:             cfg.TTSVoice,
 		Format:            format,
 		CloudModel:        cfg.TTSModel,
 		CloudVoice:        cfg.TTSCloudVoice,
-		OpenRouterBaseURL: cloudBase,
-		OpenRouterAPIKey:  cloudKey,
+		OpenRouterBaseURL: llm.DefaultBaseURL,
+		OpenRouterKey:     servicesKey,
 		TimeoutSec:        cfg.MultimodalTimeoutSec,
 	}
 }

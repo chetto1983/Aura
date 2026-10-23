@@ -89,7 +89,7 @@ func TestSTTCloudJSONInputAudio(t *testing.T) {
 		CloudModel:        "google/chirp-3",
 		Language:          "it",
 		OpenRouterBaseURL: srv.URL,
-		OpenRouterAPIKey:  "shared-key",
+		OpenRouterKey:     staticKey("shared-key"),
 		HTTPClient:        srv.Client(),
 	})
 	if !c.Cloud() {

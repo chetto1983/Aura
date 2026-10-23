@@ -15,7 +15,7 @@ import (
 // sidecar at LocalBaseURL+"/audio/transcriptions" (LocalModel + Language fields,
 // no auth) — faster-whisper decodes Opus inline (no ffmpeg, spike-027). Set
 // CloudModel to swap to OpenRouter, which REJECTS multipart: the cloud arm sends
-// JSON {model, input_audio:{data:<base64>, format}} + the shared Bearer key.
+// JSON {model, input_audio:{data:<base64>, format}} + the services key as Bearer.
 // LocalModel stays the local model id; it is NOT the cloud switch.
 type STTConfig struct {
 	LocalBaseURL      string
@@ -23,7 +23,7 @@ type STTConfig struct {
 	Language          string
 	CloudModel        string
 	OpenRouterBaseURL string
-	OpenRouterAPIKey  string
+	OpenRouterKey     KeyFunc
 	TimeoutSec        int
 	HTTPClient        *http.Client // optional; nil → a fresh shared client
 }
@@ -112,6 +112,10 @@ func (c *STTClient) buildCloudRequest(ctx context.Context, audio []byte, format 
 	if format == "" {
 		format = "ogg"
 	}
+	key, err := readKey(ctx, c.cfg.OpenRouterKey)
+	if err != nil {
+		return nil, fmt.Errorf("stt: %w", err)
+	}
 	body, err := json.Marshal(sttCloudRequest{
 		Model: c.cfg.CloudModel,
 		InputAudio: sttInputAudio{
@@ -129,7 +133,7 @@ func (c *STTClient) buildCloudRequest(ctx context.Context, audio []byte, format 
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	setBearer(req, c.cfg.OpenRouterAPIKey)
+	setBearer(req, key)
 	return req, nil
 }
 
