@@ -10,6 +10,11 @@ Step 7 was measured on 2026-10-23 on d46cedab6 (`verification/2026-10-23-documen
   extractor's proposals are 14/14 since 2fa2df738.
 - **Why.** The two tag questions fail because the agent never sees the operator's tag list. How it
   learns the lists is the operator's decision, before the next run.
+- **Closed by the operator's decision, 2026-10-23.**
+  - The lists landed in plan `2026-10-23-document-search-lists.md`, up to 489815bf7.
+  - The operator replaced the scored re-run with the agent's own check of its tools ("non serve fare
+    25 domande"). Its record is `verification/2026-10-23-document-search-lists-lab-vm.md`.
+  - The agent reports the frictions resolved, with four residuals. No 9.8 score was produced.
 The operator approved the spec, decision 2 included ("Approvata, scrivi il piano").
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development

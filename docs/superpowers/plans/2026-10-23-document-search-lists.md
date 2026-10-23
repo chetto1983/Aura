@@ -1,9 +1,12 @@
 # Document search lists Implementation Plan
 
-**Status (2026-10-23):**
-- Tasks 1 and 2 are done.
-- Tasks 2b and 2c were added the same day. Aura's agent tested its tools on the lab VM, and the
-  operator decided on two of the frictions it reported ("Query facoltativa", "Sì, nomi e stato").
+**Status (2026-10-23):** COMPLETE.
+- Tasks 1, 2, 2b and 2c landed in d9a726414..489815bf7, after two whole-branch reviews whose findings
+  were fixed.
+- Task 3 was measured on the lab VM on 489815bf7 (`verification/2026-10-23-document-search-lists-lab-vm.md`).
+  - Aura's agent reports the frictions resolved, with four residuals: paging past `limit`, unlabelled
+    count scopes, listing known ids, and unselective closest names.
+  - No 9.8 score was produced. The operator replaced the scored run with the agent's check.
 - Spec §5 is amended twice.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or

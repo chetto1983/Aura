@@ -2065,8 +2065,24 @@ The operator decided two of them:
 - **Every result names each document's type, counterparty, date and tags**, each marked
   reviewed or suggested.
 
-The floors are out of this slice. Not yet measured: the agent's report on the build that
-carries all of it.
+The floors are out of this slice.
+
+**Measured on build `489815bf7` the same day.** The operator's conversation was continued.
+- **Four frictions resolved, one improved.** The `all` bug, the list without a query and the
+  per-document fields are resolved; tag discovery is much improved. The agent found no
+  regression.
+- **Four residuals, none a wrong result:**
+  - no paging past `limit`;
+  - three counts with unlabelled scopes;
+  - known ids cannot be listed without a query;
+  - closest names that are not selective.
+- **The floors friction is still there.**
+- **What it does not show:**
+  - no 9.8 score, and the 23 passing questions were not re-run;
+  - f20 and f21 were not exercised, because the library holds a single tag;
+  - one model.
+
+Record: `docs/superpowers/verification/2026-10-23-document-search-lists-lab-vm.md`.
 
 ## 12. Workspace, shell and web
 
