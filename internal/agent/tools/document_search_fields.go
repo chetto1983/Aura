@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/arcadedb"
@@ -11,10 +12,12 @@ import (
 )
 
 // DocumentFieldFilters is what document_search needs of the document fields: the label ids behind
-// the names it is given, and how many documents each filter admits. *docfields.Store in production.
+// the names it is given, how many documents each filter admits, and the types and tags the library
+// holds. *docfields.Store in production.
 type DocumentFieldFilters interface {
 	ResolveNames(ctx context.Context, identityID string, kind docfields.Kind, names []string) ([]string, map[string][]string, error)
 	Admissions(ctx context.Context, identityID string, f arcadedb.FieldFilter) ([]arcadedb.FieldAdmission, error)
+	LibraryLists(ctx context.Context, identityID string) (docfields.LibraryLists, error)
 }
 
 // documentFieldArgs are the filters by the fields the operator keeps on documents (spec decision
@@ -113,6 +116,20 @@ func (t *DocumentSearch) fieldFilter(ctx context.Context, identityID string, arg
 		}
 	}
 	return &filter, ordered, nil
+}
+
+// libraryLists names the library's types and tags for the result. A list that cannot be read is
+// left out rather than failing a search that can still answer.
+func (t *DocumentSearch) libraryLists(ctx context.Context, identityID string) *docfields.LibraryLists {
+	if t.Fields == nil {
+		return nil
+	}
+	lists, err := t.Fields.LibraryLists(ctx, identityID)
+	if err != nil {
+		slog.Warn("document_search: library lists unavailable", "err", err)
+		return nil
+	}
+	return &lists
 }
 
 // admitsNothing reports a filter no document passes: searching under it can only come back empty.

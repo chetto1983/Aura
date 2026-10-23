@@ -134,13 +134,17 @@ the agent can filter by a tag the operator's words do not spell.
   policy only where a pinned denominator moved.
 - [ ] **Step 2: Push** with the CLAUDE.md recipe. CI, Skills, CodeQL and the edge image must be green on the
   SHA; the VM's updater applies it.
-- [ ] **Step 3: Run step 7 again** on the lab VM, by the protocol of
-  `2026-10-23-document-fields-lab-vm.md`:
-  - upload the 23 files, review them as declared, and record the extractor proposals;
-  - run the 25 questions through `POST /agent/run`, then score them.
+- [ ] **Step 3: Ask Aura's agent on the lab VM.** The operator's instruction (2026-10-23): no 25-question
+  run. Aura's agent is capable, so ask it.
+  - Upload the step-7 files through the cockpit and review them as declared, so the library holds types
+    and tags.
+  - Through `POST /agent/run`, ask the agent to work with `document_search`, including the questions
+    f20 ("i documenti interni") and f21 ("la bozza interna").
+  - Ask it to say whether its document tools serve it well, and where it finds friction.
 
-  Expected: above 9.8, with `f20` and `f21` passing `tags`. Then delete the 23 files, the labels the
-  review created and the conversations.
+  Expected: the agent filters by the `interno` and `bozza` tags it reads from `library_lists`, and its
+  report names no friction about the lists, or names friction to fix. Then delete the files, the labels
+  the review created and the conversations.
 - [ ] **Step 4: Write the verification file**: what was measured, and what it does not show (one model, one
   run). Update the PRD note and both plans' Status lines.
 - [ ] **Step 5: Commit** `docs: document_search lists, measured on the lab VM`, and push.

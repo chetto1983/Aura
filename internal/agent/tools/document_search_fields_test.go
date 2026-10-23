@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +18,12 @@ type fakeFieldFilters struct {
 	lists      map[docfields.Kind]map[string]string
 	admissions map[arcadedb.FieldDimension]arcadedb.FieldAdmission
 	asked      arcadedb.FieldFilter
+	library    docfields.LibraryLists
+	libraryErr error
+}
+
+func (f *fakeFieldFilters) LibraryLists(context.Context, string) (docfields.LibraryLists, error) {
+	return f.library, f.libraryErr
 }
 
 func (f *fakeFieldFilters) ResolveNames(_ context.Context, _ string, kind docfields.Kind, names []string) ([]string, map[string][]string, error) {
@@ -60,6 +67,10 @@ func officeFilters() *fakeFieldFilters {
 			arcadedb.FieldTags:         {Dimension: arcadedb.FieldTags, Admitted: 3, Reviewed: 3},
 			arcadedb.FieldDate:         {Dimension: arcadedb.FieldDate, Admitted: 40, Reviewed: 40},
 		},
+		library: docfields.LibraryLists{
+			Types: []docfields.ListedName{{Name: "Fattura", Documents: 30}},
+			Tags:  []docfields.ListedName{{Name: "interno", Documents: 3}},
+		},
 	}
 }
 
@@ -72,6 +83,7 @@ type filteredSearch struct {
 		RestsOnSuggestions bool                `json:"rests_on_suggestions"`
 		UnknownNames       map[string][]string `json:"unknown_names"`
 	} `json:"filters"`
+	Lists *docfields.LibraryLists `json:"library_lists"`
 }
 
 func runFiltered(t *testing.T, tool *DocumentSearch, raw string) filteredSearch {
@@ -170,4 +182,67 @@ func TestDocumentSearchUnknownNameAbstainsWithTheClosestNames(t *testing.T) {
 	if counterparty.AdmittedDocuments != 0 || !slices.Equal(counterparty.UnknownNames["Acme"], []string{"ACME SpA"}) {
 		t.Fatalf("counterparty report = %+v", counterparty)
 	}
+}
+
+// A plain query names the library's types and tags, so the agent can filter by a tag the
+// operator's words do not spell ("i documenti interni" → interno).
+func TestDocumentSearchNamesTheLibraryLists(t *testing.T) {
+	t.Parallel()
+	library := &fakeLibrary{response: documents.RetrievalResponse{Query: "documenti interni", Documents: []documents.RetrievalDocument{}}}
+	out := runFiltered(t, &DocumentSearch{Library: library, Fields: officeFilters()}, `{"query":"documenti interni"}`)
+	if out.Lists == nil || !slices.Equal(out.Lists.Tags, []docfields.ListedName{{Name: "interno", Documents: 3}}) ||
+		!slices.Equal(out.Lists.Types, []docfields.ListedName{{Name: "Fattura", Documents: 30}}) {
+		t.Fatalf("library_lists = %+v", out.Lists)
+	}
+}
+
+// The abstention on a filter carries the lists too: it is where the agent corrects a name.
+func TestDocumentSearchListsTheLibraryOnAnAbstention(t *testing.T) {
+	t.Parallel()
+	out := runFiltered(t, &DocumentSearch{Library: &fakeLibrary{}, Fields: officeFilters()},
+		`{"query":"documenti interni","tags":["interni"]}`)
+	if !out.Abstained || out.Lists == nil || len(out.Lists.Tags) != 1 {
+		t.Fatalf("abstained %v, library_lists %+v", out.Abstained, out.Lists)
+	}
+}
+
+// Lists that cannot be read never fail the search: the answer comes back without them.
+func TestDocumentSearchAnswersWithoutListsItCannotRead(t *testing.T) {
+	t.Parallel()
+	fields := officeFilters()
+	fields.libraryErr = errors.New("arcadedb: connection refused")
+	library := &fakeLibrary{response: documents.RetrievalResponse{Query: "fatture", Documents: []documents.RetrievalDocument{}}}
+	result, err := (&DocumentSearch{Library: library, Fields: fields}).Execute(toolTestContext(t), json.RawMessage(`{"query":"fatture"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := resultKeys(t, result); slices.Contains(keys, "library_lists") || !slices.Contains(keys, "documents") {
+		t.Fatalf("result keys = %v", keys)
+	}
+}
+
+// With no document fields store there is nothing to list, and the result has no key for it
+// (Review Focus 5).
+func TestDocumentSearchWithoutFieldsCarriesNoLists(t *testing.T) {
+	t.Parallel()
+	result, err := (&DocumentSearch{Library: &fakeLibrary{}}).Execute(toolTestContext(t), json.RawMessage(`{"query":"fatture"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if keys := resultKeys(t, result); slices.Contains(keys, "library_lists") {
+		t.Fatalf("result keys = %v", keys)
+	}
+}
+
+func resultKeys(t *testing.T, result ToolResult) []string {
+	t.Helper()
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(result.Preview), &raw); err != nil {
+		t.Fatalf("result is not JSON (%q): %v", result.Preview, err)
+	}
+	keys := make([]string, 0, len(raw))
+	for key := range raw {
+		keys = append(keys, key)
+	}
+	return keys
 }

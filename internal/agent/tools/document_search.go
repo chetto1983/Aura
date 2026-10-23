@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/docfields"
 	"github.com/chetto1983/aura/internal/documents"
 )
 
@@ -34,10 +35,12 @@ type documentSearchArgs struct {
 	documentFieldArgs
 }
 
-// documentSearchResult is the retrieval answer plus what each field filter did.
+// documentSearchResult is the retrieval answer plus what each field filter did and the lists a
+// filter can name.
 type documentSearchResult struct {
 	documents.RetrievalResponse
-	Filters []documentFilterReport `json:"filters,omitempty"`
+	Filters []documentFilterReport  `json:"filters,omitempty"`
+	Lists   *docfields.LibraryLists `json:"library_lists,omitempty"`
 }
 
 func (t *DocumentSearch) Spec() Spec {
@@ -81,6 +84,9 @@ func (t *DocumentSearch) Spec() Spec {
 			"operator set or accepted. filters in the result says what each admitted, whether a match rests on " +
 			"suggestions, and the closest names on the list when one matched nothing -- correct the name or drop " +
 			"the filter. " +
+			"library_lists in every result names the types and tags the operator's library holds, with how " +
+			"many documents carry each: when the question asks for a kind of document or a quality its words " +
+			"do not spell (internal, draft), filter by the listed name. " +
 			"Files YOU created live under /workspace: read those with read_file/search_files instead. " +
 			"Example: {\"query\":\"customer code for WPT SRL\",\"document_ids\":[\"doc_9f2c\"]}.",
 		Parameters: json.RawMessage(`{
@@ -143,7 +149,7 @@ func (t *DocumentSearch) Execute(ctx context.Context, raw json.RawMessage) (Tool
 			return ToolResult{}, fmt.Errorf("document_search: %w", err)
 		}
 	}
-	out, err := json.Marshal(documentSearchResult{RetrievalResponse: response, Filters: filters})
+	out, err := json.Marshal(documentSearchResult{RetrievalResponse: response, Filters: filters, Lists: t.libraryLists(ctx, owner)})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("document_search: marshal results: %w", err)
 	}
