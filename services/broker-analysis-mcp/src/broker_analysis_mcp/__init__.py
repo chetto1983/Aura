@@ -1,2 +1,1 @@
-def hello() -> str:
-    return "Hello from broker-analysis-mcp!"
+"""Read-only financial analysis MCP server: market data, explained metrics, no orders."""
