@@ -180,6 +180,46 @@ nel report prima di eseguire (`e2e/runs/tsfm_eth_sol_holdout.json`, campo `hypot
   prima origine della finestra recente del 3 ottobre 2024. I contesti dei modelli sì, ma i modelli non
   sono addestrati su questi dati.
 
+### Kronos, 23 ottobre 2026
+
+Kronos (arXiv:2508.02739, codice MIT) è preaddestrato su candele e legge barre OHLCV con le loro date.
+Stesso script e stesso protocollo sulle quattro criptovalute, con le differenze fissate prima della
+prima esecuzione e scritte in testa a `tsfm_eval.py`:
+- campionamento a temperatura 0,9 e top-p 0,9, l'impostazione del paper per la volatilità, con 10
+  traiettorie per origine;
+- volatilità di Garman-Klass delle barre campionate e, come lettura secondaria, varianza delle chiusure
+  campionate;
+- solo origini dopo giugno 2024, la fine del suo preaddestramento. Sulle criptovalute la finestra
+  comincia comunque a ottobre 2024, con 73 origini per serie.
+
+Il campionamento passa da una cache KV, che riproduce i logit di Kronos a meno di 1e-5 ed è da 6,5 a
+13,6 volte più veloce.
+
+| Run | Prezzo a 20 giorni contro drift (t) | Quantili a 20 giorni contro simulazione storica (t) | Volatilità contro EWMA, QLIKE (t) | Copertura dell'intervallo 80%, 5 / 20 giorni |
+| --- | --- | --- | --- | --- |
+| Kronos-mini, 1.024 barre di contesto (`kronos_crypto.json`) | +7,56 (peggio) | +6,99 (peggio) | +0,57 | 65,4% / 43,8% |
+| Kronos-mini, 40 barre, post hoc (`kronos_crypto_ctx40.json`) | +2,19 (peggio) | +4,42 (peggio) | −0,01 | 63,7% / 33,9% |
+| Kronos-small, 40 barre, post hoc | +2,35 (peggio) | +3,61 (peggio) | +0,47 | 56,5% / 31,5% |
+| Simulazione storica (baseline), prima finestra | — | — | — | 79,5% / 77,1% |
+
+- Prezzo e quantili: peggio di tutti i baseline, con t da +2,2 a +7,6. Con 1.024 barre Kronos-mini
+  estrapola la tendenza lunga: in una prova su nove origini di BTC la sua mediana a 20 giorni stava in
+  media il 13,3% sopra l'ultima chiusura, contro un movimento effettivo medio del 5,7% in valore
+  assoluto.
+- Con le 40 barre che il paper usa per i dati giornalieri (Tabella 8), scelte dopo aver visto il
+  risultato e dichiarate post hoc, l'errore sul prezzo scende ma resta peggiore del drift. Gli
+  intervalli si stringono ancora: a 20 giorni coprono un terzo dei casi.
+- Volatilità: con QLIKE non si distingue dall'EWMA (t da −0,01 a +0,57). Letta sulle chiusure campionate
+  è peggio (t da +1,55 a +4,49).
+- Esito: scartato. I run si sono fermati prima di Kronos-base e delle azioni, su richiesta: il primo
+  passaggio bastava a vedere che Kronos non aggiunge nulla ai baseline.
+- Durante i run sono emersi due problemi, corretti in `0f1ee88` prima di registrare risultati:
+  - Kronos-base, con 256 righe per batch, chiedeva 10,5 GB di cache e il kernel ha chiuso il processo;
+  - Kronos-small ha campionato barre con prezzi ≤ 0 su SOL e XRP, e la loro volatilità risultava NaN.
+- Il run a 40 barre è precedente alla correzione, ma non contiene barre di quel tipo, quindi la
+  correzione non lo cambia. Le due finestre differiscono di un giorno: dal 3 o dal 4 ottobre 2024.
+- Non misurati: Kronos-base, le azioni, il fine-tuning.
+
 ## Cosa queste misure non dimostrano
 
 - Che i dati Yahoo siano corretti o stabili: yfinance usa endpoint non ufficiali.
