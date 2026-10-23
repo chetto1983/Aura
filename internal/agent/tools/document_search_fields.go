@@ -50,7 +50,8 @@ type documentFilterReport struct {
 
 // fieldFilter resolves the named filters to label ids and reports, in the order a search applies
 // them, what each admits on its own. A named filter none of whose names is on a list admits
-// nothing, and is reported so rather than dropped: dropping it would widen the search.
+// nothing, and is reported so rather than dropped: dropping it would widen the search. Under
+// tags_mode all, one tag on no list is enough: no document carries it.
 func (t *DocumentSearch) fieldFilter(ctx context.Context, identityID string, args documentFieldArgs) (*arcadedb.FieldFilter, []documentFilterReport, error) {
 	if args.empty() {
 		return nil, nil, nil
@@ -86,6 +87,9 @@ func (t *DocumentSearch) fieldFilter(ctx context.Context, identityID string, arg
 		ids, unknown, err := t.Fields.ResolveNames(ctx, identityID, named.kind, named.names)
 		if err != nil {
 			return nil, nil, err
+		}
+		if named.dimension == arcadedb.FieldTags && filter.TagsAll && len(unknown) > 0 {
+			ids = nil
 		}
 		*named.ids = ids
 		report := &documentFilterReport{Name: string(named.dimension), Values: trimmed(named.names)}

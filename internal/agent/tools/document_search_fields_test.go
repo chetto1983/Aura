@@ -264,3 +264,27 @@ func TestDocumentSearchListsSurviveACutPreview(t *testing.T) {
 		t.Fatalf("truncated %v, preview head %.300q", result.Truncated, result.Preview)
 	}
 }
+
+// Under tags_mode all, a tag on no list admits nothing: no document can carry it. Dropping it
+// would widen the filter to the tags that resolved. Under any, the known tags still search.
+func TestDocumentSearchAllTagsWithAnUnknownOneAdmitsNothing(t *testing.T) {
+	t.Parallel()
+	library := &fakeLibrary{}
+	out := runFiltered(t, &DocumentSearch{Library: library, Fields: officeFilters()},
+		`{"query":"documenti","tags":["urgente","inesistente"],"tags_mode":"all"}`)
+	if library.request.Query != "" {
+		t.Fatal("the library was searched under an all-tags filter naming an unknown tag")
+	}
+	if !out.Abstained || out.AbstentionReason != documents.AbstainedFilterAdmitsNothing {
+		t.Fatalf("response = %+v", out.RetrievalResponse)
+	}
+	if tags := out.Filters[0]; tags.AdmittedDocuments != 0 || tags.UnknownNames["inesistente"] == nil {
+		t.Fatalf("tags report = %+v", tags)
+	}
+
+	library = &fakeLibrary{response: documents.RetrievalResponse{Query: "documenti", Documents: []documents.RetrievalDocument{}}}
+	runFiltered(t, &DocumentSearch{Library: library, Fields: officeFilters()}, `{"query":"documenti","tags":["urgente","inesistente"]}`)
+	if library.request.Fields == nil || !slices.Equal(library.request.Fields.Tags, []string{"l-urgente"}) {
+		t.Fatalf("any-tags search fields = %+v", library.request.Fields)
+	}
+}
