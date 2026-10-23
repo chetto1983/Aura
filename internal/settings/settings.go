@@ -97,6 +97,7 @@ var AllowedKeys = map[string]KeyMeta{
 	"AURA_EMBED_MODEL":                  {Kind: KindString, Label: "Embedding cloud model"},
 	"AURA_EMBED_BASE_URL":               {Kind: KindString, Label: "Embedding base URL"},
 	"AURA_EMBED_CLOUD_BASE_URL":         {Kind: KindString, Label: "Embedding cloud base URL"},
+	"AURA_EMBED_CLOUD_API_KEY":          {Secret: true, Kind: KindString, Label: "Embedding endpoint API key"},
 	"ARCADEDB_TIMEOUT_SECONDS":          {Kind: KindInt, Label: "Memory database timeout (seconds)"},
 	"AURA_MEMORY_QUERY_MAX_RUNES":       {Kind: KindInt, Label: "Memory query character limit"},
 	"AURA_MEMORY_ENTITY_MAX_RUNES":      {Kind: KindInt, Label: "Memory entity character limit"},

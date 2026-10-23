@@ -71,7 +71,8 @@ func TestApplyBootSettingsKeepsTheLocalRouteWithoutAModel(t *testing.T) {
 func TestApplyBootSettingsFailsClosed(t *testing.T) {
 	for name, store := range map[string]*fakeBootSettings{
 		"settings overlay": {listErr: errors.New("postgres unavailable")},
-		"secret read":      {secretErr: errors.New("sealed row unreadable")},
+		"secret read": {rows: []sqlc.AuraSettings{{Key: "AURA_EMBED_MODEL", Value: "vendor/embed"}},
+			secretErr: errors.New("sealed row unreadable")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := applyBootSettings(t.Context(), store); err == nil {

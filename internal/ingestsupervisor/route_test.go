@@ -188,6 +188,36 @@ func TestRouteResolverRefusesAHostedRouteWithoutACredential(t *testing.T) {
 	}
 }
 
+// sealedRows answers each sealed row by its key.
+type sealedRows struct {
+	rows    []sqlc.AuraSettings
+	secrets map[string]string
+}
+
+func (r sealedRows) List(context.Context) ([]sqlc.AuraSettings, error) { return r.rows, nil }
+func (r sealedRows) Secret(_ context.Context, key string) (string, error) {
+	return r.secrets[key], nil
+}
+
+// The services key is OpenRouter's: a manual endpoint without its own key embeds nothing.
+func TestRouteResolverRefusesAManualEndpointWithoutItsKey(t *testing.T) {
+	var reads atomic.Int32
+	catalogue := hostedCatalogue(t, &reads)
+	resolver := &RouteResolver{
+		Store: sealedRows{rows: hostedRows(catalogue.URL, "vendor/embed"),
+			secrets: map[string]string{"OPENROUTER_API_KEY": "services"}},
+		LookupEnv: noEnv, Dimensions: 768, HTTP: catalogue.Client(),
+	}
+
+	_, err := resolver.Resolve(context.Background())
+	if !errors.Is(err, embeddings.ErrNoCredential) {
+		t.Fatalf("Resolve error = %v, want ErrNoCredential", err)
+	}
+	if reads.Load() != 0 {
+		t.Fatal("the services key was taken to a manual endpoint")
+	}
+}
+
 func TestRouteResolverRefusesALocalRouteWithNoBase(t *testing.T) {
 	resolver := &RouteResolver{
 		Store:     routeRows{rows: []sqlc.AuraSettings{{Key: "AURA_EMBED_BASE_URL", Value: ""}}},

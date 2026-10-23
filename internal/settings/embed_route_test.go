@@ -12,11 +12,17 @@ type fakeRouteStore struct {
 	rows      []sqlc.AuraSettings
 	listErr   error
 	secret    string
+	secrets   map[string]string // by key, when set; else secret for every key
 	secretErr error
 }
 
 func (f fakeRouteStore) List(context.Context) ([]sqlc.AuraSettings, error) { return f.rows, f.listErr }
-func (f fakeRouteStore) Secret(context.Context, string) (string, error)    { return f.secret, f.secretErr }
+func (f fakeRouteStore) Secret(_ context.Context, key string) (string, error) {
+	if f.secrets != nil {
+		return f.secrets[key], f.secretErr
+	}
+	return f.secret, f.secretErr
+}
 
 func env(values map[string]string) func(string) (string, bool) {
 	return func(key string) (string, bool) {
@@ -70,7 +76,7 @@ func TestEmbedRouteDistinguishesAnAbsentRowFromAnEmptyOne(t *testing.T) {
 // (cmd/aura applySecretSettings). A deployment whose key lives only in .env must give the
 // processes reading this helper the same credential the daemon embeds with.
 func TestEmbedRouteCredentialFallsBackToTheEnvironmentWithoutASealedKey(t *testing.T) {
-	processEnv := env(map[string]string{"OPENROUTER_API_KEY": " env-key "})
+	processEnv := env(map[string]string{"OPENROUTER_API_KEY": " env-key ", "AURA_EMBED_MODEL": "vendor/embed"})
 
 	_, key, err := EmbedRoute(context.Background(), fakeRouteStore{}, processEnv, "http://default:8081")
 	if err != nil {
@@ -99,10 +105,32 @@ func TestEmbedRouteDefaultsTheLocalBaseOnlyWhenNothingNamesIt(t *testing.T) {
 	}
 }
 
+// A manual endpoint is another provider: the services key would be refused there, or worse,
+// accepted by whoever runs the URL the admin typed.
+func TestEmbedRouteGivesAManualEndpointItsOwnKey(t *testing.T) {
+	rows := []sqlc.AuraSettings{
+		{Key: "AURA_EMBED_MODEL", Value: "mistral-embed"},
+		{Key: "AURA_EMBED_CLOUD_BASE_URL", Value: "https://api.mistral.ai"},
+	}
+	_, key, err := EmbedRoute(context.Background(), fakeRouteStore{rows: rows, secrets: map[string]string{
+		ServicesKeySetting: "services", EmbedEndpointKeySetting: "endpoint",
+	}}, env(nil), "http://default:8081")
+	if err != nil || key != "endpoint" {
+		t.Fatalf("key = %q, %v, want the endpoint's own", key, err)
+	}
+	_, key, err = EmbedRoute(context.Background(), fakeRouteStore{rows: rows, secrets: map[string]string{
+		ServicesKeySetting: "services",
+	}}, env(nil), "http://default:8081")
+	if err != nil || key != "" {
+		t.Fatalf("key = %q, %v, want none rather than the services key", key, err)
+	}
+}
+
 func TestEmbedRouteFailsClosed(t *testing.T) {
+	hosted := []sqlc.AuraSettings{{Key: "AURA_EMBED_MODEL", Value: "vendor/embed"}}
 	for name, store := range map[string]fakeRouteStore{
 		"rows unreadable":   {listErr: errors.New("postgres unavailable")},
-		"secret unreadable": {secretErr: errors.New("sealed row unreadable")},
+		"secret unreadable": {rows: hosted, secretErr: errors.New("sealed row unreadable")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, _, err := EmbedRoute(context.Background(), store, env(nil), "http://default:8081"); err == nil {
