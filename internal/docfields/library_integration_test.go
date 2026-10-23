@@ -74,6 +74,27 @@ func TestLibraryListFiltersSortsAndCounts(t *testing.T) {
 	}
 }
 
+// The lists name what documents hold: Contratto is a type no document holds, and lbl-urgente is a
+// suggestion with no label behind it, so neither is listed.
+func TestLibraryListsNameTypesAndTagsWithCounts(t *testing.T) {
+	s, ctx, id, _ := officeLibrary(t)
+	interno, err := s.SaveLabel(ctx, id, Label{Kind: KindTag, Name: "Interno"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ApplyToDocuments(ctx, id, []string{docID("chat/a.pdf")}, Diff{Set: []Value{{Field: FieldTag, ValueKey: interno.ID}}}); err != nil {
+		t.Fatal(err)
+	}
+	lists, err := s.LibraryLists(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := LibraryLists{Types: []ListedName{{Name: "Fattura", Documents: 2}}, Tags: []ListedName{{Name: "Interno", Documents: 1}}}
+	if !slices.Equal(lists.Types, want.Types) || !slices.Equal(lists.Tags, want.Tags) || lists.OmittedTypes+lists.OmittedTags != 0 {
+		t.Fatalf("lists = %+v, want %+v", lists, want)
+	}
+}
+
 func TestLibraryDocumentDetail(t *testing.T) {
 	s, ctx, id, fattura := officeLibrary(t)
 	detail, err := s.Document(ctx, id, docID("chat/b.xlsx"))
