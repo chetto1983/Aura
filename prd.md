@@ -2019,8 +2019,28 @@ Every `document_search` result now carries `library_lists`:
 
 The tool description stays the same text for every identity, so the prompt cache holds.
 Counterparties are not listed; the question names them. Specified in
-`docs/superpowers/specs/2026-10-18-document-fields-design.md` §5, amended the same day. Not yet
-measured: the re-run of the set on the build that carries it.
+`docs/superpowers/specs/2026-10-18-document-fields-design.md` §5, amended the same day.
+
+**What the agent itself found, the same day.** On build `d46cedab6`, without the lists, the
+operator asked Aura's agent to search by tag and report friction. The agent ran 14 searches on
+the operator's own library and reported five frictions:
+- `tags_mode: all` with an unknown tag dropped the tag and widened the filter. That was a bug,
+  and it is fixed.
+- There was no way to discover the tags. `library_lists` is the answer.
+- "Show me the documents with this tag" went through ranking. A filter that admitted one document
+  returned none, because no passage cleared the floors.
+- The hits did not show their own fields.
+- Passages that were not relevant still came back under `uncalibrated_floors`.
+
+The operator decided two of them:
+- **A search without `query`, with at least one filter, lists the documents the filters
+  admit.** It uses the cockpit's own list: most recently added first, with how many match, and
+  no ranking.
+- **Every result names each document's type, counterparty, date and tags**, each marked
+  reviewed or suggested.
+
+The floors are out of this slice. Not yet measured: the agent's report on the build that
+carries all of it.
 
 ## 12. Workspace, shell and web
 

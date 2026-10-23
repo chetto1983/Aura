@@ -304,6 +304,41 @@ and the operator has not accepted it.
 - **What carries over.** Names travel as JSON data, not as prompt text, and a name that matches
   nothing is dropped, never trusted.
 
+*Amended again 2026-10-23, after the agent's own report.* On the lab VM, the operator asked Aura's
+agent to search by tag and say where it found friction. The run was on build `d46cedab6`, without
+the lists. Three frictions changed the rule.
+
+- **`tags_mode: all` with an unknown tag admits nothing.**
+  - The agent passed `["Cliente", "__tag_test_inesistente__"]` and got the `Cliente` document:
+    the unknown name had been dropped.
+  - No document can carry a tag that is on no list, so the tags filter admits nothing. The
+    search abstains on the filter, with the closest names, as for a filter whose names are all
+    unknown.
+  - Under `any`, the known tags still search.
+- **A search with no `query` lists what the filters admit** (operator's decision, "Query
+  facoltativa").
+  - The ask: "show me the documents tagged Cliente". The filter admitted one document, and the
+    ranked search returned none, because no passage cleared the floors.
+  - Without `query`, and with at least one of type, counterparty, tags or a date bound, the
+    result is the library's own list, the one the cockpit shows (`docfields.Store.List`):
+    - every file type;
+    - most recently added first, up to `limit`;
+    - the run's @-scope applied;
+    - `matching_documents` saying how many there are.
+  - There is no ranking and no floor. Each document is returned without passages, to open.
+  - `document_ids` still needs a `query`: it narrows a search.
+  - With neither a query nor a filter, the call is refused.
+- **Every result names each document's own fields** (operator's decision, "Sì, nomi e stato").
+  - The agent had to compare two searches to tell a reviewed tag from a suggested one.
+  - `document_fields` maps each returned `document_id` to its type, counterparty, document date
+    and tags, by name, each with `reviewed`: true when the operator set or accepted it.
+  - It shows what a filter matches on: a proposed new name (`new:`) and a value whose label is
+    gone are left out, and so are custom fields.
+  - Like `library_lists`, it comes ahead of the passages, so a cut preview keeps it.
+
+Left out of this amendment: the agent also found passages that were not relevant returned under
+`uncalibrated_floors`. The floors are spec §9, measured per embedding space, and not this slice.
+
 The agent filters on the fixed fields and tags only. Custom fields are shown, edited and filtered
 in the cockpit; the agent gets them in a later slice.
 

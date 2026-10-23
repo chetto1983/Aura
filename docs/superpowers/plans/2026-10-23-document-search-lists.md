@@ -1,7 +1,10 @@
 # Document search lists Implementation Plan
 
-**Status (2026-10-23):** written. Spec amended the same day, on the operator's decision ("Nel
-risultato").
+**Status (2026-10-23):**
+- Tasks 1 and 2 are done.
+- Tasks 2b and 2c were added the same day. Aura's agent tested its tools on the lab VM, and the
+  operator decided on two of the frictions it reported ("Query facoltativa", "Sì, nomi e stato").
+- Spec §5 is amended twice.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -122,6 +125,102 @@ the agent can filter by a tag the operator's words do not spell.
     a quality the words do not spell (internal, draft), filter by the listed name."
 - [ ] **Step 4: Run them.** Same command, plus `go test -race ./internal/agent/tools/`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(document_search): every result names the library's types and tags`.
+
+### Task 2b: a search with no query lists what the filters admit
+
+Spec §5, "Amended again 2026-10-23". The operator decided it after the agent's report on the VM.
+
+**Files:**
+- Modify: `internal/arcadedb/document_retrieval.go`: `candidateWhere` builds its scope clause with
+  the new exported `SourcePredicate`.
+- Modify: `internal/docfields/library.go`:
+  - `ListQuery.SourcePrefixes`;
+  - the facet count extracted, so `LibraryLists` stops reading a page it throws away (review
+    minor 2, fixed on touch).
+- Modify: `internal/docfields/library_search.go`: the scope clause through `arcadedb.SourcePredicate`.
+- Modify: `internal/docfields/lists.go`.
+- Modify: `internal/agent/tools/document_search.go`, `document_search_fields.go`: the list mode, the
+  schema with `query` no longer required, and the description.
+- Test: `internal/arcadedb/document_retrieval_test.go` (or the file holding `candidateWhere` tests),
+  `internal/docfields/library_integration_test.go`, `internal/agent/tools/document_search_fields_test.go`.
+
+**Interfaces:**
+- Produces:
+  - `func SourcePredicate(keys, prefixes []string, params map[string]any) string` in `arcadedb`. It
+    returns `""` when both are empty, otherwise `(source_key IN :source_keys OR source_key LIKE
+    :source_prefix_0 …)`.
+  - `ListQuery.SourcePrefixes []string`.
+  - `DocumentFieldFilters.List(ctx context.Context, identityID string, q docfields.ListQuery) (docfields.ListResult, error)`.
+  - `documentSearchResult.Matching int \`json:"matching_documents,omitempty"\``.
+
+- [ ] **Step 1: Failing tests:**
+  - `TestSourcePredicateJoinsKeysAndPrefixes`: a key and a prefix with `%` give one OR clause with the
+    prefix escaped; nothing gives `""`.
+  - `TestLibraryListHonoursSourcePrefixes` (integration): `SourcePrefixes: ["chat/"]` over
+    `officeLibrary` gives 3 documents, and `["altro/"]` gives 0.
+  - `TestDocumentSearchListsWhatTheFiltersAdmit`:
+    - `{"tags":["urgente"]}` with no query never calls `Retrieve`;
+    - it lists the fake's rows as documents with `requires_open`;
+    - `matching_documents` is the fake's total, and `profile` is `field_list`;
+    - the fake received `FileType "all"`, `Sort "-indexed_at"`, the resolved tag ids and the limit.
+  - `TestDocumentSearchListHonoursTheRunScope`: a folder scope in the context reaches
+    `ListQuery.SourcePrefixes` as `"folder/"`.
+  - `TestDocumentSearchRefusesNeitherQueryNorFilter`: `{}` is refused, and so is
+    `{"tags":["urgente"],"document_ids":["d"]}`.
+  - `TestDocumentSearchListOfNothingAbstains`: total 0 gives `abstained` with
+    `filter_admits_nothing`.
+- [ ] **Step 2: Run them.** Expected: FAIL (undefined `SourcePredicate`, missing `List` on the fake,
+  the query required).
+- [ ] **Step 3: Implement.** `candidateWhere` and `workspacePredicates` both call `SourcePredicate`.
+  `LibraryLists` counts with the extracted facet helper. The list mode sits in
+  `document_search_list.go` if `document_search.go` would pass 600 lines.
+- [ ] **Step 4: Run** `go test` and `-race` on `./internal/arcadedb/ ./internal/docfields/ ./internal/agent/tools/`,
+  and the `arcadedb_integration` tier of `docfields`. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(document_search): with no query, list the documents the filters admit`.
+
+### Task 2c: every result names each document's fields
+
+**Files:**
+- Create: `internal/docfields/document_names.go`, `internal/docfields/document_names_test.go`.
+- Modify: `internal/docfields/library_integration_test.go`, `internal/agent/tools/document_search*.go`
+  and the tests.
+
+**Interfaces:**
+- Produces:
+  - `type NamedValue struct { Name string \`json:"name"\`; Reviewed bool \`json:"reviewed"\` }`
+  - `type FieldNames struct { Type, Counterparty, DocumentDate *NamedValue; Tags []NamedValue }`, with
+    JSON `type`, `counterparty`, `document_date` and `tags`, each omitempty.
+  - `func (s *Store) DocumentFields(ctx context.Context, identityID string, documentIDs []string) (map[string]FieldNames, error)`
+  - `DocumentFieldFilters.DocumentFields`, same signature.
+  - `documentSearchResult.DocumentFields map[string]docfields.FieldNames \`json:"document_fields,omitempty"\``,
+    declared before the embedded response.
+
+- [ ] **Step 1: Failing tests:**
+  - `TestNameFieldsByLabelAndReview` (unit, pure `nameFields(values []Value, names map[string]string) FieldNames`):
+    - an operator type is named and reviewed;
+    - a rule tag is named and not reviewed;
+    - an accepted tag is reviewed;
+    - a date keeps its ISO value as name;
+    - a `new:` proposal, a label id with no name and a custom field are left out.
+  - `TestDocumentFieldsNameTheHits` (integration over `officeLibrary`):
+    - `chat/b.xlsx` gives type `Fattura` reviewed, and no tag, because `lbl-urgente` has no label row;
+    - `chat/c.txt` maps to an empty `FieldNames`;
+    - an unknown id is absent.
+  - `TestDocumentSearchNamesEachHitsFields`: in search mode, the fake's names for the hit's id reach
+    `document_fields`.
+  - `TestDocumentSearchListNamesEachListedDocument`: in list mode, the names reach `document_fields`.
+  - `TestDocumentSearchAnswersWithoutFieldsItCannotRead`: a `DocumentFields` error leaves no key.
+  - The cut-preview test also asserts `"document_fields"` in the preview.
+- [ ] **Step 2: Run them.** Expected: FAIL.
+- [ ] **Step 3: Implement.**
+  - `DocumentFields` reads the hits' rows by `search_document_id`, then `withFields`, then the three
+    kinds of labels, and names them.
+  - The tool asks after retrieval or listing, only when there is at least one document. On an error
+    it logs a warning and leaves the key out.
+  - One description sentence: "document_fields names each returned document's type, counterparty,
+    document_date and tags; reviewed true is a value the operator set or accepted."
+- [ ] **Step 4: Run** the same commands as Task 2b. Expected: PASS.
+- [ ] **Step 5: Commit** `feat(document_search): every result names each document's own fields`.
 
 ### Task 3: gates, the lab VM, step 7 again
 
