@@ -76,8 +76,8 @@ func TestDocumentLegsTakeTheirFloorsFromTheQuerysSpace(t *testing.T) {
 			t.Fatalf("space %s: floors = %v / %v, want 0.72 / 0.32", space, params["max_distance"], params["min_relevance"])
 		}
 	}
-	if !FloorsCalibrated(embeddingGemmaSpace) || FloorsCalibrated("es1-never-measured") {
-		t.Fatal("FloorsCalibrated disagrees with the table")
+	if !DocumentFloorsCalibrated(embeddingGemmaSpace) || DocumentFloorsCalibrated("es1-never-measured") {
+		t.Fatal("DocumentFloorsCalibrated disagrees with the table")
 	}
 }
 
@@ -95,7 +95,7 @@ func TestDocumentFloorsHonourOverrides(t *testing.T) {
 	if got := (DocumentIndexConfig{MinRelevance: 0.0001}).documentFloors(embeddingGemmaSpace); got != (denseFloors{0.72, 0.0001}) {
 		t.Fatalf("relevance override: floors = %+v", got)
 	}
-	if FloorsCalibrated(space) || !FloorsCalibrated(embeddingGemmaSpace) {
+	if DocumentFloorsCalibrated(space) || !DocumentFloorsCalibrated(embeddingGemmaSpace) {
 		t.Fatal("an override changed which spaces are calibrated")
 	}
 }

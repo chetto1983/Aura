@@ -58,6 +58,17 @@ func TestRetrieveNamesNoFloorsReasonInTheMeasuredSpace(t *testing.T) {
 	}
 }
 
+// The lab VM's cloud space had its document floors measured on 2026-10-23, and only those: a
+// document answer there no longer says uncalibrated_floors.
+func TestRetrieveNamesNoFloorsReasonInTheCloudSpaceItsDocumentFloorsWereMeasuredIn(t *testing.T) {
+	embedder := &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}, spaces: []string{"es1-b604719dc5fc0ce4"}}
+	response := retrieveCodice(t, spaceRetriever(&fakeRetrievalControl{cards: []RetrievalCard{retrievalCard()}},
+		embedder, &fakePassageIndex{}))
+	if response.FloorsReason != "" {
+		t.Fatalf("floors reason = %q in the space the document floors were measured in", response.FloorsReason)
+	}
+}
+
 // Review Focus 2: a model swapped between the gate and the embedding would rank the new
 // model's vector against a library checked in the old space.
 func TestRetrieveRefusesADenseReadWhoseSpaceMovedDuringTheEmbedding(t *testing.T) {

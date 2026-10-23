@@ -321,7 +321,7 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	case reason != "":
 		response.Status, response.DegradationReason = RetrievalLexicalOnly, reason
 		r.degradations.warn(reason, cause.Error(), request.IdentityID)
-	case !arcadedb.FloorsCalibrated(dense.space):
+	case !arcadedb.DocumentFloorsCalibrated(dense.space):
 		response.FloorsReason = arcadedb.ReasonUncalibratedFloors
 	}
 	cards, err := r.routeCards(ctx, CardQuery{

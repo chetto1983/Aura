@@ -197,7 +197,8 @@ func (s *Server) handleEmbeddingSpace(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, embeddingSpaceDTO{
 		Space: memory.ID, SpaceLabel: memory.Label, DocumentsSpace: documents.ID, DocumentsSpaceLabel: documents.Label,
-		FloorsCalibrated: arcadedb.FloorsCalibrated(documents.ID), Tenants: reports,
+		FloorsCalibrated: arcadedb.MemoryFloorsCalibrated(memory.ID) && arcadedb.DocumentFloorsCalibrated(documents.ID),
+		Tenants:          reports,
 	})
 }
 
@@ -317,7 +318,8 @@ func (s *Server) probeEmbeddingRoute(ctx context.Context, route EmbeddingRouteVa
 	}
 	preview.Space, preview.SpaceLabel, preview.MemorySpace = probe.Space.ID, probe.Space.Label, memory.ID
 	preview.NativeWidth, preview.CharsPerSecond, preview.InputLimit = probe.NativeWidth, probe.CharsPerSecond, probe.InputLimit
-	preview.FloorsCalibrated, preview.pricePer1M = arcadedb.FloorsCalibrated(probe.Space.ID), probe.PricePer1M
+	preview.pricePer1M = probe.PricePer1M
+	preview.FloorsCalibrated = arcadedb.MemoryFloorsCalibrated(probe.Space.ID) && arcadedb.DocumentFloorsCalibrated(probe.Space.ID)
 	if probe.HasPrice || preview.Local {
 		cost := 0.0
 		preview.CostUSD = &cost

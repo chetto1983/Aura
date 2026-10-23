@@ -158,6 +158,18 @@ func TestEmbeddingSpaceReportsTheCurrentSpacesAndEveryTenant(t *testing.T) {
 	}
 }
 
+// pplx-embed's document floors were measured on 2026-10-23 and its memory floors were not, so
+// the card still warns: it speaks for both families.
+func TestEmbeddingSpaceWarnsWhileOneFamilyIsUncalibrated(t *testing.T) {
+	pplx := embeddings.Space{ID: "es1-b604719dc5fc0ce4", Label: "openrouter perplexity/pplx-embed-v1-4b"}
+	s := asAdmin(&Server{embeddingRoutes: &fakeEmbeddingRoutes{memory: pplx, documents: pplx}})
+	rr := httptest.NewRecorder()
+	s.handleEmbeddingSpace(rr, routeRequest(t, http.MethodGet, "/api/settings/embedding-space", nil))
+	if got := decodeInto[embeddingSpaceDTO](t, rr); got.FloorsCalibrated {
+		t.Fatalf("state = %+v, want floors_calibrated false while memory is unmeasured", got)
+	}
+}
+
 func TestEmbeddingSpaceSaysWhyItCannotNameTheSpace(t *testing.T) {
 	s := &Server{embeddingRoutes: &fakeEmbeddingRoutes{currentErr: errors.New("sidecar down")}}
 	rr := httptest.NewRecorder()

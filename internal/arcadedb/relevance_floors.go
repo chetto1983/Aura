@@ -18,14 +18,14 @@ type denseFloors struct {
 	minRelevance float64
 }
 
-// calibration is one space's measured floors, per family.
+// calibration is one space's floors, per family.
 type calibration struct {
 	memory    denseFloors
 	documents denseFloors
 }
 
-// embeddingGemmaFloors are the only floors ever measured, all on EmbeddingGemma-300M at 768
-// dimensions.
+// embeddingGemmaFloors are the first floors measured, on EmbeddingGemma-300M at 768 dimensions,
+// and the ones a family without a row for its space is served with.
 //
 // Memory, 2026-09-02, a live 102-fact memory: the nearest neighbour for a question the memory
 // COULD answer sat at 0.514 and 0.667; for one it could not ("ricetta della pizza napoletana",
@@ -81,34 +81,63 @@ var embeddingGemmaFloors = calibration{
 var embeddingGemmaSpace = embeddings.SpaceFor(config.EmbedLocal, "", "", vectorDimensions,
 	"embeddinggemma-300M-Q8_0.gguf|size=327060480|params=307581696|embd=768|ftype=Q8_0").ID
 
-// calibratedFloors holds one row per space whose floors were measured. Calibrating a new model
-// is the measurement behind embeddingGemmaFloors, repeated, and a row added here.
-var calibratedFloors = map[string]calibration{
-	embeddingGemmaSpace: embeddingGemmaFloors,
-}
+// pplxEmbed4BSpace is the lab VM's cloud route as the daemon logs it (2026-10-23): OpenRouter's
+// perplexity/pplx-embed-v1-4b at 768 dimensions, recipe 1.
+var pplxEmbed4BSpace = embeddings.SpaceFor(config.EmbedOpenRouter, "perplexity/pplx-embed-v1-4b", "",
+	vectorDimensions, "").ID
 
-// floorsFor is space's calibration and whether it was measured. A space without a row is
-// served with EmbeddingGemma's floors, which may abstain too often or too rarely for another
-// model -- which is what the reason says.
-func floorsFor(space string) (calibration, bool) {
-	floors, measured := calibratedFloors[space]
+// pplxEmbed4BDocumentFloors were measured 2026-10-23 on the operator's 8-document library, 29
+// questions, top-1 (docs/superpowers/verification/2026-10-23-document-floors-pplx.md). True
+// matches scored 0.4047..0.6523 and out-of-corpus questions 0.2637..0.2961. "fattura", which
+// returned an unrelated Markdown example by its card, scored 0.3833.
+//
+// 0.39 is the midpoint of "fattura" and the worst true match, the operator's choice over 0.35,
+// the midpoint of true and out-of-corpus. It drops "fattura" and no measured true match, on a
+// band 0.0214 wide. The distance dropped no true match, so it stays at 0.72.
+//
+// Memory was not measured on this space: it has no row in memoryFloorsBySpace.
+var pplxEmbed4BDocumentFloors = denseFloors{maxDistance: 0.72, minRelevance: 0.39}
+
+// memoryFloorsBySpace and documentFloorsBySpace hold one row per space whose floors were
+// measured, one table per family, because a model can be measured for one and not the other.
+// Calibrating a model is the measurement behind embeddingGemmaFloors, repeated, and a row added.
+var (
+	memoryFloorsBySpace = map[string]denseFloors{
+		embeddingGemmaSpace: embeddingGemmaFloors.memory,
+	}
+	documentFloorsBySpace = map[string]denseFloors{
+		embeddingGemmaSpace: embeddingGemmaFloors.documents,
+		pplxEmbed4BSpace:    pplxEmbed4BDocumentFloors,
+	}
+)
+
+// measuredFloors is space's row in one family's table and whether it has one. A space without
+// one is served with fallback, EmbeddingGemma's, which may abstain too often or too rarely for
+// another model -- which is what ReasonUncalibratedFloors says.
+func measuredFloors(table map[string]denseFloors, space string, fallback denseFloors) (denseFloors, bool) {
+	floors, measured := table[space]
 	if !measured {
-		return embeddingGemmaFloors, false
+		return fallback, false
 	}
 	return floors, true
 }
 
-// FloorsCalibrated reports whether the dense floors were measured for space.
-func FloorsCalibrated(space string) bool {
-	_, measured := calibratedFloors[space]
+// MemoryFloorsCalibrated reports whether the dense memory floors were measured for space.
+func MemoryFloorsCalibrated(space string) bool {
+	_, measured := memoryFloorsBySpace[space]
+	return measured
+}
+
+// DocumentFloorsCalibrated reports whether the dense document floors were measured for space.
+func DocumentFloorsCalibrated(space string) bool {
+	_, measured := documentFloorsBySpace[space]
 	return measured
 }
 
 // documentFloors are the dense document floors for space. A positive limit is an operator
 // override (AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO, AURA_DOCUMENT_MIN_RELEVANCE) and wins.
 func (cfg DocumentIndexConfig) documentFloors(space string) denseFloors {
-	calibrated, _ := floorsFor(space)
-	floors := calibrated.documents
+	floors, _ := measuredFloors(documentFloorsBySpace, space, embeddingGemmaFloors.documents)
 	if cfg.DenseMaxDistance > 0 {
 		floors.maxDistance = cfg.DenseMaxDistance
 	}
@@ -119,11 +148,10 @@ func (cfg DocumentIndexConfig) documentFloors(space string) denseFloors {
 }
 
 // bindDenseFloors sets a dense memory read's floors for space, and returns
-// ReasonUncalibratedFloors when the table has no row for it. A positive limit is an operator
-// override (AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO, AURA_MEMORY_MIN_RELEVANCE) and wins.
+// ReasonUncalibratedFloors when memoryFloorsBySpace has no row for it. A positive limit is an
+// operator override (AURA_MEMORY_DENSE_MAX_DISTANCE_RATIO, AURA_MEMORY_MIN_RELEVANCE) and wins.
 func (limits MemoryLimits) bindDenseFloors(params map[string]any, space string) string {
-	calibrated, measured := floorsFor(space)
-	floors := calibrated.memory
+	floors, measured := measuredFloors(memoryFloorsBySpace, space, embeddingGemmaFloors.memory)
 	if limits.DenseMaxDistance > 0 {
 		floors.maxDistance = limits.DenseMaxDistance
 	}

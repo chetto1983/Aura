@@ -15,16 +15,43 @@ func TestEmbeddingGemmaFloorsAreKeyedByTheSpaceTheVMAttests(t *testing.T) {
 	if embeddingGemmaSpace != "es1-e0aa6accf0b79c6b" {
 		t.Fatalf("embeddingGemmaSpace = %q, want es1-e0aa6accf0b79c6b", embeddingGemmaSpace)
 	}
-	floors, measured := floorsFor(embeddingGemmaSpace)
-	if !measured || floors.memory != (denseFloors{maxDistance: 0.72, minRelevance: 0.28}) {
-		t.Fatalf("floors = %+v measured = %v", floors, measured)
+	if !MemoryFloorsCalibrated(embeddingGemmaSpace) || !DocumentFloorsCalibrated(embeddingGemmaSpace) {
+		t.Fatal("EmbeddingGemma's space is not calibrated for both families")
+	}
+	params := map[string]any{}
+	if reason := (MemoryLimits{}).bindDenseFloors(params, embeddingGemmaSpace); reason != "" ||
+		params["max_distance"] != 0.72 || params["min_relevance"] != 0.28 {
+		t.Fatalf("memory floors = %v reason = %q", params, reason)
 	}
 }
 
 func TestFloorsForAnUnmeasuredSpaceAreEmbeddingGemmasAndSaySo(t *testing.T) {
-	floors, measured := floorsFor("es1-never-measured")
-	if measured || floors != embeddingGemmaFloors {
-		t.Fatalf("floors = %+v measured = %v, want EmbeddingGemma's, unmeasured", floors, measured)
+	const space = "es1-never-measured"
+	if MemoryFloorsCalibrated(space) || DocumentFloorsCalibrated(space) {
+		t.Fatal("an unmeasured space reads as calibrated")
+	}
+	if got := (DocumentIndexConfig{}).documentFloors(space); got != embeddingGemmaFloors.documents {
+		t.Fatalf("document floors = %+v, want EmbeddingGemma's", got)
+	}
+}
+
+// The lab VM's cloud route, as the daemon logs it (2026-10-23). Its document floors were
+// measured that day and its memory floors were not, so memory keeps EmbeddingGemma's and still
+// says so (docs/superpowers/verification/2026-10-23-document-floors-pplx.md).
+func TestPplxEmbedHasMeasuredDocumentFloorsAndUnmeasuredMemoryFloors(t *testing.T) {
+	if pplxEmbed4BSpace != "es1-b604719dc5fc0ce4" {
+		t.Fatalf("pplxEmbed4BSpace = %q, want es1-b604719dc5fc0ce4", pplxEmbed4BSpace)
+	}
+	if !DocumentFloorsCalibrated(pplxEmbed4BSpace) || MemoryFloorsCalibrated(pplxEmbed4BSpace) {
+		t.Fatal("pplx-embed: want documents calibrated and memory not")
+	}
+	if got := (DocumentIndexConfig{}).documentFloors(pplxEmbed4BSpace); got != (denseFloors{0.72, 0.39}) {
+		t.Fatalf("document floors = %+v, want 0.72 / 0.39", got)
+	}
+	params := map[string]any{}
+	if reason := (MemoryLimits{}).bindDenseFloors(params, pplxEmbed4BSpace); reason != ReasonUncalibratedFloors ||
+		params["min_relevance"] != 0.28 {
+		t.Fatalf("memory floors = %v reason = %q, want EmbeddingGemma's, uncalibrated", params, reason)
 	}
 }
 
