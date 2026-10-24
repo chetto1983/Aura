@@ -144,7 +144,7 @@ jobs:
 
       - name: Upload definitive audit closure report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: audit-closure
           path: artifacts/production-readiness/audit-closure-report.json
@@ -238,7 +238,7 @@ jobs:
 
       - name: Upload capability report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: capability-eval
           path: artifacts/production-readiness/capability-eval.json
@@ -576,7 +576,7 @@ jobs:
 
       - name: Upload load + chaos reports
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: production-load-chaos
           path: |
@@ -590,7 +590,7 @@ jobs:
 
       - name: Upload disaster-recovery report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: disaster-recovery
           path: artifacts/production-readiness/dr-report.json
@@ -752,7 +752,7 @@ jobs:
 
       - name: Upload owned-surface coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: owned-surface-coverage
           path: artifacts/production-readiness/coverage-report.json
@@ -935,7 +935,7 @@ jobs:
 
       - name: Upload Agent Memory evaluation report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: agent-memory-eval
           path: artifacts/production-readiness/agent-memory-eval-report.json
@@ -1571,7 +1571,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1617,7 +1617,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1666,7 +1666,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -1701,7 +1701,7 @@ jobs:
 
       - name: Hand the Stryker report to the mutation gate
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: stryker-mutation
           path: |
@@ -1777,7 +1777,7 @@ jobs:
 
       - name: Hand this group's measurements to the mutation gate
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: go-mutation-${{ matrix.group }}
           path: artifacts/go-mutation-group/
@@ -1823,14 +1823,14 @@ jobs:
 
       # Go first: when the Stryker report is missing, the Go measurements are still saved below.
       - name: Download every group's Go measurements
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: go-mutation-*
           merge-multiple: true
           path: artifacts/go-mutation-cache
 
       - name: Download the Stryker report
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: stryker-mutation
           path: web/reports
@@ -1861,7 +1861,7 @@ jobs:
 
       - name: Upload critical mutation evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: critical-mutation
           path: |
@@ -1950,7 +1950,7 @@ jobs:
 
       - name: Set up Node
         if: steps.changes.outputs.web == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ env.AURA_CI_NODE_VERSION }}
           cache: npm
@@ -2115,7 +2115,7 @@ jobs:
 
       - name: HARVEST (TEMP — revert after committing the PNGs) upload regenerated calm-prism snapshots
         if: always() && steps.changes.outputs.web == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: calm-prism-snapshots
           path: web/e2e/__screenshots__/chat-calm-prism.spec.ts/
@@ -2272,7 +2272,7 @@ jobs:
 
       - name: Upload docker_integration coverage report
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: docker-integration-coverage
           path: |
