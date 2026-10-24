@@ -42,7 +42,14 @@ updates:
         patterns:
           - typescript
           - oxlint-tsgolint
+      # The catch-all needs patterns ["*"]. A dependency matching two groups goes to the more
+      # specific one, and a group with no patterns scores 500 against "@vitest/*"'s 94, so the
+      # catch-all took @vitest/coverage-v8 away from vitest (run 40095584789) and would take
+      # @stryker-mutator/*. "*" scores 1 (dependabot-core,
+      # updater/lib/dependabot/updater/pattern_specificity_calculator.rb).
       npm-minor-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
@@ -67,7 +74,11 @@ updates:
         patterns:
           - vitest
           - "@vitest/*"
+      # patterns ["*"] for the reason given on npm-minor-patch above (run 40097651704 logged
+      # "belongs to more specific group 'create-aura-minor-patch'" for @vitest/coverage-v8).
       create-aura-minor-patch:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
