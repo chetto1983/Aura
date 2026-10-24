@@ -118,7 +118,8 @@ aura's own static-app handler).
   - the only catalog in sight, storytold/deckcraft#34, is one commit 928 commits behind v0.10.0;
   - and a release every two to three days would mean rebasing a catalog patch on each one.
 
-  Italian is asked of upstream instead, and an `it.tsv` follows once a catalog lands.
+  Italian is asked of upstream instead (storytold/deckcraft#1293, which upstream's bot marked a
+  duplicate of #215), and an `it.tsv` follows once a catalog lands.
 - **WordCraft is left as released on languages it cannot draw**: with a Japanese browser it draws boxes,
   as its official web build does (FINDINGS 15).
 
