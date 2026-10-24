@@ -73,6 +73,8 @@ docker() {
   esac
 }
 bash() {
+  # The week is real: an empty one would let a missing --build-arg value pass unseen.
+  [[ "$1" != */scripts/apt_week.sh ]] || { command bash "$@"; return; }
   # Each contract reads its image from a variable of its own; only that one is set for it.
   echo "contract $* image=${AURA_CLOUDFLARED_TEST_IMAGE:-}${AURA_INGEST_IMAGE:-}${AURA_SANDBOX_IMAGE:-}" >>"$calls"
   [[ -z "$failing_contract" || "$1" != *"$failing_contract"* ]]
@@ -94,7 +96,8 @@ grep '^docker buildx imagetools create' "$calls" | tail -1 | grep -q -- '--tag r
   fail "aura:edge did not move last: $(grep '^docker buildx' "$calls" | tail -1)"
 grep -q '^docker build .*--build-arg VCS_REF=0123456789abcdef0123456789abcdef01234567' "$calls" ||
   fail "aura was not stamped with its commit"
-week="$(bash "$repo_root/scripts/apt_week.sh")"
+week="$(command bash "$repo_root/scripts/apt_week.sh")"
+[[ "$week" =~ ^[0-9]{4}-W[0-9]{2}$ ]] || fail "scripts/apt_week.sh printed $week, not an ISO week"
 for name in aura aura-ingest; do
   grep -q "^docker build .*/docker/${name}/Dockerfile .*--build-arg APT_WEEK=${week} -t " "$calls" ||
     fail "${name} was not built with this week's apt refresh"
