@@ -98,6 +98,9 @@ jobs:
       - name: Weekly security scan scripts self-test
         run: for test in scripts/security_scan/*_test.sh; do bash "$test"; done
 
+      - name: Disposable-stack library self-test
+        run: bash scripts/lib/disposable_stack_test.sh
+
       - name: EmbeddingGemma cache helper self-test
         run: make embedding-model-contract
       - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)

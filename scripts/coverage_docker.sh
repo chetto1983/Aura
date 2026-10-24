@@ -50,7 +50,7 @@ export AURA_AUTHULA_SECRET
 COV_DB="${AURA_COVERAGE_DB:-aura_cov}"
 disposable_stack_bring_up_auto "$COV_DB" "$PGPW" \
   "${AURA_COVERAGE_POSTGRES_PORT:-5433}" \
-  "${AURA_COVERAGE_POSTGRES_IMAGE:-${POSTGRES_IMAGE:-postgres:18.6-alpine3.24}}" \
+  "${AURA_COVERAGE_POSTGRES_IMAGE:-}" \
   "${AURA_COVERAGE_POSTGRES_CONTAINER:-aura-postgres-cov}" \
   "${AURA_PG_CONTAINER:-aura-postgres}"
 trap disposable_stack_teardown EXIT

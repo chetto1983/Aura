@@ -113,6 +113,20 @@ else
   echo "PASS: bring_up_auto never touches docker when the name is 'aura'"
 fi
 
+# --- disposable_stack_default_image --------------------------------------------
+# The disposable Postgres runs compose.yaml's image, read from any working directory. A tag
+# copied into these scripts fell behind compose's with no check to notice (security-scan spec, D1).
+compose_postgres="$(sed -nE 's/^    image: (postgres:[^[:space:]]+)$/\1/p' compose.yaml | head -1)"
+assert_eq "the default image is compose.yaml's postgres, read from another directory" \
+  "$compose_postgres" "$(cd /tmp && bash -c "source '$LIB_ABS'; disposable_stack_default_image")"
+ASSERTIONS=$((ASSERTIONS + 1))
+if grep -nE 'postgres:[0-9]' scripts/lib/disposable_stack.sh scripts/coverage_docker.sh; then
+  echo "FAIL: a postgres tag is copied into the disposable-stack scripts"
+  FAIL=1
+else
+  echo "PASS: no postgres tag is copied into the disposable-stack scripts"
+fi
+
 echo "==> $ASSERTIONS assertions checked"
 if [ "$FAIL" -ne 0 ]; then
   echo "FAIL: scripts/lib/disposable_stack_test.sh had failing assertions" >&2
