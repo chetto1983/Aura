@@ -106,7 +106,11 @@ index digest. Asked for the old tags, both return exactly the digests `compose.y
 - **`db migrate` changes the schema on its second run.** A fresh database's first run leaves out
   `ALTER DEFAULT PRIVILEGES FOR ROLE aura_app IN SCHEMA authula GRANT SELECT ON TABLES TO
   aura_migrate`, and the second run adds it. This holds on 18.4 and on 18.6 alike, so it is not
-  part of this change. It is not fixed here.
+  part of the pin change. It cost more than one statement. The tables Authula creates before the
+  next `db migrate` are unreadable to aura_migrate, so a fresh install's `pg_dump` fails until
+  then. Fixed on #160: the grant now runs after `Migrate`, which created the schema.
+  `TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema/from_0` failed on this with `permission
+  denied for table first_boot_table` after the first run, and passes after the fix.
 
 ## What this does not establish
 
