@@ -34,7 +34,11 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-filecard ./cmd/aura-filecard
 RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-media-index ./cmd/aura-media-index
 RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-ingest-supervisor ./cmd/aura-ingest-supervisor
 
-FROM python:3.12-slim-bookworm
+# Pinned by digest so that Dependabot moves it weekly, as it does the other bases. It does not
+# refresh the apt layer below on its own: libexpat1 and libbrotli1 are not in this base, and a
+# cached layer keeps the versions it installed. On 2026-10-24 aura-ingest:edge had libexpat1
+# deb12u4 while apt offered deb12u5.
+FROM python:3.12-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
 
 # LibreOffice exists for a narrow, measured reason: internal/documents/filecard
 # routes only .xlsx and .xlsm, so an ordinary 2010 .xls -- what Excel and every
