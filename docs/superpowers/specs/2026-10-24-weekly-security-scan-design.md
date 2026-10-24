@@ -124,6 +124,11 @@ a fixed version, at HIGH and above. The two kinds of image differ in what turns 
 - *Accepting a finding.* It is accepted in `.trivyignore.yaml`, Trivy's own format. Each entry
   needs a `statement` and an `expired_at` at most 90 days away. An entry past its `expired_at`
   stops applying (Trivy docs, *Filtering*). Our convention is the statement and the 90 days.
+  - *Amended 2026-10-24, once measured.* The docs say only that an entry without `expired_at`
+    "is always valid". Trivy 0.70.0 stops applying an entry past it.
+  - *An ID alone is too wide.* It hides the same CVE in every image, Aura's own included: kokoro's
+    and `aura-egress`'s perl-base share CVEs. So each entry also names the exact `purls` Trivy
+    reports. A purl at another version of the same package does not match.
 - *The baseline's acceptances.* All three third-party CRITICALs are upstream's to fix:
   - postgres's `gosu`, built with Go 1.24.6;
   - ArcadeDB 26.10.2's netty-handler, on the newest release;
@@ -169,6 +174,11 @@ written. The operator approved it.
   `--config`. It is OSV-Scanner's own format: one `[[IgnoredVulns]]` per advisory id, with
   `reason` and an `ignoreUntil` at most 90 days away (OSV-Scanner docs, *Configuration*). It is a
   separate file because Trivy's `.trivyignore.yaml` (D2) uses other field names.
+  - *Amended 2026-10-24: the file is `.github/osv-scanner-craft.toml`.* `scripts/craft_web_inputs.sh`
+    hashes `docker/craft-web/` whole, so a file there changes the Craft image pin. Accepting one
+    advisory would then cost a rebuild and a re-pin.
+  - *Expiry, measured with OSV-Scanner 2.7.0.* Once `ignoreUntil` is past, the finding is reported
+    again.
 
 ## Design
 

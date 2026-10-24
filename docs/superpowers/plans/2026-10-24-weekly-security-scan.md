@@ -1,9 +1,9 @@
 # Weekly security scan: implementation plan
 
 **Status (2026-10-24):**
-- *Done:* Task 1 (#161).
-- *Started:* Tasks 2–7, on the operator's "Intanto inizia il workflow della scansione settimanale",
-  given while #174 was in CI.
+- *Done:* Task 1 (#161); Tasks 2–6 on the operator's "Intanto inizia il workflow della scansione
+  settimanale", given while #174 was in CI, on a local branch from master `03a127c`.
+- *Next:* Task 7.
 - *Pending:* Tasks 8–10 depend on the first run on GitHub.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, task by task, with
@@ -24,7 +24,8 @@ GitHub:
 - `report` opens or updates one issue on a red scheduled run.
 
 **Tech Stack:**
-- bash, with `jq` and `yq` as preinstalled on `ubuntu-latest`, and `gh`;
+- bash, with `jq` and `gh`. There is no `yq`: the dev container's `yq` is the Python wrapper and
+  the runner's is mikefarah's, and their syntaxes differ. `awk` reads `dependabot.yml`;
 - Trivy 0.70.0 (`aquasec/trivy@sha256:be1190af…`);
 - OSV-Scanner 2.7.0, as a release binary checked by SHA-256;
 - govulncheck v1.6.0;
@@ -110,68 +111,86 @@ GitHub:
 
 ### Task 2: the image list
 
-- [ ] Test first, against a fixture compose file:
+- [x] Test first, against a fixture compose file:
   - a local default with no mapping is refused;
   - the five mapped variables resolve to `ghcr.io/<owner>/<name>:edge`;
   - `aura-sandbox` and `aura-egress` are appended;
   - the result is de-duplicated;
   - `ghcr.io/<owner>/*` is `own`, except `aura-whisper-server`, which is `third-party` (D2).
-- [ ] `images.sh [compose] [owner]` builds the result:
+- [x] `images.sh [compose] [owner]` builds the result:
   - placeholders come from the file's own `${VAR:?}` names, as `verify-observability.ps1` reads
     them;
   - `docker compose --profile '*' config --images` resolves the rest;
   - the output is JSON for `fromJSON`.
-- [ ] Against the real `compose.yaml` it prints the 20 images the baseline scanned.
+- [x] Against the real `compose.yaml` it prints the 20 images the baseline scanned: 9 own, 7 at
+  edge. With the whisper exception removed, the test fails.
 
 ### Task 3: the Dependabot check
 
-- [ ] Record `gh api .../actions/workflows/286685014/runs` from 2026-10-24 as a fixture. Test that:
+- [x] Build a fixture from the titles of the 2026-10-24 runs. Test that:
   - every entry of `.github/dependabot.yml` is found;
   - removing an entry's runs fails it;
   - a failed run fails;
   - a run older than eight days does not count.
-- [ ] Write `dependabot_fresh.sh`. It reads the entries with `yq` and the runs with
+- [x] Write `dependabot_fresh.sh`. It reads the entries with `awk` and the runs with
   `gh api --paginate`, and prints a table to the job summary.
+  - *Live result on 2026-10-24.* Six entries are ok. npm in `/packages/create-aura` fails on
+    run 39730585760: the @vitest/mocker security update of 2026-10-22, which `e7c0a8c` did by hand.
+  - *What follows from D5 as written.* That run keeps the check red until 2026-10-30, so the
+    first scheduled run, on 2026-10-26, fails on it. Whether a later success clears a failed run
+    is the operator's call.
 
 ### Task 4: the Craft job
 
-- [ ] Test the parts that need no network:
+- [x] Test the parts that need no network:
   - the pins read from both Dockerfiles: six apps with tag and commit, GridCraft from its `ADD`
     line;
   - the filter: an OSV finding whose `name@version` is absent from the `cargo tree` output is
     dropped;
   - severity: `max_severity` ≥ 7.0 with a fixed version fails;
-  - an expired `[[IgnoredVulns]]` no longer hides a finding (measured with OSV-Scanner 2.7.0
-    itself).
-- [ ] Write `craft_osv.sh`. For each app it:
+  - an expired `[[IgnoredVulns]]` no longer hides a finding. This was measured once with
+    OSV-Scanner 2.7.0 against WordCraft's lock, not in the test: it needs the OSV API.
+- [x] Write `craft_osv.sh`. For each app it:
   - lists newer tags (report-only);
   - clones at the pinned tag and checks the commit;
   - applies `docker/craft-web/<app>.patch`;
   - runs `cargo tree --locked -p <app>-web --target wasm32-unknown-unknown -e normal`;
   - runs OSV-Scanner over the `Cargo.lock` with `--config`, then filters.
-- [ ] Run it locally over the six apps and compare with the baseline's table.
+- [x] Run it locally over the six apps at #174's pins, in 47 s with a warm cargo cache.
+  - *What gates.* Only zip 3.0.0, in WordCraft, DeckCraft and GridCraft: RUSTSEC-2026-0367 (7.3)
+    and RUSTSEC-2026-0369 (9.1). The baseline found the same.
+  - *Why they are accepted until 2027-01-22.* Both concern `extract()` to a filesystem. No source
+    file of the three calls it, and the wasm32 target has no filesystem.
+  - *The rest.* 14 lower findings, reported only.
 
 ### Task 5: the workflow
 
-- [ ] Write `.trivyignore.yaml` with the three acceptances (gosu in postgres, netty-handler in
-  ArcadeDB, kokoro). Prove with Trivy 0.70.0 that an entry past `expired_at` stops applying.
-- [ ] Write `security-scan.yml` with the jobs `images`, `scan` (matrix, `fail-fast: false`),
+- [x] Write `.trivyignore.yaml` with the three acceptances (gosu in postgres, netty-handler in
+  ArcadeDB, kokoro's five).
+  - *Expiry.* Trivy 0.70.0 stops applying an entry past `expired_at`.
+  - *Scope.* An ID alone would hide the same CVE in Aura's images, so every entry carries its
+    exact purl. A purl at another version does not match.
+- [x] Write `security-scan.yml` with the jobs `images`, `scan` (matrix, `fail-fast: false`),
   `go`, `dependabot`, `craft` and `report`.
   - *Triggers:* cron `41 4 * * 1` plus `workflow_dispatch`.
   - *Pins:* actions pinned at the SHAs `ci.yml` and `codeql.yml` already use. `upload-sarif` uses
     the same commit as `codeql-action/init`.
-- [ ] Write `report.sh`. It finds the open issue labelled `security-scan` or creates it (and the
+- [x] Write `report.sh`. It finds the open issue labelled `security-scan` or creates it (and the
   label), then comments with the run link and the failed jobs.
-- [ ] Check it: `bash scripts/workflow_pin_gate.sh`; `actionlint` if present, otherwise
-  `yq`-parse the file; and every `*_test.sh`.
-- [ ] Run each scan step locally with the same commands: Trivy on one `own` and one
-  `third-party` image, and govulncheck.
+- [x] Check it: `bash scripts/workflow_pin_gate.sh`, actionlint 1.7.7 and every `*_test.sh`.
+- [x] Run both Trivy steps locally with the workflow's flags.
+  - *`aura-caddy:edge` (own).* The SARIF holds 2 results. The gate is red on brotli-libs and x/net,
+    as in the baseline, and the second pass takes 1 s from the shared cache.
+  - *`tempo` (third-party).* The gate is green.
 
 ### Task 6: one postgres tag (D1)
 
-- [ ] `disposable_stack.sh` and `coverage_docker.sh` read `postgres:` from `compose.yaml` when
-  `POSTGRES_IMAGE` is unset. The test makes them disagree with compose and expects the compose
-  tag.
+- [x] `disposable_stack.sh` and `coverage_docker.sh` read `postgres:` from `compose.yaml` when
+  `POSTGRES_IMAGE` is unset.
+  - *The test.* It checks the tag from another working directory, and checks that no copied tag
+    is left.
+  - *A gap found on the way.* The library test was never run by any workflow, and now `ci.yml`
+    runs it.
 
 ### Task 7: the images Aura builds
 
