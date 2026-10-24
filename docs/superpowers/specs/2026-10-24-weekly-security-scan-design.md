@@ -9,7 +9,7 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
 
 ## What exists, read in the tree and on GitHub on 2026-10-24
 
-1. **Dependabot keeps most manifests current.** `.github/dependabot.yml` has six entries:
+1. **Dependabot keeps most manifests current.** `.github/dependabot.yml` has five entries:
    - gomod, npm in `/web` and GitHub Actions, weekly;
    - seven Dockerfiles, weekly, digest refresh included (since 2026-10-08);
    - `compose.yaml`, daily, `allow`-limited to `aura-whisper-server` (since 2026-10-08). The other
@@ -21,7 +21,7 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
    the runs of the `Dependabot Updates` dynamic workflow.
    - *What still runs.* Security updates do (2026-10-21 and 2026-10-22), and so do dependency-graph
      updates (2026-10-21 and 2026-10-23).
-   - *What stopped.* None of the six configured entries has run since. The daily compose entry
+   - *What stopped.* None of the five configured entries has run since. The daily compose entry
      missed 15 days, and the weekly entries missed the Mondays of 2026-10-12 and 2026-10-19.
    - *The account outage explains only part of it.* The repository's own scheduled workflows ran
      until 2026-10-11 13:02 and again from 2026-10-21 17:23. Dependabot missed 2026-10-10 and
@@ -31,6 +31,11 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
      update needed", which was correct that day.
    - *The documented auto-pause does not apply.* It needs a Dependabot PR open for 90 days, and
      none is open.
+   - *GitHub no longer holds the config.* The repository's Dependabot tab reads "Dependabot version
+     updates aren't configured yet" (operator's screenshot, 2026-10-24). The file is on master and
+     passes the schemastore `dependabot-2.0` schema with zero errors. GitHub reinstated the account
+     on 2026-10-21 (`c7387e1`), and the file has not changed since `4441425` (2026-10-08). Dependabot
+     reads it again when it changes on the default branch.
    - *A failed security update.* The one for `@vitest/mocker` in `/packages/create-aura` failed on
      2026-10-22 with `security_update_not_possible`: vitest 4.1.11 held it at 4.1.11, and the fix is
      4.1.12. `e7c0a8c` moved vitest by hand two hours later. Dependabot opened no PR, and a red
@@ -176,12 +181,12 @@ x/crypto, has no fix and is `govulncheck`'s.
 
 ## Order of landing
 
-1. **Restart Dependabot's schedules.** Either the operator presses "Check for updates" on each
-   entry at `/network/updates`, or the `dependabot.yml` change of step 3 lands. Both are actions the
-   docs list as resetting Dependabot. On 2026-10-08 a config change started all six jobs within a
-   minute.
-
-   The proof is the next day's scheduled compose run in the `Dependabot Updates` workflow.
+1. **Make GitHub read `dependabot.yml` again, with the three new entries.**
+   - *Why this way.* The Dependabot tab shows no configuration, so it has no "Check for updates"
+     to press. A change to the file on the default branch makes Dependabot read it. On 2026-10-08
+     one started a run for every configured entry within a minute.
+   - *The proof.* The Dependabot tab lists the seven entries, and the next day's scheduled compose
+     run appears in the `Dependabot Updates` workflow.
 2. **Clear the six images Aura builds.** Today these would turn the first run red:
    - pypdf 6.21.2 in `aura-ingest`;
    - the minimist copies in `aura-sandbox`;
@@ -189,9 +194,9 @@ x/crypto, has no fix and is `govulncheck`'s.
    - then a rebuild of `:edge`.
 
    chi 5.4.0 and zod 4.6.6 move in the same change.
-3. **Land the Dependabot entries, then the workflow** with `.trivyignore.yaml` holding the three
-   third-party acceptances. In the same change, the two disposable-stack scripts read the
-   postgres tag from `compose.yaml` (D1).
+3. **Land the workflow** with `.trivyignore.yaml` holding the three third-party acceptances. In
+   the same change, the two disposable-stack scripts read the postgres tag from `compose.yaml`
+   (D1).
 4. **Run it by `workflow_dispatch` on GitHub.** Measure its time and Docker Hub's answers to a
    hosted runner. Record the run in `docs/superpowers/verification/`.
 5. **Write a PRD amendment** recording the gate as measured.
