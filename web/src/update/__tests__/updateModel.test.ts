@@ -17,6 +17,7 @@ function status(fields: Partial<SystemUpdateStatus> = {}): SystemUpdateStatus {
     available_rev: 'bbbbbbbbbbbb',
     available_built_at: null,
     pending_since: null,
+    apply_at: null,
     deadline: null,
     deferred_until: null,
     checked_at: null,

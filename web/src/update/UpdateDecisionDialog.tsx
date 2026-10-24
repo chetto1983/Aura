@@ -83,6 +83,7 @@ function DecisionDialog({
   const failed = status.state === 'failed';
   const mandatory = deadlinePassed(status, now);
   const deadline = parseTime(status.deadline);
+  const applyAt = parseTime(status.apply_at);
   const builtAt = parseTime(status.available_built_at);
   const pendingSince = parseTime(status.pending_since);
   const heldUntil = deferredUntil(status, now);
@@ -117,11 +118,16 @@ function DecisionDialog({
     return wallClock(shown, now, language).time;
   }
 
+  // The night, unless a postponement runs past it; once that moment has come, the updater only
+  // waits for the work in flight.
+  const installAt = applyAt === undefined ? undefined : Math.max(applyAt, heldUntil ?? 0);
   const headline = mandatory
     ? t('update.dialog.mandatory')
-    : deadline === undefined
-      ? t('update.dialog.firstPause')
-      : t('update.dialog.deadline', { ...wallClock(deadline, now, language) });
+    : installAt === undefined
+      ? t('update.dialog.tonight')
+      : installAt <= now
+        ? t('update.dialog.firstPause')
+        : t('update.dialog.scheduled', { ...wallClock(installAt, now, language) });
 
   return (
     <Dialog

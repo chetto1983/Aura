@@ -1,9 +1,9 @@
 import { getJSON, postJSON } from '../api/json';
 
-// The host updater downloads builds freely but applies one only when an admin asks, or when Aura
-// has been idle long enough and no deferral holds it; `deadline` ends any deferral, it never
-// forces a restart. The daemon reports that queue here; `managed: false` is a dev stack with no
-// updater, where the cockpit shows nothing at all.
+// The host updater downloads builds freely but applies one only when an admin asks, or on its own
+// at `apply_at` (the night) once no deferral holds it and nothing is running; `deadline` ends a
+// deferral. The daemon reports that queue here; `managed: false` is a dev stack with no updater,
+// where the cockpit shows nothing at all.
 
 export type UpdateState = 'current' | 'pending' | 'requested' | 'applying' | 'failed' | 'unknown';
 
@@ -14,6 +14,8 @@ export interface SystemUpdateStatus {
   readonly available_rev: string;
   readonly available_built_at: string | null;
   readonly pending_since: string | null;
+  /** When the updater installs it with nobody asking: the night after the first pending build. */
+  readonly apply_at: string | null;
   readonly deadline: string | null;
   readonly deferred_until: string | null;
   readonly checked_at: string | null;
@@ -59,6 +61,7 @@ export async function fetchSystemUpdate(signal?: AbortSignal): Promise<SystemUpd
     available_rev: raw?.available_rev ?? '',
     available_built_at: raw?.available_built_at ?? null,
     pending_since: raw?.pending_since ?? null,
+    apply_at: raw?.apply_at ?? null,
     deadline: raw?.deadline ?? null,
     deferred_until: raw?.deferred_until ?? null,
     checked_at: raw?.checked_at ?? null,

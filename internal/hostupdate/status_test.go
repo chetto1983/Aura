@@ -30,6 +30,7 @@ func TestReadStatusParsesWhatTheUpdaterWrites(t *testing.T) {
 		"available_rev=7886200e5000000000000000000000000000abcd",
 		"available_built=1790316300",
 		"pending_since=1790316600",
+		"apply_at=1790391600",
 		"deadline=1790403000",
 		"deferred_until=1790320200",
 		"deferred_by=448ddbe1-96ea-405d-8219-4a3d52a425c0",
@@ -49,6 +50,7 @@ func TestReadStatusParsesWhatTheUpdaterWrites(t *testing.T) {
 		AvailableRev:   "7886200e5000000000000000000000000000abcd",
 		AvailableBuilt: time.Unix(1790316300, 0).UTC(),
 		PendingSince:   time.Unix(1790316600, 0).UTC(),
+		ApplyAt:        time.Unix(1790391600, 0).UTC(),
 		Deadline:       time.Unix(1790403000, 0).UTC(),
 		DeferredUntil:  time.Unix(1790320200, 0).UTC(),
 		DeferredBy:     "448ddbe1-96ea-405d-8219-4a3d52a425c0",
@@ -67,7 +69,7 @@ func TestReadStatusLeavesAbsentAndZeroTimesZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.DeferredUntil.IsZero() || !got.Deadline.IsZero() || got.State != StateCurrent {
+	if !got.DeferredUntil.IsZero() || !got.Deadline.IsZero() || !got.ApplyAt.IsZero() || got.State != StateCurrent {
 		t.Fatalf("got %+v, want current with zero times", got)
 	}
 }

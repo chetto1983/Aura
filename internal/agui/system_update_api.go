@@ -2,8 +2,8 @@ package agui
 
 // system_update_api.go is the cockpit's side of an appliance update. The host updater
 // (deploy/aura-image-update.sh) downloads every build but restarts Aura only when an admin
-// asks, when the host restarted, or when Aura is idle and no deferral holds it back; the
-// deadline ends a deferral and never forces a restart. These routes show its status and hand
+// asks, when the host restarted, or at night (apply_at) with nothing running and no deferral
+// holding it back; the deadline ends a deferral. These routes show its status and hand
 // it an admin's decision through the directory both share (internal/hostupdate). GET is for
 // everyone, because a member must be warned before the restart; the two POSTs are mounted
 // behind identity.create in cmd/aura.
@@ -39,6 +39,7 @@ type systemUpdateView struct {
 	AvailableRev     string     `json:"available_rev,omitempty"`
 	AvailableBuiltAt *time.Time `json:"available_built_at,omitempty"`
 	PendingSince     *time.Time `json:"pending_since,omitempty"`
+	ApplyAt          *time.Time `json:"apply_at,omitempty"`
 	Deadline         *time.Time `json:"deadline,omitempty"`
 	DeferredUntil    *time.Time `json:"deferred_until"`
 	CheckedAt        *time.Time `json:"checked_at,omitempty"`
@@ -65,6 +66,7 @@ func (s *Server) handleSystemUpdateGet(w http.ResponseWriter, r *http.Request) {
 	view.AvailableRev = status.AvailableRev
 	view.AvailableBuiltAt = timeOrNil(status.AvailableBuilt)
 	view.PendingSince = timeOrNil(status.PendingSince)
+	view.ApplyAt = timeOrNil(status.ApplyAt)
 	view.Deadline = timeOrNil(status.Deadline)
 	view.DeferredUntil = timeOrNil(status.DeferredUntil)
 	view.CheckedAt = timeOrNil(status.CheckedAt)
