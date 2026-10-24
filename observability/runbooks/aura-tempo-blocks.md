@@ -10,7 +10,7 @@ The cause measured on the lab VM is a block whose `meta.json` or `meta.compacted
 
 ## Upstream fix and the next Tempo upgrade
 
-grafana/tempo#8058 closed #8054 on 2026-10-09 (commit `51304f345` on `main`). The poller now skips a block whose meta is not valid JSON, counts it in `tempodb_blocklist_corrupt_block_meta_total{tenant}`, and fails the tenant only when every meta is corrupt. As of 2026-10-10 no release carries it: the latest is v3.1.0 and `release-v3.1` has no backport. Aura pins 3.1.0, so this runbook applies as written.
+grafana/tempo#8058 closed #8054 on 2026-10-09 (commit `51304f345` on `main`). The poller now skips a block whose meta is not valid JSON, counts it in `tempodb_blocklist_corrupt_block_meta_total{tenant}`, and fails the tenant only when every meta is corrupt. As of 2026-10-24 no release carries it: v3.1.1 (2026-10-21) adds only security and dependency fixes to `release-v3.1` (`git log v3.1.0..v3.1.1`, six commits). Aura pins 3.1.1, and on it one empty `meta.json` still fails the tenant's poll with `unexpected end of JSON input`, adds 2 to `tempodb_blocklist_tenant_index_errors_total`, and exports no `tempodb_blocklist_corrupt_block_meta_total` (measured 2026-10-24 on a throwaway stack), so this runbook applies as written.
 
 The upgrade that brings #8058 must change two things here:
 
