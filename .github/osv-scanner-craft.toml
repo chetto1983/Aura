@@ -1,0 +1,20 @@
+# OSV-Scanner acceptances for the Craft apps' wasm32 graphs (scripts/security_scan/craft_osv.sh,
+# spec D6). One [[IgnoredVulns]] per advisory, with its reason and an ignoreUntil at most 90 days
+# out. Measured with OSV-Scanner 2.7.0 on 2026-10-24: once ignoreUntil has passed, the finding
+# is reported again.
+
+# zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet).
+# Both advisories concern ZipArchive::extract() and ZipStreamReader::extract() writing to a
+# filesystem: SUID/SGID bits kept, permissions applied through symlinks. No source file of the
+# three apps calls either, as checked at the pinned tags with Aura's patches. On
+# wasm32-unknown-unknown, the only target these builds ship, the standard library has no
+# filesystem to extract to.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0367"
+ignoreUntil = 2027-01-22
+reason = "zip extract() to a filesystem: not called by WordCraft, DeckCraft or GridCraft, and wasm32-unknown-unknown has no filesystem"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0369"
+ignoreUntil = 2027-01-22
+reason = "zip extract() to a filesystem: not called by WordCraft, DeckCraft or GridCraft, and wasm32-unknown-unknown has no filesystem"
