@@ -24,6 +24,7 @@ export function adminPending(fields: Record<string, unknown> = {}): Record<strin
     available_rev: AVAILABLE_REV,
     available_built_at: at(24, 7, 12),
     pending_since: at(24, 7),
+    apply_at: at(25, 3),
     deadline: at(25, 7),
     deferred_until: null,
     checked_at: at(24, 9, 59),

@@ -36,7 +36,7 @@ func updateServer(t *testing.T, statusBody string) (*Server, string) {
 }
 
 const pendingStatus = "state=pending\nrunning_rev=4de507676c6b\navailable_rev=7886200e5abc\navailable_built=1790316300\n" +
-	"pending_since=1790316600\ndeadline=1790403000\nhandled_request=0123456789abcdef0123456789abcdef\n" +
+	"pending_since=1790316600\napply_at=1790391600\ndeadline=1790403000\nhandled_request=0123456789abcdef0123456789abcdef\n" +
 	"error=\nchecked_at=1790319900\n"
 
 func getUpdate(t *testing.T, s *Server, principal string) map[string]any {
@@ -65,8 +65,9 @@ func TestSystemUpdateTellsAMemberOnlyWhatIsHappening(t *testing.T) {
 	s, dir := updateServer(t, pendingStatus+"error=pull failed\n")
 	writeTestActivity(t, dir)
 	body := getUpdate(t, s, updateMemberID)
-	if body["state"] != "pending" || body["can_decide"] != false || body["available_rev"] != "7886200e5abc" {
-		t.Fatalf("member body %v", body)
+	if body["state"] != "pending" || body["can_decide"] != false || body["available_rev"] != "7886200e5abc" ||
+		body["apply_at"] != rfc(1790391600) {
+		t.Fatalf("member body %v, want the pending build and when it installs", body)
 	}
 	for _, adminOnly := range []string{"error", "last_activity_at", "live_runs"} {
 		if _, ok := body[adminOnly]; ok {
@@ -86,6 +87,7 @@ func TestSystemUpdateShowsAnAdminWhatANowWouldInterrupt(t *testing.T) {
 		"available_rev":      "7886200e5abc",
 		"available_built_at": rfc(1790316300),
 		"pending_since":      rfc(1790316600),
+		"apply_at":           rfc(1790391600),
 		"deadline":           rfc(1790403000),
 		"deferred_until":     nil,
 		"checked_at":         rfc(1790319900),

@@ -66,6 +66,7 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"linux/arm64",
 		"extra_files:",
 		`VCS_REF: "{{ .FullCommit }}"`,
+		`APT_WEEK: "{{ .Env.APT_WEEK }}"`,
 		"go.mod",
 		"go.sum",
 		"cmd",

@@ -66,8 +66,9 @@ master/edge install points `.env` at the `:edge` moving tags, and `--appliance` 
 enables the `aura-image-update` systemd timer: from then on the machine re-pulls aura
 and its MCP sidecars from the image home (`IMAGE_HOME` in `deploy/aura-image-update.sh`,
 `ghcr.io/chetto1983` today) on its own, migrations and Compose payload
-included, with no operator involved. Without `--appliance` (no systemd units, no timer), the
-stack still starts; updates stay manual.
+included. It downloads with no operator involved; when it restarts into a new build is in
+[When an appliance restarts](#when-an-appliance-restarts). Without `--appliance` (no systemd
+units, no timer), the stack still starts; updates stay manual.
 
 The default stack also starts the Cloudflare supervisor healthy-idle. Enable it after
 setup in **Settings > Remote access**; the installer requires no Cloudflare credential.
@@ -159,6 +160,32 @@ what it replaces under `backups/payload-*`) and brings the whole stack up on it.
 version pin changed in `compose.yaml` therefore reaches every appliance on its own.
 `sha256sum -c payload_manifest.txt` inside `/opt/aura` shows whether a host matches
 its payload. Watch it with `journalctl -u aura-image-update.service -f`.
+
+### When an appliance restarts
+
+Every tick downloads what is new, but restarts Aura into a new build only in one of three
+cases (`deploy/aura-update-consent.sh`):
+
+- an admin chooses **Update now** in the cockpit;
+- the host restarted, and Aura already runs the new image;
+- the night came: the first `AURA_UPDATE_AT` (default `03:00`, the host's local time) after
+  the first pending build, as soon as no tool call or job is running. A night lasts three
+  hours; one that a running job or a postponement takes up whole moves the install to the next
+  night, so it never lands in the day. An activity report from Aura older than three minutes
+  reads as Aura being down, which holds nothing back.
+
+An admin can postpone a build from the cockpit, until at most 24 hours after the first pending
+one was found; past that the postponement no longer holds the night back. An install that
+fails is retried the next night, or at once from the cockpit. The edge channel publishes on
+every push to master that changes the image, several times on a busy day; every build waits
+for the same night.
+
+The cockpit warns members only once an admin has chosen **Update now**; the night's restart
+comes without a banner.
+
+`/etc/default/aura` overrides the policy: `AURA_UPDATE_AT` (`03:00`),
+`AURA_UPDATE_MAX_DEFER_SECONDS` (86400) and `AURA_UPDATE_ACTIVITY_STALE_SECONDS` (180).
+`systemctl disable --now aura-image-update.timer` stops the updates.
 
 ### An appliance on the GitLab bridge
 

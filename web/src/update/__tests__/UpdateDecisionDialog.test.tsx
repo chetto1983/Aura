@@ -41,7 +41,7 @@ describe('UpdateDecisionDialog', () => {
     await i18n.changeLanguage('en');
   });
 
-  it('shows the build, how long it has waited, its deadline and what it would interrupt', async () => {
+  it('shows the build, how long it has waited, when it installs and what it would interrupt', async () => {
     stubDaemon(adminPending());
     renderCenter();
 
@@ -54,7 +54,7 @@ describe('UpdateDecisionDialog', () => {
     expect(within(dialog).getByText('Built').nextElementSibling?.textContent).toBe(built);
     expect(within(dialog).getByText('Waiting for').nextElementSibling?.textContent).toBe('3 hours');
     expect(within(dialog).getByText(/^It will install itself/).textContent).toBe(
-      `It will install itself at the first quiet moment, by ${clock(new Date(2026, 8, 25, 7))} tomorrow.`,
+      `It will install itself tomorrow at ${clock(new Date(2026, 8, 25, 3))}.`,
     );
     expect(within(dialog).getByText('Right now').nextElementSibling?.textContent).toBe(
       'last activity 3 minutes ago',
@@ -107,8 +107,21 @@ describe('UpdateDecisionDialog', () => {
     expect(dialog.querySelector('[data-kind]')?.getAttribute('data-kind')).toBe('idle');
   });
 
-  it('leaves out what the daemon does not know', async () => {
-    stubDaemon(adminPending({ available_built_at: null, pending_since: null, deadline: null }));
+  it('installs at the end of a postponement that runs past the night', async () => {
+    stubDaemon(adminPending({ deferred_until: at(25, 5) }));
+    renderCenter();
+
+    // A running postponement keeps the dialog shut until it is reopened from the header.
+    fireEvent.click(await screen.findByRole('button', { name: 'Update available' }));
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText(/^It will install itself/).textContent).toBe(
+      `It will install itself tomorrow at ${clock(new Date(2026, 8, 25, 5))}.`,
+    );
+  });
+
+  it('says it waits for a quiet moment once its night has come', async () => {
+    stubDaemon(adminPending({ apply_at: at(24, 3), live_runs: 1 }));
     renderCenter();
 
     const dialog = await openDialog();
@@ -116,6 +129,23 @@ describe('UpdateDecisionDialog', () => {
     expect(
       within(dialog).getByText('It will install itself at the first quiet moment.'),
     ).toBeTruthy();
+    expect(within(dialog).getByText('1 task in progress')).toBeTruthy();
+  });
+
+  it('leaves out what the daemon does not know', async () => {
+    stubDaemon(
+      adminPending({
+        available_built_at: null,
+        pending_since: null,
+        apply_at: null,
+        deadline: null,
+      }),
+    );
+    renderCenter();
+
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText('It will install itself tonight.')).toBeTruthy();
     expect(within(dialog).queryByText('Built')).toBeNull();
     expect(within(dialog).queryByText('Waiting for')).toBeNull();
     expect(button(deferGroup(dialog), /^Until tonight/).textContent).toBe(
@@ -255,7 +285,8 @@ describe('UpdateDecisionDialog', () => {
   });
 
   it('offers no postponement once the deadline has passed', async () => {
-    stubDaemon(adminPending({ deadline: at(24, 9) }));
+    // Past the deadline the night has passed too, unless a failure moved it on (next test).
+    stubDaemon(adminPending({ deadline: at(24, 9), apply_at: at(24, 3) }));
     renderCenter();
 
     const dialog = await openDialog();
@@ -278,6 +309,21 @@ describe('UpdateDecisionDialog', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
     expect(window.sessionStorage.getItem('aura.update.dismissedRev')).toBe(AVAILABLE_REV);
+  });
+
+  it('names the night a failed install is retried, even past the deadline', async () => {
+    stubDaemon(
+      adminPending({ state: 'failed', error: 'boom', deadline: at(24, 9), apply_at: at(25, 3) }),
+    );
+    renderCenter();
+
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText(/^It will install itself/).textContent).toBe(
+      `It will install itself tomorrow at ${clock(new Date(2026, 8, 25, 3))}.`,
+    );
+    expect(within(dialog).queryByText(/^Mandatory update/)).toBeNull();
+    expect(within(dialog).queryByRole('group', { name: 'Postpone' })).toBeNull();
   });
 
   it.each([
@@ -354,9 +400,7 @@ describe('UpdateDecisionDialog', () => {
 
     const dialog = await screen.findByRole('dialog', { name: 'Aggiornamento disponibile' });
 
-    expect(
-      within(dialog).getByText('Si installerà da solo alla prima pausa entro domani alle 07:00.'),
-    ).toBeTruthy();
+    expect(within(dialog).getByText('Si installerà da solo domani alle 03:00.')).toBeTruthy();
     expect(within(dialog).getByText('3 attività in corso')).toBeTruthy();
     expect(within(dialog).getByText('In attesa da').nextElementSibling?.textContent).toBe('3 ore');
     const group = within(dialog).getByRole('group', { name: 'Rimanda' });

@@ -26,6 +26,20 @@ read_secret() {
   printf '%s' "$val" | tr -d '\r'
 }
 
+# disposable_stack_default_image — the postgres image compose.yaml runs, found from this
+# file's own path, so the caller's working directory does not matter. A tag copied into these
+# scripts once fell behind compose's, and no check noticed (security-scan spec, D1).
+disposable_stack_default_image() {
+  local compose image
+  compose="$(dirname "${BASH_SOURCE[0]}")/../../compose.yaml"
+  image="$(sed -nE 's/^    image: (postgres:[^[:space:]]+)$/\1/p' "$compose" | head -1)"
+  if [ -z "$image" ]; then
+    echo "FATAL: no postgres image in $compose" >&2
+    return 1
+  fi
+  printf '%s\n' "$image"
+}
+
 # disposable_stack_guard_name DB_NAME — refuses the name "aura" with exit 4. A
 # destructive tagged tier TRUNCATEs/DELETEs shared tables on setup; pointing it at a live
 # personal deployment's `aura` database is exactly what destroyed auth data on
@@ -99,9 +113,10 @@ _disposable_stack_provision_role_and_db() {
 # DISPOSABLE_STACK_HOST, DISPOSABLE_STACK_PORT.
 disposable_stack_bring_up_auto() {
   local db_name="$1" pgpw="$2"
-  local port="${3:-5433}" image="${4:-${POSTGRES_IMAGE:-postgres:18.6-alpine3.24}}"
+  local port="${3:-5433}" image="${4:-${POSTGRES_IMAGE:-}}"
   local local_container="${5:-aura-postgres-cov}" ci_container="${6:-aura-postgres}"
   disposable_stack_guard_name "$db_name"
+  if [ -z "$image" ]; then image="$(disposable_stack_default_image)"; fi
 
   DISPOSABLE_STACK_DB="$db_name"
   DISPOSABLE_STACK_CONTAINER=""
@@ -132,8 +147,9 @@ disposable_stack_bring_up_auto() {
 # Sets the same DISPOSABLE_STACK_* variables as disposable_stack_bring_up_auto.
 disposable_stack_bring_up_local() {
   local db_name="$1" pgpw="$2" container_name="$3" port="$4"
-  local image="${5:-${POSTGRES_IMAGE:-postgres:18.6-alpine3.24}}"
+  local image="${5:-${POSTGRES_IMAGE:-}}"
   disposable_stack_guard_name "$db_name"
+  if [ -z "$image" ]; then image="$(disposable_stack_default_image)"; fi
 
   DISPOSABLE_STACK_DB="$db_name"
   DISPOSABLE_STACK_CONTAINER="$container_name"

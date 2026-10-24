@@ -1,0 +1,78 @@
+# Accepted Trivy findings for the weekly security scan (.github/workflows/security-scan.yml, spec
+# docs/superpowers/specs/2026-10-24-weekly-security-scan-design.md, D2). Every entry has three
+# parts:
+# - a statement;
+# - an expired_at at most 90 days out;
+# - a purl with the exact version, so that the same advisory in another image, Aura's own above
+#   all, is still reported.
+# Measured with Trivy 0.70.0 on 2026-10-24 against kokoro's perl-base: the exact purl hides the
+# finding, a purl with another version does not, and an expired_at in the past no longer hides
+# anything.
+#
+# All entries below are third-party CRITICALs that only upstream can fix: each image is on its
+# newest release. The operator approved them on 2026-10-24. Review each one by its expired_at.
+vulnerabilities:
+  # postgres:18.6-alpine3.24: gosu is built with Go 1.24.6.
+  - id: CVE-2025-68121
+    purls:
+      - "pkg:golang/stdlib@v1.24.6"
+    statement: "Go 1.24.6 in the postgres image's gosu binary, fixed upstream by a rebuild only"
+    expired_at: 2027-01-22
+
+  # arcadedata/arcadedb:26.10.2: netty-handler inside arcadedb-ha-raft's shaded jar.
+  - id: CVE-2026-75595
+    purls:
+      - "pkg:maven/io.netty/netty-handler@4.1.136.Final"
+    statement: "netty-handler shaded into ArcadeDB 26.10.2, the newest release; fixed upstream only"
+    expired_at: 2027-01-22
+
+  # ghcr.io/remsky/kokoro-fastapi-cpu:v0.9.0, the newest release: its Debian base and Python deps.
+  - id: CVE-2026-13221
+    purls:
+      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
+    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
+    expired_at: 2027-01-22
+  - id: CVE-2026-42496
+    purls:
+      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
+    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
+    expired_at: 2027-01-22
+  - id: CVE-2026-8376
+    purls:
+      - "pkg:deb/debian/perl-base@5.40.1-6?arch=amd64&distro=debian-13.6"
+    statement: "perl-base in kokoro v0.9.0's Debian 13 base; fixed upstream by a rebuild only"
+    expired_at: 2027-01-22
+  - id: CVE-2026-63374
+    purls:
+      - "pkg:pypi/anyio@4.12.1"
+    statement: "anyio pinned by kokoro v0.9.0; fixed upstream only"
+    expired_at: 2027-01-22
+  - id: GHSA-6q48-6c7w-9gw2
+    purls:
+      - "pkg:pypi/certifi@2026.2.25"
+    statement: "certifi pinned by kokoro v0.9.0; fixed upstream only"
+    expired_at: 2027-01-22
+
+  # Aura's own images, where the vulnerable code sits inside a binary or package only upstream
+  # ships. Each entry also carries the path, so the same version elsewhere in an image is still
+  # reported (measured with Trivy 0.70.0 on 2026-10-24: a copy of the same undici at another path
+  # stays in the report). The operator approved both on 2026-10-24.
+
+  # aura-cloudflared: compress inside Cloudflare's own cloudflared 2026.10.2 binary.
+  - id: CVE-2026-63209
+    purls:
+      - "pkg:golang/github.com/klauspost/compress@v1.18.0"
+    paths:
+      - "usr/local/bin/cloudflared"
+    statement: "klauspost/compress compiled into cloudflared 2026.10.2, the newest release; only Cloudflare can rebuild it"
+    expired_at: 2027-01-22
+
+  # aura and aura-sandbox: the undici npm bundles. npm 11.21.1, the newest 11.x, and 12.2.1, the
+  # newest of all, both ship 6.29.0; the fix is 6.29.1.
+  - id: CVE-2026-109869
+    purls:
+      - "pkg:npm/undici@6.29.0"
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: "undici bundled inside npm 11.21.1; no npm release ships the fixed 6.29.1 yet"
+    expired_at: 2027-01-22

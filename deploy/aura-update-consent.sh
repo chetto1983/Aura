@@ -26,8 +26,12 @@ valid_or() {
   if [[ "$1" =~ $2 ]]; then printf '%s' "$1"; else printf '%s' "$3"; fi
 }
 
-# The policy, overridable in /etc/default/aura (sourced by main before this file).
-IDLE_SECONDS="$(valid_or "${AURA_UPDATE_IDLE_SECONDS:-}" '^[0-9]{1,9}$' 900)"
+# The policy, overridable in /etc/default/aura (sourced by main before this file). UPDATE_AT is
+# the host's local time at which a pending update applies with nobody asking.
+UPDATE_AT="$(valid_or "${AURA_UPDATE_AT:-}" '^([01][0-9]|2[0-3]):[0-5][0-9]$' 03:00)"
+# How long the night lasts from UPDATE_AT. A night that a run or a postponement takes up whole
+# moves the install to the next one, so the restart never lands in the day.
+NIGHT_SECONDS=10800
 MAX_DEFER_SECONDS="$(valid_or "${AURA_UPDATE_MAX_DEFER_SECONDS:-}" '^[0-9]{1,9}$' 86400)"
 ACTIVITY_STALE_SECONDS="$(valid_or "${AURA_UPDATE_ACTIVITY_STALE_SECONDS:-}" '^[0-9]{1,9}$' 180)"
 
@@ -53,6 +57,7 @@ load_status() {
   AVAILABLE_REV="$(valid_or "$(kv_value "${file}" available_rev)" "${hex}" '')"
   AVAILABLE_BUILT="$(valid_or "$(kv_value "${file}" available_built)" "${epoch}" 0)"
   PENDING_SINCE="$(valid_or "$(kv_value "${file}" pending_since)" "${epoch}" 0)"
+  APPLY_AT="$(valid_or "$(kv_value "${file}" apply_at)" "${epoch}" 0)"
   DEADLINE="$(valid_or "$(kv_value "${file}" deadline)" "${epoch}" 0)"
   DEFERRED_UNTIL="$(valid_or "$(kv_value "${file}" deferred_until)" "${epoch}" 0)"
   DEFERRED_BY="$(valid_or "$(kv_value "${file}" deferred_by)" '^[0-9a-f-]{0,36}$' '')"
@@ -66,7 +71,7 @@ record_status() {
   install -d -m 0755 "${dir}"
   tmp="$(mktemp "${dir}/.status.XXXXXX")"
   printf '%s\n' "state=$1" "running_rev=${RUNNING_REV}" "available_rev=${AVAILABLE_REV}" \
-    "available_built=${AVAILABLE_BUILT}" "pending_since=${PENDING_SINCE}" "deadline=${DEADLINE}" \
+    "available_built=${AVAILABLE_BUILT}" "pending_since=${PENDING_SINCE}" "apply_at=${APPLY_AT}" "deadline=${DEADLINE}" \
     "deferred_until=${DEFERRED_UNTIL}" "deferred_by=${DEFERRED_BY}" \
     "handled_request=${HANDLED_REQUEST}" "error=${UPDATE_ERROR//$'\n'/ }" "checked_at=$(date +%s)" >"${tmp}"
   chmod 0644 "${tmp}"
@@ -89,18 +94,30 @@ read_request() {
   fi
 }
 
-# Idle is nobody using Aura for IDLE_SECONDS with nothing running. A report older than
-# ACTIVITY_STALE_SECONDS means Aura is down or predates this channel: nobody can be using it,
-# and the update may be what brings it back. A report that cannot be read counts as busy.
-aura_is_idle() {
-  local file now written last live
+# Quiet is no tool call or job in flight, which a restart would cut off. A report older than
+# ACTIVITY_STALE_SECONDS means Aura is down or predates this channel, and the update may be
+# what brings it back. A report that cannot be read counts as busy.
+aura_is_quiet() {
+  local file now written live
   file="$(update_dir)/activity"
   now="$(date +%s)"
   written="$(valid_or "$(kv_value "${file}" written_at)" '^[0-9]{1,12}$' 0)"
   ((now - 10#${written} <= ACTIVITY_STALE_SECONDS)) || return 0
-  last="$(valid_or "$(kv_value "${file}" last_activity_at)" '^[0-9]{1,12}$' "${now}")"
   live="$(valid_or "$(kv_value "${file}" live_runs)" '^[0-9]{1,6}$' 1)"
-  ((10#${live} == 0 && now - 10#${last} >= IDLE_SECONDS))
+  ((10#${live} == 0))
+}
+
+# The first UPDATE_AT strictly after epoch $1, in the host's local time. The date is stepped
+# with no time beside it: GNU date reads "03:00 +1 day" as the zone offset +1.
+next_apply_at() {
+  local day at
+  day="$(date -d "@$1" +%F)"
+  at="$(date -d "${day} ${UPDATE_AT}" +%s)"
+  if ((at <= $1)); then
+    day="$(date -d "${day} +1 day" +%F)"
+    at="$(date -d "${day} ${UPDATE_AT}" +%s)"
+  fi
+  echo "${at}"
 }
 
 image_revision() {
@@ -132,9 +149,9 @@ update_pending() {
   [[ -n "$(stale_boxes)" ]]
 }
 
-# Records what this tick found; succeeds when the update is to be applied now. The deadline
-# counts from the FIRST pending build, or an edge channel publishing every hour would hold
-# every machine back forever.
+# Records what this tick found; succeeds when the update is to be applied now. The night and
+# the deadline count from the FIRST pending build, or an edge channel publishing every hour
+# would hold every machine back forever.
 decide_update() {
   local now tag running reason=''
   now="$(date +%s)"
@@ -144,14 +161,15 @@ decide_update() {
   RUNNING_REV="$(image_revision "${running}")"
   if ! update_pending; then
     ! read_request 2>/dev/null || HANDLED_REQUEST="${REQ_ID}"
-    AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''
+    AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 APPLY_AT=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''
     record_status current
     return 1
   fi
   case "${PREV_STATE}" in
     pending | failed | applying) ((PENDING_SINCE > 0)) || PENDING_SINCE="${now}" ;;
-    *) PENDING_SINCE="${now}" DEFERRED_UNTIL=0 DEFERRED_BY='' ;;
+    *) PENDING_SINCE="${now}" APPLY_AT=0 DEFERRED_UNTIL=0 DEFERRED_BY='' ;;
   esac
+  ((APPLY_AT > 0)) || APPLY_AT="$(next_apply_at "${PENDING_SINCE}")"
   DEADLINE=$((PENDING_SINCE + MAX_DEFER_SECONDS))
   AVAILABLE_REV="$(image_revision "${tag}")"
   AVAILABLE_BUILT="$(image_built "${tag}")"
@@ -171,21 +189,26 @@ decide_update() {
   if [[ -z "${reason}" && -n "${tag}" && "${running}" == "${tag}" && "${tag}" != "$(applied_image)" ]]; then
     reason="aura already runs it (the host restarted)"
   fi
-  if [[ -z "${reason}" ]] && { ((DEFERRED_UNTIL <= now)) || ((now >= DEADLINE)); } && aura_is_idle; then
-    reason="nobody is using Aura"
+  if [[ -z "${reason}" ]] && ((now >= APPLY_AT + NIGHT_SECONDS)); then
+    APPLY_AT="$(next_apply_at "${now}")"
+  fi
+  if [[ -z "${reason}" ]] && ((now >= APPLY_AT)) && { ((DEFERRED_UNTIL <= now)) || ((now >= DEADLINE)); } && aura_is_quiet; then
+    reason="it is past ${UPDATE_AT}, and nothing is running"
   fi
   record_status pending
   if [[ -z "${reason}" ]]; then
-    echo "update: ${AVAILABLE_REV:0:9} waits for an admin, a quiet spell or $(date -u -d "@${DEADLINE}" +%FT%TZ)."
+    echo "update: ${AVAILABLE_REV:0:9} waits for an admin, or for $(date -d "@${APPLY_AT}" '+%F %H:%M %Z') with nothing running."
     return 1
   fi
   echo "update: applying ${AVAILABLE_REV:0:9}: ${reason}."
 }
 
-# A failed apply leaves the cockpit an error to show; the next eligible tick retries it.
+# A failed apply leaves the cockpit an error to show, and is retried the next night: past
+# UPDATE_AT every tick would otherwise retry it, all through the day. An admin can retry now.
 on_apply_exit() {
   (($1 != 0)) || return 0
   UPDATE_ERROR="the update stopped with exit code $1; see journalctl -u aura-image-update"
+  APPLY_AT="$(next_apply_at "$(date +%s)")"
   record_status failed || true
 }
 

@@ -64,6 +64,10 @@ jobs:
         # Written outside the checkout: goreleaser refuses a dirty tree.
         run: python3 scripts/release_notes.py "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
+      # .goreleaser.yaml passes it to the aura image as APT_WEEK (docker/aura/Dockerfile).
+      - name: Week for the apt refresh
+        run: echo "APT_WEEK=$(bash scripts/apt_week.sh)" >> "$GITHUB_ENV"
+
       - name: Run goreleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:

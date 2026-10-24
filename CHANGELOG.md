@@ -5,6 +5,14 @@ Notable changes to Aura, newest first. Each section is also the text of its
 
 ## Unreleased
 
+### Appliance updates wait for the night
+
+- An edge appliance no longer restarts into a new build after 15 quiet minutes, which could
+  catch someone working in the cockpit. With nobody asking, it installs at 03:00 host time
+  (`AURA_UPDATE_AT`), once no task is running, and a night a running task fills moves it to
+  the next night. **Update now**, postponing and the 24-hour limit
+  work as before, and the admin's dialog says when the install comes.
+
 ### Cloud services read their key from the settings
 
 - Cloud embeddings, cloud speech-to-text and text-to-speech, and vision through an OpenRouter
@@ -152,7 +160,8 @@ multi-user appliance: every person has their own identity, memory, sandbox, skil
 
 - One-command installer: `npx create-aura-appliance`, local or on a remote host over SSH. It detects
   CUDA, Vulkan or CPU for the embedding model.
-- The appliance can update itself from the edge channel, and asks an admin before it
-  restarts into a new build.
+- The appliance can update itself from the edge channel. An admin can apply or defer a new
+  build from the cockpit; otherwise the appliance restarts into it once nobody has used Aura
+  for 15 minutes. (Corrected on 2026-10-24: this line used to say that it asks an admin first.)
 - Remote access through Cloudflare, configured from the cockpit.
 - Optional trust for the Caddy local certificate authority.

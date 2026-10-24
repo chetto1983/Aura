@@ -87,8 +87,8 @@ remove_built_images() {
 # Every step that can fail returns explicitly: errexit is suspended for a function called as a
 # condition (`if main …`, `main || …`), and a build that failed there must still push nothing.
 main() {
-  local registry remote sha work entry name file fork_sha tag image var test
-  local -a pushes=() moves=()
+  local registry remote sha work entry name file fork_sha tag image var test week
+  local -a pushes=() moves=() args=()
   remote="${AURA_PUBLISH_REMOTE:-gitlab}"
   sha="$(git -C "${repo_root}" rev-parse "${1:-HEAD}^{commit}")" || return 1
   git -C "${repo_root}" fetch --quiet "${remote}" master || return 1
@@ -103,13 +103,15 @@ main() {
   registry="${AURA_PUBLISH_REGISTRY:-$(sed -n 's/^IMAGE_HOME=//p' "${work}/aura/deploy/aura-image-update.sh")}"
   [[ -n "${registry}" ]] || { echo "publish: no registry (set AURA_PUBLISH_REGISTRY)" >&2; return 1; }
 
+  week="$(bash "${repo_root}/scripts/apt_week.sh")" || return 1
   for entry in "${EDGE_IMAGES[@]}"; do
     name="${entry%%:*}" file="${entry#*:}" tag="${registry}/${name}:master-${sha}"
-    if [[ "${name}" == aura ]]; then
-      build_image "${tag}" "${work}/aura" "${file}" "${sha}" "${AURA_SOURCE}" --build-arg "VCS_REF=${sha}" || return 1
-    else
-      build_image "${tag}" "${work}/aura" "${file}" "${sha}" "${AURA_SOURCE}" || return 1
-    fi
+    case "${name}" in
+      aura) args=(--build-arg "VCS_REF=${sha}" --build-arg "APT_WEEK=${week}") ;;
+      aura-ingest) args=(--build-arg "APT_WEEK=${week}") ;;
+      *) args=() ;;
+    esac
+    build_image "${tag}" "${work}/aura" "${file}" "${sha}" "${AURA_SOURCE}" "${args[@]}" || return 1
     pushes+=("${tag}")
   done
   name="${ARCADEDB_MCP%%:*}" file="${ARCADEDB_MCP#*:}" tag="${registry}/${name}:${sha}"

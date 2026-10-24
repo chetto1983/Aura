@@ -4,7 +4,7 @@
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
-/** The updater's own idle window: quieter than this, it applies a pending build by itself. */
+/** Activity newer than this reads, in the dialog, as someone using Aura right now. */
 export const IDLE_AFTER_MS = 15 * MINUTE_MS;
 const TONIGHT_HOUR = 3;
 

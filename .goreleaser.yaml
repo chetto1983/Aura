@@ -71,6 +71,9 @@ dockers_v2:
     # its commit instead of "unknown".
     build_args:
       VCS_REF: "{{ .FullCommit }}"
+      # Set by release.yml from scripts/apt_week.sh: the cache would otherwise keep the apt
+      # layers of whichever release built them.
+      APT_WEEK: "{{ .Env.APT_WEEK }}"
     flags:
       # GitHub Actions layer cache so the ~45-60min cold image build is reused
       # across releases (the runner env is exposed by ghaction-github-runtime).

@@ -21,6 +21,7 @@ type Status struct {
 	AvailableRev   string
 	AvailableBuilt time.Time
 	PendingSince   time.Time
+	ApplyAt        time.Time
 	Deadline       time.Time
 	DeferredUntil  time.Time
 	DeferredBy     string
@@ -64,6 +65,7 @@ func ReadStatus(dir string) (Status, bool, error) {
 	for key, dst := range map[string]*time.Time{
 		"available_built": &s.AvailableBuilt,
 		"pending_since":   &s.PendingSince,
+		"apply_at":        &s.ApplyAt,
 		"deadline":        &s.Deadline,
 		"deferred_until":  &s.DeferredUntil,
 		"checked_at":      &s.CheckedAt,
