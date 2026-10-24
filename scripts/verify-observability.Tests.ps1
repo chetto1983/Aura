@@ -81,6 +81,56 @@ function Assert-NegativeCase {
     Write-Host "negative fixture passed: $Name -> $Expected"
 }
 
+# Runs the container-tools branch that -SkipContainerTools leaves out, without Docker. The
+# stand-in `docker` answers every image check, and for `compose config` refuses a
+# ${NAME:?} it finds empty, as Compose does. It returns the names compose config saw set.
+function Invoke-ContainerToolsWithFakeDocker {
+    param([Parameter(Mandatory)] [string]$Root)
+
+    $bin = Join-Path $tempRoot 'fake-docker'
+    New-Item -ItemType Directory -Path $bin -Force | Out-Null
+    $log = Join-Path $bin 'compose-config.log'
+    Set-Content -LiteralPath (Join-Path $bin 'docker.ps1') -Encoding utf8 -Value @'
+if ($args[0] -ne 'compose') { exit 0 }
+$composeFile = $args[[array]::IndexOf($args, '-f') + 1]
+$required = @([regex]::Matches((Get-Content -LiteralPath $composeFile -Raw), '\$\{(?<name>[A-Z0-9_]+):\?') |
+    ForEach-Object { $_.Groups['name'].Value } | Sort-Object -Unique)
+$unset = @($required | Where-Object { [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($_)) })
+if ($unset.Count -gt 0) {
+    Write-Output "required variable $($unset -join ', ') is missing a value"
+    exit 1
+}
+Set-Content -LiteralPath $env:AURA_FAKE_DOCKER_LOG -Value ($required -join ' ')
+exit 0
+'@
+
+    # CI sets every required variable at workflow level, which would hide a gate that
+    # forgets one. Each is cleared for the run and restored after it.
+    $composeText = Get-Content -LiteralPath (Join-Path $Root 'compose.yaml') -Raw
+    $cleared = @([regex]::Matches($composeText, '\$\{(?<name>[A-Z0-9_]+):\?') |
+        ForEach-Object { $_.Groups['name'].Value } | Sort-Object -Unique)
+    $saved = @{}
+    foreach ($name in @($cleared + 'PATH' + 'AURA_FAKE_DOCKER_LOG')) {
+        $saved[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    try {
+        foreach ($name in $cleared) {
+            [Environment]::SetEnvironmentVariable($name, $null, 'Process')
+        }
+        $env:PATH = $bin + [System.IO.Path]::PathSeparator + $env:PATH
+        $env:AURA_FAKE_DOCKER_LOG = $log
+        & $verifierPath -RepositoryRoot $Root -StaticOnly | Out-Null
+    } finally {
+        foreach ($name in $saved.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process')
+        }
+    }
+    if (-not (Test-Path -LiteralPath $log)) {
+        throw 'the container-tools branch never ran compose config'
+    }
+    return @((Get-Content -LiteralPath $log -Raw).Trim() -split ' ')
+}
+
 try {
     New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 
@@ -165,6 +215,18 @@ try {
         param($root)
         Set-ContractText $root 'observability/grafana/provisioning/dashboards/aura.yml' '/var/lib/grafana/dashboards' '/var/lib/grafana/missing'
     }
+
+    # The placeholders come from compose.yaml itself. A variable only this fixture declares
+    # proves it: a copied list cannot know it, and compose config would refuse it unset.
+    $placeholderRoot = Copy-ContractFixture -Name 'compose-placeholders'
+    Set-ContractText $placeholderRoot 'compose.yaml' '      GF_PLUGINS_PREINSTALL_DISABLED: "true"' (
+        '      GF_PLUGINS_PREINSTALL_DISABLED: "true"' + "`n" +
+        '      AURA_FIXTURE_ONLY: ${AURA_FIXTURE_ONLY:?declared only by this fixture}')
+    $seen = Invoke-ContainerToolsWithFakeDocker -Root $placeholderRoot
+    if ($seen -notcontains 'AURA_FIXTURE_ONLY') {
+        throw "compose config ran without the fixture's own required variable; it saw: $($seen -join ', ')"
+    }
+    Write-Host "container-tools fixture passed: all $($seen.Count) required variables got a placeholder"
 
     Write-Host 'observability verifier fixture suite passed'
 } finally {
