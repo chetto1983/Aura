@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import copy
 import json
+import os
 import pathlib
 import re
+import subprocess
+import tempfile
+import textwrap
 import unittest
 
 import critical_mutation_gate
@@ -32,6 +37,11 @@ def step_index(steps: list[str], *needles: str) -> int:
     return matches[0]
 
 
+def run_block(step: str) -> str:
+    script = step.split("\n        run: |\n", 1)[1]
+    return textwrap.dedent(re.split(r"\n(?! {10}|\n)", script, maxsplit=1)[0])
+
+
 def matrix_values(body: str, field: str) -> list[str]:
     return re.findall(rf"^\s+(?:- )?{field}: (.+)$", body, re.MULTILINE)
 
@@ -46,9 +56,47 @@ class StrykerJobTest(unittest.TestCase):
         self.assertIn("actions/cache/restore@", job)
         self.assertIn("actions/cache/save@", job)
         self.assertEqual(job.count("path: web/reports/stryker-incremental.json"), 2)
-        self.assertIn("hashFiles('web/package-lock.json'", job)
+        self.assertIn("steps.stryker_toolchain.outputs.hash", job)
+        self.assertIn("hashFiles('web/stryker.config.json', 'web/vitest.stryker.config.ts'", job)
         self.assertIn("github.sha", job)
         self.assertIn("restore-keys:", job)
+
+    def test_the_stryker_key_moves_with_the_test_toolchain_not_the_app_dependencies(self) -> None:
+        steps = job_steps("ci.yml", "web-mutation-stryker")
+        step = steps[step_index(steps, "id: stryker_toolchain")]
+        self.assertIn("shell: bash", step)
+        script = run_block(step)
+        lock = json.loads((REPO / "web/package-lock.json").read_text(encoding="utf-8"))
+
+        def key_with(lockfile: str) -> tuple[int, str]:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = pathlib.Path(tmp)
+                (root / "web").mkdir()
+                (root / "web/package-lock.json").write_text(lockfile, encoding="utf-8")
+                output = root / "github_output"
+                output.touch()
+                # `shell: bash` runs the step as bash -eo pipefail.
+                run = subprocess.run(["bash", "-eo", "pipefail", "-c", script], cwd=root, capture_output=True,
+                                     env={**os.environ, "GITHUB_OUTPUT": str(output)})
+                return run.returncode, output.read_text(encoding="utf-8")
+
+        def bumped(package: str) -> str:
+            copied = copy.deepcopy(lock)
+            copied["packages"][f"node_modules/{package}"]["version"] += "-bumped"
+            return json.dumps(copied)
+
+        status, base = key_with(json.dumps(lock))
+        self.assertEqual(status, 0)
+        self.assertRegex(base, r"^hash=[0-9a-f]{16}\n$")
+        for toolchain in ("vitest", "@stryker-mutator/core", "typescript"):
+            status, key = key_with(bumped(toolchain))
+            self.assertEqual(status, 0, toolchain)
+            self.assertRegex(key, r"^hash=[0-9a-f]{16}\n$", toolchain)
+            self.assertNotEqual(key, base, toolchain)
+        self.assertEqual(key_with(bumped("zod")), (0, base))
+        status, unreadable = key_with("{}")
+        self.assertNotEqual(status, 0)
+        self.assertEqual(unreadable, "")
 
     def test_the_stryker_job_hands_its_report_to_the_aggregate(self) -> None:
         steps = job_steps("ci.yml", "web-mutation-stryker")

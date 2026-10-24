@@ -1698,6 +1698,8 @@ jobs:
       # npm PR re-mutated everything: 73m07s on #175 (job 120885492846).
       - name: Key the Stryker report by its test toolchain
         id: stryker_toolchain
+        # pipefail: without it a jq failure still hashes the empty string into a valid key.
+        shell: bash
         run: |
           hash="$(jq -c '[.packages | to_entries[]
             | select(.key | test("^node_modules/(vitest|@vitest/[^/]+|@stryker-mutator/[^/]+|typescript|vite|jsdom)$"))
