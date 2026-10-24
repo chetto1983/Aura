@@ -4,8 +4,8 @@
 #   dependabot_fresh.sh [.github/dependabot.yml]
 #
 # Every entry of the config needs a run of the `Dependabot Updates` workflow in the last eight
-# days, and none of those runs may have failed. It stopped for 15 days in October 2026 and
-# nothing said so (spec, finding 3). A run's title names its entry, measured on 2026-10-24:
+# days, and no failed run that a later success on the same entry has not cleared (the operator's
+# rule, 2026-10-24). It stopped for 15 days in October 2026 and nothing said so (spec, finding 3). A run's title names its entry, measured on 2026-10-24:
 # "<ecosystem> in <dir>[, <dir>...][ for <deps>] - Update #N". A security update has the same
 # title, so for an ecosystem that gets them a security update can stand in for a stopped schedule.
 #
@@ -58,9 +58,11 @@ while IFS=$'\t' read -r eco dir; do
          | select(.name | startswith($eco + " in "))
          | select(.name | sub("^[^ ]+ in "; "") | sub(" (for .*)?- Update #[0-9]+$"; "")
                         | split(", ") | index($dir) != null)]
+    | (map(select(.conclusion == "success") | .created_at) | max // "") as $cleared
     | [length, (map(.created_at) | max // "-"),
        (map(select(.conclusion == "failure" or .conclusion == "timed_out"
-                   or .conclusion == "startup_failure")) | length)]
+                   or .conclusion == "startup_failure")
+            | select(.created_at > $cleared)) | length)]
     | @tsv' <<<"$runs")"
   IFS=$'\t' read -r count last failed <<<"$row"
   verdict=ok

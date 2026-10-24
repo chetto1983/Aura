@@ -136,9 +136,9 @@ GitHub:
   `gh api --paginate`, and prints a table to the job summary.
   - *Live result on 2026-10-24.* Six entries are ok. npm in `/packages/create-aura` fails on
     run 39730585760: the @vitest/mocker security update of 2026-10-22, which `e7c0a8c` did by hand.
-  - *What follows from D5 as written.* That run keeps the check red until 2026-10-30, so the
-    first scheduled run, on 2026-10-26, fails on it. Whether a later success clears a failed run
-    is the operator's call.
+  - *What follows from D5 as first written.* That run would have kept the check red until
+    2026-10-30. The operator decided that a later success on the same entry clears a failure, and
+    the test covers both cases. Live after the change, all seven entries are ok.
 
 ### Task 4: the Craft job
 

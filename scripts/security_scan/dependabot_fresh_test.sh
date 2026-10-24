@@ -31,10 +31,17 @@ jq '[.[] | select(.name | startswith("go_modules") | not)]' "$fixtures/all.json"
 if out="$(check "$fixtures/no-go.json")"; then fail "a missing gomod entry passed"; fi
 grep -q '| gomod | / | 0 |' <<<"$out" || fail "the gomod row does not say 0 runs: $out"
 
+# The operator's rule (2026-10-24): a later success on the same entry clears a failed run, as the
+# 2026-10-24 run of /packages/create-aura cleared the @vitest/mocker failure of 2026-10-22.
 jq --argjson r "$(run "pip in /docker/aura-ingest for pypdf - Update #1" 2026-10-22T05:53:13Z failure)" \
+  '. + [$r]' "$fixtures/all.json" >"$fixtures/cleared.json"
+out="$(check "$fixtures/cleared.json")" || fail "a failure followed by a success failed the check: $out"
+grep -q '| pip | /docker/aura-ingest | 2 | .* | 0 | ok |' <<<"$out" || fail "the pip row still counts a cleared failure: $out"
+
+jq --argjson r "$(run "pip in /docker/aura-ingest for pypdf - Update #2" 2026-10-24T12:00:00Z failure)" \
   '. + [$r]' "$fixtures/all.json" >"$fixtures/failed.json"
-if out="$(check "$fixtures/failed.json")"; then fail "a failed run passed"; fi
-grep -q '| pip | /docker/aura-ingest | 2 | .* | 1 |' <<<"$out" || fail "the pip row does not count the failure: $out"
+if out="$(check "$fixtures/failed.json")"; then fail "a failure after the last success passed"; fi
+grep -q '| pip | /docker/aura-ingest | 2 | .* | 1 | FAIL |' <<<"$out" || fail "the pip row does not count the failure: $out"
 
 jq '[.[] | if (.name | startswith("docker_compose")) then .created_at = "2026-10-15T03:25:00Z" else . end]' \
   "$fixtures/all.json" >"$fixtures/stale.json"

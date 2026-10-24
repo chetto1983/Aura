@@ -152,6 +152,10 @@ that trigger workflows*, `schedule`).
 runs of the last eight days with `gh api`. Two conditions turn it red:
 - an ecosystem in `dependabot.yml` has no run in that window;
 - any run in it failed.
+  - *Amended 2026-10-24, the operator's decision.* A failed run counts only if no later run on the
+    same entry succeeded. On that day the rule as first written would have kept the 2026-10-26 run
+    red for a failure of 2026-10-22: the @vitest/mocker security update, which `e7c0a8c` had already
+    done by hand.
 
 Finding 3 shows why: Dependabot stopped for 15 days, and nothing said so. The check cannot tell a
 version update from a security update by its run's name, so a security update can mask a stopped

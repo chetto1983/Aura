@@ -4,6 +4,7 @@
 # is reported again.
 
 # zip 3.0.0 in WordCraft, DeckCraft and GridCraft (fixed in zip 9.0.0, which none of them uses yet).
+# The operator approved both acceptances on 2026-10-24.
 # Both advisories concern ZipArchive::extract() and ZipStreamReader::extract() writing to a
 # filesystem: SUID/SGID bits kept, permissions applied through symlinks. No source file of the
 # three apps calls either, as checked at the pinned tags with Aura's patches. On
