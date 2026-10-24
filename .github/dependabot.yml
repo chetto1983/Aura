@@ -57,7 +57,16 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "build(deps)"
+    ignore:
+      # The types track the oldest Node the installer runs on (engines >=22.13.0, CI 22.14.0).
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
     groups:
+      # @vitest/coverage-v8 must match vitest's version exactly, so a major moves both at once.
+      vitest-toolchain:
+        patterns:
+          - vitest
+          - "@vitest/*"
       create-aura-minor-patch:
         update-types:
           - minor

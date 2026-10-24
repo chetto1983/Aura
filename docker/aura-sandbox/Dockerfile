@@ -222,24 +222,24 @@ RUN set -eu; \
             -exec cp {} "/usr/local/share/licenses/$app/" \; ; \
         rm -rf /tmp/craft /tmp/craft.tgz; \
     }; \
-    craft gridcraft 0.8.0 gridcraft-0.8.0 \
-        4a029e20da86bad46706339ce4516a20445c131c0d82f6a114772208c5d831b3 \
-        0d4c882acdcfd4b5721a6dd1ec74c98ce0fb160d0231973a69475da6ec9e8e7d; \
-    craft pdfcraft 0.9.0 pdfcraft-cli-0.9.0 \
-        cdba2bec4d502d016dd78101a402d07845b708c49d77bc85e0ab640aca65372b \
-        6a5316da69300fc30cd7355cba1c5a9c307ceb741bcce91ba0c5c835350ca0a2; \
-    craft wordcraft 0.8.0 wordcraft-0.8.0 \
-        0ece07cf3d91b923dfd80f90310e04983bde66f0279c6b60ddce89596dde0ddf \
-        a862de2256e43c987dc8ea009ba52ac25db34091fd649b666133931ac68e02cc; \
-    craft deckcraft 0.8.0 deckcraft-0.8.0 \
-        227b8c9cdd2c06b7866807f995fe5d2d0675523a61208f9bc26cf2760fddcb8f \
-        7325c0277d5ecce335da2dabd5dbea4d90b704edccde4d23a6423189e0bcdcc4; \
-    craft photocraft 0.10.0 photocraft-0.10.0 \
-        c5d455785d9c2eaf695bf8e6327c4d6d23a39ddb956a6114f0c5b64326f984e1 \
-        829780d331e6443ddf1bada932ed07e0e9dc541b213b275f3c3a3209607bc7c7; \
-    craft filmcraft 0.9.0 filmcraft-0.9.0 \
-        ea67953cc754bfd8272e0e5fa940518e16068ae96f6b72a2dce566ed69a61632 \
-        ee0a54c2154ab34600a6d1c98a3348ac3bbcc5f44961dfa42c2c16b3a6f13c79
+    craft gridcraft 0.11.1 gridcraft-0.11.1 \
+        f2c83e6c26449a6c45983e903bf32c1d4c302b2042f263ead995271129c70e87 \
+        16e4da4873867a9080ec41d76e38430a8d0e62fa22b43edb6d7b1dbde0925435; \
+    craft pdfcraft 0.13.0 pdfcraft-cli-0.13.0 \
+        fd40f80157856cadd4348a464ef0acde8f19894d831d78e9823708ecf70a3352 \
+        1d1181757f281b2291ca218a0446ade4cfd54c5c258f3d4f22953fa1037dd29d; \
+    craft wordcraft 0.10.0 wordcraft-0.10.0 \
+        ca99ea350ba0aea4103fc8020cad98f051c58d9e9fcf670c119d810108cc45ff \
+        77e838120d9da38752ab355066a0987253d9bc95dfddad1c47bac1f180975bbb; \
+    craft deckcraft 0.10.0 deckcraft-0.10.0 \
+        546616eb2300ce8efb20b44a53e60abfe6b96d71ac606b452a36fd21c6b1ff28 \
+        7be0594d90c4c0be15b812a597b85f6005271716be778b2999cb492f52c8676b; \
+    craft photocraft 0.15.1 photocraft-0.15.1 \
+        b622be40355513056f8152afe895d0a05c1bc3c344a027f772a9a12fa3d1c223 \
+        ff2ea1945df3b413b17c64ec7c0131c093b09c717994a47b4c46c0dabf1c822f; \
+    craft filmcraft 0.12.0 filmcraft-0.12.0 \
+        ddff0a2ec0d89e5e9e65644ed724b5b79959600b1602fd4ea6653b5a54bf88fd \
+        83714c4a73774a3f54a3d2bf52ae0065d3fb8ca8c781deb7cb3450f9b4e74568
 COPY --from=landrun /out/landrun /usr/local/bin/landrun
 COPY --from=landrun /out/LICENSE /usr/local/share/licenses/landrun/LICENSE
 # Chrome must not sign itself in to the Google account a user logs into on the web. Measured

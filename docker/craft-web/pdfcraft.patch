@@ -1,8 +1,8 @@
 diff --git a/crates/engine/src/commands.rs b/crates/engine/src/commands.rs
-index b28758e..dbef5fa 100644
+index 32cf5b4..78cea20 100644
 --- a/crates/engine/src/commands.rs
 +++ b/crates/engine/src/commands.rs
-@@ -370,10 +370,10 @@ pub const COMMANDS: &[CommandSpec] = &[
+@@ -376,10 +376,10 @@ pub const COMMANDS: &[CommandSpec] = &[
      c("page.split", "Split document…", PAGES, None, Assembly, "scissors"),
      c("page.number", "Number pages…", PAGES, None, Assembly, "hash"),
      c("help.shortcuts", "Keyboard shortcuts", HELP, None, Nothing, "circle-help"),
@@ -32,24 +32,11 @@ index 4902d72..88dad36 100644
  ];
  
  pub fn for_command(id: &str) -> Option<&'static Link> {
-diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
-index aa9fe54..42e9474 100644
---- a/crates/ui-egui/Cargo.toml
-+++ b/crates/ui-egui/Cargo.toml
-@@ -71,7 +71,7 @@ rfd = { workspace = true, features = ["file-handle-inner"] }
- wasm-bindgen-futures = "0.4"
- wasm-bindgen = "0.2"
- js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "HtmlIFrameElement", "HtmlImageElement", "HtmlCollection", "Node", "EventTarget"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "HtmlIFrameElement", "HtmlImageElement", "HtmlCollection", "Node", "EventTarget", "Navigator"] }
- 
- [dev-dependencies]
- pdfcraft-xfa = { workspace = true }
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 0de1c6a..05a7867 100644
+index 0337a8c..c095743 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -1151,13 +1151,8 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
+@@ -1176,13 +1176,8 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                      1 => crate::credits::contributors_ui(ui),
                      2 => crate::credits::models_ui(ui),
                      _ => {
@@ -65,7 +52,7 @@ index 0de1c6a..05a7867 100644
                          ui.add_space(6.0);
                          ui.label(tl!("A clean-room, open-source PDF application written in Rust. MIT OR Apache-2.0."));
                          ui.label(
-@@ -1168,10 +1163,12 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
+@@ -1193,10 +1188,12 @@ fn dialogs(app: &mut PdfCraftApp, ctx: &egui::Context) {
                              .small(),
                          );
                          ui.add_space(12.0);
@@ -114,23 +101,18 @@ index 3e70f34..2229241 100644
  
              egui::Frame::NONE
 diff --git a/crates/ui-egui/src/i18n/mod.rs b/crates/ui-egui/src/i18n/mod.rs
-index 5bb2889..be3bfc0 100644
+index dff8efc..a3ba989 100644
 --- a/crates/ui-egui/src/i18n/mod.rs
 +++ b/crates/ui-egui/src/i18n/mod.rs
-@@ -390,9 +390,25 @@ fn first_supported(list: &str) -> Option<Lang> {
-     list.split(['(', ')', ',', '"', '\n']).map(str::trim).filter(|s| !s.is_empty()).find_map(lang_from_tag)
+@@ -464,9 +464,23 @@ fn detect_system_lang() -> Lang {
+     let Some(navigator) = web_sys::window().map(|w| w.navigator()) else { return Lang::EN };
+     let mut tags: Vec<String> = navigator.languages().iter().take(31).filter_map(|v| v.as_string()).collect();
+     tags.extend(navigator.language());
++    // The web build has no face for some languages: Auto skips them rather than draw boxes.
++    tags.retain(|tag| lang_from_tag(tag.trim()).is_some_and(has_face));
+     first_supported_tag(&tags).unwrap_or(Lang::EN)
  }
  
-+/// The browser's languages in its order (`navigator.languages`): the first one PdfCraft has and
-+/// can draw.
- #[cfg(target_arch = "wasm32")]
- fn detect_system_lang() -> Lang {
--    Lang::EN
-+    let Some(window) = web_sys::window() else { return Lang::EN };
-+    let tags = window.navigator().languages();
-+    tags.iter().filter_map(|tag| tag.as_string()).filter_map(|tag| lang_from_tag(&tag)).find(|lang| has_face(*lang)).unwrap_or(Lang::EN)
-+}
-+
 +/// Japanese, Chinese, Arabic and Telugu have a face only from craft-fonts, which the web build
 +/// is made without ([`crate::theme::font_definitions`]): Auto skips them rather than draw boxes.
 +#[cfg(target_arch = "wasm32")]
@@ -141,14 +123,16 @@ index 5bb2889..be3bfc0 100644
 +        "te" => !pdfcraft_fonts::ui_telugu_fonts().is_empty(),
 +        _ => true,
 +    }
- }
- 
++}
++
  thread_local! {
+     // Per thread, as in PhotoCraft: independent app and test threads (kittest harnesses run in
+     // parallel) must not change each other's drawing language.
 diff --git a/crates/ui-egui/src/widgets.rs b/crates/ui-egui/src/widgets.rs
-index 4f5aaa7..c2444b8 100644
+index 85af966..e3de287 100644
 --- a/crates/ui-egui/src/widgets.rs
 +++ b/crates/ui-egui/src/widgets.rs
-@@ -499,26 +499,6 @@ pub fn progress_notice(app: &PdfCraftApp, ctx: &egui::Context) -> bool {
+@@ -509,26 +509,6 @@ pub fn progress_notice(app: &PdfCraftApp, ctx: &egui::Context) -> bool {
      cancel
  }
  

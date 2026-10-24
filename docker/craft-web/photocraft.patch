@@ -1,8 +1,8 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index 26920a9..2802b93 100644
+index c925c8f..82cf96f 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -6871,7 +6871,10 @@ version = "0.3.2"
+@@ -6913,7 +6913,10 @@ version = "0.3.2"
  source = "registry+https://github.com/rust-lang/crates.io-index"
  checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
  dependencies = [
@@ -14,24 +14,24 @@ index 26920a9..2802b93 100644
  
  [[package]]
 diff --git a/apps/photocraft-web/Cargo.toml b/apps/photocraft-web/Cargo.toml
-index 4ecad80..41ee997 100644
+index 279d13b..e57dbaa 100644
 --- a/apps/photocraft-web/Cargo.toml
 +++ b/apps/photocraft-web/Cargo.toml
 @@ -34,7 +34,7 @@ rfd = { workspace = true }
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
  js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "Navigator", "MessageEvent", "UrlSearchParams"] }
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "RequestMode", "Navigator"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "DomRect", "HtmlAnchorElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Storage", "Event", "EventTarget", "MouseEvent", "PointerEvent", "BeforeUnloadEvent", "AbortController", "AbortSignal", "DomException", "Response", "IdbFactory", "IdbOpenDbRequest", "IdbDatabase", "IdbRequest", "IdbTransaction", "IdbTransactionMode", "IdbObjectStore", "IdbCursor", "IdbCursorWithValue", "RequestInit", "RequestMode", "Navigator", "MessageEvent", "UrlSearchParams"] }
  
  [dev-dependencies]
  serde_json = { workspace = true }
 diff --git a/apps/photocraft-web/src/host.rs b/apps/photocraft-web/src/host.rs
 new file mode 100644
-index 0000000..23854b6
+index 0000000..f17c650
 --- /dev/null
 +++ b/apps/photocraft-web/src/host.rs
-@@ -0,0 +1,144 @@
+@@ -0,0 +1,146 @@
 +//! The `postMessage` bridge to a same-origin parent page (`?host=parent`), for pages that embed
 +//! PhotoCraft in an `<iframe>`. It speaks GridCraft's and PdfCraft's protocol, with the
 +//! `photocraft:` prefix. Messages are plain objects with a `type`:
@@ -84,6 +84,8 @@ index 0000000..23854b6
 +        self.listen(ctx);
 +        let bridge = self.clone();
 +        services.write = Some(Box::new(move |path: &str, bytes: &[u8]| bridge.post_save(path, bytes)));
++        // Unlike a browser download, a save the parent took is confirmed: it marks the document saved.
++        services.write_unconfirmed = false;
 +    }
 +
 +    pub fn post_ready(&self) {
@@ -197,10 +199,10 @@ index 0802a02..141975e 100644
  mod preset_bridge;
  
 diff --git a/apps/photocraft-web/src/web.rs b/apps/photocraft-web/src/web.rs
-index 6fd3620..74e44d3 100644
+index 87e6eaf..2f96bf7 100644
 --- a/apps/photocraft-web/src/web.rs
 +++ b/apps/photocraft-web/src/web.rs
-@@ -74,6 +74,10 @@ pub fn start() {
+@@ -75,6 +75,10 @@ pub fn start() {
              }
          };
          let pen_target = canvas.clone();
@@ -211,7 +213,7 @@ index 6fd3620..74e44d3 100644
          let result = eframe::WebRunner::new()
              .start(
                  canvas,
-@@ -87,7 +91,11 @@ pub fn start() {
+@@ -88,7 +92,11 @@ pub fn start() {
                      let (session, warnings) = crate::preset_bridge::session(presets.clone());
                      preset_warnings.extend(warnings);
                      let drag = listen_drag(&pen_target);
@@ -224,7 +226,7 @@ index 6fd3620..74e44d3 100644
                      if !preset_warnings.is_empty() {
                          photocraft_ui_egui::notices::post(&mut app, i18n::t("Some brush presets could not be loaded"), preset_warnings, true, None);
                      }
-@@ -101,10 +109,16 @@ pub fn start() {
+@@ -102,10 +110,16 @@ pub fn start() {
                      }
                      let unsaved = Arc::new(AtomicBool::new(false));
                      guard_unload(unsaved.clone());
@@ -242,7 +244,7 @@ index 6fd3620..74e44d3 100644
          if let Some(el) = document.get_element_by_id("photocraft_loading") {
              match result {
                  Ok(()) => el.remove(),
-@@ -198,6 +212,10 @@ fn query() -> String {
+@@ -199,6 +213,10 @@ fn query() -> String {
      web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
  }
  
@@ -253,7 +255,7 @@ index 6fd3620..74e44d3 100644
  /// Reads the served font manifest, if the host has one, and lists its families in the font menus.
  fn load_font_manifest(served: Served, ctx: egui::Context) {
      wasm_bindgen_futures::spawn_local(async move {
-@@ -267,6 +285,8 @@ struct WebShell {
+@@ -269,6 +287,8 @@ struct WebShell {
      served: Served,
      database: Option<web_sys::IdbDatabase>,
      presets: crate::preset_bridge::Bridge,
@@ -262,7 +264,7 @@ index 6fd3620..74e44d3 100644
  }
  
  impl WebShell {
-@@ -348,6 +368,9 @@ impl eframe::App for WebShell {
+@@ -356,6 +376,9 @@ impl eframe::App for WebShell {
              });
          }
          self.serve_fonts(ctx);
@@ -272,7 +274,7 @@ index 6fd3620..74e44d3 100644
          self.app.logic(ctx, frame);
          self.save_presets(ctx);
      }
-@@ -378,6 +401,9 @@ impl eframe::App for WebShell {
+@@ -386,6 +409,9 @@ impl eframe::App for WebShell {
          }
          self.app.ui(ui, frame);
          self.save_presets(ui.ctx());
@@ -283,11 +285,11 @@ index 6fd3620..74e44d3 100644
  }
  
 diff --git a/crates/engine/src/shell_commands.rs b/crates/engine/src/shell_commands.rs
-index 2bd7656..1fe51ea 100644
+index 33383d1..b266f62 100644
 --- a/crates/engine/src/shell_commands.rs
 +++ b/crates/engine/src/shell_commands.rs
 @@ -83,9 +83,9 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
-     ("window.theme.softDark", "Soft Dark Theme", &["Window", "Theme"], None),
+     ("window.theme.softLight", "Soft", &["Window", "Theme", "Light Theme"], None),
      ("window.theme.system", "Sync with system", &["Window", "Theme"], None),
      ("edit.search", "Search…", &["Edit"], Some("Cmd+F")),
 -    ("help.discord", "Join the ArtCraft Discord…", &["Help"], None),
@@ -299,7 +301,7 @@ index 2bd7656..1fe51ea 100644
      ("help.reportIssue", "Report an Issue…", &["Help"], None),
      ("help.systemInfo", "System Info…", &["Help"], None),
 diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
-index e5bf497..5b49705 100644
+index 23ecfc3..ff1f9eb 100644
 --- a/crates/ui-egui/Cargo.toml
 +++ b/crates/ui-egui/Cargo.toml
 @@ -46,6 +46,10 @@ rayon = { workspace = true }
@@ -314,10 +316,10 @@ index e5bf497..5b49705 100644
  # desktop app already uses, pinned to the same version.
  [target.'cfg(target_os = "windows")'.dependencies]
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 43b4f3d..5228e26 100644
+index 4a7f563..64d3cd5 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -548,6 +548,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
+@@ -647,6 +647,7 @@ fn about_tab_body(app: &mut PhotocraftApp, ui: &mut egui::Ui, tab: &str) {
          "models" => crate::credits::models_ui(ui),
          _ => {
              ui.label(tl!("PhotoCraft — an open-source, native image editor written in Rust."));
@@ -326,7 +328,7 @@ index 43b4f3d..5228e26 100644
              ui.add_space(12.0);
              ui.vertical_centered(|ui| {
 diff --git a/crates/ui-egui/src/i18n/system.rs b/crates/ui-egui/src/i18n/system.rs
-index 49bc3bc..bfe6e36 100644
+index 25cc9fe..f4362f1 100644
 --- a/crates/ui-egui/src/i18n/system.rs
 +++ b/crates/ui-egui/src/i18n/system.rs
 @@ -1,10 +1,9 @@
@@ -369,7 +371,7 @@ index 49bc3bc..bfe6e36 100644
  }
  
  #[cfg(test)]
-@@ -118,6 +124,16 @@ mod tests {
+@@ -119,6 +125,16 @@ mod tests {
          assert_eq!(system_lang(), Lang::EN);
      }
  
