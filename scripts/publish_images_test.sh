@@ -94,6 +94,11 @@ grep '^docker buildx imagetools create' "$calls" | tail -1 | grep -q -- '--tag r
   fail "aura:edge did not move last: $(grep '^docker buildx' "$calls" | tail -1)"
 grep -q '^docker build .*--build-arg VCS_REF=0123456789abcdef0123456789abcdef01234567' "$calls" ||
   fail "aura was not stamped with its commit"
+week="$(bash "$repo_root/scripts/apt_week.sh")"
+for name in aura aura-ingest; do
+  grep -q "^docker build .*/docker/${name}/Dockerfile .*--build-arg APT_WEEK=${week} -t " "$calls" ||
+    fail "${name} was not built with this week's apt refresh"
+done
 grep -q -- '--tag registry.example/aura/aura-pim-mcp:sidecar ' "$calls" || fail "the pim fork's sidecar tag did not move"
 grep -q -- '--tag registry.example/aura/whatsapp-mcp:latest ' "$calls" || fail "the whatsapp fork's latest tag did not move"
 echo "ok: every per-commit tag is pushed before any moving tag moves, and aura:edge moves last"

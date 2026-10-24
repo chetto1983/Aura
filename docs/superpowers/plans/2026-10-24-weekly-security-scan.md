@@ -208,12 +208,19 @@ GitHub:
   - *`aura-caddy`:* x/net v0.60.0 by xcaddy `--replace`, and `apk add --upgrade brotli-libs`.
   - *Accepted by path:* compress in cloudflared's binary, and undici 6.29.0 inside npm. No npm
     release ships the fix.
-- [ ] **Open: libexpat1 and libbrotli1 in `aura` and `aura-ingest`.**
-  - *What is known.* They are not in either base: apt installs them, and the edge build's gha
-    cache keeps that layer while its parent and its `RUN` line are unchanged. A fresh apt-get on
+- [x] **libexpat1 and libbrotli1 in `aura` and `aura-ingest`.**
+  - *The cause.* They are not in either base: apt installs them, and the edge build's gha cache
+    keeps that layer while its parent and its `RUN` line are unchanged. A fresh apt-get on
     2026-10-24 gets the fixed versions (deb12u5, deb12u1), so the digest pins fix them only when
     a base moves.
-  - *What is undecided.* What refreshes the apt layers is the operator's call.
+  - *The fix, the operator's choice B.* An `ARG APT_WEEK` before the first `RUN` of each runtime
+    stage. Every builder passes `scripts/apt_week.sh`, the ISO week: `publish-aura-edge.yml`,
+    `release.yml` through `.goreleaser.yaml`, `scripts/publish_images.sh`, and the `ci.yml` job
+    that reads the edge cache, which would otherwise miss it.
+  - *Measured with BuildKit 29.9.2.* Two builds in the same week leave every `RUN` after the
+    `ARG` cached; a new week re-runs all of them.
+  - *Not yet shown.* That the first edge build after the merge has libexpat1 deb12u5 and
+    libbrotli1 1.0.9-2+deb12u1. Task 8's run scans that image.
 
 ### Task 8: the first run on GitHub
 
