@@ -475,9 +475,15 @@ def audit_cycle() -> None:
 
     Never raises. A live ingest that exits on a missing document or a stale row would take
     the pipeline down for the one case where it still has work to do for every other file.
+    A comparison it cannot read skips the cycle and keeps the last one that read: nothing is
+    named or removed on half of it.
     """
     global _missing_previous_cycle, _orphaned_previous_cycle
-    expected, indexed = _bucket_versus_index()
+    try:
+        expected, indexed = _bucket_versus_index()
+    except Exception as exc:  # see the docstring
+        print(f"[audit] skipped: {exc}", file=sys.stderr, flush=True)
+        return
     missing = expected - indexed
     for key in sorted(missing & _missing_previous_cycle):
         print(f"[audit] MISSING {key}", flush=True)
