@@ -4,6 +4,7 @@
   "testRunner": "vitest",
   "tsconfigFile": "",
   "coverageAnalysis": "perTest",
+  "ignoreStatic": true,
   "incremental": true,
   "incrementalFile": "reports/stryker-incremental.json",
   "mutate": [

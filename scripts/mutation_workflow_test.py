@@ -47,6 +47,13 @@ def matrix_values(body: str, field: str) -> list[str]:
 
 
 class StrykerJobTest(unittest.TestCase):
+    def test_a_full_run_skips_the_mutants_only_module_loading_reaches(self) -> None:
+        # Stryker on 1cbd7e7: 442 static mutants, 7% of 6346, estimated at 71% of a 97-minute run.
+        # ignoreStatic needs perTest coverage to tell them apart.
+        config = json.loads((REPO / "web/stryker.config.json").read_text(encoding="utf-8"))
+        self.assertIs(config["ignoreStatic"], True)
+        self.assertEqual(config["coverageAnalysis"], "perTest")
+
     def test_ci_reuses_stryker_incremental_results_across_commits(self) -> None:
         config = json.loads((REPO / "web/stryker.config.json").read_text(encoding="utf-8"))
         self.assertIs(config["incremental"], True)
