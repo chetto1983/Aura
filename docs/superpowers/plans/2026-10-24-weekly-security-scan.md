@@ -194,10 +194,26 @@ GitHub:
 
 ### Task 7: the images Aura builds
 
-- [ ] Re-measure the seven own images at `:edge` with the Task 5 gate. #171 already moved the
-  Debian base (perl) and cloudflared.
-- [ ] Fix each fixable HIGH or CRITICAL left, or accept it with a dated reason. The spec's step 2
-  has the list. pypdf 6.21.2 is held by Dependabot's cooldown, so it moves by hand.
+- [x] Re-measure the nine own images at `:edge`, built at `48b1fa5`, with the Task 5 gate.
+  - *Clean:* `aura-arcadedb-mcp`, `aura-egress`, `aura-pim-mcp`, `whatsapp-mcp`. #171 had already
+    moved perl and cloudflared.
+  - *To fix:* `aura-caddy` 2 findings, `aura-cloudflared` 1, `aura-ingest` 6, `aura` 7 and
+    `aura-sandbox` 8, two of them CRITICAL.
+- [x] Fix or accept each, on the operator's two decisions of 2026-10-24: pin the bases by digest,
+  and accept what only upstream can ship.
+  - *`aura-ingest`:* pypdf 6.21.2, and the Python base pinned by digest.
+  - *`aura`:* npm 11.21.1, and debian pinned at `7ff6ba3`.
+  - *`aura-sandbox`:* npm 11.21.1, pnpm 12.15.0, and a template override that resolves minimist
+    to 1.2.8.
+  - *`aura-caddy`:* x/net v0.60.0 by xcaddy `--replace`, and `apk add --upgrade brotli-libs`.
+  - *Accepted by path:* compress in cloudflared's binary, and undici 6.29.0 inside npm. No npm
+    release ships the fix.
+- [ ] **Open: libexpat1 and libbrotli1 in `aura` and `aura-ingest`.**
+  - *What is known.* They are not in either base: apt installs them, and the edge build's gha
+    cache keeps that layer while its parent and its `RUN` line are unchanged. A fresh apt-get on
+    2026-10-24 gets the fixed versions (deb12u5, deb12u1), so the digest pins fix them only when
+    a base moves.
+  - *What is undecided.* What refreshes the apt layers is the operator's call.
 
 ### Task 8: the first run on GitHub
 
