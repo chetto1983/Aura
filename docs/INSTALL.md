@@ -168,19 +168,20 @@ cases (`deploy/aura-update-consent.sh`):
 
 - an admin chooses **Update now** in the cockpit;
 - the host restarted, and Aura already runs the new image;
-- nobody has used Aura for 15 minutes and nothing is running. Use means a chat turn on any
-  channel, a tool call or a running job. Working in the cockpit without chatting does not
-  count. An activity report from Aura older than three minutes reads as Aura being down, and
-  counts as unused too.
+- the night came: the first 03:00 in the host's local time after the first pending build, as
+  soon as no tool call or job is running. An activity report from Aura older than three
+  minutes reads as Aura being down, which holds nothing back.
 
-An admin can defer a build until at most 24 hours after the first pending one was found. Past
-that, the third case applies again. The deadline never starts a restart on its own.
+An admin can postpone a build from the cockpit, until at most 24 hours after the first pending
+one was found; past that the postponement no longer holds the night back. An install that
+fails is retried the next night, or at once from the cockpit. The edge channel publishes on
+every push to master that changes the image, several times on a busy day; every build waits
+for the same night.
 
-The cockpit warns members only once an admin has chosen **Update now**. A restart in the
-third case arrives with no notice. The edge channel publishes on every push to master that
-changes the image, several times on a busy day.
+The cockpit warns members only once an admin has chosen **Update now**; the night's restart
+comes without a banner.
 
-`/etc/default/aura` overrides the thresholds: `AURA_UPDATE_IDLE_SECONDS` (900),
+`/etc/default/aura` overrides the policy: `AURA_UPDATE_AT` (`03:00`),
 `AURA_UPDATE_MAX_DEFER_SECONDS` (86400) and `AURA_UPDATE_ACTIVITY_STALE_SECONDS` (180).
 `systemctl disable --now aura-image-update.timer` stops the updates.
 

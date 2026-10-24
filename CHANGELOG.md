@@ -5,6 +5,13 @@ Notable changes to Aura, newest first. Each section is also the text of its
 
 ## Unreleased
 
+### Appliance updates wait for the night
+
+- An edge appliance no longer restarts into a new build after 15 quiet minutes, which could
+  catch someone working in the cockpit. With nobody asking, it installs at 03:00 host time
+  (`AURA_UPDATE_AT`), once no task is running. **Update now**, postponing and the 24-hour limit
+  work as before, and the admin's dialog says when the install comes.
+
 ### Cloud services read their key from the settings
 
 - Cloud embeddings, cloud speech-to-text and text-to-speech, and vision through an OpenRouter

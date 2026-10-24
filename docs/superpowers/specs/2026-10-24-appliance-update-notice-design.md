@@ -1,4 +1,4 @@
-# Appliance updates: a notice before every restart, a daily window, cockpit use counted as use
+# Appliance updates: the night instead of the idle spell
 
 **The operator asked** on 2026-10-24. Andrea complains that updates arrive without notice. Andrea
 was working when one arrived, so the cockpit should have warned them. **The operator approved**
@@ -7,10 +7,16 @@ the same day:
 - (b) a daily update window;
 - (d) docs that say what the updater does. This one landed in `da6781b`.
 
-**Still open:** the decisions below, and the reason for Andrea's restarts. That reason is in the
-host's journal, which has not been read yet (see "What is not known").
+**The operator then decided the shape.** In order:
+- "lascerei sempre il PopUp con aggiornamento automatico alle 3:00 locali";
+- "si lascia il modal: se l'utente vuole aggiornare aggiorna, se no si applica di notte";
+- "basta che togli solo l'inattività".
 
-## What exists, read in the tree on 2026-10-24 at `da6781b`
+So the first draft's U1–U5 (`cc89c1a`) are withdrawn: the countdown, the presence beat, the
+window, the members' notice and the measurement rule. A second draft also removed the
+deferral and gave members the modal; it went further than asked and was dropped before push.
+
+## What existed, read in the tree on 2026-10-24 at `da6781b`
 
 - **The cadence.**
   - `deploy/aura-image-update.timer` ticks 5 minutes after the last tick ended.
@@ -72,88 +78,52 @@ host's journal, which has not been read yet (see "What is not known").
 
 ## Decisions
 
-**U1. Cockpit use counts as use.**
-- The SPA sends `POST /api/system/presence` on a pointer, key or wheel event in a visible tab, at
-  most once a minute. Background polls never send it.
-- The daemon keeps the newest time in memory. `hostUpdateActivity` reports the later of that
-  and the database's.
-- A restart forgets it, which is harmless: the next input sends it again within a minute.
-- This is a new endpoint, not a reuse. The inventory above found nothing that tells a person
-  from a tab, so the operator confirms it before a line is written.
+**N1. The idle rule becomes the night, and nothing else changes.**
+- The unattended reason "nobody is using Aura for 15 minutes" (`AURA_UPDATE_IDLE_SECONDS`) is
+  gone.
+- In its place: the first `AURA_UPDATE_AT` (default `03:00`, host local time) after the first
+  pending build. It is recorded as `apply_at` in `status`, and a newer build keeps it.
+- At that time a tool call or job in flight still holds the restart, and the next tick tries
+  again. A stale activity report still means Aura is down.
+- **Unchanged:**
+  - an admin's **Update now**;
+  - the reboot case;
+  - the admin's modal, the postponement and its 24-hour deadline. A postponement holds the night
+    back until the deadline.
+- **A failed install moves `apply_at` a night later.** Past the night, every tick would otherwise
+  retry it through the day: the same complaint by another road.
 
-**U2. A notice before every unattended restart.**
-- When a tick would apply because Aura is idle, it records a new state, `scheduled`, with
-  `apply_at = now + AURA_UPDATE_NOTICE_SECONDS` (default 600, two ticks), and restarts nothing.
-- A later tick applies once `apply_at` has passed, Aura is still idle, and the window (U4) is
-  open. Any use in between returns it to `pending`, so touching the cockpit postpones the
-  restart.
-- The cockpit shows everyone a banner in `scheduled`: the restart time and what changed (U3).
-  An admin can still update now or defer.
-- An admin's request and a host restart apply as today, with no notice.
-- **Order of landing.** `hostupdate.ReadStatus` rejects a state it does not know, and the
-  updater writes `scheduled` while the old Aura still runs. So Aura must read `scheduled` one
-  edge build before the updater writes it.
+**N2. The modal tells the admin when.** `GET /api/system/update` returns `apply_at`, and the
+headline reads "It will install itself tomorrow at 03:00". The old headline said "at the first
+quiet moment, by <deadline>", which N1 makes untrue.
+- A postponement that runs past the night moves the time shown to its end.
+- Once the moment has passed, the updater waits only for the work in flight, and the headline
+  says so.
 
-**U3. The operator hears about it, with what changed.**
-- **Recipients:** every active identity holding `identity.create`, through `DeliverToIdentity`.
-  An admin with no linked Telegram account gets nothing outside the cockpit; email or WhatsApp
-  through `cron.Notifier` can be added if the operator wants them.
-- **Messages:**
-  - one when the state becomes `scheduled`, or when an admin's update starts;
-  - one when the new build serves, sent by the new process;
-  - one on `failed`.
-
-  The daemon tracks what it last announced in `update/notified` (written only by Aura), so a
-  restart sends nothing twice.
-- **What changed.**
-  - The aura image carries its commit subjects in `/usr/share/aura/changes.txt`: the edge
-    checkout gets `fetch-depth: 200`, and the file holds `<sha> <subject>` lines.
-  - When it schedules, the updater copies the lines between `running_rev` and `available_rev`
-    into `update/changes`.
-  - The message and the banner leave out `build(deps)`, `docs`, `test` and `ci` subjects, and
-    show at most 15 lines plus a count of the rest.
-  - A `running_rev` outside the 200 commits shows "more than 200 changes".
-
-**U4. A daily window.**
-- `AURA_UPDATE_WINDOW=HH:MM-HH:MM` in `/etc/default/aura`, in the host's local time. It uses
-  `AURA_SCHEDULER_QUIET_HOURS`' format and may wrap midnight.
-- Unattended applies, notice included, happen only inside it. An admin's update and a host
-  restart ignore it.
-- **Default:** `03:00-05:00`, set in the consent script, so it reaches existing hosts as well
-  as new installs. `AURA_UPDATE_WINDOW=always` restores today's behaviour.
-- With the window, a busy edge day costs one restart at night, not one per quiet spell.
-
-**U5. A failed measurement stops counting as "Aura is down".**
-- The writer still writes a fresh report, marked `measured=0`. The updater reads it as busy.
-- A stale report keeps meaning that Aura is down, as today, so an update can still bring back
-  a dead Aura.
-- **The cost:** while the measurement fails, unattended updates wait. The admin dialog shows why.
-- This reverses a choice the code states on purpose ("writes nothing rather than a guess"), so
-  it needs the operator's yes.
+**N3. The messages to the operator (a)** stay approved for a later step:
+- to every active `identity.create` identity, through `DeliverToIdentity`;
+- the commit subjects carried by the image.
 
 ## Order of landing
 
-Every step ships behind the one before, on edge, each with its tests and the lab VM run recorded
-in `docs/superpowers/verification/`.
+1. **The updater (N1):** `7b1a23e`, with `scripts/aura_update_consent_test.sh`.
+2. **The daemon and the modal (N2):** `e6df958`.
+3. **The docs:** `docs/INSTALL.md`, `CHANGELOG.md`.
+4. **The lab VM E2E**, recorded in `docs/superpowers/verification/`:
+   - a build published at noon is pending with tonight's `apply_at`, and nothing restarts in the
+     day;
+   - the restart happens at the first tick after 03:00;
+   - the same with a job running at 03:00: it waits for the job.
 
-1. **Andrea's journal**, to confirm which of the three reasons fired, or whether U5's case did.
-2. **U5 and U1.** Aura only; the updater's consent test covers `measured=0`.
-3. **Aura reads `scheduled`** (U2's first half): the API, the banner for everyone, the change
-   list read from `update/changes`.
-4. **The updater writes `scheduled` and honours the window** (U2, U4), with the consent test
-   extended for each transition.
-5. **The messages** (U3), and `changes.txt` in the image.
-6. **Lab VM E2E.**
-   - A member works in the cockpit without chatting: no restart.
-   - Then the member stops: the banner appears 10 minutes ahead, the restart happens inside the
-     window, and the admin's Telegram gets both messages.
-   - The same with the activity query forced to fail: no restart.
+   Then the PRD paragraph on appliance updates is amended from that run.
+5. **N3.**
 
 ## What this does not cover
 
-- **A stable channel for appliances that do not need edge** (the operator's option c, not
-  chosen).
-- **Saving unsaved work before a reload.** First measure whether any is lost.
-- **Updates that move only a sidecar or the sandbox boxes.** They go through the same decision,
-  and `compose up` leaves an unchanged aura running. Whether recreating a box under a running
-  tool needs its own notice is not measured.
+- **Andrea's journal.** It still tells which rule restarted their host. N1 removes the day-time
+  rule whatever the answer.
+- **The members' view.** A member still sees the banner only after an admin's **Update now**.
+  Nothing restarts in the day without one any more.
+- **A stable channel for appliances that do not need edge** (option c, not chosen).
+- **The first update.** The one that brings this is decided by the old rules, because its updater
+  predates them.
