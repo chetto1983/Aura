@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Drives deploy/aura-update-consent.sh against a stubbed docker: when a tick applies a pending
-# update on its own, when it waits for the cockpit, and what it records for the cockpit to read.
+# update on its own (at night, with nothing running), when it waits for the cockpit, and what it
+# records for the cockpit to read.
 # The status it writes is parsed by internal/hostupdate (status_test.go pins the same fields).
 
 set -euo pipefail
@@ -28,8 +29,22 @@ source "$repo_root/deploy/aura-image-update.sh"
 source "$repo_root/deploy/aura-update-consent.sh"
 # shellcheck source=deploy/aura-image-home.sh
 source "$repo_root/deploy/aura-image-home.sh"
-[[ "$IDLE_SECONDS" == 900 && "$MAX_DEFER_SECONDS" == 86400 && "$ACTIVITY_STALE_SECONDS" == 180 ]] ||
-  fail "default policy is $IDLE_SECONDS/$MAX_DEFER_SECONDS/$ACTIVITY_STALE_SECONDS"
+[[ "$UPDATE_AT" == 03:00 && "$MAX_DEFER_SECONDS" == 86400 && "$ACTIVITY_STALE_SECONDS" == 180 ]] ||
+  fail "default policy is $UPDATE_AT/$MAX_DEFER_SECONDS/$ACTIVITY_STALE_SECONDS"
+for given in 25:00 3:00 '03:00;reboot' ''; do
+  got="$(AURA_UPDATE_AT="$given" bash -c 'source "$1"; echo "$UPDATE_AT"' _ "$repo_root/deploy/aura-update-consent.sh")"
+  [[ "$got" == 03:00 ]] || fail "AURA_UPDATE_AT=$given gave $got, want the 03:00 default"
+done
+got="$(AURA_UPDATE_AT=04:30 bash -c 'source "$1"; echo "$UPDATE_AT"' _ "$repo_root/deploy/aura-update-consent.sh")"
+[[ "$got" == 04:30 ]] || fail "AURA_UPDATE_AT=04:30 gave $got"
+# Host local time, across tonight's change from CEST to CET.
+for at in '2026-10-24 12:00|2026-10-25 03:00 CET' '2026-10-25 02:30|2026-10-25 03:00 CET' \
+  '2026-10-25 03:00|2026-10-26 03:00 CET' '2026-03-29 01:00|2026-03-29 03:00 CEST'; do
+  from="$(TZ=Europe/Rome date -d "${at%%|*}" +%s)"
+  got="$(TZ=Europe/Rome date -d "@$(TZ=Europe/Rome next_apply_at "$from")" '+%F %H:%M %Z')"
+  [[ "$got" == "${at#*|}" ]] || fail "the first 03:00 after ${at%%|*} is $got, want ${at#*|}"
+done
+echo "ok: the night time defaults to 03:00 local, refuses a malformed value, and survives DST"
 set +e # the updater enables errexit when sourced; the cases below test return codes
 
 OLD=sha256:0ld
@@ -100,7 +115,7 @@ activity 30 30 0
 decides wait "nothing new"
 [[ "$(status state)" == current && "$(status running_rev)" == "${REV[$OLD]}" && "$(status pending_since)" == 0 ]] ||
   fail "an up-to-date host recorded $(cat "$INSTALL_DIR/update/status")"
-for key in state running_rev available_rev available_built pending_since deadline deferred_until deferred_by handled_request error checked_at; do
+for key in state running_rev available_rev available_built pending_since apply_at deadline deferred_until deferred_by handled_request error checked_at; do
   grep -q "^$key=" "$INSTALL_DIR/update/status" || fail "status carries no $key"
 done
 echo "ok: an up-to-date host records current and applies nothing"
@@ -113,30 +128,38 @@ decides wait "someone used Aura 30 s ago"
 [[ "$(status state)" == pending && "$(status available_rev)" == "${REV[$NEW]}" ]] || fail "pending not recorded: $(cat "$INSTALL_DIR/update/status")"
 since="$(status pending_since)"
 ((since >= before && $(status deadline) == since + 86400)) || fail "pending_since=$since deadline=$(status deadline)"
+apply_at="$(status apply_at)"
+((apply_at > since && apply_at - since <= 86400)) && [[ "$(date -d "@$apply_at" +%H:%M)" == 03:00 ]] ||
+  fail "apply_at=$apply_at is not the first 03:00 after $since"
 [[ "$(status available_built)" == "$(date -u -d 2026-09-24T06:47:13Z +%s)" ]] || fail "build time $(status available_built)"
-echo "ok: a new build while someone works waits, with a deadline 24 h from now"
+echo "ok: a new build waits for the next 03:00, with a deadline 24 h from now"
 
 TAG=([ghcr.io/example/aura:edge]=sha256:n3wer)
 REV[sha256:n3wer]=0123456789abcdef0123456789abcdef01234567
 sleep 1
 decides wait "a newer build while still waiting"
-[[ "$(status pending_since)" == "$since" && "$(status available_rev)" == "${REV[sha256:n3wer]}" ]] ||
+[[ "$(status pending_since)" == "$since" && "$(status apply_at)" == "$apply_at" && "$(status available_rev)" == "${REV[sha256:n3wer]}" ]] ||
   fail "a newer build moved the deadline: $(cat "$INSTALL_DIR/update/status")"
 echo "ok: a newer build shows the newer revision but keeps the first build's deadline"
 
 reset_host
 publish_new_build
-activity 30 1200 0
-decides apply "idle for 20 minutes"
-activity 30 1200 1
-decides wait "idle for 20 minutes but a tool call still running"
+activity 30 3600 0
+decides wait "nobody used Aura for an hour, in the day"
+night_came() { sed -i "s/^apply_at=.*/apply_at=$(($(date +%s) - 60))/" "$INSTALL_DIR/update/status"; }
+night_came
+activity 30 30 0
+decides apply "the night came, someone chatted a minute ago"
+grep -q '03:00' "$fixture/decide.out" || fail "the night case was not named: $(cat "$fixture/decide.out")"
+activity 30 30 1
+decides wait "the night came, a tool call still running"
 activity 600 30 3
-decides apply "an activity report 10 minutes old (Aura down)"
+decides apply "the night came, an activity report 10 minutes old (Aura down)"
 rm -f "$INSTALL_DIR/update/activity"
-decides apply "no activity report at all (Aura predates the channel)"
+decides apply "the night came, no activity report at all (Aura predates the channel)"
 printf 'written_at=%s\nlast_activity_at=soon\nlive_runs=x\n' "$(date +%s)" >"$INSTALL_DIR/update/activity"
-decides wait "an unreadable activity report"
-echo "ok: idle, down or silent Aura applies; busy or unreadable waits"
+decides wait "the night came, an unreadable activity report"
+echo "ok: only the night applies on its own, unless a run is live or the report is unreadable"
 
 reset_host
 publish_new_build
@@ -155,14 +178,17 @@ reset_host
 publish_new_build
 activity 30 1200 0
 request 11112222333344445555666677778888 defer $(($(date +%s) + 3600))
-decides wait "deferred an hour while idle"
+decides wait "deferred an hour"
+night_came
+decides wait "the night came while the deferral still holds"
 [[ "$(status deferred_by)" == 448ddbe1-96ea-405d-8219-4a3d52a425c0 ]] || fail "deferred_by not recorded"
 request 22223333444455556666777788889999 defer $(($(date +%s) + 999999))
 decides wait "deferred past the deadline"
 [[ "$(status deferred_until)" == "$(status deadline)" ]] || fail "deferral not clamped: $(status deferred_until) vs $(status deadline)"
 sed -i "s/^pending_since=.*/pending_since=$(($(date +%s) - 86401))/" "$INSTALL_DIR/update/status"
-decides apply "the deadline passed while idle, deferral or not"
-echo "ok: a deferral holds an idle host until the deadline, and is clamped to it"
+night_came
+decides apply "the night came and the deadline passed, deferral or not"
+echo "ok: a deferral holds the night until the deadline, and is clamped to it"
 
 reset_host
 publish_new_build
@@ -201,7 +227,8 @@ activity 30 1200 0
 decides wait "an attested republish of whatsapp's unchanged image, idle"
 [[ "$(status state)" == current ]] || fail "an unchanged republish was pending: $(cat "$INSTALL_DIR/update/status")"
 PLATFORM_TAG[ghcr.io/example/whatsapp-mcp:latest]=sha256:m4nifest2
-decides apply "whatsapp's content changed, idle"
+decides wait "whatsapp's content changed, in the day"
+[[ "$(status state)" == pending ]] || fail "a changed sidecar was not pending: $(cat "$INSTALL_DIR/update/status")"
 echo "ok: a sidecar is behind when its content changed, not when only its index did"
 
 reset_host
@@ -233,9 +260,15 @@ decides wait "pending before an apply"
   exit 7
 )
 [[ "$(status state)" == failed && "$(status error)" == *"exit code 7"* ]] || fail "a failed apply recorded $(cat "$INSTALL_DIR/update/status")"
+retry="$(status apply_at)"
+((retry > $(date +%s) && retry - $(date +%s) <= 86400)) && [[ "$(date -d "@$retry" +%H:%M)" == 03:00 ]] ||
+  fail "a failure did not move the retry to the next 03:00: apply_at=$retry"
 ( on_apply_exit 0 )
 [[ "$(status state)" == failed ]] || fail "a clean exit overwrote the failure"
-echo "ok: an apply that dies leaves the cockpit a failed state with the reason"
+activity 30 3600 0
+decides wait "failed earlier, nobody around, in the day"
+[[ "$(status apply_at)" == "$retry" ]] || fail "the retry night was lost: $(cat "$INSTALL_DIR/update/status")"
+echo "ok: an apply that dies leaves the cockpit a failed state, and retries the next night"
 
 reset_host
 # shellcheck disable=SC2016 # the stub expands them when the updater execs it, not here

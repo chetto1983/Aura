@@ -2,7 +2,8 @@
 # Converge an edge appliance on what master published — ported from wpt-iot's
 # wpt-image-update.sh. Every tick downloads what is new and tells the cockpit about it through
 # INSTALL_DIR/update (deploy/aura-update-consent.sh); the restart that applies it waits for an
-# admin's "update now", for Aura to be idle, or for the deadline. Applying is, in order:
+# admin's "update now", or for the night (AURA_UPDATE_AT) with no tool call or job running and
+# no deferral holding it; the deadline only ends a deferral. Applying is, in order:
 #   1. pulls aura and installs the payload that image carries (compose files, this script, its
 #      units, sidecar config) wherever it differs from the host, so a pin or config change made
 #      in the repo reaches every machine; a new updater re-executes itself before going on;
@@ -26,8 +27,8 @@
 #   AURA_SANDBOX_IMAGE=ghcr.io/chetto1983/aura-sandbox:edge
 #   AURA_SANDBOX_EGRESS_IMAGE=ghcr.io/chetto1983/aura-egress:edge
 #
-# /etc/default/aura may override how long the cockpit can hold an update back:
-#   AURA_UPDATE_IDLE_SECONDS=900            quiet spell before applying on its own
+# /etc/default/aura may override when an update applies and how long the cockpit can hold it:
+#   AURA_UPDATE_AT=03:00                    the host's local time it applies at on its own
 #   AURA_UPDATE_MAX_DEFER_SECONDS=86400     deadline, counted from the first pending build
 #   AURA_UPDATE_ACTIVITY_STALE_SECONDS=180  an activity report older than this means Aura is down
 
@@ -535,7 +536,7 @@ apply_update() {
   remove_orphan_volumes
   image_id "$(env_value AURA_IMAGE)" >"$(update_dir)/applied-image" || true
   RUNNING_REV="$(image_revision "$(container_image_id aura)")"
-  AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''
+  AVAILABLE_REV='' AVAILABLE_BUILT=0 PENDING_SINCE=0 APPLY_AT=0 DEADLINE=0 DEFERRED_UNTIL=0 DEFERRED_BY='' UPDATE_ERROR=''
   record_status current
   trap - EXIT
   echo "Aura image update completed; the appliance is healthy."
