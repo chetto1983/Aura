@@ -152,7 +152,8 @@ multi-user appliance: every person has their own identity, memory, sandbox, skil
 
 - One-command installer: `npx create-aura-appliance`, local or on a remote host over SSH. It detects
   CUDA, Vulkan or CPU for the embedding model.
-- The appliance can update itself from the edge channel, and asks an admin before it
-  restarts into a new build.
+- The appliance can update itself from the edge channel. An admin can apply or defer a new
+  build from the cockpit; otherwise the appliance restarts into it once nobody has used Aura
+  for 15 minutes. (Corrected on 2026-10-24: this line used to say that it asks an admin first.)
 - Remote access through Cloudflare, configured from the cockpit.
 - Optional trust for the Caddy local certificate authority.

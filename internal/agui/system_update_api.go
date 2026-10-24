@@ -2,10 +2,11 @@ package agui
 
 // system_update_api.go is the cockpit's side of an appliance update. The host updater
 // (deploy/aura-image-update.sh) downloads every build but restarts Aura only when an admin
-// asks, when Aura has been idle, or when the deadline it sets has passed; these routes show
-// its status and hand it an admin's decision through the directory both share
-// (internal/hostupdate). GET is for everyone, because a member must be warned before the
-// restart; the two POSTs are mounted behind identity.create in cmd/aura.
+// asks, when the host restarted, or when Aura is idle and no deferral holds it back; the
+// deadline ends a deferral and never forces a restart. These routes show its status and hand
+// it an admin's decision through the directory both share (internal/hostupdate). GET is for
+// everyone, because a member must be warned before the restart; the two POSTs are mounted
+// behind identity.create in cmd/aura.
 
 import (
 	"encoding/json"

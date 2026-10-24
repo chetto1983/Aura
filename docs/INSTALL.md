@@ -66,8 +66,9 @@ master/edge install points `.env` at the `:edge` moving tags, and `--appliance` 
 enables the `aura-image-update` systemd timer: from then on the machine re-pulls aura
 and its MCP sidecars from the image home (`IMAGE_HOME` in `deploy/aura-image-update.sh`,
 `ghcr.io/chetto1983` today) on its own, migrations and Compose payload
-included, with no operator involved. Without `--appliance` (no systemd units, no timer), the
-stack still starts; updates stay manual.
+included. It downloads with no operator involved; when it restarts into a new build is in
+[When an appliance restarts](#when-an-appliance-restarts). Without `--appliance` (no systemd
+units, no timer), the stack still starts; updates stay manual.
 
 The default stack also starts the Cloudflare supervisor healthy-idle. Enable it after
 setup in **Settings > Remote access**; the installer requires no Cloudflare credential.
@@ -159,6 +160,29 @@ what it replaces under `backups/payload-*`) and brings the whole stack up on it.
 version pin changed in `compose.yaml` therefore reaches every appliance on its own.
 `sha256sum -c payload_manifest.txt` inside `/opt/aura` shows whether a host matches
 its payload. Watch it with `journalctl -u aura-image-update.service -f`.
+
+### When an appliance restarts
+
+Every tick downloads what is new, but restarts Aura into a new build only in one of three
+cases (`deploy/aura-update-consent.sh`):
+
+- an admin chooses **Update now** in the cockpit;
+- the host restarted, and Aura already runs the new image;
+- nobody has used Aura for 15 minutes and nothing is running. Use means a chat turn on any
+  channel, a tool call or a running job. Working in the cockpit without chatting does not
+  count. An activity report from Aura older than three minutes reads as Aura being down, and
+  counts as unused too.
+
+An admin can defer a build until at most 24 hours after the first pending one was found. Past
+that, the third case applies again. The deadline never starts a restart on its own.
+
+The cockpit warns members only once an admin has chosen **Update now**. A restart in the
+third case arrives with no notice. The edge channel publishes on every push to master that
+changes the image, several times on a busy day.
+
+`/etc/default/aura` overrides the thresholds: `AURA_UPDATE_IDLE_SECONDS` (900),
+`AURA_UPDATE_MAX_DEFER_SECONDS` (86400) and `AURA_UPDATE_ACTIVITY_STALE_SECONDS` (180).
+`systemctl disable --now aura-image-update.timer` stops the updates.
 
 ### An appliance on the GitLab bridge
 

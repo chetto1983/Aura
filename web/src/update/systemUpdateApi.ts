@@ -1,8 +1,9 @@
 import { getJSON, postJSON } from '../api/json';
 
-// The host updater downloads builds freely but applies one only when an admin asks, when Aura
-// has been idle long enough, or at the latest by `deadline`. The daemon reports that queue here;
-// `managed: false` is a dev stack with no updater, where the cockpit shows nothing at all.
+// The host updater downloads builds freely but applies one only when an admin asks, or when Aura
+// has been idle long enough and no deferral holds it; `deadline` ends any deferral, it never
+// forces a restart. The daemon reports that queue here; `managed: false` is a dev stack with no
+// updater, where the cockpit shows nothing at all.
 
 export type UpdateState = 'current' | 'pending' | 'requested' | 'applying' | 'failed' | 'unknown';
 
