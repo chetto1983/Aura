@@ -47,6 +47,37 @@ updates:
           - minor
           - patch
 
+  # The published create-aura-appliance installer. Only security updates reached it before
+  # (run 39730585760, 2026-10-22).
+  - package-ecosystem: npm
+    directory: "/packages/create-aura"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      create-aura-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # aura-ingest's Python pins. Only security updates reached them before (#157).
+  - package-ecosystem: pip
+    directory: "/docker/aura-ingest"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      ingest-minor-patch:
+        update-types:
+          - minor
+          - patch
+
   # GitHub Actions used by the CI / CodeQL / release workflows.
   - package-ecosystem: github-actions
     directory: "/"
@@ -78,6 +109,10 @@ updates:
   # Dockerfile base images. A digest-pinned FROM gets its digest refreshed when the tag moves,
   # before Docker Hub can collect the superseded manifest. dxflrs/garage is left out: the aura
   # image and compose.yaml must move it together (cmd/aura/container_artifacts_test.go).
+  # docker/aura-craft-web is left out too. Its rust base only builds WebAssembly that ships FROM
+  # scratch. Any change to that Dockerfile changes the input hash that
+  # TestCraftWebImagePinMatchesItsInputs checks, so the grouped PR would stay red until someone
+  # republishes the Craft image.
   - package-ecosystem: docker
     directories:
       - "/docker/aura"
