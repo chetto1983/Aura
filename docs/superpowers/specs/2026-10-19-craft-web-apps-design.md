@@ -113,7 +113,12 @@ aura's own static-app handler).
 - **No Italian in GridCraft and DeckCraft**: neither has a catalog (FINDINGS 13). In the four others the
   few rows the patches reword (About, Help's links) have no translation and show in English.
   *Amended 2026-10-24:* GridCraft 0.11.1 has an Italian catalog and follows an `it-IT` browser;
-  DeckCraft 0.10.0 still has none.
+  DeckCraft 0.10.0 still has none. The operator chose, the same day, not to add one in aura's patch:
+  - its ~1,050 interface strings are literals (its `docs/localization-parity.md`);
+  - the only catalog in sight, storytold/deckcraft#34, is one commit 928 commits behind v0.10.0;
+  - and a release every two to three days would mean rebasing a catalog patch on each one.
+
+  Italian is asked of upstream instead, and an `it.tsv` follows once a catalog lands.
 - **WordCraft is left as released on languages it cannot draw**: with a Japanese browser it draws boxes,
   as its official web build does (FINDINGS 15).
 
