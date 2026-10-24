@@ -85,7 +85,8 @@ COPY --from=webbuild /internal/webui/dist ./internal/webui/dist
 ARG VCS_REF=""
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X main.commit=${VCS_REF}" -o /out/aura ./cmd/aura
 
-FROM debian:bookworm-slim
+# The same digest as docker/aura-sandbox/Dockerfile's base; Dependabot moves both weekly.
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
@@ -108,8 +109,14 @@ RUN apt-get update \
 # D-06 note: this runtime Node-24 is ORTHOGONAL to the SPA. The operator SPA is built
 # in the `webbuild` stage above and baked into the Go binary before runtime — no Node
 # touches the SPA at runtime. Do not read this as a D-06 "no Node for the SPA" violation.
+#
+# npm 11.21.1 replaces the npm NodeSource bundles (11.19.1): its own brace-expansion and undici
+# carried fixable HIGHs (weekly security scan, 2026-10-24). docker/aura-sandbox/Dockerfile moves
+# with it.
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g npm@11.21.1 \
+    && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
 RUN install -d /usr/share/postgresql-common/pgdg \
