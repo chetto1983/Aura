@@ -3,15 +3,92 @@
 Notable changes to Aura, newest first. Each section is also the text of its
 [GitHub release](https://github.com/chetto1983/Aura/releases); the full history is in git.
 
-## Unreleased
+## v1.2.0 — 2026-10-24
 
-### Appliance updates wait for the night
+About 780 commits since v1.1.0 of 2026-10-08. The documents get a workspace of their own,
+the agent gets a work board and per-identity tool policies, the six Craft apps open in the
+cockpit, and the object store is backed up every night.
 
-- An edge appliance no longer restarts into a new build after 15 quiet minutes, which could
-  catch someone working in the cockpit. With nobody asking, it installs at 03:00 host time
-  (`AURA_UPDATE_AT`), once no task is running, and a night a running task fills moves it to
-  the next night. **Update now**, postponing and the 24-hour limit
-  work as before, and the admin's dialog says when the install comes.
+### Upgrading from v1.1.0
+
+- **Back up first.** The release adds 4 database migrations (0139 to 0142), applied when Aura
+  starts. See [Backup and restore](docs/BACKUP-RESTORE.md). v1.1.0 refuses a database at the
+  new schema, so going back means restoring the pre-upgrade dump into a new database.
+- **A manual embedding endpoint needs its own key.** Enter it in the embedding settings under
+  *Endpoint API key* (`AURA_EMBED_CLOUD_API_KEY`, stored sealed, or set in the environment), then
+  save. Until it is set, the route is refused, the preview names the missing key, and memory and
+  documents are served by keyword search.
+- **Browser logins are signed in again once.** The logged-in browser now runs in its own box.
+  A profile left in the shell box by v1.1.0 is deleted when Aura starts, and nothing is copied:
+  sign in again from the live view.
+- **Deployment administration is for admins.** Writing a setting, `/api/admin/*`, installing,
+  trusting, enabling or removing an MCP server, installing a skill and editing the house skills
+  now need an admin. A member sees and manages only their own scheduled tasks, keeps
+  authorizing their own MCP accounts and keeps writing their own skills.
+- **gVisor is retired.** The installer no longer provisions it and the aura container runs on
+  runc. A box created on gVisor is recreated on runc at its next start. On a host installed with
+  `--gvisor`, runsc stays registered with Docker and nothing selects it. An `install.conf` from
+  create-aura-appliance 0.2.10 or earlier still installs: `gvisor=true` only warns.
+- **The Video Studio and the photo editor are gone from the cockpit.** The agent edits images
+  and video with PhotoCraft and FilmCraft in its box.
+
+### Documents
+
+- **A Documenti view** beside the file manager's folders: the library as a grid with type,
+  counterparty, document date, tags, the custom fields the operator switches on and the review
+  state, filtered and sorted on the server. It has an inbox of documents a suggestion waits on,
+  saved views, and thumbnails rendered by the Craft apps.
+- **Fields the operator owns.** Lists and matching rules suggest a document's type,
+  counterparty and tags, and an invoice's header lines suggest them too. The detail shows each
+  suggestion with what it rests on. The operator's value always wins, a rejected suggestion is
+  never offered again, and the history keeps every change. A bulk edit sends only the
+  difference and names what it will change first.
+- **The agent filters by those fields.** `document_search` takes type, counterparty, tags (any
+  or all), a date range and whether unreviewed suggestions count. Every result names the
+  library's types and tags with how many documents carry each, and each returned document's
+  own fields, marked reviewed or suggested. With no query it lists the documents the filters
+  admit, most recently added first, in pages. Asking for all of several tags, one of which is on
+  no list, admits nothing and names the closest tags.
+- **A document that carries the question's identifiers ranks first**, such as the report that
+  holds `RC-2026-040`.
+- **Workbooks are searchable by their rows.** Each sheet's rows become passages headed by the
+  sheet's name.
+- **Source files are documents.** Code and `.txt` files are read as text, and the cockpit, the
+  CLI and Telegram accept them. A file Aura does not read is refused with its type named.
+- An image or a scan is described or read once per content, not again on every re-index.
+- An indexed document whose file left the bucket is removed after two cycles.
+- pplx-embed's document floors are measured. `AURA_DOCUMENT_DENSE_MAX_DISTANCE_RATIO` and
+  `AURA_DOCUMENT_MIN_RELEVANCE` override them on one `aura docs search` process, to measure
+  another space.
+
+### Craft apps in the cockpit
+
+- The cockpit serves GridCraft, PdfCraft, WordCraft, DeckCraft, PhotoCraft and FilmCraft from
+  `AURA_APPS_DIR`. A workbook previews in GridCraft and a deck in DeckCraft. **Edit** opens the
+  others, where a save can be stored: the file manager and the Documenti detail.
+- A save under the file's name replaces it, and any other name lands beside it. An unsaved
+  edit is flagged, and the first close is held. Every app has a full-screen control.
+- The agent drives the same six apps as built-in box servers, on by default, with one skill
+  each.
+
+### Agent and tools
+
+- **A work board.** A Board mode beside Chat, on SVAR Kanban: columns with limits, cards, tags
+  and saved views. The agent reads and edits it through a deferred `board` tool. Deleting a card
+  asks the operator, and the approval names the card.
+- **Tool policies.** An identity can set `ask` or `deny` on a tool or one of its actions. They
+  outrank standing approvals and risk tiers: `deny` refuses even a read, `ask` always prompts.
+  Set them in Settings under standing approvals, or with `aura gateway policy list|set|clear`.
+  Under the `dev` and `local_trusted` profiles the cockpit says they are not applied.
+- A refused tool call shows as Refused, and a failed one turns red as it happens.
+- An approval prompt names what the call acts on when the tool can say it.
+- Plugin connectors run in the sandbox box. `aura pack install` puts a plugin's stdio
+  connector in each identity's box, never in the Aura container, whose environment holds the
+  database credentials. Its first start may take up to 120 seconds. A plugin that passes a key
+  to its stdio connector is refused at install, and the error names the key.
+- The embedding picker offers only the cloud models that answer at the stored width, and the
+  preview refuses the rest.
+- A skill's instructions reach the agent whole, however close to the size cap they are.
 
 ### Cloud services read their key from the settings
 
@@ -25,36 +102,49 @@ Notable changes to Aura, newest first. Each section is also the text of its
 - The services key goes only to OpenRouter. A manual embedding endpoint no longer receives it,
   and vision through a primary model on any other host sends no key.
 
-#### Upgrading
+### Browser
 
-- **A manual embedding endpoint needs its own key.** Enter it in the embedding settings under
-  *Endpoint API key* (`AURA_EMBED_CLOUD_API_KEY`, stored sealed, or set in the environment), then
-  save. Until it is set, the route is refused, the preview names the missing key, and memory and
-  documents are served by keyword search.
+- The logged-in browser runs in its own box, `aura-browser-<identity>`, with its own egress
+  sidecar. The shell's tools cannot read its cookies. Downloads cross into the shell's
+  `/workspace/downloads`, regular files only, up to 50 MiB each.
+- The browser box stays up, so the first browser call answers at once.
+- The operator can take the browser in the live view. The agent's writes are refused while
+  the operator drives, and **Let Aura drive** hands it back.
 
-### Document search knows the operator's lists
+### Scheduled jobs
 
-- **Every result names the library's types and tags**, with how many documents carry each, most
-  used first, up to 30 per list. The agent can filter by a tag that the question does not
-  spell, such as "the internal documents" for the tag `interno`.
-- **Every result names each returned document's own fields:** type, counterparty, date and
-  tags, each marked as reviewed by the operator or suggested.
-- **A search with no query and at least one filter lists the documents the filters admit.**
-  The list is the cockpit's own: most recently added first, with how many match in all.
-  "Show me the documents tagged Cliente" no longer depends on a passage clearing the
-  relevance floor.
-- **Fixed: unknown tags under `tags_mode: all`.** Asking for all of several tags, one of which
-  is on no list, used to drop that tag and return documents with only the others. It now
-  admits nothing, and the answer names the closest tags.
+- A job that fails on a network or model error before it calls a tool that changes anything is
+  fired again 2, 5, 15 and 30 minutes later, and a failed notice backs off for about an hour. An
+  internet outage no longer loses a one-shot job.
+- A task whose conversation was deleted opens a conversation of its own and keeps recording
+  its runs.
 
-### Plugin connectors run in the sandbox box
+### Backups
 
-- `aura pack install` puts a plugin's stdio connector in each identity's sandbox box, never in
-  the Aura container, whose environment holds the database credentials. Its first start may take
-  up to 120 seconds, the time a cold `uvx` needs to fetch a Python server and its dependencies.
-  Remote connectors are unchanged.
-- A box server takes no secrets, so a plugin that passes a key to its stdio connector is refused
-  at install, and the error names the key.
+- The object store is copied every night at 01:30 (Europe/Rome) into `AURA_BACKUP_DIR/objects`,
+  each identity's bucket with its own key. Only what changed is downloaded, and a deleted or
+  replaced version is kept for 14 days. The job shows on the board and can be run now.
+- `aura objectstore restore [--as-of RFC3339] [--bucket name]` puts back what a bucket lacks.
+  It never overwrites a key, and it checks every file's hash first.
+- Garage syncs metadata and data before it acknowledges a write.
+- A fresh install's first database backup no longer fails on the login tables.
+
+### Install and operations
+
+- **Appliance updates wait for the night.** An edge appliance no longer restarts into a new
+  build after 15 quiet minutes, which could catch someone working in the cockpit. With nobody
+  asking, it installs at 03:00 host time (`AURA_UPDATE_AT`), once no task is running, and a night
+  a running task fills moves it to the next night. **Update now**, postponing and the 24-hour
+  limit work as before, and the admin's dialog says when the install comes.
+- The stack comes back when Docker restarts, not only at boot.
+- An update restarts every service whose mounted config file changed, and retries a stalled
+  image pull once.
+- The appliance images are on ghcr.io again. An edge host that moved to the GitLab copy in
+  October comes back on its own.
+- The aura and aura-ingest images install their Debian packages afresh every week, so a fix
+  Debian ships reaches the next build. Every image the stack runs is scanned weekly.
+- Telegram's commands act as the chat's linked identity: `/clear`, `/search`, `/cost` and
+  `/whoami` used to act as the local operator.
 
 ### Financial analysis plugin (prototype)
 
