@@ -29,8 +29,8 @@ source "$repo_root/deploy/aura-image-update.sh"
 source "$repo_root/deploy/aura-update-consent.sh"
 # shellcheck source=deploy/aura-image-home.sh
 source "$repo_root/deploy/aura-image-home.sh"
-[[ "$UPDATE_AT" == 03:00 && "$MAX_DEFER_SECONDS" == 86400 && "$ACTIVITY_STALE_SECONDS" == 180 ]] ||
-  fail "default policy is $UPDATE_AT/$MAX_DEFER_SECONDS/$ACTIVITY_STALE_SECONDS"
+[[ "$UPDATE_AT" == 03:00 && "$NIGHT_SECONDS" == 10800 && "$MAX_DEFER_SECONDS" == 86400 && "$ACTIVITY_STALE_SECONDS" == 180 ]] ||
+  fail "default policy is $UPDATE_AT/$NIGHT_SECONDS/$MAX_DEFER_SECONDS/$ACTIVITY_STALE_SECONDS"
 for given in 25:00 3:00 '03:00;reboot' ''; do
   got="$(AURA_UPDATE_AT="$given" bash -c 'source "$1"; echo "$UPDATE_AT"' _ "$repo_root/deploy/aura-update-consent.sh")"
   [[ "$got" == 03:00 ]] || fail "AURA_UPDATE_AT=$given gave $got, want the 03:00 default"
@@ -97,6 +97,14 @@ docker() {
 systemctl() { echo "systemctl $*" >>"$fixture/systemctl.log"; }
 
 status() { kv_value "$INSTALL_DIR/update/status" "$1"; }
+# Whether epoch $1 is a 03:00 on the local calendar day of epoch $2 or the next one, after $2. A
+# calendar day, not 86400 s: the day of a DST change lasts 23 or 25 hours.
+is_next_night() {
+  local day
+  day="$(date -d "@$2" +%F)"
+  (($1 > $2)) && [[ "$(date -d "@$1" +%H:%M)" == 03:00 ]] &&
+    [[ "$(date -d "@$1" +%F)" == "$day" || "$(date -d "@$1" +%F)" == "$(date -d "$day +1 day" +%F)" ]]
+}
 activity() { # seconds since the report, seconds since the last use, live runs
   local now
   now="$(date +%s)"
@@ -129,8 +137,7 @@ decides wait "someone used Aura 30 s ago"
 since="$(status pending_since)"
 ((since >= before && $(status deadline) == since + 86400)) || fail "pending_since=$since deadline=$(status deadline)"
 apply_at="$(status apply_at)"
-((apply_at > since && apply_at - since <= 86400)) && [[ "$(date -d "@$apply_at" +%H:%M)" == 03:00 ]] ||
-  fail "apply_at=$apply_at is not the first 03:00 after $since"
+is_next_night "$apply_at" "$since" || fail "apply_at=$apply_at is not the first 03:00 after $since"
 [[ "$(status available_built)" == "$(date -u -d 2026-09-24T06:47:13Z +%s)" ]] || fail "build time $(status available_built)"
 echo "ok: a new build waits for the next 03:00, with a deadline 24 h from now"
 
@@ -147,6 +154,7 @@ publish_new_build
 activity 30 3600 0
 decides wait "nobody used Aura for an hour, in the day"
 night_came() { sed -i "s/^apply_at=.*/apply_at=$(($(date +%s) - 60))/" "$INSTALL_DIR/update/status"; }
+night_ended() { sed -i "s/^apply_at=.*/apply_at=$(($(date +%s) - NIGHT_SECONDS - 60))/" "$INSTALL_DIR/update/status"; }
 night_came
 activity 30 30 0
 decides apply "the night came, someone chatted a minute ago"
@@ -159,7 +167,13 @@ rm -f "$INSTALL_DIR/update/activity"
 decides apply "the night came, no activity report at all (Aura predates the channel)"
 printf 'written_at=%s\nlast_activity_at=soon\nlive_runs=x\n' "$(date +%s)" >"$INSTALL_DIR/update/activity"
 decides wait "the night came, an unreadable activity report"
-echo "ok: only the night applies on its own, unless a run is live or the report is unreadable"
+activity 30 30 1
+night_ended
+decides wait "a run held the whole night"
+is_next_night "$(status apply_at)" "$(date +%s)" || fail "a missed night did not move to the next one: apply_at=$(status apply_at)"
+activity 30 3600 0
+decides wait "the morning after a missed night, nothing running"
+echo "ok: only the night applies on its own, unless a run is live or the report is unreadable; a missed night waits for the next"
 
 reset_host
 publish_new_build
@@ -181,6 +195,9 @@ request 11112222333344445555666677778888 defer $(($(date +%s) + 3600))
 decides wait "deferred an hour"
 night_came
 decides wait "the night came while the deferral still holds"
+night_ended
+decides wait "a postponement outlasted the night"
+is_next_night "$(status apply_at)" "$(date +%s)" || fail "an outlasted night did not move to the next one: apply_at=$(status apply_at)"
 [[ "$(status deferred_by)" == 448ddbe1-96ea-405d-8219-4a3d52a425c0 ]] || fail "deferred_by not recorded"
 request 22223333444455556666777788889999 defer $(($(date +%s) + 999999))
 decides wait "deferred past the deadline"
@@ -261,8 +278,7 @@ decides wait "pending before an apply"
 )
 [[ "$(status state)" == failed && "$(status error)" == *"exit code 7"* ]] || fail "a failed apply recorded $(cat "$INSTALL_DIR/update/status")"
 retry="$(status apply_at)"
-((retry > $(date +%s) && retry - $(date +%s) <= 86400)) && [[ "$(date -d "@$retry" +%H:%M)" == 03:00 ]] ||
-  fail "a failure did not move the retry to the next 03:00: apply_at=$retry"
+is_next_night "$retry" "$(date +%s)" || fail "a failure did not move the retry to the next 03:00: apply_at=$retry"
 ( on_apply_exit 0 )
 [[ "$(status state)" == failed ]] || fail "a clean exit overwrote the failure"
 activity 30 3600 0

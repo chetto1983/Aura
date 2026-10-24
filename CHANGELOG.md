@@ -9,7 +9,8 @@ Notable changes to Aura, newest first. Each section is also the text of its
 
 - An edge appliance no longer restarts into a new build after 15 quiet minutes, which could
   catch someone working in the cockpit. With nobody asking, it installs at 03:00 host time
-  (`AURA_UPDATE_AT`), once no task is running. **Update now**, postponing and the 24-hour limit
+  (`AURA_UPDATE_AT`), once no task is running, and a night a running task fills moves it to
+  the next night. **Update now**, postponing and the 24-hour limit
   work as before, and the admin's dialog says when the install comes.
 
 ### Cloud services read their key from the settings

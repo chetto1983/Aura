@@ -85,13 +85,17 @@ deferral and gave members the modal; it went further than asked and was dropped 
   pending build. It is recorded as `apply_at` in `status`, and a newer build keeps it.
 - At that time a tool call or job in flight still holds the restart, and the next tick tries
   again. A stale activity report still means Aura is down.
+- **The night lasts three hours** (`NIGHT_SECONDS`). A night that a running job or a
+  postponement takes up whole moves `apply_at` to the next one. Without that, the first quiet
+  tick after it would restart Aura in the morning (CodeRabbit on #180).
 - **Unchanged:**
   - an admin's **Update now**;
   - the reboot case;
   - the admin's modal, the postponement and its 24-hour deadline. A postponement holds the night
     back until the deadline.
 - **A failed install moves `apply_at` a night later.** Past the night, every tick would otherwise
-  retry it through the day: the same complaint by another road.
+  retry it through the day: the same complaint by another road. The admin's dialog names that
+  night, even past the deadline.
 
 **N2. The modal tells the admin when.** `GET /api/system/update` returns `apply_at`, and the
 headline reads "It will install itself tomorrow at 03:00". The old headline said "at the first
@@ -123,7 +127,7 @@ quiet moment, by <deadline>", which N1 makes untrue.
 - **Andrea's journal.** It still tells which rule restarted their host. N1 removes the day-time
   rule whatever the answer.
 - **The members' view.** A member still sees the banner only after an admin's **Update now**.
-  Nothing restarts in the day without one any more.
+  Nothing restarts in the day without one anymore.
 - **A stable channel for appliances that do not need edge** (option c, not chosen).
 - **The first update.** The one that brings this is decided by the old rules, because its updater
   predates them.

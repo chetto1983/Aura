@@ -168,9 +168,11 @@ cases (`deploy/aura-update-consent.sh`):
 
 - an admin chooses **Update now** in the cockpit;
 - the host restarted, and Aura already runs the new image;
-- the night came: the first 03:00 in the host's local time after the first pending build, as
-  soon as no tool call or job is running. An activity report from Aura older than three
-  minutes reads as Aura being down, which holds nothing back.
+- the night came: the first `AURA_UPDATE_AT` (default `03:00`, the host's local time) after
+  the first pending build, as soon as no tool call or job is running. A night lasts three
+  hours; one that a running job or a postponement takes up whole moves the install to the next
+  night, so it never lands in the day. An activity report from Aura older than three minutes
+  reads as Aura being down, which holds nothing back.
 
 An admin can postpone a build from the cockpit, until at most 24 hours after the first pending
 one was found; past that the postponement no longer holds the night back. An install that

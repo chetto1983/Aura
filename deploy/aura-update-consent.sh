@@ -29,6 +29,9 @@ valid_or() {
 # The policy, overridable in /etc/default/aura (sourced by main before this file). UPDATE_AT is
 # the host's local time at which a pending update applies with nobody asking.
 UPDATE_AT="$(valid_or "${AURA_UPDATE_AT:-}" '^([01][0-9]|2[0-3]):[0-5][0-9]$' 03:00)"
+# How long the night lasts from UPDATE_AT. A night that a run or a postponement takes up whole
+# moves the install to the next one, so the restart never lands in the day.
+NIGHT_SECONDS=10800
 MAX_DEFER_SECONDS="$(valid_or "${AURA_UPDATE_MAX_DEFER_SECONDS:-}" '^[0-9]{1,9}$' 86400)"
 ACTIVITY_STALE_SECONDS="$(valid_or "${AURA_UPDATE_ACTIVITY_STALE_SECONDS:-}" '^[0-9]{1,9}$' 180)"
 
@@ -185,6 +188,9 @@ decide_update() {
   # pulled it under the old payload, and the two must not live apart past this tick.
   if [[ -z "${reason}" && -n "${tag}" && "${running}" == "${tag}" && "${tag}" != "$(applied_image)" ]]; then
     reason="aura already runs it (the host restarted)"
+  fi
+  if [[ -z "${reason}" ]] && ((now >= APPLY_AT + NIGHT_SECONDS)); then
+    APPLY_AT="$(next_apply_at "${now}")"
   fi
   if [[ -z "${reason}" ]] && ((now >= APPLY_AT)) && { ((DEFERRED_UNTIL <= now)) || ((now >= DEADLINE)); } && aura_is_quiet; then
     reason="it is past ${UPDATE_AT}, and nothing is running"

@@ -27,8 +27,10 @@ it, and the admin's dialog shows it.
 
 1. **`apply_at`.** It is the first `AURA_UPDATE_AT` strictly after the first pending build, in
    host local time across DST, and it survives newer builds.
-2. **No day-time restart is left with nobody asking.** A failure moves the night on, and a
-   postponement still holds until the deadline.
+2. **No day-time restart is left with nobody asking.**
+   - A failure moves the night on.
+   - So does a night that a run or a postponement took up whole: it lasts `NIGHT_SECONDS`.
+   - A postponement still holds until the deadline.
 3. **Compatibility.** An older Aura ignores the new `apply_at` key.
 
 ## Decisions taken while writing this plan
