@@ -99,7 +99,7 @@
     "jsdom": "^30.1.2",
     "knip": "^6.38.0",
     "oxlint": "^1.87.0",
-    "oxlint-tsgolint": "7.0.2003",
+    "oxlint-tsgolint": "7.0.2004",
     "patch-package": "8.0.1",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.3.1",
