@@ -1689,14 +1689,29 @@ jobs:
       # Stryker diffs mutated source and Vitest test locations against this report. A cache
       # miss does one full run; later commits reuse unchanged mutants while still emitting
       # a full current-candidate JSON report for both frontend score gates.
+      #
+      # Incremental mode does not see a dependency change
+      # (stryker-mutator.io/docs/stryker-js/incremental), so the key carries what decides a
+      # verdict besides the code: the test toolchain's versions as package-lock pins them, and
+      # the Stryker and Vitest config. A toolchain bump starts a full run; an application
+      # dependency bump reuses the last report. Keyed on the whole lockfile, every Dependabot
+      # npm PR re-mutated everything: 73m07s on #175 (job 120885492846).
+      - name: Key the Stryker report by its test toolchain
+        id: stryker_toolchain
+        run: |
+          hash="$(jq -c '[.packages | to_entries[]
+            | select(.key | test("^node_modules/(vitest|@vitest/[^/]+|@stryker-mutator/[^/]+|typescript|vite|jsdom)$"))
+            | [.key, .value.version]]' web/package-lock.json | sha256sum | cut -c1-16)"
+          echo "hash=$hash" >> "$GITHUB_OUTPUT"
+
       - name: Restore Stryker incremental report
         id: stryker_incremental_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: web/reports/stryker-incremental.json
-          key: stryker-incremental-v1-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-${{ github.sha }}
+          key: stryker-incremental-v2-${{ runner.os }}-${{ steps.stryker_toolchain.outputs.hash }}-${{ hashFiles('web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-${{ github.sha }}
           restore-keys: |
-            stryker-incremental-v1-${{ runner.os }}-${{ hashFiles('web/package-lock.json', 'web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-
+            stryker-incremental-v2-${{ runner.os }}-${{ steps.stryker_toolchain.outputs.hash }}-${{ hashFiles('web/stryker.config.json', 'web/vitest.stryker.config.ts', 'web/src/test/setup.ts') }}-
 
       # Vitest adds its github-actions reporter whenever GITHUB_ACTIONS=true, and that reporter
       # appends a job summary after EVERY test run: under Stryker, one per mutant run. Run
