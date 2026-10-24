@@ -4,7 +4,7 @@ Proposed on 2026-10-24, at `e7c3d1a`. **The operator asked:** automate the check
 sidecar weekly, so that no vulnerability is left behind, the way senior teams do it. **The
 operator decided:** it runs on GitHub only, with no fallback job on the GitLab mirror.
 
-The four decisions below are proposals, open until the operator confirms them. The measurement
+The five decisions below are proposals, open until the operator confirms them. The measurement
 is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
 
 ## What exists, read in the tree and on GitHub on 2026-10-24
@@ -17,8 +17,23 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
 2. **Dependabot security updates are on.** They reach directories the config does not list:
    - #157: pip in `/docker/aura-ingest`;
    - #153 and #154: npm in two spike directories.
-3. **The compose entry has never opened a PR.** A newer whisper tag has existed for three days and
-   the job runs daily. The cause is not established.
+3. **No Dependabot version update has run since 2026-10-09 08:31 UTC.** This is measured from
+   the runs of the `Dependabot Updates` dynamic workflow.
+   - *What still runs.* Security updates do (2026-10-21 and 2026-10-22), and so do dependency-graph
+     updates (2026-10-21 and 2026-10-23).
+   - *What stopped.* None of the six configured entries has run since. The daily compose entry
+     missed 15 days, and the weekly entries missed the Mondays of 2026-10-12 and 2026-10-19.
+   - *The account outage explains only part of it.* The repository's own scheduled workflows ran
+     until 2026-10-11 13:02 and again from 2026-10-21 17:23. Dependabot missed 2026-10-10 and
+     2026-10-11 before that gap, and every day since it closed.
+   - *The config is not the cause.* The compose entry's last run (2026-10-09 03:25) read
+     `chetto1983/aura-whisper-server 2026.10.08.1056`, listed its GHCR tags, and answered "No
+     update needed", which was correct that day.
+   - *The documented auto-pause does not apply.* It needs a Dependabot PR open for 90 days, and
+     none is open.
+   - *A second silent failure.* The security update for `@vitest/mocker` in `/packages/create-aura`
+     failed on 2026-10-22 with `security_update_not_possible`: vitest 4.1.11 holds it at 4.1.11,
+     and the fix is 4.1.12. The run is red in Actions, and nothing reports it.
 4. **Three manifests get no version updates at all:**
    - `docker/aura-ingest/requirements.txt` (pip). Security updates reach it, version updates do not.
    - `packages/create-aura/package-lock.json`, the published `create-aura-appliance` installer.
@@ -95,6 +110,15 @@ that trigger workflows*, `schedule`).
 - An image unbuilt for a week still shows its new findings, because the database moves even when
   the image does not.
 
+**D5. The weekly run also checks that Dependabot itself ran.** It reads the `Dependabot Updates`
+runs of the last eight days with `gh api`. Two conditions turn it red:
+- an ecosystem in `dependabot.yml` has no run in that window;
+- any run in it failed.
+
+Finding 3 shows why: Dependabot stopped for 15 days, and nothing said so. The check cannot tell a
+version update from a security update by its run's name, so a security update can mask a stopped
+schedule. For `docker` and `docker-compose`, which get no security updates, the check is exact.
+
 ## Design
 
 ### `.github/workflows/security-scan.yml`
@@ -102,8 +126,8 @@ that trigger workflows*, `schedule`).
 **Triggers.** `schedule` weekly, plus `workflow_dispatch`. The cron is Monday at 04:41 UTC, after
 CodeQL's 03:27.
 
-**Permissions.** `contents: read`, `security-events: write`, `issues: write`. Every action is
-pinned by commit SHA, as in the other workflows.
+**Permissions.** `contents: read`, `security-events: write`, `issues: write`, `actions: read`.
+Every action is pinned by commit SHA, as in the other workflows.
 
 **Jobs.**
 1. **`images`** writes the image list:
@@ -127,7 +151,8 @@ pinned by commit SHA, as in the other workflows.
    - Pass two is the gate: the severity D2 sets for the image, `--ignore-unfixed`,
      `--ignorefile .trivyignore.yaml`, `--exit-code 1`, and a table in the job summary.
 3. **`go`** runs `govulncheck` v1.6.0 over `scripts/go_packages.sh`, as `ci.yml` does.
-4. **`report`**: `needs: [scan, go]`, `if: failure() && github.event_name == 'schedule'`. It opens
+4. **`dependabot`** applies D5, with `actions: read`.
+5. **`report`**: `needs: [scan, go, dependabot]`, `if: failure() && github.event_name == 'schedule'`. It opens
    or comments on the issue (D3) with `gh`.
 
 **What it leaves to Dependabot.** No OSV-Scanner job. On 2026-10-24 every lockfile finding OSV
@@ -138,8 +163,8 @@ x/crypto, has no fix and is `govulncheck`'s.
 
 - **New entries:** pip in `/docker/aura-ingest` and npm in `/packages/create-aura`, both weekly on
   Monday with the `build(deps)` prefix. `/docker/aura-craft-web` joins the docker directories.
-- **The compose entry stays as it is** until the cause of finding 3 is known. Widening `allow` to
-  more images is a later change.
+- **The compose entry stays as it is.** Its last run proves the `allow` name and the GHCR lookup
+  work. Widening `allow` to more images is a later change.
 
 ### Forks
 
@@ -150,9 +175,13 @@ x/crypto, has no fix and is `govulncheck`'s.
 
 ## Order of landing
 
-1. **Find out why the compose entry is silent.** The operator reads the Dependabot log under
-   Insights → Dependency graph → Dependabot. If it cannot be read, the Dependabot CLI reproduces
-   the job.
+1. **Restart Dependabot's schedules.** Either the operator presses "Check for updates" on each
+   entry at `/network/updates`, or the `dependabot.yml` change of step 3 lands. Both are actions the
+   docs list as resetting Dependabot. On 2026-10-08 a config change started all six jobs within a
+   minute.
+
+   The proof is the next day's scheduled compose run in the `Dependabot Updates` workflow. Then
+   vitest 4.1.12 goes into `/packages/create-aura`, which clears the failed security update.
 2. **Clear the six images Aura builds.** Today these would turn the first run red:
    - pypdf 6.21.2 in `aura-ingest`;
    - the minimist copies in `aura-sandbox`;
