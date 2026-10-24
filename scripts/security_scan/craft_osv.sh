@@ -47,7 +47,9 @@ newer_tags() {
 }
 
 scan() {
-  local repo=$1 config=$2 work status=0
+  local repo config work status=0
+  # Absolute, because git -C and cd run inside each clone, where a relative path means nothing.
+  repo="$(cd "$1" && pwd)" config="$(realpath -- "$2")"
   work="$(mktemp -d)"
   trap 'rm -rf -- "$work"' RETURN
   echo "| app | pinned | newer releases | in the wasm32 graph | gate |"

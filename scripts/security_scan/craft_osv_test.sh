@@ -41,4 +41,39 @@ grep -qP '^tokio@1.53.2\tRUSTSEC-2026-0386\t-\t1.53.3\treport$' <<<"$out" || fai
 grep -qP '^rsa@0.9.10\tRUSTSEC-2023-0071\t5.9\t-\treport$' <<<"$out" || fail "rsa is not reported: $out"
 if grep -q zbus_names <<<"$out"; then fail "a crate outside the graph was kept: $out"; fi
 
+# scan, run as the workflow runs it: from the checkout, with relative paths. git, cargo and
+# osv-scanner are stubs, so nothing leaves the machine. The first run on GitHub (40105988445) died
+# here: git -C <clone> apply resolved ./docker/craft-web/<app>.patch inside the clone.
+bin="$fixtures/bin"
+mkdir -p "$bin"
+printf '%s\n' "$pins" >"$fixtures/pins"
+cat >"$bin/git" <<'STUB'
+#!/usr/bin/env bash
+dir=.
+while [[ $1 == -C || $1 == -c ]]; do [[ $1 == -C ]] && dir=$2; shift 2; done
+case $1 in
+  clone) mkdir -p "${@: -1}"; : >"${@: -1}/Cargo.lock" ;;
+  rev-parse) awk -v app="$(basename "$dir")" '$1 == app { print $3 }' "$CRAFT_TEST_PINS" ;;
+  apply) [[ $2 == /* && -f $2 ]] || { echo "stub git: apply got $2" >&2; exit 128; } ;;
+  ls-remote) ;;
+  *) echo "stub git: unexpected $*" >&2; exit 1 ;;
+esac
+STUB
+printf '#!/usr/bin/env bash\n' >"$bin/cargo"
+cat >"$bin/osv-scanner" <<'STUB'
+#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --config) [[ -f $2 ]] || { echo "stub osv-scanner: no config $2" >&2; exit 2; }; shift 2 ;;
+    --output-file) echo '{"results": []}' >"$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+STUB
+chmod +x "$bin/git" "$bin/cargo" "$bin/osv-scanner"
+out="$(cd "$repo_root" && CRAFT_TEST_PINS="$fixtures/pins" PATH="$bin:$PATH" \
+  bash scripts/security_scan/craft_osv.sh scan . .github/osv-scanner-craft.toml 2>&1)" ||
+  fail "scan from the checkout with relative paths failed: $out"
+[[ "$(grep -c '| ok |' <<<"$out")" == 6 ]] || fail "want six apps ok, got: $out"
+
 echo "security-scan craft test: pass"
