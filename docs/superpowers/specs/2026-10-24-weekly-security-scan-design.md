@@ -1,11 +1,12 @@
 # Weekly security scan: every image the stack runs, every week, on GitHub
 
-Proposed on 2026-10-24, at `e7c3d1a`. **The operator asked:** automate the checks on every
+Agreed with the operator on 2026-10-24, at `e7c3d1a`. **The operator asked:** automate the checks on every
 sidecar weekly, so that no vulnerability is left behind, the way senior teams do it. **The
 operator decided:** it runs on GitHub only, with no fallback job on the GitLab mirror.
 
-The six decisions below are proposals, open until the operator confirms them. The measurement
-is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
+The operator approved the six decisions below on 2026-10-24 ("approvo D1-D6"), and in the same
+message asked for the Craft apps to be upgraded. The measurement is
+`docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
 
 ## What exists, read in the tree and on GitHub on 2026-10-24
 
@@ -87,7 +88,7 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
      - filmcraft's graph carries none.
    - *Upgrading changes none of that.* The newest tags hold the same versions of those crates.
 
-## Decisions (proposed)
+## Decisions
 
 **D1. Dependabot stays, and Renovate is not added.** This reverses the recommendation of earlier
 the same day, which was made before the inventory above.
@@ -152,8 +153,8 @@ version update from a security update by its run's name, so a security update ca
 schedule. For `docker` and `docker-compose`, which get no security updates, the check is exact.
 
 **D6. The weekly run watches the Craft apps with a job of its own.** No tool reads these pins.
-This job is new code, about forty lines of shell, so it is listed here for the operator to approve
-before anything is written.
+This job is new code, about forty lines of shell, so it went to the operator before anything was
+written. The operator approved it.
 - It reads the six pins from the two Dockerfiles.
 - For each app it lists the upstream tags (`git ls-remote`) and reports newer releases. That part
   is report-only: an upgrade means rebasing a patch and a 35-minute rebuild, so it is the
