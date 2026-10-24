@@ -1,4 +1,4 @@
-# Weekly security scan: every image the stack runs, every week, on GitHub
+# Weekly security scan: every image master ships, every week, on GitHub
 
 Agreed with the operator on 2026-10-24, at `e7c3d1a`. **The operator asked:** automate the checks on every
 sidecar weekly, so that no vulnerability is left behind, the way senior teams do it. **The
@@ -161,8 +161,14 @@ written. The operator approved it.
   operator's call.
 - It resolves the app's wasm32 graph at the pinned tag, with the patch applied
   (`cargo tree -p <app>-web --target wasm32-unknown-unknown`).
-- It runs OSV-Scanner over that crate list only. It goes red on a fixable HIGH or CRITICAL, with
-  the same `statement` and `expired_at` acceptances as D2.
+- It runs OSV-Scanner over the app's whole `Cargo.lock`, then keeps only the findings whose
+  package name and version appear in the `cargo tree` output. This is how the baseline was
+  measured.
+- A fixable HIGH or CRITICAL left after that filter turns the job red.
+- Accepting one goes in `docker/craft-web/osv-scanner.toml`, which the job passes with
+  `--config`. It is OSV-Scanner's own format: one `[[IgnoredVulns]]` per advisory id, with
+  `reason` and an `ignoreUntil` at most 90 days away (OSV-Scanner docs, *Configuration*). It is a
+  separate file because Trivy's `.trivyignore.yaml` (D2) uses other field names.
 
 ## Design
 
@@ -200,8 +206,9 @@ Every action is pinned by commit SHA, as in the other workflows.
 5. **`report`**: `needs: [scan, go, dependabot]`, `if: failure() && github.event_name == 'schedule'`. It opens
    or comments on the issue (D3) with `gh`.
 
-**What it leaves to Dependabot.** No OSV-Scanner job. On 2026-10-24 every lockfile finding OSV
-reported was a GHSA, which Dependabot's alerts already read. The one exception, GO-2026-5932 in
+**What it leaves to Dependabot.** No OSV-Scanner job over the repository's own lockfiles; D6's
+Craft job is the only use of OSV-Scanner. On 2026-10-24 every finding OSV reported on those
+lockfiles was a GHSA, which Dependabot's alerts already read. The one exception, GO-2026-5932 in
 x/crypto, has no fix and is `govulncheck`'s.
 
 ### `.github/dependabot.yml`
@@ -220,16 +227,22 @@ x/crypto, has no fix and is `govulncheck`'s.
 
 ## Order of landing
 
-1. **Make GitHub read `dependabot.yml` again, with the three new entries.**
+1. **Make GitHub read `dependabot.yml` again, with the two new entries.**
    - *Why this way.* The Dependabot tab shows no configuration, so it has no "Check for updates"
      to press. A change to the file on the default branch makes Dependabot read it. On 2026-10-08
      one started a run for every configured entry within a minute.
    - *The proof.* The Dependabot tab lists the seven entries, and the next day's scheduled compose
      run appears in the `Dependabot Updates` workflow.
-2. **Clear the six images Aura builds.** Today these would turn the first run red:
-   - pypdf 6.21.2 in `aura-ingest`;
-   - the minimist copies in `aura-sandbox`;
-   - Monday's Dependabot base-image refresh for the perl-base CRITICALs, or a manual repin;
+2. **Clear the six images Aura builds.** Every fixable HIGH and CRITICAL in the baseline would
+   turn the first run red. Each one is fixed or accepted with a dated entry:
+   - `aura-ingest`: pypdf 6.21.2, plus libexpat1 and libbrotli1 from the Debian base;
+   - `aura-sandbox`: the minimist copies, undici, brace-expansion, libexpat1, libbrotli1;
+   - `aura-egress`: perl-base and libbrotli1, through Monday's Dependabot base-image refresh or a
+     manual repin;
+   - `aura`: libexpat1, libbrotli1, brace-expansion, undici;
+   - `aura-caddy`: brotli-libs and golang.org/x/net;
+   - `aura-cloudflared`: the Go standard library, x/net and klauspost/compress inside
+     Cloudflare's binary, and libssl3t64, by moving its pinned release;
    - then a rebuild of `:edge`.
 
    chi 5.4.0 and zod 4.6.6 move in the same change.
