@@ -398,9 +398,12 @@ def indexed_source_keys(
     correct, silence about a statute is a lost document.
     """
     path = f"/api/v1/query/{urllib.parse.quote(database, safe='')}"
+    # limit -1: a query that states none is cut at httpQueryDefaultLimit (20,000), marked only
+    # by `truncated: true`, and every key past the cut would read as MISSING. With -1 a result
+    # past httpQueryMaxResultRows (1,000,000) is an HTTP 413, which _post raises.
     body = _post(
         base_url, path,
-        {"language": "sql", "command": f"SELECT source_key FROM {DOCUMENT_TYPE}"},
+        {"language": "sql", "command": f"SELECT source_key FROM {DOCUMENT_TYPE}", "limit": -1},
         auth, timeout_s,
     )
     return {row["source_key"] for row in body.get("result", []) if row.get("source_key")}

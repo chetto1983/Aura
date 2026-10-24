@@ -21,12 +21,13 @@ Run (rebuild first -- a new module is invisible to the image until then):
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
 from neo4j import GraphDatabase
 
-from ingest.arcade import _post, ensure_schema, remove_document
+from ingest.arcade import DOCUMENT_TYPE, _post, ensure_schema, indexed_source_keys, remove_document
 from ingest.tests import disposable
 from ingest.tests.disposable import ARCADE_HTTP, AUTH
 
@@ -196,3 +197,20 @@ def test_remove_document_leaves_only_the_other_keys_rows(disposable_database):
             f"SELECT source_key, count(*) AS n FROM {type_name} GROUP BY source_key",
         )
         assert {row["source_key"]: row["n"] for row in rows} == {"kept.md": kept}, type_name
+
+
+def test_indexed_source_keys_reads_past_the_http_default_limit(disposable_database):
+    """A query that states no limit is cut at arcadedb.server.httpQueryDefaultLimit (20,000),
+    flagged only by `truncated: true`, which the audit does not read: every key past the cut
+    would be reported MISSING. Measured 2026-10-24 on 26.10.2: 30,000 rows came back as
+    20,000 with HTTP 200."""
+    ensure_schema(ARCADE_HTTP, disposable_database, AUTH, DIMS)
+    rows = 20_001
+    for start in range(0, rows, 1000):
+        batch = json.dumps([
+            {"search_document_id": f"doc-{i}", "source_key": f"k{i}"}
+            for i in range(start, min(rows, start + 1000))
+        ])
+        _command(disposable_database, f"INSERT INTO {DOCUMENT_TYPE} CONTENT {batch}")
+
+    assert len(indexed_source_keys(ARCADE_HTTP, disposable_database, AUTH, 60.0)) == rows
