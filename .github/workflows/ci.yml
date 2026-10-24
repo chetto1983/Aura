@@ -93,6 +93,11 @@ jobs:
       - name: Workflow pin gate
         run: bash scripts/workflow_pin_gate.sh
 
+      # security-scan.yml runs once a week, so its scripts are tested here, where a change to
+      # them or to compose.yaml lands.
+      - name: Weekly security scan scripts self-test
+        run: for test in scripts/security_scan/*_test.sh; do bash "$test"; done
+
       - name: EmbeddingGemma cache helper self-test
         run: make embedding-model-contract
       - name: LLM model fetch contract (pinned size + sha256, model + MTP drafter)

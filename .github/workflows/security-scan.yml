@@ -1,0 +1,189 @@
+name: Weekly security scan
+
+# docs/superpowers/specs/2026-10-24-weekly-security-scan-design.md (D1-D6). Every Monday:
+# - every image master ships, through Trivy;
+# - the Go graph, through govulncheck;
+# - that Dependabot itself ran;
+# - the Craft apps' shipped dependency graphs.
+# A fixable finding Aura can act on, or a third-party CRITICAL, turns the run red. A red scheduled
+# run opens or updates an issue labelled security-scan (D3). The decisions live in
+# scripts/security_scan/, each with a test that ci.yml runs; this file holds only the wiring.
+
+on:
+  schedule:
+    # After CodeQL's 03:27.
+    - cron: "41 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-scan
+  cancel-in-progress: false
+
+env:
+  # Run from a digest-pinned image, not the Trivy action: the action's tags were rewritten in the
+  # March 2026 compromise (CVE-2026-33634).
+  TRIVY_IMAGE: aquasec/trivy:0.70.0@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e
+
+jobs:
+  images:
+    name: List the images
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.list.outputs.matrix }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Every compose image, Aura's own at edge
+        id: list
+        run: |
+          matrix="$(bash scripts/security_scan/images.sh compose.yaml "$GITHUB_REPOSITORY_OWNER")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          jq -r '"| image | gate |", "|---|---|", (.[] | "| \(.image) | \(.kind) |")' <<<"$matrix" >> "$GITHUB_STEP_SUMMARY"
+
+  scan:
+    name: Scan ${{ matrix.name }}
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.images.outputs.matrix) }}
+    env:
+      IMAGE: ${{ matrix.image }}
+      # D2: Aura can rebuild its own images, and can only move the pin of someone else's.
+      GATE: ${{ matrix.kind == 'own' && 'HIGH,CRITICAL' || 'CRITICAL' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Code scanning tracks every fixable HIGH and CRITICAL across weeks, accepted ones included.
+      # The cache directory carries the database and the layers into the gate step.
+      - name: Trivy, every fixable HIGH and CRITICAL, for code scanning
+        run: |
+          mkdir -p "$RUNNER_TEMP/trivy-cache"
+          docker run --rm -v "$RUNNER_TEMP/trivy-cache:/root/.cache" \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" -v "$PWD:/repo" -w /repo \
+            "$TRIVY_IMAGE" image --image-src remote --scanners vuln --severity HIGH,CRITICAL \
+            --ignore-unfixed --format sarif --output trivy.sarif "$IMAGE"
+
+      - name: Upload to code scanning
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4
+        with:
+          sarif_file: trivy.sarif
+          category: trivy/${{ matrix.name }}
+
+      - name: Gate, minus the dated acceptances in .trivyignore.yaml
+        run: |
+          {
+            echo "### $IMAGE (${{ matrix.kind }}: red on fixable $GATE)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          status=0
+          docker run --rm -v "$RUNNER_TEMP/trivy-cache:/root/.cache" \
+            -v "$HOME/.docker/config.json:/root/.docker/config.json:ro" -v "$PWD:/repo:ro" -w /repo \
+            "$TRIVY_IMAGE" image --skip-db-update --image-src remote --scanners vuln \
+            --severity "$GATE" --ignore-unfixed --ignorefile .trivyignore.yaml \
+            --exit-code 1 --format table "$IMAGE" > gate.txt || status=$?
+          cat gate.txt
+          { cat gate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+  go:
+    name: Go graph (govulncheck)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # The same command as ci.yml's vulncheck job, which runs only when code changes.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+          listed="$(bash scripts/go_packages.sh)"
+          mapfile -t packages <<<"$listed"
+          "$(go env GOPATH)/bin/govulncheck" "${packages[@]}"
+
+  dependabot:
+    name: Dependabot ran
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Every entry ran in eight days, and no run failed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/security_scan/dependabot_fresh.sh .github/dependabot.yml | tee -a "$GITHUB_STEP_SUMMARY"
+
+  craft:
+    name: Craft apps
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The Craft image's toolchain; OSV-Scanner checked against its release's SHA256SUMS.
+      - name: Install rust 1.97.0 and OSV-Scanner 2.7.0
+        run: |
+          rustup toolchain install 1.97.0 --profile minimal --no-self-update
+          echo RUSTUP_TOOLCHAIN=1.97.0 >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -sSfL -o "$RUNNER_TEMP/bin/osv-scanner" \
+            https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64
+          echo "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b  $RUNNER_TEMP/bin/osv-scanner" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/bin/osv-scanner"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Newer releases, and the gate over each wasm32 graph
+        run: bash scripts/security_scan/craft_osv.sh scan . .github/osv-scanner-craft.toml | tee -a "$GITHUB_STEP_SUMMARY"
+
+  report:
+    name: Open or update the issue
+    needs: [images, scan, go, dependabot, craft]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Issue labelled security-scan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: bash scripts/security_scan/report.sh
