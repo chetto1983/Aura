@@ -119,7 +119,11 @@ it painted a dab. Clicking the empty area beside the image instead gave the exac
 - **The aura image and the cockpit.** The images were not built here and nothing ran in the cockpit.
   `publish-craft-web.yml` builds the Craft image on GitHub, and its digest is pinned after that
   run. The lab VM pass is the operator's.
-- **The sandbox image.** The CLIs ran in a box made for this test, not in `aura-sandbox`. The box
-  contract and the native previews run in CI's sandbox job against the real image.
+- **The sandbox image, here.** The CLIs ran in a box made for this test, not in `aura-sandbox`.
+  CI's sandbox job then built the real image at b0e727d (#174, job 120858113432). In that job:
+  - the six tarballs matched their SHA-256;
+  - `TestCraftPreviewNative` passed;
+  - `scripts/sandbox_image_contract_test.sh` passed: the six Craft MCP servers initialize offline,
+    and landrun fences a Craft server to `/workspace`.
 - **Fidelity.** Round-trip fidelity of complex documents is not claimed, as before.
 - **Other languages.** Only the languages in the table were tried.
