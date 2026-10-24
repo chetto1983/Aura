@@ -12,7 +12,7 @@
 # draft and never shipped, so the document rows had no writer at all.
 cocoindex[amazon_s3,postgres]==1.0.25
 iscc-tika==0.6.0
-neo4j==5.28.1
+neo4j==6.4.1
 # pypdf reads a PDF's own outline, which is what fills heading_path: the section a passage
 # belongs to. Measured 2026-09-09, the ArcadeDB manual's outline anchors 1,290 of 1,290
 # entries into the extracted text while a regex tuned to its numbering finds 2 candidates in
