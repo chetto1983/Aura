@@ -4,7 +4,7 @@ Proposed on 2026-10-24, at `e7c3d1a`. **The operator asked:** automate the check
 sidecar weekly, so that no vulnerability is left behind, the way senior teams do it. **The
 operator decided:** it runs on GitHub only, with no fallback job on the GitLab mirror.
 
-The five decisions below are proposals, open until the operator confirms them. The measurement
+The six decisions below are proposals, open until the operator confirms them. The measurement
 is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
 
 ## What exists, read in the tree and on GitHub on 2026-10-24
@@ -40,10 +40,15 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
      2026-10-22 with `security_update_not_possible`: vitest 4.1.11 held it at 4.1.11, and the fix is
      4.1.12. `e7c0a8c` moved vitest by hand two hours later. Dependabot opened no PR, and a red
      dynamic run is easy to miss.
-4. **Three manifests get no version updates at all:**
+4. **Two manifests get no version updates at all:**
    - `docker/aura-ingest/requirements.txt` (pip). Security updates reach it, version updates do not.
    - `packages/create-aura/package-lock.json`, the published `create-aura-appliance` installer.
-   - `docker/aura-craft-web/Dockerfile`.
+
+   `docker/aura-craft-web/Dockerfile` stays out on purpose. Its rust base only builds WebAssembly
+   that ships `FROM scratch`. Any change to the file changes the input hash
+   `TestCraftWebImagePinMatchesItsInputs` checks: a 1.97.0 → 1.99.0 edit moves it from
+   `ea8923cbe8756de5` to `a7559cebc0904474`. The grouped base-image PR would then stay red until
+   someone republishes the Craft image.
 5. **`govulncheck` runs only when code changes.** It runs on pull requests and pushes (`ci.yml`,
    v1.6.0). A Go advisory published on a quiet week waits for the next push. CodeQL is weekly.
 6. **Nothing scans what is inside an image.** Of the 20 images the stack runs, 14 carry fixable
@@ -60,6 +65,27 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
      direct `.csproj` references; the transitive NuGet graph needs
      `dotnet list package --vulnerable --include-transitive`.
    Both images are in `compose.yaml`, so a scan from Aura covers what ships.
+8. **Nothing watches the six Craft apps.** The cockpit serves them to view and edit files:
+   PdfCraft, WordCraft, DeckCraft, PhotoCraft and FilmCraft, built from source with Aura's patches
+   (`docker/aura-craft-web/Dockerfile`), and GridCraft's release zip (`docker/aura/Dockerfile`).
+   - *They are behind.* All six are pinned at storytold's releases of 2026-10-17. By 2026-10-23
+     each had two to five newer minor releases: pdfcraft v0.9.0 → v0.13.0, wordcraft and deckcraft
+     v0.8.0 → v0.10.0, photocraft v0.10.0 → v0.15.1, filmcraft v0.9.0 → v0.12.0, gridcraft
+     v0.8.0 → v0.11.1. Of their tools, trunk is at v0.21.14 (v0.22.0 is out), binaryen at
+     version_123 (133 is out) and rust at 1.97.0 (1.99.0 is out). wasm-bindgen 0.2.129 is current.
+   - *No check sees them.* The versions are arguments in a Dockerfile, and the `Cargo.lock` files
+     live upstream. So Dependabot cannot read them, the dependency graph has no cargo package, and
+     Trivy found nothing in `aura:edge`'s WebAssembly.
+   - *What ships carries advisories, none reachable as used.* This was measured with
+     `cargo tree --target wasm32-unknown-unknown` on each `-web` crate at its pinned tag with the
+     patch applied, then OSV-Scanner:
+     - zip 3.0.0 is in wordcraft, deckcraft and gridcraft: RUSTSEC-2026-0367/0368/0369, 9.1 at
+       most, fixed in 9.0.0. All three concern `extract()` to a filesystem, which no source file
+       in the three calls.
+     - crypto-bigint, ctutils and rsa are in pdfcraft: timing side channels.
+     - rustybuzz, ttf-parser and paste are unmaintained.
+     - filmcraft's graph carries none.
+   - *Upgrading changes none of that.* The newest tags hold the same versions of those crates.
 
 ## Decisions (proposed)
 
@@ -125,6 +151,18 @@ Finding 3 shows why: Dependabot stopped for 15 days, and nothing said so. The ch
 version update from a security update by its run's name, so a security update can mask a stopped
 schedule. For `docker` and `docker-compose`, which get no security updates, the check is exact.
 
+**D6. The weekly run watches the Craft apps with a job of its own.** No tool reads these pins.
+This job is new code, about forty lines of shell, so it is listed here for the operator to approve
+before anything is written.
+- It reads the six pins from the two Dockerfiles.
+- For each app it lists the upstream tags (`git ls-remote`) and reports newer releases. That part
+  is report-only: an upgrade means rebasing a patch and a 35-minute rebuild, so it is the
+  operator's call.
+- It resolves the app's wasm32 graph at the pinned tag, with the patch applied
+  (`cargo tree -p <app>-web --target wasm32-unknown-unknown`).
+- It runs OSV-Scanner over that crate list only. It goes red on a fixable HIGH or CRITICAL, with
+  the same `statement` and `expired_at` acceptances as D2.
+
 ## Design
 
 ### `.github/workflows/security-scan.yml`
@@ -168,7 +206,7 @@ x/crypto, has no fix and is `govulncheck`'s.
 ### `.github/dependabot.yml`
 
 - **New entries:** pip in `/docker/aura-ingest` and npm in `/packages/create-aura`, both weekly on
-  Monday with the `build(deps)` prefix. `/docker/aura-craft-web` joins the docker directories.
+  Monday with the `build(deps)` prefix.
 - **The compose entry stays as it is.** Its last run proves the `allow` name and the GHCR lookup
   work. Widening `allow` to more images is a later change.
 

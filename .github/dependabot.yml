@@ -109,10 +109,13 @@ updates:
   # Dockerfile base images. A digest-pinned FROM gets its digest refreshed when the tag moves,
   # before Docker Hub can collect the superseded manifest. dxflrs/garage is left out: the aura
   # image and compose.yaml must move it together (cmd/aura/container_artifacts_test.go).
+  # docker/aura-craft-web is left out too. Its rust base only builds WebAssembly that ships FROM
+  # scratch. Any change to that Dockerfile changes the input hash that
+  # TestCraftWebImagePinMatchesItsInputs checks, so the grouped PR would stay red until someone
+  # republishes the Craft image.
   - package-ecosystem: docker
     directories:
       - "/docker/aura"
-      - "/docker/aura-craft-web"
       - "/docker/aura-sandbox"
       - "/docker/aura-egress"
       - "/docker/aura-ingest"
