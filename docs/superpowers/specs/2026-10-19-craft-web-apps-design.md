@@ -39,12 +39,21 @@ aura's own static-app handler).
      `.deckcraft`), and the deck counts as saved when the parent took it.
    - PhotoCraft: `Services::write`; the image opens under its own name (`open_file`), so Save writes back
      to it instead of going through Save As to `.psd`.
+     - **Amended 2026-10-24: the bridge marks its writes confirmed.** PhotoCraft 0.15.1 counts a
+       `Services::write` as unconfirmed by default (`write_unconfirmed`, #4962), because a browser
+       download reports nothing back. The save then leaves the changes unsaved. Measured with the
+       patch rebased unchanged: the image came back inverted, and `photocraft:dirty` stayed true,
+       so the cockpit would have held the close of a file it had stored. The parent does take the
+       bytes, so `Bridge::connect` sets `write_unconfirmed = false`.
    - FilmCraft: `fs::set_on_write`; a clip sent is imported and a sequence made from it; the project
      (`.fcproj`) and every export come back. Host mode starts with no demo and nothing an earlier visit
      left in OPFS.
 2. **One upstream bug is fixed in the patch.** DeckCraft 0.8.0's official web build panics at its first
    document (`std::process::id()` on wasm, FINDINGS 6); the patch gates that call off wasm, as the line
    beside it already gates the clock.
+   - **Amended 2026-10-24: upstream fixed it.** DeckCraft 0.10.0's `instance_id` hashes the
+     browser clock on wasm, and `process::id` and the system clock only off wasm, so the patch drops
+     the hunk.
 3. **A modified build carries no ArtCraft marks** (FINDINGS 9): the brand terms let only unmodified
    official builds use them. The patches remove FilmCraft's compiled wordmark and reword the About texts
    to the allowed "based on <App> by the ArtCraft team"; the build script drops the translated rows that
@@ -83,6 +92,10 @@ aura's own static-app handler).
    face, so those are skipped for the next language, else English, rather than drawn as boxes (FINDINGS
    14), which is what FilmCraft already does (FINDINGS 15). The cockpit's own language is not passed:
    the bridge has no field for it.
+   - **Amended 2026-10-24: PdfCraft reads the browser itself.** Since #2954, PdfCraft 0.13.0 takes
+     the first of `navigator.languages`, then `navigator.language`, that it has a catalog for. It
+     does not ask whether it can draw that language. The patch keeps only that check: tags with no
+     face in the web build are dropped before upstream's choice.
 
 ## What this does not do
 
@@ -99,6 +112,8 @@ aura's own static-app handler).
 - **Round-trip fidelity of complex documents is not claimed** (FINDINGS, "does not show").
 - **No Italian in GridCraft and DeckCraft**: neither has a catalog (FINDINGS 13). In the four others the
   few rows the patches reword (About, Help's links) have no translation and show in English.
+  *Amended 2026-10-24:* GridCraft 0.11.1 has an Italian catalog and follows an `it-IT` browser;
+  DeckCraft 0.10.0 still has none.
 - **WordCraft is left as released on languages it cannot draw**: with a Japanese browser it draws boxes,
   as its official web build does (FINDINGS 15).
 
