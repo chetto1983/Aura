@@ -116,9 +116,18 @@ it painted a dab. Clicking the empty area beside the image instead gave the exac
 
 ## What this does not establish
 
-- **The aura image and the cockpit.** The images were not built here and nothing ran in the cockpit.
-  `publish-craft-web.yml` builds the Craft image on GitHub, and its digest is pinned after that
-  run. The lab VM pass is the operator's.
+- **The Craft image.** `publish-craft-web.yml` run 40091654320 built it on GitHub at b0e727d and
+  pushed `aura-craft-web:d29d54c8e01cd91c@sha256:40f3f558…`, which `docker/aura/Dockerfile` now
+  pins.
+  - The run compiled the five apps cold: pdfcraft 372 s, wordcraft 378 s, deckcraft 380 s,
+    photocraft 443 s, filmcraft 261 s.
+  - Its amd64 layer, pulled from GHCR, holds the same five apps with the same file counts as the
+    builds above. Each wasm carries its `<app>:ready` hook and is within 0.3% of the local one.
+  - The embedded cargo registry path accounts for most of the gap: in deckcraft, 972 copies are
+    83 bytes shorter on the runner.
+  - Those bytes were not driven through the bridge.
+- **The aura image and the cockpit.** The aura image was not built here and nothing ran in the
+  cockpit. The lab VM pass is the operator's.
 - **The sandbox image, here.** The CLIs ran in a box made for this test, not in `aura-sandbox`.
   CI's sandbox job then built the real image at b0e727d (#174, job 120858113432). In that job:
   - the six tarballs matched their SHA-256;
