@@ -47,6 +47,37 @@ updates:
           - minor
           - patch
 
+  # The published create-aura-appliance installer. Only security updates reached it before
+  # (run 39730585760, 2026-10-22).
+  - package-ecosystem: npm
+    directory: "/packages/create-aura"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      create-aura-minor-patch:
+        update-types:
+          - minor
+          - patch
+
+  # aura-ingest's Python pins. Only security updates reached them before (#157).
+  - package-ecosystem: pip
+    directory: "/docker/aura-ingest"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "build(deps)"
+    groups:
+      ingest-minor-patch:
+        update-types:
+          - minor
+          - patch
+
   # GitHub Actions used by the CI / CodeQL / release workflows.
   - package-ecosystem: github-actions
     directory: "/"
@@ -81,6 +112,7 @@ updates:
   - package-ecosystem: docker
     directories:
       - "/docker/aura"
+      - "/docker/aura-craft-web"
       - "/docker/aura-sandbox"
       - "/docker/aura-egress"
       - "/docker/aura-ingest"
