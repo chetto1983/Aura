@@ -24,7 +24,7 @@
 #
 # Digest-pinned base (D-13), the same pin as docker/aura-sandbox/Dockerfile. Dependabot
 # refreshes it when bookworm-slim moves, before Hub can collect the superseded manifest.
-FROM debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 
 # nftables is the ONLY hard dependency of the floor. ca-certificates + curl are kept so a
 # later OpenSandbox FQDN build layer (or a supervisor fetching allow/deny lists) has TLS.
