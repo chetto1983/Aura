@@ -1,12 +1,12 @@
 # The five Craft apps Aura builds from source, published as their own image so the aura image
 # copies them by digest instead of compiling them (docker/aura/Dockerfile). Unlike GridCraft,
 # whose release the aura Dockerfile takes as it is, these need a change: WordCraft, DeckCraft,
-# PhotoCraft and FilmCraft have no bridge upstream, and PdfCraft and PhotoCraft draw their web
-# interface in English whatever the browser's language. docker/craft-web builds each from its
-# release tag, checked against the tag's commit, with the patch beside the script (that change,
-# and the ArtCraft marks a modified build may not carry). WebAssembly is the same on every
-# platform, so it builds once, on the builder's. The tools are release binaries pinned by
-# SHA-256; trunk runs offline, so it fetches none of its own.
+# PhotoCraft and FilmCraft have no bridge upstream, PhotoCraft draws its web interface in English
+# whatever the browser's language, and PdfCraft picks languages its web build has no face for.
+# docker/craft-web builds each from its release tag, checked against the tag's commit, with the
+# patch beside the script (that change, and the ArtCraft marks a modified build may not carry).
+# WebAssembly is the same on every platform, so it builds once, on the builder's. The tools are
+# release binaries pinned by SHA-256; trunk runs offline, so it fetches none of its own.
 #
 # The inputs are this file and docker/craft-web/; scripts/craft_web_inputs.sh hashes them into
 # the tag publish-craft-web.yml pushes, the aura Dockerfile names that tag beside its digest, and
@@ -35,11 +35,11 @@ RUN set -eu; \
     tool "https://github.com/WebAssembly/binaryen/releases/download/version_123/binaryen-version_123-$arch-linux.tar.gz" "$binaryen" binaryen-version_123/bin/wasm-opt; \
     rustup target add wasm32-unknown-unknown
 COPY docker/craft-web/ /craft-web/
-RUN /craft-web/build.sh pdfcraft v0.9.0 645016addcfb9078c557f0189559ab47cdcee057 /apps
-RUN /craft-web/build.sh wordcraft v0.8.0 f2e15cf8f899a79899a2d9595ca4ce7df1e5ea22 /apps
-RUN /craft-web/build.sh deckcraft v0.8.0 22db9261f9d1a214c296fd390173130c45d76d66 /apps
-RUN /craft-web/build.sh photocraft v0.10.0 8407d9ccb125af52944fca9d228383459f94aaef /apps
-RUN /craft-web/build.sh filmcraft v0.9.0 4a69a038d32761f604b3c7e4845b21fb40b3cbe4 /apps
+RUN /craft-web/build.sh pdfcraft v0.13.0 53199fb4fa36f3c95b539add6218c57aeb2f823c /apps
+RUN /craft-web/build.sh wordcraft v0.10.0 9130181a5fdaee2293e67756fd5458c601489f3c /apps
+RUN /craft-web/build.sh deckcraft v0.10.0 b47195feec0f0fe4220d8943ad1c8add5dad8072 /apps
+RUN /craft-web/build.sh photocraft v0.15.1 60c87b9884fdae0e464614d482a3bc435cbbc578 /apps
+RUN /craft-web/build.sh filmcraft v0.12.0 274c4cf85ba638d4b6f867d97ca3f6478a993c8d /apps
 
 FROM scratch
 COPY --from=craft-web /apps /apps

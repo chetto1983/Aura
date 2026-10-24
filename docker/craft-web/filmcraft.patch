@@ -344,10 +344,10 @@ index 37df98d..d802247 100644
      ("help.reportIssue", "Report an Issue…", ISSUES),
  ];
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 48b4b82..8a03c84 100644
+index 1d760d0..a91e3a8 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -136,9 +136,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
+@@ -137,9 +137,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
      uic!("mode.import", "Import", [], None),
      uic!("mode.edit", "Edit", [], None),
      uic!("mode.export", "Export", ["File", "Export"], Some("Cmd+M")),

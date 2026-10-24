@@ -27,10 +27,10 @@ RUN npm run build
 # gzipped here because nothing in front of aura compresses: aura sends the .gz to a browser that
 # accepts it (internal/staticapp).
 FROM alpine:3.22 AS craft-official
-ADD --checksum=sha256:532966caa70bbd346bcd3c48a827d9d0118f83e50be7a0ca43fdb28bd48f1dd4 https://github.com/storytold/gridcraft/releases/download/v0.8.0/gridcraft-web-0.8.0.zip /tmp/gridcraft.zip
+ADD --checksum=sha256:b9491325936457cebd874656becbe5d189fbd2039db6798d9d7f5c5e0190715e https://github.com/storytold/gridcraft/releases/download/v0.11.1/gridcraft-web-0.11.1.zip /tmp/gridcraft.zip
 RUN set -eu; \
     mkdir /apps; \
-    unzip -q /tmp/gridcraft.zip -d /tmp && mv /tmp/gridcraft-web-0.8.0 /apps/gridcraft; \
+    unzip -q /tmp/gridcraft.zip -d /tmp && mv /tmp/gridcraft-web-0.11.1 /apps/gridcraft; \
     rm -f /apps/gridcraft/_headers /apps/gridcraft/.htaccess; \
     gzip -9 -k /apps/gridcraft/*.wasm /apps/gridcraft/*.js
 

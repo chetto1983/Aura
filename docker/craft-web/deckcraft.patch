@@ -320,35 +320,11 @@ index dabad8a..e8977df 100644
      }
  }
  
-diff --git a/crates/engine/src/recovery.rs b/crates/engine/src/recovery.rs
-index 6996cda..57d6b93 100644
---- a/crates/engine/src/recovery.rs
-+++ b/crates/engine/src/recovery.rs
-@@ -43,11 +43,16 @@ pub fn instance_id() -> u64 {
-     static ID: OnceLock<u64> = OnceLock::new();
-     *ID.get_or_init(|| {
-         use std::hash::{BuildHasher, Hasher};
-+        // wasm32-unknown-unknown has neither pids (`process::id` panics) nor a clock; a browser
-+        // page is the only instance anyway.
-+        #[cfg_attr(target_arch = "wasm32", allow(unused_mut))]
-         let mut h = std::collections::hash_map::RandomState::new().build_hasher();
--        h.write_u32(std::process::id());
-         #[cfg(not(target_arch = "wasm32"))]
--        if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
--            h.write_u128(d.as_nanos());
-+        {
-+            h.write_u32(std::process::id());
-+            if let Ok(d) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
-+                h.write_u128(d.as_nanos());
-+            }
-         }
-         // Never 0: old entries are numbered from 1.
-         ((h.finish() & UID_MASK) & !0xFF_FFFF).max(1 << 24)
 diff --git a/crates/ui-egui/src/backstage.rs b/crates/ui-egui/src/backstage.rs
-index f7bfe25..d9e35f1 100644
+index 999900d..16034e2 100644
 --- a/crates/ui-egui/src/backstage.rs
 +++ b/crates/ui-egui/src/backstage.rs
-@@ -733,8 +733,6 @@ fn home(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome)
+@@ -736,8 +736,6 @@ fn home(app: &mut SlideApp, ui: &mut Ui, bs: &mut Backstage, out: &mut Outcome)
              }
          });
      }
@@ -358,10 +334,10 @@ index f7bfe25..d9e35f1 100644
  
  /// New: a blank presentation, then every theme and starter template, with a search box.
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index 576a229..b61c21e 100644
+index 2393bd6..1b05f0a 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -2613,9 +2613,9 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
+@@ -2627,9 +2627,9 @@ pub fn about(_app: &mut SlideApp, ui: &mut Ui) {
          ui.label("Presentations and slide shows, rebuilt from scratch in pure Rust.");
          ui.label("An open-source, clean-room project. Not affiliated with Microsoft.");
          ui.add_space(6.0);

@@ -1,13 +1,13 @@
 diff --git a/apps/wordcraft-web/Cargo.toml b/apps/wordcraft-web/Cargo.toml
-index d9b44aa..36242e7 100644
+index 9152db3..4a2a9d0 100644
 --- a/apps/wordcraft-web/Cargo.toml
 +++ b/apps/wordcraft-web/Cargo.toml
 @@ -29,4 +29,4 @@ rfd = { workspace = true }
  wasm-bindgen = "0.2"
  wasm-bindgen-futures = "0.4"
  js-sys = "0.3"
--web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Event", "EventTarget", "BeforeUnloadEvent", "ClipboardEvent", "DataTransfer", "FileList", "File", "DomStringList", "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbObjectStore", "IdbTransaction", "IdbTransactionMode", "MediaQueryList"] }
-+web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Event", "EventTarget", "BeforeUnloadEvent", "ClipboardEvent", "DataTransfer", "FileList", "File", "DomStringList", "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbObjectStore", "IdbTransaction", "IdbTransactionMode", "MediaQueryList", "MessageEvent", "UrlSearchParams"] }
+-web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Event", "EventTarget", "BeforeUnloadEvent", "ClipboardEvent", "DataTransfer", "FileList", "File", "DomStringList", "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbObjectStore", "IdbTransaction", "IdbTransactionMode", "MediaQueryList", "Storage"] }
++web-sys = { version = "0.3", features = ["Window", "Document", "Element", "HtmlElement", "HtmlCanvasElement", "HtmlAnchorElement", "HtmlIFrameElement", "Blob", "BlobPropertyBag", "Url", "Location", "CssStyleDeclaration", "Event", "EventTarget", "BeforeUnloadEvent", "ClipboardEvent", "DataTransfer", "FileList", "File", "DomStringList", "IdbFactory", "IdbOpenDbRequest", "IdbRequest", "IdbDatabase", "IdbObjectStore", "IdbTransaction", "IdbTransactionMode", "MediaQueryList", "Storage", "MessageEvent", "UrlSearchParams"] }
 diff --git a/apps/wordcraft-web/src/host.rs b/apps/wordcraft-web/src/host.rs
 new file mode 100644
 index 0000000..a5f16b4
@@ -156,17 +156,22 @@ index 0000000..a5f16b4
 +    }
 +}
 diff --git a/apps/wordcraft-web/src/main.rs b/apps/wordcraft-web/src/main.rs
-index 2f4283d..a112e60 100644
+index 39c2f98..127035d 100644
 --- a/apps/wordcraft-web/src/main.rs
 +++ b/apps/wordcraft-web/src/main.rs
-@@ -6,9 +6,12 @@
- //!
+@@ -7,7 +7,8 @@
  //! Differences from the desktop app: no TCP control channel; Open and Insert › Pictures use the
  //! browser file picker (bytes arrive through `Services::inbox`); Save and Export download.
+ //! Preferences (theme, interface size, editing options…) are kept in `localStorage` (`prefs`).
 -//! URL flags: `?webgl` forces WebGL2; `?sample` opens the sample document.
 +//! URL flags: `?webgl` forces WebGL2; `?sample` opens the sample document; `?host=parent` hands
 +//! files to and from a same-origin framing page (`host`).
  #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+ 
+ #[cfg(any(target_arch = "wasm32", test))]
+@@ -15,6 +16,8 @@ mod prefs;
+ #[cfg(any(target_arch = "wasm32", test))]
+ mod save_fallback;
  
 +#[cfg(target_arch = "wasm32")]
 +mod host;
@@ -174,7 +179,7 @@ index 2f4283d..a112e60 100644
  mod web;
  
 diff --git a/apps/wordcraft-web/src/web.rs b/apps/wordcraft-web/src/web.rs
-index 0e40099..5b88695 100644
+index b2e698c..191e724 100644
 --- a/apps/wordcraft-web/src/web.rs
 +++ b/apps/wordcraft-web/src/web.rs
 @@ -38,6 +38,10 @@ pub fn start() {
@@ -208,15 +213,15 @@ index 0e40099..5b88695 100644
                      // Pasted pictures wait apart from dropped files: the app inserts one only when the page is the edit target (#1349).
                      app.services.pasted = Some(pasted);
                      app.autosave = false;
-@@ -69,10 +78,16 @@ pub fn start() {
+@@ -79,10 +88,16 @@ pub fn start() {
                      if !sample {
                          app.start_screen();
                      }
--                    Ok(Box::new(WebShell { app, inbox, messages }))
+-                    Ok(Box::new(WebShell { app, inbox, messages, prefs }))
 +                    if let Some(bridge) = &app_bridge {
 +                        bridge.post_ready();
 +                    }
-+                    Ok(Box::new(WebShell { app, inbox, messages, bridge: app_bridge }))
++                    Ok(Box::new(WebShell { app, inbox, messages, prefs, bridge: app_bridge }))
                  }),
              )
              .await;
@@ -226,7 +231,7 @@ index 0e40099..5b88695 100644
          if let Some(el) = document.get_element_by_id(LOADING_ID) {
              match result {
                  Ok(()) => el.remove(),
-@@ -86,12 +101,17 @@ fn query() -> String {
+@@ -96,6 +111,10 @@ fn query() -> String {
      web_sys::window().and_then(|w| w.location().search().ok()).unwrap_or_default()
  }
  
@@ -237,14 +242,15 @@ index 0e40099..5b88695 100644
  /// Wraps the app to read dropped files asynchronously (browsers can't read them synchronously)
  /// and feed them through the inbox.
  struct WebShell {
-     app: WordApp,
+@@ -103,6 +122,7 @@ struct WebShell {
      inbox: Inbox,
      messages: Rc<RefCell<Vec<String>>>,
+     prefs: crate::prefs::PrefsSync,
 +    bridge: Option<crate::host::Bridge>,
  }
  
- impl eframe::App for WebShell {
-@@ -124,6 +144,9 @@ impl eframe::App for WebShell {
+ fn local_storage() -> Option<web_sys::Storage> {
+@@ -155,6 +175,9 @@ impl eframe::App for WebShell {
  
      fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
          self.app.ui(ui);
@@ -255,10 +261,10 @@ index 0e40099..5b88695 100644
  }
  
 diff --git a/crates/ui-egui/src/chrome.rs b/crates/ui-egui/src/chrome.rs
-index c057992..89c88ee 100644
+index f274440..bf5a0c0 100644
 --- a/crates/ui-egui/src/chrome.rs
 +++ b/crates/ui-egui/src/chrome.rs
-@@ -304,7 +304,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
+@@ -348,7 +348,7 @@ pub fn title_bar(app: &mut WordApp, ui: &mut Ui) {
                              t.on_accent,
                          );
                          ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, tl!("Discord"), medium(11.5), t.on_accent);
@@ -268,10 +274,10 @@ index c057992..89c88ee 100644
                          }
                          ui.add_space(8.0);
 diff --git a/crates/ui-egui/src/dialogs.rs b/crates/ui-egui/src/dialogs.rs
-index c636f4c..92ecc97 100644
+index 3a945bf..3aaaf04 100644
 --- a/crates/ui-egui/src/dialogs.rs
 +++ b/crates/ui-egui/src/dialogs.rs
-@@ -2384,12 +2384,11 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
+@@ -2691,12 +2691,11 @@ fn body(app: &mut WordApp, ui: &mut Ui, d: &mut Dialog) -> bool {
                      let build = option_env!("WORDCRAFT_BUILD_SHA").map(|s| s.get(..8).unwrap_or(s)).unwrap_or(tl!("development build"));
                      ui.label(crate::i18n::fmt(tl!("Version {version} ({build})"), &[("version", env!("CARGO_PKG_VERSION")), ("build", build)]));
                      ui.label(tl!(
@@ -287,13 +293,13 @@ index c636f4c..92ecc97 100644
                      ui.label(
                          egui::RichText::new(tl!("MIT OR Apache-2.0. Copyright (c) 2026 ArtCraft Team and the WordCraft contributors."))
 diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
-index 662516f..dba57d1 100644
+index 5dede36..677efab 100644
 --- a/crates/ui-egui/src/lib.rs
 +++ b/crates/ui-egui/src/lib.rs
-@@ -351,7 +351,7 @@ impl Default for UiState {
-             animations: theme::Animations::default(),
-             legacy_dark: None,
+@@ -395,7 +395,7 @@ impl Default for UiState {
              nav_tab: "headings".into(),
+             nav_pane: false,
+             nav_collapsed: Default::default(),
 -            show_discord: true,
 +            show_discord: false,
              author: String::new(),
