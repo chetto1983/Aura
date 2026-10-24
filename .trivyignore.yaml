@@ -52,3 +52,27 @@ vulnerabilities:
       - "pkg:pypi/certifi@2026.2.25"
     statement: "certifi pinned by kokoro v0.9.0; fixed upstream only"
     expired_at: 2027-01-22
+
+  # Aura's own images, where the vulnerable code sits inside a binary or package only upstream
+  # ships. Each entry also carries the path, so the same version elsewhere in an image is still
+  # reported (measured with Trivy 0.70.0 on 2026-10-24: a copy of the same undici at another path
+  # stays in the report). The operator approved both on 2026-10-24.
+
+  # aura-cloudflared: compress inside Cloudflare's own cloudflared 2026.10.2 binary.
+  - id: CVE-2026-63209
+    purls:
+      - "pkg:golang/github.com/klauspost/compress@v1.18.0"
+    paths:
+      - "usr/local/bin/cloudflared"
+    statement: "klauspost/compress compiled into cloudflared 2026.10.2, the newest release; only Cloudflare can rebuild it"
+    expired_at: 2027-01-22
+
+  # aura and aura-sandbox: the undici npm bundles. npm 11.21.1, the newest 11.x, and 12.2.1, the
+  # newest of all, both ship 6.29.0; the fix is 6.29.1.
+  - id: CVE-2026-109869
+    purls:
+      - "pkg:npm/undici@6.29.0"
+    paths:
+      - "usr/lib/node_modules/npm/node_modules/undici/package.json"
+    statement: "undici bundled inside npm 11.21.1; no npm release ships the fixed 6.29.1 yet"
+    expired_at: 2027-01-22
