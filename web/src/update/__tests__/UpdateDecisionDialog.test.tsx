@@ -285,7 +285,8 @@ describe('UpdateDecisionDialog', () => {
   });
 
   it('offers no postponement once the deadline has passed', async () => {
-    stubDaemon(adminPending({ deadline: at(24, 9) }));
+    // Past the deadline the night has passed too, unless a failure moved it on (next test).
+    stubDaemon(adminPending({ deadline: at(24, 9), apply_at: at(24, 3) }));
     renderCenter();
 
     const dialog = await openDialog();
@@ -308,6 +309,21 @@ describe('UpdateDecisionDialog', () => {
       expect(screen.queryByRole('dialog')).toBeNull();
     });
     expect(window.sessionStorage.getItem('aura.update.dismissedRev')).toBe(AVAILABLE_REV);
+  });
+
+  it('names the night a failed install is retried, even past the deadline', async () => {
+    stubDaemon(
+      adminPending({ state: 'failed', error: 'boom', deadline: at(24, 9), apply_at: at(25, 3) }),
+    );
+    renderCenter();
+
+    const dialog = await openDialog();
+
+    expect(within(dialog).getByText(/^It will install itself/).textContent).toBe(
+      `It will install itself tomorrow at ${clock(new Date(2026, 8, 25, 3))}.`,
+    );
+    expect(within(dialog).queryByText(/^Mandatory update/)).toBeNull();
+    expect(within(dialog).queryByRole('group', { name: 'Postpone' })).toBeNull();
   });
 
   it.each([

@@ -118,16 +118,18 @@ function DecisionDialog({
     return wallClock(shown, now, language).time;
   }
 
-  // The night, unless a postponement runs past it; once that moment has come, the updater only
-  // waits for the work in flight.
+  // The night, unless a postponement runs past it. A night still ahead is named even past the
+  // deadline: a failed install is retried then. Once it has come, the updater only waits for the
+  // work in flight.
   const installAt = applyAt === undefined ? undefined : Math.max(applyAt, heldUntil ?? 0);
-  const headline = mandatory
-    ? t('update.dialog.mandatory')
-    : installAt === undefined
-      ? t('update.dialog.tonight')
-      : installAt <= now
-        ? t('update.dialog.firstPause')
-        : t('update.dialog.scheduled', { ...wallClock(installAt, now, language) });
+  const headline =
+    installAt !== undefined && installAt > now
+      ? t('update.dialog.scheduled', { ...wallClock(installAt, now, language) })
+      : mandatory
+        ? t('update.dialog.mandatory')
+        : installAt === undefined
+          ? t('update.dialog.tonight')
+          : t('update.dialog.firstPause');
 
   return (
     <Dialog
