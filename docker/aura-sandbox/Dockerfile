@@ -69,9 +69,12 @@ RUN install -d -m 0755 /etc/apt/keyrings \
 
 # Node 24 LTS (Debian bookworm ships Node 18, too old). NodeSource bundles npm/npx — the
 # box's JS skill snippets (internal/skills/snippet.go LangJS -> node) and the
-# `npx skills find/add` self-extension loop both need it. Mirrors docker/aura/Dockerfile.
+# `npx skills find/add` self-extension loop both need it. Mirrors docker/aura/Dockerfile,
+# npm 11.21.1 included.
 RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
     && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g npm@11.21.1 \
+    && npm cache clean --force \
     && rm -rf /var/lib/apt/lists/*
 
 # pnpm 10+ refuses to run a dependency's install/postinstall scripts unless the operator
@@ -147,11 +150,16 @@ RUN pip install --no-cache-dir --break-system-packages \
 RUN mkdir -p /workspace /root/.cache/uv /root/.npm /root/.cache/pip
 
 COPY internal/skills/embed/web-artifacts-builder/scripts/init-artifact.sh internal/skills/embed/web-artifacts-builder/scripts/shadcn-components.tar.gz /opt/aura-artifact-bootstrap/
-RUN npm install -g pnpm@12.3.4 \
+# pnpm 12.15.0 bundles undici 6.29.1; 12.3.4's 6.28.0 carried two fixable HIGHs. html-inline 1.2.0
+# pulls minimist 1.1.3 and 0.0.10, both CVE-2021-44906 (CRITICAL). The override in the template's
+# pnpm-workspace.yaml resolves both to 1.2.8, and every project init-artifact.sh copies from the
+# template keeps it. Measured on 2026-10-24 in node:24-bookworm-slim: html-inline still runs.
+RUN npm install -g pnpm@12.15.0 \
     && mkdir -p /opt/aura-artifacts \
     && cd /opt/aura-artifacts \
     && bash /opt/aura-artifact-bootstrap/init-artifact.sh template \
     && cd template \
+    && printf '\noverrides:\n  minimist: "^1.2.8"\n' >> pnpm-workspace.yaml \
     && pnpm add -D parcel@2.16.4 @parcel/config-default@2.16.4 parcel-resolver-tspaths@0.0.9 html-inline@1.2.0 \
     && pnpm run build
 RUN ln -s /opt/aura-artifacts/template/node_modules/typescript/bin/tsc /usr/local/bin/tsc \
