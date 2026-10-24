@@ -42,8 +42,9 @@ func runDB(args []string) {
 }
 
 func dbMigrate(ctx context.Context, cfg *config.Config) {
+	bootstrap := cfg.DB.BootstrapURL != "" && cfg.DB.Password != ""
 	lockURL := cfg.DB.MigrateURL
-	if cfg.DB.BootstrapURL != "" && cfg.DB.Password != "" {
+	if bootstrap {
 		lockURL = cfg.DB.BootstrapURL
 	}
 	var applied int
@@ -51,7 +52,7 @@ func dbMigrate(ctx context.Context, cfg *config.Config) {
 		// The bootstrap role owns the lock before EnsureRoles so two fresh-install
 		// commands cannot race role creation. Managed clusters without bootstrap
 		// credentials acquire the same lock through the pre-provisioned migrate role.
-		if cfg.DB.BootstrapURL != "" && cfg.DB.Password != "" {
+		if bootstrap {
 			if err := db.EnsureRoles(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
 				return fmt.Errorf("ensure roles: %w", err)
 			}
@@ -61,7 +62,15 @@ func dbMigrate(ctx context.Context, cfg *config.Config) {
 		if err != nil {
 			return err
 		}
-		return db.CheckMigrationHead(ctx, cfg.DB.MigrateURL)
+		if err := db.CheckMigrationHead(ctx, cfg.DB.MigrateURL); err != nil {
+			return err
+		}
+		if bootstrap {
+			if err := db.EnsureAuthulaReadable(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
+				return fmt.Errorf("ensure authula readable: %w", err)
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

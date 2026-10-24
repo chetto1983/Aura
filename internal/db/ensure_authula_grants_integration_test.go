@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// TestEnsureRolesMakesAuthulaReadableByMigrate covers the backup outage measured on the
+// TestEnsureAuthulaReadableMakesAuthulaReadableByMigrate covers the backup outage measured on the
 // live deployment on 2026-08-13: five nightly pg_dump runs, five failures, zero dumps.
 //
 // Authula creates its own tables at runtime as aura_app, so aura_app owns them. 0019
@@ -20,10 +20,10 @@ import (
 // them and aborted on the first one it reached.
 //
 // Both halves are asserted, because neither covers the other:
-//   - a table that already exists when EnsureRoles runs (the GRANT ... ON ALL TABLES half)
+//   - a table that already exists when the grant runs (the GRANT ... ON ALL TABLES half)
 //   - a table created AFTER it (the ALTER DEFAULT PRIVILEGES half). Without this, the next
 //     Authula upgrade that adds a plugin table silently re-breaks the backup.
-func TestEnsureRolesMakesAuthulaReadableByMigrate(t *testing.T) {
+func TestEnsureAuthulaReadableMakesAuthulaReadableByMigrate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	_, _, appURL := fresh0093Database(t, ctx, "aura_authula_grants")
@@ -57,8 +57,8 @@ func TestEnsureRolesMakesAuthulaReadableByMigrate(t *testing.T) {
 		t.Fatalf("create pre-existing authula table: %v", err)
 	}
 
-	if err := EnsureRoles(ctx, bootstrap, pwd); err != nil {
-		t.Fatalf("EnsureRoles: %v", err)
+	if err := EnsureAuthulaReadable(ctx, bootstrap, pwd); err != nil {
+		t.Fatalf("EnsureAuthulaReadable: %v", err)
 	}
 
 	// A table Authula creates LATER — the case ALTER DEFAULT PRIVILEGES exists for.
@@ -87,10 +87,10 @@ func TestEnsureRolesMakesAuthulaReadableByMigrate(t *testing.T) {
 	}
 }
 
-// TestEnsureAuthulaGrantsAreANoOpWithoutTheSchema pins the guard. EnsureRoles runs BEFORE
-// Migrate, so on a first boot the authula schema does not exist yet; an unguarded GRANT
-// would fail there and take the whole bootstrap down with it.
-func TestEnsureAuthulaGrantsAreANoOpWithoutTheSchema(t *testing.T) {
+// TestEnsureRolesSucceedsBeforeTheAuthulaSchemaExists pins that the authula grant stays out
+// of EnsureRoles. EnsureRoles runs BEFORE Migrate, so on a first boot the schema 0019
+// creates does not exist yet; a grant there would fail and take the bootstrap down.
+func TestEnsureRolesSucceedsBeforeTheAuthulaSchemaExists(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	_, _, _ = fresh0093Database(t, ctx, "aura_authula_absent")

@@ -560,7 +560,7 @@ services:
     # .env, where it outranked this line on every machine and froze the version there. An edge
     # appliance takes this file from its aura image on every update tick, so a pin changed here
     # reaches the whole fleet. A MAJOR bump is a data-directory upgrade, never a pin change.
-    image: postgres:18.4-alpine3.24
+    image: postgres:18.6-alpine3.24
     container_name: aura-postgres
     restart: unless-stopped
     environment:
@@ -1106,7 +1106,7 @@ services:
     # ghcr.io, not Docker Hub: same digest, no anonymous pull rate limit. The updater's
     # image cleanup compares repositories across registries, so the old Docker Hub tag
     # still goes (deploy/aura-image-update.sh image_repository).
-    image: ghcr.io/searxng/searxng:2026.10.7-6671d89be
+    image: ghcr.io/searxng/searxng:2026.10.23-629368e40
     container_name: aura-searxng
     restart: unless-stopped
     environment:
@@ -1164,7 +1164,7 @@ services:
     # and every fresh install four times. scripts/mirror_whisper_server.sh copies
     # each new :latest to a dated tag with the same digest (on GitHub, mirror-whisper-server.yml
     # runs it and Dependabot proposes the bump).
-    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.10.08.1056@sha256:c6c6311af66c2fda59645745628edbda1737c619dcd30ce7ea2c00e5e5a1d9d6}
+    image: ${AURA_STT_IMAGE:-ghcr.io/chetto1983/aura-whisper-server:2026.10.21.1401@sha256:6781a5d79221de7264fb2fad4c3c390dfd750c0e4c965a2df9b96ef7ea05855a}
     container_name: aura-stt
     restart: unless-stopped
     environment:
@@ -1492,7 +1492,7 @@ services:
   # before and a stronger one than the Docker socket this same container already
   # mounts (see the aura service).
   prometheus:
-    image: prom/prometheus:v3.13.4@sha256:87861b8cf91579109319ebc300f3f1060e6da9c05d6ae8ad15a20c879e84e32e
+    image: prom/prometheus:v3.13.5@sha256:aafa9d694e6a883c02db516d9f6e5b84e14195f49a2a6456a4cca815edda72b9
     profiles: [observability]
     restart: unless-stopped
     depends_on:
@@ -1538,7 +1538,7 @@ services:
       - aura-tempo:/var/tempo
 
   tempo:
-    image: grafana/tempo:3.1.0@sha256:3076b8dcdfb32fd6bc5ccef85e7b7313e6199b9cb84366257fc17ecb696db5fd
+    image: grafana/tempo:3.1.1@sha256:64e2fbd56d9c2b3412a4b430a58ea59e91a670b1e75f920a0c702213ad145044
     profiles: [observability]
     restart: unless-stopped
     # The distroless image has no init shell; root is required to initialize a
@@ -1570,7 +1570,7 @@ services:
       start_period: 10s
 
   grafana:
-    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    image: grafana/grafana:13.2.4@sha256:dbbc38ea21103cefb50396340cd88afec779c7e070b0a7bf5a75b4ce46651d3f
     profiles: [observability]
     restart: unless-stopped
     depends_on:

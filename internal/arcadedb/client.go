@@ -331,11 +331,14 @@ func (c *Client) executeSession(
 	if strings.TrimSpace(statement) == "" {
 		return nil, ErrEmptyStatement
 	}
-	// limit: -1 disables ArcadeDB's HTTP result cap, which is 20000 rows and
-	// SILENT -- a query matching more comes back short with no error, no flag and
-	// no truncation marker. Measured: a co-occurrence query over 48561 entity
-	// pairs returned exactly 20000, and the community detection built on it
-	// reported a clean result for 41% of the graph.
+	// limit: -1 lifts ArcadeDB's HTTP default cap (httpQueryDefaultLimit, 20000
+	// rows), which cuts a result short with HTTP 200. A co-occurrence query over
+	// 48561 entity pairs once returned exactly 20000, and the community detection
+	// built on it reported a clean result for 41% of the graph. 26.10.2 marks the
+	// cut only with `truncated: true` beside the rows, which nothing here reads
+	// (measured 2026-10-24: 30000 rows came back as 20000). With -1, a result past
+	// httpQueryMaxResultRows (1000000) is an HTTP 413, so an error, not a short
+	// answer (that setting's description on 26.10.2).
 	//
 	// Every statement this package sends carries its own LIMIT where a bound is
 	// wanted, so the transport should not be quietly adding a second one.

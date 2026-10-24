@@ -4037,6 +4037,24 @@ This does not measure Tempo under sustained load, a real power loss on an applia
 updater applying the change to an appliance. The alert timing comes from that 20-second spike
 and the 5-minute default, not from an alert firing on the appliance stack.
 
+Moved on 2026-10-24 to Prometheus 3.13.5, Tempo 3.1.1 and Grafana 13.2.4, together with
+Postgres 18.6, SearXNG 2026.10.23-629368e40 and the whisper mirror 2026.10.21.1401: patch
+releases, and for SearXNG and whisper the newest rolling build. Each service ran from
+`compose.yaml` with `--no-deps` in a throwaway Compose project, first on the old pin and then on
+the new one over the same volumes (`docs/superpowers/verification/2026-10-24-compose-pin-refresh.md`):
+- Postgres 18.6 opened a data directory that 18.4 had migrated to 0142. It kept 10,000 probe
+  rows byte for byte. Its schema dump equals a fresh 18.4's after the same two `db migrate` runs,
+  and `db migrate` found nothing pending.
+- Tempo 3.1.1 found by ID and by TraceQL a trace 3.1.0 had flushed to a block, and took new
+  OTLP spans. One empty `meta.json` still fails the tenant's poll. Grafana 13.2.4 kept both
+  datasources healthy and the four dashboards. Prometheus 3.13.5 loaded all 47 rules, kept the
+  3.13.4 samples, and passes `promtool test rules`.
+- SearXNG returned 27 results per query on both builds. Whisper transcribed an Italian clip
+  word for word on both, in about 8 s.
+
+This does not measure the aura daemon or the agent against these images, the lab VM, or the
+updater applying them to an appliance.
+
 ## 17. Deployment, backup and recovery
 
 The appliance is Docker Compose. Installation validates target prerequisites, prepares

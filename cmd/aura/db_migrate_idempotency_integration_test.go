@@ -101,6 +101,9 @@ func TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema(t *testing.T) {
 				if strings.Contains(string(output), "operation registry unavailable") {
 					t.Fatalf("migration attempt %d touched runtime registry: %s", attempt, output)
 				}
+				if attempt == 1 {
+					assertAuthulaTablesReadableByMigrate(t, ctx, appURL, migrateURL)
+				}
 				if attempt == 2 && !strings.Contains(string(output), "no pending migrations") {
 					t.Fatalf("migration retry output = %q, want tracker-backed no-op", output)
 				}
@@ -109,6 +112,32 @@ func TestDBMigrateCLIWorksBeforeRuntimeRegistrySchema(t *testing.T) {
 				t.Fatalf("schema after CLI migration: %v", err)
 			}
 		})
+	}
+}
+
+// assertAuthulaTablesReadableByMigrate is a fresh install's first nightly backup. Authula
+// creates its tables as aura_app once the daemon starts, which is after the first
+// `db migrate`, and pg_dump reads them as aura_migrate. Until 2026-10-24 the grant that
+// lets it waited for the schema 0019 creates, so it landed only on the second run.
+func assertAuthulaTablesReadableByMigrate(t *testing.T, ctx context.Context, appURL, migrateURL string) {
+	t.Helper()
+	app, err := db.Open(ctx, &db.Config{URL: appURL})
+	if err != nil {
+		t.Fatalf("open aura_app: %v", err)
+	}
+	defer app.Close()
+	if _, err := app.Exec(ctx, "CREATE TABLE IF NOT EXISTS authula.first_boot_table (id int)"); err != nil {
+		t.Fatalf("aura_app creates an authula table as Authula does: %v", err)
+	}
+	backup, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		t.Fatalf("open aura_migrate: %v", err)
+	}
+	defer backup.Close()
+	var rows int
+	if err := backup.QueryRow(ctx, "SELECT count(*) FROM authula.first_boot_table").Scan(&rows); err != nil {
+		t.Fatalf("after the first db migrate, aura_migrate cannot read a table Authula creates, "+
+			"so pg_dump fails until the next db migrate: %v", err)
 	}
 }
 

@@ -312,9 +312,9 @@ $grafanaBlock = Get-ComposeServiceBlock $composeText 'grafana'
 # is never published, which is asserted below alongside the sidecar contracts.
 $auraBlock = Get-ComposeServiceBlock $composeText 'aura'
 $imageContracts = @(
-    @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.4' },
-    @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:3.1.0' },
-    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:13.2.3' }
+    @{ Name = 'Prometheus'; Block = $prometheusBlock; Prefix = 'prom/prometheus:v3.13.5' },
+    @{ Name = 'Tempo'; Block = $tempoBlock; Prefix = 'grafana/tempo:3.1.1' },
+    @{ Name = 'Grafana'; Block = $grafanaBlock; Prefix = 'grafana/grafana:13.2.4' }
 )
 foreach ($contract in $imageContracts) {
     $imageMatch = [regex]::Match($contract.Block, '(?m)^    image:\s+(?<image>\S+)\s*$')
@@ -412,7 +412,9 @@ if (-not $SkipContainerTools) {
     Invoke-CheckedTool 'Tempo config validation' docker @('run', '--rm', '--volume', "${tempoRoot}:/etc/tempo:ro", $tempoImage, $tempoConfigArgument, $tempoVerifyArgument) | Out-Null
     Invoke-CheckedTool 'Grafana image validation' docker @('run', '--rm', '--entrypoint', '/usr/share/grafana/bin/grafana', $grafanaImage, '--version') | Out-Null
 
-    $requiredComposeEnv = @('AURA_ACCESS_TOKEN', 'AURA_AUTHULA_SECRET', 'AURA_GARAGE_ADMIN_TOKEN', 'AURA_OBJECTSTORE_ACCESS_KEY', 'AURA_OBJECTSTORE_SECRET_KEY', 'GARAGE_RPC_SECRET', 'POSTGRES_PASSWORD', 'SEARXNG_SECRET')
+    # Read from compose.yaml itself: a copied list fell five variables behind it and broke every
+    # local run, while CI passed only because ci.yml sets them all at workflow level.
+    $requiredComposeEnv = @([regex]::Matches($composeText, '\$\{(?<name>[A-Z0-9_]+):\?') | ForEach-Object { $_.Groups['name'].Value } | Sort-Object -Unique)
     $restoreEnv = @{}
     try {
         foreach ($name in $requiredComposeEnv) {

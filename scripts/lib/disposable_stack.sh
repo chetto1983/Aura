@@ -99,7 +99,7 @@ _disposable_stack_provision_role_and_db() {
 # DISPOSABLE_STACK_HOST, DISPOSABLE_STACK_PORT.
 disposable_stack_bring_up_auto() {
   local db_name="$1" pgpw="$2"
-  local port="${3:-5433}" image="${4:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}}"
+  local port="${3:-5433}" image="${4:-${POSTGRES_IMAGE:-postgres:18.6-alpine3.24}}"
   local local_container="${5:-aura-postgres-cov}" ci_container="${6:-aura-postgres}"
   disposable_stack_guard_name "$db_name"
 
@@ -132,7 +132,7 @@ disposable_stack_bring_up_auto() {
 # Sets the same DISPOSABLE_STACK_* variables as disposable_stack_bring_up_auto.
 disposable_stack_bring_up_local() {
   local db_name="$1" pgpw="$2" container_name="$3" port="$4"
-  local image="${5:-${POSTGRES_IMAGE:-postgres:18.4-alpine3.24}}"
+  local image="${5:-${POSTGRES_IMAGE:-postgres:18.6-alpine3.24}}"
   disposable_stack_guard_name "$db_name"
 
   DISPOSABLE_STACK_DB="$db_name"

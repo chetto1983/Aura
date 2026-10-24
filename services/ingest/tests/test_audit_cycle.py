@@ -147,3 +147,22 @@ def test_a_failed_removal_is_printed_and_tried_again(monkeypatch, capsys):
     assert attempts == ["chat/gone.md", "chat/gone.md"]
     assert "[audit] ORPHAN chat/gone.md not removed: POST /api/v1/command/mem_x: HTTP 503: busy" in (
         capsys.readouterr().err)
+
+
+def test_a_failed_lookup_is_printed_and_acts_on_nothing(monkeypatch, capsys, removed):
+    """A lookup that fails (ArcadeDB busy, or an index past httpQueryMaxResultRows, which
+    `limit: -1` turns into an HTTP 413) must not stop the live pipeline, and an orphan or a
+    missing key must not be judged on the half of the comparison it could not read."""
+    monkeypatch.setattr(app, "_bucket_versus_index", sets(set(), {"chat/gone.md"}))
+    app.audit_cycle()
+
+    def refuse():
+        raise app.arcade.ArcadeSchemaError("POST /api/v1/query/mem_x: HTTP 413: too many rows")
+
+    monkeypatch.setattr(app, "_bucket_versus_index", refuse)
+    app.audit_cycle()
+
+    assert removed == []
+    assert app._orphaned_previous_cycle == {"chat/gone.md"}, "the last cycle that read is kept"
+    assert "[audit] skipped: POST /api/v1/query/mem_x: HTTP 413: too many rows" in (
+        capsys.readouterr().err)
