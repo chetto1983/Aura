@@ -31,9 +31,10 @@ is `docs/superpowers/verification/2026-10-24-image-vulnerability-baseline.md`.
      update needed", which was correct that day.
    - *The documented auto-pause does not apply.* It needs a Dependabot PR open for 90 days, and
      none is open.
-   - *A second silent failure.* The security update for `@vitest/mocker` in `/packages/create-aura`
-     failed on 2026-10-22 with `security_update_not_possible`: vitest 4.1.11 holds it at 4.1.11,
-     and the fix is 4.1.12. The run is red in Actions, and nothing reports it.
+   - *A failed security update.* The one for `@vitest/mocker` in `/packages/create-aura` failed on
+     2026-10-22 with `security_update_not_possible`: vitest 4.1.11 held it at 4.1.11, and the fix is
+     4.1.12. `e7c0a8c` moved vitest by hand two hours later. Dependabot opened no PR, and a red
+     dynamic run is easy to miss.
 4. **Three manifests get no version updates at all:**
    - `docker/aura-ingest/requirements.txt` (pip). Security updates reach it, version updates do not.
    - `packages/create-aura/package-lock.json`, the published `create-aura-appliance` installer.
@@ -180,8 +181,7 @@ x/crypto, has no fix and is `govulncheck`'s.
    docs list as resetting Dependabot. On 2026-10-08 a config change started all six jobs within a
    minute.
 
-   The proof is the next day's scheduled compose run in the `Dependabot Updates` workflow. Then
-   vitest 4.1.12 goes into `/packages/create-aura`, which clears the failed security update.
+   The proof is the next day's scheduled compose run in the `Dependabot Updates` workflow.
 2. **Clear the six images Aura builds.** Today these would turn the first run red:
    - pypdf 6.21.2 in `aura-ingest`;
    - the minimist copies in `aura-sandbox`;
