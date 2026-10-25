@@ -46,10 +46,13 @@ func upgradeReport(r plugins.UpgradeReport, stopped error) string {
 		return fmt.Sprintf("Plugin %s is up to date at %s (%s).\n", r.Name, r.Version, r.Commit)
 	}
 	var b strings.Builder
-	if stopped != nil {
+	switch {
+	case stopped != nil:
 		slog.Warn("plugin_pack: the upgrade stopped part way", "plugin", r.Name, "err", stopped)
 		fmt.Fprintf(&b, "The upgrade of plugin %s to %s stopped part way: %v\nWhat it did:\n", r.Name, r.Version, stopped)
-	} else {
+	case r.FromCommit == r.Commit:
+		fmt.Fprintf(&b, "Reinstalled plugin %s at %s (%s): a connector of it was missing.\n", r.Name, r.Version, r.Commit)
+	default:
 		fmt.Fprintf(&b, "Upgraded plugin %s from %s (%s) to %s (%s).\n", r.Name, r.FromVersion, r.FromCommit, r.Version, r.Commit)
 	}
 	writeSteps(&b, "skills", r.Skills)

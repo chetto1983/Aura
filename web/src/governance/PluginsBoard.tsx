@@ -214,15 +214,16 @@ function upgradeOutcome(
       leftBehind: [],
     };
   }
-  return {
-    message: t('governance.plugins.upgraded', {
-      name: report.name,
-      from: report.fromVersion,
-      version: report.version,
-    }),
-    failed: false,
-    leftBehind,
-  };
+  // At the same commit the upgrade put back a connector that had gone from the registry.
+  const message =
+    report.fromCommit === report.commit
+      ? t('governance.plugins.reinstalled', { name: report.name, version: report.version })
+      : t('governance.plugins.upgraded', {
+          name: report.name,
+          from: report.fromVersion,
+          version: report.version,
+        });
+  return { message, failed: false, leftBehind };
 }
 
 function removeOutcome(

@@ -41,7 +41,8 @@ func (r UpgradeReport) Started() bool { return r.Applied }
 // Upgrade moves an installed plugin to the head of its ref's default branch, the way Codex
 // upgrades a Git marketplace (codex-rs/core-plugins/src/marketplace_upgrade.rs) and then
 // reinstalls its plugins (ForceReinstall):
-//   - one ls-remote first, and nothing more when the head is the recorded commit;
+//   - one ls-remote first, and nothing more when the head is the recorded commit and the
+//     installed copy is whole;
 //   - otherwise the head is checked out, the new tree swapped in with the old one kept as a
 //     backup, and the plugin reinstalled from it;
 //   - a new connector that fails its handshake, or a registry write that fails, puts the backup
@@ -58,7 +59,11 @@ func (b *Backend) Upgrade(ctx context.Context, actor, name string) (UpgradeRepor
 	if err != nil {
 		return UpgradeReport{}, err
 	}
-	if upToDate(rec, head) {
+	current, err := b.current(rec, head)
+	if err != nil {
+		return UpgradeReport{}, err
+	}
+	if current {
 		return upToDateReport(rec), nil
 	}
 	c, err := b.d.Checkout(ctx, ref, head)
@@ -73,7 +78,10 @@ func (b *Backend) Upgrade(ctx context.Context, actor, name string) (UpgradeRepor
 	if rec, _, err = b.upgradable(name); err != nil {
 		return UpgradeReport{}, err
 	}
-	if upToDate(rec, head) {
+	if current, err = b.current(rec, head); err != nil {
+		return UpgradeReport{}, err
+	}
+	if current {
 		return upToDateReport(rec), nil
 	}
 	pack, err := onePack(c, ref)
@@ -140,10 +148,26 @@ func (b *Backend) upgradable(name string) (Record, packs.Ref, error) {
 	return rec, ref, nil
 }
 
-// upToDate holds for a finished install at head. A record left in another phase at head is an
-// upgrade or an install that stopped, which the next upgrade finishes.
-func upToDate(rec Record, head string) bool {
-	return rec.Commit == head && rec.Phase == PhaseInstalled
+// current holds for a finished install at head whose recorded connectors are all in the
+// registry. A record left in another phase is an upgrade or an install that stopped, which the
+// next upgrade finishes. A recorded connector gone from the registry is a missing installed
+// copy, which Codex reinstalls at the same version too (loader.rs, no active_plugin_version):
+// on the lab VM on 2026-10-25 the broker's connector was removed from the MCP board while its
+// record stayed. A name another source now holds is not missing: the plugin cannot take it back.
+func (b *Backend) current(rec Record, head string) (bool, error) {
+	if rec.Commit != head || rec.Phase != PhaseInstalled {
+		return false, nil
+	}
+	doc, err := b.d.Registry.Load()
+	if err != nil {
+		return false, fmt.Errorf("read the MCP registry: %w", err)
+	}
+	for _, name := range rec.Connectors {
+		if _, ok := doc.MCPServers[name]; !ok {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func upToDateReport(rec Record) UpgradeReport {

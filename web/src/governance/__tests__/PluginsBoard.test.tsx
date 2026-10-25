@@ -264,6 +264,25 @@ describe('PluginsBoard', () => {
     ).toBeTruthy();
   });
 
+  it('says a missing connector was put back at the same version', async () => {
+    upgradePlugin.mockResolvedValue({
+      ...UPGRADED,
+      fromVersion: '0.3.0',
+      fromCommit: UPGRADED.commit,
+      skills: [],
+    });
+    renderBoard();
+    fireEvent.click(
+      within(await row('broker-analysis')).getByRole('button', { name: 'Update broker-analysis' }),
+    );
+
+    expect(
+      await screen.findByText(
+        'Reinstalled broker-analysis at 0.3.0: one of its connectors was missing.',
+      ),
+    ).toBeTruthy();
+  });
+
   it('shows why an update was rolled back', async () => {
     upgradePlugin.mockRejectedValue(
       new HttpError(

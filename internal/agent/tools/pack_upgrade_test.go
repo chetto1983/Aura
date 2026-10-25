@@ -58,6 +58,19 @@ func TestPluginPackUpgradeSaysUpToDate(t *testing.T) {
 	}
 }
 
+// At the same commit the upgrade reinstalled a missing connector: the report says so rather
+// than an upgrade from a version to itself.
+func TestPluginPackUpgradeSaysAReinstall(t *testing.T) {
+	t.Parallel()
+	b := newFakePluginBackend()
+	b.upgrade = upgradedReport()
+	b.upgrade.FromVersion, b.upgrade.FromCommit = b.upgrade.Version, b.upgrade.Commit
+	res, err := callPlugin(t, pluginTool(b), pluginAdmin, `{"action":"upgrade","name":"broker-analysis"}`)
+	if err != nil || !strings.Contains(res.Preview, "Reinstalled plugin broker-analysis at 0.3.0 ("+pluginCommitB+"): a connector of it was missing.") {
+		t.Fatalf("Execute = (%q, %v)", res.Preview, err)
+	}
+}
+
 func TestPluginPackUpgradeWithoutANameUpgradesEveryPlugin(t *testing.T) {
 	t.Parallel()
 	b := newFakePluginBackend()

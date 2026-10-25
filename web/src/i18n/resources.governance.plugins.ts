@@ -23,6 +23,7 @@ export const pluginsEn = {
   upgrading: 'Updating {{name}} — its connectors restart, up to two minutes for one in the box.',
   upToDate: '{{name}} is up to date at {{version}} ({{commit}}).',
   upgraded: 'Updated {{name}} from {{from}} to {{version}}.',
+  reinstalled: 'Reinstalled {{name}} at {{version}}: one of its connectors was missing.',
   upgradeFailed: "Couldn't update {{name}}.",
   upgradeStopped:
     'The update of {{name}} stopped part way: {{reason}}. Updating it again finishes the job.',
@@ -100,6 +101,7 @@ export const pluginsIt = {
     'Aggiornamento di {{name}} — i suoi connettori ripartono, fino a due minuti per uno nel box.',
   upToDate: '{{name}} è già aggiornato alla {{version}} ({{commit}}).',
   upgraded: '{{name}} aggiornato dalla {{from}} alla {{version}}.',
+  reinstalled: '{{name}} reinstallato alla {{version}}: mancava uno dei suoi connettori.',
   upgradeFailed: 'Impossibile aggiornare {{name}}.',
   upgradeStopped:
     "L'aggiornamento di {{name}} si è fermato a metà: {{reason}}. Aggiornarlo di nuovo completa il lavoro.",

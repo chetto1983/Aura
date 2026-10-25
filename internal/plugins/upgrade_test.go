@@ -249,6 +249,47 @@ func assertRolledBack(t *testing.T, w *world, b *Backend, before Record, cause s
 	}
 }
 
+// Codex reinstalls a plugin whose installed copy is missing even at the same version
+// (loader.rs: no active_plugin_version). On the lab VM on 2026-10-25 the broker's connector was
+// removed from the MCP board while its record stayed: the upgrade at the same commit puts it back.
+func TestUpgradeReinstallsAConnectorRemovedFromTheRegistry(t *testing.T) {
+	t.Parallel()
+	w, b := newWorld(t)
+	reviewAndInstall(t, b)
+	w.registry.mu.Lock()
+	w.registry.doc.RemoveServer("local")
+	w.registry.mu.Unlock()
+
+	rep := upgrade(t, b)
+	if rep.UpToDate || !rep.Started() || rep.FromCommit != commitA || rep.Commit != commitA {
+		t.Fatalf("report = %+v, want a reinstall at %s", rep, commitA)
+	}
+	if local, ok := w.registry.server("local"); !ok || local.Source != "pack:o/r/p" {
+		t.Errorf("local = %+v (present %v), want it back from the plugin", local, ok)
+	}
+	if got := w.mounted[2:]; !slices.Equal(got, []string{"local", "remote"}) {
+		t.Errorf("mounted after the reinstall %v", got)
+	}
+	if s := stepOf(rep.Skills, "s1"); s.Reason != "unchanged" {
+		t.Errorf("s1 step = %+v, want unchanged", s)
+	}
+	if rep2 := upgrade(t, b); !rep2.UpToDate {
+		t.Errorf("after the reinstall the plugin is not up to date: %+v", rep2)
+	}
+}
+
+// A connector name another source took since the install is not the plugin's to take back: it
+// does not make the plugin look out of date, or every upgrade would reinstall it.
+func TestUpgradeIsUpToDateWhenAConnectorNameIsHeldByAnotherSource(t *testing.T) {
+	t.Parallel()
+	w, b := newWorld(t)
+	reviewAndInstall(t, b)
+	w.put("local", "custom")
+	if rep := upgrade(t, b); !rep.UpToDate {
+		t.Fatalf("report = %+v, want up to date", rep)
+	}
+}
+
 // A crash between the swap and the final record leaves the new commit recorded in the
 // upgrading phase. The next upgrade finishes the job rather than calling it up to date.
 func TestUpgradeFinishesAnUpgradeThatStopped(t *testing.T) {

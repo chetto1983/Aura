@@ -42,7 +42,7 @@ const packToolDescription = "Read a knowledge-work plugin PACK from its reposito
 	"action=list <owner/repo> summarizes every pack in a repository. action=show <owner/repo/plugin> gives one in full as the REPOSITORY holds it; its `installed here:` line is what this deployment runs.\n\n" +
 	"action=install <owner/repo/plugin> installs the plugin's skills and connectors together. action=remove name=<plugin> removes an installed plugin; delete_data=true also deletes its data in your box. " +
 	"Neither acts on the first call: it returns plugin_approval_required with the operator's question. Relay it with ask_user kind=\"approval\", copying question and resume_context exactly, and after the operator accepts call plugin_pack again with exactly the arguments in repeat.\n\n" +
-	"action=upgrade name=<plugin> updates an installed plugin to the latest version on its repository's default branch, and without a name updates every installed plugin. It acts at once, with no approval; if a new connector does not start, the old version stays. " +
+	"action=upgrade name=<plugin> updates an installed plugin to the latest version on its repository's default branch, and without a name updates every installed plugin. It acts at once, with no approval; if a new connector does not start, the old version stays. At the same version it puts back a connector that went missing. " +
 	"A plugin is upgraded only when the upgrade's report says so.\n\n" +
 	"Only the operator may install, upgrade or remove plugins; anyone else is told to ask them."
 

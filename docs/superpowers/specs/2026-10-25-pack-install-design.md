@@ -514,8 +514,14 @@ operator's direction: "SERVE IL TOOL UPGRADE CON COME HA CODEX", then "BASTA CHE
   `plugin_pack action=upgrade [name]`, and "Aggiorna" on each row of Governance → Plugins
   (`POST /api/governance/plugins/{name}/upgrade`, `identity.create`).
 - **The check:** `GitFetcher.Head`, one `git ls-remote -- <url> HEAD`.
-  - A commit equal to the record's in phase `installed` answers "up to date".
+  - A commit equal to the record's, in phase `installed`, with every recorded connector in the
+    registry, answers "up to date".
   - Any other phase is an upgrade or an install that stopped, and the upgrade finishes it.
+  - A recorded connector gone from the registry is a missing installed copy. Codex reinstalls
+    one at the same version too (`loader.rs`, no `active_plugin_version`), so the upgrade
+    reinstalls the plugin at its commit. On the lab VM at 20:08:36Z the broker's connector was
+    removed from the MCP board while its record stayed. A name another source holds is not
+    missing.
 - **The swap, under the write lock and the detached write context:**
   - every connector of the plugin is unmounted, since it runs from the tree (§4.4);
   - `Store.Swap` keeps the old tree as `tree.previous`;
