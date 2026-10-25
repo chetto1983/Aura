@@ -97,7 +97,7 @@ func TestMediaRuntimeDerivesAudioTextThroughSelectedCloudModel(t *testing.T) {
 		out.URL.Scheme, out.URL.Host, out.Host = target.Scheme, target.Host, target.Host
 		return http.DefaultTransport.RoundTrip(out)
 	})}
-	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), client, true)
+	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), client, true, nil)
 	text, err := runtime.derive(t.Context(), mediaKindAudio, path, "meeting.m4a")
 	if err != nil {
 		t.Fatalf("derive audio: %v", err)
@@ -154,7 +154,7 @@ func TestMediaRuntimeDerivesImageTextThroughSelectedPrimaryModel(t *testing.T) {
 	cfg := &config.Config{
 		LLM: llm.Config{Provider: "ollama", Model: "gemma4:31b-cloud", BaseURL: srv.URL},
 	}
-	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), srv.Client(), true)
+	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), srv.Client(), true, nil)
 	text, err := runtime.derive(t.Context(), mediaKindImage, path, "cockpit.png")
 	if err != nil {
 		t.Fatalf("derive image: %v", err)
@@ -196,7 +196,7 @@ func TestMediaRuntimeSendsTheServicesKeyToAnOpenRouterPrimary(t *testing.T) {
 		t.Fatalf("write image fixture: %v", err)
 	}
 	cfg := &config.Config{LLM: llm.Config{Provider: "openrouter", BaseURL: llm.DefaultBaseURL, Model: "z-ai/glm-5.3-flash"}}
-	runtime := newMediaRuntime(cfg, storedServicesKey("sk-or-services"), client, true)
+	runtime := newMediaRuntime(cfg, storedServicesKey("sk-or-services"), client, true, nil)
 	if _, err := runtime.derive(t.Context(), mediaKindImage, path, "cockpit.png"); err != nil {
 		t.Fatalf("derive image: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestMediaRuntimeDerivesScannedPDFPagesThroughSelectedPrimaryModel(t *testin
 	cfg := &config.Config{
 		LLM: llm.Config{Provider: "ollama", Model: "gemma4:31b-cloud", BaseURL: srv.URL},
 	}
-	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), srv.Client(), true)
+	runtime := newMediaRuntime(cfg, storedServicesKey("shared-key"), srv.Client(), true, nil)
 	runtime.renderPDF = func(_ context.Context, _ string, outDir string) ([]string, error) {
 		pages := []string{
 			filepath.Join(outDir, "page-1.png"),
