@@ -1013,8 +1013,16 @@ services:
       AURA_INGEST_S3_PREFIX: ${AURA_INGEST_S3_PREFIX:-}
       AURA_INGEST_SUPERVISOR_INTERVAL: ${AURA_INGEST_SUPERVISOR_INTERVAL:-15s}
       AURA_INGEST_STATE_ROOT: /state
+      # On a ChatGPT route the media indexer reads images with the document owner's account,
+      # from the credentials store the daemon keeps beside its skills root
+      # (config.ChatGPTPlanRoot). Same value as the aura service, so both reach one store.
+      AURA_SKILLS_DIR: /var/lib/aura/skills
     volumes:
       - aura-ingest-state:/state
+      # The whole volume, read-write, because a refresh rewrites the sealed file. A volume
+      # subpath would need Docker Engine 26, and no install checks the engine. aura_app, the
+      # role this service already holds, writes every aura table, so it reaches no further.
+      - aura-home:/var/lib/aura
     healthcheck:
       test: ["CMD", "sh", "-c", "kill -0 1"]
       interval: 10s
@@ -1220,9 +1228,12 @@ services:
       # below stays empty: every recreate re-downloaded it. Same trap aura-llm documents.
       HF_HOME: /root/.cache/llama.cpp
     # Offloaded by default to free ~2.35GB VRAM for the GPU embed sidecar. On-demand:
-    # `docker compose --profile ocr up -d aura-ocr-vl`. When it is absent AND the primary
-    # model takes no images there is no vision route at all, which ingest degrades on
-    # (card-only) instead of failing the file forever.
+    # `docker compose --profile ocr up -d aura-ocr-vl`. aura and aura-ingest set
+    # MULTIMODAL_BASE_URL to it whether or not it runs, so when it is absent AND the primary
+    # model cannot read an image, ingest fails that file every cycle and retries it (seen on
+    # the lab VM 2026-10-23). Card-only, memoized until the file changes, happens only with
+    # MULTIMODAL_BASE_URL empty. Which of the two a deployment wants is not decided
+    # (docs/superpowers/specs/2026-10-25-media-vision-primary-design.md §4.7).
     profiles: [ocr]
     restart: unless-stopped
     command:

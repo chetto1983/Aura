@@ -211,3 +211,27 @@ def test_index_text_leaves_spreadsheets_to_document_open(monkeypatch, tmp_path):
     assert media.index_text(str(book.with_suffix(".bin")), "misnamed.bin", sheet) == ""
     assert media.index_text(str(book), "gi_comuni_cap.xlsx", None) == ""
     assert media.index_text(str(book), "gi_comuni_cap.xlsx", "application/octet-stream") == ""
+
+
+@pytest.mark.parametrize(
+    ("file_name", "media_kind", "budget"),
+    [
+        # A scan is up to 20 pages plus the probe page, one vision call each: on the old
+        # 390 s budget a 15-page scan read at 30 s a page was killed every cycle, and every
+        # cycle billed its first pages again on the owner's plan.
+        ("scan.pdf", "pdf", 21 * 120 + 30),
+        ("a.png", "image", 3 * 120 + 30),
+        ("a.ogg", "audio", 3 * 120 + 30),
+    ],
+)
+def test_scan_budget_grows_with_the_page_cap(monkeypatch, tmp_path, file_name, media_kind, budget):
+    monkeypatch.setenv("MULTIMODAL_TIMEOUT_SEC", "120")
+    seen = {}
+
+    def record(args, timeout):
+        seen["timeout"] = timeout
+        return "text"
+
+    monkeypatch.setattr(media, "_run", record)
+    media.derive(str(tmp_path / file_name), file_name, media_kind)
+    assert seen["timeout"] == budget

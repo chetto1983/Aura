@@ -22,6 +22,10 @@ _EXIT_NO_VISION_ROUTE = 3
 
 _BINARY = "aura-media-index"
 
+# cmd/aura-media-index maxScannedPDFPages: a scan is read one page per vision call, and the
+# renderer probes one page past the cap.
+_SCANNED_PDF_PAGE_LIMIT = 20
+
 
 def kind(file_name: str) -> str | None:
     suffix = pathlib.PurePath(file_name).suffix.lower()
@@ -62,11 +66,17 @@ def _run(args: list[str], timeout: float) -> str:
 
 
 def derive(path: str, file_name: str, media_kind: str) -> str:
-    """Describe an image, transcribe a recording, or OCR an image-only PDF ("pdf")."""
+    """Describe an image, transcribe a recording, or OCR an image-only PDF ("pdf").
+
+    A scan's budget is a call per page: on the image budget a long scan was killed every
+    cycle, and every cycle read its first pages again on the owner's plan. Each call stays
+    bounded by MULTIMODAL_TIMEOUT_SEC in the indexer itself.
+    """
     request_timeout = max(1, int(os.environ.get("MULTIMODAL_TIMEOUT_SEC", "120")))
+    calls = _SCANNED_PDF_PAGE_LIMIT + 1 if media_kind == "pdf" else 3
     return _run(
         ["-kind", media_kind, "-name", file_name, path],
-        timeout=(3 * request_timeout) + 30,
+        timeout=(calls * request_timeout) + 30,
     )
 
 
