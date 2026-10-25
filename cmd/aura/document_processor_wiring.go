@@ -11,7 +11,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identityctx"
-	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/objectstore/garageadmin"
@@ -19,25 +18,18 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const (
-	visionCapabilityTimeout = 5 * time.Second
-	visionCapabilityTTL     = time.Minute
-	// assetMaxVideoBytesTimeout bounds the boot-time AURA_ASSET_MAX_VIDEO_BYTES read the
-	// same way visionCapabilityTimeout bounds the vision-route probe above: an aura.settings
-	// row lookup over the pool buildAssetService already holds, not a network call, but still
-	// bounded so a stalled pool cannot hang boot.
-	assetMaxVideoBytesTimeout = 5 * time.Second
-)
+// assetMaxVideoBytesTimeout bounds the boot-time AURA_ASSET_MAX_VIDEO_BYTES read the same way
+// visionCapabilityTimeout bounds the vision-route probe: an aura.settings row lookup over the
+// pool buildAssetService already holds, not a network call, but still bounded so a stalled
+// pool cannot hang boot.
+const assetMaxVideoBytesTimeout = 5 * time.Second
 
-// imageReader is the chosen model reading upload images through its own client
-// (chatGPTImageReader); nil keeps the HTTP vision arms. Only the serving daemon passes one:
-// the other callers never read an image.
-func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store, imageReader multimodal.ImageReader) *assets.Service {
+// vision reads the upload images (liveImageReader). Only the serving daemon passes one: the
+// other callers never read an image, so their image processor reports itself unconfigured.
+func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store, vision assets.ImageDescriber) *assets.Service {
 	docProcessor := &assets.DocumentProcessor{}
 	creds := serviceCredentials(cfg, pool)
-	visionCfg := visionConfigFrom(cfg, creds)
-	visionCfg.PrimaryReader = imageReader
-	imageProc := assets.NewImageProcessor(objectStore, visionCfg)
+	imageProc := assets.NewImageProcessor(objectStore, vision)
 	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg, creds))
 	svc := &assets.Service{
 		Store:          assets.NewStore(pool),
@@ -180,18 +172,6 @@ func newCachingPerIdentityStoreFactory(cfg *config.Config) assets.StoreFactory {
 		actual, _ := cache.LoadOrStore(creds.AccessKey, objectstore.Store(st))
 		return actual.(objectstore.Store), nil
 	}
-}
-
-// visionConfigFrom resolves the image route once at boot, from the boot cfg.LLM. The primary
-// route is hot in the cockpit, but this snapshot, its capability and its key all read the same
-// boot route, so they never disagree; a live route switch reaches vision at the next restart.
-// The primary route is sent the services key only when it is OpenRouter, read per request.
-func visionConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.VisionConfig {
-	ctx, cancel := context.WithTimeout(context.Background(), visionCapabilityTimeout)
-	defer cancel()
-	source := llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL)
-	return multimodal.VisionConfigFrom(cfg, multimodal.PrimaryAcceptsImages(ctx, source),
-		creds.PrimaryRouteKey(cfg.LLM.Provider, cfg.LLM.BaseURL))
 }
 
 func sttConfigFrom(cfg *config.Config, creds settings.Credentials) multimodal.STTConfig {

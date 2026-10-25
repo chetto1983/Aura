@@ -26,10 +26,10 @@ func TestImageProcessorReadsUnderTheAssetOwner(t *testing.T) {
 		t.Fatalf("Put: %v", err)
 	}
 	reader := &ownerReader{}
-	result, err := NewImageProcessor(objects, multimodal.VisionConfig{
+	result, err := NewImageProcessor(objects, multimodal.NewVisionClient(multimodal.VisionConfig{
 		PrimaryReader: reader,
 		Model:         "gpt-6.1-sol",
-	}).ProcessAsset(context.Background(), Asset{
+	})).ProcessAsset(context.Background(), Asset{
 		ID: "asset-1", IdentityID: "owner-1", Modality: ModalityImage, ObjectBucket: ref.Bucket,
 		ObjectKey: ref.Key, FileName: "dog.png", MIMEType: "image/png",
 	})

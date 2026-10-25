@@ -25,9 +25,9 @@ func newChatGPTPlan(cfg *config.Config) *chatgptplan.Service {
 	return service
 }
 
-// chatGPTImageReader is the boot route's model reading upload images with each owner's
-// account, or nil off ChatGPT or without the connection service. The nil is untyped, so the
-// vision client keeps its HTTP arms.
+// chatGPTImageReader is the route's model reading upload images with each owner's account, or
+// nil off ChatGPT or without the connection service. The nil is untyped, so the vision client
+// keeps its HTTP arms.
 func chatGPTImageReader(cfg llm.Config, plan *chatgptplan.Service) multimodal.ImageReader {
 	if cfg.Provider != llm.ChatGPTProvider || plan == nil {
 		return nil

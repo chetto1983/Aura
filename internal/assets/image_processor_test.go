@@ -63,10 +63,10 @@ func TestImageProcessorReadsObjectAndCallsVisionSidecar(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := NewImageProcessor(objects, multimodal.VisionConfig{
+	result, err := NewImageProcessor(objects, multimodal.NewVisionClient(multimodal.VisionConfig{
 		LocalBaseURL: srv.URL,
 		LocalModel:   "glm-ocr",
-	}).ProcessAsset(context.Background(), Asset{
+	})).ProcessAsset(context.Background(), Asset{
 		ID:           "asset-1",
 		Modality:     ModalityImage,
 		ObjectBucket: ref.Bucket,
@@ -115,10 +115,10 @@ func TestImageProcessorCapsRetrievalText(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	result, err := NewImageProcessor(objects, multimodal.VisionConfig{
+	result, err := NewImageProcessor(objects, multimodal.NewVisionClient(multimodal.VisionConfig{
 		LocalBaseURL: srv.URL,
 		LocalModel:   "glm-ocr",
-	}).ProcessAsset(context.Background(), Asset{
+	})).ProcessAsset(context.Background(), Asset{
 		ID: "asset-long", Modality: ModalityImage, ObjectBucket: ref.Bucket,
 		ObjectKey: ref.Key, FileName: "long.png", MIMEType: "image/png",
 	})

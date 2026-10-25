@@ -93,7 +93,8 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	}
 	objects := objectstore.NewFake()
 
-	svc := buildAssetService(cfg, nil, objects, nil)
+	vision := liveImageReader(&chatEnv{cfg: cfg})
+	svc := buildAssetService(cfg, nil, objects, vision)
 
 	if svc.Bucket != "aura-assets" || svc.PresignTTL != 42*time.Second {
 		t.Fatalf("asset service bucket/ttl = %q/%s, want aura-assets/42s", svc.Bucket, svc.PresignTTL)
@@ -131,10 +132,13 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if img.Objects != objects {
 		t.Fatalf("image processor object store = %T, want shared fake store", img.Objects)
 	}
-	// The vision config is now opaque inside the shared multimodal client, so assert
-	// the cfg -> multimodal.VisionConfig projection directly (the wiring under test).
-	// The capability is passed in rather than probed: visionConfigFrom resolves it from
-	// the live model card, which is not a thing a unit test should reach for.
+	if img.Vision != vision {
+		t.Fatalf("image processor reads with %T, want the live reader it was given", img.Vision)
+	}
+	// The live reader builds its vision config per image, so assert the cfg ->
+	// multimodal.VisionConfig projection directly (the wiring under test). The capability is
+	// passed in rather than probed: liveVision resolves it from the route's model card, which
+	// is not a thing a unit test should reach for.
 	vcfg := multimodal.VisionConfigFrom(cfg, true, nil)
 	if !vcfg.PrimaryAcceptsImages || vcfg.Model != "deepseek/deepseek-v4-flash" ||
 		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
