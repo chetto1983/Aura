@@ -5,7 +5,7 @@ Proposed on 2026-10-25 at `20846f9a9`.
   - The operator confirmed the playback ("è corretto").
   - Then the written spec, with the designer's calls listed below, and the order ("va bene").
 - **The order, in three slices, each with its own plan:**
-  1. named terms (decision 1);
+  1. exact terms (decision 1);
   2. the embedding client on `openai-go` (decision 7);
   3. the judge (decisions 2–6), built on the same client shape.
 - **The origin.** It answers the agent's first request after the floors plan, "esattezza prima, AI
@@ -99,8 +99,8 @@ document alone every time. It admitted nothing for any of the 5 out-of-corpus qu
 
 ## Goal
 
-- **Named terms surface first.** A term the question names, held by a document, always reaches
-  the agent, ranked first. No score removes it.
+- **Exact terms surface first.** A term the caller quotes, an identifier or a file name, held by a
+  document, always reaches the agent, ranked first. No score removes it.
 - **The judge decides admission.** When a judge route is configured, admission is decided by a
   judge that reads the question and the document, instead of a cosine floor.
 - **The cosine floors stay.** They are the path when no judge is configured or it does not answer,
@@ -130,52 +130,67 @@ document alone every time. It admitted nothing for any of the 5 out-of-corpus qu
 
 ## Decisions
 
-### 1. Named terms admit and rank first
+### 1. Exact terms admit and rank first
 
-- **What counts as a named term.**
-  - the text inside double quotes or « »;
-  - a file name, `name.ext`;
-  - a token holding a letter and a digit, or an underscore, which is today's
-    `arcadedb.QueryIdentifiers`;
-  - a run of capitalised words that does not start the sentence ("Ubuntu Mono", "Carretera",
-    "Gross Sales");
-  - a run of two or more capitalised words at the start of the sentence: the bare `Ubuntu Mono`
-    names a term, and "Quanti" alone does not;
-  - in a query with no lowercase letter at all (a keyword query, such as `Carretera`), every word
-    that is not a stopword.
-  - A lowercase word is never a named term, however rare.
-  - The two sentence-initial cases are the designer's call. Acceptance 1 measures them, because the
-    spike ran the rule only on full Italian sentences.
-- **What carries one.** A document carries a named term when its title or its own text contains it
+**Amended 2026-10-25, while planning, on the operator's decision ("procedi").**
+- **What the first wording did.** It recognised names from capital letters, from the position in
+  the sentence and from a stopword list.
+- **Why that went.** That is the heuristic on natural language the operator's standing rule
+  forbids: regexes and static word lists over prose are fragile, and a structured signal must be
+  found instead.
+- **How it surfaced.** The planner's first test showed the failure: "Ho letto il file. Mostra Ubuntu
+  Mono?" produced the term "mostra ubuntu mono". No document carries it, so the bypass would have
+  switched off without a word.
+- **The new direction.** Only structured signals remain, and the agent, which understands the
+  language, chooses the words. This is also where 2026's agentic-search work points:
+  - Pi-Serini (arXiv 2605.10848): BM25 driven by the model, 83.1% on BrowseComp-Plus;
+  - READ (arXiv 2608.06305): embedding-free lexical operations, 58.8% against 15.7% for dense top-k;
+  - "Is Grep All You Need?" (arXiv 2605.15184): literal search above vector search in every
+    harness tried.
+- **The spike.** Its named-term measurement used the dropped heuristic. It records what that
+  heuristic did and is not evidence for this rule.
+
+- **What counts as an exact term.** Only these three structured forms:
+  - the text inside double quotes, `"…"`, `“…”` or `«…»`, written by the caller.
+    - `document_search`'s description tells the agent to quote a name or a phrase that must
+      appear verbatim, as Paperless's query syntax does.
+    - Memory recall's description says the same.
+  - a token holding a letter and a digit, or an underscore: today's `arcadedb.QueryIdentifiers`.
+  - a file name, a word ending in `.` and an extension of 2 to 5 letters or digits, at least one of
+    them a letter, such as `Financial_Sample.xlsx`. A file name is a structured format, the
+    exception the rule allows.
+  - Nothing else is an exact term: no capitalisation, no sentence position, no stopword list.
+- **What carries one.** A document carries an exact term when its title or its own text contains it
   as a case-insensitive, whole-word sequence.
-  - Its own text is the passages and the card, minus the sentences Aura writes into every card.
+  - Its own text is the passages and the card, minus the two sentences Aura writes into cards
+    itself: `filecard`'s trailer and its cut notice.
   - Measured: every card says "Written by Aura at ingest from the file itself", so "Aura" matched
     all 8 documents.
-- **Selectivity.** A named term carried by more than half of the library's ready documents selects
-  nothing, and it is ignored. This is the designer's call, from the one measured case, h12, where
-  the term was carried 8 of 8.
+- **No selectivity guard.** The guard was the designer's call from one case, h12, and the trailer
+  caused that case. Without the trailer, "Aura" is carried by the 2 documents that contain it. An
+  exact term is now one the caller chose, so a document that carries it is what was asked for.
 - **The effect.**
-  - A document that carries every selective named term of the question is admitted, whatever its
-    cosine or judge score.
+  - A document that carries every exact term of the question is admitted, whatever its cosine or,
+    later, judge score.
   - It ranks ahead of every document that does not, keeping score order within each group.
   - Its evidence carries a new leg, `exact`.
-  - This replaces `rankIdentifiersFirst`: identifiers become one kind of named term.
-  - Carrying some named terms but not all gives no bypass (the designer's call).
-- **Where the candidates come from.**
-  - The full-text index must be asked for the named terms themselves, so that a carrier reaches
-    Go even when the rerank cut or the floor would have removed it.
-  - Read `arcadedb-docs` `how-to/data-modeling/full-text-index.adoc` before writing a matcher:
-    Lucene phrase queries may express a multi-word name directly.
-  - The lexical leg already exists (`LexicalCandidates`).
-  - Whether exactness is a separate statement or a source inside the fused one is left to the
-    builder. Measure both answers on the acceptance sets.
-- **Memory.** Memory recall already drops a candidate that lacks a query identifier (letter and
-  digit, `QueryIdentifiers`, applied in `memory_recall.go` and `memory_vector.go`). That filter
-  stays as it is: an identifier is the same in every language. The other named terms (quotes,
-  file names, capitalised runs) only admit and rank first, and never filter. A filter on
-  "Torino" would drop a fact about "Turin", and cross-language recall is why memory's dense leg
-  exists. The selectivity guard counts each kind on its own: valid facts, and turns that have not
-  been deleted. These are the designer's calls.
+  - This replaces `rankIdentifiersFirst`: identifiers become one kind of exact term.
+  - Carrying some exact terms but not all gives no bypass.
+- **Where the candidates come from.** The full-text indexes are asked for each exact term as a
+  Lucene phrase, so a carrier reaches Go even when the rerank cut or the floor would have removed
+  it.
+  - Lucene phrases are documented in `arcadedb-docs`, `how-to/data-modeling/full-text-index.adoc`,
+    "Phrase Queries".
+  - The indexes are the passages', the cards' and the split file names'.
+  - The phrase is the term as the caller wrote it. Lucene's own analyzer then tokenises it the way
+    it tokenised the documents, and Go checks the carrying on the texts returned.
+- **Memory.**
+  - Recall already drops a candidate that lacks a query identifier (`IdentifiersMatch`, in
+    `memory_recall.go` and `memory_vector.go`), and that filter stays.
+  - Every exact term (identifier, quoted phrase, file name) also admits and ranks first, past the
+    relevance floor.
+  - Quoted phrases and file names never filter. A filter on "Torino" would drop a fact about
+    "Turin", and cross-language recall is why memory's dense leg exists.
 
 ### 2. A judge decides admission, routed like the embeddings
 
@@ -296,7 +311,7 @@ Indicative; the builder places it.
 - **`internal/arcadedb`**:
   - `document_retrieval.go`: the floor applied only without a judge, and the stopword-stripped
     lexical sub-query, fixed on touch;
-  - `document_lexical.go` and `identifiers.go`: named terms;
+  - `document_lexical.go` and `identifiers.go`: exact terms;
   - `memory_vector.go` and `memory_recall.go`.
 - **`internal/settings` and `cmd/arcadedb-mcp`**: the route and its watcher.
 - **`internal/agui` and `web/`**: the cockpit row.
@@ -312,8 +327,11 @@ Indicative; the builder places it.
 Measured first, then recorded (the PRD-first rule), each run with a dated file in
 `docs/superpowers/verification/`:
 
-1. **Named terms, judge off.**
-   - On the lab VM library, s04 and the bare `Ubuntu Mono` return `calibre_demo.docx` first.
+1. **Exact terms, judge off.**
+   - On the lab VM library, s04 with the name quoted (`… mostra "Ubuntu Mono" …`) and the bare
+     `"Ubuntu Mono"` return `calibre_demo.docx` first.
+   - On the lab VM, Aura's agent, asked to look for a name it knows is written in a document,
+     quotes it without being told how (the operator's validation form, acceptance 6).
    - The five out-of-corpus questions of the floors set still abstain.
    - On `scripts/fixtures/document_retrieval_eval/complex_qrels.json` (34 questions), recall@1 and
      MRR are no lower than today's, and its EXACT and LOOKALIKE categories are reported apart.
@@ -413,13 +431,11 @@ non mi piace").
 ## Calls made while writing, for the operator to check
 
 - The judge is off by default. An appliance stays on the cosine.
-- Named terms are capitalised runs, quotes, file names and identifiers, never lowercase words.
-  - A sentence-initial run counts from two words up.
-  - A query with no lowercase letter counts every word that is not a stopword.
-- The selectivity guard: a term in more than half the library is ignored. In memory it is counted
-  per kind.
-- A partial match of the named terms gives no bypass.
-- In memory, identifiers keep filtering, and the other named terms only admit and rank first.
+- Exact terms are quoted phrases, identifiers and file names only. This was amended while planning,
+  on the operator's rule against heuristics over prose.
+- No selectivity guard. Its one measured case was Aura's own card trailer, which is now stripped.
+- A partial match of the exact terms gives no bypass.
+- In memory, identifiers keep filtering. Every exact term admits and ranks first.
 - The judge may reorder an exact carrier, but never drop it. One that does not answer is
   `related`.
 - With no answering document the response abstains, with the reason `no_answering_document`,
