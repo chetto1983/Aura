@@ -73,6 +73,10 @@ jobs:
         with:
           distribution: goreleaser
           version: v2.17.1
-          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
+          # --timeout bounds the whole release and defaults to 1h (cmd/release.go in v2.17.1).
+          # v1.1.0 built the binaries in 7m27s and the cold amd64+arm64 image in 32m22s; v1.2.0's
+          # first run took 11m09s and 48m02s, and died at 1h exporting the layer cache with no
+          # release created (run 40176999046). The job's own limit stays GitHub's 6h.
+          args: release --clean --timeout 2h --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
