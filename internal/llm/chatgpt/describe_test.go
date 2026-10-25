@@ -139,6 +139,10 @@ func TestDescribeTreatsARefusalAsCannotRead(t *testing.T) {
 			`{"type":"response.output_text.delta","delta":"partial"}`,
 			`{"type":"response.refusal.delta","delta":"I can't help with that."}`,
 		},
+		"refusal, then text": {
+			`{"type":"response.refusal.delta","delta":"I can't help with that."}`,
+			`{"type":"response.output_text.delta","delta":"partial"}`,
+		},
 	}
 	for name, events := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -172,12 +176,20 @@ func TestDescribeCannotReadANonImageType(t *testing.T) {
 
 func TestDescribeFailures(t *testing.T) {
 	cases := []struct {
-		name    string
-		tokens  TokenSource
-		catalog func(w http.ResponseWriter)
-		stream  func(w http.ResponseWriter)
+		name     string
+		tokens   TokenSource
+		noTokens bool
+		idle     bool
+		catalog  func(w http.ResponseWriter)
+		stream   func(w http.ResponseWriter)
 	}{
 		{name: "no identity", tokens: tokenSource{err: chatgptplan.ErrIdentityRequired}},
+		{name: "no token source", noTokens: true},
+		// The stream opens and then says nothing: the idle watchdog ends it.
+		{name: "idle stream", idle: true, stream: func(w http.ResponseWriter) {
+			event(w, "response.created", `{"type":"response.created"}`)
+			time.Sleep(2 * time.Second)
+		}},
 		{name: "catalogue down", catalog: func(w http.ResponseWriter) { w.WriteHeader(500) }},
 		{name: "rate limited", stream: func(w http.ResponseWriter) {
 			w.Header().Set("Content-Type", "application/json")
@@ -209,6 +221,12 @@ func TestDescribeFailures(t *testing.T) {
 			client.cfg.Model = "vision"
 			if tc.tokens != nil {
 				client.tokens = tc.tokens
+			}
+			if tc.noTokens {
+				client.tokens = nil
+			}
+			if tc.idle {
+				client.cfg.StreamIdleTimeoutSec = 1
 			}
 			_, err := describe(t, client, "image/png")
 			if err == nil || errors.Is(err, llm.ErrMandatoryModalityUnavailable) {

@@ -5,6 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,5 +174,45 @@ func TestMediaRuntimeReadsScannedPagesInOrderWithTheReader(t *testing.T) {
 	want := "PDF page 1:\npage-1\n\nPDF page 2:\npage-2\n\nPDF page 3:\npage-3"
 	if err != nil || text != want {
 		t.Fatalf("derive = %q, %v; want %q", text, err, want)
+	}
+}
+
+// Speech-to-text never touches ChatGPT, so the ChatGPT route's installation must not gate it:
+// a new ingest image running under an old compose file, with no store mounted, still
+// transcribes.
+func TestRunTranscribesAudioOnAChatGPTRouteWithoutTheStore(t *testing.T) {
+	chatGPTRunEnv(t, "")
+	stt := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"text":"progetto Fenice 42"}`)
+	}))
+	defer stt.Close()
+	t.Setenv("STT_BASE_URL", stt.URL)
+	t.Setenv("AURA_STT_CLOUD_MODEL", "")
+	path := filepath.Join(t.TempDir(), "meeting.wav")
+	if err := os.WriteFile(path, []byte("RIFF-audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := run(t.Context(), []string{"-kind", "audio", "-name", "meeting.wav", path}, &stdout, &stderr)
+	if code != 0 || stdout.String() != "progetto Fenice 42" {
+		t.Fatalf("exit = %d, stdout %q, stderr %q; want the transcript", code, stdout.String(), stderr.String())
+	}
+}
+
+// A failure of the chosen model is a failure, so run exits 1 and the file is retried: it is
+// never ErrNoVisionRoute, which would be exit 3 and card-only for good.
+func TestMediaRuntimeReaderFailureIsNotNoRoute(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cockpit.png")
+	if err := os.WriteFile(path, []byte("png"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("chatgpt: usage_limit_reached: plan exhausted")
+	reader := readerFunc(func(context.Context, []byte, string, string) (string, error) { return "", failure })
+	runtime := newMediaRuntime(chatGPTConfig(""), settings.Credentials{}, nil, false, reader)
+	_, err := runtime.derive(t.Context(), mediaKindImage, path, "cockpit.png")
+	if !errors.Is(err, failure) || errors.Is(err, multimodal.ErrNoVisionRoute) {
+		t.Fatalf("derive err = %v, want the reader's failure, not ErrNoVisionRoute", err)
 	}
 }

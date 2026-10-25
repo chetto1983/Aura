@@ -61,9 +61,7 @@ func newMediaRuntime(
 	visionCfg := multimodal.VisionConfigFrom(cfg, primaryAcceptsImages,
 		creds.PrimaryRouteKey(cfg.LLM.Provider, cfg.LLM.BaseURL))
 	visionCfg.HTTPClient = client
-	if reader != nil {
-		visionCfg.PrimaryReader = reader
-	}
+	visionCfg.PrimaryReader = reader
 	sttCfg := multimodal.STTConfigFrom(cfg, creds.ServicesKey)
 	sttCfg.HTTPClient = client
 	return mediaRuntime{
@@ -246,10 +244,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	defer closeStore()
-	ctx, reader, err := chatGPTRoute(ctx, cfg, os.Getenv)
-	if err != nil {
-		_, _ = fmt.Fprintln(stderr, err)
-		return 1
+	// Only images and scans are read by the chosen model: an audio file must not wait on the
+	// ChatGPT store, which a new ingest image under an old compose file does not have.
+	var reader multimodal.ImageReader
+	if mediaKind(*kind) == mediaKindImage || mediaKind(*kind) == mediaKindPDF {
+		if ctx, reader, err = chatGPTRoute(ctx, cfg, os.Getenv); err != nil {
+			_, _ = fmt.Fprintln(stderr, err)
+			return 1
+		}
 	}
 	acceptsImages := multimodal.PrimaryAcceptsImages(
 		ctx, llm.NewContentCapabilitySource(cfg.LLM, visionCapabilityTTL),
