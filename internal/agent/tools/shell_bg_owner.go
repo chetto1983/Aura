@@ -74,7 +74,7 @@ func (s *bgShell) authorize(callerIdentity, callerSession string, hasAdmin bool)
 // on the common owner path). caps == nil ⇒ owner-only (fail-closed).
 func authorizeCaller(ctx context.Context, caps capabilityChecker, sh *bgShell) bool {
 	callerIdentity := ownerFromContext(ctx)
-	callerSession := shellSessionKey(ctx)
+	callerSession := SessionIDFromContext(ctx)
 	if callerIdentity == sh.ownerID && callerSession == sh.sessionID {
 		return true
 	}

@@ -71,8 +71,8 @@ func TestShellBg_OwnerModelUnchanged(t *testing.T) {
 	if sh.ownerID != "owner-1" {
 		t.Fatalf("ownerID = %q, want owner-1 (identity binding at start)", sh.ownerID)
 	}
-	if sh.sessionID != shellSessionKey(ownerCtx) {
-		t.Fatalf("sessionID = %q, want %q (session binding at start)", sh.sessionID, shellSessionKey(ownerCtx))
+	if sh.sessionID != SessionIDFromContext(ownerCtx) {
+		t.Fatalf("sessionID = %q, want %q (session binding at start)", sh.sessionID, SessionIDFromContext(ownerCtx))
 	}
 	if sh.ttl != bg.ttl {
 		t.Fatalf("ttl = %v, want %v (per-job TTL captured at start)", sh.ttl, bg.ttl)

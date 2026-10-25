@@ -93,7 +93,7 @@ func (t *TodoTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 		return ToolResult{}, fmt.Errorf("todo_write: %d todos are in_progress; keep exactly one in_progress at a time", inProgress)
 	}
 
-	key := shellSessionKey(ctx) // reuse the per-session key (sessionID, "" for bare ctx)
+	key := SessionIDFromContext(ctx) // "" for a bare ctx
 	t.mu.Lock()
 	if t.byID == nil {
 		t.byID = map[string][]todoItem{}

@@ -102,7 +102,7 @@ func TestPackToolRejectsBadInputBeforeReachingTheNetwork(t *testing.T) {
 	tests := []struct{ name, args string }{
 		{"a reference carrying its own host", `{"action":"list","ref":"https://evil.example/x"}`},
 		{"a traversal segment", `{"action":"show","ref":"owner/repo/.."}`},
-		{"an unknown action", `{"action":"install","ref":"owner/repo"}`},
+		{"an unknown action", `{"action":"purge","ref":"owner/repo"}`},
 		{"malformed json", `{"action":`},
 	}
 	for _, tt := range tests {
@@ -129,10 +129,12 @@ func TestPackToolSurfacesAResolveFailure(t *testing.T) {
 	}
 }
 
-// Deferred and read-only are both load-bearing: deferred keeps a long description
-// out of every turn's manifest, and non-Mutating is what lets the gateway score
-// this Safe rather than stopping the turn to read a public repository.
-func TestPackToolSpecIsDeferredAndReadOnly(t *testing.T) {
+// Deferred keeps a long description out of every turn's manifest. Mutating and Multiplexed
+// are what the gateway needs since install and remove landed: its per-action classifier
+// keeps list and show Safe and grades the two writes, which the tool's own approval card
+// guards on every profile. The spec must not change with the backend: the prompt cache
+// keys on it.
+func TestPackToolSpecIsDeferredAndMutating(t *testing.T) {
 	t.Parallel()
 	spec := (&PackTool{}).Spec()
 	if spec.Name != "plugin_pack" {
@@ -141,10 +143,25 @@ func TestPackToolSpecIsDeferredAndReadOnly(t *testing.T) {
 	if !spec.Deferred {
 		t.Error("plugin_pack is not deferred; its description would ride every turn")
 	}
-	if spec.Mutating {
-		t.Error("plugin_pack is marked Mutating; it only reads a public repository")
+	if !spec.Mutating || !spec.Multiplexed {
+		t.Errorf("Mutating %v Multiplexed %v, want both", spec.Mutating, spec.Multiplexed)
+	}
+	if spec.OperationScope != OperationScopeAgent || spec.OperationNormalizer != OperationNormalizerCanonical || spec.ReplayPolicy != ReplayToolResult {
+		t.Errorf("operation metadata = %q %q %q", spec.OperationScope, spec.OperationNormalizer, spec.ReplayPolicy)
 	}
 	if !json.Valid(spec.Parameters) {
 		t.Error("parameter schema is not valid JSON")
+	}
+	for _, want := range []string{"action=install", "action=remove"} {
+		if !strings.Contains(spec.Description, want) {
+			t.Errorf("description does not name %s", want)
+		}
+	}
+	if strings.Contains(spec.Description, "skill_manage") {
+		t.Error("the description still sends the model to skill_manage to install a pack's skills")
+	}
+	bound := (&PackTool{Backend: newFakePluginBackend(), Approvals: &PluginApprovals{}}).Spec()
+	if bound.Description != spec.Description || string(bound.Parameters) != string(spec.Parameters) {
+		t.Error("the spec changes with the backend")
 	}
 }

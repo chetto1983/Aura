@@ -261,7 +261,7 @@ func (b *BackgroundShells) newShell(callerCtx context.Context, id string) *bgShe
 	return &bgShell{
 		id:             id,
 		ownerID:        ownerFromContext(callerCtx),
-		sessionID:      shellSessionKey(callerCtx),
+		sessionID:      SessionIDFromContext(callerCtx),
 		startedAt:      time.Now(),
 		ttl:            b.ttl,
 		bufCap:         b.bufCap,

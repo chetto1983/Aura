@@ -10,11 +10,13 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/mcp/mcpenv"
 	"github.com/chetto1983/aura/internal/packs"
 	"github.com/chetto1983/aura/internal/plugins"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -23,6 +25,26 @@ import (
 // serve_plugins.go wires the plugin backend (internal/plugins) into the daemon over the same
 // machinery the MCP and skills boards use: the registry through the one registry lock, the
 // deployment's skill library, the MCP verification and live mounts, and the caller's box.
+
+// newPluginResumeHook records an accept of a relayed plugin_pack challenge into the tool's own
+// store, and only from an identity that may administer plugins. It reads the tool's backend
+// when it runs: serve boot binds it after the hook chain is built.
+func newPluginResumeHook(pack *tools.PackTool) runner.ResumeHook {
+	if pack == nil || pack.Approvals == nil {
+		return nil
+	}
+	return newChallengeResumeHook(pack.Approvals.ApproveChallenge, pack.Approvals.DiscardChallenge,
+		tools.PluginApprovalContext, "approval_sha256", func(ctx context.Context) bool {
+			if pack.Backend == nil {
+				return false
+			}
+			ok, err := pack.Backend.MayAdminister(ctx, identityctx.IdentityID(ctx))
+			if err != nil {
+				slog.Warn("plugin approval: check the approver", "err", err)
+			}
+			return err == nil && ok
+		})
+}
 
 // buildPluginBackend returns the daemon's plugin backend, or nil without a database, a plugins
 // directory or a skills directory: the plugin routes then answer 503.

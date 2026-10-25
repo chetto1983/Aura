@@ -504,7 +504,7 @@ func assembleChatEnv(
 		AlwaysBlock:              alwaysBlockProvider(cfg, newSharedSkillReader(cfg, pool)),
 		// The gateway resume hook records an operator's accept of a relayed gateway_approval
 		// pause into the SAME gateway instance (gw) the runner's PEP reads (D-03 point 2).
-		ResumeHook: chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
+		ResumeHook: chainResumeHooks(newShellResumeHook(toolHandles.ShellApprovals), newPluginResumeHook(toolHandles.Pack), newGatewayResumeHook(gw), newScheduledTaskResumeHook(taskStore)),
 		// The same gateway stamps a saved gateway pause with its challenge's target and
 		// withheld call id (spec 2026-10-12): the model relays neither.
 		ApprovalChallenges: gw.ApprovalChallengeDetails,

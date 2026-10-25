@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/approvaltext"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/board"
 	"github.com/chetto1983/aura/internal/config"
@@ -300,16 +301,18 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // cache-invalidation path serve both — a skill written through skill_manage is visible to
 // skill info/use in the same turn. Registering them together is what keeps the two call
 // sites (chat/serve boot and the cache audit) from drifting apart.
-func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgxpool.Pool) *tools.SkillManageTool {
+//
+// plugin_pack is registered beside them because a pack IS a group of skills plus the
+// connectors that ship alongside. Its plugin backend is bound later, at serve boot, once the
+// registry, the library and the live mount exist (wireAGUIServer).
+func registerSkillTools(reg *tools.Registry, cfg *config.Config, writerPool *pgxpool.Pool) (*tools.SkillManageTool, *tools.PackTool) {
 	skillTool := newSkillTool(cfg, writerPool)
 	manageTool := &tools.SkillManageTool{Skills: skillTool}
 	reg.Register(skillTool)
 	reg.Register(manageTool)
-	// Registered beside the skill tools because a pack IS a group of them plus the
-	// connectors that ship alongside, and the model reaches for one right after the
-	// other: read the pack, then install the skills it names through skill_manage.
-	reg.Register(&tools.PackTool{})
-	return manageTool
+	pack := &tools.PackTool{Approvals: &tools.PluginApprovals{}}
+	reg.Register(pack)
+	return manageTool, pack
 }
 
 // skillInstallHook adapts the skill tool's install into the seam shell_exec takes, so a
@@ -383,29 +386,45 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 	if approvals == nil {
 		return nil
 	}
+	return newChallengeResumeHook(approvals.ApproveChallenge, approvals.DiscardChallenge,
+		"shell_exec_approval", "command_sha256", nil)
+}
+
+// newChallengeResumeHook records an operator's accept of a relayed tool-owned challenge: a
+// resume context of contextType whose digestField names the challenge. It keys on the
+// authenticated pending.ConversationID and passes the operator-visible question to approve,
+// which records nothing unless it is the challenge's own. An expiry discards the challenge; a
+// decline, a cancel or another type records nothing.
+//
+// allow, when set, is asked on an accept only. A refused accept returns nil: the hook runs
+// after CommitResume, and an error would fail a resolve already persisted.
+func newChallengeResumeHook(approve func(session, digest, question string) error, discard func(session, digest string),
+	contextType, digestField string, allow func(context.Context) bool,
+) runner.ResumeHook {
 	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
 		if pending.Kind != tools.KindApproval || len(pending.ResumeContext) == 0 ||
 			(resp.Action != askuser.ActionAccept && resp.Action != askuser.ActionExpired) {
 			return nil
 		}
-		var rc struct {
-			Type          string `json:"type"`
-			CommandSHA256 string `json:"command_sha256"`
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(pending.ResumeContext, &fields); err != nil {
+			return fmt.Errorf("%s resume context: %w", contextType, err)
 		}
-		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
-			return fmt.Errorf("shell resume context: %w", err)
-		}
-		if rc.Type != "shell_exec_approval" {
+		if approvaltext.RootString(fields, "type") != contextType {
 			return nil
 		}
-		if rc.CommandSHA256 == "" {
-			return fmt.Errorf("shell resume context: missing command_sha256")
+		digest := approvaltext.RootString(fields, digestField)
+		if digest == "" {
+			return fmt.Errorf("%s resume context: missing %s", contextType, digestField)
 		}
 		if resp.Action == askuser.ActionExpired {
-			approvals.DiscardChallenge(pending.ConversationID, rc.CommandSHA256)
+			discard(pending.ConversationID, digest)
 			return nil
 		}
-		return approvals.ApproveChallenge(pending.ConversationID, rc.CommandSHA256, pending.Question)
+		if allow != nil && !allow(ctx) {
+			return nil
+		}
+		return approve(pending.ConversationID, digest, pending.Question)
 	}
 }
 

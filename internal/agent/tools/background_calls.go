@@ -241,7 +241,7 @@ func (b *BackgroundCalls) promote(turn context.Context, tool string, call detach
 		return nil, errBackgroundTurnEnded
 	}
 	task := &backgroundCall{
-		id: id, ownerID: owner, sessionID: shellSessionKey(turn), tool: tool,
+		id: id, ownerID: owner, sessionID: SessionIDFromContext(turn), tool: tool,
 		startedAt: time.Now(), call: call, status: BackgroundCallRunning,
 	}
 	b.calls[id] = task
@@ -354,7 +354,7 @@ type backgroundCallState struct {
 func (b *BackgroundCalls) poll(ctx context.Context, id string, cancel bool) (backgroundCallState, bool) {
 	b.mu.Lock()
 	task, ok := b.calls[id]
-	if !ok || task.ownerID != ownerFromContext(ctx) || task.sessionID != shellSessionKey(ctx) {
+	if !ok || task.ownerID != ownerFromContext(ctx) || task.sessionID != SessionIDFromContext(ctx) {
 		b.mu.Unlock()
 		return backgroundCallState{}, false
 	}

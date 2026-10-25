@@ -32,6 +32,17 @@ export const approvalEn = {
       scheduled: 'Approve scheduled {{kind}} task {{task}}? It will not run until you approve.',
       scheduledDetailed:
         'Approve scheduled {{kind}} task {{task}} ({{schedule}}, risk={{risk}})? It will not run until you approve.',
+      plugin: {
+        install:
+          'Approve plugin install?\nplugin: {{plugin}}\nsource: {{source}}\nskills {{skills}}\nconnectors {{connectors}}\nskipped {{skipped}}\nmcp: {{mcp}}\nnotes {{notes}}\nsha256: {{digest}}',
+        remove:
+          'Approve plugin removal?\nplugin: {{plugin}}\nsource: {{source}}\nskills {{skills}}\nconnectors {{connectors}}\nplugin data: {{data}}\nsha256: {{digest}}',
+        none: 'none',
+        mcpEnabled: 'enabled',
+        mcpDisabled: 'disabled — {{reason}}',
+        dataKept: 'kept',
+        dataDeleted: 'deleted in your box',
+      },
     },
     // The gateway's approval scopes (amendment #127). It ships a stable code and an
     // English fallback; these are the words the cockpit puts on the buttons.
@@ -95,6 +106,17 @@ export const approvalIt = {
         "Approva l'attività pianificata {{kind}} {{task}}? Non verrà eseguita finché non approvi.",
       scheduledDetailed:
         "Approva l'attività pianificata {{kind}} {{task}} ({{schedule}}, rischio={{risk}})? Non verrà eseguita finché non approvi.",
+      plugin: {
+        install:
+          "Approva l'installazione del plugin?\nplugin: {{plugin}}\norigine: {{source}}\ncompetenze {{skills}}\nconnettori {{connectors}}\nsaltati {{skipped}}\nmcp: {{mcp}}\nnote {{notes}}\nsha256: {{digest}}",
+        remove:
+          'Approva la rimozione del plugin?\nplugin: {{plugin}}\norigine: {{source}}\ncompetenze {{skills}}\nconnettori {{connectors}}\ndati del plugin: {{data}}\nsha256: {{digest}}',
+        none: 'nessuno',
+        mcpEnabled: 'attivo',
+        mcpDisabled: 'disattivato — {{reason}}',
+        dataKept: 'conservati',
+        dataDeleted: 'eliminati nel tuo box',
+      },
     },
     scope: {
       once: 'Approva una volta',

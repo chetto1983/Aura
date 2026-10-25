@@ -15,7 +15,10 @@ type runtimeToolHandles struct {
 	ShellApprovals  *tools.ShellApprovals
 	// SkillManage is retained so chat boot can attach the live identity capability
 	// checker to the exact process-global catalog writer registered for agent turns.
-	SkillManage   *tools.SkillManageTool
+	SkillManage *tools.SkillManageTool
+	// Pack is plugin_pack, retained so serve boot can bind its plugin backend once the live
+	// mount exists, and so the plugin resume hook reads that backend when it runs.
+	Pack          *tools.PackTool
 	Memory        *mcptools.MountedServer
 	MemoryContext *mountedMemoryContext
 	// ShellPoll / ShellKill are retained so serve boot can wire their .Caps to the live

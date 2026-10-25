@@ -26,7 +26,7 @@ func (s *ShellExec) storeCwd(ctx context.Context, dir string) {
 	if s.cwd == nil {
 		s.cwd = map[string]string{}
 	}
-	s.cwd[shellSessionKey(ctx)] = dir
+	s.cwd[SessionIDFromContext(ctx)] = dir
 }
 
 // Evict reclaims a finished session's tracked working directory (SessionEvictor,

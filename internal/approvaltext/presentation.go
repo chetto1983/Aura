@@ -21,6 +21,10 @@ const (
 	ShellKey = "approval.shell.command"
 	// ScheduledKey identifies a scheduled-task activation approval.
 	ScheduledKey = "approval.scheduled.task"
+	// PluginInstallKey identifies a plugin install approval.
+	PluginInstallKey = "approval.plugin.install"
+	// PluginRemoveKey identifies a plugin removal approval.
+	PluginRemoveKey = "approval.plugin.remove"
 
 	maxShortParamBytes = 256
 	maxArgsBytes       = 1024
@@ -93,6 +97,8 @@ func derive(question string, fields map[string]json.RawMessage) (Presentation, b
 		return deriveShell(question, fields)
 	case "scheduled_task_approval":
 		return deriveScheduled(question, fields)
+	case "plugin_pack_approval":
+		return derivePlugin(question, fields)
 	default:
 		return Presentation{}, false
 	}
@@ -209,6 +215,8 @@ func valid(p Presentation) bool {
 		limits = map[string]int{"cwd": maxArgsBytes, "command": maxCommandBytes, "digest": maxShortParamBytes}
 	case ScheduledKey:
 		limits = map[string]int{"task": maxShortParamBytes, "kind": maxShortParamBytes, "schedule": maxArgsBytes, "risk": maxShortParamBytes}
+	case PluginInstallKey, PluginRemoveKey:
+		limits = pluginLimits(p.Key)
 	default:
 		return false
 	}
@@ -234,6 +242,8 @@ func requiredParams(key string) []string {
 		return []string{"cwd", "command", "digest"}
 	case ScheduledKey:
 		return []string{"task", "kind"}
+	case PluginInstallKey, PluginRemoveKey:
+		return pluginRequired(key)
 	default:
 		return nil
 	}
@@ -264,6 +274,8 @@ func RenderItalian(p Presentation, fallback string) string {
 			return fmt.Sprintf("Approva l'attività pianificata %s %s (%s, rischio=%s)? Non verrà eseguita finché non approvi.", p.Params["kind"], p.Params["task"], p.Params["schedule"], p.Params["risk"])
 		}
 		return fmt.Sprintf("Approva l'attività pianificata %s %s? Non verrà eseguita finché non approvi.", p.Params["kind"], p.Params["task"])
+	case PluginInstallKey, PluginRemoveKey:
+		return renderPluginItalian(p)
 	default:
 		return fallback
 	}

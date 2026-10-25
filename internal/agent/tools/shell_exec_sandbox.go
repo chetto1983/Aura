@@ -180,7 +180,7 @@ func (s *ShellExec) rejectMissingBoxDir(ctx context.Context, h usersandbox.BoxHa
 	// The dir came from this session's own tracked `cd` and is gone. Tracking is the ONLY cwd source
 	// now that there is one execution path, so leaving it would resolve the same dead directory on
 	// every later call and wedge the session permanently.
-	s.Evict(shellSessionKey(ctx))
+	s.Evict(SessionIDFromContext(ctx))
 	return fmt.Errorf("shell_exec: %q, the directory this session had cd'd into, no longer exists in your "+
 		"workspace container; the tracked directory has been reset to the workspace root — retry the command", dir)
 }
@@ -194,7 +194,7 @@ func (s *ShellExec) boxWorkdir(ctx context.Context, cwd string) string {
 		return cwd
 	}
 	s.mu.Lock()
-	tracked := s.cwd[shellSessionKey(ctx)]
+	tracked := s.cwd[SessionIDFromContext(ctx)]
 	s.mu.Unlock()
 	if strings.HasPrefix(tracked, "/") {
 		return tracked

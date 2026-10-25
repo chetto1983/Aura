@@ -30,7 +30,7 @@ func TestTodoWrite_StoresAndRenders(t *testing.T) {
 			t.Fatalf("render missing %q: %q", needle, res.Preview)
 		}
 	}
-	if got := len(tool.byID[shellSessionKey(ctx)]); got != 3 {
+	if got := len(tool.byID[SessionIDFromContext(ctx)]); got != 3 {
 		t.Fatalf("stored %d todos under the session key, want 3", got)
 	}
 }
@@ -48,7 +48,7 @@ func TestTodoWrite_ReplacesList(t *testing.T) {
 	})); err != nil {
 		t.Fatalf("second write: %v", err)
 	}
-	got := tool.byID[shellSessionKey(ctx)]
+	got := tool.byID[SessionIDFromContext(ctx)]
 	if len(got) != 2 || got[0].Content != "B" {
 		t.Fatalf("list not replaced: %+v", got)
 	}

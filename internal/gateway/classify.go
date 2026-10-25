@@ -38,6 +38,7 @@ var multiplexedClassifiers = map[string]func(json.RawMessage) scoring.RiskTier{
 	"task":                               classifyTask,
 	"swarm_spawn":                        classifySwarmSpawn,
 	"board":                              classifyBoard,
+	"plugin_pack":                        classifyPluginPack,
 	mcptools.CalendarMultiplexedToolName: classifyCalendarAction,
 }
 
@@ -129,17 +130,37 @@ var boardFixedTiers = map[string]scoring.RiskTier{
 	"delete": scoring.Destructive,
 }
 
-func classifyBoard(raw json.RawMessage) scoring.RiskTier {
+func classifyBoard(raw json.RawMessage) scoring.RiskTier { return fixedTier(raw, boardFixedTiers) }
+
+// fixedTier grades an action from its tool's fixed table; a malformed or unknown action
+// saturates to Risky.
+func fixedTier(raw json.RawMessage, tiers map[string]scoring.RiskTier) scoring.RiskTier {
 	var a struct {
 		Action string `json:"action"`
 	}
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return scoring.Risky
 	}
-	if tier, ok := boardFixedTiers[a.Action]; ok {
+	if tier, ok := tiers[a.Action]; ok {
 		return tier
 	}
 	return scoring.Risky
+}
+
+// pluginPackFixedTiers grades plugin_pack (spec 2026-10-25-pack-install §4.6). list and show
+// read a public repository. install and remove are Normal, not Destructive: the tool's own
+// approval card is the one question either asks, on every profile, and a gated grade would
+// make a strict profile ask a second time for the same decision. Anything else saturates to
+// Risky.
+var pluginPackFixedTiers = map[string]scoring.RiskTier{
+	"list":    scoring.Safe,
+	"show":    scoring.Safe,
+	"install": scoring.Normal,
+	"remove":  scoring.Normal,
+}
+
+func classifyPluginPack(raw json.RawMessage) scoring.RiskTier {
+	return fixedTier(raw, pluginPackFixedTiers)
 }
 
 // taskFixedTiers allow-lists the task actions with a FIXED tier: list (read) to Safe,

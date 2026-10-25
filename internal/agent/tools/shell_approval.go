@@ -8,21 +8,27 @@ import (
 	"fmt"
 	pathpkg "path"
 	"strings"
-	"sync"
 )
 
-// ShellApprovals stores one-shot shell command approvals keyed by conversation
-// session and command digest. Consume deletes the approval so a retry can run once.
+// ShellApprovals stores one-shot shell command approvals keyed by conversation session and
+// command digest, over an ApprovalStore of its own. Every method is nil-receiver safe: a
+// shell_exec with no store fails closed by asking every time, and never panics.
+//
+// The store is a field and not an embedded value: a method promoted through a nil
+// *ShellApprovals would dereference it.
 type ShellApprovals struct {
-	mu       sync.Mutex
-	approved map[string]struct{}
-	pending  map[string]ShellApprovalChallenge
+	store ApprovalStore[ShellCommand]
 }
 
-// ShellApprovalChallenge is one pending approval prompt: the command as it will
-// run, and the exact Question the operator was shown. ApproveChallenge re-checks
-// that Question, so the text the operator agreed to is bound to the command that
-// executes.
+// ShellCommand is what a shell approval names: the command as it will run, in its cwd.
+type ShellCommand struct {
+	Command string
+	Cwd     string
+}
+
+// ShellApprovalChallenge is one pending approval prompt: the command as it will run, and
+// the exact Question the operator was shown. ApproveChallenge re-checks that Question, so
+// the text the operator agreed to is bound to the command that executes.
 type ShellApprovalChallenge struct {
 	Command  string
 	Cwd      string
@@ -30,12 +36,9 @@ type ShellApprovalChallenge struct {
 	Question string
 }
 
-// NewShellApprovals returns an empty approval store with both maps initialized.
+// NewShellApprovals returns an empty approval store.
 func NewShellApprovals() *ShellApprovals {
-	return &ShellApprovals{
-		approved: map[string]struct{}{},
-		pending:  map[string]ShellApprovalChallenge{},
-	}
+	return &ShellApprovals{}
 }
 
 // ShellApprovalDigest normalizes cwd before hashing (AG-018) so cosmetic variants (/tmp vs /tmp/)
@@ -54,109 +57,57 @@ func ShellApprovalDigest(command, cwd string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Approve grants a one-shot approval for the command digest and clears any
-// pending challenge for it. A nil receiver or empty key is a no-op, so callers
-// on a build with approvals disabled need no nil check.
+func (a *ShellApprovals) approvals() *ApprovalStore[ShellCommand] {
+	if a == nil {
+		return nil
+	}
+	return &a.store
+}
+
+// Approve grants a one-shot approval for the command digest and clears any pending
+// challenge for it.
 func (a *ShellApprovals) Approve(sessionID, digest string) {
-	if a == nil || sessionID == "" || digest == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.approved == nil {
-		a.approved = map[string]struct{}{}
-	}
-	key := shellApprovalKey(sessionID, digest)
-	a.approved[key] = struct{}{}
-	delete(a.pending, key)
+	a.approvals().Approve(sessionID, digest)
 }
 
-// Consume redeems an approval, reporting whether one was present. It deletes the
-// approval on success: approvals are one-shot, so a second run of the same
-// command prompts again.
+// Consume redeems an approval, reporting whether one was present. Approvals are one-shot,
+// so a second run of the same command prompts again.
 func (a *ShellApprovals) Consume(sessionID, digest string) bool {
-	if a == nil || sessionID == "" || digest == "" {
-		return false
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	key := shellApprovalKey(sessionID, digest)
-	if _, ok := a.approved[key]; !ok {
-		return false
-	}
-	delete(a.approved, key)
-	return true
+	return a.approvals().Consume(sessionID, digest)
 }
 
-// CreateChallenge records a pending approval for the command and returns the
-// challenge to put to the operator. The challenge is returned even on a nil
-// receiver so the caller can always render a prompt.
+// CreateChallenge records a pending approval for the command and returns the challenge to
+// put to the operator, even when nothing could be recorded.
 func (a *ShellApprovals) CreateChallenge(sessionID, command, cwd string) ShellApprovalChallenge {
 	digest := ShellApprovalDigest(command, cwd)
-	challenge := ShellApprovalChallenge{
-		Command:  command,
-		Cwd:      cwd,
-		Digest:   digest,
-		Question: shellApprovalQuestion(command, cwd, digest),
-	}
-	if a == nil || sessionID == "" || digest == "" {
-		return challenge
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.pending == nil {
-		a.pending = map[string]ShellApprovalChallenge{}
-	}
-	a.pending[shellApprovalKey(sessionID, digest)] = challenge
-	return challenge
+	return shellChallenge(a.approvals().CreateChallenge(sessionID, digest,
+		shellApprovalQuestion(command, cwd, digest), ShellCommand{Command: command, Cwd: cwd}))
 }
 
 // PendingChallenge returns the outstanding challenge for a digest, if any.
 func (a *ShellApprovals) PendingChallenge(sessionID, digest string) (ShellApprovalChallenge, bool) {
-	if a == nil || sessionID == "" || digest == "" {
-		return ShellApprovalChallenge{}, false
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	challenge, ok := a.pending[shellApprovalKey(sessionID, digest)]
-	return challenge, ok
+	challenge, ok := a.approvals().PendingChallenge(sessionID, digest)
+	return shellChallenge(challenge), ok
 }
 
-// ApproveChallenge promotes a pending challenge to an approval, but only if
-// question matches the text stored when the challenge was created. That equality
-// check is the anti-swap guard: it stops an approval collected for one prompt
-// from authorizing a command the operator never saw.
+// ApproveChallenge promotes a pending challenge to an approval, but only if question
+// matches the text stored when the challenge was created.
 func (a *ShellApprovals) ApproveChallenge(sessionID, digest, question string) error {
-	if a == nil || sessionID == "" || digest == "" {
-		return fmt.Errorf("shell approval challenge %q not found", digest)
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	key := shellApprovalKey(sessionID, digest)
-	challenge, ok := a.pending[key]
-	if !ok {
-		return fmt.Errorf("shell approval challenge %q not found", digest)
-	}
-	if question != challenge.Question {
-		return fmt.Errorf("shell approval challenge %q question mismatch", digest)
-	}
-	if a.approved == nil {
-		a.approved = map[string]struct{}{}
-	}
-	a.approved[key] = struct{}{}
-	delete(a.pending, key)
-	return nil
+	return a.approvals().ApproveChallenge(sessionID, digest, question)
 }
 
 // DiscardChallenge removes one unresolved challenge without creating an approval.
-// Approval expiry calls it only after the durable pause claim has won its race.
 func (a *ShellApprovals) DiscardChallenge(sessionID, digest string) {
-	if a == nil || sessionID == "" || digest == "" {
-		return
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	delete(a.pending, shellApprovalKey(sessionID, digest))
+	a.approvals().DiscardChallenge(sessionID, digest)
+}
+
+// Evict reclaims a finished session's approval ledger (SessionEvictor, R-41).
+func (a *ShellApprovals) Evict(sessionID string) {
+	a.approvals().Evict(sessionID)
+}
+
+func shellChallenge(c ApprovalChallenge[ShellCommand]) ShellApprovalChallenge {
+	return ShellApprovalChallenge{Command: c.Data.Command, Cwd: c.Data.Cwd, Digest: c.Digest, Question: c.Question}
 }
 
 func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd string) (*ToolResult, error) {
@@ -167,7 +118,7 @@ func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd strin
 	if !destructive {
 		return nil, nil
 	}
-	sessionID := shellSessionKey(ctx)
+	sessionID := SessionIDFromContext(ctx)
 	digest := ShellApprovalDigest(command, cwd)
 	if s.Approvals.Consume(sessionID, digest) {
 		return nil, nil
@@ -205,39 +156,4 @@ func shellApprovalRequiredResult(challenge ShellApprovalChallenge) ToolResult {
 
 func shellApprovalQuestion(command, cwd, digest string) string {
 	return fmt.Sprintf("Approve shell_exec command?\ncwd: %s\ncommand:\n%s\nsha256: %s", cwd, command, digest)
-}
-
-// shellSessionKey scopes shell state per conversation/session: the session id from
-// WithToolCallContext, "" for bare-ctx callers (unit tests, one-shot CLIs).
-func shellSessionKey(ctx context.Context) string {
-	if tc, ok := toolCallCtx(ctx); ok {
-		return tc.sessionID
-	}
-	return ""
-}
-
-func shellApprovalKey(sessionID, digest string) string {
-	return sessionID + "\x00" + digest
-}
-
-// Evict reclaims a finished session's approval ledger (SessionEvictor, R-41). The
-// maps are keyed by sessionID+"\x00"+digest, so every entry under the session
-// prefix is dropped. An unknown session id is a no-op; concurrency-safe under a.mu.
-func (a *ShellApprovals) Evict(sessionID string) {
-	if a == nil || sessionID == "" {
-		return
-	}
-	prefix := sessionID + "\x00"
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for k := range a.approved {
-		if strings.HasPrefix(k, prefix) {
-			delete(a.approved, k)
-		}
-	}
-	for k := range a.pending {
-		if strings.HasPrefix(k, prefix) {
-			delete(a.pending, k)
-		}
-	}
 }

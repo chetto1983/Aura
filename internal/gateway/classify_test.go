@@ -17,10 +17,11 @@ func skillSpec() tools.Spec { return (&tools.SkillManageTool{}).Spec() }
 // skillReadSpec is the READ half (list/info/use). Split out of skill in the tool
 // registry; its actions were already Safe, and classify gives a non-Mutating tool
 // exactly Safe, so the table below asserts the tier is unchanged by the split.
-func skillReadSpec() tools.Spec { return (&tools.SkillTool{}).Spec() }
-func taskSpec() tools.Spec      { return (&tools.TaskTool{}).Spec() }
-func swarmSpec() tools.Spec     { return (&tools.SwarmSpawn{}).Spec() }
-func boardSpec() tools.Spec     { return (&tools.BoardTool{}).Spec() }
+func skillReadSpec() tools.Spec  { return (&tools.SkillTool{}).Spec() }
+func taskSpec() tools.Spec       { return (&tools.TaskTool{}).Spec() }
+func swarmSpec() tools.Spec      { return (&tools.SwarmSpawn{}).Spec() }
+func boardSpec() tools.Spec      { return (&tools.BoardTool{}).Spec() }
+func pluginPackSpec() tools.Spec { return (&tools.PackTool{}).Spec() }
 
 func mustArgs(t *testing.T, v any) json.RawMessage {
 	t.Helper()
@@ -181,6 +182,38 @@ func TestClassifyExhaustive(t *testing.T) {
 		}
 		assertSameActions(t, "board", schema, covered)
 	})
+	t.Run("plugin_pack", func(t *testing.T) {
+		schema := actionEnum(t, pluginPackSpec())
+		covered := map[string]bool{}
+		for a := range pluginPackFixedTiers {
+			covered[a] = true
+		}
+		assertSameActions(t, "plugin_pack", schema, covered)
+	})
+}
+
+// plugin_pack's reads are free and its two writes are ordinary: the tool's own approval card
+// is the one question an install or a removal asks, on every profile, so a Destructive grade
+// would make a strict profile ask a second time for the same decision.
+func TestClassifyPluginPack(t *testing.T) {
+	for raw, want := range map[string]scoring.RiskTier{
+		`{"action":"list"}`:    scoring.Safe,
+		`{"action":"show"}`:    scoring.Safe,
+		`{"action":"install"}`: scoring.Normal,
+		`{"action":"remove"}`:  scoring.Normal,
+		`{"action":"trust"}`:   scoring.Risky,
+		`{"action":`:           scoring.Risky,
+	} {
+		if got := classify(pluginPackSpec(), json.RawMessage(raw)); got != want {
+			t.Errorf("classify(plugin_pack, %s) = %s, want %s", raw, got, want)
+		}
+	}
+	if gated(classify(pluginPackSpec(), json.RawMessage(`{"action":"install"}`))) {
+		t.Error("plugin_pack install must not stop the turn a second time")
+	}
+	reg := tools.NewRegistry()
+	reg.Register(&tools.PackTool{})
+	ValidateClassifiable(reg)
 }
 
 // The board's tiers: delete is the one prompt, writes are ordinary, reads are free, and a

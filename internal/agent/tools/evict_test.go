@@ -83,3 +83,22 @@ func TestSessionEvictor_ShellApprovals(t *testing.T) {
 
 	evictor.Evict("unknown") // no-op, must not panic
 }
+
+// TestSessionEvictor_PackTool: plugin_pack is the registered tool, so it is what the runner
+// evicts; its approvals go with the conversation, and a tool with no store is a no-op.
+func TestSessionEvictor_PackTool(t *testing.T) {
+	tool := &PackTool{Approvals: &PluginApprovals{}}
+	tool.Approvals.Approve("sess-A", "digest")
+	tool.Approvals.Approve("sess-B", "digest")
+
+	var evictor SessionEvictor = tool
+	evictor.Evict("sess-A")
+
+	if tool.Approvals.Consume("sess-A", "digest") {
+		t.Fatal("sess-A plugin approval should be evicted")
+	}
+	if !tool.Approvals.Consume("sess-B", "digest") {
+		t.Fatal("sess-B plugin approval must survive evicting sess-A")
+	}
+	(&PackTool{}).Evict("sess-A") // no store: no-op, must not panic
+}
