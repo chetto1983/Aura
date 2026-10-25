@@ -15,8 +15,17 @@ export const pluginsEn = {
   none: 'none',
   phase: {
     installing: 'Installing',
+    upgrading: 'Updating',
     removing: 'Removing',
   },
+  upgrade: 'Update',
+  upgradeAria: 'Update {{name}}',
+  upgrading: 'Updating {{name}} — its connectors restart, up to two minutes for one in the box.',
+  upToDate: '{{name}} is up to date at {{version}} ({{commit}}).',
+  upgraded: 'Updated {{name}} from {{from}} to {{version}}.',
+  upgradeFailed: "Couldn't update {{name}}.",
+  upgradeStopped:
+    'The update of {{name}} stopped part way: {{reason}}. Updating it again finishes the job.',
   removeAria: 'Remove {{name}}',
   removed: 'Removed {{name}}.',
   removeFailed: "Couldn't remove {{name}}.",
@@ -42,7 +51,7 @@ export const pluginsEn = {
     installFailed: "Couldn't install the plugin.",
     digestChanged: 'What this install would write changed since the review. Review it again.',
     reviewAgain: 'Review again',
-    alreadyInstalled: '{{name}} is already installed. Remove it first to install it again.',
+    alreadyInstalled: '{{name}} is already installed. Update it from its row below.',
   },
   review: {
     by: 'by {{author}}',
@@ -82,8 +91,18 @@ export const pluginsIt = {
   none: 'nessuno',
   phase: {
     installing: 'Installazione in corso',
+    upgrading: 'Aggiornamento in corso',
     removing: 'Rimozione in corso',
   },
+  upgrade: 'Aggiorna',
+  upgradeAria: 'Aggiorna {{name}}',
+  upgrading:
+    'Aggiornamento di {{name}} — i suoi connettori ripartono, fino a due minuti per uno nel box.',
+  upToDate: '{{name}} è già aggiornato alla {{version}} ({{commit}}).',
+  upgraded: '{{name}} aggiornato dalla {{from}} alla {{version}}.',
+  upgradeFailed: 'Impossibile aggiornare {{name}}.',
+  upgradeStopped:
+    "L'aggiornamento di {{name}} si è fermato a metà: {{reason}}. Aggiornarlo di nuovo completa il lavoro.",
   removeAria: 'Rimuovi {{name}}',
   removed: '{{name}} rimosso.',
   removeFailed: 'Impossibile rimuovere {{name}}.',
@@ -110,7 +129,7 @@ export const pluginsIt = {
     digestChanged:
       "Ciò che questa installazione scriverebbe è cambiato dopo l'esame. Esaminalo di nuovo.",
     reviewAgain: 'Esamina di nuovo',
-    alreadyInstalled: '{{name}} è già installato. Rimuovilo prima di installarlo di nuovo.',
+    alreadyInstalled: '{{name}} è già installato. Aggiornalo dalla sua riga qui sotto.',
   },
   review: {
     by: 'di {{author}}',

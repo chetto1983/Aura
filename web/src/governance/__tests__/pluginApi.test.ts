@@ -6,6 +6,7 @@ import {
   installPlugin,
   removePlugin,
   reviewPlugin,
+  upgradePlugin,
   type PluginConnector,
 } from '../pluginApi';
 
@@ -147,6 +148,47 @@ describe('pluginApi', () => {
     fetchMock = respond({ name: 'p', skills: [], connectors: [], data_deleted: true });
     await expect(removePlugin('p', true)).resolves.toMatchObject({ dataDeleted: true });
     expect(sent(fetchMock).url).toBe('/api/governance/plugins/p?data=delete');
+  });
+
+  it('upgrades by name and decodes the versions, before and after', async () => {
+    const fetchMock = respond({
+      name: 'a b',
+      from_version: '0.1.1',
+      from_commit: 'a'.repeat(40),
+      version: '0.3.0',
+      commit: 'b'.repeat(40),
+      up_to_date: false,
+      applied: true,
+      skills: [{ name: 's', outcome: 'ok', reason: 'updated' }],
+      connectors: null,
+    });
+    await expect(upgradePlugin('a b')).resolves.toEqual({
+      name: 'a b',
+      fromVersion: '0.1.1',
+      fromCommit: 'a'.repeat(40),
+      version: '0.3.0',
+      commit: 'b'.repeat(40),
+      upToDate: false,
+      applied: true,
+      skills: [{ name: 's', outcome: 'ok', reason: 'updated' }],
+      connectors: [],
+      error: '',
+    });
+    expect(sent(fetchMock)).toMatchObject({
+      url: '/api/governance/plugins/a%20b/upgrade',
+      method: 'POST',
+    });
+
+    respond(
+      { error: 'write the record: disk full', report: { name: 'p', applied: true, skills: null } },
+      207,
+    );
+    await expect(upgradePlugin('p')).resolves.toMatchObject({
+      name: 'p',
+      applied: true,
+      upToDate: false,
+      error: 'write the record: disk full',
+    });
   });
 
   it('reads a malformed payload as empty rather than throwing', async () => {

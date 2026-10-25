@@ -77,8 +77,24 @@ export interface PluginRemoveReport {
   readonly error: string;
 }
 
-/** One installed plugin. `phase` is 'installed' unless an install or a removal is under way,
- * or was interrupted. */
+/** The account of an upgrade: the version before and after, or that it was already up to date.
+ * `applied` means the new version's connectors were written; past that it does not roll back. */
+export interface PluginUpgradeReport {
+  readonly name: string;
+  readonly fromVersion: string;
+  readonly fromCommit: string;
+  readonly version: string;
+  readonly commit: string;
+  readonly upToDate: boolean;
+  readonly applied: boolean;
+  readonly skills: readonly PluginStep[];
+  readonly connectors: readonly PluginStep[];
+  /** Why the upgrade stopped part way; empty when it finished. */
+  readonly error: string;
+}
+
+/** One installed plugin. `phase` is 'installed' unless an install, an upgrade or a removal is
+ * under way, or was interrupted. */
 export interface PluginRecord {
   readonly name: string;
   readonly version: string;
@@ -205,6 +221,27 @@ export async function installPlugin(req: PluginInstallRequest): Promise<PluginRe
   const reviewed = body.review;
   return {
     review: review(reviewed !== null && typeof reviewed === 'object' ? (reviewed as Wire) : {}),
+    skills: list(body.skills, step),
+    connectors: list(body.connectors, step),
+    error,
+  };
+}
+
+/** POST /api/governance/plugins/{name}/upgrade — move the plugin to the head of its repository's
+ * default branch, as Codex's upgrade does, with no review. A refusal carries why: a new connector
+ * that did not start leaves the old version in place. */
+export async function upgradePlugin(name: string): Promise<PluginUpgradeReport> {
+  const { body, error } = outcome(
+    await postJSON<Wire>(`${GOV_PLUGINS_PATH}/${encodeURIComponent(name)}/upgrade`, {}),
+  );
+  return {
+    name: stringValue(body.name),
+    fromVersion: stringValue(body.from_version),
+    fromCommit: stringValue(body.from_commit),
+    version: stringValue(body.version),
+    commit: stringValue(body.commit),
+    upToDate: body.up_to_date === true,
+    applied: body.applied === true,
     skills: list(body.skills, step),
     connectors: list(body.connectors, step),
     error,

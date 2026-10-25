@@ -14,16 +14,18 @@ type PluginsProvider interface {
 	List() ([]plugins.Record, error)
 	Review(ctx context.Context, ref string) (plugins.Review, error)
 	Install(ctx context.Context, actor string, req plugins.InstallRequest) (plugins.Report, error)
+	Upgrade(ctx context.Context, actor, name string) (plugins.UpgradeReport, error)
 	Remove(ctx context.Context, actor, name string, deleteData bool) (plugins.RemoveReport, error)
 }
 
 // registerGovernancePluginRoutes mounts the plugin board. cmd/aura/serve_webui.go puts the
-// list behind governance.read and the three writes behind identity.create: a plugin's
+// list behind governance.read and the four writes behind identity.create: a plugin's
 // servers run in every identity's box, so installing one administers the deployment.
 func (s *Server) registerGovernancePluginRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/governance/plugins", s.handlePluginList)
 	mux.HandleFunc("POST /api/governance/plugins/review", s.handlePluginReview)
 	mux.HandleFunc("POST /api/governance/plugins", s.handlePluginInstall)
+	mux.HandleFunc("POST /api/governance/plugins/{name}/upgrade", s.handlePluginUpgrade)
 	mux.HandleFunc("DELETE /api/governance/plugins/{name}", s.handlePluginRemove)
 }
 
@@ -75,6 +77,18 @@ func (s *Server) handlePluginInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	report, err := s.governanceWrite.Plugins.Install(r.Context(), actor, body)
+	writePluginOutcome(w, report, err)
+}
+
+// handlePluginUpgrade serves POST /api/governance/plugins/{name}/upgrade: the plugin moves to
+// the head of its repository's default branch, or answers that it is up to date there. Like
+// Codex's upgrade it has no review step.
+func (s *Server) handlePluginUpgrade(w http.ResponseWriter, r *http.Request) {
+	actor, ok := s.beginPluginWrite(w, r)
+	if !ok {
+		return
+	}
+	report, err := s.governanceWrite.Plugins.Upgrade(r.Context(), actor, r.PathValue("name"))
 	writePluginOutcome(w, report, err)
 }
 

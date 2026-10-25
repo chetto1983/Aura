@@ -193,9 +193,7 @@ describe('PluginInstallPanel', () => {
     await review();
 
     expect(
-      screen.getByText(
-        'broker-analysis is already installed. Remove it first to install it again.',
-      ),
+      screen.getByText('broker-analysis is already installed. Update it from its row below.'),
     ).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Install' }).hasAttribute('disabled')).toBe(true);
   });

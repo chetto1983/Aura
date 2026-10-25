@@ -195,7 +195,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	}
 	mux.Handle(governancePluginListRoute, agui.RequireCapability(aguiHandler, auth, governanceReadCapability))
-	for _, route := range []string{governancePluginReviewRoute, governancePluginInstallRoute, governancePluginRemoveRoute} {
+	for _, route := range []string{governancePluginReviewRoute, governancePluginInstallRoute, governancePluginUpgradeRoute, governancePluginRemoveRoute} {
 		mux.Handle(route, agui.RequireCapability(aguiHandler, auth, identity.CapIdentityCreate))
 	}
 	mux.Handle(governanceMCPAuthStartRoute, agui.RequireCapability(aguiHandler, auth, governanceWriteCapability))

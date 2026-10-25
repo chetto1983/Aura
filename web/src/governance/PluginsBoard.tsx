@@ -1,12 +1,27 @@
 import { useId, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+} from '@tanstack/react-query';
+import { RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { HttpError } from '../api/json';
 import { BoardStateView, boardStatus } from './governanceView';
 import { PluginInstallPanel } from './PluginInstallPanel';
 import { PluginRemoveDialog } from './PluginRemoveDialog';
-import { fetchPlugins, removePlugin, shortCommit, type PluginRecord } from './pluginApi';
+import {
+  fetchPlugins,
+  removePlugin,
+  shortCommit,
+  upgradePlugin,
+  type PluginRecord,
+  type PluginRemoveReport,
+  type PluginStep,
+  type PluginUpgradeReport,
+} from './pluginApi';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,6 +30,9 @@ import { Card } from '@/components/ui/card';
 // PluginsBoard — install a plugin and see what each installed one brought. It is one column,
 // not the master + detail of the other boards: a row holds everything a plugin has, so there
 // is no detail to open, and the install field stays in view as the spec asks.
+//
+// A row updates its plugin as Codex's `plugin marketplace upgrade` does: one click, no review,
+// and the old version stays when a new connector does not start.
 //
 // The list refetches on window focus: the agent installs plugins from chat too, and a board
 // left open on another tab would otherwise show a snapshot from whenever it mounted.
@@ -27,6 +45,13 @@ export interface PluginsBoardProps {
 interface RemoveRequest {
   readonly name: string;
   readonly deleteData: boolean;
+}
+
+/** What the last write told the operator, and what it left behind. */
+interface Outcome {
+  readonly message: string;
+  readonly failed: boolean;
+  readonly leftBehind: readonly PluginStep[];
 }
 
 export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
@@ -42,16 +67,23 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
     refetchOnWindowFocus: true,
   });
 
-  // A removal that fails part-way still removed something, so every board it touches refreshes
+  // A write that fails part-way still changed something, so every board it touches refreshes
   // however it ends.
+  const refreshBoards = () => {
+    for (const board of ['plugins', 'skills', 'mcp']) {
+      void queryClient.invalidateQueries({ queryKey: ['governance', board] });
+    }
+  };
   const remove = useMutation({
     mutationFn: ({ name, deleteData }: RemoveRequest) => removePlugin(name, deleteData),
     onSettled: () => {
       setPendingRemove(undefined);
-      for (const board of ['plugins', 'skills', 'mcp']) {
-        void queryClient.invalidateQueries({ queryKey: ['governance', board] });
-      }
+      refreshBoards();
     },
+  });
+  const upgrade = useMutation({
+    mutationFn: (name: string) => upgradePlugin(name),
+    onSettled: refreshBoards,
   });
 
   const rows: readonly PluginRecord[] = plugins.data ?? [];
@@ -61,9 +93,8 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
     error: plugins.error,
     isEmpty: rows.length === 0,
   });
-  const leftBehind = [...(remove.data?.skills ?? []), ...(remove.data?.connectors ?? [])].filter(
-    (step) => step.outcome !== 'ok',
-  );
+  const busy = remove.isPending || upgrade.isPending;
+  const outcome = upgradeOutcome(t, upgrade) ?? removeOutcome(t, remove);
 
   return (
     <div className="h-full min-h-0 overflow-y-auto">
@@ -75,18 +106,11 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
             {t('governance.plugins.installedHeading')}
           </h3>
 
-          {remove.isSuccess ? (
-            <Alert role="status" variant={remove.data.error === '' ? 'default' : 'destructive'}>
+          {outcome !== undefined ? (
+            <Alert role="status" variant={outcome.failed ? 'destructive' : 'default'}>
               <AlertDescription className="gap-1">
-                <p>
-                  {remove.data.error === ''
-                    ? t('governance.plugins.removed', { name: remove.data.name })
-                    : t('governance.plugins.removeStopped', {
-                        name: remove.data.name,
-                        reason: remove.data.error,
-                      })}
-                </p>
-                {leftBehind.map((step) => (
+                <p>{outcome.message}</p>
+                {outcome.leftBehind.map((step) => (
                   <p key={step.name} className="text-text-muted">
                     {t('governance.plugins.review.skipped', {
                       name: step.name,
@@ -94,15 +118,6 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
                     })}
                   </p>
                 ))}
-              </AlertDescription>
-            </Alert>
-          ) : null}
-          {remove.isError ? (
-            <Alert variant="destructive">
-              <AlertDescription>
-                {remove.error instanceof HttpError && remove.error.reason !== ''
-                  ? remove.error.reason
-                  : t('governance.plugins.removeFailed', { name: remove.variables.name })}
               </AlertDescription>
             </Alert>
           ) : null}
@@ -123,9 +138,14 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
                 <PluginRow
                   key={plugin.name}
                   plugin={plugin}
-                  removeDisabled={remove.isPending}
+                  busy={busy}
+                  onUpgrade={() => {
+                    remove.reset();
+                    upgrade.mutate(plugin.name);
+                  }}
                   onRemove={() => {
                     remove.reset();
+                    upgrade.reset();
                     setPendingRemove(plugin.name);
                   }}
                 />
@@ -150,13 +170,96 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
   );
 }
 
+function notOK(steps: readonly PluginStep[]): readonly PluginStep[] {
+  return steps.filter((step) => step.outcome !== 'ok');
+}
+
+function refusal(error: unknown, fallback: string): string {
+  return error instanceof HttpError && error.reason !== '' ? error.reason : fallback;
+}
+
+function upgradeOutcome(
+  t: TFunction,
+  upgrade: UseMutationResult<PluginUpgradeReport, Error, string>,
+): Outcome | undefined {
+  const name = upgrade.variables ?? '';
+  if (upgrade.isPending) {
+    return { message: t('governance.plugins.upgrading', { name }), failed: false, leftBehind: [] };
+  }
+  if (upgrade.isError) {
+    return {
+      message: refusal(upgrade.error, t('governance.plugins.upgradeFailed', { name })),
+      failed: true,
+      leftBehind: [],
+    };
+  }
+  if (!upgrade.isSuccess) return undefined;
+  const report = upgrade.data;
+  const leftBehind = notOK([...report.skills, ...report.connectors]);
+  if (report.error !== '') {
+    return {
+      message: t('governance.plugins.upgradeStopped', { name: report.name, reason: report.error }),
+      failed: true,
+      leftBehind,
+    };
+  }
+  if (report.upToDate) {
+    return {
+      message: t('governance.plugins.upToDate', {
+        name: report.name,
+        version: report.version,
+        commit: shortCommit(report.commit),
+      }),
+      failed: false,
+      leftBehind: [],
+    };
+  }
+  return {
+    message: t('governance.plugins.upgraded', {
+      name: report.name,
+      from: report.fromVersion,
+      version: report.version,
+    }),
+    failed: false,
+    leftBehind,
+  };
+}
+
+function removeOutcome(
+  t: TFunction,
+  remove: UseMutationResult<PluginRemoveReport, Error, RemoveRequest>,
+): Outcome | undefined {
+  if (remove.isError) {
+    return {
+      message: refusal(
+        remove.error,
+        t('governance.plugins.removeFailed', { name: remove.variables.name }),
+      ),
+      failed: true,
+      leftBehind: [],
+    };
+  }
+  if (!remove.isSuccess) return undefined;
+  const report = remove.data;
+  return {
+    message:
+      report.error === ''
+        ? t('governance.plugins.removed', { name: report.name })
+        : t('governance.plugins.removeStopped', { name: report.name, reason: report.error }),
+    failed: report.error !== '',
+    leftBehind: notOK([...report.skills, ...report.connectors]),
+  };
+}
+
 function PluginRow({
   plugin,
-  removeDisabled,
+  busy,
+  onUpgrade,
   onRemove,
 }: {
   readonly plugin: PluginRecord;
-  readonly removeDisabled: boolean;
+  readonly busy: boolean;
+  readonly onUpgrade: () => void;
   readonly onRemove: () => void;
 }) {
   const { t } = useTranslation();
@@ -190,16 +293,28 @@ function PluginRow({
             {t('governance.plugins.connectors', { names: names(plugin.connectors) })}
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={removeDisabled}
-          aria-label={t('governance.plugins.removeAria', { name: plugin.name })}
-          onClick={onRemove}
-        >
-          <Trash2 data-icon="inline-start" aria-hidden="true" focusable="false" />
-          {t('governance.plugins.remove.confirm')}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            aria-label={t('governance.plugins.upgradeAria', { name: plugin.name })}
+            onClick={onUpgrade}
+          >
+            <RefreshCw data-icon="inline-start" aria-hidden="true" focusable="false" />
+            {t('governance.plugins.upgrade')}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy}
+            aria-label={t('governance.plugins.removeAria', { name: plugin.name })}
+            onClick={onRemove}
+          >
+            <Trash2 data-icon="inline-start" aria-hidden="true" focusable="false" />
+            {t('governance.plugins.remove.confirm')}
+          </Button>
+        </div>
       </Card>
     </li>
   );

@@ -234,12 +234,13 @@ const (
 )
 
 // governancePlugin* are the plugin board (spec 2026-10-25-pack-install §4.5). The list is a
-// governance.read; review, install and removal are identity.create, as for the MCP registry,
-// since a plugin's servers run in every identity's box.
+// governance.read; review, install, upgrade and removal are identity.create, as for the MCP
+// registry, since a plugin's servers run in every identity's box.
 const (
 	governancePluginListRoute    = "GET /api/governance/plugins"
 	governancePluginReviewRoute  = "POST /api/governance/plugins/review"
 	governancePluginInstallRoute = "POST /api/governance/plugins"
+	governancePluginUpgradeRoute = "POST /api/governance/plugins/{name}/upgrade"
 	governancePluginRemoveRoute  = "DELETE /api/governance/plugins/{name}"
 )
 
