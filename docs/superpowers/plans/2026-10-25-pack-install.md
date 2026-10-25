@@ -1,7 +1,10 @@
 # Pack install from the cockpit and from chat Implementation Plan
 
-**Status (2026-10-25):** written and reviewed twice, read-only (citations against master, then an
-adversarial pass). Both reviews' findings are folded in, and the spec gained §6b. Not started.
+**Status (2026-10-25):** DONE. Tasks 1–12 `d81343b`…`e416293`; the final review's fix pass
+`997a6878c`…`3ed81a0b2`; the broker plugin's Agent Plugins manifests in `broker-analysis-mcp` `17890a0`
+(v0.1.1). On the lab VM at `3ed81a0b2`, acceptance A, B and D passed, and so did C's install
+(`docs/superpowers/verification/2026-10-25-pack-install-lab-vm.md`). Four improvements from the agent's
+account stay open there.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for

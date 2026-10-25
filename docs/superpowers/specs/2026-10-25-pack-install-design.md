@@ -1,7 +1,9 @@
 # Pack install from the cockpit and from chat — design
 
 Date: 2026-10-25
-Status: draft, for the operator's review
+Status: approved by the operator 2026-10-25 and implemented (plan `2026-10-25-pack-install.md`, DONE).
+Amended 2026-10-25 after the final review: a removal deletes the skills it installed (§4.7, §5.6, §6).
+Verified on the lab VM: `docs/superpowers/verification/2026-10-25-pack-install-lab-vm.md`.
 
 ## 1. Why
 
