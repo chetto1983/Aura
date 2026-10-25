@@ -81,7 +81,7 @@ func TestProductionRetrievalRecall(t *testing.T) {
 				}
 				names = resolved
 			}
-			ranked := rankDocuments(cards, fused, names, nil, cfg.CandidateLimit, cfg.TopPassages, false)
+			ranked := rankDocuments(cards, fused, exactLane{}, names, cfg.CandidateLimit, cfg.TopPassages)
 			for _, doc := range ranked {
 				runs[0].Ranking[question.QID] = append(runs[0].Ranking[question.QID], doc.Title)
 			}

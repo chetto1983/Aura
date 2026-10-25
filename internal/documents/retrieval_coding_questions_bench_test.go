@@ -59,9 +59,9 @@ type rankingRule struct {
 	// cards rank only against cards, passages only against passages, and no card score is ever
 	// compared with a passage score.
 	cardSlots []int
-	// ignoreIdentifiers ranks by score alone, without rankIdentifiersFirst: the shipped rule
+	// ignoreExactTerms ranks by score alone, without rankExactTermsFirst: the shipped rule
 	// before 2026-10-16, kept so its counterfactual stays measured.
-	ignoreIdentifiers bool
+	ignoreExactTerms bool
 }
 
 type codingAgentArm struct {
@@ -88,7 +88,7 @@ func TestCodingAgentQuestions(t *testing.T) {
 		{name: "quota: cards at 2 and 4", cardSlots: []int{1, 3}},
 		{name: "two reserved places", reservedPlaces: 2},
 		{name: "three reserved places", reservedPlaces: 3},
-		{name: "identifiers ignored", ignoreIdentifiers: true},
+		{name: "exact terms ignored", ignoreExactTerms: true},
 	}
 
 	arms := []*codingAgentArm{{name: "production"}, {name: "lexical only"}}
@@ -159,7 +159,7 @@ func TestCodingAgentQuestions(t *testing.T) {
 // applyRankingRule re-orders a whole ranking the way rankDocuments would under rule, from the
 // evidence each document carries (retrieval_rank.go: the best score, then the best position
 // either leg gave it, then the id, then the earliest passage, with the documents carrying the
-// question's identifiers first), and keeps the tool's limit.
+// question's exact terms first and the reserved places behind them), and keeps the tool's limit.
 func applyRankingRule(documents []RetrievalDocument, rule rankingRule, query string) []RetrievalDocument {
 	var all []rankedEvidence
 	for _, document := range documents {
@@ -177,16 +177,21 @@ func applyRankingRule(documents []RetrievalDocument, rule rankingRule, query str
 		return withCardSlots(all, rule.cardSlots)
 	}
 	sortRanked(all)
-	if !rule.ignoreIdentifiers {
-		identifiers := arcadedb.QueryIdentifiers(query)
+	carriers := 0
+	if terms := arcadedb.QueryExactTerms(query); !rule.ignoreExactTerms && len(terms) > 0 {
 		sort.SliceStable(all, func(i, j int) bool {
-			return carriesIdentifiers(all[i].document, identifiers) && !carriesIdentifiers(all[j].document, identifiers)
+			return carriesExactTerms(all[i].document, terms) && !carriesExactTerms(all[j].document, terms)
 		})
+		for carriers < len(all) && carriesExactTerms(all[carriers].document, terms) {
+			carriers++
+		}
 	}
-	// The k-th file with no passage sits no lower than place k+2, the best hit staying first.
+	// The k-th file with no passage sits no lower than place k+2 behind the carriers, the best
+	// hit among the rest staying first.
+	rest := all[carriers:]
 	for lane := 1; lane <= max(rule.reservedPlaces, 1); lane++ {
 		seen, best := 0, -1
-		for index, entry := range all {
+		for index, entry := range rest {
 			if !hasPassages(entry.document) {
 				if seen++; seen == lane {
 					best = index
@@ -195,9 +200,9 @@ func applyRankingRule(documents []RetrievalDocument, rule rankingRule, query str
 			}
 		}
 		if best > lane {
-			promoted := all[best]
-			copy(all[lane+1:best+1], all[lane:best])
-			all[lane] = promoted
+			promoted := rest[best]
+			copy(rest[lane+1:best+1], rest[lane:best])
+			rest[lane] = promoted
 		}
 	}
 	out := make([]RetrievalDocument, 0, documentSearchDefaultLimit)
@@ -220,6 +225,10 @@ type rankedEvidence struct {
 func evidenceOf(document RetrievalDocument) rankedEvidence {
 	entry := rankedEvidence{document: document, order: math.MaxInt, ordinal: math.MaxInt64}
 	for _, evidence := range document.Evidence {
+		// The exact lane sets neither the score nor the order (rankDocuments).
+		if evidence.Leg == string(arcadedb.RetrievalLegExact) {
+			continue
+		}
 		entry.order = min(entry.order, evidence.Rank-1)
 		if evidence.Score == nil {
 			continue

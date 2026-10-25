@@ -99,6 +99,19 @@ type fakePassageIndex struct {
 	lexicalErr    error
 	lexicalQuery  string
 	lexicalFilter arcadedb.CandidateFilter
+
+	// exact answers each exact term by its Key.
+	exact       map[string]arcadedb.ExactTermHits
+	exactErr    error
+	exactTerms  []arcadedb.ExactTerm
+	exactFilter arcadedb.CandidateFilter
+}
+
+func (f *fakePassageIndex) ExactTermDocuments(
+	_ context.Context, filter arcadedb.CandidateFilter, term arcadedb.ExactTerm,
+) (arcadedb.ExactTermHits, error) {
+	f.exactFilter, f.exactTerms = filter, append(f.exactTerms, term)
+	return f.exact[term.Key], f.exactErr
 }
 
 func (f *fakePassageIndex) LexicalCandidates(

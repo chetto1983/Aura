@@ -193,7 +193,7 @@ func TestFusionBenchmark(t *testing.T) {
 			// nil names: this arm ranks passages only, and the bench resolves its own
 			// display name from SourceKey below, so the lookup map rankDocuments uses
 			// for card enrichment has nothing to contribute here.
-			for _, doc := range rankDocuments(nil, fused, nil, nil, cfg.CandidateLimit, cfg.TopPassages, false) {
+			for _, doc := range rankDocuments(nil, fused, exactLane{}, nil, cfg.CandidateLimit, cfg.TopPassages) {
 				runs[armIndex].Ranking[question.QID] = append(
 					runs[armIndex].Ranking[question.QID], benchDocName(doc.SourceKey),
 				)

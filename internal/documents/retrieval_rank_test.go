@@ -34,7 +34,7 @@ func TestTheReservedPlaceGoesToAFileWithNoPassageAtAll(t *testing.T) {
 	}
 	passages := []arcadedb.PassageCandidate{fusedPassage("a.go", 0.6), fusedPassage("b.go", 0.5), fusedPassage("c.md", 0.4)}
 
-	got := rankedIDs(rankDocuments(cards, passages, nil, nil, 8, 3, false))
+	got := rankedIDs(rankDocuments(cards, passages, exactLane{}, nil, 8, 3))
 
 	want := []string{"a.go", "sheet.xlsx", "b.go", "c.md", "named.service"}
 	if !slices.Equal(got, want) {
@@ -75,9 +75,8 @@ func TestADocumentCarryingTheIdentifiersRanksFirst(t *testing.T) {
 		passageWithText("fattura.xlsx", 0.44, "difetto segnalato dal cliente"),
 		passageWithText("report_qualita.pdf", 0.41, "RC-2026-040 etichetta illeggibile Linea 3"),
 	}
-	identifiers := arcadedb.QueryIdentifiers("che difetto riguardava il reclamo RC-2026-040")
 
-	got := rankedIDs(rankDocuments(nil, passages, nil, identifiers, 8, 3, false))
+	got := rankedIDs(rankDocuments(nil, passages, exactLaneFor("che difetto riguardava il reclamo RC-2026-040"), nil, 8, 3))
 
 	want := []string{"report_qualita.pdf", "note_pagamenti.txt", "fattura.xlsx"}
 	if !slices.Equal(got, want) {
@@ -94,7 +93,7 @@ func TestTheIdentifierRuleRunsBeforeTheLimit(t *testing.T) {
 			OriginalSHA256: "audit-raw", Rank: 0.30, PassageCount: 4},
 	}
 
-	got := rankedIDs(rankDocuments(cards, passages, nil, arcadedb.QueryIdentifiers("requisito della NC-03"), 2, 3, false))
+	got := rankedIDs(rankDocuments(cards, passages, exactLaneFor("requisito della NC-03"), nil, 2, 3))
 
 	want := []string{"audit.pdf", "a.md"}
 	if !slices.Equal(got, want) {
@@ -102,13 +101,28 @@ func TestTheIdentifierRuleRunsBeforeTheLimit(t *testing.T) {
 	}
 }
 
-// A question with no identifier is ranked by score alone, exactly as before the rule.
-func TestAQuestionWithoutIdentifiersKeepsTheScoreOrder(t *testing.T) {
+// With the passage index down the cards answer alone, and the one carrying the identifier still
+// ranks first.
+func TestACardOnlyAnswerRanksTheCarrierFirst(t *testing.T) {
+	cards := []RetrievalCard{
+		{DocumentID: "note.md", OriginalSHA256: "note-raw", Rank: 0.5, PassageCount: 2},
+		{DocumentID: "audit.pdf", Card: "Verbale con la non conformità NC-03", OriginalSHA256: "audit-raw", Rank: 0.3, PassageCount: 4},
+	}
+
+	got := rankedIDs(rankCardsOnly(cards, arcadedb.QueryExactTerms("requisito della NC-03"), 8, 3))
+
+	if want := []string{"audit.pdf", "note.md"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+}
+
+// A question with no exact term is ranked by score alone, exactly as before the rule.
+func TestAQuestionWithoutExactTermsKeepsTheScoreOrder(t *testing.T) {
 	passages := []arcadedb.PassageCandidate{
 		passageWithText("a.md", 0.6, "turni di notte"), passageWithText("b.md", 0.5, "ore di lavoro"),
 	}
 
-	got := rankedIDs(rankDocuments(nil, passages, nil, arcadedb.QueryIdentifiers("chi lavora di notte"), 8, 3, false))
+	got := rankedIDs(rankDocuments(nil, passages, exactLaneFor("chi lavora di notte"), nil, 8, 3))
 
 	if want := []string{"a.md", "b.md"}; !slices.Equal(got, want) {
 		t.Fatalf("order = %v, want %v", got, want)

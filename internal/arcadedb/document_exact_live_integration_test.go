@@ -11,6 +11,7 @@ package arcadedb_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 
@@ -90,4 +91,43 @@ func TestDocumentExactLivePhraseFindsTheTermInOrderOnly(t *testing.T) {
 	if len(hits.Cards) != 0 || len(hits.Passages) != 1 || hits.Passages[0].SearchDocumentID != "doc_markdown" {
 		t.Fatalf("hits = %d cards, passages %+v; want the Markdown passage alone", len(hits.Cards), hits.Passages)
 	}
+}
+
+// The lab VM's s04 through the whole cascade (acceptance 1): quoted, the font's document comes
+// first and the reversed words do not count; unquoted, the reranked cosine and its floor drop it,
+// which is the burial decision 1 ends.
+func TestDocumentExactLiveRetrieveRanksTheQuotedFontFirst(t *testing.T) {
+	retriever, _ := exactLiveIndex(t)
+	for _, query := range []string{`quale font mostra "Ubuntu Mono"?`, `"Ubuntu Mono"`} {
+		response, err := retriever.Retrieve(context.Background(), documents.RetrievalRequest{IdentityID: liveIdentity, Query: query})
+		if err != nil {
+			t.Fatalf("Retrieve(%s): %v", query, err)
+		}
+		if response.Abstained || len(response.Documents) == 0 || response.Documents[0].DocumentID != "doc_calibre" {
+			t.Fatalf("%s: documents = %v abstained %v, want doc_calibre first", query, liveDocumentIDs(response), response.Abstained)
+		}
+		if leg := response.Documents[0].Passages[0].Evidence[0].Leg; leg != string(arcadedb.RetrievalLegExact) {
+			t.Fatalf("%s: carrier's evidence = %s, want exact", query, leg)
+		}
+		if slices.Contains(liveDocumentIDs(response), "doc_reversed") {
+			t.Fatalf("%s: documents = %v, the reversed words carry no phrase", query, liveDocumentIDs(response))
+		}
+	}
+	unquoted, err := retriever.Retrieve(context.Background(), documents.RetrievalRequest{
+		IdentityID: liveIdentity, Query: "quale font mostra Ubuntu Mono?",
+	})
+	if err != nil {
+		t.Fatalf("Retrieve(unquoted): %v", err)
+	}
+	if slices.Contains(liveDocumentIDs(unquoted), "doc_calibre") {
+		t.Fatalf("unquoted documents = %v: the floor kept the font, so this library does not reproduce the burial", liveDocumentIDs(unquoted))
+	}
+}
+
+func liveDocumentIDs(response documents.RetrievalResponse) []string {
+	ids := make([]string, 0, len(response.Documents))
+	for _, document := range response.Documents {
+		ids = append(ids, document.DocumentID)
+	}
+	return ids
 }
