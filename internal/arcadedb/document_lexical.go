@@ -4,7 +4,6 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
-	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -110,17 +109,20 @@ func (d *DocumentIndex) LexicalCandidates(ctx context.Context, filter CandidateF
 	if err != nil {
 		return nil, err
 	}
-	return d.lexicalPassages(ctx, client, where, params, filter.Limit, RetrievalLegLexical, nil)
+	candidates, err := d.lexicalPassages(ctx, client, where, params, filter.Limit, RetrievalLegLexical)
+	if err != nil {
+		return nil, err
+	}
+	best := bestPassagePerFile(candidates)
+	return best[:min(len(best), filter.Limit)], nil
 }
 
-// lexicalPassages ranks each file's best passage for the full-text query params bind, best first,
-// and labels it leg. keep, when set, drops a passage before each file's best is chosen.
+// lexicalPassages reads the passages the full-text query params bind matches, best first, and labels
+// them leg. It over-fetches, as the fused leg does: the caller groups by file after the LIMIT, and a
+// file with many matching passages would otherwise fill the pool on its own.
 func (d *DocumentIndex) lexicalPassages(
 	ctx context.Context, client *Client, where string, params map[string]any, limit int, leg RetrievalLeg,
-	keep func(PassageCandidate) bool,
 ) ([]PassageCandidate, error) {
-	// Over-fetch, as the fused leg does: the grouping below runs after the LIMIT, and a file
-	// with many matching passages would otherwise fill the pool on its own.
 	fetch := min(max(limit*4, 20), d.config.MaxRetrievalCandidates)
 	rows, err := client.Query(ctx, lexicalPassageStatement(where, fetch), params)
 	if err != nil {
@@ -129,15 +131,7 @@ func (d *DocumentIndex) lexicalPassages(
 		}
 		return nil, fmt.Errorf("arcadedb: %s document candidates: %w", leg, err)
 	}
-	candidates, err := d.decodeCandidates(rows, leg, fetch)
-	if err != nil {
-		return nil, err
-	}
-	if keep != nil {
-		candidates = slices.DeleteFunc(candidates, func(candidate PassageCandidate) bool { return !keep(candidate) })
-	}
-	best := bestPassagePerFile(candidates)
-	return best[:min(len(best), limit)], nil
+	return d.decodeCandidates(rows, leg, fetch)
 }
 
 // bestPassagePerFile keeps each file's first, so best, passage: what the fused statement's

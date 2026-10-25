@@ -8,9 +8,9 @@ import (
 const exactCardTrailer = "Written by Aura at ingest from the file itself: it describes the file and is not the file — " +
 	"open it with document_open to read or compute on it."
 
-// Spec 2026-10-25 decision 1: an exact term is asked of every full-text index as one phrase, with
-// no score floor, inside the caller's scope, and only the texts that carry it come back. The
-// engine's phrase is every word in one record, in any order (document_exact.go).
+// Spec 2026-10-25 decision 1: the exact terms are asked of every full-text index at once, their
+// phrases joined by OR, with no score floor, inside the caller's scope, and only the texts that carry
+// one come back. The engine's phrase is every word in one record, in any order (document_exact.go).
 func TestExactTermDocumentsKeepOnlyTheCarriers(t *testing.T) {
 	var index *DocumentIndex
 	index, requests := testDocumentIndex(t, func(request recordedRequest) testResponse {
@@ -23,7 +23,9 @@ func TestExactTermDocumentsKeepOnlyTheCarriers(t *testing.T) {
 			carrierElsewhere["text"] = "Ubuntu here, Mono there."
 			carrier := candidateFixture(index, "doc_a:4", "doc_a", 4, "lexical_score", 6.1)
 			carrier["text"] = "some text in the Ubuntu Mono typeface"
-			return testResponse{Body: resultBody([]any{reversed, carrierElsewhere, carrier})}
+			named := candidateFixture(index, "doc_a:6", "doc_a", 6, "lexical_score", 5.0)
+			named["text"] = "see calibre_demo.docx for the sample"
+			return testResponse{Body: resultBody([]any{reversed, carrierElsewhere, carrier, named})}
 		case strings.Contains(statement, "IndexedDocument[card]"):
 			named := documentCardFixture("doc_b", "b.pdf", "b.pdf — PDF. Opens: the Ubuntu Mono sample.\n"+exactCardTrailer)
 			named["card_score"] = 1.4
@@ -36,28 +38,28 @@ func TestExactTermDocumentsKeepOnlyTheCarriers(t *testing.T) {
 			return testResponse{Body: resultBody([]any{named, unnamed})}
 		}
 	})
-	term := QueryExactTerms(`quale documento mostra "Ubuntu Mono"?`)[0]
+	terms := QueryExactTerms(`quale documento mostra "Ubuntu Mono" in calibre_demo.docx?`)
 	hits, err := index.ExactTermDocuments(t.Context(), CandidateFilter{
 		IdentityID: documentTestIdentity, Limit: 3, DocumentIDs: []string{"doc_a", "doc_b", "doc_r"},
-	}, term)
+	}, terms)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(hits.Passages) != 1 || hits.Passages[0].PassageID != "doc_a:4" || hits.Passages[0].Leg != RetrievalLegExact ||
-		*hits.Passages[0].Score() != 6.1 {
-		t.Fatalf("passages = %+v, want doc_a's carrying passage alone, though another of its passages scored higher", hits.Passages)
+	if len(hits.Passages) != 2 || hits.Passages[0].PassageID != "doc_a:4" || hits.Passages[1].PassageID != "doc_a:6" ||
+		hits.Passages[0].Leg != RetrievalLegExact || *hits.Passages[0].Score() != 6.1 {
+		t.Fatalf("passages = %+v, want doc_a's best passage for each term it carries, in the engine's order", hits.Passages)
 	}
 	if len(hits.Cards) != 1 || hits.Cards[0].SearchDocumentID != "doc_b" || hits.Cards[0].Score != 2.9 {
 		t.Fatalf("cards = %+v, want doc_b once, at its higher score", hits.Cards)
 	}
 	if len(*requests) != 3 {
-		t.Fatalf("requests = %d, want the passage, card and file-name indexes", len(*requests))
+		t.Fatalf("requests = %d, want one per index whatever the number of terms", len(*requests))
 	}
 	for _, request := range *requests {
 		statement, _ := request.Payload["command"].(string)
 		params, _ := request.Payload["params"].(map[string]any)
-		if params["query"] != `"Ubuntu Mono"` || params["min_lexical_score"] != float64(0) {
-			t.Fatalf("params = %v, want the quoted phrase and no floor", params)
+		if params["query"] != `"Ubuntu Mono" OR "calibre_demo.docx" OR "calibre_demo"` || params["min_lexical_score"] != float64(0) {
+			t.Fatalf("params = %v, want every phrase OR-ed and no floor", params)
 		}
 		if !strings.Contains(statement, "search_document_id IN :document_ids") || strings.Contains(statement, "vector.") {
 			t.Fatalf("statement leaves the scope or ranks by vector:\n%s", statement)
@@ -77,7 +79,7 @@ func TestExactTermDocumentsIgnoreTheCardTrailer(t *testing.T) {
 		})}
 	})
 	hits, err := index.ExactTermDocuments(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3},
-		QueryExactTerms(`"Aura"`)[0])
+		QueryExactTerms(`"Aura"`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +89,6 @@ func TestExactTermDocumentsIgnoreTheCardTrailer(t *testing.T) {
 }
 
 func TestExactTermDocumentsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
-	term := QueryExactTerms(`"Ubuntu Mono"`)[0]
 	filter := CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}
 	index, _ := testDocumentIndex(t, func(request recordedRequest) testResponse {
 		if statement, _ := request.Payload["command"].(string); strings.Contains(statement, "FROM Passage") {
@@ -95,8 +96,19 @@ func TestExactTermDocumentsTreatAMissingTypeAsAnEmptyLibrary(t *testing.T) {
 		}
 		return testResponse{Status: 500, Body: missingTypeBody}
 	})
-	hits, err := index.ExactTermDocuments(t.Context(), filter, term)
+	hits, err := index.ExactTermDocuments(t.Context(), filter, QueryExactTerms(`"Ubuntu Mono"`))
 	if err != nil || len(hits.Passages) != 0 || len(hits.Cards) != 0 {
 		t.Fatalf("hits = %+v err = %v, want an empty library", hits, err)
+	}
+}
+
+// A question with no exact term asks nothing.
+func TestExactTermDocumentsWithNoTermsAskNothing(t *testing.T) {
+	index, requests := testDocumentIndex(t, func(recordedRequest) testResponse {
+		return testResponse{Body: resultBody([]any{})}
+	})
+	hits, err := index.ExactTermDocuments(t.Context(), CandidateFilter{IdentityID: documentTestIdentity, Limit: 3}, nil)
+	if err != nil || len(hits.Passages) != 0 || len(hits.Cards) != 0 || len(*requests) != 0 {
+		t.Fatalf("hits = %+v err = %v requests = %d, want nothing asked", hits, err, len(*requests))
 	}
 }

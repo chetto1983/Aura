@@ -112,6 +112,9 @@ func TestExactTermLucenePhrase(t *testing.T) {
 			t.Fatalf("lucenePhrase(%q) = %s, want %s", tc.raw, got, tc.want)
 		}
 	}
+	if got := lucenePhrases(QueryExactTerms(`"Ubuntu Mono" e RC-2026-040`)); got != `"Ubuntu Mono" OR "rc-2026-040"` {
+		t.Fatalf("lucenePhrases = %s, want every phrase OR-ed", got)
+	}
 }
 
 func FuzzQueryExactTerms(f *testing.F) {
@@ -131,8 +134,10 @@ func FuzzQueryExactTerms(f *testing.F) {
 				t.Fatalf("duplicate term %q from %q", term.Key, query)
 			}
 			seen[term.Key] = struct{}{}
-			if !term.CarriedBy(term.Raw) {
-				t.Fatalf("term %q is not carried by its own wording %q", term.Key, term.Raw)
+			// Extraction and carrying tokenise apart: a term the query names must be one the
+			// query itself carries, or no document could ever carry it either.
+			if !term.CarriedBy(query) {
+				t.Fatalf("term %q is not carried by the query %q that named it", term.Key, query)
 			}
 		}
 	})

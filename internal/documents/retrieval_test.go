@@ -100,18 +100,20 @@ type fakePassageIndex struct {
 	lexicalQuery  string
 	lexicalFilter arcadedb.CandidateFilter
 
-	// exact answers each exact term by its Key.
-	exact       map[string]arcadedb.ExactTermHits
+	// exact answers the lane's one query, whatever terms it asks for.
+	exact       arcadedb.ExactTermHits
 	exactErr    error
+	exactCalls  int
 	exactTerms  []arcadedb.ExactTerm
 	exactFilter arcadedb.CandidateFilter
 }
 
 func (f *fakePassageIndex) ExactTermDocuments(
-	_ context.Context, filter arcadedb.CandidateFilter, term arcadedb.ExactTerm,
+	_ context.Context, filter arcadedb.CandidateFilter, terms []arcadedb.ExactTerm,
 ) (arcadedb.ExactTermHits, error) {
-	f.exactFilter, f.exactTerms = filter, append(f.exactTerms, term)
-	return f.exact[term.Key], f.exactErr
+	f.exactCalls++
+	f.exactFilter, f.exactTerms = filter, terms
+	return f.exact, f.exactErr
 }
 
 func (f *fakePassageIndex) LexicalCandidates(

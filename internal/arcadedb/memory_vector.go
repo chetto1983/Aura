@@ -189,7 +189,7 @@ func (c *Client) SearchFactsHybrid(
 		return FactSearchResult{}, err
 	}
 	if facts, err := c.exactFactsFirst(ctx, query, result.Facts, limit, asOf); err != nil {
-		result.Reason = joinReasons(result.Reason, reasonExactTermsFailed)
+		result.Reason = JoinReasons(result.Reason, reasonExactTermsFailed)
 	} else {
 		result.Facts = facts
 	}

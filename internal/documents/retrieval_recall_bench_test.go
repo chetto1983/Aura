@@ -81,7 +81,10 @@ func TestProductionRetrievalRecall(t *testing.T) {
 				}
 				names = resolved
 			}
-			ranked := rankDocuments(cards, fused, exactLane{}, names, cfg.CandidateLimit, cfg.TopPassages)
+			// The question's exact terms rank its carriers first, as in production; the bench
+			// runs no exact lane, so carriers the floor dropped stay out.
+			lane := exactLane{terms: arcadedb.QueryExactTerms(question.Query)}
+			ranked := rankDocuments(cards, fused, lane, names, cfg.CandidateLimit, cfg.TopPassages)
 			for _, doc := range ranked {
 				runs[0].Ranking[question.QID] = append(runs[0].Ranking[question.QID], doc.Title)
 			}

@@ -140,3 +140,14 @@ func (t ExactTerm) lucenePhrase() string {
 	escaped := strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(t.Raw)
 	return `"` + escaped + `"`
 }
+
+// lucenePhrases asks for any of terms in one query: the executor reads OR-ed phrases as SHOULD
+// clauses and returns their union (FullTextQueryExecutor.collectMatches on 26.10.2), so one query
+// per index serves every term, however many the question names.
+func lucenePhrases(terms []ExactTerm) string {
+	phrases := make([]string, len(terms))
+	for i, term := range terms {
+		phrases[i] = term.lucenePhrase()
+	}
+	return strings.Join(phrases, " OR ")
+}

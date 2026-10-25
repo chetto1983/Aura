@@ -179,6 +179,9 @@ func TestFusionBenchmark(t *testing.T) {
 			cardRanking = append(cardRanking, benchDocName(card.SourceKey))
 		}
 		filter := arcadedb.CandidateFilter{IdentityID: identity, Limit: cfg.CandidateLimit}
+		// The question's exact terms rank its carriers first, as in production; the bench runs no
+		// exact lane, so it measures the strategies on what fusion returned.
+		lane := exactLane{terms: arcadedb.QueryExactTerms(question.Query)}
 
 		// One arm per strategy, all through the SHIPPED FusedCandidates. The Go tier
 		// ladder these were first measured against no longer exists.
@@ -193,7 +196,7 @@ func TestFusionBenchmark(t *testing.T) {
 			// nil names: this arm ranks passages only, and the bench resolves its own
 			// display name from SourceKey below, so the lookup map rankDocuments uses
 			// for card enrichment has nothing to contribute here.
-			for _, doc := range rankDocuments(nil, fused, exactLane{}, nil, cfg.CandidateLimit, cfg.TopPassages) {
+			for _, doc := range rankDocuments(nil, fused, lane, nil, cfg.CandidateLimit, cfg.TopPassages) {
 				runs[armIndex].Ranking[question.QID] = append(
 					runs[armIndex].Ranking[question.QID], benchDocName(doc.SourceKey),
 				)

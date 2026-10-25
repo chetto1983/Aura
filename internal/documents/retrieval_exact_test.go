@@ -36,8 +36,8 @@ func renderedCard(fileName string, text ...string) string {
 	return filecard.Card{FileName: fileName, Kind: filecard.KindDocument, Text: text}.Render()
 }
 
-func exactLaneFor(query string, hits ...exactHits) exactLane {
-	return exactLane{terms: arcadedb.QueryExactTerms(query), hits: hits}
+func exactLaneFor(query string, passages ...arcadedb.PassageCandidate) exactLane {
+	return exactLane{terms: arcadedb.QueryExactTerms(query), passages: passages}
 }
 
 // The lab VM's case (spec 2026-10-25-document-exactness-and-judge, "The problem, measured"): the
@@ -49,9 +49,7 @@ func TestAnExactCarrierTheFloorDroppedRanksFirst(t *testing.T) {
 		passageWithText("SampleShow.pptx", 0.62, "Which font family does the document embed?"),
 		passageWithText("note.md", 0.45, "monospaced fonts in general"),
 	}
-	lane := exactLaneFor(fontQuery, exactHits{passages: []arcadedb.PassageCandidate{
-		exactPassage("calibre_demo.docx", 7, 6.1, "here is some text in the Ubuntu Mono typeface"),
-	}})
+	lane := exactLaneFor(fontQuery, exactPassage("calibre_demo.docx", 7, 6.1, "here is some text in the Ubuntu Mono typeface"))
 
 	documents := rankDocuments(nil, fused, lane, nil, 8, 3)
 
@@ -105,9 +103,9 @@ func TestThePassageCutKeepsTheExactEvidence(t *testing.T) {
 		passageWithText("manual.pdf", 0.5, "introduzione al manuale"),
 	}
 	lane := exactLaneFor("dove compaiono PT-100, PT-200 e PT-300?",
-		exactHits{passages: []arcadedb.PassageCandidate{exactPassage("manual.pdf", 4, 3, "la sonda PT-100")}},
-		exactHits{passages: []arcadedb.PassageCandidate{exactPassage("manual.pdf", 6, 3, "la sonda PT-200")}},
-		exactHits{passages: []arcadedb.PassageCandidate{exactPassage("manual.pdf", 9, 3, "la sonda PT-300")}},
+		exactPassage("manual.pdf", 4, 3, "la sonda PT-100"),
+		exactPassage("manual.pdf", 6, 3, "la sonda PT-200"),
+		exactPassage("manual.pdf", 9, 3, "la sonda PT-300"),
 	)
 
 	documents := rankDocuments(nil, fused, lane, nil, 8, 3)
@@ -139,13 +137,30 @@ func TestTheReservedPlaceSitsBehindTheCarriers(t *testing.T) {
 	}
 }
 
+// No leg scored or ordered what only the lane found, so the lane's own order ranks those carriers,
+// not their ids: twelve documents naming RC-2026-040 under the floor, limit 8, must not keep the
+// eight smallest ids.
+func TestLaneOnlyCarriersKeepTheLanesOrder(t *testing.T) {
+	lane := exactLaneFor("il reclamo RC-2026-040",
+		exactPassage("z_report.pdf", 2, 7.5, "il reclamo RC-2026-040 riguarda la Linea 3"),
+		exactPassage("a_note.txt", 0, 3.1, "vedi RC-2026-040"),
+	)
+
+	if got, want := rankedIDs(rankDocuments(nil, nil, lane, nil, 8, 3)), []string{"z_report.pdf", "a_note.txt"}; !slices.Equal(got, want) {
+		t.Fatalf("order = %v, want %v", got, want)
+	}
+	if got := rankedIDs(rankDocuments(nil, nil, lane, nil, 1, 3)); !slices.Equal(got, []string{"z_report.pdf"}) {
+		t.Fatalf("limit 1 kept %v, want the lane's first", got)
+	}
+}
+
 func fontIndex() *fakePassageIndex {
 	return &fakePassageIndex{
 		fused:   []arcadedb.PassageCandidate{passageWithText("SampleShow.pptx", 0.62, "Which font family?")},
 		lexical: []arcadedb.PassageCandidate{lexicalCandidate("SampleShow.pptx", "SampleShow.pptx-raw", 4.2)},
-		exact: map[string]arcadedb.ExactTermHits{"ubuntu mono": {Passages: []arcadedb.PassageCandidate{
+		exact: arcadedb.ExactTermHits{Passages: []arcadedb.PassageCandidate{
 			exactPassage("calibre_demo.docx", 7, 6.1, "here is some text in the Ubuntu Mono typeface"),
-		}}},
+		}},
 	}
 }
 
@@ -176,7 +191,7 @@ func TestRetrieveRanksTheExactCarrierFirstInBothModes(t *testing.T) {
 			if leg := response.Documents[0].Passages[0].Evidence[0].Leg; leg != string(arcadedb.RetrievalLegExact) {
 				t.Fatalf("carrier's passage evidence = %s, want exact", leg)
 			}
-			if len(index.exactTerms) != 1 || index.exactTerms[0].Raw != "Ubuntu Mono" ||
+			if index.exactCalls != 1 || len(index.exactTerms) != 1 || index.exactTerms[0].Raw != "Ubuntu Mono" ||
 				!reflect.DeepEqual(index.exactFilter.DocumentIDs, []string{"calibre_demo.docx", "SampleShow.pptx"}) {
 				t.Fatalf("lane asked %+v in %+v, want the quoted name inside the resolved scope", index.exactTerms, index.exactFilter)
 			}
@@ -204,17 +219,17 @@ func TestRetrieveAnswersWithAnExactCarrierAlone(t *testing.T) {
 	}
 }
 
-// A document the lane found for one exact term but not for another is not admitted: no leg passed
-// it, and carrying some terms is no bypass.
+// The lane returns what carries any term; a document it alone found is admitted only when what the
+// ranking holds for it carries every one. calibre_demo.docx carries the phrase in a passage and its
+// name in its title, other.docx the phrase alone.
 func TestRetrieveAdmitsOnlyTheDocumentsCarryingEveryExactTerm(t *testing.T) {
 	index := fontIndex()
-	index.exact = map[string]arcadedb.ExactTermHits{
-		"ubuntu mono": {Passages: []arcadedb.PassageCandidate{
+	index.exact = arcadedb.ExactTermHits{
+		Passages: []arcadedb.PassageCandidate{
 			exactPassage("calibre_demo.docx", 7, 6.1, "the Ubuntu Mono typeface"),
 			exactPassage("other.docx", 1, 5.0, "Ubuntu Mono again"),
-		}},
-		"calibre_demo docx": {Cards: []arcadedb.DocumentCard{exactCard("calibre_demo.docx", "calibre demo", 3.3)}},
-		"calibre_demo":      {Cards: []arcadedb.DocumentCard{exactCard("calibre_demo.docx", "calibre demo", 2.9)}},
+		},
+		Cards: []arcadedb.DocumentCard{exactCard("calibre_demo.docx", "calibre demo", 3.3)},
 	}
 	response, err := (&HostRetriever{
 		ControlPlane: &fakeRetrievalControl{}, PassageIndex: index,
@@ -226,13 +241,33 @@ func TestRetrieveAdmitsOnlyTheDocumentsCarryingEveryExactTerm(t *testing.T) {
 	if got, want := rankedIDs(response.Documents), []string{"calibre_demo.docx", "SampleShow.pptx"}; !slices.Equal(got, want) {
 		t.Fatalf("order = %v, want %v: other.docx carries one term of three", got, want)
 	}
-	if len(index.exactTerms) != 3 {
-		t.Fatalf("terms asked = %+v, want the phrase, the file name and its identifier", index.exactTerms)
+	if index.exactCalls != 1 || len(index.exactTerms) != 3 {
+		t.Fatalf("lane asked %d times for %+v, want once for the phrase, the file name and its identifier",
+			index.exactCalls, index.exactTerms)
+	}
+}
+
+// Review C1: StandardAnalyzer keeps calibre_demo.docx one token, so the identifier calibre_demo cut
+// from it is in no index and the lane finds the file by its name alone. Its title carries both
+// terms, so the card the floor dropped answers.
+func TestRetrieveAdmitsAFileNamedWithAnUnderscore(t *testing.T) {
+	index := fontIndex()
+	index.fused = nil
+	index.exact = arcadedb.ExactTermHits{Cards: []arcadedb.DocumentCard{exactCard("calibre_demo.docx", "calibre demo", 2.9)}}
+	response, err := (&HostRetriever{
+		ControlPlane: &fakeRetrievalControl{}, PassageIndex: index,
+		Embedder: &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "apri calibre_demo.docx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Abstained || !slices.Equal(rankedIDs(response.Documents), []string{"calibre_demo.docx"}) {
+		t.Fatalf("response = %v abstained %v, want the file by its name", rankedIDs(response.Documents), response.Abstained)
 	}
 }
 
 // A lane that fails costs the bypass, not the answer: the legs' ranking comes back as it would
-// without exact terms, and the cause is logged.
+// without exact terms, the response names the lost lane, and the cause is logged.
 func TestAnExactLaneFailureKeepsTheAnswer(t *testing.T) {
 	var buf bytes.Buffer
 	restore := swapDefaultLogger(t, &buf)
@@ -247,11 +282,27 @@ func TestAnExactLaneFailureKeepsTheAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := rankedIDs(response.Documents); !slices.Equal(got, []string{"SampleShow.pptx"}) ||
-		response.Status != RetrievalComplete || response.DegradationReason != "" {
-		t.Fatalf("response = %v %s %q, want the fused answer, complete", got, response.Status, response.DegradationReason)
+		response.Status != RetrievalComplete || response.DegradationReason != DegradationExactTerms {
+		t.Fatalf("response = %v %s %q, want the fused answer, complete, and the lost lane named", got, response.Status, response.DegradationReason)
 	}
-	if !strings.Contains(buf.String(), exactTermsUnavailable) || !strings.Contains(buf.String(), "phrase query refused") {
+	if !strings.Contains(buf.String(), DegradationExactTerms) || !strings.Contains(buf.String(), "phrase query refused") {
 		t.Fatalf("log = %q, want the lane's failure and its cause", buf.String())
+	}
+}
+
+// Review I2: with the legs empty and the lane failed, nothing says the library holds no carrier, so
+// the response does not abstain, and the lost lane joins the lexical mode's own reason.
+func TestAnExactLaneFailureNeverAbstains(t *testing.T) {
+	index := fontIndex()
+	index.lexical, index.exactErr = nil, errors.New("phrase query refused")
+	response, err := (&HostRetriever{ControlPlane: &fakeRetrievalControl{}, PassageIndex: index}).
+		Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: fontQuery})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Abstained || len(response.Documents) != 0 || response.Status != RetrievalLexicalOnly ||
+		response.DegradationReason != DegradationEmbedding+"+"+DegradationExactTerms {
+		t.Fatalf("response = %+v, want no documents, no abstention and both reasons", response)
 	}
 }
 
@@ -264,7 +315,7 @@ func TestAQuestionWithoutExactTermsAsksNoExactLane(t *testing.T) {
 	}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: "quale font mostra Ubuntu Mono?"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(index.exactTerms) != 0 {
-		t.Fatalf("lane asked %+v for a question with no exact term", index.exactTerms)
+	if index.exactCalls != 0 {
+		t.Fatalf("lane asked %d times for a question with no exact term", index.exactCalls)
 	}
 }

@@ -38,7 +38,8 @@ type RetrievalStatus string
 // The status names how the legs answered; the degradation reason names the dependency that
 // kept them off the full path. They travel together because an answer read lexically for want
 // of an embedding and one narrowed to cards by an offline ArcadeDB need different operator
-// responses.
+// responses. DegradationExactTerms alone may come with a complete status: the legs ran whole,
+// and only the exact lane was lost.
 const (
 	RetrievalComplete RetrievalStatus = "complete"
 	RetrievalCardOnly RetrievalStatus = "degraded_card_only"
@@ -57,6 +58,10 @@ const (
 	// (spec §3). DegradationSpaceCheck: the gate that decides it could not be read.
 	DegradationSpaceMismatch = "embedding_space_mismatch"
 	DegradationSpaceCheck    = "embedding_space_check_failed"
+	// DegradationExactTerms: the exact lane could not run. The legs' answer stands without the
+	// carriers their floors kept out, so an empty answer does not abstain. It joins the legs'
+	// own reason with "+" (arcadedb.JoinReasons), whatever the status.
+	DegradationExactTerms = "exact_terms_unavailable"
 
 	// AbstainedNoQualifiedPassage is the healthy cascade reporting that the corpus has
 	// nothing to say. It is NOT a degradation: every leg ran, and the dense floor let
@@ -247,8 +252,8 @@ type PassageIndex interface {
 	FusedCandidates(context.Context, arcadedb.FusedCandidateQuery) ([]arcadedb.PassageCandidate, error)
 	// LexicalCandidates ranks passages by the full-text index alone, for lexical mode.
 	LexicalCandidates(context.Context, arcadedb.CandidateFilter, string) ([]arcadedb.PassageCandidate, error)
-	// ExactTermDocuments finds the passages and cards that carry one exact term, with no floor.
-	ExactTermDocuments(context.Context, arcadedb.CandidateFilter, arcadedb.ExactTerm) (arcadedb.ExactTermHits, error)
+	// ExactTermDocuments finds the passages and cards that carry any of the exact terms, with no floor.
+	ExactTermDocuments(context.Context, arcadedb.CandidateFilter, []arcadedb.ExactTerm) (arcadedb.ExactTermHits, error)
 	PassagesAt(context.Context, string, []arcadedb.PassageRef) ([]arcadedb.PassageCandidate, error)
 	// IngestState answers "has the reconciler caught up", from the row the sidecar
 	// upserts beside the passages. nil means it has never written one.
@@ -355,8 +360,14 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		return response, nil
 	}
 	exact := r.exactTermLane(ctx, filter, terms)
+	if exact.failed {
+		response.DegradationReason = arcadedb.JoinReasons(response.DegradationReason, DegradationExactTerms)
+	}
+	names := r.passageLegNames(ctx, request.IdentityID, slices.Concat(cards, exact.cards), slices.Concat(fused, exact.passages))
+	response.Documents = rankDocuments(cards, fused, exact, names, request.Limit, cfg.TopPassages)
 	// Abstain when nothing qualified: neither leg, nor a document carrying the question's exact
-	// terms. Not when the passage leg alone came back empty.
+	// terms. Not when the passage leg alone came back empty, and not when the exact lane failed:
+	// without it nothing says the library holds no carrier.
 	//
 	// The rule used to be "no passage, no answer", written when a card was ranked by BM25
 	// and a passage by a cosine, so a card could not be weighed against anything and
@@ -375,12 +386,10 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 	//
 	// A document with no passage in the answer cannot be quoted, so rankDocuments marks it
 	// requires_open. That is not a degradation: the legs ran and one of them found it.
-	if len(fused) == 0 && len(cards) == 0 && exact.empty() {
+	if len(response.Documents) == 0 && !exact.failed {
 		response.Abstained, response.AbstentionReason = true, AbstainedNoQualifiedPassage
 		return response, nil
 	}
-	names := r.passageLegNames(ctx, request.IdentityID, slices.Concat(cards, exact.cards()), slices.Concat(fused, exact.passages()))
-	response.Documents = rankDocuments(cards, fused, exact, names, request.Limit, cfg.TopPassages)
 	r.attachNeighbours(ctx, request.IdentityID, response.Documents, request.Neighbours)
 	return response, nil
 }

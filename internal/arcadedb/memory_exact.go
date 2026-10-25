@@ -141,8 +141,8 @@ func (c *Client) exactFactsFirst(ctx context.Context, query string, hits []FactH
 	return ordered[:min(len(ordered), limit)], nil
 }
 
-// joinReasons names every reason a read is less than whole, in order, as one "+"-joined value.
-func joinReasons(reasons ...string) string {
+// JoinReasons names every reason a read is less than whole, in order, as one "+"-joined value.
+func JoinReasons(reasons ...string) string {
 	kept := slices.DeleteFunc(slices.Clone(reasons), func(reason string) bool { return reason == "" })
 	return strings.Join(kept, "+")
 }

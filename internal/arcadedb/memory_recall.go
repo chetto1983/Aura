@@ -168,11 +168,11 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	exact, exactErr := c.exactMemoryRIDs(ctx, []string{recallFactLexicalStatement, recallTurnLexicalStatement},
 		params, request.ExcludeConversationIDs, QueryExactTerms(query))
 	if exactErr != nil {
-		degraded = joinReasons(degraded, reasonExactTermsFailed)
+		degraded = JoinReasons(degraded, reasonExactTermsFailed)
 	}
 	// Every reason the read is less than whole is named: a lexical read that also lost one
 	// ranking says both, so half the memory never passes for a whole lexical answer.
-	reason = joinReasons(reason, degraded)
+	reason = JoinReasons(reason, degraded)
 	ranked := withExactOnly(mergeRecallRankings(facts, turns), exact)
 	result, err := c.hydrateRecallRanking(ctx, request, ranked, limit, path, reason)
 	if err != nil {

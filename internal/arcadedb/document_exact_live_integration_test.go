@@ -59,8 +59,8 @@ func exactLiveIndex(t *testing.T) (*documents.HostRetriever, *arcadedb.DocumentI
 func TestDocumentExactLivePhraseFindsTheTermInOrderOnly(t *testing.T) {
 	_, index := exactLiveIndex(t)
 	filter := arcadedb.CandidateFilter{IdentityID: liveIdentity, Limit: 10}
-	term := arcadedb.QueryExactTerms(`quale font mostra "Ubuntu Mono"?`)[0]
-	hits, err := index.ExactTermDocuments(context.Background(), filter, term)
+	terms := arcadedb.QueryExactTerms(`quale font mostra "Ubuntu Mono"?`)
+	hits, err := index.ExactTermDocuments(context.Background(), filter, terms)
 	if err != nil {
 		t.Fatalf("ExactTermDocuments: %v", err)
 	}
@@ -68,11 +68,11 @@ func TestDocumentExactLivePhraseFindsTheTermInOrderOnly(t *testing.T) {
 		hits.Passages[0].Leg != arcadedb.RetrievalLegExact {
 		t.Fatalf("passages = %+v, want doc_calibre alone: the phrase, not its words in another order", hits.Passages)
 	}
-	if !term.CarriedBy(hits.Passages[0].Text) {
+	if !arcadedb.CarriesEvery(terms, hits.Passages[0].Text) {
 		t.Fatal("the returned passage does not carry the term it was found for")
 	}
 
-	file := arcadedb.QueryExactTerms("apri calibre_demo.docx")[0]
+	file := arcadedb.QueryExactTerms("apri calibre_demo.docx")
 	hits, err = index.ExactTermDocuments(context.Background(), filter, file)
 	if err != nil {
 		t.Fatalf("ExactTermDocuments(file): %v", err)
@@ -83,7 +83,7 @@ func TestDocumentExactLivePhraseFindsTheTermInOrderOnly(t *testing.T) {
 
 	// The trailer is indexed in every card, so the phrase finds them all; only the document that
 	// names Aura in its own text carries it.
-	aura := arcadedb.QueryExactTerms(`"Aura"`)[0]
+	aura := arcadedb.QueryExactTerms(`"Aura"`)
 	hits, err = index.ExactTermDocuments(context.Background(), filter, aura)
 	if err != nil {
 		t.Fatalf("ExactTermDocuments(Aura): %v", err)
@@ -121,6 +121,28 @@ func TestDocumentExactLiveRetrieveRanksTheQuotedFontFirst(t *testing.T) {
 	}
 	if slices.Contains(liveDocumentIDs(unquoted), "doc_calibre") {
 		t.Fatalf("unquoted documents = %v: the floor kept the font, so this library does not reproduce the burial", liveDocumentIDs(unquoted))
+	}
+}
+
+// Review C1 on the engine: StandardAnalyzer keeps calibre_demo.docx one token, so the identifier
+// calibre_demo cut from it is in no index. Every card points away from the query's vector, so no
+// leg passes it; the exact lane finds the file by its name, unquoted, and its title carries both.
+func TestDocumentExactLiveRetrieveFindsAnUnderscoreFileByName(t *testing.T) {
+	retriever, _ := exactLiveIndex(t)
+	response, err := retriever.Retrieve(context.Background(), documents.RetrievalRequest{
+		IdentityID: liveIdentity, Query: "apri calibre_demo.docx",
+	})
+	if err != nil {
+		t.Fatalf("Retrieve: %v", err)
+	}
+	if response.Abstained || len(response.Documents) == 0 || response.Documents[0].DocumentID != "doc_calibre" {
+		t.Fatalf("documents = %v abstained %v, want doc_calibre first", liveDocumentIDs(response), response.Abstained)
+	}
+	exact := slices.ContainsFunc(response.Documents[0].Evidence, func(evidence documents.RetrievalEvidence) bool {
+		return evidence.Leg == string(arcadedb.RetrievalLegExact)
+	})
+	if !exact {
+		t.Fatalf("doc_calibre evidence = %+v, want the exact lane's", response.Documents[0].Evidence)
 	}
 }
 
