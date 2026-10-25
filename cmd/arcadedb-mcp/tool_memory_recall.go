@@ -55,7 +55,7 @@ const memoryRecallActiveOwnershipStatement = "SELECT identity_id, conversation_i
 // MemoryRecallInput is the additive public contract for the single memory read.
 type MemoryRecallInput struct {
 	Mode           string `json:"mode,omitempty" jsonschema:"semantic (default), recent, period, open, scroll, or reasoning"`
-	Query          string `json:"query,omitempty" jsonschema:"what to recall in natural language; used by semantic mode"`
+	Query          string `json:"query,omitempty" jsonschema:"what to recall in natural language; used by semantic mode. Quote a name or phrase that must appear verbatim: a fact or turn carrying every quoted phrase, identifier and filename ranks first"`
 	Entity         string `json:"entity,omitempty" jsonschema:"exact entity name when known; selects graph traversal in semantic mode"`
 	Predicate      string `json:"predicate,omitempty" jsonschema:"optional relation filter used with entity"`
 	ConversationID string `json:"conversation_id,omitempty" jsonschema:"stable conversation id used by open and scroll"`

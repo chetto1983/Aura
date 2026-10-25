@@ -1414,7 +1414,7 @@
           "type": "string"
         },
         "query": {
-          "description": "what to recall in natural language; used by semantic mode",
+          "description": "what to recall in natural language; used by semantic mode. Quote a name or phrase that must appear verbatim: a fact or turn carrying every quoted phrase, identifier and filename ranks first",
           "type": "string"
         },
         "to": {
@@ -2023,7 +2023,7 @@
           "type": "integer"
         },
         "query": {
-          "description": "what to look for, in natural language",
+          "description": "what to look for, in natural language. Quote a name or phrase that must appear verbatim: a fact carrying every quoted phrase, identifier and filename comes first",
           "type": "string"
         }
       },

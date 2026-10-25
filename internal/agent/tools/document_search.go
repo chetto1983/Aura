@@ -81,7 +81,10 @@ func (t *DocumentSearch) Spec() Spec {
 			"-- any count, sum, average, maximum, grouping, sort, cross-column filter or 'how many' over a " +
 			"spreadsheet or table, and any conversion -- call document_open with that document_id; it writes " +
 			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
-			"query may be a question, a topic, an entity, an exact identifier or a filename. Omit it to list up to " +
+			"query may be a question, a topic, an entity, an exact identifier or a filename. Quote a name or a " +
+			"phrase that must appear verbatim, as in \"Ubuntu Mono\": a document carrying every quoted phrase, " +
+			"identifier and filename of the query ranks first whatever its score, with an exact evidence leg. " +
+			"Omit query to list up to " +
 			"limit of the documents type, counterparty, tags or a date bound admit, or of the whole library with no " +
 			"filter, most recently added first, with matching_documents saying how many there are in all: that is " +
 			"how to answer 'show me the documents tagged X' or 'what is in my library', which a ranked search can " +
@@ -109,7 +112,7 @@ func (t *DocumentSearch) Spec() Spec {
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename. Omit it to list the documents the filters admit, or the whole library."},
+    "query": {"type": "string", "minLength": 1, "description": "Natural-language question, fact, topic, or filename; quote a name that must appear verbatim. Omit it to list the documents the filters admit, or the whole library."},
     "limit": {"type": "integer", "minimum": 1, "maximum": 50, "description": "Maximum documents to return. Default 8."},
     "document_ids": {"type": "array", "maxItems": 100, "items": {"type": "string", "minLength": 1}, "description": "Optional owner-scoped document ids: narrow a search, or with no query list those documents."},
     "offset": {"type": "integer", "minimum": 0, "description": "Listing only (no query): skip this many documents; next_offset says where the next page starts."},

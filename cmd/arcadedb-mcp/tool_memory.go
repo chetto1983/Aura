@@ -310,7 +310,7 @@ func toClassified(classified []arcadedb.EntityClass) []MemoryEntityClass {
 // MemorySearchInput asks a question of the fact graph. The calling identity
 // comes from the authenticated OAuth subject, never a model-visible field.
 type MemorySearchInput struct {
-	Query string `json:"query" jsonschema:"what to look for, in natural language"`
+	Query string `json:"query" jsonschema:"what to look for, in natural language. Quote a name or phrase that must appear verbatim: a fact carrying every quoted phrase, identifier and filename comes first"`
 	Limit int    `json:"limit,omitempty" jsonschema:"how many facts to return; defaults to 5"`
 	AsOf  string `json:"as_of,omitempty" jsonschema:"RFC3339 instant; return the facts that were valid then rather than the ones valid now"`
 }
