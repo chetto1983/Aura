@@ -25,6 +25,32 @@ The cause, read in the code:
 The operator's decision, 2026-10-23: "se il modello scelto ha la vision si sceglie quello",
 ChatGPT included.
 
+**Measured 2026-10-25 on the lab VM, at the operator's request.** The question was whether the
+existing `/chat/completions` arm could take the plan token. A throwaway probe, never committed, ran
+once inside the `aura` container:
+- It took the operator's token through `chatgptplan.Service.AccessToken`, under the store's lock,
+  and printed nothing of it.
+- It sent page 1 of `verbale_scansionato_italiano.pdf`, rendered at 1024 px (PNG, 35 KB), with
+  `gpt-6.1-sol`:
+
+| Request | Answer |
+|---|---|
+| `GET /v1/models` | 200; `gpt-6.1-sol`, `visibility: list`, `input_modalities: [text, image]` |
+| `POST /v1/chat/completions`, not streamed: today's vision request | **401** `rejected_by_access_enforcement`, `no_matching_rule` |
+| `POST /v1/chat/completions`, streamed | **401**, the same |
+| `POST /v1/responses`, streamed, `store: false`, `input_text` + `input_image` | 200, `response.completed`; the text: `VERBALE SCANSIONATO AURA  CODICE PRATICA: ITALIA-7391  IMPORTO APPROVATO: 48270 EURO  RESPONSABILE: GIULIA BIANCHI` |
+
+The plan token is refused on Chat Completions and accepted on Responses, as OpenAI documents.
+[Models and inference](https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference)
+names only `/v1/models` and `/v1/responses`;
+[preview limitations](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations)
+require `stream: true` and `store: false`.
+
+What it does not show:
+- **Other models and accounts.** One model, one account, one page.
+- **Latency and cost.** Neither was recorded.
+- **Ingest.** The text came from the probe, not from the media indexer.
+
 ## 2. Goals, non-goals, anti-goals
 
 Goals:
@@ -305,8 +331,8 @@ the image then goes to the absent sidecar and retries (§4.7). The run records w
 
 ## 9. What this design does not show, and what stays open
 
-- **That `gpt-6.1-sol` reads images on the operator's plan.** The catalogue answers that at run
-  time; the VM run measures it.
+- **Other models reading images on the plan.** For `gpt-6.1-sol` the probe measured it (§1). Any
+  other model's catalogue entry answers it at run time.
 - **Latency and plan cost per page.** Not measured.
 - **A page that always fails.** The scan stops there, and every cycle reads the pages before it
   again on the owner's plan. A per-page memo would fix that; none exists, for any route.
