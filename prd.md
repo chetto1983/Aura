@@ -1552,6 +1552,16 @@ the documents, short queries in general (one word scored high against a card), o
 which the cosine rerank can bury (0.199 for a font named verbatim in the DOCX). Record:
 `docs/superpowers/verification/2026-10-23-document-floors-pplx.md`.
 
+On the lab VM on v1.2.0 (2026-10-25), the agent's own check confirmed that "fattura" abstains,
+alone and with the tag `Cliente`. It also confirmed the fixes for the tools it had got wrong
+while writing the questions:
+- a listing with nothing to narrow it returns all 8 documents;
+- Office files open with their real media type;
+- `memory-aura` arrives whole.
+
+This proves abstention on those two queries only. Record:
+`docs/superpowers/verification/2026-10-25-document-tools-fixes-lab-vm.md`.
+
 **Upgrade note.** The release that ships the stamps finds every existing vector unstamped,
 so memory and documents answer lexically until they are re-embedded on the running route:
 the memory pass runs at boot and every five minutes, and every document is re-extracted and

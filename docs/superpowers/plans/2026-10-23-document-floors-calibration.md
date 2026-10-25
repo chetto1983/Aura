@@ -1,10 +1,14 @@
 # Document relevance floors for the cloud space Implementation Plan
 
-**Status (2026-10-25):** Tasks 1 and 2 done (overrides `95514022d`; measurement
-`docs/superpowers/verification/2026-10-23-document-floors-pplx.md`). Task 3's row (`1b70f7ffa`) and
-the review's fixes (`52da38196`) are on master, CI green on `ea9c5969a`; the lab VM check waits for
-the updater. Operator's decisions on 2026-10-23: "Frizioni + soglie ora", "CLI + override", and
-"0.39" over 0.35.
+**Status (2026-10-25):** COMPLETE.
+- Overrides `95514022d`.
+- Measurement `docs/superpowers/verification/2026-10-23-document-floors-pplx.md`.
+- Row `1b70f7ffa`, review fixes `52da38196`, CI green on `ea9c5969a`.
+- On the lab VM (v1.2.0) "fattura" abstains:
+  `docs/superpowers/verification/2026-10-25-document-tools-fixes-lab-vm.md`.
+
+Operator's decisions on 2026-10-23: "Frizioni + soglie ora", "CLI + override", and "0.39" over
+0.35.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
@@ -123,8 +127,8 @@ agent's "fattura" with `Cliente` must abstain.
 
 - [x] **The amendment:** `4a5a632b1` (§9, PRD, verification).
 - [x] **The row:** `1b70f7ffa`, one table per family; the review's fixes in `52da38196`.
-- [ ] **On the lab VM:** the agent's "fattura" with `Cliente` abstains. The VM was off from
-  2026-10-23 evening to 2026-10-25 and still runs `95514022d`; this waits for the updater.
+- [x] **On the lab VM:** the agent's "fattura" with `Cliente` abstains, on `e1e3d0dff` (v1.2.0),
+  2026-10-25 (`docs/superpowers/verification/2026-10-25-document-tools-fixes-lab-vm.md`).
 
 **Final review** (fresh reviewer, read-only, 2026-10-23): "With fixes", no Critical.
 - Fixed in `52da38196`:
@@ -134,7 +138,6 @@ agent's "fattura" with `Cliente` must abstain.
   - `.env.example` presenting the overrides as daemon settings;
   - a test assertion that could not fail;
   - the cost of 0.39 attributed to the wrong band.
-- Open: the VM check above.
 - Deferred minor: the cockpit could name the uncalibrated family instead of saying "memory,
   documents or both", with two `*_floors_calibrated` fields.
 
