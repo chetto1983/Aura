@@ -234,17 +234,21 @@ func (b *DockerBackend) writeBoxFiles(ctx context.Context, h BoxHandle) error {
 }
 
 func (b *DockerBackend) materializeInputs(ctx context.Context, h BoxHandle) error {
-	if b.sources == nil || h.Kind == Browser {
+	if h.Kind == Browser {
 		return nil
 	}
-	srcs, err := b.sources(ctx, h.IdentityID)
-	if err != nil {
-		return fmt.Errorf("materialize sources for %q: %w", h.IdentityID, err)
+	if b.sources != nil {
+		srcs, err := b.sources(ctx, h.IdentityID)
+		if err != nil {
+			return fmt.Errorf("materialize sources for %q: %w", h.IdentityID, err)
+		}
+		if len(srcs) > 0 {
+			if err := MaterializeIn(ctx, b.cli, h, srcs, b.spoolDir); err != nil {
+				return err
+			}
+		}
 	}
-	if len(srcs) == 0 {
-		return nil
-	}
-	return MaterializeIn(ctx, b.cli, h, srcs, b.spoolDir)
+	return b.syncPlugins(ctx, h)
 }
 
 // ensureVolume creates a named volume, idempotently: Docker's volume create returns the

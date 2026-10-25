@@ -91,6 +91,7 @@ type DockerBackend struct {
 	image            string
 	limits           Resources
 	sources          SourceResolver
+	plugins          PluginTreeResolver
 	boxFiles         BoxFileSource
 	browserFiles     BoxFileSource
 	browserLimits    Resources
@@ -120,6 +121,11 @@ type Option func(*DockerBackend)
 // materialize the resolver's sources into the box at create and resume (D-10).
 func WithMaterializeSources(r SourceResolver) Option {
 	return func(b *DockerBackend) { b.sources = r }
+}
+
+// WithPluginTrees wires the installed plugin trees Resolve mirrors into every shell box.
+func WithPluginTrees(r PluginTreeResolver) Option {
+	return func(b *DockerBackend) { b.plugins = r }
 }
 
 // WithBoxFiles wires the per-identity files Resolve writes at create and resume.

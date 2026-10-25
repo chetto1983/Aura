@@ -146,17 +146,26 @@ func clearDest(ctx context.Context, cli *client.Client, h BoxHandle, dest string
 	if destTooBroadToClear(clean) {
 		return fmt.Errorf("refusing to clear box path %q (too broad)", dest)
 	}
-	ec, err := cli.ExecCreate(ctx, h.ContainerID, client.ExecCreateOptions{
-		Cmd: []string{"/bin/sh", "-c", "rm -rf -- " + clean},
-	})
+	return runInBox(ctx, cli, h, removeArgv(clean))
+}
+
+// removeArgv is an `rm -rf` of paths, with no shell between Aura and rm.
+func removeArgv(paths ...string) []string {
+	return append([]string{"rm", "-rf", "--"}, paths...)
+}
+
+// runInBox runs argv in the box and waits for it to exit 0. It attaches no stream, so it suits
+// the commands whose exit code is their whole answer.
+func runInBox(ctx context.Context, cli *client.Client, h BoxHandle, argv []string) error {
+	ec, err := cli.ExecCreate(ctx, h.ContainerID, client.ExecCreateOptions{Cmd: argv})
 	if err != nil {
 		return fmt.Errorf("exec create: %w", err)
 	}
 	if _, err := cli.ExecStart(ctx, ec.ID, client.ExecStartOptions{}); err != nil {
 		return fmt.Errorf("exec start: %w", err)
 	}
-	// ExecStart is fire-and-forget: poll ExecInspect until the rm exits so the extraction
-	// cannot race the removal and lose freshly-copied files.
+	// ExecStart is fire-and-forget: poll ExecInspect until the command exits, so a copy that
+	// follows a removal cannot race it and lose freshly-copied files.
 	for {
 		ins, ierr := cli.ExecInspect(ctx, ec.ID, client.ExecInspectOptions{})
 		if ierr != nil {
@@ -164,7 +173,7 @@ func clearDest(ctx context.Context, cli *client.Client, h BoxHandle, dest string
 		}
 		if !ins.Running {
 			if ins.ExitCode != 0 {
-				return fmt.Errorf("rm -rf %q exited %d", clean, ins.ExitCode)
+				return fmt.Errorf("%q exited %d", argv, ins.ExitCode)
 			}
 			return nil
 		}
