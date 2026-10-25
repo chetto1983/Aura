@@ -152,3 +152,29 @@ func TestWriteDetailRendersADashForAMissingType(t *testing.T) {
 		t.Errorf("missing type did not render as a dash:\n%s", out.String())
 	}
 }
+
+// What Aura will not install has to be visible before anyone approves the pack: a skipped
+// connector, a disabled MCP configuration and a reported manifest field each get a line.
+func TestWriteDetailShowsFormatNotesAndSkips(t *testing.T) {
+	t.Parallel()
+	p := renderFixture()
+	p.Format = FormatAgentPlugins
+	p.Notes = []string{`unknown plugin.json field "commands" ignored`}
+	p.SkippedSkills = []Skipped{{Name: "bad", Reason: "SKILL.md resolves outside the plugin root"}}
+	p.SkippedServers = []Skipped{{Name: "legacy", Reason: `unsupported transport "sse"`}}
+	p.MCPDisabled = "mcp.json targets 1.1.0, plugin.json targets 1.0.0"
+	var out bytes.Buffer
+	WriteDetail(&out, p)
+	got := out.String()
+	for _, want := range []string{
+		"format: " + FormatAgentPlugins,
+		`note: unknown plugin.json field "commands" ignored`,
+		"skipped skill bad — SKILL.md resolves outside the plugin root",
+		`skipped connector legacy — unsupported transport "sse"`,
+		"mcp disabled — mcp.json targets 1.1.0",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("detail is missing %q:\n%s", want, got)
+		}
+	}
+}

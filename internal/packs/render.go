@@ -28,6 +28,12 @@ func WriteDetail(out io.Writer, p Pack) {
 		_, _ = fmt.Fprintf(out, "author: %s\n", p.Author)
 	}
 	_, _ = fmt.Fprintf(out, "source: %s\n", p.Ref().String())
+	if p.Format != "" {
+		_, _ = fmt.Fprintf(out, "format: %s\n", p.Format)
+	}
+	for _, note := range p.Notes {
+		_, _ = fmt.Fprintf(out, "note: %s\n", note)
+	}
 	if p.Description != "" {
 		_, _ = fmt.Fprintf(out, "\n%s\n", p.Description)
 	}
@@ -38,8 +44,12 @@ func WriteDetail(out io.Writer, p Pack) {
 	for _, ref := range p.SkillRefs() {
 		_, _ = fmt.Fprintf(out, "  %s\n", ref)
 	}
+	writeSkipped(out, "skill", p.SkippedSkills)
 
 	_, _ = fmt.Fprintf(out, "\nconnectors (%d)\n", len(p.Servers))
+	if p.MCPDisabled != "" {
+		_, _ = fmt.Fprintf(out, "  mcp disabled — %s\n", p.MCPDisabled)
+	}
 	for _, s := range p.Servers {
 		// The oauth marker is the one fact needed before approving a pack: a
 		// browser round-trip cannot be completed unattended.
@@ -49,6 +59,7 @@ func WriteDetail(out io.Writer, p Pack) {
 		}
 		_, _ = fmt.Fprintf(out, "  %-14s %-8s %s%s\n", s.Name, orDash(s.Type), ConnectorTarget(s), note)
 	}
+	writeSkipped(out, "connector", p.SkippedServers)
 
 	_, _ = fmt.Fprintf(out, "\ncommands (%d)\n", len(p.Commands))
 	for _, c := range p.Commands {
@@ -82,4 +93,10 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func writeSkipped(out io.Writer, kind string, skipped []Skipped) {
+	for _, s := range skipped {
+		_, _ = fmt.Fprintf(out, "  skipped %s %s — %s\n", kind, s.Name, s.Reason)
+	}
 }

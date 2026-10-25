@@ -90,6 +90,8 @@ type Pack struct {
 	Version     string
 	Description string
 	Author      string
+	// Format names the manifest the pack was read from: FormatClaude or FormatAgentPlugins.
+	Format string
 
 	// Skills carries NAMES, not bodies. The installer materializes a skill from
 	// `source@name` and Aura's own loader parses its frontmatter; re-parsing it
@@ -97,6 +99,26 @@ type Pack struct {
 	Skills   []string
 	Servers  []Server
 	Commands []Command
+
+	// What the reader reported or left out, each with its reason, so the operator sees it
+	// before approving anything: a manifest field it ignored, a skill or connector it
+	// skipped, and why the whole MCP configuration is off.
+	Notes          []string
+	SkippedSkills  []Skipped
+	SkippedServers []Skipped
+	MCPDisabled    string
+}
+
+// The two plugin formats the reader understands.
+const (
+	FormatClaude       = "claude"
+	FormatAgentPlugins = "agent-plugins/1.0.0"
+)
+
+// Skipped is a component the reader left out, with the reason a person can act on.
+type Skipped struct {
+	Name   string
+	Reason string
 }
 
 // Ref reconstructs the reference that resolves to exactly this pack.
@@ -123,6 +145,10 @@ type Server struct {
 	Command string
 	Args    []string
 	Env     map[string]string
+	// Cwd and Headers are Agent Plugins fields, carried unexpanded: placeholder expansion
+	// belongs to staging, which knows where the plugin lands.
+	Cwd     string
+	Headers map[string]string
 
 	// OAuth reports whether the entry declared an `oauth` block. A connector
 	// that needs a browser round-trip cannot be brought up unattended, and the

@@ -66,7 +66,7 @@ func ReadTree(root string, ref Ref) ([]Pack, error) {
 		return nil, err
 	}
 	if len(dirs) == 0 {
-		return nil, fmt.Errorf("%s: no plugin manifest found (looked for .claude-plugin/plugin.json at the root and one level down)", ref.Source)
+		return nil, fmt.Errorf("%s: no plugin manifest found (looked for an Agent Plugins plugin.json and for .claude-plugin/plugin.json, at the root and one level down)", ref.Source)
 	}
 	packs := make([]Pack, 0, len(dirs))
 	for _, d := range dirs {
@@ -105,10 +105,15 @@ func packDirs(root string) ([]string, error) {
 }
 
 func hasManifest(root, dir string) bool {
+	if claimsAgentPlugins(filepath.Join(root, dir)) {
+		return true
+	}
 	info, err := os.Stat(filepath.Join(root, dir, ".claude-plugin", "plugin.json"))
 	return err == nil && !info.IsDir()
 }
 
+// readPack reads one plugin directory. A root plugin.json that declares an Agent Plugins
+// $schema wins over the Claude manifest beside it: §5.1 says no other file replaces it.
 func readPack(root, source, dir string) (Pack, error) {
 	if dir != "" {
 		if err := validSegment(dir); err != nil {
@@ -116,6 +121,9 @@ func readPack(root, source, dir string) (Pack, error) {
 		}
 	}
 	base := filepath.Join(root, dir)
+	if claimsAgentPlugins(base) {
+		return readAgentPack(base, source, dir)
+	}
 	man, err := readManifest(base)
 	if err != nil {
 		return Pack{}, fmt.Errorf("%s/%s: %w", source, dir, err)
@@ -127,6 +135,7 @@ func readPack(root, source, dir string) (Pack, error) {
 		Version:     man.Version,
 		Description: man.Description,
 		Author:      man.author(),
+		Format:      FormatClaude,
 	}
 	if pack.Name == "" {
 		// The manifest is what makes a directory a pack; one without a name
@@ -137,9 +146,11 @@ func readPack(root, source, dir string) (Pack, error) {
 	if pack.Skills, err = readSkillNames(base); err != nil {
 		return Pack{}, err
 	}
-	if pack.Servers, err = readServers(base); err != nil {
+	servers, err := readServers(base)
+	if err != nil {
 		return Pack{}, err
 	}
+	pack.Servers, pack.SkippedServers = splitConnectorNames(servers)
 	if pack.Commands, err = readCommands(base); err != nil {
 		return Pack{}, err
 	}
@@ -305,4 +316,19 @@ func readCommands(base string) ([]Command, error) {
 	}
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].Name < cmds[j].Name })
 	return cmds, nil
+}
+
+// splitConnectorNames sets aside every connector whose name Aura cannot carry as a registry
+// key and tool namespace, with the reason, rather than failing the whole pack over one entry.
+func splitConnectorNames(servers []Server) ([]Server, []Skipped) {
+	kept := servers[:0:0]
+	var skipped []Skipped
+	for _, s := range servers {
+		if err := ValidConnectorName(s.Name); err != nil {
+			skipped = append(skipped, Skipped{Name: s.Name, Reason: err.Error()})
+			continue
+		}
+		kept = append(kept, s)
+	}
+	return kept, skipped
 }
