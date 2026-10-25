@@ -20,8 +20,8 @@ import (
 // primitives — LoadManagedConfig + the catalog + manager.SetServerEnv + the plan-01/task-1
 // atomic WriteConfigWithAudit (temp→tx→rename + one mcp_audit row) + mcp.ProbeServer.
 //
-// Each method reloads the managed config from disk first (never a cached doc), so a
-// concurrent CLI/operator edit is not clobbered, then writes atomically with its audit row.
+// Each method applies its change through updateManagedMCPConfig: inside the daemon's registry
+// lock, on the registry as it is at that moment, saved with its audit row in one transaction.
 // A nil pool (no DB) leaves the provider unset → the routes answer 503. Boot is best-effort
 // (the SetGovernanceProviders precedent): a wiring failure never aborts daemon boot.
 
@@ -46,13 +46,15 @@ type mcpWriteAdapter struct {
 const mcpRegistryDestination = "postgres: aura.mcp_server"
 
 func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req agui.MCPInstallRequest) (agui.MCPWriteResult, error) {
-	doc, err := a.load()
-	if err != nil {
-		return agui.MCPWriteResult{}, err
-	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
 		return agui.MCPWriteResult{}, fmt.Errorf("mcp install: server name is required")
+	}
+	// Checked here so a duplicate costs no verification, and again inside the registry lock,
+	// since another writer may take the name while this install verifies.
+	doc, err := a.load()
+	if err != nil {
+		return agui.MCPWriteResult{}, err
 	}
 	if _, exists := doc.MCPServers[name]; exists {
 		return agui.MCPWriteResult{}, agui.ErrMCPServerExists
@@ -68,15 +70,19 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 	// The preparation report is not projected: the panel closes on success, so the only thing
 	// an operator needs from here is the REFUSAL, which travels as the 502's reason. The CLI,
 	// which stays open, prints it.
-	server, _, verified, err := prepareAndVerify(ctx, a.prep, name, server, a.live.box())
+	server, _, verified, err := mcpInstallGuard(ctx, a.prep, name, server, a.live.box())
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
-	doc.MCPServers[name] = server
-	doc.AddToProfile(doc.ActiveProfileName(), name)
-
-	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	if err := a.update(ctx, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "install", ServerName: name,
+	}, func(doc *mcp.ManagedConfig) error {
+		if _, exists := doc.MCPServers[name]; exists {
+			return agui.ErrMCPServerExists
+		}
+		doc.MCPServers[name] = server
+		doc.AddToProfile(doc.ActiveProfileName(), name)
+		return nil
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -100,19 +106,18 @@ func (a mcpWriteAdapter) InstallServer(ctx context.Context, actor string, req ag
 }
 
 func (a mcpWriteAdapter) SetServerEnv(ctx context.Context, actor, name string, submitted []string) (agui.MCPWriteResult, error) {
-	doc, err := a.load()
-	if err != nil {
-		return agui.MCPWriteResult{}, err
-	}
-	if err := mcpmanager.SetServerEnv(&doc, name, submitted); err != nil {
-		return agui.MCPWriteResult{}, mapManagerErr(err)
-	}
-	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	var server mcp.ManagedServer
+	if err := a.update(ctx, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "edit", ServerName: name,
+	}, func(doc *mcp.ManagedConfig) error {
+		if err := mcpmanager.SetServerEnv(doc, name, submitted); err != nil {
+			return mapManagerErr(err)
+		}
+		server = doc.MCPServers[name]
+		return nil
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
 	}
-	server := doc.MCPServers[name]
 	return agui.MCPWriteResult{
 		Name:     name,
 		Server:   server,
@@ -121,29 +126,27 @@ func (a mcpWriteAdapter) SetServerEnv(ctx context.Context, actor, name string, s
 }
 
 func (a mcpWriteAdapter) TrustApprove(ctx context.Context, actor, name, class, reason string) (agui.MCPWriteResult, error) {
-	doc, err := a.load()
+	class, reason, err := validateTrustClassReason(class, reason)
 	if err != nil {
 		return agui.MCPWriteResult{}, err
 	}
-	server, ok := doc.MCPServers[name]
-	if !ok {
-		return agui.MCPWriteResult{}, agui.ErrMCPServerNotFound
-	}
-	class, reason, err = validateTrustClassReason(class, reason)
-	if err != nil {
-		return agui.MCPWriteResult{}, err
-	}
-	// Operator-direct trust-approve (D-12): populate the today-empty ApprovedBy/At/Reason.
-	server.Trust = mcp.ManagedTrust{
-		Class:      class,
-		ApprovedBy: actor,
-		ApprovedAt: time.Now().UTC().Format(time.RFC3339),
-		Reason:     reason,
-	}
-	doc.MCPServers[name] = server
-
-	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	var server mcp.ManagedServer
+	if err := a.update(ctx, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "trust", ServerName: name, Reason: reason,
+	}, func(doc *mcp.ManagedConfig) error {
+		var ok bool
+		if server, ok = doc.MCPServers[name]; !ok {
+			return agui.ErrMCPServerNotFound
+		}
+		// Operator-direct trust-approve (D-12): populate the today-empty ApprovedBy/At/Reason.
+		server.Trust = mcp.ManagedTrust{
+			Class:      class,
+			ApprovedBy: actor,
+			ApprovedAt: time.Now().UTC().Format(time.RFC3339),
+			Reason:     reason,
+		}
+		doc.MCPServers[name] = server
+		return nil
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -165,40 +168,38 @@ func validateTrustClassReason(class, reason string) (string, string, error) {
 }
 
 func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, enabled bool) (agui.MCPWriteResult, error) {
-	doc, err := a.load()
-	if err != nil {
-		return agui.MCPWriteResult{}, err
-	}
-	server, ok := doc.MCPServers[name]
-	if !ok {
-		// Default-on recipes have no registry row until the operator changes them. Resolve
-		// the active policy and persist that recipe with the requested flag; this is the
-		// explicit override RuntimeSet already treats as authoritative.
-		_, policies, resolveErr := mcpmanager.RuntimeSet(doc)
-		if resolveErr != nil {
-			return agui.MCPWriteResult{}, resolveErr
-		}
-		server, ok = policies[name]
-		if !ok {
-			return agui.MCPWriteResult{}, agui.ErrMCPServerNotFound
-		}
-	}
-	enabledCopy := enabled
-	server.Enabled = &enabledCopy
-	doc.MCPServers[name] = server
-	// The flag alone does not make a server runnable once a profile is defined: a row outside
-	// it is dropped from the runnable set, and default-on injection defers to the row. That
-	// is how disable-then-enable lost the lab VM's calendar (2026-10-10). With no profile
-	// defined every server runs, and defining one here would narrow that set to this server.
-	if _, defined := doc.Profiles[doc.ActiveProfileName()]; enabled && defined {
-		doc.AddToProfile(doc.ActiveProfileName(), name)
-	}
 	action := "disable"
 	if enabled {
 		action = "enable"
 	}
-	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	var server mcp.ManagedServer
+	if err := a.update(ctx, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: action, ServerName: name,
+	}, func(doc *mcp.ManagedConfig) error {
+		var ok bool
+		if server, ok = doc.MCPServers[name]; !ok {
+			// Default-on recipes have no registry row until the operator changes them. Resolve
+			// the active policy and persist that recipe with the requested flag; this is the
+			// explicit override RuntimeSet already treats as authoritative.
+			_, policies, err := mcpmanager.RuntimeSet(*doc)
+			if err != nil {
+				return err
+			}
+			if server, ok = policies[name]; !ok {
+				return agui.ErrMCPServerNotFound
+			}
+		}
+		server.Enabled = &enabled
+		doc.MCPServers[name] = server
+		// The flag alone does not make a server runnable once a profile is defined: a row
+		// outside it is dropped from the runnable set, and default-on injection defers to the
+		// row. That is how disable-then-enable lost the lab VM's calendar (2026-10-10). With no
+		// profile defined every server runs, and defining one here would narrow that set to
+		// this server.
+		if _, defined := doc.Profiles[doc.ActiveProfileName()]; enabled && defined {
+			doc.AddToProfile(doc.ActiveProfileName(), name)
+		}
+		return nil
 	}); err != nil {
 		return agui.MCPWriteResult{}, err
 	}
@@ -211,15 +212,13 @@ func (a mcpWriteAdapter) SetEnabled(ctx context.Context, actor, name string, ena
 }
 
 func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) error {
-	doc, err := a.load()
-	if err != nil {
-		return err
-	}
-	if !doc.RemoveServer(name) {
-		return agui.ErrMCPServerNotFound
-	}
-	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
+	if err := a.update(ctx, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "remove", ServerName: name,
+	}, func(doc *mcp.ManagedConfig) error {
+		if !doc.RemoveServer(name) {
+			return agui.ErrMCPServerNotFound
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -234,25 +233,21 @@ func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) e
 	return nil
 }
 
-// save applies doc to the registry and records its audit row in one transaction, so a
-// governance mutation is never applied without its ledger entry (MCPH-07).
-func (a mcpWriteAdapter) save(ctx context.Context, doc mcp.ManagedConfig, in mcpmanager.MCPAuditInsert) error {
-	return saveManagedMCPConfig(ctx, a.pool, doc, in)
+// update applies one change to the registry with its audit row in one transaction, so a
+// governance mutation is never applied without its ledger entry (MCPH-07), and inside the
+// daemon's registry lock, so it is never lost to another writer.
+func (a mcpWriteAdapter) update(ctx context.Context, in mcpmanager.MCPAuditInsert, fn func(*mcp.ManagedConfig) error) error {
+	return updateManagedMCPConfig(ctx, a.pool, in, fn)
 }
 
-// load reads the registry per call (never a cached doc) so each mutation is applied over
-// the freshest config — a concurrent CLI/operator edit is not clobbered.
+// load reads the registry for a check that writes nothing: InstallServer's duplicate check
+// before its verification. Writes go through update, which loads inside the registry lock.
 func (a mcpWriteAdapter) load() (mcp.ManagedConfig, error) {
 	doc, err := loadManagedMCPConfig()
 	if err != nil {
 		return mcp.ManagedConfig{}, fmt.Errorf("load managed MCP config: %w", err)
 	}
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]mcp.ManagedServer{}
-	}
-	if doc.Profiles == nil {
-		doc.Profiles = map[string]mcp.ManagedProfile{}
-	}
+	mcp.Normalize(&doc)
 	return doc, nil
 }
 

@@ -151,7 +151,10 @@ type Config struct {
 	// MCPEnvDir roots the prepared environments stdio MCP servers launch from (#211). An
 	// install materialises the server here once and stores an absolute path into it, so a
 	// mount runs a binary instead of re-resolving a package with egress it may not have.
-	MCPEnvDir           string // AURA_MCP_ENV_DIR — stdio MCP prepared-environment root
+	MCPEnvDir string // AURA_MCP_ENV_DIR — stdio MCP prepared-environment root
+	// PluginsDir keeps each installed plugin's tree and its install record, the only account
+	// of which skills and connectors the plugin brought (spec 2026-10-25-pack-install §4.3).
+	PluginsDir          string // AURA_PLUGINS_DIR — installed plugins' kept trees and records
 	SkillSnippetTTLDays int    // AURA_SKILL_SNIPPET_TTL_DAYS — TTL sweep archives snippets unused this long (D-16/D-34)
 
 	// Write-boundary injection blocklist (D-27/D-34). The NFKC-normalize-then-
@@ -468,6 +471,7 @@ func loadBase() *Config {
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
 		SkillsIdentityDir:     envDefault("AURA_SKILLS_IDENTITY_DIR", defaultSkillsIdentityDir()),
 		MCPEnvDir:             envDefault("AURA_MCP_ENV_DIR", defaultMCPEnvDir()),
+		PluginsDir:            envDefault("AURA_PLUGINS_DIR", defaultPluginsDir()),
 		AppsDir:               envDefault("AURA_APPS_DIR", "/usr/share/aura/apps"),
 		SkillSnippetTTLDays:   envutil.IntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 

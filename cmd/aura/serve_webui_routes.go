@@ -233,6 +233,16 @@ const (
 	governanceMCPRemoveRoute     = "DELETE /api/governance/mcp/{name}"
 )
 
+// governancePlugin* are the plugin board (spec 2026-10-25-pack-install §4.5). The list is a
+// governance.read; review, install and removal are identity.create, as for the MCP registry,
+// since a plugin's servers run in every identity's box.
+const (
+	governancePluginListRoute    = "GET /api/governance/plugins"
+	governancePluginReviewRoute  = "POST /api/governance/plugins/review"
+	governancePluginInstallRoute = "POST /api/governance/plugins"
+	governancePluginRemoveRoute  = "DELETE /api/governance/plugins/{name}"
+)
+
 // governanceSkills*WriteRoute are the Phase-29 SKW-01/02/03 governance SKILLS WRITE routes
 // (install a skill from a source field → the operator-origin /api/approvals pause; restore/
 // archive across tabs; create/update/delete; the external-catalog search). Each is a SPECIFIC

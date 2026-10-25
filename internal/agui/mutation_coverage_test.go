@@ -63,6 +63,9 @@ func TestEveryRegisteredUnsafeHTTPRouteIsClassified(t *testing.T) {
 		"POST /api/stt":                        true,
 		"POST /api/tts":                        true,
 		"POST /api/governance/skills/validate": true,
+		// A plugin review checks the plugin out into a temporary directory it removes, and
+		// writes nothing (internal/plugins TestReviewWritesNothing).
+		"POST /api/governance/plugins/review": true,
 		// One live-view keystroke or click: nothing durable is written, and an idempotency
 		// replay would type the same key twice into the user's browser.
 		"POST /api/browser/sessions/{session}/input": true,

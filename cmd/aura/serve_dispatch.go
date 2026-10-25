@@ -25,6 +25,7 @@ import (
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/obs"
+	"github.com/chetto1983/aura/internal/plugins"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -312,6 +313,9 @@ const sandboxPingTimeout = 5 * time.Second
 func newSandboxBackend(cli *client.Client, cfg *config.Config, pool *pgxpool.Pool) *usersandbox.DockerBackend {
 	return usersandbox.NewDockerBackend(cli, cfg.Sandbox.Image, limitsFrom(cfg.Sandbox),
 		usersandbox.WithMaterializeSources(sandboxMaterializeSources(cfg, newSharedSkillReader(cfg, pool))),
+		// Installed plugins land at /plugins/<name> in every shell box, rewritten only when
+		// their commit changes: a plugin server runs with its tree as its working directory.
+		usersandbox.WithPluginTrees(pluginTreeResolver(plugins.Store{Root: cfg.PluginsDir})),
 		// The run dir, not /tmp: this deployment mounts /tmp as a 64 MiB tmpfs (compose.yaml),
 		// where spooling the materialize tars would keep them in memory — the very cost the
 		// spool removes — and cap the whole box at 64 MiB of skills.

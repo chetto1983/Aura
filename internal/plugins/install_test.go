@@ -113,8 +113,8 @@ func newWorld(t *testing.T) (*world, *Backend) {
 			return nil
 		},
 		Admins: func(_ context.Context, id string) (bool, error) { return id == "admin", nil },
-		Taken: func() Taken {
-			return Taken{Skill: w.library.Exists, Server: w.registry.source}
+		Taken: func() (Taken, error) {
+			return Taken{Skill: w.library.Exists, Server: w.registry.source}, nil
 		},
 		BodyCapBytes: 32768,
 		Now:          func() time.Time { return time.Date(2026, 10, 25, 12, 0, 0, 0, time.UTC) },
@@ -536,11 +536,51 @@ func TestInstallRefusesAMalformedRequest(t *testing.T) {
 		"bad commit": {Ref: "o/r/p", Commit: "main", Digest: "d"},
 		"no digest":  {Ref: "o/r/p", Commit: commitA},
 	} {
-		if _, err := b.Install(context.Background(), "admin", req); err == nil {
-			t.Errorf("%s: accepted", name)
+		if _, err := b.Install(context.Background(), "admin", req); !errors.Is(err, ErrInvalidRequest) {
+			t.Errorf("%s: %v, want ErrInvalidRequest", name, err)
 		}
+	}
+	if _, err := b.Review(context.Background(), "o"); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("review of a bad ref: %v, want ErrInvalidRequest", err)
+	}
+	if _, err := b.Remove(context.Background(), "admin", "../x", false); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("removal of a bad name: %v, want ErrInvalidRequest", err)
 	}
 	if ok, err := b.MayAdminister(context.Background(), "admin"); !ok || err != nil {
 		t.Errorf("MayAdminister(admin) = (%v, %v)", ok, err)
+	}
+}
+
+func TestAnUnreadableRegistryFailsTheReview(t *testing.T) {
+	t.Parallel()
+	_, b := newWorld(t)
+	b.d.Taken = func() (Taken, error) { return Taken{}, errors.New("database is unreachable") }
+	if _, err := b.Review(context.Background(), "o/r/p"); err == nil || !strings.Contains(err.Error(), "unreachable") {
+		t.Fatalf("Review = %v, want the registry's error", err)
+	}
+}
+
+// The cockpit's review route is classified write-free on this account.
+func TestReviewWritesNothing(t *testing.T) {
+	t.Parallel()
+	w, b := newWorld(t)
+	var root string
+	prev := b.d.Checkout
+	b.d.Checkout = func(ctx context.Context, ref packs.Ref, commit string) (packs.Checkout, error) {
+		c, err := prev(ctx, ref, commit)
+		root = c.Root
+		return c, err
+	}
+	if _, err := b.Review(context.Background(), "o/r/p"); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if _, err := os.Stat(b.d.Store.Root); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the review created the plugins dir: %v", err)
+	}
+	if _, err := os.Stat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the review left its checkout behind: %v", err)
+	}
+	if len(w.library.installed) != 0 || len(w.registry.updates) != 0 || len(w.verified) != 0 || len(w.mounted) != 0 {
+		t.Errorf("the review made calls: %v %v %v %v", w.library.installed, w.registry.updates, w.verified, w.mounted)
 	}
 }

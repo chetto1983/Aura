@@ -18,6 +18,8 @@ import (
 // The install's refusals. ErrDigestChanged is never the repository moving: the install reads
 // the pinned commit.
 var (
+	// ErrInvalidRequest marks a ref, commit or name the caller can correct.
+	ErrInvalidRequest   = errors.New("invalid plugin request")
 	ErrAlreadyInstalled = errors.New("plugin already installed")
 	ErrNotInstalled     = errors.New("plugin not installed")
 	ErrDigestChanged    = errors.New("what this install would write changed since the review — a skill or connector " +
@@ -113,14 +115,14 @@ func onePack(c packs.Checkout, ref packs.Ref) (packs.Pack, error) {
 	case 1:
 		return c.Packs[0], nil
 	case 0:
-		return packs.Pack{}, fmt.Errorf("%s: no plugin found", ref)
+		return packs.Pack{}, invalid(fmt.Errorf("%s: no plugin found", ref))
 	}
 	names := make([]string, 0, len(c.Packs))
 	for _, p := range c.Packs {
 		names = append(names, p.Directory)
 	}
-	return packs.Pack{}, fmt.Errorf("%s holds %d plugins (%s): name one as %s/<plugin>",
-		ref, len(c.Packs), strings.Join(names, ", "), ref.Source)
+	return packs.Pack{}, invalid(fmt.Errorf("%s holds %d plugins (%s): name one as %s/<plugin>",
+		ref, len(c.Packs), strings.Join(names, ", "), ref.Source))
 }
 
 func reviewSkills(root string, pack packs.Pack, taken Taken, blocklist []string, bodyCapBytes int) ([]SkillEntry, []packs.Skipped) {

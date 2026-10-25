@@ -62,8 +62,9 @@ type Deps struct {
 	Probe     func(ctx context.Context, name string, s mcp.ManagedServer) mcp.ProbeResult
 	PurgeData func(ctx context.Context, dataDir string) error
 	// Admins reports whether an identity may install and remove plugins.
-	Admins       func(ctx context.Context, identityID string) (bool, error)
-	Taken        func() Taken
+	Admins func(ctx context.Context, identityID string) (bool, error)
+	// Taken reads the names in use now; an unreadable registry fails the review.
+	Taken        func() (Taken, error)
 	Blocklist    []string
 	BodyCapBytes int
 	// WriteTimeout bounds an install's or a removal's writing phase, which runs detached from
@@ -126,14 +127,18 @@ type RemoveReport struct {
 func (b *Backend) Review(ctx context.Context, ref string) (Review, error) {
 	r, err := packs.ParseRef(ref)
 	if err != nil {
-		return Review{}, err
+		return Review{}, invalid(err)
 	}
 	c, err := b.d.Checkout(ctx, r, "")
 	if err != nil {
 		return Review{}, err
 	}
 	defer func() { _ = c.Close() }()
-	return BuildReview(c, r, b.d.Taken(), b.d.Blocklist, b.d.BodyCapBytes)
+	taken, err := b.d.Taken()
+	if err != nil {
+		return Review{}, err
+	}
+	return BuildReview(c, r, taken, b.d.Blocklist, b.d.BodyCapBytes)
 }
 
 // List returns the installed plugins.
@@ -154,13 +159,13 @@ func (b *Backend) MayAdminister(ctx context.Context, identityID string) (bool, e
 func (b *Backend) Install(ctx context.Context, actor string, req InstallRequest) (Report, error) {
 	ref, err := packs.ParseRef(req.Ref)
 	if err != nil {
-		return Report{}, err
+		return Report{}, invalid(err)
 	}
 	if err := packs.ValidCommit(req.Commit); err != nil {
-		return Report{}, err
+		return Report{}, invalid(err)
 	}
 	if req.Digest == "" {
-		return Report{}, errors.New("plugin install: no review digest")
+		return Report{}, invalid(errors.New("no review digest"))
 	}
 	c, err := b.d.Checkout(ctx, ref, req.Commit)
 	if err != nil {
@@ -177,7 +182,11 @@ func (b *Backend) Install(ctx context.Context, actor string, req InstallRequest)
 	if _, installed, err := b.d.Store.Get(pack.Name); err != nil || installed {
 		return Report{}, errors.Join(err, alreadyInstalled(installed, pack.Name))
 	}
-	review, err := BuildReview(c, ref, b.d.Taken(), b.d.Blocklist, b.d.BodyCapBytes)
+	taken, err := b.d.Taken()
+	if err != nil {
+		return Report{}, err
+	}
+	review, err := BuildReview(c, ref, taken, b.d.Blocklist, b.d.BodyCapBytes)
 	if err != nil {
 		return Report{}, err
 	}
@@ -188,6 +197,8 @@ func (b *Backend) Install(ctx context.Context, actor string, req InstallRequest)
 	defer cancel()
 	return b.install(ctx, actor, ref, review, filepath.Join(c.Root, filepath.FromSlash(pack.Directory)))
 }
+
+func invalid(err error) error { return fmt.Errorf("%w: %w", ErrInvalidRequest, err) }
 
 func alreadyInstalled(installed bool, name string) error {
 	if !installed {
@@ -212,7 +223,12 @@ func (b *Backend) install(ctx context.Context, actor string, ref packs.Ref, revi
 		return report, err
 	}
 	trust := mcp.ManagedTrust{ApprovedBy: actor, ApprovedAt: now, Reason: installReason(review)}
-	ready, steps := b.verifyConnectors(ctx, review.Connectors, trust)
+	taken, err := b.d.Taken()
+	if err != nil {
+		rec.Connectors = nil
+		return b.finishInstall(rec, report, err)
+	}
+	ready, steps := b.verifyConnectors(ctx, review.Connectors, taken, trust)
 	saved, steps, err := b.saveConnectors(ctx, actor, review, ready, steps)
 	rec.Connectors = connectorNames(saved)
 	report.Connectors = steps
@@ -259,8 +275,7 @@ func (b *Backend) installSkills(ctx context.Context, actor string, ref packs.Ref
 
 // verifyConnectors approves each reviewed connector by this confirmation and brings each stdio
 // one up in the box. A name taken since the review, or a failed start, leaves the connector out.
-func (b *Backend) verifyConnectors(ctx context.Context, reviewed []Connector, trust mcp.ManagedTrust) ([]Connector, []Step) {
-	taken := b.d.Taken()
+func (b *Backend) verifyConnectors(ctx context.Context, reviewed []Connector, taken Taken, trust mcp.ManagedTrust) ([]Connector, []Step) {
 	var ready []Connector
 	var steps []Step
 	for _, c := range reviewed {

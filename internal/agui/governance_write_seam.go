@@ -166,8 +166,9 @@ type SkillsWriteProvider interface {
 // GovernanceWriteProviders bundles the Phase-29 write providers so the composition root
 // wires them in one call (parity with GovernanceProviders). A nil field → its routes 503.
 type GovernanceWriteProviders struct {
-	MCP    MCPWriteProvider
-	Skills SkillsWriteProvider
+	MCP     MCPWriteProvider
+	Skills  SkillsWriteProvider
+	Plugins PluginsProvider
 }
 
 // SetGovernanceWriteProviders wires the Phase-29 governance WRITE providers (MCPW-01/02/03 +

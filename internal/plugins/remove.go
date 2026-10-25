@@ -16,6 +16,9 @@ import (
 // A failure stops it with the record rewritten to what remains, so a second Remove finishes the
 // job. It runs detached from ctx, as an install does.
 func (b *Backend) Remove(ctx context.Context, actor, name string, deleteData bool) (RemoveReport, error) {
+	if err := packs.ValidPluginName(name); err != nil {
+		return RemoveReport{}, invalid(err)
+	}
 	rec, ok, err := b.d.Store.Get(name)
 	if err != nil {
 		return RemoveReport{}, err

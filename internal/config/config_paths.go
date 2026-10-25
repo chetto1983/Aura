@@ -72,3 +72,8 @@ func defaultSkillExportDir() string { return filepath.Join(defaultSkillsDir(), "
 // from here — and it deliberately avoids the three cache mounts, since a named volume seeded
 // once is exactly what made a build-time warm-up invisible to every later image.
 func defaultMCPEnvDir() string { return filepath.Join(auraHomeDir(), "mcp-envs") }
+
+// defaultPluginsDir is the AURA_PLUGINS_DIR code default: ~/.aura/plugins. Compose pins the
+// container's to /var/lib/aura/plugins on the durable aura-home volume, as it does
+// AURA_MCP_ENV_DIR.
+func defaultPluginsDir() string { return filepath.Join(auraHomeDir(), "plugins") }

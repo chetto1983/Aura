@@ -142,6 +142,8 @@ var httpMutationRoutes = map[string]mutationRouteMeta{
 	"POST /api/governance/mcp/{name}/enable":                   httpMutationMeta("mcp_enable"),
 	"POST /api/governance/mcp/{name}/disable":                  httpMutationMeta("mcp_disable"),
 	"DELETE /api/governance/mcp/{name}":                        httpMutationMeta("mcp_remove"),
+	"POST /api/governance/plugins":                             httpMutationMeta("plugin_install"),
+	"DELETE /api/governance/plugins/{name}":                    httpMutationMeta("plugin_remove"),
 	"POST /api/governance/scheduler/{id}/approve":              httpMutationMeta("scheduler_approve"),
 	"POST /api/governance/scheduler/{id}/run":                  httpMutationMeta("scheduler_run"),
 	"POST /api/governance/scheduler/{id}/pause":                httpMutationMeta("scheduler_pause"),
