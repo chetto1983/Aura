@@ -162,13 +162,19 @@ document alone every time. It admitted nothing for any of the 5 out-of-corpus qu
   - Nothing else is an exact term: no capitalisation, no sentence position, no stopword list.
 - **What carries one.** A document carries an exact term when its title or its own text contains it
   as a case-insensitive, whole-word sequence.
-  - Its own text is the passages and the card, minus the two sentences Aura writes into cards
-    itself: `filecard`'s trailer and its cut notice.
+  - Its own text is the passages and the card, minus the lines Aura writes into cards about
+    itself: `filecard`'s trailer, its cut notice, and the caveats saying it did not read the file
+    (amended after the review, below).
   - Measured: every card says "Written by Aura at ingest from the file itself", so "Aura" matched
     all 8 documents.
 - **No selectivity guard.** The guard was the designer's call from one case, h12, and the trailer
   caused that case. Without the trailer, "Aura" is carried by the 2 documents that contain it. An
   exact term is now one the caller chose, so a document that carries it is what was asked for.
+  - **Open, from the review (2026-10-25).** That holds for a quoted phrase only. Identifiers and
+    file names are extracted, not chosen, so `A4`, `Q3`, `24h` or `COVID-19` in a question now admit
+    every document carrying them past the floor. Acceptance 1 adds out-of-corpus questions holding
+    such tokens. If they break abstention, identifiers go back to ranking first only and only quoted
+    phrases admit: the operator's call, on that measurement.
 - **The effect.**
   - A document that carries every exact term of the question is admitted, whatever its cosine or,
     later, judge score.
@@ -184,6 +190,35 @@ document alone every time. It admitted nothing for any of the 5 out-of-corpus qu
   - The indexes are the passages', the cards' and the split file names'.
   - The phrase is the term as the caller wrote it. Lucene's own analyzer then tokenises it the way
     it tokenised the documents, and Go checks the carrying on the texts returned.
+- **Amended 2026-10-25, after the slice 1 review: one query per index, then the check in Go.**
+  - **One query per index asks for every term**, the phrases OR-ed. ArcadeDB 26.10.2's executor
+    reads OR-ed phrases as SHOULD clauses and returns their union
+    (`FullTextQueryExecutor.collectMatches`). A search costs 3 full-text queries in the documents,
+    2 in a recall and 1 in a fact search, whatever the number of terms; it cost 3, 2 and 1 per term.
+  - **The lane returns what carries any term, and Go decides who carries every one**, on all the
+    ranking holds for a document: its title, its card without Aura's notes, its returned passages.
+    The first plan kept only documents the indexes found for every term, and the engine and Go
+    tokenise apart: StandardAnalyzer keeps `calibre_demo.docx` one token, while Go cuts the
+    identifier `calibre_demo` from it, which no index holds. Every file name with an underscore
+    stayed buried. Measured live on 26.10.2: "apri calibre_demo.docx", unquoted, with every card
+    pointing away from the query's vector, now returns the file first by its exact evidence.
+  - **ArcadeDB 26.10.2's phrase ignores word order** (`collectPhraseMatches`: "We can't verify word
+    order without position indexing, so we just require all terms"), so every returned text is
+    checked in Go.
+  - **The lane's pool is bounded.** It reads each index up to its candidate cap, best BM25 first:
+    200 passages and 200 cards per index in the documents by default
+    (`AURA_DOCUMENT_RETRIEVAL_CANDIDATES` and the retriever's candidate limit), 400 records per kind
+    in memory (`HybridCandidates`). A term held in more records than that is checked only
+    in the best-matching ones, and `document_search`'s description says so. This is the one
+    candidate cut the anti-goal above still meets; it is not measured on a library that large.
+  - **A failed lane is named, never hidden.** The documents report `exact_terms_unavailable` in
+    `degradation_reason`, joined to the legs' own reason with `+`, and never abstain on it: without
+    the lane, an empty answer no longer says the library holds no carrier. Memory reports
+    `exact_terms_failed` the same way, and an abstention keeps it.
+  - **Not covered.** An Italian elided article hides a quoted name from the phrase query:
+    StandardAnalyzer has no ElisionFilter, so "dell'Agenzia" is one token and `"Agenzia delle
+    Entrate"` finds nothing there, while Go would accept the text. Reasoned from UAX#29, not
+    measured; fixing it is an analyzer change, a non-goal. Acceptance 1 adds one such case.
 - **Memory.**
   - Recall already drops a candidate that lacks a query identifier (`IdentifiersMatch`, in
     `memory_recall.go` and `memory_vector.go`), and that filter stays.

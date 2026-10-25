@@ -1,11 +1,12 @@
 # Exact terms rank first (slice 1) Implementation Plan
 
-**Status (2026-10-25):** BUILT, NOT LANDED.
-- Tasks 1–5 are written and verified in the scratch worktree `D:/Aura-scratch-named-terms`, detached at
-  `e3e562cac`, tip `b65012631`. Unit, race, lint and the live ArcadeDB 26.10.2 tier are green, with the
-  exceptions under "Local baseline".
-- Task 6 is open: land on master, run the gates, measure, amend the PRD, and run acceptance 1 on the lab
-  VM.
+**Status (2026-10-25):** LANDED AND REVIEWED, NOT PUSHED, NOT ACCEPTED.
+- Tasks 1–5 are on master: `d92a5b921`, `815519a0d`, `6beb4eef8`, `f1562629c`, `4614dc874`.
+- Task 6 Steps 1–3 are done. One review gave "with fixes", and its fixes are on master in five commits,
+  from "fix(documents): judge an exact carrier on all a document holds" to this plan's update. The
+  gates are green in the isolated worktree `D:/Aura-exact-fixes`, with the exceptions under "Local
+  baseline".
+- Steps 4–6 are open: they need the push, which waits for the operator, and the lab VM.
 
 Operator's decisions on 2026-10-25:
 - the order: exact terms first, then the embeddings on `openai-go`, then the judge ("VA BENE");
@@ -29,20 +30,21 @@ identifier or a file name. The judge stays off: this is slice 1 of the spec.
   - its identifiers (`QueryIdentifiers`).
   - `ExactTerm.CarriedBy` checks the term's tokens in order, as whole tokens. `CarriesEvery` is the one
     carrying rule both packages use.
-- **Where carriers come from.** For each term, the full-text indexes are asked for the term as one
-  Lucene phrase, with no score floor, inside the caller's scope:
+- **Where carriers come from.** Each full-text index is asked once for every term, the Lucene phrases
+  OR-ed, with no score floor, inside the caller's scope (review I6):
   - documents: `DocumentIndex.ExactTermDocuments`, over passages, cards and split file names;
   - memory: `exactMemoryRIDs`, over facts and turns.
   - ArcadeDB 26.10.2 does not keep a phrase's word order, so every text it returns is checked in Go.
-  - A card is checked without the two sentences `filecard` writes into every card
+  - A card is checked without the lines `filecard` writes into it about Aura
     (`filecard.WithoutAuraNotes`).
 - **Documents** (`internal/documents/retrieval_exact.go`):
-  - `Retrieve` runs the exact lane beside the fused or the lexical leg, and keeps what it found for the
-    documents found for every term.
+  - `Retrieve` runs the exact lane beside the fused or the lexical leg. The lane returns what carries
+    any term; `rankDocuments` keeps a document only the lane found when what it holds for it carries
+    every term (review C1).
   - `rankDocuments` merges that evidence under the leg `exact`, without touching score or order.
     `rankExactTermsFirst` then moves the carriers ahead, replacing `rankIdentifiersFirst`.
   - The reserved card place sits behind the carriers.
-  - The response abstains only when no leg and no carrier answered.
+  - The response abstains only when no leg and no carrier answered, and never when the lane failed.
 - **Memory** (`internal/arcadedb/memory_exact.go`):
   - Recall and the fact search hydrate the lane's records with the legs' records, and carriers rank
     first. A record only the lane found that misses a term is dropped.
@@ -153,6 +155,9 @@ Scratch commit `ae6324634`, `feat(arcadedb): find the documents that carry an ex
   - passages that do not carry the term are dropped before each file's best is chosen;
   - cards are checked on their file name and `WithoutAuraNotes(card)`;
   - a missing type is an empty library.
+- Amended after the review (C1, I6): it takes `terms []ExactTerm` and asks each index once, the phrases
+  OR-ed (`lucenePhrases`). It keeps each file's first passage per term it carries
+  (`bestPassagePerTerm`) and the cards carrying any term (`carriesAny`); no terms, no query.
 
 - [x] **Tests:**
   - `TestExactTermDocumentsKeepOnlyTheCarriers`:
@@ -202,6 +207,10 @@ Scratch commit `2df8c7692`, `feat(documents): a document carrying every exact te
   - `func rankCardsOnly(cards []RetrievalCard, terms []arcadedb.ExactTerm, limit, topPassages int) []RetrievalDocument`;
   - `func rankExactTermsFirst(ranked []*rankedDocument, terms []arcadedb.ExactTerm) int`;
   - `func carriesExactTerms(document RetrievalDocument, terms []arcadedb.ExactTerm) bool`.
+- Amended after the review (C1, I1, I2): `exactLane{terms, passages, cards, failed}` holds the lane's
+  one answer, and `exactHits` and `carriersOfEvery` are gone. `rankedDocument` gains `laneOrder`,
+  `fromLegs` and `carrier`; `rankExactTermsFirst(ranked []*rankedDocument) int` reads `carrier`. A
+  failed lane sets `DegradationExactTerms`.
 
 - [x] **Tests** (`retrieval_exact_test.go`):
   - **Ranking:**
@@ -261,6 +270,10 @@ floor`, and its `fixup!` `b65012631` (a turn carrier).
 - `func exactRecallOrder(ranked []recallRankedRID, facts map[string]FactHit, turns map[string]ConversationTurnHit, terms []ExactTerm) []recallRankedRID`.
 - `func (c *Client) exactFactsFirst(ctx, query string, hits []FactHit, limit int, asOf time.Time) ([]FactHit, error)`.
 - `func joinReasons(reasons ...string) string`.
+- Amended after the review (I3, I6, M3–M5): `exactMemoryRIDs` sends one OR query per statement over
+  `HybridCandidates`, and joins the errors of the statements that failed, keeping what the others found.
+  The fact prose that hides duplicate turns is built after `exactRecallOrder`. `JoinReasons` is exported,
+  for the documents.
 
 - [x] **Tests** (`memory_exact_test.go`):
   - `TestRecallAdmitsAnExactCarrierTheFloorDropped`: score 0; the phrase at floor 0 with no vector; the
@@ -313,7 +326,8 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
 
 ### Task 6: land, measure, record, accept
 
-- [ ] **Step 1: Land the verified commits on master** through lefthook, in order:
+- [x] **Step 1: Land the verified commits on master** through lefthook, in order (landed as
+  `d92a5b921`, `815519a0d`, `6beb4eef8`, `f1562629c`, `4614dc874`):
   ```bash
   git cherry-pick 308ba82d3 ae6324634 2df8c7692
   git cherry-pick -n 993c9bb01 b65012631
@@ -323,7 +337,12 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
   ```
   Master has moved since `e3e562cac`, but no commit after it touches these 31 files (checked
   2026-10-25), so the picks apply cleanly.
-- [ ] **Step 2: Gates, in WSL, on master:**
+- [x] **Step 2: Gates, in WSL, on master** (for the review fixes, in the isolated worktree at their
+  tip, because master's tree held a parallel session's half-edited `cmd/aura`):
+  - green: vet under the four tags, build, race on the five packages, the live tier with the new
+    underscore-file test, lint (0 issues, and under the tags only the seven below);
+  - coverage 49722/56858 = 87.4%, package policy passed. The first run failed in `internal/packs`
+    because the runner exported `GIT_WORK_TREE`, recorded under "Local baseline".
   - `go vet`, `go build`, and `go test -race` on these packages: `internal/arcadedb`,
     `internal/documents/...`, `internal/agent/...`, `cmd/arcadedb-mcp` and `cmd/aura`;
   - `go vet -tags retrieval_eval ./internal/documents/` and `-tags arcadedb_integration` on the two
@@ -333,17 +352,34 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
   - `bash scripts/coverage_docker.sh`: the 85% aggregate and the package policy. `internal/arcadedb`
     is delegated to its live profile (amendment #203).
   - Mutation runs in CI.
-- [ ] **Step 3: One independent review** of the five commits, by a fresh read-only reviewer on the most
+- [x] **Step 3: One independent review** of the five commits, by a fresh read-only reviewer on the most
   capable model. Fix what it finds in follow-up commits.
-- [ ] **Step 4: Measure the cost of a term.** On the lab VM, time one `aura docs search` with 1, 4 and
-  16 identifiers. Each term costs 3 full-text queries per document search and 2 per memory read.
-  - There is no cap today.
+  - Verdict "with fixes": 1 critical, 6 important, 8 minor. Nine of the fixes were each removed in
+    turn, and every removal failed the test written for it.
+  - Fixed: C1, I1, I2 and I6 in "fix(documents): judge an exact carrier on all a document holds"; I3,
+    I6, M3, M4 and M5 in "fix(arcadedb): memory asks every exact term in one query per kind"; the
+    caveats in "fix(filecard): a card's unread caveats carry no exact term"; I3's bound in
+    `document_search`'s description; M6 by C1; M7 in the first commit; M8 here.
+  - Recorded, not fixed: I3's bound, I4, I5, M1 and M2, under "What this plan does not cover".
+- [ ] **Step 4: Measure the cost of a search with exact terms.** On the lab VM, time one
+  `aura docs search` with 1, 4 and 16 identifiers. Since review I6 a search costs 3 full-text queries
+  in the documents and 2 per memory read whatever the number of terms; what grows is the OR query and
+  the Go check.
+  - There is no cap on the number of terms.
   - If 16 identifiers cost more than one search's budget, record the number and propose a cap from it.
     Never cap before the measurement.
 - [ ] **Step 5: Acceptance 1 on the lab VM**, once the updater has applied the landed SHA:
   - `docker exec aura aura docs search '<s04 with "Ubuntu Mono" quoted>'` and
     `'"Ubuntu Mono"'` return `calibre_demo.docx` first.
   - The five out-of-corpus questions of the floors set still abstain.
+  - Review I4: out-of-corpus questions holding everyday alphanumerics also abstain, such as
+    "quanto costa la carta A4 su Amazon?", and questions with `Q3`, `24h` and `COVID-19`. If one does
+    not, the operator decides whether identifiers keep admitting past the floor or only rank first.
+  - Review I5: one quoted Italian name that the library holds only after an elided article, such as
+    `"Agenzia delle Entrate"` against "dell'Agenzia delle Entrate". The expected result is a miss,
+    recorded as the limit it is.
+  - `"Aura"` returns only the documents whose own text names Aura; no unread file comes back for its
+    caveat.
   - `TestCodingAgentQuestions` (tag `retrieval_eval`) on `complex_qrels.json`, before and after the
     landing, on the same identity:
     - recall@1 and MRR must be no lower;
@@ -365,40 +401,52 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
 | File | Responsibility |
 |---|---|
 | `internal/arcadedb/exact_terms.go` | What an exact term is, and what carries it |
-| `internal/arcadedb/document_exact.go` | The documents carrying one term, from the three full-text indexes |
+| `internal/arcadedb/document_exact.go` | The texts carrying any of the terms, one query per full-text index |
 | `internal/arcadedb/document_lexical.go` | Lexical passage and card reads, shared by the lexical leg and the exact lane |
 | `internal/arcadedb/memory_exact.go` | Memory's exact lane, the carriers-first order, the fact search's carriers |
-| `internal/documents/filecard/card.go` | `WithoutAuraNotes`: a card without the sentences Aura writes into it |
-| `internal/documents/retrieval_exact.go` | The documents' exact lane, carriers, carriers-first ranking |
-| `internal/documents/retrieval_rank.go` | `rankDocuments` with the lane's evidence; the exact-first passage cut |
+| `internal/documents/filecard/card.go` | `WithoutAuraNotes`: a card without the lines Aura writes into it about itself |
+| `internal/documents/retrieval_exact.go` | The documents' exact lane, carriers-first ranking |
+| `internal/documents/retrieval_rank.go` | `rankDocuments` with the lane's evidence and order, the carrier check; the exact-first passage cut |
 | `internal/documents/retrieval.go` | The lane in `Retrieve`, one abstention rule, profile v4 |
 | `internal/agent/tools/document_search.go`, `cmd/arcadedb-mcp/tool_memory*.go` | How the agent is told to quote |
 
 ## Decisions taken while writing this plan
 
-- **Exact evidence sets no score and no order.** One phrase's BM25 is not the scale of the legs.
+- **Exact evidence sets no score.** One phrase's BM25 is not the scale of the legs.
   - A carrier only the lane found reports score 0. Memory's JSON omits it.
   - The carriers rank first by `rankExactTermsFirst`, not by a number.
+  - Amended after the review (I1): "no order" sorted the carriers only the lane found by document id.
+    The lane's best rank now breaks the tie the legs leave them in.
 - **A carrier is judged on what the response returns:** the title, the card without its notes, and the
   passages returned.
   - The passage cut keeps exact evidence first. So a document loses the bypass only when more than
     `TopPassages` (3) of its terms each sit in a different passage, and the agent could not have seen
     the fourth anyway.
   - The `retrieval_eval` bench re-derives the same order from the same data.
-- **The documents' lane keeps a document only if it was found for every term.** The match is by
-  content key, as `rankDocuments` merges, since the passage index returns one copy of a file stored
-  twice.
-  - Memory takes the union and checks `CarriesEvery` on the hydrated record, because the `FACT[statement]`
-    index does not hold a fact's subject and object names.
+- **Union, then the check in Go, in both packages.** The lane returns what carries any term; a record
+  only the lane found stays when what the ranking holds for it carries every term.
+  - Amended after the review (C1). The first plan kept, in the documents, only what the indexes found
+    for every term. The engine and Go tokenise apart: StandardAnalyzer keeps `calibre_demo.docx` one
+    token, and the identifier `calibre_demo` Go cuts from it is in no index, so every file name with
+    an underscore stayed buried. Memory already took the union, because the `FACT[statement]` index
+    does not hold a fact's subject and object names.
+  - The documents' check runs in `rankDocuments`, after the merge by content key and text alias, so two
+    copies of a text count as one document (M6).
 - **The reserved card place sits behind the carriers.** A file the question names verbatim outranks
   one that only might answer it. With no carriers, the order is unchanged.
 - **The lane runs in lexical mode too.** The card-only degraded paths have no passage index, so the lane
   does not run there, but the cards that carry the terms still rank first.
-- **A lane failure: two conventions, each the subsystem's own.**
-  - Documents log `exact_terms_unavailable` through the degradation log and leave the response
-    untouched, as `passage_names_unavailable` does.
-  - Memory names `exact_terms_failed` in the result's reason, joined with `+`, because memory names
-    every reason a read is less than whole.
+- **A lane failure is named in the response.**
+  - Amended after the review (I2). The documents logged `exact_terms_unavailable` and left the
+    response untouched, as `passage_names_unavailable` does. Names change only titles; the lane
+    changes admission, and a failed lane with empty legs produced a healthy abstention, which the tool
+    tells the agent means the library does not hold the answer.
+  - Documents now set `degradation_reason` to `exact_terms_unavailable`, joined to the legs' own
+    reason with `+` (`arcadedb.JoinReasons`), and never abstain on a failed lane.
+  - Memory names `exact_terms_failed` in the result's reason, joined with `+`. A memory statement that
+    fails costs its own kind only (M3), and an abstention joins `no_qualified_candidates` to the
+    reasons instead of replacing them (M5); the fact search's lexical fallback keeps its own reason
+    for its abstention, as its test always required.
 - **The engine's phrase order.** ArcadeDB 26.10.2's phrase query does not check word order. Read in
   `FullTextQueryExecutor.collectPhraseMatches`, which says "We can't verify word order without position
   indexing, so we just require all terms"; the docs promise the order. So `CarriedBy` checks every
@@ -409,13 +457,35 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
     neighbours cost nothing there.
 - **Memory's rule lives in the `query` parameter.** `memory_recall`'s description is held under
   768 bytes by a test.
-- **No cap on the number of exact terms.** It is not measured; Task 6 Step 4 measures it.
+- **One query per index, not per term; no cap on the number of terms.** Amended after the review (I6):
+  a query per term per index made a pasted list of 60 codes cost 180 sequential queries. The phrases
+  are OR-ed, which the 26.10.2 executor returns as a union, so a search costs 3 queries in the
+  documents, 2 per recall and 1 per fact search. Task 6 Step 4 measures the time.
+- **The lane's pool** (review I3): each index is read up to its candidate cap, best BM25 first. The
+  documents read 200 passages and 200 cards per index by default; memory reads `HybridCandidates`,
+  400 per kind, where it read the caller's 20.
+- **A card's caveats are Aura's notes too.** The plan first left them, as needing a schema change. The
+  review showed three are constants, or open with one: `unreadCaveat`, `pdfUnreadCaveat` and the
+  read-error caveat. `WithoutAuraNotes` now drops the lines they open, so quoting "Aura" no longer
+  ranks every unread file first.
 
 ## What this plan does not cover
 
-- **A card's caveats.** "Aura did not read this file at ingest" and the PDF caveat name Aura and
-  "ingest" inside unread cards, and `WithoutAuraNotes` strips only the trailer and the cut notice.
-  Keeping caveats apart needs a schema change, a non-goal of the spec.
+- **A term held in more records than the lane's pool** (I3). It is checked only in the best-matching
+  records, and `document_search`'s description says so. Not measured on a library of more than 200
+  documents.
+- **Identifiers admit past the floor** (I4). That is the spec's decision, but identifiers and file names
+  are extracted, not chosen by the caller, so `A4` or `COVID-19` admit what carries them. Acceptance 1
+  measures it; the operator decides on the result.
+- **Italian elided articles** (I5). StandardAnalyzer keeps "dell'Agenzia" one token, so the phrase
+  `"Agenzia delle Entrate"` cannot find it. Fixing it is an analyzer change, a spec non-goal.
+- **Abbreviations read as file names** (M1). `p.es`, `sig.ra`, `p.zza` pass `isFileName`: the first
+  switches the bypass off with a term no document carries, the last ranks every `p.zza` first. The fix
+  the review suggests, only an extension `filecard` routes, would still accept `p.es`: `.es` is routed
+  as Erlang and JavaScript (`filecard/source.go`).
+- **Turns under limit 4** (M2). Recall gives turns no slot below limit 4, so a phrase only a
+  conversation carries is not returned there.
+- **The phrase order upstream.** Reporting it to ArcadeDB is the operator's call.
 - **The judge (slice 3), the embeddings on `openai-go` (slice 2), chunking.**
 
 ## Local baseline (2026-10-25, the same on master and in scratch)
@@ -426,7 +496,10 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
   - CI provisions its own databases.
 - **`TestCommandHook_OversizedRewriteRejected`** timed out once under the full race run, and passed
   three times alone.
-- **`TestEnvExampleNamesHaveReaders`** needs `GIT_DIR` inside the worktree, whose `.git` file holds a
-  Windows path.
+- **A worktree's `.git` file holds a Windows path**, which WSL git cannot read, so
+  `TestEnvExampleNamesHaveReaders` fails there without `GIT_DIR`. Exporting `GIT_DIR` and
+  `GIT_WORK_TREE` is worse: they reach the tests that run git themselves, and `internal/packs`'
+  `git init` failed under the coverage gate (a non-bare `git init` would reuse `GIT_DIR`). A relative
+  gitfile, `gitdir: ../Aura/.git/worktrees/Aura-exact-fixes`, reads on both sides with no variable.
 - **Seven lint findings under the `arcadedb_integration` tag**, in `memory_*_live_test.go` and
   `testclient_test.go`. None is in a file this plan touches.
