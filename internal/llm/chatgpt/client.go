@@ -12,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/openai/openai-go/v3/option"
+	"github.com/openai/openai-go/v3/packages/ssestream"
 	"github.com/openai/openai-go/v3/responses"
 )
 
@@ -78,12 +79,9 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 	if err != nil {
 		return nil, err
 	}
-	streamCtx, firedIdle, cleanup := openai_compat.StreamIdleContext(ctx, time.Duration(c.cfg.StreamIdleTimeoutSec)*time.Second)
-	stream := c.responses.NewStreaming(streamCtx, params, option.WithAPIKey(token))
-	if err := stream.Err(); err != nil {
-		_ = stream.Close()
-		cleanup()
-		return nil, sanitizeError(err, token)
+	stream, firedIdle, cleanup, err := c.openStream(ctx, params, token)
+	if err != nil {
+		return nil, err
 	}
 	out := make(chan llm.Chunk, 16)
 	go func() {
@@ -93,4 +91,17 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 		consumeStream(ctx, stream, firedIdle, out, token)
 	}()
 	return out, nil
+}
+
+// openStream starts a Responses stream under the idle watchdog. The caller closes the stream
+// and then calls cleanup, which releases the watchdog.
+func (c *Client) openStream(ctx context.Context, params responses.ResponseNewParams, token string) (*ssestream.Stream[responses.ResponseStreamEventUnion], func() bool, func(), error) {
+	streamCtx, firedIdle, cleanup := openai_compat.StreamIdleContext(ctx, time.Duration(c.cfg.StreamIdleTimeoutSec)*time.Second)
+	stream := c.responses.NewStreaming(streamCtx, params, option.WithAPIKey(token))
+	if err := stream.Err(); err != nil {
+		_ = stream.Close()
+		cleanup()
+		return nil, nil, nil, sanitizeError(err, token)
+	}
+	return stream, firedIdle, cleanup, nil
 }

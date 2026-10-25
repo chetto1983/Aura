@@ -75,14 +75,7 @@ func consumeStream(ctx context.Context, stream *ssestream.Stream[responses.Respo
 			call.Arguments = event.Arguments
 			calls[event.OutputIndex] = call
 		case "response.failed", "response.incomplete", "error":
-			code, message := event.Code, event.Message
-			if event.Type == "response.failed" {
-				code, message = string(event.Response.Error.Code), event.Response.Error.Message
-			}
-			if event.Type == "response.incomplete" {
-				code, message = "response.incomplete", event.Response.IncompleteDetails.Reason
-			}
-			emit(llm.Chunk{Err: safeResponseError(code, message, token)})
+			emit(llm.Chunk{Err: terminalError(event, token)})
 			return
 		case "response.completed":
 			for i, item := range event.Response.Output {
@@ -117,15 +110,30 @@ func consumeStream(ctx context.Context, stream *ssestream.Stream[responses.Respo
 			return
 		}
 	}
+	emit(llm.Chunk{Err: streamEndError(stream, firedIdle, token)})
+}
+
+// terminalError is the provider's own account of a stream that ended without an answer.
+func terminalError(event responses.ResponseStreamEventUnion, token string) *ResponseError {
+	code, message := event.Code, event.Message
+	if event.Type == "response.failed" {
+		code, message = string(event.Response.Error.Code), event.Response.Error.Message
+	}
+	if event.Type == "response.incomplete" {
+		code, message = "response.incomplete", event.Response.IncompleteDetails.Reason
+	}
+	return safeResponseError(code, message, token)
+}
+
+// streamEndError names why a stream stopped before response.completed.
+func streamEndError(stream *ssestream.Stream[responses.ResponseStreamEventUnion], firedIdle func() bool, token string) error {
 	if firedIdle() {
-		emit(llm.Chunk{Err: openai_compat.ErrStreamIdleTimeout})
-		return
+		return openai_compat.ErrStreamIdleTimeout
 	}
 	if err := stream.Err(); err != nil {
-		emit(llm.Chunk{Err: sanitizeError(err, token)})
-		return
+		return sanitizeError(err, token)
 	}
-	emit(llm.Chunk{Err: ErrStreamIncomplete})
+	return ErrStreamIncomplete
 }
 
 func safeResponseError(code, message, token string) *ResponseError {

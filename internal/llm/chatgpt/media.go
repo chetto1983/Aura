@@ -26,20 +26,7 @@ func (c *Client) projectMedia(ctx context.Context, model, token string, projecti
 	if err != nil {
 		return result, err
 	}
-	caps := llm.ProviderContentCapabilities{Modalities: map[string]bool{"text": true}}
-	for _, entry := range models {
-		if entry.Slug != model || entry.Visibility != "list" {
-			continue
-		}
-		for _, modality := range entry.InputModalities {
-			if modality == "image" || modality == "file" {
-				caps.Modalities[modality] = true
-			}
-		}
-		if entry.SupportsImage {
-			caps.Modalities["image"] = true
-		}
-	}
+	caps := catalogCapabilities(models, model)
 	if projection != nil {
 		if projection.Loader == nil {
 			return result, fmt.Errorf("chatgpt: content projection has no loader")
@@ -69,6 +56,26 @@ func (c *Client) projectMedia(ctx context.Context, model, token string, projecti
 		}
 	}
 	return result, nil
+}
+
+// catalogCapabilities is what the account catalogue lets slug read: text always, and image or
+// file when its listed entry says so. An entry the account does not list reads text only.
+func catalogCapabilities(models []modelWire, slug string) llm.ProviderContentCapabilities {
+	caps := llm.ProviderContentCapabilities{Modalities: map[string]bool{"text": true}}
+	for _, entry := range models {
+		if entry.Slug != slug || entry.Visibility != "list" {
+			continue
+		}
+		for _, modality := range entry.InputModalities {
+			if modality == "image" || modality == "file" {
+				caps.Modalities[modality] = true
+			}
+		}
+		if entry.SupportsImage {
+			caps.Modalities["image"] = true
+		}
+	}
+	return caps
 }
 
 func mediaPart(part llm.ProjectedRequestPart) (responses.ResponseInputContentUnionParam, error) {
