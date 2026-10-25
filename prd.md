@@ -3278,12 +3278,32 @@ their own implementation contract rather than being inferred from the generic AC
 
 Knowledge-work packs preserve repository membership across the upstream plugin
 manifest, skills, MCP declarations and commands. Resolve them from the repository,
-not a skill catalog that discarded their grouping. Connectors arrive blocked until
-one explicit pack trust decision covers the imported members; a pack cannot trust
-itself. Missing endpoints and unsupported entries are reported. Reuse the existing
-skill/MCP installers rather than creating a second marketplace or execution system.
-Composer discovery/invocation and governance management remain the intended UI
-contract; CLI installation alone is not evidence that every UI path is complete.
+not a skill catalog that discarded their grouping. Missing endpoints and unsupported
+entries are reported. Reuse the existing skill/MCP installers rather than creating a
+second marketplace or execution system.
+
+**The CLI install did not reach the running daemon** (measured on the lab VM,
+2026-10-23). `aura pack install` and `aura pack trust` wrote a correct row for
+`chetto1983/broker-analysis-mcp/broker-analysis`: runtime box, `initTimeoutSec` 120,
+trust `sandboxed_local`. The daemon never mounted it, because it mounts registry servers
+at boot and, while running, only through the cockpit's MCP write path (`MountNow`). The
+agent saw the skills and none of the tools.
+
+**What the operator decided** (2026-10-23 and 2026-10-25, spec
+`2026-10-25-pack-install-design.md`):
+- A plugin is installed by the operator, from Governance, or by the agent with the
+  operator's confirmation on an approval card. There is one daemon-side backend, and the
+  install mounts live.
+- The confirmation is the trust approval. It is recorded with the operator, the ref and
+  the reviewed commit; a pack still cannot trust itself.
+- Aura reads Agent Plugins 1.0 beside the Claude format, conformantly, with `PLUGIN_ROOT`
+  and `PLUGIN_DATA` in the identity's box. Install and remove are in scope; update is not.
+- A connector may not take a catalog recipe's name, and an installed skill never arrives
+  `always`-on.
+- The CLI keeps `aura pack list` and `aura pack show` only.
+
+**What this does not show:** one plugin and one identity measured, and no Agent Plugins
+plugin measured yet.
 
 ## 15. Scheduling, delegation and asynchronous delivery
 
