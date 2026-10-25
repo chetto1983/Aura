@@ -14,15 +14,34 @@ import (
 	"github.com/chetto1983/aura/internal/skills"
 )
 
-// Fetcher materializes source into dir, which already exists and is empty.
-// It is the one seam that touches the network, so a test drives the whole
-// resolver against a fixture tree without one.
-type Fetcher func(ctx context.Context, source, dir string) error
+// Fetcher materializes source into dir, which already exists and is empty, at commit (the
+// default branch when empty), and returns the commit it landed on. It is the one seam that
+// touches the network, so a test drives the whole resolver against a fixture tree without one.
+type Fetcher func(ctx context.Context, source, dir, commit string) (string, error)
 
 // Resolver reads packs out of a repository.
 type Resolver struct {
-	// Fetch defaults to a shallow git clone (see fetch.go).
+	// Fetch defaults to GitFetcher{}.Fetch, a shallow git clone.
 	Fetch Fetcher
+	// WorkDir is where checkouts are made; empty means the system temp directory. The daemon
+	// passes its run dir: compose's /tmp is a 64 MiB tmpfs.
+	WorkDir string
+}
+
+// Checkout is a repository materialized at one commit, kept until Close. An install reads its
+// files after the review; Resolve, which only describes, closes it at once.
+type Checkout struct {
+	Root   string
+	Commit string
+	Packs  []Pack
+}
+
+// Close removes the checkout.
+func (c Checkout) Close() error {
+	if c.Root == "" {
+		return nil
+	}
+	return os.RemoveAll(c.Root)
 }
 
 // Resolve materializes the reference's repository once and returns its packs:
@@ -32,20 +51,51 @@ type Resolver struct {
 // empty slice — the caller asked to install something, and "nothing here" is an
 // answer they need rather than a quiet success with no packs in it.
 func (r *Resolver) Resolve(ctx context.Context, ref Ref) ([]Pack, error) {
+	c, err := r.Checkout(ctx, ref, "")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = c.Close() }()
+	return c.Packs, nil
+}
+
+// Checkout materializes the reference's repository at commit (the default branch when empty)
+// and reads its packs. A fetcher that lands on another commit than the one asked for is
+// refused: the install must read exactly what the operator reviewed.
+func (r *Resolver) Checkout(ctx context.Context, ref Ref, commit string) (Checkout, error) {
+	if commit != "" {
+		if err := ValidCommit(commit); err != nil {
+			return Checkout{}, err
+		}
+	}
 	fetch := r.Fetch
 	if fetch == nil {
-		fetch = GitFetcher
+		fetch = GitFetcher{}.Fetch
 	}
-	dir, err := os.MkdirTemp("", "aura-pack-*")
+	dir, err := os.MkdirTemp(r.WorkDir, "aura-pack-*")
 	if err != nil {
-		return nil, fmt.Errorf("pack workspace: %w", err)
+		return Checkout{}, fmt.Errorf("pack workspace: %w", err)
 	}
-	defer func() { _ = os.RemoveAll(dir) }()
-
-	if err := fetch(ctx, ref.Source, dir); err != nil {
-		return nil, fmt.Errorf("fetch %s: %w", ref.Source, err)
+	c := Checkout{Root: dir}
+	fail := func(err error) (Checkout, error) {
+		_ = c.Close()
+		return Checkout{}, err
 	}
-	return ReadTree(dir, ref)
+	resolved, err := fetch(ctx, ref.Source, dir, commit)
+	if err != nil {
+		return fail(fmt.Errorf("fetch %s: %w", ref.Source, err))
+	}
+	if err := ValidCommit(resolved); err != nil {
+		return fail(fmt.Errorf("fetch %s: %w", ref.Source, err))
+	}
+	if commit != "" && resolved != commit {
+		return fail(fmt.Errorf("fetch %s: landed on %s, asked for %s", ref.Source, resolved, commit))
+	}
+	if c.Packs, err = ReadTree(dir, ref); err != nil {
+		return fail(err)
+	}
+	c.Commit = resolved
+	return c, nil
 }
 
 // ReadTree resolves packs from an ALREADY-materialized repository at root. It is

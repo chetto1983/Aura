@@ -281,12 +281,12 @@ func TestResolveFetchesOnceThenReads(t *testing.T) {
 	t.Parallel()
 	fixture := marketplace(t)
 	calls := 0
-	r := &Resolver{Fetch: func(_ context.Context, source, dir string) error {
+	r := &Resolver{Fetch: func(_ context.Context, source, dir, _ string) (string, error) {
 		calls++
 		if source != "anthropics/knowledge-work-plugins" {
 			t.Errorf("fetched %q", source)
 		}
-		return copyTree(fixture, dir)
+		return fakeCommit, copyTree(fixture, dir)
 	}}
 
 	got, err := r.Resolve(t.Context(), Ref{Source: "anthropics/knowledge-work-plugins", Directory: "sales"})
@@ -304,7 +304,7 @@ func TestResolveFetchesOnceThenReads(t *testing.T) {
 func TestResolveSurfacesAFetchFailure(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("network is down")
-	r := &Resolver{Fetch: func(context.Context, string, string) error { return boom }}
+	r := &Resolver{Fetch: func(context.Context, string, string, string) (string, error) { return "", boom }}
 
 	_, err := r.Resolve(t.Context(), Ref{Source: "o/r"})
 	if !errors.Is(err, boom) {
@@ -390,7 +390,7 @@ func TestPackRefReconstructsWhatResolvesToIt(t *testing.T) {
 // cloneURL is the boundary where a catalogue string becomes an argument to git.
 func TestCloneURLAcceptsOnlyAnOwnerRepoPair(t *testing.T) {
 	t.Parallel()
-	if got, err := cloneURL("anthropics/knowledge-work-plugins"); err != nil ||
+	if got, err := (GitFetcher{}).url("anthropics/knowledge-work-plugins"); err != nil ||
 		got != "https://github.com/anthropics/knowledge-work-plugins.git" {
 		t.Fatalf("cloneURL = %q, %v", got, err)
 	}
@@ -402,7 +402,7 @@ func TestCloneURLAcceptsOnlyAnOwnerRepoPair(t *testing.T) {
 		"../../etc",
 		"owner/repo?x=1/y",
 	} {
-		if got, err := cloneURL(bad); err == nil {
+		if got, err := (GitFetcher{}).url(bad); err == nil {
 			t.Errorf("cloneURL(%q) = %q, want a refusal", bad, got)
 		}
 	}
@@ -414,7 +414,7 @@ func TestCloneURLAcceptsOnlyAnOwnerRepoPair(t *testing.T) {
 // trust the operator granted the first.
 func TestCloneArgsPinTheFlagsThatMatter(t *testing.T) {
 	t.Parallel()
-	args, err := cloneArgs("anthropics/knowledge-work-plugins", "/tmp/dest")
+	args, err := (GitFetcher{}).cloneArgs("anthropics/knowledge-work-plugins", "/tmp/dest")
 	if err != nil {
 		t.Fatalf("cloneArgs: %v", err)
 	}
@@ -435,10 +435,10 @@ func TestCloneArgsPinTheFlagsThatMatter(t *testing.T) {
 
 func TestCloneArgsRefuseABadSourceOrAnEmptyDestination(t *testing.T) {
 	t.Parallel()
-	if _, err := cloneArgs("https://evil.example/x/y", "/tmp/d"); err == nil {
+	if _, err := (GitFetcher{}).cloneArgs("https://evil.example/x/y", "/tmp/d"); err == nil {
 		t.Error("a source carrying its own host built an argv")
 	}
-	if _, err := cloneArgs("owner/repo", "  "); err == nil {
+	if _, err := (GitFetcher{}).cloneArgs("owner/repo", "  "); err == nil {
 		t.Error("an empty destination built an argv; git would clone into the cwd")
 	}
 }
@@ -446,7 +446,7 @@ func TestCloneArgsRefuseABadSourceOrAnEmptyDestination(t *testing.T) {
 func TestGitFetcherRefusesABadSourceWithoutRunningGit(t *testing.T) {
 	t.Parallel()
 	// No network and no git process: the refusal happens while building argv.
-	if err := GitFetcher(t.Context(), "https://evil.example/x/y", t.TempDir()); err == nil {
+	if _, err := (GitFetcher{}).Fetch(t.Context(), "https://evil.example/x/y", t.TempDir(), ""); err == nil {
 		t.Fatal("GitFetcher accepted a source that names its own host")
 	}
 }
