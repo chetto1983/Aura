@@ -140,8 +140,9 @@ type FactSearchResult struct {
 	Abstained     bool
 	Reason        string
 	// FloorsReason is ReasonUncalibratedFloors when a hybrid answer was admitted by floors
-	// never measured for its space (spec §9). Reason names why a read left the dense path;
-	// this names how far to trust one that did not.
+	// never measured for its space (spec §9). Reason names every way the read is less than
+	// whole, "+"-joined (JoinReasons): why it left the dense path, an exact lane that failed,
+	// and why it abstained; this names how far to trust a read that kept the dense path.
 	FloorsReason string
 }
 
@@ -193,10 +194,12 @@ func (c *Client) SearchFactsHybrid(
 	} else {
 		result.Facts = facts
 	}
+	// The lexical fallback's own reason stands for its abstention, as it always has; a hybrid
+	// read adds the abstention to an exact lane's failure rather than hiding behind it.
 	if len(result.Facts) == 0 {
 		result.Abstained = true
-		if result.Reason == "" {
-			result.Reason = reasonNoQualifiedCandidates
+		if result.RetrievalPath == retrievalPathHybrid || result.Reason == "" {
+			result.Reason = JoinReasons(result.Reason, reasonNoQualifiedCandidates)
 		}
 	}
 	return result, nil

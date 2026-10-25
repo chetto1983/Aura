@@ -2,6 +2,7 @@ package arcadedb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -20,32 +21,41 @@ import (
 // the carriers their floor kept out.
 const reasonExactTermsFailed = "exact_terms_failed"
 
-// exactMemoryRIDs asks each lexical statement for each term as one phrase with no floor, and
-// returns every record found, once, in the order found. The caller hydrates them and keeps those
-// that carry every term. The phrase's BM25 is dropped: it is not the reranked cosine a recall
-// score reports.
+// exactMemoryRIDs asks each lexical statement for every term at once, the phrases OR-ed with no
+// floor (lucenePhrases), and returns every record found, once, in the order found. The caller
+// hydrates them and keeps those that carry every term. The phrase's BM25 is dropped: it is not the
+// reranked cosine a recall score reports.
+//
+// Each statement reads the memory's whole candidate cap, not the caller's share of it: the engine
+// returns a phrase's words in any order (document_exact.go), and those records share the pool with
+// the carriers. A statement that fails costs its own kind only, as in rankRecallKinds; the error
+// joins every failure.
 func (c *Client) exactMemoryRIDs(
 	ctx context.Context, statements []string, params map[string]any, excluded []string, terms []ExactTerm,
 ) ([]recallRankedRID, error) {
+	if len(terms) == 0 {
+		return nil, nil
+	}
+	bound := maps.Clone(params)
+	bound["query"], bound["min_lexical_score"] = lucenePhrases(terms), 0
+	bound["candidates"] = c.memoryLimits().HybridCandidates
 	var found []recallRankedRID
+	var failures []error
 	seen := make(map[string]struct{})
 	for _, statement := range statements {
-		for _, term := range terms {
-			bound := maps.Clone(params)
-			bound["query"], bound["min_lexical_score"] = term.lucenePhrase(), 0
-			rows, err := c.Query(ctx, applyRecallExclusions(statement, bound, excluded), bound)
-			if err != nil {
-				return nil, fmt.Errorf("arcadedb: exact term %q: %w", term.Raw, err)
-			}
-			for _, ranked := range decodeRecallRanking(rows) {
-				if _, duplicate := seen[ranked.rid]; !duplicate {
-					seen[ranked.rid] = struct{}{}
-					found = append(found, recallRankedRID{rid: ranked.rid, exactOnly: true})
-				}
+		rows, err := c.Query(ctx, applyRecallExclusions(statement, bound, excluded), bound)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("arcadedb: exact terms: %w", err))
+			continue
+		}
+		for _, ranked := range decodeRecallRanking(rows) {
+			if _, duplicate := seen[ranked.rid]; !duplicate {
+				seen[ranked.rid] = struct{}{}
+				found = append(found, recallRankedRID{rid: ranked.rid, exactOnly: true})
 			}
 		}
 	}
-	return found, nil
+	return found, errors.Join(failures...)
 }
 
 // withExactOnly appends to ranked the exact lane's records it does not already hold.
@@ -104,8 +114,7 @@ func (c *Client) exactFactsFirst(ctx context.Context, query string, hits []FactH
 		return hits, nil
 	}
 	exact, err := c.exactMemoryRIDs(ctx, []string{recallFactLexicalStatement}, map[string]any{
-		"as_of":      asOf.UTC().Format(time.RFC3339),
-		"candidates": min(max(limit*4, 20), c.memoryLimits().HybridCandidates),
+		"as_of": asOf.UTC().Format(time.RFC3339),
 	}, nil, terms)
 	if err != nil {
 		return hits, err

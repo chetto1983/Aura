@@ -280,7 +280,7 @@ func (c *Client) hydrateRecallRanking(
 	if len(ranked) == 0 {
 		return RecallResult{
 			Evidence: make([]RecallEvidence, 0), Abstained: true,
-			Reason:    reasonNoQualifiedCandidates,
+			Reason:    JoinReasons(reason, reasonNoQualifiedCandidates),
 			Retrieval: RecallRetrieval{Path: path},
 		}, nil
 	}
@@ -293,11 +293,14 @@ func (c *Client) hydrateRecallRanking(
 	if factErr != nil && turnErr != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: hydrate recall facts: %v; turns: %w", factErr, turnErr)
 	}
-	factProse := make(map[string]struct{}, len(facts))
-	for _, fact := range facts {
-		factProse[normalizedRecallProse(fact.Statement)] = struct{}{}
-	}
 	ranked = exactRecallOrder(ranked, facts, turns, QueryExactTerms(request.Query))
+	// After the order drops the exact lane's non-carriers: a fact no floor admitted hides no turn.
+	factProse := make(map[string]struct{}, len(facts))
+	for _, item := range ranked {
+		if fact, ok := facts[item.rid]; ok {
+			factProse[normalizedRecallProse(fact.Statement)] = struct{}{}
+		}
+	}
 	quota := recallQuotaFor(limit)
 	identifiers := QueryIdentifiers(request.Query)
 	var admitted recallAdmission
@@ -381,7 +384,7 @@ func (c *Client) hydrateRecallRanking(
 	)
 	if len(evidence) == 0 {
 		result.Abstained = true
-		result.Reason = reasonNoQualifiedCandidates
+		result.Reason = JoinReasons(reason, reasonNoQualifiedCandidates)
 	}
 	return result, nil
 }
