@@ -62,7 +62,7 @@ func newWorld(t *testing.T) (*world, *Backend) {
 		t:        t,
 		commits:  map[string]map[string]string{commitA: pluginFiles("1.0.0")},
 		head:     commitA,
-		library:  &fakeLibrary{active: map[string]string{}, failInstall: map[string]bool{}, failArchive: map[string]bool{}},
+		library:  &fakeLibrary{active: map[string]string{}, failInstall: map[string]bool{}, failDelete: map[string]bool{}},
 		registry: &fakeRegistry{doc: mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{}}},
 		failVer:  map[string]bool{},
 		failProb: map[string]bool{},
@@ -157,9 +157,9 @@ type fakeLibrary struct {
 	active      map[string]string
 	installed   []string
 	sources     []string
-	archived    []string
+	deleted     []string
 	failInstall map[string]bool
-	failArchive map[string]bool
+	failDelete  map[string]bool
 	onInstall   func()
 }
 
@@ -167,7 +167,7 @@ func (l *fakeLibrary) Exists(name string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	_, ok := l.active[name]
-	return ok || slices.Contains(l.archived, name)
+	return ok
 }
 
 func (l *fakeLibrary) InstallDir(_ context.Context, dir, source string, _ skills.AuditActor) (string, error) {
@@ -199,14 +199,14 @@ func (l *fakeLibrary) ActiveHash(name string) (string, bool) {
 	return h, ok
 }
 
-func (l *fakeLibrary) Archive(_ context.Context, name string, _ skills.AuditActor) error {
+func (l *fakeLibrary) Delete(_ context.Context, name string, _ skills.AuditActor) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.failArchive[name] {
-		return errors.New("archive failed")
+	if l.failDelete[name] {
+		return errors.New("delete failed")
 	}
 	delete(l.active, name)
-	l.archived = append(l.archived, name)
+	l.deleted = append(l.deleted, name)
 	return nil
 }
 

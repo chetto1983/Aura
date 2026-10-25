@@ -52,8 +52,8 @@ func TestRemoveSkipsAChangedSkillAndAForeignConnector(t *testing.T) {
 	if s := stepOf(rep.Skills, "s1"); s.Outcome != OutcomeSkipped || s.Reason != "changed since install" {
 		t.Errorf("s1 step = %+v", s)
 	}
-	if !slices.Equal(w.library.archived, []string{"s2"}) {
-		t.Errorf("archived %v, want only s2", w.library.archived)
+	if !slices.Equal(w.library.deleted, []string{"s2"}) {
+		t.Errorf("deleted %v, want only s2", w.library.deleted)
 	}
 	if s := stepOf(rep.Connectors, "remote"); s.Outcome != OutcomeSkipped {
 		t.Errorf("remote step = %+v", s)
@@ -71,7 +71,6 @@ func TestRemoveKeepsDataUnlessAsked(t *testing.T) {
 	if err != nil || rep.DataDeleted || len(w.purged) != 0 {
 		t.Fatalf("Remove keeping data = (%+v, %v), purged %v", rep, err, w.purged)
 	}
-	w.library.archived = nil
 	reviewAndInstall(t, b)
 	rep, err = b.Remove(context.Background(), "admin", "p", true)
 	if err != nil || !rep.DataDeleted || !slices.Equal(w.purged, []string{DataDir("p", testRef)}) {
@@ -83,9 +82,9 @@ func TestRemoveFailureLeavesARecordOfWhatRemains(t *testing.T) {
 	t.Parallel()
 	w, b := newWorld(t)
 	reviewAndInstall(t, b)
-	w.library.failArchive["s2"] = true
+	w.library.failDelete["s2"] = true
 	if _, err := b.Remove(context.Background(), "admin", "p", false); err == nil {
-		t.Fatal("Remove succeeded with a failed archive")
+		t.Fatal("Remove succeeded with a failed delete")
 	}
 	rec, ok, _ := b.Get("p")
 	if !ok || rec.Phase != PhaseRemoving || len(rec.Skills) != 1 || rec.Skills[0].Name != "s2" || len(rec.Connectors) != 0 {
@@ -93,12 +92,29 @@ func TestRemoveFailureLeavesARecordOfWhatRemains(t *testing.T) {
 	}
 
 	w.registry.fail = errors.New("database is unreachable")
-	w.library.failArchive["s2"] = false
+	w.library.failDelete["s2"] = false
 	if _, err := b.Remove(context.Background(), "admin", "p", false); err == nil {
 		t.Fatal("Remove succeeded with a failed registry update")
 	}
 	if rec, _, _ := b.Get("p"); len(rec.Skills) != 1 {
 		t.Errorf("a failed update changed what remains: %+v", rec)
+	}
+}
+
+// A new version is a removal and a reinstall (spec §2), so a removal leaves nothing the next
+// review counts as taken.
+func TestRemoveThenReinstallLandsTheSkillsAgain(t *testing.T) {
+	t.Parallel()
+	_, b := newWorld(t)
+	reviewAndInstall(t, b)
+	if _, err := b.Remove(context.Background(), "admin", "p", false); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	rep := reviewAndInstall(t, b)
+	for _, name := range []string{"s1", "s2"} {
+		if s := stepOf(rep.Skills, name); s.Outcome != OutcomeOK {
+			t.Errorf("%s step on the reinstall = %+v", name, s)
+		}
 	}
 }
 

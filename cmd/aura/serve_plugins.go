@@ -139,8 +139,8 @@ func (s pluginSkills) ActiveHash(name string) (string, bool) {
 	return hash, true
 }
 
-func (s pluginSkills) Archive(ctx context.Context, name string, actor skills.AuditActor) error {
-	if err := s.writer.Archive(ctx, name, skills.ApprovalCLI, actor); err != nil {
+func (s pluginSkills) Delete(ctx context.Context, name string, actor skills.AuditActor) error {
+	if _, err := s.writer.Delete(ctx, name, actor); err != nil {
 		return err
 	}
 	s.changed()

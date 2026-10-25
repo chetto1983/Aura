@@ -31,7 +31,7 @@ const (
 )
 
 // SkillEntry is one skill a plugin installed, with the content hash it landed with: removal
-// archives a skill only while its content is still what the plugin wrote.
+// deletes a skill only while its content is still what the plugin wrote.
 type SkillEntry struct {
 	Name string `json:"name"`
 	Hash string `json:"hash"`

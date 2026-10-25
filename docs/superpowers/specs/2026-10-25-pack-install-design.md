@@ -197,7 +197,7 @@ There is one implementation, daemon-side, behind both entries. In order:
    re-fetched one by one, because a re-fetch could land another commit.
    - A plugin skill whose name already exists in the library is **skipped** and listed in the
      review, as a taken connector name is. `WriteInstall` would otherwise replace the existing
-     skill (`promoteDir`), and a later removal would archive it.
+     skill (`promoteDir`), and a later removal would delete it.
 4. **Stage each connector:**
    - **stdio:**
      - it runs in the box (`runtime.kind=box`, `initTimeoutSec` 120);
@@ -303,7 +303,10 @@ Removal finds a plugin's connectors by their `pack:owner/repo/plugin` source and
 install record (§4.3 step 2). It then:
 - removes the connectors from the registry, in one write and one audit row, and calls `Unmount` on
   each;
-- archives the skills through the existing archive path, so they leave the box mirror;
+- deletes each skill whose content still matches its install hash, through the existing delete
+  path, so it leaves the box mirror and a reinstall lands it again. Amended 2026-10-25 after the
+  final review: archiving kept the name taken, so the update path of §2 reinstalled no skill
+  (`TestRemoveThenReinstallLandsTheSkillsAgain`). A skill changed since the install stays;
 - deletes the kept tree, which leaves `/plugins/<name>` at the next mirror;
 - deletes `PLUGIN_DATA` only when asked. Every identity's box holds its own copy; the request
   deletes the copies of the boxes Aura can reach.
@@ -351,8 +354,8 @@ Machine-checkable, before the VM:
    - an identity without `identity.create` gets no challenge, and its accept counts for nothing.
    - The gateway classifies `list` and `show` as `Safe` and `install` and `remove` as `Normal`.
    - The cockpit routes answer 403 to a member.
-6. **Removal:** connectors leave the registry and the live registry, skills are archived, and the
-   tree is deleted. `PLUGIN_DATA` stays unless asked.
+6. **Removal:** connectors leave the registry and the live registry, skills still as installed are
+   deleted, and the tree is deleted. `PLUGIN_DATA` stays unless asked.
 7. **Box:** a `docker_integration` test with a fixture plugin whose stdio server is a `./` script.
    - The script reads `PLUGIN_ROOT`, `PLUGIN_DATA` and its working directory, writes into
      `PLUGIN_DATA`, and answers an MCP handshake.
@@ -425,9 +428,10 @@ Each amendment comes from a finding read in the code, at the line the plan cites
   timeout must not leave a half-installed plugin.
 - **Remote connectors after the save.** They are probed after the mount. A failed probe is reported
   as "needs attention" with a link to the server on the MCP board, where its authorization lives.
-- **Removal is checked against the install.** Removal archives only skills whose content still
+- **Removal is checked against the install.** Removal deletes only skills whose content still
   matches the hash recorded at install, and treats an archived skill of the same name as taken at
-  review. Otherwise an operator's archived skill would be overwritten.
+  review. Otherwise an operator's archived skill would be overwritten. Deleting, not archiving,
+  frees the name for the reinstall that lands a new version (amended 2026-10-25).
 - **A pinned commit cannot move.** `ErrDigestChanged` therefore means that what Aura would write
   changed since the review: a name taken in the meantime, or Aura itself updated. It does not mean
   the repository moved. The message says so.

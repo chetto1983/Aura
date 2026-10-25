@@ -37,7 +37,7 @@ type SkillLibrary interface {
 	Exists(name string) bool
 	InstallDir(ctx context.Context, dir, source string, actor skills.AuditActor) (hash string, err error)
 	ActiveHash(name string) (string, bool)
-	Archive(ctx context.Context, name string, actor skills.AuditActor) error
+	Delete(ctx context.Context, name string, actor skills.AuditActor) error
 }
 
 // Registry applies one change to the MCP registry: fn runs inside the registry's lock on a

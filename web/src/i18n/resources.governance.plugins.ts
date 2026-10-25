@@ -22,7 +22,7 @@ export const pluginsEn = {
   removeFailed: "Couldn't remove {{name}}.",
   remove: {
     title: 'Remove {{name}}?',
-    body: 'Its connectors leave every box and its skills are archived. A skill you changed since the install stays.',
+    body: 'Its connectors leave every box and its skills are deleted; installing it again brings them back. A skill you changed since the install stays.',
     deleteData: 'Also delete its data (only in your box)',
     cancel: 'Cancel',
     confirm: 'Remove',
@@ -86,7 +86,7 @@ export const pluginsIt = {
   removeFailed: 'Impossibile rimuovere {{name}}.',
   remove: {
     title: 'Rimuovere {{name}}?',
-    body: "I suoi connettori escono da ogni box e le sue competenze vengono archiviate. Una competenza che hai modificato dopo l'installazione resta.",
+    body: "I suoi connettori escono da ogni box e le sue competenze vengono eliminate; installarlo di nuovo le riporta. Una competenza che hai modificato dopo l'installazione resta.",
     deleteData: 'Elimina anche i dati (solo nel tuo box)',
     cancel: 'Annulla',
     confirm: 'Rimuovi',

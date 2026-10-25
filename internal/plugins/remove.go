@@ -45,10 +45,10 @@ func (b *Backend) Remove(ctx context.Context, actor, name string, deleteData boo
 	}
 	rec.Connectors = nil
 	var remaining []SkillEntry
-	report.Skills, remaining = b.archiveSkills(ctx, actor, rec.Skills)
+	report.Skills, remaining = b.deleteSkills(ctx, actor, rec.Skills)
 	if len(remaining) > 0 {
 		rec.Skills = remaining
-		return report, errors.Join(fmt.Errorf("plugin %s: %d skill(s) could not be archived", name, len(remaining)),
+		return report, errors.Join(fmt.Errorf("plugin %s: %d skill(s) could not be deleted", name, len(remaining)),
 			b.d.Store.WriteRecord(rec))
 	}
 	rec.Skills = nil
@@ -98,10 +98,12 @@ func (b *Backend) removeConnectors(ctx context.Context, actor string, rec Record
 	return steps, nil
 }
 
-// archiveSkills archives each recorded skill whose active content still has its install hash.
-// An edited or already archived skill is the operator's now and is left alone. It returns the
-// skills whose archive failed.
-func (b *Backend) archiveSkills(ctx context.Context, actor string, recorded []SkillEntry) ([]Step, []SkillEntry) {
+// deleteSkills deletes each recorded skill whose active content still has its install hash.
+// Such a skill is the plugin's own content and comes back with a reinstall, which is how a new
+// version lands (spec §2); an archived copy would hold its name and make the reinstall skip it.
+// An edited or archived skill is the operator's now and is left alone. It returns the skills
+// whose delete failed.
+func (b *Backend) deleteSkills(ctx context.Context, actor string, recorded []SkillEntry) ([]Step, []SkillEntry) {
 	var steps []Step
 	var remaining []SkillEntry
 	for _, s := range recorded {
@@ -112,7 +114,7 @@ func (b *Backend) archiveSkills(ctx context.Context, actor string, recorded []Sk
 		case hash != s.Hash:
 			steps = append(steps, Step{Name: s.Name, Outcome: OutcomeSkipped, Reason: "changed since install"})
 		default:
-			if err := b.d.Skills.Archive(ctx, s.Name, skills.AuditActor{ActorID: actor}); err != nil {
+			if err := b.d.Skills.Delete(ctx, s.Name, skills.AuditActor{ActorID: actor}); err != nil {
 				steps = append(steps, Step{Name: s.Name, Outcome: OutcomeFailed, Reason: err.Error()})
 				remaining = append(remaining, s)
 				continue
