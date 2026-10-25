@@ -150,12 +150,14 @@ func fixedTier(raw json.RawMessage, tiers map[string]scoring.RiskTier) scoring.R
 // pluginPackFixedTiers grades plugin_pack (spec 2026-10-25-pack-install §4.6). list and show
 // read a public repository. install and remove are Normal, not Destructive: the tool's own
 // approval card is the one question either asks, on every profile, and a gated grade would
-// make a strict profile ask a second time for the same decision. Anything else saturates to
-// Risky.
+// make a strict profile ask a second time for the same decision. upgrade is Normal too: it
+// reads the source the operator approved at install, and like Codex's it asks nothing.
+// Anything else saturates to Risky.
 var pluginPackFixedTiers = map[string]scoring.RiskTier{
 	"list":    scoring.Safe,
 	"show":    scoring.Safe,
 	"install": scoring.Normal,
+	"upgrade": scoring.Normal,
 	"remove":  scoring.Normal,
 }
 

@@ -35,12 +35,15 @@ type fakePluginBackend struct {
 	removeErr error
 	// partial makes a failing write fail after it began, as one past the claim does: the report
 	// then says what was done. Otherwise a failure is a refusal, with an empty report.
-	partial  bool
-	records  map[string]plugins.Record
-	reviews  int
-	installs []plugins.InstallRequest
-	removes  []string
-	actors   []string
+	partial    bool
+	records    map[string]plugins.Record
+	reviews    int
+	installs   []plugins.InstallRequest
+	removes    []string
+	actors     []string
+	upgrade    plugins.UpgradeReport
+	upgradeErr error
+	upgrades   []string
 }
 
 func newFakePluginBackend() *fakePluginBackend {
@@ -87,6 +90,18 @@ func (f *fakePluginBackend) Remove(_ context.Context, actor, name string, delete
 		Skills:      []plugins.Step{{Name: "broker-report", Outcome: plugins.OutcomeSkipped, Reason: "changed since install"}},
 		DataDeleted: deleteData,
 	}, f.removeErr
+}
+
+func (f *fakePluginBackend) Upgrade(_ context.Context, actor, name string) (plugins.UpgradeReport, error) {
+	f.upgrades = append(f.upgrades, name)
+	f.actors = append(f.actors, actor)
+	return f.upgrade, f.upgradeErr
+}
+
+func (f *fakePluginBackend) UpgradeAll(_ context.Context, actor string) ([]plugins.UpgradeReport, error) {
+	f.upgrades = append(f.upgrades, "*")
+	f.actors = append(f.actors, actor)
+	return []plugins.UpgradeReport{f.upgrade, {Name: "other", Version: "1.0.0", Commit: pluginCommit, UpToDate: true}}, f.upgradeErr
 }
 
 func (f *fakePluginBackend) Get(name string) (plugins.Record, bool, error) {
@@ -331,11 +346,14 @@ func TestPluginPackWithoutABackendSaysSo(t *testing.T) {
 func TestPluginPackRepeatFingerprintDiffersFromTheProposal(t *testing.T) {
 	t.Parallel()
 	b := newFakePluginBackend()
-	b.records["broker-analysis"] = plugins.Record{Name: "broker-analysis", Ref: pluginRef, Commit: pluginCommit}
 	tool := pluginTool(b)
 	spec := tool.Spec()
 
 	for _, proposal := range []string{pluginProposal, `{"action":"remove","name":"broker-analysis"}`} {
+		// An install is proposed for a plugin not installed yet, a removal for an installed one.
+		if strings.Contains(proposal, `"remove"`) {
+			b.records["broker-analysis"] = plugins.Record{Name: "broker-analysis", Ref: pluginRef, Commit: pluginCommit}
+		}
 		res, err := callPlugin(t, tool, pluginAdmin, proposal)
 		c := challengeOf(t, res, err)
 		first, ferr := OperationFingerprint(spec, json.RawMessage(proposal))
@@ -383,9 +401,12 @@ func TestPluginPackReportsWhatAPartialWriteDid(t *testing.T) {
 	stop := errors.New("save the connectors of broker-analysis: database is unreachable")
 	b := newFakePluginBackend()
 	b.installErr, b.removeErr, b.partial = stop, stop, true
-	b.records["broker-analysis"] = plugins.Record{Name: "broker-analysis", Ref: pluginRef, Commit: pluginCommit, Version: "0.1.1"}
 	tool := pluginTool(b)
 	for _, proposal := range []string{pluginProposal, `{"action":"remove","name":"broker-analysis"}`} {
+		// An install is proposed for a plugin not installed yet, a removal for an installed one.
+		if strings.Contains(proposal, `"remove"`) {
+			b.records["broker-analysis"] = plugins.Record{Name: "broker-analysis", Ref: pluginRef, Commit: pluginCommit, Version: "0.1.1"}
+		}
 		res, err := callPlugin(t, tool, pluginAdmin, proposal)
 		c := challengeOf(t, res, err)
 		if err := tool.Approvals.ApproveChallenge(pluginSession, c.ApprovalSHA256, c.Question); err != nil {

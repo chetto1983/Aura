@@ -16,11 +16,13 @@ import (
 	"github.com/chetto1983/aura/internal/plugins"
 )
 
-// PluginBackend is the plugin backend plugin_pack installs and removes through
+// PluginBackend is the plugin backend plugin_pack installs, upgrades and removes through
 // (internal/plugins.Backend). The cockpit drives the same one.
 type PluginBackend interface {
 	Review(ctx context.Context, ref string) (plugins.Review, error)
 	Install(ctx context.Context, actor string, req plugins.InstallRequest) (plugins.Report, error)
+	Upgrade(ctx context.Context, actor, name string) (plugins.UpgradeReport, error)
+	UpgradeAll(ctx context.Context, actor string) ([]plugins.UpgradeReport, error)
 	Remove(ctx context.Context, actor, name string, deleteData bool) (plugins.RemoveReport, error)
 	Get(name string) (plugins.Record, bool, error)
 	MayAdminister(ctx context.Context, identityID string) (bool, error)
@@ -44,9 +46,9 @@ type PluginApprovals = ApprovalStore[PluginAction]
 const PluginApprovalContext = "plugin_pack_approval"
 
 var (
-	errNoPluginBackend = errors.New("plugin_pack: installing and removing plugins is not available here — " +
+	errNoPluginBackend = errors.New("plugin_pack: installing, upgrading and removing plugins is not available here — " +
 		"this deployment has no plugin backend (it needs AURA_PLUGINS_DIR, a database and a skills directory)")
-	errPluginNotOperator = errors.New("plugin_pack: only the operator (identity.create) installs and removes plugins. " +
+	errPluginNotOperator = errors.New("plugin_pack: only the operator (identity.create) installs, upgrades and removes plugins. " +
 		"Ask them to do it in the cockpit, Governance → Plugins, or from their own conversation")
 )
 
@@ -87,6 +89,14 @@ func (t *PackTool) install(ctx context.Context, a packArgs) (ToolResult, error) 
 	review, err := t.Backend.Review(ctx, a.Ref)
 	if err != nil {
 		return ToolResult{}, err
+	}
+	// An install of an installed plugin can only be refused after the accept, so it gets no card.
+	if rec, installed, err := t.Backend.Get(review.Name); err != nil || installed {
+		if err != nil {
+			return ToolResult{}, fmt.Errorf("plugin_pack install %s: %w", review.Ref, err)
+		}
+		return NewResult(ctx, fmt.Sprintf("Plugin %s is already installed at %s (%s). The repository's default branch has %s (%s). "+
+			"To move to it: plugin_pack action=upgrade name=%s.\n", rec.Name, rec.Version, rec.Commit, review.Version, review.Commit, rec.Name))
 	}
 	digest := pluginApprovalDigest("install", review.Ref, review.Commit, review.Digest)
 	question, err := review.Question(digest)

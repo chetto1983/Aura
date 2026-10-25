@@ -23,6 +23,12 @@ func (adminOnlyBackend) Review(context.Context, string) (plugins.Review, error) 
 func (adminOnlyBackend) Install(context.Context, string, plugins.InstallRequest) (plugins.Report, error) {
 	return plugins.Report{}, nil
 }
+func (adminOnlyBackend) Upgrade(context.Context, string, string) (plugins.UpgradeReport, error) {
+	return plugins.UpgradeReport{}, nil
+}
+func (adminOnlyBackend) UpgradeAll(context.Context, string) ([]plugins.UpgradeReport, error) {
+	return nil, nil
+}
 func (adminOnlyBackend) Remove(context.Context, string, string, bool) (plugins.RemoveReport, error) {
 	return plugins.RemoveReport{}, nil
 }
