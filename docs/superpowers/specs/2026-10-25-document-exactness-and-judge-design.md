@@ -175,6 +175,10 @@ document alone every time. It admitted nothing for any of the 5 out-of-corpus qu
     every document carrying them past the floor. Acceptance 1 adds out-of-corpus questions holding
     such tokens. If they break abstention, identifiers go back to ranking first only and only quoted
     phrases admit: the operator's call, on that measurement.
+  - Measured on the lab VM on 2026-10-25 (`2026-10-25-document-exact-terms-lab-vm.md`): none of
+    `A4`, `Q3`, `24h`, `COVID-19` admitted a document through the exact lane, because the library
+    holds none of them. One question cleared the floor by its cosine alone. The question stays open
+    for a library that holds such a token.
 - **The effect.**
   - A document that carries every exact term of the question is admitted, whatever its cosine or,
     later, judge score.

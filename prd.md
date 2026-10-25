@@ -1688,6 +1688,42 @@ This does not prove:
   workbook rows became passages ("Workbook rows as passages", below), `RIC-10959` ranks first;
 - anything beyond 54 questions written by the corpus's own generator.
 
+**Exact terms admit and rank first (measured 2026-10-25).** This extends the rule above. An
+identifier is now one kind of exact term, beside a phrase the caller quotes (`"…"`, `“…”`, `«…»`)
+and a file name. A document that carries every exact term of the question is admitted whatever
+its cosine and ranks ahead of every other. Memory recall and the fact search follow the same
+rule. Nothing else is an exact term: no capitals, no sentence position, no word list.
+- **Where carriers come from.** Each full-text index is asked once, the terms' Lucene phrases OR-ed,
+  with no floor. Go then checks every text: ArcadeDB 26.10.2's phrase ignores word order
+  (`FullTextQueryExecutor.collectPhraseMatches`). A document only that query found is kept when
+  its title, its card without Aura's own notes, or its returned passages carry every term.
+- **What it does not score.** Such a document reports score 0; its exact evidence carries the
+  phrase's BM25, which is not the legs' scale.
+- **A failed lane is named** (`exact_terms_unavailable` in the documents, `exact_terms_failed` in
+  memory), and the documents never abstain on it.
+
+Measured on the lab VM's library (8 documents, pplx-embed space, floors 0.39 and 0.72), on the 29
+questions of the 2026-10-23 floors set plus 11 for this rule:
+- s04 with "Ubuntu Mono" quoted, and the bare `"Ubuntu Mono"`, now return `calibre_demo.docx`
+  first. Unquoted, it still abstains.
+- The 5 out-of-corpus questions and "fattura" still abstain. The hard negatives admitted are 7 of
+  12, as before.
+- 16 identifiers cost what none do: medians of 904 and 901 ms per search.
+- Aura's agent quoted the name on its first call, unprompted.
+
+The record is [the verification](docs/superpowers/verification/2026-10-25-document-exact-terms-lab-vm.md).
+
+This does not prove:
+- **anything on the complex corpus.** `complex_qrels.json` was not run: no stack holds the complex
+  identity today;
+- **that an identifier extracted from a question never admits a non-answer.** `A4`, `Q3`, `24h`
+  and `COVID-19` are in no document of this library;
+- **a quoted name behind an elided article.** StandardAnalyzer keeps "l’italia" one token, so the
+  exact lane misses `"Italia è una Repubblica democratica"`; the legs still rank it first;
+- **the lane's candidate cap.** It reads each index up to 200 records in the documents and 400 per
+  kind in memory, and 8 documents never fill it;
+- anything about memory on the VM: memory was measured by the live tests alone.
+
 **The card's vector (measured 2026-10-16).** A card's vector is computed from its
 description: the card without what it says about Aura. That means no caveat, no cut notice, and
 no trailer ("Written by Aura at ingest … open it with document_open …").

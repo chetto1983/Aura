@@ -1,12 +1,15 @@
 # Exact terms rank first (slice 1) Implementation Plan
 
-**Status (2026-10-25):** LANDED AND REVIEWED, NOT PUSHED, NOT ACCEPTED.
+**Status (2026-10-25):** ACCEPTED ON THE LAB VM; THE COMPLEX-CORPUS MEASUREMENT IS OPEN.
 - Tasks 1–5 are on master: `d92a5b921`, `815519a0d`, `6beb4eef8`, `f1562629c`, `4614dc874`.
 - Task 6 Steps 1–3 are done. One review gave "with fixes", and its fixes are on master in five commits,
-  from "fix(documents): judge an exact carrier on all a document holds" to this plan's update. The
-  gates are green in the isolated worktree `D:/Aura-exact-fixes`, with the exceptions under "Local
+  `11998bdb5`…`a062464f8`. The gates are green at master's tip, with the exceptions under "Local
   baseline".
-- Steps 4–6 are open: they need the push, which waits for the operator, and the lab VM.
+- Pushed with master's `3ed81a0b2`, CI green on that SHA; the VM runs it since 17:51Z.
+- Steps 4–6 are done: `docs/superpowers/verification/2026-10-25-document-exact-terms-lab-vm.md` and
+  the PRD's "Exact terms admit and rank first (measured 2026-10-25)".
+- Open: `complex_qrels.json` before and after, which needs the complex identity re-seeded through
+  the whole ingest pipeline.
 
 Operator's decisions on 2026-10-25:
 - the order: exact terms first, then the embeddings on `openai-go`, then the judge ("VA BENE");
@@ -361,14 +364,17 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
     caveats in "fix(filecard): a card's unread caveats carry no exact term"; I3's bound in
     `document_search`'s description; M6 by C1; M7 in the first commit; M8 here.
   - Recorded, not fixed: I3's bound, I4, I5, M1 and M2, under "What this plan does not cover".
-- [ ] **Step 4: Measure the cost of a search with exact terms.** On the lab VM, time one
+- [x] **Step 4: Measure the cost of a search with exact terms.** On the lab VM, time one
   `aura docs search` with 1, 4 and 16 identifiers. Since review I6 a search costs 3 full-text queries
   in the documents and 2 per memory read whatever the number of terms; what grows is the OR query and
   the Go check.
   - There is no cap on the number of terms.
   - If 16 identifiers cost more than one search's budget, record the number and propose a cap from it.
     Never cap before the measurement.
-- [ ] **Step 5: Acceptance 1 on the lab VM**, once the updater has applied the landed SHA:
+  - Measured: medians of 901, 823, 869 and 904 ms with 0, 1, 4 and 16 identifiers. No cap.
+- [x] **Step 5: Acceptance 1 on the lab VM**, once the updater has applied the landed SHA. All passed
+  but the complex corpus, which did not run; the I5 case was the Constitution's "L’Italia è una
+  Repubblica democratica", a miss of the exact lane as expected:
   - `docker exec aura aura docs search '<s04 with "Ubuntu Mono" quoted>'` and
     `'"Ubuntu Mono"'` return `calibre_demo.docx` first.
   - The five out-of-corpus questions of the floors set still abstain.
@@ -388,8 +394,8 @@ Scratch commit `f2c3f50d3`, `feat(tools): tell the agent to quote a name that mu
   - The operator's validation form: in the operator's conversation, ask Aura's agent whether its
     tools work or show friction. Without being told to, does it quote a name it knows is in a
     document? It also re-checks "Ubuntu Mono", an identifier and "fattura" (acceptance 6).
-- [ ] **Step 6: Record.**
-  - `docs/superpowers/verification/2026-10-2x-document-exact-terms-lab-vm.md`, with what was measured
+- [x] **Step 6: Record.**
+  - `docs/superpowers/verification/2026-10-25-document-exact-terms-lab-vm.md`, with what was measured
     and what it does not show.
   - The PRD amendment that records it, amending "Exact identifiers rank first". It cites the
     measurement and the phrase-order finding.
