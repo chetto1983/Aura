@@ -13,7 +13,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	llmpkg "github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mediagen"
-	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 	"github.com/chetto1983/aura/internal/settings"
 )
@@ -81,8 +80,6 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 		AssetMaxAudioBytes:    789,
 		AssetPresignTTLSec:    42,
 		MultimodalTimeoutSec:  7,
-		MultimodalBaseURL:     "http://vision-local.test/v1",
-		MultimodalModel:       "glm-ocr",
 		STTBaseURL:            "http://stt.test/v1",
 		STTModel:              "large-v3-turbo",
 		STTLanguage:           "it",
@@ -132,20 +129,9 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	if img.Objects != objects {
 		t.Fatalf("image processor object store = %T, want shared fake store", img.Objects)
 	}
+	// What the live reader sends where is pinned by vision_live_test.go.
 	if img.Vision != vision {
 		t.Fatalf("image processor reads with %T, want the live reader it was given", img.Vision)
-	}
-	// The live reader builds its vision config per image, so assert the cfg ->
-	// multimodal.VisionConfig projection directly (the wiring under test). The capability is
-	// passed in rather than probed: liveVision resolves it from the route's model card, which
-	// is not a thing a unit test should reach for.
-	vcfg := multimodal.VisionConfigFrom(cfg, true, nil)
-	if !vcfg.PrimaryAcceptsImages || vcfg.Model != "deepseek/deepseek-v4-flash" ||
-		vcfg.LocalBaseURL != "http://vision-local.test/v1" ||
-		vcfg.LocalModel != "glm-ocr" ||
-		vcfg.PrimaryBaseURL != "http://openrouter.test/api/v1" ||
-		vcfg.TimeoutSec != 7 {
-		t.Fatalf("vision config = %+v, want projected vision config", vcfg)
 	}
 	audio, ok := svc.Processors.Audio.(*assetspkg.AudioProcessor)
 	if !ok {

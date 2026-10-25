@@ -1,16 +1,19 @@
 package main
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/settings"
 )
 
 // ollamaVision serves an Ollama that reads images: /api/show names the vision capability and
@@ -142,7 +145,7 @@ func TestLiveVisionSurvivesConcurrentSwitches(t *testing.T) {
 			}
 		})
 	}
-	for i := range 20 {
+	for i := range 21 {
 		if i%2 == 0 {
 			runtime.Replace(nil, second)
 		} else {
@@ -153,5 +156,67 @@ func TestLiveVisionSurvivesConcurrentSwitches(t *testing.T) {
 	close(errs)
 	for err := range errs {
 		t.Errorf("read during a switch: %v", err)
+	}
+	// The last switch installed the second route; the reader must have followed it there.
+	if _, model, err := describeOnce(t, vision); err != nil || model != "qwen3-vl" {
+		t.Fatalf("after the switches the model is %q (err %v), want qwen3-vl", model, err)
+	}
+}
+
+func TestLiveVisionReadsWithOpenRouterAfterASwitch(t *testing.T) {
+	var mu sync.Mutex
+	var bearer, sentModel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/models"):
+			_, _ = io.WriteString(w, `{"data":[`+
+				`{"id":"vendor/sees","architecture":{"input_modalities":["text","image"]}},`+
+				`{"id":"vendor/blind","architecture":{"input_modalities":["text"]}}]}`)
+		case strings.HasSuffix(r.URL.Path, "/chat/completions"):
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			mu.Lock()
+			bearer, sentModel = r.Header.Get("Authorization"), body.Model
+			mu.Unlock()
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"read on openrouter"}}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	// ReasoningTarget reads any base URL that names openrouter.ai as OpenRouter.
+	openRouter := llm.Config{Provider: "openrouter", BaseURL: srv.URL + "/openrouter.ai/api/v1"}
+	route, _ := ollamaVision(t, "gemma4", "read by gemma")
+	sidecar, _ := visionSidecar(t)
+	creds, _ := storedCredentials(map[string]string{settings.ServicesKeySetting: "services-key"})
+	runtime := llm.NewRuntime(nil, route)
+	vision := liveImageReader(&chatEnv{
+		cfg:         &config.Config{MultimodalTimeoutSec: 5, MultimodalBaseURL: sidecar, MultimodalModel: "glm-ocr"},
+		credentials: creds, llmRuntime: runtime,
+	})
+	if _, model, err := describeOnce(t, vision); err != nil || model != "gemma4" {
+		t.Fatalf("boot route read model %q, err %v; want gemma4", model, err)
+	}
+
+	openRouter.Model = "vendor/sees"
+	runtime.Replace(nil, openRouter)
+	text, model, err := describeOnce(t, vision)
+	if err != nil || text != "read on openrouter" || model != "vendor/sees" {
+		t.Fatalf("OpenRouter read = %q, %q, %v; want the new model's text", text, model, err)
+	}
+	mu.Lock()
+	gotBearer, gotModel := bearer, sentModel
+	mu.Unlock()
+	if gotBearer != "Bearer services-key" || gotModel != "vendor/sees" {
+		t.Fatalf("OpenRouter was sent %q for model %q, want the services key for vendor/sees", gotBearer, gotModel)
+	}
+
+	openRouter.Model = "vendor/blind"
+	runtime.Replace(nil, openRouter)
+	text, model, err = describeOnce(t, vision)
+	if err != nil || text != "read by the sidecar" || model != "glm-ocr" {
+		t.Fatalf("a text-only OpenRouter model = %q, %q, %v; want the sidecar", text, model, err)
 	}
 }

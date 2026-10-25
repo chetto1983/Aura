@@ -198,7 +198,7 @@ func applySettingsOverlay(ctx context.Context) string {
 // would: the aura.settings overlay, then the stored key. Without the overlay `aura docs search`
 // embedded its query on the .env route and read every stamped passage as another space's. The
 // embedders and speech read their own keys per call (serviceCredentials); the stored key here is
-// the chat route's, as the daemon's cfg.LLM carries it, which the vision capability probe sends.
+// the chat route's, as the daemon's cfg.LLM carries it.
 func cliConfig(ctx context.Context, notes io.Writer) *config.Config {
 	if note := applySettingsOverlay(ctx); note != "" {
 		_, _ = fmt.Fprintln(notes, "note:", note)

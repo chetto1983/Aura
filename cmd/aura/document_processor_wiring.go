@@ -18,10 +18,9 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// assetMaxVideoBytesTimeout bounds the boot-time AURA_ASSET_MAX_VIDEO_BYTES read the same way
-// visionCapabilityTimeout bounds the vision-route probe: an aura.settings row lookup over the
-// pool buildAssetService already holds, not a network call, but still bounded so a stalled
-// pool cannot hang boot.
+// assetMaxVideoBytesTimeout bounds the boot-time AURA_ASSET_MAX_VIDEO_BYTES read: an
+// aura.settings row lookup over the pool buildAssetService already holds, not a network call,
+// but still bounded so a stalled pool cannot hang boot.
 const assetMaxVideoBytesTimeout = 5 * time.Second
 
 // vision reads the upload images (liveImageReader). Only the serving daemon passes one: the

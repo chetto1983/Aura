@@ -202,7 +202,10 @@ image summary now reads it for each image. When the runtime publishes a new rout
 source from that one snapshot. The reader, the capability and the key therefore never disagree,
 which is what the boot snapshot was protecting. Between switches the capability source keeps its
 own one-minute cache. As a side effect, a probe that failed at boot no longer leaves the HTTP
-primary arm off until the next restart: it is asked again a minute later. The sidecar's URL, its
+primary arm off until the next restart. Read from the code, not measured: an Ollama or llama.cpp
+probe that failed is asked again a minute later, and OpenRouter's model-card client caches no
+failure, so it asks again on the next image, waiting at most `visionCapabilityTimeout` (5 s)
+before the image falls to the sidecar. The sidecar's URL, its
 model and the timeout stay boot settings, as today. The other two asset services (`docs.go`,
 `document_open_wiring.go`) get no image reader. They never read an image, and they no longer run a
 capability probe they never use.
