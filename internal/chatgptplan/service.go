@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -40,6 +41,9 @@ var (
 	ErrInvalidCallback = errors.New("chatgpt plan: invalid or expired authorization callback")
 	// ErrRevocationUnconfirmed means local tokens were cleared despite remote failure.
 	ErrRevocationUnconfirmed = errors.New("chatgpt plan: disconnected locally; remote revocation was not confirmed, disconnect Aura in ChatGPT Settings")
+	// ErrStoreMissing is Open finding no store the daemon made: a mount or path mistake, never
+	// an identity that has not connected.
+	ErrStoreMissing = errors.New("chatgpt plan: no credential store here; the daemon creates it")
 )
 
 // Flow carries only the transient browser navigation and its progress.
@@ -77,6 +81,17 @@ type Service struct {
 
 // New creates protected storage beneath the supplied Aura data directory.
 func New(dir, authulaSecret string) (*Service, error) {
+	return newService(dir, authulaSecret, true)
+}
+
+// Open reads the store a daemon already created beneath dir and creates none. Another
+// process that only reads tokens uses it: a fresh empty store there would read as "this
+// identity never connected" and hide the mistake that put it there.
+func Open(dir, authulaSecret string) (*Service, error) {
+	return newService(dir, authulaSecret, false)
+}
+
+func newService(dir, authulaSecret string, create bool) (*Service, error) {
 	if strings.TrimSpace(dir) == "" {
 		return nil, errors.New("chatgpt plan: credential directory is required")
 	}
@@ -87,7 +102,12 @@ func New(dir, authulaSecret string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = privateDirectory(dir); err != nil {
+	if create {
+		err = privateDirectory(dir)
+	} else if info, statErr := os.Stat(dir); statErr != nil || !info.IsDir() {
+		err = ErrStoreMissing
+	}
+	if err != nil {
 		return nil, err
 	}
 	s := &Service{dir: dir, masterSecret: authulaSecret, endpoint: productionEndpoints(), client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}, now: time.Now, flows: make(map[string]*pending)}
@@ -96,7 +116,7 @@ func New(dir, authulaSecret string) (*Service, error) {
 		return nil, err
 	}
 	defer release()
-	if s.hostID, err = loadHostID(dir); err != nil {
+	if s.hostID, err = loadHostID(dir, create); err != nil {
 		return nil, err
 	}
 	return s, nil

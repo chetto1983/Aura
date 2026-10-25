@@ -108,7 +108,7 @@ func privateDirectory(path string) error {
 	return privatePath(path, true)
 }
 
-func loadHostID(dir string) (string, error) {
+func loadHostID(dir string, create bool) (string, error) {
 	path := filepath.Join(dir, "host-id")
 	data, err := os.ReadFile(path) // #nosec G304 -- Fixed host-id filename beneath the application's private directory.
 	if err == nil {
@@ -120,6 +120,9 @@ func loadHostID(dir string) (string, error) {
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return "", err
+	}
+	if !create {
+		return "", ErrStoreMissing
 	}
 	id := uuid.New().URN()
 	return id, atomicWrite(path, []byte(id))

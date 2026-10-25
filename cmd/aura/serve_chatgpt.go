@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"path/filepath"
 	"slices"
 
 	"github.com/chetto1983/aura/internal/chatgptplan"
@@ -17,7 +16,7 @@ func newChatGPTPlan(cfg *config.Config) *chatgptplan.Service {
 	if cfg == nil || cfg.AuthulaSecret == "" || cfg.SkillsDir == "" {
 		return nil
 	}
-	service, err := chatgptplan.New(filepath.Dir(cfg.SkillsDir), cfg.AuthulaSecret)
+	service, err := chatgptplan.New(cfg.ChatGPTPlanRoot(), cfg.AuthulaSecret)
 	if err != nil {
 		slog.Warn("ChatGPT connection unavailable")
 		return nil

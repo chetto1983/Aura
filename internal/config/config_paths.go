@@ -77,3 +77,8 @@ func defaultMCPEnvDir() string { return filepath.Join(auraHomeDir(), "mcp-envs")
 // container's to /var/lib/aura/plugins on the durable aura-home volume, as it does
 // AURA_MCP_ENV_DIR.
 func defaultPluginsDir() string { return filepath.Join(auraHomeDir(), "plugins") }
+
+// ChatGPTPlanRoot is the directory chatgptplan keeps its store beneath: beside the skills
+// root, aura-home under compose. The daemon and the media indexer must agree on it, so
+// neither computes it.
+func (c *Config) ChatGPTPlanRoot() string { return filepath.Dir(c.SkillsDir) }
