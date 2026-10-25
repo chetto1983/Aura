@@ -50,8 +50,12 @@ const (
 	sampleRows = 5
 )
 
-// unreadCaveat is the card's statement about a file no reader opened.
-const unreadCaveat = "Aura did not read this file at ingest: nothing here describes its contents."
+// unreadCaveat is the card's statement about a file no reader opened; readErrorCaveat opens the one
+// about a file its reader failed on.
+const (
+	unreadCaveat    = "Aura did not read this file at ingest: nothing here describes its contents."
+	readErrorCaveat = "Aura could not read this file at ingest"
+)
 
 // Request names the file to describe. FileName is the name the library shows,
 // which is not always the name on disk: an asset upload lands in a temp file.
@@ -76,7 +80,7 @@ func Build(req Request) (Card, error) {
 	built, err := handler(req, card)
 	if err != nil {
 		card.Caveats = append(card.Caveats,
-			fmt.Sprintf("Aura could not read this file at ingest (%v); only its name and size are described here.", err))
+			fmt.Sprintf(readErrorCaveat+" (%v); only its name and size are described here.", err))
 		return card, err
 	}
 	return built, nil

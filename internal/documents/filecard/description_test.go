@@ -76,6 +76,25 @@ func TestWithoutAuraNotesDropsTheTrailerAndTheCutNotice(t *testing.T) {
 	}
 }
 
+// The caveats saying Aura did not read a file name Aura in every unread card, so quoting "Aura"
+// would rank every unread file first; a card whose own text names Aura keeps it.
+func TestWithoutAuraNotesDropsTheUnreadCaveats(t *testing.T) {
+	for _, caveat := range []string{
+		unreadCaveat,
+		pdfUnreadCaveat + " " + pdfUnreadReason(nil),
+		readErrorCaveat + " (zip: not a valid zip file); only its name and size are described here.",
+	} {
+		card := Card{FileName: "scan.pdf", Kind: KindDocument, Caveats: []string{caveat}}
+		if got := WithoutAuraNotes(card.Render()); strings.Contains(got, "Aura") {
+			t.Fatalf("stripped card still names Aura:\n%s", got)
+		}
+	}
+	named := Card{FileName: "esempio.md", Kind: KindText, Text: []string{"Questo file è stato creato da Aura."}}
+	if got := WithoutAuraNotes(named.Render()); !strings.Contains(got, "creato da Aura") {
+		t.Fatalf("the card's own text lost its name:\n%s", got)
+	}
+}
+
 func TestAnUnreadFileIsDescribedByItsNameAlone(t *testing.T) {
 	card := build(t, writeFile(t, "dati.bin", "\x00\x01\x02"), "dati.bin")
 

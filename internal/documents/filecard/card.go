@@ -27,6 +27,7 @@ package filecard
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -156,12 +157,21 @@ func (c Card) Render() string {
 	return b.String()
 }
 
-// WithoutAuraNotes is a rendered card without the two sentences Aura writes into cards itself, the
-// trailer and the cut notice. A term a question quotes is matched against what is left: the trailer
-// names Aura in every card.
+// auraNotes open the lines Aura writes into cards about itself: the trailer, the cut notice and the
+// caveats saying it did not read the file.
+var auraNotes = []string{cardTrailer, cardCutNotice, unreadCaveat, pdfUnreadCaveat, readErrorCaveat}
+
+// WithoutAuraNotes is a rendered card without the lines Aura writes into it about itself
+// (auraNotes). A term a question quotes is matched against what is left: the trailer names Aura in
+// every card, and an unread file's caveat in every unread card.
 func WithoutAuraNotes(rendered string) string {
-	rendered = strings.TrimSuffix(rendered, cardTrailer)
-	return strings.TrimRight(strings.Replace(rendered, cardCutNotice+"\n", "", 1), "\n")
+	var kept []string
+	for line := range strings.SplitSeq(rendered, "\n") {
+		if !slices.ContainsFunc(auraNotes, func(note string) bool { return strings.HasPrefix(line, note) }) {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
 }
 
 // Description is the card without what it says about Aura: no caveat, no cut notice, no
