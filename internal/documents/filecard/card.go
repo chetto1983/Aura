@@ -156,6 +156,14 @@ func (c Card) Render() string {
 	return b.String()
 }
 
+// WithoutAuraNotes is a rendered card without the two sentences Aura writes into cards itself, the
+// trailer and the cut notice. A term a question quotes is matched against what is left: the trailer
+// names Aura in every card.
+func WithoutAuraNotes(rendered string) string {
+	rendered = strings.TrimSuffix(rendered, cardTrailer)
+	return strings.TrimRight(strings.Replace(rendered, cardCutNotice+"\n", "", 1), "\n")
+}
+
 // Description is the card without what it says about Aura: no caveat, no cut notice, no
 // trailer. A card's vector is computed from it. Measured 2026-10-16 on five question sets
 // (prd.md §11), those sentences made every card look a little like every question about
