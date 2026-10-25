@@ -3,8 +3,12 @@ package plugins
 import (
 	"context"
 	"errors"
+	"runtime"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestRemoveFindsConnectorsBySourceAndRecord(t *testing.T) {
@@ -124,4 +128,62 @@ func TestRemoveOfAnUnknownNameIsNotInstalled(t *testing.T) {
 	if _, err := b.Remove(context.Background(), "admin", "ghost", false); !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("Remove = %v, want ErrNotInstalled", err)
 	}
+}
+
+// A removal that waits behind an install acts on the record the install finished with, not the
+// one it found while waiting: s2 never landed, so the removal has nothing to say about it. Not
+// parallel: the wait is read from the goroutine dump, where another test's Remove would match.
+func TestRemoveWaitingOnAnInstallActsOnItsFinalRecord(t *testing.T) {
+	w, b := newWorld(t)
+	w.library.failInstall["s2"] = true
+	r, err := b.Review(context.Background(), "o/r/p")
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	entered, release := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	w.library.onInstall = func() { once.Do(func() { close(entered); <-release }) }
+	installed := make(chan error, 1)
+	go func() {
+		_, err := b.Install(context.Background(), "admin", InstallRequest{Ref: "o/r/p", Commit: r.Commit, Digest: r.Digest})
+		installed <- err
+	}()
+	<-entered
+	type result struct {
+		rep RemoveReport
+		err error
+	}
+	removed := make(chan result, 1)
+	go func() {
+		rep, err := b.Remove(context.Background(), "admin", "p", false)
+		removed <- result{rep, err}
+	}()
+	waitParkedOnALock(t, "plugins.(*Backend).Remove(")
+	close(release)
+	if err := <-installed; err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	res := <-removed
+	if res.err != nil {
+		t.Fatalf("Remove: %v", res.err)
+	}
+	if len(res.rep.Skills) != 1 || stepOf(res.rep.Skills, "s1").Outcome != OutcomeOK {
+		t.Errorf("removal skills = %+v, want s1 deleted and nothing else", res.rep.Skills)
+	}
+}
+
+// waitParkedOnALock waits until a goroutine in fn is parked on a sync.Mutex. testing/synctest
+// cannot tell, since a mutex wait is not durably blocking; the goroutine dump can.
+func waitParkedOnALock(t *testing.T, fn string) {
+	t.Helper()
+	buf := make([]byte, 1<<20)
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		for g := range strings.SplitSeq(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+			if strings.Contains(g, "[sync.Mutex.Lock") && strings.Contains(g, fn) {
+				return
+			}
+		}
+		runtime.Gosched()
+	}
+	t.Fatalf("no goroutine in %s parked on a lock", fn)
 }

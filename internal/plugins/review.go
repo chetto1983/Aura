@@ -138,7 +138,7 @@ func reviewSkills(root string, pack packs.Pack, taken Taken, blocklist []string,
 			skipped = append(skipped, packs.Skipped{Name: name, Reason: err.Error()})
 			continue
 		}
-		hash, err := skills.HashSkillDir(dir)
+		hash, err := skills.LandingHash(dir)
 		if err != nil {
 			skipped = append(skipped, packs.Skipped{Name: name, Reason: err.Error()})
 			continue

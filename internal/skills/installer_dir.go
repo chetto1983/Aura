@@ -75,8 +75,29 @@ func (i *Installer) InstallDir(ctx context.Context, dir, source string, actor Au
 	}, nil
 }
 
-// stripAlways rewrites a SKILL.md without its `always` key. The frontmatter goes through an
-// ordered YAML round trip, so every other key, nested ones included, keeps its value and place.
+// LandingHash is the content hash InstallDir records for the skill in dir: the tree's hash with
+// `always` dropped from its SKILL.md. It writes nothing, so a plugin review can record the hash
+// a removal later compares the active copy against.
+func LandingHash(dir string) (string, error) {
+	files := make(map[string][]byte)
+	if err := collectFilesNoSymlinks(dir, dir, files); err != nil {
+		return "", err
+	}
+	if raw, ok := files["SKILL.md"]; ok {
+		fm, _, err := parseFrontmatter(raw)
+		if err != nil {
+			return "", fmt.Errorf("parse SKILL.md: %w", err)
+		}
+		if fm.Always {
+			if files["SKILL.md"], err = withoutAlways(raw); err != nil {
+				return "", err
+			}
+		}
+	}
+	return HashSkillFiles(files), nil
+}
+
+// stripAlways rewrites a SKILL.md without its `always` key.
 func stripAlways(path string) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -86,13 +107,23 @@ func stripAlways(path string) error {
 	if err != nil {
 		return err
 	}
-	block, body, err := SplitFrontmatter(raw)
+	out, err := withoutAlways(raw)
 	if err != nil {
 		return err
 	}
+	return os.WriteFile(path, out, info.Mode().Perm()) // #nosec G703 -- the SKILL.md read above, of the tree InstallDir was handed
+}
+
+// withoutAlways renders a SKILL.md without its `always` key. The frontmatter goes through an
+// ordered YAML round trip, so every other key, nested ones included, keeps its value and place.
+func withoutAlways(raw []byte) ([]byte, error) {
+	block, body, err := SplitFrontmatter(raw)
+	if err != nil {
+		return nil, err
+	}
 	var header yaml.MapSlice
 	if err := yaml.UnmarshalWithOptions(block, &header, yaml.UseOrderedMap()); err != nil {
-		return fmt.Errorf("parse frontmatter yaml: %w", err)
+		return nil, fmt.Errorf("parse frontmatter yaml: %w", err)
 	}
 	kept := header[:0]
 	for _, item := range header {
@@ -102,12 +133,12 @@ func stripAlways(path string) error {
 	}
 	out, err := yaml.Marshal(kept)
 	if err != nil {
-		return fmt.Errorf("render frontmatter yaml: %w", err)
+		return nil, fmt.Errorf("render frontmatter yaml: %w", err)
 	}
 	var b bytes.Buffer
 	b.WriteString("---\n")
 	b.Write(out)
 	b.WriteString("---\n")
 	b.WriteString(body)
-	return os.WriteFile(path, b.Bytes(), info.Mode().Perm())
+	return b.Bytes(), nil
 }

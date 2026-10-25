@@ -88,3 +88,36 @@ func TestInstallDirStripsAlways(t *testing.T) {
 		t.Errorf("the rewrite changed more than always: %+v, body %q", fm, body)
 	}
 }
+
+// A plugin review records each skill's hash before anything lands, and a removal deletes a skill
+// only while its content still has that hash, so the review must hash what InstallDir will write.
+func TestLandingHashIsTheHashOfWhatInstallDirLands(t *testing.T) {
+	t.Parallel()
+	for name, frontmatter := range map[string]string{
+		"always":   "name: pinned\ndescription: d\nalways: true\n",
+		"ordinary": "name: pinned\ndescription: d\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			inst := newTestInstaller(t, nil)
+			dir := skillDir(t, "pinned", frontmatter, "body")
+			before, err := LandingHash(dir)
+			if err != nil {
+				t.Fatalf("LandingHash: %v", err)
+			}
+			if err := pastValidation(t, func() error {
+				_, err := inst.InstallDir(t.Context(), dir, "pack:o/r/p", AuditActor{ActorID: "cli"})
+				return err
+			}); err != nil {
+				t.Fatalf("InstallDir: %v", err)
+			}
+			landed, err := HashSkillDir(dir)
+			if err != nil {
+				t.Fatalf("HashSkillDir: %v", err)
+			}
+			if before != landed {
+				t.Errorf("LandingHash = %s, but InstallDir lands %s", before, landed)
+			}
+		})
+	}
+}

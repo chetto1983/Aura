@@ -19,6 +19,11 @@ func (b *Backend) Remove(ctx context.Context, actor, name string, deleteData boo
 	if err := packs.ValidPluginName(name); err != nil {
 		return RemoveReport{}, invalid(err)
 	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.d.WriteTimeout)
+	defer cancel()
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// Read inside the lock: a removal that waited behind an install acts on what it landed.
 	rec, ok, err := b.d.Store.Get(name)
 	if err != nil {
 		return RemoveReport{}, err
@@ -30,10 +35,6 @@ func (b *Backend) Remove(ctx context.Context, actor, name string, deleteData boo
 	if err != nil {
 		return RemoveReport{}, fmt.Errorf("plugin %s records ref %q: %w", name, rec.Ref, err)
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), b.d.WriteTimeout)
-	defer cancel()
-	b.mu.Lock()
-	defer b.mu.Unlock()
 
 	rec.Phase = PhaseRemoving
 	if err := b.d.Store.WriteRecord(rec); err != nil {
