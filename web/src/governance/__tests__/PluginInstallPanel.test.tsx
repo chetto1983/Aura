@@ -40,6 +40,13 @@ const REVIEW: PluginReview = {
       placement: 'box',
       trust: 'untrusted',
       oauth: false,
+      command: 'uvx',
+      args: [
+        '--from',
+        'git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.1',
+        'broker-analysis-mcp',
+      ],
+      url: '',
     },
     {
       name: 'broker-cloud',
@@ -47,6 +54,9 @@ const REVIEW: PluginReview = {
       placement: 'remote',
       trust: 'untrusted',
       oauth: true,
+      command: '',
+      args: [],
+      url: 'https://broker.example/mcp',
     },
   ],
   skippedConnectors: [{ name: 'legacy', reason: 'declares headers' }],
@@ -106,7 +116,15 @@ describe('PluginInstallPanel', () => {
     expect(
       within(connectorItem('broker-analysis')).queryByText('may ask for an authorization'),
     ).toBeNull();
+    expect(
+      within(connectorItem('broker-analysis')).getByText(
+        'uvx --from git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.1 broker-analysis-mcp',
+      ),
+    ).toBeTruthy();
     expect(within(connectorItem('broker-cloud')).getByText('remote')).toBeTruthy();
+    expect(
+      within(connectorItem('broker-cloud')).getByText('https://broker.example/mcp'),
+    ).toBeTruthy();
     expect(
       within(connectorItem('broker-cloud')).getByText('may ask for an authorization'),
     ).toBeTruthy();

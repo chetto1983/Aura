@@ -14,6 +14,7 @@ const (
 	maxQuestionBytes = 3500
 	maxFieldRunes    = 120
 	maxListedSkills  = 20
+	maxListedConns   = 10
 	maxListedSkipped = 10
 	maxListedNotes   = 5
 	truncatedMarker  = "… (truncated)"
@@ -29,7 +30,7 @@ func (r Review) Question(digest string) (string, error) {
 	}
 	connectors := make([]string, 0, len(r.Connectors))
 	for _, c := range r.Connectors {
-		connectors = append(connectors, quote(c.Name)+" ("+c.Placement+")")
+		connectors = append(connectors, quote(c.Name)+" ("+c.Placement+"): "+c.target())
 	}
 	mcpLine := "mcp: enabled"
 	if r.MCPDisabled != "" {
@@ -44,7 +45,7 @@ func (r Review) Question(digest string) (string, error) {
 		"plugin: " + quote(r.Name) + " " + quote(r.Version),
 		"source: " + r.Ref + "@" + r.Commit,
 		listLine("skills", skillNames(r.Skills), ", ", maxListedSkills),
-		listLine("connectors", connectors, ", ", 0),
+		listLine("connectors", connectors, "; ", maxListedConns),
 		listLine("skipped", skippedItems, "; ", maxListedSkipped),
 		mcpLine,
 		listLine("notes", notes, "; ", maxListedNotes),
@@ -69,6 +70,18 @@ func RemovalQuestion(rec Record, deleteData bool, digest string) (string, error)
 		listLine("connectors", connectors, ", ", 0),
 		"plugin data: " + data,
 	}, digest)
+}
+
+// target is what a connector runs, each argv element quoted, or the URL it dials.
+func (c Connector) target() string {
+	if c.URL != "" {
+		return quote(c.URL)
+	}
+	argv := make([]string, 0, 1+len(c.Args))
+	for _, a := range append([]string{c.Command}, c.Args...) {
+		argv = append(argv, quote(a))
+	}
+	return strings.Join(argv, " ")
 }
 
 func skillNames(entries []SkillEntry) []string {

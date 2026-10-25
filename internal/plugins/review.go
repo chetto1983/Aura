@@ -41,8 +41,13 @@ type Connector struct {
 	Trust     string `json:"trust"`
 	// OAuth reports that the connector may ask for an authorization: a Claude `oauth` block,
 	// or any remote server, since Agent Plugins leaves authorization to the client (§7.2.1).
-	OAuth  bool `json:"oauth"`
-	server mcp.ManagedServer
+	OAuth bool `json:"oauth"`
+	// What the operator trusts: the command the box starts, with its args expanded, or the URL
+	// the daemon dials.
+	Command string   `json:"command,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	URL     string   `json:"url,omitempty"`
+	server  mcp.ManagedServer
 }
 
 // Review is everything an install of one plugin at one commit would write, and what it would
@@ -167,7 +172,8 @@ func reviewConnectors(pack packs.Pack, ref packs.Ref, taken Taken) ([]Connector,
 			skipped = append(skipped, packs.Skipped{Name: s.Name, Reason: err.Error()})
 			continue
 		}
-		c := Connector{Name: s.Name, Transport: server.Type, Placement: PlacementBox, Trust: class, OAuth: s.OAuth, server: server}
+		c := Connector{Name: s.Name, Transport: server.Type, Placement: PlacementBox, Trust: class, OAuth: s.OAuth,
+			Command: server.Command, Args: server.Args, URL: server.URL, server: server}
 		if server.Type == mcp.ServerTypeStreamableHTTP {
 			c.Placement, c.OAuth = PlacementRemote, true
 		}

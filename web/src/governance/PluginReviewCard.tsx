@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { shortCommit, type PluginReview, type PluginSkip } from './pluginApi';
+import { connectorTarget, shortCommit, type PluginReview, type PluginSkip } from './pluginApi';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 
 // PluginReviewCard shows what an install would write, before the operator confirms it: each
-// skill, each connector with where it runs and whether it may ask for an authorization, and
-// every skipped entry with the reason. The digest at the foot names exactly this review — the
+// skill, each connector with where it runs, what it runs or dials, and whether it may ask for an
+// authorization, and every skipped entry with the reason. The digest at the foot names exactly this review — the
 // install refuses if what it would write no longer matches it.
 
 export function PluginReviewCard({ review }: { readonly review: PluginReview }) {
@@ -83,6 +83,9 @@ export function PluginReviewCard({ review }: { readonly review: PluginReview }) 
                   {c.oauth ? (
                     <Badge variant="warning">{t('governance.plugins.review.oauth')}</Badge>
                   ) : null}
+                  <code className="basis-full break-all font-mono text-[12px] text-text-muted">
+                    {connectorTarget(c)}
+                  </code>
                 </li>
               ))
             )}

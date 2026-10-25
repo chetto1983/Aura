@@ -78,8 +78,12 @@ func TestQuestionCapsListsAndSize(t *testing.T) {
 	}
 
 	r.Connectors = nil
-	for i := range 200 {
-		r.Connectors = append(r.Connectors, Connector{Name: fmt.Sprintf("connector-number-%03d", i), Placement: PlacementBox})
+	for i := range maxListedConns {
+		args := make([]string, 12)
+		for j := range args {
+			args[j] = strings.Repeat("a", maxFieldRunes)
+		}
+		r.Connectors = append(r.Connectors, Connector{Name: fmt.Sprintf("connector-number-%03d", i), Placement: PlacementBox, Command: "uvx", Args: args})
 	}
 	q, err = r.Question("d1g3st")
 	if err != nil {
@@ -110,5 +114,39 @@ func TestQuestionShowsDisabledMCPAndNotes(t *testing.T) {
 	rq, err := RemovalQuestion(Record{Name: "p", Ref: "o/r/p", Commit: reviewCommit}, true, "d")
 	if err != nil || !strings.Contains(rq, "\nplugin data: deleted in your box\n") {
 		t.Errorf("removal question = (%q, %v)", rq, err)
+	}
+}
+
+func TestQuestionShowsWhatEachConnectorRuns(t *testing.T) {
+	t.Parallel()
+	r := Review{Ref: "o/r/p", Commit: reviewCommit, Name: "p", Version: "1", Connectors: []Connector{
+		{Name: "local", Placement: PlacementBox, Command: "uvx", Args: []string{"--from", "git+https://x/y@v1", "a b"}},
+		{Name: "remote", Placement: PlacementRemote, URL: "https://r.example/mcp"},
+	}}
+	q, err := r.Question("d")
+	if err != nil {
+		t.Fatalf("Question: %v", err)
+	}
+	want := `connectors (2): "local" (box): "uvx" "--from" "git+https://x/y@v1" "a b"; "remote" (remote): "https://r.example/mcp"`
+	if got := linesWith(q, "connectors"); len(got) != 1 || got[0] != want {
+		t.Errorf("connectors line = %q, want %q", got, want)
+	}
+}
+
+func TestQuestionCapsTheConnectorList(t *testing.T) {
+	t.Parallel()
+	r := Review{Ref: "o/r/p", Commit: reviewCommit, Name: "p", Version: "1"}
+	for i := range 30 {
+		r.Connectors = append(r.Connectors, Connector{Name: fmt.Sprintf("c%02d", i), Placement: PlacementBox, Command: "uvx"})
+	}
+	q, err := r.Question("d")
+	if err != nil {
+		t.Fatalf("Question: %v", err)
+	}
+	if got := linesWith(q, "connectors"); len(got) != 1 || !strings.HasSuffix(got[0], "; and 20 more") {
+		t.Errorf("connectors line = %q", got)
+	}
+	if len(linesWith(q, "mcp:")) != 1 {
+		t.Errorf("the connectors pushed the mcp line off the card:\n%s", q)
 	}
 }

@@ -92,7 +92,7 @@ describe('approvalQuestion', () => {
           plugin: '"broker-analysis" "0.1.1"',
           source: 'o/r/p@0123456',
           skills: '(23): "a", "b", and 21 more',
-          connectors: '(2): "x" (box), "y" (remote)',
+          connectors: '(2): "x" (box): "uvx" "srv"; "y" (remote): "https://r.example/mcp"',
           skipped: '(0): none',
           mcp: 'disabled — "mcp.json resolves outside the plugin"',
           notes: '(1): "hooks are not run"',
@@ -116,7 +116,7 @@ describe('approvalQuestion', () => {
 
     await i18n.changeLanguage('en');
     expect(approvalQuestion(install, i18n.t)).toBe(
-      'Approve plugin install?\nplugin: "broker-analysis" "0.1.1"\nsource: o/r/p@0123456\nskills (23): "a", "b", and 21 more\nconnectors (2): "x" (box), "y" (remote)\nskipped (0): none\nmcp: disabled — "mcp.json resolves outside the plugin"\nnotes (1): "hooks are not run"\nsha256: deadbeef',
+      'Approve plugin install?\nplugin: "broker-analysis" "0.1.1"\nsource: o/r/p@0123456\nskills (23): "a", "b", and 21 more\nconnectors (2): "x" (box): "uvx" "srv"; "y" (remote): "https://r.example/mcp"\nskipped (0): none\nmcp: disabled — "mcp.json resolves outside the plugin"\nnotes (1): "hooks are not run"\nsha256: deadbeef',
     );
     expect(approvalQuestion(removal, i18n.t)).toBe(
       'Approve plugin removal?\nplugin: "broker-analysis" "0.1.1"\nsource: o/r/p@0123456\nskills (0): none\nconnectors (1): "x"\nplugin data: deleted in your box\nsha256: deadbeef',
@@ -124,7 +124,7 @@ describe('approvalQuestion', () => {
 
     await i18n.changeLanguage('it');
     expect(approvalQuestion(install, i18n.t)).toBe(
-      'Approva l\'installazione del plugin?\nplugin: "broker-analysis" "0.1.1"\norigine: o/r/p@0123456\ncompetenze (23): "a", "b", and 21 more\nconnettori (2): "x" (box), "y" (remote)\nsaltati (0): nessuno\nmcp: disattivato — "mcp.json resolves outside the plugin"\nnote (1): "hooks are not run"\nsha256: deadbeef',
+      'Approva l\'installazione del plugin?\nplugin: "broker-analysis" "0.1.1"\norigine: o/r/p@0123456\ncompetenze (23): "a", "b", and 21 more\nconnettori (2): "x" (box): "uvx" "srv"; "y" (remote): "https://r.example/mcp"\nsaltati (0): nessuno\nmcp: disattivato — "mcp.json resolves outside the plugin"\nnote (1): "hooks are not run"\nsha256: deadbeef',
     );
     expect(approvalQuestion(removal, i18n.t)).toBe(
       'Approva la rimozione del plugin?\nplugin: "broker-analysis" "0.1.1"\norigine: o/r/p@0123456\ncompetenze (0): nessuno\nconnettori (1): "x"\ndati del plugin: eliminati nel tuo box\nsha256: deadbeef',

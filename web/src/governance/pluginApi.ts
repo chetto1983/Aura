@@ -29,6 +29,10 @@ export interface PluginConnector {
   readonly trust: string;
   /** True when the server may ask for an authorization before it answers. */
   readonly oauth: boolean;
+  /** What the operator trusts: the command the box starts with its args, or the URL dialled. */
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly url: string;
 }
 
 /** What an install would write, pinned to one commit and named by its digest. */
@@ -91,6 +95,15 @@ export function shortCommit(commit: string): string {
   return commit.slice(0, 7);
 }
 
+/** The URL a remote connector dials, or the command line a box one runs, where an argument that
+ * is empty or holds a space or a quote is shown quoted, so every argument boundary is visible. */
+export function connectorTarget(c: PluginConnector): string {
+  if (c.url !== '') return c.url;
+  return [c.command, ...c.args]
+    .map((arg) => (arg === '' || /[\s"'\\]/.test(arg) ? JSON.stringify(arg) : arg))
+    .join(' ');
+}
+
 type Wire = Record<string, unknown>;
 
 function list<T>(value: unknown, decode: (raw: Wire) => T): readonly T[] {
@@ -128,6 +141,9 @@ const connector = (raw: Wire): PluginConnector => ({
   placement: stringValue(raw.placement),
   trust: stringValue(raw.trust),
   oauth: raw.oauth === true,
+  command: stringValue(raw.command),
+  args: strings(raw.args),
+  url: stringValue(raw.url),
 });
 
 function review(raw: Wire): PluginReview {

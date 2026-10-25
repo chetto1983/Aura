@@ -1,6 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HttpError } from '../../api/json';
-import { fetchPlugins, installPlugin, removePlugin, reviewPlugin } from '../pluginApi';
+import {
+  connectorTarget,
+  fetchPlugins,
+  installPlugin,
+  removePlugin,
+  reviewPlugin,
+  type PluginConnector,
+} from '../pluginApi';
 
 // pluginApi: the URL and method each call sends, and the decoding of what Go writes — an empty
 // slice arrives as null, and the names arrive in snake_case.
@@ -29,7 +36,23 @@ const GO_REVIEW = {
   skills: null,
   skipped_skills: [{ name: 's', reason: 'why' }],
   connectors: [
-    { name: 'x', transport: 'stdio', placement: 'box', trust: 'untrusted', oauth: false },
+    {
+      name: 'x',
+      transport: 'stdio',
+      placement: 'box',
+      trust: 'untrusted',
+      oauth: false,
+      command: 'uvx',
+      args: ['--from', 'a b'],
+    },
+    {
+      name: 'y',
+      transport: 'streamable_http',
+      placement: 'remote',
+      trust: 'untrusted',
+      oauth: true,
+      url: 'https://r.example/mcp',
+    },
   ],
   skipped_connectors: null,
   notes: null,
@@ -77,7 +100,17 @@ describe('pluginApi', () => {
       notes: [],
       mcpDisabled: '',
     });
-    expect(review.connectors[0]?.placement).toBe('box');
+    expect(review.connectors[0]).toMatchObject({
+      placement: 'box',
+      command: 'uvx',
+      args: ['--from', 'a b'],
+      url: '',
+    });
+    expect(review.connectors[1]).toMatchObject({
+      command: '',
+      args: [],
+      url: 'https://r.example/mcp',
+    });
   });
 
   it('installs the approved triple and decodes the report', async () => {
@@ -136,5 +169,28 @@ describe('pluginApi', () => {
     expect(err).toBeInstanceOf(HttpError);
     expect((err as HttpError).status).toBe(409);
     expect((err as HttpError).reason).toBe('plugin already installed: p');
+  });
+});
+
+describe('connectorTarget', () => {
+  const box: PluginConnector = {
+    name: 'x',
+    transport: 'stdio',
+    placement: 'box',
+    trust: 'untrusted',
+    oauth: false,
+    command: '/plugins/p/bin/srv',
+    args: ['--name', 'a b', '', 'say "hi"'],
+    url: '',
+  };
+
+  it('shows every argument boundary of a box command', () => {
+    expect(connectorTarget(box)).toBe('/plugins/p/bin/srv --name "a b" "" "say \\"hi\\""');
+  });
+
+  it('shows the URL of a remote connector', () => {
+    expect(connectorTarget({ ...box, command: '', args: [], url: 'https://r.example/mcp' })).toBe(
+      'https://r.example/mcp',
+    );
   });
 });

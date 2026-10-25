@@ -221,3 +221,23 @@ func TestReviewRefusesATreeTheStoreWouldRefuse(t *testing.T) {
 		t.Fatalf("review = %v, want the escaping link refused", err)
 	}
 }
+
+// The operator trusts what a connector runs, or where it connects, so the review shows the
+// staged entry: the command as the box will start it, its args expanded, or the URL.
+func TestReviewNamesWhatEachConnectorRuns(t *testing.T) {
+	t.Parallel()
+	c, ref := claudePlugin(t, "p", `{"mcpServers":{
+		"local":{"command":"./bin/srv","args":["--data","${PLUGIN_DATA}"]},
+		"remote":{"type":"http","url":"https://r.example/mcp"}}}`, nil)
+	r := review(t, c, ref, nothingTaken())
+	if len(r.Connectors) != 2 {
+		t.Fatalf("connectors = %+v", r.Connectors)
+	}
+	local, remote := r.Connectors[0], r.Connectors[1]
+	if local.Command != "/plugins/p/bin/srv" || !slices.Equal(local.Args, []string{"--data", DataDir("p", ref)}) || local.URL != "" {
+		t.Errorf("local = %+v", local)
+	}
+	if remote.URL != "https://r.example/mcp" || remote.Command != "" || len(remote.Args) != 0 {
+		t.Errorf("remote = %+v", remote)
+	}
+}

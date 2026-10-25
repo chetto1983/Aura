@@ -27,8 +27,9 @@ func pluginReview() plugins.Review {
 		Name: "broker-analysis", Version: "0.1.1", Format: packs.FormatAgentPlugins,
 		Skills: []plugins.SkillEntry{{Name: "broker-report"}, {Name: "broker-risk"}},
 		Connectors: []plugins.Connector{
-			{Name: "broker-analysis", Placement: plugins.PlacementBox},
-			{Name: "broker-cloud", Placement: plugins.PlacementRemote},
+			{Name: "broker-analysis", Placement: plugins.PlacementBox, Command: "uvx",
+				Args: []string{"--from", "git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.1", "broker-analysis-mcp"}},
+			{Name: "broker-cloud", Placement: plugins.PlacementRemote, URL: "https://broker.example/mcp"},
 		},
 		SkippedConnectors: []packs.Skipped{{Name: "memory", Reason: "reserved by recipe:memory"}},
 	}
@@ -59,7 +60,7 @@ func TestDerivePluginInstallAndRemove(t *testing.T) {
 		"plugin":     `"broker-analysis" "0.1.1"`,
 		"source":     "chetto1983/broker-analysis-mcp/broker-analysis@0123456789abcdef0123456789abcdef01234567",
 		"skills":     `(2): "broker-report", "broker-risk"`,
-		"connectors": `(2): "broker-analysis" (box), "broker-cloud" (remote)`,
+		"connectors": `(2): "broker-analysis" (box): "uvx" "--from" "git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.1" "broker-analysis-mcp"; "broker-cloud" (remote): "https://broker.example/mcp"`,
 		"skipped":    `(1): "memory" — "reserved by recipe:memory"`,
 		"mcp":        "enabled",
 		"notes":      "(0): none",
@@ -117,7 +118,7 @@ func TestRenderItalianPluginInstall(t *testing.T) {
 		`plugin: "broker-analysis" "0.1.1"` + "\n" +
 		"origine: chetto1983/broker-analysis-mcp/broker-analysis@0123456789abcdef0123456789abcdef01234567\n" +
 		`competenze (2): "broker-report", "broker-risk"` + "\n" + //nolint:misspell // Italian, not English "competence".
-		`connettori (2): "broker-analysis" (box), "broker-cloud" (remote)` + "\n" +
+		`connettori (2): "broker-analysis" (box): "uvx" "--from" "git+https://github.com/chetto1983/broker-analysis-mcp@v0.1.1" "broker-analysis-mcp"; "broker-cloud" (remote): "https://broker.example/mcp"` + "\n" +
 		`saltati (1): "memory" — "reserved by recipe:memory"` + "\n" +
 		"mcp: attivo\n" +
 		"note (0): nessuno\n" +
