@@ -117,7 +117,7 @@ func stagePackServer(doc *mcp.ManagedConfig, ref packs.Ref, name string, s packs
 		server.Runtime = mcp.ManagedRuntime{Kind: mcp.RuntimeKindBox, InitTimeoutSec: packBoxInitTimeoutSec}
 	}
 	doc.MCPServers[name] = server
-	ensureProfileMembership(doc, doc.ActiveProfileName(), name)
+	doc.AddToProfile(doc.ActiveProfileName(), name)
 	return nil
 }
 

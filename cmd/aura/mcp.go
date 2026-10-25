@@ -164,7 +164,7 @@ func mcpInstall(ctx context.Context, pool *pgxpool.Pool, args []string, out io.W
 	server := recipe.Server
 	server.Env = append(append([]string(nil), server.Env...), env...)
 	doc.MCPServers[name] = server
-	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
+	doc.AddToProfile(doc.ActiveProfileName(), name)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "install", name, ""); err != nil {
 		return err
 	}

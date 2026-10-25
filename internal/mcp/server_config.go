@@ -27,6 +27,9 @@ type ServerConfig struct {
 	Browser bool `json:"-"`
 	// InitTimeout is a box server's first-start budget (BoxInitTimeout).
 	InitTimeout time.Duration `json:"-"`
+	// Dir and DataDir are a box server's in-box directories (ManagedRuntime).
+	Dir     string `json:"-"`
+	DataDir string `json:"-"`
 }
 
 // ManagedStdioConfig keeps direct probes and managed mounts on the same isolation policy.
@@ -40,5 +43,6 @@ func ManagedStdioConfig(server ManagedServer) (ServerConfig, error) {
 		return ServerConfig{}, errors.New("browser recipe requires its fixed box command and no custom environment")
 	}
 	return ServerConfig{Command: server.Command, Args: server.Args, Env: server.Env,
-		Box: IsBoxRuntime(server), InitTimeout: BoxInitTimeout(server), Browser: browser}, nil
+		Box: IsBoxRuntime(server), InitTimeout: BoxInitTimeout(server), Browser: browser,
+		Dir: server.Runtime.Dir, DataDir: server.Runtime.DataDir}, nil
 }

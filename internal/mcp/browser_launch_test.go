@@ -9,12 +9,12 @@ import (
 
 type browserOnlyBox struct{ fakeBox }
 
-func (*browserOnlyBox) StartStdio(context.Context, string, []string, []string, io.ReadCloser, io.Writer) (BoxProcess, error) {
+func (*browserOnlyBox) StartStdio(context.Context, BoxStart, io.ReadCloser, io.Writer) (BoxProcess, error) {
 	return nil, errors.New("browser was sent to the shell launcher")
 }
 
-func (b *browserOnlyBox) StartBrowserStdio(ctx context.Context, name string, argv, env []string, in io.ReadCloser, out io.Writer) (BoxProcess, error) {
-	return b.fakeBox.StartStdio(ctx, name, argv, env, in, out)
+func (b *browserOnlyBox) StartBrowserStdio(ctx context.Context, start BoxStart, in io.ReadCloser, out io.Writer) (BoxProcess, error) {
+	return b.fakeBox.StartStdio(ctx, start, in, out)
 }
 
 func TestDirectManagedBrowserSessionUsesDedicatedLauncher(t *testing.T) {

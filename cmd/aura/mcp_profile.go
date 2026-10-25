@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -121,7 +120,7 @@ func mcpProfileAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out i
 	if _, ok := doc.MCPServers[server]; !ok {
 		return fmt.Errorf("MCP server %q not found", server)
 	}
-	ensureProfileMembership(&doc, profile, server)
+	doc.AddToProfile(profile, server)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "profile_add", server, ""); err != nil {
 		return err
 	}
@@ -241,21 +240,4 @@ func mcpTrust(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Wri
 		return err
 	}
 	return writef(out, "ok: trusted %s as %s\n", name, class)
-}
-
-func ensureProfileMembership(doc *mcp.ManagedConfig, profile, server string) {
-	if strings.TrimSpace(profile) == "" {
-		profile = mcp.DefaultMCPProfile
-	}
-	if doc.Profiles == nil {
-		doc.Profiles = map[string]mcp.ManagedProfile{}
-	}
-	p := doc.Profiles[profile]
-	if slices.Contains(p.Servers, server) {
-		doc.Profiles[profile] = p
-		return
-	}
-	p.Servers = append(p.Servers, server)
-	sort.Strings(p.Servers)
-	doc.Profiles[profile] = p
 }

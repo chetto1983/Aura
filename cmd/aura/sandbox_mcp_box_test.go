@@ -37,7 +37,7 @@ func TestBoxServerStartFailureIsRetriedUnlessTheImageIsUnavailable(t *testing.T)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			box := newSandboxMCPBox(usersandbox.NewSandboxRouter(&failingResolveBackend{err: tc.err}, config.SandboxConfig{}))
-			_, err := box.StartStdio(context.Background(), "deckcraft", []string{"deckcraft-cli", "mcp"}, nil,
+			_, err := box.StartStdio(context.Background(), mcp.BoxStart{Name: "deckcraft", Argv: []string{"deckcraft-cli", "mcp"}},
 				io.NopCloser(strings.NewReader("")), io.Discard)
 			if err == nil {
 				t.Fatal("StartStdio err = nil, want the resolve failure")
@@ -72,5 +72,27 @@ func TestNoSandboxMeansNoBoxLauncher(t *testing.T) {
 func TestBoxDiscoveryWithoutADatabaseUsesTheRoutersOwnIdentity(t *testing.T) {
 	if got := boxDiscoveryIdentity(context.Background(), nil); got != identityctx.LocalOperatorIdentity {
 		t.Fatalf("boxDiscoveryIdentity(nil pool) = %q", got)
+	}
+}
+
+// A plugin server's working directory may sit under its data directory, which exists only after
+// the first start creates it, and Docker does not create an exec's working directory. So the
+// exec always starts in /workspace and the command creates the data directory, then enters
+// the server's own (adversarial plan review, 2026-10-25).
+func TestBoxExecRequestCreatesDataThenEntersDir(t *testing.T) {
+	got := boxExecRequest(mcp.BoxStart{
+		Name: "p", Argv: []string{"./bin/run", "--data", "/workspace/.plugin-data/p-1a2b/v"},
+		Dir: "/workspace/.plugin-data/p-1a2b/x", DataDir: "/workspace/.plugin-data/p-1a2b",
+	})
+	want := "mkdir -p '/workspace/.plugin-data/p-1a2b' && cd '/workspace/.plugin-data/p-1a2b/x' && " +
+		"'./bin/run' '--data' '/workspace/.plugin-data/p-1a2b/v' 2>>'/tmp/aura-mcp-p.log'"
+	if got.Dir != "/workspace" || got.Command != want {
+		t.Fatalf("request = %+v\nwant command %s", got, want)
+	}
+
+	plain := boxExecRequest(mcp.BoxStart{Name: "deckcraft", Argv: []string{"deckcraft-cli", "mcp"}, Env: []string{"A=1"}})
+	if plain.Dir != "/workspace" || plain.Command != boxStdioCommand("deckcraft", []string{"deckcraft-cli", "mcp"}) ||
+		len(plain.Env) != 1 {
+		t.Fatalf("a server with no dirs changed its launch: %+v", plain)
 	}
 }

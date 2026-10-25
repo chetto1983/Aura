@@ -210,7 +210,7 @@ type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
-func (sdkBox) StartStdio(_ context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+func (sdkBox) StartStdio(_ context.Context, _ mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	p := sdkBoxProc{stdin: stdin, done: make(chan struct{})}
 	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "box", Version: "0"}, nil)
 	server.AddTool(&sdkmcp.Tool{Name: "ping", InputSchema: map[string]any{"type": "object"}},
@@ -229,8 +229,8 @@ func (sdkBox) StartStdio(_ context.Context, _ string, _, _ []string, stdin io.Re
 // envBox records the env a box start was given, and starts nothing.
 type envBox struct{ env *[]string }
 
-func (b envBox) StartStdio(_ context.Context, _ string, _, env []string, _ io.ReadCloser, _ io.Writer) (mcp.BoxProcess, error) {
-	*b.env = env
+func (b envBox) StartStdio(_ context.Context, start mcp.BoxStart, _ io.ReadCloser, _ io.Writer) (mcp.BoxProcess, error) {
+	*b.env = start.Env
 	return nil, errors.New("not started")
 }
 

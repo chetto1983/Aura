@@ -48,7 +48,7 @@ func mcpAdd(ctx context.Context, pool *pgxpool.Pool, args []string, out io.Write
 	}
 
 	doc.MCPServers[name] = prepared
-	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
+	doc.AddToProfile(doc.ActiveProfileName(), name)
 	if err := mcpWriteManagedConfig(ctx, pool, doc, "add", name, ""); err != nil {
 		return err
 	}

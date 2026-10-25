@@ -2,6 +2,8 @@ package mcp
 
 import (
 	"fmt"
+	pathpkg "path"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -105,7 +107,19 @@ type ManagedRuntime struct {
 	// identity's box, when `npx -y` or `uvx` fetch the server into that identity's caches
 	// (BoxInitTimeout). Box servers only; unset means DefaultBoxInitTimeout.
 	InitTimeoutSec int `json:"initTimeoutSec,omitempty"`
+	// Dir and DataDir place a box server inside its box: the directory it starts in, and the
+	// data directory created before it starts (a plugin's root and its PLUGIN_DATA). Box servers
+	// only; unset means /workspace and no data directory, as before.
+	Dir     string `json:"dir,omitempty"`
+	DataDir string `json:"dataDir,omitempty"`
 }
+
+// In-box roots a box server's directories may live under.
+const (
+	boxPluginsRoot = "/plugins/"
+	boxWorkspace   = "/workspace"
+	boxPluginData  = "/workspace/.plugin-data/"
+)
 
 // PrepareForWrite normalizes doc and refuses it if any server is malformed or has a launch
 // declaration shaped like a backdoor. Every write to the registry goes through it.
@@ -136,6 +150,24 @@ func (c ManagedConfig) ActiveProfileName() string {
 		return strings.TrimSpace(c.ActiveProfile)
 	}
 	return DefaultMCPProfile
+}
+
+// AddToProfile puts server into profile (the default profile when blank), creating the map
+// and the profile entry as needed, and is idempotent. Every install path joins a server to a
+// profile through it: an install that forgot to left a server listed and mountable by nothing.
+func (c *ManagedConfig) AddToProfile(profile, server string) {
+	if strings.TrimSpace(profile) == "" {
+		profile = DefaultMCPProfile
+	}
+	if c.Profiles == nil {
+		c.Profiles = map[string]ManagedProfile{}
+	}
+	p := c.Profiles[profile]
+	if !slices.Contains(p.Servers, server) {
+		p.Servers = append(p.Servers, server)
+		sort.Strings(p.Servers)
+	}
+	c.Profiles[profile] = p
 }
 
 // ProfileServerNames returns the sorted, de-duplicated server names selected by the
@@ -260,12 +292,35 @@ func validateStdioRuntime(name string, cfg ManagedServer) error {
 	switch {
 	case kind != RuntimeKindBox && cfg.Runtime.InitTimeoutSec != 0:
 		return fmt.Errorf("MCP managed config: server %q declares runtime.initTimeoutSec, which only a box server's first start uses", name)
+	case kind != RuntimeKindBox && (cfg.Runtime.Dir != "" || cfg.Runtime.DataDir != ""):
+		return fmt.Errorf("MCP managed config: server %q declares runtime.dir or runtime.dataDir, which only a box server uses", name)
 	case cfg.Runtime.InitTimeoutSec < 0 || cfg.Runtime.InitTimeoutSec > maxBoxInitTimeoutSec:
 		return fmt.Errorf("MCP managed config: server %q runtime.initTimeoutSec must be between 1 and %d", name, maxBoxInitTimeoutSec)
 	case kind != RuntimeKindBox:
 		return nil
 	}
+	if err := validateBoxDirs(name, cfg.Runtime); err != nil {
+		return err
+	}
 	return refuseBoxSecrets(name, cfg.Env)
+}
+
+// validateBoxDirs holds a box server's directories to the roots Aura owns in the box: a plugin
+// root or the workspace to start in, and a data directory under the plugin-data root. Both are
+// clean absolute paths, so neither can climb out with "..".
+func validateBoxDirs(name string, rt ManagedRuntime) error {
+	if dir := rt.Dir; dir != "" {
+		under := func(root string) bool { return strings.HasPrefix(dir, root) && len(dir) > len(root) }
+		if pathpkg.Clean(dir) != dir || (!under(boxPluginsRoot) && dir != boxWorkspace && !under(boxWorkspace+"/")) {
+			return fmt.Errorf("MCP managed config: server %q runtime.dir %q must be a clean path under %s or %s", name, dir, boxPluginsRoot, boxWorkspace)
+		}
+	}
+	if data := rt.DataDir; data != "" {
+		if pathpkg.Clean(data) != data || !strings.HasPrefix(data, boxPluginData) || len(data) == len(boxPluginData) {
+			return fmt.Errorf("MCP managed config: server %q runtime.dataDir %q must be a clean path under %s", name, data, boxPluginData)
+		}
+	}
+	return nil
 }
 
 // DefaultBoxInitTimeout is a box server's first-start budget when it declares none. A first

@@ -81,13 +81,13 @@ func TestBrowserLazyColdStartGetsItsInitTimeout(t *testing.T) {
 
 type delayedBrowserBox struct{ sandboxMCPBox }
 
-func (b delayedBrowserBox) StartBrowserStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+func (b delayedBrowserBox) StartBrowserStdio(ctx context.Context, start mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	timer := time.NewTimer(12 * time.Second)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-timer.C:
-		return b.sandboxMCPBox.StartBrowserStdio(ctx, name, argv, env, stdin, stdout)
+		return b.sandboxMCPBox.StartBrowserStdio(ctx, start, stdin, stdout)
 	}
 }

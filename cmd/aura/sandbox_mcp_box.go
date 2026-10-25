@@ -30,18 +30,18 @@ func newSandboxMCPBox(router *usersandbox.SandboxRouter) mcp.BoxLauncher {
 	return sandboxMCPBox{router: router}
 }
 
-func (b sandboxMCPBox) StartStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
-	return b.startStdio(ctx, name, argv, env, stdin, stdout, false)
+func (b sandboxMCPBox) StartStdio(ctx context.Context, start mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+	return b.startStdio(ctx, start, stdin, stdout, false)
 }
 
-func (b sandboxMCPBox) StartBrowserStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
-	if !slices.Equal(argv, []string{"agent-browser", "mcp"}) || len(env) != 0 {
+func (b sandboxMCPBox) StartBrowserStdio(ctx context.Context, start mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+	if !slices.Equal(start.Argv, []string{"agent-browser", "mcp"}) || len(start.Env) != 0 || start.Dir != "" || start.DataDir != "" {
 		return nil, errors.New("browser sandbox only admits its fixed recipe command")
 	}
-	return b.startStdio(ctx, name, argv, nil, stdin, stdout, true)
+	return b.startStdio(ctx, start, stdin, stdout, true)
 }
 
-func (b sandboxMCPBox) startStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer, browser bool) (mcp.BoxProcess, error) {
+func (b sandboxMCPBox) startStdio(ctx context.Context, start mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer, browser bool) (mcp.BoxProcess, error) {
 	route := b.router.Route
 	if browser {
 		route = b.router.RouteBrowser
@@ -53,11 +53,7 @@ func (b sandboxMCPBox) startStdio(ctx context.Context, name string, argv, env []
 	if err != nil {
 		return nil, err
 	}
-	job, err := b.router.ExecStream(ctx, h, usersandbox.ExecRequest{
-		Command: boxStdioCommand(name, argv),
-		Dir:     "/workspace",
-		Env:     env,
-	}, stdin, stdout)
+	job, err := b.router.ExecStream(ctx, h, boxExecRequest(start), stdin, stdout)
 	if err != nil {
 		return nil, err
 	}
@@ -85,6 +81,20 @@ func boxFileName(name string) string {
 
 func boxLogPath(name string) string {
 	return "/tmp/aura-mcp-" + boxFileName(name) + ".log"
+}
+
+// boxExecRequest is the exec a box server starts as. It always starts in /workspace: Docker
+// does not create an exec's working directory, and a plugin server's directory may sit under
+// its data directory, which only the `mkdir -p` in front of it creates.
+func boxExecRequest(start mcp.BoxStart) usersandbox.ExecRequest {
+	command := boxStdioCommand(start.Name, start.Argv)
+	if start.Dir != "" {
+		command = "cd " + tools.ShellQuoteArg(start.Dir) + " && " + command
+	}
+	if start.DataDir != "" {
+		command = "mkdir -p " + tools.ShellQuoteArg(start.DataDir) + " && " + command
+	}
+	return usersandbox.ExecRequest{Command: command, Dir: "/workspace", Env: start.Env}
 }
 
 // boxStdioCommand runs the server with its stderr in a per-server log in the box: ExecStream

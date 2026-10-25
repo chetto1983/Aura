@@ -37,12 +37,22 @@ var ErrBoxUnavailable = errors.New("mcp: this server's sandbox box cannot be cre
 // cache on its first start, the model LibreChat uses on its host; in a box every identity gets
 // its own copy (prd.md §12). The first start's longer budget is BoxInitTimeout.
 type BoxLauncher interface {
-	StartStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error)
+	StartStdio(ctx context.Context, start BoxStart, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error)
+}
+
+// BoxStart is what a box server is started with: its name, its argv and env, and the in-box
+// directory it starts in and data directory it gets (ManagedRuntime.Dir and DataDir).
+type BoxStart struct {
+	Name    string
+	Argv    []string
+	Env     []string
+	Dir     string
+	DataDir string
 }
 
 // BrowserBoxLauncher is granted only to the trusted, fixed browser recipe.
 type BrowserBoxLauncher interface {
-	StartBrowserStdio(context.Context, string, []string, []string, io.ReadCloser, io.Writer) (BoxProcess, error)
+	StartBrowserStdio(ctx context.Context, start BoxStart, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error)
 }
 
 // BoxProcess is one server process running in a box.
@@ -78,7 +88,7 @@ func openSDKBox(processCtx, handshakeCtx context.Context, name string, cfg Serve
 		}
 		start = launcher.StartBrowserStdio
 	}
-	proc, err := start(processCtx, name, argv, cfg.Env, inR, stdout)
+	proc, err := start(processCtx, BoxStart{Name: name, Argv: argv, Env: cfg.Env, Dir: cfg.Dir, DataDir: cfg.DataDir}, inR, stdout)
 	if err != nil {
 		_ = inW.Close()
 		_ = outR.Close()

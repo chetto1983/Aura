@@ -22,6 +22,7 @@ type fakeBox struct {
 	noisy    bool // print npm's output to stdout first, as a self-installing server did
 
 	mu     sync.Mutex
+	start  BoxStart
 	argv   []string
 	env    []string
 	procs  []*fakeBoxProc
@@ -44,14 +45,14 @@ type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
-func (f *fakeBox) StartStdio(_ context.Context, _ string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error) {
+func (f *fakeBox) StartStdio(_ context.Context, start BoxStart, stdin io.ReadCloser, stdout io.Writer) (BoxProcess, error) {
 	if f.startErr != nil {
 		f.stdin, f.stdout = stdin, stdout
 		return nil, f.startErr
 	}
 	p := &fakeBoxProc{stdin: stdin, done: make(chan struct{})}
 	f.mu.Lock()
-	f.argv, f.env = argv, env
+	f.start, f.argv, f.env = start, start.Argv, start.Env
 	f.procs = append(f.procs, p)
 	f.mu.Unlock()
 	go func() {

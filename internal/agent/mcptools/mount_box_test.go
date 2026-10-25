@@ -45,7 +45,7 @@ type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
 
-func (b *identityBoxes) StartBrowserStdio(ctx context.Context, name string, argv, env []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+func (b *identityBoxes) StartBrowserStdio(ctx context.Context, _ mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	advertised, err := mcpmanager.BrowserTools()
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (b *identityBoxes) StartBrowserStdio(ctx context.Context, name string, argv
 	return b.start(ctx, stdin, stdout, advertised)
 }
 
-func (b *identityBoxes) StartStdio(ctx context.Context, _ string, _, _ []string, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
+func (b *identityBoxes) StartStdio(ctx context.Context, _ mcp.BoxStart, stdin io.ReadCloser, stdout io.Writer) (mcp.BoxProcess, error) {
 	advertised := []*sdkmcp.Tool{{Name: "whoami", InputSchema: map[string]any{"type": "object"}, Annotations: &sdkmcp.ToolAnnotations{ReadOnlyHint: true}}}
 	for _, name := range b.echoTools {
 		advertised = append(advertised, &sdkmcp.Tool{Name: name, InputSchema: map[string]any{"type": "object"}})
