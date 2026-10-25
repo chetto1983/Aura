@@ -39,7 +39,7 @@ func TestVisionLocalRouteNoAuth(t *testing.T) {
 		LocalModel:   "local-vl",
 		HTTPClient:   srv.Client(),
 	})
-	out, err := c.Describe(t.Context(), []byte("img"), "", "Describe this image.")
+	out, _, err := c.Describe(t.Context(), []byte("img"), "", "Describe this image.")
 	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
@@ -80,7 +80,8 @@ func TestVisionPrefersPrimaryModelWhenItAcceptsImages(t *testing.T) {
 		LocalModel:           "glm-ocr",
 		HTTPClient:           srv.Client(),
 	})
-	if _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
+	_, model, err := c.Describe(t.Context(), []byte("img"), "image/png", "x")
+	if err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
 	if gotAuth != "Bearer shared-key" {
@@ -89,8 +90,8 @@ func TestVisionPrefersPrimaryModelWhenItAcceptsImages(t *testing.T) {
 	if gotModel != "gemma4:31b-cloud" {
 		t.Errorf("vision model = %q, want the operator-selected primary model", gotModel)
 	}
-	if got := c.VisionModel(); got != gotModel {
-		t.Errorf("VisionModel() = %q, want wire model %q", got, gotModel)
+	if model != gotModel {
+		t.Errorf("reported model = %q, want wire model %q", model, gotModel)
 	}
 }
 
@@ -114,7 +115,7 @@ func TestVisionFallsBackToSidecarWhenPrimaryRejectsImages(t *testing.T) {
 		LocalModel:           "glm-ocr",
 		HTTPClient:           srv.Client(),
 	})
-	if _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
+	if _, _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
 	if gotAuth != "" {
@@ -134,7 +135,7 @@ func TestVisionReportsNoRouteWhenNeitherArmCanSeeImages(t *testing.T) {
 		PrimaryBaseURL:       "https://openrouter.ai/api/v1",
 		PrimaryKey:           staticKey("shared-key"),
 	})
-	_, err := c.Describe(t.Context(), []byte("img"), "image/png", "x")
+	_, _, err := c.Describe(t.Context(), []byte("img"), "image/png", "x")
 	if !errors.Is(err, ErrNoVisionRoute) {
 		t.Fatalf("err = %v, want ErrNoVisionRoute", err)
 	}
@@ -142,7 +143,7 @@ func TestVisionReportsNoRouteWhenNeitherArmCanSeeImages(t *testing.T) {
 
 func TestVisionEmptyConfigHasNoRoute(t *testing.T) {
 	c := NewVisionClient(VisionConfig{})
-	if _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); !errors.Is(err, ErrNoVisionRoute) {
+	if _, _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); !errors.Is(err, ErrNoVisionRoute) {
 		t.Fatalf("err = %v, want ErrNoVisionRoute", err)
 	}
 }
@@ -153,7 +154,7 @@ func TestVisionNon2xxStatusError(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewVisionClient(VisionConfig{LocalBaseURL: srv.URL, HTTPClient: srv.Client()})
-	_, err := c.Describe(t.Context(), []byte("x"), "image/png", "p")
+	_, _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p")
 	var se *StatusError
 	if err == nil || !errors.As(err, &se) || se.StatusCode != http.StatusBadGateway {
 		t.Fatalf("err = %v, want *StatusError 502", err)
@@ -166,7 +167,7 @@ func TestVisionEmptyChoices(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewVisionClient(VisionConfig{LocalBaseURL: srv.URL, HTTPClient: srv.Client()})
-	if _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); err == nil ||
+	if _, _, err := c.Describe(t.Context(), []byte("x"), "image/png", "p"); err == nil ||
 		!strings.Contains(err.Error(), "empty choices") {
 		t.Fatalf("err = %v, want empty choices", err)
 	}

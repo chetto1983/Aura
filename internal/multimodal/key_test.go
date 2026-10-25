@@ -136,7 +136,7 @@ func TestVisionSendsNoKeyToANonOpenRouterPrimary(t *testing.T) {
 	cfg := &config.Config{LLM: llm.Config{Provider: "ollama", BaseURL: srv.URL, Model: "gemma4:31b-cloud"}}
 	vcfg := VisionConfigFrom(cfg, true, primaryKeyOf(cfg, servicesKeyOnly()))
 	vcfg.HTTPClient = srv.Client()
-	if _, err := NewVisionClient(vcfg).Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
+	if _, _, err := NewVisionClient(vcfg).Describe(t.Context(), []byte("img"), "image/png", "x"); err != nil {
 		t.Fatalf("Describe: %v", err)
 	}
 	assertAuthorizations(t, seen(), "")

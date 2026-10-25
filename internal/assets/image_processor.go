@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/chetto1983/aura/internal/multimodal"
 	"github.com/chetto1983/aura/internal/objectstore"
 )
@@ -57,7 +58,9 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 	if mimeType == "" {
 		mimeType = attrs.MIMEType
 	}
-	summary, err := DescribeImageForRetrieval(ctx, p.Vision, imageBytes, mimeType)
+	// The owner's identity, as for the object: a ChatGPT route reads with the owner's account.
+	summary, model, err := DescribeImageForRetrieval(
+		identityctx.WithIdentityID(ctx, asset.IdentityID), p.Vision, imageBytes, mimeType)
 	if err != nil {
 		return Result{}, err
 	}
@@ -65,18 +68,18 @@ func (p *ImageProcessor) ProcessAsset(ctx context.Context, asset Asset) (Result,
 		Status:  StatusComplete,
 		Summary: summary,
 		Metadata: map[string]any{
-			"vision_model": p.Vision.VisionModel(),
+			"vision_model": model,
 		},
 	}, nil
 }
 
 // DescribeImageForRetrieval is the shared image-to-text boundary for immediate asset
-// summaries and durable Garage indexing.
+// summaries and durable Garage indexing. model names the model that read the image.
 func DescribeImageForRetrieval(
 	ctx context.Context, vision *multimodal.VisionClient, imageBytes []byte, mimeType string,
-) (string, error) {
+) (text, model string, err error) {
 	if vision == nil {
-		return "", fmt.Errorf("vision client is not configured")
+		return "", "", fmt.Errorf("vision client is not configured")
 	}
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
@@ -85,11 +88,11 @@ func DescribeImageForRetrieval(
 	if prepared, err := multimodal.DownscaleForVision(ctx, imageBytes, 0); err == nil && prepared.MIMEType != "" {
 		imageBytes, mimeType = prepared.Bytes, prepared.MIMEType
 	}
-	summary, err := vision.Describe(ctx, imageBytes, mimeType, assetVisionPrompt)
+	summary, model, err := vision.Describe(ctx, imageBytes, mimeType, assetVisionPrompt)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return capVisionRetrievalText(summary), nil
+	return capVisionRetrievalText(summary), model, nil
 }
 
 func capVisionRetrievalText(text string) string {

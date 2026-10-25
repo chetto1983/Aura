@@ -131,7 +131,7 @@ func TestImageProcessorCapsRetrievalText(t *testing.T) {
 }
 
 func TestDescribeImageForRetrievalRejectsMissingClient(t *testing.T) {
-	_, err := DescribeImageForRetrieval(context.Background(), nil, []byte("image"), "image/png")
+	_, _, err := DescribeImageForRetrieval(context.Background(), nil, []byte("image"), "image/png")
 	if err == nil || !strings.Contains(err.Error(), "vision client is not configured") {
 		t.Fatalf("missing vision client error = %v, want configuration error", err)
 	}

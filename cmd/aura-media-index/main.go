@@ -78,7 +78,8 @@ func (r mediaRuntime) derive(
 		if err != nil {
 			return "", err
 		}
-		return assets.DescribeImageForRetrieval(ctx, r.vision, raw, mediaType(path, fileName, raw))
+		text, _, err := assets.DescribeImageForRetrieval(ctx, r.vision, raw, mediaType(path, fileName, raw))
+		return text, err
 	case mediaKindAudio:
 		// #nosec G304 -- this CLI intentionally reads the operator-selected document path.
 		raw, err := os.ReadFile(path)
@@ -120,7 +121,7 @@ func (r mediaRuntime) describeScannedPDF(ctx context.Context, path string) (stri
 		if readErr != nil {
 			return "", fmt.Errorf("read scanned PDF page %d: %w", i+1, readErr)
 		}
-		text, visionErr := assets.DescribeImageForRetrieval(ctx, r.vision, raw, "image/png")
+		text, _, visionErr := assets.DescribeImageForRetrieval(ctx, r.vision, raw, "image/png")
 		if visionErr != nil {
 			return "", fmt.Errorf("describe scanned PDF page %d: %w", i+1, visionErr)
 		}
