@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -109,22 +110,34 @@ func (d *DocumentIndex) LexicalCandidates(ctx context.Context, filter CandidateF
 	if err != nil {
 		return nil, err
 	}
+	return d.lexicalPassages(ctx, client, where, params, filter.Limit, RetrievalLegLexical, nil)
+}
+
+// lexicalPassages ranks each file's best passage for the full-text query params bind, best first,
+// and labels it leg. keep, when set, drops a passage before each file's best is chosen.
+func (d *DocumentIndex) lexicalPassages(
+	ctx context.Context, client *Client, where string, params map[string]any, limit int, leg RetrievalLeg,
+	keep func(PassageCandidate) bool,
+) ([]PassageCandidate, error) {
 	// Over-fetch, as the fused leg does: the grouping below runs after the LIMIT, and a file
 	// with many matching passages would otherwise fill the pool on its own.
-	fetch := min(max(filter.Limit*4, 20), d.config.MaxRetrievalCandidates)
+	fetch := min(max(limit*4, 20), d.config.MaxRetrievalCandidates)
 	rows, err := client.Query(ctx, lexicalPassageStatement(where, fetch), params)
 	if err != nil {
 		if IsMissingType(err, documentPassageType) {
 			return nil, nil // nothing ingested yet — an empty library, not a failure
 		}
-		return nil, fmt.Errorf("arcadedb: lexical document candidates: %w", err)
+		return nil, fmt.Errorf("arcadedb: %s document candidates: %w", leg, err)
 	}
-	candidates, err := d.decodeCandidates(rows, RetrievalLegLexical, fetch)
+	candidates, err := d.decodeCandidates(rows, leg, fetch)
 	if err != nil {
 		return nil, err
 	}
+	if keep != nil {
+		candidates = slices.DeleteFunc(candidates, func(candidate PassageCandidate) bool { return !keep(candidate) })
+	}
 	best := bestPassagePerFile(candidates)
-	return best[:min(len(best), filter.Limit)], nil
+	return best[:min(len(best), limit)], nil
 }
 
 // bestPassagePerFile keeps each file's first, so best, passage: what the fused statement's
@@ -143,9 +156,7 @@ func bestPassagePerFile(ranked []PassageCandidate) []PassageCandidate {
 	return kept
 }
 
-// LexicalDocumentCards ranks documents by their card and by their split file name, one query
-// per index, a document keeping the higher of its two scores. One OR query is not used: its
-// $score depends on predicate order (measured 1.3798 against 1.2880 for one document, audit F8).
+// LexicalDocumentCards ranks documents by their card and by their split file name alone.
 func (d *DocumentIndex) LexicalDocumentCards(ctx context.Context, filter CandidateFilter, query string) ([]DocumentCard, error) {
 	filter, where, params, err := d.lexicalRequest(filter, query)
 	if err != nil || params == nil {
@@ -155,9 +166,17 @@ func (d *DocumentIndex) LexicalDocumentCards(ctx context.Context, filter Candida
 	if err != nil {
 		return nil, err
 	}
+	return lexicalCards(ctx, client, where, params, filter.Limit)
+}
+
+// lexicalCards ranks documents for the full-text query params bind by their card and by their
+// split file name, one query per index, a document keeping the higher of its two scores. One OR
+// query is not used: its $score depends on predicate order (measured 1.3798 against 1.2880 for
+// one document, audit F8).
+func lexicalCards(ctx context.Context, client *Client, where string, params map[string]any, limit int) ([]DocumentCard, error) {
 	best := make(map[string]DocumentCard)
 	for _, field := range []string{"card", "file_name_words"} {
-		rows, err := client.Query(ctx, lexicalCardStatement(field, where, filter.Limit), params)
+		rows, err := client.Query(ctx, lexicalCardStatement(field, where, limit), params)
 		if err != nil {
 			if missingIndexedDocumentType(err) {
 				return nil, nil // nothing ingested yet — an empty library, not a failure
@@ -184,7 +203,7 @@ func (d *DocumentIndex) LexicalDocumentCards(ctx context.Context, filter Candida
 		}
 		return cards[i].SearchDocumentID < cards[j].SearchDocumentID
 	})
-	return cards[:min(len(cards), filter.Limit)], nil
+	return cards[:min(len(cards), limit)], nil
 }
 
 // lexicalPassageStatement ranks passages by BM25. The floor sits in the WHERE, as memory's

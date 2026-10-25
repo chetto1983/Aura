@@ -24,6 +24,9 @@ const (
 	// RetrievalLegLexical is the full-text index alone, for when the dense legs cannot run
 	// (spec §8). It does not fuse with the fused leg: a response is one or the other.
 	RetrievalLegLexical RetrievalLeg = "lexical"
+	// RetrievalLegExact is the full-text indexes asked for one exact term as a phrase, with no
+	// score floor (document_exact.go). It runs beside either of the other two.
+	RetrievalLegExact RetrievalLeg = "exact"
 )
 
 // FusionStrategy is `vector.fuse`'s combination rule -- the engine's three, no fourth.
@@ -96,10 +99,10 @@ type PassageCandidate struct {
 
 // Score is the score the candidate's own leg ranked it by.
 func (c PassageCandidate) Score() *float64 {
-	if c.Leg == RetrievalLegLexical {
-		return c.LexicalScore
+	if c.Leg == RetrievalLegFused {
+		return c.FusedScore
 	}
-	return c.FusedScore
+	return c.LexicalScore
 }
 
 const passageCandidateFields = "passage_key, search_document_id, source_kind, source_key, " +
@@ -383,7 +386,7 @@ func (d *DocumentIndex) decodeCandidate(
 	field, target := "fused_score", &candidate.FusedScore
 	switch leg {
 	case RetrievalLegFused:
-	case RetrievalLegLexical:
+	case RetrievalLegLexical, RetrievalLegExact:
 		field, target = "lexical_score", &candidate.LexicalScore
 	default:
 		return PassageCandidate{}, "", fmt.Errorf("unknown retrieval leg %q", leg)

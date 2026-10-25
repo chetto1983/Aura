@@ -190,8 +190,13 @@ func liveLibrary() []liveDocument {
 
 func seedLiveLibrary(t *testing.T, client *arcadedb.Client, schema string) {
 	t.Helper()
+	seedLibrary(t, client, schema, liveLibrary())
+}
+
+func seedLibrary(t *testing.T, client *arcadedb.Client, schema string, library []liveDocument) {
+	t.Helper()
 	ctx := context.Background()
-	for _, doc := range liveLibrary() {
+	for _, doc := range library {
 		if _, err := client.Command(ctx, "INSERT INTO IndexedDocument SET search_document_id = :id, "+
 			"source_kind = 's3', source_key = :key, file_name = :name, file_name_words = :words, "+
 			"raw_sha256 = :raw, normalized_text_sha256 = :normalized, size_bytes = 1000, passage_count = :count, "+
