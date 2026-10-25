@@ -75,16 +75,24 @@ func TestInstallerEmptySourceRejected(t *testing.T) {
 // check (the nil-pool db.WithTx then panics on Pool.Acquire, which we recover and treat
 // as "validation passed"), or the validation error when a check rejected it pre-tx. This
 // lets the DB-free unit tests assert the boundary edges without a live pool.
-func installPastValidation(t *testing.T, inst *Installer, source string) (err error) {
+func installPastValidation(t *testing.T, inst *Installer, source string) error {
+	t.Helper()
+	return pastValidation(t, func() error {
+		_, err := inst.Install(t.Context(), source, AuditActor{ActorID: "cli"})
+		return err
+	})
+}
+
+// pastValidation runs an install over a nil-pool writer: nil when it reached the audit
+// transaction, whose nil pool panics at db.WithTx, or the error that stopped it first.
+func pastValidation(t *testing.T, install func() error) (err error) {
 	t.Helper()
 	defer func() {
 		if r := recover(); r != nil {
-			// The nil-pool WriteInstallPending panicked at db.WithTx → validation passed.
 			err = nil
 		}
 	}()
-	_, err = inst.Install(t.Context(), source, AuditActor{ActorID: "cli"})
-	return err
+	return install()
 }
 
 // TestInstallerNoIgnoreScripts proves the transport runs `npx skills add <src> --copy -y`

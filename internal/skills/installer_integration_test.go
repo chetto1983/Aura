@@ -156,8 +156,7 @@ func TestInstallerAuditAppendOnly(t *testing.T) {
 
 // skillAuditSQLState extracts the SQLSTATE from a pg error, "" otherwise.
 func skillAuditSQLState(err error) string {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
+	if pgErr, ok := errors.AsType[*pgconn.PgError](err); ok {
 		return pgErr.Code
 	}
 	return ""
@@ -256,5 +255,47 @@ func TestSkillAuditAppendOnly(t *testing.T) {
 	}
 	if len(after) != 3 {
 		t.Fatalf("skill_audit rows tampered or removed: want 3 surviving rows, got %d", len(after))
+	}
+}
+
+// TestInstallDirLandsActiveWithoutAlways installs a fetched tree that asks to be always-on,
+// as a plugin's skill does: it lands active, under the source it came from, and neither the
+// catalog row nor the materialized file keeps the flag.
+func TestInstallDirLandsActiveWithoutAlways(t *testing.T) {
+	pool := catalogPool(t)
+	ctx := context.Background()
+	owner := catalogIdentity(t, pool)
+	scoped, err := catalogWriter(t, pool).For(owner)
+	if err != nil {
+		t.Fatalf("For: %v", err)
+	}
+	inst := NewInstaller(InstallerConfig{Writer: scoped, BodyCapBytes: 32768})
+	name := "pack-" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String()[:8], "-", "")
+	dir := filepath.Join(t.TempDir(), name)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	md := "---\nname: " + name + "\ndescription: a plugin skill\nalways: true\n---\nbody"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte(md), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	info, err := inst.InstallDir(ctx, dir, "pack:o/r/p", AuditActor{ActorID: "cli", IdentityID: owner})
+	if err != nil {
+		t.Fatalf("InstallDir: %v", err)
+	}
+	if info.Source != "pack:o/r/p" || info.Status != StatusActive {
+		t.Errorf("info = %+v, want source pack:o/r/p and active", info)
+	}
+	rows, err := NewCatalogStore(pool).ListOwned(ctx, owner)
+	if err != nil || len(rows) != 1 || rows[0].Name != name || rows[0].AlwaysApply {
+		t.Fatalf("catalog = (%+v, %v), want one row for %s with always off", rows, err, name)
+	}
+	landed, err := os.ReadFile(filepath.Join(scoped.ActiveDir(), name, "SKILL.md"))
+	if err != nil {
+		t.Fatalf("the skill did not land active: %v", err)
+	}
+	if strings.Contains(string(landed), "always") {
+		t.Errorf("the active SKILL.md kept always:\n%s", landed)
 	}
 }

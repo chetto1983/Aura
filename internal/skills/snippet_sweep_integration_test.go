@@ -12,6 +12,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -61,13 +62,13 @@ func TestSkillTTLSweep(t *testing.T) {
 		t.Fatalf("SweepExpiredSnippets: %v", err)
 	}
 
-	if !containsName(res.Archived, stale) {
+	if !slices.Contains(res.Archived, stale) {
 		t.Fatalf("archived = %v, want it to include the stale snippet %q", res.Archived, stale)
 	}
-	if containsName(res.Archived, fresh) {
+	if slices.Contains(res.Archived, fresh) {
 		t.Fatalf("archived = %v, must NOT include the fresh snippet %q", res.Archived, fresh)
 	}
-	if !containsName(res.Kept, fresh) {
+	if !slices.Contains(res.Kept, fresh) {
 		t.Fatalf("kept = %v, want it to include the fresh snippet %q", res.Kept, fresh)
 	}
 
@@ -93,13 +94,4 @@ func TestSkillTTLSweep(t *testing.T) {
 	if !foundAuto {
 		t.Fatalf("no D-29 auto_archive audit row for %q (want auto/!gate_recommended/gate_taken)", stale)
 	}
-}
-
-func containsName(ss []string, want string) bool {
-	for _, s := range ss {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

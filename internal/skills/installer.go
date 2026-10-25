@@ -13,15 +13,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/mcp"
-	"github.com/chetto1983/aura/internal/scoring"
 )
 
 // installer.go is the cockpit-side skills install transport (SKW-01/02, the
 // gap-filler #3 net-new piece). It runs the `npx skills` CLI inside Aura's container
 // to fetch a skill from a source field (owner/repo, URL, or local path) or to search
 // the skills.sh catalog, stages the fetched tree to a temp dir, ANSI-strips the
-// output, parses the staged SKILL.md, computes the canonical content hash, runs the
-// EXISTING five-item write-boundary checklist (ValidateForWrite), and hands off to
+// output, parses the staged SKILL.md, runs the EXISTING five-item write-boundary
+// checklist (ValidateForWrite), drops `always`, computes the canonical content hash, and hands off to
 // the write sink (Writer.WriteInstall) — which lands the staged tree in active/<name>/,
 // materializes it into the /skills mount, and records the install audit row. Since
 // amendment #97 an install is live when it returns; there is no approval step.
@@ -164,10 +163,10 @@ const previewCapBytes = 2048
 const ambiguityListCap = 10
 
 // Install fetches a skill from source via `npx skills add <source> -y` (scripts
-// PERMITTED, container-isolated — no script-disabling flag), stages the fetched tree, parses
-// the staged SKILL.md, computes the canonical hash, runs the five-item checklist, then
-// hands off to Writer.WriteInstall, which lands it active + materialized + audited.
-// An empty/blank source is rejected with a safe error before any subprocess runs.
+// PERMITTED, container-isolated — no script-disabling flag), locates the one fetched tree,
+// and installs it through InstallDir, which validates it, drops `always`, and lands it
+// active + materialized + audited. An empty/blank source is rejected with a safe error
+// before any subprocess runs.
 func (i *Installer) Install(ctx context.Context, source string, actor AuditActor) (InstallInfo, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -205,49 +204,7 @@ func (i *Installer) Install(ctx context.Context, source string, actor AuditActor
 	if err != nil {
 		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
 	}
-
-	raw, err := os.ReadFile(filepath.Join(stagedDir, "SKILL.md")) // #nosec G304 -- stagedDir is locateStagedSkill's container-staged tree under our own MkdirTemp work dir
-	if err != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: read staged SKILL.md: %w", source, err)
-	}
-	fm, body, perr := parseFrontmatter(raw)
-	if perr != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: parse staged SKILL.md: %w", source, perr)
-	}
-	// The on-disk dir name MUST equal the declared frontmatter name (D-30): a cloned
-	// tree whose dir != its declared name is rejected before staging into pending.
-	if err := ValidateNameAgainstDir(fm, filepath.Base(stagedDir)); err != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
-	}
-
-	hash, err := HashSkillDir(stagedDir)
-	if err != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: hash staged tree: %w", source, err)
-	}
-
-	// The FIVE-item write-boundary checklist (allowBlocklisted=false — the install path
-	// NEVER bypasses the injection blocklist). A body one byte over the cap fails here;
-	// at-cap passes (the boundary edge). A non-ASCII name / NFKC injection literal fail.
-	if err := ValidateForWrite(fm, body, i.blocklist, i.bodyCapBytes, false); err != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
-	}
-
-	status, err := i.writer.WriteInstall(ctx, fm, stagedDir, hash, actor)
-	if err != nil {
-		return InstallInfo{}, fmt.Errorf("install %q: %w", source, err)
-	}
-
-	tier := scoring.ComputeSkillTier(scoring.SkillInstall, body)
-	return InstallInfo{
-		Name:        fm.Name,
-		Source:      source,
-		ContentHash: hash,
-		Preview:     previewBody(body),
-		Destination: filepath.Join(i.writer.activeDir, fm.Name),
-		RiskTier:    string(tier),
-		Status:      status,
-		Checklist:   installChecklist(),
-	}, nil
+	return i.InstallDir(ctx, stagedDir, source, actor)
 }
 
 // Search prefers the skills.sh JSON catalog and falls back to `npx skills find <q>`.
