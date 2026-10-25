@@ -87,8 +87,8 @@ func TestRemoveFailureLeavesARecordOfWhatRemains(t *testing.T) {
 	w, b := newWorld(t)
 	reviewAndInstall(t, b)
 	w.library.failDelete["s2"] = true
-	if _, err := b.Remove(context.Background(), "admin", "p", false); err == nil {
-		t.Fatal("Remove succeeded with a failed delete")
+	if rep, err := b.Remove(context.Background(), "admin", "p", false); err == nil || !rep.Started() {
+		t.Fatalf("Remove with a failed delete = (%+v, %v), want a started report and its error", rep, err)
 	}
 	rec, ok, _ := b.Get("p")
 	if !ok || rec.Phase != PhaseRemoving || len(rec.Skills) != 1 || rec.Skills[0].Name != "s2" || len(rec.Connectors) != 0 {
@@ -125,8 +125,8 @@ func TestRemoveThenReinstallLandsTheSkillsAgain(t *testing.T) {
 func TestRemoveOfAnUnknownNameIsNotInstalled(t *testing.T) {
 	t.Parallel()
 	_, b := newWorld(t)
-	if _, err := b.Remove(context.Background(), "admin", "ghost", false); !errors.Is(err, ErrNotInstalled) {
-		t.Fatalf("Remove = %v, want ErrNotInstalled", err)
+	if rep, err := b.Remove(context.Background(), "admin", "ghost", false); !errors.Is(err, ErrNotInstalled) || rep.Started() {
+		t.Fatalf("Remove = (%+v, %v), want ErrNotInstalled with nothing started", rep, err)
 	}
 }
 

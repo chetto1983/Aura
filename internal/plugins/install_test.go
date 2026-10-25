@@ -42,7 +42,10 @@ func TestInstallRefusesAChangedDigestAndWritesNothing(t *testing.T) {
 		t.Fatalf("Review: %v", err)
 	}
 	w.put("local", "custom")
-	_, err = b.Install(context.Background(), "admin", InstallRequest{Ref: "o/r/p", Commit: r.Commit, Digest: r.Digest})
+	rep, err := b.Install(context.Background(), "admin", InstallRequest{Ref: "o/r/p", Commit: r.Commit, Digest: r.Digest})
+	if rep.Started() {
+		t.Errorf("a refused install reports %+v", rep)
+	}
 	if !errors.Is(err, ErrDigestChanged) || !strings.Contains(err.Error(), "did not move") {
 		t.Fatalf("Install = %v, want ErrDigestChanged saying the commit did not move", err)
 	}
@@ -213,9 +216,12 @@ func TestInstallFailurePoints(t *testing.T) {
 		w, b := newWorld(t)
 		w.registry.fail = errors.New("database is unreachable")
 		r, _ := b.Review(context.Background(), "o/r/p")
-		_, err := b.Install(context.Background(), "admin", InstallRequest{Ref: "o/r/p", Commit: r.Commit, Digest: r.Digest})
+		rep, err := b.Install(context.Background(), "admin", InstallRequest{Ref: "o/r/p", Commit: r.Commit, Digest: r.Digest})
 		if err == nil || !strings.Contains(err.Error(), "database is unreachable") {
 			t.Fatalf("Install = %v, want the update's error", err)
+		}
+		if !rep.Started() || stepOf(rep.Skills, "s1").Outcome != OutcomeOK {
+			t.Errorf("the report of a stopped install = %+v, want it started with what landed", rep)
 		}
 		rec, ok, _ := b.Get("p")
 		if !ok || len(rec.Skills) != 2 || len(rec.Connectors) != 0 || len(w.mounted) != 0 {

@@ -64,6 +64,8 @@ export interface PluginReport {
   readonly review: PluginReview;
   readonly skills: readonly PluginStep[];
   readonly connectors: readonly PluginStep[];
+  /** Why the install stopped part way; empty when it finished. */
+  readonly error: string;
 }
 
 export interface PluginRemoveReport {
@@ -71,6 +73,8 @@ export interface PluginRemoveReport {
   readonly skills: readonly PluginStep[];
   readonly connectors: readonly PluginStep[];
   readonly dataDeleted: boolean;
+  /** Why the removal stopped part way; empty when it finished. */
+  readonly error: string;
 }
 
 /** One installed plugin. `phase` is 'installed' unless an install or a removal is under way,
@@ -185,15 +189,25 @@ export async function reviewPlugin(ref: string): Promise<PluginReview> {
   return review(await postJSON<Wire>(`${GOV_PLUGINS_PATH}/review`, { ref }));
 }
 
+/** A write that an error stopped after it began answers 207 with `{error, report}`: what it did,
+ * and why it stopped. Any other answer is the report itself. */
+function outcome(raw: Wire): { readonly body: Wire; readonly error: string } {
+  const report = raw.report;
+  return report !== null && typeof report === 'object'
+    ? { body: report as Wire, error: stringValue(raw.error) }
+    : { body: raw, error: '' };
+}
+
 /** POST /api/governance/plugins — install what the review showed. A 409 means the review no
  * longer holds, or the plugin is already installed. */
 export async function installPlugin(req: PluginInstallRequest): Promise<PluginReport> {
-  const raw = await postJSON<Wire>(GOV_PLUGINS_PATH, req);
-  const reviewed = raw.review;
+  const { body, error } = outcome(await postJSON<Wire>(GOV_PLUGINS_PATH, req));
+  const reviewed = body.review;
   return {
     review: review(reviewed !== null && typeof reviewed === 'object' ? (reviewed as Wire) : {}),
-    skills: list(raw.skills, step),
-    connectors: list(raw.connectors, step),
+    skills: list(body.skills, step),
+    connectors: list(body.connectors, step),
+    error,
   };
 }
 
@@ -201,11 +215,14 @@ export async function installPlugin(req: PluginInstallRequest): Promise<PluginRe
  * asked. */
 export async function removePlugin(name: string, deleteData: boolean): Promise<PluginRemoveReport> {
   const query = deleteData ? '?data=delete' : '';
-  const raw = await deleteJSON<Wire>(`${GOV_PLUGINS_PATH}/${encodeURIComponent(name)}${query}`);
+  const { body, error } = outcome(
+    await deleteJSON<Wire>(`${GOV_PLUGINS_PATH}/${encodeURIComponent(name)}${query}`),
+  );
   return {
-    name: stringValue(raw.name),
-    skills: list(raw.skills, step),
-    connectors: list(raw.connectors, step),
-    dataDeleted: raw.data_deleted === true,
+    name: stringValue(body.name),
+    skills: list(body.skills, step),
+    connectors: list(body.connectors, step),
+    dataDeleted: body.data_deleted === true,
+    error,
   };
 }

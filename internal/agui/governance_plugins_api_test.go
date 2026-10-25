@@ -14,7 +14,10 @@ import (
 
 // fakePlugins answers each call with the error a test sets, recording what reached it.
 type fakePlugins struct {
-	err        error
+	err error
+	// partial makes err stop a write after it began, with a report of what was done; otherwise
+	// err is a refusal and the report is empty.
+	partial    bool
 	installed  plugins.InstallRequest
 	removed    string
 	deleteData bool
@@ -37,12 +40,18 @@ func (f *fakePlugins) Review(_ context.Context, ref string) (plugins.Review, err
 
 func (f *fakePlugins) Install(_ context.Context, _ string, req plugins.InstallRequest) (plugins.Report, error) {
 	f.installed = req
-	return plugins.Report{Skills: []plugins.Step{{Name: "s", Outcome: plugins.OutcomeOK}}}, f.err
+	if f.err != nil && !f.partial {
+		return plugins.Report{}, f.err
+	}
+	return plugins.Report{Review: plugins.Review{Name: "p"}, Skills: []plugins.Step{{Name: "s", Outcome: plugins.OutcomeOK}}}, f.err
 }
 
 func (f *fakePlugins) Remove(_ context.Context, _, name string, deleteData bool) (plugins.RemoveReport, error) {
 	f.removed, f.deleteData = name, deleteData
-	return plugins.RemoveReport{Name: name, DataDeleted: deleteData}, f.err
+	if f.err != nil && !f.partial {
+		return plugins.RemoveReport{}, f.err
+	}
+	return plugins.RemoveReport{Name: name, Skills: []plugins.Step{{Name: "s", Outcome: plugins.OutcomeOK}}, DataDeleted: deleteData}, f.err
 }
 
 func pluginServer(p PluginsProvider) *Server {
@@ -85,6 +94,23 @@ func TestPluginRoutes(t *testing.T) {
 			body := `{"ref":"o/r/p","commit":"` + commit40 + `","digest":"d"}`
 			if rec := doGovWrite(t, s, http.MethodPost, "/api/governance/plugins", body, true); rec.Code != want {
 				t.Errorf("install with %v = %d, want %d", err, rec.Code, want)
+			}
+		}
+	})
+	t.Run("a write that stopped part way answers what it did and why", func(t *testing.T) {
+		stop := errors.New("save the connectors of p: database is unreachable")
+		for _, rt := range []writeRoute{
+			{http.MethodPost, "/api/governance/plugins", `{"ref":"o/r/p","commit":"` + commit40 + `","digest":"d"}`},
+			{http.MethodDelete, "/api/governance/plugins/p", ""},
+		} {
+			rec := doGovWrite(t, pluginServer(&fakePlugins{err: stop, partial: true}), rt.method, rt.target, rt.body, true)
+			var got struct {
+				Error  string
+				Report struct{ Skills []plugins.Step }
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || rec.Code != http.StatusMultiStatus ||
+				got.Error != stop.Error() || len(got.Report.Skills) != 1 {
+				t.Errorf("%s %s = %d %s", rt.method, rt.target, rec.Code, rec.Body)
 			}
 		}
 	})

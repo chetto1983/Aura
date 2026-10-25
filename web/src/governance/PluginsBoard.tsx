@@ -76,9 +76,16 @@ export function PluginsBoard({ onOpenServer }: PluginsBoardProps) {
           </h3>
 
           {remove.isSuccess ? (
-            <Alert role="status">
+            <Alert role="status" variant={remove.data.error === '' ? 'default' : 'destructive'}>
               <AlertDescription className="gap-1">
-                <p>{t('governance.plugins.removed', { name: remove.data.name })}</p>
+                <p>
+                  {remove.data.error === ''
+                    ? t('governance.plugins.removed', { name: remove.data.name })
+                    : t('governance.plugins.removeStopped', {
+                        name: remove.data.name,
+                        reason: remove.data.error,
+                      })}
+                </p>
                 {leftBehind.map((step) => (
                   <p key={step.name} className="text-text-muted">
                     {t('governance.plugins.review.skipped', {

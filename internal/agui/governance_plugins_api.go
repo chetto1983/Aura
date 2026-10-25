@@ -75,11 +75,7 @@ func (s *Server) handlePluginInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	report, err := s.governanceWrite.Plugins.Install(r.Context(), actor, body)
-	if err != nil {
-		writePluginError(w, err)
-		return
-	}
-	writeJSON(w, report)
+	writePluginOutcome(w, report, err)
 }
 
 // handlePluginRemove serves DELETE /api/governance/plugins/{name}; ?data=delete also deletes
@@ -90,11 +86,7 @@ func (s *Server) handlePluginRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	report, err := s.governanceWrite.Plugins.Remove(r.Context(), actor, r.PathValue("name"), r.URL.Query().Get("data") == "delete")
-	if err != nil {
-		writePluginError(w, err)
-		return
-	}
-	writeJSON(w, report)
+	writePluginOutcome(w, report, err)
 }
 
 // beginPluginWrite answers 503 while the backend is unwired and 401 without a principal, and
@@ -110,6 +102,20 @@ func (s *Server) beginPluginWrite(w http.ResponseWriter, r *http.Request) (strin
 		return "", false
 	}
 	return actor, true
+}
+
+// writePluginOutcome answers a write with its report, or with its refusal. A write that an error
+// stopped after it began answers 207 with the report beside the error: something landed or left,
+// and the operator needs to know what.
+func writePluginOutcome[R interface{ Started() bool }](w http.ResponseWriter, report R, err error) {
+	switch {
+	case err == nil:
+		writeJSON(w, report)
+	case report.Started():
+		writeJSONStatus(w, http.StatusMultiStatus, map[string]any{"error": sanitizeErr(err), "report": report})
+	default:
+		writePluginError(w, err)
+	}
 }
 
 // writePluginError maps the backend's refusals: a request the caller can correct is 400, a

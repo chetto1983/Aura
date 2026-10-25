@@ -20,6 +20,8 @@ export const pluginsEn = {
   removeAria: 'Remove {{name}}',
   removed: 'Removed {{name}}.',
   removeFailed: "Couldn't remove {{name}}.",
+  removeStopped:
+    'The removal of {{name}} stopped part way: {{reason}}. Removing it again finishes the job.',
   remove: {
     title: 'Remove {{name}}?',
     body: 'Its connectors leave every box and its skills are deleted; installing it again brings them back. A skill you changed since the install stays.',
@@ -67,6 +69,7 @@ export const pluginsEn = {
       attention: 'needs attention',
     },
     openServer: 'Open on the MCP board',
+    stopped: 'The install stopped part way: {{reason}}',
   },
 };
 
@@ -84,6 +87,8 @@ export const pluginsIt = {
   removeAria: 'Rimuovi {{name}}',
   removed: '{{name}} rimosso.',
   removeFailed: 'Impossibile rimuovere {{name}}.',
+  removeStopped:
+    'La rimozione di {{name}} si è fermata a metà: {{reason}}. Rimuoverlo di nuovo completa il lavoro.',
   remove: {
     title: 'Rimuovere {{name}}?',
     body: "I suoi connettori escono da ogni box e le sue competenze vengono eliminate; installarlo di nuovo le riporta. Una competenza che hai modificato dopo l'installazione resta.",
@@ -132,5 +137,6 @@ export const pluginsIt = {
       attention: 'richiede attenzione',
     },
     openServer: 'Apri nel board MCP',
+    stopped: "L'installazione si è fermata a metà: {{reason}}",
   },
 };

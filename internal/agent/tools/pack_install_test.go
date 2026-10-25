@@ -33,6 +33,9 @@ type fakePluginBackend struct {
 	reviewErr error
 	installErr,
 	removeErr error
+	// partial makes a failing write fail after it began, as one past the claim does: the report
+	// then says what was done. Otherwise a failure is a refusal, with an empty report.
+	partial  bool
 	records  map[string]plugins.Record
 	reviews  int
 	installs []plugins.InstallRequest
@@ -60,6 +63,9 @@ func (f *fakePluginBackend) Review(_ context.Context, _ string) (plugins.Review,
 func (f *fakePluginBackend) Install(_ context.Context, actor string, req plugins.InstallRequest) (plugins.Report, error) {
 	f.installs = append(f.installs, req)
 	f.actors = append(f.actors, actor)
+	if f.installErr != nil && !f.partial {
+		return plugins.Report{}, f.installErr
+	}
 	return plugins.Report{
 		Review: f.review,
 		Skills: []plugins.Step{{Name: "broker-report", Outcome: plugins.OutcomeOK}},
@@ -73,6 +79,9 @@ func (f *fakePluginBackend) Install(_ context.Context, actor string, req plugins
 func (f *fakePluginBackend) Remove(_ context.Context, actor, name string, deleteData bool) (plugins.RemoveReport, error) {
 	f.removes = append(f.removes, name+" data="+strconv.FormatBool(deleteData))
 	f.actors = append(f.actors, actor)
+	if f.removeErr != nil && !f.partial {
+		return plugins.RemoveReport{}, f.removeErr
+	}
 	return plugins.RemoveReport{
 		Name:        name,
 		Skills:      []plugins.Step{{Name: "broker-report", Outcome: plugins.OutcomeSkipped, Reason: "changed since install"}},
@@ -364,5 +373,32 @@ func TestPluginPackSurfacesBackendFailures(t *testing.T) {
 
 	if _, err := callPlugin(t, tool, pluginAdmin, `{"action":"remove","name":"nope"}`); err == nil || !strings.Contains(err.Error(), "not installed") {
 		t.Errorf("remove of an unknown plugin: err = %v", err)
+	}
+}
+
+// A write that stopped part way changed something, so the agent reads what was done beside why
+// it stopped, and can tell the operator.
+func TestPluginPackReportsWhatAPartialWriteDid(t *testing.T) {
+	t.Parallel()
+	stop := errors.New("save the connectors of broker-analysis: database is unreachable")
+	b := newFakePluginBackend()
+	b.installErr, b.removeErr, b.partial = stop, stop, true
+	b.records["broker-analysis"] = plugins.Record{Name: "broker-analysis", Ref: pluginRef, Commit: pluginCommit, Version: "0.1.1"}
+	tool := pluginTool(b)
+	for _, proposal := range []string{pluginProposal, `{"action":"remove","name":"broker-analysis"}`} {
+		res, err := callPlugin(t, tool, pluginAdmin, proposal)
+		c := challengeOf(t, res, err)
+		if err := tool.Approvals.ApproveChallenge(pluginSession, c.ApprovalSHA256, c.Question); err != nil {
+			t.Fatal(err)
+		}
+		res, err = callPlugin(t, tool, pluginAdmin, repeatArgs(t, c))
+		if err != nil {
+			t.Fatalf("%s: a partial write answered only its error: %v", proposal, err)
+		}
+		for _, want := range []string{"stopped part way", "database is unreachable", "broker-report: "} {
+			if !strings.Contains(res.Preview, want) {
+				t.Errorf("%s: the report misses %q:\n%s", proposal, want, res.Preview)
+			}
+		}
 	}
 }

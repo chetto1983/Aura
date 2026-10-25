@@ -122,6 +122,14 @@ type RemoveReport struct {
 	DataDeleted bool   `json:"data_deleted"`
 }
 
+// Started reports whether the install wrote anything before an error stopped it: the tree is
+// claimed, so the report says what landed and the operator needs it beside the error.
+func (r Report) Started() bool { return r.Review.Name != "" }
+
+// Started reports whether the removal wrote anything before an error stopped it: the record is
+// marked removing, so the report says what left and a second removal finishes the job.
+func (r RemoveReport) Started() bool { return r.Name != "" }
+
 // Review checks the plugin out at its default branch and reviews it. It writes nothing.
 func (b *Backend) Review(ctx context.Context, ref string) (Review, error) {
 	r, err := packs.ParseRef(ref)

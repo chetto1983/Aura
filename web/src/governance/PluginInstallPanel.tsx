@@ -214,6 +214,13 @@ function InstallReport({
 
   return (
     <section className="flex flex-col gap-2">
+      {report.error !== '' ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {t('governance.plugins.report.stopped', { reason: report.error })}
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <h4 className="text-[13px] font-semibold uppercase tracking-wide text-text-muted">
         {heading}
       </h4>

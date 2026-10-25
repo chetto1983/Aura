@@ -137,6 +137,7 @@ describe('pluginApi', () => {
       skills: [],
       connectors: [],
       dataDeleted: false,
+      error: '',
     });
     expect(sent(fetchMock)).toMatchObject({
       url: '/api/governance/plugins/a%20b',
@@ -158,6 +159,41 @@ describe('pluginApi', () => {
     const report = await installPlugin({ ref: 'o/r/p', commit: 'c', digest: 'd' });
     expect(report.review).toMatchObject({ ref: '', skills: [], notes: [] });
     expect(report.connectors).toEqual([]);
+  });
+
+  it('decodes a write that stopped part way: what it did, and why', async () => {
+    respond(
+      {
+        error: 'database is unreachable',
+        report: { review: GO_REVIEW, skills: [{ name: 's', outcome: 'ok' }], connectors: null },
+      },
+      207,
+    );
+    const report = await installPlugin({ ref: 'o/r/p', commit: 'c'.repeat(40), digest: 'd' });
+    expect(report).toMatchObject({
+      error: 'database is unreachable',
+      skills: [{ name: 's', outcome: 'ok', reason: '' }],
+      connectors: [],
+    });
+    expect(report.review.name).toBe('p');
+
+    respond(
+      {
+        error: 'database is unreachable',
+        report: {
+          name: 'p',
+          skills: null,
+          connectors: [{ name: 'c', outcome: 'ok' }],
+          data_deleted: false,
+        },
+      },
+      207,
+    );
+    expect(await removePlugin('p', false)).toMatchObject({
+      name: 'p',
+      error: 'database is unreachable',
+      connectors: [{ name: 'c', outcome: 'ok', reason: '' }],
+    });
   });
 
   it('carries the server reason on a refusal', async () => {

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strconv"
 	"strings"
@@ -77,10 +78,10 @@ func (t *PackTool) install(ctx context.Context, a packArgs) (ToolResult, error) 
 	if a.Commit != "" || a.Digest != "" {
 		if t.Approvals.Consume(session, pluginApprovalDigest("install", a.Ref, a.Commit, a.Digest)) {
 			report, err := t.Backend.Install(ctx, actor, plugins.InstallRequest{Ref: a.Ref, Commit: a.Commit, Digest: a.Digest})
-			if err != nil {
+			if err != nil && !report.Started() {
 				return ToolResult{}, fmt.Errorf("plugin_pack install %s: %w", a.Ref, err)
 			}
-			return NewResult(ctx, installReport(report))
+			return NewResult(ctx, installReport(report, err))
 		}
 	}
 	review, err := t.Backend.Review(ctx, a.Ref)
@@ -118,10 +119,10 @@ func (t *PackTool) remove(ctx context.Context, a packArgs) (ToolResult, error) {
 	digest := pluginApprovalDigest("remove", rec.Name, rec.Commit, strconv.FormatBool(a.DeleteData))
 	if a.Commit == rec.Commit && t.Approvals.Consume(session, digest) {
 		report, err := t.Backend.Remove(ctx, actor, rec.Name, a.DeleteData)
-		if err != nil {
+		if err != nil && !report.Started() {
 			return ToolResult{}, fmt.Errorf("plugin_pack remove %s: %w", rec.Name, err)
 		}
-		return NewResult(ctx, removeReport(report))
+		return NewResult(ctx, removeReport(report, err))
 	}
 	question, err := plugins.RemovalQuestion(rec, a.DeleteData, digest)
 	if err != nil {
@@ -164,9 +165,17 @@ func pluginApprovalRequired(c ApprovalChallenge[PluginAction], repeat map[string
 	}
 }
 
-func installReport(r plugins.Report) string {
+// installReport is the account of an install. One that stopped part way says why first, then
+// what landed: the tree is claimed and some of it may be live, which the operator must know.
+func installReport(r plugins.Report, stopped error) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Installed plugin %s from %s@%s.\n", strings.TrimSpace(r.Review.Name+" "+r.Review.Version), r.Review.Ref, r.Review.Commit)
+	plugin := strings.TrimSpace(r.Review.Name + " " + r.Review.Version)
+	if stopped != nil {
+		slog.Warn("plugin_pack: the install stopped part way", "plugin", r.Review.Name, "err", stopped)
+		fmt.Fprintf(&b, "The install of plugin %s from %s@%s stopped part way: %v\nWhat it did:\n", plugin, r.Review.Ref, r.Review.Commit, stopped)
+	} else {
+		fmt.Fprintf(&b, "Installed plugin %s from %s@%s.\n", plugin, r.Review.Ref, r.Review.Commit)
+	}
 	writeSteps(&b, "skills", r.Skills)
 	writeSteps(&b, "connectors", r.Connectors)
 	if slices.ContainsFunc(r.Connectors, func(s plugins.Step) bool { return s.Outcome == plugins.OutcomeAttention }) {
@@ -175,13 +184,19 @@ func installReport(r plugins.Report) string {
 	return b.String()
 }
 
-func removeReport(r plugins.RemoveReport) string {
-	data := "Its data was kept."
-	if r.DataDeleted {
-		data = "Its data was deleted in your box."
-	}
+// removeReport is the account of a removal. One that stopped part way says why, and that a
+// second removal finishes the job.
+func removeReport(r plugins.RemoveReport, stopped error) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Removed plugin %s. %s\n", r.Name, data)
+	switch {
+	case stopped != nil:
+		slog.Warn("plugin_pack: the removal stopped part way", "plugin", r.Name, "err", stopped)
+		fmt.Fprintf(&b, "The removal of plugin %s stopped part way: %v\nRemoving it again finishes the job. What it did:\n", r.Name, stopped)
+	case r.DataDeleted:
+		fmt.Fprintf(&b, "Removed plugin %s. Its data was deleted in your box.\n", r.Name)
+	default:
+		fmt.Fprintf(&b, "Removed plugin %s. Its data was kept.\n", r.Name)
+	}
 	writeSteps(&b, "skills", r.Skills)
 	writeSteps(&b, "connectors", r.Connectors)
 	return b.String()

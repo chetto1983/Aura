@@ -78,6 +78,7 @@ describe('PluginsBoard', () => {
       skills: [],
       connectors: [],
       dataDeleted: false,
+      error: '',
     });
   });
   afterEach(() => {
@@ -153,6 +154,7 @@ describe('PluginsBoard', () => {
       skills: [{ name: 'broker-report', outcome: 'skipped', reason: 'changed since install' }],
       connectors: [{ name: 'broker-analysis', outcome: 'ok', reason: '' }],
       dataDeleted: false,
+      error: '',
     });
     renderBoard();
     fireEvent.click(
@@ -166,9 +168,34 @@ describe('PluginsBoard', () => {
     expect(screen.queryByText(/broker-analysis — /)).toBeNull();
   });
 
+  it('says why a removal stopped part way, and not that it was removed', async () => {
+    removePlugin.mockResolvedValue({
+      name: 'broker-analysis',
+      skills: [{ name: 'broker-report', outcome: 'failed', reason: 'disk full' }],
+      connectors: [{ name: 'broker-analysis', outcome: 'ok', reason: '' }],
+      dataDeleted: false,
+      error: 'plugin broker-analysis: 1 skill(s) could not be deleted',
+    });
+    renderBoard();
+    fireEvent.click(
+      within(await row('broker-analysis')).getByRole('button', {
+        name: 'Remove broker-analysis',
+      }),
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+
+    expect(
+      await screen.findByText(
+        'The removal of broker-analysis stopped part way: plugin broker-analysis: 1 skill(s) could not be deleted. Removing it again finishes the job.',
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText('broker-report — disk full')).toBeTruthy();
+    expect(screen.queryByText('Removed broker-analysis.')).toBeNull();
+  });
+
   it('shows the server reason when the removal fails', async () => {
     removePlugin.mockRejectedValue(
-      new HttpError(502, 'plugin broker-analysis: 1 skill(s) could not be archived'),
+      new HttpError(502, 'plugin broker-analysis: 1 skill(s) could not be deleted'),
     );
     renderBoard();
     fireEvent.click(
@@ -179,7 +206,7 @@ describe('PluginsBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     expect(
-      await screen.findByText('plugin broker-analysis: 1 skill(s) could not be archived'),
+      await screen.findByText('plugin broker-analysis: 1 skill(s) could not be deleted'),
     ).toBeTruthy();
   });
 

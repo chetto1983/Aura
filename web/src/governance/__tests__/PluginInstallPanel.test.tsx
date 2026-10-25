@@ -155,7 +155,7 @@ describe('PluginInstallPanel', () => {
   });
 
   it('installs exactly the reviewed ref, commit and digest', async () => {
-    installPlugin.mockResolvedValue({ review: REVIEW, skills: [], connectors: [] });
+    installPlugin.mockResolvedValue({ review: REVIEW, skills: [], connectors: [], error: '' });
     renderPanel();
     await review(`  ${REF}  `);
 
@@ -218,6 +218,28 @@ describe('PluginInstallPanel', () => {
     expect(screen.queryByRole('list', { name: 'Connectors' })).toBeNull();
   });
 
+  it('says why an install stopped part way, beside what it did', async () => {
+    installPlugin.mockResolvedValue({
+      review: REVIEW,
+      skills: [{ name: 'broker-report', outcome: 'ok', reason: '' }],
+      connectors: [
+        { name: 'broker-analysis', outcome: 'failed', reason: 'database is unreachable' },
+      ],
+      error: 'save the connectors of broker-analysis: database is unreachable',
+    });
+    renderPanel();
+    await review();
+    fireEvent.click(screen.getByRole('button', { name: 'Install' }));
+
+    expect(
+      await screen.findByText(
+        'The install stopped part way: save the connectors of broker-analysis: database is unreachable',
+      ),
+    ).toBeTruthy();
+    const report = screen.getByRole('list', { name: 'Install report' });
+    expect(within(report).getByText('broker-report')).toBeTruthy();
+  });
+
   it('reports each step and opens a connector that needs attention on the MCP board', async () => {
     installPlugin.mockResolvedValue({
       review: REVIEW,
@@ -229,6 +251,7 @@ describe('PluginInstallPanel', () => {
         { name: 'broker-analysis', outcome: 'ok', reason: '' },
         { name: 'broker-cloud', outcome: 'attention', reason: '401 Unauthorized' },
       ],
+      error: '',
     });
     const onOpenServer = vi.fn();
     renderPanel({ onOpenServer });
