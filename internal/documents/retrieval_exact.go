@@ -147,12 +147,7 @@ func carriesExactTerms(document RetrievalDocument, terms []arcadedb.ExactTerm) b
 	for _, passage := range document.Passages {
 		texts = append(texts, passage.Text)
 	}
-	for _, term := range terms {
-		if !term.CarriedBy(texts...) {
-			return false
-		}
-	}
-	return true
+	return arcadedb.CarriesEvery(terms, texts...)
 }
 
 func hasExactEvidence(passage RetrievalPassage) bool {

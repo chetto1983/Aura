@@ -86,6 +86,21 @@ func TestExactTermCarriedBy(t *testing.T) {
 	}
 }
 
+// A record carries the question's exact terms only when it carries every one, each in any of its
+// texts; a question with none has no carrier.
+func TestCarriesEvery(t *testing.T) {
+	terms := QueryExactTerms(`il reclamo RC-2026-040 cita "Ubuntu Mono"?`)
+	if !CarriesEvery(terms, "RC-2026-040", "stampato in Ubuntu Mono") {
+		t.Fatal("two texts carrying one term each carry both")
+	}
+	if CarriesEvery(terms, "il font Ubuntu Mono") {
+		t.Fatal("a text missing the identifier carries the terms")
+	}
+	if CarriesEvery(nil, "anything") {
+		t.Fatal("a question with no exact term has a carrier")
+	}
+}
+
 func TestExactTermLucenePhrase(t *testing.T) {
 	cases := []struct{ raw, want string }{
 		{"Ubuntu Mono", `"Ubuntu Mono"`},

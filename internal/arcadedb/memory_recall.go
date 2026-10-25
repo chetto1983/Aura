@@ -165,15 +165,16 @@ func (c *Client) recallSemantic(ctx context.Context, request RecallRequest) (Rec
 	if err != nil {
 		return RecallResult{}, fmt.Errorf("arcadedb: unified memory recall: %w", err)
 	}
+	exact, exactErr := c.exactMemoryRIDs(ctx, []string{recallFactLexicalStatement, recallTurnLexicalStatement},
+		params, request.ExcludeConversationIDs, QueryExactTerms(query))
+	if exactErr != nil {
+		degraded = joinReasons(degraded, reasonExactTermsFailed)
+	}
 	// Every reason the read is less than whole is named: a lexical read that also lost one
 	// ranking says both, so half the memory never passes for a whole lexical answer.
-	switch {
-	case reason == "":
-		reason = degraded
-	case degraded != "":
-		reason += "+" + degraded
-	}
-	result, err := c.hydrateRecallRanking(ctx, request, mergeRecallRankings(facts, turns), limit, path, reason)
+	reason = joinReasons(reason, degraded)
+	ranked := withExactOnly(mergeRecallRankings(facts, turns), exact)
+	result, err := c.hydrateRecallRanking(ctx, request, ranked, limit, path, reason)
 	if err != nil {
 		return RecallResult{}, err
 	}
@@ -245,6 +246,9 @@ func (c *Client) recallEntity(ctx context.Context, request RecallRequest) (Recal
 type recallRankedRID struct {
 	rid   string
 	score float64
+	// exactOnly marks a record only the exact lane found: it passed no floor, so it is admitted
+	// as a carrier of every exact term or not at all (exactRecallOrder).
+	exactOnly bool
 }
 
 func decodeRecallRanking(rows []map[string]any) []recallRankedRID {
@@ -293,6 +297,7 @@ func (c *Client) hydrateRecallRanking(
 	for _, fact := range facts {
 		factProse[normalizedRecallProse(fact.Statement)] = struct{}{}
 	}
+	ranked = exactRecallOrder(ranked, facts, turns, QueryExactTerms(request.Query))
 	quota := recallQuotaFor(limit)
 	identifiers := QueryIdentifiers(request.Query)
 	var admitted recallAdmission

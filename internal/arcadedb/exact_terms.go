@@ -1,6 +1,7 @@
 package arcadedb
 
 import (
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -114,7 +115,7 @@ func (t ExactTerm) CarriedBy(texts ...string) bool {
 	for _, text := range texts {
 		tokens := identifierTokens(text)
 		for start := 0; start+len(want) <= len(tokens); start++ {
-			if equalTokens(tokens[start:start+len(want)], want) {
+			if slices.Equal(tokens[start:start+len(want)], want) {
 				return true
 			}
 		}
@@ -122,13 +123,15 @@ func (t ExactTerm) CarriedBy(texts ...string) bool {
 	return false
 }
 
-func equalTokens(a, b []string) bool {
-	for i := range a {
-		if a[i] != b[i] {
+// CarriesEvery reports whether texts carry every term, each in any of them. No terms, no carrier:
+// the bypass exists only for a question that names something verbatim.
+func CarriesEvery(terms []ExactTerm, texts ...string) bool {
+	for _, term := range terms {
+		if !term.CarriedBy(texts...) {
 			return false
 		}
 	}
-	return true
+	return len(terms) > 0
 }
 
 // lucenePhrase quotes Raw as one Lucene phrase (arcadedb-docs full-text-index.adoc, "Phrase
