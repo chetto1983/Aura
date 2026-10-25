@@ -365,8 +365,18 @@ func TestRefStringRoundTrips(t *testing.T) {
 	}
 }
 
-// SkillRefs is what makes installing a pack's skills a loop over the installer
-// that already exists rather than a second installer.
+// A plugin's connectors carry its reference behind the reserved prefix, which is how a
+// removal finds them.
+func TestSourceMarkerNamesThePlugin(t *testing.T) {
+	t.Parallel()
+	ref := Ref{Source: "anthropics/knowledge-work-plugins", Directory: "sales"}
+	if got := SourceMarker(ref); got != "pack:anthropics/knowledge-work-plugins/sales" {
+		t.Fatalf("SourceMarker = %q", got)
+	}
+}
+
+// SkillRefs renders a pack's skills in the `owner/repo@skill` form `aura pack show` prints,
+// the form the skill installer takes.
 func TestSkillRefsRenderTheInstallerSyntax(t *testing.T) {
 	t.Parallel()
 	p := Pack{Source: "anthropics/knowledge-work-plugins", Skills: []string{"call-prep", "forecast"}}

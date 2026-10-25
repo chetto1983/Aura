@@ -149,8 +149,10 @@ func runMCPDispatch(args []string) {
 	runMCP(ctx, pool, args)
 }
 
+const topLevelUsage = "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}"
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|gateway grants <sub>|paused-states <sub>|task <sub>|retention <plan|apply>|skills <sub>|pack <list|show|install|trust>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|objectstore <sub>|docs <sub>|version}")
+	fmt.Fprintln(os.Stderr, topLevelUsage)
 }
 
 // buildRegistry is the pool-free, box-free registry the manifest/fixture verbs use. The nil

@@ -215,3 +215,24 @@ func TestPackShowNamesAConnectorThatPointsNowhere(t *testing.T) {
 		t.Errorf("an empty url rendered silently:\n%s", out.String())
 	}
 }
+
+// The CLI reads; installing and removing belong to the operator's surfaces, the cockpit and
+// the chat, where a review and one confirmation stand before anything is written.
+func TestPackUsageOffersOnlyListAndShow(t *testing.T) {
+	t.Parallel()
+	for _, gone := range []string{"aura pack install", "aura pack trust", "trust"} {
+		if strings.Contains(packUsage, gone) {
+			t.Errorf("pack usage still offers %q:\n%s", gone, packUsage)
+		}
+	}
+	if !strings.Contains(packUsage, "install from Governance → Plugins, or ask the agent") {
+		t.Errorf("pack usage does not say where installing went:\n%s", packUsage)
+	}
+}
+
+func TestTopLevelUsageListsPackListAndShowOnly(t *testing.T) {
+	t.Parallel()
+	if !strings.Contains(topLevelUsage, "pack <list|show>") || strings.Contains(topLevelUsage, "pack <list|show|install") {
+		t.Errorf("top-level usage = %s", topLevelUsage)
+	}
+}

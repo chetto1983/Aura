@@ -82,6 +82,15 @@ func (r Ref) String() string {
 	return r.Source + "/" + r.Directory
 }
 
+// SourceMarker is what a plugin install writes into the Source field of every connector it
+// saves. The field is already persisted beside each managed server, so a removal finds a
+// plugin's connectors by filter, without a table of its own.
+//
+// The prefix is reserved. Aura's own sources are bare words ("manual", "custom") or the
+// `recipe:` catalog form, so `pack:` cannot collide with one, and a human reading the
+// registry can see where a server came from.
+func SourceMarker(ref Ref) string { return "pack:" + ref.String() }
+
 // Pack is one plugin, whole.
 type Pack struct {
 	Source      string
@@ -124,8 +133,8 @@ type Skipped struct {
 // Ref reconstructs the reference that resolves to exactly this pack.
 func (p Pack) Ref() Ref { return Ref{Source: p.Source, Directory: p.Directory} }
 
-// SkillRefs renders each skill in the syntax the existing installer accepts, so
-// installing a pack's skills is a loop over this and nothing more.
+// SkillRefs renders each skill in the `owner/repo@skill` syntax the skill installer accepts,
+// as `aura pack show` prints it.
 func (p Pack) SkillRefs() []string {
 	refs := make([]string, 0, len(p.Skills))
 	for _, s := range p.Skills {
