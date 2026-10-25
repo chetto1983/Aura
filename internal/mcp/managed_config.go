@@ -170,6 +170,18 @@ func (c *ManagedConfig) AddToProfile(profile, server string) {
 	c.Profiles[profile] = p
 }
 
+// RemoveServer deletes a server and its membership in every profile, reporting whether it was
+// registered. The profiles get new slices, so a document that shares them is not rewritten.
+func (c *ManagedConfig) RemoveServer(name string) bool {
+	_, ok := c.MCPServers[name]
+	delete(c.MCPServers, name)
+	for profile, p := range c.Profiles {
+		p.Servers = slices.DeleteFunc(slices.Clone(p.Servers), func(s string) bool { return s == name })
+		c.Profiles[profile] = p
+	}
+	return ok
+}
+
 // ProfileServerNames returns the sorted, de-duplicated server names selected by the
 // given profile (defaulting to the active profile); when the profile is undefined
 // it falls back to all enabled servers.

@@ -78,6 +78,30 @@ func TestAddToProfileIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestRemoveServerLeavesEveryProfile(t *testing.T) {
+	t.Parallel()
+	shared := []string{"a", "b"}
+	doc := ManagedConfig{
+		MCPServers: map[string]ManagedServer{"a": {Command: "x"}, "b": {Command: "y"}},
+		Profiles:   map[string]ManagedProfile{DefaultMCPProfile: {Servers: shared}, "work": {Servers: []string{"a"}}},
+	}
+	if !doc.RemoveServer("a") || doc.RemoveServer("ghost") {
+		t.Fatal("RemoveServer misreported whether the server was there")
+	}
+	if _, ok := doc.MCPServers["a"]; ok {
+		t.Error("the server is still registered")
+	}
+	if got := doc.Profiles[DefaultMCPProfile].Servers; !slices.Equal(got, []string{"b"}) {
+		t.Errorf("default profile = %v", got)
+	}
+	if got := doc.Profiles["work"].Servers; len(got) != 0 {
+		t.Errorf("work profile = %v", got)
+	}
+	if !slices.Equal(shared, []string{"a", "b"}) {
+		t.Errorf("RemoveServer rewrote a slice it did not own: %v", shared)
+	}
+}
+
 func TestManagedStdioConfigCarriesTheBoxDirs(t *testing.T) {
 	t.Parallel()
 	cfg, err := ManagedStdioConfig(ManagedServer{Command: "uvx", Runtime: ManagedRuntime{

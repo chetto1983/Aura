@@ -215,13 +215,8 @@ func (a mcpWriteAdapter) RemoveServer(ctx context.Context, actor, name string) e
 	if err != nil {
 		return err
 	}
-	if _, ok := doc.MCPServers[name]; !ok {
+	if !doc.RemoveServer(name) {
 		return agui.ErrMCPServerNotFound
-	}
-	delete(doc.MCPServers, name)
-	for profile, cfg := range doc.Profiles {
-		cfg.Servers = removeString(cfg.Servers, name)
-		doc.Profiles[profile] = cfg
 	}
 	if err := a.save(ctx, doc, mcpmanager.MCPAuditInsert{
 		ActorIdentityID: actor, Action: "remove", ServerName: name,
@@ -363,18 +358,6 @@ func recipeOf(server mcp.ManagedServer) string {
 		return rest
 	}
 	return ""
-}
-
-// removeString returns in with the first occurrence of v removed (profile membership
-// cleanup on remove).
-func removeString(in []string, v string) []string {
-	out := in[:0:0]
-	for _, s := range in {
-		if s != v {
-			out = append(out, s)
-		}
-	}
-	return out
 }
 
 // mapManagerErr maps the manager-package sentinels onto the agui write sentinels so the
