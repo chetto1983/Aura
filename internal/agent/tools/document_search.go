@@ -83,7 +83,8 @@ func (t *DocumentSearch) Spec() Spec {
 			"the real file into /workspace, and uploaded documents are not otherwise on the filesystem. " +
 			"query may be a question, a topic, an entity, an exact identifier or a filename. Quote a name or a " +
 			"phrase that must appear verbatim, as in \"Ubuntu Mono\": a document carrying every quoted phrase, " +
-			"identifier and filename of the query ranks first whatever its score, with an exact evidence leg. " +
+			"identifier and filename of the query ranks first whatever its score, with an exact evidence leg; " +
+			"a term the library holds in hundreds of passages is checked only in its best-matching ones. " +
 			"Omit query to list up to " +
 			"limit of the documents type, counterparty, tags or a date bound admit, or of the whole library with no " +
 			"filter, most recently added first, with matching_documents saying how many there are in all: that is " +
