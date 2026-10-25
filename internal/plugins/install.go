@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -99,13 +98,13 @@ type InstallRequest struct {
 	Digest string `json:"digest"`
 }
 
-// Step is the outcome of one skill or connector. Link points to where an operator finishes a
-// step that needs them, such as a connector's authorization.
+// Step is the outcome of one skill or connector. A connector step needs the operator when its
+// outcome is attention: the server is saved and mounted but did not answer its probe, and its
+// authorization lives on the MCP board.
 type Step struct {
 	Name    string `json:"name"`
 	Outcome string `json:"outcome"`
 	Reason  string `json:"reason,omitempty"`
-	Link    string `json:"link,omitempty"`
 }
 
 // Report is the account of an install.
@@ -345,8 +344,7 @@ func (b *Backend) mountConnectors(ctx context.Context, saved []Connector) []Step
 			continue
 		}
 		if res := b.d.Probe(ctx, c.Name, c.server); !res.OK {
-			steps = append(steps, Step{Name: c.Name, Outcome: OutcomeAttention, Reason: probeReason(res),
-				Link: "/governance/mcp?server=" + url.QueryEscape(c.Name)})
+			steps = append(steps, Step{Name: c.Name, Outcome: OutcomeAttention, Reason: probeReason(res)})
 			continue
 		}
 		steps = append(steps, Step{Name: c.Name, Outcome: OutcomeOK})

@@ -1,11 +1,14 @@
 import { lazy, Suspense, useState } from 'react';
-import { CalendarClock, ScrollText, Server, Sparkles } from 'lucide-react';
+import { CalendarClock, Package, ScrollText, Server, Sparkles } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { SectionRail } from '@/components/SectionRail';
 
 const McpBoard = lazy(() => import('./McpBoard').then((m) => ({ default: m.McpBoard })));
 const SkillsBoard = lazy(() => import('./SkillsBoard').then((m) => ({ default: m.SkillsBoard })));
+const PluginsBoard = lazy(() =>
+  import('./PluginsBoard').then((m) => ({ default: m.PluginsBoard })),
+);
 const SchedulerBoard = lazy(() =>
   import('./SchedulerBoard').then((m) => ({ default: m.SchedulerBoard })),
 );
@@ -15,16 +18,17 @@ const AdminAuditView = lazy(() =>
   import('../audit/AdminAuditView').then((m) => ({ default: m.AdminAuditView })),
 );
 
-type GovSection = 'mcp' | 'skills' | 'scheduler' | 'audit';
+type GovSection = 'mcp' | 'skills' | 'plugins' | 'scheduler' | 'audit';
 
 const SECTION_ICONS: Record<GovSection, LucideIcon> = {
   mcp: Server,
   skills: Sparkles,
+  plugins: Package,
   scheduler: CalendarClock,
   audit: ScrollText,
 };
 
-const SECTIONS: readonly GovSection[] = ['mcp', 'skills', 'scheduler', 'audit'];
+const SECTIONS: readonly GovSection[] = ['mcp', 'skills', 'plugins', 'scheduler', 'audit'];
 
 // Governance is a rail + pane, the same shape as Settings and on the same SectionRail: a
 // sidebar column from `lg` up, a scrollable strip above the board below it. It used to be a
@@ -33,6 +37,8 @@ const SECTIONS: readonly GovSection[] = ['mcp', 'skills', 'scheduler', 'audit'];
 export default function GovernanceWorkspace() {
   const { t } = useTranslation();
   const [section, setSection] = useState<GovSection>('mcp');
+  // The server a plugin connector hands over to the MCP board, kept only for that one visit.
+  const [mcpServer, setMcpServer] = useState<string | undefined>(undefined);
 
   return (
     <section
@@ -55,6 +61,7 @@ export default function GovernanceWorkspace() {
         activeId={section}
         onSelect={(id) => {
           setSection(id as GovSection);
+          setMcpServer(undefined);
         }}
       />
 
@@ -69,19 +76,36 @@ export default function GovernanceWorkspace() {
             </div>
           }
         >
-          <GovernancePane section={section} />
+          <GovernancePane
+            section={section}
+            mcpServer={mcpServer}
+            onOpenServer={(name) => {
+              setMcpServer(name);
+              setSection('mcp');
+            }}
+          />
         </Suspense>
       </div>
     </section>
   );
 }
 
-function GovernancePane({ section }: { readonly section: GovSection }) {
+function GovernancePane({
+  section,
+  mcpServer,
+  onOpenServer,
+}: {
+  readonly section: GovSection;
+  readonly mcpServer: string | undefined;
+  readonly onOpenServer: (name: string) => void;
+}) {
   switch (section) {
     case 'mcp':
-      return <McpBoard />;
+      return <McpBoard initialServer={mcpServer} />;
     case 'skills':
       return <SkillsBoard />;
+    case 'plugins':
+      return <PluginsBoard onOpenServer={onOpenServer} />;
     case 'scheduler':
       return <SchedulerBoard />;
     case 'audit':

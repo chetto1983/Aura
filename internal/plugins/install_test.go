@@ -399,7 +399,7 @@ func TestInstallReportsAFailedRemoteProbeAsAttention(t *testing.T) {
 	w.failProb["remote"] = true
 	rep := reviewAndInstall(t, b)
 	s := stepOf(rep.Connectors, "remote")
-	if s.Outcome != OutcomeAttention || s.Link != "/governance/mcp?server=remote" || !strings.Contains(s.Reason, "401") {
+	if s.Outcome != OutcomeAttention || !strings.Contains(s.Reason, "401") {
 		t.Errorf("remote step = %+v", s)
 	}
 	if !slices.Equal(w.probed, []string{"remote"}) {

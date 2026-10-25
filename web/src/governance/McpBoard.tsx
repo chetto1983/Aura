@@ -55,9 +55,14 @@ function McpProbeStatus({ name }: { readonly name: string }) {
   );
 }
 
-export function McpBoard() {
+export interface McpBoardProps {
+  /** The server to open on arrival — a plugin connector handed over for its authorization. */
+  readonly initialServer?: string | undefined;
+}
+
+export function McpBoard({ initialServer }: McpBoardProps = {}) {
   const { t } = useTranslation();
-  const [selected, setSelected] = useState<string | undefined>(undefined);
+  const [selected, setSelected] = useState<string | undefined>(initialServer);
   const [installing, setInstalling] = useState(false);
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const addButtonRef = useRef<HTMLButtonElement | null>(null);

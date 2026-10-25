@@ -2,18 +2,32 @@ import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 
-// GovernanceWorkspace is the lazy rail + pane shell. The four panes are mocked (their data
+// GovernanceWorkspace is the lazy rail + pane shell. The five panes are mocked (their data
 // hooks are exercised by their own tests) so this suite asserts ONLY the workspace
-// obligations: the shared SectionRail renders the four sections, the obsolete read-only
+// obligations: the shared SectionRail renders the five sections, the obsolete read-only
 // banner is gone, and selecting a section swaps the mounted board. The rail replaced a
 // four-column tablist that truncated every label; the two-layout contract (strip above the
 // pane below `lg`, sidebar column from `lg` up) is asserted here and in SectionRail's suite.
 
 vi.mock('../McpBoard', () => ({
-  McpBoard: () => <div data-testid="mcp-board">mcp</div>,
+  McpBoard: ({ initialServer }: { initialServer?: string }) => (
+    <div data-testid="mcp-board">{initialServer ?? 'mcp'}</div>
+  ),
 }));
 vi.mock('../SkillsBoard', () => ({
   SkillsBoard: () => <div data-testid="skills-board">skills</div>,
+}));
+vi.mock('../PluginsBoard', () => ({
+  PluginsBoard: ({ onOpenServer }: { onOpenServer: (name: string) => void }) => (
+    <button
+      type="button"
+      onClick={() => {
+        onOpenServer('broker-cloud');
+      }}
+    >
+      open broker-cloud
+    </button>
+  ),
 }));
 vi.mock('../SchedulerBoard', () => ({
   SchedulerBoard: () => <div data-testid="scheduler-board">scheduler</div>,
@@ -25,7 +39,7 @@ vi.mock('../../audit/AdminAuditView', () => ({
 const { default: GovernanceWorkspace } = await import('../GovernanceWorkspace');
 
 describe('GovernanceWorkspace (boards mocked)', () => {
-  it('renders the section rail with the four governance boards', async () => {
+  it('renders the section rail with the five governance boards', async () => {
     render(<GovernanceWorkspace />);
 
     const rail = screen.getByRole('navigation', { name: 'Governance sections' });
@@ -37,7 +51,7 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     // beside it are already master + detail.
     expect(screen.getByRole('separator', { name: 'Resize the sections rail' })).toBeTruthy();
 
-    for (const name of ['MCP servers', 'Skills', 'Scheduler', 'Audit']) {
+    for (const name of ['MCP servers', 'Skills', 'Plugins', 'Scheduler', 'Audit']) {
       const item = screen.getByRole('button', { name });
       expect(item.getAttribute('data-slot')).toBe('button');
       // Labels keep their full width on the strip — the old grid-cols-4 tablist clipped them.
@@ -73,7 +87,7 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     });
     expect(skills.getAttribute('aria-current')).toBe('page');
     expect(mcp.getAttribute('aria-current')).toBeNull();
-    // Only the selected board is mounted — the rail is what keeps the other three unmounted.
+    // Only the selected board is mounted — the rail is what keeps the other four unmounted.
     expect(screen.queryByTestId('mcp-board')).toBeNull();
   });
 
@@ -85,6 +99,25 @@ describe('GovernanceWorkspace (boards mocked)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('scheduler-board')).toBeTruthy();
     });
+  });
+
+  // A plugin connector that needs an authorization is finished on the MCP board, where the
+  // authorization panel lives: the plugin board hands over the server, and only that visit
+  // opens on it.
+  it('opens a plugin connector on the MCP board, once', async () => {
+    render(<GovernanceWorkspace />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Plugins' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'open broker-cloud' }));
+
+    expect((await screen.findByTestId('mcp-board')).textContent).toBe('broker-cloud');
+    expect(screen.getByRole('button', { name: 'MCP servers' }).getAttribute('aria-current')).toBe(
+      'page',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Skills' }));
+    fireEvent.click(screen.getByRole('button', { name: 'MCP servers' }));
+    expect((await screen.findByTestId('mcp-board')).textContent).toBe('mcp');
   });
 
   it('opens the per-identity audit feed on its own section', async () => {

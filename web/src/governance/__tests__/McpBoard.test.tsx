@@ -234,6 +234,19 @@ describe('McpBoard (GOV-01)', () => {
     });
   });
 
+  // The plugin board sends an operator here to authorize a connector it installed.
+  it('opens on the server it is handed', async () => {
+    fetchMcpServers.mockResolvedValue(SERVERS);
+    probeMcpServer.mockResolvedValue({ name: 'github', ok: true, tool_count: 3, detail: 'ok' });
+
+    render(<McpBoard initialServer="github" />, {
+      wrapper: ({ children }) => <Wrapper qc={client()}>{children}</Wrapper>,
+    });
+
+    expect(await screen.findByText('GITHUB_TOKEN')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /github/, pressed: true })).toBeTruthy();
+  });
+
   // Measured 2026-10-13 on the lab VM: with ElevenLabs's consent pending, selecting Linear
   // showed ElevenLabs's consent URL under Linear's name and no Connect button for Linear.
   it("never shows one server's pending consent on another server's detail", async () => {
