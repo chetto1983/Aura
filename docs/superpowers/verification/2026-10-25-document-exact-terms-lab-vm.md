@@ -3,7 +3,8 @@
 Plan `docs/superpowers/plans/2026-10-25-document-named-terms.md`, Task 6, Steps 4 and 5. Spec
 `docs/superpowers/specs/2026-10-25-document-exactness-and-judge-design.md`, decision 1 and acceptance 1.
 
-**Verdict: acceptance 1 passes, with the complex-corpus measurement still open.**
+**Verdict: acceptance 1 passes.** The complex-corpus measurement was waived by the operator ("basta
+aura e te"): Aura's agent and Claude validate on this library.
 - s04 with the name quoted, and the bare `"Ubuntu Mono"`, return `calibre_demo.docx` first on the
   exact evidence, where the floor used to drop it.
 - Nothing that abstained before admits now: the five out-of-corpus questions and "fattura" still
@@ -11,7 +12,7 @@ Plan `docs/superpowers/plans/2026-10-25-document-named-terms.md`, Task 6, Steps 
 - Aura's agent, asked to find the font without being told how, quoted the name on its first call.
 - A search with 16 identifiers costs what a search with none does.
 - `complex_qrels.json` was not run. The complex identity no longer exists, neither on the
-  workstation nor on the VM, and seeding it needs the whole ingest pipeline.
+  workstation nor on the VM, seeding it needs the whole ingest pipeline, and the operator waived it.
 
 ## Protocol
 
@@ -104,9 +105,27 @@ B12, then "fattura", and to report friction. The message used no quotation marks
     8.95; "zero" can read as irrelevant to a caller that does not read the evidence. Decision 1
     sets no score on purpose. Saying so in the tool's description is the operator's call.
 
+## The frictions fixed, checked by Aura
+
+`98ab451a4` ("fix(documents): say which terms a search checked word for word") adds `exact_terms`
+to the response, absent when no term was checked, and says in `document_search`'s description what
+an absent list and a score of 0 mean. The operator applied it by hand at 18:23Z. From the CLI:
+`Ubuntu Mono` and `fattura` abstain with no `exact_terms`, `"vitamina B12"`'s abstention shows
+`["b12"]`, and `"Ubuntu Mono"` shows `["Ubuntu Mono"]` and finds the file.
+
+A second turn in the same conversation asked Aura to repeat its checks, the unquoted forms included.
+- **The diagnostic friction is gone.** In Aura's words: "adesso l'assenza di `exact_terms` … mi dice
+  che il nome non è stato controllato alla lettera … devo riprovare quotando il nome".
+- **The score is understood:** "Non lo considero più un'incoerenza né un attrito irrisolto."
+- **B12 and "fattura" still abstain.**
+- **One friction remains, operational:** a compound name written without quotes still abstains,
+  and Aura has to spot the name and call again with quotes. That is decision 1's boundary: only
+  structured signals make an exact term. In the first turn Aura quoted the name on its own; this
+  turn asked it for the unquoted forms on purpose.
+
 ## What this does not show
 
-- **`complex_qrels.json` before and after.** Not run. The bench needs the complex identity, which
+- **`complex_qrels.json` before and after.** Not run, waived by the operator. The bench needs the complex identity, which
   the workstation's stack no longer holds (its ArcadeDB has only `aura_memory`) and the VM never
   held. Seeding it means rebuilding the ingest pipeline on the workstation (aura-ingest image,
   Garage, CocoIndex state, EmbeddingGemma). The bench's "exact terms ignored" arm gives the

@@ -1701,6 +1701,9 @@ rule. Nothing else is an exact term: no capitals, no sentence position, no word 
   phrase's BM25, which is not the legs' scale.
 - **A failed lane is named** (`exact_terms_unavailable` in the documents, `exact_terms_failed` in
   memory), and the documents never abstain on it.
+- **The response names what it checked word for word** (`exact_terms`, absent when nothing was).
+  Aura's agent, validating on the lab VM, could not tell an unquoted name's abstention from a
+  missing name's until it could read the list.
 
 Measured on the lab VM's library (8 documents, pplx-embed space, floors 0.39 and 0.72), on the 29
 questions of the 2026-10-23 floors set plus 11 for this rule:
