@@ -107,6 +107,11 @@ type RetrievalResponse struct {
 	// as though the library had agreed. It mirrors memory_search's own contract.
 	Abstained        bool   `json:"abstained"`
 	AbstentionReason string `json:"abstention_reason,omitempty"`
+	// ExactTerms are the quoted phrases, identifiers and file names the search checked word for
+	// word (spec 2026-10-25-document-exactness-and-judge, decision 1). Absent, it looked for no
+	// name verbatim. Measured on the lab VM on 2026-10-25, Aura could not tell an abstention for
+	// "Ubuntu Mono" unquoted from one for a name the library lacks.
+	ExactTerms []string `json:"exact_terms,omitempty"`
 
 	// Indexing is how far the ingest reconciler has got, so a caller that has just added
 	// a document can tell "not indexed yet" from "indexed and has nothing to say" -- the
@@ -340,6 +345,9 @@ func (r *HostRetriever) Retrieve(ctx context.Context, request RetrievalRequest) 
 		return RetrievalResponse{}, fmt.Errorf("documents: route document cards: %w", err)
 	}
 	terms := arcadedb.QueryExactTerms(request.Query)
+	for _, term := range terms {
+		response.ExactTerms = append(response.ExactTerms, term.Raw)
+	}
 	if r.PassageIndex == nil {
 		response.Status, response.DegradationReason = RetrievalCardOnly, DegradationUnconfigured
 		r.degradations.warn(DegradationUnconfigured, "no passage index is wired", request.IdentityID)

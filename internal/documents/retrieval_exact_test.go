@@ -2,6 +2,7 @@ package documents
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"reflect"
 	"slices"
@@ -317,5 +318,39 @@ func TestAQuestionWithoutExactTermsAsksNoExactLane(t *testing.T) {
 	}
 	if index.exactCalls != 0 {
 		t.Fatalf("lane asked %d times for a question with no exact term", index.exactCalls)
+	}
+}
+
+// Aura's friction on the lab VM (2026-10-25): an abstention for a name it had not quoted read the
+// same as one for a name the library lacks. The response names what it checked word for word, so
+// no list means no name was looked for verbatim, with no passage index as with one.
+func TestRetrieveSaysWhichTermsItCheckedVerbatim(t *testing.T) {
+	for _, test := range []struct {
+		query string
+		index PassageIndex
+		want  []string
+	}{
+		{fontQuery, fontIndex(), []string{"Ubuntu Mono"}},
+		{"vitamina B12", fontIndex(), []string{"b12"}},
+		{"quale font mostra Ubuntu Mono?", fontIndex(), nil},
+		{fontQuery, nil, []string{"Ubuntu Mono"}},
+	} {
+		response, err := (&HostRetriever{
+			ControlPlane: &fakeRetrievalControl{}, PassageIndex: test.index,
+			Embedder: &fakeRetrievalEmbedder{vector: []float64{0.1, 0.2}},
+		}).Retrieve(t.Context(), RetrievalRequest{IdentityID: retrievalIdentity, Query: test.query})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !slices.Equal(response.ExactTerms, test.want) {
+			t.Fatalf("%q: exact_terms = %q, want %q", test.query, response.ExactTerms, test.want)
+		}
+		encoded, err := json.Marshal(response)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if listed := strings.Contains(string(encoded), `"exact_terms"`); listed != (len(test.want) > 0) {
+			t.Fatalf("%q: exact_terms on the wire = %v, want it only when a term was checked:\n%s", test.query, listed, encoded)
+		}
 	}
 }

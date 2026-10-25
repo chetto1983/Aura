@@ -85,6 +85,11 @@ func (t *DocumentSearch) Spec() Spec {
 			"phrase that must appear verbatim, as in \"Ubuntu Mono\": a document carrying every quoted phrase, " +
 			"identifier and filename of the query ranks first whatever its score, with an exact evidence leg; " +
 			"a term the library holds in hundreds of passages is checked only in its best-matching ones. " +
+			"exact_terms lists what the search checked word for word. When it is absent no name was, so an " +
+			"abstention may only mean the name was not quoted: quote it and search again. score is the " +
+			"document's similarity to the question, and 0 for a document that only an exact term admitted: " +
+			"its exact evidence carries the term's match score, and its place in the list, not its score, " +
+			"says it answers first. " +
 			"Omit query to list up to " +
 			"limit of the documents type, counterparty, tags or a date bound admit, or of the whole library with no " +
 			"filter, most recently added first, with matching_documents saying how many there are in all: that is " +
