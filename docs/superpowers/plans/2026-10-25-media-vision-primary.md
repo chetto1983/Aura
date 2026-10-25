@@ -516,4 +516,72 @@ the same day after a read-only builder check; committed `aa321507c`).
 - [ ] **Step 6: Record the result.** The verification file, the PRD paragraph and the Status lines, in
   one docs commit and push.
 
-  The file says what was measured, and what the run does not show (spec §9).
+  The file says what was measured, and what the run does not show (spec §9). It runs after Task 8,
+  so one file records both.
+
+### Task 8: The upload summary follows a model switch without a restart
+
+Added 2026-10-25 during Task 7 step 5, by spec §4.4 as amended that day. Acceptance A and B passed,
+but B needed a `docker restart aura`: the summary's route was a boot snapshot, and a model switch in
+the cockpit offers no restart.
+
+**Files:**
+- Create: `cmd/aura/vision_live.go`, `cmd/aura/vision_live_test.go`
+- Modify: `internal/assets/image_processor.go` (`ImageDescriber`, `NewImageProcessor`,
+  `DescribeImageForRetrieval`), `internal/assets/image_processor_test.go`,
+  `internal/assets/image_processor_reader_test.go`
+- Modify: `cmd/aura/document_processor_wiring.go` (`buildAssetService`; `visionConfigFrom` and the two
+  vision constants leave it), `cmd/aura/serve.go:275`, `cmd/aura/assets_test.go`
+
+**Interfaces:**
+- Consumes: `llm.Runtime` and `RuntimeSnapshot.Version`; `chatGPTImageReader` (Task 5);
+  `multimodal.VisionConfigFrom`, `PrimaryAcceptsImages`, `NewVisionClient`; `chatEnv.credentials`.
+- Produces:
+  - `type ImageDescriber interface { Describe(ctx context.Context, image []byte, mimeType, prompt string) (text, model string, err error) }`
+    in `internal/assets`, which `*multimodal.VisionClient` satisfies;
+  - `func NewImageProcessor(objects objectstore.Store, vision ImageDescriber) *ImageProcessor`;
+  - `func DescribeImageForRetrieval(ctx, vision ImageDescriber, imageBytes []byte, mimeType string) (text, model string, err error)`;
+  - `func liveImageReader(chat *chatEnv) *liveVision`, whose `Describe` satisfies `ImageDescriber`;
+  - `buildAssetService(cfg, pool, objectStore, vision assets.ImageDescriber)`. `serve.go` passes
+    `liveImageReader(chat)`. `docs.go` and `document_open_wiring.go` keep passing `nil`.
+
+- [ ] **Step 1: Write the failing tests** in `vision_live_test.go`. Each route is an `httptest` Ollama
+  (`/api/show` names `vision`, `/v1/chat/completions` answers with a fixed text).
+  - `TestLiveVisionReadsWithTheRouteInForce`: first on route A (`gemma4`), the result is A's text with
+    model `gemma4`. After `runtime.Replace` to route B (`qwen3-vl`), it is B's text with model
+    `qwen3-vl`. Same `liveVision`, no rebuild.
+  - `TestLiveVisionAsksTheCapabilityOncePerRoute`: two reads on one route hit `/api/show` once, and a
+    `Replace` with the same config makes the next read hit it again.
+  - `TestLiveVisionReadsWithChatGPTAfterASwitch`: from route A to the ChatGPT route, with a plan from
+    `newChatGPTPlan` on a temp dir and a sidecar `httptest` server. With no identity on the context
+    the read fails and the sidecar is never called, which shows the reader arm answered. With a
+    nil plan, the sidecar answers with `glm-ocr`.
+  - `TestLiveVisionSurvivesConcurrentSwitches`: 8 goroutines read while the test replaces the route
+    20 times, under `-race`. Every read succeeds.
+  - In `assets_test.go`, the builder test passes a describer and checks that it is the image
+    processor's `Vision`.
+- [ ] **Step 2: Run them to see them fail.**
+  Run: `go test ./cmd/aura/ -run 'LiveVision|AssetService'`.
+  Expected: FAIL, `undefined: liveImageReader`.
+- [ ] **Step 3: Implement.**
+  - `liveVision` holds the boot `cfg`, `chat.credentials`, the runtime and the plan. Under a mutex,
+    it keeps one route per runtime version: the snapshot's `llm.Config`, the source
+    `llm.NewContentCapabilitySource(cfg, visionCapabilityTTL)` and `chatGPTImageReader(cfg, plan)`.
+  - `Describe` asks `PrimaryAcceptsImages` with a `visionCapabilityTimeout` context, outside the
+    mutex. It builds the config with `VisionConfigFrom` on a copy of the boot `cfg` whose `LLM` is
+    the route's, plus `PrimaryRouteKey` and `PrimaryReader`, and reads through `NewVisionClient`.
+  - `assets.ImageProcessor.Vision` and `DescribeImageForRetrieval` take `ImageDescriber`. The three
+    asset tests wrap their config in `multimodal.NewVisionClient`.
+- [ ] **Step 4: Run the touched tests, race and vet.**
+  Run: `go test -race ./cmd/aura/ -run 'LiveVision|Asset|ChatGPT|Vision' && go test -race ./internal/assets/ ./cmd/aura-media-index/ && go vet ./cmd/aura/ ./internal/assets/`.
+  Expected: `ok`.
+- [ ] **Step 5: Commit.**
+  ```bash
+  git commit -m "feat(assets): the upload summary reads with the route in force, no restart"
+  ```
+- [ ] **Step 6: Gates, review, push, VM.**
+  - `make quality` and the coverage gate, then one fresh review of this task's range and one fix pass.
+  - Push, with CI green.
+  - After the operator approves the update, the operator switches the chat model in the cockpit
+    without a restart and attaches an image in chat. The asset row's `vision_model` is the new
+    model, and `aura`'s `StartedAt` has not moved since the update.

@@ -179,14 +179,36 @@ file.
 
 ### 4.4 The daemon's image summary
 
-`buildAssetService` gives the image processor the same reader when the boot route is ChatGPT. It
+`buildAssetService` gives the image processor the same reader while the chat route is ChatGPT. It
 reuses the boot's `chatgptplan.Service` (`chatEnv.chatGPTPlan`), so one process holds one service.
 Only the serving daemon's asset service (`serve.go`) gets it. The other two callers never read an
 image: `docs.go` ingests with `ModalityDocument`, and `document_open_wiring.go` only gets an
 upload by id.
 The image processor stamps `asset.IdentityID` on the context it reads the image with, as
-`storeForAsset` does for the object. The image summary stays fail-soft, as today. Like every
-other vision setting, the boot snapshot holds until the next restart.
+`storeForAsset` does for the object. The image summary stays fail-soft, as today.
+
+**The route is read when the image arrives, not at boot** (amended 2026-10-25, during the lab VM
+run). This section first kept the boot snapshot until the next restart. The VM showed what that
+costs. The daemon booted on Ollama at 20:10:40Z, and the operator then switched the chat to
+ChatGPT in the cockpit. The chat followed at once. The upload summary would have stayed on Ollama
+(found by reading `visionConfigFrom`), and the cockpit offers no restart for a model switch, so
+the summary moved only after a `docker restart aura` at 20:21:57Z. A screenshot attached in chat at
+20:32:20Z was then summarised by `gpt-6.1-sol`. The same file, attached at 14:33 while the chat was
+on OpenRouter, had been summarised by `deepseek/deepseek-v4.1-flash`.
+
+The chat's route lives on `llm.Runtime`, which the cockpit replaces without a restart. The daemon's
+image summary now reads it for each image. When the runtime publishes a new route
+(`RuntimeSnapshot.Version` grows), the summary rebuilds its ChatGPT reader and its capability
+source from that one snapshot. The reader, the capability and the key therefore never disagree,
+which is what the boot snapshot was protecting. Between switches the capability source keeps its
+own one-minute cache. As a side effect, a probe that failed at boot no longer leaves the HTTP
+primary arm off until the next restart: it is asked again a minute later. The sidecar's URL, its
+model and the timeout stay boot settings, as today. The other two asset services (`docs.go`,
+`document_open_wiring.go`) get no image reader. They never read an image, and they no longer run a
+capability probe they never use.
+
+What the amendment does not show: an image already being read when the route changes finishes on
+the route it started with.
 
 ### 4.5 The credentials in aura-ingest
 
@@ -320,6 +342,9 @@ the image then goes to the absent sidecar and retries (§4.7). The run records w
 10. **Scans and images go to OpenAI under the owner's ChatGPT account,** as the chat already
    sends attached images. The PII egress spec (`2026-10-13-pii-model-egress-design.md`) is
    proposed and not implemented; this change adds no egress policy.
+11. **The upload summary follows a model switch without a restart** (§4.4, amended 2026-10-25 on
+   the operator's question "si può evitare il riavvio?"). The media indexer already did, since it
+   starts a new process for each file.
 
 ## 8. Left to the builder
 
