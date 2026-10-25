@@ -296,7 +296,7 @@ func (i *runtimeDocumentIngestor) IngestDocument(ctx context.Context, req assets
 	if err != nil {
 		return assets.Asset{}, err
 	}
-	return buildAssetService(i.cfg, i.pool, objects).IngestDocument(ctx, req)
+	return buildAssetService(i.cfg, i.pool, objects, nil).IngestDocument(ctx, req)
 }
 
 func (i *runtimeDocumentIngestor) IngestDocumentPath(

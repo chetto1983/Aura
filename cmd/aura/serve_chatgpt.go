@@ -10,6 +10,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/chatgpt"
+	"github.com/chetto1983/aura/internal/multimodal"
 )
 
 func newChatGPTPlan(cfg *config.Config) *chatgptplan.Service {
@@ -22,6 +23,16 @@ func newChatGPTPlan(cfg *config.Config) *chatgptplan.Service {
 		return nil
 	}
 	return service
+}
+
+// chatGPTImageReader is the boot route's model reading upload images with each owner's
+// account, or nil off ChatGPT or without the connection service. The nil is untyped, so the
+// vision client keeps its HTTP arms.
+func chatGPTImageReader(cfg llm.Config, plan *chatgptplan.Service) multimodal.ImageReader {
+	if cfg.Provider != llm.ChatGPTProvider || plan == nil {
+		return nil
+	}
+	return chatgpt.New(cfg, plan)
 }
 
 func chatGPTTokenSourceOrNil(service *chatgptplan.Service) chatGPTTokenSource {

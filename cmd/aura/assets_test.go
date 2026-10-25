@@ -93,7 +93,7 @@ func TestBuildAssetServiceWiresDocumentProcessor(t *testing.T) {
 	}
 	objects := objectstore.NewFake()
 
-	svc := buildAssetService(cfg, nil, objects)
+	svc := buildAssetService(cfg, nil, objects, nil)
 
 	if svc.Bucket != "aura-assets" || svc.PresignTTL != 42*time.Second {
 		t.Fatalf("asset service bucket/ttl = %q/%s, want aura-assets/42s", svc.Bucket, svc.PresignTTL)

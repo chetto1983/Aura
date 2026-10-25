@@ -64,7 +64,7 @@ func TestAssetRoundTripKeepsTheOriginal(t *testing.T) {
 	if err != nil {
 		t.Skipf("object store: %v", err)
 	}
-	service := buildAssetService(cfg, pool, objectStore)
+	service := buildAssetService(cfg, pool, objectStore, nil)
 	if service == nil {
 		t.Fatal("buildAssetService returned nil: the daemon would fall back to the " +
 			"path that deletes the file")

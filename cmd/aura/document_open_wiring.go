@@ -46,7 +46,7 @@ func (o *runtimeDocumentOpener) OpenDocument(
 	service := &documents.OpenService{
 		Index:   index,
 		Objects: identityObjectOpener{objects: objectStore, resolver: buildObjectResolverBundle(o.cfg, o.pool), bucket: o.cfg.ObjectStoreBucket},
-		Uploads: attachmentUploads{assets: buildAssetService(o.cfg, o.pool, objectStore)},
+		Uploads: attachmentUploads{assets: buildAssetService(o.cfg, o.pool, objectStore, nil)},
 	}
 	return service.OpenDocument(ctx, identityID, documentID)
 }

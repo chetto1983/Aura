@@ -29,10 +29,15 @@ const (
 	assetMaxVideoBytesTimeout = 5 * time.Second
 )
 
-func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store) *assets.Service {
+// imageReader is the chosen model reading upload images through its own client
+// (chatGPTImageReader); nil keeps the HTTP vision arms. Only the serving daemon passes one:
+// the other callers never read an image.
+func buildAssetService(cfg *config.Config, pool *pgxpool.Pool, objectStore objectstore.Store, imageReader multimodal.ImageReader) *assets.Service {
 	docProcessor := &assets.DocumentProcessor{}
 	creds := serviceCredentials(cfg, pool)
-	imageProc := assets.NewImageProcessor(objectStore, visionConfigFrom(cfg, creds))
+	visionCfg := visionConfigFrom(cfg, creds)
+	visionCfg.PrimaryReader = imageReader
+	imageProc := assets.NewImageProcessor(objectStore, visionCfg)
 	audioProc := assets.NewAudioProcessor(objectStore, sttConfigFrom(cfg, creds))
 	svc := &assets.Service{
 		Store:          assets.NewStore(pool),

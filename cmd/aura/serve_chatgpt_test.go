@@ -147,3 +147,21 @@ func TestChatGPTOwnerMayConnectWithoutSettingsAdministration(t *testing.T) {
 		t.Fatal("own-account connection granted deployment administration")
 	}
 }
+
+func TestChatGPTImageReaderOnlyOnTheChatGPTRoute(t *testing.T) {
+	cfg := &config.Config{SkillsDir: filepath.Join(t.TempDir(), "skills"), AuthulaSecret: "00000000000000000000000000000000000000000000000000000000000000a1"}
+	plan := newChatGPTPlan(cfg)
+	if plan == nil {
+		t.Fatal("connection service not created")
+	}
+	chatGPT := llm.Config{Provider: llm.ChatGPTProvider, BaseURL: llm.ChatGPTBaseURL, Model: "gpt-6.1-sol"}
+	if chatGPTImageReader(chatGPT, plan) == nil {
+		t.Fatal("no image reader on the ChatGPT route")
+	}
+	if reader := chatGPTImageReader(llm.Config{Provider: "openrouter", Model: "z-ai/glm-5.3"}, plan); reader != nil {
+		t.Fatalf("image reader %v off the ChatGPT route", reader)
+	}
+	if reader := chatGPTImageReader(chatGPT, nil); reader != nil {
+		t.Fatalf("image reader %v without a connection service", reader)
+	}
+}
