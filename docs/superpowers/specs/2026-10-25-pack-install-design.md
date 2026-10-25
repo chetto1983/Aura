@@ -176,8 +176,12 @@ There is one implementation, daemon-side, behind both entries. In order:
 
 1. **Fetch** the repository at `commit`, shallow, and re-read the plugin. A different digest refuses
    the install.
-2. **Keep the plugin tree** under `<AURA_CONFIG_DIR>/plugins/<name>/`. That is the durable
-   `aura-home` volume on compose, so no new variable is needed.
+2. **Keep the plugin tree** under `<AURA_PLUGINS_DIR>/<name>/`.
+   - `AURA_PLUGINS_DIR` is a new variable, pinned in compose to `/var/lib/aura/plugins` on the
+     durable `aura-home` volume. Its code default is `~/.aura/plugins`, the same pattern as
+     `AURA_SKILLS_IDENTITY_DIR` and `AURA_MCP_ENV_DIR`.
+   - Corrected 2026-10-25 while planning: the first draft derived the path from
+     `AURA_CONFIG_DIR`. Compose sets that variable, but no Go code reads it.
    - The kept tree is the filesystem-resolved plugin root. Symlinks are refused, as `MaterializeIn`
      already refuses them.
    - An existing directory for that name refuses the install ("already installed"). There is no
@@ -382,6 +386,52 @@ On the lab VM, recorded in `docs/superpowers/verification/`:
 `mcp.json`'s `uvx --from …@v0.1.1` and the tag must agree. Today the repository ships only the
 Claude and Codex forms.
 
+## 6b. Amended 2026-10-25 while planning (two read-only plan reviews)
+
+Each amendment comes from a finding read in the code, at the line the plan cites.
+
+- **Reserved names.** A connector may not take a catalog recipe's name (`memory`, `calendar`,
+  `whatsapp`, `browser`, the Craft servers): the review skips it as "reserved by recipe:<name>".
+  - Why: default-on recipes have no registry row (`mcp/manager/runtimeset.go`, `injectDefaultOn`).
+    A plugin row named `memory` would stop the real recipe from being injected, and would receive
+    every identity's memory calls.
+- **Safe connector names.** A connector name follows the plugin-name rule and contains no `__`.
+  - Why: names come from `mcp.json` keys, and they reach the registry, the tool namespace and the
+    approval card.
+- **Escaped review strings.** Every string the plugin controls is escaped and length-capped on the
+  card, and a question with a control character is refused.
+  - Why: a newline in a name would otherwise forge a line of the card.
+- **`always` is stripped at install.** This holds for every installed skill, the cockpit's single
+  installs included. A third-party skill must not become a standing instruction for every identity.
+  - The finding: `Writer.WriteInstall`'s comment says "always-stripped", but no code strips it.
+    The operator can turn `always` on afterwards.
+- **`PLUGIN_DATA` per source.** It is `/workspace/.plugin-data/<name>-<12 hex of sha256(ref)>`, so a
+  plugin of the same name from another publisher never receives the previous one's data.
+- **Repository-root plugins.** `owner/repo` is accepted when the repository root is the plugin; it
+  is the common Agent Plugins layout.
+- **Transports.**
+  - `streamable-http` (Agent Plugins) and `http` (Claude) map to Aura's `streamable_http`.
+  - `sse` is skipped as an unsupported transport (§7.2.2 rule 4): Aura has no legacy SSE client.
+  - A remote server declaring `headers` is skipped as unsupported. Aura's static-header transport
+    (`MCP_HEADER_*`) applies headers to every request with no origin check, and §7.2.1 forbids
+    forwarding them to another origin.
+- **One registry writer at a time.** Every registry write in the daemon (the MCP adapter's and the
+  plugin backend's) applies its change inside one process-wide lock, on a document loaded inside
+  that lock.
+  - Why: a save removes every server absent from the saved document (`applyManagedMCPConfig`). An
+    MCP install that verifies for up to 120 s and a plugin install would otherwise erase each other.
+- **The writing phase outlives the request.** After the digest check, the install and the removal
+  run on a context detached from the request, with their own time bound. A closed tab or a proxy
+  timeout must not leave a half-installed plugin.
+- **Remote connectors after the save.** They are probed after the mount. A failed probe is reported
+  as "needs attention" with a link to the server on the MCP board, where its authorization lives.
+- **Removal is checked against the install.** Removal archives only skills whose content still
+  matches the hash recorded at install, and treats an archived skill of the same name as taken at
+  review. Otherwise an operator's archived skill would be overwritten.
+- **A pinned commit cannot move.** `ErrDigestChanged` therefore means that what Aura would write
+  changed since the review: a name taken in the meantime, or Aura itself updated. It does not mean
+  the repository moved. The message says so.
+
 ## 7. Calls made while writing, for the operator to check
 
 The operator decided the shape (§1). These were decided by the author, from the code and the
@@ -398,7 +448,7 @@ builder check of 2026-10-25:
   the ref and the commit (§4.3).
 - **Commit pinning.** The review pins the default branch's commit, and the install refuses a
   changed digest (§4.2).
-- **Storage.** The kept tree lives under `<AURA_CONFIG_DIR>/plugins/`, with no new variable.
+- **Storage.** The kept tree lives under `AURA_PLUGINS_DIR`, pinned to `/var/lib/aura/plugins`.
   `PLUGIN_DATA` is in the workspace volume (§4.3, §4.4).
 - **Remote connectors** are saved and then probed, not verified first (§4.3).
 
@@ -426,4 +476,8 @@ builder check of 2026-10-25:
 - **Concurrent installs** of the same name from two surfaces. They are expected to be refused by
   the kept-tree check (§4.3 step 2), but no run measures it.
 - **Multi-identity removal.** Removal across many identities' boxes is exercised with one identity
-  only, as the lab VM has one.
+  only, as the lab VM has one. "Delete the data" reaches the remover's own box only.
+- **The broker's code is outside the reviewed commit.** Its server comes from `uvx --from …@v0.1.1`, a
+  movable tag that neither the commit nor the digest covers.
+- **Skill shadowing.** A deployment plugin skill shadows a member's own skill of the same name,
+  because the deployment export wins in the box.
