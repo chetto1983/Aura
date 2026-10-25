@@ -1,8 +1,13 @@
 # Exactness first, a judge after: what document and memory search admit
 
 Proposed on 2026-10-25 at `20846f9a9`.
-- **The direction is approved.** The operator confirmed the playback in conversation ("è corretto").
-  This written spec is not yet approved.
+- **Approved on 2026-10-25.**
+  - The operator confirmed the playback ("è corretto").
+  - Then the written spec, with the designer's calls listed below, and the order ("va bene").
+- **The order, in three slices, each with its own plan:**
+  1. named terms (decision 1);
+  2. the embedding client on `openai-go` (decision 7);
+  3. the judge (decisions 2–6), built on the same client shape.
 - **The origin.** It answers the agent's first request after the floors plan, "esattezza prima, AI
   dopo" (`docs/superpowers/verification/2026-10-23-document-search-lists-lab-vm.md`, turn 3), and
   the floors record's own gap (`2026-10-23-document-floors-pplx.md`, "Exact phrases").
