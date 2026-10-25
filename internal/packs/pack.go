@@ -117,8 +117,8 @@ const (
 
 // Skipped is a component the reader left out, with the reason a person can act on.
 type Skipped struct {
-	Name   string
-	Reason string
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
 }
 
 // Ref reconstructs the reference that resolves to exactly this pack.
