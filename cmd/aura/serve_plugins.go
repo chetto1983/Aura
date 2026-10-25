@@ -65,6 +65,9 @@ func buildPluginBackend(cfg *config.Config, pool *pgxpool.Pool, live *liveMCPMou
 	return plugins.New(plugins.Deps{
 		Store:    plugins.Store{Root: cfg.PluginsDir},
 		Checkout: (&packs.Resolver{WorkDir: cfg.RunDir}).Checkout,
+		Head: func(ctx context.Context, ref packs.Ref) (string, error) {
+			return packs.GitFetcher{}.Head(ctx, ref.Source)
+		},
 		Skills:   library,
 		Registry: pluginRegistry{pool: pool},
 		Verify: func(ctx context.Context, name string, s mcp.ManagedServer) (mcp.ManagedServer, error) {
@@ -103,6 +106,8 @@ func (r pluginRegistry) Update(ctx context.Context, actor, action, subject, reas
 		ActorIdentityID: actor, Action: action, ServerName: subject, Reason: reason,
 	}, fn)
 }
+
+func (pluginRegistry) Load() (mcp.ManagedConfig, error) { return loadManagedMCPConfig() }
 
 // pluginSkills is the deployment's skill library, where a plugin's skills land: the registry
 // and /plugins are the deployment's too.
@@ -196,8 +201,10 @@ func purgeBoxData(ctx context.Context, router *usersandbox.SandboxRouter, dataDi
 	return nil
 }
 
-// pluginTreeResolver is what the box mirror carries: the tree of every plugin installing or
-// installed. A removing plugin's tree leaves the boxes at the next mirror.
+// pluginTreeResolver is what the box mirror carries: the tree of every plugin installing,
+// installed or upgrading. An upgrading record names the new commit, so its new tree reaches the
+// boxes before its connectors are verified there. A removing plugin's tree leaves the boxes at
+// the next mirror.
 func pluginTreeResolver(store plugins.Store) usersandbox.PluginTreeResolver {
 	return func(context.Context) ([]usersandbox.PluginTree, error) {
 		records, err := store.List()
@@ -206,7 +213,7 @@ func pluginTreeResolver(store plugins.Store) usersandbox.PluginTreeResolver {
 		}
 		var trees []usersandbox.PluginTree
 		for _, rec := range records {
-			if rec.Phase == plugins.PhaseInstalling || rec.Phase == plugins.PhaseInstalled {
+			if rec.Phase != plugins.PhaseRemoving {
 				trees = append(trees, usersandbox.PluginTree{Name: rec.Name, HostDir: store.TreeDir(rec.Name), Version: rec.Commit})
 			}
 		}

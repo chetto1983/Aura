@@ -77,6 +77,53 @@ func TestStoreClaimIsAtomicAndRefusesAnInstalledName(t *testing.T) {
 	}
 }
 
+func TestStoreSwapKeepsABackupUntilRestoreOrDrop(t *testing.T) {
+	t.Parallel()
+	s := Store{Root: t.TempDir()}
+	if err := s.Claim(Record{Name: "p", Ref: "o/r/p"}, pluginTree(t)); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	next := t.TempDir()
+	writeFile(t, filepath.Join(next, "plugin.json"), `{"v":2}`, 0o644)
+	if err := s.Swap("p", next); err != nil {
+		t.Fatalf("swap: %v", err)
+	}
+	read := func() string {
+		raw, err := os.ReadFile(filepath.Join(s.TreeDir("p"), "plugin.json"))
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
+		return string(raw)
+	}
+	if got := read(); got != `{"v":2}` {
+		t.Fatalf("after the swap the tree holds %q", got)
+	}
+	if left := stagingDirs(t, filepath.Join(s.Root, "p")); len(left) != 0 {
+		t.Errorf("staging left behind: %v", left)
+	}
+	if err := s.Restore("p"); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if got := read(); got != "{}" {
+		t.Fatalf("after the restore the tree holds %q", got)
+	}
+	if err := s.Restore("p"); err != nil {
+		t.Errorf("a restore with no backup = %v, want nothing to undo", err)
+	}
+	if err := s.Swap("p", next); err != nil {
+		t.Fatalf("second swap: %v", err)
+	}
+	if err := s.DropBackup("p"); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Root, "p", backupDir)); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the backup survived the drop: %v", err)
+	}
+	if got := read(); got != `{"v":2}` {
+		t.Errorf("the drop touched the tree: %q", got)
+	}
+}
+
 func TestStoreClaimKeepsModesAndInternalSymlinks(t *testing.T) {
 	t.Parallel()
 	s := Store{Root: t.TempDir()}

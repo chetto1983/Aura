@@ -40,6 +40,34 @@ func TestFetchAtCommitArgs(t *testing.T) {
 	}
 }
 
+// The remote head is one ls-remote of the default branch: the cheap check Codex's marketplace
+// upgrade runs (git_remote_revision) before it clones anything.
+func TestHeadArgs(t *testing.T) {
+	t.Parallel()
+	got, err := GitFetcher{}.headArgs("owner/repo")
+	if err != nil {
+		t.Fatalf("headArgs: %v", err)
+	}
+	if want := []string{"ls-remote", "--", "https://github.com/owner/repo.git", "HEAD"}; !slices.Equal(got, want) {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+	if _, err := (GitFetcher{}).headArgs("owner/repo/plugin"); err == nil {
+		t.Error("a plugin path was accepted as a repository")
+	}
+}
+
+func TestParseHead(t *testing.T) {
+	t.Parallel()
+	if got, err := parseHead(fakeCommit + "\tHEAD\n"); err != nil || got != fakeCommit {
+		t.Errorf("parseHead = (%q, %v), want %q", got, err, fakeCommit)
+	}
+	for _, bad := range []string{"", "\n", "v0.1.1\tHEAD\n", fakeCommit[:39] + "\tHEAD"} {
+		if _, err := parseHead(bad); err == nil {
+			t.Errorf("parseHead(%q) accepted", bad)
+		}
+	}
+}
+
 func TestValidCommit(t *testing.T) {
 	t.Parallel()
 	if err := ValidCommit(fakeCommit); err != nil {
@@ -150,7 +178,11 @@ func TestGitFetcherAgainstALocalBareRepository(t *testing.T) {
 	if !strings.HasPrefix(root, "/") {
 		root = "/" + root // a Windows drive path, file:///C:/...
 	}
-	r := &Resolver{Fetch: GitFetcher{BaseURL: "file://" + root + "/"}.Fetch, WorkDir: t.TempDir()}
+	fetcher := GitFetcher{BaseURL: "file://" + root + "/"}
+	if got, err := fetcher.Head(t.Context(), "owner/repo"); err != nil || got != second {
+		t.Errorf("Head = (%q, %v), want %s", got, err, second)
+	}
+	r := &Resolver{Fetch: fetcher.Fetch, WorkDir: t.TempDir()}
 	head, err := r.Checkout(t.Context(), Ref{Source: "owner/repo"}, "")
 	if err != nil {
 		t.Fatalf("default branch: %v", err)

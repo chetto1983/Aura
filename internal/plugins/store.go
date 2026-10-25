@@ -21,12 +21,14 @@ import (
 const (
 	PhaseInstalling = "installing"
 	PhaseInstalled  = "installed"
+	PhaseUpgrading  = "upgrading"
 	PhaseRemoving   = "removing"
 )
 
 const (
 	recordFile    = "record.json"
 	treeDir       = "tree"
+	backupDir     = "tree.previous"
 	stagingPrefix = ".staging-"
 )
 
@@ -108,6 +110,65 @@ func (s Store) Claim(rec Record, src string) error {
 	}
 	placed = true
 	return nil
+}
+
+// Swap replaces an installed plugin's kept tree with a copy of src and keeps the old tree as a
+// backup until Restore or DropBackup, as Codex's activate_marketplace_root swaps a marketplace
+// root (codex-rs/core-plugins/src/marketplace_upgrade/activation.rs). A backup left by an
+// upgrade that never finished is dropped first. A failed swap puts the old tree back itself.
+func (s Store) Swap(name, src string) error {
+	dir, err := s.dir(name)
+	if err != nil {
+		return err
+	}
+	staging, err := os.MkdirTemp(dir, stagingPrefix+"*")
+	if err != nil {
+		return fmt.Errorf("plugin staging: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(staging) }()
+	if err := copyTree(src, filepath.Join(staging, treeDir)); err != nil {
+		return fmt.Errorf("keep plugin %s: %w", name, err)
+	}
+	tree, backup := filepath.Join(dir, treeDir), filepath.Join(dir, backupDir)
+	if err := os.RemoveAll(backup); err != nil {
+		return fmt.Errorf("drop the stale backup of %s: %w", name, err)
+	}
+	if err := os.Rename(tree, backup); err != nil {
+		return fmt.Errorf("move the tree of %s aside: %w", name, err)
+	}
+	if err := os.Rename(filepath.Join(staging, treeDir), tree); err != nil {
+		return errors.Join(fmt.Errorf("place the new tree of %s: %w", name, err), os.Rename(backup, tree))
+	}
+	return nil
+}
+
+// Restore puts the backup Swap kept back in place. Without a backup there is nothing to undo.
+func (s Store) Restore(name string) error {
+	dir, err := s.dir(name)
+	if err != nil {
+		return err
+	}
+	backup := filepath.Join(dir, backupDir)
+	if _, err := os.Lstat(backup); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	tree := filepath.Join(dir, treeDir)
+	if err := os.RemoveAll(tree); err != nil {
+		return fmt.Errorf("restore plugin %s: %w", name, err)
+	}
+	if err := os.Rename(backup, tree); err != nil {
+		return fmt.Errorf("restore plugin %s: %w", name, err)
+	}
+	return nil
+}
+
+// DropBackup deletes the backup Swap kept, once the upgrade it guarded has finished.
+func (s Store) DropBackup(name string) error {
+	dir, err := s.dir(name)
+	if err != nil {
+		return err
+	}
+	return os.RemoveAll(filepath.Join(dir, backupDir))
 }
 
 // WriteRecord replaces an installed plugin's record.

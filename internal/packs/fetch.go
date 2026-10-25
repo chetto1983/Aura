@@ -68,8 +68,43 @@ func (g GitFetcher) Fetch(ctx context.Context, source, dir, commit string) (stri
 	return strings.TrimSpace(head), nil
 }
 
+// Head returns the commit at the tip of source's default branch, with one ls-remote and no
+// clone: the check Codex's marketplace upgrade runs (git_remote_revision) before fetching.
+func (g GitFetcher) Head(ctx context.Context, source string) (string, error) {
+	args, err := g.headArgs(source)
+	if err != nil {
+		return "", err
+	}
+	out, err := runGit(ctx, args)
+	if err != nil {
+		return "", fmt.Errorf("read the head of %s: %w", source, err)
+	}
+	head, err := parseHead(out)
+	if err != nil {
+		return "", fmt.Errorf("read the head of %s: %w", source, err)
+	}
+	return head, nil
+}
+
+func (g GitFetcher) headArgs(source string) ([]string, error) {
+	url, err := g.url(source)
+	if err != nil {
+		return nil, err
+	}
+	return []string{"ls-remote", "--", url, "HEAD"}, nil
+}
+
+// parseHead reads the commit from ls-remote's `<commit>\tHEAD` line.
+func parseHead(out string) (string, error) {
+	commit, _, _ := strings.Cut(strings.TrimSpace(out), "\t")
+	if err := ValidCommit(commit); err != nil {
+		return "", fmt.Errorf("ls-remote answered %q: %w", strings.TrimSpace(out), err)
+	}
+	return commit, nil
+}
+
 func runGit(ctx context.Context, args []string) (string, error) {
-	// #nosec G204 -- fixed argv built by cloneArgs/fetchAtCommitArgs; the only interpolated
+	// #nosec G204 -- fixed argv built by cloneArgs/fetchAtCommitArgs/headArgs; the only interpolated
 	// values are a URL from a validated owner/repo pair, a caller-owned temporary directory and
 	// a commit id that passed ValidCommit.
 	out, err := exec.CommandContext(ctx, "git", args...).CombinedOutput()

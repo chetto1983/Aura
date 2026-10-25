@@ -27,6 +27,7 @@ const (
 const (
 	ActionInstall = "plugin-install"
 	ActionRemove  = "plugin-remove"
+	ActionUpgrade = "plugin-upgrade"
 )
 
 const defaultWriteTimeout = 10 * time.Minute
@@ -41,15 +42,19 @@ type SkillLibrary interface {
 }
 
 // Registry applies one change to the MCP registry: fn runs inside the registry's lock on a
-// freshly loaded document, which is saved with one audit row when fn returns nil.
+// freshly loaded document, which is saved with one audit row when fn returns nil. Load reads
+// the document as it stands.
 type Registry interface {
 	Update(ctx context.Context, actor, action, subject, reason string, fn func(*mcp.ManagedConfig) error) error
+	Load() (mcp.ManagedConfig, error)
 }
 
 // Deps is everything the backend reaches outside this package.
 type Deps struct {
 	Store    Store
 	Checkout func(ctx context.Context, ref packs.Ref, commit string) (packs.Checkout, error)
+	// Head reads the commit at the tip of the ref's default branch without a checkout.
+	Head     func(ctx context.Context, ref packs.Ref) (string, error)
 	Skills   SkillLibrary
 	Registry Registry
 	// Verify brings a stdio connector up in the box before it is saved, and returns the entry
@@ -236,7 +241,7 @@ func (b *Backend) install(ctx context.Context, actor string, ref packs.Ref, revi
 		return b.finishInstall(rec, report, err)
 	}
 	ready, steps := b.verifyConnectors(ctx, review.Connectors, taken, trust)
-	saved, steps, err := b.saveConnectors(ctx, actor, review, ready, steps)
+	saved, steps, err := b.saveConnectors(ctx, actor, ActionInstall, installReason(review), review, ready, steps, "")
 	rec.Connectors = connectorNames(saved)
 	report.Connectors = steps
 	if err != nil {
@@ -306,15 +311,21 @@ func (b *Backend) verifyConnectors(ctx context.Context, reviewed []Connector, ta
 }
 
 // saveConnectors writes every ready connector in one registry update, which re-checks each name
-// inside the registry lock.
-func (b *Backend) saveConnectors(ctx context.Context, actor string, review Review, ready []Connector, steps []Step) ([]Connector, []Step, error) {
-	if len(ready) == 0 {
+// inside the registry lock. A non-empty replace first deletes every row from that source, so an
+// upgrade swaps a plugin's connectors in the same write.
+func (b *Backend) saveConnectors(ctx context.Context, actor, action, reason string, review Review, ready []Connector, steps []Step, replace string) ([]Connector, []Step, error) {
+	if len(ready) == 0 && replace == "" {
 		return nil, append(steps, skippedSteps(review.SkippedConnectors)...), nil
 	}
 	var saved []Connector
 	var taken []Step
-	err := b.d.Registry.Update(ctx, actor, ActionInstall, review.Name, installReason(review), func(doc *mcp.ManagedConfig) error {
+	err := b.d.Registry.Update(ctx, actor, action, review.Name, reason, func(doc *mcp.ManagedConfig) error {
 		saved, taken = nil, nil
+		for name, s := range doc.MCPServers {
+			if replace != "" && s.Source == replace {
+				doc.RemoveServer(name)
+			}
+		}
 		for _, c := range ready {
 			if existing, ok := doc.MCPServers[c.Name]; ok {
 				taken = append(taken, Step{Name: c.Name, Outcome: OutcomeSkipped, Reason: takenReason(existing.Source)})

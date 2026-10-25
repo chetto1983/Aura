@@ -35,6 +35,7 @@ func TestPluginWriteRoutesRequireIdentityCreate(t *testing.T) {
 		{http.MethodGet, "/api/governance/plugins", true},
 		{http.MethodPost, "/api/governance/plugins/review", false},
 		{http.MethodPost, "/api/governance/plugins", false},
+		{http.MethodPost, "/api/governance/plugins/broker-analysis/upgrade", false},
 		{http.MethodDelete, "/api/governance/plugins/broker-analysis", false},
 	} {
 		hits = nil
@@ -58,6 +59,7 @@ func TestPluginTreesComeFromRecordsOnly(t *testing.T) {
 	for name, phase := range map[string]string{
 		"installed":  plugins.PhaseInstalled,
 		"installing": plugins.PhaseInstalling,
+		"upgrading":  plugins.PhaseUpgrading,
 		"removing":   plugins.PhaseRemoving,
 	} {
 		rec := plugins.Record{Name: name, Commit: strings.Repeat("c", 40)}
@@ -79,6 +81,7 @@ func TestPluginTreesComeFromRecordsOnly(t *testing.T) {
 	want := []usersandbox.PluginTree{
 		{Name: "installed", HostDir: store.TreeDir("installed"), Version: strings.Repeat("c", 40)},
 		{Name: "installing", HostDir: store.TreeDir("installing"), Version: strings.Repeat("c", 40)},
+		{Name: "upgrading", HostDir: store.TreeDir("upgrading"), Version: strings.Repeat("c", 40)},
 	}
 	if !slices.Equal(trees, want) {
 		t.Errorf("trees = %+v, want %+v", trees, want)

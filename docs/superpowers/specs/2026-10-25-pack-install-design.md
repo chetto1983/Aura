@@ -3,6 +3,7 @@
 Date: 2026-10-25
 Status: approved by the operator 2026-10-25 and implemented (plan `2026-10-25-pack-install.md`, DONE).
 Amended 2026-10-25 after the final review: a removal deletes the skills it installed (§4.7, §5.6, §6).
+Amended 2026-10-25 evening: upgrade landed, copied from Codex (§10); the non-goal of §2 is withdrawn.
 Verified on the lab VM: `docs/superpowers/verification/2026-10-25-pack-install-lab-vm.md`.
 
 ## 1. Why
@@ -50,7 +51,8 @@ On 2026-10-25 the operator added three answers:
    install, and the operator confirms it from the card.
 
 **Non-goals**
-- **Update** (re-fetch and diff). For a new version, remove and reinstall.
+- **Update** (re-fetch and diff). For a new version, remove and reinstall. Withdrawn the same
+  evening: upgrade landed as §10.
 - **Placeholder expansion for the Claude format** (`${CLAUDE_PLUGIN_ROOT}`). Claude-format packs keep
   today's reading.
 - **Hooks, agents, LSP, client extension directories.** They are outside Agent Plugins v1 (§7), and
@@ -487,3 +489,57 @@ builder check of 2026-10-25:
   movable tag that neither the commit nor the digest covers.
 - **Skill shadowing.** A deployment plugin skill shadows a member's own skill of the same name,
   because the deployment export wins in the box.
+
+## 10. Upgrade, copied from Codex (amended 2026-10-25 evening)
+
+**Why.** On the lab VM the broker moved from v0.1.1 to v0.3.0, and the operator asked Aura's agent
+to update it (conversation `01a17438…`, 19:01–19:03Z). With no upgrade, the agent proposed an
+install. Its card listed no skills and no connectors, because every name was taken by the plugin
+itself. The install then refused after the accept. The agent read v0.3.0 from `show`, which reads
+the repository, and told the operator the plugin was upgraded. The record still said 0.1.1. The
+operator's direction: "SERVE IL TOOL UPGRADE CON COME HA CODEX", then "BASTA CHE LO COPI DA CODEX".
+
+**What Codex does,** read from `openai/codex` (`core-plugins/src/marketplace_upgrade.rs`,
+`marketplace_upgrade/activation.rs`, `manager.rs`, `loader.rs`) and codex-cli 0.164.0:
+- **The command.** `codex plugin marketplace upgrade [NAME]`; with no name, every Git source.
+- **The check.** An `ls-remote` (`git_remote_revision`). An equal revision does nothing.
+- **The swap.** A changed source is cloned into staging, and `activate_marketplace_root` swaps it
+  in with the old root kept as a backup, restored when a later step fails.
+- **The reinstall.** The source's installed plugins are reinstalled from the new copy
+  (`ForceReinstall`).
+- **No question.** There is one error per source.
+
+**The mapping in Aura:**
+- **The operations.** `Backend.Upgrade(name)` and `Backend.UpgradeAll` (`internal/plugins/upgrade.go`),
+  `plugin_pack action=upgrade [name]`, and "Aggiorna" on each row of Governance → Plugins
+  (`POST /api/governance/plugins/{name}/upgrade`, `identity.create`).
+- **The check:** `GitFetcher.Head`, one `git ls-remote -- <url> HEAD`.
+  - A commit equal to the record's in phase `installed` answers "up to date".
+  - Any other phase is an upgrade or an install that stopped, and the upgrade finishes it.
+- **The swap, under the write lock and the detached write context:**
+  - every connector of the plugin is unmounted, since it runs from the tree (§4.4);
+  - `Store.Swap` keeps the old tree as `tree.previous`;
+  - the record takes the new commit in phase `upgrading`, which the box mirror carries, so the
+    new tree reaches the box;
+  - new stdio connectors are verified in the box;
+  - one `plugin-upgrade` registry write replaces every row of the plugin's source;
+  - the connectors are mounted again.
+- **Rollback.** A failed handshake or a failed registry write puts the tree and the record back
+  and remounts the old connectors (`ErrUpgradeRolledBack`).
+- **Skills.** They are reinstalled from the new tree, as `ForceReinstall`, with §4.7's rule kept: a
+  skill the operator changed since the install stays. A skill the new version dropped is deleted
+  while still as installed. Past the registry write each skill is on its own, as at install.
+- **No card.** Like Codex, the upgrade asks nothing: the operator approved the source at install,
+  and an upgrade reads the same ref. Only the operator may run it. The gateway grades it
+  `Normal`.
+- **The false-success path is closed:**
+  - `install` of an installed plugin gets no card, and names `action=upgrade`;
+  - `show` adds `installed here: <version> at <commit>`;
+  - the upgrade report names both versions.
+
+**What this does not show:**
+- **The handshake against the real broker.** The upgrade on the lab VM is the acceptance (its
+  verification file).
+- **Downtime.** A connector is down from its unmount to its mount, up to the 120 s box budget
+  when `uvx` fetches a new tag cold. It is not measured.
+- **Other identities' boxes.** They get the new tree at their next `Route`. Not measured.

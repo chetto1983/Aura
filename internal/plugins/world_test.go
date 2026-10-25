@@ -40,6 +40,7 @@ type world struct {
 	mu       sync.Mutex
 	commits  map[string]map[string]string
 	head     string
+	headErr  error
 	afterCO  func()
 	library  *fakeLibrary
 	registry *fakeRegistry
@@ -68,6 +69,11 @@ func newWorld(t *testing.T) (*world, *Backend) {
 	b := New(Deps{
 		Store:    Store{Root: filepath.Join(t.TempDir(), "plugins")},
 		Checkout: w.checkout,
+		Head: func(context.Context, packs.Ref) (string, error) {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+			return w.head, w.headErr
+		},
 		Skills:   w.library,
 		Registry: w.registry,
 		Verify: func(_ context.Context, name string, s mcp.ManagedServer) (mcp.ManagedServer, error) {
@@ -226,12 +232,8 @@ func (r *fakeRegistry) Update(_ context.Context, _, action, subject, reason stri
 	if r.fail != nil {
 		return r.fail
 	}
-	raw, err := json.Marshal(r.doc)
+	doc, err := r.copyDoc()
 	if err != nil {
-		return err
-	}
-	var doc mcp.ManagedConfig
-	if err := json.Unmarshal(raw, &doc); err != nil {
 		return err
 	}
 	if err := fn(&doc); err != nil {
@@ -240,6 +242,22 @@ func (r *fakeRegistry) Update(_ context.Context, _, action, subject, reason stri
 	r.doc = doc
 	r.updates = append(r.updates, action+" "+subject+" "+reason)
 	return nil
+}
+
+func (r *fakeRegistry) Load() (mcp.ManagedConfig, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.copyDoc()
+}
+
+func (r *fakeRegistry) copyDoc() (mcp.ManagedConfig, error) {
+	raw, err := json.Marshal(r.doc)
+	if err != nil {
+		return mcp.ManagedConfig{}, err
+	}
+	var doc mcp.ManagedConfig
+	err = json.Unmarshal(raw, &doc)
+	return doc, err
 }
 
 func (r *fakeRegistry) source(name string) (string, bool) {
