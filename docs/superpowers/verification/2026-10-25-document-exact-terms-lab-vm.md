@@ -123,6 +123,20 @@ A second turn in the same conversation asked Aura to repeat its checks, the unqu
   structured signals make an exact term. In the first turn Aura quoted the name on its own; this
   turn asked it for the unquoted forms on purpose.
 
+**Aura's verdict**, which the operator relayed afterwards:
+- It now tells three answers apart: nothing semantically relevant came up; the name was checked
+  word for word and is not there; the name is there exactly, although its similarity would not
+  have passed the floor.
+- `exact_terms` keeps it from turning an abstention into a false "not in the library", and the
+  documented score of 0 keeps it from discarding a valid match.
+- The quoting step remains, but it is "una regola esplicita che posso seguire, non un comportamento
+  oscuro".
+- Recognising compound names unquoted is a later improvement. It is "non un motivo per allargare di
+  nuovo le soglie e far riapparire le false fatture".
+
+So the slice closes on this contract. Unquoted names wait for the judge (slice 3), in the
+operator's order.
+
 ## What this does not show
 
 - **`complex_qrels.json` before and after.** Not run, waived by the operator. The bench needs the complex identity, which

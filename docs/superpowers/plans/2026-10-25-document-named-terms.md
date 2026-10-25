@@ -1,6 +1,8 @@
 # Exact terms rank first (slice 1) Implementation Plan
 
-**Status (2026-10-25):** ACCEPTED ON THE LAB VM.
+**Status (2026-10-25):** DONE. Accepted on the lab VM, and closed on Aura's verdict that the contract
+is clear: quoting is an explicit rule it can follow, and unquoted names are a later improvement, not
+a reason to widen the floors.
 - Tasks 1–5 are on master: `d92a5b921`, `815519a0d`, `6beb4eef8`, `f1562629c`, `4614dc874`.
 - Task 6 Steps 1–3 are done. One review gave "with fixes", and its fixes are on master in five commits,
   `11998bdb5`…`a062464f8`. The gates are green at master's tip, with the exceptions under "Local
@@ -12,8 +14,10 @@
   e te"), so Aura's agent and Claude validate on the lab VM's library. Re-seeding the complex
   identity would have needed the whole ingest pipeline.
 - Aura's two frictions from that validation are fixed in "fix(documents): say which terms a search
-  checked word for word": the response names the terms it checked verbatim, and the description
-  says what score 0 means.
+  checked word for word" (`98ab451a4`): the response names the terms it checked verbatim, and the
+  description says what score 0 means. Aura re-checked both on the VM.
+- Next, in the operator's order: slice 2, the embeddings on `openai-go`; unquoted names wait for the
+  judge, slice 3.
 
 Operator's decisions on 2026-10-25:
 - the order: exact terms first, then the embeddings on `openai-go`, then the judge ("VA BENE");
