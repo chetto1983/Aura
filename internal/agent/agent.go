@@ -82,7 +82,7 @@ func (ic InvocationContext) WithContext(ctx context.Context) InvocationContext {
 // WithSubAgent returns a copy of ic re-pointed at sub, keeping the SAME *Budget
 // (same *atomic.Int32 step counter AND the same dedup ring) so a single logical
 // reasoning thread sees its own cross-iteration repeats (D-09). The receiver is
-// never mutated (D-24). Parallel branches use Budget.Child instead to fork a
+// never mutated (D-24). Swarm branches use Budget.Child instead to fork a
 // distinct dedup ring while still sharing the atomic counter.
 func (ic InvocationContext) WithSubAgent(sub Agent) InvocationContext {
 	c := ic

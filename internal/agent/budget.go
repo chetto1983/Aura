@@ -386,12 +386,12 @@ func (b *Budget) SoftCapExceeded() bool {
 // *atomic.Int32 step counter and the same wallclock + clock (so the hard total
 // bound is preserved across the tree), but gets a DISTINCT dedup ring (no
 // cross-branch false positives) and a PASSIVE per-branch soft cap (D-12).
-// Sequential/Loop sub-agents instead use InvocationContext.WithSubAgent, which
+// Loop sub-agents instead use InvocationContext.WithSubAgent, which
 // shares the ring for cross-iteration repeat detection.
 //
 // IN-04 — the soft cap is a SPAWN-TIME SNAPSHOT and therefore TIMING-DEPENDENT BY
 // DESIGN: it is computed off b.Remaining() at the instant Child is called. When a
-// ParallelAgent spawns siblings in a loop, a later sibling reads an already-depleted
+// swarm spawns siblings in a loop, a later sibling reads an already-depleted
 // pool and so gets a SMALLER advisory share than an earlier one. This is intentional
 // and consistent with the non-terminal "passive advisory" framing (D-12) — the soft
 // cap never bounds correctness, only fairness hints — so siblings are NOT guaranteed
