@@ -338,7 +338,6 @@ func TestServeWebui(t *testing.T) {
 			{http.MethodPost, "/api/documents/labels"},
 			{http.MethodPut, "/api/documents/labels/l1"},
 			{http.MethodDelete, "/api/documents/labels/l1"},
-			{http.MethodPost, "/api/documents/labels/l1/run"},
 			{http.MethodGet, "/api/documents/custom-fields"},
 			{http.MethodPost, "/api/documents/custom-fields"},
 			{http.MethodPut, "/api/documents/custom-fields/f1"},
