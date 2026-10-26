@@ -36,7 +36,7 @@ func TestMemoryUpsertAcceptedCapture(t *testing.T) {
 	tool := &bridgedTool{}
 	tool.storeSpec(tools.Spec{Name: memoryUpsertFactModelName})
 	callCtx := tools.WithToolCallContext(ctx, "conversation-a", "call-memory", t.TempDir(), 4096)
-	result, err := tool.newResult(callCtx, args, payload)
+	result, err := tool.newResultWithTail(callCtx, args, payload, "")
 	if err != nil {
 		t.Fatalf("newResult: %v", err)
 	}

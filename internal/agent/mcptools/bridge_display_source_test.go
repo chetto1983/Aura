@@ -28,9 +28,9 @@ func TestMCPDisplaySourceOwnedByBridge(t *testing.T) {
 	b := &bridgedTool{name: tool.Name, policy: trusted}
 	b.storeSpec(specFromToolDefWithPolicy("memory", tool, trusted))
 	ctx := tools.WithToolCallContext(context.Background(), "session", "call", t.TempDir(), 2048)
-	result, err := b.newResult(ctx, map[string]any{
+	result, err := b.newResultWithTail(ctx, map[string]any{
 		"aura_display_source": map[string]any{"recipe": "recipe:calendar", "tool": "calendar"},
-	}, mcp.ToolPayload{Text: `{"facts":[]}`})
+	}, mcp.ToolPayload{Text: `{"facts":[]}`}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func TestMCPDisplaySourceOwnedByBridge(t *testing.T) {
 
 	untrusted := &bridgedTool{name: tool.Name}
 	untrusted.storeSpec(specFromToolDefWithPolicy("other", tool, bridgePolicy{}))
-	result, err = untrusted.newResult(ctx, nil, mcp.ToolPayload{Text: `{"facts":[]}`})
+	result, err = untrusted.newResultWithTail(ctx, nil, mcp.ToolPayload{Text: `{"facts":[]}`}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,10 +63,10 @@ func TestMCPDisplaySourceCalendarAction(t *testing.T) {
 	b := &bridgedTool{name: "calendar", policy: policy}
 	b.storeSpec(specFromToolDefWithPolicy("calendar", &sdkmcp.Tool{Name: "calendar"}, policy))
 	ctx := tools.WithToolCallContext(context.Background(), "session", "call", t.TempDir(), 2048)
-	result, err := b.newResult(ctx, map[string]any{
+	result, err := b.newResultWithTail(ctx, map[string]any{
 		"action":              "get_emails",
 		"aura_display_source": map[string]any{"recipe": "recipe:whatsapp", "action": "send_message"},
-	}, mcp.ToolPayload{Text: `{"emails":[]}`})
+	}, mcp.ToolPayload{Text: `{"emails":[]}`}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +74,7 @@ func TestMCPDisplaySourceCalendarAction(t *testing.T) {
 	if result.Meta == nil || !reflect.DeepEqual((*result.Meta)["aura_display_source"], want) {
 		t.Fatalf("calendar marker = %#v, want %#v", result.Meta, want)
 	}
-	result, err = b.newResult(ctx, map[string]any{"action": "unknown"}, mcp.ToolPayload{Text: "ok"})
+	result, err = b.newResultWithTail(ctx, map[string]any{"action": "unknown"}, mcp.ToolPayload{Text: "ok"}, "")
 	if err != nil {
 		t.Fatal(err)
 	}

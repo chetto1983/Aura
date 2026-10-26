@@ -99,7 +99,7 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	return b.newResultWithTail(ctx, args, payload, downloadFooter)
 }
 
-// newResult wraps an MCP tool's output. A mounted MCP server is
+// newResultWithTail wraps an MCP tool's output. A mounted MCP server is
 // operator-configured infrastructure, so its output is marked TrustTrusted:
 // trusted content like a built-in, never wrapped in the untrusted envelope. The
 // preview cap and sidecar spillover (resultText) still bound it; only the distrust
@@ -109,10 +109,9 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 // Meta. The MODEL never sees it — Meta is not part of the preview threaded back
 // into history — so a server cannot use the view channel to say something extra
 // to the model; it reaches only the surfaces that render (bridge_views.go).
-func (b *bridgedTool) newResult(ctx context.Context, args map[string]any, payload mcp.ToolPayload) (tools.ToolResult, error) {
-	return b.newResultWithTail(ctx, args, payload, "")
-}
-
+//
+// tail, when non-empty, follows the payload text and its files footer, and survives
+// the preview cap (tools.NewResultReservingTail).
 func (b *bridgedTool) newResultWithTail(ctx context.Context, args map[string]any, payload mcp.ToolPayload, tail string) (tools.ToolResult, error) {
 	res, err := b.resultTextWithTail(ctx, payload, tail)
 	if err != nil {
