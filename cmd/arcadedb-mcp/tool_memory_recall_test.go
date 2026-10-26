@@ -16,6 +16,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/chetto1983/aura/internal/activesources"
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/embeddings"
 )
@@ -205,7 +206,7 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 	t.Run("identity is required before header decode", func(t *testing.T) {
 		client, rec := newRecordingDB(t)
 		req := reqWithIdentity("")
-		req.Extra.Header = http.Header{memoryRecallActiveSourcesHeader: {"%%%"}}
+		req.Extra.Header = http.Header{activesources.Header: {"%%%"}}
 		_, _, err := memoryRecallHandler(singleTenant(t, client))(
 			context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
 		if !errors.Is(err, errMissingOAuthSubject) {
@@ -220,9 +221,9 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 		name   string
 		header http.Header
 	}{
-		{name: "malformed", header: http.Header{memoryRecallActiveSourcesHeader: {"%%%"}}},
-		{name: "over encoded cap", header: http.Header{memoryRecallActiveSourcesHeader: {strings.Repeat("a", 2049)}}},
-		{name: "ambiguous duplicate headers", header: http.Header{memoryRecallActiveSourcesHeader: {"one", "two"}}},
+		{name: "malformed", header: http.Header{activesources.Header: {"%%%"}}},
+		{name: "over encoded cap", header: http.Header{activesources.Header: {strings.Repeat("a", 2049)}}},
+		{name: "ambiguous duplicate headers", header: http.Header{activesources.Header: {"one", "two"}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			client, rec := newRecordingDB(t)
@@ -241,7 +242,7 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 
 	t.Run("turn id must match the host actor", func(t *testing.T) {
 		client, rec := newRecordingDB(t)
-		req := recallRequestWithActiveSource(t, testIdentity, "actor-turn", memoryRecallActiveSource{
+		req := recallRequestWithActiveSource(t, testIdentity, "actor-turn", activesources.Source{
 			ConversationID: "conversation-active", TurnID: "different-turn",
 		})
 		_, _, err := memoryRecallHandler(singleTenant(t, client))(
@@ -255,9 +256,9 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 	})
 
 	t.Run("source count is bounded before database access", func(t *testing.T) {
-		sources := make([]memoryRecallActiveSource, 0, memoryRecallMaxActiveSources+1)
-		for index := range memoryRecallMaxActiveSources + 1 {
-			sources = append(sources, memoryRecallActiveSource{
+		sources := make([]activesources.Source, 0, activesources.MaxSources+1)
+		for index := range activesources.MaxSources + 1 {
+			sources = append(sources, activesources.Source{
 				ConversationID: fmt.Sprintf("conversation-%02d", index), TurnID: "turn-current",
 			})
 		}
@@ -276,7 +277,7 @@ func TestMemoryRecallActiveSourceHeader(t *testing.T) {
 	t.Run("foreign conversation fails after ownership lookup and before recall", func(t *testing.T) {
 		foreign := `{"result":[{"identity_id":"foreign-identity","conversation_id":"conversation-active"}]}`
 		client, rec := newRecordingDB(t, foreign)
-		req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+		req := recallRequestWithActiveSource(t, testIdentity, "turn-current", activesources.Source{
 			ConversationID: "conversation-active", TurnID: "turn-current",
 		})
 		_, _, err := memoryRecallHandler(singleTenant(t, client))(
@@ -302,7 +303,7 @@ func TestMemoryRecallSuppressesActiveConversation(t *testing.T) {
 	client, rec := newRecordingDB(t, append([]string{ownership},
 		openMemoryGate(`{"result":[]}`, ranked, `{"result":[]}`, turns, window)...)...)
 	client.WithEmbedder(recallStubEmbedder{})
-	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", activesources.Source{
 		ConversationID: "conversation-active", TurnID: "turn-current",
 	})
 	_, output, err := memoryRecallHandler(singleTenant(t, client))(
@@ -352,7 +353,7 @@ func TestMemoryRecallActiveSourceIsNotModelInput(t *testing.T) {
 	client, rec := newRecordingDB(t, `{"result":[]}`)
 	req := reqWithIdentity(testIdentity)
 	req.Params.SetMeta(map[string]any{
-		memoryRecallActiveSourcesHeader: "model-supplied-exclusion",
+		activesources.Header: "model-supplied-exclusion",
 	})
 	_, _, err = memoryRecallHandler(singleTenant(t, client))(
 		context.Background(), req, MemoryRecallInput{Query: "blue notebook"})
@@ -368,18 +369,18 @@ func recallRequestWithActiveSource(
 	t *testing.T,
 	identity string,
 	actorTurn string,
-	sources ...memoryRecallActiveSource,
+	sources ...activesources.Source,
 ) *mcp.CallToolRequest {
 	t.Helper()
 	raw, err := json.Marshal(struct {
-		Version int                        `json:"version"`
-		Sources []memoryRecallActiveSource `json:"sources"`
+		Version int                    `json:"version"`
+		Sources []activesources.Source `json:"sources"`
 	}{Version: 1, Sources: sources})
 	if err != nil {
 		t.Fatal(err)
 	}
 	req := reqWithParentActor(identity, actorTurn)
-	req.Extra.Header.Set(memoryRecallActiveSourcesHeader, base64.RawURLEncoding.EncodeToString(raw))
+	req.Extra.Header.Set(activesources.Header, base64.RawURLEncoding.EncodeToString(raw))
 	return req
 }
 
@@ -437,7 +438,7 @@ func TestMemoryRecallDescriptionTeachesModeSelection(t *testing.T) {
 func TestMemoryRecallUnprojectedActiveSourceIsNotARefusal(t *testing.T) {
 	// The Conversation lookup finds nothing; the recall itself then answers normally.
 	client, rec := newRecordingDB(t, `{"result":[]}`)
-	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", memoryRecallActiveSource{
+	req := recallRequestWithActiveSource(t, testIdentity, "turn-current", activesources.Source{
 		ConversationID: "conversation-brand-new", TurnID: "turn-current",
 	})
 	_, _, err := memoryRecallHandler(singleTenant(t, client))(

@@ -15,6 +15,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
+	"github.com/chetto1983/aura/internal/activesources"
 	"github.com/chetto1983/aura/internal/arcadedb"
 	"github.com/chetto1983/aura/internal/embeddings"
 	auramcp "github.com/chetto1983/aura/internal/mcp"
@@ -346,7 +347,7 @@ func TestAgentMemoryMCPLive_MixedTierRecall(t *testing.T) {
 		t.Fatalf("projected recall fixtures = %+v, want active and historical owner candidates only", seeded.Evidence)
 	}
 
-	activeHeader, err := encodeMemoryRecallActiveSources([]memoryRecallActiveSource{
+	activeHeader, err := activesources.Encode([]activesources.Source{
 		{ConversationID: "conversation-active", TurnID: agentMemoryLiveParentRunID},
 	})
 	if err != nil {
@@ -471,7 +472,7 @@ type agentMemoryLiveRecallHeaderKey struct{}
 func agentMemoryLiveRecallHeaders(ctx context.Context) map[string]string {
 	headers := agentMemoryLiveActorHeaders(ctx)
 	if encoded, ok := ctx.Value(agentMemoryLiveRecallHeaderKey{}).(string); ok && encoded != "" {
-		headers[memoryRecallActiveSourcesHeader] = encoded
+		headers[activesources.Header] = encoded
 	}
 	return headers
 }
