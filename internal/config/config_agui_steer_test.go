@@ -53,12 +53,10 @@ func TestAGUISteerConfigDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
-// TestEveryNewKnobIsCatalogued is the D-11 tripwire the plan-check pass asked for:
-// it fails if a knob is catalogued in config_knobs.go with a Default string the
-// loader does not actually apply, covering both this plan's four new knobs and
-// AURA_AGUI_RUN_DETACH (D-11 — the reconciled knob, not a new one). A future
-// revert of either D-11 or D-12 that drifts the catalogue back out of sync with
-// the loader fails this test by name, not as an unrelated-looking diff.
+// TestEveryNewKnobIsCatalogued is the D-11 tripwire the plan-check pass asked for: this
+// plan's four new knobs and AURA_AGUI_RUN_DETACH must be in the registry, so the re-parse
+// pass checks them, and AURA_AGUI_RUN_DETACH's loader default must stay true (D-11). The
+// registry no longer carries defaults (2026-10-26), so the loader is the only side asserted.
 func TestEveryNewKnobIsCatalogued(t *testing.T) {
 	clearPostgresEnv(t)
 	cfg := LoadDB()
@@ -68,26 +66,12 @@ func TestEveryNewKnobIsCatalogued(t *testing.T) {
 		byName[k.Name] = k
 	}
 
-	cases := []struct {
-		name string
-		want string
-	}{
-		{"AURA_AGUI_RUN_STEER", "true"},
-		{"AURA_AGUI_RUN_STEER_MAX", "8"},
-		{"AURA_AGUI_RUN_STEER_MAX_BYTES", "16384"},
-		{"AURA_ASKUSER_PAUSE_TTL_SEC", "172800"},
-		// D-11: AURA_AGUI_RUN_DETACH's catalogued default must equal the loader's
-		// actual default — the exact contradiction this amendment resolved.
-		{"AURA_AGUI_RUN_DETACH", "true"},
-	}
-	for _, tc := range cases {
-		k, ok := byName[tc.name]
-		if !ok {
-			t.Errorf("%s is absent from the knob registry (D-11/D-12 tripwire)", tc.name)
-			continue
-		}
-		if k.Default != tc.want {
-			t.Errorf("%s catalogued Default = %q, want %q (D-11/D-12 tripwire: catalogue must match the loader)", tc.name, k.Default, tc.want)
+	for _, name := range []string{
+		"AURA_AGUI_RUN_STEER", "AURA_AGUI_RUN_STEER_MAX", "AURA_AGUI_RUN_STEER_MAX_BYTES",
+		"AURA_ASKUSER_PAUSE_TTL_SEC", "AURA_AGUI_RUN_DETACH",
+	} {
+		if _, ok := byName[name]; !ok {
+			t.Errorf("%s is absent from the knob registry (D-11/D-12 tripwire)", name)
 		}
 	}
 

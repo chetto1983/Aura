@@ -16,27 +16,19 @@ func TestRetentionConfigContractIsRegistered(t *testing.T) {
 		t.Fatalf("Config.Retention type = %s, want RetentionConfig", field.Type)
 	}
 
-	want := map[string]string{
-		"AURA_RETENTION_TEMP_HOURS":             "24",
-		"AURA_RETENTION_PROD_TRACE_HOURS":       "24",
-		"AURA_RETENTION_DEV_TRACE_HOURS":        "168",
-		"AURA_RETENTION_METADATA_TRACE_HOURS":   "336",
-		"AURA_RETENTION_CONVERSATION_DAYS":      "0",
-		"AURA_RETENTION_REASONING_SUCCESS_DAYS": "30",
-		"AURA_RETENTION_REASONING_FAILED_DAYS":  "7",
-		"AURA_RETENTION_DISK_WARN_PERCENT":      "70",
-		"AURA_RETENTION_DISK_URGENT_PERCENT":    "80",
-		"AURA_RETENTION_DISK_STOP_PERCENT":      "85",
-	}
-	got := make(map[string]string)
+	registered := make(map[string]bool)
 	for _, spec := range knobRegistry() {
-		if _, expected := want[spec.Name]; expected {
-			got[spec.Name] = spec.Default
-		}
+		registered[spec.Name] = true
 	}
-	for name, defaultValue := range want {
-		if got[name] != defaultValue {
-			t.Errorf("knob %s default = %q, want %q", name, got[name], defaultValue)
+	for _, name := range []string{
+		"AURA_RETENTION_TEMP_HOURS", "AURA_RETENTION_PROD_TRACE_HOURS",
+		"AURA_RETENTION_DEV_TRACE_HOURS", "AURA_RETENTION_METADATA_TRACE_HOURS",
+		"AURA_RETENTION_CONVERSATION_DAYS", "AURA_RETENTION_REASONING_SUCCESS_DAYS",
+		"AURA_RETENTION_REASONING_FAILED_DAYS", "AURA_RETENTION_DISK_WARN_PERCENT",
+		"AURA_RETENTION_DISK_URGENT_PERCENT", "AURA_RETENTION_DISK_STOP_PERCENT",
+	} {
+		if !registered[name] {
+			t.Errorf("knob %s is not in the registry, so the re-parse pass never checks it", name)
 		}
 	}
 }
