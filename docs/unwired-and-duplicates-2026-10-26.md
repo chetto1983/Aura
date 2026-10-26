@@ -46,6 +46,128 @@ One bug, a set of half-finished consolidations, and a set of features built up t
 `dupl` at the CI threshold (100) finds nothing. Everything here is below that gate, or is the kind
 of duplicate it cannot see: same behaviour in a different shape.
 
+## Closure, 2026-10-26
+
+Asked the same day: "Parti a chiudere tutto e validalo" (close everything and validate it). The
+closure is `e4f87d1..HEAD` on branch `ccr-648b75d9-4hbqnw`, one commit per decision. Every
+finding below was either wired, deleted or folded, or is listed under "Left to the operator"
+with the reason it was not.
+
+### Bugs fixed
+
+| Finding | Commit | What changed |
+|---|---|---|
+| U0, owner-export download 404 | `e4f87d1` | `GET /api/owner-exports/{id}` is mounted. `TestServeWebuiMountsEveryAGUIRoute` reads every `mux.Handle` pattern in `internal/agui` from source and drives each through `newServeHandler`, so a third unmounted route fails a test instead of a user. |
+| U4, 10 s OAuth leeway | `87b9865` | `refreshingTokenSource` wraps every refreshing source in `oauth2.ReuseTokenSourceWithExpiry(…, oauthTokenLeeway)`: reload, restore and first authorization. |
+| U5, span-export metric never recorded | `a996f56` | The exporter is wrapped by `countSpanExportFailures`, which increments the counter on every failed `ExportSpans`. |
+| U1, pause TTL switched off | `ac09355` | The runner's pause store is `askuser.NewWithPauseTTL(pool, cfg.AskUser.PauseTTLSec)`. |
+| New: asset retry re-armed any status | `b6dbbc3` | `POST /api/assets/{id}/retry` put a complete or processing asset back to `accepted`, so a retry of a success re-ingested it and a retry of a running job raced the worker. `Store.ResetForRetry` uses the guarded `ResetAssetForIngestionRetry`, which had no caller; anything else is `ErrNotRetryable`. A `db_integration` test proves the SQL guard. |
+| New: empty-key session fallback | `65429f7` | With no `SessionValidator`, `RequireAuth` fell back to an HMAC cookie under `AuthDeps.SigningKey`, which production set to nil; a cookie MAC'd under an empty key would have passed. It now fails closed, and the passphrase cookie code, its three `AuthDeps` fields and `POST /logout` are gone. |
+| New: rune-splitting truncation | `59ae93f`, `55e1a2c` | `agenteval` and the MUSR live assert cut strings by byte. `mcptools.truncateUTF8Bytes` was O(n²) on invalid UTF-8. All four truncations now go through `internal/utf8cut`. |
+
+### Removed: built, not connected, and not worth wiring
+
+| What | Commit | Why delete, not wire |
+|---|---|---|
+| U2, `mcp.AppsClientSettings` | `5e04232` | One connection per server is shared by the cockpit, Telegram and the CLI; declaring the capability would let servers trim text the other two need. Views render without it. |
+| U6, worker transcript pull route | `be9b12e` | Superseded by the push-only SSE worker streams. |
+| U6, `remote-access/rotate-token` stub | `c43ed9c` | It always answered 409; the cockpit shows the same guidance itself. |
+| U6, `POST /api/documents/labels/{id}/run` | `794871a` | Saving a label already runs its rule. |
+| U6, `POST /logout` | `65429f7` | It cleared only the passphrase cookie; sign-out is Authula's. |
+| `AURA_WEB_AUTH_PROVIDER`, `AURA_WEB_AUTH_SECRET` | `9c7a25c` | Loaded and never read once the boundary became Authula-only. |
+| Telegram local Bot API trio | `7e98b3d` | `TELEGRAM_API_BASE_URL`, `TELEGRAM_FILE_BASE_URL` and `AURA_TELEGRAM_LOCAL_BOT_API` reached no `tele.Settings`. Wiring the URL alone would not work: in `--local` mode `getFile` returns a path on the server's disk (tdlib `telegram-bot-api` README), so a local server needs a service, a shared volume and a reader. `docs/asset-pipeline.md` now states the real 20 MB limit. |
+| `AURA_CONFIG_DIR` | `a9a3ef9` | Set by compose and `.env.example`, read by nothing. |
+| `ArcadeDBConfig.User/Password`, `KnobSpec.Default/Secret` | `5128f6e` | The pair belongs to the `arcadedb-mcp` sidecar, which reads it itself. The knob fields fed doc generation and redaction that do not exist. |
+| 17 sqlc queries | `d32a4d1` | Grepped across `internal/` and `cmd/` with tests; `sqlc generate` (v1.31.1) leaves no diff. The tables behind them stay: see below. |
+| Dead parameters and results, `garageadmin.Option` | `3d1b61f`, `1f05262` | The 13 `unparam` hits, plus the nil parent span threaded through about twenty methods. |
+
+### Duplicates folded
+
+| Finding | Commit | Shared home |
+|---|---|---|
+| D1 | `aafac9e`, `fd3e69e` | `secret.DeriveKey` and `secret.NewSealerFromKey`. Six `hkdf.Key` call sites became one; every HKDF info label is unchanged, and a vector test proves rows written by the old copies still open. |
+| D2 | `4d9a270` | `db.IsUniqueViolation`, five private copies deleted. |
+| D3 | `96e17f6` | `internal/activesources`, imported by both sides of the recall-context wire. |
+| D4 | `98aa9ce` | `sidecarBaseURL`, one WR-01 port guard. |
+| D5 | `1eee0aa` | `mcp.DrainTools` beside `BoundedCall`. |
+| D6 | `bb9f4f0` | `idempotency.Registry` and `idempotency.ReplayRetention`. |
+| D7 | `074a997`, `4043128`, `08fd19e`, `55b8585`, `d8a4d8e`, `55e1a2c`, `d4212e5`, `b0d532f` | `internal/asciifold`, `pgnumeric.FloatFromAggregate`, `envutil.BoolDefault`, `conversations.Excerpt`, `pgtype.UUID.String` with `db.ParseUUID` and `db.OptionalText`, `internal/utf8cut`, `isNilDependency`, `SessionIDFromContext`. |
+
+### Corrections to this report and to the docs
+
+- **U3 was half wrong.** The cockpit does read `aura.mcp_audit`: `GET /api/admin/audit` unions it
+  with the other identity ledgers (`internal/agui/audit_store.go`). What was dead is the second
+  reader, `MCPAuditStore.List`, whose constructor already lived behind `db_integration`. It moved
+  under that tag (`8a44f79`); production keeps the write half.
+- **The `/setup` "wizard"** is a token-gated JSON API. README, `docs/INSTALL.md` and the installer
+  now point at the cockpit (`8966729`).
+- **The update policy.** `prd.md` and `packages/create-aura/README.md` still described a 15-minute
+  idle trigger and `AURA_UPDATE_IDLE_SECONDS`; the updater has applied at night from
+  `AURA_UPDATE_AT` since `7b1a23e` (`ab6ffd1`).
+- **The env catalogue.** 23 knobs read by the process appeared in no document. They are now in a
+  `.env.example` section that says compose forwards none of them (`3984c74`). CLAUDE.md pointed to
+  a PRD env index that no longer exists (`62f6e2a`). `AURA_RECOVERY_*` stay out: they are one-shot
+  inputs to `aura identity recover-operator`, documented by its usage text.
+- **Found by the closure's own gate.** `b6dbbc3` took `internal/assets/service_test.go` to 634
+  lines; `make quality`'s file-size check caught it before a push, and the fake store moved to
+  `fake_store_test.go`.
+
+### Kept on purpose
+
+- `Event.ParentSpanID` and `InvocationContext.ParentSpanID`: the documented forward-compatible
+  wire shape for span chaining (WR-04). Only the plumbing went.
+- `RunSession.append`'s `bool`: production ignores it by design and the backpressure tests pin it.
+- `retention.ratioFromCapacity` and `mcp.countTools`: the first is called from a Windows build
+  file; the second counts under the probe's own per-transport boundary and collects nothing, so
+  `DrainTools` would replace its bound and allocate a slice to read its length.
+- Duplicates of shape only: `openRouter` List/ListKeys, `newPasswordResetToken`/`newRecoveryCode`,
+  `stringSet`/`finiteSet`, `buildArcadeMemoryPurger`/`buildArcadeMemoryProvisioner`.
+- `GetIdentityRecoveryByIdentity`, `ListIdentityAudit` and `GetRun`: queries only tests call, as
+  the typed read-back of what production writes. Replacing them with hand-written SQL in tests
+  would lose sqlc's check against the schema.
+
+### Left to the operator
+
+Each needs a decision this closure should not take alone.
+
+- **Dropping tables or columns** needs a migration, which cannot be undone on a live database:
+  - `aura.benchmark_settings_overrides` and `aura.benchmark_settings_override_rows`, whose
+    queries went in `d32a4d1`;
+  - `aura.asset_events`, written only by RLS tests;
+  - `aura.audit_logs`, which nothing writes or reads, and whose `ON DELETE RESTRICT` foreign key
+    `cmd/aura/serve_provisioning.go` warns will break de-provisioning once something does;
+  - `pipeline_generation` on `aura.assets`, `aura.ingestion_jobs` and `aura.ingestion_events`,
+    always 0, already listed as retired by `services/ingest/arcade.py`.
+- **Write-only audit tables.** `aura.ingestion_events`, `aura.identity_recovery_audit` and
+  `aura.identity_audit` (the admin feed does not union the last one) are written and never read.
+  Whether an audit table needs a reader is a product call.
+- **Gates that check a self-reported number.**
+  - `gateReplication` refuses `server_production` unless `AURA_OBJECTSTORE_REPLICATION_FACTOR >= 2`,
+    but nothing compares the knob with Garage, whose config pins `replication_factor = 1`.
+    Setting the knob to 2 passes the gate and changes no durability. The honest gate reads the
+    factor from Garage's admin API.
+  - `AURA_EMBED_REVISION` and `AURA_EMBED_FINGERPRINT` are required by compose and derived by the
+    installer, yet only checked for presence and hex. `embeddings.AttestLocal` already names the
+    served model from the sidecar, and its comment says the fingerprint cannot. Either compare
+    them, or drop the pair and the installer step.
+- **U6 routes with no production caller, kept:**
+  - `GET /api/conversations/{id}/branches` and `POST …/branches/{branchSeq}/select`. The cockpit's
+    branch navigation is client-side only (`ExternalStoreChat_branches.ts` posts only to `/edit`).
+    Not verified live: after navigating to an older sibling, the next message may continue the
+    server's newest branch, and siblings may not survive a reload. A cockpit test decides whether
+    this is a bug to wire or routes to delete.
+  - `GET /api/fetch`: its comment says cockpit-only and only `web/e2e` calls it.
+  - `GET /api/settings/remote-access/events`, the admin capability grant routes,
+    `POST /api/admin/openrouter/reconcile`, `/debug/vars` and `/metrics` on `:9080`, and the
+    cloudflared supervisor's `/status`: manual or operational surfaces, used by hand in
+    verification files.
+
+### Validation
+
+In progress when this section was committed: `make quality`, the `db_integration` coverage gate
+on a disposable database and the mutation scopes whose packages this closure touched. The
+measured results replace this paragraph in the next commit.
+
 ## Method
 
 Every finding below was read in the source after a tool flagged it. A tool hit that did not
