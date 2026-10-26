@@ -44,19 +44,3 @@ func RenderManifest(skills []Skill, capBytes int) string {
 	}
 	return b.String()
 }
-
-// BM25Corpus returns spec-shaped "name description" documents — one per skill, in
-// the SAME alphabetical order RenderManifest uses — feeding the overflow `list`
-// ranker in tools/skill_read.go (the ranker itself is tools/bm25.go). The order
-// is index-aligned with a name-sorted skill slice so the tool can map a ranked
-// document index back to its skill deterministically.
-func BM25Corpus(skills []Skill) []string {
-	sorted := make([]Skill, len(skills))
-	copy(sorted, skills)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
-	out := make([]string, 0, len(sorted))
-	for _, s := range sorted {
-		out = append(out, s.Name+" "+s.Description)
-	}
-	return out
-}

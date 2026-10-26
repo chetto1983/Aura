@@ -61,18 +61,3 @@ func TestRenderManifestEmpty(t *testing.T) {
 		t.Fatalf("empty manifest = %q, want a 'No skills' notice", got)
 	}
 }
-
-func TestBM25CorpusSorted(t *testing.T) {
-	t.Parallel()
-	in := []Skill{
-		{Name: "zebra", Description: "z desc"},
-		{Name: "alpha", Description: "a desc"},
-	}
-	corpus := BM25Corpus(in)
-	if len(corpus) != 2 {
-		t.Fatalf("corpus len = %d, want 2", len(corpus))
-	}
-	if !strings.HasPrefix(corpus[0], "alpha ") || !strings.HasPrefix(corpus[1], "zebra ") {
-		t.Fatalf("corpus not name-sorted: %v", corpus)
-	}
-}
