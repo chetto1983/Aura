@@ -25,7 +25,7 @@ func TestRecoveredToolResultIsNotProjectedAsSuccess(t *testing.T) {
 			{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
 			{Role: llm.RoleTool, ToolCallID: call.ID, Content: content},
 		}
-		encoded, err := json.Marshal(projectDisplaySnapshot(history))
+		encoded, err := json.Marshal(projectDisplaySnapshotWithFacts(history, "", nil, nil))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -65,11 +65,11 @@ func TestPendingPauseIsAwaitingNotFailed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			snap := projectDisplaySnapshot([]llm.Message{
+			snap := projectDisplaySnapshotWithFacts([]llm.Message{
 				{Role: llm.RoleUser, Content: "remind me a week before"},
 				{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
 				{Role: llm.RoleTool, ToolCallID: call.ID, Content: conversations.RecoveryToolResultContent(call)},
-			})
+			}, "", nil, nil)
 			markAwaitingInput(&snap, tc.pending)
 			if len(snap.Messages) != tc.wantMessages {
 				t.Fatalf("messages = %d, want %d", len(snap.Messages), tc.wantMessages)

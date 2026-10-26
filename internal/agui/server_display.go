@@ -67,19 +67,16 @@ type displaySnapshotToolCall struct {
 	AwaitingInput bool `json:"awaitingInput,omitempty"`
 }
 
-// projectDisplaySnapshot builds the display-aware MESSAGES_SNAPSHOT (D-06): it re-runs
+// projectDisplaySnapshotWithFacts builds the display-aware MESSAGES_SNAPSHOT (D-06): it re-runs
 // the SAME display normalizer over each persisted tool-result turn and attaches the
 // re-derived payload to the matching assistant tool-call entry by tool_call_id, so a
 // reopened thread renders typed displays identically to live ("one normalizer for live
 // + replay"). It builds ONE registry for the whole thread and feeds it in turn order,
 // mirroring the live per-run registry, so source RefIDs/Index match the live run.
-func projectDisplaySnapshot(hist []llm.Message) displaySnapshotEvent {
-	return projectDisplaySnapshotWithFacts(hist, "", nil, nil)
-}
-
-// projectDisplaySnapshotWithFacts is projectDisplaySnapshot plus what the thread's rows
-// add: the ledger's end rows (MCP displays and each call's outcome) and the calls the
-// operator refused by declining their gateway approval.
+//
+// The thread's rows add the rest: the ledger's end rows (facts: MCP displays and each
+// call's outcome) and the calls the operator refused by declining their gateway
+// approval.
 func projectDisplaySnapshotWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event, declined []string) displaySnapshotEvent {
 	displays := rederiveDisplaysWithFacts(hist, conversationID, facts)
 	views := replayMCPViews(hist, conversationID, facts)
@@ -210,15 +207,12 @@ func consumeAuraContextBlock(value, closeTag string) (string, bool) {
 	return after, true
 }
 
-// rederiveDisplays walks the persisted history in order and re-derives a display.Payload
+// rederiveDisplaysWithFacts walks the persisted history in order and re-derives a display.Payload
 // per recognized tool-result turn (a RoleTool turn carries ToolCallID + the persisted
 // ResultPreview as Content). It returns the map keyed by tool_call_id. A single shared
 // registry accumulates across all web turns so cross-turn source RefIDs are stable —
-// identical to the live per-run registry (Pitfall 4 parity).
-func rederiveDisplays(hist []llm.Message) map[string]*display.Payload {
-	return rederiveDisplaysWithFacts(hist, "", nil)
-}
-
+// identical to the live per-run registry (Pitfall 4 parity). facts are the thread's
+// ledger rows, which supply the inputs a preview alone does not carry.
 func rederiveDisplaysWithFacts(hist []llm.Message, conversationID string, facts []toolinvocations.Event) map[string]*display.Payload {
 	reg := display.NewRegistry()
 	inputs := previewInputsByCallIDWithFacts(hist, conversationID, facts)

@@ -35,7 +35,7 @@ func TestAttachTurnReasoning_PositionalPairing(t *testing.T) {
 		{Role: llm.RoleUser, Content: "thanks"},
 		{Role: llm.RoleAssistant, Content: "welcome"}, // answer #2 → rows[1] (NULL reasoning)
 	}
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{
 		{Seq: 5, Reasoning: "user wants a summary of ls output", DurationMS: 1200},
 		{Seq: 7, Reasoning: "", DurationMS: 0},
@@ -62,7 +62,7 @@ func TestAttachTurnReasoning_CountMismatchFailSoft(t *testing.T) {
 		{Role: llm.RoleUser, Content: "q"},
 		{Role: llm.RoleAssistant, Content: "a"},
 	}
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{
 		{Seq: 2, Reasoning: "cot", DurationMS: 10},
 		{Seq: 9, Reasoning: "surplus row", DurationMS: 20},
@@ -73,7 +73,7 @@ func TestAttachTurnReasoning_CountMismatchFailSoft(t *testing.T) {
 
 	// More answer messages than rows: the extra answer stays bare.
 	hist = append(hist, llm.Message{Role: llm.RoleUser, Content: "q2"}, llm.Message{Role: llm.RoleAssistant, Content: "a2"})
-	snap = projectDisplaySnapshot(hist)
+	snap = projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 	attachTurnReasoning(&snap, []conversations.TurnReasoning{{Seq: 2, Reasoning: "cot", DurationMS: 10}})
 	if got := snap.Messages[3]; got.Reasoning != "" {
 		t.Errorf("row-less answer decorated with %q, want bare", got.Reasoning)

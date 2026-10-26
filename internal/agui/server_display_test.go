@@ -36,7 +36,7 @@ func TestProjectMessagesDisplay(t *testing.T) {
 	}
 	hist := append([]llm.Message{{Role: llm.RoleUser, Content: "weather"}}, webSearchTurn("c1", results)...)
 
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 
 	// Find the assistant tool-call entry and assert its re-derived display.
 	var got *display.Payload
@@ -79,7 +79,7 @@ func TestPreviewInputsByCallIDPreservesArgumentsAndResult(t *testing.T) {
 		t.Fatalf("tool result preview lost: %+v", in)
 	}
 	live, liveOK := display.NormalizeToolPreview(in, display.NewRegistry())
-	replay := rederiveDisplays(hist)["with-args"]
+	replay := rederiveDisplaysWithFacts(hist, "", nil)["with-args"]
 	if !liveOK || replay == nil {
 		t.Fatalf("display missing: live=%v replay=%+v", liveOK, replay)
 	}
@@ -104,7 +104,7 @@ func TestProjectDisplaySnapshotStripsModelContextFromUserTurns(t *testing.T) {
 		{Role: llm.RoleAssistant, Content: "robot industriali e robot collaborativi"},
 	}
 
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 
 	if got := snap.Messages[0].Content; got != visible {
 		t.Fatalf("visible snapshot user content = %q, want %q", got, visible)
@@ -131,7 +131,7 @@ func TestProjectMessagesDisplayUnrecognizedNoDisplay(t *testing.T) {
 		{Role: llm.RoleTool, ToolCallID: "c2", Content: "file1\nfile2"},
 	}
 
-	snap := projectDisplaySnapshot(hist)
+	snap := projectDisplaySnapshotWithFacts(hist, "", nil, nil)
 	for _, m := range snap.Messages {
 		for _, tc := range m.ToolCalls {
 			if tc.ID == "c2" && tc.Display != nil {
@@ -150,7 +150,7 @@ func TestProjectDisplaySnapshotWireShape(t *testing.T) {
 	hist := append(webSearchTurn("c1", results),
 		llm.Message{Role: llm.RoleAssistant, Content: "Rome is sunny [1]."})
 
-	raw, err := json.Marshal(projectDisplaySnapshot(hist))
+	raw, err := json.Marshal(projectDisplaySnapshotWithFacts(hist, "", nil, nil))
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestRederiveDisplaysSharedRegistryStableRefIDs(t *testing.T) {
 		{Title: "B", URL: "https://b.test/y"},
 	})...)
 
-	displays := rederiveDisplays(hist)
+	displays := rederiveDisplaysWithFacts(hist, "", nil)
 	d1, d2 := displays["c1"], displays["c2"]
 	if d1 == nil || d2 == nil {
 		t.Fatalf("missing re-derived displays: c1=%v c2=%v", d1, d2)
