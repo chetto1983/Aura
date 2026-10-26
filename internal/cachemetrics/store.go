@@ -99,7 +99,7 @@ func (s *Store) AggregateSince(ctx context.Context, since time.Time) (Aggregate,
 	if err != nil {
 		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: cached_tokens: %w", since.Format(time.RFC3339), err)
 	}
-	cost, err := anyNumericFloat(row.TotalCostUsd)
+	cost, err := pgnumeric.FloatFromAggregate(row.TotalCostUsd)
 	if err != nil {
 		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: cost_usd: %w", since.Format(time.RFC3339), err)
 	}

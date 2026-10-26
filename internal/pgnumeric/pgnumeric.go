@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -115,4 +116,35 @@ func FloatFromNumeric(n pgtype.Numeric) float64 {
 		return 0
 	}
 	return f.Float64
+}
+
+// FloatFromAggregate coerces a sqlc `coalesce(sum(numeric),0)` result to float64: the sum
+// decodes as pgtype.Numeric, or as text on some drivers. An unparseable text shape or an
+// unmodeled driver type is an error, never a silent 0: a "$0.00 spend" that is really an
+// unrecognized decode shape reads as "this identity is free", the false green the cost
+// ledgers exist to prevent (WR-02). The credit ledger and cache metrics each used to carry
+// a copy of this switch.
+func FloatFromAggregate(v any) (float64, error) {
+	switch n := v.(type) {
+	case pgtype.Numeric:
+		return FloatFromNumeric(n), nil
+	case float64:
+		return n, nil
+	case int64:
+		return float64(n), nil
+	case string:
+		f, err := strconv.ParseFloat(n, 64)
+		if err != nil {
+			return 0, fmt.Errorf("decode float aggregate from string %q: %w", n, err)
+		}
+		return f, nil
+	case []byte:
+		f, err := strconv.ParseFloat(string(n), 64)
+		if err != nil {
+			return 0, fmt.Errorf("decode float aggregate from bytes %q: %w", n, err)
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("unmodeled float aggregate shape %T", v)
+	}
 }

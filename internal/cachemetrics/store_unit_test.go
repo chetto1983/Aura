@@ -257,7 +257,7 @@ func TestAggregateSince_Success(t *testing.T) {
 }
 
 // TestAggregateSince_TextShapes proves the coalesce(sum(...)) results decode across the
-// driver shapes anyInt64 / anyNumericFloat accept (text sums on some planners).
+// driver shapes anyInt64 / pgnumeric.FloatFromAggregate accept (text sums on some planners).
 func TestAggregateSince_TextShapes(t *testing.T) {
 	t.Parallel()
 	fake := &fakeDBTX{queryRowVal: aggRow(2, "7000", []byte("6800"), "0.5000")}

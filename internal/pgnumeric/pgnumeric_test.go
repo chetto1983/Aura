@@ -140,3 +140,51 @@ func TestNullableFloatKeepsNullDistinctFromZero(t *testing.T) {
 		t.Fatal("NullableFromFloat accepted NaN")
 	}
 }
+
+func TestFloatFromAggregateDecodeShapes(t *testing.T) {
+	t.Parallel()
+	mustFloat := func(v any) float64 {
+		t.Helper()
+		f, err := FloatFromAggregate(v)
+		if err != nil {
+			t.Fatalf("FloatFromAggregate(%#v): %v", v, err)
+		}
+		return f
+	}
+	if got := mustFloat(mustNumericForTest(t, 1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
+		t.Errorf("FloatFromAggregate(numeric 1.25): got %v", got)
+	}
+	if got := mustFloat(float64(2.5)); got != 2.5 {
+		t.Errorf("FloatFromAggregate(float 2.5): got %v", got)
+	}
+	if got := mustFloat(int64(3)); got != 3 {
+		t.Errorf("FloatFromAggregate(int64 3): got %v", got)
+	}
+	if got := mustFloat("4.5"); got != 4.5 {
+		t.Errorf("FloatFromAggregate(string 4.5): got %v", got)
+	}
+	if got := mustFloat([]byte("6.75")); got != 6.75 {
+		t.Errorf("FloatFromAggregate([]byte 6.75): got %v", got)
+	}
+}
+
+// TestFloatFromAggregateUnparseableErrors proves WR-02: an unmodeled shape or an
+// unparseable text cost aggregate errors rather than reporting a fabricated $0.00.
+func TestFloatFromAggregateUnparseableErrors(t *testing.T) {
+	t.Parallel()
+	bad := []any{nil, struct{}{}, "not-a-number", []byte("xx")}
+	for _, in := range bad {
+		if _, err := FloatFromAggregate(in); err == nil {
+			t.Errorf("FloatFromAggregate(%#v): want error, got nil", in)
+		}
+	}
+}
+
+func mustNumericForTest(t *testing.T, f float64) pgtype.Numeric {
+	t.Helper()
+	n, err := NumericFromFloat(f)
+	if err != nil {
+		t.Fatalf("NumericFromFloat(%v): %v", f, err)
+	}
+	return n
+}
