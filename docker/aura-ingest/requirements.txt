@@ -10,7 +10,7 @@
 # way: cocoindex's pyproject declares postgres = ["asyncpg>=0.31.0"], and without the extra
 # `cocoindex.connectors.postgres` cannot import. asyncpg appeared in this file's first
 # draft and never shipped, so the document rows had no writer at all.
-cocoindex[amazon_s3,postgres]==1.0.25
+cocoindex[amazon_s3,postgres]==1.0.26
 iscc-tika==0.6.0
 neo4j==6.4.1
 # pypdf reads a PDF's own outline, which is what fills heading_path: the section a passage
