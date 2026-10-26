@@ -272,4 +272,4 @@ Fix issues before moving on.
 
 Tutti gli env vars usano convenzione `AURA_<DOMAIN>_<UNIT>` (es. `AURA_SWARM_MAX_DEPTH`). Eccezioni: env per librerie/sidecar di terze parti (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`, `LMCACHE_*`) mantengono naming canonico upstream.
 
-Indice completo: vedi PRD §Caps & Limits → Indice completo env vars (~60 voci catalogate).
+Catalogo operatore: `.env.example` (le voci commentate sono documentazione; la sezione finale elenca i knob che `compose.yaml` non inoltra). Il PRD non ha più un indice env: misurato 2026-10-26 (`git grep -ohw`), nomina 35 nomi `AURA_*` contro 297 nel Go non-test.
