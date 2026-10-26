@@ -2,6 +2,7 @@
   "schema_version": 1,
   "target_percent": 85,
   "packages": {
+    "github.com/chetto1983/aura/internal/activesources": {"mode": "target"},
     "github.com/chetto1983/aura/internal/agent": {"mode": "target"},
     "github.com/chetto1983/aura/internal/agent/display": {"mode": "target"},
     "github.com/chetto1983/aura/internal/agent/mcptools": {"mode": "target"},
@@ -16,6 +17,7 @@
     "github.com/chetto1983/aura/internal/approvalpolicies": {"mode": "target"},
     "github.com/chetto1983/aura/internal/approvaltext": {"mode": "target"},
     "github.com/chetto1983/aura/internal/arcadedb": {"mode": "delegated", "authority": "arcadedb_coverage"},
+    "github.com/chetto1983/aura/internal/asciifold": {"mode": "target"},
     "github.com/chetto1983/aura/internal/askuser": {"mode": "target"},
     "github.com/chetto1983/aura/internal/board": {"mode": "target"},
     "github.com/chetto1983/aura/internal/browsercontrol": {"mode": "target"},
@@ -98,6 +100,7 @@
     "github.com/chetto1983/aura/internal/swarm": {"mode": "target"},
     "github.com/chetto1983/aura/internal/toolinvocations": {"mode": "target"},
     "github.com/chetto1983/aura/internal/tracesink": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/utf8cut": {"mode": "target"},
     "github.com/chetto1983/aura/internal/web": {"mode": "target"},
     "github.com/chetto1983/aura/internal/webauth": {"mode": "baseline", "covered_statements": 220, "total_statements": 393},
     "github.com/chetto1983/aura/internal/webui": {"mode": "target"},
