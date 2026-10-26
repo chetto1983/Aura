@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"unicode"
 
+	"github.com/chetto1983/aura/internal/asciifold"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
 )
 
@@ -163,7 +163,7 @@ func (s *SendFile) emitDelivery(ctx context.Context, path, caption string) ToolR
 	descriptor := map[string]any{
 		"path":     path,
 		"filename": filename,
-		"caption":  asciiCaption(caption),
+		"caption":  asciifold.Caption(caption),
 	}
 	// Always-present correlation key + stat size (success AND degrade), like path (Landmine 5 / D-02).
 	if tcid := ToolCallIDFromContext(ctx); tcid != "" {
@@ -245,68 +245,4 @@ func errorResult(code, message string) ToolResult {
 		b = []byte(`{"error":"` + code + `"}`)
 	}
 	return ToolResult{Preview: string(b), Bytes: len(b)}
-}
-
-// asciiCaption renders a caption ASCII-safe: a non-ASCII rune is transliterated to
-// its closest ASCII form where trivially possible (accented Latin → base letter),
-// otherwise dropped. This avoids the document/voice-caption 400 a non-ASCII byte
-// triggers on the Bot API (Pitfall 4 / T-13-02-CaptionInject) without coupling the
-// substrate to any channel. The result contains only bytes ≤ 0x7F.
-func asciiCaption(caption string) string {
-	var b strings.Builder
-	b.Grow(len(caption))
-	for _, r := range caption {
-		switch {
-		case r <= unicode.MaxASCII:
-			b.WriteRune(r)
-		default:
-			if base := foldToASCII(r); base != 0 {
-				b.WriteByte(base)
-			}
-			// Otherwise the rune is dropped (best-effort, never a 400).
-		}
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// foldToASCII maps a common accented Latin rune to its base ASCII letter, or 0
-// when there is no trivial single-byte equivalent (the rune is then dropped). It
-// covers the Latin-1/Latin-Extended-A vowels and consonants the model is most
-// likely to emit in an Italian/European caption; it is deliberately small, not a
-// full Unicode transliteration table.
-func foldToASCII(r rune) byte {
-	switch r {
-	case 'à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą':
-		return 'a'
-	case 'è', 'é', 'ê', 'ë', 'ē', 'ĕ', 'ė', 'ę', 'ě':
-		return 'e'
-	case 'ì', 'í', 'î', 'ï', 'ī', 'ĭ', 'į':
-		return 'i'
-	case 'ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ŏ', 'ő':
-		return 'o'
-	case 'ù', 'ú', 'û', 'ü', 'ū', 'ŭ', 'ů', 'ű':
-		return 'u'
-	case 'ç', 'ć', 'č', 'ĉ', 'ċ':
-		return 'c'
-	case 'ñ', 'ń', 'ň':
-		return 'n'
-	case 'ÿ', 'ý':
-		return 'y'
-	case 'À', 'Á', 'Â', 'Ã', 'Ä', 'Å', 'Ā', 'Ă', 'Ą':
-		return 'A'
-	case 'È', 'É', 'Ê', 'Ë', 'Ē', 'Ĕ', 'Ė', 'Ę', 'Ě':
-		return 'E'
-	case 'Ì', 'Í', 'Î', 'Ï', 'Ī', 'Ĭ', 'Į':
-		return 'I'
-	case 'Ò', 'Ó', 'Ô', 'Õ', 'Ö', 'Ø', 'Ō', 'Ŏ', 'Ő':
-		return 'O'
-	case 'Ù', 'Ú', 'Û', 'Ü', 'Ū', 'Ŭ', 'Ů', 'Ű':
-		return 'U'
-	case 'Ç', 'Ć', 'Č', 'Ĉ', 'Ċ':
-		return 'C'
-	case 'Ñ', 'Ń', 'Ň':
-		return 'N'
-	default:
-		return 0
-	}
 }

@@ -29,6 +29,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/chetto1983/aura/internal/asciifold"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -155,7 +156,7 @@ func TestLiveSendVoiceResponse(t *testing.T) {
 	voice := &tele.Voice{
 		File:    tele.FromReader(bytes.NewReader(minimalOggOpus())),
 		MIME:    "audio/ogg",
-		Caption: asciiCaption("telegram_integration voice probe"),
+		Caption: asciifold.Caption("telegram_integration voice probe"),
 	}
 	msg, err := bot.Send(to, voice)
 	if err != nil {
