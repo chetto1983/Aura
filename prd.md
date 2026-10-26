@@ -1381,9 +1381,9 @@ ArcadeDB schema, with version 1 URL queries (maximum 16 KiB), validated library 
 support exact uploaded-object lookup without inventing queue records. No Postgres migration
 or new environment setting is needed. These measurements establish SQL behavior on synthetic
 fixtures, not latency or memory bounds on a large archive, ingestion status, OCR fidelity or
-browser acceptance. Evidence: `docs/superpowers/verification/2026-10-21-paperless-documents.md`
-(final acceptance) and `.superpowers/sdd/2026-10-21-paperless-documents/task-1-report.md`
-(Task 1 measurements).
+browser acceptance. Evidence:
+`docs/superpowers/verification/2026-10-22-paperless-documents-acceptance.md` (final acceptance).
+The Task 1 measurements were written to the plan's git-ignored workspace, which was not kept.
 
 Measured 2026-10-21 on disposable ArcadeDB 26.10.1 databases: the Documents library's
 `file_type` filter accepts `all|documents|pdf|word|spreadsheet|presentation|text|image|video|audio|code`.
@@ -1458,10 +1458,9 @@ File manager uploads return the stored absolute object ID; each queue item needs
 own uploads/UUID/ prefix, exact source-key polling with file_type=all, and identity-scoped
 storage/cancellation. Ingest counters measure components, not files. The measurements
 do not establish the new frontend's usability, refresh behavior or ingestion latency;
-those require Task 3 tests and controller-run live acceptance. Evidence and API inventory:
-`.superpowers/sdd/2026-10-21-paperless-documents/frontend-inventory.md`,
-`docs/superpowers/verification/2026-10-21-paperless-documents.md`, and
-`output/playwright/paperless-comparison/`.
+those require Task 3 tests and controller-run live acceptance. Evidence:
+`docs/superpowers/verification/2026-10-21-paperless-comparison.md`. The frontend inventory and
+the comparison screenshots were written to git-ignored folders and were not kept.
 
 Task 3 implementation inventory also confirms that library facets enumerate only type,
 counterparty and tag values. Custom-field Diff.set works for both explicit and filter-wide
