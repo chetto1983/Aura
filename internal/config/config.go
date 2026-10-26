@@ -333,28 +333,15 @@ type Config struct {
 	MUSRIsolation bool // AURA_MUSR_ISOLATION — allow provisioning a 2nd identity, default false
 }
 
-// Load reads .env (best-effort) then populates a Config from environment
-// variables. A missing .env file is not an error — production deployments
-// rely on real environment variables, not on the .env shim.
+// LoadServe reads .env (best-effort), then the full daemon config from environment
+// variables, permitting an empty LLM API key so the setup wizard and channels can boot.
+// LLM turns still fail closed at call time. A missing .env file is not an error —
+// production deployments rely on real environment variables, not on the .env shim.
 //
 // Postgres DSN composition: AURA_DB_URL / AURA_DB_MIGRATE_URL overrides take
 // precedence (production managed Postgres). Otherwise URLs are composed from
 // POSTGRES_* primitives + AURA_DB_*_ROLE role names. Single POSTGRES_PASSWORD
 // fans out to both runtime + DDL roles for local-dev ergonomics.
-func Load() (*Config, error) {
-	cfg := loadBase()
-	// LLM config owns its own 4-tier load order + fail-fast empty-key (D-22);
-	// its error (e.g. ErrMissingAPIKey) propagates through this composite.
-	llmCfg, err := llm.Load()
-	if err != nil {
-		return nil, fmt.Errorf("config: load llm: %w", err)
-	}
-	cfg.LLM = *llmCfg
-	return cfg, nil
-}
-
-// LoadServe reads the full daemon config but permits an empty LLM API key so the
-// setup wizard and channels can boot. LLM turns still fail closed at call time.
 func LoadServe() (*Config, error) {
 	cfg := loadBase()
 	llmCfg, err := llm.LoadAllowEmptyKey()

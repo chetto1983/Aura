@@ -8,9 +8,8 @@ import (
 
 // clearPostgresEnv zeroes every Postgres-related env var so each test runs from
 // a known baseline regardless of what the host shell sets. It also clears the
-// AURA_LLM_*/AURA_OTEL_* knobs and sets a placeholder OPENROUTER_API_KEY: since
-// Slice 1, config.Load composes llm.Load (which fail-fasts on an empty key), so
-// every Load() needs a non-empty key to reach the DB/embed assertions.
+// AURA_LLM_*/AURA_OTEL_* knobs and sets a placeholder OPENROUTER_API_KEY, so a
+// loaded config carries a key as a configured deployment's would.
 func clearPostgresEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
@@ -114,7 +113,7 @@ func TestSwarmChildTimeoutSecRetiredIsIgnored(t *testing.T) {
 
 // TestLoadDB_NoLLMKeyRequired is the CI regression for the db-migrate coupling:
 // `aura db migrate` (and ping/status/reset) go through config, but they are pure
-// DB operations and must NOT require OPENROUTER_API_KEY. Load() fail-fasts on an
+// DB operations and must NOT require OPENROUTER_API_KEY. llm.Load fail-fasts on an
 // empty key (correct for the chat/agent path); LoadDB() must succeed without it so
 // CI's migrate step (no LLM key) is not blocked.
 func TestLoadDB_NoLLMKeyRequired(t *testing.T) {
@@ -126,11 +125,6 @@ func TestLoadDB_NoLLMKeyRequired(t *testing.T) {
 	// LOCAL provider inherited from the developer's shell no key is required and this
 	// fails on something else entirely. Empty means the default, which is the hosted one.
 	t.Setenv("AURA_LLM_PROVIDER", "")
-
-	// Load() must still fail-fast (the LLM path needs the key).
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() must fail with an empty OPENROUTER_API_KEY, got nil error")
-	}
 
 	// LoadDB() must succeed and compose the migrate DSN — no LLM key needed.
 	cfg := LoadDB()
@@ -148,7 +142,7 @@ func TestLoadDB_NoLLMKeyRequired(t *testing.T) {
 func TestLoad_DefaultsApplied(t *testing.T) {
 	clearPostgresEnv(t)
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -179,7 +173,7 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 func TestLoad_LLMAndOtelComposed(t *testing.T) {
 	clearPostgresEnv(t)
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -220,7 +214,7 @@ func TestLoad_ComposesFromPrimitives(t *testing.T) {
 	t.Setenv("POSTGRES_PASSWORD", "s3cret")
 	// User/DB/Host/Port/SSLMode all fall back to defaults (aura/aura/127.0.0.1/5432/disable).
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -248,7 +242,7 @@ func TestLoad_FullDSNOverrides(t *testing.T) {
 	t.Setenv("AURA_DB_MIGRATE_URL", "postgres://prod_migrate:prod_pwd@db.prod:5432/aura?sslmode=require")
 	t.Setenv("AURA_DB_BOOTSTRAP_URL", "postgres://prod_super:prod_pwd@db.prod:5432/aura?sslmode=require")
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -274,7 +268,7 @@ func TestLoad_PrimitivesAndRoleOverrides(t *testing.T) {
 	t.Setenv("AURA_DB_APP_ROLE", "myapp")
 	t.Setenv("AURA_DB_MIGRATE_ROLE", "mymigrate")
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -314,7 +308,7 @@ func TestComposeDSNEscapesComponents(t *testing.T) {
 func TestLoad_EmbedDefaultsApplied(t *testing.T) {
 	clearPostgresEnv(t)
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -333,7 +327,7 @@ func TestLoad_EmbedEnvOverrides(t *testing.T) {
 	t.Setenv("AURA_EMBED_DIMENSIONS", "1024")
 	t.Setenv("AURA_EMBED_MODEL", "qwen/qwen3-embedding-8b")
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -356,7 +350,7 @@ func TestLoad_EmbedEnvOverrides(t *testing.T) {
 func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	clearPostgresEnv(t)
 
-	cfg, err := Load()
+	cfg, err := LoadServe()
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
@@ -443,13 +437,13 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 		t.Errorf("WebUserAgent default must be the measured current Chrome, got %q", cfg.WebUserAgent)
 	}
 
-	// Load() with a placeholder LLM key must also load the web fields without error.
-	full, err := Load()
+	// LoadServe() with a placeholder LLM key must also load the web fields without error.
+	full, err := LoadServe()
 	if err != nil {
-		t.Fatalf("Load() errored with SEARXNG_URL unset: %v", err)
+		t.Fatalf("LoadServe() errored with SEARXNG_URL unset: %v", err)
 	}
 	if full.SearxngURL != "" {
-		t.Errorf("Load(): SearxngURL must stay empty when unset, got %q", full.SearxngURL)
+		t.Errorf("LoadServe(): SearxngURL must stay empty when unset, got %q", full.SearxngURL)
 	}
 }
 

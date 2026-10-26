@@ -35,9 +35,6 @@ func TestLoadServe_AllowsEmptyLLMKey(t *testing.T) {
 	// LOCAL provider inherited from the developer's shell no key is required and this
 	// fails on something else entirely. Empty means the default, which is the hosted one.
 	t.Setenv("AURA_LLM_PROVIDER", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("Load() must still fail-fast with an empty OPENROUTER_API_KEY")
-	}
 	if dbOnly := LoadDB(); dbOnly.LLM.APIKey != "" {
 		t.Fatalf("LoadDB LLM.APIKey = %q, want zero-value", dbOnly.LLM.APIKey)
 	}

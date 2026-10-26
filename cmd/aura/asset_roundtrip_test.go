@@ -44,7 +44,7 @@ func roundTripEnv(t *testing.T) (*config.Config, *pgxpool.Pool) {
 		}
 		t.Skip("AURA_DB_URL not set")
 	}
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Skipf("config: %v", err)
 	}

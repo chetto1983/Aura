@@ -130,7 +130,7 @@ func TestOverlayEnvFeedsRuntimeConfig(t *testing.T) {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config.Load after OverlayEnv: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestOverlayEnvBeatsAConflictingDeploymentValue(t *testing.T) {
 	if err := OverlayEnv(t.Context(), l); err != nil {
 		t.Fatalf("OverlayEnv: %v", err)
 	}
-	cfg, err := config.Load()
+	cfg, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config.Load after OverlayEnv: %v", err)
 	}

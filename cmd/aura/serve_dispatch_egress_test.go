@@ -34,7 +34,7 @@ func TestBuildSandboxRouterWiresEgress(t *testing.T) {
 	// placeholder; clear AURA_SANDBOX_EGRESS_IMAGE to force the in-code default regardless of host.
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-egress-wiring")
 	t.Setenv("AURA_SANDBOX_EGRESS_IMAGE", "")
-	loaded, err := config.Load()
+	loaded, err := config.LoadServe()
 	if err != nil {
 		t.Fatalf("config.Load: %v", err)
 	}
