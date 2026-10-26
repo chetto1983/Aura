@@ -13,6 +13,12 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
+// dispatch is dispatchRich's reply text alone, which is all most command tests assert.
+func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (handled bool, reply string) {
+	handled, out := c.dispatchRich(ctx, chatID, text)
+	return handled, out.text
+}
+
 // fakeSearch is the searchBackend double. It records the last query+limit and
 // returns a fixed result set so the cross-slice invariant test can assert the
 // Telegram render equals the CLI render over the SAME backend output.

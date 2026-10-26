@@ -15,6 +15,12 @@ import (
 	"github.com/chetto1983/aura/internal/runner"
 )
 
+// handleCallback is handleCallbackResult with no afterSubmit hook, reporting only
+// whether a resume was driven.
+func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
+	return h.handleCallbackResult(ctx, data, convID, nil).resumed
+}
+
 // fakeResume is the resumeRunner double. It records SubmitAnswer calls and the
 // resume Turn drive, and serves a scripted PendingFor list. It NEVER writes
 // paused_states — proving the channel is render-only over the Runner (the Runner

@@ -157,15 +157,10 @@ func (c *commands) unregisterTurn(chatID int64) {
 	c.mu.Unlock()
 }
 
-// dispatch intercepts a slash-command before any LLM handling. It returns
+// dispatchRich intercepts a slash-command before any LLM handling. It returns
 // handled=true (and the user-facing reply) for every /command — including an
 // unknown one (a /help hint) — so a command NEVER reaches handleTurn. A
 // non-command message returns handled=false; the caller then drives an LLM turn.
-func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (handled bool, reply string) {
-	handled, out := c.dispatchRich(ctx, chatID, text)
-	return handled, out.text
-}
-
 func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) (handled bool, reply commandReply) {
 	if !isCommand(text) {
 		return false, commandReply{}
