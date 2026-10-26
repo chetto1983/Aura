@@ -4,7 +4,10 @@ Date: 2026-10-25
 Status: written 2026-10-25. The operator skipped the questions ("parti pure"); every call made
 while writing is listed in §7 for the operator to check. Revised the same day after a read-only
 builder check: the credentials mount, the store the indexer opens, refusals, a scan's time budget,
-and the sidecar default (dropped from this change, §4.7).
+and the sidecar default (dropped from this change, §4.7). §4.4 amended the same day: the summary
+reads the route per image. Implemented and accepted on the lab VM on 2026-10-26 (plan Status;
+`docs/superpowers/verification/2026-10-25-media-vision-primary-lab-vm.md`). §4.7 stays open for the
+operator.
 
 ## 1. Why
 

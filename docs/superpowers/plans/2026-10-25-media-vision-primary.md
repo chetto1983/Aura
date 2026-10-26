@@ -1,5 +1,17 @@
 # The chosen model reads images, ChatGPT included — Implementation Plan
 
+**Status (2026-10-26):** COMPLETE.
+- **Implementation.** Tasks 1–6 in 8412803fd..4bf38c402, final review fixes up to c6ce97bd8; Task 8
+  in 5052dc3e2..15b080f17, its review fix c034fb3c5.
+- **Delivery.** c6ce97bd8 and c034fb3c5 pushed with the pre-push gates; every workflow green on
+  both. Coverage 87.5% on each.
+- **Acceptance** on the lab VM, recorded in
+  `docs/superpowers/verification/2026-10-25-media-vision-primary-lab-vm.md`:
+  - A: a scan was indexed and found by the agent;
+  - B: an attachment was summarised by `gpt-6.1-sol`;
+  - Task 8: a switch Ollama ↔ ChatGPT reached the summary with no restart.
+- **Open:** the sidecar default (spec §4.7) and a member identity.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for
 > tracking. Commits on master (the operator's standing rule).

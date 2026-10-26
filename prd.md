@@ -778,7 +778,7 @@ Amended 2026-10-23, measured on the lab VM with the chat on ChatGPT
 - **What the same run found.** A ChatGPT primary gives the media indexer no vision route: the
   capability source has no ChatGPT case. A scan then goes to the local OCR sidecar, which the
   VM does not run. The operator decided that the chosen model reads images whenever it can,
-  ChatGPT included; that is a slice of its own.
+  ChatGPT included. It landed on 2026-10-25: §11, "The chosen model reads images".
 
 A key counts as present only while the provider still holds it, not while Aura still has a
 row for it. Measured 2026-10-02 on the lab VM, reproducing an operator report: every key of
@@ -1936,6 +1936,31 @@ The primary model receives supported media natively where its route advertises t
 capability. OCR/transcription/extraction use shared services and settings. Telegram is
 an attachment wrapper, not a competing pipeline. Runs that need indexing wait for the
 relevant indexed state and show it to the user. Filename prose is not image transmission.
+
+**The chosen model reads images, ChatGPT included (measured 2026-10-25).** With the chat on the
+ChatGPT plan, the selected model reads the media indexer's images and scanned PDF pages and the
+daemon's upload summaries, each with the document owner's own ChatGPT account (spec
+`2026-10-25-media-vision-primary-design.md`).
+- **A reader, not the HTTP arm.** Measured on the lab VM: the plan's token gets 401
+  `rejected_by_access_enforcement` on `/v1/chat/completions` and reads the page on `/v1/responses`.
+  `(*chatgpt.Client).Describe` sends one Responses message, and the vision route asks it first.
+- **What falls back.** A model that reads no images, an owner with no connected account, a refusal
+  or a non-image type is "cannot read here": the sidecar takes the image, or the file is card-only.
+  Any other error is a failure that retries. It never hands the file to another model.
+- **The indexer opens the daemon's store** (`chatgptplan.Open`, which creates nothing), so
+  `aura-ingest` mounts `aura-home`.
+- **The daemon reads the route per image,** from `llm.Runtime`, so a model switched in the cockpit
+  reaches the upload summary without a restart. The indexer starts a process per file, so it
+  always did.
+- **Measured on the lab VM**
+  (`docs/superpowers/verification/2026-10-25-media-vision-primary-lab-vm.md`): a scan with no text
+  layer was indexed with its exact text and found by the agent; an image attached in chat was
+  summarised by `gpt-6.1-sol`. On `c034fb3c5`, the chat was switched from ChatGPT to Ollama and
+  back through the cockpit API, with no restart. Each attached screenshot was summarised by the
+  model in force (`gemma4:31b-cloud`, then `gpt-6.1-sol`), quoting its text, and `aura` kept its
+  start time.
+- **What it does not show:** a member's own account (the VM has one identity), Telegram
+  attachments, and the latency and plan cost per image.
 
 Video is indexed by metadata only, for now (operator, 2026-09-24): an `.mp4` or `.webm`,
 the two formats the asset layer calls video (`internal/assets/limits.go`), gets its card,
