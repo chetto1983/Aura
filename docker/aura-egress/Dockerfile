@@ -26,12 +26,19 @@
 # refreshes it when bookworm-slim moves, before Hub can collect the superseded manifest.
 FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2078bea43f78efe3f8
 
+# A cached RUN keeps the packages it installed: on 2026-10-26 aura-egress:edge still had the
+# libssl3 of 2026-10-24, deb12u1, while bookworm had deb12u2 (CVE-2026-84782, issue #189). The
+# builders pass scripts/apt_week.sh, so this layer runs again once a week, and apt-get upgrade
+# also takes the fixes the base itself lacks.
+ARG APT_WEEK=""
+
 # nftables is the ONLY hard dependency of the floor. ca-certificates + curl are kept so a
 # later OpenSandbox FQDN build layer (or a supervisor fetching allow/deny lists) has TLS.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         nftables \
         curl \

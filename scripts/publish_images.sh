@@ -108,7 +108,7 @@ main() {
     name="${entry%%:*}" file="${entry#*:}" tag="${registry}/${name}:master-${sha}"
     case "${name}" in
       aura) args=(--build-arg "VCS_REF=${sha}" --build-arg "APT_WEEK=${week}") ;;
-      aura-ingest) args=(--build-arg "APT_WEEK=${week}") ;;
+      aura-caddy | aura-ingest | aura-sandbox | aura-egress) args=(--build-arg "APT_WEEK=${week}") ;;
       *) args=() ;;
     esac
     build_image "${tag}" "${work}/aura" "${file}" "${sha}" "${AURA_SOURCE}" "${args[@]}" || return 1

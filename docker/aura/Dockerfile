@@ -96,10 +96,13 @@ FROM debian:bookworm-slim@sha256:7ff6ba31527b9e336162fa061746c366c4b2032f4d2cff2
 # scripts/apt_week.sh, so apt runs once a week.
 ARG APT_WEEK=""
 
+# apt-get upgrade takes the fixes of the packages the base itself ships, which install leaves
+# alone: aura-ingest's python base kept libssl3 deb12u1 on 2026-10-26 (issue #189).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends \
         curl \
         git \

@@ -55,7 +55,10 @@ ARG APT_WEEK=""
 # ingest (docker/aura/Dockerfile)". This sidecar is a NEW container that never inherited
 # it, so every PDF card failed with "a PDF's text could not be extracted" -- measured
 # 2026-08-08 across the fixture set.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# apt-get upgrade takes the fixes of the packages the base itself ships, which install leaves
+# alone: on 2026-10-26 this image had the base's libssl3 deb12u1 while bookworm had deb12u2
+# (CVE-2026-84782, issue #189).
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
       libreoffice-writer libreoffice-calc libreoffice-impress \
       fonts-dejavu-core \
       poppler-utils \
@@ -64,8 +67,12 @@ ENV SAL_USE_VCLPLUGIN=svp \
     HOME=/tmp \
     PYTHONUNBUFFERED=1
 
+# pip leaves once it has installed the requirements: nothing in the service runs it, and its own
+# vendored msgpack 1.1.2, urllib3 2.7.0 and setuptools 70.3.0 were HIGH findings on 2026-10-26
+# (issue #189) that pip 26.2.2, the newest release, still ships.
 COPY docker/aura-ingest/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && pip uninstall -y pip
 
 COPY --from=filecard /out/aura-filecard /usr/local/bin/aura-filecard
 COPY --from=filecard /out/aura-media-index /usr/local/bin/aura-media-index

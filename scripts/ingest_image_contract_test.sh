@@ -17,6 +17,9 @@
 #     native image and the collision surfaces as
 #     `NoSuchMethodError ... TesseractOCRConfig.setSkipOcr` on whichever loads second.
 #   - soffice, without which a legacy .doc/.xls/.ppt has no route into Aura.
+#
+# And one absence: pip. The service never runs it, and its vendored msgpack, urllib3 and
+# setuptools were the image's HIGH findings on 2026-10-26 (issue #189).
 set -euo pipefail
 
 img="${AURA_INGEST_IMAGE:-aura-ingest:local}"
@@ -37,7 +40,8 @@ print('python ok: cocoindex', cocoindex.__version__)
 docker run --rm --entrypoint sh "$img" -lc '
   command -v soffice >/dev/null || { echo "soffice missing" >&2; exit 1; }
   command -v pdftoppm >/dev/null || { echo "pdftoppm missing" >&2; exit 1; }
-  echo "soffice + pdftoppm ok"
+  if python -m pip --version >/dev/null 2>&1; then echo "pip is still in the image" >&2; exit 1; fi
+  echo "soffice + pdftoppm ok, no pip"
 '
 
 echo "ok: ingest image contract"

@@ -375,6 +375,8 @@ ingest-image:
 # 25-minute cap in the third Rust build, before a single test ran.
 ingest-test: memory-up-core ingest-image
 	@# @-silenced: make echoes the recipe line and ARCADEDB_PASSWORD sits on it.
+	@# The image ships without pip (docker/aura-ingest/Dockerfile); ensurepip puts the bundled
+	@# one back in this throwaway container, for pytest only.
 	@docker run --rm --network aura_default --entrypoint sh \
 	  -v "$(CURDIR)/services/ingest:/app/ingest:ro" \
 	  -v "$(CURDIR)/scripts/fixtures/document_pipeline_e2e:/fx:ro" \
@@ -389,7 +391,7 @@ ingest-test: memory-up-core ingest-image
 	  -e AURA_INGEST_S3_BUCKET=aura-ingest-test \
 	  -e AURA_INGEST_S3_ACCESS_KEY_ID=test \
 	  -e AURA_INGEST_S3_SECRET_ACCESS_KEY=test \
-	  aura-ingest:local -c 'pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
+	  aura-ingest:local -c 'python -m ensurepip >/dev/null && python -m pip install --quiet pytest && cd /app && python -m pytest ingest/tests -q'
 
 # The extractor's format matrix: every fixture format opens, and the canary sentence
 # survives verbatim and un-reflowed. Needs the image and the fixtures, nothing else --
