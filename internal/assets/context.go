@@ -47,14 +47,6 @@ func BuildAttachmentBlock(items []Asset) string {
 	return b.String()
 }
 
-func WithAttachmentBlock(userText string, items []Asset) string {
-	block := BuildAttachmentBlock(items)
-	if block == "" {
-		return userText
-	}
-	return block + "User message:\n" + userText
-}
-
 // DocumentScopeResolver answers the only question that decides whether a document can be
 // retrieved: does the index actually hold it? *documents.ArcadeRetrievalControlPlane
 // satisfies it; the knowledge catalog and the mentioned files both ask it.

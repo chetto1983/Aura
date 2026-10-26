@@ -120,7 +120,7 @@ func TestQueuedAttachmentTurnPersistsWhatWasSent(t *testing.T) {
 	close(hop2.gate)
 	tg.wg.Wait()
 
-	want := TurnMessage{Visible: caption, Model: assetspkg.WithAttachmentBlock(caption, []assetspkg.Asset{attachment})}
+	want := TurnMessage{Visible: caption, Model: assetspkg.WithContextBlocks(caption, assetspkg.BuildAttachmentBlock([]assetspkg.Asset{attachment}))}
 	if hop2.msg != want {
 		t.Fatalf("queued turn = %+v, want %+v", hop2.msg, want)
 	}
