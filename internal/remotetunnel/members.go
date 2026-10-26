@@ -7,50 +7,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/cloudflareapi"
-	"github.com/chetto1983/aura/internal/identity"
 )
-
-// IdentitySource reuses Aura's canonical identity and capability store.
-type IdentitySource interface {
-	ListIdentities(context.Context) ([]identity.Identity, error)
-	ListCapabilities(context.Context, string) ([]string, error)
-}
-
-// IdentityMembers excludes deactivated, system, service, and channel identities.
-type IdentityMembers struct{ Source IdentitySource }
-
-// ActiveEmails derives email addresses from human identity names.
-func (m IdentityMembers) ActiveEmails(ctx context.Context) ([]string, error) {
-	return m.emails(ctx, false)
-}
-
-// ActiveAdminEmails requires the explicit identity.create grant.
-func (m IdentityMembers) ActiveAdminEmails(ctx context.Context) ([]string, error) {
-	return m.emails(ctx, true)
-}
-func (m IdentityMembers) emails(ctx context.Context, admins bool) ([]string, error) {
-	identities, err := m.Source.ListIdentities(ctx)
-	if err != nil {
-		return nil, err
-	}
-	emails := []string{}
-	for _, person := range identities {
-		if person.Deactivated || person.Kind != "user" {
-			continue
-		}
-		if admins {
-			caps, e := m.Source.ListCapabilities(ctx, person.ID)
-			if e != nil {
-				return nil, e
-			}
-			if !slices.Contains(caps, identity.CapIdentityCreate) {
-				continue
-			}
-		}
-		emails = append(emails, person.Name)
-	}
-	return emails, nil
-}
 
 func normalizedEmails(emails []string) ([]string, error) {
 	if len(emails) == 0 {
