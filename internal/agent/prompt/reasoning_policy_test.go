@@ -9,39 +9,32 @@ import (
 )
 
 // TestIsReasoningTarget covers the GENERALIZED fixed-path gate (D-08): true for
-// OpenRouter, llama.cpp, or Ollama; false for anything else. It also re-asserts that the
-// refactored IsOpenRouterReasoningTarget (now delegating to llm.ReasoningTarget)
-// still returns the exact pre-refactor results — the regression guard the plan
-// requires (existing callers unchanged).
+// OpenRouter, llama.cpp, Ollama or ChatGPT; false for anything else.
 func TestIsReasoningTarget(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name        string
-		provider    string
-		baseURL     string
-		wantAny     bool // IsReasoningTarget (all supported reasoning backends)
-		wantOpenRtr bool // IsOpenRouterReasoningTarget (regression: OpenRouter only)
+		name     string
+		provider string
+		baseURL  string
+		want     bool
 	}{
-		{"openrouter_default_url", "openrouter", "https://openrouter.ai/api/v1", true, true},
-		{"openrouter_empty_url", "openrouter", "", true, true},
-		{"openrouter_case_insensitive", "OpenRouter", "https://openrouter.ai/api/v1", true, true},
-		{"llamacpp_fires_generalized_only", "llamacpp", "http://127.0.0.1:8080/v1", true, false},
-		{"llamacpp_case_insensitive", "LlamaCpp", "", true, false},
-		{"ollama_fires_generalized_only", "ollama", "http://127.0.0.1:11434/v1", true, false},
-		{"chatgpt_official_responses", llm.ChatGPTProvider, llm.ChatGPTBaseURL, true, false},
-		{"vllm_local_is_none", "vllm", "http://127.0.0.1:8000/v1", false, false},
-		{"openrouter_provider_foreign_url_is_none", "openrouter", "http://127.0.0.1:8080/v1", false, false},
-		{"anthropic_is_none", "anthropic", "", false, false},
-		{"empty_is_none", "", "", false, false},
+		{"openrouter_default_url", "openrouter", "https://openrouter.ai/api/v1", true},
+		{"openrouter_empty_url", "openrouter", "", true},
+		{"openrouter_case_insensitive", "OpenRouter", "https://openrouter.ai/api/v1", true},
+		{"llamacpp", "llamacpp", "http://127.0.0.1:8080/v1", true},
+		{"llamacpp_case_insensitive", "LlamaCpp", "", true},
+		{"ollama", "ollama", "http://127.0.0.1:11434/v1", true},
+		{"chatgpt_official_responses", llm.ChatGPTProvider, llm.ChatGPTBaseURL, true},
+		{"vllm_local_is_none", "vllm", "http://127.0.0.1:8000/v1", false},
+		{"openrouter_provider_foreign_url_is_none", "openrouter", "http://127.0.0.1:8080/v1", false},
+		{"anthropic_is_none", "anthropic", "", false},
+		{"empty_is_none", "", "", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := IsReasoningTarget(tc.provider, tc.baseURL); got != tc.wantAny {
-				t.Fatalf("IsReasoningTarget(%q,%q) = %v, want %v", tc.provider, tc.baseURL, got, tc.wantAny)
-			}
-			if got := IsOpenRouterReasoningTarget(tc.provider, tc.baseURL); got != tc.wantOpenRtr {
-				t.Fatalf("IsOpenRouterReasoningTarget(%q,%q) = %v, want %v (regression)", tc.provider, tc.baseURL, got, tc.wantOpenRtr)
+			if got := IsReasoningTarget(tc.provider, tc.baseURL); got != tc.want {
+				t.Fatalf("IsReasoningTarget(%q,%q) = %v, want %v", tc.provider, tc.baseURL, got, tc.want)
 			}
 		})
 	}
