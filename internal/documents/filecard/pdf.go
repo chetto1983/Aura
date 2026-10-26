@@ -90,7 +90,7 @@ func describePDFText(req Request, card Card, pages int, exact bool) Card {
 		return card
 	}
 
-	opening := firstWords(blocks, maxProseWords)
+	opening := firstWords(blocks)
 	if card.Title == "" {
 		card.Title = pdfTitle(blocks)
 	}

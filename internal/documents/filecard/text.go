@@ -43,7 +43,7 @@ func buildHTML(req Request, card Card) (Card, error) {
 		card.Text = append(card.Text, "Headings: "+strings.Join(headings, "; "))
 	}
 	if len(body) > 0 {
-		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(body, maxProseWords), " / "))
+		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(body), " / "))
 	}
 	if card.Title == "" && len(headings) > 0 {
 		card.Title = headings[0]
@@ -164,7 +164,7 @@ func buildPlainText(req Request, card Card) (Card, error) {
 		card.Text = append(card.Text, "Headings: "+strings.Join(headings, "; "))
 	}
 	if len(lines) > 0 {
-		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(lines, maxProseWords), " / "))
+		card.Text = append(card.Text, "Opens: "+strings.Join(firstWords(lines), " / "))
 	}
 	if len(card.Text) == 0 {
 		card.Caveats = append(card.Caveats, "The file carried no readable text at ingest.")

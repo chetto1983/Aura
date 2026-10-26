@@ -118,8 +118,10 @@ func newRunSession(runID, threadID, identityID string, ringCap, subBuffer int, c
 // blocks until delivered, ctx-done, or the subscriber unsubscribes (pumpGone → the
 // dead entry is pruned). Producer and question asker serialize on mu.
 // Returns false on ctx-cancel (or a terminal session — a producer bug,
-// tolerated defensively rather than panicking a detached
-// goroutine) so the producer unwinds.
+// tolerated defensively rather than panicking a detached goroutine). runProducer
+// deliberately keeps going on false (server_run_detach.go: a cancelled run's
+// remaining frames must still reach the ring); the result is the contract the
+// backpressure tests pin.
 func (s *RunSession) append(ctx context.Context, ev events.Event) bool {
 	return s.appendWithAbortPolicy(ctx, ev, false)
 }

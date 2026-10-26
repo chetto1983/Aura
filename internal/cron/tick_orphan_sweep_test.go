@@ -39,9 +39,7 @@ func TestTickOnceRepudiatesARunThatWentStaleAfterBoot(t *testing.T) {
 
 	// Boot: the run is fresh, so recovery correctly leaves it alone. This is the state
 	// the old boot-only scan was stuck in.
-	if err := s.recoverOrphans(ctx); err != nil {
-		t.Fatalf("boot recoverOrphans: %v", err)
-	}
+	s.recoverOrphans(ctx)
 	if got := runStatus(t, ctx, s, run.ID); got != "running" {
 		t.Fatalf("after boot scan, fresh run status = %q, want running (untouched)", got)
 	}

@@ -26,19 +26,6 @@ const maxAdminBody = 1 << 20
 // admin client fails closed rather than dialing an unauthenticated admin API.
 var ErrEmptyConfig = errors.New("garageadmin: endpoint and token are required")
 
-// Option configures a Client.
-type Option func(*Client)
-
-// WithHTTPClient overrides the default *http.Client (used by tests to inject an
-// httptest server transport / timeout).
-func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) {
-		if hc != nil {
-			c.hc = hc
-		}
-	}
-}
-
 // Client talks to the Garage Admin API v2 with a bearer admin token over the
 // internal compose network (never host-reachable — Pitfall 3).
 type Client struct {
@@ -49,17 +36,13 @@ type Client struct {
 
 // New builds a Client. It fails closed on an empty endpoint or token so a
 // mis-provisioned deployment never dials an unauthenticated admin API.
-func New(endpoint, token string, opts ...Option) (*Client, error) {
+func New(endpoint, token string) (*Client, error) {
 	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
 	token = strings.TrimSpace(token)
 	if endpoint == "" || token == "" {
 		return nil, ErrEmptyConfig
 	}
-	c := &Client{endpoint: endpoint, token: token, hc: &http.Client{Timeout: 30 * time.Second}}
-	for _, o := range opts {
-		o(c)
-	}
-	return c, nil
+	return &Client{endpoint: endpoint, token: token, hc: &http.Client{Timeout: 30 * time.Second}}, nil
 }
 
 // BucketForIdentity maps an identity to its bucket name aura-<identity> after the

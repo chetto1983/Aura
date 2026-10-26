@@ -247,18 +247,18 @@ func boundedString(value string, limit int) string {
 func (g *Gateway) reserve(
 	ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey,
 	tier scoring.RiskTier, operatorID string, scope ApprovalScope, policy Policy,
-) (Verdict, error) {
+) Verdict {
 	if g.store == nil {
 		// A strict Gateway constructed without a ledger (standalone/tests): allow without
 		// a reservation. The dev/local_trusted no-op already short-circuits before here.
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}
 	}
 	acquired, replay, err := g.store.Reserve(ctx, g.reservationStart(spec, rawArgs, key, tier, operatorID, scope, policy))
 	if err != nil {
-		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}, nil
+		return Verdict{Decision: Deny, Tier: tier, Reason: "reservation failed"}
 	}
 	if acquired {
-		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}, nil
+		return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope}
 	}
 	if replay == nil {
 		// The slot is held by a prior dispatch that never recorded an end — crashed, or a
@@ -273,10 +273,10 @@ func (g *Gateway) reserve(
 		return Verdict{
 			Decision: Deny, Tier: tier,
 			Reason: "a prior dispatch of this tool call is still unaccounted for; it was not re-run",
-		}, nil
+		}
 	}
 	res := replayResult(replay)
-	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope, Replay: &res}, nil
+	return Verdict{Decision: Allow, Tier: tier, OperatorID: operatorID, Scope: scope, Replay: &res}
 }
 
 // reservationStart builds the append-only `start` Event for the reservation. The verdict

@@ -197,7 +197,7 @@ func (s *Server) handleSkillMutate(w http.ResponseWriter, r *http.Request, actio
 // is privileged (it triggers an external network fetch when the flag is on), so it inherits
 // the same governance.write gate as the mutations at the parent mux.
 func (s *Server) handleSkillCatalog(w http.ResponseWriter, r *http.Request) {
-	if !s.beginSkillsRead(w, r) {
+	if !s.beginSkillsRead(w) {
 		return
 	}
 	res, err := s.governanceWrite.Skills.Search(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")))
@@ -228,7 +228,7 @@ func (s *Server) beginSkillsWrite(w http.ResponseWriter, r *http.Request) (strin
 // search needs no audit actor (it writes nothing), so it does not require a bound principal
 // here — the parent-mux RequireCapability(governance.write) gate already authenticated +
 // authorized the caller.
-func (s *Server) beginSkillsRead(w http.ResponseWriter, r *http.Request) bool {
+func (s *Server) beginSkillsRead(w http.ResponseWriter) bool {
 	if s.governanceWrite.Skills == nil {
 		http.Error(w, "skills write not configured", http.StatusServiceUnavailable)
 		return false

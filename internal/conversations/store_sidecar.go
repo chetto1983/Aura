@@ -25,7 +25,7 @@ func (s *Store) readTurnSidecarReserved(
 	if !filepath.IsAbs(s.runDir) {
 		return nil, fmt.Errorf("sidecar runDir %q is not absolute", s.runDir)
 	}
-	if err := validateID("conversation_id", conversationID); err != nil {
+	if err := validateConversationID(conversationID); err != nil {
 		return nil, err
 	}
 	root, err := os.OpenRoot(s.runDir)

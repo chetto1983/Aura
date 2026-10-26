@@ -33,9 +33,7 @@ func TestRecoverOrphans_MarksStaleLeavesFresh(t *testing.T) {
 		t.Fatalf("InsertRun fresh: %v", err)
 	}
 
-	if err := s.recoverOrphans(ctx); err != nil {
-		t.Fatalf("recoverOrphans: %v", err)
-	}
+	s.recoverOrphans(ctx)
 
 	if got := runStatus(t, ctx, s, stale.ID); got != "unknown_recovery" {
 		t.Errorf("stale run status = %q, want unknown_recovery", got)

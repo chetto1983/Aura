@@ -47,9 +47,9 @@ func TestValidateID(t *testing.T) {
 		{"a\\b", true},
 	}
 	for _, tc := range tests {
-		err := validateID("conversation_id", tc.id)
+		err := validateConversationID(tc.id)
 		if (err != nil) != tc.wantErr {
-			t.Errorf("validateID(%q): err=%v want wantErr=%v", tc.id, err, tc.wantErr)
+			t.Errorf("validateConversationID(%q): err=%v want wantErr=%v", tc.id, err, tc.wantErr)
 		}
 	}
 }

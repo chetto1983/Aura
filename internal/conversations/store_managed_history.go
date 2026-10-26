@@ -135,7 +135,7 @@ func (s *Store) loadManagedLinearTurns(
 		return managedHistoryLoad{}, err
 	}
 	return s.finishManagedHistory(ctx, conversationID, head, descending, stored, hasStored,
-		foundBoundary, evictAfter, work)
+		foundBoundary, evictAfter)
 }
 
 func (s *Store) loadManagedBranchTurns(
@@ -215,7 +215,7 @@ func (s *Store) loadManagedBranchTurns(
 		return managedHistoryLoad{}, err
 	}
 	return s.finishManagedHistory(ctx, conversationID, head, descending, stored, hasStored,
-		foundBoundary, evictAfter, work)
+		foundBoundary, evictAfter)
 }
 
 func usableCompactionBoundary(stored Compaction, ok bool) bool {
@@ -229,7 +229,6 @@ func (s *Store) finishManagedHistory(
 	stored Compaction,
 	hasStored, foundBoundary bool,
 	evictAfter int,
-	work *managedHistoryWork,
 ) (managedHistoryLoad, error) {
 	slices.Reverse(descending)
 	turns := make([]Turn, 0, len(head)+len(descending)+1)

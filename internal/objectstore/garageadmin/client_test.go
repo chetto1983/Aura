@@ -42,10 +42,11 @@ func newMock(t *testing.T, route func(w http.ResponseWriter, r *http.Request, bo
 		route(w, r, body)
 	}))
 	t.Cleanup(srv.Close)
-	c, err := New(srv.URL, testToken, WithHTTPClient(srv.Client()))
+	c, err := New(srv.URL, testToken)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	c.hc = srv.Client()
 	return c, got
 }
 

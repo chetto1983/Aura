@@ -36,7 +36,6 @@ const (
 func (t *Telegram) startDocumentTurnWhenIndexed(daemonCtx context.Context, c tele.Context, chatID int64, text string, asset assets.Asset) {
 	t.reply(c, fmt.Sprintf(docReceivedMessage, asset.FileName))
 	sender := t.sender(c)
-	to := c.Recipient()
 	messageID := 0
 	if msg := c.Message(); msg != nil {
 		messageID = msg.ID
@@ -56,7 +55,7 @@ func (t *Telegram) startDocumentTurnWhenIndexed(daemonCtx context.Context, c tel
 		msg := TurnMessage{Visible: text, Model: composed}
 		attachmentIDs := []string{asset.ID}
 		turnCtx := assets.WithTurnAttachments(daemonCtx, attachmentIDs)
-		t.startTurn(turnCtx, sender, to, chatID, messageID, &msg, false, func() {
+		t.startTurn(turnCtx, sender, chatID, messageID, &msg, false, func() {
 			if t.enqueuePendingTurn(chatID, msg, attachmentIDs, false) {
 				t.sendPlain(sender, chatID, turnQueuedForNextTurnMessage)
 				return

@@ -203,7 +203,7 @@ func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 	resume := func(ctx context.Context, _ string) {
 		// nil userMsg → a continuation turn; inboundWasVoice=false (a resume is a
 		// button/text answer, never itself a voice note).
-		t.startTurn(ctx, sender, tele.ChatID(chatID), chatID, messageID, nil, false,
+		t.startTurn(ctx, sender, chatID, messageID, nil, false,
 			func() { t.sendBusy(sender, chatID) })
 	}
 	return newHitl(t.deps.Resume, resume)

@@ -46,8 +46,8 @@ func gated(t scoring.RiskTier) bool { return t == scoring.Destructive }
 // store.Reserve call (reserve.go) before Allow is returned — exactly one durable
 // reservation start per executed call (GATE-03/04, D-03 point 2).
 func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawMessage, key ReservationKey) (Verdict, error) {
-	if verdict, handled, err := g.decideReviewedMessage(ctx, spec, rawArgs, key); handled {
-		return verdict, err
+	if verdict, handled := g.decideReviewedMessage(ctx, spec, rawArgs, key); handled {
+		return verdict, nil
 	}
 	if g == nil || !g.profile.Strict() {
 		return Verdict{Decision: Allow, Reason: "no-op (dev/local_trusted)"}, nil
@@ -94,10 +94,10 @@ func (g *Gateway) Decide(ctx context.Context, spec tools.Spec, rawArgs json.RawM
 	if !proceed {
 		return operationVerdict, nil
 	}
-	verdict, err := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope, policy)
+	verdict := g.reserve(ctx, spec, rawArgs, key, tier, operatorID, scope, policy)
 	verdict.OperationDecision = operationVerdict.OperationDecision
 	verdict.OperationClaimToken = operationVerdict.OperationClaimToken
-	return verdict, err
+	return verdict, nil
 }
 
 // recordDecisionFact durably records an Allow decision-fact as a `start` row (verdict

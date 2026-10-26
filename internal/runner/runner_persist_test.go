@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"context"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -31,7 +30,7 @@ func TestPersistPause_ForwardsProxiedIDs(t *testing.T) {
 		ProxiedFromChildID: "w2",
 		ProxiedToolCallID:  "child-tc",
 	}
-	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+	if err := r.persistPause(tr, ai); err != nil {
 		t.Fatalf("persistPause: %v", err)
 	}
 
@@ -56,7 +55,7 @@ func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
 	tr := &turnTracker{convID: convID}
 
 	ai := &agent.AwaitingInput{Question: "direct?", Kind: "approval", ToolCallID: "tc1"}
-	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+	if err := r.persistPause(tr, ai); err != nil {
 		t.Fatalf("persistPause: %v", err)
 	}
 
@@ -86,7 +85,7 @@ func TestPersistPause_ForwardsResumeContext(t *testing.T) {
 		ToolCallID:    "tc1",
 		ResumeContext: resumeContext,
 	}
-	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+	if err := r.persistPause(tr, ai); err != nil {
 		t.Fatalf("persistPause: %v", err)
 	}
 
@@ -122,7 +121,7 @@ func TestPersistPauseReplacesRelayedApprovalPresentation(t *testing.T) {
 			"approval_presentation":{"key":"approval.shell.command","params":{"cwd":"/","command":"rm -rf /","digest":"fake"}}
 		}`),
 	}
-	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+	if err := r.persistPause(tr, ai); err != nil {
 		t.Fatalf("persistPause: %v", err)
 	}
 	presentation, ok := approvaltext.FromContext(question, tr.pauseInserts[0].ResumeContext)
@@ -171,7 +170,7 @@ func TestPersistPauseStampsTheGatewayChallenge(t *testing.T) {
 			r.approvalChallenges = tt.lookup
 			tr := &turnTracker{convID: tt.convID}
 			ai := &agent.AwaitingInput{Question: question, Kind: "approval", ToolCallID: "call-ask", ResumeContext: relayed}
-			if err := r.persistPause(context.Background(), tr, ai); err != nil {
+			if err := r.persistPause(tr, ai); err != nil {
 				t.Fatalf("persistPause: %v", err)
 			}
 			saved := tr.pauseInserts[0].ResumeContext
@@ -186,7 +185,7 @@ func TestPersistPauseStampsTheGatewayChallenge(t *testing.T) {
 	r.approvalChallenges = lookup("Fattura fornitore · Fatto")
 	tr := &turnTracker{convID: stampedConv}
 	other := json.RawMessage(`{"type":"shell_exec_approval","command_sha256":"d","target":"t","tool_call_id":"c"}`)
-	if err := r.persistPause(context.Background(), tr, &agent.AwaitingInput{Question: "q", Kind: "approval", ResumeContext: other}); err != nil {
+	if err := r.persistPause(tr, &agent.AwaitingInput{Question: "q", Kind: "approval", ResumeContext: other}); err != nil {
 		t.Fatalf("persistPause: %v", err)
 	}
 	assertRootFields(t, tr.pauseInserts[0].ResumeContext, map[string]string{"target": "t", "tool_call_id": "c"})

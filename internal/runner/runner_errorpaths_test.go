@@ -345,7 +345,7 @@ func TestFlushPause_PauseInsertError(t *testing.T) {
 	pause.insertEr = errFake
 	tr := &turnTracker{convID: newConvID(t)}
 	ai := &agent.AwaitingInput{Question: "q?", Kind: "clarification", ToolCallID: "c1"}
-	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+	if err := r.persistPause(tr, ai); err != nil {
 		t.Fatalf("persistPause must not do I/O now (D-05 accumulate-only), got %v", err)
 	}
 	if err := r.flushPause(context.Background(), tr); err == nil {
@@ -459,5 +459,5 @@ func TestTurn_DeferredFlushOnConsumerStop(t *testing.T) {
 }
 
 func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
-	return r.persistToolTurnEvent(ctx, tr, ti, nil)
+	return r.persistToolTurnEvent(ctx, tr, ti)
 }
