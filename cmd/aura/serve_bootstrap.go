@@ -47,14 +47,14 @@ func wireBootstrapService(
 	grants firstPartyGrantProvisioner,
 	resources bootstrapResources,
 ) bool {
-	if isNilBootstrapDependency(server) || pool == nil || isNilBootstrapDependency(provider) || isNilBootstrapDependency(memory) {
+	if isNilDependency(server) || pool == nil || isNilDependency(provider) || isNilDependency(memory) {
 		return false
 	}
 	core := provider.CoreServices()
 	if core == nil {
 		return false
 	}
-	if isNilBootstrapDependency(grants) {
+	if isNilDependency(grants) {
 		grants = nil
 	}
 	server.SetBootstrapService(&firstOperatorBootstrapService{
@@ -69,7 +69,11 @@ func wireBootstrapService(
 	return true
 }
 
-func isNilBootstrapDependency(v any) bool {
+// isNilDependency reports whether v is nil or a typed nil inside an interface: the
+// composition root receives optional collaborators as interfaces, and a nil *T stored in one
+// is not == nil. Four copies of this had grown in this package (bootstrap, password reset,
+// and the two web-auth provider checks).
+func isNilDependency(v any) bool {
 	if v == nil {
 		return true
 	}

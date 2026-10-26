@@ -62,7 +62,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 		return nil, fmt.Errorf("webui handler: %w", err)
 	}
 	mux := http.NewServeMux()
-	authulaEnabled := credentialProviderConfigured(authulaProvider)
+	authulaEnabled := !isNilDependency(authulaProvider)
 	// The embedded Authula provider serves all credential flows under /auth/* (login,
 	// totp/verify, logout, csrf token issuance). Registered as a subtree ahead of "/",
 	// it wins Go 1.22 longest-pattern precedence over the embed catch-all; RequireAuth

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"reflect"
 	"time"
 
 	authulamodels "github.com/Authula/authula/models"
@@ -480,13 +479,13 @@ type passwordResetCoreProvider interface {
 func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, deliverer recoveryCodeDeliverer, provider passwordResetCoreProvider, pepper []byte) bool {
 	missing := ""
 	switch {
-	case isNilPasswordResetDependency(server):
+	case isNilDependency(server):
 		missing = "agui server"
 	case pool == nil:
 		missing = "postgres pool"
-	case isNilPasswordResetDependency(deliverer):
+	case isNilDependency(deliverer):
 		missing = "recovery-code deliverer (the channels registry — a reset code is delivered over Telegram)"
-	case isNilPasswordResetDependency(provider):
+	case isNilDependency(provider):
 		missing = "authula provider"
 	case len(pepper) == 0:
 		missing = "reset-token pepper (derived from AURA_AUTHULA_SECRET)"
@@ -509,19 +508,6 @@ func wirePasswordResetService(server passwordResetServer, pool *pgxpool.Pool, de
 		TokenPepper: pepper,
 	}))
 	return true
-}
-
-func isNilPasswordResetDependency(v any) bool {
-	if v == nil {
-		return true
-	}
-	rv := reflect.ValueOf(v)
-	switch rv.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return rv.IsNil()
-	default:
-		return false
-	}
 }
 
 func passwordResetChallengeParams(identityID uuid.UUID, telegramUserID int64, challenge agui.PasswordResetChallenge) sqlc.InsertPasswordResetChallengeParams {

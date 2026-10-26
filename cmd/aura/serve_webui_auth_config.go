@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
-	"reflect"
 	"time"
 
 	"github.com/chetto1983/aura/internal/webauth"
@@ -18,19 +17,6 @@ type credentialProvider interface {
 
 type bootstrapAvailabilityProvider interface {
 	OperatorUserID(context.Context) (string, error)
-}
-
-func credentialProviderConfigured(provider credentialProvider) bool {
-	if provider == nil {
-		return false
-	}
-	value := reflect.ValueOf(provider)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return !value.IsNil()
-	default:
-		return true
-	}
 }
 
 type frontendAuthConfig struct {
@@ -77,7 +63,7 @@ func newAuthConfigHandler(bootstrapProvider bootstrapAvailabilityProvider) http.
 }
 
 func bootstrapAvailable(ctx context.Context, provider bootstrapAvailabilityProvider) bool {
-	if !bootstrapAvailabilityProviderConfigured(provider) {
+	if isNilDependency(provider) {
 		return false
 	}
 	operatorID, err := provider.OperatorUserID(ctx)
@@ -85,19 +71,6 @@ func bootstrapAvailable(ctx context.Context, provider bootstrapAvailabilityProvi
 		return false
 	}
 	return operatorID == ""
-}
-
-func bootstrapAvailabilityProviderConfigured(provider bootstrapAvailabilityProvider) bool {
-	if provider == nil {
-		return false
-	}
-	value := reflect.ValueOf(provider)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return !value.IsNil()
-	default:
-		return true
-	}
 }
 
 const csrfTokenBytes = 32
