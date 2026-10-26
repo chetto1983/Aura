@@ -311,19 +311,15 @@ func callAgentMemoryLiveJSON[T any](
 	return output
 }
 
-// drainAgentMemoryLiveTools drains session's paginated tool list, mirroring
-// internal/mcp's drainSDKToolsForTest / cmd/aura's drainSDKTools — pagination
-// is a capability the deleted bespoke client never had.
+// drainAgentMemoryLiveTools lists the live server's tools through the client's own
+// production path (mcp.DrainTools), pagination included.
 func drainAgentMemoryLiveTools(t *testing.T, ctx context.Context, session *officialmcp.ClientSession) []*officialmcp.Tool {
 	t.Helper()
-	var out []*officialmcp.Tool
-	for tool, err := range session.Tools(ctx, nil) {
-		if err != nil {
-			t.Fatalf("tools/list: %v", err)
-		}
-		out = append(out, tool)
+	tools, err := auramcp.DrainTools(ctx, session)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
 	}
-	return out
+	return tools
 }
 
 func assertAgentMemoryLiveTools(t *testing.T, tools []*officialmcp.Tool, names ...string) {

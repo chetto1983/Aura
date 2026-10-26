@@ -103,3 +103,21 @@ func BoundedCall[T any](ctx context.Context, call func(context.Context) (T, erro
 		return zero, ctx.Err()
 	}
 }
+
+// DrainTools collects session's paginated tools/list, bounded by ctx. The bound is the point:
+// a server that completes its handshake and then stops answering would otherwise hold its
+// caller past the deadline, because the SDK observes ctx only between whole requests.
+// Measured 2026-08-16: the hung-server mount guard
+// (TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives) failed here, not at connect.
+func DrainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.Tool, error) {
+	return BoundedCall(ctx, func(ctx context.Context) ([]*sdkmcp.Tool, error) {
+		var out []*sdkmcp.Tool
+		for t, err := range session.Tools(ctx, nil) {
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, t)
+		}
+		return out, nil
+	}, nil)
+}

@@ -239,25 +239,6 @@ func (s *MountedServer) sessionOrDeath() (session *sdkmcp.ClientSession, termina
 	return s.session, nil, false
 }
 
-// drainTools drains session.Tools' paginated iterator into a slice.
-// drainTools is bounded for the same reason the connect is (internal/mcp/bounded_call.go):
-// a server that completes its handshake and then stops answering would otherwise hold the
-// mount past its deadline. Measured 2026-08-16: the hung-server mount guard
-// (TestBuildRegistryWithMCP_HungServerDroppedHealthySurvives) failed here, not at connect —
-// the session opened, and the paginated tools/list never observed the 1s handshake ctx.
-func drainTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.Tool, error) {
-	return mcp.BoundedCall(ctx, func(ctx context.Context) ([]*sdkmcp.Tool, error) {
-		var out []*sdkmcp.Tool
-		for t, err := range session.Tools(ctx, nil) {
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, t)
-		}
-		return out, nil
-	}, nil)
-}
-
 // decodeResult decodes every result an agent-side call gets back (RESEARCH Pitfall 1):
 // bridgedTool.Execute, the two cmd/aura host-memory callers and the readiness check
 // all route through CallTool, so the domain-outcome chain cannot be bypassed by adding
@@ -479,7 +460,7 @@ func (s *MountedServer) onToolListChanged(ctx context.Context, _ *sdkmcp.ToolLis
 	if err != nil {
 		return
 	}
-	advertised, err := drainTools(listCtx, session)
+	advertised, err := mcp.DrainTools(listCtx, session)
 	if err != nil {
 		slog.Warn("mcp tool list refresh failed", "server", s.name, "error", err)
 		return

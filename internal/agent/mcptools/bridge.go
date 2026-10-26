@@ -122,7 +122,7 @@ func (b *bridgedTool) refreshSpec(t *sdkmcp.Tool) {
 // indexes the deferred tool's name, description, and argument-field names, so
 // deferred MCP tools stay discoverable.
 //
-// The mount lists the tools before it gets here, on the RAW session (drainTools),
+// The mount lists the tools before it gets here, on the RAW session (mcp.DrainTools),
 // bounded by its handshakeCtx alone (AURA_MCP_MOUNT_TIMEOUT at boot). Bridged tools
 // still reference srv, the supervisor that owns every CALL after the mount and
 // redials on a transport error. A Craft server's desktop-only tools are left out here,

@@ -54,7 +54,7 @@ func mcpSessionOptionsFor(srv *MountedServer) mcp.SessionOptions {
 	return mcp.SessionOptions{ToolListChanged: srv.onToolListChanged}
 }
 
-// advertisedTools lists srv's live session the way a mount does (drainTools on the
+// advertisedTools lists srv's live session the way a mount does (mcp.DrainTools on the
 // raw session), for a fixture that has no stdio or HTTP transport for MountServer or
 // MountManagedServerWithOptions to open.
 func advertisedTools(ctx context.Context, srv *MountedServer) ([]*sdkmcp.Tool, error) {
@@ -62,7 +62,7 @@ func advertisedTools(ctx context.Context, srv *MountedServer) ([]*sdkmcp.Tool, e
 	if err != nil {
 		return nil, err
 	}
-	return drainTools(ctx, session)
+	return mcp.DrainTools(ctx, session)
 }
 
 // bridgeDefault bridges the tools srv advertises under namespace with the policy a

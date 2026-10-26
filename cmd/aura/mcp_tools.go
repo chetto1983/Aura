@@ -126,7 +126,7 @@ func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig)
 	if err != nil {
 		return nil, nil, err
 	}
-	advertised, err := drainSDKTools(ctx, session)
+	advertised, err := mcp.DrainTools(ctx, session)
 	if err != nil {
 		mcp.ReleaseSession(session)
 		return nil, nil, err
@@ -153,29 +153,12 @@ func openAndListManagedMCPTools(ctx context.Context, name string, server mcp.Man
 	if err != nil {
 		return nil, nil, err
 	}
-	advertised, err := drainSDKTools(ctx, session)
+	advertised, err := mcp.DrainTools(ctx, session)
 	if err != nil {
 		mcp.ReleaseSession(session)
 		return nil, nil, err
 	}
 	return session, advertised, nil
-}
-
-// drainSDKTools drains session's paginated tool list bounded by ctx rather than
-// however long the peer takes to answer — mirrors bridge_supervisor.go's drainTools
-// and probe.go's countTools (internal/mcp/bounded_call.go: the SDK observes a
-// deadline only between whole dual-era handshake rungs, never mid-call).
-func drainSDKTools(ctx context.Context, session *sdkmcp.ClientSession) ([]*sdkmcp.Tool, error) {
-	return mcp.BoundedCall(ctx, func(ctx context.Context) ([]*sdkmcp.Tool, error) {
-		var out []*sdkmcp.Tool
-		for t, err := range session.Tools(ctx, nil) {
-			if err != nil {
-				return nil, err
-			}
-			out = append(out, t)
-		}
-		return out, nil
-	}, nil)
 }
 
 // callSessionText calls tool on session and decodes its result through the shared
