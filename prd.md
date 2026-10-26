@@ -2910,6 +2910,34 @@ Web search uses the configured service. Fetch enforces URL/redirect limits, SSRF
 protection, MIME handling, response caps and readable extraction, including supported
 non-HTML. Documents, pages, attachments and delegated output remain untrusted data.
 
+One classifier, `internal/netguard`, decides which addresses web_fetch, the MCP transport
+and the browser URL check may reach (2026-10-26). Reading Karakeep's denylist led to a probe
+of the code (`docs/karakeep-behaviours-2026-10-26.md`, K1):
+- **Two copies in `internal/web` and `internal/mcp`** let through an IPv4 address carried in
+  IPv6. The metadata address as `64:ff9b::a9fe:a9fe` (NAT64) or `2002:a9fe:a9fe::1` (6to4)
+  passed the gate. The `aura` binary then dialed it and failed only as `http_error`, because
+  the container had no IPv6 route.
+- **The same copies let through Teredo**, and the IANA blocks marked not globally reachable:
+  TEST-NET, benchmarking, `240.0.0.0/4` and broadcast.
+- **The browser check also let through** CGNAT and `0.0.0.0/8` literals.
+
+The rule now:
+- **A carried IPv4 is judged as itself.** A DNS64 answer for a public site stays dialable.
+- **Every IANA special-purpose block marked "Globally Reachable: False" is refused**,
+  including all of IPv6 outside `2000::/3`.
+- **`192.0.0.0/24` and `2001::/23` are refused whole**, Teredo included.
+- **Under the MCP dev profile**, the metadata block also covers the carried forms.
+
+The file is a critical mutation scope, `ssrf`, at 30/30 killed when measured.
+`scripts/ssrf_smoke.sh` now blocks six targets with the real binary.
+
+This does not establish:
+- a request through a real NAT64 gateway or 6to4 relay;
+- a network-specific NAT64 prefix, which no address check can recognise;
+- whether the lab VM's networks carry IPv6;
+- the egress floor's own gaps (IPv4 only, the metadata address as a `/32`, no CGNAT), which
+  are read from `egress.go` and unchanged.
+
 A real conversation on the lab VM (2026-10-07, "Caratteristiche motore Siemens
 1FK22064AF001MA0", gpt-5.6-sol) answered a part-number question from search snippets
 because three of its four fetches failed. Each failure was then reproduced from the VM's
