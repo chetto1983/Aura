@@ -1,10 +1,13 @@
 # Craft web apps in the cockpit: implementation plan
 
-**Status (2026-10-19):** Tasks 1–7 done in one session on `claude/photo-video-craft-wasm-ui-t7bkgi`;
-in Task 8 the image is built and measured, the live run on the lab VM is open. The operator asked for
-the spike and "tutte le modifiche necessarie per le altre non supportate a oggi con la modifica ed il
-salvataggio", then, on the Italian catalogs, "Procedi pure" (Task 7), and "Hai docker basta farlo
-partire" (Task 8's image build).
+**Status (2026-10-20): COMPLETE.** Tasks 1–9 are done and on master. Task 8's live run closed on
+the lab VM on build `5d12271d7`: the operator's pass in the cockpit, the unsaved-changes notice
+included, and the edits checked outside the apps, all in
+`docs/superpowers/verification/2026-10-19-craft-web-apps.md`. The apps moved to newer releases on
+2026-10-24 (`2026-10-24-craft-apps-upgrade.md`). The operator asked for the spike and "tutte le
+modifiche necessarie per le altre non supportate a oggi con la modifica ed il salvataggio", then, on
+the Italian catalogs, "Procedi pure" (Task 7), and "Hai docker basta farlo partire" (Task 8's image
+build).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, task by task, with
 > test-driven-development.

@@ -1429,6 +1429,22 @@ Word converts every page before previewing the first, spreadsheet fit-to-page is
 overview, and native font substitution remains visible. Evidence:
 `docs/superpowers/verification/2026-10-21-craft-document-previews.md`.
 
+The cockpit opens and edits a file in the Craft app for its kind (measured 2026-10-19/20; the
+versions moved on 2026-10-24). aura serves `AURA_APPS_DIR/<app>` (`/usr/share/aura/apps` in the
+image) at `/apps/<app>/` under its own page policy. GridCraft is its official release zip, checked
+by SHA-256. PdfCraft, WordCraft, DeckCraft, PhotoCraft and FilmCraft are built from their tags plus
+`docker/craft-web/<app>.patch` in `docker/aura-craft-web`, and the aura image copies a pinned build.
+One frame, `CraftFrame`, speaks the apps' `?host=parent` bridge. `<app>:save` stores the bytes in
+the library under the file's own name. While `<app>:dirty` is true the frame says the edit is
+unsaved, and the preview holds its first close. On the lab VM (build `5d12271d7`, 2026-10-20) the
+operator confirmed the pass in the cockpit. An edit reached its file, checked outside the app, for
+WordCraft and PhotoCraft by the operator's hand and for GridCraft and DeckCraft by a driven
+browser. At the 2026-10-24 versions each app again opened, edited and saved a real file through the
+bridge, in a dev container. These runs do not show PdfCraft or FilmCraft edits on the VM, WebGPU,
+Firefox, Safari or phones, memory use, or more than one small file per app. Evidence:
+`docs/superpowers/verification/2026-10-19-craft-web-apps.md`,
+`2026-10-24-craft-apps-upgrade.md`.
+
 Documents workspace amendment, recorded 2026-10-22 before Task 3 implementation:
 the live Paperless comparison and frontend inventory measured a folders-first entry,
 no document route, and a 17 px filename column at 390 px. The running content-search
