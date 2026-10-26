@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/envutil"
 	"github.com/joho/godotenv"
 )
 
@@ -303,8 +304,8 @@ func load(allowEmptyKey bool) (*Config, error) {
 	}
 
 	// A malformed opt-out bool retains the default, like the other config toggles.
-	cfg.CompletionGate = envBool(envCompletionGate, defaultCompletionGate)
-	cfg.OpenRouterMiddleOut = envBool(envOpenRouterMiddleOut, false)
+	cfg.CompletionGate = envutil.BoolDefault(envCompletionGate, defaultCompletionGate)
+	cfg.OpenRouterMiddleOut = envutil.BoolDefault(envOpenRouterMiddleOut, false)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -454,10 +455,10 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	}
 	if v := os.Getenv(envAdaptiveReasoning); v != "" {
-		cfg.AdaptiveReasoning = envBool(envAdaptiveReasoning, cfg.AdaptiveReasoning)
+		cfg.AdaptiveReasoning = envutil.BoolDefault(envAdaptiveReasoning, cfg.AdaptiveReasoning)
 	}
 	if v := os.Getenv(envShowReasoning); v != "" {
-		cfg.ShowReasoning = envBool(envShowReasoning, cfg.ShowReasoning)
+		cfg.ShowReasoning = envutil.BoolDefault(envShowReasoning, cfg.ShowReasoning)
 	}
 	if v, ok, err := envInt(envContextWindow); err != nil {
 		return err
@@ -509,22 +510,6 @@ func envInt(key string) (val int, ok bool, err error) {
 		return 0, false, fmt.Errorf("%s=%q: not a valid integer", key, v)
 	}
 	return n, true, nil
-}
-
-// envBool reads key as a bool, falling back to `fallback` when unset, empty, or
-// malformed. Unlike envInt/envFloat this is NOT fail-fast: the completion-gate
-// toggle is operative, not budget-load-bearing — a typo should not block boot
-// (mirrors the root config envBoolDefault).
-func envBool(key string, fallback bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return fallback
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return fallback
-	}
-	return b
 }
 
 // overlaySamplingEnv reads the model-card sampling knobs. Each is applied only when
