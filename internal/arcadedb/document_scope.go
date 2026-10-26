@@ -13,7 +13,7 @@ func SourcePredicate(keys, prefixes []string, params map[string]any) string {
 	if len(keys) == 0 && len(prefixes) == 0 {
 		return ""
 	}
-	parts := make([]string, 0, 1+len(prefixes))
+	var parts []string
 	if len(keys) > 0 {
 		parts = append(parts, "source_key IN :source_keys")
 		params["source_keys"] = keys
