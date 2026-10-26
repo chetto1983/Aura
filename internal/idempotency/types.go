@@ -105,12 +105,6 @@ func ParseState(raw string) (State, error) {
 	}
 }
 
-// CanTransitionTo permits only an owned in-progress operation to become terminal.
-func (s State) CanTransitionTo(next State) bool {
-	return s == StateInProgress &&
-		(next == StateCompleted || next == StateIndeterminate || next == StateRejected)
-}
-
 // Decision describes what a caller may do after Begin. Only acquired permits
 // the external effect; all other values are observational outcomes.
 type Decision string
