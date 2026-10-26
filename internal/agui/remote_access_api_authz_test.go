@@ -26,7 +26,7 @@ func TestRemoteAccessMutationsRequireIdempotencyKeys(t *testing.T) {
 	s.SetRemoteAccess(&fakeRemoteAccess{})
 	for _, route := range RemoteAccessRoutes() {
 		method, path, _ := strings.Cut(route, " ")
-		if method == "GET" || strings.HasSuffix(path, "/token/verify") || strings.HasSuffix(path, "/rotate-token") {
+		if method == "GET" || strings.HasSuffix(path, "/token/verify") {
 			continue
 		}
 		rec := httptest.NewRecorder()

@@ -73,7 +73,7 @@ func RemoteAccessRoutes() []string {
 		"GET /api/settings/remote-access", "PUT /api/settings/remote-access",
 		"DELETE /api/settings/remote-access", "GET /api/settings/remote-access/events",
 		"POST /api/settings/remote-access/token/verify", "POST /api/settings/remote-access/token/refresh",
-		"POST /api/settings/remote-access/rotate-token", "POST /api/settings/remote-access/reconcile",
+		"POST /api/settings/remote-access/reconcile",
 		"POST /api/settings/remote-access/disable", "POST /api/settings/remote-access/accept-external",
 	}
 }
@@ -148,10 +148,6 @@ func (s *Server) handleRemoteAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	if strictDecodeJSON(w, r, &body, decodeOpts{allowEmpty: true}) != nil {
 		writeJSONStatus(w, 400, map[string]string{"error": "invalid request body"})
-		return
-	}
-	if path == "/rotate-token" {
-		writeJSONStatus(w, 409, map[string]string{"error": "manual_rotation_required", "documentation_url": "https://developers.cloudflare.com/tunnel/reference/tunnel-tokens/"})
 		return
 	}
 	action := strings.TrimPrefix(path, "/")
