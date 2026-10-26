@@ -168,7 +168,7 @@ var _ Agent = (*LlmAgent)(nil)
 // call (D-13/D-16), a budget trip (terminal Event with reason, D-04), or a real
 // infra failure (the iter.Seq2 error slot, D-15).
 func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
-	spanID, parentSpanID := rootSpanIDs()
+	spanID := mintSpanID()
 	requestID := ic.RequestID.String()
 	slog.Info("agent turn start", "request_id", requestID, "thread_id", a.sessionID, "agent", a.name)
 
@@ -266,7 +266,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					continue
 				}
 				turnReason = reason
-				a.finalize(ic, spanID, parentSpanID, requestID, reason, &turnU, yield)
+				a.finalize(ic, spanID, requestID, reason, &turnU, yield)
 				return
 			}
 
@@ -309,7 +309,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 			spanCtx = withModelRound(spanCtx, modelRound)
 			if !transportRetry { // an exact transport retry never drains (llm_agent_steer.go)
-				if ev := a.drainSteer(ic, spanID, parentSpanID, modelRound); ev != nil && !yield(ev, nil) {
+				if ev := a.drainSteer(ic, spanID, modelRound); ev != nil && !yield(ev, nil) {
 					span.End()
 					cancel()
 					return
@@ -347,7 +347,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					turnReason = "hook_model_response"
 					turnU.add(hookResult.Usage)
 					yield(a.finalEvent(
-						ic, spanID, parentSpanID, requestID, answer,
+						ic, spanID, requestID, answer,
 						hookResult.FinishReason, turnU.total(),
 					), nil)
 					return
@@ -373,7 +373,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					// open breaker and falls back to the deterministic stub digest, so the
 					// terminal Event is always non-empty.
 					turnReason = "breaker_open"
-					a.finalize(ic, spanID, parentSpanID, requestID, "breaker_open", &turnU, yield)
+					a.finalize(ic, spanID, requestID, "breaker_open", &turnU, yield)
 					return
 				}
 				turnReason = "stream_open_error"
@@ -381,7 +381,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
-			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, requestID, yield)
 			// Repair provider-supplied ids the moment they arrive (D-13): every
 			// downstream consumer -- the terminal/runnable partition, argument
 			// validation, the reservation key, dispatch, history -- must see the
@@ -421,7 +421,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					// (B-12) before the retry streams fresh — otherwise the consumer shows
 					// partial+answer. A consumer stop here ends the run (iter.Seq2 contract:
 					// no further yield after a false return).
-					if !yield(a.discardStreamedEvent(ic, spanID, parentSpanID), nil) {
+					if !yield(a.discardStreamedEvent(ic, spanID), nil) {
 						turnReason = "consumer_stopped"
 						return
 					}
@@ -451,11 +451,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 						continue
 					}
 					turnReason = "empty_response"
-					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", &turnU, yield)
+					a.finalize(ic, spanID, requestID, "empty_response", &turnU, yield)
 					return
 				}
 				if directive := a.classifyLeakedToolCall(requestID, text); directive != directiveProceed {
-					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+					if !a.repudiateStreamed(ic, spanID, yield) {
 						turnReason = "consumer_stopped"
 						return
 					}
@@ -463,7 +463,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 						continue
 					}
 					turnReason = "tool_call_leaked"
-					a.finalize(ic, spanID, parentSpanID, requestID, turnReason, &turnU, yield)
+					a.finalize(ic, spanID, requestID, turnReason, &turnU, yield)
 					return
 				}
 				answer := normalizeContentStopAnswer(text)
@@ -477,7 +477,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				// forward on budget trips) NOR stay on the wire: the draft was streamed
 				// live, so it is repudiated first (#191).
 				if feedback, _, veto := a.gateVoluntaryStop(answer); veto {
-					if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+					if !a.repudiateStreamed(ic, spanID, yield) {
 						turnReason = "consumer_stopped"
 						return
 					}
@@ -486,7 +486,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				}
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 				turnReason = "content_stop"
-				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, turnU.total()), nil)
+				yield(a.finalEvent(ic, spanID, requestID, answer, finish, turnU.total()), nil)
 				return
 			}
 
@@ -496,7 +496,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			switch a.classifyToolTruncation(finish) {
 			case directiveFinalize:
 				turnReason = "tool_args_truncated"
-				a.finalize(ic, spanID, parentSpanID, requestID, "tool_args_truncated", &turnU, yield)
+				a.finalize(ic, spanID, requestID, "tool_args_truncated", &turnU, yield)
 				return
 			case directiveRetry:
 				continue
@@ -509,7 +509,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			if pauses := a.pauseCalls(ic.Ctx, calls); len(pauses) > 0 {
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: pauseToolCalls(pauses)})
 				turnReason = outcomeAskUserPause
-				a.emitPauses(ic, spanID, parentSpanID, pauses, yield)
+				a.emitPauses(ic, spanID, pauses, yield)
 				return
 			}
 			// Drop an exact same-message repeat (D-12) before it enters history or
@@ -521,7 +521,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// tool path never sees the round unless it is re-pointed here — mirrors the
 			// turnCtx/ic.WithContext precedent above for RequestID (D-03).
 			ic = ic.WithContext(withModelRound(ic.Ctx, modelRound))
-			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, &turnU, yield)
+			done, infraErr := a.dispatch(ic, spanID, requestID, calls, &turnU, yield)
 			if infraErr != nil {
 				turnReason = "dispatch_infra_error"
 				yield(nil, infraErr)
@@ -532,7 +532,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			// loop: the next LLM call sees the appended RoleTool results.
-			if ev := a.drainSteer(ic, spanID, parentSpanID, modelRound); ev != nil && !yield(ev, nil) {
+			if ev := a.drainSteer(ic, spanID, modelRound); ev != nil && !yield(ev, nil) {
 				return
 			}
 		}

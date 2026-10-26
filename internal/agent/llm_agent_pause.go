@@ -128,11 +128,11 @@ func (a *LlmAgent) detectPause(ctx context.Context, call llm.ToolCall) (*tools.E
 // pause (the loop is suspended, the Runner injects the answer on resume). The
 // yield-after-false guard is honored: once the consumer returns false the loop
 // stops yielding (iter.Seq2 contract).
-func (a *LlmAgent) emitPauses(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) emitPauses(ic InvocationContext, spanID [8]byte,
 	pauses []pauseCall, yield func(*Event, error) bool,
 ) {
 	for _, p := range pauses {
-		event := a.pauseEvent(ic, spanID, parentSpanID, p.pause)
+		event := a.pauseEvent(ic, spanID, p.pause)
 		event.Actions.AwaitingInput.OriginalToolName = p.originalToolName
 		event.Actions.AwaitingInput.OriginalArguments = p.originalArguments
 		if !yield(event, nil) {
@@ -145,10 +145,10 @@ func (a *LlmAgent) emitPauses(ic InvocationContext, spanID [8]byte, parentSpanID
 // It projects the tools.ErrAwaitingUserInput payload onto the Event model's
 // AwaitingInput (no DB type crosses here) and stamps OriginAgent for swarm
 // forward-compat (D-A1-08).
-func (a *LlmAgent) pauseEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) pauseEvent(ic InvocationContext, spanID [8]byte,
 	pause *tools.ErrAwaitingUserInput,
 ) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev := a.newEvent(ic, spanID)
 	ev.Actions.AwaitingInput = &AwaitingInput{
 		Question:           pause.Question,
 		Options:            pauseOptions(pause.Options),

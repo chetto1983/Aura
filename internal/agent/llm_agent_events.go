@@ -15,25 +15,24 @@ import (
 
 const redactedReasoningDelta = "[reasoning redacted]"
 
-// newEvent stamps the trace identity (Author/Branch/RequestID/SpanID/ParentSpanID/
+// newEvent stamps the trace identity (Author/Branch/RequestID/SpanID/
 // ThreadID) and a non-zero UTC Timestamp common to every Event LlmAgent emits
 // (Req#14 — Phase 2 left Timestamp zero; the agent must set it). Concern-split out
 // of llm_agent.go to keep that file focused on the loop (≤600 LOC).
-func (a *LlmAgent) newEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte) *Event {
+func (a *LlmAgent) newEvent(ic InvocationContext, spanID [8]byte) *Event {
 	return &Event{
-		Author:       a.name,
-		Branch:       ic.Branch,
-		RequestID:    ic.RequestID,
-		SpanID:       spanID,
-		ParentSpanID: parentSpanID,
-		ThreadID:     a.sessionID,
-		Timestamp:    time.Now().UTC(),
+		Author:    a.name,
+		Branch:    ic.Branch,
+		RequestID: ic.RequestID,
+		SpanID:    spanID,
+		ThreadID:  a.sessionID,
+		Timestamp: time.Now().UTC(),
 	}
 }
 
 // chunkEvent is one streamed assistant text delta (Req#11).
-func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, text string) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, text string) *Event {
+	ev := a.newEvent(ic, spanID)
 	ev.LLMResponse = &LLMResponse{Content: text}
 	return ev
 }
@@ -41,8 +40,8 @@ func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 // reasoningChunkEvent is one streamed chain-of-thought delta (amendment #57). It
 // mirrors chunkEvent — same trace-identity stamping — but sets LLMResponse.Reasoning
 // (not Content) so the reasoning is stream-only and never enters accumulated content.
-func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, text string) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, text string) *Event {
+	ev := a.newEvent(ic, spanID)
 	reasoning := redactedReasoningDelta
 	if a.cfg.ShowReasoning {
 		reasoning = text
@@ -64,8 +63,8 @@ func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, par
 // mid-stream retry (B-12) and on a gate veto (amendment #191: a vetoed content-stop
 // draft otherwise stays on the wire and, worse, marks the round as "already
 // streamed" so the real answer is never emitted).
-func (a *LlmAgent) discardStreamedEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) discardStreamedEvent(ic InvocationContext, spanID [8]byte) *Event {
+	ev := a.newEvent(ic, spanID)
 	ev.Actions.DiscardStreamed = true
 	return ev
 }
@@ -73,21 +72,21 @@ func (a *LlmAgent) discardStreamedEvent(ic InvocationContext, spanID [8]byte, pa
 // repudiateStreamed yields the DiscardStreamed marker for a round whose prose the
 // loop is about to throw away. Returns false when the consumer stopped (iter.Seq2
 // contract: no further yield after a false return).
-func (a *LlmAgent) repudiateStreamed(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, yield func(*Event, error) bool) bool {
-	return yield(a.discardStreamedEvent(ic, spanID, parentSpanID), nil)
+func (a *LlmAgent) repudiateStreamed(ic InvocationContext, spanID [8]byte, yield func(*Event, error) bool) bool {
+	return yield(a.discardStreamedEvent(ic, spanID), nil)
 }
 
 // toolCallEvent announces a finalized tool call before dispatch (D-12 activity).
-func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, call llm.ToolCall) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, call llm.ToolCall) *Event {
+	ev := a.newEvent(ic, spanID)
 	ev.LLMResponse = &LLMResponse{ToolCalls: []llm.ToolCall{call}}
 	return ev
 }
 
-func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte,
 	call llm.ToolCall, startedAt time.Time, batchIndex, batchSize int,
 ) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev := a.newEvent(ic, spanID)
 	ts := startedAt.UTC()
 	ev.Actions.ToolInvocation = &ToolInvocation{
 		Event:      ToolInvocationStart,
@@ -106,8 +105,8 @@ func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSp
 // tool_call_id correlation lives in the appended RoleTool history message (Event
 // has no dedicated tool_call_id field this phase — AG-UI fan-out is Phase 12); the
 // id is passed for forward-compat callers but not stamped on the Event yet.
-func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, run toolRunResult) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, run toolRunResult) *Event {
+	ev := a.newEvent(ic, spanID)
 	// The event projection surfaces the RAW tool preview (run.Result.Preview), not
 	// the nonce-wrapped prompt rendering (run.Preview): the UI/REPL/AG-UI consumer
 	// and the audit ToolInvocation want the clean tool output, while only the
@@ -239,8 +238,8 @@ func viewDelta(descriptor map[string]any, run toolRunResult) map[string]any {
 	return delta
 }
 
-func (a *LlmAgent) toolPreviewEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) toolPreviewEvent(ic InvocationContext, spanID [8]byte, toolCallID, preview string) *Event {
+	ev := a.newEvent(ic, spanID)
 	ev.LLMResponse = &LLMResponse{Content: preview}
 	ev.Actions.StateDelta = map[string]any{"tool_call_id": toolCallID}
 	return ev
@@ -286,11 +285,11 @@ func exitCodeFromMeta(meta *tools.ToolResultMeta) *int {
 // Actions.StateDelta["usage"] so the REPL can render the cost footer (D-11/Req#12)
 // — the span (tracing.go) is the observability primitive, but the REPL has no span
 // reader, so the human-facing footer reads usage off the final Event.
-func (a *LlmAgent) finalEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) finalEvent(ic InvocationContext, spanID [8]byte,
 	requestID, answer, finish string, usage llm.Usage,
 ) *Event {
 	_ = requestID
-	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev := a.newEvent(ic, spanID)
 	ev.LLMResponse = &LLMResponse{Content: answer, FinishReason: finish}
 	ev.Actions.StateDelta = usageStateDelta(usage)
 	return ev
@@ -318,8 +317,8 @@ func usageStateDelta(usage llm.Usage) map[string]any {
 // terminalBudgetEvent is the budget-trip terminal Event (D-04): an explicit
 // termination signal, NEVER the iter.Seq2 error slot. reason ∈ {max_steps,
 // wallclock, dedup}.
-func (a *LlmAgent) terminalBudgetEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, reason string) *Event {
-	ev := a.newEvent(ic, spanID, parentSpanID)
+func (a *LlmAgent) terminalBudgetEvent(ic InvocationContext, spanID [8]byte, reason string) *Event {
+	ev := a.newEvent(ic, spanID)
 	// steps_consumed is the LoopAgent contract (workflow/loop.go) the cockpit and
 	// Telegram notices read; measured absent on this path 2026-08-30 (amendment #188
 	// live E2E: /limit_hit arrived, the notice said "0 steps").

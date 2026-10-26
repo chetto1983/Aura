@@ -32,14 +32,14 @@ import (
 // llm_agent.go is the D-13/D-16 fallback for a model that answers in prose instead. Both
 // are voluntary terminations, so both gates run at both — and the attempt counters are on
 // the agent, so the budget is per RUN and shared across the two seams, never per seam.
-func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte,
 	requestID string, call llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool) {
 	answer, perr := parseTextResponse(call.Function.Arguments)
 	if perr != nil {
 		a.appendToolError(call.ID, perr)
 		// yield false (consumer stopped) → done=true; otherwise continue the loop.
-		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil)
+		return !yield(a.toolPreviewEvent(ic, spanID, call.ID, "parse error"), nil)
 	}
 	// Unlike the content-stop seam there IS a tool_call to answer here, so the
 	// follow-up rides a RoleTool result on the terminal call id — a RoleUser message
@@ -48,13 +48,13 @@ func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanI
 	// consumers drop it, the translator is silent when there was none.
 	if feedback, reason, veto := a.gateVoluntaryStop(answer); veto {
 		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
-		if !a.repudiateStreamed(ic, spanID, parentSpanID, yield) {
+		if !a.repudiateStreamed(ic, spanID, yield) {
 			return true
 		}
-		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, reason), nil)
+		return !yield(a.toolPreviewEvent(ic, spanID, call.ID, reason), nil)
 	}
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-	yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", acc.total()), nil)
+	yield(a.finalEvent(ic, spanID, requestID, answer, "stop", acc.total()), nil)
 	return true
 }
 

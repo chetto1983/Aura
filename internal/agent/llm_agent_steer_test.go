@@ -42,7 +42,7 @@ func TestDrainSteerAppendsToLastToolResult(t *testing.T) {
 		}}
 		before := len(agent.history)
 		ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-		ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 3})
+		ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 3})
 		if ev == nil {
 			t.Fatal("drainSteer returned nil Event")
 		}
@@ -85,7 +85,7 @@ func TestDrainSteerAppendsToLastToolResult(t *testing.T) {
 		agent := &LlmAgent{sessionID: "conv-1", history: []llm.Message{{Role: llm.RoleSystem, Content: "sys"}}}
 		before := len(agent.history)
 		ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-		if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev != nil {
+		if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev != nil {
 			t.Fatalf("drainSteer with nil inbox returned %+v, want nil", ev)
 		}
 		if got := len(agent.history); got != before {
@@ -98,7 +98,7 @@ func TestDrainSteerAppendsToLastToolResult(t *testing.T) {
 		agent := &LlmAgent{sessionID: "conv-1", steer: inbox, history: []llm.Message{{Role: llm.RoleSystem, Content: "sys"}}}
 		before := len(agent.history)
 		ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-		if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev != nil {
+		if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev != nil {
 			t.Fatalf("drainSteer with nothing queued returned %+v, want nil", ev)
 		}
 		if got := len(agent.history); got != before {
@@ -119,7 +119,7 @@ func TestDrainSteerAppendsToLastToolResult(t *testing.T) {
 			{Role: llm.RoleUser, Content: "hi"},
 		}}
 		ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-		ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1})
+		ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1})
 		if ev == nil {
 			t.Fatal("drainSteer returned nil Event")
 		}
@@ -147,7 +147,7 @@ func TestDrainSteerFallsBackToUserMessage(t *testing.T) {
 	}}
 	before := len(agent.history)
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-	ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 2})
+	ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 2})
 	if ev == nil {
 		t.Fatal("drainSteer returned nil Event")
 	}
@@ -189,7 +189,7 @@ func TestSteerMarkerSitsOutsideToolOutputEnvelope(t *testing.T) {
 		{Role: llm.RoleTool, ToolCallID: "call-1", Content: preview},
 	}}
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-	if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev == nil {
+	if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev == nil {
 		t.Fatal("drainSteer returned nil Event")
 	}
 	content := agent.history[len(agent.history)-1].Content
@@ -219,7 +219,7 @@ func TestSteerNeverEntersCacheablePrefix(t *testing.T) {
 	}
 	agent := &LlmAgent{sessionID: "conv-1", steer: inbox, history: append([]llm.Message(nil), base...)}
 	ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New()}
-	if ev := agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1}); ev == nil {
+	if ev := agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1}); ev == nil {
 		t.Fatal("drainSteer returned nil Event; expected a steer to be delivered")
 	}
 	for i := range 3 {
@@ -256,7 +256,7 @@ func TestDrainSteerDoesNotConsumeBudget(t *testing.T) {
 				{Role: llm.RoleSystem, Content: "sys"},
 			}}
 			ic := InvocationContext{Ctx: context.Background(), RequestID: uuid.New(), Budget: budget}
-			agent.drainSteer(ic, [8]byte{}, nil, modelRound{ordinal: 1})
+			agent.drainSteer(ic, [8]byte{}, modelRound{ordinal: 1})
 
 			if got := budget.Remaining(); got != remainingBefore {
 				t.Fatalf("Budget.Remaining() changed: before=%d after=%d", remainingBefore, got)

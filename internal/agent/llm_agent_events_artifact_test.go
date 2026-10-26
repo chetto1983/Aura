@@ -41,7 +41,7 @@ func TestToolResultEvent_LiftsArtifactMeta(t *testing.T) {
 		"filename": "results.xlsx",
 		"caption":  "results",
 	}
-	ev := a.toolResultEvent(internalPauseIC(t), span, nil, artifactRun(t, descriptor))
+	ev := a.toolResultEvent(internalPauseIC(t), span, artifactRun(t, descriptor))
 
 	if ev.Actions.ArtifactDelta == nil {
 		t.Fatal("toolResultEvent must lift the Meta artifact onto Actions.ArtifactDelta")
@@ -67,7 +67,7 @@ func TestToolResultEvent_NoArtifactLeavesNil(t *testing.T) {
 	var span [8]byte
 
 	// No Meta at all.
-	ev := a.toolResultEvent(internalPauseIC(t), span, nil, artifactRun(t, nil))
+	ev := a.toolResultEvent(internalPauseIC(t), span, artifactRun(t, nil))
 	if ev.Actions.ArtifactDelta != nil {
 		t.Fatalf("a run without an artifact key must leave ArtifactDelta nil, got %v", ev.Actions.ArtifactDelta)
 	}
@@ -77,7 +77,7 @@ func TestToolResultEvent_NoArtifactLeavesNil(t *testing.T) {
 	run := artifactRun(t, nil)
 	meta := tools.ToolResultMeta{"exit_code": 0}
 	run.Result.Meta = &meta
-	ev2 := a.toolResultEvent(internalPauseIC(t), span, nil, run)
+	ev2 := a.toolResultEvent(internalPauseIC(t), span, run)
 	if ev2.Actions.ArtifactDelta != nil {
 		t.Fatalf("a non-artifact Meta key must leave ArtifactDelta nil, got %v", ev2.Actions.ArtifactDelta)
 	}
@@ -87,7 +87,7 @@ func TestArtifactCorrelationComesFromExecution(t *testing.T) {
 	for _, supplied := range []string{"", "another-call"} {
 		a := newBareAgent(t, tools.NewRegistry())
 		descriptor := map[string]any{"filename": "report.html", "tool_call_id": supplied}
-		ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, nil, artifactRun(t, descriptor))
+		ev := a.toolResultEvent(internalPauseIC(t), [8]byte{}, artifactRun(t, descriptor))
 		if ev.Actions.ArtifactDelta["tool_call_id"] != "call-sf" {
 			t.Fatalf("artifact lost execution correlation: %v", ev.Actions.ArtifactDelta)
 		}

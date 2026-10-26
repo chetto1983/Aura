@@ -129,7 +129,7 @@ var runtimeSteerEnvelopes = map[string]string{
 // message carrying the marked text. This is amendment #132's ratified
 // primary and its ratified fallback expressed as a single branch (D-07/D-08).
 // Never touches a.history[0..2] — only ever the tail.
-func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, round modelRound) *Event {
+func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, round modelRound) *Event {
 	if a.steer == nil {
 		return nil
 	}
@@ -155,7 +155,7 @@ func (a *LlmAgent) drainSteer(ic InvocationContext, spanID [8]byte, parentSpanID
 			"envelope": envelope,
 		})
 	}
-	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev := a.newEvent(ic, spanID)
 	ev.Actions.SteerDelta = map[string]any{
 		"conversation_id": a.sessionID,
 		"round":           round.ordinal,

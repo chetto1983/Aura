@@ -11,7 +11,7 @@ import (
 // dispatch runs the assistant's tool calls for one turn (D-14, P1 parallel).
 // Runnable non-terminal calls execute concurrently; shared state changes stay
 // serial and in original call order so the wire contract and cache stability hold.
-func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, requestID string,
+func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, requestID string,
 	calls []llm.ToolCall, acc *turnUsage, yield func(*Event, error) bool,
 ) (done bool, infraErr error) {
 	// Partition: the FIRST text_response is the terminal; the rest are runnable.
@@ -48,7 +48,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 		if a.maybeRecover(terminalTool) {
 			return false, nil
 		}
-		a.finalize(ic, spanID, parentSpanID, requestID, "terminal_exclusivity", acc, yield)
+		a.finalize(ic, spanID, requestID, "terminal_exclusivity", acc, yield)
 		return true, nil
 	}
 
@@ -80,7 +80,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			if a.maybeRecover(call.Function.Name) {
 				return false, nil
 			}
-			a.finalize(ic, spanID, parentSpanID, requestID, reason, acc, yield)
+			a.finalize(ic, spanID, requestID, reason, acc, yield)
 			return true, nil
 		}
 	}
@@ -91,7 +91,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	if len(runnable) > 0 {
 		startedAt := time.Now().UTC()
 		for batchIndex, i := range runnable {
-			if !yield(a.toolStartEvent(ic, spanID, parentSpanID, calls[i], startedAt, batchIndex, len(runnable)), nil) {
+			if !yield(a.toolStartEvent(ic, spanID, calls[i], startedAt, batchIndex, len(runnable)), nil) {
 				return true, nil
 			}
 		}
@@ -150,7 +150,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			// (AG-052), which would make every identical result look different and
 			// defeat the progress veto. The underlying tool output is the stable signal.
 			ic.Budget.AfterToolResult(calls[i].Function.Name, canon[i], []byte(run.Result.Preview))
-			if !yield(a.toolResultEvent(ic, spanID, parentSpanID, run), nil) {
+			if !yield(a.toolResultEvent(ic, spanID, run), nil) {
 				return true, nil
 			}
 		}
@@ -159,7 +159,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	// Terminal: text_response ends the turn after the batch has run (D-13).
 	if terminalIdx >= 0 && terminalIdx < len(calls) {
 		terminalCall := calls[terminalIdx]
-		return a.runTerminal(ic, spanID, parentSpanID, requestID, terminalCall, acc, yield), nil
+		return a.runTerminal(ic, spanID, requestID, terminalCall, acc, yield), nil
 	}
 	return false, nil
 }

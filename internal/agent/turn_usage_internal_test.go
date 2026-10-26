@@ -97,7 +97,7 @@ func TestFinalizeReportsTheWholeTurnNotJustTheSynthesisCall(t *testing.T) {
 	var got *Event
 	a.finalize(
 		InvocationContext{Ctx: context.Background()},
-		[8]byte{}, nil, "req-1", "max_steps", acc,
+		[8]byte{}, "req-1", "max_steps", acc,
 		func(ev *Event, _ error) bool { got = ev; return true },
 	)
 
