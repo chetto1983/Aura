@@ -1,7 +1,6 @@
 package manager
 
 import (
-	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -10,49 +9,37 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
-// memoryRecipeURL uses stable Compose DNS in the appliance and the loopback
-// host publish for a native Aura process.
+// sidecarBaseURL is a first-party sidecar's base URL: stable Compose DNS inside the appliance
+// (AURA_IN_CONTAINER=1), the loopback host publish for a native Aura process.
 //
-// The port derives from AURA_ARCADEDB_MCP_PORT, defaulting to 8096. It is
-// validated as a TCP port (1-65535) before interpolation: anything else (e.g.
-// "8096@evil.example" via the URL userinfo trick) would retarget the
-// loopback-by-construction recipe off-host, so garbage falls back to 8096 (WR-01).
+// The host port comes from portEnv, validated as a TCP port (1-65535) before interpolation:
+// anything else (e.g. "8096@evil.example" via the URL userinfo trick) would retarget the
+// loopback-by-construction URL off-host, so garbage falls back to defaultPort (WR-01). One
+// helper, because the four sidecars below each carried their own copy of this guard.
+func sidecarBaseURL(containerURL, portEnv, defaultPort string) string {
+	if os.Getenv("AURA_IN_CONTAINER") == "1" {
+		return containerURL
+	}
+	port := strings.TrimSpace(os.Getenv(portEnv))
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		port = defaultPort
+	}
+	return "http://127.0.0.1:" + port
+}
+
+// memoryRecipeURL is the ArcadeDB memory MCP endpoint (AURA_ARCADEDB_MCP_PORT, default 8096).
 func memoryRecipeURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-arcadedb-mcp:8096/mcp/"
-	}
-	port := strings.TrimSpace(os.Getenv("AURA_ARCADEDB_MCP_PORT"))
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = "8096"
-	}
-	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
+	return sidecarBaseURL("http://aura-arcadedb-mcp:8096", "AURA_ARCADEDB_MCP_PORT", "8096") + "/mcp/"
 }
 
-// whatsappRecipeURL uses stable Compose DNS in the appliance and the loopback
-// host publish for a native Aura process.
+// whatsappRecipeURL is the WhatsApp bridge's MCP endpoint (AURA_WHATSAPP_MCP_PORT, default 8092).
 func whatsappRecipeURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://whatsapp:8080/mcp/"
-	}
-	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_MCP_PORT"))
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = "8092"
-	}
-	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
+	return sidecarBaseURL("http://whatsapp:8080", "AURA_WHATSAPP_MCP_PORT", "8092") + "/mcp/"
 }
 
-// PIMSidecarBaseURL returns the PIM MCP/admin base. The appliance uses Compose DNS;
-// a native Aura process uses the loopback-only host publish. WR-01 keeps an invalid
-// host-side port from retargeting the URL through userinfo syntax.
+// PIMSidecarBaseURL returns the PIM MCP/admin base (AURA_PIM_MCP_PORT, default 8093).
 func PIMSidecarBaseURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://aura-pim-mcp:8080"
-	}
-	port := strings.TrimSpace(os.Getenv("AURA_PIM_MCP_PORT"))
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = "8093"
-	}
-	return fmt.Sprintf("http://127.0.0.1:%s", port)
+	return sidecarBaseURL("http://aura-pim-mcp:8080", "AURA_PIM_MCP_PORT", "8093")
 }
 
 // calendarRecipeURL is the sidecar's MCP-over-HTTP endpoint — the server root "/".
@@ -60,17 +47,10 @@ func calendarRecipeURL() string {
 	return PIMSidecarBaseURL() + "/"
 }
 
-// WhatsAppBridgeBaseURL returns the management REST base. The appliance uses
-// Compose DNS; a native Aura process uses the loopback-only host publish.
+// WhatsAppBridgeBaseURL returns the WhatsApp bridge's management REST base
+// (AURA_WHATSAPP_BRIDGE_PORT, default 8094).
 func WhatsAppBridgeBaseURL() string {
-	if os.Getenv("AURA_IN_CONTAINER") == "1" {
-		return "http://whatsapp:8081"
-	}
-	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_BRIDGE_PORT"))
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
-		port = "8094"
-	}
-	return fmt.Sprintf("http://127.0.0.1:%s", port)
+	return sidecarBaseURL("http://whatsapp:8081", "AURA_WHATSAPP_BRIDGE_PORT", "8094")
 }
 
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
