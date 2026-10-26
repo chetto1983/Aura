@@ -94,9 +94,8 @@ func (s *Store) MarkResumedFenced(ctx context.Context, token string, ans ResumeA
 // NewWithPauseTTL builds a Store whose GetByToken additionally applies D-12/D-13's lazy
 // expiry (mirroring LibreChat ApprovalLifecycle.peek): a still-pending row whose
 // created_at is at least ttlSec old reads as ErrPauseNotFound, before the sweeper (plan
-// 51-06b) ever claims it. ttlSec<=0 disables the check — the same value as New(pool),
-// which every production call site (cmd/aura/chat_boot.go, cmd/aura/paused_states.go)
-// still uses today, so this constructor is additive and inert until a caller opts in.
+// 51-06b) ever claims it. ttlSec<=0 disables the check, the same value as New(pool).
+// cmd/aura/chat_boot.go builds the runner's store with AURA_ASKUSER_PAUSE_TTL_SEC.
 func NewWithPauseTTL(pool *pgxpool.Pool, ttlSec int) *Store {
 	return &Store{pool: pool, pauseTTLSec: ttlSec}
 }
