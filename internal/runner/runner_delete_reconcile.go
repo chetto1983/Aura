@@ -91,17 +91,10 @@ func NewDeleteReconciler(runner *Runner, interval time.Duration) *DeleteReconcil
 	return &DeleteReconciler{runner: runner, interval: interval, stop: make(chan struct{})}
 }
 
-// SetConversationProjector joins derived deletion to reserved-delete recovery.
-// Projection failure is reported but never rolls back PostgreSQL authority;
-// full replay pruning remains the crash/outage repair path.
-func (r *DeleteReconciler) SetConversationProjector(projector *ConversationProjector) {
-	if r != nil {
-		r.projector = projector
-	}
-}
-
-// SetConversationProjection wires the authoritative identity roster used by
-// boot and periodic full replay.
+// SetConversationProjection joins derived deletion to reserved-delete recovery and
+// wires the authoritative identity roster used by boot and periodic full replay.
+// Projection failure is reported but never rolls back PostgreSQL authority; full
+// replay pruning remains the crash/outage repair path.
 func (r *DeleteReconciler) SetConversationProjection(
 	projector *ConversationProjector,
 	identities ConversationProjectionIdentities,
@@ -235,10 +228,6 @@ func (r *DeleteReconciler) reconcile(parent context.Context) {
 	if err := r.ReconcileReasoningRetention(ctx, time.Now().UTC()); err != nil {
 		slog.Warn("reasoning retention reconciliation failed", "err", collapseJoined(err))
 	}
-}
-
-func (r *Runner) reconcileReservedConversationDeletes(ctx context.Context, limit int32) (int, error) {
-	return r.reconcileReservedConversationDeletesWithProjection(ctx, limit, nil)
 }
 
 func (r *Runner) reconcileReservedConversationDeletesWithProjection(
