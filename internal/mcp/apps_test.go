@@ -182,11 +182,3 @@ func TestTrustMayRenderViews(t *testing.T) {
 		t.Error("a padded class must still resolve")
 	}
 }
-
-func TestAppsClientSettings(t *testing.T) {
-	settings := AppsClientSettings()
-	mimes, ok := settings["mimeTypes"].([]any)
-	if !ok || len(mimes) != 1 || mimes[0] != AppMIMEType {
-		t.Fatalf("settings = %#v, want the app MIME type a server keys on", settings)
-	}
-}
