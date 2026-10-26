@@ -34,7 +34,7 @@ type ProbeResult struct {
 	Err       string `json:"err,omitempty"`
 }
 
-// ProbeServer dials one configured MCP server under ctx, completes the initialize
+// ProbeServerWithOptions dials one configured MCP server under ctx, completes the initialize
 // handshake, and counts its advertised tools (tools/list) — the real "mounted tool
 // count", not a mere LookPath reachability check (the heavier live probe GOV-01's
 // acceptance requires). It probes BOTH transports: a streamable-HTTP server is dialed
@@ -46,20 +46,13 @@ type ProbeResult struct {
 // failure yields OK=false with a redacted Err for THAT server only (bounded by ctx).
 //
 // It is exported so cmd/aura's `mcp doctor` (package main) can render its text output
-// from the same structured probe the governance handler consumes.
-func ProbeServer(ctx context.Context, name string, server ManagedServer) ProbeResult {
-	return ProbeServerWithEgress(ctx, name, server, RuntimeEgressPolicy(false, server))
-}
-
-// ProbeServerWithEgress performs the same live probe using a composition-root
-// policy, keeping diagnostics on the identical network boundary as agent mounts.
-func ProbeServerWithEgress(ctx context.Context, name string, server ManagedServer, egress EgressPolicy) ProbeResult {
-	return ProbeServerWithOptions(ctx, name, server, egress, SessionOptions{})
-}
-
-// ProbeServerWithOptions is the probe body, and the one a caller with credentials uses.
-// A board that probes without them reports "dial failed" for every server behind OAuth,
-// which is a lie about a server whose tools are mounted and working.
+// from the same structured probe the governance handler consumes. egress is the
+// composition root's policy, keeping diagnostics on the identical network boundary as
+// agent mounts.
+//
+// opts carries the caller's credentials: a board that probes without them reports
+// "dial failed" for every server behind OAuth, which is a lie about a server whose tools
+// are mounted and working.
 func ProbeServerWithOptions(ctx context.Context, name string, server ManagedServer, egress EgressPolicy, opts SessionOptions) ProbeResult {
 	res := ProbeResult{Name: name}
 
