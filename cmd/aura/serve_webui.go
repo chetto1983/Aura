@@ -106,6 +106,7 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	// endpoint is not 301-redirected into the subtree and lost.
 	mux.Handle(conversationsRoutePrefix, aguiHandler)
 	mux.Handle(conversationsListRoute, aguiHandler)
+	mux.Handle(ownerExportDownloadRoute, aguiHandler)
 	// The D-09 mutating branch re-runs (edit / branch-select) are capability-gated like
 	// POST /agent/run. Their method+path-specific patterns win longest-pattern precedence
 	// over the "/api/conversations/" subtree above, so the gate fires on the re-run while
