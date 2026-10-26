@@ -411,6 +411,13 @@ func TestCloneURLAcceptsOnlyAnOwnerRepoPair(t *testing.T) {
 		"owner",
 		"../../etc",
 		"owner/repo?x=1/y",
+		// ParseRef admits these, GitHub names never hold them, and each would reach git's argv.
+		"own er/repo",
+		"-owner/repo",
+		"owner/repo#main",
+		"owner/re%2fpo",
+		"owner/.hidden",
+		"owner/repo\nx",
 	} {
 		if got, err := (GitFetcher{}).url(bad); err == nil {
 			t.Errorf("cloneURL(%q) = %q, want a refusal", bad, got)

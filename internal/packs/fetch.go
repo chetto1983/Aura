@@ -31,6 +31,11 @@ type GitFetcher struct {
 
 var commitShape = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
+// gitHubName is the widest shape GitHub gives an owner or a repository. ParseRef only keeps a
+// segment from leaving the checkout; a space, a leading '-', '#', '%' or a newline would still
+// reach git's argv inside the URL.
+var gitHubName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$`)
+
 // ValidCommit accepts a full 40-character lowercase commit id and nothing else. A tag or a
 // branch can move between the review and the install; a commit cannot.
 func ValidCommit(s string) error {
@@ -166,6 +171,10 @@ func (g GitFetcher) url(source string) (string, error) {
 	}
 	if ref.Directory != "" {
 		return "", fmt.Errorf("clone source %q: want owner/repo, not a plugin path", source)
+	}
+	owner, repo, _ := strings.Cut(ref.Source, "/")
+	if !gitHubName.MatchString(owner) || !gitHubName.MatchString(repo) {
+		return "", fmt.Errorf("clone source %q: owner and repository must be GitHub names", source)
 	}
 	base := g.BaseURL
 	if base == "" {
