@@ -130,12 +130,10 @@ Aura deployment from Postgres 17, migrate the data with `pg_dump` / `pg_restore`
 Aura listens on loopback; Caddy serves the cockpit on HTTPS at `https://<host>`,
 behind the Authula sign-in. On a fresh install the sign-in page offers **Create first
 user**: that account is the operator, and after signing in the cockpit's first-run
-setup finishes the configuration. The Telegram bot is connected through the setup
-wizard, gated by the access token the installer prints:
-
-```text
-https://<host>/setup/?token=<AURA_ACCESS_TOKEN>
-```
+setup finishes the configuration, Telegram included; the bot token can also be set later
+under Settings. `https://<host>/setup/` is not a page: it is a JSON status API gated by the
+access token the installer prints (`AURA_ACCESS_TOKEN`), for automation such as
+`scripts/telegram_e2e.sh`.
 
 Caddy uses `tls internal`. Browsers on other LAN machines will warn until they trust
 the local CA root from the `caddy-data` volume:

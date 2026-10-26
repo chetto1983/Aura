@@ -51,7 +51,7 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 		"download_file scripts/garage_bootstrap.sh scripts/garage_bootstrap.sh",
 		"AURA_ACCESS_TOKEN",
 		"docker compose up -d",
-		"https://${host}/setup/?token=${token}",
+		"Cockpit (create the first user, then follow its first-run setup):",
 	} {
 		if !strings.Contains(installer, want) {
 			t.Fatalf("installer scripts missing %q", want)
