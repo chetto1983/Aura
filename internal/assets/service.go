@@ -34,6 +34,9 @@ type StoreBackend interface {
 	MarkUploaded(context.Context, string, string, int64, string) (Asset, error)
 	MarkAccepted(context.Context, string, string, int64, string, string) (Asset, error)
 	SetStatus(context.Context, string, string, Status, string, string) (Asset, error)
+	// ResetForRetry(ctx, id, identityID) re-arms a failed, refused or canceled asset to
+	// accepted. Any other status, or no such asset, is ErrNotRetryable.
+	ResetForRetry(context.Context, string, string) (Asset, error)
 	SetResult(context.Context, string, string, Result) (Asset, error)
 	Promote(context.Context, string, string) (Asset, error)
 	// AdoptIntoThread(ctx, id, identityID, threadID) claims an asset presigned before its
@@ -278,7 +281,7 @@ func (s *Service) Retry(ctx context.Context, identityID, assetID string) (Asset,
 	if s.Store == nil {
 		return Asset{}, fmt.Errorf("asset service is not configured")
 	}
-	asset, err := s.Store.SetStatus(ctx, assetID, identityID, StatusAccepted, "", "")
+	asset, err := s.Store.ResetForRetry(ctx, assetID, identityID)
 	if err != nil {
 		return Asset{}, err
 	}

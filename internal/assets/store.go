@@ -202,6 +202,26 @@ func (s *Store) SetStatus(ctx context.Context, id, identityID string, status Sta
 		})
 }
 
+// ErrNotRetryable is a retry of an asset whose processing did not fail: complete, still
+// accepted or processing, deleted, or absent.
+var ErrNotRetryable = errors.New("assets: only a failed, refused or canceled asset can be retried")
+
+// ResetForRetry re-arms a failed, refused or canceled asset to accepted and clears its
+// error and processing timestamps, in one statement guarded on that status.
+func (s *Store) ResetForRetry(ctx context.Context, id, identityID string) (Asset, error) {
+	asset, err := s.scopedTarget(ctx, id, identityID,
+		func(q *sqlc.Queries, pgID, pgIdentityID pgtype.UUID) (sqlc.AuraAssets, error) {
+			return q.ResetAssetForIngestionRetry(ctx, sqlc.ResetAssetForIngestionRetryParams{
+				ID:         pgID,
+				IdentityID: pgIdentityID,
+			})
+		})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Asset{}, ErrNotRetryable
+	}
+	return asset, err
+}
+
 // SetResult records processing output and clears prior error fields.
 func (s *Store) SetResult(ctx context.Context, id, identityID string, result Result) (Asset, error) {
 	metadata, err := metadataJSON(result.Metadata)

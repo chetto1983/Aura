@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"maps"
 	"slices"
 	"sort"
@@ -175,6 +176,36 @@ func TestServiceProcessAcceptedRunsProcessor(t *testing.T) {
 		}
 	default:
 		t.Fatal("processor was not called")
+	}
+}
+
+// The cockpit retry route reaches Service.Retry with any asset id. An asset that succeeded,
+// or is still being processed, must not go back into the queue (2026-10-26).
+func TestServiceRetryRefusesAnAssetThatDidNotFail(t *testing.T) {
+	for _, status := range []Status{StatusComplete, StatusProcessing, StatusAccepted} {
+		t.Run(string(status), func(t *testing.T) {
+			svc, store := newAssetServiceTestRig(t, Limits{MaxDocumentBytes: 100})
+			queue := &recordingProcessingQueue{}
+			svc.ProcessingJobs = queue
+			asset, err := store.Create(context.Background(), CreateRequest{
+				IdentityID: serviceIdentityID, SourceKind: SourceWeb, Scope: ScopeThread,
+				Modality: ModalityDocument, FileName: "manual.pdf", MIMEType: "application/pdf",
+				DeclaredSizeBytes: 9, ObjectBucket: "asset-test", ObjectKey: "asset-key-" + string(status),
+				Metadata: map[string]any{},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.SetStatus(context.Background(), asset.ID, serviceIdentityID, status, "", ""); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.Retry(context.Background(), serviceIdentityID, asset.ID); !errors.Is(err, ErrNotRetryable) {
+				t.Fatalf("Retry of a %s asset = %v, want ErrNotRetryable", status, err)
+			}
+			if queue.asset.ID != "" {
+				t.Fatalf("a %s asset was queued for processing again: %#v", status, queue.asset)
+			}
+		})
 	}
 }
 
@@ -498,6 +529,25 @@ func (s *fakeAssetStore) SetStatus(_ context.Context, id, identityID string, sta
 		asset.Status = status
 		asset.ErrorCode = code
 		asset.ErrorMessage = message
+	})
+}
+
+// ResetForRetry mirrors ResetAssetForIngestionRetry's guard; the statement itself is proven in
+// store_retry_integration_test.go.
+func (s *fakeAssetStore) ResetForRetry(_ context.Context, id, identityID string) (Asset, error) {
+	s.mu.Lock()
+	current, ok := s.assets[id]
+	s.mu.Unlock()
+	if !ok || current.IdentityID != identityID ||
+		(current.Status != StatusFailed && current.Status != StatusRefused && current.Status != StatusCanceled) {
+		return Asset{}, ErrNotRetryable
+	}
+	return s.update(id, identityID, func(asset *Asset) {
+		asset.Status = StatusAccepted
+		asset.ErrorCode = ""
+		asset.ErrorMessage = ""
+		asset.ProcessedAt = time.Time{}
+		asset.CompletedAt = time.Time{}
 	})
 }
 

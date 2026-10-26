@@ -61,6 +61,9 @@ func (r *recordingAssetStore) ListRecent(context.Context, string, string, []asse
 func (r *recordingAssetStore) SetStatus(context.Context, string, string, assets.Status, string, string) (assets.Asset, error) {
 	return r.asset, nil
 }
+func (r *recordingAssetStore) ResetForRetry(context.Context, string, string) (assets.Asset, error) {
+	return r.asset, nil
+}
 func (r *recordingAssetStore) SetResult(context.Context, string, string, assets.Result) (assets.Asset, error) {
 	return r.asset, nil
 }
