@@ -354,7 +354,7 @@ func taskFromRow(r sqlc.AuraSchedulerTasks) Task {
 		NextRunAt:            r.NextRunAt.Time,
 		NotifyRoute:          r.NotifyRoute,
 		IdentityID:           r.IdentityID,
-		OriginConversationID: uuidString(r.OriginConversationID),
+		OriginConversationID: r.OriginConversationID.String(),
 		CreatedAt:            r.CreatedAt.Time,
 		UpdatedAt:            r.UpdatedAt.Time,
 		PausedReason:         r.PausedReason.String,
@@ -375,7 +375,7 @@ func runFromRow(r sqlc.AuraAgentJobRuns) Run {
 		Summary:           r.Summary.String,
 		LastError:         r.LastError.String,
 		MissedSince:       r.MissedSince.Time,
-		PausedStateToken:  uuidString(r.PausedStateToken),
+		PausedStateToken:  r.PausedStateToken.String(),
 		CompletedAt:       r.CompletedAt.Time,
 	}
 }
@@ -395,13 +395,6 @@ func uuidOrNull(s string) pgtype.UUID {
 		return pgtype.UUID{}
 	}
 	return pgtype.UUID{Bytes: u, Valid: true}
-}
-
-func uuidString(u pgtype.UUID) string {
-	if !u.Valid {
-		return ""
-	}
-	return uuid.UUID(u.Bytes).String()
 }
 
 func text(s string) pgtype.Text {

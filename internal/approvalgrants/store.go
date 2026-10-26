@@ -16,7 +16,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -80,7 +79,7 @@ func (s *Store) Grant(ctx context.Context, identityID, tool, action, grantedBy s
 			IdentityID: id,
 			Tool:       tool,
 			Action:     action,
-			GrantedBy:  optionalText(grantedBy),
+			GrantedBy:  db.OptionalText(grantedBy),
 		})
 	})
 	if err != nil {
@@ -162,13 +161,4 @@ func (s *Store) Revoke(ctx context.Context, identityID, tool, action string) (bo
 		return false, fmt.Errorf("revoke approval grant %q/%q for %s: %w", tool, action, identityID, err)
 	}
 	return affected > 0, nil
-}
-
-// optionalText maps an empty attribution to SQL NULL, matching the column's documented
-// "NULL for a grant seeded outside the cockpit".
-func optionalText(v string) pgtype.Text {
-	if v == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: v, Valid: true}
 }

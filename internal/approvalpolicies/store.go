@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/approvalgrants"
@@ -100,7 +99,7 @@ func (s *Store) Set(ctx context.Context, identityID, tool, action string, policy
 			Tool:       tool,
 			Action:     action,
 			Policy:     string(policy),
-			SetBy:      optionalText(setBy),
+			SetBy:      db.OptionalText(setBy),
 		})
 	})
 	if err != nil {
@@ -185,13 +184,4 @@ func (s *Store) Clear(ctx context.Context, identityID, tool, action string) (boo
 		return false, fmt.Errorf("clear tool policy %q/%q for %s: %w", tool, action, identityID, err)
 	}
 	return affected > 0, nil
-}
-
-// optionalText maps an empty attribution to SQL NULL, matching the column's documented
-// "NULL for a row seeded outside the cockpit and the CLI".
-func optionalText(v string) pgtype.Text {
-	if v == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: v, Valid: true}
 }

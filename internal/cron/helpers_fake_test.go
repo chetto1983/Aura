@@ -122,11 +122,11 @@ func TestUUIDHelpers(t *testing.T) {
 	}
 
 	// uuidString: NULL → ""; valid → canonical string.
-	if uuidString(pgtype.UUID{}) != "" {
-		t.Fatal("uuidString(NULL) must be empty")
+	if (pgtype.UUID{}).String() != "" {
+		t.Fatal("NULL.String() must be empty")
 	}
-	if uuidString(pu) != valid {
-		t.Fatalf("uuidString(valid) = %q", uuidString(pu))
+	if pu.String() != valid {
+		t.Fatalf("valid.String() = %q", pu.String())
 	}
 }
 

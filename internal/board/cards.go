@@ -464,18 +464,11 @@ func timestamp(t *time.Time) pgtype.Timestamptz {
 	return pgtype.Timestamptz{Time: t.UTC(), Valid: true}
 }
 
-func uuidString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	return id.String()
-}
-
 func cardFromRow(r sqlc.AuraBoardCards) Card {
 	c := Card{
 		ID: r.ID.String(), ColumnID: r.ColumnID, Position: r.Position, Label: r.Label,
 		Description: r.Description, Priority: int(r.Priority), Tags: r.Tags,
-		ConversationID: uuidString(r.ConversationID), TaskID: uuidString(r.TaskID),
+		ConversationID: r.ConversationID.String(), TaskID: r.TaskID.String(),
 		Source: Source(r.Source), UpdatedBy: Actor(r.UpdatedBy),
 		CreatedAt: r.CreatedAt.Time, UpdatedAt: r.UpdatedAt.Time,
 	}

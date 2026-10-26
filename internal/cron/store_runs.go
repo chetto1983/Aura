@@ -189,8 +189,8 @@ func (s *Store) ScanStaleRuns(ctx context.Context, staleSeconds float64) ([]Stal
 	out := make([]StaleRun, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, StaleRun{
-			RunID:  uuidString(r.ID),
-			TaskID: uuidString(r.TaskID),
+			RunID:  r.ID.String(),
+			TaskID: r.TaskID.String(),
 		})
 	}
 	return out, nil
@@ -338,8 +338,8 @@ func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
 
 func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotification {
 	return PendingNotification{
-		ID:           uuidString(r.ID),
-		RunID:        uuidString(r.RunID),
+		ID:           r.ID.String(),
+		RunID:        r.RunID.String(),
 		NotifyRoute:  r.NotifyRoute,
 		Body:         r.Body,
 		NotifyAfter:  r.NotifyAfter.Time,
@@ -349,14 +349,14 @@ func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotifica
 		CreatedAt:    r.CreatedAt.Time,
 		UpdatedAt:    r.UpdatedAt.Time,
 		IdentityID:   r.IdentityID,
-		SteerQueueID: uuidString(r.SteerQueueID),
+		SteerQueueID: r.SteerQueueID.String(),
 	}
 }
 
 func pendingNotificationFromSweepRow(r sqlc.SweepDueNotificationsRow) PendingNotification {
 	return PendingNotification{
-		ID:                   uuidString(r.ID),
-		RunID:                uuidString(r.RunID),
+		ID:                   r.ID.String(),
+		RunID:                r.RunID.String(),
 		NotifyRoute:          r.NotifyRoute,
 		Body:                 r.Body,
 		NotifyAfter:          r.NotifyAfter.Time,
@@ -366,7 +366,7 @@ func pendingNotificationFromSweepRow(r sqlc.SweepDueNotificationsRow) PendingNot
 		CreatedAt:            r.CreatedAt.Time,
 		UpdatedAt:            r.UpdatedAt.Time,
 		IdentityID:           r.IdentityID,
-		SteerQueueID:         uuidString(r.SteerQueueID),
+		SteerQueueID:         r.SteerQueueID.String(),
 		OriginConversationID: r.OriginConversationID,
 	}
 }

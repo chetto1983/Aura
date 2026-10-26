@@ -149,15 +149,6 @@ func writeTurnSidecar(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
 }
 
-// optionalText maps an empty string to a NULL pgtype.Text (tool_call_id is only
-// set on tool-role turns).
-func optionalText(s string) pgtype.Text {
-	if s == "" {
-		return pgtype.Text{}
-	}
-	return pgtype.Text{String: s, Valid: true}
-}
-
 // optionalInt8 maps a zero int64 to a NULL pgtype.Int8 (mirrors optionalText:
 // reasoning_duration_ms is only set on reasoning-bearing assistant answer turns).
 func optionalInt8(v int64) pgtype.Int8 {

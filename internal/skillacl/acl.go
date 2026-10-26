@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -251,11 +250,11 @@ func grantsFrom(rows []sqlc.AuraResourceAcl) []Grant {
 	for _, r := range rows {
 		out = append(out, Grant{
 			ResourceType:  ResourceType(r.ResourceType),
-			ResourceID:    uuidString(r.ResourceID),
+			ResourceID:    r.ResourceID.String(),
 			PrincipalType: r.PrincipalType,
-			PrincipalID:   uuidString(r.PrincipalID),
+			PrincipalID:   r.PrincipalID.String(),
 			Perm:          Perm(r.PermBits),
-			GrantedBy:     uuidString(r.GrantedBy),
+			GrantedBy:     r.GrantedBy.String(),
 		})
 	}
 	return out
@@ -293,18 +292,9 @@ func grantArgs(granter string, rt ResourceType, resourceID string, perm Perm) (g
 func uuidStrings(in []pgtype.UUID) []string {
 	out := make([]string, 0, len(in))
 	for _, id := range in {
-		if s := uuidString(id); s != "" {
+		if s := id.String(); s != "" {
 			out = append(out, s)
 		}
 	}
 	return out
-}
-
-// uuidString renders one nullable uuid; a NULL becomes the empty string, never a zero uuid
-// that would read as a real principal.
-func uuidString(id pgtype.UUID) string {
-	if !id.Valid {
-		return ""
-	}
-	return uuid.UUID(id.Bytes).String()
 }

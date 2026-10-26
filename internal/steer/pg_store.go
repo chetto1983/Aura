@@ -248,20 +248,13 @@ func (s *PostgresStore) drain(ctx context.Context, conv string, scope workerScop
 	msgs := make([]Message, 0, len(rows))
 	for _, r := range rows {
 		msgs = append(msgs, Message{
-			ID:      uuidString(r.ID),
+			ID:      r.ID.String(),
 			Source:  r.Source,
 			Text:    r.Body,
 			Arrived: r.CreatedAt.Time,
 		})
 	}
 	return msgs
-}
-
-func uuidString(v pgtype.UUID) string {
-	if !v.Valid {
-		return ""
-	}
-	return uuid.UUID(v.Bytes).String()
 }
 
 // UnnudgedDelegationResult is one aura.steer_queue delegation_result row past
@@ -334,8 +327,8 @@ func delegationResultRows(rows []sqlc.AuraSteerQueue) []UnnudgedDelegationResult
 	out := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, UnnudgedDelegationResult{
-			ID:             uuidString(r.ID),
-			IdentityID:     uuidString(r.IdentityID),
+			ID:             r.ID.String(),
+			IdentityID:     r.IdentityID.String(),
 			ConversationID: r.ConversationID,
 			Body:           r.Body,
 			FanoutKey:      r.FanoutKey.String,
@@ -374,8 +367,8 @@ func (s *PostgresStore) MarkFanoutNudged(ctx context.Context, identityID, fanout
 	claimed := make([]UnnudgedDelegationResult, 0, len(rows))
 	for _, r := range rows {
 		claimed = append(claimed, UnnudgedDelegationResult{
-			ID:             uuidString(r.ID),
-			IdentityID:     uuidString(r.IdentityID),
+			ID:             r.ID.String(),
+			IdentityID:     r.IdentityID.String(),
 			ConversationID: r.ConversationID,
 			Body:           r.Body,
 			FanoutKey:      r.FanoutKey.String,

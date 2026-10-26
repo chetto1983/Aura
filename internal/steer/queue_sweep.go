@@ -75,7 +75,7 @@ func (s *Sweeper) ExpireDue(ctx context.Context, now time.Time, limit int) (int,
 			if errors.Is(err, errRowAlreadyExpired) {
 				continue
 			}
-			errs = append(errs, fmt.Errorf("expire steer row %s: %w", uuidString(row.ID), err))
+			errs = append(errs, fmt.Errorf("expire steer row %s: %w", row.ID.String(), err))
 			continue
 		}
 		expired++
@@ -88,7 +88,7 @@ func (s *Sweeper) ExpireDue(ctx context.Context, now time.Time, limit int) (int,
 // OWN kind at Push time (D-07's "one sweep, two knobs" means the knobs are consulted
 // once, at write time, not re-derived on every sweep tick).
 func (s *Sweeper) expireOne(ctx context.Context, row sqlc.AuraSteerQueue) error {
-	identityID := uuidString(row.IdentityID)
+	identityID := row.IdentityID.String()
 	if identityID == "" {
 		return fmt.Errorf("row carries no identity_id")
 	}

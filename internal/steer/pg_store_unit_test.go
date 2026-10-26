@@ -200,12 +200,12 @@ func TestDiagnosePushRefusalNamesMalformedConversationID(t *testing.T) {
 // maps every row through uuidString, and a zero uuid rendered as the all-zero string
 // would look like a real message id to a consumer.
 func TestUUIDStringOnInvalidValue(t *testing.T) {
-	if got := uuidString(pgtype.UUID{}); got != "" {
-		t.Fatalf("uuidString(invalid) = %q, want the empty string", got)
+	if got := (pgtype.UUID{}).String(); got != "" {
+		t.Fatalf("invalid.String() = %q, want the empty string", got)
 	}
 	id := pgtype.UUID{Bytes: [16]byte{0x01, 0x02, 0x03}, Valid: true}
-	if got := uuidString(id); got == "" {
-		t.Fatal("uuidString(valid) = empty, want the rendered uuid")
+	if got := id.String(); got == "" {
+		t.Fatal("valid.String() = empty, want the rendered uuid")
 	}
 }
 

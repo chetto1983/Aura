@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -43,7 +43,7 @@ func NewStore(db sqlc.DBTX) *Store {
 
 // Create inserts a new presigned asset record.
 func (s *Store) Create(ctx context.Context, req CreateRequest) (Asset, error) {
-	identityID, err := pgUUID("identity_id", req.IdentityID)
+	identityID, err := db.ParseUUID("identity_id", req.IdentityID)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -77,7 +77,7 @@ func (s *Store) Create(ctx context.Context, req CreateRequest) (Asset, error) {
 // The key is where the bytes live, and aura.assets holds it UNIQUE per identity, so this
 // answers "is this object already ingested" -- which is the question a re-ingest asks.
 func (s *Store) ByObjectKey(ctx context.Context, identityID, objectKey string) (Asset, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return Asset{}, err
 	}
@@ -102,7 +102,7 @@ func (s *Store) GetForIdentity(ctx context.Context, id, identityID string) (Asse
 
 // ListForThread returns non-deleted assets in thread order.
 func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) ([]Asset, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +120,13 @@ func (s *Store) ListForThread(ctx context.Context, identityID, threadID string) 
 func (s *Store) ListRecent(
 	ctx context.Context, identityID, beforeID string, modalities []Modality, limit int,
 ) ([]Asset, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
 	var before pgtype.UUID
 	if beforeID != "" {
-		if before, err = pgUUID("before id", beforeID); err != nil {
+		if before, err = db.ParseUUID("before id", beforeID); err != nil {
 			return []Asset{}, nil
 		}
 	}
@@ -146,7 +146,7 @@ func (s *Store) ListRecent(
 
 // ListForLibrary returns recent non-deleted library assets for one identity.
 func (s *Store) ListForLibrary(ctx context.Context, identityID string, limit int) ([]Asset, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -277,7 +277,7 @@ func (s *Store) Delete(ctx context.Context, id, identityID string) (Asset, error
 
 // ListDeleting returns up to limit of the identity's deleting rows, oldest first.
 func (s *Store) ListDeleting(ctx context.Context, identityID string, limit int) ([]Asset, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func (s *Store) ListDeleting(ctx context.Context, identityID string, limit int) 
 // RetireIdle marks deleting up to limit of the identity's rows in one of statuses untouched
 // since before, oldest first, so the delete sweep finishes them like any other delete.
 func (s *Store) RetireIdle(ctx context.Context, identityID string, statuses []Status, before time.Time, limit int) error {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return err
 	}
@@ -337,8 +337,8 @@ func assetFromSQL(row sqlc.AuraAssets) (Asset, error) {
 		return Asset{}, err
 	}
 	return Asset{
-		ID:                uuidString(row.ID),
-		IdentityID:        uuidString(row.IdentityID),
+		ID:                row.ID.String(),
+		IdentityID:        row.IdentityID.String(),
 		SourceKind:        SourceKind(row.SourceKind),
 		SourceRef:         row.SourceRef,
 		ToolCallID:        row.ToolCallID,
@@ -394,32 +394,17 @@ func metadataFromJSON(data []byte) (map[string]any, error) {
 	return metadata, nil
 }
 
-func pgUUID(field, value string) (pgtype.UUID, error) {
-	u, err := uuid.Parse(value)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, value, err)
-	}
-	return pgtype.UUID{Bytes: u, Valid: true}, nil
-}
-
 // pgTarget parses the (asset id, identity id) pair every targeted statement is addressed by.
 func pgTarget(id, identityID string) (pgtype.UUID, pgtype.UUID, error) {
-	pgID, err := pgUUID("asset id", id)
+	pgID, err := db.ParseUUID("asset id", id)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
 	return pgID, pgIdentityID, nil
-}
-
-func uuidString(value pgtype.UUID) string {
-	if !value.Valid {
-		return ""
-	}
-	return uuid.UUID(value.Bytes).String()
 }
 
 func timeValue(value pgtype.Timestamptz) time.Time {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -33,7 +34,7 @@ func (s *PostgresIngestionJobStore) StageDelegationDelivery(ctx context.Context,
 		row, queryErr = q.StageDelegationDelivery(ctx, sqlc.StageDelegationDeliveryParams{
 			ID:              jobID,
 			IdentityID:      identityID,
-			LockedBy:        pgText(req.WorkerID),
+			LockedBy:        db.OptionalText(req.WorkerID),
 			LeaseGeneration: req.LeaseGeneration,
 			Payload:         payload,
 		})

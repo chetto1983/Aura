@@ -41,13 +41,13 @@ func (s *Store) RecordTurnDecision(ctx context.Context, conversationID string, s
 	}
 	return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		n, err := q.RecordConversationTurnDecision(ctx, sqlc.RecordConversationTurnDecisionParams{
-			RecallContextKey:             optionalText(d.ContextKey),
-			ReasoningEffort:              optionalText(d.Effort),
-			ReasoningEffortRequested:     optionalText(d.EffortRequested),
-			ReasoningEffortSource:        optionalText(d.EffortSource),
-			ReasoningEffortRouteKey:      optionalText(d.RouteKey),
-			ReasoningEffortPolicyVersion: optionalText(d.PolicyVersion),
-			ReasoningEffortOriginRef:     optionalText(d.OriginRef),
+			RecallContextKey:             db.OptionalText(d.ContextKey),
+			ReasoningEffort:              db.OptionalText(d.Effort),
+			ReasoningEffortRequested:     db.OptionalText(d.EffortRequested),
+			ReasoningEffortSource:        db.OptionalText(d.EffortSource),
+			ReasoningEffortRouteKey:      db.OptionalText(d.RouteKey),
+			ReasoningEffortPolicyVersion: db.OptionalText(d.PolicyVersion),
+			ReasoningEffortOriginRef:     db.OptionalText(d.OriginRef),
 			ConversationID:               id,
 			Seq:                          int32(seq),
 		})
@@ -79,7 +79,7 @@ func (s *Store) RecordTeacherLabel(ctx context.Context, conversationID string, s
 	}
 	return db.WithCallerIdentityTx(ctx, s.pool, func(q *sqlc.Queries) error {
 		if _, err := q.RecordConversationTurnTeacherLabel(ctx, sqlc.RecordConversationTurnTeacherLabelParams{
-			ReasoningEffortRequested: optionalText(requested),
+			ReasoningEffortRequested: db.OptionalText(requested),
 			ConversationID:           id,
 			Seq:                      int32(seq),
 		}); err != nil {

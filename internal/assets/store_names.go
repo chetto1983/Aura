@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
@@ -43,7 +44,7 @@ func (s *Store) AssetsByKey(ctx context.Context, identityID string, keys []strin
 	if s == nil || len(keys) == 0 {
 		return nil, nil
 	}
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +62,7 @@ func (s *Store) AssetsByKey(ctx context.Context, identityID string, keys []strin
 	found := make(map[string]KeyedAsset, len(rows))
 	for _, row := range rows {
 		if row.FileName != "" {
-			found[row.ObjectKey] = KeyedAsset{ID: uuidString(row.ID), FileName: row.FileName}
+			found[row.ObjectKey] = KeyedAsset{ID: row.ID.String(), FileName: row.FileName}
 		}
 	}
 	return found, nil
@@ -69,7 +70,7 @@ func (s *Store) AssetsByKey(ctx context.Context, identityID string, keys []strin
 
 // KeysHeld returns the keys among keys some row of the identity holds, in any status.
 func (s *Store) KeysHeld(ctx context.Context, identityID string, keys []string) ([]string, error) {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +86,7 @@ func (s *Store) KeysHeld(ctx context.Context, identityID string, keys []string) 
 // Relocate moves the identity's rows in bucket along with the objects a move or rename
 // relocated, in one transaction: either every row follows or none does.
 func (s *Store) Relocate(ctx context.Context, identityID, bucket string, moves []KeyMove) error {
-	pgIdentityID, err := pgUUID("identity_id", identityID)
+	pgIdentityID, err := db.ParseUUID("identity_id", identityID)
 	if err != nil {
 		return err
 	}

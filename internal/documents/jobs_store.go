@@ -172,7 +172,7 @@ func (s *PostgresIngestionJobStore) CreateBatch(ctx context.Context, reqs []Crea
 
 // Claim leases queued or expired-running jobs for one owner.
 func (s *PostgresIngestionJobStore) Claim(ctx context.Context, req ClaimIngestionJobsRequest) ([]IngestionJob, error) {
-	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
+	identityID, err := db.ParseUUID("ingestion job identity id", req.IdentityID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +180,7 @@ func (s *PostgresIngestionJobStore) Claim(ctx context.Context, req ClaimIngestio
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		var queryErr error
 		rows, queryErr = q.ClaimIngestionJobs(ctx, sqlc.ClaimIngestionJobsParams{
-			IdentityID: identityID, JobType: pgText(req.JobType), LockedBy: pgText(req.WorkerID),
+			IdentityID: identityID, JobType: db.OptionalText(req.JobType), LockedBy: db.OptionalText(req.WorkerID),
 			LeaseDuration: pgInterval(req.LeaseDuration),
 			BatchSize:     int32(req.BatchSize), //nolint:gosec // configured worker batch is bounded.
 		})
@@ -210,7 +210,7 @@ func (s *PostgresIngestionJobStore) UpdateStatus(ctx context.Context, req Transi
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		var queryErr error
 		row, queryErr = q.UpdateIngestionJobStatus(ctx, sqlc.UpdateIngestionJobStatusParams{
-			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			ID: jobID, IdentityID: identityID, LockedBy: db.OptionalText(req.WorkerID),
 			LeaseGeneration: req.LeaseGeneration, Status: req.Status, Stage: req.Stage,
 			ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
 			EventType: req.EventType, EventMessage: req.EventMessage,
@@ -234,7 +234,7 @@ func (s *PostgresIngestionJobStore) Retry(ctx context.Context, req RetryIngestio
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		var queryErr error
 		row, queryErr = q.RetryIngestionJob(ctx, sqlc.RetryIngestionJobParams{
-			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			ID: jobID, IdentityID: identityID, LockedBy: db.OptionalText(req.WorkerID),
 			LeaseGeneration: req.LeaseGeneration, Stage: req.Stage,
 			ErrorCode: req.ErrorCode, ErrorMessage: req.ErrorMessage,
 			NextAttemptAt: pgTime(req.NextAttemptAt), EventMessage: req.EventMessage,
@@ -257,7 +257,7 @@ func (s *PostgresIngestionJobStore) Heartbeat(ctx context.Context, req Heartbeat
 	err = s.withIdentity(ctx, req.IdentityID, func(q *sqlc.Queries) error {
 		var queryErr error
 		row, queryErr = q.HeartbeatIngestionJob(ctx, sqlc.HeartbeatIngestionJobParams{
-			ID: jobID, IdentityID: identityID, LockedBy: pgText(req.WorkerID),
+			ID: jobID, IdentityID: identityID, LockedBy: db.OptionalText(req.WorkerID),
 			LeaseGeneration: req.LeaseGeneration, LeaseDuration: pgInterval(req.LeaseDuration),
 		})
 		return queryErr
@@ -270,7 +270,7 @@ func (s *PostgresIngestionJobStore) Heartbeat(ctx context.Context, req Heartbeat
 
 // CountByStatus returns one owner's durable job count for a status.
 func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityID, status string) (int64, error) {
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -293,7 +293,7 @@ func (s *PostgresIngestionJobStore) CountByStatus(ctx context.Context, identityI
 // awaiting_input (51-11 Task 3, the fan-out nudge sweep's eligibility check). A fanoutKey
 // nobody wrote, or one whose every job already reached a terminal status, returns 0.
 func (s *PostgresIngestionJobStore) CountUnfinishedDelegationJobs(ctx context.Context, identityID, fanoutKey string) (int, error) {
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return 0, err
 	}
@@ -348,7 +348,7 @@ func (s *PostgresIngestionJobStore) listDelegationJobs(ctx context.Context, iden
 	if limit <= 0 || int64(limit) > int64(1<<31-1) {
 		return nil, fmt.Errorf("delegation job limit must be between 1 and %d", int64(1<<31-1))
 	}
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return nil, err
 	}
@@ -378,12 +378,12 @@ func (s *PostgresIngestionJobStore) listDelegationJobs(ctx context.Context, iden
 func delegationJobRowFromSQL(r sqlc.ListDelegationJobsForConversationRow) (DelegationJobRow, error) {
 	payload, err := ingestionJobPayloadFromJSON(r.Payload)
 	if err != nil {
-		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: %w", uuidString(r.ID), err)
+		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: %w", r.ID.String(), err)
 	}
 	goal, goalOK := payload["goal"].(string)
 	childID, childIDOK := payload["child_id"].(string)
 	if !goalOK || goal == "" || !childIDOK || childID == "" {
-		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: goal and child_id are required", uuidString(r.ID))
+		return DelegationJobRow{}, fmt.Errorf("decode delegation job %s payload: goal and child_id are required", r.ID.String())
 	}
 	var report json.RawMessage
 	if pending, ok := payload["pending_delivery"].(map[string]any); ok {
@@ -396,7 +396,7 @@ func delegationJobRowFromSQL(r sqlc.ListDelegationJobsForConversationRow) (Deleg
 	}
 	return DelegationJobRow{
 		Report: report,
-		ID:     uuidString(r.ID), Goal: goal, ChildID: childID, Status: r.Status,
+		ID:     r.ID.String(), Goal: goal, ChildID: childID, Status: r.Status,
 		AttemptCount: int(r.AttemptCount), MaxAttempts: int(r.MaxAttempts),
 		CreatedAt: timeValue(r.CreatedAt), CompletedAt: timeValue(r.CompletedAt),
 		ErrorMessage:      r.ErrorMessage,
@@ -416,7 +416,7 @@ func (s *PostgresIngestionJobStore) withIdentity(ctx context.Context, identityID
 }
 
 func createIngestionJobParams(req CreateIngestionJobRequest) (sqlc.CreateIngestionJobParams, error) {
-	identityID, err := pgUUID("ingestion job identity id", req.IdentityID)
+	identityID, err := db.ParseUUID("ingestion job identity id", req.IdentityID)
 	if err != nil {
 		return sqlc.CreateIngestionJobParams{}, err
 	}
@@ -451,11 +451,11 @@ func transitionIngestionJobParams(req TransitionIngestionJobRequest) (pgtype.UUI
 }
 
 func ingestionJobFence(identityID, jobID string) (pgtype.UUID, pgtype.UUID, error) {
-	pgIdentityID, err := pgUUID("ingestion job identity id", identityID)
+	pgIdentityID, err := db.ParseUUID("ingestion job identity id", identityID)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
-	pgJobID, err := pgUUID("ingestion job id", jobID)
+	pgJobID, err := db.ParseUUID("ingestion job id", jobID)
 	if err != nil {
 		return pgtype.UUID{}, pgtype.UUID{}, err
 	}
@@ -487,8 +487,8 @@ func ingestionJobFromSQL[R ingestionJobRow](row R) (IngestionJob, error) {
 		return IngestionJob{}, err
 	}
 	return IngestionJob{
-		ID: uuidString(rec.ID), IdentityID: uuidString(rec.IdentityID), JobType: rec.JobType,
-		AssetID: uuidString(rec.AssetID), Status: rec.Status,
+		ID: rec.ID.String(), IdentityID: rec.IdentityID.String(), JobType: rec.JobType,
+		AssetID: rec.AssetID.String(), Status: rec.Status,
 		IdempotencyKey: rec.IdempotencyKey, Stage: rec.Stage,
 		AttemptCount: int(rec.AttemptCount), MaxAttempts: int(rec.MaxAttempts),
 		PipelineGeneration: rec.PipelineGeneration, AttemptGeneration: rec.AttemptGeneration,
@@ -542,7 +542,7 @@ func optionalUUIDFromString(field, value string) (pgtype.UUID, error) {
 	if value == "" {
 		return pgtype.UUID{}, nil
 	}
-	u, err := pgUUID(field, value)
+	u, err := db.ParseUUID(field, value)
 	if err != nil {
 		return pgtype.UUID{}, err
 	}
