@@ -1,17 +1,16 @@
 package agui
 
 import (
-	"crypto/hkdf"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 
+	"github.com/chetto1983/aura/internal/secret"
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
@@ -79,17 +78,9 @@ func HashLookupToken(token string, pepper []byte) string {
 // DeriveResetTokenPepper expands Authula's configured 32-byte secret into a
 // domain-separated HMAC key. Invalid input fails closed; no default key exists.
 func DeriveResetTokenPepper(secretHex string) ([]byte, error) {
-	secret := strings.TrimSpace(secretHex)
-	if len(secret) != 64 {
-		return nil, errors.New("AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
-	}
-	raw, err := hex.DecodeString(secret)
+	pepper, err := secret.DeriveKey(secretHex, resetTokenPepperInfo)
 	if err != nil {
-		return nil, fmt.Errorf("AURA_AUTHULA_SECRET must be valid hex: %w", err)
-	}
-	pepper, err := hkdf.Key(sha256.New, raw, nil, resetTokenPepperInfo, 32)
-	if err != nil {
-		return nil, fmt.Errorf("derive reset token pepper: %w", err)
+		return nil, fmt.Errorf("AURA_AUTHULA_SECRET: %w", err)
 	}
 	return pepper, nil
 }

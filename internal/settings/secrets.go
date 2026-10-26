@@ -3,13 +3,13 @@ package settings
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hkdf"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // secretDerivationInfo domain-separates the settings wrapping key from every other key
@@ -39,13 +39,9 @@ func newSecretAEAD(authulaSecretHex string) (cipher.AEAD, error) {
 // aeadWithInfo takes the info string as a parameter so a test can derive a key under another
 // store's info and assert the two cannot open each other's values.
 func aeadWithInfo(authulaSecretHex, info string) (cipher.AEAD, error) {
-	raw, err := hex.DecodeString(strings.TrimSpace(authulaSecretHex))
-	if err != nil || len(raw) != 32 {
-		return nil, errors.New("settings: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
-	}
-	key, err := hkdf.Key(sha256.New, raw, nil, info, 32)
+	key, err := secret.DeriveKey(authulaSecretHex, info)
 	if err != nil {
-		return nil, fmt.Errorf("settings: derive key: %w", err)
+		return nil, fmt.Errorf("settings: AURA_AUTHULA_SECRET: %w", err)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
