@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fakeGraphView is a scripted GraphView for the graph-api unit tests: it returns canned
@@ -352,8 +351,7 @@ func TestGraphQueryFilterSchemaError(t *testing.T) {
 // local identity (validCookieReq only builds GETs; the graph query route is a POST).
 func validCookiePost(deps AuthDeps, path string, body []byte) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-	value := signedSessionFixture(deps.SigningKey, deps.LocalIdentityID, time.Now())
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: value})
+	req.AddCookie(sessionCookieFor(deps.LocalIdentityID))
 	return req
 }
 

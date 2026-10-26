@@ -51,7 +51,7 @@ import (
 // WEB-03 (D-03/D-04): the whole returned subtree is wrapped in agui.RequireAuth so the
 // origin is private when Authula auth is configured — the public-path exceptions (the
 // login route + its assets + GET /healthz) are handled INSIDE the middleware, not by
-// leaving routes unwrapped. POST /logout remains for cookie clearing. The only mutating
+// leaving routes unwrapped. The only mutating
 // route, POST /agent/run, is additionally interposed with
 // agui.RequireCapability ahead of the AG-UI prefix loop (Go 1.22 method-pattern
 // precedence makes "POST /agent/run" win over the bare "/agent/run") so the capability
@@ -93,7 +93,6 @@ func newServeHandler(aguiHandler http.Handler, auth agui.AuthDeps, authulaProvid
 	}
 	// Public credential endpoint for clearing the old Aura session cookie. Authula's own
 	// logout flow lives under /auth/* on the provider subtree.
-	mux.HandleFunc("POST /logout", auth.LogoutHandler())
 	// The CHAT-02 conversation-management subtree (Phase 25) delegates to the AG-UI
 	// handler, which carries the /api/conversations/ routes on its own Server.Mux. It
 	// is registered as the SPECIFIC subtree — NEVER a bare "/api/". Go 1.22

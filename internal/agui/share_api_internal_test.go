@@ -39,7 +39,7 @@ func TestShareInternalAnonymous401(t *testing.T) {
 	env := newShareAPIEnv(t, pool, true)
 	owner, convID := seedOwnerAndConversation(t, env, oneTurn())
 	link := createShare(t, env, owner, convID, "internal", http.StatusCreated)
-	deps := AuthDeps{SecretConfigured: true, SigningKey: []byte("0123456789abcdef0123456789abcdef")}
+	deps := AuthDeps{SecretConfigured: true}
 	gated := RequireAuth(env.server.Mux(), deps)
 	req := httptest.NewRequest(http.MethodGet, "/api/shares/"+link.ID+"/data", nil)
 	rec := httptest.NewRecorder()
@@ -144,7 +144,7 @@ func TestShareInternalVideoStreamsToABearer(t *testing.T) {
 	if got := rec.Header().Get("Content-Range"); got != "bytes 2000-2047/2048" {
 		t.Fatalf("Content-Range = %q, want bytes 2000-2047/2048", got)
 	}
-	deps := AuthDeps{SecretConfigured: true, SigningKey: []byte("0123456789abcdef0123456789abcdef")}
+	deps := AuthDeps{SecretConfigured: true}
 	anonymous := httptest.NewRecorder()
 	RequireAuth(env.server.Mux(), deps).ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, stream, nil))
 	if anonymous.Code != http.StatusUnauthorized && anonymous.Code != http.StatusFound {

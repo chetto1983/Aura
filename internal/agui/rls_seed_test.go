@@ -13,8 +13,9 @@ package agui
 
 import (
 	"context"
-	"github.com/chetto1983/aura/internal/identityctx"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/identityctx"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/jackc/pgx/v5"

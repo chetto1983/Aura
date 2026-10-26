@@ -50,13 +50,12 @@ import (
 )
 
 const (
-	sc4TitleA            = "Aura-SC4-Owner-A-Weather-Briefing"
-	sc4TitleB            = "Aura-SC4-Owner-B-Private-Budget"
-	sc4ProseMarkerA      = "aura-sc4-marker-owner-A-prose-quarterly-roadmap"
-	sc4ProseMarkerB      = "aura-sc4-marker-owner-B-prose-confidential-budget"
-	sc4ArtifactNameA     = "a-report.txt"
-	sc4ArtifactNameB     = "b-secret-report.pdf"
-	sc4SigningKeyLiteral = "0123456789abcdef0123456789abcdef"
+	sc4TitleA        = "Aura-SC4-Owner-A-Weather-Briefing"
+	sc4TitleB        = "Aura-SC4-Owner-B-Private-Budget"
+	sc4ProseMarkerA  = "aura-sc4-marker-owner-A-prose-quarterly-roadmap"
+	sc4ProseMarkerB  = "aura-sc4-marker-owner-B-prose-confidential-budget"
+	sc4ArtifactNameA = "a-report.txt"
+	sc4ArtifactNameB = "b-secret-report.pdf"
 )
 
 // TestShareCrossIdentityDeny is the WEBSHARE-04 SC4 acceptance vehicle: ten rows proving no
@@ -171,7 +170,7 @@ func TestShareCrossIdentityDeny(t *testing.T) {
 	// and pass vacuously, so this wraps env.server.Mux() in the real RequireAuth chain with
 	// the same shape production wires at the parent mux (cmd/aura/serve_webui.go).
 	t.Run("row4_internal_anonymous_401_not_on_public_allowlist", func(t *testing.T) {
-		deps := AuthDeps{SecretConfigured: true, SigningKey: []byte(sc4SigningKeyLiteral)}
+		deps := AuthDeps{SecretConfigured: true}
 		gated := RequireAuth(env.server.Mux(), deps)
 		req := httptest.NewRequest(http.MethodGet, "/api/shares/"+linkAInternal.ID+"/data", nil)
 		rec := httptest.NewRecorder()
@@ -280,7 +279,7 @@ func TestShareCrossIdentityDeny(t *testing.T) {
 	// lane" cannot happen — exercised through the real RequireAuth chain exactly like row 4,
 	// never a bare handler call.
 	t.Run("row10_public_token_grants_no_identity_lane_access", func(t *testing.T) {
-		deps := AuthDeps{SecretConfigured: true, SigningKey: []byte(sc4SigningKeyLiteral)}
+		deps := AuthDeps{SecretConfigured: true}
 		gated := RequireAuth(env.server.Mux(), deps)
 		req := httptest.NewRequest(http.MethodGet, "/api/assets/"+assetA+"/download", nil)
 		rec := httptest.NewRecorder()

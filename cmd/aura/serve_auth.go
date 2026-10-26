@@ -52,8 +52,7 @@ func (a identityCheckerAdapter) HasCapability(ctx context.Context, id, capabilit
 
 // buildAuthDeps assembles the WEB-03 auth bundle from the booted composition root.
 // Authula is the only web-auth provider: boot fails when its DB/secret configuration is
-// incomplete, the legacy passphrase secret/signing key stay neutral, and RequireAuth is
-// always active through the Authula session validator.
+// incomplete, and RequireAuth is always active through the Authula session validator.
 func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.Provider, error) {
 	if !authulaProvisioningConfigured(chat.cfg) {
 		return agui.AuthDeps{}, nil, fmt.Errorf("authula web auth misconfigured: set AURA_AUTHULA_SECRET and AURA_AUTHULA_DATABASE_URL or AURA_DB_URL")
@@ -67,8 +66,6 @@ func buildAuthDeps(ctx context.Context, chat *chatEnv) (agui.AuthDeps, *webauth.
 		return agui.AuthDeps{}, nil, err
 	}
 	deps := agui.AuthDeps{
-		Secret:           "",
-		SigningKey:       nil,
 		SecretConfigured: true,
 		LocalIdentityID:  localIdentityID,
 		Identities:       identityCheckerAdapter{store: chat.identity},

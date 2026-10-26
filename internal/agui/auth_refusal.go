@@ -27,11 +27,10 @@ const sessionChallenge = "Session"
 const userAgentLogCap = 160
 
 func (d AuthDeps) missingOrRefused(r *http.Request) string {
-	name := d.SessionCookieName
-	if name == "" {
-		name = sessionCookieName
+	if d.SessionCookieName == "" {
+		return refusedNoCookie
 	}
-	if _, err := r.Cookie(name); err != nil {
+	if _, err := r.Cookie(d.SessionCookieName); err != nil {
 		return refusedNoCookie
 	}
 	return refusedSession

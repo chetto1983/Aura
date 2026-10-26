@@ -62,14 +62,6 @@ type Identity struct {
 // bootServe. SecretConfigured is the master switch: when false (loopback dev, which
 // the boot guard confines to loopback) RequireAuth is a no-op pass-through.
 type AuthDeps struct {
-	// Secret is the raw operator passphrase (AURA_WEB_AUTH_SECRET) the login form is
-	// compared against constant-time. Empty ⇒ login fail-closed.
-	Secret string
-	// SigningKey is the derived HMAC-SHA256 key (sha256(Secret)) that signs/verifies
-	// the session cookie.
-	SigningKey []byte
-	// TTL is the absolute session lifetime; a zero value falls back to defaultSessionTTL.
-	TTL time.Duration
 	// SecretConfigured reports whether in-binary auth is active. When false the whole
 	// gate is bypassed (loopback dev) — safe because GuardWebBind only permits an
 	// unconfigured secret on a loopback bind.
@@ -97,20 +89,18 @@ type AuthDeps struct {
 	// a session. The composition root uses this for tiny bootstrap contracts such as
 	// the auth-provider config; credential subtrees should still use AuthBasePath.
 	PublicRoute func(r *http.Request) bool
-	// SessionValidator, when non-nil, REPLACES the HMAC cookie-validation core inside
-	// RequireAuth (the Option-A2 seam, AURA_WEB_AUTH_PROVIDER=authula): given a request
-	// it returns the bound Aura identity UUID + ok. When nil, RequireAuth falls back to
-	// the legacy stdlib HMAC verifySession path used by unit tests. Either way the result feeds the SAME existence re-check +
-	// withPrincipal + RequireCapability contract — only the issuer/validator of the
-	// cookie changes, never the principalKey{} downstream.
+	// SessionValidator resolves a request's session to the bound Aura identity UUID + ok.
+	// Production wires Authula's (cmd/aura/serve_auth.go). It is the only validator: nil
+	// means no session validates, so an AuthDeps built without one fails closed rather than
+	// falling back to anything. The result feeds the existence re-check + withPrincipal +
+	// RequireCapability contract.
 	SessionValidator func(r *http.Request) (identityID string, ok bool)
 	// SessionRenewer, when non-nil, slides the session behind an authenticated request
 	// forward. RequireAuth calls it only after the identity re-check, so the session of a
 	// deleted or deactivated identity is never extended.
 	SessionRenewer func(w http.ResponseWriter, r *http.Request)
 	// SessionCookieName is the cookie SessionValidator reads (Authula's). It only tells a
-	// refused session from one the browser never sent, for the log; empty means the
-	// passphrase cookie.
+	// refused session from one the browser never sent, for the log.
 	SessionCookieName string
 	// DenialRecorder persists a capability refusal (RBAC-10): RequireCapability calls it
 	// on each of its three refusal branches before writing the 403. nil is a no-op — the
@@ -119,31 +109,12 @@ type AuthDeps struct {
 	DenialRecorder capabilityDenialRecorder
 }
 
-// ttl resolves the effective absolute session lifetime, defaulting a zero/negative
-// configured TTL to defaultSessionTTL.
-func (d AuthDeps) ttl() time.Duration {
-	if d.TTL <= 0 {
-		return defaultSessionTTL
-	}
-	return d.TTL
-}
-
 // loginPath resolves the public login route, defaulting to "/login".
 func (d AuthDeps) loginPath() string {
 	if d.LoginPath == "" {
 		return "/login"
 	}
 	return d.LoginPath
-}
-
-// LogoutHandler returns the POST /logout handler: it clears the session cookie
-// (MaxAge < 0) and 303-redirects to the login page. It is safe to call without a
-// session (idempotent) and never reads the cookie value.
-func (d AuthDeps) LogoutHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		clearSessionCookie(w)
-		http.Redirect(w, r, d.loginPath(), http.StatusSeeOther)
-	}
 }
 
 // isPublicPath reports whether a request path is reachable WITHOUT a session (D-03):
@@ -173,11 +144,11 @@ func (d AuthDeps) isPublicPath(p string) bool {
 // only permits an unconfigured secret on a loopback bind. When active it:
 //  1. lets isPublicPath requests + GET /healthz through (login + assets + liveness);
 //     GET /readyz is allowed only for same-process loopback orchestrator probes;
-//  2. reads ONLY r.Cookie(sessionCookieName) — never a client auth/identity header
-//     (T-24-13, golang-security client-header anti-pattern);
+//  2. reads the session ONLY through SessionValidator, which reads a cookie — never a
+//     client auth/identity header (T-24-13, golang-security client-header anti-pattern);
 //  3. redirects a browser GET to the login page (302) / 401s an API request on a
-//     missing or invalid cookie;
-//  4. validates the session (SessionValidator, else HMAC verifySession);
+//     missing or invalid session;
+//  4. validates the session (SessionValidator; none wired means none validates);
 //  5. confirms the bound identity still exists (a deleted identity invalidates the
 //     session);
 //  6. slides the session forward (SessionRenewer, when wired);
@@ -208,10 +179,9 @@ func RequireAuth(next http.Handler, deps AuthDeps) http.Handler {
 			return
 		}
 		// The bound identity must still exist AND not be soft-deleted — a deleted OR
-		// deactivated identity invalidates the session even with a valid MAC / Authula
-		// token (D-02 principal binding, HI-02). This re-check is provider-agnostic: it
-		// runs for BOTH the passphrase and Authula paths so a deleted operator identity
-		// always 401s the next request (AC-11), and a soft-deleted principal cannot
+		// deactivated identity invalidates the session even with a valid Authula token
+		// (D-02 principal binding, HI-02). So a deleted operator identity always 401s
+		// the next request (AC-11), and a soft-deleted principal cannot
 		// re-authenticate during the D-27 de-provisioning grace window even though its
 		// row still exists for the deprovision saga + admin roster.
 		if id, err := deps.Identities.GetIdentityByID(r.Context(), identityID); err != nil || id.Deactivated {
@@ -234,21 +204,16 @@ func isLoopbackRemoteAddr(remoteAddr string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// validateSession is the provider dispatch for the cookie-validation core (D-03,
-// Option-A2 seam). When SessionValidator is wired (AURA_WEB_AUTH_PROVIDER=authula) it
-// delegates to it (Authula session lookup → mapped Aura identity UUID); otherwise it
-// reads the __Host-aura_session cookie and runs the stdlib HMAC verifySession
-// (passphrase). Both return the bound Aura identity UUID + ok; RequireAuth applies the
-// identical existence re-check + withPrincipal afterwards.
+// validateSession delegates to SessionValidator (Authula session lookup → mapped Aura
+// identity UUID). There is no fallback: until 2026-10-26 a nil validator fell through to the
+// retired passphrase HMAC cookie, verified with whatever SigningKey the deps carried, and
+// production carried none, so an HMAC under an empty key, which anyone can compute, would
+// have validated.
 func (d AuthDeps) validateSession(r *http.Request) (identityID string, ok bool) {
-	if d.SessionValidator != nil {
-		return d.SessionValidator(r)
-	}
-	c, err := r.Cookie(sessionCookieName)
-	if err != nil {
+	if d.SessionValidator == nil {
 		return "", false
 	}
-	return verifySession(d.SigningKey, c.Value, d.ttl(), time.Now())
+	return d.SessionValidator(r)
 }
 
 // RequireCapability wraps a mutating-route handler with the capability_grants check

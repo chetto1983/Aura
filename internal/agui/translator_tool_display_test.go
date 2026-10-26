@@ -2,9 +2,10 @@ package agui
 
 import (
 	"encoding/json"
+	"testing"
+
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/display"
-	"testing"
 )
 
 func TestRetainedCancelledToolEmitsCorrectedDisplayWithoutMutatingAudit(t *testing.T) {

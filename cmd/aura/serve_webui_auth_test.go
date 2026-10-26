@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"errors"
 	"io"
 	"net/http"
@@ -37,8 +36,6 @@ const validAuthulaSession = "valid-authula-session"
 
 func authulaTestDeps(localID string, identities aguiIdentityStore) agui.AuthDeps {
 	return agui.AuthDeps{
-		Secret:           "",
-		SigningKey:       nil,
 		SecretConfigured: true,
 		LocalIdentityID:  localID,
 		Identities:       identities,
@@ -86,7 +83,6 @@ func (f *fakeAuthulaProvider) OperatorUserID(context.Context) (string, error) {
 func TestServeWebuiAuthulaSubtreePublic(t *testing.T) {
 	const localID = "00000000-0000-0000-0000-000000000001"
 	auth := agui.AuthDeps{
-		Secret:           "operator-secret",
 		SecretConfigured: true,
 		LocalIdentityID:  localID,
 		Identities:       wiringIdentities{id: localID},
@@ -240,20 +236,11 @@ func TestServeWebuiAuthWiring(t *testing.T) {
 	})
 
 	t.Run("POST /login no longer mints a passphrase session", func(t *testing.T) {
-		legacySecretAuth := auth
-		legacySecretAuth.Secret = "operator-secret"
-		key := sha256.Sum256([]byte(legacySecretAuth.Secret))
-		legacySecretAuth.SigningKey = key[:]
-		legacyHandler, err := newServeHandler(aguiHandler, legacySecretAuth, &fakeAuthulaProvider{}, "")
-		if err != nil {
-			t.Fatalf("newServeHandler with legacy secret: %v", err)
-		}
-
 		aguiHits = nil
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader("passphrase=operator-secret"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		legacyHandler.ServeHTTP(rec, req)
+		handler.ServeHTTP(rec, req)
 		if rec.Code == http.StatusSeeOther {
 			t.Fatalf("POST /login = %d, want legacy passphrase handler unmounted", rec.Code)
 		}

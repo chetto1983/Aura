@@ -112,8 +112,6 @@ func TestGovernanceWriteAuthSweep403(t *testing.T) {
 	s.SetGovernanceWriteProviders(GovernanceWriteProviders{MCP: newFakeMCPWrite(), Skills: newFakeSkillsWrite()})
 
 	deps := AuthDeps{
-		Secret:           "operator-secret",
-		SigningKey:       deriveSigningKey("operator-secret"),
 		SecretConfigured: true,
 		LocalIdentityID:  granteeID,
 		Identities: &fakeIdentities{
@@ -155,8 +153,6 @@ func TestGovernanceWriteAuthSweepGranteeReaches(t *testing.T) {
 	s := NewServer(&scriptedRunner{}, nil, ServerConfig{})
 	s.SetGovernanceWriteProviders(GovernanceWriteProviders{MCP: newFakeMCPWrite(), Skills: newFakeSkillsWrite()})
 	deps := AuthDeps{
-		Secret:           "operator-secret",
-		SigningKey:       deriveSigningKey("operator-secret"),
 		SecretConfigured: true,
 		LocalIdentityID:  granteeID,
 		Identities: &fakeIdentities{

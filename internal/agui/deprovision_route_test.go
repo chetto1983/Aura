@@ -117,7 +117,6 @@ func TestRemoveIdentityRequiresIdentityDelete(t *testing.T) {
 	s.SetIdentityRemover(fake)
 
 	deps := AuthDeps{
-		Secret:           "test-secret",
 		SecretConfigured: true,
 		Identities: &fakeIdentities{
 			known:        map[string]Identity{testLocalID: {ID: testLocalID, Name: "member", Kind: "user"}},

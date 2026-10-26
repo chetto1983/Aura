@@ -27,7 +27,7 @@ func TestRequireAuthLogsWhySessionWasRefused(t *testing.T) {
 	deps := testDeps("operator-secret")
 	stale := httptest.NewRequest(http.MethodGet, "/chat/abc", nil)
 	stale.Header.Set("Accept", "text/html")
-	stale.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "forged"})
+	stale.AddCookie(&http.Cookie{Name: testSessionCookie, Value: "forged"})
 	for _, tc := range []struct {
 		name  string
 		req   *http.Request
@@ -66,13 +66,13 @@ func TestRequireAuthLogsAnIdentityThatIsGone(t *testing.T) {
 	}
 }
 
-// The provider's cookie name decides "no cookie" versus "refused": Authula's cookie is not
-// the passphrase one, and reading the wrong name would call every refused Authula session
-// a missing cookie.
+// The provider's cookie name decides "no cookie" versus "refused": another cookie, such as a
+// stale one from the retired passphrase login, is not Authula's, and reading the wrong name
+// would call every refused Authula session a missing cookie.
 func TestMissingOrRefusedReadsTheProvidersCookie(t *testing.T) {
 	deps := AuthDeps{SessionCookieName: "__Host-authula_session"}
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "passphrase-cookie"})
+	req.AddCookie(&http.Cookie{Name: "__Host-aura_session", Value: "passphrase-cookie"})
 	if got := deps.missingOrRefused(req); got != refusedNoCookie {
 		t.Fatalf("passphrase cookie under Authula = %q, want %q", got, refusedNoCookie)
 	}
