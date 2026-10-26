@@ -59,7 +59,6 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 	for _, name := range []string{
 		"-- name: trystartoperation :one",
 		"-- name: getoperation :one",
-		"-- name: lockoperationreceipt :one",
 		"-- name: completeoperation :execrows",
 		"-- name: markoperationindeterminate :execrows",
 		"-- name: listexpiredreplaybodies :many",
@@ -72,15 +71,6 @@ func TestIdempotencyOperationsQueryContract(t *testing.T) {
 
 	assertSQLSectionContains(t, queries, "trystartoperation", "on conflict (identity_id, operation_scope, operation_key) do nothing")
 	assertSQLSectionContains(t, queries, "trystartoperation", "returning version")
-	lockReceipt := sqlSection(queries, "lockoperationreceipt")
-	wantLockReceipt := "lockoperationreceipt :one -- this must run on transaction-bound queries because autocommit releases the row lock when the statement returns. select identity_id, operation_scope, operation_key, payload_hash, state, version, created_at from aura.idempotency_operations where identity_id = sqlc.arg(identity_id) and operation_scope = sqlc.arg(operation_scope) and operation_key = sqlc.arg(operation_key) for update;"
-	if strings.TrimSpace(lockReceipt) != wantLockReceipt {
-		t.Errorf(
-			"LockOperationReceipt query = %q, want exact PK row lock %q",
-			lockReceipt,
-			wantLockReceipt,
-		)
-	}
 	for _, name := range []string{"completeoperation", "markoperationindeterminate"} {
 		assertSQLSectionContains(t, queries, name, "state = 'in_progress' and payload_hash =")
 		assertSQLSectionContains(t, queries, name, "version = sqlc.arg(claim_token)")

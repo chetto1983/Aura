@@ -55,7 +55,6 @@ type Querier interface {
 	// without re-authorizing against a possibly changed global candidate set.
 	AuthorizeRetentionOperation(ctx context.Context, arg AuthorizeRetentionOperationParams) (int64, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
-	BenchmarkSettingsOverrideExpired(ctx context.Context, runID pgtype.UUID) (bool, error)
 	BindMediaJobAssetDelivery(ctx context.Context, arg BindMediaJobAssetDeliveryParams) (int64, error)
 	// A paused task cancels too; its pause reason goes with the pause (migration 0138 ties a
 	// reason to the paused status).
@@ -66,7 +65,6 @@ type Querier interface {
 	// the same linear history ListTurnsBySeq returns (byte-identity, store.go:250). Returns
 	// 0 when the conversation has no turns.
 	CanonicalBranchLeafSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
-	CaptureBenchmarkSetting(ctx context.Context, arg CaptureBenchmarkSettingParams) error
 	ClaimConversationDeleteTeardown(ctx context.Context, arg ClaimConversationDeleteTeardownParams) (int64, error)
 	// job_type is an OPTIONAL filter (sqlc.narg): NULL (the document ingestion
 	// worker's own call) claims across every job_type exactly as before this
@@ -83,7 +81,6 @@ type Querier interface {
 	ClearActiveMCPProfile(ctx context.Context) error
 	ClearExpiredReplayBody(ctx context.Context, arg ClearExpiredReplayBodyParams) (int64, error)
 	ClearGatewayToolPolicy(ctx context.Context, arg ClearGatewayToolPolicyParams) (int64, error)
-	CompleteBenchmarkSettingsOverride(ctx context.Context, arg CompleteBenchmarkSettingsOverrideParams) (int64, error)
 	// The asset must be deliverable by BindMediaJobAssetDelivery when the job completes: owned,
 	// in the job's conversation, an accepted agent video that is not deleted.
 	CompleteMediaJob(ctx context.Context, arg CompleteMediaJobParams) (AuraMediaJob, error)
@@ -105,8 +102,6 @@ type Querier interface {
 	// error); a non-NULL result together with a 0-row insert means the queue was full
 	// (steer.ErrQueueFull).
 	ConversationOwner(ctx context.Context, conversationID string) (pgtype.UUID, error)
-	CountBenchmarkSettingsOverrideRows(ctx context.Context, runID pgtype.UUID) (int32, error)
-	CountBenchmarkSettingsRestoreMismatches(ctx context.Context, runID pgtype.UUID) (int32, error)
 	CountConversationsForIdentityPurge(ctx context.Context, identityID pgtype.UUID) (int64, error)
 	CountIngestionJobsByStatus(ctx context.Context, arg CountIngestionJobsByStatusParams) (int64, error)
 	// Current durable work that has not reached a terminal completed/failed item state.
@@ -207,7 +202,6 @@ type Querier interface {
 	FinalizeRetentionItem(ctx context.Context, arg FinalizeRetentionItemParams) (int64, error)
 	FinalizeRetentionOperation(ctx context.Context, arg FinalizeRetentionOperationParams) (AuraRetentionOperations, error)
 	GetActivePasswordResetChallenge(ctx context.Context, identityID pgtype.UUID) (AuraPasswordResetChallenges, error)
-	GetAsset(ctx context.Context, id pgtype.UUID) (AuraAssets, error)
 	GetAssetByObjectKey(ctx context.Context, arg GetAssetByObjectKeyParams) (AuraAssets, error)
 	GetAssetForIdentity(ctx context.Context, arg GetAssetForIdentityParams) (AuraAssets, error)
 	// Reads a board without creating it, unlike EnsureBoard: naming a card for an approval
@@ -255,7 +249,6 @@ type Querier interface {
 	GetMessageDraftByCall(ctx context.Context, arg GetMessageDraftByCallParams) (AuraMessageDrafts, error)
 	GetMessageDraftForIdentity(ctx context.Context, arg GetMessageDraftForIdentityParams) (AuraMessageDrafts, error)
 	GetOnboardingState(ctx context.Context, identityID pgtype.UUID) (GetOnboardingStateRow, error)
-	GetOpenBenchmarkSettingsOverride(ctx context.Context) (AuraBenchmarkSettingsOverrides, error)
 	GetOperation(ctx context.Context, arg GetOperationParams) (GetOperationRow, error)
 	GetPIMProviderApp(ctx context.Context, provider string) (AuraPimProviderApp, error)
 	GetPasswordResetToken(ctx context.Context, tokenHash string) (AuraPasswordResetTokens, error)
@@ -265,7 +258,6 @@ type Querier interface {
 	// token owned by another identity) is the caller's 404/403 signal. Run through
 	// db.WithIdentityTx so the RLS owner policy backstops a forgotten filter.
 	GetPausedStateByTokenForIdentity(ctx context.Context, arg GetPausedStateByTokenForIdentityParams) (AuraPausedStates, error)
-	GetRetentionItem(ctx context.Context, id pgtype.UUID) (AuraRetentionOperationItems, error)
 	GetRetentionOperationByToken(ctx context.Context, token string) (AuraRetentionOperations, error)
 	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
 	GetSetting(ctx context.Context, key string) (AuraSettings, error)
@@ -295,12 +287,9 @@ type Querier interface {
 	GrantResourceToIdentity(ctx context.Context, arg GrantResourceToIdentityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	HasGatewayApprovalGrant(ctx context.Context, arg HasGatewayApprovalGrantParams) (bool, error)
-	HeartbeatBenchmarkSettingsOverride(ctx context.Context, arg HeartbeatBenchmarkSettingsOverrideParams) (int64, error)
 	HeartbeatIngestionJob(ctx context.Context, arg HeartbeatIngestionJobParams) (AuraIngestionJobs, error)
 	IncrementPasswordResetChallengeAttempts(ctx context.Context, id pgtype.UUID) error
 	IncrementPasswordResetTokenAttempts(ctx context.Context, tokenHash string) error
-	InsertAssetEvent(ctx context.Context, arg InsertAssetEventParams) error
-	InsertBenchmarkSettingsOverride(ctx context.Context, arg InsertBenchmarkSettingsOverrideParams) (AuraBenchmarkSettingsOverrides, error)
 	InsertBoardCard(ctx context.Context, arg InsertBoardCardParams) (AuraBoardCards, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
 	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
@@ -523,7 +512,6 @@ type Querier interface {
 	ListRunsForTask(ctx context.Context, arg ListRunsForTaskParams) ([]AuraAgentJobRuns, error)
 	ListSettings(ctx context.Context) ([]AuraSettings, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
-	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
 	// The shared-in half of a reader's view: the rows an ACL lookup already said they may see.
 	// It carries NO owner predicate on purpose -- these are by definition someone else's skills
 	// -- so the ids MUST come from aura.resource_acl and never from user input.
@@ -570,8 +558,6 @@ type Querier interface {
 	ListUserTurnAttachments(ctx context.Context, conversationID pgtype.UUID) ([]ListUserTurnAttachmentsRow, error)
 	ListWorkerSteers(ctx context.Context, arg ListWorkerSteersParams) ([]AuraSteerQueue, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
-	// This must run on transaction-bound Queries because autocommit releases the row lock when the statement returns.
-	LockOperationReceipt(ctx context.Context, arg LockOperationReceiptParams) (LockOperationReceiptRow, error)
 	// Acquire this in a separate statement before the guarded insert. A lock inside
 	// that insert would retain a snapshot taken before waiting and race the cap.
 	// https://www.postgresql.org/docs/18/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS
@@ -581,7 +567,6 @@ type Querier interface {
 	// re-nudges at most once per cadence and a failing channel cannot spam the tick.
 	MarkApprovalReminded(ctx context.Context, id pgtype.UUID) error
 	MarkAssetDeleted(ctx context.Context, arg MarkAssetDeletedParams) (AuraAssets, error)
-	MarkBenchmarkSettingsOverrideRestoring(ctx context.Context, runID pgtype.UUID) (int64, error)
 	// The conditional UPDATE is the claim-before-push idempotency key for one complete
 	// (identity, fanout_key) set. RETURNING tells the caller which rows THIS pass won: two
 	// concurrent sweep passes over the SAME complete fan-out race for the SAME set of
@@ -630,7 +615,6 @@ type Querier interface {
 	MarkSteerRowExpired(ctx context.Context, arg MarkSteerRowExpiredParams) (int64, error)
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	MoveBoardCard(ctx context.Context, arg MoveBoardCardParams) (AuraBoardCards, error)
-	NextAssetEventSeq(ctx context.Context, assetID pgtype.UUID) (int32, error)
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	// 51-06b (SWARM-06 SC#4, Task 1): a claim-loop worker's AwaitingInput report parks its
 	// row instead of succeeding, failing or dead-lettering. The conditional UPDATE (status
@@ -720,7 +704,6 @@ type Querier interface {
 	// idempotency key -- a second sweep pass, or a sweep racing an operator's late answer
 	// that already un-parked the row, resolves zero rows.
 	ResolveIngestionJobAwaitingInput(ctx context.Context, arg ResolveIngestionJobAwaitingInputParams) (int64, error)
-	RestoreBenchmarkSetting(ctx context.Context, arg RestoreBenchmarkSettingParams) error
 	// Reactivate a paused task at the next fire the caller computed from now, clearing the
 	// failure count that may have paused it and any retry it was waiting for. Returns rows
 	// affected (a non-paused task misses).
@@ -834,7 +817,6 @@ type Querier interface {
 	// so a cancelled/completed task is not silently revived; a paused task stays paused. Returns
 	// rows affected.
 	UpdateTaskScheduleRow(ctx context.Context, arg UpdateTaskScheduleRowParams) (int64, error)
-	UpsertBenchmarkSetting(ctx context.Context, arg UpsertBenchmarkSettingParams) error
 	UpsertBoardView(ctx context.Context, arg UpsertBoardViewParams) (AuraBoardViews, error)
 	// Writes the branch's summary, advancing the watermark.
 	//
