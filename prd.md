@@ -4693,6 +4693,34 @@ load, chaos, disaster recovery, observability and audit closure. Evidence
 older than 24 hours, missing reports and failed required gates block release. The
 readiness report hashes its inputs; checkboxes and historical scores do not replace it.
 
+A weekly security scan (`.github/workflows/security-scan.yml`, Monday 04:41 UTC and on dispatch)
+reads every image the stack runs, own images at `:edge`. A run goes red on:
+- a fixable HIGH or CRITICAL in an image Aura or its forks build;
+- a fixable CRITICAL in a third-party image;
+- a finding govulncheck reaches in the Go graph;
+- a fixable HIGH or CRITICAL in a Craft app's wasm32 graph;
+- a Dependabot entry with no run in eight days, or with a failure no later run cleared.
+
+A red scheduled run opens or updates one `security-scan` issue. An accepted finding carries a
+statement and an expiry at most 90 days out, in `.trivyignore.yaml` or
+`.github/osv-scanner-craft.toml`. Own images take the week's OS fixes when they are built:
+`APT_WEEK` re-runs their package layer, which upgrades what the base ships.
+
+Measured on GitHub on 2026-10-24 and 26:
+- with runners free, a run takes 1.5 to 2 min and a scan job 25 to 90 s;
+- Docker Hub answered every pull from the hosted runners;
+- the first scheduled run started 5 h 51 min after its cron, went red on six fixable HIGHs in four
+  own images and opened #189, and after `baa95bb` the dispatched run was green.
+
+Not shown:
+- the cron's usual delay;
+- Hub's limit from one address;
+- the Go, Craft and Dependabot jobs going red on a real finding, which only their script tests show;
+- an update to an issue already open;
+- release images, which are not scanned.
+
+Evidence: `docs/superpowers/verification/2026-10-26-weekly-security-scan-first-run.md`.
+
 The CLI subprocess used for idempotent commands must inherit the caller's standard
 input. On 2026-09-14, `aura chat new` on the appliance printed its prompt and exited
 without a turn, with both piped input and a TTY. Its child executor omitted stdin;

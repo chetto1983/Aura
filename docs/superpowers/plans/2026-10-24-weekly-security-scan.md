@@ -1,10 +1,10 @@
 # Weekly security scan: implementation plan
 
-**Status (2026-10-24):**
+**Status (2026-10-26): closed.**
 - *Done:* Task 1 (#161); Tasks 2–6 on the operator's "Intanto inizia il workflow della scansione
-  settimanale", given while #174 was in CI, on a local branch from master `03a127c`.
-- *Next:* Task 7.
-- *Pending:* Tasks 8–10 depend on the first run on GitHub.
+  settimanale", given while #174 was in CI, on a local branch from master `03a127c`; Task 7; Tasks
+  8–10 from the runs on GitHub, recorded in
+  `docs/superpowers/verification/2026-10-26-weekly-security-scan-first-run.md`.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:executing-plans, task by task, with
 > test-driven-development for every script.
@@ -219,19 +219,29 @@ GitHub:
     that reads the edge cache, which would otherwise miss it.
   - *Measured with BuildKit 29.9.2.* Two builds in the same week leave every `RUN` after the
     `ARG` cached; a new week re-runs all of them.
-  - *Not yet shown.* That the first edge build after the merge has libexpat1 deb12u5 and
-    libbrotli1 1.0.9-2+deb12u1. Task 8's run scans that image.
+  - *Shown on GitHub.* Run 40108028947 scanned the first edge build after the merge, and
+    `aura` and `aura-ingest` came out green, so neither carries the fixable libexpat1 or
+    libbrotli1 any more.
 
 ### Task 8: the first run on GitHub
 
-- [ ] Merge, then run by `workflow_dispatch`. A dispatch needs the file on the default branch.
-- [ ] Record the time per job, Docker Hub's answers, and each job's verdict in
-  `docs/superpowers/verification/<date>-weekly-security-scan-first-run.md`.
+- [x] Merge, then run by `workflow_dispatch`. A dispatch needs the file on the default branch.
+  - #180 merged on 2026-10-24.
+  - The first run (40105988445) found the Craft script's path bug, fixed in `b68fe65`.
+  - The second (40108028947) was green.
+- [x] Record the time per job, Docker Hub's answers, and each job's verdict in
+  `docs/superpowers/verification/2026-10-26-weekly-security-scan-first-run.md`.
+  - With runners free, a run takes 1.5 to 2 minutes, and a scan job 25 to 90 s.
+  - Docker Hub answered every request from the hosted runners.
 
 ### Task 9: the first scheduled run
 
-- [ ] The Monday 04:41 UTC run: confirm the cron fired. If it is red, confirm the issue opened.
+- [x] The Monday 04:41 UTC run: confirm the cron fired. If it is red, confirm the issue opened.
+  - Run 40308151675 was created at 10:32 on 2026-10-26, 5 h 51 min late.
+  - It was red on six fixable HIGHs in four own images, and the report job opened #189.
+  - `baa95bb` fixed them. The dispatched run 40375348673 was green, and #189 is closed.
 
 ### Task 10: PRD amendment
 
-- [ ] Record the gate as measured: what turns it red, the time, and what it does not cover.
+- [x] Record the gate as measured: what turns it red, the time, and what it does not cover:
+  `prd.md` §18, 2026-10-26.
