@@ -5,9 +5,9 @@
 // resolves the Phase-2 deferred SpanID minting (full-tree crypto/rand, tracing.go)
 // and emits one llm.request span per LLM call.
 //
-// The loop shape replicates agenttest.CountingAgent.Run (the canonical budget-gated
-// iter.Seq2 emitter): budget gate BEFORE each call -> on a trip yield a terminal
-// Event (never the error slot, D-04); the yield-after-false guard is mandatory.
+// The loop shape is the canonical budget-gated iter.Seq2 emitter: budget gate
+// BEFORE each call -> on a trip yield a terminal Event (never the error slot, D-04);
+// the yield-after-false guard is mandatory.
 package agent
 
 import (
