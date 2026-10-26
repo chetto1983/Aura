@@ -11,12 +11,12 @@ import (
 // testIC builds an InvocationContext with a Budget seeded to maxSteps via
 // SetMaxSteps so drain tests are hermetic (no AURA_LOOP_* env dependence). The
 // shared *atomic.Int32 lives inside the returned Budget; CountingAgent consumes
-// it directly (never a fresh NewBudgetFromEnv — Pitfall 3).
+// it directly (never a fresh NewBudget — Pitfall 3).
 func testIC(t *testing.T, maxSteps int32) agent.InvocationContext {
 	t.Helper()
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	b.SetMaxSteps(maxSteps)
 	return agent.InvocationContext{Ctx: context.Background(), Budget: b, Branch: "root"}
@@ -112,7 +112,7 @@ func TestMocks_RunYieldDiscipline(t *testing.T) {
 
 // TestMocks_CountingAgent_SharedCounter proves CountingAgent consumes the
 // INJECTED shared budget — when drained without an artificial cap it stops at
-// exactly the seeded step count (not a fresh NewBudgetFromEnv default of 25),
+// exactly the seeded step count (not a fresh NewBudget default of 25),
 // which is the SC#3 shared-counter guarantee in miniature.
 func TestMocks_CountingAgent_SharedCounter(t *testing.T) {
 	const seeded = 4

@@ -12,9 +12,9 @@ import (
 // given root branch label.
 func newTestIC(t *testing.T, branch string) agent.InvocationContext {
 	t.Helper()
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	return agent.InvocationContext{
 		Ctx:    context.Background(),

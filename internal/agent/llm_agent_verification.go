@@ -21,9 +21,7 @@ import (
 // what catches a run that failed and was then walked away from.
 const verificationMaxAttempts = 2
 
-// verifyOnStopNudgePrefix leads every nudge BuildVerifyOnStopNudge returns. The nudge
-// is injected as a USER-role message, so isAgentNudge keeps it separate from the
-// actual user's request.
+// verifyOnStopNudgePrefix leads every nudge BuildVerifyOnStopNudge returns.
 const verifyOnStopNudgePrefix = "[System: You edited code in this turn"
 
 // gateVerification returns the follow-up for a voluntary termination that edited code

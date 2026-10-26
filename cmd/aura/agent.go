@@ -35,7 +35,7 @@ import (
 const dryRunToolName = "noop"
 
 // dryRunConfig holds the parsed `dry-run` flags. The numeric fields use a -1
-// sentinel meaning "unset → fall through to NewBudgetFromEnv" (D-06).
+// sentinel meaning "unset → fall through to NewBudget" (D-06).
 type dryRunConfig struct {
 	requestID       string // "auto" → uuid.NewV7(); else a literal UUID parsed verbatim
 	maxSteps        int    // -1 = unset

@@ -76,7 +76,7 @@ func TestRecordDeliveredPath(t *testing.T) {
 func TestGateDeliveryNudgesOncePerRun(t *testing.T) {
 	a := &LlmAgent{editedPaths: []string{"/workspace/artifacts/a.html", "/workspace/artifacts/b.png"}}
 	nudge, ok := a.gateDelivery()
-	if !ok || !strings.HasPrefix(nudge, deliverOnStopNudgePrefix) || !isAgentNudge(nudge) {
+	if !ok || !strings.HasPrefix(nudge, deliverOnStopNudgePrefix) {
 		t.Fatalf("first stop: ok=%v nudge=%q", ok, nudge)
 	}
 	if !strings.Contains(nudge, "/workspace/artifacts/a.html, /workspace/artifacts/b.png") {

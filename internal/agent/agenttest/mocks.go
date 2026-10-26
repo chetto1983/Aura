@@ -7,7 +7,7 @@
 // agent never imports agenttest outside _test.go, so there is no cycle. This is
 // the standard Go test-helper package layout.
 //
-// Budget invariant (Pitfall 3 / T-02-09): no mock here calls NewBudgetFromEnv.
+// Budget invariant (Pitfall 3 / T-02-09): no mock here calls NewBudget.
 // A mock that forked a fresh budget would silently break the shared-counter
 // guarantee that makes SC#3 true (depth-3 fan-3 ≤ max_steps, NOT max_steps³).
 // The counting mock therefore consumes ONLY ic.Budget, the single shared
@@ -166,7 +166,7 @@ func (a *RecordingAgent) FindAgent(name string) agent.Agent { return selfIfNamed
 // ic.Budget.ConsumeStep() — the single shared *atomic.Int32 threaded down the
 // whole tree (D-10) — and increments Calls in lockstep. It stops the instant the
 // shared budget refuses a step, so a depth-N tree of CountingAgents consumes
-// total ≤ max_steps, NOT max_steps^depth. It NEVER calls NewBudgetFromEnv:
+// total ≤ max_steps, NOT max_steps^depth. It NEVER calls NewBudget:
 // forking a fresh budget would reintroduce the depth³ trap (Pitfall 3 / T-02-09),
 // so a future wrapper that exposes this mock as a tool MUST thread the same
 // ic.Budget rather than build a new one.

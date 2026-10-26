@@ -226,9 +226,9 @@ func TestLoopAgent_MultiToolEscalate_EscalateRidesExactlyOneStepEvent(t *testing
 	// see N terminal signals for one logical turn.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
 	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "noop1,noop2,noop3") // budget/dedup never trips here
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 
@@ -319,9 +319,9 @@ func TestLoopAgent_SameToolTwicePerTurn_DedupCountsOnePerTurn(t *testing.T) {
 
 	baseline := func(t *testing.T, copies int) []*agent.Event {
 		t.Helper()
-		b, err := agent.NewBudgetFromEnv()
+		b, err := agent.NewBudget(agent.BudgetOptions{})
 		if err != nil {
-			t.Fatalf("NewBudgetFromEnv: %v", err)
+			t.Fatalf("NewBudget: %v", err)
 		}
 		ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 		sub := &sameToolTwiceAgent{name: "rep", toolName: "search", toolArgs: `{"q":"x"}`, copies: copies}
@@ -363,9 +363,9 @@ func TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(t *testing.T) 
 	// count of yielded step Events must equal the terminal steps_consumed.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "5")
 	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "noop1,noop2") // budget, not dedup, is the stop
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 
@@ -524,9 +524,9 @@ func TestLoopAgent_TerminatesAtMaxSteps_WithExplicitEvent(t *testing.T) {
 	// wins — this test asserts budget exhaustion, not dedup.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
 	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "noop")
-	b, err := agent.NewBudgetFromEnv()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
+		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
 
