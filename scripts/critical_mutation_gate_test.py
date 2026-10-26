@@ -88,6 +88,14 @@ class GoMutationParserTest(unittest.TestCase):
             "internal/agent/llm_agent_turn_reading.go",
         )
 
+    def test_ssrf_is_scoped(self) -> None:
+        # One classifier decides every outbound address: web_fetch, the MCP transport and
+        # the browser URL check (2026-10-26).
+        self.assertEqual(
+            critical_mutation_gate.GO_SCOPES["ssrf"],
+            "internal/netguard/netguard.go",
+        )
+
     def test_required_ids_and_go_scopes_cannot_drift(self) -> None:
         # REQUIRED_SCOPE_IDS is written out by hand on purpose. Deleting a boundary from
         # GO_SCOPES must fail the suite here rather than quietly delete its own requirement.

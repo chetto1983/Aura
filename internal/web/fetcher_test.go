@@ -47,9 +47,11 @@ func fetchClient(t *testing.T, hostIPs map[string][]netip.Addr) *Client {
 	return c
 }
 
-// publicIP is the classification stand-in for an allowed host: it passes classify
-// (TEST-NET-3, not private/loopback/link-local) so the gate approves the dial.
-var publicIP = netip.MustParseAddr("203.0.113.10")
+// publicIP is the classification stand-in for an allowed host: a routable public
+// address (example.com's), so netguard approves the dial. It is never contacted: the
+// dialer above sends every connection to the httptest server. A documentation block
+// such as TEST-NET-3 cannot stand in, because IANA marks it not globally reachable.
+var publicIP = netip.MustParseAddr("93.184.216.34")
 
 func hostPort(t *testing.T, rawURL string) (host, port string) {
 	t.Helper()
@@ -103,7 +105,7 @@ func TestFetch_RedirectRevalidate(t *testing.T) {
 	defer pubSrv.Close()
 	_, pubPort := hostPort(t, pubSrv.URL)
 
-	meta := netip.MustParseAddr("169.254.169.254") // link-local → blocked by classify
+	meta := netip.MustParseAddr("169.254.169.254") // link-local → blocked by netguard
 	c := fetchClient(t, map[string][]netip.Addr{
 		"public.test":   {publicIP},
 		"metadata.test": {meta},

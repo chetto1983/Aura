@@ -9,75 +9,6 @@ import (
 	"testing"
 )
 
-// TestBlocked_Classification is the SC#3 table: every blocklist class (loopback,
-// private, link-local/metadata, ULA, CGNAT, this-network/unspecified, multicast)
-// MUST classify blocked with an explicit reason, and the public sentinels MUST
-// pass. The two IPv4-mapped-IPv6 rows (::ffff:169.254.169.254 / ::ffff:127.0.0.1)
-// prove Unmap() runs BEFORE the switch — without it they would slip past the v4
-// predicates as opaque v6 addresses (Pitfall 2 / T-07-11).
-func TestBlocked_Classification(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name    string
-		ip      string
-		blocked bool
-		reason  string
-	}{
-		{"loopback v4", "127.0.0.1", true, "loopback"},
-		{"loopback v6", "::1", true, "loopback"},
-		{"private 10/8", "10.0.0.5", true, "private"},
-		{"private 192.168/16", "192.168.1.1", true, "private"},
-		{"private 172.16/12", "172.16.0.1", true, "private"},
-		{"link-local metadata v4", "169.254.169.254", true, "link_local"},
-		{"link-local v6", "fe80::1", true, "link_local"},
-		{"ula v6", "fc00::1", true, "private"},
-		{"cgnat", "100.64.0.1", true, "cgnat"},
-		{"unspecified v4", "0.0.0.0", true, "unspecified"},
-		{"this-network 0/8 nonzero", "0.1.2.3", true, "this_network"},
-		{"link-local multicast v4", "224.0.0.1", true, "link_local"},
-		{"global multicast v4", "225.1.2.3", true, "multicast"},
-		// fd00:ec2::/32 sits inside ULA fd00::/8, so IsPrivate() classifies it
-		// "private" BEFORE the dedicated metadataV6Pfx case — that case is therefore
-		// unreachable (a known dead branch flagged at the Gate-3 mutation review).
-		{"v6 ula incl. metadata range", "fd00:ec2::1", true, "private"},
-		// IPv4-mapped IPv6 — proves Unmap() before the switch (each row hits a
-		// DISTINCT v4-only predicate so dropping Unmap leaves the address unblocked).
-		{"mapped metadata", "::ffff:169.254.169.254", true, "link_local"},
-		{"mapped loopback", "::ffff:127.0.0.1", true, "loopback"},
-		{"mapped private 10/8", "::ffff:10.0.0.1", true, "private"},
-		{"mapped cgnat", "::ffff:100.64.0.1", true, "cgnat"},
-		{"mapped this-network", "::ffff:0.1.2.3", true, "this_network"},
-		// Public — must NOT be blocked.
-		{"public v4 cloudflare", "1.1.1.1", false, ""},
-		{"public v4 google", "8.8.8.8", false, ""},
-		{"public v6", "2606:4700:4700::1111", false, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			ip := netip.MustParseAddr(tc.ip)
-			reason, blocked := classify(ip)
-			if blocked != tc.blocked {
-				t.Fatalf("classify(%s) blocked=%v, want %v (reason=%q)", tc.ip, blocked, tc.blocked, reason)
-			}
-			if tc.blocked && reason != tc.reason {
-				t.Fatalf("classify(%s) reason=%q, want %q", tc.ip, reason, tc.reason)
-			}
-		})
-	}
-}
-
-// TestBlocked_InvalidTarget proves an invalid (zero) Addr is blocked with the
-// invalid_target reason — the fail-closed default when a resolver hands back a
-// malformed record.
-func TestBlocked_InvalidTarget(t *testing.T) {
-	t.Parallel()
-	reason, blocked := classify(netip.Addr{})
-	if !blocked || reason != "invalid_target" {
-		t.Fatalf("classify(invalid) = (%q,%v), want (invalid_target,true)", reason, blocked)
-	}
-}
-
 // stubResolver is a deterministic resolver injected so validateAndPin never
 // touches real DNS. answers maps a host to its record set; err overrides.
 type stubResolver struct {
@@ -126,6 +57,37 @@ func TestValidateAndPin_MixedRecords(t *testing.T) {
 			t.Fatalf("pinned %v, want first public 1.2.3.4", ip)
 		}
 	})
+}
+
+// TestValidateAndPin_CarriedIPv4 proves the guard judges an IPv4 address carried in
+// IPv6 as that address (netguard owns the table): NAT64 and 6to4 forms of the metadata
+// IP are refused, and a DNS64 answer for a public site is pinned as answered.
+func TestValidateAndPin_CarriedIPv4(t *testing.T) {
+	t.Parallel()
+	for host, want := range map[string]string{
+		"nat64-metadata.test": "",
+		"6to4-loopback.test":  "",
+		"dns64-public.test":   "64:ff9b::808:808",
+	} {
+		t.Run(host, func(t *testing.T) {
+			t.Parallel()
+			g := newGuard(stubResolver{answers: map[string][]netip.Addr{
+				"nat64-metadata.test": {netip.MustParseAddr("64:ff9b::a9fe:a9fe")},
+				"6to4-loopback.test":  {netip.MustParseAddr("2002:7f00:1::1")},
+				"dns64-public.test":   {netip.MustParseAddr("64:ff9b::808:808")},
+			}}, newDNSPin(60), nil)
+			ip, reason := g.validateAndPin(context.Background(), "conv-1", host)
+			if want == "" {
+				if reason != ReasonPrivateOrMetadata || ip.IsValid() {
+					t.Fatalf("validateAndPin(%s) = (%v, %q), want (invalid, %q)", host, ip, reason, ReasonPrivateOrMetadata)
+				}
+				return
+			}
+			if reason != "" || ip.String() != want {
+				t.Fatalf("validateAndPin(%s) = (%v, %q), want (%s, \"\")", host, ip, reason, want)
+			}
+		})
+	}
 }
 
 // countingResolver wraps a record set and counts LookupNetIP calls so a test can
@@ -199,7 +161,8 @@ func TestValidateAndPin_ResolveFailsClosed(t *testing.T) {
 }
 
 // TestHostnameBlocklist proves the five cloud-metadata / internal hostnames are
-// blocked by the hostname set BEFORE resolution, case-insensitively (T-07-10).
+// blocked BEFORE resolution, case-insensitively and with or without the root dot
+// (T-07-10).
 func TestHostnameBlocklist(t *testing.T) {
 	t.Parallel()
 	hosts := []string{
@@ -208,6 +171,7 @@ func TestHostnameBlocklist(t *testing.T) {
 		"metadata.azure.com",
 		"kubernetes.default.svc",
 		"Host.Docker.Internal",
+		"metadata.google.internal.",
 	}
 	// A resolver that would return a public IP — proving the block is by hostname,
 	// not by resolution.

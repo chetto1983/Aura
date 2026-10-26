@@ -62,6 +62,7 @@
     "github.com/chetto1983/aura/internal/mediagen": {"mode": "target"},
     "github.com/chetto1983/aura/internal/messagedrafts": {"mode": "target"},
     "github.com/chetto1983/aura/internal/multimodal": {"mode": "target"},
+    "github.com/chetto1983/aura/internal/netguard": {"mode": "target"},
     "github.com/chetto1983/aura/internal/objectbackup": {"mode": "target"},
     "github.com/chetto1983/aura/internal/objectstore": {"mode": "baseline", "covered_statements": 467, "total_statements": 596},
     "github.com/chetto1983/aura/internal/objectstore/garageadmin": {"mode": "baseline", "covered_statements": 113, "total_statements": 144},

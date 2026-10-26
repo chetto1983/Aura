@@ -7,6 +7,8 @@ import (
 	"net/netip"
 	"syscall"
 	"time"
+
+	"github.com/chetto1983/aura/internal/netguard"
 )
 
 // dialConnectTimeout bounds the dial only; the total request deadline rides the
@@ -112,7 +114,7 @@ func (h *hardenedTransport) control(_ string, address string, _ syscall.RawConn)
 	if perr != nil {
 		return &internalError{code: CodeBlockedURL, reason: ReasonInvalidTarget, message: "blocked"}
 	}
-	if _, blocked := classify(ip); blocked {
+	if _, blocked := netguard.Classify(ip); blocked {
 		return &internalError{code: CodeBlockedURL, reason: ReasonPrivateOrMetadata, message: "blocked", resolvedIP: host}
 	}
 	return nil

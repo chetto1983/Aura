@@ -33,7 +33,8 @@ operator's demand, measured first.
 transition ranges that embed an IPv4 address, or the IPv4 reserved ranges. The classifier exists
 in two copies, `internal/web/ssrf.go:35-60` and `internal/mcp/ssrf.go:52-`, and both copies have
 the gap. Karakeep blocks 6to4, Teredo and the reserved ranges. Neither project blocks NAT64. The
-probe tables are in §Measurements. The realistic risk is low, and the fix is small.
+probe tables are in §Measurements. The realistic risk is low. The fix landed the same day as
+one shared classifier (K1, "Landed the same day").
 
 **The design rules.**
 - Use the labels of a document's nearest reviewed neighbours as the dumb baseline for
@@ -120,10 +121,35 @@ piece taken from it.
 
   Both copies need the change. Better still, extract the one guard that the comment at
   `internal/mcp/ssrf.go:12-14` defers to QUAL-03, so the next gap is fixed once.
-- **Gate.** `classify` is the mutation-gate target (`ssrf.go:30-34`).
-  - One row per new class goes into `TestBlocked_Classification`.
+- **Gate.** The comment at `ssrf.go:30-34` called `classify` the mutation-gate target, but
+  `scripts/critical_mutation_gate.py` had no such scope, so the claim was false.
+  - One row per new class goes into the classifier's table test.
   - The mutation gate must pass on the changed file.
   - No live claim is made without a lab-VM probe through a host that has IPv6.
+
+**Landed the same day.**
+- **One classifier, `internal/netguard/netguard.go`.** `internal/web`, `internal/mcp` and
+  `publicBrowserURL` call it, and the two copies are gone. The browser check was a third,
+  narrower variant. Probed the same way, it accepted the CGNAT, `0.1.2.3`, reserved, NAT64
+  and 6to4 literals.
+- **The rule comes from the IANA registries** read that day:
+  - a carried IPv4 (mapped, `64:ff9b::/96`, `2002::/16`) is judged as itself;
+  - every block marked "Globally Reachable: False" is refused, including all of IPv6 outside
+    `2000::/3`;
+  - `192.0.0.0/24` and `2001::/23` are refused whole, Teredo included.
+
+  `IsMetadata` sees carried forms, so the MCP dev profile refuses them too. A metadata
+  hostname written with the root dot is refused.
+- **Evidence.**
+  - The table and property tests in `internal/netguard` cover 100% of statements.
+  - The new `ssrf` scope of the critical mutation gate killed 30 of 30 mutants in 14 s. The
+    first run left one equivalent mutant, `b[2:6]` → `b[2:7]` in a slice-to-array conversion.
+    The redundant upper bound was dropped, which removed that mutant.
+  - `scripts/ssrf_smoke.sh` gives 6/6 `blocked_url` with the real binary. The binary built
+    from `209e8d0` passed both new targets to the dial (`http_error`).
+- **One test fixture changed, with its reason.** `internal/web/fetcher_test.go` had used
+  TEST-NET-3 as its "public" stand-in. A documentation block is exactly what the rule
+  refuses, so the fixture is now a routable address that the test's dialer never contacts.
 
 ## K2. A saved link becomes a document
 
