@@ -15,6 +15,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/browsercontrol"
+	"github.com/chetto1983/aura/internal/idempotency"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	runtimereadiness "github.com/chetto1983/aura/internal/readiness"
@@ -135,7 +136,7 @@ type Server struct {
 	run             Runner
 	conv            ConversationStore
 	toolInvocations ToolInvocationReader
-	operations      operationRegistry
+	operations      idempotency.Registry
 	approvals       ApprovalStore
 	// approvalGrants serves the durable "always approve" grants (amendment #127). nil ⇒ the
 	// grant routes answer 503, exactly like the pending read without an ApprovalStore.

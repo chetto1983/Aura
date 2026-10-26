@@ -2,6 +2,7 @@ package idempotency
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,6 +24,24 @@ const (
 	MaxReplayHeadersBytes   = 4 << 10
 	MaxAuditToolCallIDBytes = 200
 	MaxRetryAfter           = time.Minute
+)
+
+// ReplayRetention is how long a completed operation's replay receipt is kept. HTTP ingress,
+// the CLI and the tool gateway each used to declare their own 30-day constant for it.
+const ReplayRetention = 30 * 24 * time.Hour
+
+// Registry is the public-operation state machine as its three consumers (HTTP ingress, the
+// CLI, the tool gateway) use it: only an acquired Begin authorizes a mutating effect. *Store
+// and *MaintenanceRegistry satisfy it.
+type Registry interface {
+	Begin(context.Context, BeginRequest) (BeginDecision, error)
+	Complete(context.Context, CompleteRequest) error
+	MarkIndeterminate(context.Context, OperationKey, [32]byte, ClaimToken) error
+}
+
+var (
+	_ Registry = (*Store)(nil)
+	_ Registry = (*MaintenanceRegistry)(nil)
 )
 
 // ErrConflict and the other sentinels classify public operation outcomes and

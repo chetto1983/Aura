@@ -45,8 +45,6 @@ func markReplayed(result tools.ToolResult) tools.ToolResult {
 	return result
 }
 
-const operationReplayRetention = 30 * 24 * time.Hour
-
 // beginOperation consumes the shared registry before the internal policy
 // reservation. A non-acquired decision returns a terminal/replay verdict and
 // prevents both policy reservation and tool execution.
@@ -206,7 +204,7 @@ func boundedOperationReplay(result tools.ToolResult) idempotency.ReplayResult {
 	}
 	return idempotency.ReplayResult{
 		Body: body, Preview: copyResult.Preview, SidecarRef: copyResult.FullPath,
-		ExpiresAt: time.Now().UTC().Add(operationReplayRetention),
+		ExpiresAt: time.Now().UTC().Add(idempotency.ReplayRetention),
 	}
 }
 
@@ -222,7 +220,7 @@ func boundedOperationRejection(toolErr error) idempotency.ReplayResult {
 	}
 	return idempotency.ReplayResult{
 		Body: body, Preview: preview,
-		ExpiresAt: time.Now().UTC().Add(operationReplayRetention),
+		ExpiresAt: time.Now().UTC().Add(idempotency.ReplayRetention),
 	}
 }
 

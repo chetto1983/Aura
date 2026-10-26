@@ -40,20 +40,8 @@ const cliExplicitOrGeneratedKey = "explicit_or_generated"
 
 const (
 	cliIdempotencyChildEnv  = "AURA_CLI_IDEMPOTENCY_CHILD"
-	cliReplayRetention      = 30 * 24 * time.Hour
 	maxCLIReplayStreamBytes = 96 << 10
 )
-
-type cliOperationRegistry interface {
-	Begin(context.Context, idempotency.BeginRequest) (idempotency.BeginDecision, error)
-	Complete(context.Context, idempotency.CompleteRequest) error
-	MarkIndeterminate(
-		context.Context,
-		idempotency.OperationKey,
-		[32]byte,
-		idempotency.ClaimToken,
-	) error
-}
 
 type cliCommandExecutor func(context.Context, []string, io.Writer, io.Writer) int
 
@@ -234,7 +222,7 @@ func runCLIIdempotent(
 	args []string,
 	stdout io.Writer,
 	stderr io.Writer,
-	registry cliOperationRegistry,
+	registry idempotency.Registry,
 	execute cliCommandExecutor,
 ) int {
 	operation, ok := idempotency.OperationFromContext(ctx)
@@ -300,7 +288,7 @@ func runCLIIdempotent(
 	}
 	result := idempotency.ReplayResult{
 		Body: body, StatusCode: 200,
-		ExpiresAt: time.Now().UTC().Add(cliReplayRetention),
+		ExpiresAt: time.Now().UTC().Add(idempotency.ReplayRetention),
 	}
 	completeErr := registry.Complete(ctx, idempotency.CompleteRequest{
 		Operation: operation.Key, Fingerprint: operation.Fingerprint,
