@@ -79,7 +79,7 @@ func (e *WebFetch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 		return ToolResult{}, fmt.Errorf("web_fetch: url is required")
 	}
 
-	page, err := e.Engine.Fetch(ctx, fetchConvID(ctx), a.URL)
+	page, err := e.Engine.Fetch(ctx, SessionIDFromContext(ctx), a.URL)
 	if err != nil {
 		return webErrorResult(ctx, err)
 	}
@@ -90,18 +90,6 @@ func (e *WebFetch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	}
 	// Success path: a large content_md spills to the sidecar via NewResult (D-21).
 	return NewResult(ctx, string(out))
-}
-
-// fetchConvID reads the conversation/session id the agent injected via
-// WithToolCallContext; the engine keys its per-conversation DNS pin by it. An
-// empty id (e.g. a bare ctx in a unit test) is fine — the pin simply scopes to
-// the empty conversation.
-func fetchConvID(ctx context.Context) string {
-	tc, ok := toolCallCtx(ctx)
-	if !ok {
-		return ""
-	}
-	return tc.sessionID
 }
 
 // webErrorResult maps an engine error to the model-visible result channel. A
