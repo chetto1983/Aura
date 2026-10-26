@@ -35,7 +35,7 @@ RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-media-index ./cmd/aura-media-i
 RUN CGO_ENABLED=0 go build -trimpath -o /out/aura-ingest-supervisor ./cmd/aura-ingest-supervisor
 
 # Pinned by digest so that Dependabot moves it weekly, as it does the other bases.
-FROM python:3.12-slim-bookworm@sha256:6a0e06f5ba0b373d051aabd3fffb9b873f27f9a2a3a14bcbe37dee6f0e3bbc70
+FROM python:3.15-slim-bookworm@sha256:575f8bc12ec26542e0678bc6b60e385218248019d433157ec327264a78c3a853
 
 # The digest alone does not refresh the apt layer below: libexpat1 and libbrotli1 are not in this
 # base, and a cached RUN keeps the versions it installed. On 2026-10-24 aura-ingest:edge had

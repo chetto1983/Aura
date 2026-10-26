@@ -23,7 +23,7 @@
 # Landlock (internal/mcp/manager/catalog_craft.go). It is built from its module, which the Go checksum
 # database verifies, and statically: the release binary needs glibc 2.38 and bookworm has 2.36. The
 # fetch is retried for the reason docker/aura/Dockerfile gives at its `go mod download`.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:21ade014faf952365b9ecbd8dbdb87176fbacb82fac9fb132d9f2a7b8cc3f132 AS landrun
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS landrun
 ARG TARGETARCH
 RUN set -e; \
     for attempt in 1 2 3; do \
