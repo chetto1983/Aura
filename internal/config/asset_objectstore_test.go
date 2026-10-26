@@ -45,15 +45,6 @@ func TestLoadDBAssetObjectStoreDefaultsAndOverrides(t *testing.T) {
 	if cfg.AssetProcessingConcurrent != 2 {
 		t.Errorf("AssetProcessingConcurrent default = %d, want 2", cfg.AssetProcessingConcurrent)
 	}
-	if cfg.TelegramAPIBaseURL != "" {
-		t.Errorf("TelegramAPIBaseURL default = %q, want empty", cfg.TelegramAPIBaseURL)
-	}
-	if cfg.TelegramFileBaseURL != "" {
-		t.Errorf("TelegramFileBaseURL default = %q, want empty", cfg.TelegramFileBaseURL)
-	}
-	if cfg.TelegramLocalBotAPI {
-		t.Error("TelegramLocalBotAPI default = true, want false")
-	}
 
 	t.Setenv("AURA_OBJECTSTORE_BACKEND", "filesystem-dev")
 	t.Setenv("AURA_OBJECTSTORE_ENDPOINT", "file:///tmp/aura-assets")
@@ -68,9 +59,6 @@ func TestLoadDBAssetObjectStoreDefaultsAndOverrides(t *testing.T) {
 	t.Setenv("AURA_ASSET_MAX_AUDIO_BYTES", "789")
 	t.Setenv("AURA_ASSET_PRESIGN_TTL_SEC", "42")
 	t.Setenv("AURA_ASSET_PROCESSING_CONCURRENCY", "3")
-	t.Setenv("TELEGRAM_API_BASE_URL", "http://telegram-api:8081")
-	t.Setenv("TELEGRAM_FILE_BASE_URL", "http://telegram-api:8081/file")
-	t.Setenv("AURA_TELEGRAM_LOCAL_BOT_API", "true")
 
 	cfg = LoadDB()
 	if cfg.ObjectStoreBackend != "filesystem-dev" {
@@ -105,14 +93,5 @@ func TestLoadDBAssetObjectStoreDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.AssetProcessingConcurrent != 3 {
 		t.Errorf("AssetProcessingConcurrent override = %d, want 3", cfg.AssetProcessingConcurrent)
-	}
-	if cfg.TelegramAPIBaseURL != "http://telegram-api:8081" {
-		t.Errorf("TelegramAPIBaseURL override = %q, want http://telegram-api:8081", cfg.TelegramAPIBaseURL)
-	}
-	if cfg.TelegramFileBaseURL != "http://telegram-api:8081/file" {
-		t.Errorf("TelegramFileBaseURL override = %q, want http://telegram-api:8081/file", cfg.TelegramFileBaseURL)
-	}
-	if !cfg.TelegramLocalBotAPI {
-		t.Error("TelegramLocalBotAPI override = false, want true")
 	}
 }

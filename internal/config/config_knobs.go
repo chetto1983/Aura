@@ -127,7 +127,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_EMBED_REVISION", Kind: KindString},
 		{Name: "AURA_EMBED_FINGERPRINT", Kind: KindString},
 		{Name: "AURA_OBJECTSTORE_PATH_STYLE", Kind: KindBool},
-		{Name: "AURA_TELEGRAM_LOCAL_BOT_API", Kind: KindBool},
 		{Name: "AURA_AUTHULA_RATE_LIMIT_MAX", Kind: KindInt},
 		{Name: "AURA_SERVE_SHUTDOWN_GRACE_SEC", Kind: KindInt},
 		{Name: "AURA_RETENTION_TEMP_HOURS", Kind: KindInt},

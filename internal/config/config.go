@@ -206,9 +206,6 @@ type Config struct {
 	AssetPresignTTLSec           int           // AURA_ASSET_PRESIGN_TTL_SEC — upload URL lifetime
 	AssetProcessingConcurrent    int           // AURA_ASSET_PROCESSING_CONCURRENCY — asset worker width
 	AssetProcessingLeaseDuration time.Duration // AURA_ASSET_PROCESSING_LEASE_SEC — durable asset job lease
-	TelegramAPIBaseURL           string        // TELEGRAM_API_BASE_URL — optional local Bot API base
-	TelegramFileBaseURL          string        // TELEGRAM_FILE_BASE_URL — optional local Bot API file base
-	TelegramLocalBotAPI          bool          // AURA_TELEGRAM_LOCAL_BOT_API — local Bot API toggle
 
 	// Web-auth knobs. GuardWebBind decides at boot whether a non-loopback AGUIBind
 	// may start.
@@ -492,9 +489,6 @@ func loadBase() *Config {
 		AssetProcessingLeaseDuration: time.Duration(envutil.IntDefault(
 			"AURA_ASSET_PROCESSING_LEASE_SEC", DefaultAssetProcessingLeaseSec,
 		)) * time.Second,
-		TelegramAPIBaseURL:  os.Getenv("TELEGRAM_API_BASE_URL"),
-		TelegramFileBaseURL: os.Getenv("TELEGRAM_FILE_BASE_URL"),
-		TelegramLocalBotAPI: envutil.BoolDefault("AURA_TELEGRAM_LOCAL_BOT_API", false),
 
 		WebTrustProxy: envutil.BoolDefault("AURA_WEB_TRUST_PROXY", false),
 
