@@ -10,6 +10,13 @@ import (
 	"time"
 )
 
+// IngestionJobHandlerFunc adapts a function to IngestionJobHandler.
+type IngestionJobHandlerFunc func(context.Context, IngestionJob) error
+
+func (f IngestionJobHandlerFunc) HandleIngestionJob(ctx context.Context, job IngestionJob) error {
+	return f(ctx, job)
+}
+
 const testIngestionIdentityID = "20000000-0000-0000-0000-000000000001"
 
 func TestIngestionJobWorkerMarksSucceeded(t *testing.T) {

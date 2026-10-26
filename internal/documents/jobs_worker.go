@@ -34,14 +34,6 @@ type IngestionJobHandler interface {
 	HandleIngestionJob(ctx context.Context, job IngestionJob) error
 }
 
-// IngestionJobHandlerFunc adapts a function to IngestionJobHandler.
-type IngestionJobHandlerFunc func(context.Context, IngestionJob) error
-
-// HandleIngestionJob calls f(ctx, job).
-func (f IngestionJobHandlerFunc) HandleIngestionJob(ctx context.Context, job IngestionJob) error {
-	return f(ctx, job)
-}
-
 // IngestionQueueDepthSource reports the current durable queued-job backlog
 // for the queue-depth gauge. Optional: a nil source skips the gauge (fail-soft).
 type IngestionQueueDepthSource interface {
