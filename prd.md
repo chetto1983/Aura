@@ -4259,16 +4259,23 @@ may apply edge images automatically; pinned deployments have an explicit update 
 Acceptance records source revisions and image digests. Hot settings are not rollouts.
 
 An edge appliance downloads every build on each tick but restarts into it only when an
-admin (`identity.create`) asks from the cockpit, when Aura has been idle for 15 minutes
-with no tool call or job running, or once the first pending build has waited 24 hours;
-an admin may defer up to that deadline, and members see only the restart. The channel is
+admin (`identity.create`) asks from the cockpit, or during the night: from
+`AURA_UPDATE_AT` (host local time, default `03:00`) for three hours, with no tool call or
+job running and no deferral holding it. A night that a run or a deferral fills whole moves
+the install to the next one, so the restart never lands in the day. An admin may defer
+until the deadline, 24 hours after the first pending build; the deadline ends a deferral
+and forces nothing. Members see only the restart. The channel is
 `/opt/aura/update`, bind-mounted at `AURA_UPDATE_STATE_DIR` (`/run/aura-update`): the
 updater writes `status`, Aura writes `request` and a per-minute `activity` report, each
 one writer per file by atomic rename, and a stale report reads as idle so a down Aura
 never blocks the update that may fix it. A systemd `.path` unit on `request` starts the
 updater at once; the updater enables it itself, so hosts installed earlier gain it on
-their next tick. The policy lives in `/etc/default/aura` (`AURA_UPDATE_IDLE_SECONDS`,
-`AURA_UPDATE_MAX_DEFER_SECONDS`, `AURA_UPDATE_ACTIVITY_STALE_SECONDS`). A host rebooted
+their next tick. The policy lives in `/etc/default/aura` (`AURA_UPDATE_AT`,
+`AURA_UPDATE_MAX_DEFER_SECONDS`, `AURA_UPDATE_ACTIVITY_STALE_SECONDS`). Corrected
+2026-10-26 against `deploy/aura-update-consent.sh`: this paragraph still described a
+15-minute idle trigger and an `AURA_UPDATE_IDLE_SECONDS` knob the script no longer reads;
+the nightly policy landed in `7b1a23e` (plan `2026-10-24-nightly-appliance-update.md`), and
+this correction is a reading of the script, not a new measurement on the lab VM. A host rebooted
 onto the new image applies the rest without asking, because image and payload must not
 run apart. Measured 2026-09-24 on the lab VM: the path unit started the updater about
 300 ms after the write, and a trigger arriving while the oneshot ran was folded into it
