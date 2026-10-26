@@ -46,6 +46,14 @@ import (
 // the thing that discovers the expiry. It matches the leeway Grant.Expired documents.
 const oauthTokenLeeway = 60 * time.Second
 
+// refreshingTokenSource is cfg.TokenSource with oauthTokenLeeway as its early-expiry
+// window. cfg.TokenSource alone refreshes only x/oauth2's defaultExpiryDelta (10 s) before
+// expiry; ReuseTokenSourceWithExpiry unwraps that cache and rebuilds it around the same
+// refresher, so there is one cache, not two disagreeing ones.
+func refreshingTokenSource(ctx context.Context, cfg *oauth2.Config, tok *oauth2.Token) oauth2.TokenSource {
+	return oauth2.ReuseTokenSourceWithExpiry(tok, cfg.TokenSource(ctx, tok), oauthTokenLeeway)
+}
+
 // resolvedClient is the OAuth state Aura persists beside the tokens: what the client
 // turned out to be, and where it must talk. Every field is one the SDK resolved at
 // authorization time and would otherwise forget.
@@ -259,7 +267,7 @@ func (p *persistingTokenSource) reload() error {
 			"server", p.name, "error", err)
 		return nil
 	}
-	p.inner = client.oauth2Config().TokenSource(p.ctx, tokenFrom(grant))
+	p.inner = refreshingTokenSource(p.ctx, client.oauth2Config(), tokenFrom(grant))
 	p.client = client
 	p.resourceURL = grant.ResourceURL
 	p.last = grant.AccessToken
@@ -337,7 +345,7 @@ func restoreTokenSource(ctx context.Context, serverName string, store GrantStore
 		detached = context.WithValue(detached, oauth2.HTTPClient, httpClient)
 	}
 	tok := tokenFrom(grant)
-	source := rc.oauth2Config().TokenSource(detached, tok)
+	source := refreshingTokenSource(detached, rc.oauth2Config(), tok)
 	// Seeded with the token just loaded so a mount that never refreshes does not write
 	// the row back unchanged on its first call.
 	return newPersistingTokenSource(detached, source, serverName, grant.ResourceURL, rc, store, log, grant.AccessToken, true), nil
