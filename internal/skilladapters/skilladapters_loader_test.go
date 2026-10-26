@@ -10,6 +10,11 @@ import (
 	"github.com/chetto1983/aura/internal/skills"
 )
 
+// NewLoader builds the adapter over ONE loader, whatever identity asks.
+func NewLoader(loader *skills.Loader, manCap int) *Loader {
+	return NewIdentityLoader(func(context.Context, string) *skills.Loader { return loader }, loader.Invalidate, manCap)
+}
+
 // writeSkillFile materializes <root>/<dir>/SKILL.md with the given content and
 // returns the skill dir. It is the realistic on-disk fixture builder the loader
 // adapter scans over (mirrors internal/skills.writeSkill).
