@@ -2212,6 +2212,24 @@ Tools and artifact delivery resolve the persistent working root consistently. Sa
 materialization and original-object access cannot expose another identity's files.
 Container paths, host staging and user-facing attachments are distinct.
 
+**The agent's tools run only in the per-identity box (since 2026-08-03, `0d76f84a8`; recorded
+2026-10-26).** `shell_exec`, the five `fs_*` tools, `send_file`, `skill_read` and `document_open`
+have no host arm. `buildSandboxRouter` builds the router on every profile, and a box that cannot
+be created makes the tool deny. Before, `document_open` wrote into the aura container's
+`/workspace` while `shell_exec` read the box's, and the agent found the file missing. The aura
+container keeps what Aura itself runs there:
+- poppler for `pdftotext` and `pdftoppm`;
+- git for pack fetches, and `postgresql-client` for backups;
+- Node/npm, uv and python3, for stdio MCP servers whose runtime is not the box (prepared with
+  uv or npm, amendment #211), for `npx skills add`, and for skill snippets.
+
+Measured on the lab VM on 2026-10-26: the image is 1.43 GB, Node 222 MB and uv 64 MB of it, and
+the container ran no process but `aura`. Only `serve`, `chat`, `shell`, `identity` and `mcp`
+build a router; the other CLI verbs need no Docker. Not shown: the live tabular acceptance the
+plan named (699 on `Clienti.xlsx`) was never recorded, and moving the remaining in-container
+installers into the box is not decided. Record:
+`docs/superpowers/verification/2026-10-26-one-path-sandbox-only.md`.
+
 **The boxes and the Aura container run on runc; gVisor retired 2026-10-11.** The operator
 retired gVisor: runc works well, and gVisor caused problems in the past. Until then two
 settings could select it. `server_production` gave every box the `runsc` runtime, and

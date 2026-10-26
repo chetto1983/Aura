@@ -106,10 +106,10 @@ services:
       # Installed plugins' kept trees and install records, on aura-home (durable): the code
       # default falls under $HOME, which a recreated container loses.
       AURA_PLUGINS_DIR: /var/lib/aura/plugins
-      # Amendment #88: the fixed local working root every host-direct tool (shell_exec,
-      # fs_*, send_file) and the per-turn runner workspace hint resolve against — same
-      # path the strict-profile sandbox box mounts, backed by the aura-workspace volume
-      # below (durable across `docker compose up -d --force-recreate aura`).
+      # Amendment #88: the fixed working root. The per-turn runner workspace hint names it and
+      # `aura docs` resolves its paths against it. The agent's tools work in the per-identity
+      # box, which mounts its own volume at the same /workspace path; this one is the
+      # aura-workspace volume below (durable across `docker compose up -d --force-recreate aura`).
       AURA_WORKSPACE_DIR: ${AURA_WORKSPACE_DIR:-/workspace}
       AURA_BACKUP_DIR: /backups
       AURA_CONTEXT_PREVIEW_CAP_BYTES: ${AURA_CONTEXT_PREVIEW_CAP_BYTES:-30000}
@@ -150,8 +150,8 @@ services:
       AURA_SHOW_REASONING: ${AURA_SHOW_REASONING:-true}
       # Declares this deployment fit to host more than one identity: while it is off the
       # onboarding saga refuses to provision a second one. Default off, because the skills
-      # library, aura.settings, the MCP catalog and (under a non-strict AURA_PROFILE) the
-      # host filesystem tools are shared deployment-wide (docs/runbooks/musr-rollout.md).
+      # library, aura.settings and the MCP catalog are shared deployment-wide
+      # (docs/runbooks/musr-rollout.md).
       AURA_MUSR_ISOLATION: ${AURA_MUSR_ISOLATION:-false}
       AURA_LLM_TOTAL_TIMEOUT_SEC: ${AURA_LLM_TOTAL_TIMEOUT_SEC:-120}
       AURA_LLM_CONNECT_TIMEOUT_SEC: ${AURA_LLM_CONNECT_TIMEOUT_SEC:-10}
@@ -281,38 +281,34 @@ services:
       AURA_WHATSAPP_BRIDGE_URL: http://whatsapp:8081
       # ↓↓ Phase 37 (SBX-05, ADR 0037) — per-identity full-capability sandbox ↓↓
       # The daemon spawns one box (aura-box-<identity>) per identity DIRECTLY over the Docker
-      # Engine API (moby client, client.FromEnv reads DOCKER_HOST). This is a NO-OP under
-      # dev/local_trusted: buildSandboxRouter is Strict()-gated, so under any non-strict profile
-      # the router is nil and the Docker client is NEVER constructed — DOCKER_HOST is unused.
+      # Engine API (moby client, client.FromEnv reads DOCKER_HOST) on every profile: since
+      # 2026-08-03 (0d76f84a8) the box is the agent's only shell and filesystem.
       #
-      # Docker API access (T-37-08-SOCKET, Open Q5): default EMPTY so the dev stack grants the
-      # daemon NO socket. In production the operator brings up the socket-proxy sidecar
-      # (`docker compose --profile sandbox up -d`) and points the daemon at it:
+      # Docker API access (T-37-08-SOCKET, Open Q5). Empty by default, so the daemon dials the
+      # raw /var/run/docker.sock mounted into this service below: the accepted raw-socket
+      # fallback (ADR 0037 Residual A). To narrow it, bring up the socket-proxy sidecar
+      # (`docker compose --profile sandbox up -d`), point the daemon at it and drop that mount:
       #   AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375
-      # The raw /var/run/docker.sock is mounted into the PROXY ONLY (never into aura, never into a
-      # box — SBX-02); the proxy exposes only the container/exec/volume/network/image lifecycle
-      # subset. A minimal single-user install MAY instead mount the socket straight into this
-      # service — the accepted raw-socket fallback (ADR 0037 Residual A).
+      # The proxy exposes only the container/exec/volume/network/image lifecycle subset, and no
+      # box ever gets the socket (SBX-02).
       DOCKER_HOST: ${AURA_SANDBOX_DOCKER_HOST:-}
       # Box + egress image refs (D-13). BOTH are LIVE — config.SandboxConfig reads them. AURA_SANDBOX_IMAGE
       # sources the box spec. AURA_SANDBOX_EGRESS_IMAGE sources config.SandboxConfig.EgressImage, which
       # buildSandboxRouter passes to usersandbox.WithEgress (37-10) — so the per-box egress sidecar (the
       # SBX-04 tenancy floor: DROP RFC1918 + 169.254.169.254 metadata + the shared-services bridge) is
-      # created on every box under a strict profile. The default aura-egress:latest keeps the floor ON by
+      # created on every box. The default aura-egress:latest keeps the floor ON by
       # default (SC#4); operators SHOULD override both with digest-pinned registry refs in production.
-      # Fail-CLOSED consequence: a strict host WITHOUT this egress image built/available refuses box
+      # Fail-CLOSED consequence: a host WITHOUT this egress image built/available refuses box
       # creation (ensureImage pull-fail -> Resolve error -> the tool denies) rather than running un-floored.
       AURA_SANDBOX_IMAGE: ${AURA_SANDBOX_IMAGE:-aura-sandbox:latest}
       AURA_SANDBOX_EGRESS_IMAGE: ${AURA_SANDBOX_EGRESS_IMAGE:-aura-egress:latest}
-      # The master switch for everything described above, and it was NOT reachable from here:
-      # AURA_PROFILE was never forwarded to this service, so a compose deployment ran the
-      # `dev` default no matter what the operator put in .env — buildSandboxRouter is
-      # Strict()-gated, so the box, the egress floor and the routed file tools were all
-      # inert on the appliance while the two image knobs above sat there suggesting otherwise.
-      # Bare Compose, like the binary, defaults to single_user_hardened; appliance installs
-      # and updates also write it to .env. A strict host must have AURA_SANDBOX_IMAGE
-      # built/pullable first, because with no box image it fails CLOSED (every routed tool
-      # denies) rather than silently running on the host. AURA_PROFILE=dev is opt-in.
+      # The runtime profile. It no longer selects the box, which every profile uses; it sets
+      # the strict configuration checks and the approval gateway (internal/gateway/decide.go).
+      # It was once never forwarded to this service, so a compose deployment ran the `dev`
+      # default whatever .env said. Bare Compose, like the binary, defaults to
+      # single_user_hardened; appliance installs and updates also write it to .env. Every host
+      # must have AURA_SANDBOX_IMAGE built or pullable, because with no box image it fails
+      # CLOSED: every tool that needs the box denies. AURA_PROFILE=dev is opt-in.
       AURA_PROFILE: ${AURA_PROFILE:-single_user_hardened}
       # The remaining AURA_SANDBOX_* knobs, same reason: config reads them, compose never
       # passed them, so per-box caps and the idle-suspend TTL could not be tuned at all.
@@ -341,13 +337,10 @@ services:
       # Amendment #88: the fixed /workspace working root (AURA_WORKSPACE_DIR), durable
       # across recreates — the entrypoint bootstrap above lays out its subdirs on boot.
       - aura-workspace:/workspace
-      # Required by the STRICT profile only (AURA_MUSR_ISOLATION=true +
-      # AURA_PROFILE=single_user_hardened). usersandbox.SandboxRouter then routes
-      # shell_exec and every fs_* into a per-identity box, and buildSandboxRouter builds
-      # that box through the Docker API. With no socket, client.New(FromEnv) has nothing
-      # to dial, Route returns routed=true WITH an error, and the tools DENY rather than
-      # falling back to the host — the fail-closed containment invariant (D-09/GATE-01)
-      # behaving exactly as designed.
+      # Required on every profile: usersandbox.SandboxRouter runs shell_exec and every fs_* in
+      # a per-identity box, which buildSandboxRouter builds through the Docker API. With no
+      # socket the box cannot be created, Route fails, and the tools DENY: this container has
+      # no execution path for them to fall back to (the fail-closed invariant, D-09/GATE-01).
       #
       # Measured live 2026-08-03: multi-user was switched on without this line and the
       # agent reported the blocker itself — "shell_exec non può eseguire comandi,
@@ -357,17 +350,15 @@ services:
       #
       # The privilege is real and deliberate: the daemon socket is host-root-equivalent,
       # so anything that escapes this container owns the host. That is the price of
-      # per-identity boxes, and it is why the non-strict single-principal profile — where
-      # tools run host-direct in this container — must NOT mount it.
+      # per-identity boxes; the socket-proxy sidecar below narrows it.
       - /var/run/docker.sock:/var/run/docker.sock
-      # Warm package caches for the non-strict host-direct shell_exec path (which runs IN this
-      # container, HOME=/root, not in a box): without these, /root/.npm|.cache/pip|.cache/uv live in
-      # the ephemeral container layer and are wiped on every recreate, so npm/pip/uv re-download every
-      # turn. These retained volumes make re-installs cache hits (no network). Same warm-cache intent
-      # as the shared box volumes (translate.go) — kept per-service here since the box path is bypassed
-      # under a non-strict profile.
+      # Package caches for the installers that still run IN this container (HOME=/root): uv
+      # and npm preparing a stdio MCP server's environment (cmd/aura/mcp_prepare.go) and
+      # running one whose runtime is not the box, and `npx skills add`
+      # (internal/skills/installer.go). Without them every recreate re-downloads. The agent's
+      # own installs run in its box, on the box volumes (usersandbox/translate.go). Nothing
+      # here runs pip: `uv pip install` caches under /root/.cache/uv.
       - aura-npm-cache-host:/root/.npm
-      - aura-pip-cache-host:/root/.cache/pip
       - aura-uv-cache-host:/root/.cache/uv
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -444,14 +435,15 @@ services:
   # ↓↓ Phase 37 (SBX-05, ADR 0037) — narrowed Docker API access for the sandbox daemon ↓↓
   # tecnativa/docker-socket-proxy fronts /var/run/docker.sock so the aura daemon can spawn
   # per-identity boxes WITHOUT holding raw root-equivalent socket access (T-37-08-SOCKET,
-  # Open Q5). The raw socket is mounted READ-ONLY into THIS proxy only — never into the aura
-  # service, never into a box (SBX-02). The proxy enables only the container/exec/volume/
-  # network/image lifecycle subset the DockerBackend needs and denies everything else (no
-  # swarm, no secrets, no daemon auth). It binds :2375 on the INTERNAL compose network only —
+  # Open Q5). The raw socket is mounted READ-ONLY into this proxy and never into a box (SBX-02);
+  # using the proxy means dropping the aura service's own raw mount. The proxy enables only
+  # the container/exec/volume/network/image lifecycle subset the DockerBackend needs and
+  # denies everything else (no swarm, no secrets, no daemon auth). It binds :2375 on the
+  # INTERNAL compose network only —
   # there is deliberately NO host publish (a host-reachable Docker proxy is a privilege-
   # escalation surface). Gated behind `profiles: [sandbox]`, so the DEFAULT `docker compose up`
   # neither starts it nor changes the dev stack — enable with `docker compose --profile sandbox
-  # up -d` under a strict profile and set AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375.
+  # up -d` and set AURA_SANDBOX_DOCKER_HOST=tcp://docker-socket-proxy:2375.
   docker-socket-proxy:
     image: ${AURA_DOCKER_SOCKET_PROXY_IMAGE:-tecnativa/docker-socket-proxy:v0.5.0}
     container_name: aura-docker-socket-proxy
@@ -1651,10 +1643,8 @@ volumes:
   aura-tempo:
   aura-grafana:
   garage-data:
-  # Warm package caches for the non-strict host-direct shell_exec path (npm/pip/uv download caches
-  # under HOME=/root inside the aura container) — retained across recreates so re-installs are cache hits.
+  # The npm and uv caches of the installers that run inside the aura container (see its mounts).
   aura-npm-cache-host:
-  aura-pip-cache-host:
   aura-uv-cache-host:
 
 networks:

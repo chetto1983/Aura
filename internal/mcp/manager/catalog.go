@@ -93,9 +93,9 @@ type CatalogEntry struct {
 //
 // The calculator recipe was retired too. It was the only recipe whose runtime
 // depended on a uv cache warmed at image build time, and that dependency could not
-// be made to hold: the aura service mounts a named volume over /root/.cache/uv for
-// the host-direct shell_exec path, and a named volume is seeded ONCE at creation and
-// never refreshed, so the warmed cache was invisible to every image built after it.
+// be made to hold: the aura service mounts a named volume over /root/.cache/uv, and a
+// named volume is seeded ONCE at creation and never refreshed, so the warmed cache was
+// invisible to every image built after it.
 // With UV_OFFLINE=1 there was no network to fall back to, the stdio server died
 // during initialize, and the host reported it as "recv: unexpected EOF" — a transport
 // fault it was not. What it bought (symbolic math, stats, matrices) the agent already

@@ -306,11 +306,10 @@ type Config struct {
 	Share     ShareConfig
 	Retention RetentionConfig
 
-	// Amendment #88 fixed local working root. WorkspaceDir is the single WorkspaceRoot
-	// every host-direct tool (shell_exec, fs_read/write/edit/glob/grep, send_file) and
-	// the per-turn runner.Deps.Workspace hint resolve against — replacing the previous
-	// process-cwd fallback (fs_* had NO WorkspaceRoot at all) with one fixed root, same
-	// path in-container as the strict-profile sandbox box's /workspace (forward-compat).
+	// Amendment #88 fixed working root, replacing the process-cwd fallback. The per-turn
+	// runner.Deps.Workspace hint names it and `aura docs` resolves its paths against it. In
+	// the container it is /workspace, the same path the per-identity box mounts its own volume
+	// at, so the hint names the directory the agent's boxed tools actually work in.
 	WorkspaceDir string // AURA_WORKSPACE_DIR — fixed working root, default ~/.aura/workspace (code) / /workspace (in-container env)
 
 	// MUSRIsolation declares this deployment fit to host more than ONE identity: while it

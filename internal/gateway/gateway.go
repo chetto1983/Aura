@@ -52,8 +52,8 @@ type rejectionRegistry interface {
 type Decision string
 
 const (
-	// Allow lets the dispatch proceed to tool.Execute (a host-direct no-op under the
-	// dev profiles, or a recorded decision-fact under the strict profiles).
+	// Allow lets the dispatch proceed to tool.Execute (unrecorded under the dev profiles,
+	// a recorded decision-fact under the strict profiles).
 	Allow Decision = "allow"
 	// Deny blocks the dispatch: execTool returns *ErrDenied instead of executing.
 	Deny Decision = "deny"

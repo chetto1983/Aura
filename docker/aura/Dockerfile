@@ -111,8 +111,8 @@ RUN apt-get update \
 
 # Node 24 LTS (Debian bookworm ships Node 18, too old). NodeSource nodejs bundles
 # npm/npx. Runtime consumers: (1) JS skill snippets — internal/skills/snippet.go maps
-# LangJS to the `node` interpreter (Slice 7e), and (2) the `npx skills find/add`
-# self-extension loop the agent drives on the host terminal (find-skills-aura).
+# LangJS to the `node` interpreter (Slice 7e), (2) the `npx skills find/add` installer
+# (internal/skills/installer.go), and (3) npm-prepared stdio MCP servers (see uv below).
 #
 # D-06 note: this runtime Node-24 is ORTHOGONAL to the SPA. The operator SPA is built
 # in the `webbuild` stage above and baked into the Go binary before runtime — no Node
@@ -138,8 +138,10 @@ RUN install -d /usr/share/postgresql-common/pgdg \
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 
-# uv/uvx above stay: the agent reaches them from shell_exec for Python work. What is gone
-# is the calculator warm-up that used to live here. Warming a uv cache at build time cannot
+# uv/uvx stay, with Node and python3 above, for the work Aura itself runs in this container:
+# preparing a stdio MCP server's environment (cmd/aura/mcp_prepare.go, amendment #211) and
+# running one whose runtime is not the box. The agent's own shell work runs in its box. What is
+# gone is the calculator warm-up that used to live here. Warming a uv cache at build time cannot
 # work for a recipe in THIS image: compose mounts a named volume over /root/.cache/uv, and a
 # named volume is seeded once at creation and never refreshed, so every image built after
 # the volume existed warmed a cache nobody could see. With UV_OFFLINE=1 on the mount there

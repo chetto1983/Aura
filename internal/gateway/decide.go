@@ -1,6 +1,6 @@
 // decide.go is the PEP proper (GATE-01): Decide is interposed inside execTool above
 // tool.Execute at all three composition roots. It branches on the runtime profile
-// (dev/local_trusted host-direct no-op — SC-4; hardened/production fail-closed),
+// (dev/local_trusted no-op — SC-4; hardened/production fail-closed),
 // classifies via the 35-01 substrate, records a read-only decision-fact (D-01e), and
 // routes a mutating GateRecommended call to approve-by-responder (D-03). Enforcement
 // (Strict()/GateRecommended) stays separate from classification (classify), per D-02d.
@@ -39,7 +39,7 @@ func gated(t scoring.RiskTier) bool { return t == scoring.Destructive }
 // carries an ApprovalRequest tool result (the caller returns it as a normal tool result,
 // tool.Execute withheld) — the gateway no longer mints a pause sentinel. A nil *Gateway
 // and any non-Strict profile short-circuit to Allow with NO store write — the
-// dev/local_trusted host-direct no-op preserving today's full-host experience (SC-4).
+// dev/local_trusted no-op (SC-4).
 //
 // The mutating-Allow outcomes (the not-GateRecommended auto-allow branch here AND
 // routeApprove's post-resume Verdict{Allow, OperatorID}) converge on ONE synchronous

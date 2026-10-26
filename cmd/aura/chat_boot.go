@@ -489,9 +489,8 @@ func assembleChatEnv(
 		Profiles: onboarding.NewProfileStore(pool),
 		LLM:      cfg.LLM,
 		RunDir:   cfg.RunDir,
-		// Amendment #88: the per-turn "Working directory" hint mirrors the fixed
-		// WorkspaceRoot every host-direct tool now resolves against, replacing the
-		// process-cwd fallback (runner.New still falls back to os.Getwd if this is "").
+		// Amendment #88: the per-turn "Working directory" hint names the fixed working root,
+		// the box's /workspace (runner.New still falls back to os.Getwd if this is "").
 		Workspace:            cfg.WorkspaceDir,
 		PreviewCap:           cfg.ToolPreviewCap,
 		HistoryCap:           cfg.HistoryHardCapTurns,

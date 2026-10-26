@@ -1,9 +1,16 @@
 # One path: every tool runs in the box
 
-**Status (2026-10-15):** PARTIAL. Steps 1-2 landed in 0d76f84a8. Two Step 3 items remain: the aura image still installs LibreOffice, Node, uv and python3 (docker/aura/Dockerfile), and compose still declares the dead host-direct cache volumes. Steps 4-5 have no evidence.
+**Status (2026-10-26): COMPLETE.** Steps 1–2 landed in `0d76f84a8`. Step 3 is closed as
+measured: LibreOffice is gone and poppler stays. Node/npm, uv and python3 stay too, because they
+have live callers in the aura container that this plan did not list: stdio MCP preparation and
+launch (amendment #211), `npx skills add`, and skill snippets. `0d76f84a8`'s own message had
+already said so. The npm and uv caches serve those callers; the dead pip cache is removed.
+Steps 4–5 have their evidence, and PRD §12 records the one path. The 699 live run was never
+recorded. The operator chose this close ("Registra e chiudi"). Record:
+`docs/superpowers/verification/2026-10-26-one-path-sandbox-only.md`.
 
-**Date:** 2026-08-03 · **Status:** PROPOSED. Operator direction, blast radius measured,
-three consequences that need a decision before code. PRD amendment required.
+**Date:** 2026-08-03. Operator direction, blast radius measured, three consequences that needed
+a decision before code.
 
 > *"io toglierei tutta la parte non di sandbox, il codice resta pulito, tanto singolo
 > utente o multi utente sono la stessa cosa"*

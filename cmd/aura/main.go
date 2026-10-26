@@ -186,8 +186,8 @@ func buildBaseRegistryWithHandles(
 ) (*tools.Registry, runtimeToolHandles) {
 	handles := runtimeToolHandles{
 		// The background registry carries the SAME sandboxRouter the synchronous tools do (37-09):
-		// under a strict profile shell_exec routes background jobs into the box via startBox; a nil
-		// router (pool-free manifest paths, dev/local_trusted) keeps every job host-direct.
+		// shell_exec starts background jobs in the box via startBox, and a nil router (the
+		// pool-free manifest paths) denies them like every other routed call.
 		BackgroundShells: tools.NewBackgroundShells(sandboxRouter),
 		BackgroundCalls:  tools.NewBackgroundCalls(),
 		ShellApprovals:   tools.NewShellApprovals(),

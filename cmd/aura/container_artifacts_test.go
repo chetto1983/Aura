@@ -265,9 +265,9 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 
 	// Nothing in the image may warm a uv cache for a recipe to consume at runtime. compose
-	// mounts a named volume over /root/.cache/uv for the host-direct shell_exec path, and a
-	// named volume is seeded ONCE at creation and never refreshed — so a warm-up here is
-	// invisible to every image built after that volume existed. The calculator recipe was
+	// mounts a named volume over /root/.cache/uv for the installers that run in the aura
+	// container, and a named volume is seeded ONCE at creation and never refreshed — so a
+	// warm-up here is invisible to every image built after that volume existed. The calculator recipe was
 	// built on exactly that assumption and is retired; this keeps the shape out.
 	// Only the image side is checkable as text here; the recipe side is asserted against the
 	// real catalog data in manager.TestNoRecipeDependsOnABuildTimeUVCache, which a comment

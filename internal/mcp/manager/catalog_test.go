@@ -250,7 +250,7 @@ func containsString(values []string, want string) bool {
 
 // No recipe may depend on a uv cache warmed at image build time. That was the calculator's
 // design and it could not hold: the aura service mounts a named volume over /root/.cache/uv
-// for the host-direct shell_exec path, a named volume is seeded ONCE at creation and never
+// for its installers, a named volume is seeded ONCE at creation and never
 // refreshed, so every image built after that moment warmed a cache the container could not
 // see. Paired with UV_OFFLINE=1 there was no network to fall back to, the stdio server died
 // during initialize, and the host surfaced it as "recv: unexpected EOF" — which reads like a
