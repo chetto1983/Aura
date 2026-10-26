@@ -45,29 +45,6 @@ func TestResolveWebAuthIdentityIDUsesAuthulaOperatorIdentity(t *testing.T) {
 	}}
 
 	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
-		WebAuthProvider:         "authula",
-		AuthulaOperatorIdentity: "operator",
-	})
-	if err != nil {
-		t.Fatalf("resolveWebAuthIdentityID: %v", err)
-	}
-
-	if got != "operator-id" {
-		t.Fatalf("identity id = %q, want operator-id", got)
-	}
-	if len(store.seen) != 1 || store.seen[0] != "operator" {
-		t.Fatalf("resolved names = %v, want [operator]", store.seen)
-	}
-}
-
-func TestResolveWebAuthIdentityIDUsesOperatorIdentityIndependentOfProvider(t *testing.T) {
-	store := &namedIdentityStore{ids: map[string]identity.Identity{
-		"local":    {ID: "local-id", Name: "local"},
-		"operator": {ID: "operator-id", Name: "operator"},
-	}}
-
-	got, err := resolveWebAuthIdentityID(context.Background(), store, &config.Config{
-		WebAuthProvider:         "passphrase",
 		AuthulaOperatorIdentity: "operator",
 	})
 	if err != nil {
@@ -171,29 +148,14 @@ func TestResolveSetupIdentityIDToleratesMissingLegacyLocal(t *testing.T) {
 	}
 }
 
-func TestAuthulaProvisioningConfiguredIgnoresLegacyProviderFlag(t *testing.T) {
-	cfg := &config.Config{
-		WebAuthProvider: "passphrase",
-		DB:              db.Config{URL: "postgres://aura_app:pw@127.0.0.1:5432/aura"},
-		AuthulaSecret:   "0123456789abcdef0123456789abcdef",
-	}
-
-	if !authulaProvisioningConfigured(cfg) {
-		t.Fatal("Authula DB+secret should be configured regardless of the legacy provider flag")
-	}
-}
-
-func TestBuildAuthDepsRequiresAuthulaConfigEvenWithLegacyProviderFlag(t *testing.T) {
+func TestBuildAuthDepsRequiresAuthulaConfig(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.Fatalf("buildAuthDeps panicked before returning an Authula configuration error: %v", r)
 		}
 	}()
 	_, provider, err := buildAuthDeps(context.Background(), &chatEnv{
-		cfg: &config.Config{
-			WebAuthProvider: "passphrase",
-			WebAuthSecret:   "legacy-passphrase",
-		},
+		cfg: &config.Config{},
 	})
 
 	if err == nil {

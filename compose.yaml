@@ -62,7 +62,6 @@ services:
       # WEB-02 GuardWebBind: the 0.0.0.0:9080 cockpit bind boots only when Authula
       # is configured or a reverse proxy is trusted.
       AURA_WEB_TRUST_PROXY: ${AURA_WEB_TRUST_PROXY:-false}
-      AURA_WEB_AUTH_PROVIDER: ${AURA_WEB_AUTH_PROVIDER:-authula}
       AURA_AUTHULA_DATABASE_URL: ${AURA_AUTHULA_DATABASE_URL:-}
       AURA_AUTHULA_SECRET: ${AURA_AUTHULA_SECRET:?AURA_AUTHULA_SECRET required in .env}
       AURA_AUTHULA_RATE_LIMIT_MAX: ${AURA_AUTHULA_RATE_LIMIT_MAX:-30}

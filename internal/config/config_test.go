@@ -50,9 +50,8 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_REASONING_PERSIST_MAX_RUNES",
 		// The web-auth knobs. loadBase() reads .env best-effort, so any knob a test
 		// asserts a DEFAULT for has to be listed here or the test measures the
-		// developer's own deployment: AURA_WEB_AUTH_SECRET is set on this host and
-		// TestWebAuthConfigLoad reported its live passphrase as the "default".
-		"AURA_WEB_AUTH_PROVIDER", "AURA_WEB_AUTH_SECRET", "AURA_WEB_TRUST_PROXY",
+		// developer's own deployment.
+		"AURA_WEB_TRUST_PROXY",
 		"AURA_AUTHULA_RATE_LIMIT_MAX", "AURA_AUTHULA_SECRET",
 	}
 	for _, k := range keys {

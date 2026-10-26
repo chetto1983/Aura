@@ -452,7 +452,6 @@ jobs:
       # Embedded Authula provider (no separate container — it runs in-process against the
       # 0019 Postgres schema). The E2E's authula_integration leg provisions A + B and
       # exercises login; the secret + seeded operator satisfy its envOrSkip.
-      AURA_WEB_AUTH_PROVIDER: authula
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test
@@ -1923,7 +1922,6 @@ jobs:
       CI: "true"
       AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
-      AURA_WEB_AUTH_PROVIDER: authula
       AURA_AUTHULA_SECRET: 00000000000000000000000000000000000000000000000000000000000000a1
       AURA_AUTHULA_RATE_LIMIT_MAX: "1000"
       AURA_E2E_AUTHULA_EMAIL: e2e-operator@example.test

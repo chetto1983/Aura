@@ -587,8 +587,6 @@ def daemon_env(
             "AURA_RUN_DIR_SWEEP_INTERVAL_SEC": "0",
             "AURA_SCHEDULER_TICK_SECONDS": "60",
             "AURA_SCHEDULER_APPROVAL_REMINDER_SEC": "0",
-            "AURA_WEB_AUTH_PROVIDER": "authula",
-            "AURA_WEB_AUTH_SECRET": "",
             "AURA_WEB_TRUST_PROXY": "",
             "AURA_AUTHULA_SECRET": "2" * 64,
             "AURA_AUTHULA_DATABASE_URL": "",

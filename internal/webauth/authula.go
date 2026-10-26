@@ -1,6 +1,6 @@
 // Package webauth embeds the Authula (Apache-2.0) Go auth framework as
-// the cockpit's "industrial" web-auth provider, behind the AURA_WEB_AUTH_PROVIDER
-// feature flag (see docs/cockpit-overhaul/05-authula-auth-SPEC.md, Option A2). It
+// the cockpit's "industrial" web-auth provider, and since the passphrase provider's
+// retirement the only one (see docs/cockpit-overhaul/05-authula-auth-SPEC.md, Option A2). It
 // constructs authula.New with the three mandatory hardenings:
 //
 //   - H1 schema isolation: Authula has NO table-prefix config, so it gets its own
@@ -95,8 +95,8 @@ type Config struct {
 }
 
 // Provider owns the constructed *authula.Auth: its mounted /auth/* HTTP handler, the
-// session-validate seam, and lifecycle Close. It is nil-safe so the passphrase path
-// can leave it unset.
+// session-validate seam, and lifecycle Close. It is nil-safe so a boot that fails before
+// building one can still close it.
 type Provider struct {
 	auth      *authula.Auth
 	session   *sessionplugin.SessionPlugin
@@ -216,7 +216,7 @@ func New(cfg Config) (_ *Provider, err error) {
 func validateAuthulaSecret(secret string) error {
 	secret = strings.TrimSpace(secret)
 	if secret == "" {
-		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be set when AURA_WEB_AUTH_PROVIDER=authula")
+		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be set")
 	}
 	if len(secret) != 64 {
 		return fmt.Errorf("webauth: AURA_AUTHULA_SECRET must be 64 hex characters (32 bytes)")
@@ -349,7 +349,7 @@ func (p *Provider) OperatorUserID(ctx context.Context) (string, error) {
 }
 
 // Close releases Authula's plugins + core systems (the expiry cleanup workers) so the
-// daemon shuts down goleak-clean. It is nil-safe (the passphrase path leaves it unset).
+// daemon shuts down goleak-clean. It is nil-safe.
 func (p *Provider) Close() error {
 	if p == nil || p.auth == nil {
 		return nil

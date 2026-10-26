@@ -65,14 +65,8 @@ func TestGuardWebBind(t *testing.T) {
 func TestWebAuthConfigLoad(t *testing.T) {
 	clearPostgresEnv(t)
 
-	// Defaults: Authula provider, legacy secret empty, trust-proxy false.
+	// Defaults: trust-proxy false.
 	cfg := LoadDB()
-	if cfg.WebAuthProvider != "authula" {
-		t.Errorf("WebAuthProvider default = %q, want authula", cfg.WebAuthProvider)
-	}
-	if cfg.WebAuthSecret != "" {
-		t.Errorf("WebAuthSecret default = %q, want empty", cfg.WebAuthSecret)
-	}
 	if cfg.WebTrustProxy {
 		t.Error("WebTrustProxy default = true, want false")
 	}
@@ -83,21 +77,13 @@ func TestWebAuthConfigLoad(t *testing.T) {
 		t.Errorf("AuthulaOperatorIdentity default = %q, want empty", cfg.AuthulaOperatorIdentity)
 	}
 
-	t.Setenv("AURA_WEB_AUTH_SECRET", "operator-pass")
 	t.Setenv("AURA_WEB_TRUST_PROXY", "true")
-	t.Setenv("AURA_WEB_AUTH_PROVIDER", "legacy-value")
 	t.Setenv("AURA_AUTHULA_RATE_LIMIT_MAX", "77")
 	t.Setenv("AURA_AUTHULA_OPERATOR_IDENTITY", "operator")
 
 	cfg = LoadDB()
-	if cfg.WebAuthSecret != "operator-pass" {
-		t.Errorf("WebAuthSecret override = %q, want operator-pass", cfg.WebAuthSecret)
-	}
 	if !cfg.WebTrustProxy {
 		t.Error("WebTrustProxy override = false, want true")
-	}
-	if cfg.WebAuthProvider != "legacy-value" {
-		t.Errorf("WebAuthProvider override = %q, want legacy-value", cfg.WebAuthProvider)
 	}
 	if cfg.AuthulaRateLimitMax != 77 {
 		t.Errorf("AuthulaRateLimitMax override = %d, want 77", cfg.AuthulaRateLimitMax)

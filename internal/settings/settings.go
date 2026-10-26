@@ -14,7 +14,7 @@
 //
 // The overlay applies ONLY an allowlist of product configuration keys, so a settings row
 // can never clobber connection/security env (POSTGRES_*, ARCADEDB_PASSWORD,
-// AURA_WEB_AUTH_SECRET).
+// AURA_AUTHULA_SECRET).
 package settings
 
 import (

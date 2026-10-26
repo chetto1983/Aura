@@ -336,7 +336,7 @@ func TestSecretRedactionPredicateUnaffected(t *testing.T) {
 		"AURA_MEMORY_EMBED_BASE_URL",
 		"OPENROUTER_API_KEY",
 		"ARCADEDB_PASSWORD",
-		"AURA_WEB_AUTH_SECRET",
+		"AURA_AUTHULA_SECRET",
 	} {
 		if !secret.IsSecretEnvKey(key) {
 			t.Errorf("secret.IsSecretEnvKey(%q) = false, want true (redaction must stay intact)", key)
