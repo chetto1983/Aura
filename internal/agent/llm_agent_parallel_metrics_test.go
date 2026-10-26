@@ -6,11 +6,23 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
-	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
+
+// recoveredPanics reads the published aura_agent_panic_total expvar for site.
+func recoveredPanics(t *testing.T, site string) int64 {
+	t.Helper()
+	m, ok := expvar.Get("aura_agent_panic_total").(*expvar.Map)
+	if !ok || m == nil {
+		t.Fatal("aura_agent_panic_total expvar map is not published")
+	}
+	if v, ok := m.Get(site).(*expvar.Int); ok {
+		return v.Value()
+	}
+	return 0
+}
 
 // sumToolErrors totals the published aura_agent_tool_errors_total expvar map across
 // all tool labels, so a before/after delta isolates this test's contribution.
@@ -63,14 +75,14 @@ func TestExecuteBatch_PanicRecordsObservabilityMetrics(t *testing.T) {
 		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
 	})
 
-	panicBefore := panicobs.Count("execute_batch")
+	panicBefore := recoveredPanics(t, "execute_batch")
 	toolErrBefore := sumToolErrors(t)
 
 	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: new(10)}))); err != nil {
 		t.Fatalf("run errored: %v", err)
 	}
 
-	if got := panicobs.Count("execute_batch") - panicBefore; got != panics {
+	if got := recoveredPanics(t, "execute_batch") - panicBefore; got != panics {
 		t.Fatalf("recovered-panic metric delta = %d, want %d (recordRecoveredPanic dropped?)", got, panics)
 	}
 	if got := sumToolErrors(t) - toolErrBefore; got != panics {
