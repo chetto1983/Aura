@@ -71,3 +71,13 @@ func TestPrefixProperty(t *testing.T) {
 		}
 	})
 }
+
+func TestEllipsizeMarksOnlyACut(t *testing.T) {
+	t.Parallel()
+	if got := Ellipsize("short", 10); got != "short" {
+		t.Fatalf("Ellipsize under budget = %q, want it unchanged", got)
+	}
+	if got := Ellipsize("perché sì", 6); got != "perch…" {
+		t.Fatalf("Ellipsize = %q, want a rune-safe cut plus an ellipsis", got)
+	}
+}

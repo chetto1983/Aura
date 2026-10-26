@@ -28,6 +28,14 @@ func Prefix(s string, max int) string {
 	return s[:cut]
 }
 
+// Ellipsize is Prefix plus "…" when anything was cut, for a value quoted in a message.
+func Ellipsize(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	return Prefix(s, max) + "…"
+}
+
 // ValidPrefix is Prefix over s with each invalid UTF-8 sequence replaced by U+FFFD first, so
 // the result is always valid UTF-8. It is for text Aura does not control, such as an MCP
 // server's descriptions and errors.
