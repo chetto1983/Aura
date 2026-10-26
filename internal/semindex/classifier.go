@@ -10,8 +10,7 @@ import (
 // Classifier is a labelled exemplar bank (D-01) answering a query with the argmax
 // label plus the top-2 Margin. A group is scored either by its centroid (RankVecs,
 // GroupCosine) or by its exemplars nearest to the query (RankNearest). It holds the
-// Embedder seam and one sync.RWMutex; the math stays in the lock-free core. Margin
-// lives on this result ONLY, never on Ranker.
+// Embedder seam and one sync.RWMutex; the math stays in the lock-free core.
 type Classifier struct {
 	embed Embedder
 
