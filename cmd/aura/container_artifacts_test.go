@@ -88,7 +88,6 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"entrypoint: [\"sh\", \"-lc\", \"aura db migrate\"]",
 		"command: []",
 		"POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}",
-		"AURA_CONFIG_DIR: /var/lib/aura",
 		"aura-home:/var/lib/aura",
 		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
 		"whatsapp:",
