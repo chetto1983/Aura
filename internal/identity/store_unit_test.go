@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestValidateGrantInput(t *testing.T) {
@@ -56,33 +55,6 @@ func TestValidateGrantInput(t *testing.T) {
 				if err != nil {
 					t.Fatalf("validateGrantInput(%q,%q): want nil, got %v", tc.identityID, tc.capability, err)
 				}
-			}
-		})
-	}
-}
-
-func TestIsUniqueViolation(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"23505 matches", &pgconn.PgError{Code: "23505"}, true},
-		{"23503 fk does not match", &pgconn.PgError{Code: "23503"}, false},
-		{"42501 privilege does not match", &pgconn.PgError{Code: "42501"}, false},
-		{"wrapped 23505 matches", errors.New("wrap: " + (&pgconn.PgError{Code: "23505"}).Error()), false},
-		{"non-pg error does not match", errors.New("plain"), false},
-		{"nil does not match", nil, false},
-	}
-	// The "wrapped 23505" case above is a plain errors.New (no Unwrap chain to a
-	// *pgconn.PgError), so it must NOT match — proving we classify by type via
-	// errors.As, not by message substring.
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := isUniqueViolation(tc.err); got != tc.want {
-				t.Errorf("isUniqueViolation(%v): want %v, got %v", tc.err, tc.want, got)
 			}
 		})
 	}

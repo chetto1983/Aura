@@ -2,14 +2,13 @@ package runner
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/identityctx"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // runner_conversation.go holds the conversation-lifecycle helpers split out of runner.go
@@ -84,17 +83,10 @@ func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
 		// first-message creator won); classify by SQLSTATE, never by the row's mere
 		// presence — that would mask a real create failure (FK/constraint/connection)
 		// as "already exists" (M-08).
-		if isUniqueViolation(err) {
+		if db.IsUniqueViolation(err) {
 			return nil // a concurrent creator won the race — the row now exists
 		}
 		return err
 	}
 	return nil
-}
-
-// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
-// pgErr.Code — never string-matching the message (mirrors identity/cron/telegram).
-func isUniqueViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

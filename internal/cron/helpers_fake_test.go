@@ -7,14 +7,12 @@ package cron
 // fake DBTX — just value-in/value-out assertions against the real boundary contract.
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -44,29 +42,6 @@ func TestClaimConnAccessor(t *testing.T) {
 	c.release(t.Context()) // idempotent-safe on a nil conn
 	var nilClaim *Claim
 	nilClaim.release(t.Context()) // nil receiver is a no-op
-}
-
-func TestIsUniqueViolationClassification(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name string
-		err  error
-		want bool
-	}{
-		{"nil", nil, false},
-		{"plain error", errors.New("boom"), false},
-		{"23505 unique", &pgconn.PgError{Code: "23505"}, true},
-		{"23503 fk (not unique)", &pgconn.PgError{Code: "23503"}, false},
-		{"wrapped 23505", errors.Join(errors.New("ctx"), &pgconn.PgError{Code: "23505"}), true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			if got := isUniqueViolation(tc.err); got != tc.want {
-				t.Fatalf("isUniqueViolation(%v) = %v, want %v", tc.err, got, tc.want)
-			}
-		})
-	}
 }
 
 func TestPgtypeConversionHelpers(t *testing.T) {

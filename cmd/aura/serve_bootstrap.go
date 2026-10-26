@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/webauth"
@@ -236,14 +237,14 @@ func createAuraFirstOperatorTx(ctx context.Context, tx pgx.Tx, identityName, aut
 	// operator gets the declared set explicitly, not the '*' shortcut.
 	grantedCapabilities := identity.All()
 	newID, err := identity.CreateUserTx(ctx, tx, identityName, grantedCapabilities)
-	if isUniqueViolation(err) {
+	if db.IsUniqueViolation(err) {
 		return "", agui.ErrBootstrapAlreadyConfigured
 	}
 	if err != nil {
 		return "", fmt.Errorf("create bootstrap identity: %w", err)
 	}
 	if _, err := tx.Exec(ctx, linkOperatorSQL, newID.String(), authulaUserID); err != nil {
-		if isUniqueViolation(err) {
+		if db.IsUniqueViolation(err) {
 			return "", agui.ErrBootstrapAlreadyConfigured
 		}
 		return "", fmt.Errorf("link bootstrap operator: %w", err)
