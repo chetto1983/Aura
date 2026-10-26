@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/secret"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // ToolCallContext carries the per-Execute identifiers the spillover helper needs
@@ -242,22 +242,6 @@ func sidecarPath(runDir, sessionID, spillID string) (string, error) {
 	return filepath.Join(runDir, "conversations", sessionID, spillID+".result"), nil
 }
 
-// truncatePreview returns content truncated to at most capBytes, backed off to a
-// UTF-8 rune boundary so a multi-byte rune is never split.
-func truncatePreview(content string, capBytes int) string {
-	if capBytes <= 0 {
-		return ""
-	}
-	if len(content) <= capBytes {
-		return content
-	}
-	cut := capBytes
-	for cut > 0 && !utf8.RuneStart(content[cut]) {
-		cut--
-	}
-	return content[:cut]
-}
-
 // NewResult applies the shared cap → preview → (maybe) sidecar spillover (D-25).
 // It reads the session_id, tool_call_id, run_dir, and preview cap from the ctx
 // the agent injected via WithToolCallContext. Small outputs (≤cap) become a
@@ -277,7 +261,7 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 		return retainedResult(tc, content, total), nil
 	}
 
-	preview := truncatePreview(content, tc.cap)
+	preview := utf8cut.Prefix(content, tc.cap)
 	shown := len(preview)
 	spillID := tc.sidecarID
 	if spillID == "" {
@@ -343,7 +327,7 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 	}
 
 	bodyCap := max(tc.cap-len(footer), 0)
-	bodyPreview := truncatePreview(body, bodyCap)
+	bodyPreview := utf8cut.Prefix(body, bodyCap)
 	shown := len(bodyPreview)
 	preview := bodyPreview + footer
 	spillID := tc.sidecarID

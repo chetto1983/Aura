@@ -185,31 +185,3 @@ func TestStubDigest_UnknownCallIDLabelsTool(t *testing.T) {
 		t.Errorf("stub digest included non-tool conversation content: %q", got)
 	}
 }
-
-// TestTruncateBytes covers the byte clamp on a valid UTF-8 boundary: the len<=n
-// early return (exact-length boundary, where an off-by-one would index past the
-// end), ASCII truncation, and the rune-boundary walk that must never split a
-// multibyte rune (and must terminate — a mutant that stops decrementing hangs).
-func TestTruncateBytes(t *testing.T) {
-	cases := []struct {
-		name string
-		s    string
-		n    int
-		want string
-	}{
-		{"shorter_than_n", "abc", 5, "abc"},
-		{"exact_length", "abc", 3, "abc"}, // len(s)==n returns s, must not walk past the end
-		{"ascii_truncate", "hello", 3, "hel"},
-		{"multibyte_boundary", "àbc", 1, ""}, // byte 1 splits 'à' (0xC3 0xA0) → walk back to 0
-		{"multibyte_keeps_whole_rune", "àbc", 2, "à"},
-		{"empty", "", 0, ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := truncateBytes(tc.s, tc.n)
-			if got != tc.want {
-				t.Errorf("truncateBytes(%q, %d) = %q, want %q", tc.s, tc.n, got, tc.want)
-			}
-		})
-	}
-}

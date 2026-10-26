@@ -17,11 +17,11 @@ import (
 	"maps"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/redact"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // finalizeNudge is the D-03 synthesis instruction appended (as a trailing user
@@ -194,9 +194,9 @@ func (a *LlmAgent) stubDigest() string {
 		b.WriteString("\n- ")
 		b.WriteString(name)
 		b.WriteString(": ")
-		b.WriteString(truncateBytes(m.Content, stubBulletCap))
+		b.WriteString(utf8cut.Prefix(m.Content, stubBulletCap))
 	}
-	return truncateBytes(b.String(), stubDigestCap)
+	return utf8cut.Prefix(b.String(), stubDigestCap)
 }
 
 // toolNamesByCallID maps each tool_call_id to its tool name by scanning the
@@ -210,19 +210,6 @@ func toolNamesByCallID(history []llm.Message) map[string]string {
 		}
 	}
 	return names
-}
-
-// truncateBytes clamps s to at most n bytes on a valid UTF-8 boundary (the previews
-// are UTF-8 prose), avoiding a split rune in the user-facing digest.
-func truncateBytes(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	cut := n
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut]
 }
 
 // synthesize runs the tool-free synthesis call and returns the content-parsed

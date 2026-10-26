@@ -63,19 +63,6 @@ func utf8Valid(s string) bool {
 	return true
 }
 
-func TestTruncateRuneBoundaryNeverSplitsARune(t *testing.T) {
-	s := "aàbèc" // mixed 1- and 2-byte runes
-	for cut := 0; cut <= len(s); cut++ {
-		got := truncateRuneBoundary(s, cut)
-		if len(got) > cut {
-			t.Fatalf("truncateRuneBoundary(%q, %d) returned %d bytes", s, cut, len(got))
-		}
-		if !utf8Valid(got) {
-			t.Fatalf("truncateRuneBoundary(%q, %d) = %q split a rune", s, cut, got)
-		}
-	}
-}
-
 func TestScoreSimilarNamesSurfacesTheRealFile(t *testing.T) {
 	// The point of the suggestion list: a wrong extension or a case slip should surface the
 	// file that exists, rather than the model retrying the same miss.

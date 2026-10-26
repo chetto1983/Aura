@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // ReadFile is a Go port of hermes-agent's tools/file_tools.py read_file (schema at
@@ -289,21 +290,9 @@ func truncateToCharBudget(content string, maxChars int) (kept string, linesKept 
 		running += addition
 	}
 	if len(out) == 0 {
-		return truncateRuneBoundary(lines[0], maxChars), 1
+		return utf8cut.Prefix(lines[0], maxChars), 1
 	}
 	return strings.Join(out, "\n"), len(out)
-}
-
-// truncateRuneBoundary clamps s to at most maxBytes bytes without splitting a multi-byte rune.
-func truncateRuneBoundary(s string, maxBytes int) string {
-	if len(s) <= maxBytes {
-		return s
-	}
-	cut := maxBytes
-	for cut > 0 && (s[cut]&0xC0) == 0x80 {
-		cut--
-	}
-	return s[:cut]
 }
 
 // notFoundWithSuggestions renders read_file_tool's "File not found" branch (file_tools.py's

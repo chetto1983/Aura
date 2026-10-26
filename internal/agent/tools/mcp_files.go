@@ -13,6 +13,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandbox/usersandbox"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // MCPFileSink puts the files an MCP tool result carried into the caller's box, at
@@ -218,7 +219,7 @@ func mcpFileName(name, mimeType string) string {
 		if len(ext) > maxMCPExtensionBytes {
 			ext = ""
 		}
-		stem := truncatePreview(strings.TrimSuffix(name, ext), maxMCPFileNameBytes-len(ext))
+		stem := utf8cut.Prefix(strings.TrimSuffix(name, ext), maxMCPFileNameBytes-len(ext))
 		name = strings.TrimSpace(stem) + ext
 	}
 	return name

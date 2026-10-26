@@ -13,6 +13,7 @@ import (
 	"github.com/chetto1983/aura/internal/elicit"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/redact"
+	"github.com/chetto1983/aura/internal/utf8cut"
 )
 
 // elicitation.go answers SEP-2322 server-initiated elicitation. A form a mounted
@@ -102,7 +103,7 @@ func NewElicitationHandler(server string, consent ElicitationConsent) func(conte
 		}
 		// The operator's values never reach a log: the action, bounded server
 		// name and field count do.
-		loggedServer := redact.Line(truncateUTF8Bytes(server, maxLoggedValueBytes))
+		loggedServer := redact.Line(utf8cut.ValidPrefix(server, maxLoggedValueBytes))
 		slog.Log(ctx, level, "mcp elicitation resolved", "server", loggedServer,
 			"action", out.action, "fields", out.fields, "reason", out.reason, "err", loggedError(out.err))
 		return &sdkmcp.ElicitResult{Action: out.action, Content: out.content}, nil
@@ -165,7 +166,7 @@ func answered(a elicit.Answer, fields int) elicitOutcome {
 		return elicitOutcome{action: a.Action, fields: fields, reason: "answered"}
 	default:
 		return elicitOutcome{action: elicit.ActionDecline, fields: fields,
-			reason: "unrecognised action " + redact.Line(strconv.Quote(truncateUTF8Bytes(a.Action, maxLoggedValueBytes)))}
+			reason: "unrecognised action " + redact.Line(strconv.Quote(utf8cut.ValidPrefix(a.Action, maxLoggedValueBytes)))}
 	}
 }
 
@@ -175,7 +176,7 @@ func loggedError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return redact.Line(truncateUTF8Bytes(err.Error(), maxLoggedErrorBytes))
+	return redact.Line(utf8cut.ValidPrefix(err.Error(), maxLoggedErrorBytes))
 }
 
 // configuredElicitationTimeout reads AURA_MCP_ELICITATION_TIMEOUT_SEC, mirroring
@@ -192,7 +193,7 @@ func configuredElicitationTimeout() time.Duration {
 	sec, err := strconv.Atoi(raw)
 	if err != nil {
 		slog.Warn("ignoring malformed elicitation timeout",
-			"env", envMCPElicitationTimeoutSec, "value", truncateUTF8Bytes(raw, maxLoggedValueBytes))
+			"env", envMCPElicitationTimeoutSec, "value", utf8cut.ValidPrefix(raw, maxLoggedValueBytes))
 		return defaultElicitationTimeout
 	}
 	if sec <= 0 {
