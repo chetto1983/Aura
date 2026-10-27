@@ -21,9 +21,11 @@ env_value() {
 # embeddings. `convert_hf_to_gguf.py` drops them unless `--sentence-transformers-dense-modules`
 # is passed, and Google's own maintainer confirms the projections are part of the model
 # (huggingface.co/google/embeddinggemma-300m/discussions/22). ggml-org's build carries them
-# — 316 tensors including dense_2/dense_3 — so that is the build fetched here, and the check
-# below is for exactly those two tensors rather than a size or a checksum, because that is
-# the property that was actually wrong.
+# — 316 tensors including dense_2/dense_3 — so that is the build fetched here, and
+# fetch_embedding_model.sh checks for exactly those two tensors, the property that was
+# actually wrong. It also checks the file hashes to AURA_EMBED_FINGERPRINT: since 2026-10-27
+# the model is fetched at AURA_EMBED_REVISION rather than main, and refused unless it is the
+# exact artifact the pair names.
 #
 # Both are the release's, never .env's: compose.yaml's `-m` carries the same path, and a
 # copy of either in .env froze each machine on the model it was installed with.
@@ -49,11 +51,16 @@ embed_header_value() {
 
 ensure_embed_model() {
   model_path="$EMBED_MODEL_PATH"
-  model_url="$EMBED_MODEL_URL"
-
-  # Upstream is the size authority: pinning one here would turn a legitimate upstream
-  # rebuild into a failed install, while asking the server costs one HEAD request.
-  want_bytes="$(embed_model_headers | embed_header_value x-linked-size '[^0-9]')"
+  # The artifact .env names, not whatever main serves today. ensure_embed_provenance froze
+  # AURA_EMBED_REVISION and AURA_EMBED_FINGERPRINT at the first install, so fetching main
+  # after an upstream rebuild placed a file the pair no longer described, and nothing noticed.
+  revision="$(env_value AURA_EMBED_REVISION)"
+  fingerprint="$(env_value AURA_EMBED_FINGERPRINT | tr '[:upper:]' '[:lower:]')"
+  if [ -z "$revision" ] || [ -z "$fingerprint" ]; then
+    echo "FAIL: AURA_EMBED_REVISION and AURA_EMBED_FINGERPRINT must name the model to place" >&2
+    exit 1
+  fi
+  model_url="${EMBED_MODEL_URL/\/resolve\/main\//\/resolve\/${revision}\/}"
 
   docker compose create aura-llama-embed >/dev/null 2>&1 || true
   embed_cid="$(docker compose ps -aq aura-llama-embed 2>/dev/null | head -1)"
@@ -61,20 +68,20 @@ ensure_embed_model() {
     echo "FAIL: could not materialise the aura-llama-embed container to place the model" >&2
     exit 1
   fi
-  have_bytes="$(docker run --rm --volumes-from "$embed_cid" alpine \
-    sh -c "stat -c %s '$model_path' 2>/dev/null || echo 0" 2>/dev/null | tr -d '\r')"
+  have_sha="$(docker run --rm --volumes-from "$embed_cid" alpine \
+    sh -c "sha256sum '$model_path' 2>/dev/null | cut -d' ' -f1" 2>/dev/null | tr -d '\r')"
 
-  if [ -n "$want_bytes" ] && [ "$have_bytes" = "$want_bytes" ]; then
-    echo "embedding model already present (${have_bytes} bytes)"
+  if [ "$have_sha" = "$fingerprint" ]; then
+    echo "embedding model already present (sha256 ${fingerprint})"
     return 0
   fi
-  if [ "$have_bytes" != "0" ]; then
-    echo "embedding model differs from upstream (${have_bytes} vs ${want_bytes:-unknown} bytes) — refetching"
+  if [ -n "$have_sha" ]; then
+    echo "embedding model on disk (sha256 ${have_sha}) is not AURA_EMBED_FINGERPRINT — refetching revision ${revision}"
   fi
 
   tmp_model="$(mktemp -t aura-embed-model.XXXXXX)"
   trap 'rm -f "$tmp_model"' EXIT
-  scripts/fetch_embedding_model.sh "$tmp_model" "$model_url"
+  scripts/fetch_embedding_model.sh "$tmp_model" "$model_url" "$fingerprint"
 
   docker cp "$tmp_model" "${embed_cid}:${model_path}" || {
     echo "FAIL: could not place the embedding model into the sidecar volume" >&2

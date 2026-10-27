@@ -380,6 +380,61 @@ timer_line="$(grep -n '^install_systemd_unit$' "$repo_root/scripts/install.sh" |
 
 echo "ok: the installer records the image and payload its stack runs, and only those"
 
+# The embedding model placed is the artifact .env names: fetched at AURA_EMBED_REVISION, not
+# main, and kept only when it hashes to AURA_EMBED_FINGERPRINT. A file already in the volume
+# is judged by its hash, not its size, so a same-size rebuild upstream cannot pass for it.
+embed_fixture="$fixture_root/embed"
+embed_case() {
+  rm -rf "$embed_fixture"
+  mkdir -p "$embed_fixture/scripts"
+  printf 'AURA_EMBED_REVISION=%s\nAURA_EMBED_FINGERPRINT=%s\n' "$1" "$2" > "$embed_fixture/.env"
+  printf '%s' "$3" > "$embed_fixture/volume-sha"
+  cat > "$embed_fixture/scripts/fetch_embedding_model.sh" <<'FETCH'
+#!/usr/bin/env bash
+printf '%s\n' "$@" > "$(dirname "$0")/../fetch-args"
+FETCH
+  chmod +x "$embed_fixture/scripts/fetch_embedding_model.sh"
+}
+docker() {
+  case "$1 $2" in
+    "compose create") ;;
+    "compose ps") echo embed-cid ;;
+    "run --rm") cat "$embed_fixture/volume-sha" ;;
+    "cp "*) printf '%s\n' "$3" > "$embed_fixture/cp-target" ;;
+    *) echo "FAIL: unexpected docker $*" >&2; exit 1 ;;
+  esac
+}
+want_fp="b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
+(
+  embed_case 0f741b5 "$want_fp" "$want_fp"
+  cd "$embed_fixture"
+  ensure_embed_model >/dev/null
+  [ ! -e fetch-args ] && [ ! -e cp-target ] \
+    || { echo "FAIL: a model already hashing to AURA_EMBED_FINGERPRINT was fetched again" >&2; exit 1; }
+)
+(
+  embed_case 0f741b5 "$(printf '%s' "$want_fp" | tr a-f A-F)" "$(printf '%064d' 7)"
+  cd "$embed_fixture"
+  ensure_embed_model >/dev/null
+  [ "$(sed -n 2p fetch-args)" = "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5/embeddinggemma-300M-Q8_0.gguf" ] \
+    || { echo "FAIL: the model was not fetched at AURA_EMBED_REVISION: $(sed -n 2p fetch-args)" >&2; exit 1; }
+  [ "$(sed -n 3p fetch-args)" = "$want_fp" ] \
+    || { echo "FAIL: the fetch was not pinned to AURA_EMBED_FINGERPRINT, lower-cased" >&2; exit 1; }
+  [ "$(cat cp-target)" = "embed-cid:$EMBED_MODEL_PATH" ] \
+    || { echo "FAIL: the fetched model was not placed in the sidecar volume" >&2; exit 1; }
+)
+(
+  embed_case "" "$want_fp" ""
+  cd "$embed_fixture"
+  if ( ensure_embed_model ) >/dev/null 2>&1; then
+    echo "FAIL: ensure_embed_model placed a model with no AURA_EMBED_REVISION" >&2
+    exit 1
+  fi
+)
+unset -f docker
+
+echo "ok: the embedding model placed is the one AURA_EMBED_REVISION and AURA_EMBED_FINGERPRINT name"
+
 # The phase counter is hand-maintained, and the first version of it shipped as [10/9]
 # because a phase was added without moving the total. An operator reading "10 of 9" learns
 # that the number lying to them is the one thing they were given to trust.
