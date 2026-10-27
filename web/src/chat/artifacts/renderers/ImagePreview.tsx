@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useBlobPreview } from '../useBlobPreview';
 import { PreviewError, PreviewLoading, type RendererProps } from './PreviewStatus';
+import { MediaStage } from './MediaStage';
 import { ToolImage } from '@/components/tool-ui-image';
 
 // image/* (except SVG, which previewKind gates to 'download' — T-37B-05): the
@@ -14,15 +15,17 @@ export default function ImagePreview({ assetId, mimeType, fileName }: RendererPr
   }
   if (url === undefined) return <PreviewLoading />;
   return (
-    <ToolImage
-      id={assetId}
-      src={url}
-      alt={fileName}
-      ratio="auto"
-      className="mx-auto"
-      onError={() => {
-        setFailedUrl(url);
-      }}
-    />
+    <MediaStage>
+      <ToolImage
+        id={assetId}
+        src={url}
+        alt={fileName}
+        ratio="auto"
+        className="w-fit"
+        onError={() => {
+          setFailedUrl(url);
+        }}
+      />
+    </MediaStage>
   );
 }

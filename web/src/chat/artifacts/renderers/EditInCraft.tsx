@@ -11,8 +11,9 @@ const CraftFrame = lazy(() => import('./CraftFrame'));
 
 // A file a light viewer shows and a Craft app edits (docs/superpowers/specs/2026-10-19-craft-web-apps-design.md):
 // the viewer stays the preview, so reading costs no app download, and Edit swaps the app in. It
-// is offered only where the source can store what the app saves (the file manager's tier); an
-// edit made anywhere else could only be lost. Edit sits in the host's header, beside its download.
+// is offered only where the source can store what the app saves: the file manager's tier writes
+// it beside the file, the chat's attaches it to the next message (composerSource). An edit made
+// anywhere else could only be lost. Edit sits in the host's header, beside its download.
 export default function EditInCraft({
   app,
   asset,

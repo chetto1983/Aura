@@ -50,6 +50,10 @@ export interface AssetSource {
     saveAs?: string,
     signal?: AbortSignal,
   ) => Promise<void>;
+  /** Where `save` puts what it is given when that is not the library: 'message' is the chat's
+   *  tier, which attaches every save to the composer's next message and never overwrites the
+   *  artifact (composerSource). CraftFrame says so in place of "Saved". */
+  readonly savesInto?: 'message';
 }
 
 /** The identity-scoped tier, this context's default. A share tier overrides it through the

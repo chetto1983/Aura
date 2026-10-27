@@ -23,11 +23,12 @@ import { useThreadArtifacts } from './useThreadArtifacts';
 // links, 37B explicitly deferred to this phase — which derives entirely from
 // `threadId` via its own hook, so this panel's props contract is untouched.
 
-// PreviewModal is a NAMED export; map it to the default shape React.lazy expects.
-// The dynamic import() keeps the modal + its six lazy renderer chunks off the
-// panel's static graph until an artifact is actually previewed (D-08).
+// ChatPreviewModal (the preview whose Edit goes into the next message) is a NAMED export;
+// map it to the default shape React.lazy expects. The dynamic import() keeps the modal + its
+// six lazy renderer chunks off the panel's static graph until an artifact is actually
+// previewed (D-08).
 const PreviewModal = lazy(() =>
-  import('./PreviewModal').then((m) => ({ default: m.PreviewModal })),
+  import('./ChatPreviewModal').then((m) => ({ default: m.ChatPreviewModal })),
 );
 
 export interface ArtifactsPanelProps {

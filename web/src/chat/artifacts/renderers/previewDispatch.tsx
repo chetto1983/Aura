@@ -2,6 +2,7 @@ import { lazy, type ReactNode } from 'react';
 import type { PreviewKind } from '../artifactMeta';
 import type { RendererProps } from './PreviewStatus';
 import EditInCraft from './EditInCraft';
+import { MediaStage } from './MediaStage';
 
 // previewDispatch — the one place a PreviewKind becomes a renderer. The cockpit modal and the
 // share page previewed the same assets through two identical switches; a seventh kind (video)
@@ -10,7 +11,8 @@ import EditInCraft from './EditInCraft';
 //
 // Each renderer keeps its own lazy boundary (D-08). PDF and supported Office formats open
 // directly in the installed Craft apps. Images and video retain their players/viewers and
-// offer Craft editing through EditInCraft. Callers differ only in what
+// offer Craft editing through EditInCraft, centred on a MediaStage here and not in the renderers,
+// which a chat message also mounts at its own card width. Callers differ only in what
 // "no safe renderer" looks like, so that arm is a prop. This is a component rather than a plain
 // function because the file defines the lazy renderers, and a module that exports a
 // non-component alongside them loses fast refresh (only-export-components, the same rule
@@ -53,11 +55,17 @@ export function PreviewByKind({ kind, asset, downloadFallback }: PreviewByKindPr
     case 'video':
       return (
         <EditInCraft app="filmcraft" asset={asset}>
-          <VideoPreview {...asset} />
+          <MediaStage>
+            <VideoPreview {...asset} className="w-fit max-w-full" />
+          </MediaStage>
         </EditInCraft>
       );
     case 'audio':
-      return <AudioPreview {...asset} />;
+      return (
+        <MediaStage>
+          <AudioPreview {...asset} />
+        </MediaStage>
+      );
     case 'download':
       return downloadFallback;
   }

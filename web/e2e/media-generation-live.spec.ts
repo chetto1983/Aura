@@ -94,7 +94,7 @@ test.describe.serial('media generation (paid, real agent)', () => {
   test('the real agent generates a visible image', async ({ page }, info) => {
     test.setTimeout(600_000);
     await gotoAuthenticated(page, `/c/${encodeURIComponent(conversationId)}`);
-    const image = page.locator('[data-slot="image-preview"] img');
+    const image = page.locator('[data-slot="image-root"] [data-slot="image"] img');
     await sendPrompt(page, conversationId, imagePrompt);
 
     await expect(frameOrResult(page, image)).toBeVisible({ timeout: 120_000 });
@@ -245,12 +245,12 @@ test.describe.serial('media generation (paid, real agent)', () => {
         900_000,
       );
       await gotoAuthenticated(page, `/c/${encodeURIComponent(detachedId)}`);
-      await expect(page.locator(`video[src="/api/assets/${detachedAssetID}/stream"]`)).toBeVisible({
-        timeout: 180_000,
-      });
-      // The replayed submit frame stays static and unduplicated once the clip has landed.
-      await expect(staticFrame).toHaveCount(1);
-      await expect(staticFrame.locator('[role="timer"]')).toHaveCount(0);
+      const clip = page.locator(`video[src="/api/assets/${detachedAssetID}/stream"]`);
+      await expect(clip).toBeVisible({ timeout: 180_000 });
+      // Once the wake has collected the job, the thread drops the submit's frame: the clip
+      // below is that generation, shown once (adae9bd3b, GenerationToolDisplay).
+      await expect(staticFrame).toHaveCount(0);
+      await expect(clip).toHaveCount(1);
 
       const settled = await threadSnapshot(page, detachedId);
       expect(countToolCalls(settled, 'video_generate')).toBe(2);

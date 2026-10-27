@@ -126,4 +126,19 @@ describe('VideoPreview', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     expect(videoOf(container).getAttribute('src')).toBe('/api/assets/next/stream');
   });
+
+  it('keeps the card width in a message and takes the width its host asks for', () => {
+    const inMessage = renderIn(undefined, <VideoPreview {...props} />);
+    const card = inMessage.container.querySelector('[data-slot="video-player"]');
+    expect(card?.classList.contains('max-w-xl')).toBe(true);
+    inMessage.unmount();
+
+    const { container } = renderIn(
+      undefined,
+      <VideoPreview {...props} className="w-fit max-w-full" />,
+    );
+    const player = container.querySelector('[data-slot="video-player"]');
+    expect(player?.classList.contains('w-fit')).toBe(true);
+    expect(player?.classList.contains('max-w-xl')).toBe(false);
+  });
 });

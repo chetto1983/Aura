@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { lazy, Suspense, useState } from 'react';
 import { AlertTriangle, Eye, File } from 'lucide-react';
 import { formatSize, previewKind } from '../artifacts/artifactMeta';
-import { PreviewModal } from '../artifacts/PreviewModal';
+import { ChatPreviewModal } from '../artifacts/ChatPreviewModal';
 import { SaveFileLink } from '../artifacts/SaveFileLink';
 import { useAssetSource } from '../artifacts/renderers/assetSourceContext';
 import { PreviewLoading } from '../artifacts/renderers/PreviewStatus';
@@ -160,7 +160,7 @@ function OpenInCockpit({
         <Eye aria-hidden="true" className="size-4 shrink-0" />
         {t('display.artifact.open')}
       </button>
-      <PreviewModal
+      <ChatPreviewModal
         active={open ? { id: assetId, file_name: filename, mime_type: mimeType } : undefined}
         onClose={() => {
           setOpen(false);
