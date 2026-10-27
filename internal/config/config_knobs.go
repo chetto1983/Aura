@@ -71,7 +71,6 @@ func knobRegistry() []KnobSpec {
 		{Name: "AURA_WEB_PUBLIC_URL", Kind: KindString},
 		{Name: "AURA_OBJECTSTORE_BUCKET", Kind: KindString},
 		{Name: "AURA_OBJECTSTORE_ENDPOINT", Kind: KindString},
-		{Name: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Kind: KindInt},
 		{Name: "AURA_AGUI_BIND", Kind: KindString},
 		{Name: "AURA_SHELL_DESTRUCTIVE_PATTERNS", Kind: KindString},
 		{Name: "AURA_WEB_TRUST_PROXY", Kind: KindBool},

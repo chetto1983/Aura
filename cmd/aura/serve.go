@@ -238,6 +238,10 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		chat.close()
 		return nil, err
 	}
+	if err := objectStoreReplicationPreflight(ctx, chat.cfg); err != nil {
+		chat.close()
+		return nil, err
+	}
 	sweepLegacyBrowserHomes(ctx, chat)
 	startBrowserBoxes(ctx, chat)
 	logMultiUserAvailability(chat.cfg)

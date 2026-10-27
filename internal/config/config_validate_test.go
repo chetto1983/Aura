@@ -21,10 +21,9 @@ import (
 func TestConfigValidate(t *testing.T) {
 	full := func() *Config {
 		return &Config{
-			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Profile:                      ProfileDev,
-			AGUIBind:                     "127.0.0.1:9080",
-			ObjectStoreReplicationFactor: 1,
+			DB:       db.Config{URL: "postgres://u:p@h:5432/db"},
+			Profile:  ProfileDev,
+			AGUIBind: "127.0.0.1:9080",
 		}
 	}
 	if err := full().Validate(); err != nil {
@@ -41,10 +40,9 @@ func TestConfigValidate(t *testing.T) {
 func TestConfigValidateRejectsNonPositiveHistoryHardCap(t *testing.T) {
 	t.Setenv("AURA_HISTORY_HARD_CAP_TURNS", "0")
 	cfg := &Config{
-		DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-		Profile:                      ProfileServerProduction,
-		AGUIBind:                     "127.0.0.1:9080",
-		ObjectStoreReplicationFactor: 2,
+		DB:       db.Config{URL: "postgres://u:p@h:5432/db"},
+		Profile:  ProfileServerProduction,
+		AGUIBind: "127.0.0.1:9080",
 	}
 	violations := cfg.ValidateProfile(ProfileServerProduction)
 	if !hasViolation(violations, "AURA_HISTORY_HARD_CAP_TURNS", Fatal) {
@@ -121,18 +119,31 @@ func TestGateGarageRPCSecret(t *testing.T) {
 }
 
 // TestGateReplication is the hardened↔prod differentiator (D-11/PROF-06/F-018):
-// server_production rejects replication < 2; single_user_hardened ALLOWS 1; the
-// lenient tiers never constrain it.
+// server_production needs what the boot-time replica count reads, the garage backend and its
+// admin credential; every other tier keeps one copy unconstrained.
 func TestGateReplication(t *testing.T) {
-	if vs := (&Config{ObjectStoreReplicationFactor: 1}).gateReplication(ProfileServerProduction); !hasViolation(vs, "AURA_OBJECTSTORE_REPLICATION_FACTOR", Fatal) {
-		t.Fatalf("server_production with replication=1 must be Fatal naming AURA_OBJECTSTORE_REPLICATION_FACTOR, got %+v", vs)
+	measurable := Config{ObjectStoreBackend: "garage", GarageAdminEndpoint: "http://garage:3903", GarageAdminToken: "t"}
+	if vs := measurable.gateReplication(ProfileServerProduction); len(vs) != 0 {
+		t.Errorf("server_production on garage with an admin credential must pass the pure gate, got %+v", vs)
 	}
-	if vs := (&Config{ObjectStoreReplicationFactor: 2}).gateReplication(ProfileServerProduction); len(vs) != 0 {
-		t.Errorf("server_production with replication=2 must pass, got %+v", vs)
+	s3 := measurable
+	s3.ObjectStoreBackend = "s3"
+	if vs := s3.gateReplication(ProfileServerProduction); !hasViolation(vs, "AURA_OBJECTSTORE_BACKEND", Fatal) {
+		t.Errorf("server_production on s3 must be Fatal naming AURA_OBJECTSTORE_BACKEND, got %+v", vs)
+	}
+	for _, missing := range []func(*Config){
+		func(c *Config) { c.GarageAdminEndpoint = "" },
+		func(c *Config) { c.GarageAdminToken = " " },
+	} {
+		c := measurable
+		missing(&c)
+		if vs := c.gateReplication(ProfileServerProduction); !hasViolation(vs, "AURA_GARAGE_ADMIN_ENDPOINT/AURA_GARAGE_ADMIN_TOKEN", Fatal) {
+			t.Errorf("server_production without the admin credential must be Fatal, got %+v", vs)
+		}
 	}
 	for _, p := range []RuntimeProfile{ProfileDev, ProfileLocalTrusted, ProfileSingleUserHardened} {
-		if vs := (&Config{ObjectStoreReplicationFactor: 1}).gateReplication(p); len(vs) != 0 {
-			t.Errorf("%s must ALLOW replication=1 (only prod requires >=2), got %+v", p, vs)
+		if vs := (&Config{ObjectStoreBackend: "s3"}).gateReplication(p); len(vs) != 0 {
+			t.Errorf("%s must not gate the object store's replication, got %+v", p, vs)
 		}
 	}
 }
@@ -401,15 +412,14 @@ func TestValidateProfile(t *testing.T) {
 		clearPostgresEnv(t)
 		t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
 		cfg := &Config{
-			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Profile:                      ProfileServerProduction,
-			AGUIBind:                     "127.0.0.1:9080",
-			RunDir:                       filepath.Join(t.TempDir(), "runs"),
-			ObjectStoreAccessKey:         defaultObjectStoreAccessKey,
-			ObjectStoreSecretKey:         defaultObjectStoreSecretKey,
-			GarageRPCSecret:              "",
-			ObjectStoreReplicationFactor: 1,
-			AuthulaSecret:                "",
+			DB:                   db.Config{URL: "postgres://u:p@h:5432/db"},
+			Profile:              ProfileServerProduction,
+			AGUIBind:             "127.0.0.1:9080",
+			RunDir:               filepath.Join(t.TempDir(), "runs"),
+			ObjectStoreAccessKey: defaultObjectStoreAccessKey,
+			ObjectStoreSecretKey: defaultObjectStoreSecretKey,
+			GarageRPCSecret:      "",
+			AuthulaSecret:        "",
 		}
 		var fatals []Violation
 		for _, v := range cfg.ValidateProfile(ProfileServerProduction) {
@@ -424,7 +434,7 @@ func TestValidateProfile(t *testing.T) {
 
 		wantKnobs := []string{
 			"AURA_OBJECTSTORE_ACCESS_KEY", "AURA_OBJECTSTORE_SECRET_KEY", "GARAGE_RPC_SECRET",
-			"AURA_OBJECTSTORE_REPLICATION_FACTOR",
+			"AURA_GARAGE_ADMIN_ENDPOINT/AURA_GARAGE_ADMIN_TOKEN",
 			"AURA_AUTHULA_SECRET", "AURA_SHELL_DESTRUCTIVE_PATTERNS",
 		}
 		for _, k := range wantKnobs {
@@ -449,11 +459,10 @@ func TestValidateProfile(t *testing.T) {
 		clearPostgresEnv(t)
 		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
 		dev := &Config{
-			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Profile:                      ProfileDev,
-			AGUIBind:                     "127.0.0.1:9080",
-			RunDir:                       filepath.Join(t.TempDir(), "runs"),
-			ObjectStoreReplicationFactor: 1,
+			DB:       db.Config{URL: "postgres://u:p@h:5432/db"},
+			Profile:  ProfileDev,
+			AGUIBind: "127.0.0.1:9080",
+			RunDir:   filepath.Join(t.TempDir(), "runs"),
 		}
 		if err := dev.Validate(); err != nil {
 			t.Fatalf("invalid int under dev must be Warn (Validate nil), got %v", err)
@@ -464,17 +473,16 @@ func TestValidateProfile(t *testing.T) {
 		clearPostgresEnv(t)
 		t.Setenv("AURA_SWARM_MAX_GOALS", "notanint")
 		prod := &Config{
-			DB:                           db.Config{URL: "postgres://u:p@h:5432/db"},
-			Profile:                      ProfileServerProduction,
-			AGUIBind:                     "127.0.0.1:9080",
-			RunDir:                       filepath.Join(t.TempDir(), "runs"),
-			ObjectStoreAccessKey:         "GKrealoperatorkey0000000001",
-			ObjectStoreSecretKey:         "realoperatorsecretvalue000000000000000000000000000000000000000000",
-			GarageRPCSecret:              "deadbeefrpcsecret",
-			ObjectStoreReplicationFactor: 3,
-			AuthulaSecret:                "32byteshexsecretvalueforauthula0",
-			ObjectStoreBucket:            "prod-assets",
-			ObjectStoreEndpoint:          "https://garage.prod:3900",
+			DB:                   db.Config{URL: "postgres://u:p@h:5432/db"},
+			Profile:              ProfileServerProduction,
+			AGUIBind:             "127.0.0.1:9080",
+			RunDir:               filepath.Join(t.TempDir(), "runs"),
+			ObjectStoreAccessKey: "GKrealoperatorkey0000000001",
+			ObjectStoreSecretKey: "realoperatorsecretvalue000000000000000000000000000000000000000000",
+			GarageRPCSecret:      "deadbeefrpcsecret",
+			AuthulaSecret:        "32byteshexsecretvalueforauthula0",
+			ObjectStoreBucket:    "prod-assets",
+			ObjectStoreEndpoint:  "https://garage.prod:3900",
 		}
 		err := prod.Validate()
 		if err == nil {

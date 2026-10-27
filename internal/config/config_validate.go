@@ -229,18 +229,26 @@ func (c *Config) gateGarageRPCSecret(p RuntimeProfile) []Violation {
 	return nil
 }
 
-// gateReplication requires an object-store replication factor of at least 2 under
-// server_production ONLY (PROF-06/F-018): a single replica is non-durable. This is the
-// clean hardened↔prod differentiator (D-11) — single_user_hardened (the single-node
-// appliance tier) ALLOWS replication = 1, so this gate is a no-op outside production.
+// gateReplication keeps server_production on an object store whose durability Aura can
+// measure (PROF-06/F-018): a single copy is not durable. The copies are counted at boot
+// from Garage's cluster layout (objectStoreReplicationPreflight in cmd/aura); this pure gate
+// refuses what that count cannot reach, an S3 backend Aura has no admin API for, or no admin
+// credential. It is the hardened↔prod differentiator (D-11): single_user_hardened, the
+// single-node appliance tier, keeps one copy and is not gated.
 func (c *Config) gateReplication(p RuntimeProfile) []Violation {
 	if p != ProfileServerProduction {
 		return nil
 	}
-	if c.ObjectStoreReplicationFactor < 2 {
-		return []Violation{{Knob: "AURA_OBJECTSTORE_REPLICATION_FACTOR", Sev: Fatal, Msg: fmt.Sprintf("must be >= 2 for durability under server_production, got %d", c.ObjectStoreReplicationFactor)}}
+	var vs []Violation
+	if backend := strings.TrimSpace(c.ObjectStoreBackend); backend != "" && backend != "garage" {
+		vs = append(vs, Violation{Knob: "AURA_OBJECTSTORE_BACKEND", Sev: Fatal, Msg: fmt.Sprintf(
+			"server_production needs the garage backend, whose replication Aura reads from the cluster layout; got %q", backend)})
 	}
-	return nil
+	if strings.TrimSpace(c.GarageAdminEndpoint) == "" || strings.TrimSpace(c.GarageAdminToken) == "" {
+		vs = append(vs, Violation{Knob: "AURA_GARAGE_ADMIN_ENDPOINT/AURA_GARAGE_ADMIN_TOKEN", Sev: Fatal,
+			Msg: "server_production reads the object store's replication through the Garage admin API, which needs both"})
+	}
+	return vs
 }
 
 // gateDestructiveShell forbids an explicitly DISABLED destructive-shell gate under

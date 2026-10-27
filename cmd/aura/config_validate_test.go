@@ -32,7 +32,7 @@ func setUnsafeServerProductionEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", sampleObjectStoreAccessKey)
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", sampleObjectStoreSecretKey)
 	t.Setenv("GARAGE_RPC_SECRET", "")
-	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
+	t.Setenv("AURA_GARAGE_ADMIN_TOKEN", "")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "off")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
 	t.Setenv("AURA_PROFILE", "")        // base profile irrelevant; --profile overrides it (D-02)
@@ -49,7 +49,6 @@ func setBenignDevEnv(t *testing.T) {
 	t.Setenv("AURA_OBJECTSTORE_ACCESS_KEY", "GKrealoperatorkey0000000001")
 	t.Setenv("AURA_OBJECTSTORE_SECRET_KEY", "realoperatorsecretvalue0000000000000000000000000000000000000000ab")
 	t.Setenv("GARAGE_RPC_SECRET", "deadbeefrpcsecret")
-	t.Setenv("AURA_OBJECTSTORE_REPLICATION_FACTOR", "1")
 	t.Setenv("AURA_SHELL_DESTRUCTIVE_PATTERNS", "")
 	t.Setenv("AURA_AUTHULA_SECRET", "")
 	t.Setenv("AURA_PROFILE", "")
@@ -66,7 +65,7 @@ func setBenignDevEnv(t *testing.T) {
 var offendingKnobs = []string{
 	"AURA_OBJECTSTORE_ACCESS_KEY",
 	"AURA_OBJECTSTORE_SECRET_KEY",
-	"AURA_OBJECTSTORE_REPLICATION_FACTOR",
+	"AURA_GARAGE_ADMIN_ENDPOINT/AURA_GARAGE_ADMIN_TOKEN",
 	"GARAGE_RPC_SECRET",
 	"AURA_AUTHULA_SECRET",
 	"AURA_SHELL_DESTRUCTIVE_PATTERNS",

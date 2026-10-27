@@ -16,6 +16,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"os"
+	"path/filepath"
+	"regexp"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -150,6 +153,40 @@ func TestGarageAdminImportsALostKey(t *testing.T) {
 	}
 	if err := c.ImportKey(ctx, accessKey, secretKey, "again"); err == nil {
 		t.Fatal("a second ImportKey of the same id succeeded, want Garage's refusal")
+	}
+}
+
+// TestGarageAdminPlacedReplicasMatchesTheConfiguredFactor reads the copies a live cluster's
+// layout stores and holds them against the replication_factor its garage.toml configures:
+// the repository's own (docker/garage/garage.toml, the stack this tier runs on) unless
+// AURA_GARAGE_CONFIG names another.
+func TestGarageAdminPlacedReplicasMatchesTheConfiguredFactor(t *testing.T) {
+	c, err := New(envOrSkip(t, "AURA_GARAGE_ADMIN_ENDPOINT"), envOrSkip(t, "AURA_GARAGE_ADMIN_TOKEN"))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	path := os.Getenv("AURA_GARAGE_CONFIG")
+	if path == "" {
+		path = filepath.Join("..", "..", "..", "docker", "garage", "garage.toml")
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	m := regexp.MustCompile(`(?m)^replication_factor\s*=\s*(\d+)`).FindSubmatch(raw)
+	if m == nil {
+		t.Fatalf("%s sets no replication_factor", path)
+	}
+	want, _ := strconv.Atoi(string(m[1]))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	got, err := c.PlacedReplicas(ctx)
+	if err != nil {
+		t.Fatalf("PlacedReplicas: %v", err)
+	}
+	if got != want {
+		t.Fatalf("PlacedReplicas = %d, want the replication_factor %d that %s configures", got, want, path)
 	}
 }
 

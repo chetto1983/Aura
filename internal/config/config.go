@@ -198,7 +198,6 @@ type Config struct {
 	ObjectStoreAccessKey         string        // AURA_OBJECTSTORE_ACCESS_KEY — S3 access key
 	ObjectStoreSecretKey         string        // AURA_OBJECTSTORE_SECRET_KEY — S3 secret key
 	ObjectStorePathStyle         bool          // AURA_OBJECTSTORE_PATH_STYLE — Garage requires path-style by default
-	ObjectStoreReplicationFactor int           // AURA_OBJECTSTORE_REPLICATION_FACTOR — declared Garage durability intent, default 1 (D-13/PROF-06)
 	GarageRPCSecret              string        // GARAGE_RPC_SECRET — Garage inter-node RPC secret (upstream name; D-13/PROF-03)
 	AssetMaxDocumentBytes        int           // AURA_ASSET_MAX_DOCUMENT_BYTES — document upload ceiling
 	AssetMaxImageBytes           int           // AURA_ASSET_MAX_IMAGE_BYTES — image upload ceiling
@@ -479,13 +478,12 @@ func loadBase() *Config {
 		// D-13: declared Garage durability intent + inter-node RPC secret. Config-contract
 		// READS only (validation surface, plan 04) — NOT runtime enforcement; keeping
 		// docker/garage/garage.toml in sync is a deployment follow-on, not this phase.
-		ObjectStoreReplicationFactor: envutil.IntDefault("AURA_OBJECTSTORE_REPLICATION_FACTOR", 1),
-		GarageRPCSecret:              os.Getenv("GARAGE_RPC_SECRET"),
-		AssetMaxDocumentBytes:        envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", DefaultAssetMaxDocumentBytes),
-		AssetMaxImageBytes:           envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
-		AssetMaxAudioBytes:           envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
-		AssetPresignTTLSec:           envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
-		AssetProcessingConcurrent:    envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
+		GarageRPCSecret:           os.Getenv("GARAGE_RPC_SECRET"),
+		AssetMaxDocumentBytes:     envutil.IntDefault("AURA_ASSET_MAX_DOCUMENT_BYTES", DefaultAssetMaxDocumentBytes),
+		AssetMaxImageBytes:        envutil.IntDefault("AURA_ASSET_MAX_IMAGE_BYTES", 26214400),
+		AssetMaxAudioBytes:        envutil.IntDefault("AURA_ASSET_MAX_AUDIO_BYTES", 104857600),
+		AssetPresignTTLSec:        envutil.IntDefault("AURA_ASSET_PRESIGN_TTL_SEC", 600),
+		AssetProcessingConcurrent: envutil.IntDefault("AURA_ASSET_PROCESSING_CONCURRENCY", 2),
 		AssetProcessingLeaseDuration: time.Duration(envutil.IntDefault(
 			"AURA_ASSET_PROCESSING_LEASE_SEC", DefaultAssetProcessingLeaseSec,
 		)) * time.Second,
