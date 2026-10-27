@@ -179,8 +179,9 @@ What the measurement does not show:
    - each request the model received holds only its own path;
    - `GET /threads/{id}/messages` returns the tree.
 9. **Live run, recorded** in `docs/superpowers/verification/2026-10-27-conversation-branches-local.md`
-   (operator choice, 2026-10-27). Playwright drives `aura serve` on the local stack, with
-   compose's `aura-llm` (gemma-4-12B) as the model:
+   (operator choice, 2026-10-27). Playwright drives `aura serve` on the local stack. The model
+   planned was compose's `aura-llm` (gemma-4-12B); the run used the reviewer instead (correction
+   below):
    - send, edit, then go back with the arrow;
    - send again, then reload;
    - the tree holds three leaves, and the reload opens on the branch sent last.

@@ -1,8 +1,10 @@
 # Conversation branches the model and the cockpit can follow — Implementation Plan
 
-**Status (2026-10-27):** implemented and validated live. Open:
-- CI on the PR, which also runs the coverage gate (the operator left the gates to CI);
-- the mutation gaps of Task 7.
+**Status (2026-10-27):** done. Implemented, validated live, and merged in two PRs, split so
+CodeRabbit could review each: #194 (store, runner, HTTP, snapshot) and #193 (the rest). Open, for
+the lab VM:
+- the mutation gaps of Task 7;
+- the pre-0095 forks with no parent (PRD §7).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan
 > task by task. Steps use checkbox (`- [ ]`) syntax for tracking. One atomic commit per task.
@@ -184,4 +186,4 @@ stack with `aura-llm`.
 - [x] Update `docs/unwired-and-duplicates-2026-10-26.md`: the branch routes are deleted, and the
   flow is wired.
 - [x] Update the PRD paragraph with the measured results.
-- [ ] Set this plan's status. Open the PR after #192 merges.
+- [x] Set this plan's status. Opened after #192 merged, then split into #194 and #193.

@@ -159,14 +159,16 @@ Each needs a decision this closure should not take alone.
     them, or drop the pair and the installer step. Decided by the operator on 2026-10-27 and
     done: the installer fetches the model at the revision and checks its hash, and a strict
     boot hashes the served file again. `prd.md` records the measurement.
+- **U6 branch routes, deleted.** `GET /api/conversations/{id}/branches` and
+  `POST …/branches/{branchSeq}/select`.
+  - Measured on 2026-10-27 before touching them: the model was sent every branch, the snapshot
+    was one flat list, and `/agent/run` could not continue an older branch.
+  - Decided by the operator on 2026-10-27 and done (spec
+    `docs/superpowers/specs/2026-10-27-conversation-branches-design.md`): both routes are
+    deleted, since `select` re-ran the model.
+  - The snapshot now carries the tree, the cockpit switches branches in its own runtime, and a
+    send names the branch on screen with `aura.parent_seq`. `prd.md` §7 records the measurement.
 - **U6 routes with no production caller, kept:**
-  - `GET /api/conversations/{id}/branches` and `POST …/branches/{branchSeq}/select`. Measured on
-    2026-10-27 before touching them: the model was sent every branch, the snapshot was one flat
-    list, and `/agent/run` could not continue an older branch. Decided by the operator on
-    2026-10-27 and done (spec `docs/superpowers/specs/2026-10-27-conversation-branches-design.md`):
-    both routes are deleted, since `select` re-ran the model. The snapshot now carries the tree,
-    the cockpit switches branches in its own runtime, and a send names the branch on screen with
-    `aura.parent_seq`. `prd.md` §7 records the measurement.
   - `GET /api/fetch`: its comment says cockpit-only and only `web/e2e` calls it.
   - `GET /api/settings/remote-access/events`, the admin capability grant routes,
     `POST /api/admin/openrouter/reconcile`, `/debug/vars` and `/metrics` on `:9080`, and the
