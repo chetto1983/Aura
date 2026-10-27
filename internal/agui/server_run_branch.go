@@ -46,22 +46,22 @@ func (s *Server) continueBranch(ctx context.Context, w http.ResponseWriter, thre
 // requireTurnSeq checks that seq, the request field named name, is a turn of the thread. It
 // writes the refusal and reports false when seq is not positive (400) or lies above the turn
 // written last (404). Seqs are dense, so every seq up to that one names a turn. It returns
-// the turn written last.
-func (s *Server) requireTurnSeq(ctx context.Context, w http.ResponseWriter, threadID, name string, seq int) (int, bool) {
+// the turn written last; a refusal returns the zero values, which callers do not read.
+func (s *Server) requireTurnSeq(ctx context.Context, w http.ResponseWriter, threadID, name string, seq int) (latest int, ok bool) {
 	if seq <= 0 {
 		http.Error(w, name+" must be a positive turn seq", http.StatusBadRequest)
-		return 0, false
+		return
 	}
-	latest, err := s.conv.LatestTurnSeq(scopedCtx(ctx), threadID)
+	last, err := s.conv.LatestTurnSeq(scopedCtx(ctx), threadID)
 	if err != nil {
 		writeStoreErr(w, err)
-		return 0, false
+		return
 	}
-	if seq > latest {
+	if seq > last {
 		http.Error(w, "turn not found", http.StatusNotFound)
-		return 0, false
+		return
 	}
-	return latest, true
+	return last, true
 }
 
 func (s *Server) threadHasPendingPause(ctx context.Context, threadID string) (bool, error) {
