@@ -1,4 +1,5 @@
 import type { ThreadMessageLike } from '@assistant-ui/react';
+import type { JSONPatchOp } from './sseAdapter_frames';
 
 // messageSeq — the one mapping from a visible message to the backend turn seq behind it.
 //
@@ -6,16 +7,45 @@ import type { ThreadMessageLike } from '@assistant-ui/react';
 // marker is drawn at a seq, and a search hit opens the thread at a seq. If they disagreed the
 // marker would sit one turn away from the history it describes, which is precisely the kind
 // of off-by-one nobody reports as a bug.
+//
+// A seq is known or it is not. Rehydrated messages carry theirs from the snapshot ids
+// (msg-<seq>), and live ones receive theirs from the seqs their run reports. A message with
+// neither has no seq: guessing it from the visible position, as the cockpit once did, named
+// another turn as soon as the thread had branches (spec 2026-10-27, §4.4).
 
-/** The backend turn seq a visible message diverges from.
- *
- * Rehydrated snapshots carry metadata.custom.backendSeq from the GET /threads/{id}/messages
- * ids (msg-1, msg-2, …). Fresh in-memory turns fall back to the visible index + 1, because a
- * normal Aura conversation starts at the first user turn (no persisted system row); before
- * the first message, index -1, that is 0. */
-export function backendSeqAt(messages: readonly ThreadMessageLike[], index: number): number {
-  const seq = messages[index]?.metadata?.custom?.backendSeq;
-  return typeof seq === 'number' && Number.isFinite(seq) && seq > 0 ? seq : index + 1;
+function positiveSeq(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/** The backend turn a visible message diverges from: its first turn. Undefined when it is not
+ * known, which refuses an edit or a regenerate rather than forking at the wrong turn. */
+export function backendSeqAt(
+  messages: readonly ThreadMessageLike[],
+  index: number,
+): number | undefined {
+  return positiveSeq(messages[index]?.metadata?.custom?.backendSeq);
+}
+
+/** The last turn folded into a message: what a send that follows it continues
+ * (aura.parent_seq). A message whose run did not report one falls back to its own seq. */
+export function leafSeqOf(message: ThreadMessageLike | undefined): number | undefined {
+  const custom = message?.metadata?.custom;
+  return positiveSeq(custom?.leafSeq) ?? positiveSeq(custom?.backendSeq);
+}
+
+/** The seqs a run reports on its STATE_DELTA (spec 2026-10-27, D7): head_seq, the turn it
+ * starts from, and leaf_seq, the turn it ends on. */
+export function turnSeqsFromDelta(ops: readonly JSONPatchOp[]): {
+  headSeq?: number;
+  leafSeq?: number;
+} {
+  const byPath = new Map(ops.map((op) => [op.path, op.value]));
+  const headSeq = positiveSeq(byPath.get('/head_seq'));
+  const leafSeq = positiveSeq(byPath.get('/leaf_seq'));
+  return {
+    ...(headSeq !== undefined ? { headSeq } : {}),
+    ...(leafSeq !== undefined ? { leafSeq } : {}),
+  };
 }
 
 /** The id of the message the compaction marker belongs AFTER: the last one the summary
@@ -27,7 +57,8 @@ export function compactionAnchorId(
   coversThroughSeq: number,
 ): string | undefined {
   for (let index = messages.length - 1; index >= 0; index--) {
-    if (backendSeqAt(messages, index) <= coversThroughSeq) return messages[index]?.id;
+    const seq = backendSeqAt(messages, index);
+    if (seq !== undefined && seq <= coversThroughSeq) return messages[index]?.id;
   }
   return undefined;
 }

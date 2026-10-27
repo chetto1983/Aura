@@ -75,6 +75,7 @@
     "src/update/useSystemUpdate.ts",
     "src/conversations/searchHighlight.ts",
     "src/chat/messageSeq.ts",
+    "src/chat/ExternalStoreChat_tree.ts",
     "src/chat/ExternalStoreChat_viewport.tsx",
     "src/chat/ExternalStoreChat_steer.ts"
   ],

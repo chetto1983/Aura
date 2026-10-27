@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '../../i18n/i18n'; // side-effect: initialise i18next so t() resolves keys
 import { ExternalStoreChat } from '../ExternalStoreChat';
+import { withTurnSeqs } from './chatTestHarness';
 
 // Build a single SSE wire body from raw AG-UI frame objects (the same shapes the Go
 // translator emits + the branch re-run streams).
@@ -33,13 +34,20 @@ function isHistoryURL(url: unknown): boolean {
   return typeof url === 'string' && url.startsWith('/threads/');
 }
 
-const turnFrames = (msgId: string, text: string) => [
-  { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
-  { type: 'TEXT_MESSAGE_START', messageId: msgId },
-  { type: 'TEXT_MESSAGE_CONTENT', messageId: msgId, delta: text },
-  { type: 'TEXT_MESSAGE_END', messageId: msgId },
-  { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-1', outcome: { type: 'success' } },
-];
+// Every run reports the turn it starts from and the turn it ends on; a fresh send in an empty
+// thread writes U1=1 and A1=2.
+const turnFrames = (msgId: string, text: string, headSeq = 1, leafSeq = 2) =>
+  withTurnSeqs(
+    [
+      { type: 'RUN_STARTED', threadId: 'conv-1', runId: 'run-1' },
+      { type: 'TEXT_MESSAGE_START', messageId: msgId },
+      { type: 'TEXT_MESSAGE_CONTENT', messageId: msgId, delta: text },
+      { type: 'TEXT_MESSAGE_END', messageId: msgId },
+      { type: 'RUN_FINISHED', threadId: 'conv-1', runId: 'run-1', outcome: { type: 'success' } },
+    ],
+    headSeq,
+    leafSeq,
+  );
 
 function sendPrompt(text: string): void {
   const input = screen.getByPlaceholderText('Ask Aura');

@@ -908,6 +908,30 @@ preserves the recent working tail and enforces a hard budget. Summaries retain t
 correct source version and branch. Failures are reported; fallback truncation records
 what was dropped. Token estimates and provider usage are separate measurements.
 
+The token estimate cost seconds per turn (2026-10-27). Every turn counts the replayed
+history with tiktoken-go before the model sees it. Measured on 4 cores, against
+`BenchmarkTokenEstimate` and an 800-turn history of mixed prose:
+- **One long run is quadratic.** The byte-pair merge scans all parts once per merge, so a regex
+  piece of length n costs n². 64 KiB of base64 over zeroed bytes, one run of `A` as an
+  attachment encodes, took 3.46 s; prose of the same size takes 19 ms.
+- **The drop recounted the history once per round.** Over the hard cap, L2.5 dropped a round
+  and recounted everything left. At a 128k window: 37.5 s and 12.4 GB allocated per turn.
+- **Nothing was remembered.** Every turn recounted every turn: 224 ms at a 1M window.
+
+What changed:
+- **A piece the encoder sees is bounded.** A run of one character class is cut at 256 bytes.
+  Prose, JSON and base64 of varied bytes never hold such a run, so their counts are unchanged;
+  a longer run can only gain a token per cut. The 64 KiB case is 19 ms.
+- **The drop subtracts each round from one total.** 217 ms and 79 MB, cold.
+- **A count is remembered by a hash of its text.** Two bounded generations of 32,768 counts;
+  the cache holds no conversation text. The turn after: 0.56 ms at 1M and 0.81 ms at 128k.
+- **The runner's overhead uses the same estimate.** Its own encoder downloaded the vocabulary
+  when it ran before the ladder's offline loader was set.
+
+What this does not show: a real conversation's mix of content; the cost of the summarizer
+call, which dominates a compacting turn; the sidecar reads, which are now the largest cost of a
+1000-turn load (46 ms, almost all syscalls); and any host but this 4-core container.
+
 The stable prompt prefix excludes volatile per-turn data. Worker framing and current
 budgets do not mutate that prefix. Definitions and dynamic context obey the same cache
 contract in interactive and delegated runs.
@@ -1131,6 +1155,55 @@ What the measurement does not show:
 Turns written before the change keep their canonical `branch_id`. That costs extra summarizer
 calls, not a wrong context: a stored summary is used only when its boundary seq lies on the
 walked path.
+
+Measured once branches were wired (2026-10-27):
+- **Over HTTP** (`internal/agui/branch_http_e2e_integration_test.go`). The test uses real
+  Postgres, the real `Runner` and a scripted model, and makes three calls: a run, an edit, then a
+  run whose `aura.parent_seq` names A1.
+  - The model received `U1`, then `U1 edited`, then `U1 | A1 | U3`.
+  - The snapshot is the tree.
+- **Through the cockpit**
+  (`docs/superpowers/verification/2026-10-27-conversation-branches-local.md`). Chromium drove
+  `aura serve`, with the reviewer as the model through a llama.cpp-shaped endpoint. The steps were
+  send, edit, Previous, send, regenerate, reload.
+  - Every request held only the branch on screen.
+  - Previous read nothing.
+  - The reload opened on the branch written last.
+  - The snapshot had three leaves and two roots.
+- **One cockpit defect found by the run.** The read after a run could undo a branch switch made
+  in the second before it landed.
+  - The read is `useWorkerReportRefresh`. It fires on the coordinator status, which the watch
+    stream reports for every run.
+  - A switch now advances `historyRequestRef` the way a send does.
+- **Mutation**:
+  - `store_append.go`: 100%.
+  - The cockpit files (Stryker): `ExternalStoreChat_tree.ts` 93.5%, `messageSeq.ts` 93.1%,
+    `sseAdapter_snapshot.ts` 76.7%.
+  - `runner_context.go`: 58.3%, below the floor. Its nine survivors are all in code this change
+    did not touch: the compaction summarizer, the memory context and recall, and the profile
+    block. `loadTurnHistory` has none.
+  - The Go projection (`server_display_tree.go`, `store_display.go`) was not measured: the
+    operator stopped the local run and left the gates to CI.
+
+Still open:
+- `/compact` condenses the path written last, not the branch on screen, and the marker follows
+  it. A leaf-aware compact changes the compaction API.
+- A refused edit loses its text: assistant-ui's edit composer closes on send.
+- Turns forked before migration 0095 can still have a NULL `parent_seq` mid-conversation. The
+  old `ForkBranch` copied the diverging turn's parent, which was NULL everywhere before 0095.
+  - A run that walks through such a turn stops there and loses the turns before the fork.
+    Before this change, the same run got the flat history instead.
+  - Code cannot tell these rows from a legitimate root fork, which also has no parent, and the
+    row does not record its divergence point.
+  - Operator decision (2026-10-27, CodeRabbit on #194): measure on the lab VM before choosing
+    between leaving them and a targeted repair. Count forked turns with `parent_seq IS NULL AND
+    seq > 1` written before 0095, and the conversations they sit in. They are candidates, not
+    confirmed breaks.
+
+What this does not show:
+- a real model;
+- the race above in a browser;
+- the forks already on the lab VM.
 
 ## 8. Long-term memory: facts and provenance
 

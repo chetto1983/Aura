@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-CK5xzyS1.js";import{na as t}from"./assistant-rendering-CsMnIz-u.js";var n,r,i;function a(){return(a=e((()=>{n=t(),r=(0,n.createContext)(null),i=()=>(0,n.useContext)(r)})))()}export{a as n,i as r,r as t};

@@ -437,24 +437,23 @@ func splitHeadHistoryActive(turns []Turn) (head, history, active []Turn) {
 // dropOldestPairs removes complete historical rounds after the protected head
 // while preserving the final user-led active round byte-for-byte. The historical
 // name/signature stays because rot-event accounting consumes its count.
+//
+// The total is counted once and each dropped round subtracted from it. Recounting what was
+// left after every drop made the drop quadratic in the history: measured 2026-10-27, 800
+// turns against a 128k window took 39 s and allocated 12 GB per turn.
 func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
 	head, historyView, active := splitHeadHistoryActive(turns)
 	history := append([]Turn(nil), historyView...)
 
 	pairsDropped := 0
-	for len(history) > 0 {
-		current := make([]Turn, 0, len(head)+len(history)+len(active))
-		current = append(current, head...)
-		current = append(current, history...)
-		current = append(current, active...)
-		if totalTokens(enc, current) <= hardCap {
-			break
-		}
-		var dropped bool
-		history, dropped = dropOldestRound(history)
+	total := totalTokens(enc, turns)
+	for len(history) > 0 && total > hardCap {
+		rest, dropped := dropOldestRound(history)
 		if !dropped {
 			break
 		}
+		total -= totalTokens(enc, history[:len(history)-len(rest)])
+		history = rest
 		pairsDropped++
 	}
 	for len(history) > 0 && history[0].Role == llm.RoleTool {

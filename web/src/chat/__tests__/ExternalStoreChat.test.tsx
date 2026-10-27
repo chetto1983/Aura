@@ -15,6 +15,7 @@ import {
   renderChatWithClient,
   sendPrompt,
   sseResponse,
+  withTurnSeqs,
 } from './chatTestHarness';
 
 function usageEvents(spy: { mock: { calls: unknown[][] } }): RunUsageEvent[] {
@@ -352,12 +353,17 @@ describe('ExternalStoreChat (CHAT-01)', () => {
       if (isHistoryURL(url)) return Promise.resolve(messagesSnapshotResponse([]));
       if (init?.method === 'POST' && (url === '/agent/run' || url.includes('/edit'))) {
         streamCount += 1;
+        // Send U1=1/A1=2, edit U1'=3/A=4, regenerate placeholder 5/A''=6.
         return Promise.resolve(
           sseResponse(
-            usageFrames(
-              `message-${String(streamCount)}`,
-              `answer ${String(streamCount)}`,
-              10 * streamCount,
+            withTurnSeqs(
+              usageFrames(
+                `message-${String(streamCount)}`,
+                `answer ${String(streamCount)}`,
+                10 * streamCount,
+              ),
+              2 * streamCount - 1,
+              2 * streamCount,
             ),
           ),
         );

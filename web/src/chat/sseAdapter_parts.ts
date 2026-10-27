@@ -30,6 +30,9 @@ export interface AssistantTurnState {
   usage?: TurnUsage;
   /** Set when the terminal STATE_DELTA says the loop budget cut this turn. */
   limit?: BudgetLimit;
+  /** The turn the run started from and the turn it ended on (spec 2026-10-27, D7). */
+  headSeq?: number;
+  leafSeq?: number;
   error?: string;
   status: AssistantStatus;
 }
@@ -210,14 +213,20 @@ export function toThreadMessage(state: AssistantTurnState): ThreadMessageLike {
   if (state.error !== undefined) {
     content.push({ type: 'text', text: state.error });
   }
+  // The budget trip rides as metadata, not as a text part: a synthetic part would be
+  // prose the runtime could branch from or re-send (the CompactionMarker/SteerNotice
+  // argument), while metadata stays a fact ABOUT this turn that AssistantMessage renders.
+  // The run's seqs are facts too; the caller knows which turn they make this message.
+  const custom = {
+    ...(state.limit === undefined ? {} : { budgetLimit: state.limit }),
+    ...(state.headSeq === undefined ? {} : { headSeq: state.headSeq }),
+    ...(state.leafSeq === undefined ? {} : { leafSeq: state.leafSeq }),
+  };
   return {
     id: state.id,
     role: 'assistant',
     content,
     status: state.status,
-    // The budget trip rides as metadata, not as a text part: a synthetic part would be
-    // prose the runtime could branch from or re-send (the CompactionMarker/SteerNotice
-    // argument), while metadata stays a fact ABOUT this turn that AssistantMessage renders.
-    ...(state.limit === undefined ? {} : { metadata: { custom: { budgetLimit: state.limit } } }),
+    ...(Object.keys(custom).length === 0 ? {} : { metadata: { custom } }),
   };
 }

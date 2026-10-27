@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ThreadMessageLike } from '@assistant-ui/react';
-import { fetchThreadMessages, snapshotToThreadMessages } from '../sseAdapter_snapshot';
+import { fetchThreadTree, snapshotToThreadMessages } from '../sseAdapter_snapshot';
 
 // sseAdapter_snapshot tests — persisted-history rehydration (GET /threads/{id}/messages).
 // Pure projection of a MESSAGES_SNAPSHOT body onto the assistant-ui chat model: role
 // handling (system dropped, tool results merged), tool-call shaping, metadata seq, and
-// the defensive content coercion. fetchThreadMessages wraps it with the HTTP read.
+// the defensive content coercion. fetchThreadTree wraps it with the HTTP read.
 
 function snap(messages: unknown[]): unknown {
   return { type: 'MESSAGES_SNAPSHOT', messages };
@@ -71,12 +71,15 @@ describe('snapshotToThreadMessages — roles', () => {
     expect(partsOf(messageAt(out, 0))).toEqual([{ type: 'text', text: visible }]);
   });
 
-  it('omits id + metadata when the id is absent or not the msg-<n> shape', () => {
+  it('omits seq metadata when the id is not the msg-<n> shape, and names an id-less row by position', () => {
     const out = snapshotToThreadMessages(snap([{ id: 'weird', role: 'user', content: 'x' }]));
     expect(out[0]?.id).toBe('weird');
     expect(out[0]?.metadata).toBeUndefined();
+    // The runtime imports a tree (spec 2026-10-27, D5), and a node without an id has no place
+    // in one.
     const out2 = snapshotToThreadMessages(snap([{ role: 'user', content: 'x' }]));
-    expect(out2[0]?.id).toBeUndefined();
+    expect(out2[0]?.id).toBe('snapshot-0');
+    expect(out2[0]?.metadata).toBeUndefined();
   });
 
   it('projects an assistant text-only turn as complete', () => {
@@ -299,7 +302,7 @@ describe('snapshotToThreadMessages — content coercion', () => {
   });
 });
 
-describe('fetchThreadMessages', () => {
+describe('fetchThreadTree', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -313,8 +316,8 @@ describe('fetchThreadMessages', () => {
         ),
       ),
     );
-    const out = await fetchThreadMessages('c-1');
-    expect(out[0]?.role).toBe('user');
+    const tree = await fetchThreadTree('c-1');
+    expect(tree.items[0]?.message.role).toBe('user');
   });
 
   it('throws on a non-ok response', async () => {
@@ -322,6 +325,6 @@ describe('fetchThreadMessages', () => {
       'fetch',
       vi.fn(() => Promise.resolve(new Response('nope', { status: 500 }))),
     );
-    await expect(fetchThreadMessages('c-1')).rejects.toThrow();
+    await expect(fetchThreadTree('c-1')).rejects.toThrow();
   });
 });

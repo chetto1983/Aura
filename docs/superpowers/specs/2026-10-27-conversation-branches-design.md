@@ -144,8 +144,12 @@ What the measurement does not show:
   `backendSeq` on the user message it sent, and `backendSeq = head_seq + 1` and
   `leafSeq = leaf_seq` on the assistant message.
 - `backendSeqAt` no longer guesses `index + 1`. An unknown seq is `undefined`:
-  - an edit or a regenerate on such a message is refused (the composer keeps the text);
+  - an edit or a regenerate on such a message is refused;
   - a send omits `parent_seq`.
+
+  Corrected 2026-10-27: the edit composer cannot keep the text. In `@assistant-ui/core` 0.3.31,
+  `DefaultEditComposerRuntimeCore.handleSend` resets and closes it right after `runtime.append`,
+  whatever `onEdit` does. A refused edit posts nothing and loses the edited text.
 
 ## 5. Acceptance (machine-checkable)
 
@@ -175,11 +179,17 @@ What the measurement does not show:
    - each request the model received holds only its own path;
    - `GET /threads/{id}/messages` returns the tree.
 9. **Live run, recorded** in `docs/superpowers/verification/2026-10-27-conversation-branches-local.md`
-   (operator choice, 2026-10-27). Playwright drives `aura serve` on the local stack, with
-   compose's `aura-llm` (gemma-4-12B) as the model:
+   (operator choice, 2026-10-27). Playwright drives `aura serve` on the local stack. The model
+   planned was compose's `aura-llm` (gemma-4-12B); the run used the reviewer instead (correction
+   below):
    - send, edit, then go back with the arrow;
    - send again, then reload;
    - the tree holds three leaves, and the reload opens on the branch sent last.
+
+   Corrected 2026-10-27 by the run:
+   - those steps leave two leaves, and the third needs a regenerate, which the run adds;
+   - the model was the reviewer through a llama.cpp-shaped endpoint, not gemma-4-12B (operator
+     choice: on 4 CPU cores and no GPU the estimate was tens of minutes per turn).
 10. Coverage gate and package policy green. Mutation ≥ 70% on the critical files the plan names.
 
 ## 6. Risks

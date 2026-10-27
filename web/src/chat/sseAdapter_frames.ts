@@ -203,6 +203,9 @@ export interface SnapshotToolCall {
 export interface SnapshotMessage {
   readonly workerReport?: unknown;
   readonly id?: unknown;
+  /** The message this one continues, null at a root (spec 2026-10-27, D5). Absent from a
+   *  snapshot that predates branches, which is one branch. */
+  readonly parentId?: unknown;
   readonly role?: unknown;
   readonly content?: unknown;
   readonly toolCallId?: unknown;

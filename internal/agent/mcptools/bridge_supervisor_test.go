@@ -431,13 +431,13 @@ func TestMountedServer_RefreshInPlaceOnSameNameSet(t *testing.T) {
 	waitFor(t, func() bool {
 		return strings.Contains(bridged[0].Spec().Description, "New description.")
 	}, "in-place refresh never observed the new description")
-
-	mu.Lock()
-	calls := hookCalls
-	mu.Unlock()
-	if calls == 0 {
-		t.Fatal("refresh hook must fire on an in-place spec change")
-	}
+	// The notification goroutine stores the spec before it fires the hook, so the new
+	// description can show while the hook is still to come: wait for it, do not sample it.
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return hookCalls > 0
+	}, "refresh hook must fire on an in-place spec change")
 	if _, err := srv.currentSession(); err != nil {
 		t.Fatalf("a same-name-set change must not mark the server dead, got %v", err)
 	}
