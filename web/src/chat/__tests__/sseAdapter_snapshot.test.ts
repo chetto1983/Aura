@@ -71,12 +71,15 @@ describe('snapshotToThreadMessages — roles', () => {
     expect(partsOf(messageAt(out, 0))).toEqual([{ type: 'text', text: visible }]);
   });
 
-  it('omits id + metadata when the id is absent or not the msg-<n> shape', () => {
+  it('omits seq metadata when the id is not the msg-<n> shape, and names an id-less row by position', () => {
     const out = snapshotToThreadMessages(snap([{ id: 'weird', role: 'user', content: 'x' }]));
     expect(out[0]?.id).toBe('weird');
     expect(out[0]?.metadata).toBeUndefined();
+    // The runtime imports a tree (spec 2026-10-27, D5), and a node without an id has no place
+    // in one.
     const out2 = snapshotToThreadMessages(snap([{ role: 'user', content: 'x' }]));
-    expect(out2[0]?.id).toBeUndefined();
+    expect(out2[0]?.id).toBe('snapshot-0');
+    expect(out2[0]?.metadata).toBeUndefined();
   });
 
   it('projects an assistant text-only turn as complete', () => {

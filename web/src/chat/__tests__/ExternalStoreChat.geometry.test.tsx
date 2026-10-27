@@ -5,6 +5,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import '../../i18n/i18n';
 import { ExternalStoreChat } from '../ExternalStoreChat';
 import { AttachmentChip } from '../attachments/AttachmentChip';
+import { withTurnSeqs } from './chatTestHarness';
 
 function sseResponse(frames: readonly Record<string, unknown>[]): Response {
   const encoder = new TextEncoder();
@@ -203,9 +204,13 @@ describe('ExternalStoreChat message geometry', () => {
       const edited = url.includes('/edit');
       return Promise.resolve(
         sseResponse(
-          completedTurn(
-            edited ? 'msg-edited' : 'msg-first',
-            edited ? 'edited answer' : 'first answer',
+          withTurnSeqs(
+            completedTurn(
+              edited ? 'msg-edited' : 'msg-first',
+              edited ? 'edited answer' : 'first answer',
+            ),
+            edited ? 3 : 1,
+            edited ? 4 : 2,
           ),
         ),
       );

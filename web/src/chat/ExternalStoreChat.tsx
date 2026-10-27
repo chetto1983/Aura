@@ -22,7 +22,6 @@ import { useThreadElicitations } from '../questions/useThreadElicitations';
 import type { Approval } from '../approvals/useApprovals';
 import { Composer } from './Composer';
 import { EmptyThreadStarters } from './EmptyThreadStarters';
-import { listThreadAssets } from './attachments/api';
 import { createAuraAttachmentAdapter } from './attachments/auraAttachmentAdapter';
 import { useComposerSkills } from './composer/useComposerSkills';
 import { resolveGarageMentions } from './composer/garageMentions';
@@ -32,7 +31,6 @@ import { CompactionStatus } from './compaction/CompactionStatus';
 import { useThreadCompaction } from './compaction/useThreadCompaction';
 import { useReasoningCapabilities } from './composer/useReasoningCapabilities';
 import { useReasoningEffort } from './composer/useReasoningEffort';
-import type { Asset } from './attachments/types';
 import { SourceExplorerProvider } from './displays/SourceExplorerContext';
 import { CollectedJobsContext } from './generation/collectedJobsContext';
 import { collectedJobIds } from './generation/generationState';
@@ -40,9 +38,7 @@ import { AssistantMessage, UserMessage } from './ExternalStoreChat_messages';
 import {
   appendMessageText,
   assistantErrorMessage,
-  attachAssetsToUserMessages,
   isAbortError,
-  isAbortSignalAborted,
   placeAssistant,
   refuseDeclinedCall,
   userMessage,
@@ -50,11 +46,13 @@ import {
 import { useAssetActions } from './ExternalStoreChat_assets';
 import { useStreamFolds } from './ExternalStoreChat_streams';
 import { useBranchEdits } from './ExternalStoreChat_branches';
+import { useThreadHistory } from './ExternalStoreChat_history';
+import { hostMessages, placeTurn } from './ExternalStoreChat_tree';
+import { leafSeqOf } from './messageSeq';
 import { useLiveRunAttach } from './ExternalStoreChat_liveRun';
 import { useSteerSend } from './ExternalStoreChat_steer';
 import { ThreadViewport } from './ExternalStoreChat_viewport';
 import { SteerNotice } from './SteerNotice';
-import { fetchThreadMessages } from './sseAdapter';
 import { cancelRun, streamRunResilient } from './sseResume';
 import { useRunUsageLifecycle } from './runUsage';
 import { useRunUsageBaseline } from './useRunUsageBaseline';
@@ -83,14 +81,13 @@ export function ExternalStoreChat({
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
-  const [historyReadiness, setHistoryReadiness] = useState<{
-    readonly threadId: string;
-    readonly status: 'loading' | 'ready' | 'error';
-  }>({ threadId, status: threadId.length === 0 ? 'ready' : 'loading' });
-  const historyReadinessRef = useRef(historyReadiness);
-  useEffect(() => {
-    historyReadinessRef.current = historyReadiness;
-  }, [historyReadiness]);
+  // onNew reads the branch on screen to continue it; the runtime is created after the effects
+  // that import into it.
+  const messagesRef = useRef(messages);
+  const runtimeRef = useRef<ReturnType<typeof useExternalStoreRuntime> | null>(null);
+  useLayoutEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
   const [isRunning, setIsRunning] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const historyAbortRef = useRef<AbortController | null>(null);
@@ -188,6 +185,8 @@ export function ExternalStoreChat({
         return asset === undefined ? [] : [asset];
       });
       const readyAttachmentIds = readyAttachments.map((asset) => asset.id);
+      // The run continues the branch on screen, whichever it is (spec 2026-10-27, D2).
+      const parentSeq = leafSeqOf(messagesRef.current.find((m) => m.id === message.parentId));
       const user = userMessage(text, readyAttachments);
       let assistantIndex = -1;
       setMessages((prev) => {
@@ -222,6 +221,7 @@ export function ExternalStoreChat({
           ...(skill !== null ? { skill } : {}),
           ...(documentScope.length > 0 ? { documentScope } : {}),
           effort: effortRef.current,
+          ...(parentSeq !== undefined ? { parentSeq } : {}),
           signal: controller.signal,
           connectionLostNote: t('chat.error.connectionLost'),
           onRunId: (runId) => {
@@ -236,7 +236,7 @@ export function ExternalStoreChat({
           },
           onUpdate: (assistant, usage) => {
             usageLifecycle.update(usageRunId, usage);
-            setMessages((prev) => placeAssistant(prev, assistantIndex, assistant));
+            setMessages((prev) => placeTurn(prev, assistantIndex, assistant, true));
           },
         });
       } catch (err) {
@@ -295,89 +295,20 @@ export function ExternalStoreChat({
     [],
   );
 
-  useEffect(() => {
-    const isFirstThreadAdoption = usageThreadRef.current === threadId;
-    if (isFirstThreadAdoption) {
-      usageThreadRef.current = null;
-    } else {
-      usageLifecycle.clear();
-      if (isRunningRef.current) {
-        const previousViewer = abortRef.current;
-        abortRef.current = null;
-        activeRunIdRef.current = null;
-        isRunningRef.current = false;
-        setIsRunning(false);
-        previousViewer?.abort();
-      }
-    }
-    historyRequestRef.current += 1;
-    const request = historyRequestRef.current;
-    const nextHistoryStatus = threadId.length === 0 ? 'ready' : 'loading';
-    queueMicrotask(() => {
-      if (request !== historyRequestRef.current) return;
-      const current = historyReadinessRef.current;
-      if (current.threadId === threadId && current.status === nextHistoryStatus) return;
-      const next = { threadId, status: nextHistoryStatus } as const;
-      historyReadinessRef.current = next;
-      setHistoryReadiness(next);
-    });
-    const clearLoadedMessages = () => {
-      queueMicrotask(() => {
-        if (request !== historyRequestRef.current) return;
-        setMessages([]);
-      });
-    };
-    historyAbortRef.current?.abort();
-    if (threadId.length === 0) {
-      historyAbortRef.current = null;
-      clearLoadedMessages();
-      return;
-    }
-    if (isFirstThreadAdoption && isRunningRef.current) {
-      historyAbortRef.current = null;
-      return;
-    }
-
-    const controller = new AbortController();
-    historyAbortRef.current = controller;
-    clearLoadedMessages();
-
-    void fetchThreadMessages(threadId, controller.signal)
-      .then(async (loaded) => {
-        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
-          return;
-        let assets: Asset[] = [];
-        try {
-          assets = await listThreadAssets(threadId, controller.signal);
-        } catch (err) {
-          if (err instanceof DOMException && err.name === 'AbortError') return;
-        }
-        if (isAbortSignalAborted(controller.signal) || request !== historyRequestRef.current)
-          return;
-        // A user turn names what it was sent with (migration 0116). An agent file is
-        // already on its send_file call, inside the snapshot itself (migration 0126).
-        setMessages(attachAssetsToUserMessages(loaded, assets));
-        setHistoryReadiness({ threadId, status: 'ready' });
-      })
-      .catch((err: unknown) => {
-        if (
-          isAbortSignalAborted(controller.signal) ||
-          request !== historyRequestRef.current ||
-          (err instanceof DOMException && err.name === 'AbortError')
-        ) {
-          return;
-        }
-        setMessages([assistantErrorMessage(t('chat.error.loadHistory'))]);
-        setHistoryReadiness({ threadId, status: 'error' });
-      })
-      .finally(() => {
-        if (request === historyRequestRef.current) historyAbortRef.current = null;
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [threadId, usageLifecycle, t]);
+  const historyReadiness = useThreadHistory({
+    threadId,
+    runtimeRef,
+    usageThreadRef,
+    isRunningRef,
+    abortRef,
+    activeRunIdRef,
+    historyRequestRef,
+    historyAbortRef,
+    setIsRunning,
+    setMessages,
+    usageLifecycle,
+    loadErrorText: t('chat.error.loadHistory'),
+  });
 
   // Attachment-chip actions live in ./ExternalStoreChat_assets (600-LOC split).
   const { handleAssetRetry, handleAssetPromote } = useAssetActions(setMessages);
@@ -451,12 +382,22 @@ export function ExternalStoreChat({
     messages,
     isRunning,
     convertMessage: (m) => m,
+    // A branch switch and an import hand back the host messages of the branch on screen.
+    setMessages: (next) => {
+      setMessages([...next]);
+    },
+    onImport: (imported) => {
+      setMessages(hostMessages(imported));
+    },
     onNew,
     onEdit,
     onReload,
     onCancel,
     adapters: { ...voiceAdapters, attachments },
   });
+  useLayoutEffect(() => {
+    runtimeRef.current = runtime;
+  }, [runtime]);
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>

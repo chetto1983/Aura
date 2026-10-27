@@ -13,6 +13,29 @@ export function sseBody(frames: readonly Record<string, unknown>[]): string {
   return frames.map((f) => `event: ${String(f.type)}\ndata: ${JSON.stringify(f)}\n\n`).join('');
 }
 
+/** A run's frames with the seqs every run reports (internal/agui/server_run_branch.go):
+ * head_seq after RUN_STARTED, the turn it starts from, and leaf_seq before RUN_FINISHED, the
+ * turn it ends on. A fresh turn writes the turn after its head first. */
+export function withTurnSeqs(
+  frames: readonly Record<string, unknown>[],
+  headSeq: number,
+  leafSeq: number,
+): Record<string, unknown>[] {
+  const seq = (path: string, value: number) => ({
+    type: 'STATE_DELTA',
+    delta: [{ op: 'replace', path, value }],
+  });
+  const finished = frames.findIndex((frame) => frame.type === 'RUN_FINISHED');
+  const end = finished < 0 ? frames.length : finished;
+  return [
+    ...frames.slice(0, 1),
+    seq('/head_seq', headSeq),
+    ...frames.slice(1, end),
+    seq('/leaf_seq', leafSeq),
+    ...frames.slice(end),
+  ];
+}
+
 export function sseResponse(frames: readonly Record<string, unknown>[]): Response {
   const enc = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
